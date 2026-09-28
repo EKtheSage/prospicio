@@ -1,0 +1,11 @@
+[package]
+name = "act-prob"
+description = "Risk mathematics: distributions (later: PredictiveDistribution, dependence, risk measures)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+act-core.workspace = true
+act-math.workspace = true

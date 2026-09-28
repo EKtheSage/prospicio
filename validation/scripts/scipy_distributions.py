@@ -1,0 +1,49 @@
+"""Regenerate validation/reference/distributions_scipy.csv from SciPy.
+
+Run from the repository root:
+
+    python validation/scripts/scipy_distributions.py
+
+Each row is one parity case. `abs_tol` and `rel_tol` are the tolerances the
+Rust result must meet (either one suffices).
+"""
+
+import csv
+import math
+import sys
+
+import scipy
+from scipy import stats
+
+OUT = "validation/reference/distributions_scipy.csv"
+SOURCE = f"scipy {scipy.__version__}"
+
+# (meanlog, sdlog) pairs covering light to very heavy tails.
+LOGNORMALS = [(0.0, 1.0), (7.0, 0.5), (10.0, 2.0), (-1.0, 0.1)]
+PROBS = [1e-6, 0.01, 0.25, 0.5, 0.75, 0.99, 0.995, 0.999999]
+
+
+def rows():
+    for meanlog, sdlog in LOGNORMALS:
+        d = stats.lognorm(s=sdlog, scale=math.exp(meanlog))
+        params = f"meanlog={meanlog};sdlog={sdlog}"
+        yield ("lognormal", params, "mean", "", d.mean(), 0.0, 1e-13)
+        yield ("lognormal", params, "variance", "", d.var(), 0.0, 1e-12)
+        for p in PROBS:
+            x = d.ppf(p)
+            yield ("lognormal", params, "quantile", p, x, 0.0, 1e-12)
+            yield ("lognormal", params, "cdf", x, d.cdf(x), 1e-15, 1e-12)
+
+
+def main():
+    with open(OUT, "w", newline="") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(["distribution", "params", "quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
+        for r in rows():
+            dist, params, qty, arg, expected, abs_tol, rel_tol = r
+            w.writerow([dist, params, qty, repr(float(arg)) if arg != "" else "", repr(float(expected)), abs_tol, rel_tol, SOURCE])
+    print(f"wrote {OUT}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

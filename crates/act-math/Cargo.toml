@@ -1,0 +1,10 @@
+[package]
+name = "act-math"
+description = "Numerical engine: special functions (later: linear algebra, optimization, integration, FFT)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+libm.workspace = true

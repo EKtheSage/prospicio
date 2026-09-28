@@ -1,6 +1,41 @@
+# The root package is the provisional reserving sandbox (see README). The
+# act-* crates under crates/ are the real architecture (docs/architecture.md).
 [package]
 name = "risk-rs"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [dependencies]
+
+[workspace]
+members = [".", "crates/*", "validation"]
+# Binding crates need a Python or R toolchain at build time, so plain
+# `cargo build` / `cargo test` skip them; see python/ and R/ for their builds.
+default-members = [
+    ".",
+    "crates/act-core",
+    "crates/act-math",
+    "crates/act-prob",
+    "crates/act-reserving",
+    "crates/act-aggregate",
+    "validation",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[workspace.dependencies]
+act-core = { path = "crates/act-core" }
+act-math = { path = "crates/act-math" }
+act-prob = { path = "crates/act-prob" }
+libm = "0.2.16"
+# Pinned exactly: RNG output is part of the reproducibility contract, so a
+# version bump must be a deliberate, reviewed change.
+rand_chacha = "=0.10.0"
+rand_core = "=0.10.1"
+rayon = "1.12.0"
