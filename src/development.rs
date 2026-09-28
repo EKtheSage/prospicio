@@ -1,4 +1,7 @@
 //! Loss development factors.
+//!
+//! **Provisional:** this module will be replaced by `act-reserving` as
+//! described in `docs/architecture.md`. Do not build on this API.
 
 use std::fmt;
 

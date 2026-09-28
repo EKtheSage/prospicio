@@ -1,4 +1,8 @@
 //! Loss development triangles.
+//!
+//! **Provisional:** this ragged-row `Triangle` will be replaced by the
+//! four-axis (index × column × origin × development), masked, Arrow-backed
+//! Triangle described in `docs/architecture.md`. Do not build on this API.
 
 use std::fmt;
 
