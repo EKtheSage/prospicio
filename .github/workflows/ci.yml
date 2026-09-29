@@ -6,13 +6,43 @@ on:
   pull_request:
 
 jobs:
-  test:
+  rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - run: cargo fmt --check
+      - run: cargo fmt --all --check
+      # Default members: pure-Rust crates, the sandbox and the parity suite.
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: cargo clippy -p act-python -- -D warnings
+      - run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install maturin pytest scipy
+          cd python && maturin develop && pytest tests
+
+  r:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: r-lib/actions/setup-r@v2
+      - run: cargo clippy -p act-r -- -D warnings
+      - run: R CMD INSTALL R/actuarialrs
+      - run: Rscript R/actuarialrs/tests/test-distributions.R

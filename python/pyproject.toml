@@ -1,0 +1,18 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "actuarialrs"
+description = "Actuarial modeling on a Rust core."
+requires-python = ">=3.9"
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = ["pytest", "scipy"]
+
+[tool.maturin]
+manifest-path = "../crates/act-python/Cargo.toml"
+module-name = "actuarialrs.actuarialrs_native"
+python-source = "."
+include = [{ path = "actuarialrs/**/*", format = "sdist" }]

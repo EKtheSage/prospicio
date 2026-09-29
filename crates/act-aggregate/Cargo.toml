@@ -1,0 +1,9 @@
+[package]
+name = "act-aggregate"
+description = "Aggregate loss and reinsurance (v0.3)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]

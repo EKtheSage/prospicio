@@ -1,0 +1,14 @@
+[package]
+name = "act-validation"
+description = "Parity harness: reference datasets and results from reference implementations."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+act-prob.workspace = true
+# Provisional sandbox; swap for act-reserving when v0.1 lands.
+risk-rs = { path = ".." }

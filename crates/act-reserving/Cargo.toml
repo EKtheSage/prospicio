@@ -1,0 +1,9 @@
+[package]
+name = "act-reserving"
+description = "Reserving: Triangle, deterministic and stochastic methods (v0.1)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]

@@ -1,0 +1,15 @@
+# Builds crates/act-r from the surrounding workspace. Installing from a
+# repository checkout only; a CRAN tarball will vendor the crates instead
+# (docs/architecture.md, Language boundary).
+WORKSPACE = $(CURDIR)/../../..
+LIBDIR = $(WORKSPACE)/target/release
+STATLIB = $(LIBDIR)/libactuarialrs_r.a
+PKG_LIBS = -L$(LIBDIR) -lactuarialrs_r
+
+all: $(SHLIB)
+
+$(SHLIB): $(STATLIB)
+
+.PHONY: $(STATLIB)
+$(STATLIB):
+	cargo build --lib --release --manifest-path=$(WORKSPACE)/crates/act-r/Cargo.toml
