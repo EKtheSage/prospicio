@@ -1,0 +1,23 @@
+# Windows build (R >= 4.2 with Rtools). R links packages with the MinGW
+# toolchain from Rtools, so the Rust library is built for the GNU target.
+# One-time setup: rustup target add x86_64-pc-windows-gnu
+#
+# Paths are relative (from this src/ directory): Windows cargo does not
+# understand the /c/... paths that $(CURDIR) gives under Rtools' make.
+TARGET = x86_64-pc-windows-gnu
+LIBDIR = ../../../target/$(TARGET)/release
+STATLIB = $(LIBDIR)/libactuarialrs_r.a
+# System libraries the Rust standard library needs, from
+# `cargo rustc -p act-r --target x86_64-pc-windows-gnu -- --print native-static-libs`.
+# R itself (-lR) is added by R's own link command.
+PKG_LIBS = -L$(LIBDIR) -lactuarialrs_r -lkernel32 -lntdll -luserenv -lws2_32 -ldbghelp
+
+all: $(SHLIB)
+
+$(SHLIB): $(STATLIB)
+
+.PHONY: $(STATLIB)
+$(STATLIB):
+	@rustup target list --installed | grep -q "^$(TARGET)" || \
+		{ echo "Rust target $(TARGET) missing: run 'rustup target add $(TARGET)'"; exit 1; }
+	cargo build --lib --release --target $(TARGET) --manifest-path=../../../crates/act-r/Cargo.toml
