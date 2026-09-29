@@ -17,9 +17,13 @@ m <- lognormal_from_mean_cv(1000, 0.5)
 close(mean(m), 1000, 1e-12)
 close(sqrt(variance(m)), 500, 1e-12)
 
-# Errors from Rust surface as R errors.
-stopifnot(inherits(try(lognormal(0, -1), silent = TRUE), "try-error"))
-stopifnot(inherits(try(quantile(d, 2), silent = TRUE), "try-error"))
+# Errors from Rust surface as ordinary R errors naming the R call.
+e <- tryCatch(lognormal(0, -1), error = identity)
+stopifnot(grepl("sdlog", conditionMessage(e)), identical(conditionCall(e)[[1]], quote(lognormal)))
+e <- tryCatch(quantile(d, 2), error = identity)
+stopifnot(grepl("probability 2", conditionMessage(e)))
+e <- tryCatch(draws(d, 3, seed = -1), error = identity)
+stopifnot(grepl("seed", conditionMessage(e)))
 
 # Same kernel as Rust and Python: these draws are pinned in all three.
 x <- draws(lognormal(0, 1), 3, seed = 42, stream = 3)

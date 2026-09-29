@@ -1,6 +1,7 @@
 //! R bindings, built by `R CMD INSTALL R/actuarialrs`.
 //!
-//! Wrappers convert arguments and map [`act_core::Error`] to R errors. They
+//! Wrappers convert arguments and return [`act_core::Error`]s as R condition
+//! objects (extendr `result_condition`), which the R layer raises. They
 //! hold no numerical code; the idiomatic R API (functions and S3 methods)
 //! lives in `R/actuarialrs/R`.
 
