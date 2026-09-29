@@ -52,9 +52,12 @@ uv run python        # a Python shell with actuarialrs installed
 
 ### R
 
-From the repository root (a terminal where `cargo --version` works):
+From the repository root (a terminal where `cargo --version` works). The
+package's R API is built on [S7](https://rconsortium.github.io/S7/), so
+install that first:
 
 ```bash
+Rscript -e 'install.packages("S7")'
 R CMD INSTALL R/actuarialrs
 Rscript R/actuarialrs/tests/test-distributions.R
 ```
@@ -85,6 +88,7 @@ d.quantile(0.995), d.sample(3, seed=42, stream=0)
 library(actuarialrs)
 d <- lognormal_from_mean_cv(1000, 0.5)
 quantile(d, 0.995); draws(d, 3, seed = 42, stream = 0)
+d@meanlog; d@sdlog   # read-only S7 properties
 ```
 
 Errors raised in Rust surface as Python `ValueError`s and ordinary R errors.

@@ -21,6 +21,6 @@ A local session and one or more cloud sessions may be working on this repo at th
 - Run the `ci.yml` checks locally before you open or update a PR, and list what you ran, with results, in the PR description:
   - Always: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
   - Python bindings touched: `cargo clippy -p act-python -- -D warnings`, then `cd python && maturin develop && pytest tests`
-  - R bindings touched: `cargo clippy -p act-r -- -D warnings`, `R CMD INSTALL R/actuarialrs`, `Rscript R/actuarialrs/tests/test-distributions.R`
+  - R bindings touched: `cargo clippy -p act-r -- -D warnings`, `install.packages("S7")` if missing, `R CMD INSTALL R/actuarialrs`, `Rscript R/actuarialrs/tests/test-distributions.R`
 - If a check cannot run in your environment (for example, R is not installed), say that in the PR. Do not claim it passed.
 - On or after 2026-10-01, remove this section once CI is running again.

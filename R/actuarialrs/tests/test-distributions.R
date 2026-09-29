@@ -13,17 +13,25 @@ p <- c(0.01, 0.5, 0.995)
 close(quantile(d, p), qlnorm(p, 7, 0.5), 1e-12)
 close(cdf(d, c(500, 1500)), plnorm(c(500, 1500), 7, 0.5), 1e-12)
 
+# S7 classes: read-only parameter properties, a shared abstract parent.
+stopifnot(S7::S7_inherits(d, lognormal), S7::S7_inherits(d, distribution))
+stopifnot(identical(d@meanlog, 7), identical(d@sdlog, 0.5))
+stopifnot(inherits(tryCatch(d@sdlog <- 1, error = identity), "error"))
+stopifnot(inherits(tryCatch(d@ptr <- 1, error = identity), "error"))
+stopifnot(identical(capture.output(print(d)), "<lognormal> meanlog = 7, sdlog = 0.5"))
+
 m <- lognormal_from_mean_cv(1000, 0.5)
 close(mean(m), 1000, 1e-12)
 close(sqrt(variance(m)), 500, 1e-12)
+stopifnot(S7::S7_inherits(m, lognormal))
 
 # Errors from Rust surface as ordinary R errors naming the R call.
 e <- tryCatch(lognormal(0, -1), error = identity)
 stopifnot(grepl("sdlog", conditionMessage(e)), identical(conditionCall(e)[[1]], quote(lognormal)))
 e <- tryCatch(quantile(d, 2), error = identity)
-stopifnot(grepl("probability 2", conditionMessage(e)))
+stopifnot(grepl("probability 2", conditionMessage(e)), identical(conditionCall(e), quote(quantile(d, 2))))
 e <- tryCatch(draws(d, 3, seed = -1), error = identity)
-stopifnot(grepl("seed", conditionMessage(e)))
+stopifnot(grepl("seed", conditionMessage(e)), identical(conditionCall(e), quote(draws(d, 3, seed = -1))))
 
 # Same kernel as Rust and Python: these draws are pinned in all three.
 x <- draws(lognormal(0, 1), 3, seed = 42, stream = 3)
