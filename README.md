@@ -21,28 +21,48 @@ core abstractions: [docs/design/](docs/design/).
 
 ## Build and test
 
-Rust (all pure-Rust crates, the sandbox and the parity suite):
+### Prerequisites
+
+| | macOS / Linux | Windows (PowerShell) |
+|---|---|---|
+| Rust ≥ 1.85 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` then `winget install Rustlang.Rustup` |
+| uv (Python) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `winget install astral-sh.uv` |
+| R ≥ 4.2 | from CRAN | R from CRAN, **Rtools** matching your R version, then `rustup target add x86_64-pc-windows-gnu` |
+
+Open a new terminal after installing so `cargo`, `uv` and `R` are on `PATH`.
+
+### Rust
+
+All pure-Rust crates, the sandbox and the parity suite:
 
 ```bash
 cargo test
 ```
 
-Python (needs Python ≥ 3.9):
+### Python (uv)
 
 ```bash
 cd python
-python -m venv .venv && . .venv/bin/activate
-pip install maturin pytest scipy
-maturin develop
-pytest tests
+uv sync              # creates .venv, installs dev deps, builds the Rust extension
+uv run pytest tests
+uv run python        # a Python shell with actuarialrs installed
 ```
 
-R (needs R ≥ 4.2 and Cargo):
+`uv run` rebuilds the extension automatically when Rust sources change.
+
+### R
+
+From the repository root (a terminal where `cargo --version` works):
 
 ```bash
 R CMD INSTALL R/actuarialrs
 Rscript R/actuarialrs/tests/test-distributions.R
 ```
+
+On Windows, R builds packages with Rtools' MinGW compiler, so the Rust code
+is compiled for the `x86_64-pc-windows-gnu` target (see
+`R/actuarialrs/src/Makevars.win`); the build stops with a message if that
+target is not installed.
 
 The same distribution, driven by the same Rust code, from all three:
 

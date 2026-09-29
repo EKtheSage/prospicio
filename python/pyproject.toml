@@ -8,11 +8,21 @@ description = "Actuarial modeling on a Rust core."
 requires-python = ">=3.9"
 dynamic = ["version"]
 
-[project.optional-dependencies]
-test = ["pytest", "scipy"]
+[dependency-groups]
+dev = ["maturin>=1.7,<2", "pytest", "scipy"]
 
 [tool.maturin]
 manifest-path = "../crates/act-python/Cargo.toml"
 module-name = "actuarialrs.actuarialrs_native"
 python-source = "."
 include = [{ path = "actuarialrs/**/*", format = "sdist" }]
+
+[tool.uv]
+# Rebuild the Rust extension on `uv sync` / `uv run` when Rust sources change.
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "../Cargo.toml" },
+    { file = "../Cargo.lock" },
+    { file = "../crates/**/*.rs" },
+    { file = "../crates/**/Cargo.toml" },
+]
