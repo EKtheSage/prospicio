@@ -13,4 +13,7 @@ crate-type = ["staticlib"]
 [dependencies]
 act-core.workspace = true
 act-prob.workspace = true
-extendr-api = "0.9.0"
+# result_condition: Rust errors come back as R condition objects (raised by
+# R/actuarialrs/R/distributions.R) instead of panics, so R prints no Rust
+# panic message for ordinary input errors.
+extendr-api = { version = "0.9.0", features = ["result_condition"] }

@@ -59,6 +59,15 @@ R CMD INSTALL R/actuarialrs
 Rscript R/actuarialrs/tests/test-distributions.R
 ```
 
+**Windows PowerShell:** `R` is PowerShell's alias for `Invoke-History`, so
+call `R.exe CMD INSTALL R\actuarialrs` instead. To put R on `PATH` for your
+user (newest installed R; rerun after upgrading R), then open a new window:
+
+```powershell
+$rbin = (Get-ChildItem "C:\Program Files\R" -Directory | Sort-Object Name | Select-Object -Last 1).FullName + "\bin"
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$rbin", "User")
+```
+
 On Windows, R builds packages with Rtools' MinGW compiler, so the Rust code
 is compiled for the `x86_64-pc-windows-gnu` target (see
 `R/actuarialrs/src/Makevars.win`); the build stops with a message if that
@@ -78,8 +87,7 @@ d <- lognormal_from_mean_cv(1000, 0.5)
 quantile(d, 0.995); draws(d, 3, seed = 42, stream = 0)
 ```
 
-Errors raised in Rust surface as Python `ValueError`s and R errors. In R,
-extendr also prints the Rust panic message it uses to carry the error.
+Errors raised in Rust surface as Python `ValueError`s and ordinary R errors.
 
 ## Provisional code
 
