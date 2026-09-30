@@ -19,6 +19,28 @@ conversion reports the error it introduces.
   plus `from_mean_cv`. Parity with SciPy is checked by
   `validation/tests/distributions.rs` against
   `validation/reference/distributions_scipy.csv`.
+- `act_prob::Sampled` and the `Empirical` trait (`draws`, `sorted`,
+  `mean_of`, `var`, `tvar`), and `act_prob::risk::{var_sorted, tvar_sorted}`,
+  the shared risk measures every domain calls.
+
+### Decisions for `Sampled`
+
+- **The draws are the distribution.** Every `Distribution` method describes
+  the empirical distribution: `variance` divides by `n`, `quantile` inverts
+  the empirical distribution function (R `type = 1`, NumPy
+  `inverted_cdf`), and `sample` resamples with replacement. This keeps
+  `quantile` consistent with the trait's "smallest `x` with
+  `cdf(x) >= p`" contract. Interpolated quantiles, if a parity target
+  needs them, are a separate function, not a different `quantile`.
+- **TVaR** is `(1 / (1 - p)) * integral from p to 1 of VaR(u) du`, with the
+  atom at the VaR split fractionally. It is coherent and continuous in
+  `p`. When `p * n` is a whole number it is the mean of the largest
+  `n * (1 - p)` draws (the draw at the VaR gets no weight).
+- **Simulation order is kept.** `draws()` returns draws in simulation order
+  so marginals from one `PredictiveDistribution` can be paired row by row;
+  a sorted copy is stored alongside for quantiles (2 × 8 bytes per draw).
+- **No weights** (open question 3): a `WeightedSampled` joins when
+  importance sampling does (v1.x).
 
 ## Proposed trait layout
 
@@ -100,8 +122,7 @@ tolerances recorded per row.
    pickling for free. Decide before the second family lands.
 2. **Grid origin**: severity grids start at 0. Do we need signed grids (for
    P&L / net cash flow) in v0.3, or only when capital needs them?
-3. **Weights on `Sampled`**: add now (importance sampling is on the roadmap
-   at v1.x), or add a separate `WeightedSampled` later?
+3. ~~**Weights on `Sampled`**~~: decided, see "Decisions for `Sampled`".
 4. **Frequency distributions** (Poisson, NB, binomial) are discrete: same
    trait with integer support, or a separate `Counting` trait for Panjer?
    Recommendation: separate trait, since Panjer needs the (a, b, 0) form.
