@@ -1,6 +1,46 @@
 # Design note: PredictiveDistribution
 
-Status: **Draft for review** · Phase 0 · Depends on: `distributions.md` · Blocks: v0.1 ODP bootstrap, Mack output
+Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.md` · Blocks: v0.1 ODP bootstrap, Mack output
+
+## What exists
+
+`act_prob::PredictiveDistribution`, with:
+
+- `from_draws(dims, components, draws, provenance)` for draws already laid
+  out simulation-major;
+- `simulate(dims, components, n_sims, seed, provenance, f)`, which fills row
+  `i` in parallel from `StreamRng::new(seed, i)`, and records the seed and
+  `SIM_INDEX_SCHEME` (`"chacha20/sim-index/v1"`) in the provenance;
+- `marginal(key) -> Option<Sampled>`, `aggregate(keep) -> PredictiveDistribution`
+  and `resample(rng, n)`, which draws whole rows;
+- `total() -> &Sampled` (row sums, computed on first use). The
+  `Distribution` and `Empirical` impls (`mean`, `quantile`, `var`, `tvar`, …)
+  describe the total and go through `risk::*`;
+- `Provenance` with `model`, `parameters`, `seed`, `stream_scheme`,
+  `versions` (starting with `act-prob`) and `input_hash`.
+
+### Decisions
+
+- **Draws only, `f64` only** (open questions 1 and 2): `Joint::Gaussian`
+  and `f32` draws wait until a consumer or memory needs them. There is no
+  `Joint` enum yet; it is introduced with the second variant.
+- **Key values are `Int` or `Text`.** The Triangle's `Period` lives in
+  `act-reserving`, which `act-prob` cannot depend on. When `Period` moves to
+  `act-core`, `KeyValue` gains a `Period` variant so reserve components
+  join back to triangle origins without conversion.
+- **`aggregate(keep)`** keeps the listed dimensions in the listed order and
+  sums the rest within each simulation. Groups appear in the order of their
+  first component. `aggregate(&[])` is the total as a one-component
+  distribution.
+- **`draw_matrix()`** is the full simulation-major matrix. `Empirical::draws()`
+  is the per-simulation total, like every other `Distribution` method.
+- **Errors** use `act_core::Error::InvalidParameter`, with the offending
+  index or length as the value. Dedicated `Shape` / `UnknownKey` variants
+  would read better, but changing `act-core` needs its own PR (AGENTS.md).
+- **Deferred to their own PRs:** `input_hash` computation with BLAKE3
+  (open question 3) and Arrow IPC persistence with provenance in the schema
+  metadata (open question 4). Both add dependencies. `input_hash` is a field
+  the model fills until then.
 
 ## Goal
 
@@ -86,15 +126,17 @@ and R ChainLadder, with tolerances per test.
 
 ## Open questions
 
-1. **`Joint::Gaussian` in v0.1?** Mack naturally produces mean and
-   covariance. Returning it as `Gaussian` keeps Mack analytic; converting to
-   draws makes every downstream step uniform. Recommendation: draws only
-   for v0.1; add `Gaussian` when a consumer needs analytic results.
-2. **f64 only, or allow f32 draws** for very large simulations?
-   Recommendation: f64 only until memory forces the question.
-3. **Hash function** for `input_hash`: BLAKE3 (fast, a new dependency) vs a
-   simpler non-cryptographic hash. Integrity against tampering is not a
-   goal, but collision resistance for audit is.
-4. **Serialization format** for persisted results: Arrow IPC (fits the data
-   plan) vs a custom format. Recommendation: Arrow IPC, with provenance in
-   schema metadata.
+All four were decided on 2026-09-30, following the recommendations:
+
+1. ~~`Joint::Gaussian` in v0.1~~: draws only; add `Gaussian` when a
+   consumer needs analytic results.
+2. ~~`f32` draws~~: `f64` only until memory forces the question.
+3. ~~Hash function~~: BLAKE3 for `input_hash` (own PR).
+4. ~~Serialization format~~: Arrow IPC, with provenance in the schema
+   metadata (own PR).
+
+Still open:
+
+5. **`Period` in `act-core`**, so keys can hold periods (see Decisions).
+   Needs agreement with the Reserving lane, since #9 defines `Period` in
+   `act-reserving`.
