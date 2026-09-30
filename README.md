@@ -28,6 +28,7 @@ core abstractions: [docs/design/](docs/design/).
 | Rust ≥ 1.85 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` then `winget install Rustlang.Rustup` |
 | uv (Python) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `winget install astral-sh.uv` |
 | R ≥ 4.2 | from CRAN | R from CRAN, **Rtools** matching your R version, then `rustup target add x86_64-pc-windows-gnu` |
+| Quarto (docs only) | from [quarto.org](https://quarto.org/docs/get-started/) | `winget install Posit.Quarto` |
 
 Open a new terminal after installing so `cargo`, `uv` and `R` are on `PATH`.
 
@@ -75,6 +76,24 @@ On Windows, R builds packages with Rtools' MinGW compiler, so the Rust code
 is compiled for the `x86_64-pc-windows-gnu` target (see
 `R/actuarialrs/src/Makevars.win`); the build stops with a message if that
 target is not installed.
+
+### Docs
+
+Building a binding regenerates its docs (see "Documentation" in
+[docs/architecture.md](docs/architecture.md)). Use these instead of the
+plain builds above whenever you change a doc comment or a public API:
+
+```bash
+Rscript -e 'install.packages(c("S7", "roxygen2", "pkgload", "pkgdown"))'  # once
+cargo xtask python   # build + stubs, test, great-docs site in python/great-docs/_site
+cargo xtask r        # roxygen2 man/ + NAMESPACE, install, test, pkgdown site in R/actuarialrs/docs
+cargo xtask docs     # both plus rustdoc, collected into target/docs-site
+```
+
+The Python docs need Python 3.11+ (great-docs); `cargo xtask python` asks uv
+for one. Commit the regenerated `python/actuarialrs/actuarialrs_native.pyi`,
+`R/actuarialrs/man/` and `R/actuarialrs/NAMESPACE`; never edit them by hand.
+`cargo xtask docs --check` fails if they are stale.
 
 The same distribution, driven by the same Rust code, from all three:
 

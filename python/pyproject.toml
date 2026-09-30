@@ -10,6 +10,9 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = ["maturin>=1.7,<2", "pytest", "scipy"]
+docs = [
+    "great-docs>=0.17 ; python_full_version >= '3.11'",
+]
 
 [tool.maturin]
 manifest-path = "../crates/act-python/Cargo.toml"

@@ -1,0 +1,19 @@
+# Python API site. Built by `cargo xtask python`; see docs/architecture.md,
+# "Documentation". Options: https://posit-dev.github.io/great-docs/
+module: actuarialrs
+display_name: actuarialrs
+parser: numpy
+# Static analysis reads actuarialrs_native.pyi, which maturin generates from
+# the Rust doc comments (`--generate-stubs`); nothing is imported.
+dynamic: false
+repo: https://github.com/EKtheSage/risk-rs
+pypi: false
+changelog:
+  enabled: false
+site:
+  html-math-method: katex
+reference:
+  - title: Distributions
+    desc: Parametric, discretized and sampled representations.
+    contents:
+      - distributions.Lognormal
