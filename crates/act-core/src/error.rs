@@ -16,6 +16,8 @@ pub enum Error {
     },
     /// A probability argument is NaN or outside `[0, 1]`.
     InvalidProbability(f64),
+    /// A month number is outside 1 to 12.
+    InvalidMonth(u8),
 }
 
 impl fmt::Display for Error {
@@ -27,6 +29,7 @@ impl fmt::Display for Error {
                 reason,
             } => write!(f, "invalid parameter {name} = {value}: {reason}"),
             Self::InvalidProbability(p) => write!(f, "probability {p} is not in [0, 1]"),
+            Self::InvalidMonth(m) => write!(f, "month {m} is not in 1 to 12"),
         }
     }
 }
