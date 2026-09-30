@@ -146,7 +146,7 @@ The fast path is a closed set of Rust-native objects; user-defined Python/R call
 
 - extendr, with vendored crates and offline builds to meet CRAN policy; pin a minimum rustc.
 - Phase 0 proves the same kernel serves both languages; feature parity waits until the Python API is stable (targeted around v0.5).
-- R wrappers stay idiomatic (functions + S3 methods) and contain no algorithms.
+- R wrappers stay idiomatic and contain no algorithms. They use S7: each distribution is an S7 class under an abstract `distribution` parent, parameters are read-only properties, and package-specific operations (`cdf`, `variance`, `draws`) are S7 generics, with methods on base generics such as `mean` and `quantile`.
 
 ### WASM
 
