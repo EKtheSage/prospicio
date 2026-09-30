@@ -133,8 +133,11 @@ fn r(check: bool) -> Result {
     step("r: check that every export is documented and usage matches code");
     rscript(
         &root,
-        r#"u <- tools::undoc(package = "actuarialrs"); c <- tools::codoc(package = "actuarialrs")
-           if (length(unlist(u)) || length(c)) { print(u); print(c); quit(status = 1) }"#,
+        concat!(
+            r#"u <- tools::undoc(package = "actuarialrs"); "#,
+            r#"c <- tools::codoc(package = "actuarialrs"); "#,
+            r#"if (length(unlist(u)) || length(c)) { print(u); print(c); quit(status = 1) }"#,
+        ),
     )?;
     step("r: render the docs site (pkgdown)");
     let mut cmd = Command::new("Rscript");
@@ -206,7 +209,8 @@ const INDEX: &str = r#"<!doctype html>
 </ul>
 "#;
 
-/// Pandoc bundled with Quarto: `<quarto bin>/tools`.
+/// Directory of the pandoc bundled with Quarto: `<quarto bin>/tools` on
+/// Windows, `<quarto bin>/tools/<arch>` on Linux and macOS.
 fn quarto_pandoc() -> Option<PathBuf> {
     let out = Command::new("quarto").arg("--paths").output().ok()?;
     let bin = String::from_utf8(out.stdout)
@@ -216,7 +220,9 @@ fn quarto_pandoc() -> Option<PathBuf> {
         .trim()
         .to_owned();
     let tools = Path::new(&bin).join("tools");
-    tools.is_dir().then_some(tools)
+    [tools.join(env::consts::ARCH), tools]
+        .into_iter()
+        .find(|dir| dir.join("pandoc").is_file() || dir.join("pandoc.exe").is_file())
 }
 
 /// Fails if any of `paths` differs from the committed tree, including new
@@ -244,7 +250,10 @@ fn unchanged(paths: &[&str]) -> Result {
     }
 }
 
+/// Runs one R expression. Keep `expr` on one line: Rscript on Windows drops
+/// everything after the first newline of an `-e` argument.
 fn rscript(dir: &Path, expr: &str) -> Result {
+    debug_assert!(!expr.contains('\n'), "Rscript -e takes one line");
     run(Command::new("Rscript").args(["-e", expr]).current_dir(dir))
 }
 

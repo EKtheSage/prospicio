@@ -42,5 +42,6 @@ The ODP bootstrap needs both a `Triangle` and a `PredictiveDistribution`. It sta
   - Always: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
   - Python bindings touched: `cargo clippy -p act-python -- -D warnings`, then `cd python && maturin develop && pytest tests`
   - R bindings touched: `cargo clippy -p act-r -- -D warnings`, `install.packages("S7")` if missing, `R CMD INSTALL R/actuarialrs`, `Rscript R/actuarialrs/tests/test-distributions.R`
+  - Bindings, their doc comments or docs config touched: `cargo xtask docs --check` (needs Quarto and the R packages `roxygen2`, `pkgdown`), and commit the regenerated stub, `man/` and `NAMESPACE`
 - If a check cannot run in your environment (for example, R is not installed), say that in the PR. Do not claim it passed.
 - On or after 2026-10-01, remove this section once CI is running again.
