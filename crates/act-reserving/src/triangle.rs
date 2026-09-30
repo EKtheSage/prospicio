@@ -637,7 +637,8 @@ impl Triangle {
 
         // (index, new origin start) -> observed increments as (valuation,
         // column, value).
-        let mut increments: BTreeMap<(usize, Month), Vec<(Month, usize, f64)>> = BTreeMap::new();
+        type Increments = Vec<(Month, usize, f64)>;
+        let mut increments: BTreeMap<(usize, Month), Increments> = BTreeMap::new();
         for i in 0..ni {
             for o in 0..no {
                 let new_origin = self.origins[o].floor(origin_grain);
