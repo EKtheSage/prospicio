@@ -28,6 +28,7 @@ version = "0.0.1"
 dependencies = [
  "act-core",
  "act-math",
+ "rayon",
 ]
 
 [[package]]
