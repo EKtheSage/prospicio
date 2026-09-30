@@ -225,29 +225,39 @@ fn quarto_pandoc() -> Option<PathBuf> {
         .find(|dir| dir.join("pandoc").is_file() || dir.join("pandoc.exe").is_file())
 }
 
-/// Fails if any of `paths` differs from the committed tree, including new
-/// untracked files.
+/// Fails if any of `paths` differs from `HEAD` in content, or holds a new
+/// untracked file. Content, not `git status`: under `core.autocrlf` a
+/// regenerated file with LF endings shows as modified in `git status` even
+/// when it matches the commit.
 fn unchanged(paths: &[&str]) -> Result {
-    let out = Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=all", "--"])
-        .args(paths)
-        .current_dir(root())
-        .output()
-        .map_err(|e| format!("running git: {e}"))?;
-    let changed = String::from_utf8_lossy(&out.stdout);
-    if !out.status.success() {
-        return Err(format!(
-            "git status failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
+    let modified = git(&["diff", "HEAD", "--name-status", "--"], paths)?;
+    let untracked = git(&["ls-files", "--others", "--exclude-standard", "--"], paths)?;
+    let changed = format!("{modified}{untracked}");
     if changed.trim().is_empty() {
         Ok(())
     } else {
         Err(format!(
-            "generated docs are out of date; commit the regenerated files:\n{changed}"
+            "generated docs are out of date; commit the regenerated files:
+{changed}"
         ))
     }
+}
+
+fn git(args: &[&str], paths: &[&str]) -> Result<String> {
+    let out = Command::new("git")
+        .args(args)
+        .args(paths)
+        .current_dir(root())
+        .output()
+        .map_err(|e| format!("running git: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git {} failed: {}",
+            args[0],
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Runs one R expression. Keep `expr` on one line: Rscript on Windows drops
