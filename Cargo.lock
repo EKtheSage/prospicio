@@ -57,7 +57,7 @@ name = "act-validation"
 version = "0.0.1"
 dependencies = [
  "act-prob",
- "risk-rs",
+ "act-reserving",
 ]
 
 [[package]]
@@ -294,10 +294,6 @@ dependencies = [
  "quote",
  "syn 3.0.6",
 ]
-
-[[package]]
-name = "risk-rs"
-version = "0.1.0"
 
 [[package]]
 name = "syn"

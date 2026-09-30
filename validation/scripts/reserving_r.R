@@ -1,0 +1,126 @@
+# Regenerate validation/reference/reserving_chainladder_r.csv from R ChainLadder.
+#
+# Run from the repository root:
+#
+#     Rscript validation/scripts/reserving_r.R
+#
+# Triangles are read from validation/data/*.csv (not the R datasets) so the R
+# and Python generators see identical input. `arg` is the 0-based development
+# index k (k links age k to k+1) for per-age quantities, the origin year for
+# per-origin quantities, and empty for totals.
+
+suppressPackageStartupMessages(library(ChainLadder))
+
+OUT <- "validation/reference/reserving_chainladder_r.csv"
+DATASETS <- c("raa", "genins", "abc")
+VER <- as.character(packageVersion("ChainLadder"))
+REL <- 1e-9
+ZERO_ABS <- 1e-9
+
+read_triangle <- function(name) {
+  d <- read.csv(file.path("validation/data", paste0(name, ".csv")), comment.char = "#")
+  origins <- sort(unique(d$origin))
+  devs <- sort(unique(d$development))
+  tri <- matrix(NA_real_, length(origins), length(devs),
+                dimnames = list(origin = origins, dev = devs))
+  tri[cbind(match(d$origin, origins), match(d$development, devs))] <- d$value
+  as.triangle(tri)
+}
+
+rows <- character(0)
+notes <- character(0)
+
+emit <- function(dataset, method, quantity, arg, value, source) {
+  abs_tol <- if (value == 0) ZERO_ABS else 0
+  rows <<- c(rows, sprintf("%s,%s,%s,%s,%s,%s,%s,%s", dataset, method, quantity,
+                           arg, sprintf("%.15g", value), format(abs_tol),
+                           format(REL), source))
+}
+
+# Runs MackChainLadder, recording any warning (e.g. a log-linear fallback).
+mack <- function(name, tri, alpha, est.sigma) {
+  withCallingHandlers(
+    MackChainLadder(tri, alpha = alpha, est.sigma = est.sigma),
+    warning = function(w) {
+      msg <- gsub("\\s+", " ", conditionMessage(w))
+      notes <<- c(notes, sprintf("# %s alpha=%s est.sigma=%s: R warning: %s",
+                                 name, alpha, est.sigma, msg))
+      invokeRestart("muffleWarning")
+    })
+}
+
+MACK_METHODS <- list(
+  mack            = list(alpha = 1, est.sigma = "log-linear"),
+  mack_sigma_mack = list(alpha = 1, est.sigma = "Mack"),
+  mack_alpha0     = list(alpha = 0, est.sigma = "log-linear"),
+  mack_alpha2     = list(alpha = 2, est.sigma = "log-linear")
+)
+
+for (name in DATASETS) {
+  tri <- read_triangle(name)
+  n <- ncol(tri)
+  origins <- rownames(tri)
+  latest <- getLatestCumulative(tri)
+
+  # Volume-weighted chain ladder, no tail.
+  m <- mack(name, tri, 1, "log-linear")
+  f <- m$f[1:(n - 1)]
+  src <- sprintf("R ChainLadder %s: MackChainLadder(tri)", VER)
+  for (k in seq_len(n - 1)) emit(name, "chain_ladder", "ata_factor", k - 1, f[k], paste0(src, "$f"))
+  cdf <- rev(cumprod(rev(c(f, 1))))
+  for (k in seq_len(n)) emit(name, "chain_ladder", "cdf", k - 1, cdf[k], paste0(src, "$f cumulative product"))
+  ult <- m$FullTriangle[, n]
+  for (i in seq_along(origins)) {
+    emit(name, "chain_ladder", "ultimate", origins[i], ult[i], paste0(src, "$FullTriangle[,n]"))
+    emit(name, "chain_ladder", "reserve", origins[i], ult[i] - latest[i],
+         paste0(src, " summary ByOrigin IBNR"))
+  }
+  emit(name, "chain_ladder", "total_ultimate", "", sum(ult), paste0(src, " summary Totals Ultimate"))
+  emit(name, "chain_ladder", "total_reserve", "", sum(ult - latest), paste0(src, " summary Totals IBNR"))
+
+  # Simple average of link ratios.
+  smpl <- attr(ata(tri), "smpl")
+  for (k in seq_len(n - 1))
+    emit(name, "chain_ladder_simple", "ata_factor", k - 1, smpl[k],
+         sprintf("R ChainLadder %s: attr(ata(tri), 'smpl')", VER))
+  m0 <- mack(name, tri, 0, "log-linear")
+  emit(name, "chain_ladder_simple", "total_reserve", "", sum(m0$FullTriangle[, n] - latest),
+       sprintf("R ChainLadder %s: MackChainLadder(tri, alpha=0) summary Totals IBNR", VER))
+
+  # Mack standard errors.
+  for (method in names(MACK_METHODS)) {
+    p <- MACK_METHODS[[method]]
+    m <- mack(name, tri, p$alpha, p$est.sigma)
+    call <- sprintf("R ChainLadder %s: MackChainLadder(tri, alpha=%s, est.sigma='%s')",
+                    VER, p$alpha, p$est.sigma)
+    for (k in seq_len(n - 1)) {
+      emit(name, method, "sigma", k - 1, m$sigma[k], paste0(call, "$sigma"))
+      emit(name, method, "f_se", k - 1, m$f.se[k], paste0(call, "$f.se"))
+    }
+    for (i in seq_along(origins)) {
+      emit(name, method, "se", origins[i], m$Mack.S.E[i, n], paste0(call, "$Mack.S.E[,n]"))
+      emit(name, method, "process_risk", origins[i], m$Mack.ProcessRisk[i, n],
+           paste0(call, "$Mack.ProcessRisk[,n]"))
+      emit(name, method, "parameter_risk", origins[i], m$Mack.ParameterRisk[i, n],
+           paste0(call, "$Mack.ParameterRisk[,n]"))
+    }
+    emit(name, method, "total_standard_error", "", m$Total.Mack.S.E, paste0(call, "$Total.Mack.S.E"))
+    emit(name, method, "total_process_risk", "", m$Total.ProcessRisk[n],
+         paste0(call, "$Total.ProcessRisk[n]"))
+    emit(name, method, "total_parameter_risk", "", m$Total.ParameterRisk[n],
+         paste0(call, "$Total.ParameterRisk[n]"))
+  }
+}
+
+header <- c(
+  sprintf("# Generated by validation/scripts/reserving_r.R with R %s, ChainLadder %s.",
+          paste(R.version$major, R.version$minor, sep = "."), VER),
+  "# Triangles from validation/data/{raa,genins,abc}.csv. No tail factor. Mack risks are",
+  "# standard errors (not variances) at ultimate. sigma/f_se include the extrapolated last age.",
+  unique(notes),
+  "dataset,method,quantity,arg,expected,abs_tol,rel_tol,source"
+)
+con <- file(OUT, "wb")
+writeLines(c(header, rows), con)
+close(con)
+cat(sprintf("wrote %d cases to %s\n", length(rows), OUT))

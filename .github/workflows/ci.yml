@@ -14,7 +14,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - run: cargo fmt --all --check
-      # Default members: pure-Rust crates, the sandbox and the parity suite.
+      # Default members: pure-Rust crates and the parity suite.
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
 

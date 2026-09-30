@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use act_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
+
 /// One row of a reference file: column name to raw value.
 #[derive(Debug, Clone)]
 pub struct Case {
@@ -131,22 +133,35 @@ pub fn check(cases: &[Case], mut eval: impl FnMut(&Case) -> Option<f64>) {
     );
 }
 
-/// Loads a cumulative triangle from `validation/data/<name>.csv` (columns
-/// `origin,development,value`) as one row per origin, ordered by origin and
-/// development.
-pub fn triangle(name: &str) -> Vec<Vec<f64>> {
-    let mut by_origin: BTreeMap<i64, BTreeMap<i64, f64>> = BTreeMap::new();
-    for row in read_rows(&format!("data/{name}.csv")) {
-        let parse = |k: &str| row[k].parse::<f64>().unwrap();
-        by_origin
-            .entry(parse("origin") as i64)
-            .or_default()
-            .insert(parse("development") as i64, parse("value"));
-    }
-    by_origin
-        .into_values()
-        .map(|ages| ages.into_values().collect())
-        .collect()
+/// Loads a cumulative annual triangle from `validation/data/<name>.csv`
+/// (columns `origin,development,value`: origin year, age in months, value)
+/// with one column, `values`.
+pub fn triangle(name: &str) -> Triangle {
+    let rows = read_rows(&format!("data/{name}.csv"));
+    let parse = |row: &BTreeMap<String, String>, k: &str| -> f64 {
+        row[k]
+            .parse()
+            .unwrap_or_else(|_| panic!("{name}: {k} = {:?} is not a number", row[k]))
+    };
+    let origin: Vec<Month> = rows
+        .iter()
+        .map(|r| Month::january(parse(r, "origin") as i32))
+        .collect();
+    let ages: Vec<Lag> = rows
+        .iter()
+        .map(|r| parse(r, "development") as Lag)
+        .collect();
+    let values: Vec<f64> = rows.iter().map(|r| parse(r, "value")).collect();
+    Triangle::from_long(&Long {
+        index: None,
+        origin: &origin,
+        development: DevelopmentColumn::Age(&ages),
+        values: &[("values", &values)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
 #[cfg(test)]

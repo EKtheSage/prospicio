@@ -7,8 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+act-reserving.workspace = true
 
 [dev-dependencies]
 act-prob.workspace = true
-# Provisional sandbox; swap for act-reserving when v0.1 lands.
-risk-rs = { path = ".." }

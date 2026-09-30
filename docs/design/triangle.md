@@ -1,6 +1,6 @@
 # Design note: Triangle
 
-Status: **Draft for review** · Phase 0 · Depends on: `distributions.md`, `predictive-distribution.md` (period keys) · Replaces: provisional `src/triangle.rs`
+Status: **Implemented** in `crates/act-reserving` (v0.1), except the Arrow feature · Depends on: `distributions.md`, `predictive-distribution.md` (period keys) · Replaced: the provisional root `src/` sandbox
 
 ## Goal
 
@@ -24,15 +24,15 @@ Four axes, in chainladder-python's order:
 ```rust
 pub struct Triangle {
     values: Vec<f64>,        // dense, row-major over (index, column, origin, development)
-    mask: BitVec,            // true where a value is observed
+    mask: Vec<bool>,         // true where a value is observed
     shape: [usize; 4],
     index: Vec<Label>,       // one label per index position (possibly multi-part)
     columns: Vec<String>,
-    origins: Vec<Period>,    // start of each origin period
+    origins: Vec<Month>,     // start month of each origin period
     origin_grain: Grain,     // M, Q, S, Y
     development: Vec<Lag>,   // lag in months from origin start
     development_grain: Grain,
-    valuation: Date,         // date of the latest diagonal
+    valuation: Month,        // month of the latest diagonal
     cumulative: bool,
 }
 ```
@@ -51,7 +51,9 @@ pub struct Triangle {
 
 ## Periods and grain
 
-- `Period` is a start date plus a grain; `Lag` is months from origin start.
+- `Period` is a start month plus a grain; `Lag` is months from origin
+  start. Dates have month resolution (`Month`); a valuation month means
+  its last day. Periods align to the calendar year.
 - **Partial periods:** the latest origin may be only partly exposed on the
   valuation date. Its age is measured from its start, and `valuation` makes
   the diagonal exact.
@@ -81,7 +83,10 @@ pub struct Triangle {
 - The `arrow` crate is heavy, so the core Triangle builds from plain slices
   (`from_long(&[origin], &[development], &[value], …)`). Arrow conversion
   lives behind an `arrow` feature, enabled in the Python and R bindings and
-  off for WASM.
+  off for WASM. **Not built yet:** it arrives with the Python and R
+  Triangle bindings. The core takes `Long` (borrowed slices, with an
+  optional `Label` per row and ages or valuation months) and returns
+  `LongTable`.
 
 ## Relationship to reserving methods
 
@@ -89,25 +94,52 @@ Methods take `&Triangle` and a column. Output per origin is keyed by the
 Triangle's `Period`s, so a reserve `PredictiveDistribution` component
 `{lob, origin}` joins back to the triangle without conversion.
 
-## Migration from the sandbox
+v0.1 methods fit a triangle with a single index position (slice first);
+fitting every segment at once, as chainladder-python broadcasts, comes later.
 
-Port `development.rs`, `chain_ladder.rs` (volume and simple averages,
-cumulative factors, chain ladder, Mack) onto this Triangle in
-`act-reserving`. Then point `validation/tests/reserving.rs` at the new
-crate and delete the root sandbox crate.
+Development factors (`Development`) follow Mack's weighted regression, as
+R ChainLadder and chainladder-python do:
 
-## Open questions
+- `Average::{Volume, Simple, Regression}` is Mack's `alpha` = 1, 0, 2.
+- A sigma that cannot be estimated (one link ratio at that age) is filled
+  by `SigmaInterpolation::LogLinear` (default in both references) or
+  `SigmaInterpolation::Mack` (Mack 1993). Mack's rule fills gaps in order,
+  as R does.
+- Where the two references disagree, we follow R ChainLadder, except for the
+  p-value fallback:
+  - A sigma of exactly zero stays zero and is left out of the log-linear
+    fit (R). chainladder-python keeps it in the fit as `1e-320`.
+  - R falls back to Mack's rule when the log-linear slope's p-value is
+    above 0.05; chainladder-python never does, and neither do we.
+- An origin whose value is zero at an age informs that age's factor (its
+  weight is `C^(alpha-1)`) but not its sigma, where its weight would be
+  infinite.
+- A sigma that cannot be filled either is NaN: the chain ladder does not
+  need it, and Mack rejects it.
 
-1. **Relationship to chainladder-python** (plan's open decision): if we
-   become its optional backend (option b), axis semantics and grain
-   behaviour must match it exactly, edge cases included. Parity rather than
-   "similar" changes the scope of this note. **Needed before this design is
-   finalized.**
-2. **Development axis storage:** always ages, with valuation derived (the
-   proposal), or store whichever the user supplied?
-3. **Multi-part index labels:** a tuple of strings (like a pandas
-   MultiIndex), or a separate small dimension table?
-4. **Exclusions** (dropping link ratios by origin/age, as chainladder's
-   `drop`): a second mask on the Triangle, or a parameter of the
-   development estimator? Recommendation: estimator parameter, keeping the
-   Triangle pure data.
+`Mack` uses R's `mse.method = "Mack"` recursions: per-origin process and
+parameter risk, and a total parameter risk that carries the covariance
+between origins through the shared factors.
+
+## Migration from the sandbox (done)
+
+`development.rs` and `chain_ladder.rs` (volume and simple averages,
+cumulative factors, chain ladder, Mack) are ported onto this Triangle in
+`act-reserving`. `validation/tests/reserving.rs` checks every R ChainLadder
+and chainladder-python reference value on RAA, GenIns and ABC (chain ladder,
+simple average, and Mack with `alpha` 0, 1, 2 and both sigma rules), and the
+root sandbox crate is deleted.
+
+## Decisions
+
+1. **Relationship to chainladder-python** (plan's open decision): still
+   open. Implemented behaviour follows chainladder-python's semantics
+   (axes, ages, `grain()` anchored on the valuation date), and the parity
+   suite is the contract. Full backend parity (option b) would widen scope.
+2. **Development axis storage:** always ages in months. `dev_to_val()`
+   returns a borrowed `CalendarView` keyed by valuation month;
+   `val_to_dev()` returns the triangle.
+3. **Multi-part index labels:** `Label` is a tuple of strings, like a pandas
+   `MultiIndex` row.
+4. **Exclusions** (chainladder's `drop`): a parameter of the development
+   estimator, keeping the Triangle pure data. Not implemented yet.
