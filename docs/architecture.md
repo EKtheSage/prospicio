@@ -35,7 +35,7 @@ v2 keeps the v1 layering, principle and target scope; it changes priorities, bui
 | Front ends | Python + R | Python first; R skeleton in Phase 0, parity later; WASM target added |
 | Reserving scope | Ultimate-view methods | Adds one-year view / CDR (Merz–Wüthrich) |
 | Validation | "Testing framework" | Parity tests against reference packages on standard datasets as a release gate |
-| Relationship to chainladder-python | Unstated | Explicit decision required (see Open decisions) |
+| Relationship to chainladder-python | Unstated | Decided (2026-09-29): standalone Rust implementation, exposed to Python and R through our own bindings. chainladder-python and R ChainLadder are parity references only, never a backend target |
 
 ## Layered architecture
 
@@ -357,7 +357,6 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 
 | Decision | Options | Needed by |
 | --- | --- | --- |
-| Relationship to chainladder-python | (a) standalone rewrite with Triangle parity; (b) Rust kernel that chainladder-python can call as an optional backend; (c) both, starting with (b) | Before Phase 2 design note |
 | Public name | Defer branding; reserve the chosen name on crates.io, PyPI and CRAN as soon as it is picked | Before v0.1 publish |
 | Working prefix | `actuarial-rs` repo, `act-*` crates, `actuarialrs` Python/R package | Now |
 | License | MIT/Apache-2.0 dual (Rust convention); confirm compatibility with CRAN distribution | Before first public commit |

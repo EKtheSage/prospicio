@@ -133,10 +133,13 @@ root sandbox crate is deleted.
 
 ## Decisions
 
-1. **Relationship to chainladder-python** (plan's open decision): still
-   open. Implemented behaviour follows chainladder-python's semantics
-   (axes, ages, `grain()` anchored on the valuation date), and the parity
-   suite is the contract. Full backend parity (option b) would widen scope.
+1. **Relationship to chainladder-python:** decided, standalone. This is
+   its own Rust implementation of actuarial models, exposed to Python and R
+   through our bindings; it will not be a chainladder-python backend.
+   chainladder-python and R ChainLadder are parity references: where they
+   agree we match them, and where they differ or are silent we choose and
+   record the choice here. Familiar axis semantics are kept for users, not
+   as a compatibility contract.
 2. **Development axis storage:** always ages in months. `dev_to_val()`
    returns a borrowed `CalendarView` keyed by valuation month;
    `val_to_dev()` returns the triangle.
