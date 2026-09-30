@@ -24,10 +24,12 @@ Lognormal$quantile <- function(p) .Call(wrap__Lognormal__quantile, self, p)
 
 Lognormal$sample <- function(n, seed, stream) .Call(wrap__Lognormal__sample, self, n, seed, stream)
 
+#' @export
 `$.Lognormal` <- function(self, name) {
   func <- Lognormal[[name]]
   environment(func) <- environment()
   func
 }
 
+#' @export
 `[[.Lognormal` <- `$.Lognormal`

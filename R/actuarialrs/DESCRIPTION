@@ -10,3 +10,5 @@ SystemRequirements: Cargo (Rust's package manager), rustc >= 1.85
 Depends: R (>= 4.2.0)
 Imports: S7, stats
 Config/rextendr/version: 0.9.0
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.1.0

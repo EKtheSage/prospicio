@@ -1,0 +1,17 @@
+# R docs site. Built by `cargo xtask r`; see docs/architecture.md,
+# "Documentation".
+# Unset until the docs have a public home (docs/architecture.md, Open decisions).
+url: ~
+template:
+  bootstrap: 5
+reference:
+  - title: Distributions
+    contents:
+      - distribution
+      - lognormal
+      - lognormal_from_mean_cv
+  - title: Distribution functions
+    contents:
+      - cdf
+      - variance
+      - draws
