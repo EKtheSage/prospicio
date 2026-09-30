@@ -331,7 +331,8 @@ mod tests {
             Err(Error::Factor { age: 0, .. })
         ));
         // Volume weighting keeps the zero origin's later value in the factor
-        // (R's weighted regression) but leaves it out of sigma.
+        // (the regression formula) but leaves it out of sigma. R ChainLadder
+        // fails on this input, so there is no reference value.
         let t = annual(2020, &[&[0.0, 5.0], &[4.0, 6.0], &[2.0, 4.0], &[1.0]]);
         let f = Development::default().fit(&t, "values").unwrap();
         close(&f.ldf, &[15.0 / 6.0], 1e-12);

@@ -20,7 +20,9 @@ pub enum Error {
     },
     /// Two value columns share a name.
     DuplicateColumn(String),
-    /// A value is NaN or infinite.
+    /// An index label is named twice.
+    DuplicateLabel(String),
+    /// A value is infinite (NaN marks a missing value).
     NonFinite { column: String, row: usize },
     /// A development age is zero, or a valuation is before its origin starts.
     NonPositiveAge { row: usize },
@@ -54,8 +56,9 @@ impl fmt::Display for Error {
                 found,
             } => write!(f, "column {column} has {found} rows, expected {expected}"),
             Self::DuplicateColumn(c) => write!(f, "column {c} is supplied twice"),
+            Self::DuplicateLabel(l) => write!(f, "index label {l} is supplied twice"),
             Self::NonFinite { column, row } => {
-                write!(f, "column {column}, row {row} is NaN or infinite")
+                write!(f, "column {column}, row {row} is infinite")
             }
             Self::NonPositiveAge { row } => {
                 write!(f, "row {row} is not after the start of its origin period")

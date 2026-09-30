@@ -41,7 +41,10 @@ pub struct MackFit {
 
 impl Mack {
     /// Fits `column` of a single-segment triangle. Needs at least three
-    /// development ages so an unestimable last sigma can be filled in.
+    /// development ages, and every sigma estimable (two or more link ratios
+    /// at that age) or fillable: log-linear needs two estimated positive
+    /// sigmas, Mack's rule the two before the gap. A square triangle
+    /// therefore needs at least four ages.
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<MackFit> {
         let n_dev = triangle.shape()[3];
         if n_dev < 3 {

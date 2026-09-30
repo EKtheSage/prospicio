@@ -113,7 +113,8 @@ R ChainLadder and chainladder-python do:
     above 0.05; chainladder-python never does, and neither do we.
 - An origin whose value is zero at an age informs that age's factor (its
   weight is `C^(alpha-1)`) but not its sigma, where its weight would be
-  infinite.
+  infinite. This is our choice, not a reference behaviour: R ChainLadder
+  fails on such a triangle.
 - A sigma that cannot be filled either is NaN: the chain ladder does not
   need it, and Mack rejects it.
 

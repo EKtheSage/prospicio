@@ -151,9 +151,15 @@ impl Triangle {
     /// Builds a triangle from a long table.
     ///
     /// Origins span every period from the earliest to the latest row, and
-    /// ages every development period from the youngest to the oldest, so
-    /// periods with no rows appear as unobserved. Rows with the same
-    /// (index, origin, age) are summed. NaN values are treated as missing.
+    /// ages every development period from the youngest to the oldest.
+    /// Rows with the same (index, origin, age) are summed. NaN values are
+    /// treated as missing.
+    ///
+    /// Cumulative input: periods with no rows are unobserved. Incremental
+    /// input: as in chainladder-python, a missing row is a period without
+    /// movement, so in every (index, column, origin) with any value, cells
+    /// up to the valuation are zero increments, and ages run to the oldest
+    /// origin's age at the valuation.
     pub fn from_long(long: &Long<'_>) -> Result<Self> {
         let n = long.origin.len();
         if n == 0 || long.values.is_empty() {
@@ -225,8 +231,15 @@ impl Triangle {
             .map(|k| first.add_months(k as i64 * step))
             .collect();
 
+        let has_value = |row: usize| long.values.iter().any(|(_, v)| !v[row].is_nan());
+        let valuation = (0..n)
+            .filter(|&row| has_value(row))
+            .map(|row| starts[row].add_months(ages[row] - 1))
+            .max()
+            .ok_or(Error::Empty)?;
+
         let youngest = *ages.iter().min().expect("n > 0");
-        let oldest = *ages.iter().max().expect("n > 0");
+        let mut oldest = *ages.iter().max().expect("n > 0");
         let dev_step = long.development_grain.months() as i64;
         for (row, &age) in ages.iter().enumerate() {
             if (age - youngest) % dev_step != 0 {
@@ -235,6 +248,12 @@ impl Triangle {
                     age: age as u32,
                 });
             }
+        }
+        if !long.cumulative {
+            // Missing incremental rows are periods without movement, so the
+            // grid runs to the oldest origin's age at the valuation.
+            let at_valuation = valuation.months_since(first) + 1;
+            oldest = oldest.max(youngest + (at_valuation - youngest) / dev_step * dev_step);
         }
         let n_dev = ((oldest - youngest) / dev_step + 1) as usize;
         let development: Vec<Lag> = (0..n_dev)
@@ -253,11 +272,10 @@ impl Triangle {
             origin_grain: long.origin_grain,
             development,
             development_grain: long.development_grain,
-            valuation: first,
+            valuation,
             cumulative: long.cumulative,
         };
 
-        let mut valuation = None;
         for row in 0..n {
             let i = tri
                 .index
@@ -265,7 +283,6 @@ impl Triangle {
                 .expect("label collected above");
             let o = (starts[row].months_since(first) / step) as usize;
             let d = ((ages[row] - youngest) / dev_step) as usize;
-            let mut any = false;
             for (c, (_, values)) in long.values.iter().enumerate() {
                 let v = values[row];
                 if v.is_nan() {
@@ -274,15 +291,35 @@ impl Triangle {
                 let at = tri.offset(i, c, o, d);
                 tri.values[at] += v;
                 tri.mask[at] = true;
-                any = true;
-            }
-            if any {
-                let val = starts[row].add_months(ages[row] - 1);
-                valuation = Some(valuation.map_or(val, |cur: Month| cur.max(val)));
             }
         }
-        tri.valuation = valuation.ok_or(Error::Empty)?;
+        if !long.cumulative {
+            tri.fill_missing_increments();
+        }
         Ok(tri)
+    }
+
+    /// Marks every unobserved cell up to the valuation as a zero increment,
+    /// in each (index, column, origin) row that has any observation, as
+    /// chainladder-python does: a claims extract has no row for a period
+    /// without payments.
+    fn fill_missing_increments(&mut self) {
+        let [ni, nc, no, nd] = self.shape;
+        for i in 0..ni {
+            for c in 0..nc {
+                for o in 0..no {
+                    let row = self.offset(i, c, o, 0);
+                    if !self.mask[row..row + nd].contains(&true) {
+                        continue;
+                    }
+                    for d in 0..nd {
+                        if !self.mask[row + d] && self.valuation_of(o, d) <= self.valuation {
+                            self.mask[row + d] = true;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// The triangle as a long table: one row per (index, origin, age) with
@@ -327,7 +364,8 @@ impl Triangle {
         self.shape
     }
 
-    /// Labels of the index axis, sorted.
+    /// Labels of the index axis: sorted by [`Triangle::from_long`], in the
+    /// requested order after [`Triangle::slice`].
     pub fn index(&self) -> &[Label] {
         &self.index
     }
@@ -501,7 +539,8 @@ impl Triangle {
     }
 
     /// A triangle with only the named index positions and columns, in the
-    /// order given. `None` keeps an axis whole.
+    /// order given. `None` keeps an axis whole. Naming a label or column
+    /// twice is an error.
     pub fn slice(&self, index: Option<&[Label]>, columns: Option<&[&str]>) -> Result<Self> {
         let index_pos: Vec<usize> = match index {
             None => (0..self.shape[0]).collect(),
@@ -524,6 +563,12 @@ impl Triangle {
         };
         if index_pos.is_empty() || column_pos.is_empty() {
             return Err(Error::Empty);
+        }
+        if let Some(k) = (1..index_pos.len()).find(|&k| index_pos[..k].contains(&index_pos[k])) {
+            return Err(Error::DuplicateLabel(self.index[index_pos[k]].to_string()));
+        }
+        if let Some(k) = (1..column_pos.len()).find(|&k| column_pos[..k].contains(&column_pos[k])) {
+            return Err(Error::DuplicateColumn(self.columns[column_pos[k]].clone()));
         }
         let [_, _, no, nd] = self.shape;
         let block = no * nd;
@@ -568,12 +613,13 @@ impl Triangle {
     /// `grain()`. Both new grains must be multiples of the current ones, and
     /// the development grain must divide the origin grain.
     ///
-    /// Cumulative values of the new origin are sums over its sub-origins at
-    /// the same valuation. Valuations are kept every development period back
-    /// from the triangle's valuation, so a partial latest period keeps its
-    /// exact latest diagonal and ages are measured from the new origin start.
-    /// A new cell is observed only if every sub-origin started by then is
-    /// observed at that valuation.
+    /// The cumulative value of a new origin at a valuation is the sum of its
+    /// sub-origins' increments valued by then, so a sub-origin with no rows
+    /// or a later start contributes nothing rather than masking the cell. A
+    /// cell is observed if any of those increments is. Valuations are kept
+    /// every development period back from the triangle's valuation, so a
+    /// partial latest period keeps its exact latest diagonal and ages are
+    /// measured from the new origin start.
     pub fn grain(&self, origin_grain: Grain, development_grain: Grain) -> Result<Self> {
         if !origin_grain.is_multiple_of(self.origin_grain) {
             return Err(Error::InvalidGrain(
@@ -585,55 +631,50 @@ impl Triangle {
                 "development grain must be a multiple of the current development grain",
             ));
         }
-        let cum = self.to_cumulative();
+        let inc = self.to_incremental();
         let [ni, nc, no, nd] = self.shape;
         let dev_step = development_grain.months() as i64;
 
-        // (index, new origin start, valuation) -> per-column sums and counts.
-        type Key = (usize, Month, Month);
-        let mut cells: BTreeMap<Key, (Vec<f64>, Vec<usize>)> = BTreeMap::new();
-        for o in 0..no {
-            let new_origin = self.origins[o].floor(origin_grain);
-            for d in 0..nd {
-                let valuation = self.valuation_of(o, d);
-                if self.valuation.months_since(valuation) % dev_step != 0 {
-                    continue;
-                }
-                for i in 0..ni {
-                    for c in 0..nc {
-                        if let Some(v) = cum.get(i, c, o, d) {
-                            let (sums, counts) = cells
-                                .entry((i, new_origin, valuation))
-                                .or_insert_with(|| (vec![0.0; nc], vec![0; nc]));
-                            sums[c] += v;
-                            counts[c] += 1;
+        // (index, new origin start) -> observed increments as (valuation,
+        // column, value).
+        let mut increments: BTreeMap<(usize, Month), Vec<(Month, usize, f64)>> = BTreeMap::new();
+        for i in 0..ni {
+            for o in 0..no {
+                let new_origin = self.origins[o].floor(origin_grain);
+                for c in 0..nc {
+                    for d in 0..nd {
+                        if let Some(v) = inc.get(i, c, o, d) {
+                            increments.entry((i, new_origin)).or_default().push((
+                                self.valuation_of(o, d),
+                                c,
+                                v,
+                            ));
                         }
                     }
                 }
             }
         }
 
-        let started_by = |new_origin: Month, valuation: Month| {
-            self.origins
-                .iter()
-                .filter(|&&s| s.floor(origin_grain) == new_origin && s <= valuation)
-                .count()
-        };
         let mut index = Vec::new();
         let mut origin = Vec::new();
         let mut ages = Vec::new();
         let mut columns: Vec<Vec<f64>> = vec![Vec::new(); nc];
-        for ((i, new_origin, valuation), (sums, counts)) in cells {
-            let expected = started_by(new_origin, valuation);
-            index.push(self.index[i].clone());
-            origin.push(new_origin);
-            ages.push((valuation.months_since(new_origin) + 1) as Lag);
-            for c in 0..nc {
-                columns[c].push(if counts[c] == expected {
-                    sums[c]
-                } else {
-                    f64::NAN
-                });
+        for ((i, new_origin), cells) in increments {
+            let mut valuation = self.valuation;
+            while valuation >= new_origin {
+                let mut sums = vec![f64::NAN; nc];
+                for &(v, c, x) in &cells {
+                    if v <= valuation {
+                        sums[c] = if sums[c].is_nan() { x } else { sums[c] + x };
+                    }
+                }
+                index.push(self.index[i].clone());
+                origin.push(new_origin);
+                ages.push((valuation.months_since(new_origin) + 1) as Lag);
+                for (column, sum) in columns.iter_mut().zip(sums) {
+                    column.push(sum);
+                }
+                valuation = valuation.add_months(-dev_step);
             }
         }
         let values: Vec<(&str, &[f64])> = self
@@ -1102,6 +1143,98 @@ pub(crate) mod tests {
         assert_eq!(
             t.segment("paid").unwrap_err(),
             Error::UnknownLabel("paid".into())
+        );
+    }
+
+    /// Quarterly origins and ages valued at 2020-12, cumulative 1 per elapsed
+    /// quarter, for the given (segment, 2020 quarters present).
+    fn sparse_quarterly(segments: &[(&str, &[i64])]) -> Triangle {
+        let (mut index, mut origin, mut ages, mut values) = (vec![], vec![], vec![], vec![]);
+        for (label, quarters) in segments {
+            for &q in *quarters {
+                let start = m(2020, 1).add_months(3 * q);
+                for k in 1..=(4 - q) {
+                    index.push(Label::from(*label));
+                    origin.push(start);
+                    ages.push(3 * k as Lag);
+                    values.push(k as f64);
+                }
+            }
+        }
+        Triangle::from_long(&Long {
+            index: Some(&index),
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &values)],
+            origin_grain: Grain::Quarter,
+            development_grain: Grain::Quarter,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn grain_with_an_empty_sub_origin() {
+        // chainladder-python 0.10.1 grain("OYDY") gives 7: Q2 has no rows.
+        let y = sparse_quarterly(&[("A", &[0, 2, 3])])
+            .grain(Grain::Year, Grain::Year)
+            .unwrap();
+        assert_eq!(y.get(0, 0, 0, 0), Some(7.0));
+    }
+
+    #[test]
+    fn grain_with_a_segment_that_starts_later() {
+        // chainladder-python 0.10.1: B gives 3 for OYDY, [nan, nan, 1, 3]
+        // for OYDQ.
+        let t = sparse_quarterly(&[("A", &[0, 1, 2, 3]), ("B", &[2, 3])]);
+        let yy = t.grain(Grain::Year, Grain::Year).unwrap();
+        assert_eq!(yy.get(0, 0, 0, 0), Some(10.0));
+        assert_eq!(yy.get(1, 0, 0, 0), Some(3.0));
+        let yq = t.grain(Grain::Year, Grain::Quarter).unwrap();
+        let b: Vec<_> = (0..4).map(|d| yq.get(1, 0, 0, d)).collect();
+        assert_eq!(b, [None, None, Some(1.0), Some(3.0)]);
+    }
+
+    #[test]
+    fn missing_incremental_rows_are_zero_increments() {
+        let origin = [2018, 2018, 2018, 2019, 2019, 2020, 2020, 2021].map(Month::january);
+        let t = Triangle::from_long(&Long {
+            index: None,
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12, 24, 12]),
+            values: &[(
+                "paid",
+                &[100.0, 50.0, 25.0, 100.0, 60.0, 100.0, 40.0, 100.0],
+            )],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: false,
+        })
+        .unwrap();
+        // The grid reaches 2018's age at the 2021 valuation.
+        assert_eq!(t.development(), [12, 24, 36, 48]);
+        let cum = t.to_cumulative();
+        assert_eq!(cum.get(0, 0, 0, 3), Some(175.0));
+        assert_eq!(cum.get(0, 0, 1, 2), Some(160.0));
+        assert_eq!(cum.get(0, 0, 1, 3), None);
+        // chainladder-python 0.10.1 Chainladder().fit(...).ultimate_.
+        let cl = crate::ChainLadder::default().fit(&t, "paid").unwrap();
+        for (got, want) in cl.ultimate.iter().zip([175.0, 160.0, 151.29, 162.10]) {
+            assert!((got - want).abs() < 0.01, "{:?}", cl.ultimate);
+        }
+    }
+
+    #[test]
+    fn slice_rejects_duplicates() {
+        let t = sparse_quarterly(&[("A", &[0]), ("B", &[0])]);
+        let a = Label::from("A");
+        assert_eq!(
+            t.slice(Some(&[a.clone(), a]), None),
+            Err(Error::DuplicateLabel("A".into()))
+        );
+        assert_eq!(
+            t.slice(None, Some(&["paid", "paid"])),
+            Err(Error::DuplicateColumn("paid".into()))
         );
     }
 }
