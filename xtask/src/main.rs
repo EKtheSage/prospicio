@@ -5,8 +5,8 @@
 //!
 //! - `python`: build the extension and its type stubs, run the tests, render
 //!   the great-docs site.
-//! - `r`: install the package, regenerate `man/` and `NAMESPACE` with
-//!   roxygen2, run the tests, render the pkgdown site.
+//! - `r`: regenerate `man/` and `NAMESPACE` with roxygen2, install the
+//!   package, run the tests, render the pkgdown site.
 //! - `rust`: rustdoc for the pure-Rust crates, warnings denied.
 //! - `docs`: all three, collected into one site under `target/docs-site`.
 //!
@@ -77,30 +77,30 @@ fn root() -> PathBuf {
 
 fn python(check: bool) -> Result {
     let dir = root().join("python");
+    // great-docs needs Python 3.11+, although the package supports 3.9+.
+    // uv keeps an existing environment that satisfies this.
+    let uv = || {
+        let mut cmd = Command::new("uv");
+        cmd.env("UV_PYTHON", ">=3.11").current_dir(&dir);
+        cmd
+    };
     step("python: sync the environment");
-    run(Command::new("uv")
-        .args(["sync", "--group", "docs"])
-        .current_dir(&dir))?;
+    run(uv().args(["sync", "--group", "docs"]))?;
     step("python: build the extension and regenerate its type stubs");
-    run(Command::new("uv")
-        .args([
-            "run",
-            "maturin",
-            "develop",
-            "--uv",
-            "--release",
-            "--generate-stubs",
-        ])
-        .current_dir(&dir))?;
+    run(uv().args([
+        "run",
+        "maturin",
+        "develop",
+        "--uv",
+        "--release",
+        "--generate-stubs",
+    ]))?;
     step("python: test");
-    run(Command::new("uv")
-        .args(["run", "pytest", "tests"])
-        .current_dir(&dir))?;
+    run(uv().args(["run", "pytest", "tests"]))?;
     step("python: render the docs site");
-    run(Command::new("uv")
+    run(uv()
         .args(["run", "great-docs", "build"])
-        .env("PYTHONIOENCODING", "utf-8")
-        .current_dir(&dir))?;
+        .env("PYTHONIOENCODING", "utf-8"))?;
     if check {
         unchanged(PYTHON_GENERATED)?;
     }
@@ -110,19 +110,12 @@ fn python(check: bool) -> Result {
 fn r(check: bool) -> Result {
     let root = root();
     let pkg = "R/actuarialrs";
-    step("r: install");
-    run(Command::new("R")
-        .args(["CMD", "INSTALL", pkg])
-        .current_dir(&root))?;
-    // roxygen2 reads the installed package, so the install above goes first.
-    // A second install puts the new NAMESPACE and help pages into the library
-    // that the tests and pkgdown load.
+    // roxygen2 loads the source with pkgload, which tolerates a stale
+    // NAMESPACE (say, a renamed export) that `R CMD INSTALL` would reject, so
+    // it runs before the install.
     step("r: regenerate man/ and NAMESPACE (roxygen2)");
-    rscript(
-        &root,
-        r#"roxygen2::roxygenise("R/actuarialrs", load_code = "installed")"#,
-    )?;
-    step("r: reinstall with the regenerated docs");
+    rscript(&root, r#"roxygen2::roxygenise("R/actuarialrs")"#)?;
+    step("r: install");
     run(Command::new("R")
         .args(["CMD", "INSTALL", pkg])
         .current_dir(&root))?;
@@ -146,12 +139,12 @@ fn r(check: bool) -> Result {
         r#"pkgdown::build_site("R/actuarialrs", install = FALSE, new_process = FALSE, preview = FALSE)"#,
     ])
     .current_dir(&root);
-    if env::var_os("RSTUDIO_PANDOC").is_none()
-        && let Some(pandoc) = quarto_pandoc()
-    {
-        // pkgdown needs pandoc; Quarto, which the Python docs need anyway,
-        // bundles one.
-        cmd.env("RSTUDIO_PANDOC", pandoc);
+    // pkgdown needs pandoc; Quarto, which the Python docs need anyway,
+    // bundles one. (No let chain: the MSRV is 1.85.)
+    if env::var_os("RSTUDIO_PANDOC").is_none() {
+        if let Some(pandoc) = quarto_pandoc() {
+            cmd.env("RSTUDIO_PANDOC", pandoc);
+        }
     }
     run(&mut cmd)?;
     if check {

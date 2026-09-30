@@ -20,9 +20,11 @@ def public_objects():
             obj = getattr(ns, name)
             yield f"{ns.__name__}.{name}", obj
             if inspect.isclass(obj):
-                for member, value in vars(obj).items():
+                for member in vars(obj):
                     if not member.startswith("_"):
-                        yield f"{ns.__name__}.{name}.{member}", value
+                        # getattr, not the raw class dict: on Python 3.9 a
+                        # staticmethod wrapper reports its own type's docstring.
+                        yield f"{ns.__name__}.{name}.{member}", getattr(obj, member)
 
 
 @pytest.mark.parametrize("path, obj", list(public_objects()), ids=lambda x: x if isinstance(x, str) else "")

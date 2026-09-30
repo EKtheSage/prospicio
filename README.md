@@ -84,13 +84,14 @@ Building a binding regenerates its docs (see "Documentation" in
 plain builds above whenever you change a doc comment or a public API:
 
 ```bash
-Rscript -e 'install.packages(c("S7", "roxygen2", "pkgdown"))'  # once
+Rscript -e 'install.packages(c("S7", "roxygen2", "pkgload", "pkgdown"))'  # once
 cargo xtask python   # build + stubs, test, great-docs site in python/great-docs/_site
-cargo xtask r        # install, roxygen2 man/ + NAMESPACE, test, pkgdown site in R/actuarialrs/docs
+cargo xtask r        # roxygen2 man/ + NAMESPACE, install, test, pkgdown site in R/actuarialrs/docs
 cargo xtask docs     # both plus rustdoc, collected into target/docs-site
 ```
 
-Commit the regenerated `python/actuarialrs/actuarialrs_native.pyi`,
+The Python docs need Python 3.11+ (great-docs); `cargo xtask python` asks uv
+for one. Commit the regenerated `python/actuarialrs/actuarialrs_native.pyi`,
 `R/actuarialrs/man/` and `R/actuarialrs/NAMESPACE`; never edit them by hand.
 `cargo xtask docs --check` fails if they are stale.
 
