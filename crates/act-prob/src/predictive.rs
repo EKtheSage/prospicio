@@ -4,19 +4,23 @@ use std::collections::HashSet;
 use std::fmt;
 use std::sync::OnceLock;
 
-use act_core::{Error, Result, StreamRng};
+use act_core::{Error, Period, Result, StreamRng};
 use rayon::prelude::*;
 
 use crate::distribution::Distribution;
 use crate::provenance::{Provenance, SIM_INDEX_SCHEME};
 use crate::sampled::{Empirical, Sampled};
 
-/// One value of a component key: an integer (an origin year, a layer
-/// number) or text (a line of business).
+/// One value of a component key: an integer (a layer number), text (a line
+/// of business) or a [`Period`] (an origin).
+///
+/// A `Period` key compares equal to the same origin in a Triangle, so a
+/// reserve component joins back to its triangle row without conversion.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeyValue {
     Int(i64),
     Text(String),
+    Period(Period),
 }
 
 impl From<i64> for KeyValue {
@@ -43,11 +47,18 @@ impl From<String> for KeyValue {
     }
 }
 
+impl From<Period> for KeyValue {
+    fn from(v: Period) -> Self {
+        Self::Period(v)
+    }
+}
+
 impl fmt::Display for KeyValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int(v) => write!(f, "{v}"),
             Self::Text(v) => f.write_str(v),
+            Self::Period(v) => write!(f, "{v}"),
         }
     }
 }
@@ -631,5 +642,39 @@ mod tests {
         assert_eq!(KeyValue::from(2024).to_string(), "2024");
         assert_eq!(KeyValue::from("Auto").to_string(), "Auto");
         assert!(KeyValue::from(1) < KeyValue::from(2));
+    }
+
+    #[test]
+    fn period_keys_display_order_and_join() {
+        use act_core::{Grain, Month};
+
+        let q = |y, m| Period::containing(Month::new(y, m).unwrap(), Grain::Quarter);
+        assert_eq!(KeyValue::from(q(2021, 8)).to_string(), "2021Q3");
+        assert_eq!(KeyValue::from(Period::year(2019)).to_string(), "2019");
+        assert!(KeyValue::from(q(2021, 3)) < KeyValue::from(q(2021, 4)));
+        // Any month in the period gives the same key.
+        assert_eq!(KeyValue::from(q(2021, 7)), KeyValue::from(q(2021, 9)));
+        // A period key is not the integer year.
+        assert_ne!(KeyValue::from(Period::year(2019)), KeyValue::from(2019));
+
+        let origins = [Period::year(2019), Period::year(2020)];
+        let pd = PredictiveDistribution::from_draws(
+            vec!["lob".into(), "origin".into()],
+            vec![
+                vec!["Auto".into(), origins[0].into()],
+                vec!["Auto".into(), origins[1].into()],
+                vec!["Home".into(), origins[1].into()],
+            ],
+            vec![1.0, 2.0, 4.0, 10.0, 20.0, 40.0],
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let by_origin = pd.aggregate(&["origin"]).unwrap();
+        assert_eq!(
+            by_origin.components(),
+            &[vec![origins[0].into()], vec![origins[1].into()]]
+        );
+        let o2020 = by_origin.marginal(&vec![origins[1].into()]).unwrap();
+        assert_eq!(o2020.draws(), &[6.0, 60.0]);
     }
 }

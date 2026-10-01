@@ -17,17 +17,20 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   `Distribution` and `Empirical` impls (`mean`, `quantile`, `var`, `tvar`, …)
   describe the total and go through `risk::*`;
 - `Provenance` with `model`, `parameters`, `seed`, `stream_scheme`,
-  `versions` (starting with `act-prob`) and `input_hash`.
+  `versions` (starting with `act-prob`) and `input_hash`;
+- with the `arrow` feature, `write_ipc` / `read_ipc` (Arrow IPC files) and
+  `to_record_batch` / `from_record_batch`, in `act_prob::ipc`.
 
 ### Decisions
 
 - **Draws only, `f64` only** (open questions 1 and 2): `Joint::Gaussian`
   and `f32` draws wait until a consumer or memory needs them. There is no
   `Joint` enum yet; it is introduced with the second variant.
-- **Key values are `Int` or `Text`.** The Triangle's `Period` lives in
-  `act-reserving`, which `act-prob` cannot depend on. When `Period` moves to
-  `act-core`, `KeyValue` gains a `Period` variant so reserve components
-  join back to triangle origins without conversion.
+- **Key values are `Int`, `Text` or `Period`.** `Period` is
+  `act_core::Period`, the same type as the Triangle's origins, so a reserve
+  component keyed by origin joins back to its triangle row without
+  conversion. A `Period` key never equals an `Int` key: the 2019 accident
+  year is `Period::year(2019)`, not `2019`.
 - **`aggregate(keep)`** keeps the listed dimensions in the listed order and
   sums the rest within each simulation. Groups appear in the order of their
   first component. `aggregate(&[])` is the total as a one-component
@@ -47,8 +50,24 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   `validation/scripts/input_hash_golden.py`. Changing the encoding means a
   new context (`v2`). Models choose what to feed it; once Arrow lands, a
   triangle's canonical Arrow IPC bytes go in through `bytes()`.
-- **Deferred to its own PR:** Arrow IPC persistence with provenance in the
-  schema metadata (open question 4), which adds the `arrow` dependency.
+- **Arrow IPC files** (open question 4), behind act-prob's `arrow`
+  feature (off by default; the `validation` crate turns it on, so
+  `cargo test` covers it). The layout is **wide**: one non-null `Float64`
+  column per component, so each column is a marginal and each row a
+  simulation, and pyarrow, R `arrow` and Polars read it as a plain table.
+  A long table (`sim, lob, origin, value`) would repeat every key in every
+  simulation, and would force one Arrow type per dimension, which
+  `KeyValue` does not. Each field's metadata holds its typed key as JSON
+  (`{"int": …}`, `{"text": …}`, `{"period": {"start": "2019-01", "grain":
+  "Y"}}`). The schema metadata holds the format name, `format_version`
+  `"1"`, the dimension names and the provenance as JSON, with the seed as
+  a decimal string because JSON numbers lose precision above 2^53.
+  Readers reject unknown versions. The full spec is in the `ipc` module
+  docs. `validation/scripts/predictive_ipc.py` writes a fixture from that
+  spec with pyarrow, which `validation/tests/predictive.rs` must read
+  back, and it can check a file Rust wrote. Errors use `ipc::IpcError`
+  rather than `act_core::Error`, which has no I/O variant. arrow 59.x is
+  the newest line that builds on rust-version 1.85.
 
 ## Goal
 
@@ -103,7 +122,7 @@ never implements its own quantiles).
 A `ComponentKey` is an ordered set of `(dimension, value)` pairs with a
 shared dimension schema per distribution, e.g. `(lob, origin)`. Aggregation
 takes a list of dimensions to keep (`["lob"]` sums over origins). Values are
-strings or integers. Periods reuse the Triangle's period type, so an
+strings, integers or periods. Periods reuse the Triangle's period type, so an
 origin in a reserve distribution and an origin in a triangle compare equal.
 
 ## Provenance
@@ -141,9 +160,9 @@ All four were decided on 2026-09-30, following the recommendations:
 2. ~~`f32` draws~~: `f64` only until memory forces the question.
 3. ~~Hash function~~: BLAKE3 for `input_hash` (implemented, see Decisions).
 4. ~~Serialization format~~: Arrow IPC, with provenance in the schema
-   metadata (own PR).
+   metadata (implemented, see Decisions).
 
 Also decided:
 
-5. ~~`Period` in `act-core`~~: done in #13 (2026-09-30). `KeyValue` gains a
-   `Period` variant in its own PR.
+5. ~~`Period` in `act-core`~~: done in #13 (2026-09-30), and `KeyValue`
+   has a `Period` variant.

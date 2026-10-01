@@ -4,8 +4,13 @@
 //! sampled representation [`Sampled`], the shared [`risk`] measures and
 //! [`PredictiveDistribution`], the joint result every model returns. The
 //! discretized representation follows `docs/design/distributions.md`.
+//!
+//! With the `arrow` feature, [`PredictiveDistribution`] reads and writes
+//! Arrow IPC files; the format is described in `ipc`.
 
 pub mod distribution;
+#[cfg(feature = "arrow")]
+pub mod ipc;
 pub mod lognormal;
 pub mod predictive;
 pub mod provenance;
