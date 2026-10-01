@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 
 [dev-dependencies]
-act-prob.workspace = true
+act-core.workspace = true
+act-prob = { workspace = true, features = ["arrow"] }
 # Provisional sandbox; swap for act-reserving when v0.1 lands.
 risk-rs = { path = ".." }
