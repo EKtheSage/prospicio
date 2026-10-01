@@ -4,6 +4,7 @@ use act_core::{Error, Result};
 use act_math::special::{norm_cdf, norm_quantile};
 
 use crate::distribution::{Distribution, check_probability};
+use crate::severity::Severity;
 
 /// Lognormal distribution: `ln X ~ Normal(meanlog, sdlog^2)`.
 ///
@@ -100,10 +101,72 @@ impl Distribution for Lognormal {
     }
 }
 
+impl Severity for Lognormal {
+    /// `E[min(X, d)] = e^(mu + s^2/2) Phi((ln d - mu - s^2) / s) + d (1 - Phi((ln d - mu) / s))`.
+    fn lev(&self, limit: f64) -> f64 {
+        if limit <= 0.0 {
+            return limit;
+        }
+        if limit == f64::INFINITY {
+            return self.mean();
+        }
+        let (mu, s) = (self.meanlog, self.sdlog);
+        let z = (limit.ln() - mu) / s;
+        self.mean() * norm_cdf(z - s) + limit * norm_cdf(-z)
+    }
+
+    /// `E[(X - d)+] = e^(mu + s^2/2) Phi((mu + s^2 - ln d) / s) - d Phi((mu - ln d) / s)`,
+    /// with both terms small in the tail, so it keeps full relative
+    /// precision where `mean() - lev(d)` would cancel.
+    fn stop_loss(&self, retention: f64) -> f64 {
+        if retention <= 0.0 {
+            return self.mean() - retention;
+        }
+        if retention == f64::INFINITY {
+            return 0.0;
+        }
+        let (mu, s) = (self.meanlog, self.sdlog);
+        let z = (retention.ln() - mu) / s;
+        (self.mean() * norm_cdf(s - z) - retention * norm_cdf(-z)).max(0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use act_core::StreamRng;
+
+    #[test]
+    fn severity_identities_and_edges() {
+        let d = Lognormal::new(7.0, 0.5).unwrap();
+        for limit in [100.0, 1_000.0, 5_000.0] {
+            let sum = d.lev(limit) + d.stop_loss(limit);
+            assert!((sum - d.mean()).abs() < 1e-12 * d.mean());
+        }
+        assert_eq!(d.lev(0.0), 0.0);
+        assert_eq!(d.lev(-5.0), -5.0);
+        assert_eq!(d.lev(f64::INFINITY), d.mean());
+        assert_eq!(d.stop_loss(f64::INFINITY), 0.0);
+        assert_eq!(d.stop_loss(0.0), d.mean());
+        assert_eq!(d.layer(f64::INFINITY, 0.0), d.mean());
+        // Layer limits stack: 1000 xs 0 + 1000 xs 1000 = 2000 xs 0.
+        let stacked = d.layer(1_000.0, 0.0) + d.layer(1_000.0, 1_000.0);
+        assert!((stacked - d.layer(2_000.0, 0.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn stop_loss_keeps_precision_in_the_tail() {
+        // Retention 1135 is about the 1 - 1e-12 quantile of Lognormal(0, 1).
+        let d = Lognormal::new(0.0, 1.0).unwrap();
+        let sl = d.stop_loss(1135.0);
+        // mpmath at 40 digits, closed form and quadrature agree.
+        let exact = 1.796211496502316e-10;
+        assert!((sl / exact - 1.0).abs() < 1e-12, "{sl}");
+        // The naive difference keeps only about 6 digits here (relative
+        // error 9e-7), against 2e-14 for the direct formula.
+        let naive = d.mean() - d.lev(1135.0);
+        assert!((naive / exact - 1.0).abs() > 1e-8);
+    }
 
     #[test]
     fn rejects_bad_parameters() {

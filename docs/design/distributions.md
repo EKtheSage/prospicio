@@ -1,6 +1,6 @@
 # Design note: distribution representations
 
-Status: **Draft for review** · Phase 0 · Depends on: nothing · Blocks: PredictiveDistribution, Triangle, RNG
+Status: **Decided; partly implemented** (parametric, sampled, `Severity`) · Depends on: nothing · Next: discretized `Grid`, `Counting`
 
 ## Goal
 
@@ -10,7 +10,7 @@ different operations. An operation that is not exact for a representation
 is not offered on it; the caller must convert explicitly, and every
 conversion reports the error it introduces.
 
-## What exists (Phase 0)
+## What exists
 
 - `act_prob::Distribution`: `mean`, `variance`, `std_dev`, `cdf`,
   `quantile -> Result<f64>`, and `sample(&mut StreamRng, n)` defaulting to
@@ -22,6 +22,20 @@ conversion reports the error it introduces.
 - `act_prob::Sampled` and the `Empirical` trait (`draws`, `sorted`,
   `mean_of`, `var`, `tvar`), and `act_prob::risk::{var_sorted, tvar_sorted}`,
   the shared risk measures every domain calls.
+- `act_prob::Severity` (`lev`, `stop_loss`, `layer`), implemented for
+  `Lognormal`. Parity: `validation/reference/severity_mpmath.csv`, from
+  30-digit integration of the survival function
+  (`validation/scripts/mpmath_severity.py`), at limits out to the
+  `1 - 1e-9` quantile.
+
+### Decisions for `Severity`
+
+- `stop_loss` is computed directly, not as `mean() - lev(d)`: in the tail
+  that difference cancels (Lognormal(0, 1) at d = 1135 keeps ~6 digits
+  against ~14 for the direct form). `layer(l, a)` defaults to
+  `stop_loss(a) - stop_loss(a + l)` for the same reason.
+- `lev(d)` for `d <= 0` is `d`, and `lev(inf)` is the mean: severities are
+  non-negative.
 
 ### Decisions for `Sampled`
 
@@ -117,12 +131,14 @@ tolerances recorded per row.
 
 ## Open questions
 
-1. **Enum vs trait objects** at the boundary: the recommendation above is an
-   enum. A trait-object design is more open to extension but loses serde and
-   pickling for free. Decide before the second family lands.
-2. **Grid origin**: severity grids start at 0. Do we need signed grids (for
-   P&L / net cash flow) in v0.3, or only when capital needs them?
-3. ~~**Weights on `Sampled`**~~: decided, see "Decisions for `Sampled`".
-4. **Frequency distributions** (Poisson, NB, binomial) are discrete: same
-   trait with integer support, or a separate `Counting` trait for Panjer?
-   Recommendation: separate trait, since Panjer needs the (a, b, 0) form.
+All decided on 2026-10-01, following the recommendations:
+
+1. ~~Enum vs trait objects~~: concrete structs plus a closed `Dist` enum at
+   the boundary (bindings, serialization, model outputs); hot loops stay
+   generic over `D: Distribution`. The enum is introduced with the second
+   family.
+2. ~~Grid origin~~: severity grids start at 0 for v0.3. Signed grids (net
+   cash flow, P&L) wait until capital needs them.
+3. ~~Weights on `Sampled`~~: decided, see "Decisions for `Sampled`".
+4. ~~Frequency distributions~~: a separate `Counting` trait over integer
+   support, exposing the (a, b, 0) / (a, b, 1) form Panjer needs.
