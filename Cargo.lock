@@ -28,6 +28,7 @@ version = "0.0.1"
 dependencies = [
  "act-core",
  "act-math",
+ "rayon",
 ]
 
 [[package]]
@@ -51,6 +52,9 @@ dependencies = [
 [[package]]
 name = "act-reserving"
 version = "0.0.1"
+dependencies = [
+ "act-core",
+]
 
 [[package]]
 name = "act-validation"
@@ -328,6 +332,10 @@ name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
+
+[[package]]
+name = "xtask"
+version = "0.0.1"
 
 [[package]]
 name = "zerocopy"

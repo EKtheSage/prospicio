@@ -2,8 +2,8 @@
 
 use crate::development::{Development, DevelopmentFit, cumulative_factors};
 use crate::error::{Error, Result};
-use crate::period::Period;
 use crate::triangle::{Segment, Triangle};
+use act_core::Period;
 
 /// Chain-ladder method: project each origin's latest value to ultimate with
 /// the estimated age-to-age factors and a tail factor.
@@ -196,9 +196,9 @@ mod tests {
 
     #[test]
     fn hole_in_a_row_uses_latest_observation() {
-        use crate::period::Month;
         use crate::triangle::{DevelopmentColumn, Long};
         use crate::{Grain, Triangle};
+        use act_core::Month;
 
         // 2020 is unobserved at 24 months, so it does not inform either
         // factor, but its value at 36 months is its latest.

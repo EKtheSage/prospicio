@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::error::{Error, Result};
-use crate::period::{Grain, Lag, Month, Period};
+use act_core::{Grain, Lag, Month, Period};
 
 /// A position on the index axis (a segment such as a company or line of
 /// business). Labels have one or more parts, like a pandas `MultiIndex` row.

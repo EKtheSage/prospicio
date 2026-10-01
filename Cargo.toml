@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "validation"]
+members = ["crates/*", "validation", "xtask"]
 # Binding crates need a Python or R toolchain at build time, so plain
 # `cargo build` / `cargo test` skip them; see python/ and R/ for their builds.
 default-members = [
@@ -9,6 +9,7 @@ default-members = [
     "crates/act-reserving",
     "crates/act-aggregate",
     "validation",
+    "xtask",
 ]
 resolver = "3"
 

@@ -1,5 +1,11 @@
 //! Calendar months, period grains and origin periods.
 //!
+//! Shared by every crate that keys results by period: `act-reserving`
+//! (triangle origins) and `act-prob` (predictive-distribution components),
+//! so a reserve component joins back to its triangle origin directly.
+//! Moved here unchanged from `act-reserving` (PR #9), apart from the
+//! error type.
+//!
 //! Development ages are whole months measured from the start of the origin
 //! period, so a triangle only ever needs month resolution: an age of 12
 //! months on an origin starting January 2021 is valued at the end of
@@ -7,7 +13,7 @@
 
 use std::fmt;
 
-use crate::error::{Error, Result};
+use crate::{Error, Result};
 
 /// Length of an origin or development period.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -53,7 +59,7 @@ impl fmt::Display for Grain {
 /// A calendar month. As a valuation date it means the end of that month.
 ///
 /// ```
-/// use act_reserving::Month;
+/// use act_core::Month;
 ///
 /// let m = Month::new(2021, 11).unwrap();
 /// assert_eq!(m.add_months(3), Month::new(2022, 2).unwrap());
@@ -137,7 +143,7 @@ impl fmt::Display for Month {
 /// reserve component keyed by origin joins back to the triangle directly.
 ///
 /// ```
-/// use act_reserving::{Grain, Month, Period};
+/// use act_core::{Grain, Month, Period};
 ///
 /// let p = Period::containing(Month::new(2021, 8).unwrap(), Grain::Quarter);
 /// assert_eq!(p.start(), Month::new(2021, 7).unwrap());

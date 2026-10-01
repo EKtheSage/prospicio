@@ -1,6 +1,6 @@
 [package]
 name = "act-prob"
-description = "Risk mathematics: distributions (later: PredictiveDistribution, dependence, risk measures)."
+description = "Risk mathematics: distributions, PredictiveDistribution, risk measures (later: dependence)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +9,5 @@ publish.workspace = true
 [dependencies]
 act-core.workspace = true
 act-math.workspace = true
+# Outer-loop parallelism over simulations (PredictiveDistribution::simulate).
+rayon.workspace = true

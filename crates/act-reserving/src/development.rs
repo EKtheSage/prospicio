@@ -3,8 +3,8 @@
 //! 1999) used by R ChainLadder and chainladder-python.
 
 use crate::error::{Error, Result};
-use crate::period::Lag;
 use crate::triangle::{Segment, Triangle};
+use act_core::Lag;
 
 /// How individual link ratios are averaged into one factor per age.
 ///

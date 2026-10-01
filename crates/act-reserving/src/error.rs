@@ -8,8 +8,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Why a triangle could not be built or a method could not be fitted.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
-    /// A month number is outside 1 to 12.
-    InvalidMonth(u8),
     /// The long table has no rows or no value columns.
     Empty,
     /// A long-table column has a different number of rows than `origin`.
@@ -48,7 +46,6 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidMonth(m) => write!(f, "month {m} is not in 1 to 12"),
             Self::Empty => write!(f, "no rows or no value columns supplied"),
             Self::LengthMismatch {
                 column,
