@@ -11,5 +11,15 @@ act-core.workspace = true
 act-math.workspace = true
 # Provenance input hashes (InputHasher).
 blake3.workspace = true
+# Arrow IPC files (the `arrow` feature): format in `ipc`.
+arrow-array = { workspace = true, optional = true }
+arrow-ipc = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 # Outer-loop parallelism over simulations (PredictiveDistribution::simulate).
 rayon.workspace = true
+
+[features]
+# Read and write PredictiveDistribution as Arrow IPC files. Off by default:
+# arrow is heavy, and WASM builds do not need it.
+arrow = ["dep:arrow-array", "dep:arrow-ipc", "dep:arrow-schema", "dep:serde_json"]
