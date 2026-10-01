@@ -33,15 +33,15 @@ The ODP bootstrap needs both a `Triangle` and a `PredictiveDistribution`. It sta
 - **`AGENTS.md` and `docs/architecture.md`**: change them in small PRs. Each lane edits only its own design notes under `docs/design/`.
 - **Keep PRs small** (one type or method each) and merge `main` often. The longer a branch lives, the harder its conflicts get.
 
-## CI status
+## Checks
 
-**GitHub Actions is out of monthly credits until 2026-10-01.** Until then, `.github/workflows/ci.yml` will not run on PRs.
+`.github/workflows/ci.yml` runs on every PR and on pushes to `main`. A PR merges only when CI is green on its latest commit.
 
-- Do not wait on CI checks, poll for them, or treat a missing CI result as a failure.
-- Run the `ci.yml` checks locally before you open or update a PR, and list what you ran, with results, in the PR description:
-  - Always: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
-  - Python bindings touched: `cargo clippy -p act-python -- -D warnings`, then `cd python && maturin develop && pytest tests`
-  - R bindings touched: `cargo clippy -p act-r -- -D warnings`, `install.packages("S7")` if missing, `R CMD INSTALL R/actuarialrs`, `Rscript R/actuarialrs/tests/test-distributions.R`
-  - Bindings, their doc comments or docs config touched: `cargo xtask docs --check` (needs Quarto, Python 3.11+ for great-docs, and the R packages `roxygen2`, `pkgload`, `pkgdown`), and commit the regenerated stub, `man/` and `NAMESPACE`
-- If a check cannot run in your environment (for example, R is not installed), say that in the PR. Do not claim it passed.
-- On or after 2026-10-01, remove this section once CI is running again.
+Run the matching `ci.yml` checks locally before you push, so CI does not go red on something a local run would have caught:
+
+- Always: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
+- Python bindings touched: `cargo clippy -p act-python -- -D warnings`, then `cd python && maturin develop && pytest tests`
+- R bindings touched: `cargo clippy -p act-r -- -D warnings`, `install.packages("S7")` if missing, `R CMD INSTALL R/actuarialrs`, `Rscript R/actuarialrs/tests/test-distributions.R`
+- Bindings, their doc comments or docs config touched: `cargo xtask docs --check` (needs Quarto, Python 3.11+ for great-docs, and the R packages `roxygen2`, `pkgload`, `pkgdown`), and commit the regenerated stub, `man/` and `NAMESPACE`
+
+If a check cannot run in your environment (for example, R is not installed), rely on CI for it and say so in the PR.
