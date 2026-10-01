@@ -1,19 +1,8 @@
-# The root package is the provisional reserving sandbox (see README). The
-# act-* crates under crates/ are the real architecture (docs/architecture.md).
-[package]
-name = "risk-rs"
-version = "0.1.0"
-edition = "2024"
-publish = false
-
-[dependencies]
-
 [workspace]
-members = [".", "crates/*", "validation", "xtask"]
+members = ["crates/*", "validation", "xtask"]
 # Binding crates need a Python or R toolchain at build time, so plain
 # `cargo build` / `cargo test` skip them; see python/ and R/ for their builds.
 default-members = [
-    ".",
     "crates/act-core",
     "crates/act-math",
     "crates/act-prob",
@@ -34,6 +23,7 @@ publish = false
 act-core = { path = "crates/act-core" }
 act-math = { path = "crates/act-math" }
 act-prob = { path = "crates/act-prob" }
+act-reserving = { path = "crates/act-reserving" }
 # PredictiveDistribution to and from Arrow IPC (act-prob's `arrow`
 # feature). 59.x is the last line that builds on rust-version 1.85.
 arrow-array = { version = "59.3.0", default-features = false }
