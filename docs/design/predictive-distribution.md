@@ -24,10 +24,11 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
 - **Draws only, `f64` only** (open questions 1 and 2): `Joint::Gaussian`
   and `f32` draws wait until a consumer or memory needs them. There is no
   `Joint` enum yet; it is introduced with the second variant.
-- **Key values are `Int` or `Text`.** The Triangle's `Period` lives in
-  `act-reserving`, which `act-prob` cannot depend on. When `Period` moves to
-  `act-core`, `KeyValue` gains a `Period` variant so reserve components
-  join back to triangle origins without conversion.
+- **Key values are `Int`, `Text` or `Period`.** `Period` is
+  `act_core::Period`, the same type as the Triangle's origins, so a reserve
+  component keyed by origin joins back to its triangle row without
+  conversion. A `Period` key never equals an `Int` key: the 2019 accident
+  year is `Period::year(2019)`, not `2019`.
 - **`aggregate(keep)`** keeps the listed dimensions in the listed order and
   sums the rest within each simulation. Groups appear in the order of their
   first component. `aggregate(&[])` is the total as a one-component
@@ -103,7 +104,7 @@ never implements its own quantiles).
 A `ComponentKey` is an ordered set of `(dimension, value)` pairs with a
 shared dimension schema per distribution, e.g. `(lob, origin)`. Aggregation
 takes a list of dimensions to keep (`["lob"]` sums over origins). Values are
-strings or integers. Periods reuse the Triangle's period type, so an
+strings, integers or periods. Periods reuse the Triangle's period type, so an
 origin in a reserve distribution and an origin in a triangle compare equal.
 
 ## Provenance
@@ -145,5 +146,5 @@ All four were decided on 2026-09-30, following the recommendations:
 
 Also decided:
 
-5. ~~`Period` in `act-core`~~: done in #13 (2026-09-30). `KeyValue` gains a
-   `Period` variant in its own PR.
+5. ~~`Period` in `act-core`~~: done in #13 (2026-09-30), and `KeyValue`
+   has a `Period` variant.
