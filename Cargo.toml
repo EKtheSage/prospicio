@@ -25,6 +25,9 @@ act-math = { path = "crates/act-math" }
 act-prob = { path = "crates/act-prob" }
 act-reserving = { path = "crates/act-reserving" }
 libm = "0.2.16"
+# Provenance input hashes. `pure` skips the C/assembly SIMD build so the
+# Windows R build (Rtools) and WASM need no extra toolchain.
+blake3 = { version = "1.8.7", default-features = false, features = ["std", "pure"] }
 # Pinned exactly: RNG output is part of the reproducibility contract, so a
 # version bump must be a deliberate, reviewed change.
 rand_chacha = "=0.10.0"
