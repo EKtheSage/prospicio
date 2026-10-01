@@ -15,5 +15,5 @@ pub mod sampled;
 pub use distribution::Distribution;
 pub use lognormal::Lognormal;
 pub use predictive::{ComponentKey, KeyValue, PredictiveDistribution};
-pub use provenance::Provenance;
+pub use provenance::{InputHasher, Provenance};
 pub use sampled::{Empirical, Sampled};

@@ -37,10 +37,18 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
 - **Errors** use `act_core::Error::InvalidParameter`, with the offending
   index or length as the value. Dedicated `Shape` / `UnknownKey` variants
   would read better, but changing `act-core` needs its own PR (AGENTS.md).
-- **Deferred to their own PRs:** `input_hash` computation with BLAKE3
-  (open question 3) and Arrow IPC persistence with provenance in the schema
-  metadata (open question 4). Both add dependencies. `input_hash` is a field
-  the model fills until then.
+- **`input_hash`** comes from `provenance::InputHasher` (BLAKE3 in
+  key-derivation mode, context `INPUT_HASH_CONTEXT` =
+  `"risk-rs 2026-09-30 input-hash v1"`). Each field is a one-byte type tag,
+  a little-endian `u64` length and the payload, so field boundaries and
+  types cannot collide. Floats are hashed by their bits, with `-0.0` as
+  `0.0` and one canonical NaN. The hash is written `"blake3:<64 hex>"`.
+  Golden values are reproduced independently by
+  `validation/scripts/input_hash_golden.py`. Changing the encoding means a
+  new context (`v2`). Models choose what to feed it; once Arrow lands, a
+  triangle's canonical Arrow IPC bytes go in through `bytes()`.
+- **Deferred to its own PR:** Arrow IPC persistence with provenance in the
+  schema metadata (open question 4), which adds the `arrow` dependency.
 
 ## Goal
 
@@ -131,12 +139,11 @@ All four were decided on 2026-09-30, following the recommendations:
 1. ~~`Joint::Gaussian` in v0.1~~: draws only; add `Gaussian` when a
    consumer needs analytic results.
 2. ~~`f32` draws~~: `f64` only until memory forces the question.
-3. ~~Hash function~~: BLAKE3 for `input_hash` (own PR).
+3. ~~Hash function~~: BLAKE3 for `input_hash` (implemented, see Decisions).
 4. ~~Serialization format~~: Arrow IPC, with provenance in the schema
    metadata (own PR).
 
-Still open:
+Also decided:
 
-5. **`Period` in `act-core`**, so keys can hold periods (see Decisions).
-   Needs agreement with the Reserving lane, since #9 defines `Period` in
-   `act-reserving`.
+5. ~~`Period` in `act-core`~~: done in #13 (2026-09-30). `KeyValue` gains a
+   `Period` variant in its own PR.
