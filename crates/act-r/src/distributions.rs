@@ -457,7 +457,7 @@ impl PredictiveDistribution {
                 dims.len()
             )));
         }
-        let n_components = if n_sims == 0 { 0 } else { draws.len() / n_sims };
+        let n_components = draws.len().checked_div(n_sims).unwrap_or(0);
         if n_sims == 0 || draws.len() != n_sims * n_components {
             return Err(Error::Other(
                 "draws must be an n_sims x n_components matrix".into(),
