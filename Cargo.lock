@@ -29,6 +29,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "act-pricing"
+version = "0.0.1"
+dependencies = [
+ "act-core",
+ "act-prob",
+]
+
+[[package]]
 name = "act-prob"
 version = "0.0.1"
 dependencies = [

@@ -1,0 +1,11 @@
+[package]
+name = "act-pricing"
+description = "Pricing: layer and limit rating shared by primary and reinsurance pricing, and reinsurance tower matching."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+act-core.workspace = true
+act-prob.workspace = true

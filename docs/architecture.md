@@ -169,6 +169,8 @@ actuarial-rs/
 │   │                      dependence, risk measures, distortions, transforms
 │   ├── act-reserving/     Triangle, deterministic + stochastic methods, CDR
 │   ├── act-aggregate/     freq-sev, FFT/Panjer/MC, reinsurance contracts, towers
+│   ├── act-pricing/       layer and limit rating (ILF, deductibles, extrapolation),
+│   │                      reinsurance tower matching (see docs/design/pareto.md)
 │   ├── act-python/        PyO3 bindings
 │   └── act-r/             extendr bindings
 ├── python/
