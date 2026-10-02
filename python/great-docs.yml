@@ -17,3 +17,15 @@ reference:
     desc: Parametric, discretized and sampled representations.
     contents:
       - distributions.Lognormal
+      - distributions.Grid
+      - distributions.DiscretizationReport
+      - distributions.Sampled
+  - title: Claim counts
+    desc: Frequency distributions for frequency-severity aggregation.
+    contents:
+      - distributions.Poisson
+      - distributions.NegativeBinomial
+  - title: Predictive distributions
+    desc: The joint result every model returns.
+    contents:
+      - distributions.PredictiveDistribution
