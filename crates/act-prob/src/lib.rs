@@ -19,6 +19,7 @@ pub mod grid;
 #[cfg(feature = "arrow")]
 pub mod ipc;
 pub mod large_losses;
+pub mod local_pareto;
 pub mod lognormal;
 pub mod pareto;
 pub mod piecewise_pareto;
@@ -34,6 +35,7 @@ pub use distortion::Distortion;
 pub use distribution::Distribution;
 pub use grid::{Discretization, DiscretizationReport, Grid};
 pub use large_losses::LargeLosses;
+pub use local_pareto::LogAffinePareto;
 pub use lognormal::Lognormal;
 pub use pareto::Pareto;
 pub use piecewise_pareto::{PiecewisePareto, Truncation};

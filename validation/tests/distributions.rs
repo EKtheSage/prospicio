@@ -211,6 +211,14 @@ fn layer_moments_match_integration() {
         let sev: Box<dyn Severity> = match c.get("distribution") {
             "pareto" => Box::new(pareto_from(c)?),
             "piecewise_pareto" => Box::new(piecewise_pareto_from(c)?),
+            "log_affine_pareto" => Box::new(
+                act_prob::LogAffinePareto::new(
+                    c.param("params", "t"),
+                    c.param("params", "alpha_0"),
+                    c.param("params", "gamma"),
+                )
+                .ok()?,
+            ),
             "gpd" => Box::new(
                 act_prob::evt::Gpd::new(c.param("params", "xi"), c.param("params", "beta"))
                     .ok()?
@@ -347,6 +355,42 @@ fn pareto_fits_match_r() {
                 fit.alphas().get(index).copied()
             }
             _ => None,
+        }
+    });
+}
+
+#[test]
+fn log_affine_pareto_matches_r() {
+    use act_prob::LogAffinePareto;
+    let cases = reference("local_pareto_r.csv");
+    check(&cases, |c| {
+        let params = c.get("params");
+        let d = if params.contains("delta") {
+            LogAffinePareto::from_delta(
+                c.param("params", "t"),
+                c.param("params", "alpha_0"),
+                c.param("params", "delta"),
+            )
+        } else {
+            LogAffinePareto::new(
+                c.param("params", "t"),
+                c.param("params", "alpha_0"),
+                c.param("params", "gamma"),
+            )
+        }
+        .ok()?;
+        match c.get("quantity") {
+            "cdf" => Some(d.cdf(c.number("arg")?)),
+            "quantile" => d.quantile(c.number("arg")?).ok(),
+            q => {
+                let (cover, att) = layer_args(c)?;
+                match q {
+                    "layer" => Some(d.layer(cover, att)),
+                    "layer_second_moment" => Some(d.layer_second_moment(cover, att)),
+                    "layer_variance" => Some(d.layer_variance(cover, att)),
+                    _ => None,
+                }
+            }
         }
     });
 }
