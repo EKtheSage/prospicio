@@ -13,8 +13,8 @@ forms in Rust:
 
 for the Pareto (optionally truncated), the piecewise Pareto (with both
 truncation types), the generalized Pareto (with a location; Riegel's
-parameterization is xi = 1/alpha_tail, beta = t/alpha_ini, location t) and
-the lognormal.
+parameterization is xi = 1/alpha_tail, beta = t/alpha_ini, location t), the
+log-affine local Pareto and the lognormal.
 """
 
 import csv
@@ -50,6 +50,7 @@ GPDS = [  # (xi, beta, location)
     (1 / 1.5, 500, 1000),
     (1 / 0.9, 250, 1000),
 ]
+LOG_AFFINE = [(1000, 1.5, 0.3), (1000, 0.6, 1.2), (500, 2.5, 0.05), (1000, 0.2, 2.0)]
 LOGNORMALS = [(7.0, 0.5), (10.0, 2.0)]
 LAYERS = [  # (cover, attachment); "inf" for unlimited
     ("500", "0"),
@@ -121,6 +122,19 @@ def gpd_survival(xi, beta, loc):
     return s, kinks
 
 
+def log_affine_survival(t, alpha0, gamma):
+    t, alpha0, gamma = mp.mpf(t), mp.mpf(alpha0), mp.mpf(gamma)
+
+    def s(x):
+        if x < t:
+            return mp.mpf(1)
+        l = mp.log(x / t)
+        return mp.exp(-alpha0 * l - alpha0 * gamma * l * l / 2)
+
+    # Breakpoints at every half doubling keep quad accurate over long layers.
+    return s, [t * mp.mpf(2) ** (j / 2) for j in range(0, 80)]
+
+
 def lognormal_survival(mu, sigma):
     mu, sigma = mp.mpf(mu), mp.mpf(sigma)
     return (lambda x: mp.erfc((mp.log(x) - mu) / (sigma * mp.sqrt(2))) / 2 if x > 0 else mp.mpf(1)), [mp.exp(mu)]
@@ -186,6 +200,13 @@ def rows():
             m1, m2 = moments(s, kinks, cover, att)
             yield "gpd", params, "layer", cover, att, m1, 1e-12
             yield "gpd", params, "layer_second_moment", cover, att, m2, 1e-11
+    for t, alpha0, gamma in LOG_AFFINE:
+        s, kinks = log_affine_survival(t, alpha0, gamma)
+        params = f"t={t};alpha_0={alpha0};gamma={gamma}"
+        for cover, att in LAYERS:
+            m1, m2 = moments(s, kinks, cover, att)
+            yield "log_affine_pareto", params, "layer", cover, att, m1, 1e-12
+            yield "log_affine_pareto", params, "layer_second_moment", cover, att, m2, 1e-11
     for mu, sigma in LOGNORMALS:
         s, kinks = lognormal_survival(mu, sigma)
         params = f"meanlog={mu};sdlog={sigma}"

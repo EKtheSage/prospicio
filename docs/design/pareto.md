@@ -312,6 +312,15 @@ from it. Truncated estimates are clamped to `[1e-3, 1e3]`, since data
 rising towards the truncation point can put the maximum at or below 0.
 Fits of the generalized and local Pareto, and of a piecewise Pareto
 truncated as a whole, come later.
+`LogAffinePareto` (`new(t, α₀, γ)` or `from_delta(t, α₀, δ)`) has its
+layer moments in closed form as above, through the Mills ratio
+(`erfc` below `z = 26`, a continued fraction beyond), so layers far in
+the tail keep full relative precision: `1e-12` against 30-digit mpmath
+integration. The R package LocalPareto computes those moments with
+`stats::integrate` (relative tolerance about `1e-4`), so it is only a
+coarse cross-check (`1e-6`) there, and an exact one for the distribution
+function and quantile. The general local Pareto (any `α(x)`, converted to
+a piecewise Pareto) comes later.
 `Binomial` and `PanjerClass::from_mean_dispersion` complete the Panjer
 class. A binomial needs a whole number of trials, so below dispersion 1
 the trials are `mean / (1 − dispersion)` rounded up: the mean is kept and
