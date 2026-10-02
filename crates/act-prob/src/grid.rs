@@ -215,7 +215,7 @@ impl Grid {
     }
 
     /// Distortion risk measure of the grid, exact for the grid; see
-    /// [`Distortion::apply_discrete`].
+    /// [`Distortion::apply_discrete`](crate::Distortion::apply_discrete).
     ///
     /// ```
     /// use act_prob::{Distortion, Grid};
