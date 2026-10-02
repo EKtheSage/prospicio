@@ -1,9 +1,11 @@
 [package]
 name = "act-aggregate"
-description = "Aggregate loss and reinsurance (v0.3)."
+description = "Aggregate loss (Panjer, FFT, Monte Carlo) and reinsurance."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+act-core.workspace = true
+act-prob.workspace = true

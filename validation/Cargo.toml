@@ -10,5 +10,6 @@ publish = false
 act-reserving.workspace = true
 
 [dev-dependencies]
+act-aggregate.workspace = true
 act-core.workspace = true
 act-prob = { workspace = true, features = ["arrow"] }
