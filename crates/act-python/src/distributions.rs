@@ -912,7 +912,7 @@ impl PyGrid {
 /// 3.5
 #[pyclass(name = "Sampled", module = "actuarialrs.distributions", frozen)]
 pub(crate) struct PySampled {
-    inner: Sampled,
+    pub(crate) inner: Sampled,
 }
 
 #[pymethods]
@@ -1029,12 +1029,12 @@ impl PySampled {
 
 /// One value of a component key, as Python passes it.
 #[derive(FromPyObject)]
-enum KeyArg {
+pub(crate) enum KeyArg {
     Int(i64),
     Text(String),
 }
 
-fn key_from_py(key: Vec<KeyArg>) -> ComponentKey {
+pub(crate) fn key_from_py(key: Vec<KeyArg>) -> ComponentKey {
     key.into_iter()
         .map(|v| match v {
             KeyArg::Int(i) => KeyValue::Int(i),

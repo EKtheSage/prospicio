@@ -1,0 +1,54 @@
+library(actuarialrs)
+
+x <- sampled(c(10, 20, 30, 40, 50))
+
+# Distortions: TVaR agrees with TVaR(); identity parameters give the mean.
+stopifnot(abs(risk_measure(x, distortion("tvar", 0.6)) - TVaR(x, 0.6)) < 1e-12)
+for (d in list(distortion("wang", 0), distortion("proportional_hazard", 1), distortion("dual_power", 1))) {
+  stopifnot(abs(risk_measure(x, d) - 30) < 1e-12)
+}
+stopifnot(abs(distortion_g(distortion("dual_power", 2), 0.3) - 0.51) < 1e-15)
+stopifnot(identical(distortion_weights(distortion("tvar", 0.5), 4), c(0, 0, 0.5, 0.5)))
+stopifnot(risk_measure(grid_distribution(1, c(0.5, 0.25, 0.25)), distortion("tvar", 0.5)) == 1.5)
+stopifnot(inherits(try(distortion("proportional_hazard", 1.5), silent = TRUE), "try-error"))
+stopifnot(inherits(try(distortion("variance", 1), silent = TRUE), "try-error"))
+
+# Copulas: uniforms in (0, 1), rows replay, Kendall's tau near its closed form.
+r <- matrix(c(1, 0.6, 0.6, 1), 2)
+for (cop in list(gaussian_copula(r), t_copula(r, 4), archimedean_copula("gumbel", 2.5))) {
+  u <- copula_sample(cop, 2000, seed = 5)
+  stopifnot(nrow(u) == 2000, ncol(u) == 2, all(u > 0 & u < 1))
+  stopifnot(identical(copula_sample(cop, 10, seed = 5), u[1:10, ]))
+}
+tau <- cor(copula_sample(gaussian_copula(r), 2000, seed = 1), method = "kendall")[1, 2]
+stopifnot(abs(tau - 2 / pi * asin(0.6)) < 0.04)
+tau <- cor(copula_sample(archimedean_copula("clayton", 2), 2000, seed = 1), method = "kendall")[1, 2]
+stopifnot(abs(tau - 0.5) < 0.04)
+stopifnot(inherits(try(gaussian_copula(matrix(c(1, 2, 2, 1), 2)), silent = TRUE), "try-error"))
+stopifnot(inherits(try(archimedean_copula("gumbel", 0.5), silent = TRUE), "try-error"))
+
+# Simulation with a copula, then allocation that adds up.
+pd <- copula_simulate(
+  gaussian_copula(r),
+  list(lognormal_from_mean_cv(100, 0.3), lognormal_from_mean_cv(50, 1.5)),
+  n_sims = 5000, seed = 3,
+  keys = data.frame(lob = c("motor", "property"))
+)
+stopifnot(identical(pd@keys$lob, c("motor", "property")))
+for (d in list(distortion("tvar", 0.99), distortion("wang", 0.5))) {
+  a <- allocate(pd, d)
+  stopifnot(identical(a$lob, c("motor", "property")))
+  stopifnot(abs(sum(a$contribution) - risk_measure(pd, d)) < 1e-9 * risk_measure(pd, d))
+}
+stopifnot(identical(copula_simulate(gaussian_copula(r), list(lognormal(0, 1), lognormal(0, 1)), 10, 1)@keys$component, c(1, 2)))
+stopifnot(inherits(try(copula_simulate(gaussian_copula(r), list(lognormal(0, 1)), 10, 1), silent = TRUE), "try-error"))
+
+# Iman-Conover keeps marginals and reaches the target.
+indep <- copula_simulate(gaussian_copula(diag(2)), list(lognormal(0, 0.5), lognormal(1, 1)), 4000, seed = 9)
+joined <- iman_conover(indep, matrix(c(1, 0.8, 0.8, 1), 2), seed = 2)
+m0 <- draw_matrix(indep)
+m1 <- draw_matrix(joined)
+stopifnot(identical(sort(m0[, 1]), sort(m1[, 1])), identical(sort(m0[, 2]), sort(m1[, 2])))
+stopifnot(abs(cor(m1, method = "spearman")[1, 2] - 6 / pi * asin(0.4)) < 0.02)
+
+cat("actuarialrs R risk tests passed\n")

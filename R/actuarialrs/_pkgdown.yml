@@ -52,3 +52,15 @@ reference:
       - inuring_tower
       - tower_ceded
       - apply_tower
+  - title: Risk measures
+    contents:
+      - distortion
+      - distortion_g
+      - risk_measure
+      - allocate
+  - title: Dependence
+    contents:
+      - copula
+      - copula_sample
+      - copula_simulate
+      - iman_conover

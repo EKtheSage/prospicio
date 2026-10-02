@@ -415,6 +415,34 @@ impl Sampled {
     }
 }
 
+/// Component keys from R key columns (a list with one column per dimension
+/// and one entry per component).
+pub(crate) fn components_from_keys(
+    dims: &[String],
+    keys: List,
+    n_components: usize,
+) -> Result<Vec<ComponentKey>> {
+    let columns: Vec<Vec<KeyValue>> = keys
+        .values()
+        .map(|c| key_column(&c))
+        .collect::<Result<_>>()?;
+    if columns.len() != dims.len() {
+        return Err(Error::Other(format!(
+            "{} key columns for {} dimensions",
+            columns.len(),
+            dims.len()
+        )));
+    }
+    if columns.iter().any(|c| c.len() != n_components) {
+        return Err(Error::Other(format!(
+            "every key column needs one entry per component ({n_components})"
+        )));
+    }
+    Ok((0..n_components)
+        .map(|j| columns.iter().map(|c| c[j].clone()).collect())
+        .collect())
+}
+
 /// Converts one R key column (character, integer or double) to key values.
 fn key_column(col: &Robj) -> Result<Vec<KeyValue>> {
     if let Some(s) = col.as_str_vector() {
@@ -453,31 +481,13 @@ impl PredictiveDistribution {
     /// column-major order.
     fn new(dims: Vec<String>, keys: List, draws: &[f64], n_sims: f64) -> Result<Self> {
         let n_sims = whole(n_sims, "n_sims")? as usize;
-        let columns: Vec<Vec<KeyValue>> = keys
-            .values()
-            .map(|c| key_column(&c))
-            .collect::<Result<_>>()?;
-        if columns.len() != dims.len() {
-            return Err(Error::Other(format!(
-                "{} key columns for {} dimensions",
-                columns.len(),
-                dims.len()
-            )));
-        }
         let n_components = draws.len().checked_div(n_sims).unwrap_or(0);
         if n_sims == 0 || draws.len() != n_sims * n_components {
             return Err(Error::Other(
                 "draws must be an n_sims x n_components matrix".into(),
             ));
         }
-        if columns.iter().any(|c| c.len() != n_components) {
-            return Err(Error::Other(format!(
-                "every key column needs one entry per component ({n_components})"
-            )));
-        }
-        let components: Vec<ComponentKey> = (0..n_components)
-            .map(|j| columns.iter().map(|c| c[j].clone()).collect())
-            .collect();
+        let components = components_from_keys(&dims, keys, n_components)?;
         // Column-major (R) to simulation-major.
         let mut rows = Vec::with_capacity(draws.len());
         for i in 0..n_sims {

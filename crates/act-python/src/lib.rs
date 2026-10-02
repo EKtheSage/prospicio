@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 
 mod aggregate;
 mod distributions;
+mod risk;
 
 fn to_py(e: act_core::Error) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -30,5 +31,10 @@ mod actuarialrs_native {
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
         PyPredictiveDistribution, PySampled,
+    };
+    #[pymodule_export]
+    use super::risk::{
+        PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyStudentTCopula, allocate,
+        iman_conover, simulate,
     };
 }

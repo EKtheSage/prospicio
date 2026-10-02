@@ -1,0 +1,574 @@
+//! `actuarialrs.risk`: distortion risk measures, allocation, copulas and
+//! Iman-Conover, over `act_prob`.
+
+use act_core::StreamRng;
+use act_prob::copula::{self, Copula};
+use act_prob::{
+    Archimedean, ArchimedeanCopula, Distortion, Empirical, GaussianCopula, Provenance,
+    StudentTCopula,
+};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::prelude::*;
+
+use crate::distributions::{
+    AnySeverity, KeyArg, PyGrid, PyPredictiveDistribution, PySampled, key_from_py,
+};
+use crate::to_py;
+
+/// A distortion risk measure: ``rho(X) = integral of g(S(x)) dx`` for a
+/// concave distortion ``g`` of the survival function.
+///
+/// Make one with ``Distortion.tvar``, ``Distortion.wang``,
+/// ``Distortion.proportional_hazard`` or ``Distortion.dual_power``. Every
+/// one is coherent, and each has a parameter value that gives the mean.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Sampled
+/// >>> from actuarialrs.risk import Distortion
+/// >>> x = Sampled([1.0, 2.0, 3.0, 4.0])
+/// >>> Distortion.tvar(0.5).measure(x)
+/// 3.5
+/// >>> Distortion.tvar(0.5).weights(4)
+/// [0.0, 0.0, 0.5, 0.5]
+#[pyclass(name = "Distortion", module = "actuarialrs.risk", frozen)]
+pub(crate) struct PyDistortion {
+    inner: Distortion,
+}
+
+#[pymethods]
+impl PyDistortion {
+    /// Tail value at risk at level ``p``: ``g(s) = min(s / (1 - p), 1)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///     In ``[0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn tvar(p: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::tvar(p).map_err(to_py)?,
+        })
+    }
+
+    /// Wang transform: ``g(s) = Phi(Phi^-1(s) + lambda)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// lam : float
+    ///     Market price of risk, ``>= 0``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn wang(lam: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::wang(lam).map_err(to_py)?,
+        })
+    }
+
+    /// Proportional hazard transform: ``g(s) = s**rho``.
+    ///
+    /// Parameters
+    /// ----------
+    /// rho : float
+    ///     In ``(0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn proportional_hazard(rho: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::proportional_hazard(rho).map_err(to_py)?,
+        })
+    }
+
+    /// Dual power transform: ``g(s) = 1 - (1 - s)**beta``.
+    ///
+    /// Parameters
+    /// ----------
+    /// beta : float
+    ///     ``>= 1``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn dual_power(beta: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::dual_power(beta).map_err(to_py)?,
+        })
+    }
+
+    /// The distortion ``g(s)`` of a survival probability ``s``.
+    ///
+    /// Parameters
+    /// ----------
+    /// s : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn g(&self, s: f64) -> f64 {
+        self.inner.g(s)
+    }
+
+    /// Weights for ``n`` equally likely values sorted ascending.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    ///     Non-negative, summing to 1.
+    fn weights(&self, n: usize) -> Vec<f64> {
+        self.inner.weights(n)
+    }
+
+    /// The risk measure of a distribution.
+    ///
+    /// Parameters
+    /// ----------
+    /// dist : Sampled, Grid or PredictiveDistribution
+    ///     A predictive distribution is measured on its total.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn measure(&self, dist: &Bound<'_, PyAny>) -> PyResult<f64> {
+        if let Ok(s) = dist.extract::<PyRef<'_, PySampled>>() {
+            return Ok(s.inner.distortion(&self.inner));
+        }
+        if let Ok(g) = dist.extract::<PyRef<'_, PyGrid>>() {
+            return Ok(g.inner.distortion(&self.inner));
+        }
+        if let Ok(p) = dist.extract::<PyRef<'_, PyPredictiveDistribution>>() {
+            return Ok(p.inner.distortion(&self.inner));
+        }
+        Err(PyTypeError::new_err(
+            "expected a Sampled, Grid or PredictiveDistribution",
+        ))
+    }
+
+    fn __repr__(&self) -> String {
+        match self.inner {
+            Distortion::Tvar(p) => format!("Distortion.tvar({p:?})"),
+            Distortion::Wang(l) => format!("Distortion.wang({l:?})"),
+            Distortion::ProportionalHazard(r) => format!("Distortion.proportional_hazard({r:?})"),
+            Distortion::DualPower(b) => format!("Distortion.dual_power({b:?})"),
+        }
+    }
+}
+
+/// Allocates a distortion risk measure of the total to the components.
+///
+/// Euler allocation by co-measure: simulations are ranked by their total
+/// and each component gets the distortion-weighted sum of its own draws.
+/// The contributions sum to ``distortion.measure(pd)``; for
+/// ``Distortion.tvar(p)`` they are the CoTVaRs. Components must add up to
+/// the portfolio being allocated.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+/// distortion : Distortion
+///
+/// Returns
+/// -------
+/// list of float
+///     One contribution per component, in ``pd.components()`` order.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import PredictiveDistribution
+/// >>> from actuarialrs.risk import Distortion, allocate
+/// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+/// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+/// >>> allocate(pd, Distortion.tvar(0.5))
+/// [2.5, 5.5]
+#[pyfunction]
+pub(crate) fn allocate(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    distortion: PyRef<'_, PyDistortion>,
+) -> Vec<f64> {
+    let (pd, d) = (&pd.inner, distortion.inner);
+    py.detach(|| pd.allocate(&d))
+}
+
+/// One of the copula classes, as a Rust copula.
+enum AnyCopula {
+    Gaussian(GaussianCopula),
+    StudentT(StudentTCopula),
+    Archimedean(ArchimedeanCopula),
+}
+
+impl AnyCopula {
+    fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if let Ok(c) = obj.extract::<PyRef<'_, PyGaussianCopula>>() {
+            return Ok(Self::Gaussian(c.inner.clone()));
+        }
+        if let Ok(c) = obj.extract::<PyRef<'_, PyStudentTCopula>>() {
+            return Ok(Self::StudentT(c.inner.clone()));
+        }
+        if let Ok(c) = obj.extract::<PyRef<'_, PyArchimedeanCopula>>() {
+            return Ok(Self::Archimedean(c.inner.clone()));
+        }
+        Err(PyTypeError::new_err(
+            "expected a GaussianCopula, StudentTCopula or ArchimedeanCopula",
+        ))
+    }
+
+    fn as_copula(&self) -> &dyn Copula {
+        match self {
+            Self::Gaussian(c) => c,
+            Self::StudentT(c) => c,
+            Self::Archimedean(c) => c,
+        }
+    }
+}
+
+/// ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+fn sample_rows(c: &dyn Copula, n: usize, seed: u64) -> Vec<Vec<f64>> {
+    (0..n)
+        .map(|i| {
+            let mut u = vec![0.0; c.dim()];
+            c.sample(&mut StreamRng::new(seed, i as u64), &mut u);
+            u
+        })
+        .collect()
+}
+
+/// A correlation matrix from nested lists, row-major.
+fn flatten_square(m: Vec<Vec<f64>>) -> PyResult<(Vec<f64>, usize)> {
+    let d = m.len();
+    if m.iter().any(|row| row.len() != d) {
+        return Err(PyValueError::new_err("correlation must be a square matrix"));
+    }
+    Ok((m.into_iter().flatten().collect(), d))
+}
+
+/// The Gaussian copula with correlation matrix ``correlation``.
+///
+/// Parameters
+/// ----------
+/// correlation : list of list of float
+///     Symmetric, unit diagonal, positive definite.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the matrix is not a valid correlation matrix.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.risk import GaussianCopula
+/// >>> c = GaussianCopula([[1.0, 0.5], [0.5, 1.0]])
+/// >>> u = c.sample(3, seed=1)
+/// >>> len(u), all(0.0 < x < 1.0 for row in u for x in row)
+/// (3, True)
+#[pyclass(name = "GaussianCopula", module = "actuarialrs.risk", frozen)]
+pub(crate) struct PyGaussianCopula {
+    inner: GaussianCopula,
+}
+
+#[pymethods]
+impl PyGaussianCopula {
+    #[new]
+    fn new(correlation: Vec<Vec<f64>>) -> PyResult<Self> {
+        let (r, d) = flatten_square(correlation)?;
+        Ok(Self {
+            inner: GaussianCopula::new(&r, d).map_err(to_py)?,
+        })
+    }
+
+    /// Number of dimensions.
+    #[getter]
+    fn dim(&self) -> usize {
+        self.inner.dim()
+    }
+
+    /// ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    fn sample(&self, py: Python<'_>, n: usize, seed: u64) -> Vec<Vec<f64>> {
+        let c = &self.inner;
+        py.detach(|| sample_rows(c, n, seed))
+    }
+}
+
+/// The Student t copula with correlation matrix ``correlation`` and ``nu``
+/// degrees of freedom: Gaussian-like correlation with joint extremes.
+///
+/// Parameters
+/// ----------
+/// correlation : list of list of float
+///     Symmetric, unit diagonal, positive definite.
+/// nu : float
+///     Degrees of freedom, positive.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the matrix or ``nu`` is invalid.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.risk import StudentTCopula
+/// >>> StudentTCopula([[1.0, 0.5], [0.5, 1.0]], 4.0).dim
+/// 2
+#[pyclass(name = "StudentTCopula", module = "actuarialrs.risk", frozen)]
+pub(crate) struct PyStudentTCopula {
+    inner: StudentTCopula,
+}
+
+#[pymethods]
+impl PyStudentTCopula {
+    #[new]
+    fn new(correlation: Vec<Vec<f64>>, nu: f64) -> PyResult<Self> {
+        let (r, d) = flatten_square(correlation)?;
+        Ok(Self {
+            inner: StudentTCopula::new(&r, d, nu).map_err(to_py)?,
+        })
+    }
+
+    /// Number of dimensions.
+    #[getter]
+    fn dim(&self) -> usize {
+        self.inner.dim()
+    }
+
+    /// Degrees of freedom.
+    #[getter]
+    fn nu(&self) -> f64 {
+        self.inner.nu()
+    }
+
+    /// ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    fn sample(&self, py: Python<'_>, n: usize, seed: u64) -> Vec<Vec<f64>> {
+        let c = &self.inner;
+        py.detach(|| sample_rows(c, n, seed))
+    }
+}
+
+/// An exchangeable Archimedean copula: Clayton, Gumbel, Frank or Joe.
+///
+/// Parameters
+/// ----------
+/// family : {"clayton", "gumbel", "frank", "joe"}
+/// theta : float
+///     Positive for Clayton and Frank; at least 1 for Gumbel and Joe.
+/// dim : int
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the family is unknown or ``theta`` is out of range.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.risk import ArchimedeanCopula
+/// >>> c = ArchimedeanCopula("clayton", 2.0, 3)  # Kendall's tau 0.5
+/// >>> c.dim, c.family
+/// (3, 'clayton')
+#[pyclass(name = "ArchimedeanCopula", module = "actuarialrs.risk", frozen)]
+pub(crate) struct PyArchimedeanCopula {
+    inner: ArchimedeanCopula,
+}
+
+#[pymethods]
+impl PyArchimedeanCopula {
+    #[new]
+    fn new(family: &str, theta: f64, dim: usize) -> PyResult<Self> {
+        let family = match family {
+            "clayton" => Archimedean::Clayton,
+            "gumbel" => Archimedean::Gumbel,
+            "frank" => Archimedean::Frank,
+            "joe" => Archimedean::Joe,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown family {other:?}: use \"clayton\", \"gumbel\", \"frank\" or \"joe\""
+                )));
+            }
+        };
+        Ok(Self {
+            inner: ArchimedeanCopula::new(family, theta, dim).map_err(to_py)?,
+        })
+    }
+
+    /// Number of dimensions.
+    #[getter]
+    fn dim(&self) -> usize {
+        self.inner.dim()
+    }
+
+    /// Family name.
+    #[getter]
+    fn family(&self) -> &'static str {
+        match self.inner.family() {
+            Archimedean::Clayton => "clayton",
+            Archimedean::Gumbel => "gumbel",
+            Archimedean::Frank => "frank",
+            Archimedean::Joe => "joe",
+        }
+    }
+
+    /// Copula parameter.
+    #[getter]
+    fn theta(&self) -> f64 {
+        self.inner.theta()
+    }
+
+    /// ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    fn sample(&self, py: Python<'_>, n: usize, seed: u64) -> Vec<Vec<f64>> {
+        let c = &self.inner;
+        py.detach(|| sample_rows(c, n, seed))
+    }
+}
+
+/// Simulates marginals joined by a copula.
+///
+/// In simulation ``i``, draws uniforms from ``copula`` with stream ``i`` of
+/// ``seed`` and applies each marginal's quantile function.
+///
+/// Parameters
+/// ----------
+/// copula : GaussianCopula, StudentTCopula or ArchimedeanCopula
+/// marginals : list of Lognormal or Grid
+///     One per copula dimension.
+/// n_sims : int
+/// seed : int
+/// keys : list of tuple, optional
+///     One component key per marginal; defaults to ``(0,), (1,), ...``.
+/// dims : list of str, default ["component"]
+///
+/// Returns
+/// -------
+/// PredictiveDistribution
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Lognormal
+/// >>> from actuarialrs.risk import GaussianCopula, simulate
+/// >>> c = GaussianCopula([[1.0, 0.4], [0.4, 1.0]])
+/// >>> pd = simulate(c, [Lognormal.from_mean_cv(100.0, 0.2), Lognormal.from_mean_cv(50.0, 1.0)],
+/// ...               10_000, 42, keys=[("motor",), ("property",)], dims=["lob"])
+/// >>> abs(pd.mean() - 150.0) < 3.0
+/// True
+#[pyfunction]
+#[pyo3(signature = (copula, marginals, n_sims, seed, keys = None, dims = None))]
+pub(crate) fn simulate(
+    py: Python<'_>,
+    copula: &Bound<'_, PyAny>,
+    marginals: Vec<Bound<'_, PyAny>>,
+    n_sims: usize,
+    seed: u64,
+    keys: Option<Vec<Vec<KeyArg>>>,
+    dims: Option<Vec<String>>,
+) -> PyResult<PyPredictiveDistribution> {
+    let copula = AnyCopula::extract(copula)?;
+    let marginals: Vec<AnySeverity> = marginals
+        .iter()
+        .map(AnySeverity::extract)
+        .collect::<PyResult<_>>()?;
+    let components = match keys {
+        Some(keys) => keys.into_iter().map(key_from_py).collect(),
+        None => (0..marginals.len())
+            .map(|j| vec![act_prob::KeyValue::Int(j as i64)])
+            .collect(),
+    };
+    let dims = dims.unwrap_or_else(|| vec!["component".into()]);
+    let inner = py
+        .detach(|| {
+            let refs: Vec<&(dyn act_prob::Distribution + Sync)> = marginals
+                .iter()
+                .map(|m| m as &(dyn act_prob::Distribution + Sync))
+                .collect();
+            copula::simulate(
+                copula.as_copula(),
+                &refs,
+                dims,
+                components,
+                n_sims,
+                seed,
+                Provenance::new("copula"),
+            )
+        })
+        .map_err(to_py)?;
+    Ok(PyPredictiveDistribution { inner })
+}
+
+/// Reorders each component's draws to a target correlation (Iman-Conover).
+///
+/// Every component keeps exactly its own draws; only their pairing across
+/// simulations changes. The correlation of the result's normal scores is
+/// close to ``correlation``, and Spearman's rho close to
+/// ``(6 / pi) asin(correlation / 2)``.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+/// correlation : list of list of float
+///     One row and column per component.
+/// seed : int
+///
+/// Returns
+/// -------
+/// PredictiveDistribution
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import PredictiveDistribution
+/// >>> from actuarialrs.risk import iman_conover
+/// >>> rows = [[float(i), float((i * 7919) % 1000)] for i in range(1000)]
+/// >>> pd = PredictiveDistribution(["lob"], [(0,), (1,)], rows)
+/// >>> joined = iman_conover(pd, [[1.0, 0.7], [0.7, 1.0]], seed=3)
+/// >>> sorted(joined.marginal((1,)).draws) == sorted(pd.marginal((1,)).draws)
+/// True
+#[pyfunction]
+pub(crate) fn iman_conover(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    correlation: Vec<Vec<f64>>,
+    seed: u64,
+) -> PyResult<PyPredictiveDistribution> {
+    let (r, _) = flatten_square(correlation)?;
+    let pd = &pd.inner;
+    let inner = py
+        .detach(|| copula::iman_conover(pd, &r, seed))
+        .map_err(to_py)?;
+    Ok(PyPredictiveDistribution { inner })
+}
