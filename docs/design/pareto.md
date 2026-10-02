@@ -326,6 +326,11 @@ the dispersion moves up to the nearest attainable value, which
 `act-aggregate` stays about aggregate distributions. The collective
 model is the frequency–severity input to an aggregate, so it lives here.
 
+Done: `CollectiveModel<N, X>` (with `Box<dyn Severity>` and
+`Box<dyn Counting>` usable through blanket impls in `act-prob`), and
+`Distribution::survival` so excess frequencies keep their precision far
+in the tail.
+
 | Item | Notes |
 |---|---|
 | `CollectiveModel<N, X>` | Expected layer loss, layer variance (`E[N] Var[Y] + Var[N] E[Y]²`), excess frequency; simulation and Panjer/FFT through existing code. |

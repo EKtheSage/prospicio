@@ -70,6 +70,44 @@ pub trait Counting {
     }
 }
 
+impl<T: Counting + ?Sized> Counting for Box<T> {
+    fn pmf(&self, k: u64) -> f64 {
+        (**self).pmf(k)
+    }
+
+    fn mean(&self) -> f64 {
+        (**self).mean()
+    }
+
+    fn variance(&self) -> f64 {
+        (**self).variance()
+    }
+
+    fn panjer_ab(&self) -> (f64, f64) {
+        (**self).panjer_ab()
+    }
+
+    fn pgf(&self, z: f64) -> f64 {
+        (**self).pgf(z)
+    }
+
+    fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
+        (**self).pgf_complex(z)
+    }
+
+    fn cdf(&self, k: u64) -> f64 {
+        (**self).cdf(k)
+    }
+
+    fn quantile(&self, p: f64) -> Result<u64> {
+        (**self).quantile(p)
+    }
+
+    fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<u64> {
+        (**self).sample(rng, n)
+    }
+}
+
 /// Poisson claim counts with mean `lambda`.
 ///
 /// ```

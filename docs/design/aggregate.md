@@ -29,6 +29,11 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   (`Layer::stop_loss`); `Tower::inuring` stages layers so later ones see
   losses net of earlier ones. `Tower::apply(&events)` returns gross, ceded
   per layer and net as one joint `PredictiveDistribution`.
+- `act_aggregate::CollectiveModel<N, X>`: a claim count and a severity
+  with closed-form layer mean, layer variance
+  (`E[N] Var[Y] + Var[N] E[Y]^2`) and excess frequency, the treaty
+  pricing model of `pareto.md`; `simulate` reuses `simulate_events`.
+  (Not yet in the bindings.)
 - Python (`actuarialrs.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -118,6 +123,13 @@ the simulated mean ceded loss against the exact `E[N] · Severity::layer`
 two-stage tower and against the identity that a cession `c` inuring to
 `l` xs `a` equals `(1 - c)` of `l / (1 - c)` xs `a / (1 - c)` on gross, in
 every simulated year.
+
+`CollectiveModel` is checked against the R package Pareto's `PPP_Model`
+and `PGP_Model` (`validation/scripts/r_collective.R`): layer means at
+`1e-12`, layer variances at `1e-8` (the package's second moments cancel on
+high layers), and excess frequencies, for binomial, Poisson and negative
+binomial counts. A unit test checks the layer mean and variance against
+200,000 simulated years.
 
 ## Next
 

@@ -83,7 +83,7 @@ impl Pareto {
     }
 
     /// `P(X > x)`.
-    pub fn survival(&self, x: f64) -> f64 {
+    fn survival_at(&self, x: f64) -> f64 {
         if x < self.t {
             return 1.0;
         }
@@ -180,7 +180,11 @@ impl Distribution for Pareto {
     }
 
     fn cdf(&self, x: f64) -> f64 {
-        1.0 - self.survival(x)
+        1.0 - self.survival_at(x)
+    }
+
+    fn survival(&self, x: f64) -> f64 {
+        self.survival_at(x)
     }
 
     /// `t (1 − p)^(−1/α)` untruncated; `p = 1` gives `+∞` (or the
