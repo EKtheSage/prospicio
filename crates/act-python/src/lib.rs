@@ -22,5 +22,8 @@ fn to_py(e: act_core::Error) -> PyErr {
 #[pymodule]
 mod actuarialrs_native {
     #[pymodule_export]
-    use super::distributions::PyLognormal;
+    use super::distributions::{
+        PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
+        PyPredictiveDistribution, PySampled,
+    };
 }
