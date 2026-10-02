@@ -36,6 +36,8 @@ export(stop_loss)
 export(total)
 export(variance)
 if (getRversion() < "4.3.0") importFrom(S7, "@")
-importFrom(stats,aggregate)
-importFrom(stats,quantile)
+importFrom(stats,
+  aggregate,
+  quantile
+)
 useDynLib(actuarialrs, .registration = TRUE)
