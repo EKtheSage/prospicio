@@ -20,6 +20,9 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
 - `act_aggregate::panjer(&frequency, &severity_grid, points)` and
   `act_aggregate::fft(&frequency, &severity_grid, points)` return the
   aggregate `Grid` and a `CompoundReport`.
+- `act_aggregate::simulate_events(&frequency, &severity, n_sims, seed)`
+  returns an `EventSet`: each simulated year's individual losses, with
+  `totals()` as a `PredictiveDistribution`.
 
 ## Decisions
 
@@ -44,6 +47,14 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `Counting::pgf_complex`, written with `(re, im)` pairs so `act-prob` needs
   no complex-number dependency; `rustfft` (pure Rust) does the transforms.
 
+- **Monte Carlo keeps events.** Reinsurance terms apply per loss, so the
+  simulation keeps every year's individual losses (stored compactly, one
+  offset per year) rather than only totals.
+- **Monte Carlo stream order** (scheme `chacha20/sim-index/v1`): year `i`
+  draws only from `StreamRng::new(seed, i)`, first the claim count, then
+  each severity in order, all by inverse transform. Results are identical
+  for any thread count, and any year replays alone (both tested).
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -53,12 +64,13 @@ Poisson and a negative binomial at `1e-14`. FFT is checked against the
 same file and passes at the same tolerance. FFT also agrees with Panjer to
 `1e-13` and handles a Poisson mean of 2,000 that makes Panjer underflow. Unit
 tests check `E[S] = E[N] E[X]`, the compound variance
-`E[N] Var[X] + Var[N] E[X]^2`, and `S = N` for a unit severity.
+`E[N] Var[X] + Var[N] E[X]^2`, and `S = N` for a unit severity. Monte
+Carlo totals are tested against the exact FFT result for a discrete
+severity by a Kolmogorov–Smirnov statistic (200,000 years, below the 0.1%
+critical value) under a fixed seed.
 
 ## Next
 
-1. Monte Carlo frequency-severity into a `PredictiveDistribution`, one RNG
-   stream per simulation, keeping event-level losses for reinsurance.
-2. Reinsurance: per-occurrence and aggregate layers, reinstatements and
+1. Reinsurance: per-occurrence and aggregate layers, reinstatements and
    towers as data, applied to simulated events, giving gross, ceded and
    net `PredictiveDistribution`s.
