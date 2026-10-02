@@ -35,7 +35,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 - `ArchimedeanCopula` (Clayton, Gumbel, Frank, Joe), exchangeable in any
   dimension.
 - `act_prob::evt`: `Gpd` (generalized Pareto, with a maximum likelihood
-  `Gpd::fit`) and `PotTail`, a peaks-over-threshold tail fitted to the
+  `Gpd::fit`, an optional location, and closed-form layer moments as a
+  `Severity`; see `pareto.md`) and `PotTail`, a peaks-over-threshold tail fitted to the
   draws above an empirical quantile, with VaR and TVaR beyond the draws.
 - Python `actuarialrs.risk` (`Distortion`, `allocate`, the three copula
   classes, `simulate`, `iman_conover`) and R (`distortion`,

@@ -298,6 +298,12 @@ Done: `Severity::layer_second_moment` (with a default `layer_variance`),
 WholeDistribution}`. Survival at the thresholds is stored as a logarithm
 so steep pieces do not underflow, and truncated survival is computed as
 `S(x) (1 − S(T)/S(x))` so it keeps full precision just below `T`.
+Riegel's generalized Pareto is `evt::Gpd::riegel(t, alpha_ini,
+alpha_tail)`: `Gpd` gained a location (`Gpd::shifted`) and implements
+`Severity`, with layer means and second moments in closed form for every
+`ξ` (series for small `c / β`, where the closed forms cancel). Truncation
+of the generalized Pareto, which the R package also offers, waits for a
+use.
 
 | Item | Notes |
 |---|---|
