@@ -75,6 +75,7 @@ version = "0.0.1"
 dependencies = [
  "act-aggregate",
  "act-core",
+ "act-math",
  "act-prob",
  "act-reserving",
 ]

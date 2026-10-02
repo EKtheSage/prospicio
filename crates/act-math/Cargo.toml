@@ -1,6 +1,6 @@
 [package]
 name = "act-math"
-description = "Numerical engine: special functions (later: linear algebra, optimization, integration, FFT)."
+description = "Numerical engine: special functions and small dense linear algebra (later: optimization, integration)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
