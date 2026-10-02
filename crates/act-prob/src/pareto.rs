@@ -92,8 +92,9 @@ impl Pareto {
             None => raw,
             Some(tr) if x >= tr => 0.0,
             Some(tr) => {
-                let (q, one_minus_q) = self.truncated_mass(tr);
-                (raw - q) / one_minus_q
+                // (t/x)^α − (t/T)^α = (t/x)^α (1 − (x/T)^α), without cancellation.
+                let (_, one_minus_q) = self.truncated_mass(tr);
+                raw * -(self.alpha * (x / tr).ln()).exp_m1() / one_minus_q
             }
         }
     }
@@ -122,30 +123,35 @@ impl Pareto {
 
     /// `∫_a^b x^k S(x) dx` for the untruncated Pareto.
     fn raw_integral(&self, k: i32, a: f64, b: f64) -> f64 {
-        if a >= b {
-            return 0.0;
-        }
-        let t = self.t;
-        let below = if a < t {
-            power_integral(k, a, b.min(t))
-        } else {
-            0.0
-        };
-        let lo = a.max(t);
-        if lo >= b {
-            return below;
-        }
-        // t^α ∫_lo^b x^(k−α) dx = (t/lo)^α lo^(k+1) ∫_1^(b/lo) u^(k−α) du.
-        let e = f64::from(k) + 1.0 - self.alpha;
-        let scale = (t / lo).powf(self.alpha) * lo.powi(k + 1);
-        let above = if b == f64::INFINITY {
-            if e < 0.0 { scale / -e } else { f64::INFINITY }
-        } else {
-            let l = (b / lo).ln();
-            scale * l * exprel(e * l)
-        };
-        below + above
+        raw_integral(k, self.t, self.alpha, a, b)
     }
+}
+
+/// `∫_a^b x^k S(x) dx` for `S` the untruncated `Pareto(t, α)` survival
+/// function, `k ∈ {0, 1}`, `0 ≤ a ≤ b ≤ ∞` and `α ≥ 0`.
+pub(crate) fn raw_integral(k: i32, t: f64, alpha: f64, a: f64, b: f64) -> f64 {
+    if a >= b {
+        return 0.0;
+    }
+    let below = if a < t {
+        power_integral(k, a, b.min(t))
+    } else {
+        0.0
+    };
+    let lo = a.max(t);
+    if lo >= b {
+        return below;
+    }
+    // t^α ∫_lo^b x^(k−α) dx = (t/lo)^α lo^(k+1) ∫_1^(b/lo) u^(k−α) du.
+    let e = f64::from(k) + 1.0 - alpha;
+    let scale = (t / lo).powf(alpha) * lo.powi(k + 1);
+    let above = if b == f64::INFINITY {
+        if e < 0.0 { scale / -e } else { f64::INFINITY }
+    } else {
+        let l = (b / lo).ln();
+        scale * l * exprel(e * l)
+    };
+    below + above
 }
 
 impl Distribution for Pareto {
@@ -224,7 +230,7 @@ impl Severity for Pareto {
 }
 
 /// `∫_a^b x^k dx` for `k ∈ {0, 1}`.
-fn power_integral(k: i32, a: f64, b: f64) -> f64 {
+pub(crate) fn power_integral(k: i32, a: f64, b: f64) -> f64 {
     match k {
         0 => b - a,
         _ => 0.5 * (b - a) * (b + a),
@@ -236,7 +242,7 @@ fn exprel(z: f64) -> f64 {
     if z == 0.0 { 1.0 } else { z.exp_m1() / z }
 }
 
-fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
+pub(crate) fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
     Error::InvalidParameter {
         name,
         value,

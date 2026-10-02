@@ -293,6 +293,12 @@ adaptive scheme with a stated bound on the relative error of `S`.
 
 ### `act-prob` (Probability lane)
 
+Done: `Severity::layer_second_moment` (with a default `layer_variance`),
+`Pareto`, and `PiecewisePareto` with `Truncation::{LastPiece,
+WholeDistribution}`. Survival at the thresholds is stored as a logarithm
+so steep pieces do not underflow, and truncated survival is computed as
+`S(x) (1 − S(T)/S(x))` so it keeps full precision just below `T`.
+
 | Item | Notes |
 |---|---|
 | `Severity::layer_second_moment` | Layer variance for every severity; closed form for the Pareto family and the lognormal. |

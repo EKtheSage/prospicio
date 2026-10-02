@@ -161,6 +161,31 @@ fn pareto_from(c: &act_validation::Case) -> Option<act_prob::Pareto> {
     }
 }
 
+/// A piecewise Pareto from `params` such as
+/// `t=1000|2000;alpha=1.0|2.0;truncation=5000;type=lp`.
+fn piecewise_pareto_from(c: &act_validation::Case) -> Option<act_prob::PiecewisePareto> {
+    let mut fields = std::collections::HashMap::new();
+    for kv in c.get("params").split(';') {
+        let (k, v) = kv.split_once('=')?;
+        fields.insert(k, v);
+    }
+    let list = |k: &str| -> Option<Vec<f64>> {
+        fields.get(k)?.split('|').map(|v| v.parse().ok()).collect()
+    };
+    let pp = act_prob::PiecewisePareto::new(list("t")?, list("alpha")?).ok()?;
+    match fields.get("truncation") {
+        None => Some(pp),
+        Some(tr) => {
+            let kind = match *fields.get("type")? {
+                "lp" => act_prob::Truncation::LastPiece,
+                "wd" => act_prob::Truncation::WholeDistribution,
+                _ => return None,
+            };
+            pp.truncated(tr.parse().ok()?, kind).ok()
+        }
+    }
+}
+
 /// Cover and attachment from `arg` ("inf" for unlimited) and `arg2`.
 fn layer_args(c: &act_validation::Case) -> Option<(f64, f64)> {
     let cover = match c.get("arg") {
@@ -177,6 +202,7 @@ fn layer_moments_match_integration() {
         let (cover, att) = layer_args(c)?;
         let sev: Box<dyn Severity> = match c.get("distribution") {
             "pareto" => Box::new(pareto_from(c)?),
+            "piecewise_pareto" => Box::new(piecewise_pareto_from(c)?),
             "lognormal" => Box::new(
                 Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?,
             ),
@@ -195,6 +221,27 @@ fn pareto_matches_r() {
     let cases = reference("pareto_r.csv");
     check(&cases, |c| {
         let p = pareto_from(c)?;
+        match c.get("quantity") {
+            "cdf" => Some(p.cdf(c.number("arg")?)),
+            "quantile" => p.quantile(c.number("arg")?).ok(),
+            q => {
+                let (cover, att) = layer_args(c)?;
+                match q {
+                    "layer" => Some(p.layer(cover, att)),
+                    "layer_second_moment" => Some(p.layer_second_moment(cover, att)),
+                    "layer_variance" => Some(p.layer_variance(cover, att)),
+                    _ => None,
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn piecewise_pareto_matches_r() {
+    let cases = reference("piecewise_pareto_r.csv");
+    check(&cases, |c| {
+        let p = piecewise_pareto_from(c)?;
         match c.get("quantity") {
             "cdf" => Some(p.cdf(c.number("arg")?)),
             "quantile" => p.quantile(c.number("arg")?).ok(),
