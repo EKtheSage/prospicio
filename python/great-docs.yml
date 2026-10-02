@@ -55,3 +55,8 @@ reference:
       - risk.ArchimedeanCopula
       - risk.simulate
       - risk.iman_conover
+  - title: Extreme value tails
+    desc: Generalized Pareto tails over a threshold, beyond the draws.
+    contents:
+      - risk.Gpd
+      - risk.PotTail

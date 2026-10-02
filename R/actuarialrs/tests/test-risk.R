@@ -52,4 +52,15 @@ m1 <- draw_matrix(joined)
 stopifnot(identical(sort(m0[, 1]), sort(m1[, 1])), identical(sort(m0[, 2]), sort(m1[, 2])))
 stopifnot(abs(cor(m1, method = "spearman")[1, 2] - 6 / pi * asin(0.4)) < 0.02)
 
+# EVT: GPD fit on exact quantiles, and a peaks-over-threshold tail.
+y <- 2 * expm1(0.25 * -log1p(-ppoints(2000))) / 0.25
+f <- gpd_fit(y)
+stopifnot(identical(names(f), c("xi", "beta")), abs(f[["xi"]] - 0.25) < 0.02)
+stopifnot(inherits(try(gpd_fit(c(1, 1, 1)), silent = TRUE), "try-error"))
+s <- sampled(qlnorm(ppoints(20000)))
+tl <- pot_tail(s, 0.9)
+stopifnot(abs(tl@p_exceed - 0.1) < 1e-3, length(VaR(tl, c(0.99, 0.999))) == 2)
+stopifnot(TVaR(tl, 0.99) > VaR(tl, 0.99))
+stopifnot(inherits(try(VaR(tl, 0.5), silent = TRUE), "try-error"))
+
 cat("actuarialrs R risk tests passed\n")

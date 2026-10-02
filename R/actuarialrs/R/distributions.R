@@ -380,7 +380,7 @@ S7::method(print, grid_distribution) <- function(x, ...) {
 #' VaR so it is coherent and continuous in `p`. For a
 #' [predictive_distribution] both describe the total over all components.
 #'
-#' @param dist A [sampled] or [predictive_distribution].
+#' @param dist A [sampled], [predictive_distribution] or [pot_tail].
 #' @param p Probabilities in `[0, 1]`.
 #' @param ... Unused; for methods.
 #' @returns Numeric vector the length of `p`.

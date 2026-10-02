@@ -10,6 +10,8 @@ compound <- function(frequency, severity, points, method) .Call(wrap__compound, 
 
 iman_conover_reorder <- function(pd, correlation, seed) .Call(wrap__iman_conover_reorder, pd, correlation, seed)
 
+gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
+
 EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
@@ -263,6 +265,28 @@ PredictiveDistribution$provenance <- function() .Call(wrap__PredictiveDistributi
 
 #' @export
 `[[.PredictiveDistribution` <- `$.PredictiveDistribution`
+
+EvtTail <- new.env(parent = emptyenv())
+
+EvtTail$fit <- function(draws, level) .Call(wrap__EvtTail__fit, draws, level)
+
+EvtTail$threshold <- function() .Call(wrap__EvtTail__threshold, self)
+
+EvtTail$p_exceed <- function() .Call(wrap__EvtTail__p_exceed, self)
+
+EvtTail$xi <- function() .Call(wrap__EvtTail__xi, self)
+
+EvtTail$beta <- function() .Call(wrap__EvtTail__beta, self)
+
+EvtTail$var <- function(p) .Call(wrap__EvtTail__var, self, p)
+
+EvtTail$tvar <- function(p) .Call(wrap__EvtTail__tvar, self, p)
+
+#' @export
+`$.EvtTail` <- function (self, name) { func <- EvtTail[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.EvtTail` <- `$.EvtTail`
 
 RiskDistortion <- new.env(parent = emptyenv())
 
