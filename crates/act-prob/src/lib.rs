@@ -8,6 +8,7 @@
 //! With the `arrow` feature, [`PredictiveDistribution`] reads and writes
 //! Arrow IPC files; the format is described in `ipc`.
 
+pub mod counting;
 pub mod distribution;
 pub mod grid;
 #[cfg(feature = "arrow")]
@@ -19,6 +20,7 @@ pub mod risk;
 pub mod sampled;
 pub mod severity;
 
+pub use counting::{Counting, NegativeBinomial, Poisson};
 pub use distribution::Distribution;
 pub use grid::{Discretization, DiscretizationReport, Grid};
 pub use lognormal::Lognormal;

@@ -1,6 +1,6 @@
 # Design note: distribution representations
 
-Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`) · Depends on: nothing · Next: `Counting`
+Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`) · Depends on: nothing · Next: `Dist` enum with the second severity family
 
 ## Goal
 
@@ -34,6 +34,19 @@ conversion reports the error it introduces.
   `Distribution` and a `Severity` (exact LEV, stop-loss and layers on the
   grid). Parity: `validation/reference/grid_mpmath.csv`, masses from the
   textbook definitions at 30 digits (`validation/scripts/mpmath_grid.py`).
+
+- `act_prob::Counting` (`pmf`, `cdf`, `mean`, `variance`, `panjer_ab`, `pgf`,
+  `quantile`, `sample`), with `Poisson` and `NegativeBinomial` (Klugman's
+  `r`, `beta`; SciPy `nbinom(n=r, p=1/(1+beta))`). Parity: claim-count rows
+  in `validation/reference/distributions_scipy.csv`.
+
+### Decisions for `Counting`
+
+- Probabilities come from log-gamma closed forms, not by running the
+  `(a, b, 0)` recursion, so they carry no accumulated rounding; a test
+  checks they satisfy the recursion `panjer_ab` reports.
+- `quantile(1)` is `u64::MAX`; sampling is inverse transform from 0, so its
+  cost grows with the mean (fine for annual claim counts).
 
 ### Decisions for `Grid`
 

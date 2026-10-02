@@ -35,11 +35,36 @@ def rows():
             yield ("lognormal", params, "cdf", x, d.cdf(x), 1e-15, 1e-12)
 
 
+# Claim counts: Poisson(lambda) and negative binomial (r, beta), with SciPy's
+# nbinom(n=r, p=1/(1+beta)).
+POISSONS = [0.5, 3.0, 40.0]
+NEGBINS = [(0.7, 10.0), (2.5, 1.5), (50.0, 0.2)]
+COUNT_PROBS = [0.01, 0.25, 0.5, 0.9, 0.999]
+
+
+def count_rows(name, params, d):
+    yield (name, params, "mean", "", d.mean(), 0.0, 1e-13)
+    yield (name, params, "variance", "", d.var(), 0.0, 1e-12)
+    lo, hi = int(d.ppf(0.001)), int(d.ppf(0.999))
+    for k in sorted({0, 1, lo, int(d.mean()), hi}):
+        yield (name, params, "pmf", k, d.pmf(k), 1e-300, 1e-11)
+        yield (name, params, "cdf", k, d.cdf(k), 0.0, 1e-11)
+    for p in COUNT_PROBS:
+        yield (name, params, "quantile", p, d.ppf(p), 0.0, 0.0)
+
+
+def counts():
+    for lam in POISSONS:
+        yield from count_rows("poisson", f"lambda={lam}", stats.poisson(lam))
+    for r, beta in NEGBINS:
+        yield from count_rows("negative_binomial", f"r={r};beta={beta}", stats.nbinom(r, 1 / (1 + beta)))
+
+
 def main():
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
-        for r in rows():
+        for r in list(rows()) + list(counts()):
             dist, params, qty, arg, expected, abs_tol, rel_tol = r
             w.writerow([dist, params, qty, repr(float(arg)) if arg != "" else "", repr(float(expected)), abs_tol, rel_tol, SOURCE])
     print(f"wrote {OUT}", file=sys.stderr)
