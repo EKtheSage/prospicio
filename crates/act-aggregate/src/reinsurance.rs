@@ -39,6 +39,13 @@ pub struct Layer {
     pub aggregate_deductible: f64,
     /// Annual aggregate limit (AAL); infinite when unlimited.
     pub aggregate_limit: f64,
+    /// Upfront premium for the placed share; used only for reinstatement
+    /// premiums.
+    pub premium: f64,
+    /// Premium rate of each paid reinstatement, as a fraction of
+    /// `premium` (1.0 is 100%), pro rata as to amount. Empty when
+    /// reinstatements are free.
+    pub reinstatement_rates: Vec<f64>,
 }
 
 impl Layer {
@@ -61,6 +68,8 @@ impl Layer {
             share: 1.0,
             aggregate_deductible: 0.0,
             aggregate_limit: f64::INFINITY,
+            premium: 0.0,
+            reinstatement_rates: Vec::new(),
         })
     }
 
@@ -127,17 +136,96 @@ impl Layer {
         Ok(self)
     }
 
-    /// `n` reinstatements: the annual limit becomes `limit × (n + 1)`.
-    /// Reinstatement premiums are not modelled yet.
+    /// `n` free reinstatements: the annual limit becomes
+    /// `limit × (n + 1)`.
     pub fn reinstatements(self, n: u32) -> Result<Self> {
         let aal = self.limit * (f64::from(n) + 1.0);
         self.aggregate_limit(aal)
     }
 
+    /// Paid reinstatements, one per entry of `rates`: the annual limit
+    /// becomes `limit × (rates.len() + 1)`, and reinstating the `k`-th
+    /// limit costs `rates[k] × premium`, pro rata as to amount (see
+    /// [`reinstatement_premium`](Self::reinstatement_premium)). `premium`
+    /// is the upfront premium for the placed share.
+    ///
+    /// ```
+    /// use act_aggregate::Layer;
+    ///
+    /// // 10 xs 10, premium 2, the first reinstatement at 100% and the
+    /// // second at 50%.
+    /// let layer = Layer::xol("10x10", 10.0, 10.0).unwrap()
+    ///     .paid_reinstatements(2.0, vec![1.0, 0.5]).unwrap();
+    /// assert_eq!(layer.aggregate_limit, 30.0);
+    /// // Layer loss 10 + 2 = 12: the first limit is used up and 2 of the
+    /// // second.
+    /// assert_eq!(
+    ///     layer.reinstatement_premium(&[22.0, 12.0]),
+    ///     2.0 * (1.0 * 10.0 + 0.5 * 2.0) / 10.0
+    /// );
+    /// ```
+    pub fn paid_reinstatements(mut self, premium: f64, rates: Vec<f64>) -> Result<Self> {
+        if !self.limit.is_finite() {
+            return Err(invalid(
+                "limit",
+                self.limit,
+                "must be finite for paid reinstatements",
+            ));
+        }
+        if !premium.is_finite() || premium < 0.0 {
+            return Err(invalid(
+                "premium",
+                premium,
+                "must be finite and non-negative",
+            ));
+        }
+        if let Some(&rate) = rates.iter().find(|r| !r.is_finite() || **r < 0.0) {
+            return Err(invalid(
+                "reinstatement_rates",
+                rate,
+                "must be finite and non-negative",
+            ));
+        }
+        let n = u32::try_from(rates.len())
+            .map_err(|_| invalid("reinstatement_rates", rates.len() as f64, "too many"))?;
+        self = self.reinstatements(n)?;
+        self.premium = premium;
+        self.reinstatement_rates = rates;
+        Ok(self)
+    }
+
     /// Ceded loss for one year's losses.
     pub fn ceded(&self, losses: &[f64]) -> f64 {
+        self.share * self.layer_loss(losses)
+    }
+
+    /// Reinstatement premium for one year's losses: with layer loss `L`
+    /// at 100% (after the annual deductible and limit),
+    ///
+    /// ```text
+    /// premium × Σ_k rates[k] × min(max(L - k × limit, 0), limit) / limit
+    /// ```
+    ///
+    /// summing over `k = 0, 1, …` (the `k`-th reinstatement restores the
+    /// limit used up by the `k + 1`-th). Zero when reinstatements are free.
+    pub fn reinstatement_premium(&self, losses: &[f64]) -> f64 {
+        if self.reinstatement_rates.is_empty() {
+            return 0.0;
+        }
+        let loss = self.layer_loss(losses);
+        let used: f64 = self
+            .reinstatement_rates
+            .iter()
+            .enumerate()
+            .map(|(k, rate)| rate * (loss - k as f64 * self.limit).clamp(0.0, self.limit))
+            .sum();
+        self.premium * used / self.limit
+    }
+
+    /// Annual layer loss at 100%, after annual terms.
+    fn layer_loss(&self, losses: &[f64]) -> f64 {
         let recovery: f64 = losses.iter().map(|&x| self.recovery(x)).sum();
-        self.annual(recovery)
+        self.after_terms(recovery)
     }
 
     /// Ceded loss per event for one year, in the order given.
@@ -164,7 +252,7 @@ impl Layer {
             .iter()
             .map(|&x| {
                 recovery += self.recovery(x);
-                let after = self.annual(recovery);
+                let after = self.share * self.after_terms(recovery);
                 let ceded = after - before;
                 before = after;
                 ceded
@@ -177,10 +265,11 @@ impl Layer {
         (loss - self.attachment).max(0.0).min(self.limit)
     }
 
-    /// Ceded loss for an annual recovery total at 100%.
-    fn annual(&self, recovery: f64) -> f64 {
-        let after_aad = (recovery - self.aggregate_deductible).max(0.0);
-        self.share * after_aad.min(self.aggregate_limit)
+    /// Annual terms applied to an annual recovery total at 100%.
+    fn after_terms(&self, recovery: f64) -> f64 {
+        (recovery - self.aggregate_deductible)
+            .max(0.0)
+            .min(self.aggregate_limit)
     }
 }
 
@@ -243,6 +332,11 @@ impl Tower {
 
     /// Ceded loss of each layer, in tower order, for one year's losses.
     pub fn ceded(&self, losses: &[f64]) -> Vec<f64> {
+        self.year(losses).into_iter().map(|(c, _)| c).collect()
+    }
+
+    /// Ceded loss and reinstatement premium of each layer for one year.
+    fn year(&self, losses: &[f64]) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let mut seen = losses.to_vec();
         let last_stage = self.stages.last().copied().unwrap_or(0);
@@ -252,7 +346,7 @@ impl Tower {
             let end = i + self.stages[i..].iter().take_while(|&&s| s == stage).count();
             let mut stage_by_event = vec![0.0; seen.len()];
             for layer in &self.layers[i..end] {
-                ceded.push(layer.ceded(&seen));
+                ceded.push((layer.ceded(&seen), layer.reinstatement_premium(&seen)));
                 if stage < last_stage {
                     for (total, c) in stage_by_event.iter_mut().zip(layer.ceded_by_event(&seen)) {
                         *total += c;
@@ -273,8 +367,11 @@ impl Tower {
     ///
     /// The result has dimensions `["kind", "layer"]` and components
     /// `(gross, ground_up)`, `(ceded, <layer name>)` for each layer, and
-    /// `(net, retained)`, kept joint per year. `aggregate(&["kind"])` gives
-    /// gross, total ceded and net; `net = gross - Σ ceded` in every year.
+    /// `(net, retained)`, kept joint per year, then
+    /// `(reinstatement_premium, <layer name>)` for each layer with paid
+    /// reinstatements. `aggregate(&["kind"])` gives gross, total ceded and
+    /// net (and total reinstatement premium); `net = gross - Σ ceded` in
+    /// every year, so net is a loss, before any premium.
     ///
     /// ```
     /// use act_aggregate::{Layer, Tower, simulate_events};
@@ -297,16 +394,27 @@ impl Tower {
     /// assert_eq!(by_kind.n_components(), 3); // gross, ceded, net
     /// ```
     pub fn apply(&self, events: &EventSet) -> Result<PredictiveDistribution> {
-        let n_layers = self.layers.len();
-        let mut draws = Vec::with_capacity(events.n_sims() * (n_layers + 2));
+        let paid: Vec<bool> = self
+            .layers
+            .iter()
+            .map(|l| !l.reinstatement_rates.is_empty())
+            .collect();
+        let n_components = self.layers.len() + 2 + paid.iter().filter(|&&p| p).count();
+        let mut draws = Vec::with_capacity(events.n_sims() * n_components);
         for sim in 0..events.n_sims() {
             let losses = events.events(sim);
             let gross: f64 = losses.iter().sum();
             draws.push(gross);
-            let ceded = self.ceded(losses);
-            let ceded_total: f64 = ceded.iter().sum();
-            draws.extend(ceded);
+            let year = self.year(losses);
+            let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
+            draws.extend(year.iter().map(|(c, _)| c));
             draws.push(gross - ceded_total);
+            draws.extend(
+                year.iter()
+                    .zip(&paid)
+                    .filter(|(_, p)| **p)
+                    .map(|((_, rp), _)| rp),
+            );
         }
 
         let key = |kind: &str, layer: &str| -> ComponentKey {
@@ -315,18 +423,28 @@ impl Tower {
         let mut components = vec![key("gross", "ground_up")];
         components.extend(self.layers.iter().map(|l| key("ceded", &l.name)));
         components.push(key("net", "retained"));
+        components.extend(
+            self.layers
+                .iter()
+                .filter(|l| !l.reinstatement_rates.is_empty())
+                .map(|l| key("reinstatement_premium", &l.name)),
+        );
 
         let mut provenance = Provenance::new("reinsurance_tower")
             .version("act-aggregate", env!("CARGO_PKG_VERSION"))
             .seed(events.seed(), act_prob::provenance::SIM_INDEX_SCHEME);
         for (l, stage) in self.layers.iter().zip(&self.stages) {
-            provenance = provenance.param(
-                format!("layer:{}", l.name),
-                format!(
-                    "{} xs {}, share {}, aad {}, aal {}, stage {stage}",
-                    l.limit, l.attachment, l.share, l.aggregate_deductible, l.aggregate_limit
-                ),
+            let mut terms = format!(
+                "{} xs {}, share {}, aad {}, aal {}, stage {stage}",
+                l.limit, l.attachment, l.share, l.aggregate_deductible, l.aggregate_limit
             );
+            if !l.reinstatement_rates.is_empty() {
+                terms += &format!(
+                    ", premium {}, reinstatement rates {:?}",
+                    l.premium, l.reinstatement_rates
+                );
+            }
+            provenance = provenance.param(format!("layer:{}", l.name), terms);
         }
         PredictiveDistribution::from_draws(
             vec!["kind".into(), "layer".into()],
@@ -564,6 +682,83 @@ mod tests {
         let result = inuring.apply(&events).unwrap();
         for sim in 0..result.n_sims() {
             let row = result.row(sim).unwrap();
+            assert!((row[0] - row[1] - row[2] - row[3]).abs() <= 1e-6 * row[0].max(1.0));
+        }
+    }
+
+    #[test]
+    fn reinstatement_premiums() {
+        let layer = Layer::xol("10x10", 10.0, 10.0)
+            .unwrap()
+            .paid_reinstatements(2.0, vec![1.0, 0.5])
+            .unwrap();
+        // Recoveries 5 + 10 = 15: the first limit and 5 of the second,
+        // so 2 × (1.0 × 10 + 0.5 × 5) / 10 = 2.5.
+        assert_eq!(layer.reinstatement_premium(&[15.0, 25.0]), 2.5);
+        // Exhausted (30 = three limits): both reinstatements in full.
+        assert_eq!(layer.reinstatement_premium(&[40.0, 40.0, 40.0]), 3.0);
+        assert_eq!(layer.reinstatement_premium(&[5.0]), 0.0);
+        // The share scales the loss, not the premium, which is already
+        // for the placed share.
+        let half = layer.clone().share(0.5).unwrap();
+        assert_eq!(half.reinstatement_premium(&[15.0, 25.0]), 2.5);
+        // The annual deductible comes off first.
+        let aad = layer.clone().aggregate_deductible(5.0).unwrap();
+        assert_eq!(aad.reinstatement_premium(&[15.0, 25.0]), 2.0);
+        assert_eq!(
+            Layer::xol("F", 10.0, 0.0)
+                .unwrap()
+                .reinstatements(2)
+                .unwrap()
+                .reinstatement_premium(&[30.0]),
+            0.0
+        );
+        assert!(
+            Layer::quota_share("QS", 0.5)
+                .unwrap()
+                .paid_reinstatements(1.0, vec![1.0])
+                .is_err()
+        );
+        assert!(
+            Layer::xol("L", 1.0, 0.0)
+                .unwrap()
+                .paid_reinstatements(-1.0, vec![])
+                .is_err()
+        );
+        assert!(
+            Layer::xol("L", 1.0, 0.0)
+                .unwrap()
+                .paid_reinstatements(1.0, vec![f64::NAN])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn tower_reports_reinstatement_premiums() {
+        let tower = Tower::new(vec![
+            Layer::xol("5x5", 5e6, 5e6)
+                .unwrap()
+                .paid_reinstatements(1e6, vec![1.0])
+                .unwrap(),
+            Layer::xol("15x10", 15e6, 10e6).unwrap(),
+        ])
+        .unwrap();
+        let events = events();
+        let result = tower.apply(&events).unwrap();
+        let kinds: Vec<String> = result
+            .components()
+            .iter()
+            .map(|k| k[0].to_string())
+            .collect();
+        assert_eq!(
+            kinds,
+            ["gross", "ceded", "ceded", "net", "reinstatement_premium"]
+        );
+        for sim in 0..result.n_sims() {
+            let row = result.row(sim).unwrap();
+            // One reinstatement at 100%: premium × min(ceded, limit) / limit.
+            let expected = 1e6 * row[1].min(5e6) / 5e6;
+            assert!((row[4] - expected).abs() <= 1e-9 * expected.max(1.0));
             assert!((row[0] - row[1] - row[2] - row[3]).abs() <= 1e-6 * row[0].max(1.0));
         }
     }
