@@ -13,11 +13,22 @@ reference:
       - grid_distribution
       - discretize
       - sampled
+  - title: Large-loss severities
+    contents:
+      - pareto
+      - piecewise_pareto
+      - log_affine_pareto
+      - generalized_pareto
+      - pareto_fit
+      - pareto_severity
+      - local_alpha
   - title: Claim counts
     contents:
       - poisson_count
       - negative_binomial_count
       - negative_binomial_count_from_mean_variance
+      - binomial_count
+      - claim_count
       - pmf
   - title: Distribution functions
     contents:

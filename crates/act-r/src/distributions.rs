@@ -77,69 +77,88 @@ impl Lognormal {
 }
 
 /// A severity accepted wherever a parametric or discretized loss
-/// distribution can be used: a `Lognormal` or a `Grid` pointer.
+/// distribution can be used: a `Lognormal`, a `Grid` or a Pareto-family
+/// pointer.
 pub(crate) enum AnySeverity {
     Lognormal(act_prob::Lognormal),
     Grid(GridInner),
+    Pareto(act_prob::Pareto),
+    PiecewisePareto(act_prob::PiecewisePareto),
+    LogAffinePareto(act_prob::LogAffinePareto),
+    GeneralizedPareto(act_prob::evt::Gpd),
+}
+
+/// Calls `$call` on the inner severity, whichever it is.
+macro_rules! each {
+    ($self:ident, $d:ident => $call:expr) => {
+        match $self {
+            Self::Lognormal($d) => $call,
+            Self::Grid($d) => $call,
+            Self::Pareto($d) => $call,
+            Self::PiecewisePareto($d) => $call,
+            Self::LogAffinePareto($d) => $call,
+            Self::GeneralizedPareto($d) => $call,
+        }
+    };
 }
 
 impl AnySeverity {
     pub(crate) fn from_robj(obj: &Robj) -> Result<Self> {
+        use crate::pareto::{GeneralizedPareto, LogAffinePareto, Pareto, PiecewisePareto};
         if let Ok(d) = <&Lognormal>::try_from(obj) {
             return Ok(Self::Lognormal(d.inner));
         }
         if let Ok(g) = <&Grid>::try_from(obj) {
             return Ok(Self::Grid(g.inner.clone()));
         }
-        Err(Error::Other("expected a lognormal or a grid".into()))
+        if let Ok(d) = <&Pareto>::try_from(obj) {
+            return Ok(Self::Pareto(d.inner));
+        }
+        if let Ok(d) = <&PiecewisePareto>::try_from(obj) {
+            return Ok(Self::PiecewisePareto(d.inner.clone()));
+        }
+        if let Ok(d) = <&LogAffinePareto>::try_from(obj) {
+            return Ok(Self::LogAffinePareto(d.inner));
+        }
+        if let Ok(d) = <&GeneralizedPareto>::try_from(obj) {
+            return Ok(Self::GeneralizedPareto(d.inner));
+        }
+        Err(Error::Other(
+            "expected a severity: lognormal, grid, or a Pareto-family distribution".into(),
+        ))
     }
 }
 
 impl Distribution for AnySeverity {
     fn mean(&self) -> f64 {
-        match self {
-            Self::Lognormal(d) => d.mean(),
-            Self::Grid(g) => g.mean(),
-        }
+        each!(self, d => d.mean())
     }
     fn variance(&self) -> f64 {
-        match self {
-            Self::Lognormal(d) => d.variance(),
-            Self::Grid(g) => g.variance(),
-        }
+        each!(self, d => d.variance())
     }
     fn cdf(&self, x: f64) -> f64 {
-        match self {
-            Self::Lognormal(d) => d.cdf(x),
-            Self::Grid(g) => g.cdf(x),
-        }
+        each!(self, d => d.cdf(x))
+    }
+    fn survival(&self, x: f64) -> f64 {
+        each!(self, d => d.survival(x))
     }
     fn quantile(&self, p: f64) -> act_core::Result<f64> {
-        match self {
-            Self::Lognormal(d) => d.quantile(p),
-            Self::Grid(g) => g.quantile(p),
-        }
+        each!(self, d => d.quantile(p))
     }
 }
 
 impl Severity for AnySeverity {
     fn lev(&self, limit: f64) -> f64 {
-        match self {
-            Self::Lognormal(d) => d.lev(limit),
-            Self::Grid(g) => g.lev(limit),
-        }
+        each!(self, d => d.lev(limit))
     }
     fn stop_loss(&self, retention: f64) -> f64 {
-        match self {
-            Self::Lognormal(d) => d.stop_loss(retention),
-            Self::Grid(g) => g.stop_loss(retention),
-        }
+        each!(self, d => d.stop_loss(retention))
+    }
+    fn layer(&self, limit: f64, attachment: f64) -> f64 {
+        each!(self, d => d.layer(limit, attachment))
     }
     fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
-        match self {
-            Self::Lognormal(d) => d.layer_second_moment(limit, attachment),
-            Self::Grid(g) => g.layer_second_moment(limit, attachment),
-        }
+        each!(self, d => d.layer_second_moment(limit, attachment))
     }
 }
 

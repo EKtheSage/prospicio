@@ -7,7 +7,7 @@
 discretize(dist, step, points, method = c("local_moment", "rounding", "lower"))
 }
 \arguments{
-\item{dist}{A \link{lognormal} or a \link{grid_distribution}.}
+\item{dist}{A \link{lognormal}, a \link{grid_distribution} or a Pareto-family severity.}
 
 \item{step}{Grid step.}
 

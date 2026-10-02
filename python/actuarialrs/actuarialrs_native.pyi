@@ -56,6 +56,106 @@ class ArchimedeanCopula:
         """
 
 @final
+class Binomial:
+    """
+    Binomial claim counts: ``n`` risks, each claiming with probability
+    ``p``.
+    
+    Parameters
+    ----------
+    n : int
+        Number of trials.
+    p : float
+        Claim probability in ``[0, 1)``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Binomial
+    >>> Binomial(10, 0.3).mean()
+    3.0
+    """
+    def __getnewargs__(self, /) -> tuple[int, float]: ...
+    def __new__(cls, /, n: int, p: float) -> Binomial: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, k: int) -> float:
+        """
+        ``P(N <= k)``.
+        
+        Parameters
+        ----------
+        k : int
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the claim count.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def n(self, /) -> int:
+        """
+        Number of trials.
+        """
+    @property
+    def p(self, /) -> float:
+        """
+        Claim probability per trial.
+        """
+    def pmf(self, /, k: int) -> float:
+        """
+        ``P(N = k)``.
+        
+        Parameters
+        ----------
+        k : int
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> int:
+        """
+        Smallest ``k`` with ``P(N <= k) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        int
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[int]:
+        """
+        ``n`` claim counts from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of int
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the claim count.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class CompoundReport:
     """
     What a compound calculation produced and the error it introduced.
@@ -368,6 +468,212 @@ class GaussianCopula:
         """
 
 @final
+class GeneralizedPareto:
+    """
+    Generalized Pareto severity with a location (Riegel's parameterization
+    via :meth:`GeneralizedPareto.riegel`): ``P(X > x) =
+    (1 + xi (x - location) / beta) ** (-1 / xi)`` above the location.
+    
+    For tail estimation from draws, see :class:`actuarialrs.risk.Gpd`;
+    this class is the same distribution as a pricing severity.
+    
+    Parameters
+    ----------
+    xi : float
+        Shape.
+    beta : float
+        Scale; finite and positive.
+    location : float, default 0.0
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import GeneralizedPareto
+    >>> g = GeneralizedPareto.riegel(1000.0, 2.0, 1.5)
+    >>> round(g.survival(2000.0), 12) == round((7 / 3) ** -1.5, 12)
+    True
+    """
+    def __getnewargs__(self, /) -> tuple[float, float, float]: ...
+    def __new__(cls, /, xi: float, beta: float, location: float = 0.0) -> GeneralizedPareto: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def beta(self, /) -> float:
+        """
+        Scale ``beta``.
+        """
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def location(self, /) -> float:
+        """
+        Location, where the support starts.
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    @staticmethod
+    def riegel(t: float, alpha_ini: float, alpha_tail: float) -> GeneralizedPareto:
+        """
+        Riegel's generalized Pareto: local alpha ``alpha_ini`` at the
+        threshold ``t``, tending to ``alpha_tail`` far out.
+        
+        Parameters
+        ----------
+        t : float
+        alpha_ini : float
+        alpha_tail : float
+        
+        Returns
+        -------
+        GeneralizedPareto
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def xi(self, /) -> float:
+        """
+        Shape ``xi``.
+        """
+
+@final
 class Gpd:
     """
     The generalized Pareto distribution, as SciPy's
@@ -521,7 +827,7 @@ class Grid:
         
         Parameters
         ----------
-        severity : Lognormal or Grid
+        severity : Lognormal, Grid, Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto
         step : float
         points : int
         
@@ -542,7 +848,7 @@ class Grid:
         
         Parameters
         ----------
-        severity : Lognormal or Grid
+        severity : Lognormal, Grid, Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto
         step : float
         points : int
         
@@ -592,7 +898,7 @@ class Grid:
         
         Parameters
         ----------
-        severity : Lognormal or Grid
+        severity : Lognormal, Grid, Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto
         step : float
         points : int
         
@@ -820,6 +1126,228 @@ class Layer:
         >>> from actuarialrs.aggregate import Layer
         >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
         30.0
+        """
+
+@final
+class LogAffinePareto:
+    """
+    Log-affine local Pareto: the local alpha
+    ``alpha0 * (1 + gamma * ln(x / t))`` rises linearly in the log of the
+    amount, so ``P(X > x) = exp(-alpha0 L - alpha0 gamma L**2 / 2)`` with
+    ``L = ln(x / t)``.
+    
+    Parameters
+    ----------
+    t : float
+        Threshold; finite and positive.
+    alpha0 : float
+        Local alpha at ``t``; finite and positive.
+    gamma : float
+        Non-negative; 0 gives the Pareto.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import LogAffinePareto
+    >>> d = LogAffinePareto.from_delta(1e6, 1.5, 0.5)
+    >>> round(d.local_alpha(2e6), 12)
+    2.0
+    """
+    def __getnewargs__(self, /) -> tuple[float, float, float]: ...
+    def __new__(cls, /, t: float, alpha0: float, gamma: float) -> LogAffinePareto: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha0(self, /) -> float:
+        """
+        Local alpha at the threshold.
+        """
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def delta(self, /) -> float:
+        """
+        ``delta = alpha0 * gamma * ln 2``.
+        """
+    @staticmethod
+    def from_delta(t: float, alpha0: float, delta: float) -> LogAffinePareto:
+        """
+        The distribution from ``delta = alpha0 * gamma * ln 2``, the rise
+        in the local alpha each time the amount doubles.
+        
+        Parameters
+        ----------
+        t : float
+        alpha0 : float
+        delta : float
+        
+        Returns
+        -------
+        LogAffinePareto
+        """
+    @property
+    def gamma(self, /) -> float:
+        """
+        ``gamma``.
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def local_alpha(self, /, x: float) -> float:
+        """
+        The local Pareto alpha ``-x S'(x) / S(x)`` at ``x``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def t(self, /) -> float:
+        """
+        Threshold ``t``.
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
         """
 
 @final
@@ -1128,6 +1656,449 @@ class NegativeBinomial:
     def variance(self, /) -> float:
         """
         Variance of the claim count.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class Pareto:
+    """
+    Single-parameter Pareto: ``P(X > x) = (t / x) ** alpha`` for ``x >= t``,
+    optionally truncated (conditioned on ``X < truncation``).
+    
+    Parameters
+    ----------
+    t : float
+        Threshold; finite and positive.
+    alpha : float
+        Pareto alpha; finite and positive.
+    truncation : float, optional
+        Truncation point above ``t``.
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is out of range.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Pareto
+    >>> p = Pareto(500.0, 2.0)
+    >>> round(p.layer(4000.0, 1000.0), 9)
+    200.0
+    """
+    def __getnewargs__(self, /) -> tuple[float, float, float |None]: ...
+    def __new__(cls, /, t: float, alpha: float, truncation: float |None = None) -> Pareto: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        Pareto alpha.
+        """
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def fit(losses: Sequence[float], t: float, reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncation: float |None = None) -> Pareto:
+        """
+        Maximum likelihood fit of the alpha to large losses at or above
+        ``t``.
+        
+        Parameters
+        ----------
+        losses : list of float
+        t : float
+            Threshold of the fitted Pareto.
+        reporting_thresholds : list of float, optional
+            Per-loss thresholds below which a loss would not have been
+            reported; raised to ``t``.
+        censored : list of bool, optional
+            ``True`` where a loss was capped by a policy limit.
+        weights : list of float, optional
+        truncation : float, optional
+        
+        Returns
+        -------
+        Pareto
+        
+        Examples
+        --------
+        >>> from actuarialrs.distributions import Pareto
+        >>> round(Pareto.fit([1500.0, 2500.0, 4000.0], 1000.0).alpha, 6)
+        1.10524
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def t(self, /) -> float:
+        """
+        Threshold ``t``.
+        """
+    @property
+    def truncation(self, /) -> float |None:
+        """
+        Truncation point, or ``None``.
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class PiecewisePareto:
+    """
+    Piecewise Pareto: alpha ``alpha[k]`` above threshold ``t[k]``, the
+    general large-loss model and the result of tower matching.
+    
+    Parameters
+    ----------
+    t : list of float
+        Strictly increasing positive thresholds.
+    alpha : list of float
+        One alpha per threshold; interior ones may be 0, the last must be
+        positive.
+    truncation : float, optional
+        Truncation point above the last threshold.
+    truncation_type : {"lp", "wd"}, default "lp"
+        Truncate the last piece only, or the whole distribution.
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is out of range.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PiecewisePareto
+    >>> pp = PiecewisePareto([1000.0, 2000.0], [1.0, 2.0])
+    >>> round(pp.survival(4000.0), 12)
+    0.125
+    """
+    def __getnewargs__(self, /) -> tuple[list[float], list[float], float |None, str]: ...
+    def __new__(cls, /, t: Sequence[float], alpha: Sequence[float], truncation: float |None = None, truncation_type: str = "lp") -> PiecewisePareto: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> list[float]:
+        """
+        Alphas, one per threshold.
+        """
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def fit(losses: Sequence[float], t: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncation: float |None = None) -> PiecewisePareto:
+        """
+        Maximum likelihood fit of the alphas for thresholds ``t`` to large
+        losses at or above ``t[0]``.
+        
+        Parameters
+        ----------
+        losses : list of float
+        t : list of float
+            Thresholds of the fitted distribution.
+        reporting_thresholds : list of float, optional
+        censored : list of bool, optional
+        weights : list of float, optional
+        truncation : float, optional
+            Truncation of the last piece (whole-distribution truncation is
+            not supported for fits).
+        
+        Returns
+        -------
+        PiecewisePareto
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def t(self, /) -> list[float]:
+        """
+        Thresholds.
+        """
+    @property
+    def truncation(self, /) -> float |None:
+        """
+        Truncation point, or ``None``.
+        """
+    @property
+    def truncation_type(self, /) -> str |None:
+        """
+        ``"lp"`` or ``"wd"`` when truncated, else ``None``.
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
         
         Returns
         -------
@@ -1781,6 +2752,32 @@ def allocate(pd: PredictiveDistribution, distortion: Distortion) -> list[float]:
     [2.5, 5.5]
     """
 
+def claim_count(mean: float, dispersion: float) -> Any:
+    """
+    The claim count with this mean and dispersion ``Var[N] / E[N]``:
+    binomial below 1, Poisson at 1, negative binomial above 1.
+    
+    A binomial needs a whole number of trials, so below 1 the trials are
+    ``mean / (1 - dispersion)`` rounded up: the mean is kept and the
+    dispersion moves up to the nearest attainable value.
+    
+    Parameters
+    ----------
+    mean : float
+    dispersion : float
+        Positive.
+    
+    Returns
+    -------
+    Binomial or Poisson or NegativeBinomial
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import claim_count
+    >>> claim_count(4.0, 2.5)
+    NegativeBinomial(r=2.6666666666666665, beta=1.5)
+    """
+
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
     """
     Aggregate loss ``S = X_1 + ... + X_N`` by fast Fourier transform.
@@ -1790,7 +2787,7 @@ def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundRepo
     
     Parameters
     ----------
-    frequency : Poisson or NegativeBinomial
+    frequency : Poisson, NegativeBinomial or Binomial
     severity : Grid
     points : int
     
@@ -1841,7 +2838,7 @@ def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundR
     
     Parameters
     ----------
-    frequency : Poisson or NegativeBinomial
+    frequency : Poisson, NegativeBinomial or Binomial
     severity : Grid
         Severity on a grid; the result uses its step.
     points : int
@@ -1876,7 +2873,7 @@ def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys
     Parameters
     ----------
     copula : GaussianCopula, StudentTCopula or ArchimedeanCopula
-    marginals : list of Lognormal or Grid
+    marginals : list of Lognormal, Grid or Pareto-family severities
         One per copula dimension.
     n_sims : int
     seed : int
@@ -1906,8 +2903,8 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     
     Parameters
     ----------
-    frequency : Poisson or NegativeBinomial
-    severity : Lognormal or Grid
+    frequency : Poisson, NegativeBinomial or Binomial
+    severity : Lognormal, Grid, Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto
     n_sims : int
     seed : int
     

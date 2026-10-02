@@ -15,6 +15,7 @@ use crate::to_py;
 enum AnyCount {
     Poisson(act_prob::Poisson),
     NegativeBinomial(act_prob::NegativeBinomial),
+    Binomial(act_prob::Binomial),
 }
 
 impl AnyCount {
@@ -25,8 +26,11 @@ impl AnyCount {
         if let Ok(n) = obj.extract::<PyRef<'_, PyNegativeBinomial>>() {
             return Ok(Self::NegativeBinomial(n.inner));
         }
+        if let Ok(n) = obj.extract::<PyRef<'_, crate::pareto::PyBinomial>>() {
+            return Ok(Self::Binomial(n.inner));
+        }
         Err(PyTypeError::new_err(
-            "expected a Poisson or a NegativeBinomial",
+            "expected a Poisson, a NegativeBinomial or a Binomial",
         ))
     }
 
@@ -34,6 +38,7 @@ impl AnyCount {
         match self {
             Self::Poisson(n) => n,
             Self::NegativeBinomial(n) => n,
+            Self::Binomial(n) => n,
         }
     }
 }
@@ -121,7 +126,7 @@ fn compound(
 ///
 /// Parameters
 /// ----------
-/// frequency : Poisson or NegativeBinomial
+/// frequency : Poisson, NegativeBinomial or Binomial
 /// severity : Grid
 ///     Severity on a grid; the result uses its step.
 /// points : int
@@ -163,7 +168,7 @@ pub(crate) fn panjer(
 ///
 /// Parameters
 /// ----------
-/// frequency : Poisson or NegativeBinomial
+/// frequency : Poisson, NegativeBinomial or Binomial
 /// severity : Grid
 /// points : int
 ///
@@ -269,8 +274,8 @@ impl PyEventSet {
 ///
 /// Parameters
 /// ----------
-/// frequency : Poisson or NegativeBinomial
-/// severity : Lognormal or Grid
+/// frequency : Poisson, NegativeBinomial or Binomial
+/// severity : Lognormal, Grid, Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto
 /// n_sims : int
 /// seed : int
 ///

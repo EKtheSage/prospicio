@@ -468,7 +468,7 @@ impl PyArchimedeanCopula {
 /// Parameters
 /// ----------
 /// copula : GaussianCopula, StudentTCopula or ArchimedeanCopula
-/// marginals : list of Lognormal or Grid
+/// marginals : list of Lognormal, Grid or Pareto-family severities
 ///     One per copula dimension.
 /// n_sims : int
 /// seed : int

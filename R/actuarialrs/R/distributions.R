@@ -152,9 +152,11 @@ s7_call <- function() sys.call(sys.parent(2))
 #' `lev(dist, limit)` is `E[min(X, limit)]`; `stop_loss(dist, retention)` is
 #' `E[max(X - retention, 0)]`, computed directly so it stays accurate far into
 #' the tail; `layer(dist, limit, attachment)` is the expected loss to the layer
-#' `limit` xs `attachment`. Defined for [lognormal] and [grid_distribution] severities.
+#' `limit` xs `attachment`. Defined for [lognormal] and [grid_distribution]
+#' severities and the Pareto family ([pareto], [piecewise_pareto],
+#' [log_affine_pareto], [generalized_pareto]).
 #'
-#' @param dist A [lognormal] or a [grid_distribution].
+#' @param dist A severity.
 #' @param limit,retention Numeric vector.
 #' @param attachment Layer attachment, a single number.
 #' @param ... Unused; for methods.
@@ -189,7 +191,7 @@ S7::method(layer, lognormal) <- function(dist, limit, attachment, ...) {
 #'
 #' `P(N = k)` for each element of `k`.
 #'
-#' @param dist A [poisson_count] or [negative_binomial_count].
+#' @param dist A [poisson_count], [negative_binomial_count] or [binomial_count].
 #' @param k Non-negative whole numbers.
 #' @param ... Unused; for methods.
 #' @returns Numeric vector the length of `k`.
@@ -339,7 +341,7 @@ grid_distribution <- S7::new_class(
 #' stochastic lower bound. Mass above the last point is lumped onto it and
 #' reported in `g@report$tail_mass`.
 #'
-#' @param dist A [lognormal] or a [grid_distribution].
+#' @param dist A [lognormal], a [grid_distribution] or a Pareto-family severity.
 #' @param step Grid step.
 #' @param points Number of grid points.
 #' @param method One of `"local_moment"`, `"rounding"`, `"lower"`.

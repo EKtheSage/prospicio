@@ -7,9 +7,10 @@
 simulate_events(frequency, severity, n_sims, seed)
 }
 \arguments{
-\item{frequency}{A \link{poisson_count} or \link{negative_binomial_count}.}
+\item{frequency}{A \link{poisson_count}, \link{negative_binomial_count} or \link{binomial_count}.}
 
-\item{severity}{A \link{lognormal} or \link{grid_distribution}.}
+\item{severity}{A \link{lognormal}, \link{grid_distribution} or Pareto-family severity
+(\link{pareto}, \link{piecewise_pareto}, \link{log_affine_pareto}, \link{generalized_pareto}).}
 
 \item{n_sims}{Number of simulated years.}
 

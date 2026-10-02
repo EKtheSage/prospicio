@@ -7,7 +7,7 @@
 pmf(dist, k, ...)
 }
 \arguments{
-\item{dist}{A \link{poisson_count} or \link{negative_binomial_count}.}
+\item{dist}{A \link{poisson_count}, \link{negative_binomial_count} or \link{binomial_count}.}
 
 \item{k}{Non-negative whole numbers.}
 

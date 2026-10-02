@@ -14,7 +14,7 @@ stop_loss(dist, retention, ...)
 layer(dist, limit, attachment, ...)
 }
 \arguments{
-\item{dist}{A \link{lognormal} or a \link{grid_distribution}.}
+\item{dist}{A severity.}
 
 \item{limit, retention}{Numeric vector.}
 
@@ -29,7 +29,9 @@ A numeric vector (\code{lev}, \code{stop_loss}) or a single number (\code{layer}
 \code{lev(dist, limit)} is \code{E[min(X, limit)]}; \code{stop_loss(dist, retention)} is
 \code{E[max(X - retention, 0)]}, computed directly so it stays accurate far into
 the tail; \code{layer(dist, limit, attachment)} is the expected loss to the layer
-\code{limit} xs \code{attachment}. Defined for \link{lognormal} and \link{grid_distribution} severities.
+\code{limit} xs \code{attachment}. Defined for \link{lognormal} and \link{grid_distribution}
+severities and the Pareto family (\link{pareto}, \link{piecewise_pareto},
+\link{log_affine_pareto}, \link{generalized_pareto}).
 }
 \examples{
 d <- lognormal(7, 0.5)
