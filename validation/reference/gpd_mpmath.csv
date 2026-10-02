@@ -1,0 +1,9 @@
+distribution,params,quantity,arg,expected,abs_tol,rel_tol,source
+gpd_fit,xi0=0.4;beta0=1.0;n=200,xi,,0.39214053608636544,1e-09,1e-08,mpmath 1.4.1 profile likelihood at 30 digits
+gpd_fit,xi0=0.4;beta0=1.0;n=200,beta,,1.0054340781830099,1e-09,1e-08,mpmath 1.4.1 profile likelihood at 30 digits
+gpd_fit,xi0=-0.2;beta0=2.0;n=150,xi,,-0.21589765667181398,1e-09,1e-08,mpmath 1.4.1 profile likelihood at 30 digits
+gpd_fit,xi0=-0.2;beta0=2.0;n=150,beta,,2.0279470132372101,1e-09,1e-08,mpmath 1.4.1 profile likelihood at 30 digits
+gpd_fit,xi0=0.05;beta0=3.0;n=400,xi,,0.044627435056874126,1e-09,1e-08,mpmath 1.4.1 profile likelihood at 30 digits
+gpd_fit,xi0=0.05;beta0=3.0;n=400,beta,,3.0133806387641833,1e-09,1e-08,mpmath 1.4.1 profile likelihood at 30 digits
+gpd_fit,xi0=1.1;beta0=0.5;n=100,xi,,1.0859696926079820,1e-09,1e-08,mpmath 1.4.1 profile likelihood at 30 digits
+gpd_fit,xi0=1.1;beta0=0.5;n=100,beta,,0.50338076437521179,1e-09,1e-08,mpmath 1.4.1 profile likelihood at 30 digits

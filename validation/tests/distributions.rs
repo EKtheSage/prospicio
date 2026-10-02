@@ -128,3 +128,25 @@ fn special_functions_match_scipy() {
         }
     });
 }
+
+#[test]
+fn gpd_fits_match_exact_likelihood() {
+    use act_prob::evt::Gpd;
+    let cases = reference("gpd_mpmath.csv");
+    check(&cases, |c| {
+        let (xi0, beta0) = (c.param("params", "xi0"), c.param("params", "beta0"));
+        let n = c.param("params", "n") as usize;
+        // The data set in validation/scripts/mpmath_gpd.py.
+        let truth = Gpd::new(xi0, beta0).ok()?;
+        let y: Vec<f64> = (1..=n)
+            .map(|i| truth.quantile((i as f64 - 0.5) / n as f64))
+            .collect::<Result<_, _>>()
+            .ok()?;
+        let fit = Gpd::fit(&y).ok()?;
+        match c.get("quantity") {
+            "xi" => Some(fit.xi()),
+            "beta" => Some(fit.beta()),
+            _ => None,
+        }
+    });
+}

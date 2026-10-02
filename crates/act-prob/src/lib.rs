@@ -1,8 +1,10 @@
 //! Risk mathematics: the hub every domain reads and writes.
 //!
 //! Holds the [`Distribution`] and [`Severity`] traits, the parametric [`Lognormal`], the
-//! sampled representation [`Sampled`], the shared [`risk`] measures and
-//! [`PredictiveDistribution`], the joint result every model returns. The
+//! sampled representation [`Sampled`], the shared [`risk`] measures,
+//! [`Distortion`] risk measures and their allocation, [`copula`]s, extreme
+//! value tails ([`evt`]) and [`PredictiveDistribution`], the joint result
+//! every model returns. The
 //! discretized representation follows `docs/design/distributions.md`.
 //!
 //! With the `arrow` feature, [`PredictiveDistribution`] reads and writes
@@ -12,6 +14,7 @@ pub mod copula;
 pub mod counting;
 pub mod distortion;
 pub mod distribution;
+pub mod evt;
 pub mod grid;
 #[cfg(feature = "arrow")]
 pub mod ipc;

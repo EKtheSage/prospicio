@@ -16,7 +16,7 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 | Allocation (co-measures) | `PredictiveDistribution::allocate` | `PredictiveDistribution` |
 | Copulas | `copula` | uniforms per simulation, then marginals |
 | Iman-Conover | `copula` | reorders existing draws |
-| EVT tails | later | — |
+| EVT tails | `evt` | sorted draws (peaks over threshold) |
 
 ## What exists
 
@@ -34,6 +34,9 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   component's draws to a target correlation.
 - `ArchimedeanCopula` (Clayton, Gumbel, Frank, Joe), exchangeable in any
   dimension.
+- `act_prob::evt`: `Gpd` (generalized Pareto, with a maximum likelihood
+  `Gpd::fit`) and `PotTail`, a peaks-over-threshold tail fitted to the
+  draws above an empirical quantile, with VaR and TVaR beyond the draws.
 - Python `actuarialrs.risk` (`Distortion`, `allocate`, the three copula
   classes, `simulate`, `iman_conover`) and R (`distortion`,
   `risk_measure`, `allocate`, `gaussian_copula`, `t_copula`,
@@ -81,6 +84,17 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 - **Uniforms stay inside `(0, 1)`.** Far in a tail, `Φ` or a generator
   rounds to 0 or 1, where marginal quantiles are infinite, so every copula
   clamps to `[f64::MIN_POSITIVE, 1 - 2^-53]`.
+- **EVT tails are peaks over threshold.** `PotTail::fit(draws, level)`
+  takes the threshold `u` at the empirical `level` quantile and fits a GPD
+  to the exceedances; `P(X > x) = p_u S_GPD(x - u)`, so VaR and TVaR at
+  levels above `level` have closed forms and extend past the largest
+  draw. Choosing the threshold stays the caller's job.
+- **The GPD fit maximizes the profile likelihood in `θ = ξ / β`**
+  (Grimshaw): a log-spaced scan over `θ` in `(-1/max, ∞)` finds the
+  maximum, then bisection on the analytic score refines it, since a search
+  on the likelihood value pins a maximum only to about `sqrt(eps)`. The
+  estimate is restricted to `ξ > -1`, where the maximum likelihood
+  estimator exists.
 - **Iman-Conover reorders draws**: it imposes a target correlation on
   existing marginals (for example, reserve and premium-risk results
   simulated separately) by permuting them, so every marginal keeps its
@@ -122,6 +136,13 @@ is checked on three lognormal lines: marginals unchanged draw for draw,
 normal-score correlations within 0.01 of the target, and Spearman's rho
 within 0.01 of `(6 / π) asin(ρ / 2)`.
 
+`validation/reference/gpd_mpmath.csv` checks GPD fits against the exact
+maximum likelihood estimate at 30 digits (`validation/scripts/mpmath_gpd.py`,
+the score root by the Illinois method) on four data sets with
+`ξ` from -0.2 to 1.1, at `1e-8`. Unit tests check that fits recover
+known parameters from 50,000 draws, the GPD's closed forms, and that a
+`PotTail` built from known parts gives `P(X > VaR(p)) = 1 - p`.
+
 Allocation tests check, on simulated dependent lines, that contributions
 sum to the measure of the total for every distortion, that the mean
 allocates to component means, and that CoTVaR equals the conditional tail
@@ -131,4 +152,6 @@ total but split differently give the same allocation in either order.
 
 ## Next
 
-1. EVT tails (GPD over a threshold) for extrapolating past the draws.
+1. Python and R bindings for EVT tails.
+2. Nested Archimedean and vine copulas; threshold diagnostics (mean
+   excess plots) for EVT.
