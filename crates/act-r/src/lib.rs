@@ -13,6 +13,7 @@ use extendr_api::{Error, Result};
 mod aggregate;
 mod distributions;
 mod pareto;
+mod pricing;
 mod risk;
 
 pub(crate) fn to_r(e: act_core::Error) -> Error {
@@ -35,5 +36,6 @@ extendr_module! {
     use aggregate;
     use distributions;
     use pareto;
+    use pricing;
     use risk;
 }

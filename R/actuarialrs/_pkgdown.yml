@@ -63,6 +63,16 @@ reference:
       - inuring_tower
       - tower_ceded
       - apply_tower
+  - title: Pricing
+    contents:
+      - collective_model
+      - collective_simulate
+      - excess_frequency
+      - layer_rating
+      - match_tower
+      - fit_pml_curve
+      - fit_references
+      - tower_model
   - title: Risk measures
     contents:
       - distortion

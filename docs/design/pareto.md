@@ -429,6 +429,14 @@ Where the references leave freedom, this completion differs from the R
 package's (which fills gaps with a default alpha), so the two are not
 compared.
 
+Bindings: Python `actuarialrs.pricing` (`CollectiveModel`, `ilf`,
+`loss_elimination_ratio`, `pareto_extrapolation`, the three implied-alpha
+functions, `match_tower`, `fit_pml_curve`, `fit_references`,
+`TowerModel`) and R (`collective_model()`, `collective_simulate()`,
+`excess_frequency()`, `ilf()`, `loss_elimination_ratio()`,
+`pareto_extrapolation()`, `alpha_between_*()`, `match_tower()`,
+`fit_pml_curve()`, `fit_references()`, `tower_model`).
+
 `Layer` and `Tower` (contract terms) still live in `act-aggregate`;
 `docs/architecture.md` gives them their own `reinsurance` namespace, and
 moving them is a separate, later PR.

@@ -10,14 +10,14 @@ use crate::distributions::{AnySeverity, Grid, NegativeBinomial, Poisson, Predict
 use crate::{to_r, whole};
 
 /// A claim count accepted by the aggregation functions.
-enum AnyCount {
+pub(crate) enum AnyCount {
     Poisson(act_prob::Poisson),
     NegativeBinomial(act_prob::NegativeBinomial),
     Binomial(act_prob::Binomial),
 }
 
 impl AnyCount {
-    fn from_robj(obj: &Robj) -> Result<Self> {
+    pub(crate) fn from_robj(obj: &Robj) -> Result<Self> {
         if let Ok(n) = <&Poisson>::try_from(obj) {
             return Ok(Self::Poisson(n.inner));
         }
@@ -38,6 +38,27 @@ impl AnyCount {
             Self::NegativeBinomial(n) => n,
             Self::Binomial(n) => n,
         }
+    }
+}
+
+impl Counting for AnyCount {
+    fn pmf(&self, k: u64) -> f64 {
+        self.as_counting().pmf(k)
+    }
+    fn mean(&self) -> f64 {
+        self.as_counting().mean()
+    }
+    fn variance(&self) -> f64 {
+        self.as_counting().variance()
+    }
+    fn panjer_ab(&self) -> (f64, f64) {
+        self.as_counting().panjer_ab()
+    }
+    fn pgf(&self, z: f64) -> f64 {
+        self.as_counting().pgf(z)
+    }
+    fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
+        self.as_counting().pgf_complex(z)
     }
 }
 
@@ -81,7 +102,7 @@ fn compound(frequency: Robj, severity: Robj, points: f64, method: &str) -> Resul
 /// Simulated years of individual losses.
 #[extendr]
 pub(crate) struct EventSet {
-    inner: EventSetInner,
+    pub(crate) inner: EventSetInner,
 }
 
 #[extendr]

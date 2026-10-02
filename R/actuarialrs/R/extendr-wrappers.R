@@ -10,6 +10,18 @@ compound <- function(frequency, severity, points, method) .Call(wrap__compound, 
 
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
 
+pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
+
+pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)
+
+pricing_pareto_extrapolation <- function(from, to, alpha, truncation_at) .Call(wrap__pricing_pareto_extrapolation, from, to, alpha, truncation_at)
+
+pricing_alpha_between_layers <- function(a, b, truncation_at) .Call(wrap__pricing_alpha_between_layers, a, b, truncation_at)
+
+pricing_alpha_between_frequency_and_layer <- function(threshold, frequency, limit, attachment, expected_loss, truncation_at) .Call(wrap__pricing_alpha_between_frequency_and_layer, threshold, frequency, limit, attachment, expected_loss, truncation_at)
+
+pricing_alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, frequency_2, truncation_at) .Call(wrap__pricing_alpha_between_frequencies, threshold_1, frequency_1, threshold_2, frequency_2, truncation_at)
+
 iman_conover_reorder <- function(pd, correlation, seed) .Call(wrap__iman_conover_reorder, pd, correlation, seed)
 
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
@@ -451,6 +463,50 @@ Binomial$sample <- function(n, seed, stream) .Call(wrap__Binomial__sample, self,
 
 #' @export
 `[[.Binomial` <- `$.Binomial`
+
+CollectiveModel <- new.env(parent = emptyenv())
+
+CollectiveModel$new <- function(frequency, severity) .Call(wrap__CollectiveModel__new, frequency, severity)
+
+CollectiveModel$excess_frequency <- function(x) .Call(wrap__CollectiveModel__excess_frequency, self, x)
+
+CollectiveModel$layer_mean <- function(limit, attachment) .Call(wrap__CollectiveModel__layer_mean, self, limit, attachment)
+
+CollectiveModel$layer_variance <- function(limit, attachment) .Call(wrap__CollectiveModel__layer_variance, self, limit, attachment)
+
+CollectiveModel$mean <- function() .Call(wrap__CollectiveModel__mean, self)
+
+CollectiveModel$variance <- function() .Call(wrap__CollectiveModel__variance, self)
+
+CollectiveModel$simulate <- function(n_sims, seed) .Call(wrap__CollectiveModel__simulate, self, n_sims, seed)
+
+#' @export
+`$.CollectiveModel` <- function (self, name) { func <- CollectiveModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CollectiveModel` <- `$.CollectiveModel`
+
+TowerModel <- new.env(parent = emptyenv())
+
+TowerModel$frequency <- function() .Call(wrap__TowerModel__frequency, self)
+
+TowerModel$severity <- function() .Call(wrap__TowerModel__severity, self)
+
+TowerModel$excess_frequency <- function(x) .Call(wrap__TowerModel__excess_frequency, self, x)
+
+TowerModel$layer_loss <- function(limit, attachment) .Call(wrap__TowerModel__layer_loss, self, limit, attachment)
+
+TowerModel$match_tower <- function(attachments, layer_losses, frequencies, rule_name) .Call(wrap__TowerModel__match_tower, attachments, layer_losses, frequencies, rule_name)
+
+TowerModel$fit_pml_curve <- function(return_periods, amounts, tail_alpha, truncation_at) .Call(wrap__TowerModel__fit_pml_curve, return_periods, amounts, tail_alpha, truncation_at)
+
+TowerModel$fit_references <- function(limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name) .Call(wrap__TowerModel__fit_references, limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name)
+
+#' @export
+`$.TowerModel` <- function (self, name) { func <- TowerModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.TowerModel` <- `$.TowerModel`
 
 EvtTail <- new.env(parent = emptyenv())
 

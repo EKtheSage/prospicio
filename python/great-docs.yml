@@ -51,6 +51,20 @@ reference:
     contents:
       - aggregate.Layer
       - aggregate.Tower
+  - title: Pricing
+    desc: The collective model, layer rating, and reinsurance tower matching.
+    contents:
+      - pricing.CollectiveModel
+      - pricing.ilf
+      - pricing.loss_elimination_ratio
+      - pricing.pareto_extrapolation
+      - pricing.alpha_between_layers
+      - pricing.alpha_between_frequency_and_layer
+      - pricing.alpha_between_frequencies
+      - pricing.match_tower
+      - pricing.fit_pml_curve
+      - pricing.fit_references
+      - pricing.TowerModel
   - title: Risk measures
     desc: Distortion risk measures and their allocation to components.
     contents:
