@@ -10,8 +10,26 @@ reference:
       - distribution
       - lognormal
       - lognormal_from_mean_cv
+      - grid_distribution
+      - discretize
+      - sampled
+  - title: Claim counts
+    contents:
+      - poisson_count
+      - negative_binomial_count
+      - negative_binomial_count_from_mean_variance
+      - pmf
   - title: Distribution functions
     contents:
       - cdf
       - variance
       - draws
+      - severity
+      - risk_measures
+  - title: Predictive distributions
+    contents:
+      - predictive_distribution
+      - marginal
+      - total
+      - draw_matrix
+      - provenance
