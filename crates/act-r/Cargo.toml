@@ -12,6 +12,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 act-core.workspace = true
+act-aggregate.workspace = true
 act-prob.workspace = true
 # result_condition: Rust errors come back as R condition objects (raised by
 # R/actuarialrs/R/distributions.R) instead of panics, so R prints no Rust

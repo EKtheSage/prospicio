@@ -27,6 +27,9 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   with share, annual aggregate deductible and limit, and reinstatements;
   `Tower::apply(&events)` returns gross, ceded per layer and net as one
   joint `PredictiveDistribution`.
+- Python (`actuarialrs.aggregate`) and R (`compound_distribution`,
+  `simulate_events`, `xol_layer`, `reinsurance_tower`) bindings for all of
+  the above.
 
 ## Decisions
 
@@ -91,4 +94,3 @@ the simulated mean ceded loss against the exact `E[N] · Severity::layer`
 
 1. Inuring order, reinstatement premiums, quota share and surplus,
    aggregate stop-loss.
-2. Python and R bindings for aggregate results.

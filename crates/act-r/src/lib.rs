@@ -10,6 +10,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
+mod aggregate;
 mod distributions;
 
 pub(crate) fn to_r(e: act_core::Error) -> Error {
@@ -29,5 +30,6 @@ pub(crate) fn whole(x: f64, name: &str) -> Result<u64> {
 
 extendr_module! {
     mod actuarialrs;
+    use aggregate;
     use distributions;
 }

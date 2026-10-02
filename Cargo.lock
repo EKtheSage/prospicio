@@ -56,6 +56,7 @@ dependencies = [
 name = "act-r"
 version = "0.0.1"
 dependencies = [
+ "act-aggregate",
  "act-core",
  "act-prob",
  "extendr-api",

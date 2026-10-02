@@ -33,3 +33,16 @@ reference:
       - total
       - draw_matrix
       - provenance
+  - title: Aggregate loss
+    contents:
+      - compound_distribution
+      - simulate_events
+      - event_set
+      - events
+      - event_counts
+  - title: Reinsurance
+    contents:
+      - xol_layer
+      - ceded
+      - reinsurance_tower
+      - apply_tower
