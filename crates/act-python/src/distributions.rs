@@ -223,13 +223,13 @@ impl PyLognormal {
 
 /// A severity accepted wherever a parametric or discretized loss
 /// distribution can be used.
-enum AnySeverity {
+pub(crate) enum AnySeverity {
     Lognormal(act_prob::Lognormal),
     Grid(Grid),
 }
 
 impl AnySeverity {
-    fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+    pub(crate) fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(d) = obj.extract::<PyRef<'_, PyLognormal>>() {
             return Ok(Self::Lognormal(d.inner));
         }

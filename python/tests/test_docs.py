@@ -11,7 +11,7 @@ import pytest
 
 import actuarialrs as ar
 
-NAMESPACES = [ar.distributions]
+NAMESPACES = [ar.distributions, ar.aggregate]
 
 
 def public_objects():
