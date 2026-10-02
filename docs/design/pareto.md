@@ -304,6 +304,14 @@ alpha_tail)`: `Gpd` gained a location (`Gpd::shifted`) and implements
 `ξ` (series for small `c / β`, where the closed forms cancel). Truncation
 of the generalized Pareto, which the R package also offers, waits for a
 use.
+`LargeLosses` holds large-loss data with per-loss reporting thresholds,
+censoring flags and weights; `Pareto::fit` (closed form, or a score
+bisection when truncated) and `PiecewisePareto::fit` (closed form per
+piece; a truncated last piece is a truncated Pareto fit) estimate alphas
+from it. Truncated estimates are clamped to `[1e-3, 1e3]`, since data
+rising towards the truncation point can put the maximum at or below 0.
+Fits of the generalized and local Pareto, and of a piecewise Pareto
+truncated as a whole, come later.
 `Binomial` and `PanjerClass::from_mean_dispersion` complete the Panjer
 class. A binomial needs a whole number of trials, so below dispersion 1
 the trials are `mean / (1 − dispersion)` rounded up: the mean is kept and

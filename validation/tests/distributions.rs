@@ -297,3 +297,56 @@ fn gen_pareto_matches_r() {
         }
     });
 }
+
+#[test]
+fn pareto_fits_match_r() {
+    use act_prob::{LargeLosses, Pareto, PiecewisePareto, Truncation};
+    // The data in validation/scripts/r_pareto_fit.R.
+    let losses = vec![
+        1100.0, 1300.0, 1750.0, 2000.0, 2600.0, 3500.0, 4100.0, 5200.0, 7000.0, 9000.0, 12000.0,
+        18000.0, 25000.0, 40000.0,
+    ];
+    let cases = reference("pareto_fit_r.csv");
+    check(&cases, |c| {
+        let fields: std::collections::HashMap<&str, &str> = c
+            .get("params")
+            .split(';')
+            .filter_map(|kv| kv.split_once('='))
+            .collect();
+        let list = |k: &str| -> Option<Vec<f64>> {
+            match *fields.get(k)? {
+                "" => Some(vec![]),
+                v => v.split('|').map(|x| x.parse().ok()).collect(),
+            }
+        };
+        let mut data = LargeLosses::new(losses.clone()).ok()?;
+        let (r, cens, w) = (list("r")?, list("c")?, list("w")?);
+        if !r.is_empty() {
+            data = data.reporting_thresholds(r).ok()?;
+        }
+        if !cens.is_empty() {
+            data = data
+                .censored(cens.iter().map(|&x| x == 1.0).collect())
+                .ok()?;
+        }
+        if !w.is_empty() {
+            data = data.weights(w).ok()?;
+        }
+        let truncation: Option<f64> = fields.get("truncation").and_then(|v| v.parse().ok());
+        let t = list("t")?;
+        let index = c.number("index")? as usize;
+        match c.get("model") {
+            "pareto" => Some(Pareto::fit(t[0], &data, truncation).ok()?.alpha()),
+            "piecewise_pareto" => {
+                let fit = PiecewisePareto::fit(
+                    t,
+                    &data,
+                    truncation.map(|tr| (tr, Truncation::LastPiece)),
+                )
+                .ok()?;
+                fit.alphas().get(index).copied()
+            }
+            _ => None,
+        }
+    });
+}
