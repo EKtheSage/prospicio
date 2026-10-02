@@ -12,6 +12,7 @@ use extendr_api::{Error, Result};
 
 mod aggregate;
 mod distributions;
+mod risk;
 
 pub(crate) fn to_r(e: act_core::Error) -> Error {
     Error::Other(e.to_string())
@@ -32,4 +33,5 @@ extendr_module! {
     mod actuarialrs;
     use aggregate;
     use distributions;
+    use risk;
 }

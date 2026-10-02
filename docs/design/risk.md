@@ -34,6 +34,11 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   component's draws to a target correlation.
 - `ArchimedeanCopula` (Clayton, Gumbel, Frank, Joe), exchangeable in any
   dimension.
+- Python `actuarialrs.risk` (`Distortion`, `allocate`, the three copula
+  classes, `simulate`, `iman_conover`) and R (`distortion`,
+  `risk_measure`, `allocate`, `gaussian_copula`, `t_copula`,
+  `archimedean_copula`, `copula_sample`, `copula_simulate`,
+  `iman_conover`).
 
 ## Decisions
 
@@ -126,5 +131,4 @@ total but split differently give the same allocation in either order.
 
 ## Next
 
-1. Python and R bindings.
-2. EVT tails (GPD over a threshold) for extrapolating past the draws.
+1. EVT tails (GPD over a threshold) for extrapolating past the draws.

@@ -42,3 +42,16 @@ reference:
     contents:
       - aggregate.Layer
       - aggregate.Tower
+  - title: Risk measures
+    desc: Distortion risk measures and their allocation to components.
+    contents:
+      - risk.Distortion
+      - risk.allocate
+  - title: Dependence
+    desc: Copulas, and reordering existing draws to a target correlation.
+    contents:
+      - risk.GaussianCopula
+      - risk.StudentTCopula
+      - risk.ArchimedeanCopula
+      - risk.simulate
+      - risk.iman_conover

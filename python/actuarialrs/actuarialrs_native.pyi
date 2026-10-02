@@ -2,6 +2,60 @@ from collections.abc import Sequence
 from typing import Any, final
 
 @final
+class ArchimedeanCopula:
+    """
+    An exchangeable Archimedean copula: Clayton, Gumbel, Frank or Joe.
+    
+    Parameters
+    ----------
+    family : {"clayton", "gumbel", "frank", "joe"}
+    theta : float
+        Positive for Clayton and Frank; at least 1 for Gumbel and Joe.
+    dim : int
+    
+    Raises
+    ------
+    ValueError
+        If the family is unknown or ``theta`` is out of range.
+    
+    Examples
+    --------
+    >>> from actuarialrs.risk import ArchimedeanCopula
+    >>> c = ArchimedeanCopula("clayton", 2.0, 3)  # Kendall's tau 0.5
+    >>> c.dim, c.family
+    (3, 'clayton')
+    """
+    def __new__(cls, /, family: str, theta: float, dim: int) -> ArchimedeanCopula: ...
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of dimensions.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        Family name.
+        """
+    def sample(self, /, n: int, seed: int) -> list[list[float]]:
+        """
+        ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def theta(self, /) -> float:
+        """
+        Copula parameter.
+        """
+
+@final
 class CompoundReport:
     """
     What a compound calculation produced and the error it introduced.
@@ -100,6 +154,122 @@ class DiscretizationReport:
         """
 
 @final
+class Distortion:
+    """
+    A distortion risk measure: ``rho(X) = integral of g(S(x)) dx`` for a
+    concave distortion ``g`` of the survival function.
+    
+    Make one with ``Distortion.tvar``, ``Distortion.wang``,
+    ``Distortion.proportional_hazard`` or ``Distortion.dual_power``. Every
+    one is coherent, and each has a parameter value that gives the mean.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Sampled
+    >>> from actuarialrs.risk import Distortion
+    >>> x = Sampled([1.0, 2.0, 3.0, 4.0])
+    >>> Distortion.tvar(0.5).measure(x)
+    3.5
+    >>> Distortion.tvar(0.5).weights(4)
+    [0.0, 0.0, 0.5, 0.5]
+    """
+    def __repr__(self, /) -> str: ...
+    @staticmethod
+    def dual_power(beta: float) -> Distortion:
+        """
+        Dual power transform: ``g(s) = 1 - (1 - s)**beta``.
+        
+        Parameters
+        ----------
+        beta : float
+            ``>= 1``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    def g(self, /, s: float) -> float:
+        """
+        The distortion ``g(s)`` of a survival probability ``s``.
+        
+        Parameters
+        ----------
+        s : float
+        
+        Returns
+        -------
+        float
+        """
+    def measure(self, /, dist: Any) -> float:
+        """
+        The risk measure of a distribution.
+        
+        Parameters
+        ----------
+        dist : Sampled, Grid or PredictiveDistribution
+            A predictive distribution is measured on its total.
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def proportional_hazard(rho: float) -> Distortion:
+        """
+        Proportional hazard transform: ``g(s) = s**rho``.
+        
+        Parameters
+        ----------
+        rho : float
+            In ``(0, 1]``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def tvar(p: float) -> Distortion:
+        """
+        Tail value at risk at level ``p``: ``g(s) = min(s / (1 - p), 1)``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def wang(lam: float) -> Distortion:
+        """
+        Wang transform: ``g(s) = Phi(Phi^-1(s) + lambda)``.
+        
+        Parameters
+        ----------
+        lam : float
+            Market price of risk, ``>= 0``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    def weights(self, /, n: int) -> list[float]:
+        """
+        Weights for ``n`` equally likely values sorted ascending.
+        
+        Parameters
+        ----------
+        n : int
+        
+        Returns
+        -------
+        list of float
+            Non-negative, summing to 1.
+        """
+
+@final
 class EventSet:
     """
     Simulated years of individual losses, for applying per-loss terms such
@@ -152,6 +322,49 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+
+@final
+class GaussianCopula:
+    """
+    The Gaussian copula with correlation matrix ``correlation``.
+    
+    Parameters
+    ----------
+    correlation : list of list of float
+        Symmetric, unit diagonal, positive definite.
+    
+    Raises
+    ------
+    ValueError
+        If the matrix is not a valid correlation matrix.
+    
+    Examples
+    --------
+    >>> from actuarialrs.risk import GaussianCopula
+    >>> c = GaussianCopula([[1.0, 0.5], [0.5, 1.0]])
+    >>> u = c.sample(3, seed=1)
+    >>> len(u), all(0.0 < x < 1.0 for row in u for x in row)
+    (3, True)
+    """
+    def __new__(cls, /, correlation: Sequence[Sequence[float]]) -> GaussianCopula: ...
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of dimensions.
+        """
+    def sample(self, /, n: int, seed: int) -> list[list[float]]:
+        """
+        ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        
+        Returns
+        -------
+        list of list of float
         """
 
 @final
@@ -1237,6 +1450,55 @@ class Sampled:
         """
 
 @final
+class StudentTCopula:
+    """
+    The Student t copula with correlation matrix ``correlation`` and ``nu``
+    degrees of freedom: Gaussian-like correlation with joint extremes.
+    
+    Parameters
+    ----------
+    correlation : list of list of float
+        Symmetric, unit diagonal, positive definite.
+    nu : float
+        Degrees of freedom, positive.
+    
+    Raises
+    ------
+    ValueError
+        If the matrix or ``nu`` is invalid.
+    
+    Examples
+    --------
+    >>> from actuarialrs.risk import StudentTCopula
+    >>> StudentTCopula([[1.0, 0.5], [0.5, 1.0]], 4.0).dim
+    2
+    """
+    def __new__(cls, /, correlation: Sequence[Sequence[float]], nu: float) -> StudentTCopula: ...
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of dimensions.
+        """
+    @property
+    def nu(self, /) -> float:
+        """
+        Degrees of freedom.
+        """
+    def sample(self, /, n: int, seed: int) -> list[list[float]]:
+        """
+        ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        
+        Returns
+        -------
+        list of list of float
+        """
+
+@final
 class Tower:
     """
     A reinsurance programme: layers in inuring stages.
@@ -1332,6 +1594,36 @@ class Tower:
         Stage of each layer, in order, starting at 0.
         """
 
+def allocate(pd: PredictiveDistribution, distortion: Distortion) -> list[float]:
+    """
+    Allocates a distortion risk measure of the total to the components.
+    
+    Euler allocation by co-measure: simulations are ranked by their total
+    and each component gets the distortion-weighted sum of its own draws.
+    The contributions sum to ``distortion.measure(pd)``; for
+    ``Distortion.tvar(p)`` they are the CoTVaRs. Components must add up to
+    the portfolio being allocated.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+    distortion : Distortion
+    
+    Returns
+    -------
+    list of float
+        One contribution per component, in ``pd.components()`` order.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.risk import Distortion, allocate
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> allocate(pd, Distortion.tvar(0.5))
+    [2.5, 5.5]
+    """
+
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
     """
     Aggregate loss ``S = X_1 + ... + X_N`` by fast Fourier transform.
@@ -1353,6 +1645,37 @@ def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundRepo
     ------
     ValueError
         If ``points`` is 0.
+    """
+
+def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+    """
+    Reorders each component's draws to a target correlation (Iman-Conover).
+    
+    Every component keeps exactly its own draws; only their pairing across
+    simulations changes. The correlation of the result's normal scores is
+    close to ``correlation``, and Spearman's rho close to
+    ``(6 / pi) asin(correlation / 2)``.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+    correlation : list of list of float
+        One row and column per component.
+    seed : int
+    
+    Returns
+    -------
+    PredictiveDistribution
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.risk import iman_conover
+    >>> rows = [[float(i), float((i * 7919) % 1000)] for i in range(1000)]
+    >>> pd = PredictiveDistribution(["lob"], [(0,), (1,)], rows)
+    >>> joined = iman_conover(pd, [[1.0, 0.7], [0.7, 1.0]], seed=3)
+    >>> sorted(joined.marginal((1,)).draws) == sorted(pd.marginal((1,)).draws)
+    True
     """
 
 def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
@@ -1384,6 +1707,39 @@ def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundR
     >>> agg, report = panjer(Poisson(3.0), sev, 100)
     >>> round(agg.mean(), 6)
     6.15
+    """
+
+def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
+    """
+    Simulates marginals joined by a copula.
+    
+    In simulation ``i``, draws uniforms from ``copula`` with stream ``i`` of
+    ``seed`` and applies each marginal's quantile function.
+    
+    Parameters
+    ----------
+    copula : GaussianCopula, StudentTCopula or ArchimedeanCopula
+    marginals : list of Lognormal or Grid
+        One per copula dimension.
+    n_sims : int
+    seed : int
+    keys : list of tuple, optional
+        One component key per marginal; defaults to ``(0,), (1,), ...``.
+    dims : list of str, default ["component"]
+    
+    Returns
+    -------
+    PredictiveDistribution
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Lognormal
+    >>> from actuarialrs.risk import GaussianCopula, simulate
+    >>> c = GaussianCopula([[1.0, 0.4], [0.4, 1.0]])
+    >>> pd = simulate(c, [Lognormal.from_mean_cv(100.0, 0.2), Lognormal.from_mean_cv(50.0, 1.0)],
+    ...               10_000, 42, keys=[("motor",), ("property",)], dims=["lob"])
+    >>> abs(pd.mean() - 150.0) < 3.0
+    True
     """
 
 def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> EventSet:
