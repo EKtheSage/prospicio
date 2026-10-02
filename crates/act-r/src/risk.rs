@@ -2,6 +2,7 @@
 
 use act_core::StreamRng;
 use act_prob::copula::{self, Copula};
+use act_prob::evt::{Gpd, PotTail};
 use act_prob::{
     Archimedean, ArchimedeanCopula, Distortion, Empirical, GaussianCopula, Provenance,
     StudentTCopula,
@@ -216,9 +217,60 @@ fn iman_conover_reorder(
     Ok(PredictiveDistribution { inner })
 }
 
+/// A peaks-over-threshold tail.
+#[extendr]
+pub(crate) struct EvtTail {
+    inner: PotTail,
+}
+
+#[extendr]
+impl EvtTail {
+    fn fit(draws: Robj, level: f64) -> Result<Self> {
+        let s = <&Sampled>::try_from(&draws)
+            .map_err(|_| Error::Other("draws must be a sampled object".into()))?;
+        let inner = PotTail::fit(&s.inner, level).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn threshold(&self) -> f64 {
+        self.inner.threshold()
+    }
+
+    fn p_exceed(&self) -> f64 {
+        self.inner.p_exceed()
+    }
+
+    fn xi(&self) -> f64 {
+        self.inner.gpd().xi()
+    }
+
+    fn beta(&self) -> f64 {
+        self.inner.gpd().beta()
+    }
+
+    fn var(&self, p: &[f64]) -> Result<Vec<f64>> {
+        p.iter().map(|&p| self.inner.var(p).map_err(to_r)).collect()
+    }
+
+    fn tvar(&self, p: &[f64]) -> Result<Vec<f64>> {
+        p.iter()
+            .map(|&p| self.inner.tvar(p).map_err(to_r))
+            .collect()
+    }
+}
+
+/// Maximum likelihood GPD fit: `c(xi, beta)`.
+#[extendr]
+fn gpd_mle(exceedances: &[f64]) -> Result<Vec<f64>> {
+    let g = Gpd::fit(exceedances).map_err(to_r)?;
+    Ok(vec![g.xi(), g.beta()])
+}
+
 extendr_module! {
     mod risk;
     fn iman_conover_reorder;
+    fn gpd_mle;
+    impl EvtTail;
     impl RiskDistortion;
     impl RiskCopula;
 }

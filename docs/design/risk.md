@@ -41,7 +41,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   classes, `simulate`, `iman_conover`) and R (`distortion`,
   `risk_measure`, `allocate`, `gaussian_copula`, `t_copula`,
   `archimedean_copula`, `copula_sample`, `copula_simulate`,
-  `iman_conover`).
+  `iman_conover`), and for EVT, Python `Gpd` and `PotTail` and R
+  `gpd_fit` and `pot_tail` (with `VaR` and `TVaR` methods).
 
 ## Decisions
 
@@ -152,6 +153,5 @@ total but split differently give the same allocation in either order.
 
 ## Next
 
-1. Python and R bindings for EVT tails.
-2. Nested Archimedean and vine copulas; threshold diagnostics (mean
+1. Nested Archimedean and vine copulas; threshold diagnostics (mean
    excess plots) for EVT.

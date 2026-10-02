@@ -64,3 +64,7 @@ reference:
       - copula_sample
       - copula_simulate
       - iman_conover
+  - title: Extreme value tails
+    contents:
+      - pot_tail
+      - gpd_fit

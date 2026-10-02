@@ -74,3 +74,23 @@ def test_iman_conover_keeps_marginals():
     cov = sum((ra[i] - mean) * (rb[i] - mean) for i in range(n))
     var = sum((r - mean) ** 2 for r in range(n))
     assert cov / var == pytest.approx(6 / math.pi * math.asin(0.4), abs=0.02)
+
+
+def test_evt():
+    from actuarialrs.risk import Gpd, PotTail
+
+    g = Gpd(0.25, 2.0)
+    assert g.cdf(g.quantile(0.9)) == pytest.approx(0.9)
+    fit = Gpd.fit([g.quantile((i - 0.5) / 2000) for i in range(1, 2001)])
+    assert fit.xi == pytest.approx(0.25, abs=0.02)
+    with pytest.raises(ValueError):
+        Gpd.fit([1.0, 1.0, 1.0])
+    with pytest.raises(ValueError):
+        Gpd(0.1, 0.0)
+    s = Sampled([Lognormal(0.0, 1.0).quantile((i - 0.5) / 20_000) for i in range(1, 20_001)])
+    tail = PotTail.fit(s, 0.9)
+    assert tail.p_exceed == pytest.approx(0.1, abs=1e-3)
+    assert tail.var(0.9999) > s.var(0.9999) * 0.5
+    assert tail.tvar(0.99) > tail.var(0.99)
+    with pytest.raises(ValueError):
+        tail.var(0.5)

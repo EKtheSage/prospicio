@@ -3,6 +3,7 @@
 
 use act_core::StreamRng;
 use act_prob::copula::{self, Copula};
+use act_prob::evt::{Gpd, PotTail};
 use act_prob::{
     Archimedean, ArchimedeanCopula, Distortion, Empirical, GaussianCopula, Provenance,
     StudentTCopula,
@@ -571,4 +572,201 @@ pub(crate) fn iman_conover(
         .detach(|| copula::iman_conover(pd, &r, seed))
         .map_err(to_py)?;
     Ok(PyPredictiveDistribution { inner })
+}
+
+/// The generalized Pareto distribution, as SciPy's
+/// ``genpareto(c=xi, scale=beta)``.
+///
+/// ``P(X > x) = (1 + xi x / beta)**(-1 / xi)`` for ``x >= 0``.
+///
+/// Parameters
+/// ----------
+/// xi : float
+///     Shape; moments of order ``1 / xi`` and above are infinite.
+/// beta : float
+///     Scale, positive.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.risk import Gpd
+/// >>> g = Gpd(0.5, 2.0)
+/// >>> g.mean()
+/// 4.0
+/// >>> fit = Gpd.fit([g.quantile((i - 0.5) / 1000) for i in range(1, 1001)])
+/// >>> round(fit.xi, 2), round(fit.beta, 2)
+/// (0.5, 2.0)
+#[pyclass(name = "Gpd", module = "actuarialrs.risk", frozen)]
+pub(crate) struct PyGpd {
+    inner: Gpd,
+}
+
+#[pymethods]
+impl PyGpd {
+    #[new]
+    fn new(xi: f64, beta: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Gpd::new(xi, beta).map_err(to_py)?,
+        })
+    }
+
+    /// Maximum likelihood fit to exceedances (values over a threshold,
+    /// minus the threshold).
+    ///
+    /// Parameters
+    /// ----------
+    /// exceedances : list of float
+    ///     At least 3, non-negative, not all equal.
+    ///
+    /// Returns
+    /// -------
+    /// Gpd
+    #[staticmethod]
+    fn fit(py: Python<'_>, exceedances: Vec<f64>) -> PyResult<Self> {
+        let inner = py.detach(|| Gpd::fit(&exceedances)).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Shape.
+    #[getter]
+    fn xi(&self) -> f64 {
+        self.inner.xi()
+    }
+
+    /// Scale.
+    #[getter]
+    fn beta(&self) -> f64 {
+        self.inner.beta()
+    }
+
+    /// Mean, ``beta / (1 - xi)``; infinite for ``xi >= 1``.
+    fn mean(&self) -> f64 {
+        act_prob::Distribution::mean(&self.inner)
+    }
+
+    /// Distribution function.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn cdf(&self, x: f64) -> f64 {
+        act_prob::Distribution::cdf(&self.inner, x)
+    }
+
+    /// Quantile function.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn quantile(&self, p: f64) -> PyResult<f64> {
+        act_prob::Distribution::quantile(&self.inner, p).map_err(to_py)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Gpd({:?}, {:?})", self.inner.xi(), self.inner.beta())
+    }
+}
+
+/// A peaks-over-threshold tail: draws above a threshold modelled by a
+/// fitted generalized Pareto distribution, for VaR and TVaR beyond the
+/// draws.
+///
+/// Make one with ``PotTail.fit(draws, level)``, which takes the threshold
+/// at the empirical ``level`` quantile.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Lognormal, Sampled
+/// >>> from actuarialrs.risk import PotTail
+/// >>> d = Lognormal(0.0, 1.0)
+/// >>> s = Sampled([d.quantile((i - 0.5) / 100_000) for i in range(1, 100_001)])
+/// >>> tail = PotTail.fit(s, 0.95)
+/// >>> abs(tail.var(0.999) / d.quantile(0.999) - 1) < 0.02
+/// True
+#[pyclass(name = "PotTail", module = "actuarialrs.risk", frozen)]
+pub(crate) struct PyPotTail {
+    inner: PotTail,
+}
+
+#[pymethods]
+impl PyPotTail {
+    /// Fits a tail to the draws above their empirical ``level`` quantile.
+    ///
+    /// Parameters
+    /// ----------
+    /// draws : Sampled
+    /// level : float
+    ///     For example 0.95 for the top 5%.
+    ///
+    /// Returns
+    /// -------
+    /// PotTail
+    #[staticmethod]
+    fn fit(py: Python<'_>, draws: PyRef<'_, PySampled>, level: f64) -> PyResult<Self> {
+        let s = &draws.inner;
+        let inner = py.detach(|| PotTail::fit(s, level)).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Threshold ``u``.
+    #[getter]
+    fn threshold(&self) -> f64 {
+        self.inner.threshold()
+    }
+
+    /// Share of draws above the threshold.
+    #[getter]
+    fn p_exceed(&self) -> f64 {
+        self.inner.p_exceed()
+    }
+
+    /// The fitted GPD for the exceedances.
+    #[getter]
+    fn gpd(&self) -> PyGpd {
+        PyGpd {
+            inner: *self.inner.gpd(),
+        }
+    }
+
+    /// VaR at ``p >= 1 - p_exceed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn var(&self, p: f64) -> PyResult<f64> {
+        self.inner.var(p).map_err(to_py)
+    }
+
+    /// TVaR at ``p >= 1 - p_exceed``; infinite when ``xi >= 1``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn tvar(&self, p: f64) -> PyResult<f64> {
+        self.inner.tvar(p).map_err(to_py)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PotTail(threshold={:?}, p_exceed={:?}, gpd={})",
+            self.inner.threshold(),
+            self.inner.p_exceed(),
+            self.gpd().__repr__()
+        )
+    }
 }

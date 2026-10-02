@@ -368,6 +368,87 @@ class GaussianCopula:
         """
 
 @final
+class Gpd:
+    """
+    The generalized Pareto distribution, as SciPy's
+    ``genpareto(c=xi, scale=beta)``.
+    
+    ``P(X > x) = (1 + xi x / beta)**(-1 / xi)`` for ``x >= 0``.
+    
+    Parameters
+    ----------
+    xi : float
+        Shape; moments of order ``1 / xi`` and above are infinite.
+    beta : float
+        Scale, positive.
+    
+    Examples
+    --------
+    >>> from actuarialrs.risk import Gpd
+    >>> g = Gpd(0.5, 2.0)
+    >>> g.mean()
+    4.0
+    >>> fit = Gpd.fit([g.quantile((i - 0.5) / 1000) for i in range(1, 1001)])
+    >>> round(fit.xi, 2), round(fit.beta, 2)
+    (0.5, 2.0)
+    """
+    def __new__(cls, /, xi: float, beta: float) -> Gpd: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def beta(self, /) -> float:
+        """
+        Scale.
+        """
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def fit(exceedances: Sequence[float]) -> Gpd:
+        """
+        Maximum likelihood fit to exceedances (values over a threshold,
+        minus the threshold).
+        
+        Parameters
+        ----------
+        exceedances : list of float
+            At least 3, non-negative, not all equal.
+        
+        Returns
+        -------
+        Gpd
+        """
+    def mean(self, /) -> float:
+        """
+        Mean, ``beta / (1 - xi)``; infinite for ``xi >= 1``.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile function.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def xi(self, /) -> float:
+        """
+        Shape.
+        """
+
+@final
 class Grid:
     """
     A distribution on the points ``0, step, 2*step, ...``: the discretized
@@ -1151,6 +1232,82 @@ class Poisson:
     def variance(self, /) -> float:
         """
         Variance of the claim count.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class PotTail:
+    """
+    A peaks-over-threshold tail: draws above a threshold modelled by a
+    fitted generalized Pareto distribution, for VaR and TVaR beyond the
+    draws.
+    
+    Make one with ``PotTail.fit(draws, level)``, which takes the threshold
+    at the empirical ``level`` quantile.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Lognormal, Sampled
+    >>> from actuarialrs.risk import PotTail
+    >>> d = Lognormal(0.0, 1.0)
+    >>> s = Sampled([d.quantile((i - 0.5) / 100_000) for i in range(1, 100_001)])
+    >>> tail = PotTail.fit(s, 0.95)
+    >>> abs(tail.var(0.999) / d.quantile(0.999) - 1) < 0.02
+    True
+    """
+    def __repr__(self, /) -> str: ...
+    @staticmethod
+    def fit(draws: Sampled, level: float) -> PotTail:
+        """
+        Fits a tail to the draws above their empirical ``level`` quantile.
+        
+        Parameters
+        ----------
+        draws : Sampled
+        level : float
+            For example 0.95 for the top 5%.
+        
+        Returns
+        -------
+        PotTail
+        """
+    @property
+    def gpd(self, /) -> Gpd:
+        """
+        The fitted GPD for the exceedances.
+        """
+    @property
+    def p_exceed(self, /) -> float:
+        """
+        Share of draws above the threshold.
+        """
+    @property
+    def threshold(self, /) -> float:
+        """
+        Threshold ``u``.
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        TVaR at ``p >= 1 - p_exceed``; infinite when ``xi >= 1``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        VaR at ``p >= 1 - p_exceed``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------

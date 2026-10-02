@@ -1,10 +1,12 @@
 """Risk measures and dependence: distortion risk measures, allocation,
-copulas and Iman-Conover reordering."""
+copulas, Iman-Conover reordering and extreme value tails."""
 
 from .actuarialrs_native import (
     ArchimedeanCopula,
     Distortion,
     GaussianCopula,
+    Gpd,
+    PotTail,
     StudentTCopula,
     allocate,
     iman_conover,
@@ -19,4 +21,6 @@ __all__ = [
     "ArchimedeanCopula",
     "simulate",
     "iman_conover",
+    "Gpd",
+    "PotTail",
 ]

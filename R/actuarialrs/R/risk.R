@@ -247,3 +247,59 @@ iman_conover <- function(x, correlation, seed) {
     iman_conover_reorder(x@ptr, as.double(correlation), as.double(seed))
   ))
 }
+
+#' Generalized Pareto fit
+#'
+#' Maximum likelihood fit of the generalized Pareto distribution
+#' `P(X > x) = (1 + xi * x / beta)^(-1 / xi)` to exceedances (values over a
+#' threshold, minus the threshold), as `evd::fpot` or SciPy's
+#' `genpareto.fit(floc = 0)`.
+#'
+#' @param exceedances At least 3 non-negative values, not all equal.
+#' @returns A named numeric vector `c(xi = , beta = )`.
+#' @export
+#' @examples
+#' y <- 2 * expm1(0.5 * -log1p(-ppoints(1000))) / 0.5 # GPD(0.5, 2) quantiles
+#' gpd_fit(y)
+gpd_fit <- function(exceedances) {
+  stats::setNames(rust_result(gpd_mle(as.double(exceedances))), c("xi", "beta"))
+}
+
+#' Peaks-over-threshold tail
+#'
+#' Fits a generalized Pareto distribution to the draws above their empirical
+#' `level` quantile, so that [VaR()] and [TVaR()] at levels above `level`
+#' extend smoothly past the largest draw.
+#'
+#' @param draws A [sampled] object.
+#' @param level Threshold level, for example `0.95` for the top 5%.
+#' @returns A `pot_tail` object with `threshold`, `p_exceed`, `xi` and `beta`
+#'   properties; [VaR()] and [TVaR()] accept levels `p >= 1 - p_exceed`.
+#' @export
+#' @examples
+#' s <- sampled(qlnorm(ppoints(100000)))
+#' tail <- pot_tail(s, 0.95)
+#' VaR(tail, 0.999) / qlnorm(0.999)
+#' TVaR(tail, c(0.99, 0.999))
+pot_tail <- S7::new_class(
+  "pot_tail",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("EvtTail"),
+    threshold = S7::new_property(S7::class_double, getter = function(self) self@ptr$threshold()),
+    p_exceed = S7::new_property(S7::class_double, getter = function(self) self@ptr$p_exceed()),
+    xi = S7::new_property(S7::class_double, getter = function(self) self@ptr$xi()),
+    beta = S7::new_property(S7::class_double, getter = function(self) self@ptr$beta())
+  ),
+  constructor = function(draws, level) {
+    S7::new_object(S7::S7_object(), ptr = rust_result(EvtTail$fit(draws@ptr, as.double(level))))
+  }
+)
+
+S7::method(VaR, pot_tail) <- function(dist, p, ...) rust_result(dist@ptr$var(as.double(p)), s7_call())
+S7::method(TVaR, pot_tail) <- function(dist, p, ...) rust_result(dist@ptr$tvar(as.double(p)), s7_call())
+S7::method(print, pot_tail) <- function(x, ...) {
+  cat(sprintf("<pot_tail> threshold %s (top %s), GPD xi = %s, beta = %s\n",
+              format(x@threshold), format(x@p_exceed), format(x@xi), format(x@beta)))
+  invisible(x)
+}

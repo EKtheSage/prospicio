@@ -11,7 +11,7 @@ VaR(dist, p, ...)
 TVaR(dist, p, ...)
 }
 \arguments{
-\item{dist}{A \link{sampled} or \link{predictive_distribution}.}
+\item{dist}{A \link{sampled}, \link{predictive_distribution} or \link{pot_tail}.}
 
 \item{p}{Probabilities in \verb{[0, 1]}.}
 

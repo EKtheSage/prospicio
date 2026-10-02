@@ -34,7 +34,7 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::risk::{
-        PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyStudentTCopula, allocate,
-        iman_conover, simulate,
+        PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail, PyStudentTCopula,
+        allocate, iman_conover, simulate,
     };
 }
