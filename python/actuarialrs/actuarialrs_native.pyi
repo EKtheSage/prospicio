@@ -357,14 +357,23 @@ class Layer:
     aggregate_deductible : float, default 0.0
     aggregate_limit : float, default inf
     reinstatements : int, optional
-        Sets ``aggregate_limit`` to ``limit * (reinstatements + 1)``; cannot be
-        combined with ``aggregate_limit``.
+        Free reinstatements: sets ``aggregate_limit`` to
+        ``limit * (reinstatements + 1)``; cannot be combined with
+        ``aggregate_limit``.
+    premium : float, default 0.0
+        Upfront premium for the placed share; used only by
+        ``reinstatement_rates``.
+    reinstatement_rates : list of float, optional
+        Paid reinstatements, one rate per reinstatement as a fraction of
+        ``premium`` (1.0 is 100%), pro rata as to amount. Sets
+        ``aggregate_limit`` to ``limit * (len(reinstatement_rates) + 1)``;
+        cannot be combined with ``aggregate_limit`` or ``reinstatements``.
     
     Raises
     ------
     ValueError
-        If a term is out of range, or both ``aggregate_limit`` and
-        ``reinstatements`` are given.
+        If a term is out of range, or more than one of ``aggregate_limit``,
+        ``reinstatements`` and ``reinstatement_rates`` is given.
     
     Examples
     --------
@@ -374,8 +383,11 @@ class Layer:
     2000000.0
     >>> layer.ceded([12e6, 20e6, 30e6])
     10000000.0
+    >>> paid = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
+    >>> paid.reinstatement_premium([22.0, 12.0])
+    2.2
     """
-    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None) -> Layer: ...
+    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None) -> Layer: ...
     def __repr__(self, /) -> str: ...
     @property
     def aggregate_deductible(self, /) -> float:
@@ -404,6 +416,28 @@ class Layer:
         -------
         float
         """
+    def ceded_by_event(self, /, losses: Sequence[float]) -> list[float]:
+        """
+        Ceded loss per event for one year, taking losses as chronological.
+        
+        The annual deductible absorbs the first recoveries and the annual
+        limit stops the last ones; the entries sum to ``ceded(losses)``.
+        
+        Parameters
+        ----------
+        losses : list of float
+        
+        Returns
+        -------
+        list of float
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import Layer
+        >>> layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=15.0)
+        >>> layer.ceded_by_event([8.0, 20.0, 12.0])
+        [0.0, 9.0, 6.0]
+        """
     @property
     def limit(self, /) -> float:
         """
@@ -415,9 +449,83 @@ class Layer:
         Layer name.
         """
     @property
+    def premium(self, /) -> float:
+        """
+        Upfront premium for the placed share.
+        """
+    @staticmethod
+    def quota_share(name: str, cession: float) -> Layer:
+        """
+        A quota share ceding ``cession`` of every loss.
+        
+        Unlimited cover from the first unit with ``share = cession``.
+        
+        Parameters
+        ----------
+        name : str
+        cession : float
+            In ``(0, 1]``.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import Layer
+        >>> Layer.quota_share("QS", 0.4).ceded([10.0, 5.0])
+        6.0
+        """
+    def reinstatement_premium(self, /, losses: Sequence[float]) -> float:
+        """
+        Reinstatement premium for one year's losses.
+        
+        With layer loss ``L`` at 100% after annual terms, ``premium *
+        sum(rate_k * min(max(L - k * limit, 0), limit) / limit)``; zero when
+        reinstatements are free.
+        
+        Parameters
+        ----------
+        losses : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def reinstatement_rates(self, /) -> list[float]:
+        """
+        Rate of each paid reinstatement; empty when reinstatements are free.
+        """
+    @property
     def share(self, /) -> float:
         """
         Placed share.
+        """
+    @staticmethod
+    def stop_loss(name: str, limit: float, retention: float) -> Layer:
+        """
+        An aggregate stop-loss: ``limit`` xs ``retention`` on the year's total.
+        
+        Covers the total of the losses it sees: gross, or net of earlier
+        stages in an inuring ``Tower``.
+        
+        Parameters
+        ----------
+        name : str
+        limit : float
+            Annual limit; may be ``inf``.
+        retention : float
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import Layer
+        >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
+        30.0
         """
 
 @final
@@ -1131,7 +1239,11 @@ class Sampled:
 @final
 class Tower:
     """
-    Layers applied to the same ground-up losses (no inuring order yet).
+    A reinsurance programme: layers in inuring stages.
+    
+    ``Tower(layers)`` is one stage: every layer sees the gross losses.
+    ``Tower.inuring(stages)`` applies stages in order, each seeing the losses
+    net of all earlier stages, event by event.
     
     Parameters
     ----------
@@ -1160,8 +1272,10 @@ class Tower:
         Applies the tower to every simulated year.
         
         The result has dimensions ``["kind", "layer"]``: ``("gross",
-        "ground_up")``, ``("ceded", name)`` per layer and ``("net",
-        "retained")``. ``aggregate(["kind"])`` gives gross, total ceded and net.
+        "ground_up")``, ``("ceded", name)`` per layer, ``("net",
+        "retained")``, then ``("reinstatement_premium", name)`` per layer with
+        paid reinstatements. ``aggregate(["kind"])`` gives gross, total ceded
+        and net; net is a loss, before premiums.
         
         Parameters
         ----------
@@ -1171,10 +1285,51 @@ class Tower:
         -------
         PredictiveDistribution
         """
+    def ceded(self, /, losses: Sequence[float]) -> list[float]:
+        """
+        Ceded loss of each layer, in order, for one year's losses.
+        
+        Parameters
+        ----------
+        losses : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @staticmethod
+    def inuring(stages: Sequence[Sequence[Layer]]) -> Tower:
+        """
+        A tower whose stages inure in order.
+        
+        Each stage's layers see the losses net of all earlier stages, event
+        by event, with annual terms used up in event order.
+        
+        Parameters
+        ----------
+        stages : list of list of Layer
+            No stage may be empty; names must be unique across stages.
+        
+        Returns
+        -------
+        Tower
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
+        >>> tower.ceded([30.0])
+        [15.0, 5.0]
+        """
     @property
     def layer_names(self, /) -> list[str]:
         """
         Layer names, in order.
+        """
+    @property
+    def stages(self, /) -> list[int]:
+        """
+        Stage of each layer, in order, starting at 0.
         """
 
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:

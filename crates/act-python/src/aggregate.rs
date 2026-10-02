@@ -323,14 +323,23 @@ pub(crate) fn simulate_events(
 /// aggregate_deductible : float, default 0.0
 /// aggregate_limit : float, default inf
 /// reinstatements : int, optional
-///     Sets ``aggregate_limit`` to ``limit * (reinstatements + 1)``; cannot be
-///     combined with ``aggregate_limit``.
+///     Free reinstatements: sets ``aggregate_limit`` to
+///     ``limit * (reinstatements + 1)``; cannot be combined with
+///     ``aggregate_limit``.
+/// premium : float, default 0.0
+///     Upfront premium for the placed share; used only by
+///     ``reinstatement_rates``.
+/// reinstatement_rates : list of float, optional
+///     Paid reinstatements, one rate per reinstatement as a fraction of
+///     ``premium`` (1.0 is 100%), pro rata as to amount. Sets
+///     ``aggregate_limit`` to ``limit * (len(reinstatement_rates) + 1)``;
+///     cannot be combined with ``aggregate_limit`` or ``reinstatements``.
 ///
 /// Raises
 /// ------
 /// ValueError
-///     If a term is out of range, or both ``aggregate_limit`` and
-///     ``reinstatements`` are given.
+///     If a term is out of range, or more than one of ``aggregate_limit``,
+///     ``reinstatements`` and ``reinstatement_rates`` is given.
 ///
 /// Examples
 /// --------
@@ -340,6 +349,9 @@ pub(crate) fn simulate_events(
 /// 2000000.0
 /// >>> layer.ceded([12e6, 20e6, 30e6])
 /// 10000000.0
+/// >>> paid = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
+/// >>> paid.reinstatement_premium([22.0, 12.0])
+/// 2.2
 #[pyclass(name = "Layer", module = "actuarialrs.aggregate", frozen)]
 pub(crate) struct PyLayer {
     inner: Layer,
@@ -348,7 +360,8 @@ pub(crate) struct PyLayer {
 #[pymethods]
 impl PyLayer {
     #[new]
-    #[pyo3(signature = (name, limit, attachment, share = 1.0, aggregate_deductible = 0.0, aggregate_limit = None, reinstatements = None))]
+    #[pyo3(signature = (name, limit, attachment, share = 1.0, aggregate_deductible = 0.0, aggregate_limit = None, reinstatements = None, premium = 0.0, reinstatement_rates = None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         name: String,
         limit: f64,
@@ -357,22 +370,79 @@ impl PyLayer {
         aggregate_deductible: f64,
         aggregate_limit: Option<f64>,
         reinstatements: Option<u32>,
+        premium: f64,
+        reinstatement_rates: Option<Vec<f64>>,
     ) -> PyResult<Self> {
         let mut layer = Layer::xol(name, limit, attachment)
             .and_then(|l| l.share(share))
             .and_then(|l| l.aggregate_deductible(aggregate_deductible))
             .map_err(to_py)?;
-        layer = match (aggregate_limit, reinstatements) {
-            (Some(_), Some(_)) => {
+        layer = match (aggregate_limit, reinstatements, reinstatement_rates) {
+            (Some(aal), None, None) => layer.aggregate_limit(aal).map_err(to_py)?,
+            (None, Some(n), None) => layer.reinstatements(n).map_err(to_py)?,
+            (None, None, Some(rates)) => {
+                layer.paid_reinstatements(premium, rates).map_err(to_py)?
+            }
+            (None, None, None) => layer,
+            _ => {
                 return Err(pyo3::exceptions::PyValueError::new_err(
-                    "give aggregate_limit or reinstatements, not both",
+                    "give at most one of aggregate_limit, reinstatements and reinstatement_rates",
                 ));
             }
-            (Some(aal), None) => layer.aggregate_limit(aal).map_err(to_py)?,
-            (None, Some(n)) => layer.reinstatements(n).map_err(to_py)?,
-            (None, None) => layer,
         };
         Ok(Self { inner: layer })
+    }
+
+    /// A quota share ceding ``cession`` of every loss.
+    ///
+    /// Unlimited cover from the first unit with ``share = cession``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// cession : float
+    ///     In ``(0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.aggregate import Layer
+    /// >>> Layer.quota_share("QS", 0.4).ceded([10.0, 5.0])
+    /// 6.0
+    #[staticmethod]
+    fn quota_share(name: String, cession: f64) -> PyResult<Self> {
+        let inner = Layer::quota_share(name, cession).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// An aggregate stop-loss: ``limit`` xs ``retention`` on the year's total.
+    ///
+    /// Covers the total of the losses it sees: gross, or net of earlier
+    /// stages in an inuring ``Tower``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// limit : float
+    ///     Annual limit; may be ``inf``.
+    /// retention : float
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.aggregate import Layer
+    /// >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
+    /// 30.0
+    #[staticmethod]
+    fn stop_loss(name: String, limit: f64, retention: f64) -> PyResult<Self> {
+        let inner = Layer::stop_loss(name, limit, retention).map_err(to_py)?;
+        Ok(Self { inner })
     }
 
     /// Layer name.
@@ -411,6 +481,18 @@ impl PyLayer {
         self.inner.aggregate_limit
     }
 
+    /// Upfront premium for the placed share.
+    #[getter]
+    fn premium(&self) -> f64 {
+        self.inner.premium
+    }
+
+    /// Rate of each paid reinstatement; empty when reinstatements are free.
+    #[getter]
+    fn reinstatement_rates(&self) -> Vec<f64> {
+        self.inner.reinstatement_rates.clone()
+    }
+
     /// Ceded loss for one year's losses.
     ///
     /// Parameters
@@ -424,6 +506,46 @@ impl PyLayer {
         self.inner.ceded(&losses)
     }
 
+    /// Ceded loss per event for one year, taking losses as chronological.
+    ///
+    /// The annual deductible absorbs the first recoveries and the annual
+    /// limit stops the last ones; the entries sum to ``ceded(losses)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.aggregate import Layer
+    /// >>> layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=15.0)
+    /// >>> layer.ceded_by_event([8.0, 20.0, 12.0])
+    /// [0.0, 9.0, 6.0]
+    fn ceded_by_event(&self, losses: Vec<f64>) -> Vec<f64> {
+        self.inner.ceded_by_event(&losses)
+    }
+
+    /// Reinstatement premium for one year's losses.
+    ///
+    /// With layer loss ``L`` at 100% after annual terms, ``premium *
+    /// sum(rate_k * min(max(L - k * limit, 0), limit) / limit)``; zero when
+    /// reinstatements are free.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn reinstatement_premium(&self, losses: Vec<f64>) -> f64 {
+        self.inner.reinstatement_premium(&losses)
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Layer({:?}, limit={:?}, attachment={:?}, share={:?})",
@@ -432,7 +554,11 @@ impl PyLayer {
     }
 }
 
-/// Layers applied to the same ground-up losses (no inuring order yet).
+/// A reinsurance programme: layers in inuring stages.
+///
+/// ``Tower(layers)`` is one stage: every layer sees the gross losses.
+/// ``Tower.inuring(stages)`` applies stages in order, each seeing the losses
+/// net of all earlier stages, event by event.
 ///
 /// Parameters
 /// ----------
@@ -466,6 +592,55 @@ impl PyTower {
         Ok(Self { inner })
     }
 
+    /// A tower whose stages inure in order.
+    ///
+    /// Each stage's layers see the losses net of all earlier stages, event
+    /// by event, with annual terms used up in event order.
+    ///
+    /// Parameters
+    /// ----------
+    /// stages : list of list of Layer
+    ///     No stage may be empty; names must be unique across stages.
+    ///
+    /// Returns
+    /// -------
+    /// Tower
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.aggregate import Layer, Tower
+    /// >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
+    /// >>> tower.ceded([30.0])
+    /// [15.0, 5.0]
+    #[staticmethod]
+    fn inuring(stages: Vec<Vec<PyRef<'_, PyLayer>>>) -> PyResult<Self> {
+        let stages = stages
+            .iter()
+            .map(|stage| stage.iter().map(|l| l.inner.clone()).collect())
+            .collect();
+        let inner = Tower::inuring(stages).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Stage of each layer, in order, starting at 0.
+    #[getter]
+    fn stages(&self) -> Vec<usize> {
+        self.inner.stages.clone()
+    }
+
+    /// Ceded loss of each layer, in order, for one year's losses.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn ceded(&self, losses: Vec<f64>) -> Vec<f64> {
+        self.inner.ceded(&losses)
+    }
+
     /// Layer names, in order.
     #[getter]
     fn layer_names(&self) -> Vec<String> {
@@ -475,8 +650,10 @@ impl PyTower {
     /// Applies the tower to every simulated year.
     ///
     /// The result has dimensions ``["kind", "layer"]``: ``("gross",
-    /// "ground_up")``, ``("ceded", name)`` per layer and ``("net",
-    /// "retained")``. ``aggregate(["kind"])`` gives gross, total ceded and net.
+    /// "ground_up")``, ``("ceded", name)`` per layer, ``("net",
+    /// "retained")``, then ``("reinstatement_premium", name)`` per layer with
+    /// paid reinstatements. ``aggregate(["kind"])`` gives gross, total ceded
+    /// and net; net is a loss, before premiums.
     ///
     /// Parameters
     /// ----------

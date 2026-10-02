@@ -43,6 +43,12 @@ reference:
   - title: Reinsurance
     contents:
       - xol_layer
+      - quota_share
+      - aggregate_stop_loss
       - ceded
+      - ceded_by_event
+      - reinstatement_premium
       - reinsurance_tower
+      - inuring_tower
+      - tower_ceded
       - apply_tower

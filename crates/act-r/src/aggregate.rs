@@ -130,8 +130,10 @@ pub(crate) struct XolLayer {
 #[extendr]
 impl XolLayer {
     /// `aggregate_limit` may be `Inf`; `reinstatements` is a number or
-    /// negative for none, and cannot be combined with a finite
-    /// `aggregate_limit`.
+    /// negative for none; `paid` says whether `reinstatement_rates` were
+    /// given. At most one of a finite `aggregate_limit`, `reinstatements`
+    /// and paid reinstatements.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         name: &str,
         limit: f64,
@@ -140,27 +142,44 @@ impl XolLayer {
         aggregate_deductible: f64,
         aggregate_limit: f64,
         reinstatements: f64,
+        premium: f64,
+        reinstatement_rates: &[f64],
+        paid: bool,
     ) -> Result<Self> {
         let layer = Layer::xol(name, limit, attachment)
             .and_then(|l| l.share(share))
             .and_then(|l| l.aggregate_deductible(aggregate_deductible))
             .map_err(to_r)?;
-        let layer = match (aggregate_limit.is_finite(), reinstatements >= 0.0) {
-            (true, true) => {
-                return Err(Error::Other(
-                    "give aggregate_limit or reinstatements, not both".into(),
-                ));
-            }
-            (true, false) => layer.aggregate_limit(aggregate_limit).map_err(to_r)?,
-            (false, true) => {
+        let layer = match (aggregate_limit.is_finite(), reinstatements >= 0.0, paid) {
+            (true, false, false) => layer.aggregate_limit(aggregate_limit).map_err(to_r)?,
+            (false, true, false) => {
                 let n = whole(reinstatements, "reinstatements")?;
                 let n = u32::try_from(n)
                     .map_err(|_| Error::Other("reinstatements is too large".into()))?;
                 layer.reinstatements(n).map_err(to_r)?
             }
-            (false, false) => layer,
+            (false, false, true) => layer
+                .paid_reinstatements(premium, reinstatement_rates.to_vec())
+                .map_err(to_r)?,
+            (false, false, false) => layer,
+            _ => {
+                return Err(Error::Other(
+                    "give at most one of aggregate_limit, reinstatements and reinstatement_rates"
+                        .into(),
+                ));
+            }
         };
         Ok(Self { inner: layer })
+    }
+
+    fn quota_share(name: &str, cession: f64) -> Result<Self> {
+        let inner = Layer::quota_share(name, cession).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn stop_loss(name: &str, limit: f64, retention: f64) -> Result<Self> {
+        let inner = Layer::stop_loss(name, limit, retention).map_err(to_r)?;
+        Ok(Self { inner })
     }
 
     fn name(&self) -> String {
@@ -187,12 +206,28 @@ impl XolLayer {
         self.inner.aggregate_limit
     }
 
+    fn premium(&self) -> f64 {
+        self.inner.premium
+    }
+
+    fn reinstatement_rates(&self) -> Vec<f64> {
+        self.inner.reinstatement_rates.clone()
+    }
+
     fn ceded(&self, losses: &[f64]) -> f64 {
         self.inner.ceded(losses)
     }
+
+    fn ceded_by_event(&self, losses: &[f64]) -> Vec<f64> {
+        self.inner.ceded_by_event(losses)
+    }
+
+    fn reinstatement_premium(&self, losses: &[f64]) -> f64 {
+        self.inner.reinstatement_premium(losses)
+    }
 }
 
-/// Layers applied to the same ground-up losses.
+/// Layers in inuring stages.
 #[extendr]
 pub(crate) struct ReinsuranceTower {
     inner: Tower,
@@ -201,20 +236,35 @@ pub(crate) struct ReinsuranceTower {
 #[extendr]
 impl ReinsuranceTower {
     fn new(layers: List) -> Result<Self> {
-        let layers: Vec<Layer> = layers
+        let inner = Tower::new(layer_list(layers)?).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    /// `stages` is a list of lists of layers.
+    fn inuring(stages: List) -> Result<Self> {
+        let stages = stages
             .values()
-            .map(|l| {
-                <&XolLayer>::try_from(&l)
-                    .map(|l| l.inner.clone())
-                    .map_err(|_| Error::Other("layers must all be xol_layer objects".into()))
+            .map(|stage| {
+                List::try_from(&stage)
+                    .map_err(|_| Error::Other("stages must be a list of lists of layers".into()))
+                    .and_then(layer_list)
             })
             .collect::<Result<_>>()?;
-        let inner = Tower::new(layers).map_err(to_r)?;
+        let inner = Tower::inuring(stages).map_err(to_r)?;
         Ok(Self { inner })
     }
 
     fn layer_names(&self) -> Vec<String> {
         self.inner.layers.iter().map(|l| l.name.clone()).collect()
+    }
+
+    /// 1-based stage of each layer.
+    fn stages(&self) -> Vec<f64> {
+        self.inner.stages.iter().map(|&s| s as f64 + 1.0).collect()
+    }
+
+    fn ceded(&self, losses: &[f64]) -> Vec<f64> {
+        self.inner.ceded(losses)
     }
 
     fn apply(&self, events: Robj) -> Result<PredictiveDistribution> {
@@ -223,6 +273,17 @@ impl ReinsuranceTower {
         let inner = self.inner.apply(&events.inner).map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
+}
+
+fn layer_list(layers: List) -> Result<Vec<Layer>> {
+    layers
+        .values()
+        .map(|l| {
+            <&XolLayer>::try_from(&l)
+                .map(|l| l.inner.clone())
+                .map_err(|_| Error::Other("layers must all be xol_layer objects".into()))
+        })
+        .collect()
 }
 
 extendr_module! {

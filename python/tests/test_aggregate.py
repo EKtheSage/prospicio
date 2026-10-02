@@ -61,9 +61,50 @@ def test_mean_ceded_matches_the_exact_layer_value():
 def test_layer_terms():
     layer = Layer("L", 10.0, 5.0, share=0.5, aggregate_deductible=4.0, aggregate_limit=15.0)
     assert layer.ceded([8.0, 20.0, 12.0]) == 7.5
-    with pytest.raises(ValueError, match="not both"):
+    with pytest.raises(ValueError, match="at most one"):
         Layer("L", 1.0, 0.0, aggregate_limit=2.0, reinstatements=1)
     with pytest.raises(ValueError):
         Layer("L", 1.0, 0.0, share=1.5)
     with pytest.raises(ValueError):
         Tower([Layer("L", 1.0, 0.0), Layer("L", 2.0, 1.0)])
+
+
+def test_quota_share_and_stop_loss():
+    assert Layer.quota_share("QS", 0.25).ceded([8.0, 4.0]) == 3.0
+    sl = Layer.stop_loss("SL", 50.0, 100.0)
+    assert sl.ceded([60.0, 70.0]) == 30.0
+    assert sl.ceded([200.0]) == 50.0
+    with pytest.raises(ValueError):
+        Layer.quota_share("QS", 0.0)
+
+
+def test_inuring_tower():
+    tower = Tower.inuring(
+        [
+            [Layer("A", 10.0, 5.0, aggregate_limit=15.0), Layer("B", 100.0, 18.0)],
+            [Layer.stop_loss("SL", 20.0, 20.0)],
+        ]
+    )
+    assert tower.stages == [0, 0, 1]
+    assert tower.ceded([20.0, 20.0]) == [15.0, 4.0, 1.0]
+    with pytest.raises(ValueError):
+        Tower.inuring([[], [Layer("A", 1.0, 0.0)]])
+
+
+def test_ceded_by_event_and_reinstatement_premiums():
+    layer = Layer("L", 10.0, 5.0, share=0.5, aggregate_deductible=4.0, aggregate_limit=15.0)
+    assert layer.ceded_by_event([8.0, 20.0, 12.0]) == [0.0, 4.5, 3.0]
+    paid = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
+    assert paid.aggregate_limit == 30.0
+    assert paid.reinstatement_rates == [1.0, 0.5]
+    assert paid.reinstatement_premium([15.0, 25.0]) == 2.5
+    with pytest.raises(ValueError):
+        Layer("L", 1.0, 0.0, reinstatements=1, reinstatement_rates=[1.0])
+
+    events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 2_000, 3)
+    result = Tower([Layer("5x5", 5e6, 5e6, premium=1e6, reinstatement_rates=[1.0])]).apply(events)
+    assert [k[0] for k in result.components()] == ["gross", "ceded", "net", "reinstatement_premium"]
+    ceded = result.marginal(("ceded", "5x5")).draws
+    premium = result.marginal(("reinstatement_premium", "5x5")).draws
+    for c, p in zip(ceded, premium):
+        assert abs(p - 1e6 * min(c, 5e6) / 5e6) <= 1e-6

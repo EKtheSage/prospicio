@@ -11,7 +11,10 @@ xol_layer(
   share = 1,
   aggregate_deductible = 0,
   aggregate_limit = Inf,
-  reinstatements = NULL
+  reinstatements = NULL,
+  premium = 0,
+  reinstatement_rates = NULL,
+  ptr = NULL
 )
 }
 \arguments{
@@ -27,9 +30,19 @@ xol_layer(
 
 \item{aggregate_limit}{Annual aggregate limit; \code{Inf} for none.}
 
-\item{reinstatements}{Number of reinstatements, which sets the annual limit
-to \code{limit * (reinstatements + 1)}; cannot be combined with a finite
+\item{reinstatements}{Number of free reinstatements, which sets the annual
+limit to \code{limit * (reinstatements + 1)}; cannot be combined with a finite
 \code{aggregate_limit}.}
+
+\item{premium}{Upfront premium for the placed share; used only by
+\code{reinstatement_rates}.}
+
+\item{reinstatement_rates}{Paid reinstatements: one rate per reinstatement,
+as a fraction of \code{premium} (1 is 100\%), pro rata as to amount. Sets the
+annual limit to \code{limit * (length(reinstatement_rates) + 1)}; cannot be
+combined with \code{reinstatements} or a finite \code{aggregate_limit}.}
+
+\item{ptr}{Internal: an existing layer to wrap.}
 }
 \value{
 An \code{xol_layer} object with read-only properties for each term.
@@ -42,4 +55,10 @@ An \code{xol_layer} object with read-only properties for each term.
 l <- xol_layer("5x5", 5e6, 5e6, reinstatements = 1)
 ceded(l, 7e6)
 ceded(l, c(12e6, 20e6, 30e6))
+paid <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
+reinstatement_premium(paid, c(22, 12))
+}
+\seealso{
+\code{\link[=quota_share]{quota_share()}} and \code{\link[=aggregate_stop_loss]{aggregate_stop_loss()}} for the other contract
+types, which are layers too.
 }

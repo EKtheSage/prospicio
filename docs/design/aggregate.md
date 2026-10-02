@@ -30,8 +30,8 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   losses net of earlier ones. `Tower::apply(&events)` returns gross, ceded
   per layer and net as one joint `PredictiveDistribution`.
 - Python (`actuarialrs.aggregate`) and R (`compound_distribution`,
-  `simulate_events`, `xol_layer`, `reinsurance_tower`) bindings for all of
-  the above.
+  `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
+  `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
 
 ## Decisions
 
@@ -121,4 +121,5 @@ every simulated year.
 
 ## Next
 
-1. Python and R bindings for quota share, stop-loss and inuring towers.
+1. Surplus treaties, once events carry sums insured.
+2. Pro rata as to time reinstatement premiums, once events carry dates.

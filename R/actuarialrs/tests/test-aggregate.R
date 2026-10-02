@@ -52,4 +52,30 @@ ce <- marginal(apply_tower(reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6))), 
 se <- sqrt(variance(ce) / 100000)
 stopifnot(abs(mean(ce) - 2 * layer(lsev, 5e6, 5e6)) < 4 * se)
 
+# Quota share, stop-loss and inuring stages.
+stopifnot(ceded(quota_share("QS", 0.25), c(8, 4)) == 3)
+sl <- aggregate_stop_loss("SL", 50, 100)
+stopifnot(ceded(sl, c(60, 70)) == 30, ceded(sl, 200) == 50)
+stopifnot(inherits(try(quota_share("QS", 0), silent = TRUE), "try-error"))
+tw <- inuring_tower(list(
+  list(xol_layer("A", 10, 5, aggregate_limit = 15), xol_layer("B", 100, 18)),
+  list(aggregate_stop_loss("SL", 20, 20))
+))
+stopifnot(identical(tw@stages, c(1, 1, 2)))
+stopifnot(identical(tower_ceded(tw, c(20, 20)), c(A = 15, B = 4, SL = 1)))
+stopifnot(inherits(try(inuring_tower(list(list(), list(xol_layer("A", 1, 0)))), silent = TRUE), "try-error"))
+
+# Per-event allocation and reinstatement premiums.
+l <- xol_layer("L", 10, 5, share = 0.5, aggregate_deductible = 4, aggregate_limit = 15)
+stopifnot(identical(ceded_by_event(l, c(8, 20, 12)), c(0, 4.5, 3)))
+paid <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
+stopifnot(paid@aggregate_limit == 30, identical(paid@reinstatement_rates, c(1, 0.5)))
+stopifnot(reinstatement_premium(paid, c(15, 25)) == 2.5)
+stopifnot(inherits(try(xol_layer("L", 1, 0, reinstatements = 1, reinstatement_rates = 1), silent = TRUE), "try-error"))
+ev <- simulate_events(poisson_count(2), lsev, 2000, seed = 3)
+res <- apply_tower(reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6, premium = 1e6, reinstatement_rates = 1))), ev)
+stopifnot(identical(res@keys$kind, c("gross", "ceded", "net", "reinstatement_premium")))
+m <- draw_matrix(res)
+stopifnot(max(abs(m[, 4] - 1e6 * pmin(m[, 2], 5e6) / 5e6)) <= 1e-6)
+
 cat("actuarialrs R aggregate tests passed\n")
