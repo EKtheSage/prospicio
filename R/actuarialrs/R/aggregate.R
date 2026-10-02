@@ -12,7 +12,7 @@ NULL
 #' error: `tail_mass` (probability above the last point, lumped onto it),
 #' `aliasing_error` (FFT only; check it first) and `mean_error`.
 #'
-#' @param frequency A [poisson_count] or [negative_binomial_count].
+#' @param frequency A [poisson_count], [negative_binomial_count] or [binomial_count].
 #' @param severity A [grid_distribution], usually from [discretize()].
 #' @param points Number of points in the aggregate grid.
 #' @param method `"panjer"`, or `"fft"` for large claim counts where Panjer
@@ -37,8 +37,9 @@ compound_distribution <- function(frequency, severity, points, method = c("panje
 #' generator keyed by `seed`, so results do not depend on the number of
 #' threads and match Python and Rust.
 #'
-#' @param frequency A [poisson_count] or [negative_binomial_count].
-#' @param severity A [lognormal] or [grid_distribution].
+#' @param frequency A [poisson_count], [negative_binomial_count] or [binomial_count].
+#' @param severity A [lognormal], [grid_distribution] or Pareto-family severity
+#'   ([pareto], [piecewise_pareto], [log_affine_pareto], [generalized_pareto]).
 #' @param n_sims Number of simulated years.
 #' @param seed Generator seed: a non-negative whole number below 2^53.
 #' @returns An `event_set`. Use [events()] for one year's losses,

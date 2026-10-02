@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 
 mod aggregate;
 mod distributions;
+mod pareto;
 mod risk;
 
 fn to_py(e: act_core::Error) -> PyErr {
@@ -31,6 +32,11 @@ mod actuarialrs_native {
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
         PyPredictiveDistribution, PySampled,
+    };
+    #[pymodule_export]
+    use super::pareto::{
+        PyBinomial, PyGeneralizedPareto, PyLogAffinePareto, PyPareto, PyPiecewisePareto,
+        claim_count,
     };
     #[pymodule_export]
     use super::risk::{

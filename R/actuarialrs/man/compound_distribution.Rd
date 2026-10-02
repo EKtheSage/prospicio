@@ -7,7 +7,7 @@
 compound_distribution(frequency, severity, points, method = c("panjer", "fft"))
 }
 \arguments{
-\item{frequency}{A \link{poisson_count} or \link{negative_binomial_count}.}
+\item{frequency}{A \link{poisson_count}, \link{negative_binomial_count} or \link{binomial_count}.}
 
 \item{severity}{A \link{grid_distribution}, usually from \code{\link[=discretize]{discretize()}}.}
 

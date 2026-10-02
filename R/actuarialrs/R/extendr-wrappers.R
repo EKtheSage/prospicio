@@ -8,6 +8,8 @@ NULL
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
 
+claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
+
 iman_conover_reorder <- function(pd, correlation, seed) .Call(wrap__iman_conover_reorder, pd, correlation, seed)
 
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
@@ -265,6 +267,190 @@ PredictiveDistribution$provenance <- function() .Call(wrap__PredictiveDistributi
 
 #' @export
 `[[.PredictiveDistribution` <- `$.PredictiveDistribution`
+
+Pareto <- new.env(parent = emptyenv())
+
+Pareto$new <- function(t, alpha, truncation_at) .Call(wrap__Pareto__new, t, alpha, truncation_at)
+
+Pareto$fit <- function(losses, t, reporting, censored, weights, truncation_at) .Call(wrap__Pareto__fit, losses, t, reporting, censored, weights, truncation_at)
+
+Pareto$t <- function() .Call(wrap__Pareto__t, self)
+
+Pareto$alpha <- function() .Call(wrap__Pareto__alpha, self)
+
+Pareto$truncation <- function() .Call(wrap__Pareto__truncation, self)
+
+Pareto$mean <- function() .Call(wrap__Pareto__mean, self)
+
+Pareto$variance <- function() .Call(wrap__Pareto__variance, self)
+
+Pareto$cdf <- function(x) .Call(wrap__Pareto__cdf, self, x)
+
+Pareto$survival <- function(x) .Call(wrap__Pareto__survival, self, x)
+
+Pareto$quantile <- function(p) .Call(wrap__Pareto__quantile, self, p)
+
+Pareto$lev <- function(limit) .Call(wrap__Pareto__lev, self, limit)
+
+Pareto$stop_loss <- function(retention) .Call(wrap__Pareto__stop_loss, self, retention)
+
+Pareto$layer <- function(limit, attachment) .Call(wrap__Pareto__layer, self, limit, attachment)
+
+Pareto$layer_variance <- function(limit, attachment) .Call(wrap__Pareto__layer_variance, self, limit, attachment)
+
+Pareto$sample <- function(n, seed, stream) .Call(wrap__Pareto__sample, self, n, seed, stream)
+
+#' @export
+`$.Pareto` <- function (self, name) { func <- Pareto[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Pareto` <- `$.Pareto`
+
+PiecewisePareto <- new.env(parent = emptyenv())
+
+PiecewisePareto$new <- function(t, alpha, truncation_at, truncation_type) .Call(wrap__PiecewisePareto__new, t, alpha, truncation_at, truncation_type)
+
+PiecewisePareto$fit <- function(losses, t, reporting, censored, weights, truncation_at) .Call(wrap__PiecewisePareto__fit, losses, t, reporting, censored, weights, truncation_at)
+
+PiecewisePareto$t <- function() .Call(wrap__PiecewisePareto__t, self)
+
+PiecewisePareto$alpha <- function() .Call(wrap__PiecewisePareto__alpha, self)
+
+PiecewisePareto$truncation <- function() .Call(wrap__PiecewisePareto__truncation, self)
+
+PiecewisePareto$truncation_type <- function() .Call(wrap__PiecewisePareto__truncation_type, self)
+
+PiecewisePareto$mean <- function() .Call(wrap__PiecewisePareto__mean, self)
+
+PiecewisePareto$variance <- function() .Call(wrap__PiecewisePareto__variance, self)
+
+PiecewisePareto$cdf <- function(x) .Call(wrap__PiecewisePareto__cdf, self, x)
+
+PiecewisePareto$survival <- function(x) .Call(wrap__PiecewisePareto__survival, self, x)
+
+PiecewisePareto$quantile <- function(p) .Call(wrap__PiecewisePareto__quantile, self, p)
+
+PiecewisePareto$lev <- function(limit) .Call(wrap__PiecewisePareto__lev, self, limit)
+
+PiecewisePareto$stop_loss <- function(retention) .Call(wrap__PiecewisePareto__stop_loss, self, retention)
+
+PiecewisePareto$layer <- function(limit, attachment) .Call(wrap__PiecewisePareto__layer, self, limit, attachment)
+
+PiecewisePareto$layer_variance <- function(limit, attachment) .Call(wrap__PiecewisePareto__layer_variance, self, limit, attachment)
+
+PiecewisePareto$sample <- function(n, seed, stream) .Call(wrap__PiecewisePareto__sample, self, n, seed, stream)
+
+#' @export
+`$.PiecewisePareto` <- function (self, name) { func <- PiecewisePareto[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.PiecewisePareto` <- `$.PiecewisePareto`
+
+LogAffinePareto <- new.env(parent = emptyenv())
+
+LogAffinePareto$new <- function(t, alpha0, gamma) .Call(wrap__LogAffinePareto__new, t, alpha0, gamma)
+
+LogAffinePareto$from_delta <- function(t, alpha0, delta) .Call(wrap__LogAffinePareto__from_delta, t, alpha0, delta)
+
+LogAffinePareto$t <- function() .Call(wrap__LogAffinePareto__t, self)
+
+LogAffinePareto$alpha0 <- function() .Call(wrap__LogAffinePareto__alpha0, self)
+
+LogAffinePareto$gamma <- function() .Call(wrap__LogAffinePareto__gamma, self)
+
+LogAffinePareto$delta <- function() .Call(wrap__LogAffinePareto__delta, self)
+
+LogAffinePareto$local_alpha <- function(x) .Call(wrap__LogAffinePareto__local_alpha, self, x)
+
+LogAffinePareto$mean <- function() .Call(wrap__LogAffinePareto__mean, self)
+
+LogAffinePareto$variance <- function() .Call(wrap__LogAffinePareto__variance, self)
+
+LogAffinePareto$cdf <- function(x) .Call(wrap__LogAffinePareto__cdf, self, x)
+
+LogAffinePareto$survival <- function(x) .Call(wrap__LogAffinePareto__survival, self, x)
+
+LogAffinePareto$quantile <- function(p) .Call(wrap__LogAffinePareto__quantile, self, p)
+
+LogAffinePareto$lev <- function(limit) .Call(wrap__LogAffinePareto__lev, self, limit)
+
+LogAffinePareto$stop_loss <- function(retention) .Call(wrap__LogAffinePareto__stop_loss, self, retention)
+
+LogAffinePareto$layer <- function(limit, attachment) .Call(wrap__LogAffinePareto__layer, self, limit, attachment)
+
+LogAffinePareto$layer_variance <- function(limit, attachment) .Call(wrap__LogAffinePareto__layer_variance, self, limit, attachment)
+
+LogAffinePareto$sample <- function(n, seed, stream) .Call(wrap__LogAffinePareto__sample, self, n, seed, stream)
+
+#' @export
+`$.LogAffinePareto` <- function (self, name) { func <- LogAffinePareto[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.LogAffinePareto` <- `$.LogAffinePareto`
+
+GeneralizedPareto <- new.env(parent = emptyenv())
+
+GeneralizedPareto$new <- function(xi, beta, location) .Call(wrap__GeneralizedPareto__new, xi, beta, location)
+
+GeneralizedPareto$riegel <- function(t, alpha_ini, alpha_tail) .Call(wrap__GeneralizedPareto__riegel, t, alpha_ini, alpha_tail)
+
+GeneralizedPareto$xi <- function() .Call(wrap__GeneralizedPareto__xi, self)
+
+GeneralizedPareto$beta <- function() .Call(wrap__GeneralizedPareto__beta, self)
+
+GeneralizedPareto$location <- function() .Call(wrap__GeneralizedPareto__location, self)
+
+GeneralizedPareto$mean <- function() .Call(wrap__GeneralizedPareto__mean, self)
+
+GeneralizedPareto$variance <- function() .Call(wrap__GeneralizedPareto__variance, self)
+
+GeneralizedPareto$cdf <- function(x) .Call(wrap__GeneralizedPareto__cdf, self, x)
+
+GeneralizedPareto$survival <- function(x) .Call(wrap__GeneralizedPareto__survival, self, x)
+
+GeneralizedPareto$quantile <- function(p) .Call(wrap__GeneralizedPareto__quantile, self, p)
+
+GeneralizedPareto$lev <- function(limit) .Call(wrap__GeneralizedPareto__lev, self, limit)
+
+GeneralizedPareto$stop_loss <- function(retention) .Call(wrap__GeneralizedPareto__stop_loss, self, retention)
+
+GeneralizedPareto$layer <- function(limit, attachment) .Call(wrap__GeneralizedPareto__layer, self, limit, attachment)
+
+GeneralizedPareto$layer_variance <- function(limit, attachment) .Call(wrap__GeneralizedPareto__layer_variance, self, limit, attachment)
+
+GeneralizedPareto$sample <- function(n, seed, stream) .Call(wrap__GeneralizedPareto__sample, self, n, seed, stream)
+
+#' @export
+`$.GeneralizedPareto` <- function (self, name) { func <- GeneralizedPareto[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.GeneralizedPareto` <- `$.GeneralizedPareto`
+
+Binomial <- new.env(parent = emptyenv())
+
+Binomial$new <- function(n, p) .Call(wrap__Binomial__new, n, p)
+
+Binomial$n <- function() .Call(wrap__Binomial__n, self)
+
+Binomial$p <- function() .Call(wrap__Binomial__p, self)
+
+Binomial$pmf <- function(k) .Call(wrap__Binomial__pmf, self, k)
+
+Binomial$cdf <- function(k) .Call(wrap__Binomial__cdf, self, k)
+
+Binomial$mean <- function() .Call(wrap__Binomial__mean, self)
+
+Binomial$variance <- function() .Call(wrap__Binomial__variance, self)
+
+Binomial$quantile <- function(p) .Call(wrap__Binomial__quantile, self, p)
+
+Binomial$sample <- function(n, seed, stream) .Call(wrap__Binomial__sample, self, n, seed, stream)
+
+#' @export
+`$.Binomial` <- function (self, name) { func <- Binomial[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Binomial` <- `$.Binomial`
 
 EvtTail <- new.env(parent = emptyenv())
 

@@ -20,11 +20,20 @@ reference:
       - distributions.Grid
       - distributions.DiscretizationReport
       - distributions.Sampled
+  - title: Large-loss severities
+    desc: The Pareto family for layer and treaty pricing, with maximum likelihood fits.
+    contents:
+      - distributions.Pareto
+      - distributions.PiecewisePareto
+      - distributions.LogAffinePareto
+      - distributions.GeneralizedPareto
   - title: Claim counts
     desc: Frequency distributions for frequency-severity aggregation.
     contents:
       - distributions.Poisson
       - distributions.NegativeBinomial
+      - distributions.Binomial
+      - distributions.claim_count
   - title: Predictive distributions
     desc: The joint result every model returns.
     contents:

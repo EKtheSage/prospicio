@@ -321,6 +321,14 @@ integration. The R package LocalPareto computes those moments with
 coarse cross-check (`1e-6`) there, and an exact one for the distribution
 function and quantile. The general local Pareto (any `α(x)`, converted to
 a piecewise Pareto) comes later.
+Bindings: Python `actuarialrs.distributions` (`Pareto`,
+`PiecewisePareto`, `LogAffinePareto`, `GeneralizedPareto` with `riegel`,
+`Binomial`, `claim_count`, and `fit` static methods) and R (`pareto()`,
+`piecewise_pareto()`, `log_affine_pareto()`, `generalized_pareto()`,
+`generalized_pareto_riegel()`, `pareto_fit()`, `piecewise_pareto_fit()`,
+`binomial_count()`, `claim_count()`, with `survival()`,
+`layer_variance()` and `local_alpha()`). Every severity also works with
+grid discretization, compound distributions and event simulation.
 `Binomial` and `PanjerClass::from_mean_dispersion` complete the Panjer
 class. A binomial needs a whole number of trials, so below dispersion 1
 the trials are `mean / (1 − dispersion)` rounded up: the mean is kept and

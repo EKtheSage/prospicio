@@ -13,6 +13,7 @@ use crate::{to_r, whole};
 enum AnyCount {
     Poisson(act_prob::Poisson),
     NegativeBinomial(act_prob::NegativeBinomial),
+    Binomial(act_prob::Binomial),
 }
 
 impl AnyCount {
@@ -23,8 +24,11 @@ impl AnyCount {
         if let Ok(n) = <&NegativeBinomial>::try_from(obj) {
             return Ok(Self::NegativeBinomial(n.inner));
         }
+        if let Ok(n) = <&crate::pareto::Binomial>::try_from(obj) {
+            return Ok(Self::Binomial(n.inner));
+        }
         Err(Error::Other(
-            "frequency must be a poisson_count or negative_binomial_count".into(),
+            "frequency must be a poisson_count, negative_binomial_count or binomial_count".into(),
         ))
     }
 
@@ -32,6 +36,7 @@ impl AnyCount {
         match self {
             Self::Poisson(n) => n,
             Self::NegativeBinomial(n) => n,
+            Self::Binomial(n) => n,
         }
     }
 }
