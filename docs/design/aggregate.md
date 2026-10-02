@@ -25,8 +25,10 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `totals()` as a `PredictiveDistribution`.
 - `act_aggregate::{Layer, Tower}`: per-occurrence excess-of-loss layers
   with share, annual aggregate deductible and limit, and reinstatements;
-  `Tower::apply(&events)` returns gross, ceded per layer and net as one
-  joint `PredictiveDistribution`.
+  quota shares (`Layer::quota_share`) and aggregate stop-losses
+  (`Layer::stop_loss`); `Tower::inuring` stages layers so later ones see
+  losses net of earlier ones. `Tower::apply(&events)` returns gross, ceded
+  per layer and net as one joint `PredictiveDistribution`.
 - Python (`actuarialrs.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `reinsurance_tower`) bindings for all of
   the above.
@@ -70,8 +72,25 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `["kind", "layer"]`: `(gross, ground_up)`, `(ceded, <name>)` per layer
   and `(net, retained)`. `aggregate(&["kind"])` gives gross, total ceded and
   net per year, and `net = gross − Σ ceded` holds in every year (tested).
-- **Not yet:** inuring order (every layer sees gross losses), reinstatement
-  premiums, quota share and surplus, and stop-loss on the annual total.
+- **Quota share and stop-loss are layers.** A quota share with cession
+  `c` is unlimited cover from 0 with `share = c`; a stop-loss `l` xs `r`
+  is unlimited cover from 0 with `AAD = r` and `AAL = l`. One formula
+  covers all three contract types, and a stop-loss in a later stage covers
+  the annual total net of earlier stages.
+- **Inuring order is by stage.** `Tower::inuring(stages)` applies stages
+  in order; layers within a stage see the same losses, and each later
+  stage sees every event net of all earlier stages. `Tower::new(layers)`
+  is one stage.
+- **Annual terms are used up in event order.** Passing a net loss per event
+  to the next stage needs each event's share of a layer with annual terms.
+  `Layer::ceded_by_event` takes events as chronological: the AAD absorbs
+  the first recoveries and the AAL stops the last ones, and event `k`
+  cedes the increase in annual ceded loss it causes. The split sums to the
+  annual ceded loss, which does not depend on order; only later stages do.
+  Simulated events are in simulation order, which stands in for time
+  until events carry dates.
+- **Not yet:** reinstatement premiums; surplus treaties, which need sums
+  insured per risk that events do not carry.
 
 ## Validation
 
@@ -88,9 +107,12 @@ severity by a Kolmogorov–Smirnov statistic (200,000 years, below the 0.1%
 critical value) under a fixed seed. Reinsurance is checked on hand-worked
 layers and annual terms, gross = ceded + net in every simulated year, and
 the simulated mean ceded loss against the exact `E[N] · Severity::layer`
-(within four standard errors).
+(within four standard errors). Inuring is checked on a hand-worked
+two-stage tower and against the identity that a cession `c` inuring to
+`l` xs `a` equals `(1 - c)` of `l / (1 - c)` xs `a / (1 - c)` on gross, in
+every simulated year.
 
 ## Next
 
-1. Inuring order, reinstatement premiums, quota share and surplus,
-   aggregate stop-loss.
+1. Reinstatement premiums.
+2. Python and R bindings for quota share, stop-loss and inuring towers.
