@@ -33,7 +33,7 @@ archimedean_copula(
 \item{dim}{Number of dimensions.}
 }
 \value{
-A \code{copula} object with \code{dim} and \code{description} properties. Use
+A \code{copula} object with \code{dimension} and \code{description} properties. Use
 it with \code{\link[=copula_sample]{copula_sample()}} and \code{\link[=copula_simulate]{copula_simulate()}}.
 }
 \description{

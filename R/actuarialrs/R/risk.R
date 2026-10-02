@@ -127,7 +127,7 @@ S7::method(allocate, predictive_distribution) <- function(x, distortion, ...) {
 #' @param theta Positive for Clayton and Frank; at least 1 for Gumbel and Joe.
 #' @param dim Number of dimensions.
 #' @param ptr Internal: an existing copula to wrap.
-#' @returns A `copula` object with `dim` and `description` properties. Use
+#' @returns A `copula` object with `dimension` and `description` properties. Use
 #'   it with [copula_sample()] and [copula_simulate()].
 #' @export
 #' @examples
@@ -140,14 +140,14 @@ copula <- S7::new_class(
   package = "actuarialrs",
   properties = list(
     ptr = S7::new_S3_class("RiskCopula"),
-    dim = S7::new_property(S7::class_double, getter = function(self) self@ptr$dim()),
+    dimension = S7::new_property(S7::class_double, getter = function(self) self@ptr$dim()),
     description = S7::new_property(S7::class_character, getter = function(self) self@ptr$description())
   ),
   constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
 )
 
 S7::method(print, copula) <- function(x, ...) {
-  cat(sprintf("<copula> %s, dimension %d\n", x@description, as.integer(x@dim)))
+  cat(sprintf("<copula> %s, dimension %d\n", x@description, as.integer(x@dimension)))
   invisible(x)
 }
 
@@ -181,7 +181,7 @@ archimedean_copula <- function(family = c("clayton", "gumbel", "frank", "joe"), 
 #' @param copula A [copula].
 #' @param n Number of draws.
 #' @param seed Seed, a whole number.
-#' @returns An `n` by `copula@dim` matrix of uniforms in `(0, 1)`.
+#' @returns An `n` by `copula@dimension` matrix of uniforms in `(0, 1)`.
 #' @export
 #' @examples
 #' copula_sample(archimedean_copula("gumbel", 2), 5, seed = 1)

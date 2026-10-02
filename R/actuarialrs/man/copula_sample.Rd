@@ -14,7 +14,7 @@ copula_sample(copula, n, seed)
 \item{seed}{Seed, a whole number.}
 }
 \value{
-An \code{n} by \code{copula@dim} matrix of uniforms in \verb{(0, 1)}.
+An \code{n} by \code{copula@dimension} matrix of uniforms in \verb{(0, 1)}.
 }
 \description{
 Row \code{i} uses stream \code{i - 1} of \code{seed}, so any row replays alone.

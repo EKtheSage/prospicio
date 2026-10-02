@@ -24,6 +24,7 @@ tau <- cor(copula_sample(gaussian_copula(r), 2000, seed = 1), method = "kendall"
 stopifnot(abs(tau - 2 / pi * asin(0.6)) < 0.04)
 tau <- cor(copula_sample(archimedean_copula("clayton", 2), 2000, seed = 1), method = "kendall")[1, 2]
 stopifnot(abs(tau - 0.5) < 0.04)
+stopifnot(gaussian_copula(r)@dimension == 2, archimedean_copula("joe", 2, dim = 3)@dimension == 3)
 stopifnot(inherits(try(gaussian_copula(matrix(c(1, 2, 2, 1), 2)), silent = TRUE), "try-error"))
 stopifnot(inherits(try(archimedean_copula("gumbel", 0.5), silent = TRUE), "try-error"))
 
