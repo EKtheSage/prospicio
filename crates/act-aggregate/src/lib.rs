@@ -1,4 +1,14 @@
-//! Aggregate loss (frequency-severity, FFT, Panjer, Monte Carlo) and
-//! reinsurance contracts and towers.
+//! Aggregate loss and reinsurance.
 //!
-//! Empty until v0.3; see `docs/architecture.md`.
+//! Compound (frequency-severity) distributions by Panjer's recursion, with
+//! FFT and Monte Carlo to follow, then reinsurance layers and towers. See
+//! `docs/design/aggregate.md`.
+//!
+//! This crate holds no numerics of its own beyond the aggregation
+//! algorithms: distributions, grids and risk measures come from `act-prob`.
+
+pub mod compound;
+pub mod panjer;
+
+pub use compound::{CompoundMethod, CompoundReport};
+pub use panjer::panjer;

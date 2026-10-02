@@ -22,6 +22,7 @@ publish = false
 [workspace.dependencies]
 act-core = { path = "crates/act-core" }
 act-math = { path = "crates/act-math" }
+act-aggregate = { path = "crates/act-aggregate" }
 act-prob = { path = "crates/act-prob" }
 act-reserving = { path = "crates/act-reserving" }
 # PredictiveDistribution to and from Arrow IPC (act-prob's `arrow`

@@ -5,6 +5,10 @@ version = 4
 [[package]]
 name = "act-aggregate"
 version = "0.0.1"
+dependencies = [
+ "act-core",
+ "act-prob",
+]
 
 [[package]]
 name = "act-core"
@@ -65,6 +69,7 @@ dependencies = [
 name = "act-validation"
 version = "0.0.1"
 dependencies = [
+ "act-aggregate",
  "act-core",
  "act-prob",
  "act-reserving",
