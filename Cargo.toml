@@ -39,4 +39,7 @@ blake3 = { version = "1.8.7", default-features = false, features = ["std", "pure
 rand_chacha = "=0.10.0"
 rand_core = "=0.10.1"
 rayon = "1.12.0"
+# FFT aggregation in act-aggregate. Pure Rust (SIMD via intrinsics, no C), so
+# it builds for the Windows R target and WASM.
+rustfft = "6.4.1"
 serde_json = "1.0.151"

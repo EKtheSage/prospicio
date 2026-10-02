@@ -27,6 +27,10 @@ pub trait Counting {
     /// recursion starts from `P(S = 0) = pgf(f_0)`.
     fn pgf(&self, z: f64) -> f64;
 
+    /// The pgf at a complex `z = (re, im)` with `|z| ≤ 1`, as `(re, im)`.
+    /// FFT aggregation applies it to the transform of the severity grid.
+    fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64);
+
     /// `P(N ≤ k)`.
     fn cdf(&self, k: u64) -> f64 {
         (0..=k).map(|j| self.pmf(j)).sum::<f64>().min(1.0)
@@ -124,6 +128,12 @@ impl Counting for Poisson {
     /// `exp(lambda (z - 1))`.
     fn pgf(&self, z: f64) -> f64 {
         (self.lambda * (z - 1.0)).exp()
+    }
+
+    fn pgf_complex(&self, (re, im): (f64, f64)) -> (f64, f64) {
+        let modulus = (self.lambda * (re - 1.0)).exp();
+        let angle = self.lambda * im;
+        (modulus * angle.cos(), modulus * angle.sin())
     }
 }
 
@@ -226,6 +236,16 @@ impl Counting for NegativeBinomial {
     fn pgf(&self, z: f64) -> f64 {
         (-self.r * (self.beta * (1.0 - z)).ln_1p()).exp()
     }
+
+    fn pgf_complex(&self, (re, im): (f64, f64)) -> (f64, f64) {
+        // w = 1 + beta (1 - z); w^(-r) = exp(-r (ln|w| + i arg w)).
+        let (wr, wi) = (1.0 + self.beta * (1.0 - re), -self.beta * im);
+        let ln_modulus = 0.5 * (wr * wr + wi * wi).ln();
+        let arg = wi.atan2(wr);
+        let modulus = (-self.r * ln_modulus).exp();
+        let angle = -self.r * arg;
+        (modulus * angle.cos(), modulus * angle.sin())
+    }
 }
 
 #[cfg(test)]
@@ -300,6 +320,32 @@ mod tests {
                 let series: f64 = (0..500).map(|k| n.pmf(k) * z.powi(k as i32)).sum();
                 assert!((n.pgf(z) - series).abs() < 1e-12, "z {z}");
             }
+        }
+    }
+
+    #[test]
+    fn complex_pgf_matches_the_series() {
+        for n in [
+            &Poisson::new(2.5).unwrap() as &dyn Counting,
+            &NegativeBinomial::new(1.5, 3.0).unwrap(),
+        ] {
+            for theta in [0.0f64, 0.7, 2.0, 3.1] {
+                let (zr, zi) = (0.9 * theta.cos(), 0.9 * theta.sin());
+                // Sum p_k z^k, tracking z^k by repeated multiplication.
+                let (mut pr, mut pi, mut sr, mut si) = (1.0, 0.0, 0.0, 0.0);
+                for k in 0..600 {
+                    let p = n.pmf(k);
+                    sr += p * pr;
+                    si += p * pi;
+                    (pr, pi) = (pr * zr - pi * zi, pr * zi + pi * zr);
+                }
+                let (gr, gi) = n.pgf_complex((zr, zi));
+                assert!(
+                    (gr - sr).abs() < 1e-12 && (gi - si).abs() < 1e-12,
+                    "theta {theta}"
+                );
+            }
+            assert!((n.pgf_complex((0.4, 0.0)).0 - n.pgf(0.4)).abs() < 1e-15);
         }
     }
 

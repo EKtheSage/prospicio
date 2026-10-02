@@ -1,12 +1,11 @@
 //! Aggregate parity: compound distributions against brute-force
-//! convolution (numpy), which is independent of Panjer's recursion.
+//! convolution (numpy), which is independent of Panjer's recursion and FFT.
 
-use act_aggregate::panjer;
+use act_aggregate::{fft, panjer};
 use act_prob::{Counting, Grid, NegativeBinomial, Poisson};
 use act_validation::{check, reference};
 
-#[test]
-fn panjer_matches_convolution() {
+fn check_method(method: &str) {
     let cases = reference("compound_convolution.csv");
     check(&cases, |c| {
         let n: Box<dyn Counting> = match c.get("frequency") {
@@ -25,7 +24,21 @@ fn panjer_matches_convolution() {
         // Compare the interior points; the last point carries the lumped tail.
         let points = c.number("points")? as usize;
         let index = c.number("index")? as usize;
-        let (agg, _) = panjer(n.as_ref(), &sev, points + 1).ok()?;
+        let (agg, _) = match method {
+            "panjer" => panjer(n.as_ref(), &sev, points + 1),
+            _ => fft(n.as_ref(), &sev, points + 1),
+        }
+        .ok()?;
         agg.probs().get(index).copied()
     });
+}
+
+#[test]
+fn panjer_matches_convolution() {
+    check_method("panjer");
+}
+
+#[test]
+fn fft_matches_convolution() {
+    check_method("fft");
 }
