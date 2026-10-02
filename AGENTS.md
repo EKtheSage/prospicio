@@ -17,11 +17,11 @@ A local session and one or more cloud sessions may be working on this repo at th
 
 Work is split by crate so that sessions rarely touch the same file. A lane owns the files listed for it; edit another lane's files only with the user's go-ahead.
 
-| Lane | Session | Owns | Current work (v0.1) |
+| Lane | Session | Owns | Current work |
 |---|---|---|---|
 | Reserving | Local | `crates/act-reserving/`, `validation/tests/reserving.rs`, root `src/` | `Triangle` per `docs/design/triangle.md`, Chain Ladder, Mack, parity on RAA / GenIns / ABC; delete the `src/` sandbox once `act-reserving` covers it |
-| Probability | Cloud | `crates/act-prob/`, `crates/act-math/`, `validation/tests/distributions.rs` | Distributions per `docs/design/distributions.md`, `PredictiveDistribution` per `docs/design/predictive-distribution.md` |
-| Aggregate | Unassigned | `crates/act-aggregate/` | Not started (v0.3) |
+| Probability | Cloud | `crates/act-prob/`, `crates/act-math/`, `validation/tests/distributions.rs` | Discretized `Grid` and the `Counting` frequency trait per `docs/design/distributions.md` (done: `Sampled`, VaR/TVaR, `PredictiveDistribution`, `Severity`) |
+| Aggregate | Cloud (the Probability session) | `crates/act-aggregate/`, `validation/tests/aggregate.rs`, `docs/design/aggregate.md` | v0.3: Panjer, FFT and Monte Carlo frequency-severity, then reinsurance layers and towers |
 
 The ODP bootstrap needs both a `Triangle` and a `PredictiveDistribution`. It starts in the Reserving lane after both lanes have merged.
 
