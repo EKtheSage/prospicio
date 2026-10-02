@@ -6,7 +6,7 @@
 //! any simulation replays alone (see `docs/design/risk.md`).
 
 use act_core::{Error, Result, StreamRng};
-use act_math::linalg::{cholesky, lower_mul};
+use act_math::linalg::{cholesky, lower_mul, lower_solve};
 use act_math::special::{norm_cdf, norm_quantile, student_t_cdf};
 
 use crate::distribution::Distribution;
@@ -172,6 +172,146 @@ pub fn simulate(
             *x = m.quantile(*x).expect("copula uniforms lie in (0, 1)");
         }
     })
+}
+
+/// Reorders each component's draws so the components have (close to) the
+/// target correlation of normal scores, by Iman and Conover (1982). Every component
+/// keeps exactly its own draws; only their pairing across simulations
+/// changes.
+///
+/// Builds an `n × m` matrix whose columns are the normal scores
+/// `Φ⁻¹(i / (n + 1))`, shuffled independently (column `j` by
+/// `StreamRng::new(seed, j)`; column 0 is not shuffled), transforms it to
+/// have exactly the correlation `correlation`, and gives each component's
+/// draws the ranks of the matching column. The correlation of the
+/// result's normal scores (van der Waerden) is then close to
+/// `correlation`, not exact, and Spearman's rho is close to
+/// `(6 / π) asin(correlation / 2)`, as for a Gaussian copula.
+///
+/// Use it to join results simulated separately, for example a reserve and
+/// a premium-risk distribution, without resimulating either.
+///
+/// ```
+/// use act_prob::copula::iman_conover;
+/// use act_prob::{Empirical, KeyValue, PredictiveDistribution, Provenance};
+///
+/// // Two components, both 1..=1000, simulated independently.
+/// let n = 1000;
+/// let draws: Vec<f64> = (0..n).flat_map(|i| [i as f64, ((i * 7919) % n) as f64]).collect();
+/// let pd = PredictiveDistribution::from_draws(
+///     vec!["lob".into()],
+///     vec![vec![KeyValue::Int(0)], vec![KeyValue::Int(1)]],
+///     draws,
+///     Provenance::new("example"),
+/// )
+/// .unwrap();
+/// let joined = iman_conover(&pd, &[1.0, 0.7, 0.7, 1.0], 3).unwrap();
+/// assert_eq!(joined.marginal(&vec![KeyValue::Int(1)]).unwrap().sorted(),
+///            pd.marginal(&vec![KeyValue::Int(1)]).unwrap().sorted());
+/// ```
+pub fn iman_conover(
+    pd: &PredictiveDistribution,
+    correlation: &[f64],
+    seed: u64,
+) -> Result<PredictiveDistribution> {
+    let m = pd.n_components();
+    let n = pd.n_sims();
+    let target = correlation_factor(correlation, m)?;
+    if n < m + 1 {
+        return Err(invalid(
+            "n_sims",
+            n as f64,
+            "must exceed the number of components",
+        ));
+    }
+
+    // Shuffled normal scores, column-major.
+    let scores: Vec<f64> = (1..=n)
+        .map(|i| norm_quantile(i as f64 / (n + 1) as f64))
+        .collect();
+    let mut cols: Vec<Vec<f64>> = (0..m)
+        .map(|j| {
+            let mut c = scores.clone();
+            if j > 0 {
+                shuffle(&mut c, &mut StreamRng::new(seed, j as u64));
+            }
+            c
+        })
+        .collect();
+
+    // Rotate to exactly the target correlation: T = M F^-T P^T, row by row.
+    let actual = correlation_factor(&sample_correlation(&cols), m)
+        .map_err(|_| invalid("n_sims", n as f64, "too few to decorrelate the scores"))?;
+    let (mut row, mut y, mut t) = (vec![0.0; m], vec![0.0; m], vec![0.0; m]);
+    for i in 0..n {
+        for (r, col) in row.iter_mut().zip(&cols) {
+            *r = col[i];
+        }
+        lower_solve(&actual, &row, &mut y);
+        lower_mul(&target, &y, &mut t);
+        for (col, v) in cols.iter_mut().zip(&t) {
+            col[i] = *v;
+        }
+    }
+
+    // Each component takes its sorted draws in the ranks of its column.
+    let mut draws = vec![0.0; n * m];
+    for (j, col) in cols.iter().enumerate() {
+        let mut sorted: Vec<f64> = (0..n).map(|i| pd.row(i).expect("in range")[j]).collect();
+        sorted.sort_by(f64::total_cmp);
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&a, &b| col[a].total_cmp(&col[b]));
+        for (rank, &i) in order.iter().enumerate() {
+            draws[i * m + j] = sorted[rank];
+        }
+    }
+    let provenance = pd
+        .provenance()
+        .clone()
+        .param("iman_conover_correlation", format!("{correlation:?}"))
+        .param("iman_conover_seed", seed);
+    PredictiveDistribution::from_draws(
+        pd.dims().to_vec(),
+        pd.components().to_vec(),
+        draws,
+        provenance,
+    )
+}
+
+/// Pearson correlation matrix of columns, row-major.
+fn sample_correlation(cols: &[Vec<f64>]) -> Vec<f64> {
+    let m = cols.len();
+    let n = cols[0].len() as f64;
+    let centred: Vec<Vec<f64>> = cols
+        .iter()
+        .map(|c| {
+            let mean = c.iter().sum::<f64>() / n;
+            c.iter().map(|x| x - mean).collect()
+        })
+        .collect();
+    let norms: Vec<f64> = centred
+        .iter()
+        .map(|c| c.iter().map(|x| x * x).sum::<f64>().sqrt())
+        .collect();
+    let mut r = vec![0.0; m * m];
+    for i in 0..m {
+        r[i * m + i] = 1.0;
+        for j in 0..i {
+            let dot: f64 = centred[i].iter().zip(&centred[j]).map(|(a, b)| a * b).sum();
+            let v = dot / (norms[i] * norms[j]);
+            r[i * m + j] = v;
+            r[j * m + i] = v;
+        }
+    }
+    r
+}
+
+/// Fisher–Yates shuffle with uniform indices from `rng`.
+fn shuffle(x: &mut [f64], rng: &mut StreamRng) {
+    for i in (1..x.len()).rev() {
+        let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
+        x.swap(i, j);
+    }
 }
 
 /// Checks a correlation matrix and returns its Cholesky factor.
@@ -405,5 +545,78 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    /// Pearson correlation of `f(rank / (n + 1))` for 1-based ranks.
+    fn rank_correlation(x: &[f64], y: &[f64], f: fn(f64) -> f64) -> f64 {
+        let n = x.len();
+        let scores = |v: &[f64]| {
+            let mut order: Vec<usize> = (0..n).collect();
+            order.sort_by(|&a, &b| v[a].total_cmp(&v[b]));
+            let mut r = vec![0.0; n];
+            for (k, &i) in order.iter().enumerate() {
+                r[i] = f((k + 1) as f64 / (n + 1) as f64);
+            }
+            r
+        };
+        sample_correlation(&[scores(x), scores(y)])[1]
+    }
+
+    #[test]
+    fn iman_conover_keeps_marginals_and_reaches_the_target() {
+        use crate::{Empirical, KeyValue, Lognormal};
+        let a = Lognormal::from_mean_cv(100.0, 0.3).unwrap();
+        let b = Lognormal::from_mean_cv(50.0, 1.5).unwrap();
+        let c = Lognormal::from_mean_cv(10.0, 0.8).unwrap();
+        let independent =
+            GaussianCopula::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], 3).unwrap();
+        let keys: Vec<ComponentKey> = (0..3).map(|j| vec![KeyValue::Int(j)]).collect();
+        let n = 10_000;
+        let pd = simulate(
+            &independent,
+            &[&a, &b, &c],
+            vec!["lob".into()],
+            keys.clone(),
+            n,
+            1,
+            Provenance::new("t"),
+        )
+        .unwrap();
+        let joined = iman_conover(&pd, &R, 7).unwrap();
+        for key in &keys {
+            assert_eq!(
+                joined.marginal(key).unwrap().sorted(),
+                pd.marginal(key).unwrap().sorted()
+            );
+        }
+        let col = |j: usize| -> Vec<f64> { (0..n).map(|i| joined.row(i).unwrap()[j]).collect() };
+        for (i, j) in [(0, 1), (0, 2), (1, 2)] {
+            let r = R[i * 3 + j];
+            let normal_scores = rank_correlation(&col(i), &col(j), norm_quantile);
+            assert!(
+                (normal_scores - r).abs() < 0.01,
+                "({i}, {j}): {normal_scores} vs {r}"
+            );
+            let spearman = rank_correlation(&col(i), &col(j), |u| u);
+            let want = 6.0 / PI * (r / 2.0).asin();
+            assert!(
+                (spearman - want).abs() < 0.01,
+                "({i}, {j}): {spearman} vs {want}"
+            );
+        }
+        // Reproducible, and recorded.
+        assert_eq!(
+            iman_conover(&pd, &R, 7).unwrap().draw_matrix(),
+            joined.draw_matrix()
+        );
+        assert!(
+            joined
+                .provenance()
+                .parameters
+                .iter()
+                .any(|(k, _)| k == "iman_conover_seed")
+        );
+        // Bad inputs.
+        assert!(iman_conover(&pd, &[1.0, 0.5, 0.5, 1.0], 7).is_err());
     }
 }

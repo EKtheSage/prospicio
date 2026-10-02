@@ -45,6 +45,16 @@ pub fn lower_mul(l: &[f64], x: &[f64], y: &mut [f64]) {
     }
 }
 
+/// Solves `l x = b` for a lower-triangular row-major `l` (`n × n`) with a
+/// non-zero diagonal, into `x` (forward substitution).
+pub fn lower_solve(l: &[f64], b: &[f64], x: &mut [f64]) {
+    let n = b.len();
+    for i in 0..n {
+        let dot: f64 = (0..i).map(|k| l[i * n + k] * x[k]).sum();
+        x[i] = (b[i] - dot) / l[i * n + i];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,6 +81,13 @@ mod tests {
         let mut y = [0.0; 4];
         lower_mul(&l, &[1.0, 0.0, 0.0, 0.0], &mut y);
         assert_eq!(y, [l[0], l[4], l[8], l[12]]);
+        let x = [0.3, -1.0, 2.0, 0.5];
+        lower_mul(&l, &x, &mut y);
+        let mut back = [0.0; 4];
+        lower_solve(&l, &y, &mut back);
+        for (a, b) in back.iter().zip(&x) {
+            assert!((a - b).abs() < 1e-14);
+        }
     }
 
     #[test]
