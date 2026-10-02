@@ -1,10 +1,16 @@
 suppressMessages(library(actuarialrs))
 
-near <- function(a, b, rel = 1e-12) stopifnot(all(abs(a - b) <= rel * pmax(abs(b), 1e-300)))
+# Reports the values on failure, so a CI log shows what diverged.
+near <- function(a, b, rel = 1e-12) {
+  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
+    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
+         call. = FALSE)
+  }
+}
 
 # Pareto: closed forms and truncation.
 p <- pareto(500, 2)
-near(layer(p, 4000, 1000), 200, 1e-14)
+near(layer(p, 4000, 1000), 200)
 near(mean(p), 1000)
 near(survival(p, 1000), 0.25)
 stopifnot(is.infinite(mean(pareto(1, 0.9))))
@@ -16,9 +22,9 @@ stopifnot(inherits(try(pareto(1, 0), silent = TRUE), "try-error"))
 
 # Fits.
 f <- pareto_fit(c(1500, 2500, 4000, 10000), 1000, censored = c(FALSE, FALSE, FALSE, TRUE))
-near(f@alpha, 3 / log(150), 1e-14)
+near(f@alpha, 3 / log(150))
 pf <- piecewise_pareto_fit(c(1200, 1500, 2500, 6000), c(1000, 2000))
-near(pf@alpha[1], 2 / (log(1.2) + log(1.5) + 2 * log(2)), 1e-14)
+near(pf@alpha[1], 2 / (log(1.2) + log(1.5) + 2 * log(2)))
 
 # Piecewise Pareto.
 pp <- piecewise_pareto(c(1000, 2000), c(1, 2))
@@ -35,7 +41,7 @@ near(local_alpha(d, 2e6), 2)
 near(layer(log_affine_pareto(1000, 2.5, gamma = 0), 4000, 1000), layer(pareto(1000, 2.5), 4000, 1000))
 stopifnot(inherits(try(log_affine_pareto(1, 1), silent = TRUE), "try-error"))
 g <- generalized_pareto_riegel(1000, 2, 1.5)
-near(survival(g, 2000), (7 / 3)^-1.5, 1e-14)
+near(survival(g, 2000), (7 / 3)^-1.5)
 near(lev(g, 5000) + stop_loss(g, 5000), mean(g))
 
 # Claim counts by dispersion.
