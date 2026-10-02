@@ -33,6 +33,9 @@ arrow-array = { version = "59.3.0", default-features = false }
 arrow-ipc = { version = "59.3.0", default-features = false }
 arrow-schema = { version = "59.3.0", default-features = false }
 libm = "0.2.16"
+# Linear programs in act-pricing (reference fits). Pure Rust simplex, no
+# C or C++ build, so CRAN, Windows and WASM builds are unaffected.
+microlp = { version = "0.6.0", default-features = false }
 # Provenance input hashes. `pure` skips the C/assembly SIMD build so the
 # Windows R build (Rtools) and WASM need no extra toolchain.
 blake3 = { version = "1.8.7", default-features = false, features = ["std", "pure"] }

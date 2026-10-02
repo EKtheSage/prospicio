@@ -7,7 +7,8 @@
 //! implemented from the paper as restated in `docs/design/pareto.md`.
 
 use act_core::{Error, Result};
-use act_prob::{PiecewisePareto, Severity};
+use act_prob::{PiecewisePareto, Severity, Truncation};
+use microlp::{ComparisonOp, LinearExpr, OptimizationDirection, Problem};
 
 use crate::layer::{XsLayer, alpha_between_layers};
 
@@ -193,6 +194,615 @@ pub fn match_tower(
         frequency: f1,
         severity: PiecewisePareto::new(thresholds, alphas)?,
     })
+}
+
+/// The model through the points of a PML curve: `amounts[j]` is exceeded
+/// once in `return_periods[j]` years, so the excess frequency at
+/// `amounts[j]` is `1 / return_periods[j]`.
+///
+/// The severity has a threshold at every amount, the alpha between two
+/// consecutive points (`ln(f_j / f_{j+1}) / ln(A_{j+1} / A_j)`), and
+/// `tail_alpha` above the largest amount, optionally truncated at
+/// `truncation` (the last piece only, which leaves every point of the
+/// curve in place). Larger amounts must have longer return periods.
+///
+/// ```
+/// use act_pricing::tower::fit_pml_curve;
+///
+/// let model = fit_pml_curve(&[10.0, 40.0, 100.0], &[1e6, 2e6, 3e6], 2.0, None).unwrap();
+/// assert!((model.excess_frequency(2e6) - 1.0 / 40.0).abs() < 1e-15);
+/// assert!((model.severity.alphas()[0] - 2.0).abs() < 1e-14); // 4 = 2^α
+/// ```
+pub fn fit_pml_curve(
+    return_periods: &[f64],
+    amounts: &[f64],
+    tail_alpha: f64,
+    truncation: Option<f64>,
+) -> Result<TowerModel> {
+    if amounts.is_empty() || return_periods.len() != amounts.len() {
+        return Err(invalid(
+            "return_periods",
+            return_periods.len() as f64,
+            "must have one return period per amount, and at least one",
+        ));
+    }
+    if !tail_alpha.is_finite() || tail_alpha <= 0.0 {
+        return Err(invalid(
+            "tail_alpha",
+            tail_alpha,
+            "must be finite and positive",
+        ));
+    }
+    let mut points: Vec<(f64, f64)> = amounts
+        .iter()
+        .copied()
+        .zip(return_periods.iter().copied())
+        .collect();
+    points.sort_by(|a, b| a.0.total_cmp(&b.0));
+    for (j, &(amount, period)) in points.iter().enumerate() {
+        if !period.is_finite() || period <= 0.0 {
+            return Err(invalid(
+                "return_periods",
+                period,
+                "must be finite and positive",
+            ));
+        }
+        if j > 0 && (amount == points[j - 1].0 || period <= points[j - 1].1) {
+            return Err(invalid(
+                "return_periods",
+                period,
+                "must increase strictly with the amount",
+            ));
+        }
+    }
+    let thresholds: Vec<f64> = points.iter().map(|p| p.0).collect();
+    let mut alphas: Vec<f64> = points
+        .windows(2)
+        .map(|w| (w[1].1 / w[0].1).ln() / (w[1].0 / w[0].0).ln())
+        .collect();
+    alphas.push(tail_alpha);
+    let severity = PiecewisePareto::new(thresholds, alphas)?;
+    let severity = match truncation {
+        None => severity,
+        Some(tr) => severity.truncated(tr, Truncation::LastPiece)?,
+    };
+    Ok(TowerModel {
+        frequency: 1.0 / points[0].1,
+        severity,
+    })
+}
+
+/// One piece of reference information for [`fit_references`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Reference {
+    /// The expected loss a year to a layer.
+    Layer { layer: XsLayer, expected_loss: f64 },
+    /// The expected number of losses a year above a threshold.
+    Frequency { threshold: f64, frequency: f64 },
+}
+
+/// A model that reproduces every reference: expected layer losses (the
+/// layers may overlap or leave gaps) and excess frequencies.
+///
+/// The references pin down the excess-loss function `u(x)` (the expected
+/// loss to `∞ xs x`) and its slope `−g(x)` (the excess frequency) only at
+/// some points. The fit completes both at every reference point: layer
+/// losses are differences of `u`, frequencies are values of `g`, and
+/// between consecutive points the risk rate on line must lie strictly
+/// between the frequencies at its ends, which is what [`match_tower`]
+/// needs. Above the highest point the alpha is `default_alpha`, unless a
+/// reference to an unlimited layer determines the tail.
+///
+/// 1. A linear program (`microlp`) finds a completion with a positive
+///    relative margin in every inequality; bisection on the margin finds
+///    the largest, and half of it is used.
+/// 2. That point is projected exactly onto the reference equalities, then
+///    moved to the analytic center of the inequalities (maximizing the sum
+///    of their logarithms, by Newton's method), so free frequencies and
+///    rates on line sit well inside their ranges rather than at a vertex.
+///    A frequency at the lowest point that no reference gives is unbounded
+///    above, so it is derived as in step 1 of the algorithm instead.
+/// 3. The completed tower is matched with `rule`.
+///
+/// Fails if the references are inconsistent: no completion has a
+/// decreasing, convex excess-loss function.
+///
+/// ```
+/// use act_pricing::layer::XsLayer;
+/// use act_pricing::tower::{Reference, SelectionRule, fit_references};
+///
+/// let refs = [
+///     Reference::Layer { layer: XsLayer::new(1000.0, 1000.0).unwrap(), expected_loss: 150.0 },
+///     Reference::Layer { layer: XsLayer::new(3000.0, 1500.0).unwrap(), expected_loss: 160.0 },
+///     Reference::Frequency { threshold: 1000.0, frequency: 0.3 },
+/// ];
+/// let model = fit_references(&refs, 2.0, SelectionRule::default()).unwrap();
+/// assert!((model.layer_loss(1000.0, 1000.0) / 150.0 - 1.0).abs() < 1e-11);
+/// assert!((model.layer_loss(3000.0, 1500.0) / 160.0 - 1.0).abs() < 1e-11);
+/// assert!((model.excess_frequency(1000.0) / 0.3 - 1.0).abs() < 1e-11);
+/// ```
+pub fn fit_references(
+    references: &[Reference],
+    default_alpha: f64,
+    rule: SelectionRule,
+) -> Result<TowerModel> {
+    if references.is_empty() {
+        return Err(invalid("references", 0.0, "need at least one reference"));
+    }
+    if !default_alpha.is_finite() || default_alpha <= 1.0 {
+        return Err(invalid(
+            "default_alpha",
+            default_alpha,
+            "must be finite and above 1",
+        ));
+    }
+    let mut points = Vec::new();
+    let mut unlimited = false;
+    for r in references {
+        match *r {
+            Reference::Layer {
+                layer,
+                expected_loss,
+            } => {
+                if !expected_loss.is_finite() || expected_loss <= 0.0 {
+                    return Err(invalid(
+                        "expected_loss",
+                        expected_loss,
+                        "must be finite and positive",
+                    ));
+                }
+                points.push(layer.attachment());
+                if layer.top().is_finite() {
+                    points.push(layer.top());
+                } else {
+                    unlimited = true;
+                }
+            }
+            Reference::Frequency {
+                threshold,
+                frequency,
+            } => {
+                if !threshold.is_finite() || threshold <= 0.0 {
+                    return Err(invalid(
+                        "threshold",
+                        threshold,
+                        "must be finite and positive",
+                    ));
+                }
+                if !frequency.is_finite() || frequency <= 0.0 {
+                    return Err(invalid(
+                        "frequency",
+                        frequency,
+                        "must be finite and positive",
+                    ));
+                }
+                points.push(threshold);
+            }
+        }
+    }
+    points.sort_by(f64::total_cmp);
+    points.dedup();
+    let completion = Completion {
+        points: &points,
+        references,
+        default_alpha,
+        unlimited,
+    };
+    // Bisection on the relative margin: feasibility shrinks as it grows.
+    // Below about 1e-6 the margin drowns in the solver's tolerance.
+    let tiny = 1e-6;
+    let Some(mut best) = completion.solve(tiny) else {
+        return Err(invalid(
+            "references",
+            f64::NAN,
+            "are inconsistent: no decreasing, convex excess-loss function meets them",
+        ));
+    };
+    let (mut lo, mut hi) = (tiny, 1.0);
+    if completion.solve(hi).is_some() {
+        lo = hi;
+    } else {
+        for _ in 0..40 {
+            let mid = (lo * hi).sqrt();
+            if completion.solve(mid).is_some() {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+            if hi / lo < 1.01 {
+                break;
+            }
+        }
+    }
+    if let Some(sol) = completion.solve(0.5 * lo) {
+        best = sol;
+    }
+    let x = completion.center(best).ok_or_else(|| {
+        invalid(
+            "references",
+            f64::NAN,
+            "could not be completed to a strictly consistent tower",
+        )
+    })?;
+    let m = points.len();
+    let scale = points[0];
+    let losses: Vec<f64> = (0..m)
+        .map(|i| (x[i] - if i + 1 < m { x[i + 1] } else { 0.0 }) * scale)
+        .collect();
+    let mut freq: Vec<Option<f64>> = x[m..].iter().map(|&g| Some(g)).collect();
+    if m > 1 && !completion.lowest_frequency_given() {
+        // Unbounded above by the references: derived from the alpha
+        // between the two lowest layers, as in step 1 of the algorithm.
+        freq[0] = None;
+    }
+    match_tower(&points, &losses, &freq, rule)
+}
+
+/// The linear program behind [`fit_references`]: `u` and `g` at every
+/// point, scaled by the lowest point so the variables are of the order of
+/// frequencies.
+struct Completion<'a> {
+    points: &'a [f64],
+    references: &'a [Reference],
+    default_alpha: f64,
+    unlimited: bool,
+}
+
+impl Completion<'_> {
+    /// `x = (u / scale, g)` at the points with every inequality holding
+    /// with relative margin `eps`, or `None` if there is none.
+    fn solve(&self, eps: f64) -> Option<Vec<f64>> {
+        let scale = self.points[0];
+        let p: Vec<f64> = self.points.iter().map(|x| x / scale).collect();
+        let m = p.len();
+        let mut lp = Problem::new(OptimizationDirection::Minimize);
+        let u: Vec<_> = (0..m)
+            .map(|_| lp.add_var(0.0, (0.0, f64::INFINITY)))
+            .collect();
+        let g: Vec<_> = (0..m)
+            .map(|_| lp.add_var(0.0, (0.0, f64::INFINITY)))
+            .collect();
+        let index = |x: f64| {
+            self.points
+                .iter()
+                .position(|&q| q == x)
+                .expect("a reference point")
+        };
+        for r in self.references {
+            match *r {
+                Reference::Layer {
+                    layer,
+                    expected_loss,
+                } => {
+                    let mut e = LinearExpr::empty();
+                    e.add(u[index(layer.attachment())], 1.0);
+                    if layer.top().is_finite() {
+                        e.add(u[index(layer.top())], -1.0);
+                    }
+                    lp.add_constraint(e, ComparisonOp::Eq, expected_loss / scale);
+                }
+                Reference::Frequency {
+                    threshold,
+                    frequency,
+                } => {
+                    lp.add_constraint([(g[index(threshold)], 1.0)], ComparisonOp::Eq, frequency);
+                }
+            }
+        }
+        let k = 1.0 + eps;
+        for i in 0..m - 1 {
+            // RRoL_i = (u_i − u_{i+1}) / Δ_i: g_i ≥ k RRoL_i ≥ k² g_{i+1}.
+            let d = p[i + 1] - p[i];
+            lp.add_constraint(
+                [(g[i], 1.0), (u[i], -k / d), (u[i + 1], k / d)],
+                ComparisonOp::Ge,
+                0.0,
+            );
+            lp.add_constraint(
+                [(u[i], 1.0 / d), (u[i + 1], -1.0 / d), (g[i + 1], -k)],
+                ComparisonOp::Ge,
+                0.0,
+            );
+        }
+        // The unlimited top layer: α_top − 1 = g_m p_m / u_m. Its frequency
+        // keeps the same relative margin above 0 as the others keep from
+        // each other: g_m ≥ eps RRoL_{m−1}.
+        let (gm, um, pm) = (g[m - 1], u[m - 1], p[m - 1]);
+        if m > 1 {
+            let d = p[m - 1] - p[m - 2];
+            lp.add_constraint(
+                [(gm, 1.0), (u[m - 2], -eps / d), (um, eps / d)],
+                ComparisonOp::Ge,
+                0.0,
+            );
+        }
+        if self.unlimited {
+            lp.add_constraint([(gm, pm), (um, -eps)], ComparisonOp::Ge, 0.0);
+            lp.add_constraint([(um, 1.0), (gm, -eps * pm)], ComparisonOp::Ge, 0.0);
+        } else {
+            lp.add_constraint(
+                [(um, self.default_alpha - 1.0), (gm, -pm)],
+                ComparisonOp::Eq,
+                0.0,
+            );
+        }
+        let solution = lp.solve().ok()?.into_solution().ok()?;
+        let x: Vec<f64> = u.iter().chain(&g).map(|&v| solution.var_value(v)).collect();
+        // The solver meets constraints only to its tolerance: check the
+        // strict inequalities in floating point.
+        self.inequalities(true)
+            .iter()
+            .all(|a| dot(a, &x) > 0.0)
+            .then_some(x)
+    }
+
+    /// Whether a reference gives the frequency at the lowest point.
+    fn lowest_frequency_given(&self) -> bool {
+        self.references.iter().any(
+            |r| matches!(*r, Reference::Frequency { threshold, .. } if threshold == self.points[0]),
+        )
+    }
+
+    /// The equalities `A x = b` on `x = (u / scale, g)`.
+    fn equalities(&self) -> (Vec<Vec<f64>>, Vec<f64>) {
+        let m = self.points.len();
+        let scale = self.points[0];
+        let index = |x: f64| {
+            self.points
+                .iter()
+                .position(|&q| q == x)
+                .expect("a reference point")
+        };
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        for r in self.references {
+            let mut row = vec![0.0; 2 * m];
+            match *r {
+                Reference::Layer {
+                    layer,
+                    expected_loss,
+                } => {
+                    row[index(layer.attachment())] = 1.0;
+                    if layer.top().is_finite() {
+                        row[index(layer.top())] = -1.0;
+                    }
+                    b.push(expected_loss / scale);
+                }
+                Reference::Frequency {
+                    threshold,
+                    frequency,
+                } => {
+                    row[m + index(threshold)] = 1.0;
+                    b.push(frequency);
+                }
+            }
+            a.push(row);
+        }
+        if !self.unlimited {
+            let mut row = vec![0.0; 2 * m];
+            row[m - 1] = self.default_alpha - 1.0;
+            row[2 * m - 1] = -self.points[m - 1] / scale;
+            a.push(row);
+            b.push(0.0);
+        }
+        (a, b)
+    }
+
+    /// The strict inequalities `a · x > 0`: frequencies and risk rates on
+    /// line interleave, decreasing up the tower, and the top frequency
+    /// and unlimited loss are positive. With `with_lowest` false, the
+    /// lowest frequency's bound is left out.
+    fn inequalities(&self, with_lowest: bool) -> Vec<Vec<f64>> {
+        let m = self.points.len();
+        let scale = self.points[0];
+        let mut out = Vec::new();
+        for i in 0..m - 1 {
+            let d = (self.points[i + 1] - self.points[i]) / scale;
+            // g_i − RRoL_i and RRoL_i − g_{i+1}.
+            let mut above = vec![0.0; 2 * m];
+            above[m + i] = 1.0;
+            above[i] = -1.0 / d;
+            above[i + 1] = 1.0 / d;
+            if i > 0 || with_lowest {
+                out.push(above);
+            }
+            let mut below = vec![0.0; 2 * m];
+            below[i] = 1.0 / d;
+            below[i + 1] = -1.0 / d;
+            below[m + i + 1] = -1.0;
+            out.push(below);
+        }
+        let mut top = vec![0.0; 2 * m];
+        top[2 * m - 1] = 1.0;
+        out.push(top);
+        let mut unlimited = vec![0.0; 2 * m];
+        unlimited[m - 1] = 1.0;
+        out.push(unlimited);
+        out
+    }
+
+    /// The analytic center of the strict inequalities within the
+    /// equalities, from a strictly feasible `x0`: the point maximizing
+    /// `Σ ln(a_j · x)`, which keeps every free frequency and rate on line
+    /// well inside its range instead of at an end. Newton's method on the
+    /// null space of the equalities, after projecting `x0` onto them
+    /// exactly. With no reference at the lowest frequency it is held
+    /// fixed (it is unbounded above, and derived later).
+    fn center(&self, x0: Vec<f64>) -> Option<Vec<f64>> {
+        let m = self.points.len();
+        let (mut a, mut b) = self.equalities();
+        let free_lowest = m > 1 && !self.lowest_frequency_given();
+        if free_lowest {
+            let mut row = vec![0.0; 2 * m];
+            row[m] = 1.0;
+            a.push(row);
+            b.push(x0[m]);
+        }
+        let (rows, rhs, null) = reduce(&a, &b)?;
+        // Project onto A x = b: x0 − Aᵀ (A Aᵀ)⁻¹ (A x0 − b).
+        let r = rows.len();
+        let residual: Vec<f64> = (0..r).map(|i| dot(&rows[i], &x0) - rhs[i]).collect();
+        let gram: Vec<f64> = (0..r * r)
+            .map(|k| dot(&rows[k / r], &rows[k % r]))
+            .collect();
+        let y = gauss_solve(gram, residual, r)?;
+        let mut x = x0;
+        for (i, row) in rows.iter().enumerate() {
+            for (xj, aj) in x.iter_mut().zip(row) {
+                *xj -= y[i] * aj;
+            }
+        }
+        let ineq = self.inequalities(!free_lowest);
+        let phi = |x: &[f64]| -> Option<f64> {
+            ineq.iter()
+                .map(|a| {
+                    let s = dot(a, x);
+                    (s > 0.0).then(|| s.ln())
+                })
+                .sum()
+        };
+        let mut value = phi(&x)?;
+        let k = null.len();
+        for _ in 0..200 {
+            if k == 0 {
+                break;
+            }
+            // Gradient and (negated) Hessian of φ along the null space.
+            let mut grad = vec![0.0; k];
+            let mut hess = vec![0.0; k * k];
+            for a in &ineq {
+                let s = dot(a, &x);
+                let an: Vec<f64> = null.iter().map(|n| dot(a, n) / s).collect();
+                for i in 0..k {
+                    grad[i] += an[i];
+                    for j in 0..k {
+                        hess[i * k + j] += an[i] * an[j];
+                    }
+                }
+            }
+            let step = gauss_solve(hess, grad.clone(), k)?;
+            let decrement = dot(&grad, &step);
+            if decrement < 1e-24 {
+                break;
+            }
+            let mut t = 1.0;
+            loop {
+                let trial: Vec<f64> = (0..2 * m)
+                    .map(|j| x[j] + t * (0..k).map(|i| step[i] * null[i][j]).sum::<f64>())
+                    .collect();
+                if let Some(v) = phi(&trial)
+                    && v >= value + 0.25 * t * decrement
+                {
+                    x = trial;
+                    value = v;
+                    break;
+                }
+                t *= 0.5;
+                if t < 1e-12 {
+                    return Some(x);
+                }
+            }
+        }
+        Some(x)
+    }
+}
+
+fn dot(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b).map(|(x, y)| x * y).sum()
+}
+
+/// Row-reduces `A x = b`: independent rows (in reduced form), their
+/// right-hand sides, and a basis of the null space of `A`. `None` if the
+/// system is inconsistent.
+#[allow(clippy::type_complexity)]
+fn reduce(a: &[Vec<f64>], b: &[f64]) -> Option<(Vec<Vec<f64>>, Vec<f64>, Vec<Vec<f64>>)> {
+    let n = a.first().map_or(0, Vec::len);
+    let mut rows: Vec<Vec<f64>> = a
+        .iter()
+        .zip(b)
+        .map(|(r, &v)| {
+            let mut r = r.clone();
+            r.push(v);
+            r
+        })
+        .collect();
+    let mut pivots = Vec::new();
+    let mut rank = 0;
+    for col in 0..n {
+        let Some(p) =
+            (rank..rows.len()).max_by(|&i, &j| rows[i][col].abs().total_cmp(&rows[j][col].abs()))
+        else {
+            break;
+        };
+        if rows[p][col].abs() < 1e-12 {
+            continue;
+        }
+        rows.swap(rank, p);
+        let lead = rows[rank][col];
+        for v in rows[rank].iter_mut() {
+            *v /= lead;
+        }
+        let pivot = rows[rank].clone();
+        for (i, row) in rows.iter_mut().enumerate() {
+            if i != rank && row[col] != 0.0 {
+                let f = row[col];
+                for (v, p) in row.iter_mut().zip(&pivot) {
+                    *v -= f * p;
+                }
+            }
+        }
+        pivots.push(col);
+        rank += 1;
+    }
+    // A zero row with a non-zero right-hand side: inconsistent.
+    let scale = b.iter().fold(1.0f64, |s, v| s.max(v.abs()));
+    if rows[rank..].iter().any(|r| r[n].abs() > 1e-9 * scale) {
+        return None;
+    }
+    rows.truncate(rank);
+    let rhs = rows
+        .iter_mut()
+        .map(|r| r.pop().expect("augmented"))
+        .collect();
+    let null = (0..n)
+        .filter(|c| !pivots.contains(c))
+        .map(|free| {
+            let mut v = vec![0.0; n];
+            v[free] = 1.0;
+            for (k, &p) in pivots.iter().enumerate() {
+                v[p] = -rows[k][free];
+            }
+            v
+        })
+        .collect();
+    Some((rows, rhs, null))
+}
+
+/// Solves the `n × n` system `a x = b` (row-major) by Gaussian elimination
+/// with partial pivoting; `None` if it is singular.
+fn gauss_solve(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
+    for col in 0..n {
+        let p = (col..n).max_by(|&i, &j| a[i * n + col].abs().total_cmp(&a[j * n + col].abs()))?;
+        if a[p * n + col] == 0.0 || !a[p * n + col].is_finite() {
+            return None;
+        }
+        for j in 0..n {
+            a.swap(col * n + j, p * n + j);
+        }
+        b.swap(col, p);
+        for i in col + 1..n {
+            let f = a[i * n + col] / a[col * n + col];
+            for j in col..n {
+                a[i * n + j] -= f * a[col * n + j];
+            }
+            b[i] -= f * b[col];
+        }
+    }
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let s: f64 = (i + 1..n).map(|j| a[i * n + j] * x[j]).sum();
+        x[i] = (b[i] - s) / a[i * n + i];
+    }
+    Some(x)
 }
 
 /// Frequencies above each attachment point: given, or from the alpha
@@ -557,6 +1167,142 @@ mod tests {
         assert!(match_tower(&ATTACHMENTS, &LOSSES, &freq, rule).is_err());
         assert!(match_tower(&ATTACHMENTS, &LOSSES[..6], &[], rule).is_err());
         assert!(match_tower(&[2.0, 1.0], &[1.0, 1.0], &[], rule).is_err());
+    }
+
+    #[test]
+    fn pml_curve_points_are_reproduced() {
+        let periods = [5.0, 20.0, 50.0, 200.0];
+        let amounts = [2e6, 5e6, 9e6, 2e7];
+        let model = fit_pml_curve(&periods, &amounts, 1.8, None).unwrap();
+        for (rp, x) in periods.iter().zip(amounts) {
+            assert!((model.excess_frequency(x) * rp - 1.0).abs() < 1e-13);
+        }
+        assert_eq!(model.severity.alphas()[3], 1.8);
+        // Unsorted input, and a truncated last piece keeps the points.
+        let t = fit_pml_curve(
+            &[50.0, 5.0, 200.0, 20.0],
+            &[9e6, 2e6, 2e7, 5e6],
+            1.8,
+            Some(1e8),
+        )
+        .unwrap();
+        for (rp, x) in periods.iter().zip(amounts) {
+            assert!((t.excess_frequency(x) * rp - 1.0).abs() < 1e-13);
+        }
+        assert_eq!(t.excess_frequency(1e8), 0.0);
+        assert!(fit_pml_curve(&[5.0, 4.0], &[1.0, 2.0], 2.0, None).is_err());
+        assert!(fit_pml_curve(&[5.0], &[1.0], 0.0, None).is_err());
+    }
+
+    fn layer_ref(limit: f64, attachment: f64, loss: f64) -> Reference {
+        Reference::Layer {
+            layer: XsLayer::new(limit, attachment).unwrap(),
+            expected_loss: loss,
+        }
+    }
+
+    fn reproduces(model: &TowerModel, refs: &[Reference]) {
+        for r in refs {
+            let (got, want) = match *r {
+                Reference::Layer {
+                    layer,
+                    expected_loss,
+                } => (
+                    model.layer_loss(layer.limit(), layer.attachment()),
+                    expected_loss,
+                ),
+                Reference::Frequency {
+                    threshold,
+                    frequency,
+                } => (model.excess_frequency(threshold), frequency),
+            };
+            assert!((got / want - 1.0).abs() < 1e-11, "{r:?}: {got}");
+        }
+    }
+
+    #[test]
+    fn complete_references_are_the_tower() {
+        // Every layer of Table 3 and every frequency of a matched model:
+        // nothing is left to choose.
+        let base = example_4(SelectionRule::MinimizeAlphaRatio);
+        let mut refs: Vec<Reference> = (0..7)
+            .map(|i| {
+                let limit = if i < 6 {
+                    ATTACHMENTS[i + 1] - ATTACHMENTS[i]
+                } else {
+                    f64::INFINITY
+                };
+                layer_ref(limit, ATTACHMENTS[i], LOSSES[i])
+            })
+            .collect();
+        refs.extend(ATTACHMENTS.iter().map(|&a| Reference::Frequency {
+            threshold: a,
+            frequency: base.excess_frequency(a),
+        }));
+        let fit = fit_references(&refs, 2.0, SelectionRule::MinimizeAlphaRatio).unwrap();
+        reproduces(&fit, &refs);
+        for (x, y) in fit.severity.alphas().iter().zip(base.severity.alphas()) {
+            assert!((x / y - 1.0).abs() < 1e-6, "{x} {y}");
+        }
+    }
+
+    #[test]
+    fn partial_references_are_reproduced() {
+        // Overlapping layers, a gap, a frequency, no unlimited layer.
+        let refs = [
+            layer_ref(1000.0, 1000.0, 120.0),
+            layer_ref(1500.0, 1500.0, 110.0),
+            layer_ref(5000.0, 5000.0, 60.0),
+            Reference::Frequency {
+                threshold: 2500.0,
+                frequency: 0.05,
+            },
+        ];
+        for rule in [SelectionRule::MinimizeAlphaRatio, SelectionRule::Midpoint] {
+            let fit = fit_references(&refs, 2.0, rule).unwrap();
+            reproduces(&fit, &refs);
+            // The default alpha above the highest point.
+            assert!((fit.severity.alphas().last().unwrap() - 2.0).abs() < 1e-9);
+        }
+        // Centred, the gaps get moderate alphas (a vertex of the linear
+        // program gives alphas near 100 here).
+        let fit = fit_references(&refs, 2.0, SelectionRule::default()).unwrap();
+        assert!(
+            fit.severity.alphas().iter().all(|&a| a < 10.0),
+            "{:?}",
+            fit.severity.alphas()
+        );
+        // A single unlimited layer with its frequency.
+        let refs = [
+            layer_ref(f64::INFINITY, 1000.0, 500.0),
+            Reference::Frequency {
+                threshold: 1000.0,
+                frequency: 0.25,
+            },
+        ];
+        let fit = fit_references(&refs, 2.0, SelectionRule::default()).unwrap();
+        reproduces(&fit, &refs);
+        assert!((fit.severity.alphas()[0] - 1.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn inconsistent_references_fail() {
+        // The upper layer has the higher rate on line.
+        let refs = [
+            layer_ref(1000.0, 1000.0, 100.0),
+            layer_ref(1000.0, 2000.0, 120.0),
+        ];
+        assert!(fit_references(&refs, 2.0, SelectionRule::default()).is_err());
+        // A frequency below the rate on line of the layer above it.
+        let refs = [
+            layer_ref(1000.0, 1000.0, 100.0),
+            Reference::Frequency {
+                threshold: 1000.0,
+                frequency: 0.09,
+            },
+        ];
+        assert!(fit_references(&refs, 2.0, SelectionRule::default()).is_err());
+        assert!(fit_references(&[], 2.0, SelectionRule::default()).is_err());
     }
 
     #[test]

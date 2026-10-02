@@ -386,6 +386,32 @@ pure-Rust simplex crate `microlp` (Apache-2.0), as a dependency of
 `act-pricing` only; no C or C++ build, so WASM, CRAN and Windows builds
 are unaffected.
 
+Done in `tower`: `fit_pml_curve` (closed form: the alpha between
+consecutive PML points, a tail alpha above, optionally a truncated last
+piece; matches R at `1e-13`) and `fit_references` for any mix of layer
+losses (overlapping or with gaps) and excess frequencies. The reference
+fit is our own construction, not the package's:
+
+1. The unknowns are the excess-loss function `u` and the frequency `g` at
+   every reference point. References are linear equalities, and the
+   conditions `match_tower` needs (rates on line strictly between the
+   frequencies around them) are linear inequalities. `microlp` finds a
+   point with a positive relative margin, by bisection on the margin.
+2. A vertex of that program puts free frequencies at the ends of their
+   ranges, which gives alphas near 100 in the gaps between references
+   and distorts the prices of layers there. So the point is projected
+   exactly onto the equalities, then moved to the analytic center of the
+   inequalities by Newton's method; gaps then get moderate alphas. A
+   lowest frequency that no reference gives is unbounded above, and is
+   derived as in step 1 of the algorithm.
+3. The completed tower goes to `match_tower`. Every reference is
+   reproduced to rounding (`1e-11` in tests). With references for every
+   layer and frequency, the result is the tower match itself.
+
+Where the references leave freedom, this completion differs from the R
+package's (which fills gaps with a default alpha), so the two are not
+compared.
+
 `Layer` and `Tower` (contract terms) still live in `act-aggregate`;
 `docs/architecture.md` gives them their own `reinsurance` namespace, and
 moving them is a separate, later PR.
