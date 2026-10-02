@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use act_core::{Error, Period, Result, StreamRng};
 use rayon::prelude::*;
 
+use crate::distortion::Distortion;
 use crate::distribution::Distribution;
 use crate::provenance::{Provenance, SIM_INDEX_SCHEME};
 use crate::sampled::{Empirical, Sampled};
@@ -338,6 +339,71 @@ impl PredictiveDistribution {
                 .collect();
             Sampled::new(sums).expect("sums of finite draws are finite")
         })
+    }
+
+    /// Allocates the distortion risk measure of the [`total`](Self::total)
+    /// to the components by co-measure (Euler allocation): one
+    /// contribution per component, in [`components`](Self::components)
+    /// order, summing to `d` applied to the total.
+    ///
+    /// Simulations are ranked by their total, take the distortion's
+    /// weights by rank ([`Distortion::weights`]), and each component's
+    /// contribution is the weighted sum of its own draws. For
+    /// `Distortion::Tvar(p)` the contributions are the CoTVaRs,
+    /// `E[X_j | total in its top 1 - p]`. Simulations with equal totals
+    /// share their weights equally, so the result does not depend on how
+    /// ties are ordered.
+    ///
+    /// Components must add up to the portfolio being allocated: allocate
+    /// a set of segments, not a tower result that holds gross, ceded and
+    /// net side by side.
+    ///
+    /// ```
+    /// use act_prob::{Distortion, PredictiveDistribution, Provenance, KeyValue};
+    ///
+    /// // Two lines over four simulations; the totals are 3, 5, 7, 9.
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["lob".into()],
+    ///     vec![vec![KeyValue::from("motor")], vec![KeyValue::from("property")]],
+    ///     vec![1.0, 2.0, 4.0, 1.0, 2.0, 5.0, 3.0, 6.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// // TVaR at 50%: the two worst years, 7 = 2 + 5 and 9 = 3 + 6.
+    /// let co = pd.allocate(&Distortion::tvar(0.5).unwrap());
+    /// assert_eq!(co, [2.5, 5.5]);
+    /// ```
+    pub fn allocate(&self, d: &Distortion) -> Vec<f64> {
+        let n = self.n_sims;
+        let m = self.n_components();
+        let totals = self.total().draws();
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&a, &b| totals[a].total_cmp(&totals[b]));
+        let mut weights = d.weights(n);
+        // Simulations tied on the total share their weights.
+        let mut start = 0;
+        while start < n {
+            let mut end = start + 1;
+            while end < n && totals[order[end]] == totals[order[start]] {
+                end += 1;
+            }
+            if end - start > 1 {
+                let mean = weights[start..end].iter().sum::<f64>() / (end - start) as f64;
+                weights[start..end].fill(mean);
+            }
+            start = end;
+        }
+        let mut contributions = vec![0.0; m];
+        for (w, &sim) in weights.iter().zip(&order) {
+            if *w == 0.0 {
+                continue;
+            }
+            let row = &self.draws[sim * m..(sim + 1) * m];
+            for (c, x) in contributions.iter_mut().zip(row) {
+                *c += w * x;
+            }
+        }
+        contributions
     }
 }
 
@@ -676,5 +742,109 @@ mod tests {
         );
         let o2020 = by_origin.marginal(&vec![origins[1].into()]).unwrap();
         assert_eq!(o2020.draws(), &[6.0, 60.0]);
+    }
+
+    fn lines(draws: Vec<f64>, m: usize) -> PredictiveDistribution {
+        let components = (0..m).map(|j| vec![KeyValue::Int(j as i64)]).collect();
+        PredictiveDistribution::from_draws(
+            vec!["lob".into()],
+            components,
+            draws,
+            Provenance::new("test"),
+        )
+        .unwrap()
+    }
+
+    fn simulated_lines() -> PredictiveDistribution {
+        use crate::Lognormal;
+        let a = Lognormal::from_mean_cv(100.0, 0.3).unwrap();
+        let b = Lognormal::from_mean_cv(50.0, 1.2).unwrap();
+        PredictiveDistribution::simulate(
+            vec!["lob".into()],
+            vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+            20_000,
+            5,
+            Provenance::new("test"),
+            |rng, row| {
+                let x = a.sample(rng, 1)[0];
+                let y = b.sample(rng, 1)[0];
+                // Some dependence: the second line moves with the first.
+                row.copy_from_slice(&[x, y + 0.5 * x]);
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn allocation_adds_up_to_the_measure_of_the_total() {
+        let pd = simulated_lines();
+        for d in [
+            Distortion::tvar(0.99).unwrap(),
+            Distortion::wang(0.5).unwrap(),
+            Distortion::proportional_hazard(0.7).unwrap(),
+            Distortion::dual_power(3.0).unwrap(),
+        ] {
+            let co = pd.allocate(&d);
+            let whole = pd.distortion(&d);
+            assert!(
+                (co.iter().sum::<f64>() - whole).abs() <= 1e-9 * whole,
+                "{d:?}"
+            );
+        }
+        // The mean allocates to the component means.
+        let co = pd.allocate(&Distortion::tvar(0.0).unwrap());
+        for (j, c) in co.iter().enumerate() {
+            let mean =
+                (0..pd.n_sims()).map(|i| pd.row(i).unwrap()[j]).sum::<f64>() / pd.n_sims() as f64;
+            assert!((c - mean).abs() <= 1e-9 * mean);
+        }
+    }
+
+    #[test]
+    fn cotvar_is_the_conditional_tail_mean() {
+        let pd = simulated_lines();
+        let p = 0.95;
+        let co = pd.allocate(&Distortion::tvar(p).unwrap());
+        // 20,000 × 0.05 = 1,000 whole simulations: the plain conditional mean.
+        let mut rows: Vec<&[f64]> = (0..pd.n_sims()).map(|i| pd.row(i).unwrap()).collect();
+        rows.sort_by(|a, b| a.iter().sum::<f64>().total_cmp(&b.iter().sum::<f64>()));
+        let tail = &rows[19_000..];
+        for (j, c) in co.iter().enumerate() {
+            let want = tail.iter().map(|r| r[j]).sum::<f64>() / 1_000.0;
+            assert!((c - want).abs() <= 1e-9 * want, "{c} vs {want}");
+        }
+    }
+
+    #[test]
+    fn comonotonic_parts_get_their_own_measure() {
+        // The second line is twice the first: ρ is comonotonic additive, so
+        // each line is allocated its own risk measure.
+        let x = [3.0, 1.0, 4.0, 1.5, 5.0, 9.0, 2.0, 6.0];
+        let draws: Vec<f64> = x.iter().flat_map(|&v| [v, 2.0 * v]).collect();
+        let pd = lines(draws, 2);
+        let mut sorted = x.to_vec();
+        sorted.sort_by(f64::total_cmp);
+        let d = Distortion::wang(0.8).unwrap();
+        let co = pd.allocate(&d);
+        let own = d.apply_sorted(&sorted);
+        assert!((co[0] - own).abs() < 1e-12);
+        assert!((co[1] - 2.0 * own).abs() < 1e-12);
+    }
+
+    #[test]
+    fn tied_totals_share_weights() {
+        // Simulations 1 and 2 tie on the total (5) but split it differently;
+        // TVaR at 2/3 takes the top third of the mass, which is all on that
+        // tie, so each line gets the mean of its two values.
+        let a = lines(vec![1.0, 1.0, 4.0, 1.0, 0.0, 5.0], 2);
+        let b = lines(vec![1.0, 1.0, 0.0, 5.0, 4.0, 1.0], 2);
+        let d = Distortion::tvar(2.0 / 3.0).unwrap();
+        for pd in [a, b] {
+            let co = pd.allocate(&d);
+            assert!(
+                (co[0] - 2.0).abs() < 1e-12 && (co[1] - 3.0).abs() < 1e-12,
+                "{co:?}"
+            );
+        }
     }
 }

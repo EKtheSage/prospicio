@@ -13,7 +13,7 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 |---|---|---|
 | VaR, TVaR | `risk` | sorted draws (done) |
 | Distortion risk measures | `distortion` | sorted draws, discrete distributions, grids |
-| Allocation (co-measures) | `allocation` | `PredictiveDistribution` |
+| Allocation (co-measures) | `PredictiveDistribution::allocate` | `PredictiveDistribution` |
 | Copulas | `copula` | uniforms per simulation, then marginals |
 | Iman-Conover | `copula` | reorders existing draws |
 | EVT tails | later | — |
@@ -24,6 +24,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 - `act_prob::Distortion`: `Tvar(p)`, `Wang(λ)`, `ProportionalHazard(ρ)`,
   `DualPower(β)`, with `g`, `weights(n)`, `apply_sorted`,
   `apply_discrete`; `Empirical::distortion` and `Grid::distortion`.
+- `PredictiveDistribution::allocate(&Distortion)`: co-measure allocation
+  of the total's risk measure to the components (CoTVaR for `Tvar`).
 
 ## Decisions
 
@@ -75,10 +77,16 @@ weights are a non-decreasing probability vector, and coherence: translation
 and scale equivariance, bounds between the mean and the maximum, and
 monotonicity in each parameter.
 
+Allocation tests check, on simulated dependent lines, that contributions
+sum to the measure of the total for every distortion, that the mean
+allocates to component means, and that CoTVaR equals the conditional tail
+mean computed directly. Two exact cases: comonotonic lines (`X_2 = 2 X_1`)
+each receive their own risk measure, and two simulations tied on the
+total but split differently give the same allocation in either order.
+
 ## Next
 
-1. Allocation: `PredictiveDistribution::allocate(&Distortion)`, CoTVaR.
-2. Gaussian and t copulas; Iman-Conover.
-3. Archimedean copulas (Clayton, Gumbel, Frank, Joe).
-4. Python and R bindings.
-5. EVT tails (GPD over a threshold) for extrapolating past the draws.
+1. Gaussian and t copulas; Iman-Conover.
+2. Archimedean copulas (Clayton, Gumbel, Frank, Joe).
+3. Python and R bindings.
+4. EVT tails (GPD over a threshold) for extrapolating past the draws.
