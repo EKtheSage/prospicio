@@ -32,6 +32,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `special::beta_inc` and `special::student_t_cdf` for them.
 - `copula::iman_conover(&pd, correlation, seed)`: reorders each
   component's draws to a target correlation.
+- `ArchimedeanCopula` (Clayton, Gumbel, Frank, Joe), exchangeable in any
+  dimension.
 
 ## Decisions
 
@@ -64,6 +66,16 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   copula draw takes its `d` normals first, as `Φ⁻¹(U)`, then (t copula)
   one chi-square from the same stream. Rejection sampling keeps each draw
   a pure function of `(seed, sim)`.
+- **Archimedean copulas by frailty** (Marshall–Olkin): one frailty `V`
+  per draw (gamma, positive stable by Kanter's representation,
+  logarithmic by Kemp's LK, Sibuya by inverting its distribution
+  function), then `d` unit exponentials, `u_j = ψ(E_j / V)`. This is exact
+  in every dimension, uses a fixed number of uniforms except for the gamma
+  rejection step, and gives exchangeable dependence only; nested and
+  vine structures come later.
+- **Uniforms stay inside `(0, 1)`.** Far in a tail, `Φ` or a generator
+  rounds to 0 or 1, where marginal quantiles are infinite, so every copula
+  clamps to `[f64::MIN_POSITIVE, 1 - 2^-53]`.
 - **Iman-Conover reorders draws**: it imposes a target correlation on
   existing marginals (for example, reserve and premium-risk results
   simulated separately) by permuting them, so every marginal keeps its
@@ -95,7 +107,12 @@ monotonicity in each parameter.
 tau against `(2 / π) asin(ρ)` for the Gaussian and t copulas (including
 `nu < 1`), uniform margins by a Kolmogorov–Smirnov test, the t copula's
 joint extremes against its tail-dependence coefficient, the gamma
-sampler's moments, and that any simulation replays alone. Iman-Conover
+sampler's moments, and that any simulation replays alone. Archimedean
+copulas are checked against their Kendall's tau (closed forms for Clayton
+and Gumbel; Frank's Debye integral and Joe's series computed in the
+test), uniform margins, and tail dependence: Clayton's lower tail
+`2^(-1/θ)` and Gumbel's upper tail `2 - 2^(1/θ)`. Each frailty sampler has
+a moment or probability check. Iman-Conover
 is checked on three lognormal lines: marginals unchanged draw for draw,
 normal-score correlations within 0.01 of the target, and Spearman's rho
 within 0.01 of `(6 / π) asin(ρ / 2)`.
@@ -109,6 +126,5 @@ total but split differently give the same allocation in either order.
 
 ## Next
 
-1. Archimedean copulas (Clayton, Gumbel, Frank, Joe).
-2. Python and R bindings.
-3. EVT tails (GPD over a threshold) for extrapolating past the draws.
+1. Python and R bindings.
+2. EVT tails (GPD over a threshold) for extrapolating past the draws.

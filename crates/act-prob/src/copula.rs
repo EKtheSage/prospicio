@@ -7,7 +7,7 @@
 
 use act_core::{Error, Result, StreamRng};
 use act_math::linalg::{cholesky, lower_mul, lower_solve};
-use act_math::special::{norm_cdf, norm_quantile, student_t_cdf};
+use act_math::special::{ln_gamma, norm_cdf, norm_quantile, student_t_cdf};
 
 use crate::distribution::Distribution;
 use crate::predictive::{ComponentKey, PredictiveDistribution};
@@ -69,7 +69,7 @@ impl Copula for GaussianCopula {
     fn sample(&self, rng: &mut StreamRng, u: &mut [f64]) {
         correlated_normals(&self.chol, rng, u);
         for x in u.iter_mut() {
-            *x = norm_cdf(*x);
+            *x = open01(norm_cdf(*x));
         }
     }
 }
@@ -119,7 +119,116 @@ impl Copula for StudentTCopula {
         let w = 2.0 * gamma(rng, 0.5 * self.nu);
         let scale = (w / self.nu).sqrt();
         for x in u.iter_mut() {
-            *x = student_t_cdf(*x / scale, self.nu);
+            *x = open01(student_t_cdf(*x / scale, self.nu));
+        }
+    }
+}
+
+/// An Archimedean copula family; see [`ArchimedeanCopula`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Archimedean {
+    Clayton,
+    Gumbel,
+    Frank,
+    Joe,
+}
+
+/// An exchangeable `d`-dimensional Archimedean copula with generator
+/// `ψ_θ`, sampled by Marshall and Olkin's frailty method: draw a frailty
+/// `V` (whose Laplace transform is `ψ`), then `d` unit exponentials `E_j`,
+/// and return `u_j = ψ(E_j / V)`.
+///
+/// | Family | `ψ(t)` | Frailty `V` | `θ` | Kendall's tau |
+/// |---|---|---|---|---|
+/// | Clayton | `(1 + t)^(-1/θ)` | Gamma(`1/θ`) | `> 0` | `θ / (θ + 2)` |
+/// | Gumbel | `exp(-t^(1/θ))` | positive stable(`1/θ`) | `>= 1` | `1 - 1/θ` |
+/// | Frank | `-ln(1 - (1 - e^-θ) e^-t) / θ` | logarithmic(`1 - e^-θ`) | `> 0` | `1 + 4 (D_1(θ) - 1) / θ` |
+/// | Joe | `1 - (1 - e^-t)^(1/θ)` | Sibuya(`1/θ`) | `>= 1` | `1 - 4 Σ_k 1 / (k (θk + 2)(θ(k - 1) + 2))` |
+///
+/// Clayton has lower-tail dependence `2^(-1/θ)`; Gumbel and Joe have
+/// upper-tail dependence `2 - 2^(1/θ)`; Frank has none. Draws use the
+/// frailty first, then the exponentials, all from the simulation's stream.
+///
+/// ```
+/// use act_core::StreamRng;
+/// use act_prob::copula::{Archimedean, ArchimedeanCopula, Copula};
+///
+/// // Clayton with tau = 0.5.
+/// let c = ArchimedeanCopula::new(Archimedean::Clayton, 2.0, 3).unwrap();
+/// let mut u = [0.0; 3];
+/// c.sample(&mut StreamRng::new(1, 0), &mut u);
+/// assert!(u.iter().all(|&x| x > 0.0 && x < 1.0));
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArchimedeanCopula {
+    family: Archimedean,
+    theta: f64,
+    dim: usize,
+}
+
+impl ArchimedeanCopula {
+    /// A `dim`-dimensional copula of `family` with parameter `theta`.
+    pub fn new(family: Archimedean, theta: f64, dim: usize) -> Result<Self> {
+        let ok = theta.is_finite()
+            && match family {
+                Archimedean::Clayton | Archimedean::Frank => theta > 0.0,
+                Archimedean::Gumbel | Archimedean::Joe => theta >= 1.0,
+            };
+        if !ok {
+            let reason = match family {
+                Archimedean::Clayton | Archimedean::Frank => "must be finite and positive",
+                Archimedean::Gumbel | Archimedean::Joe => "must be finite and at least 1",
+            };
+            return Err(invalid("theta", theta, reason));
+        }
+        if dim == 0 {
+            return Err(invalid("dim", 0.0, "must be positive"));
+        }
+        Ok(Self { family, theta, dim })
+    }
+
+    pub fn family(&self) -> Archimedean {
+        self.family
+    }
+
+    pub fn theta(&self) -> f64 {
+        self.theta
+    }
+
+    /// The generator `ψ(t)` for `t >= 0`.
+    pub fn generator(&self, t: f64) -> f64 {
+        let th = self.theta;
+        match self.family {
+            Archimedean::Clayton => (-(t.ln_1p()) / th).exp(),
+            Archimedean::Gumbel => (-t.powf(1.0 / th)).exp(),
+            // -ln(1 + e^-t (e^-θ - 1)) / θ.
+            Archimedean::Frank => -((-t).exp() * (-th).exp_m1()).ln_1p() / th,
+            // 1 - (1 - e^-t)^(1/θ).
+            Archimedean::Joe => -((-(-t).exp_m1()).ln() / th).exp_m1(),
+        }
+    }
+
+    fn frailty(&self, rng: &mut StreamRng) -> f64 {
+        let th = self.theta;
+        match self.family {
+            Archimedean::Clayton => gamma(rng, 1.0 / th),
+            Archimedean::Gumbel => positive_stable(rng, 1.0 / th),
+            Archimedean::Frank => logarithmic(rng, th),
+            Archimedean::Joe => sibuya(rng, 1.0 / th),
+        }
+    }
+}
+
+impl Copula for ArchimedeanCopula {
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn sample(&self, rng: &mut StreamRng, u: &mut [f64]) {
+        let v = self.frailty(rng);
+        for x in u.iter_mut() {
+            let e = -rng.next_open01().ln();
+            *x = open01(self.generator(e / v));
         }
     }
 }
@@ -304,6 +413,77 @@ fn sample_correlation(cols: &[Vec<f64>]) -> Vec<f64> {
         }
     }
     r
+}
+
+/// Keeps a uniform inside `(0, 1)`, where `norm_cdf` or a generator can
+/// round to 0 or 1 far in a tail; marginal quantiles are infinite there.
+fn open01(u: f64) -> f64 {
+    u.clamp(f64::MIN_POSITIVE, 1.0 - f64::EPSILON / 2.0)
+}
+
+/// A positive stable draw with Laplace transform `exp(-t^alpha)`,
+/// `0 < alpha <= 1`, by Kanter's representation (Chambers, Mallows and
+/// Stuck): one uniform angle, then one unit exponential.
+fn positive_stable(rng: &mut StreamRng, alpha: f64) -> f64 {
+    if alpha == 1.0 {
+        return 1.0;
+    }
+    let theta = std::f64::consts::PI * rng.next_open01();
+    let w = -rng.next_open01().ln();
+    let a = (alpha * theta).sin() / theta.sin().powf(1.0 / alpha);
+    let b = (((1.0 - alpha) * theta).sin() / w).powf((1.0 - alpha) / alpha);
+    a * b
+}
+
+/// A logarithmic-series draw, `P(V = k) = p^k / (-k ln(1 - p))` with
+/// `p = 1 - e^-theta`, by Kemp's (1981) LK algorithm: two uniforms.
+fn logarithmic(rng: &mut StreamRng, theta: f64) -> f64 {
+    let p = -(-theta).exp_m1();
+    let v = rng.next_open01();
+    let u = rng.next_open01();
+    if v > p {
+        return 1.0;
+    }
+    // q = 1 - (1 - p)^u = 1 - e^(-theta u).
+    let q = -(-theta * u).exp_m1();
+    if v < q * q {
+        (1.0 + v.ln() / q.ln()).floor()
+    } else if v > q {
+        1.0
+    } else {
+        2.0
+    }
+}
+
+/// A Sibuya draw, `P(V > k) = Γ(k + 1 - alpha) / (Γ(k + 1) Γ(1 - alpha))`
+/// for `0 < alpha <= 1`, by inverting the distribution function with one
+/// uniform. The tail is heavy (no mean), so the search runs in `f64`.
+fn sibuya(rng: &mut StreamRng, alpha: f64) -> f64 {
+    let u = rng.next_open01();
+    if alpha == 1.0 || u <= alpha {
+        return 1.0;
+    }
+    let target = (1.0 - u).ln();
+    let ln_survival =
+        |k: f64| ln_gamma(k + 1.0 - alpha) - ln_gamma(k + 1.0) - ln_gamma(1.0 - alpha);
+    // Smallest k with P(V > k) <= 1 - u: double, then bisect.
+    let (mut lo, mut hi) = (1.0, 2.0);
+    while ln_survival(hi) > target {
+        lo = hi;
+        hi *= 2.0;
+        if hi > 1e300 {
+            return hi;
+        }
+    }
+    while hi - lo > 1.0 {
+        let mid = (lo + (hi - lo) / 2.0).floor();
+        if ln_survival(mid) > target {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    hi
 }
 
 /// Fisher–Yates shuffle with uniform indices from `rng`.
@@ -618,5 +798,144 @@ mod tests {
         );
         // Bad inputs.
         assert!(iman_conover(&pd, &[1.0, 0.5, 0.5, 1.0], 7).is_err());
+    }
+
+    fn frank_tau(theta: f64) -> f64 {
+        // Debye D_1(θ) = (1/θ) ∫_0^θ t / (e^t - 1) dt, by Simpson's rule.
+        let n = 20_000;
+        let h = theta / n as f64;
+        let f = |t: f64| if t == 0.0 { 1.0 } else { t / t.exp_m1() };
+        let mut sum = f(0.0) + f(theta);
+        for i in 1..n {
+            sum += f(i as f64 * h) * if i % 2 == 1 { 4.0 } else { 2.0 };
+        }
+        let d1 = sum * h / 3.0 / theta;
+        1.0 + 4.0 * (d1 - 1.0) / theta
+    }
+
+    fn joe_tau(theta: f64) -> f64 {
+        let s: f64 = (1..2_000_000)
+            .map(|k| {
+                let k = k as f64;
+                1.0 / (k * (theta * k + 2.0) * (theta * (k - 1.0) + 2.0))
+            })
+            .sum();
+        1.0 - 4.0 * s
+    }
+
+    #[test]
+    fn archimedean_kendall_tau() {
+        use Archimedean::*;
+        let n = 3_000;
+        for (family, theta, want) in [
+            (Clayton, 2.0, 0.5),
+            (Clayton, 0.3, 0.3 / 2.3),
+            (Gumbel, 1.0, 0.0),
+            (Gumbel, 2.5, 0.6),
+            (Frank, 5.0, frank_tau(5.0)),
+            (Frank, 0.5, frank_tau(0.5)),
+            (Joe, 2.0, joe_tau(2.0)),
+            (Joe, 6.0, joe_tau(6.0)),
+        ] {
+            let c = ArchimedeanCopula::new(family, theta, 3).unwrap();
+            let u = draws(&c, n, 21);
+            for (i, j) in [(0, 1), (1, 2)] {
+                let x: Vec<f64> = u.iter().map(|r| r[i]).collect();
+                let y: Vec<f64> = u.iter().map(|r| r[j]).collect();
+                let got = kendall_tau(&x, &y);
+                assert!(
+                    (got - want).abs() < 0.04,
+                    "{family:?}({theta}) ({i}, {j}): {got} vs {want}"
+                );
+            }
+        }
+        // Frank at θ = 5 has tau 0.4567 (Nelsen, Table 5.1 rounding).
+        assert!((frank_tau(5.0) - 0.4567).abs() < 1e-3);
+    }
+
+    #[test]
+    fn archimedean_margins_are_uniform() {
+        use Archimedean::*;
+        let n = 30_000;
+        for (family, theta) in [(Clayton, 1.5), (Gumbel, 3.0), (Frank, 8.0), (Joe, 4.0)] {
+            let c = ArchimedeanCopula::new(family, theta, 2).unwrap();
+            let u = draws(&c, n, 6);
+            for j in 0..2 {
+                let d = ks_uniform(u.iter().map(|r| r[j]).collect());
+                assert!(
+                    d < 1.95 / (n as f64).sqrt(),
+                    "{family:?} dimension {j}: {d}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn archimedean_tails() {
+        use Archimedean::*;
+        let n = 200_000;
+        let q = 0.995;
+        let upper = |c: &dyn Copula| {
+            draws(c, n, 13)
+                .iter()
+                .filter(|u| u[0] > q && u[1] > q)
+                .count() as f64
+                / (n as f64 * (1.0 - q))
+        };
+        let lower = |c: &dyn Copula| {
+            draws(c, n, 13)
+                .iter()
+                .filter(|u| u[0] < 1.0 - q && u[1] < 1.0 - q)
+                .count() as f64
+                / (n as f64 * (1.0 - q))
+        };
+        let clayton = ArchimedeanCopula::new(Clayton, 2.0, 2).unwrap();
+        let gumbel = ArchimedeanCopula::new(Gumbel, 2.0, 2).unwrap();
+        // Clayton: lower tail 2^(-1/2) = 0.707, little in the upper tail.
+        assert!((lower(&clayton) - 0.5f64.sqrt()).abs() < 0.08);
+        assert!(upper(&clayton) < 0.2);
+        // Gumbel: upper tail 2 - 2^(1/2) = 0.586, little in the lower tail.
+        assert!((upper(&gumbel) - (2.0 - 2f64.sqrt())).abs() < 0.08);
+        assert!(lower(&gumbel) < 0.2);
+    }
+
+    #[test]
+    fn frailty_samplers() {
+        let mut rng = StreamRng::new(17, 0);
+        let n = 200_000;
+        // Logarithmic: mean p / (-(1 - p) ln(1 - p)) with p = 1 - e^-θ.
+        let theta: f64 = 3.0;
+        let p = 1.0 - (-theta).exp();
+        let mean = (0..n).map(|_| logarithmic(&mut rng, theta)).sum::<f64>() / n as f64;
+        let want = p / ((1.0 - p) * theta);
+        assert!((mean / want - 1.0).abs() < 0.02, "{mean} vs {want}");
+        // Sibuya: P(V = 1) = alpha, P(V = 2) = alpha (1 - alpha) / 2.
+        let alpha = 0.4;
+        let v: Vec<f64> = (0..n).map(|_| sibuya(&mut rng, alpha)).collect();
+        let share = |k: f64| v.iter().filter(|&&x| x == k).count() as f64 / n as f64;
+        assert!((share(1.0) - alpha).abs() < 0.005);
+        assert!((share(2.0) - alpha * (1.0 - alpha) / 2.0).abs() < 0.005);
+        assert!(v.iter().all(|&x| x >= 1.0 && x.fract() == 0.0));
+        // Positive stable: E[exp(-V)] = exp(-1) for any alpha.
+        for alpha in [0.3, 0.7] {
+            let m = (0..n)
+                .map(|_| (-positive_stable(&mut rng, alpha)).exp())
+                .sum::<f64>()
+                / n as f64;
+            assert!((m - (-1f64).exp()).abs() < 0.005, "alpha {alpha}: {m}");
+        }
+    }
+
+    #[test]
+    fn archimedean_rejects_bad_parameters() {
+        use Archimedean::*;
+        assert!(ArchimedeanCopula::new(Clayton, 0.0, 2).is_err());
+        assert!(ArchimedeanCopula::new(Gumbel, 0.9, 2).is_err());
+        assert!(ArchimedeanCopula::new(Frank, -1.0, 2).is_err());
+        assert!(ArchimedeanCopula::new(Joe, f64::INFINITY, 2).is_err());
+        assert!(ArchimedeanCopula::new(Clayton, 1.0, 0).is_err());
+        let g = ArchimedeanCopula::new(Gumbel, 2.0, 2).unwrap();
+        assert_eq!(g.generator(0.0), 1.0);
+        assert!(g.generator(1e6) < 1e-300);
     }
 }
