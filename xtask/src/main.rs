@@ -229,9 +229,11 @@ fn unchanged(paths: &[&str]) -> Result {
     if changed.trim().is_empty() {
         Ok(())
     } else {
+        let diff = git(&["--no-pager", "diff", "HEAD", "--"], paths)?;
         Err(format!(
             "generated docs are out of date; commit the regenerated files:
-{changed}"
+{changed}
+{diff}"
         ))
     }
 }

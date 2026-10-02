@@ -37,4 +37,50 @@ stopifnot(grepl("seed", conditionMessage(e)), identical(conditionCall(e), quote(
 x <- draws(lognormal(0, 1), 3, seed = 42, stream = 3)
 stopifnot(identical(x, c(1.0007760893701914, 1.6293872534754683, 1.0763869265482304)))
 
+# Severity: limited expected value, stop-loss, layer.
+close(lev(d, 1500) + stop_loss(d, 1500), mean(d), 1e-12)
+close(layer(d, 1000, 500), lev(d, 1500) - lev(d, 500), 1e-12)
+
+# Claim counts against base R.
+n <- poisson_count(3)
+close(pmf(n, 0:9), dpois(0:9, 3), 1e-12)
+close(cdf(n, 0:9), ppois(0:9, 3), 1e-12)
+stopifnot(identical(quantile(n, 0.9), qpois(0.9, 3)))
+nb <- negative_binomial_count(2.5, 1.5)
+close(pmf(nb, 0:9), dnbinom(0:9, size = 2.5, prob = 1 / 2.5), 1e-12)
+close(variance(negative_binomial_count_from_mean_variance(10, 30)), 30, 1e-12)
+stopifnot(identical(draws(nb, 5, seed = 1), draws(nb, 5, seed = 1)))
+e <- tryCatch(pmf(n, -1), error = identity)
+stopifnot(grepl("non-negative whole", conditionMessage(e)), identical(conditionCall(e), quote(pmf(n, -1))))
+
+# Grids: local moment matching keeps the limited mean; the report is attached.
+g <- discretize(d, step = 100, points = 200)
+stopifnot(S7::S7_inherits(g, grid_distribution), identical(g@report$method, "local_moment"))
+close(sum(g@probs), 1, 1e-12)
+close(mean(g), lev(d, 199 * 100), 1e-9)
+close(g@report$mean_error, -stop_loss(d, 199 * 100), 1e-6)
+stopifnot(mean(discretize(d, 100, 200, "lower")) <= mean(d), is.null(grid_distribution(1, c(0.5, 0.5))@report))
+stopifnot(inherits(tryCatch(grid_distribution(1, c(0.5, 0.4)), error = identity), "error"))
+
+# Sampled and the joint predictive distribution.
+s <- sampled(c(1, 2, 3, 4))
+stopifnot(identical(VaR(s, 0.5), 2), identical(TVaR(s, 0.5), 3.5))
+pd <- predictive_distribution(
+  matrix(c(0, 0, 0, 100, 0, 0, 100, 0), ncol = 2),
+  data.frame(line = c("A", "B"))
+)
+stopifnot(identical(VaR(pd, 0.75), 100), identical(VaR(marginal(pd, list(line = "A")), 0.75), 0))
+stopifnot(is.null(marginal(pd, list(line = "C"))))
+lob <- predictive_distribution(
+  rbind(c(1, 2, 10, 20), c(3, 4, 30, 40), c(5, 6, 50, 60)),
+  data.frame(lob = c("Auto", "Auto", "Home", "Home"), origin = c(2023, 2024, 2023, 2024))
+)
+by_lob <- aggregate(lob, keep = "lob")
+stopifnot(identical(by_lob@keys$lob, c("Auto", "Home")))
+stopifnot(identical(draw_matrix(by_lob), rbind(c(3, 30), c(7, 70), c(11, 110))))
+stopifnot(identical(total(lob)@draws, c(33, 77, 121)), identical(lob@keys$origin, c(2023, 2024, 2023, 2024)))
+stopifnot(identical(provenance(lob)$model, "r"))
+e <- tryCatch(aggregate(lob, keep = "state"), error = identity)
+stopifnot(grepl("dimension", conditionMessage(e)), identical(conditionCall(e), quote(aggregate(lob, keep = "state"))))
+
 cat("actuarialrs R tests passed\n")

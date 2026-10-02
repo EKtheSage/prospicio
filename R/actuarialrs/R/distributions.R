@@ -4,7 +4,7 @@
 # into man/*.Rd and NAMESPACE with roxygen2 and renders the pkgdown site
 # (docs/architecture.md, "Documentation"). Do not edit man/ or NAMESPACE.
 
-#' @importFrom stats quantile
+#' @importFrom stats quantile aggregate
 #' @rawNamespace if (getRversion() < "4.3.0") importFrom(S7, "@")
 NULL
 
@@ -140,6 +140,427 @@ S7::method(draws, lognormal) <- function(dist, n, seed, stream = 0, ...) {
 S7::method(print, lognormal) <- function(x, ...) {
   cat(sprintf("<lognormal> meanlog = %s, sdlog = %s\n",
               format(x@meanlog, digits = 15), format(x@sdlog, digits = 15)))
+  invisible(x)
+}
+
+# The call a user made, for error messages: under S7 dispatch the generic's
+# frame holds it.
+s7_call <- function() sys.call(sys.parent(2))
+
+#' Limited expected value, stop-loss and layer
+#'
+#' `lev(dist, limit)` is `E[min(X, limit)]`; `stop_loss(dist, retention)` is
+#' `E[max(X - retention, 0)]`, computed directly so it stays accurate far into
+#' the tail; `layer(dist, limit, attachment)` is the expected loss to the layer
+#' `limit` xs `attachment`. Defined for [lognormal] and [grid_distribution] severities.
+#'
+#' @param dist A [lognormal] or a [grid_distribution].
+#' @param limit,retention Numeric vector.
+#' @param attachment Layer attachment, a single number.
+#' @param ... Unused; for methods.
+#' @returns A numeric vector (`lev`, `stop_loss`) or a single number (`layer`).
+#' @name severity
+#' @examples
+#' d <- lognormal(7, 0.5)
+#' lev(d, c(500, 1500))
+#' stop_loss(d, 1500)
+#' layer(d, 1000, 500)
+NULL
+
+#' @rdname severity
+#' @export
+lev <- S7::new_generic("lev", "dist", function(dist, limit, ...) S7::S7_dispatch())
+
+#' @rdname severity
+#' @export
+stop_loss <- S7::new_generic("stop_loss", "dist", function(dist, retention, ...) S7::S7_dispatch())
+
+#' @rdname severity
+#' @export
+layer <- S7::new_generic("layer", "dist", function(dist, limit, attachment, ...) S7::S7_dispatch())
+
+S7::method(lev, lognormal) <- function(dist, limit, ...) dist@ptr$lev(as.double(limit))
+S7::method(stop_loss, lognormal) <- function(dist, retention, ...) dist@ptr$stop_loss(as.double(retention))
+S7::method(layer, lognormal) <- function(dist, limit, attachment, ...) {
+  dist@ptr$layer(as.double(limit), as.double(attachment))
+}
+
+#' Claim-count probability mass
+#'
+#' `P(N = k)` for each element of `k`.
+#'
+#' @param dist A [poisson_count] or [negative_binomial_count].
+#' @param k Non-negative whole numbers.
+#' @param ... Unused; for methods.
+#' @returns Numeric vector the length of `k`.
+#' @export
+#' @examples
+#' pmf(poisson_count(3), 0:3)
+pmf <- S7::new_generic("pmf", "dist", function(dist, k, ...) S7::S7_dispatch())
+
+#' Poisson claim counts
+#'
+#' Claim counts with mean `lambda`. Supports [pmf()], [cdf()], [mean()],
+#' [variance()], `quantile()` and [draws()].
+#'
+#' @param lambda Mean number of claims; finite and non-negative.
+#' @returns A `poisson_count` object, which inherits from [distribution].
+#' @export
+#' @examples
+#' n <- poisson_count(3)
+#' pmf(n, 0:2)
+#' quantile(n, 0.9)
+poisson_count <- S7::new_class(
+  "poisson_count",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("Poisson"),
+    lambda = S7::new_property(S7::class_double, getter = function(self) self@ptr$lambda())
+  ),
+  constructor = function(lambda) {
+    ptr <- rust_result(Poisson$new(as.double(lambda)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Negative binomial claim counts
+#'
+#' Claim counts with mean `beta * r` and variance `beta * r * (1 + beta)`
+#' (Klugman, Panjer and Willmot). This is `dnbinom(size = r, prob = 1 / (1 + beta))`.
+#'
+#' @param r Shape; finite and positive.
+#' @param beta Scale; finite and positive.
+#' @returns A `negative_binomial_count` object, which inherits from [distribution].
+#' @seealso [negative_binomial_count_from_mean_variance()].
+#' @export
+#' @examples
+#' n <- negative_binomial_count(2.5, 1.5)
+#' mean(n)
+#' variance(n)
+negative_binomial_count <- S7::new_class(
+  "negative_binomial_count",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("NegativeBinomial"),
+    r = S7::new_property(S7::class_double, getter = function(self) self@ptr$r()),
+    beta = S7::new_property(S7::class_double, getter = function(self) self@ptr$beta())
+  ),
+  constructor = function(r, beta) {
+    ptr <- rust_result(NegativeBinomial$new(as.double(r), as.double(beta)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Negative binomial from its mean and variance
+#'
+#' @param mean Mean number of claims; finite and positive.
+#' @param variance Variance; must exceed the mean.
+#' @returns A [negative_binomial_count] object.
+#' @export
+#' @examples
+#' negative_binomial_count_from_mean_variance(10, 30)
+negative_binomial_count_from_mean_variance <- function(mean, variance) {
+  ptr <- rust_result(NegativeBinomial$from_mean_variance(as.double(mean), as.double(variance)))
+  negative_binomial_count(ptr$r(), ptr$beta())
+}
+
+for (cls in list(poisson_count, negative_binomial_count)) {
+  S7::method(pmf, cls) <- function(dist, k, ...) rust_result(dist@ptr$pmf(as.double(k)), s7_call())
+  S7::method(cdf, cls) <- function(dist, q, ...) rust_result(dist@ptr$cdf(as.double(q)), s7_call())
+  S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
+  S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
+  S7::method(quantile, cls) <- function(x, probs, ...) {
+    call <- sys.call()
+    call[[1]] <- quote(quantile)
+    rust_result(x@ptr$quantile(as.double(probs)), call)
+  }
+  S7::method(draws, cls) <- function(dist, n, seed, stream = 0, ...) {
+    rust_result(dist@ptr$sample(as.double(n), as.double(seed), as.double(stream)), s7_call())
+  }
+}
+
+S7::method(print, poisson_count) <- function(x, ...) {
+  cat(sprintf("<poisson_count> lambda = %s\n", format(x@lambda, digits = 15)))
+  invisible(x)
+}
+
+S7::method(print, negative_binomial_count) <- function(x, ...) {
+  cat(sprintf("<negative_binomial_count> r = %s, beta = %s\n",
+              format(x@r, digits = 15), format(x@beta, digits = 15)))
+  invisible(x)
+}
+
+#' Distribution on an evenly spaced grid
+#'
+#' Named `grid_distribution` so it does not mask `graphics::grid()`.
+#'
+#' Probabilities `probs` at `0, step, 2 * step, ...`: the discretized
+#' representation that Panjer and FFT aggregation work on. Usually made with
+#' [discretize()], which also records how much error the grid introduced in
+#' `g@report`.
+#'
+#' Supports [mean()], [variance()], `quantile()`, [cdf()], [lev()],
+#' [stop_loss()] and [layer()], all exact on the grid.
+#'
+#' @param step Grid step; finite and positive.
+#' @param probs Non-negative probabilities summing to 1.
+#' @returns A `grid_distribution` object, which inherits from [distribution]. Its `report`
+#'   property is `NULL` for a grid built from probabilities, or a list with
+#'   `method`, `step`, `points`, `tail_mass`, `source_mean`, `grid_mean` and
+#'   `mean_error`.
+#' @export
+#' @examples
+#' g <- grid_distribution(1, c(0.5, 0.25, 0.25))
+#' mean(g)
+#' cdf(g, 1)
+grid_distribution <- S7::new_class(
+  "grid_distribution",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("Grid"),
+    step = S7::new_property(S7::class_double, getter = function(self) self@ptr$step()),
+    probs = S7::new_property(S7::class_double, getter = function(self) self@ptr$probs()),
+    report = S7::new_property(S7::class_any, getter = function(self) self@ptr$report())
+  ),
+  constructor = function(step, probs, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(Grid$new(as.double(step), as.double(probs)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Discretize a severity onto a grid
+#'
+#' `"local_moment"` matches the mean on every cell (the grid mean is the
+#' limited mean up to the last point); `"rounding"` moves each loss to the
+#' nearest point; `"lower"` moves each cell's mass to its left end, a
+#' stochastic lower bound. Mass above the last point is lumped onto it and
+#' reported in `g@report$tail_mass`.
+#'
+#' @param dist A [lognormal] or a [grid_distribution].
+#' @param step Grid step.
+#' @param points Number of grid points.
+#' @param method One of `"local_moment"`, `"rounding"`, `"lower"`.
+#' @returns A [grid_distribution] whose `report` property describes the error introduced.
+#' @export
+#' @examples
+#' g <- discretize(lognormal(7, 0.5), step = 100, points = 200)
+#' g@report$tail_mass
+#' mean(g)
+discretize <- function(dist, step, points, method = c("local_moment", "rounding", "lower")) {
+  method <- match.arg(method)
+  ptr <- rust_result(Grid$discretize(dist@ptr, as.double(step), as.double(points), method))
+  grid_distribution(ptr = ptr)
+}
+
+S7::method(mean, grid_distribution) <- function(x, ...) x@ptr$mean()
+S7::method(variance, grid_distribution) <- function(dist, ...) dist@ptr$variance()
+S7::method(cdf, grid_distribution) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
+S7::method(quantile, grid_distribution) <- function(x, probs, ...) {
+  call <- sys.call()
+  call[[1]] <- quote(quantile)
+  rust_result(x@ptr$quantile(as.double(probs)), call)
+}
+S7::method(lev, grid_distribution) <- function(dist, limit, ...) dist@ptr$lev(as.double(limit))
+S7::method(stop_loss, grid_distribution) <- function(dist, retention, ...) dist@ptr$stop_loss(as.double(retention))
+S7::method(layer, grid_distribution) <- function(dist, limit, attachment, ...) {
+  dist@ptr$layer(as.double(limit), as.double(attachment))
+}
+S7::method(print, grid_distribution) <- function(x, ...) {
+  cat(sprintf("<grid_distribution> step = %s, %d points\n", format(x@step, digits = 15), length(x@probs)))
+  invisible(x)
+}
+
+#' Value at risk and tail value at risk
+#'
+#' `VaR(dist, p)` is the inverted empirical distribution function;
+#' `TVaR(dist, p)` is the mean of the worst `1 - p`, splitting the draw at the
+#' VaR so it is coherent and continuous in `p`. For a
+#' [predictive_distribution] both describe the total over all components.
+#'
+#' @param dist A [sampled] or [predictive_distribution].
+#' @param p Probabilities in `[0, 1]`.
+#' @param ... Unused; for methods.
+#' @returns Numeric vector the length of `p`.
+#' @name risk_measures
+#' @examples
+#' s <- sampled(c(1, 2, 3, 4))
+#' VaR(s, 0.5)
+#' TVaR(s, 0.5)
+NULL
+
+#' @rdname risk_measures
+#' @export
+VaR <- S7::new_generic("VaR", "dist", function(dist, p, ...) S7::S7_dispatch())
+
+#' @rdname risk_measures
+#' @export
+TVaR <- S7::new_generic("TVaR", "dist", function(dist, p, ...) S7::S7_dispatch())
+
+#' Distribution of equally weighted draws
+#'
+#' Every method describes the draws themselves: [variance()] divides by `n`
+#' and `quantile()` inverts the empirical distribution function (R `type = 1`).
+#'
+#' @param draws Non-empty numeric vector of finite values.
+#' @returns A `sampled` object, which inherits from [distribution].
+#' @export
+#' @examples
+#' s <- sampled(c(10, 20, 30, 40))
+#' quantile(s, 0.5)
+#' TVaR(s, 0.5)
+sampled <- S7::new_class(
+  "sampled",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("Sampled"),
+    draws = S7::new_property(S7::class_double, getter = function(self) self@ptr$draws())
+  ),
+  constructor = function(draws, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(Sampled$new(as.double(draws)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(mean, sampled) <- function(x, ...) x@ptr$mean()
+S7::method(variance, sampled) <- function(dist, ...) dist@ptr$variance()
+S7::method(cdf, sampled) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
+S7::method(quantile, sampled) <- function(x, probs, ...) {
+  call <- sys.call()
+  call[[1]] <- quote(quantile)
+  rust_result(x@ptr$quantile(as.double(probs)), call)
+}
+S7::method(VaR, sampled) <- function(dist, p, ...) rust_result(dist@ptr$var(as.double(p)), s7_call())
+S7::method(TVaR, sampled) <- function(dist, p, ...) rust_result(dist@ptr$tvar(as.double(p)), s7_call())
+S7::method(print, sampled) <- function(x, ...) {
+  cat(sprintf("<sampled> %d draws, mean = %s\n", length(x@draws), format(mean(x), digits = 6)))
+  invisible(x)
+}
+
+#' Joint predictive distribution
+#'
+#' The result every model returns: a matrix of draws with one row per
+#' simulation and one column per component, plus one key per component.
+#' Components keep their dependence, so the total's quantiles come from row
+#' sums. [mean()], [variance()], `quantile()`, [VaR()] and [TVaR()] describe the
+#' total; use [marginal()] for one component and `aggregate()` to sum over
+#' dimensions.
+#'
+#' @param draws Numeric matrix, `n_sims` rows by `n_components` columns.
+#' @param keys Data frame with one column per dimension (character or whole
+#'   numbers) and one row per component.
+#' @returns A `predictive_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' pd <- predictive_distribution(
+#'   matrix(c(0, 0, 0, 100, 0, 0, 100, 0), ncol = 2),
+#'   data.frame(line = c("A", "B"))
+#' )
+#' VaR(pd, 0.75)
+#' VaR(marginal(pd, list(line = "A")), 0.75)
+predictive_distribution <- S7::new_class(
+  "predictive_distribution",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("PredictiveDistribution"),
+    dims = S7::new_property(S7::class_character, getter = function(self) self@ptr$dims()),
+    keys = S7::new_property(S7::class_data.frame, getter = function(self) {
+      as.data.frame(self@ptr$keys(), stringsAsFactors = FALSE)
+    }),
+    n_sims = S7::new_property(S7::class_double, getter = function(self) self@ptr$n_sims())
+  ),
+  constructor = function(draws, keys, ptr = NULL) {
+    if (is.null(ptr)) {
+      draws <- as.matrix(draws)
+      keys <- as.data.frame(keys, stringsAsFactors = FALSE)
+      ptr <- rust_result(PredictiveDistribution$new(
+        names(keys), as.list(keys), as.double(draws), as.double(nrow(draws))
+      ))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' One component of a predictive distribution
+#'
+#' @param dist A [predictive_distribution].
+#' @param key A named list (or vector) with one value per dimension.
+#' @param ... Unused; for methods.
+#' @returns A [sampled] object, or `NULL` when no component has this key.
+#' @export
+#' @examples
+#' pd <- predictive_distribution(matrix(1:6, ncol = 2), data.frame(year = c(2023, 2024)))
+#' marginal(pd, list(year = 2024))
+marginal <- S7::new_generic("marginal", "dist", function(dist, key, ...) S7::S7_dispatch())
+
+#' Total over all components
+#'
+#' @inheritParams marginal
+#' @returns A [sampled] object with one draw per simulation.
+#' @export
+#' @examples
+#' pd <- predictive_distribution(matrix(1:6, ncol = 2), data.frame(year = c(2023, 2024)))
+#' total(pd)@draws
+total <- S7::new_generic("total", "dist", function(dist, ...) S7::S7_dispatch())
+
+#' Draw matrix of a predictive distribution
+#'
+#' @inheritParams marginal
+#' @returns Numeric matrix with one row per simulation and one column per
+#'   component.
+#' @export
+#' @examples
+#' pd <- predictive_distribution(matrix(1:6, ncol = 2), data.frame(year = c(2023, 2024)))
+#' draw_matrix(pd)
+draw_matrix <- S7::new_generic("draw_matrix", "dist", function(dist, ...) S7::S7_dispatch())
+
+#' Where a result came from
+#'
+#' @inheritParams marginal
+#' @returns A list with `model`, `parameters`, `seed`, `stream_scheme`,
+#'   `versions` and `input_hash`.
+#' @export
+#' @examples
+#' pd <- predictive_distribution(matrix(1:6, ncol = 2), data.frame(year = c(2023, 2024)))
+#' provenance(pd)$model
+provenance <- S7::new_generic("provenance", "dist", function(dist, ...) S7::S7_dispatch())
+
+S7::method(marginal, predictive_distribution) <- function(dist, key, ...) {
+  ptr <- rust_result(dist@ptr$marginal(as.list(key)), s7_call())
+  if (is.null(ptr)) NULL else sampled(ptr = ptr)
+}
+S7::method(total, predictive_distribution) <- function(dist, ...) sampled(ptr = dist@ptr$total())
+S7::method(draw_matrix, predictive_distribution) <- function(dist, ...) {
+  matrix(dist@ptr$draw_matrix(), nrow = dist@ptr$n_sims())
+}
+S7::method(provenance, predictive_distribution) <- function(dist, ...) dist@ptr$provenance()
+S7::method(aggregate, predictive_distribution) <- function(x, keep = character(), ...) {
+  call <- sys.call()
+  call[[1]] <- quote(aggregate)
+  predictive_distribution(ptr = rust_result(x@ptr$aggregate(as.character(keep)), call))
+}
+S7::method(mean, predictive_distribution) <- function(x, ...) x@ptr$mean()
+S7::method(variance, predictive_distribution) <- function(dist, ...) dist@ptr$variance()
+S7::method(quantile, predictive_distribution) <- function(x, probs, ...) {
+  call <- sys.call()
+  call[[1]] <- quote(quantile)
+  rust_result(x@ptr$quantile(as.double(probs)), call)
+}
+S7::method(VaR, predictive_distribution) <- function(dist, p, ...) {
+  rust_result(dist@ptr$var(as.double(p)), s7_call())
+}
+S7::method(TVaR, predictive_distribution) <- function(dist, p, ...) {
+  rust_result(dist@ptr$tvar(as.double(p)), s7_call())
+}
+S7::method(print, predictive_distribution) <- function(x, ...) {
+  cat(sprintf("<predictive_distribution> dims = %s, %d simulations x %d components\n",
+              paste(x@dims, collapse = ", "), as.integer(x@n_sims),
+              as.integer(x@ptr$n_components())))
   invisible(x)
 }
 
