@@ -57,6 +57,7 @@ version = "0.0.1"
 dependencies = [
  "act-aggregate",
  "act-core",
+ "act-pricing",
  "act-prob",
  "pyo3",
 ]
@@ -67,6 +68,7 @@ version = "0.0.1"
 dependencies = [
  "act-aggregate",
  "act-core",
+ "act-pricing",
  "act-prob",
  "extendr-api",
 ]

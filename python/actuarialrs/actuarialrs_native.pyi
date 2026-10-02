@@ -156,6 +156,114 @@ class Binomial:
         """
 
 @final
+class CollectiveModel:
+    """
+    The collective risk model: a claim count and a severity, with layer
+    moments in closed form.
+    
+    For the layer ``limit`` xs ``attachment`` applied to each loss, with
+    ``Y`` the loss to the layer from one claim, the aggregate has mean
+    ``E[N] E[Y]`` and variance ``E[N] Var[Y] + Var[N] E[Y]**2``.
+    
+    Parameters
+    ----------
+    frequency : Poisson, NegativeBinomial or Binomial
+    severity : Lognormal, Grid, Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Pareto, claim_count
+    >>> from actuarialrs.pricing import CollectiveModel
+    >>> m = CollectiveModel(claim_count(2.0, 1.5), Pareto(1e6, 2.0))
+    >>> round(m.layer_mean(4e6, 1e6))
+    1600000
+    >>> m.excess_frequency(2e6)
+    0.5
+    """
+    def __new__(cls, /, frequency: Any, severity: Any) -> CollectiveModel: ...
+    def excess_frequency(self, /, x: float) -> float:
+        """
+        Expected number of losses above ``x``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_mean(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected aggregate loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_std(self, /, limit: float, attachment: float) -> float:
+        """
+        Standard deviation of the aggregate loss to the layer.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the aggregate loss to the layer.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Expected aggregate loss.
+        
+        Returns
+        -------
+        float
+        """
+    def simulate(self, /, n_sims: int, seed: int) -> EventSet:
+        """
+        ``n_sims`` simulated years of individual losses.
+        
+        Parameters
+        ----------
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        EventSet
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the aggregate loss.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class CompoundReport:
     """
     What a compound calculation produced and the error it introduced.
@@ -2722,6 +2830,49 @@ class Tower:
         Stage of each layer, in order, starting at 0.
         """
 
+@final
+class TowerModel:
+    """
+    A frequency and a piecewise Pareto severity that reproduce a tower,
+    a PML curve or a set of references.
+    """
+    def __repr__(self, /) -> str: ...
+    def excess_frequency(self, /, x: float) -> float:
+        """
+        Expected number of losses a year above ``x``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def frequency(self, /) -> float:
+        """
+        Expected number of losses a year above the lowest threshold.
+        """
+    def layer_loss(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss a year to ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def severity(self, /) -> PiecewisePareto:
+        """
+        The fitted severity.
+        """
+
 def allocate(pd: PredictiveDistribution, distortion: Distortion) -> list[float]:
     """
     Allocates a distortion risk measure of the total to the components.
@@ -2750,6 +2901,66 @@ def allocate(pd: PredictiveDistribution, distortion: Distortion) -> list[float]:
     ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
     >>> allocate(pd, Distortion.tvar(0.5))
     [2.5, 5.5]
+    """
+
+def alpha_between_frequencies(threshold_1: float, frequency_1: float, threshold_2: float, frequency_2: float, truncation: float |None = None) -> float:
+    """
+    The Pareto alpha between two excess frequencies.
+    
+    Parameters
+    ----------
+    threshold_1 : float
+    frequency_1 : float
+    threshold_2 : float
+    frequency_2 : float
+    truncation : float, optional
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import alpha_between_frequencies
+    >>> round(alpha_between_frequencies(1e6, 4.0, 2e6, 1.0), 12)
+    2.0
+    """
+
+def alpha_between_frequency_and_layer(threshold: float, frequency: float, limit: float, attachment: float, expected_loss: float, truncation: float |None = None) -> float:
+    """
+    The Pareto alpha at which ``frequency`` losses a year above
+    ``threshold`` give the layer an expected loss of ``expected_loss``.
+    
+    Parameters
+    ----------
+    threshold : float
+    frequency : float
+    limit : float
+    attachment : float
+    expected_loss : float
+    truncation : float, optional
+    
+    Returns
+    -------
+    float
+    """
+
+def alpha_between_layers(a: tuple[float, float, float], b: tuple[float, float, float], truncation: float |None = None) -> float:
+    """
+    The Pareto alpha at which two layers have the given expected losses.
+    
+    Parameters
+    ----------
+    a : tuple of float
+        ``(limit, attachment, expected_loss)``.
+    b : tuple of float
+        ``(limit, attachment, expected_loss)``; one layer must lie above
+        the other.
+    truncation : float, optional
+    
+    Returns
+    -------
+    float
     """
 
 def claim_count(mean: float, dispersion: float) -> Any:
@@ -2801,6 +3012,74 @@ def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundRepo
         If ``points`` is 0.
     """
 
+def fit_pml_curve(return_periods: Sequence[float], amounts: Sequence[float], tail_alpha: float = 2.0, truncation: float |None = None) -> TowerModel:
+    """
+    The model through the points of a PML curve: ``amounts[j]`` is
+    exceeded once in ``return_periods[j]`` years.
+    
+    Parameters
+    ----------
+    return_periods : list of float
+    amounts : list of float
+    tail_alpha : float, default 2.0
+        Alpha above the largest amount.
+    truncation : float, optional
+        Truncation of the last piece.
+    
+    Returns
+    -------
+    TowerModel
+    """
+
+def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequencies: Sequence[tuple[float, float]] = ..., default_alpha: float = 2.0, rule: str = "minimize") -> TowerModel:
+    """
+    A model that reproduces every reference: expected layer losses (which
+    may overlap or leave gaps) and excess frequencies.
+    
+    Parameters
+    ----------
+    layers : list of tuple of float, optional
+        ``(limit, attachment, expected_loss)`` per layer.
+    frequencies : list of tuple of float, optional
+        ``(threshold, frequency)`` per excess frequency.
+    default_alpha : float, default 2.0
+        Alpha above the highest point, unless an unlimited layer sets it.
+    rule : {"minimize", "midpoint"}, default "minimize"
+    
+    Returns
+    -------
+    TowerModel
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import fit_references
+    >>> m = fit_references([(1000.0, 1000.0, 150.0), (3000.0, 1500.0, 160.0)], [(1000.0, 0.3)])
+    >>> round(m.layer_loss(3000.0, 1500.0), 6)
+    160.0
+    """
+
+def ilf(severity: Any, limit: float, basic_limit: float) -> float:
+    """
+    Increased limit factor ``LEV(limit) / LEV(basic_limit)``.
+    
+    Parameters
+    ----------
+    severity : a severity
+    limit : float
+    basic_limit : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Pareto
+    >>> from actuarialrs.pricing import ilf
+    >>> round(ilf(Pareto(100.0, 2.0), 1000.0, 200.0), 12)
+    1.266666666667
+    """
+
 def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
     """
     Reorders each component's draws to a target correlation (Iman-Conover).
@@ -2832,6 +3111,50 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     True
     """
 
+def loss_elimination_ratio(severity: Any, deductible: float) -> float:
+    """
+    Loss elimination ratio of a deductible, ``LEV(deductible) / E[X]``.
+    
+    Parameters
+    ----------
+    severity : a severity
+    deductible : float
+    
+    Returns
+    -------
+    float
+    """
+
+def match_tower(attachments: Sequence[float], layer_losses: Sequence[float], frequencies: Sequence[float |None] |None = None, rule: str = "minimize") -> TowerModel:
+    """
+    Matches a tower of contiguous layers, the last unlimited, with one
+    frequency and a piecewise Pareto severity (Riegel 2018).
+    
+    Parameters
+    ----------
+    attachments : list of float
+        Increasing attachment points; layer ``i`` runs to the next one, the
+        last is unlimited.
+    layer_losses : list of float
+        Expected loss a year of each layer.
+    frequencies : list of float or None, optional
+        Expected losses a year above each attachment point; ``None`` (or a
+        ``None`` entry) to derive them.
+    rule : {"minimize", "midpoint"}, default "minimize"
+        How the free threshold inside each layer is chosen.
+    
+    Returns
+    -------
+    TowerModel
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import match_tower
+    >>> m = match_tower([1000.0, 1500.0, 2000.0], [100.0, 90.0, 120.0], [0.25, None, None])
+    >>> round(m.layer_loss(500.0, 1500.0), 9)
+    90.0
+    """
+
 def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
     """
     Aggregate loss ``S = X_1 + ... + X_N`` by Panjer's recursion.
@@ -2861,6 +3184,31 @@ def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundR
     >>> agg, report = panjer(Poisson(3.0), sev, 100)
     >>> round(agg.mean(), 6)
     6.15
+    """
+
+def pareto_extrapolation(from_: tuple[float, float], to: tuple[float, float], alpha: float, truncation: float |None = None) -> float:
+    """
+    Expected loss of layer ``to`` per unit of expected loss of layer
+    ``from_``, under a Pareto with this alpha (and truncation).
+    
+    Parameters
+    ----------
+    from_ : tuple of float
+        ``(limit, attachment)``.
+    to : tuple of float
+        ``(limit, attachment)``.
+    alpha : float
+    truncation : float, optional
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import pareto_extrapolation
+    >>> round(pareto_extrapolation((1e6, 1e6), (2e6, 2e6), 2.0), 12)
+    0.5
     """
 
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:

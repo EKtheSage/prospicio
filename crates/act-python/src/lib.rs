@@ -16,6 +16,7 @@ use pyo3::prelude::*;
 mod aggregate;
 mod distributions;
 mod pareto;
+mod pricing;
 mod risk;
 
 fn to_py(e: act_core::Error) -> PyErr {
@@ -37,6 +38,12 @@ mod actuarialrs_native {
     use super::pareto::{
         PyBinomial, PyGeneralizedPareto, PyLogAffinePareto, PyPareto, PyPiecewisePareto,
         claim_count,
+    };
+    #[pymodule_export]
+    use super::pricing::{
+        PyCollectiveModel, PyTowerModel, alpha_between_frequencies,
+        alpha_between_frequency_and_layer, alpha_between_layers, fit_pml_curve, fit_references,
+        ilf, loss_elimination_ratio, match_tower, pareto_extrapolation,
     };
     #[pymodule_export]
     use super::risk::{

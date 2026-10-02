@@ -12,14 +12,14 @@ use crate::distributions::{
 use crate::to_py;
 
 /// A claim count accepted by the aggregation functions.
-enum AnyCount {
+pub(crate) enum AnyCount {
     Poisson(act_prob::Poisson),
     NegativeBinomial(act_prob::NegativeBinomial),
     Binomial(act_prob::Binomial),
 }
 
 impl AnyCount {
-    fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+    pub(crate) fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(n) = obj.extract::<PyRef<'_, PyPoisson>>() {
             return Ok(Self::Poisson(n.inner));
         }
@@ -40,6 +40,27 @@ impl AnyCount {
             Self::NegativeBinomial(n) => n,
             Self::Binomial(n) => n,
         }
+    }
+}
+
+impl Counting for AnyCount {
+    fn pmf(&self, k: u64) -> f64 {
+        self.as_counting().pmf(k)
+    }
+    fn mean(&self) -> f64 {
+        self.as_counting().mean()
+    }
+    fn variance(&self) -> f64 {
+        self.as_counting().variance()
+    }
+    fn panjer_ab(&self) -> (f64, f64) {
+        self.as_counting().panjer_ab()
+    }
+    fn pgf(&self, z: f64) -> f64 {
+        self.as_counting().pgf(z)
+    }
+    fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
+        self.as_counting().pgf_complex(z)
     }
 }
 
@@ -201,6 +222,12 @@ pub(crate) fn fft(
 #[pyclass(name = "EventSet", module = "actuarialrs.aggregate", frozen)]
 pub(crate) struct PyEventSet {
     inner: EventSet,
+}
+
+impl From<EventSet> for PyEventSet {
+    fn from(inner: EventSet) -> Self {
+        Self { inner }
+    }
 }
 
 #[pymethods]
