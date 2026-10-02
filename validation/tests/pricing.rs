@@ -97,3 +97,34 @@ fn tower_matching_matches_r() {
         }
     });
 }
+
+#[test]
+fn pml_curve_fit_matches_r() {
+    use act_pricing::tower::fit_pml_curve;
+    let cases = reference("pml_curve_r.csv");
+    check(&cases, |c| {
+        let fields: std::collections::HashMap<&str, &str> = c
+            .get("params")
+            .split(';')
+            .filter_map(|kv| kv.split_once('='))
+            .collect();
+        let list = |k: &str| -> Option<Vec<f64>> {
+            fields.get(k)?.split('|').map(|v| v.parse().ok()).collect()
+        };
+        let truncation = fields.get("truncation").and_then(|v| v.parse().ok());
+        let model = fit_pml_curve(
+            &list("rp")?,
+            &list("x")?,
+            fields.get("tail")?.parse().ok()?,
+            truncation,
+        )
+        .ok()?;
+        let j = c.number("index")? as usize;
+        match c.get("quantity") {
+            "frequency" => Some(model.frequency),
+            "threshold" => model.severity.thresholds().get(j).copied(),
+            "alpha" => model.severity.alphas().get(j).copied(),
+            _ => None,
+        }
+    });
+}

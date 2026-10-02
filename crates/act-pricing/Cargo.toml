@@ -9,3 +9,4 @@ publish.workspace = true
 [dependencies]
 act-core.workspace = true
 act-prob.workspace = true
+microlp.workspace = true
