@@ -12,3 +12,7 @@ Imports: S7, stats
 Config/rextendr/version: 0.9.0
 Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.1.0
+Collate: 
+    'distributions.R'
+    'aggregate.R'
+    'extendr-wrappers.R'

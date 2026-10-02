@@ -259,7 +259,9 @@ impl NegativeBinomial {
 #[extendr]
 pub(crate) struct Grid {
     pub(crate) inner: GridInner,
-    report: Option<DiscretizationReport>,
+    /// How the grid was made (a discretization or compound report), as the
+    /// named list R sees, or `None` for a grid built from probabilities.
+    report: Option<List>,
 }
 
 impl Grid {
@@ -269,6 +271,30 @@ impl Grid {
             report: None,
         }
     }
+
+    pub(crate) fn with_report(inner: GridInner, report: List) -> Self {
+        Self {
+            inner,
+            report: Some(report),
+        }
+    }
+}
+
+fn discretization_list(r: &DiscretizationReport) -> List {
+    let method = match r.method {
+        act_prob::Discretization::LocalMoment => "local_moment",
+        act_prob::Discretization::Rounding => "rounding",
+        act_prob::Discretization::Lower => "lower",
+    };
+    list!(
+        method = method,
+        step = r.step,
+        points = r.points as f64,
+        tail_mass = r.tail_mass,
+        source_mean = r.source_mean,
+        grid_mean = r.grid_mean,
+        mean_error = r.mean_error()
+    )
 }
 
 #[extendr]
@@ -293,10 +319,7 @@ impl Grid {
             }
         }
         .map_err(to_r)?;
-        Ok(Self {
-            inner,
-            report: Some(report),
-        })
+        Ok(Self::with_report(inner, discretization_list(&report)))
     }
 
     fn step(&self) -> f64 {
@@ -307,27 +330,11 @@ impl Grid {
         self.inner.probs().to_vec()
     }
 
-    /// The discretization report as a named list, or NULL.
+    /// The report of how the grid was made, as a named list, or NULL.
     fn report(&self) -> Robj {
         match &self.report {
             None => ().into(),
-            Some(r) => {
-                let method = match r.method {
-                    act_prob::Discretization::LocalMoment => "local_moment",
-                    act_prob::Discretization::Rounding => "rounding",
-                    act_prob::Discretization::Lower => "lower",
-                };
-                list!(
-                    method = method,
-                    step = r.step,
-                    points = r.points as f64,
-                    tail_mass = r.tail_mass,
-                    source_mean = r.source_mean,
-                    grid_mean = r.grid_mean,
-                    mean_error = r.mean_error()
-                )
-                .into()
-            }
+            Some(list) => list.clone().into(),
         }
     }
 
@@ -365,7 +372,7 @@ impl Grid {
 /// A distribution known only through equally weighted draws.
 #[extendr]
 pub(crate) struct Sampled {
-    inner: SampledInner,
+    pub(crate) inner: SampledInner,
 }
 
 #[extendr]

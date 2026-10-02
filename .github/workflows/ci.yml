@@ -56,7 +56,9 @@ jobs:
       - run: cargo clippy -p act-r -- -D warnings
       - run: Rscript -e "install.packages('S7', repos = 'https://cloud.r-project.org')"
       - run: R CMD INSTALL R/actuarialrs
-      - run: Rscript R/actuarialrs/tests/test-distributions.R
+      - name: Run the R tests
+        shell: bash
+        run: for f in R/actuarialrs/tests/*.R; do Rscript "$f" || exit 1; done
 
   # Builds both bindings through `cargo xtask docs`, which regenerates their
   # docs, and fails if a committed generated file (the Python stub, R's man/

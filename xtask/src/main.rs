@@ -120,9 +120,16 @@ fn r(check: bool) -> Result {
         .args(["CMD", "INSTALL", pkg])
         .current_dir(&root))?;
     step("r: test");
-    run(Command::new("Rscript")
-        .arg("R/actuarialrs/tests/test-distributions.R")
-        .current_dir(&root))?;
+    let tests = root.join("R/actuarialrs/tests");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&tests)
+        .map_err(|e| format!("cannot read {}: {e}", tests.display()))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| path.extension().is_some_and(|ext| ext == "R"))
+        .collect();
+    files.sort();
+    for file in files {
+        run(Command::new("Rscript").arg(&file).current_dir(&root))?;
+    }
     step("r: check that every export is documented and usage matches code");
     rscript(
         &root,

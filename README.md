@@ -59,7 +59,7 @@ install that first:
 ```bash
 Rscript -e 'install.packages("S7")'
 R CMD INSTALL R/actuarialrs
-Rscript R/actuarialrs/tests/test-distributions.R
+for f in R/actuarialrs/tests/*.R; do Rscript "$f"; done
 ```
 
 **Windows PowerShell:** `R` is PowerShell's alias for `Invoke-History`, so
