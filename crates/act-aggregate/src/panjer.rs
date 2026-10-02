@@ -62,7 +62,10 @@ pub fn panjer<N: Counting + ?Sized>(
         let sum: f64 = (1..=k.min(f.len() - 1))
             .map(|j| (a + b * j as f64 / kf) * f[j] * g[k - j])
             .sum();
-        g.push(sum * scale);
+        // With a binomial count (a < 0) the terms alternate in sign, so
+        // where the true probability is 0 (beyond N_max times the largest
+        // loss) the sum is rounding noise of either sign: clamp it.
+        g.push((sum * scale).max(0.0));
     }
     let (probs, tail_mass) = lump_tail(g);
     let grid = Grid::new(severity.step(), probs)?;
@@ -101,6 +104,27 @@ mod tests {
             assert!((agg.mean() - n.mean() * ex).abs() < 1e-10);
             assert!((agg.variance() - var).abs() < 1e-8);
             assert!(report.mean_error().abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn binomial_counts_give_no_negative_probabilities() {
+        // Beyond n times the largest loss the aggregate has no mass; the
+        // alternating recursion leaves rounding noise there, which used to
+        // come out negative (down to -1.6e-20 for these) and fail Grid::new.
+        let sev = small_severity();
+        for (n, p) in [(3u64, 0.4), (20, 0.1), (7, 0.9), (50, 0.5)] {
+            let b = act_prob::Binomial::new(n, p).unwrap();
+            let (agg, _) = panjer(&b, &sev, 2000).unwrap();
+            let support = n as usize * 5;
+            // The last point holds the lumped tail, 1 − Σ p: rounding only.
+            let probs = agg.probs();
+            let tail = probs[support + 1..probs.len() - 1]
+                .iter()
+                .cloned()
+                .fold(0.0, f64::max);
+            assert!(tail < 1e-15, "{n} {p} {tail:e}");
+            assert!((agg.mean() - b.mean() * sev.mean()).abs() < 1e-10);
         }
     }
 
