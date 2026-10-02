@@ -30,6 +30,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `StudentTCopula`, and `copula::simulate` to join marginals into a
   `PredictiveDistribution`. `act_math` gained `linalg::cholesky`,
   `special::beta_inc` and `special::student_t_cdf` for them.
+- `copula::iman_conover(&pd, correlation, seed)`: reorders each
+  component's draws to a target correlation.
 
 ## Decisions
 
@@ -62,10 +64,13 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   copula draw takes its `d` normals first, as `Φ⁻¹(U)`, then (t copula)
   one chi-square from the same stream. Rejection sampling keeps each draw
   a pure function of `(seed, sim)`.
-- **Iman-Conover reorders draws**: it imposes a target rank correlation
-  on existing marginals (for example, reserve and premium-risk results
+- **Iman-Conover reorders draws**: it imposes a target correlation on
+  existing marginals (for example, reserve and premium-risk results
   simulated separately) by permuting them, so every marginal keeps its
-  exact draws.
+  exact draws. The target is the correlation of normal scores (van der
+  Waerden), which is what the method controls; Spearman's rho is then
+  close to `(6 / π) asin(ρ / 2)`, as for a Gaussian copula with
+  correlation `ρ`. Score columns are shuffled by `StreamRng::new(seed, j)`.
 
 ## Validation
 
@@ -90,7 +95,10 @@ monotonicity in each parameter.
 tau against `(2 / π) asin(ρ)` for the Gaussian and t copulas (including
 `nu < 1`), uniform margins by a Kolmogorov–Smirnov test, the t copula's
 joint extremes against its tail-dependence coefficient, the gamma
-sampler's moments, and that any simulation replays alone.
+sampler's moments, and that any simulation replays alone. Iman-Conover
+is checked on three lognormal lines: marginals unchanged draw for draw,
+normal-score correlations within 0.01 of the target, and Spearman's rho
+within 0.01 of `(6 / π) asin(ρ / 2)`.
 
 Allocation tests check, on simulated dependent lines, that contributions
 sum to the measure of the total for every distortion, that the mean
@@ -101,7 +109,6 @@ total but split differently give the same allocation in either order.
 
 ## Next
 
-1. Iman-Conover.
-2. Archimedean copulas (Clayton, Gumbel, Frank, Joe).
-3. Python and R bindings.
-4. EVT tails (GPD over a threshold) for extrapolating past the draws.
+1. Archimedean copulas (Clayton, Gumbel, Frank, Joe).
+2. Python and R bindings.
+3. EVT tails (GPD over a threshold) for extrapolating past the draws.
