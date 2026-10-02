@@ -203,6 +203,12 @@ fn layer_moments_match_integration() {
         let sev: Box<dyn Severity> = match c.get("distribution") {
             "pareto" => Box::new(pareto_from(c)?),
             "piecewise_pareto" => Box::new(piecewise_pareto_from(c)?),
+            "gpd" => Box::new(
+                act_prob::evt::Gpd::new(c.param("params", "xi"), c.param("params", "beta"))
+                    .ok()?
+                    .shifted(c.param("params", "location"))
+                    .ok()?,
+            ),
             "lognormal" => Box::new(
                 Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?,
             ),
@@ -251,6 +257,32 @@ fn piecewise_pareto_matches_r() {
                     "layer" => Some(p.layer(cover, att)),
                     "layer_second_moment" => Some(p.layer_second_moment(cover, att)),
                     "layer_variance" => Some(p.layer_variance(cover, att)),
+                    _ => None,
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn gen_pareto_matches_r() {
+    let cases = reference("gen_pareto_r.csv");
+    check(&cases, |c| {
+        let g = act_prob::evt::Gpd::riegel(
+            c.param("params", "t"),
+            c.param("params", "alpha_ini"),
+            c.param("params", "alpha_tail"),
+        )
+        .ok()?;
+        match c.get("quantity") {
+            "cdf" => Some(g.cdf(c.number("arg")?)),
+            "quantile" => g.quantile(c.number("arg")?).ok(),
+            q => {
+                let (cover, att) = layer_args(c)?;
+                match q {
+                    "layer" => Some(g.layer(cover, att)),
+                    "layer_second_moment" => Some(g.layer_second_moment(cover, att)),
+                    "layer_variance" => Some(g.layer_variance(cover, att)),
                     _ => None,
                 }
             }

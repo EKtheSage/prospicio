@@ -12,7 +12,9 @@ forms in Rust:
     lev(d), stop_loss(d)     = integral of S over (0, d) and (d, inf)
 
 for the Pareto (optionally truncated), the piecewise Pareto (with both
-truncation types) and the lognormal.
+truncation types), the generalized Pareto (with a location; Riegel's
+parameterization is xi = 1/alpha_tail, beta = t/alpha_ini, location t) and
+the lognormal.
 """
 
 import csv
@@ -39,6 +41,14 @@ PIECEWISE = [  # (thresholds, alphas, truncation or None, type)
     ([1000, 2000, 3000], [1, 1.5, 2], 5000, "wd"),
     ([1000, 1500, 4000, 10000], [2.5, 0.4, 3, 1.2], 1000000, "wd"),
     ([200, 1000, 50000], [1, 3, 2.5], None, None),
+]
+GPDS = [  # (xi, beta, location)
+    (0.0, 2000, 0),
+    (-0.3, 3000, 500),
+    (0.1, 2000, 0),
+    (0.5, 1000, 1000),
+    (1 / 1.5, 500, 1000),
+    (1 / 0.9, 250, 1000),
 ]
 LOGNORMALS = [(7.0, 0.5), (10.0, 2.0)]
 LAYERS = [  # (cover, attachment); "inf" for unlimited
@@ -91,12 +101,39 @@ def piecewise_survival(ts, alphas, tr, kind):
     return base, ts + ([tr_] if tr_ is not None else [])
 
 
+def gpd_survival(xi, beta, loc):
+    xi, beta, loc = mp.mpf(xi), mp.mpf(beta), mp.mpf(loc)
+
+    def s(x):
+        if x <= loc:
+            return mp.mpf(1)
+        z = (x - loc) / beta
+        if xi == 0:
+            return mp.exp(-z)
+        y = 1 + xi * z
+        return y ** (-1 / xi) if y > 0 else mp.mpf(0)
+
+    # Breakpoints every few scales keep quad accurate where an exponential
+    # tail decays by hundreds of e-folds across a layer.
+    end = loc - beta / xi if xi < 0 else None
+    steps = [loc + 4 * beta * k for k in range(1, 400)]
+    kinks = [loc] + ([end] if end is not None else []) + [k for k in steps if end is None or k < end]
+    return s, kinks
+
+
 def lognormal_survival(mu, sigma):
     mu, sigma = mp.mpf(mu), mp.mpf(sigma)
     return (lambda x: mp.erfc((mp.log(x) - mu) / (sigma * mp.sqrt(2))) / 2 if x > 0 else mp.mpf(1)), [mp.exp(mu)]
 
 
-def integrate(f, a, b, kinks):
+def integrate(f, a, b, kinks, scale=None):
+    # quad's error target is absolute, so scale far-tail integrands by the
+    # survival at the attachment.
+    scale = scale if scale else (f(a) if f(a) != 0 else mp.mpf(1))
+    return scale * integrate_unscaled(lambda x: f(x) / scale, a, b, kinks)
+
+
+def integrate_unscaled(f, a, b, kinks):
     pts = sorted({a, b} | {k for k in kinks if a < k < b})
     if b == mp.inf:
         finite = [p for p in pts if p != mp.inf]
@@ -109,7 +146,7 @@ def moments(s, kinks, cover, att):
     a = mp.mpf(att)
     b = mp.inf if cover == "inf" else a + mp.mpf(cover)
     m1 = integrate(s, a, b, kinks)
-    m2 = 2 * integrate(lambda x: (x - a) * s(x), a, b, kinks)
+    m2 = 2 * integrate(lambda x: (x - a) * s(x), a, b, kinks, scale=s(a))
     return m1, m2
 
 
@@ -137,6 +174,18 @@ def rows():
             m1, m2 = moments(s, kinks, cover, att)
             yield "piecewise_pareto", params, "layer", cover, att, m1, 1e-12
             yield "piecewise_pareto", params, "layer_second_moment", cover, att, m2, 1e-11
+    for xi, beta, loc in GPDS:
+        s, kinks = gpd_survival(xi, beta, loc)
+        params = f"xi={xi!r};beta={beta};location={loc}"
+        for cover, att in LAYERS:
+            if cover == "inf" and xi >= 0.5:
+                if xi < 1:
+                    m1 = integrate(s, mp.mpf(att), mp.inf, kinks)
+                    yield "gpd", params, "layer", cover, att, m1, 1e-12
+                continue
+            m1, m2 = moments(s, kinks, cover, att)
+            yield "gpd", params, "layer", cover, att, m1, 1e-12
+            yield "gpd", params, "layer_second_moment", cover, att, m2, 1e-11
     for mu, sigma in LOGNORMALS:
         s, kinks = lognormal_survival(mu, sigma)
         params = f"meanlog={mu};sdlog={sigma}"
