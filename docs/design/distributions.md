@@ -1,6 +1,6 @@
 # Design note: distribution representations
 
-Status: **Decided; partly implemented** (parametric, sampled, `Severity`) · Depends on: nothing · Next: discretized `Grid`, `Counting`
+Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`) · Depends on: nothing · Next: `Counting`
 
 ## Goal
 
@@ -27,6 +27,27 @@ conversion reports the error it introduces.
   30-digit integration of the survival function
   (`validation/scripts/mpmath_severity.py`), at limits out to the
   `1 - 1e-9` quantile.
+
+- `act_prob::Grid`, the discretized representation, with
+  `Grid::local_moment` (needs `Severity`), `Grid::rounding` and
+  `Grid::lower`, each returning a `DiscretizationReport`. A `Grid` is a
+  `Distribution` and a `Severity` (exact LEV, stop-loss and layers on the
+  grid). Parity: `validation/reference/grid_mpmath.csv`, masses from the
+  textbook definitions at 30 digits (`validation/scripts/mpmath_grid.py`).
+
+### Decisions for `Grid`
+
+- **Probabilities always sum to 1.** Discretization lumps the source's mass
+  above the last point onto that point, and the report records it as
+  `tail_mass = S((n - 1)h)`, with `source_mean`, `grid_mean` and
+  `mean_error()`. Choosing `n` so `tail_mass` is negligible is the caller's
+  job; aggregation will check it.
+- **Local moment matching keeps the limited mean:** the grid's mean is
+  exactly `LEV((n - 1)h)`, so `mean_error() = -stop_loss((n - 1)h)`.
+- **No upper-bound method.** Lumping the tail onto the last point moves mass
+  down, which breaks the upper bound; it returns if a use needs it, with
+  the tail handled separately.
+- Grids start at 0 (open question 2).
 
 ### Decisions for `Severity`
 

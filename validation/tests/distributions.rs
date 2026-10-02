@@ -1,5 +1,5 @@
-//! Distribution parity against SciPy, and severity parity against
-//! high-precision integration (mpmath).
+//! Distribution parity: moments and quantiles against SciPy; limited
+//! expected values and grid masses against 30-digit mpmath references.
 
 use act_prob::{Distribution, Lognormal, Severity};
 use act_validation::{check, reference};
@@ -35,5 +35,24 @@ fn lognormal_severity_matches_integration() {
             "layer" => Some(d.layer(arg, c.number("arg2")?)),
             _ => None,
         }
+    });
+}
+
+#[test]
+fn lognormal_grids_match_textbook_masses() {
+    use act_prob::Grid;
+    let cases = reference("grid_mpmath.csv");
+    check(&cases, |c| {
+        let d = Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?;
+        let step = c.number("step")?;
+        let points = c.number("points")? as usize;
+        let (grid, _) = match c.get("method") {
+            "local_moment" => Grid::local_moment(&d, step, points),
+            "rounding" => Grid::rounding(&d, step, points),
+            "lower" => Grid::lower(&d, step, points),
+            _ => return None,
+        }
+        .ok()?;
+        grid.probs().get(c.number("index")? as usize).copied()
     });
 }

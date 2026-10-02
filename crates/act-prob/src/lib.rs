@@ -9,6 +9,7 @@
 //! Arrow IPC files; the format is described in `ipc`.
 
 pub mod distribution;
+pub mod grid;
 #[cfg(feature = "arrow")]
 pub mod ipc;
 pub mod lognormal;
@@ -19,6 +20,7 @@ pub mod sampled;
 pub mod severity;
 
 pub use distribution::Distribution;
+pub use grid::{Discretization, DiscretizationReport, Grid};
 pub use lognormal::Lognormal;
 pub use predictive::{ComponentKey, KeyValue, PredictiveDistribution};
 pub use provenance::{InputHasher, Provenance};
