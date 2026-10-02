@@ -89,8 +89,15 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   annual ceded loss, which does not depend on order; only later stages do.
   Simulated events are in simulation order, which stands in for time
   until events carry dates.
-- **Not yet:** reinstatement premiums; surplus treaties, which need sums
-  insured per risk that events do not carry.
+- **Reinstatement premiums are pro rata as to amount.** With layer loss
+  `L` at 100% after annual terms, `paid_reinstatements(premium, rates)`
+  charges `premium × Σ_k rates[k] × min(max(L - k·l, 0), l) / l`, where
+  `premium` is the upfront premium for the placed share (so the share
+  does not scale it again). Pro rata as to time needs event dates. The
+  tower reports them as `(reinstatement_premium, <name>)` components, and
+  `net` stays a loss: premiums are not netted against it.
+- **Not yet:** surplus treaties, which need sums insured per risk that
+  events do not carry.
 
 ## Validation
 
@@ -114,5 +121,4 @@ every simulated year.
 
 ## Next
 
-1. Reinstatement premiums.
-2. Python and R bindings for quota share, stop-loss and inuring towers.
+1. Python and R bindings for quota share, stop-loss and inuring towers.
