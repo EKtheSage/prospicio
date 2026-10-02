@@ -17,7 +17,8 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
 
 ## What exists
 
-- `act_aggregate::panjer(&frequency, &severity_grid, points)` returns the
+- `act_aggregate::panjer(&frequency, &severity_grid, points)` and
+  `act_aggregate::fft(&frequency, &severity_grid, points)` return the
   aggregate `Grid` and a `CompoundReport`.
 
 ## Decisions
@@ -32,22 +33,32 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   would return all zeros. `panjer` fails and points to FFT instead of
   scaling tricks.
 - **The aggregate grid uses the severity grid's step.**
+- **FFT aliasing is measured, not estimated.** A finite FFT is circular, so
+  mass beyond the buffer wraps onto the start. `fft` runs at a power-of-two
+  buffer `L ≥ 2 · max(points, severity points)` and at `2L`, returns the `2L`
+  result, and reports the largest difference over the returned points as
+  `aliasing_error`. When it is not negligible, wrapped mass sits inside the
+  grid and `tail_mass` understates the truth (a test pins this), so callers
+  must check `aliasing_error`, not `tail_mass`, first.
+- **FFT applies the claim-count pgf at complex points** via
+  `Counting::pgf_complex`, written with `(re, im)` pairs so `act-prob` needs
+  no complex-number dependency; `rustfft` (pure Rust) does the transforms.
 
 ## Validation
 
-`validation/tests/aggregate.rs` checks Panjer against a brute-force
+`validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
 compound sum, `Σ_n P(N = n) f^{*n}`, with numpy convolutions and SciPy
 pmfs (`validation/scripts/compound_convolution.py`): 80 points for a
-Poisson and a negative binomial at `1e-14`. FFT will be checked against the
-same file. Unit tests check `E[S] = E[N] E[X]`, the compound variance
+Poisson and a negative binomial at `1e-14`. FFT is checked against the
+same file and passes at the same tolerance. FFT also agrees with Panjer to
+`1e-13` and handles a Poisson mean of 2,000 that makes Panjer underflow. Unit
+tests check `E[S] = E[N] E[X]`, the compound variance
 `E[N] Var[X] + Var[N] E[X]^2`, and `S = N` for a unit severity.
 
 ## Next
 
-1. FFT aggregation (needs complex FFT: `rustfft`, pure Rust, WASM-safe), with
-   an aliasing check from the padded grid.
-2. Monte Carlo frequency-severity into a `PredictiveDistribution`, one RNG
+1. Monte Carlo frequency-severity into a `PredictiveDistribution`, one RNG
    stream per simulation, keeping event-level losses for reinsurance.
-3. Reinsurance: per-occurrence and aggregate layers, reinstatements and
+2. Reinsurance: per-occurrence and aggregate layers, reinstatements and
    towers as data, applied to simulated events, giving gross, ceded and
    net `PredictiveDistribution`s.
