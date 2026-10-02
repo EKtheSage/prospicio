@@ -82,3 +82,35 @@ fn claim_counts_match_scipy() {
         }
     });
 }
+
+#[test]
+fn distortions_match_integration() {
+    use act_prob::{Distortion, Grid};
+    // The discrete distribution in validation/scripts/mpmath_distortion.py.
+    let values = [0.0, 1.0, 2.0, 5.0, 10.0, 100.0];
+    let probs = [0.5, 0.2, 0.15, 0.1, 0.0499999999, 1e-10];
+    let cases = reference("distortion_mpmath.csv");
+    check(&cases, |c| {
+        let a = c.number("arg")?;
+        let d = match c.get("quantity") {
+            "tvar" => Distortion::tvar(a),
+            "wang" => Distortion::wang(a),
+            "proportional_hazard" => Distortion::proportional_hazard(a),
+            "dual_power" => Distortion::dual_power(a),
+            _ => return None,
+        }
+        .ok()?;
+        match c.get("distribution") {
+            "discrete" => Some(d.apply_discrete(&values, &probs)),
+            "lognormal" => {
+                let ln = Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog"))
+                    .ok()?;
+                let step = c.param("params", "step");
+                let points = c.param("params", "points") as usize;
+                let (grid, _) = Grid::local_moment(&ln, step, points).ok()?;
+                Some(grid.distortion(&d))
+            }
+            _ => None,
+        }
+    });
+}

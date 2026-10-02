@@ -214,6 +214,21 @@ impl Grid {
         j as f64 * self.step
     }
 
+    /// Distortion risk measure of the grid, exact for the grid; see
+    /// [`Distortion::apply_discrete`].
+    ///
+    /// ```
+    /// use act_prob::{Distortion, Grid};
+    ///
+    /// let g = Grid::new(1.0, vec![0.5, 0.25, 0.25]).unwrap();
+    /// // TVaR at 50%: the top half of the mass, at 1 and 2.
+    /// assert_eq!(g.distortion(&Distortion::tvar(0.5).unwrap()), 1.5);
+    /// ```
+    pub fn distortion(&self, d: &crate::Distortion) -> f64 {
+        let values: Vec<f64> = (0..self.len()).map(|j| self.x(j)).collect();
+        d.apply_discrete(&values, &self.probs)
+    }
+
     fn points(&self) -> impl Iterator<Item = (f64, f64)> + '_ {
         self.probs.iter().enumerate().map(|(j, &p)| (self.x(j), p))
     }

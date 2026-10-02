@@ -1,0 +1,25 @@
+distribution,params,quantity,arg,arg2,expected,abs_tol,rel_tol,source
+discrete,,tvar,0.9,,7.5000000900000000,0.0,1e-14,mpmath 1.4.1 at 30 digits
+discrete,,tvar,0.99,,10.000000900000000,0.0,1e-14,mpmath 1.4.1 at 30 digits
+discrete,,wang,0.25,,2.0456651964495120,0.0,1e-14,mpmath 1.4.1 at 30 digits
+discrete,,wang,1.0,,4.2781288935203074,0.0,1e-14,mpmath 1.4.1 at 30 digits
+discrete,,proportional_hazard,0.5,,3.5356583313038336,0.0,1e-14,mpmath 1.4.1 at 30 digits
+discrete,,proportional_hazard,0.9,,1.7555966170292108,0.0,1e-14,mpmath 1.4.1 at 30 digits
+discrete,,dual_power,2.0,,2.5800000180000000,0.0,1e-14,mpmath 1.4.1 at 30 digits
+discrete,,dual_power,5.0,,4.6006594200000000,0.0,1e-14,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=0.5;step=0.0005;points=40000,tvar,0.9,,2.4616412793186075,0.0,0.0002000072675703662,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=0.5;step=0.0005;points=40000,tvar,0.99,,3.8412530427655811,0.0,0.0002000465737378262,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=0.5;step=0.0005;points=40000,wang,0.25,,1.2840254166877415,0.0,0.00020000655618700836,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=0.5;step=0.0005;points=40000,wang,1.0,,1.8682459574322224,0.0,0.00020032937718801591,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=0.5;step=0.0005;points=40000,proportional_hazard,0.5,,1.7370995110954582,0.0,0.0002676624721400384,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=0.5;step=0.0005;points=40000,proportional_hazard,0.9,,1.1996741586539193,0.0,0.0002000131933047781,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=0.5;step=0.0005;points=40000,dual_power,2.0,,1.4462672746275043,0.0,0.00020000247397580282,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=0.5;step=0.0005;points=40000,dual_power,5.0,,1.8953801970090524,0.0,0.000200004719409653,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=1.0;step=0.002;points=100000,tvar,0.9,,6.4158948177447838,0.0,0.00020389635861520154,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=1.0;step=0.002;points=100000,tvar,0.99,,15.227960300878113,0.0,0.00021641626754563138,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=1.0;step=0.002;points=100000,wang,0.25,,2.1170000166126747,0.0,0.00020473955249002214,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=1.0;step=0.002;points=100000,wang,1.0,,4.4816890703380648,0.0,0.0003023283291194285,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=1.0;step=0.002;points=100000,proportional_hazard,0.5,,4.5929693617532897,0.0,0.0055611062496193735,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=1.0;step=0.002;points=100000,proportional_hazard,0.9,,1.8834688372129697,0.0,0.0002079450218718673,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=1.0;step=0.002;points=100000,dual_power,2.0,,2.5068804906473157,0.0,0.0002019944011534475,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=0.0;sdlog=1.0;step=0.002;points=100000,dual_power,5.0,,4.0698590793962820,0.0,0.0002030711905759288,mpmath 1.4.1 at 30 digits

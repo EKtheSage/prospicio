@@ -2,6 +2,7 @@
 
 use act_core::{Error, Result};
 
+use crate::distortion::Distortion;
 use crate::distribution::Distribution;
 use crate::risk::{tvar_sorted, var_sorted};
 
@@ -44,6 +45,20 @@ pub trait Empirical: Distribution {
     /// Tail value at risk at level `p`; see [`tvar_sorted`].
     fn tvar(&self, p: f64) -> Result<f64> {
         tvar_sorted(self.sorted(), p)
+    }
+
+    /// Distortion risk measure of the draws; see
+    /// [`Distortion::apply_sorted`].
+    ///
+    /// ```
+    /// use act_prob::{Distortion, Empirical, Sampled};
+    ///
+    /// let s = Sampled::new(vec![3.0, 1.0, 4.0, 2.0]).unwrap();
+    /// let tvar = Distortion::tvar(0.5).unwrap();
+    /// assert_eq!(s.distortion(&tvar), s.tvar(0.5).unwrap());
+    /// ```
+    fn distortion(&self, d: &Distortion) -> f64 {
+        d.apply_sorted(self.sorted())
     }
 }
 
