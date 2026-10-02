@@ -150,3 +150,63 @@ fn gpd_fits_match_exact_likelihood() {
         }
     });
 }
+
+/// A Pareto (optionally truncated) from `t=..;alpha=..[;truncation=..]`.
+fn pareto_from(c: &act_validation::Case) -> Option<act_prob::Pareto> {
+    let p = act_prob::Pareto::new(c.param("params", "t"), c.param("params", "alpha")).ok()?;
+    if c.get("params").contains("truncation") {
+        p.truncated(c.param("params", "truncation")).ok()
+    } else {
+        Some(p)
+    }
+}
+
+/// Cover and attachment from `arg` ("inf" for unlimited) and `arg2`.
+fn layer_args(c: &act_validation::Case) -> Option<(f64, f64)> {
+    let cover = match c.get("arg") {
+        "inf" => f64::INFINITY,
+        s => s.parse().ok()?,
+    };
+    Some((cover, c.get("arg2").parse().ok()?))
+}
+
+#[test]
+fn layer_moments_match_integration() {
+    let cases = reference("layer_moments_mpmath.csv");
+    check(&cases, |c| {
+        let (cover, att) = layer_args(c)?;
+        let sev: Box<dyn Severity> = match c.get("distribution") {
+            "pareto" => Box::new(pareto_from(c)?),
+            "lognormal" => Box::new(
+                Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?,
+            ),
+            _ => return None,
+        };
+        match c.get("quantity") {
+            "layer" => Some(sev.layer(cover, att)),
+            "layer_second_moment" => Some(sev.layer_second_moment(cover, att)),
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn pareto_matches_r() {
+    let cases = reference("pareto_r.csv");
+    check(&cases, |c| {
+        let p = pareto_from(c)?;
+        match c.get("quantity") {
+            "cdf" => Some(p.cdf(c.number("arg")?)),
+            "quantile" => p.quantile(c.number("arg")?).ok(),
+            q => {
+                let (cover, att) = layer_args(c)?;
+                match q {
+                    "layer" => Some(p.layer(cover, att)),
+                    "layer_second_moment" => Some(p.layer_second_moment(cover, att)),
+                    "layer_variance" => Some(p.layer_variance(cover, att)),
+                    _ => None,
+                }
+            }
+        }
+    });
+}

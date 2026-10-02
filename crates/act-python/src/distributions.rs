@@ -280,6 +280,12 @@ impl Severity for AnySeverity {
             Self::Grid(g) => g.stop_loss(retention),
         }
     }
+    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+        match self {
+            Self::Lognormal(d) => d.layer_second_moment(limit, attachment),
+            Self::Grid(g) => g.layer_second_moment(limit, attachment),
+        }
+    }
 }
 
 /// Poisson claim counts with mean ``lam``.
