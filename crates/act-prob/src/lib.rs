@@ -28,7 +28,7 @@ pub mod sampled;
 pub mod severity;
 
 pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, StudentTCopula};
-pub use counting::{Counting, NegativeBinomial, Poisson};
+pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
 pub use distortion::Distortion;
 pub use distribution::Distribution;
 pub use grid::{Discretization, DiscretizationReport, Grid};

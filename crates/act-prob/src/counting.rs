@@ -248,6 +248,200 @@ impl Counting for NegativeBinomial {
     }
 }
 
+/// Binomial claim counts: `n` independent risks, each claiming with
+/// probability `p`. Mean `n p`, variance `n p (1 - p)`: under-dispersed.
+///
+/// ```
+/// use act_prob::{Binomial, Counting};
+///
+/// let n = Binomial::new(10, 0.3).unwrap();
+/// assert!((n.mean() - 3.0).abs() < 1e-15);
+/// assert_eq!(n.pmf(11), 0.0);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Binomial {
+    n: u64,
+    p: f64,
+}
+
+impl Binomial {
+    /// Binomial with `n` trials and claim probability `p` in `[0, 1)`.
+    /// (`p = 1` is a fixed count, outside the `(a, b, 0)` recursion.)
+    pub fn new(n: u64, p: f64) -> Result<Self> {
+        if !(0.0..1.0).contains(&p) {
+            return Err(Error::InvalidParameter {
+                name: "p",
+                value: p,
+                reason: "must be in [0, 1)",
+            });
+        }
+        Ok(Self { n, p })
+    }
+
+    /// Number of trials.
+    pub fn n(&self) -> u64 {
+        self.n
+    }
+
+    /// Claim probability per trial.
+    pub fn p(&self) -> f64 {
+        self.p
+    }
+}
+
+impl Counting for Binomial {
+    fn pmf(&self, k: u64) -> f64 {
+        if k > self.n {
+            return 0.0;
+        }
+        if self.p == 0.0 {
+            return if k == 0 { 1.0 } else { 0.0 };
+        }
+        let (n, k) = (self.n as f64, k as f64);
+        (ln_gamma(n + 1.0) - ln_gamma(k + 1.0) - ln_gamma(n - k + 1.0)
+            + k * self.p.ln()
+            + (n - k) * (-self.p).ln_1p())
+        .exp()
+    }
+
+    fn mean(&self) -> f64 {
+        self.n as f64 * self.p
+    }
+
+    fn variance(&self) -> f64 {
+        self.n as f64 * self.p * (1.0 - self.p)
+    }
+
+    fn panjer_ab(&self) -> (f64, f64) {
+        let odds = self.p / (1.0 - self.p);
+        (-odds, (self.n as f64 + 1.0) * odds)
+    }
+
+    /// `(1 + p (z - 1))^n`.
+    fn pgf(&self, z: f64) -> f64 {
+        (1.0 + self.p * (z - 1.0)).powf(self.n as f64)
+    }
+
+    fn pgf_complex(&self, (re, im): (f64, f64)) -> (f64, f64) {
+        // w = 1 + p (z - 1); w^n = |w|^n exp(i n arg w).
+        let (wr, wi) = (1.0 + self.p * (re - 1.0), self.p * im);
+        let n = self.n as f64;
+        let modulus = (0.5 * n * (wr * wr + wi * wi).ln()).exp();
+        let angle = n * wi.atan2(wr);
+        (modulus * angle.cos(), modulus * angle.sin())
+    }
+}
+
+/// A claim count in the Panjer class chosen by its dispersion
+/// `Var[N] / E[N]`: binomial below 1, Poisson at 1, negative binomial
+/// above 1. The usual way to state frequency uncertainty in treaty
+/// pricing (see `docs/design/pareto.md`).
+///
+/// ```
+/// use act_prob::{Counting, PanjerClass};
+///
+/// let n = PanjerClass::from_mean_dispersion(4.0, 2.5).unwrap();
+/// assert!(matches!(n, PanjerClass::NegativeBinomial(_)));
+/// assert!((n.variance() - 10.0).abs() < 1e-12);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PanjerClass {
+    Binomial(Binomial),
+    Poisson(Poisson),
+    NegativeBinomial(NegativeBinomial),
+}
+
+impl PanjerClass {
+    /// The claim count with this `mean` (finite, non-negative) and
+    /// `dispersion` (finite, positive).
+    ///
+    /// A binomial must have a whole number of trials, so for dispersion
+    /// below 1 the number of trials is `mean / (1 - dispersion)` rounded up
+    /// and `p = mean / n`: the mean is kept exactly and the dispersion
+    /// becomes `1 - p`, the nearest attainable value at or above the one
+    /// asked for. [`PanjerClass::dispersion`] reports it.
+    pub fn from_mean_dispersion(mean: f64, dispersion: f64) -> Result<Self> {
+        if !mean.is_finite() || mean < 0.0 {
+            return Err(Error::InvalidParameter {
+                name: "mean",
+                value: mean,
+                reason: "must be finite and non-negative",
+            });
+        }
+        if !dispersion.is_finite() || dispersion <= 0.0 {
+            return Err(Error::InvalidParameter {
+                name: "dispersion",
+                value: dispersion,
+                reason: "must be finite and positive",
+            });
+        }
+        if dispersion == 1.0 || mean == 0.0 {
+            return Ok(Self::Poisson(Poisson::new(mean)?));
+        }
+        if dispersion > 1.0 {
+            let beta = dispersion - 1.0;
+            return Ok(Self::NegativeBinomial(NegativeBinomial::new(
+                mean / beta,
+                beta,
+            )?));
+        }
+        let trials = mean / (1.0 - dispersion);
+        // A whole number of trials up to rounding is taken as exact.
+        let n = if (trials - trials.round()).abs() <= 1e-9 * trials {
+            trials.round()
+        } else {
+            trials.ceil()
+        };
+        Ok(Self::Binomial(Binomial::new(
+            n as u64,
+            (mean / n).min(1.0),
+        )?))
+    }
+
+    /// `Var[N] / E[N]` (1 for a zero mean).
+    pub fn dispersion(&self) -> f64 {
+        match self {
+            Self::Binomial(b) => 1.0 - b.p(),
+            Self::Poisson(_) => 1.0,
+            Self::NegativeBinomial(nb) => 1.0 + nb.beta(),
+        }
+    }
+
+    fn inner(&self) -> &dyn Counting {
+        match self {
+            Self::Binomial(n) => n,
+            Self::Poisson(n) => n,
+            Self::NegativeBinomial(n) => n,
+        }
+    }
+}
+
+impl Counting for PanjerClass {
+    fn pmf(&self, k: u64) -> f64 {
+        self.inner().pmf(k)
+    }
+
+    fn mean(&self) -> f64 {
+        self.inner().mean()
+    }
+
+    fn variance(&self) -> f64 {
+        self.inner().variance()
+    }
+
+    fn panjer_ab(&self) -> (f64, f64) {
+        self.inner().panjer_ab()
+    }
+
+    fn pgf(&self, z: f64) -> f64 {
+        self.inner().pgf(z)
+    }
+
+    fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
+        self.inner().pgf_complex(z)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +461,36 @@ mod tests {
         check_recursion(&Poisson::new(4.5).unwrap());
         check_recursion(&NegativeBinomial::new(2.5, 1.5).unwrap());
         check_recursion(&NegativeBinomial::new(0.7, 10.0).unwrap());
+        check_recursion(&Binomial::new(12, 0.35).unwrap());
+        check_recursion(&Binomial::new(300, 0.02).unwrap());
+    }
+
+    #[test]
+    fn panjer_class_by_dispersion() {
+        let nb = PanjerClass::from_mean_dispersion(4.0, 3.0).unwrap();
+        assert!(matches!(nb, PanjerClass::NegativeBinomial(_)));
+        assert!((nb.variance() / nb.mean() - 3.0).abs() < 1e-14);
+        let po = PanjerClass::from_mean_dispersion(4.0, 1.0).unwrap();
+        assert_eq!(po, PanjerClass::Poisson(Poisson::new(4.0).unwrap()));
+        // 10 / (1 − 0.5) = 20 trials exactly (up to rounding).
+        let bi = PanjerClass::from_mean_dispersion(10.0, 0.5).unwrap();
+        assert_eq!(bi, PanjerClass::Binomial(Binomial::new(20, 0.5).unwrap()));
+        // 10 / 0.7 = 14.3 trials: 15, so p = 2/3 and dispersion 1/3 ≥ 0.3.
+        let up = PanjerClass::from_mean_dispersion(10.0, 0.3).unwrap();
+        let PanjerClass::Binomial(b) = up else {
+            panic!("{up:?}")
+        };
+        assert_eq!(b.n(), 15);
+        assert!((up.mean() - 10.0).abs() < 1e-14);
+        assert!((up.dispersion() - 1.0 / 3.0).abs() < 1e-15);
+        assert!((up.variance() / up.mean() - up.dispersion()).abs() < 1e-15);
+        assert_eq!(
+            PanjerClass::from_mean_dispersion(0.0, 2.0).unwrap(),
+            PanjerClass::Poisson(Poisson::new(0.0).unwrap())
+        );
+        assert!(PanjerClass::from_mean_dispersion(1.0, 0.0).is_err());
+        assert!(PanjerClass::from_mean_dispersion(-1.0, 1.0).is_err());
+        check_recursion(&up);
     }
 
     #[test]
@@ -274,6 +498,7 @@ mod tests {
         for n in [
             &Poisson::new(7.0).unwrap() as &dyn Counting,
             &NegativeBinomial::new(3.0, 2.0).unwrap(),
+            &Binomial::new(40, 0.15).unwrap(),
         ] {
             let pmf: Vec<f64> = (0..400).map(|k| n.pmf(k)).collect();
             let total: f64 = pmf.iter().sum();
@@ -315,6 +540,7 @@ mod tests {
         for n in [
             &Poisson::new(2.5).unwrap() as &dyn Counting,
             &NegativeBinomial::new(1.5, 3.0).unwrap(),
+            &Binomial::new(25, 0.2).unwrap(),
         ] {
             for z in [0.0f64, 0.3, 0.9, 1.0] {
                 let series: f64 = (0..500).map(|k| n.pmf(k) * z.powi(k as i32)).sum();
@@ -328,6 +554,7 @@ mod tests {
         for n in [
             &Poisson::new(2.5).unwrap() as &dyn Counting,
             &NegativeBinomial::new(1.5, 3.0).unwrap(),
+            &Binomial::new(25, 0.2).unwrap(),
         ] {
             for theta in [0.0f64, 0.7, 2.0, 3.1] {
                 let (zr, zi) = (0.9 * theta.cos(), 0.9 * theta.sin());
@@ -363,5 +590,9 @@ mod tests {
         assert!(NegativeBinomial::new(0.0, 1.0).is_err());
         assert!(NegativeBinomial::new(1.0, f64::NAN).is_err());
         assert!(NegativeBinomial::from_mean_variance(10.0, 10.0).is_err());
+        assert!(Binomial::new(5, 1.0).is_err());
+        assert!(Binomial::new(5, -0.1).is_err());
+        let zero = Binomial::new(5, 0.0).unwrap();
+        assert_eq!((zero.pmf(0), zero.pmf(1)), (1.0, 0.0));
     }
 }
