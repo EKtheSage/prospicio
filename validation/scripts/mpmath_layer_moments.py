@@ -11,7 +11,8 @@ forms in Rust:
     layer second moment      = 2 * integral of (x - a) S(x) over (a, a + c)
     lev(d), stop_loss(d)     = integral of S over (0, d) and (d, inf)
 
-for the Pareto (optionally truncated) and the lognormal.
+for the Pareto (optionally truncated), the piecewise Pareto (with both
+truncation types) and the lognormal.
 """
 
 import csv
@@ -31,6 +32,13 @@ PARETOS = [  # (t, alpha, truncation or None)
     (1000, 3.5, None),
     (500, 1.2, 20000),
     (500, 2.0, 8000),
+]
+PIECEWISE = [  # (thresholds, alphas, truncation or None, type)
+    ([1000, 2000, 3000], [1, 1.5, 2], None, None),
+    ([1000, 2000, 3000], [1, 1.5, 2], 5000, "lp"),
+    ([1000, 2000, 3000], [1, 1.5, 2], 5000, "wd"),
+    ([1000, 1500, 4000, 10000], [2.5, 0.4, 3, 1.2], 1000000, "wd"),
+    ([200, 1000, 50000], [1, 3, 2.5], None, None),
 ]
 LOGNORMALS = [(7.0, 0.5), (10.0, 2.0)]
 LAYERS = [  # (cover, attachment); "inf" for unlimited
@@ -58,6 +66,29 @@ def pareto_survival(t, alpha, tr):
         return (raw - q) / (1 - q)
 
     return s, [t] + ([mp.mpf(tr)] if tr is not None else [])
+
+
+def piecewise_survival(ts, alphas, tr, kind):
+    ts, alphas = [mp.mpf(t) for t in ts], [mp.mpf(a) for a in alphas]
+
+    def base(x):
+        if x < ts[0]:
+            return mp.mpf(1)
+        s = mp.mpf(1)
+        for k, (t, a) in enumerate(zip(ts, alphas)):
+            nxt = ts[k + 1] if k + 1 < len(ts) else mp.inf
+            if x < nxt:
+                if kind == "lp" and k == len(ts) - 1:
+                    q = (t / tr_) ** a
+                    return s * ((t / x) ** a - q) / (1 - q) if x < tr_ else mp.mpf(0)
+                return s * (t / x) ** a
+            s *= (t / nxt) ** a
+
+    tr_ = mp.mpf(tr) if tr is not None else None
+    if kind == "wd":
+        s_tr = base(tr_)
+        return (lambda x: (base(x) - s_tr) / (1 - s_tr) if x < tr_ else mp.mpf(0)), ts + [tr_]
+    return base, ts + ([tr_] if tr_ is not None else [])
 
 
 def lognormal_survival(mu, sigma):
@@ -96,6 +127,16 @@ def rows():
                 yield "pareto", params, "layer", cover, att, m1, 1e-12
             if m2 is not None:
                 yield "pareto", params, "layer_second_moment", cover, att, m2, 1e-11
+    for ts, alphas, tr, kind in PIECEWISE:
+        s, kinks = piecewise_survival(ts, alphas, tr, kind)
+        join = lambda v: "|".join(str(x) for x in v)
+        params = f"t={join(ts)};alpha={join(alphas)}" + (f";truncation={tr};type={kind}" if tr else "")
+        for cover, att in LAYERS:
+            if cover == "inf" and tr is None and alphas[-1] <= 2:
+                continue
+            m1, m2 = moments(s, kinks, cover, att)
+            yield "piecewise_pareto", params, "layer", cover, att, m1, 1e-12
+            yield "piecewise_pareto", params, "layer_second_moment", cover, att, m2, 1e-11
     for mu, sigma in LOGNORMALS:
         s, kinks = lognormal_survival(mu, sigma)
         params = f"meanlog={mu};sdlog={sigma}"
