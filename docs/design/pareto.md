@@ -1,6 +1,6 @@
 # Design note: Pareto-family severities for reinsurance pricing
 
-Status: **Proposed** · v0.4 · Depends on: `distributions.md` (`Severity`, `Counting`, `Grid`), `aggregate.md` (towers), `risk.md` (`evt::Gpd`) · Lanes: Probability (distributions), Aggregate (pricing)
+Status: **Accepted** · v0.4 · Depends on: `distributions.md` (`Severity`, `Counting`, `Grid`), `aggregate.md` (towers), `risk.md` (`evt::Gpd`) · Lanes: Probability (`act-prob`), Aggregate (`act-aggregate`, `act-pricing`)
 
 ## Goal
 
@@ -306,12 +306,32 @@ adaptive scheme with a stated bound on the relative error of `S`.
 
 ### `act-aggregate` (Aggregate lane)
 
+`act-aggregate` stays about aggregate distributions. The collective
+model is the frequency–severity input to an aggregate, so it lives here.
+
 | Item | Notes |
 |---|---|
 | `CollectiveModel<N, X>` | Expected layer loss, layer variance (`E[N] Var[Y] + Var[N] E[Y]²`), excess frequency; simulation and Panjer/FFT through existing code. |
-| Rating helpers | Extrapolation; implied alpha from two layers, a frequency and a layer, or two frequencies. |
-| Tower matching | Riegel (2018) Matching Algorithm 2 (above), with both selection rules; reports why a tower is inconsistent when it is. |
-| Reference and PML fits | Partial references and PML curves; overlapping reference layers need a linear program and come later. |
+
+### `act-pricing` (Aggregate lane, new crate)
+
+The `pricing` namespace planned in `docs/architecture.md`. Most of it
+serves primary and reinsurance pricing alike; only `tower` is
+reinsurance-specific.
+
+| Module | Item | Used by |
+|---|---|---|
+| `layer` | Increased limit factors (`LEV(limit)/LEV(basic)`), deductible credits (`1 − LEV(d)/E[X]`), Pareto extrapolation, implied alpha from two layers, a frequency and a layer, or two frequencies. Later: MBBEFD exposure curves. | Primary (ILF tables, deductibles, large-loss loads) and reinsurance (rating upper layers) |
+| `tower` | Tower matching (Riegel 2018, above, both selection rules); reference fits; PML-curve fits. | Reinsurance |
+
+Overlapping reference layers need a small linear program. It uses the
+pure-Rust simplex crate `microlp` (Apache-2.0), as a dependency of
+`act-pricing` only; no C or C++ build, so WASM, CRAN and Windows builds
+are unaffected.
+
+`Layer` and `Tower` (contract terms) still live in `act-aggregate`;
+`docs/architecture.md` gives them their own `reinsurance` namespace, and
+moving them is a separate, later PR.
 
 Then Python and R bindings. Each row is one small PR, in roughly this
 order.
@@ -338,11 +358,9 @@ order.
 1. ~~Riegel (2018)~~: received; the algorithm above is taken from it.
    The 2025 local Pareto preprint is not available, so the log-affine
    formulas are derived from the definition (above).
-2. Namespace: the pricing helpers and tower matching live in
-   `act-aggregate` for now; `docs/architecture.md` plans a `pricing`
-   namespace (ILF, exposure curves, MBBEFD) that they may move to.
-3. Overlapping reference layers need a small linear-programming solver;
-   build one in `act-math` or leave the case out.
+2. ~~Namespace~~: decided, a new `act-pricing` crate (above);
+   `act-aggregate` keeps aggregates and the collective model.
+3. ~~Linear programming~~: decided, `microlp` rather than our own solver.
 
 ## References
 
