@@ -355,6 +355,24 @@ As in the R package, a frequency threshold may not lie strictly inside
 the layer, whose loss would then include losses the frequency does not
 count.
 
+Done in `tower`: `match_tower(attachments, layer_losses, frequencies,
+rule)` (Matching Algorithm 2 with `SelectionRule::MinimizeAlphaRatio` or
+`Midpoint`) and `layer_losses_from_unlimited`. A limited layer that one
+Pareto piece already matches (as the lowest layer always is when its
+frequency is derived) gets one piece, not two. Findings from checking
+against R 2.4.5:
+
+- With the minimize rule, R agrees to about `1e-8` on Example 4 with
+  `f_1` given, derived, or every frequency given.
+- R's rule without minimization is not the paper's midpoint, so it is no
+  reference for `Midpoint`.
+- On the tower 5m xs 5m, 15m xs 10m, ∞ xs 25m (losses 2.4m, 1.5m, 1.2m,
+  `f_1 = 1`), R's middle layer is not the minimum of the stated
+  objective (spread `0.0703` where `0.0645` is attainable), and at that
+  scale its model misses the layer's loss by `1.5e-5`. Our unit tests check
+  that tower for exact reproduction, scale invariance and local
+  optimality instead.
+
 Overlapping reference layers need a small linear program. It uses the
 pure-Rust simplex crate `microlp` (Apache-2.0), as a dependency of
 `act-pricing` only; no C or C++ build, so WASM, CRAN and Windows builds

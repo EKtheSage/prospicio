@@ -58,3 +58,42 @@ fn pareto_rating_matches_r() {
         }
     });
 }
+
+#[test]
+fn tower_matching_matches_r() {
+    use act_pricing::tower::{SelectionRule, match_tower};
+    let cases = reference("tower_matching_r.csv");
+    check(&cases, |c| {
+        let fields: std::collections::HashMap<&str, &str> = c
+            .get("params")
+            .split(';')
+            .filter_map(|kv| kv.split_once('='))
+            .collect();
+        let list = |k: &str| -> Option<Vec<Option<f64>>> {
+            fields
+                .get(k)?
+                .split('|')
+                .map(|v| match v {
+                    "NA" => Some(None),
+                    v => v.parse().ok().map(Some),
+                })
+                .collect()
+        };
+        let attachments: Vec<f64> = list("a")?.into_iter().collect::<Option<_>>()?;
+        let losses: Vec<f64> = list("e")?.into_iter().collect::<Option<_>>()?;
+        let model = match_tower(
+            &attachments,
+            &losses,
+            &list("f")?,
+            SelectionRule::MinimizeAlphaRatio,
+        )
+        .ok()?;
+        let j = c.number("index")? as usize;
+        match c.get("quantity") {
+            "frequency" => Some(model.frequency),
+            "threshold" => model.severity.thresholds().get(j).copied(),
+            "alpha" => model.severity.alphas().get(j).copied(),
+            _ => None,
+        }
+    });
+}
