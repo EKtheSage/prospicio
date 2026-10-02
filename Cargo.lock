@@ -84,6 +84,7 @@ dependencies = [
  "act-aggregate",
  "act-core",
  "act-math",
+ "act-pricing",
  "act-prob",
  "act-reserving",
 ]
