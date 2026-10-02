@@ -129,6 +129,43 @@ impl Severity for Lognormal {
         let z = (retention.ln() - mu) / s;
         (self.mean() * norm_cdf(s - z) - retention * norm_cdf(-z)).max(0.0)
     }
+
+    /// With `b = a + limit` and `Y` the layer loss,
+    /// `E[Y^2] = E[(X - a)^2; a < X <= b] + limit^2 P(X > b)`, from the
+    /// partial moments `E[X^k; a < X <= b] = e^(k mu + k^2 s^2 / 2)
+    /// (Phi(z_b - k s) - Phi(z_a - k s))`. Differences of `Phi` are taken in
+    /// the upper tail so they keep their precision for high layers.
+    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+        let (mu, s) = (self.meanlog, self.sdlog);
+        let a = attachment.max(0.0);
+        let b = a + limit;
+        let z = |x: f64| {
+            if x <= 0.0 {
+                f64::NEG_INFINITY
+            } else {
+                (x.ln() - mu) / s
+            }
+        };
+        let (za, zb) = (z(a), z(b));
+        // Phi(hi) - Phi(lo) for hi >= lo, from the side where both are small.
+        let band = |lo: f64, hi: f64| {
+            if lo > 0.0 {
+                norm_cdf(-lo) - norm_cdf(-hi)
+            } else {
+                norm_cdf(hi) - norm_cdf(lo)
+            }
+        };
+        let m0 = band(za, zb);
+        let m1 = self.mean() * band(za - s, zb - s);
+        let m2 = (2.0 * mu + 2.0 * s * s).exp() * band(za - 2.0 * s, zb - 2.0 * s);
+        let inside = m2 - 2.0 * a * m1 + a * a * m0;
+        let above = if b == f64::INFINITY {
+            0.0
+        } else {
+            limit * limit * norm_cdf(-zb)
+        };
+        (inside + above).max(0.0)
+    }
 }
 
 #[cfg(test)]

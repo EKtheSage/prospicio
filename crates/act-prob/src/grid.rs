@@ -319,6 +319,15 @@ impl Severity for Grid {
             .map(|(x, p)| (x - retention).max(0.0) * p)
             .sum()
     }
+
+    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+        self.points()
+            .map(|(x, p)| {
+                let y = (x - attachment).max(0.0).min(limit);
+                y * y * p
+            })
+            .sum()
+    }
 }
 
 #[cfg(test)]

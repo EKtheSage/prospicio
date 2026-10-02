@@ -19,6 +19,7 @@ pub mod grid;
 #[cfg(feature = "arrow")]
 pub mod ipc;
 pub mod lognormal;
+pub mod pareto;
 pub mod predictive;
 pub mod provenance;
 pub mod risk;
@@ -31,6 +32,7 @@ pub use distortion::Distortion;
 pub use distribution::Distribution;
 pub use grid::{Discretization, DiscretizationReport, Grid};
 pub use lognormal::Lognormal;
+pub use pareto::Pareto;
 pub use predictive::{ComponentKey, KeyValue, PredictiveDistribution};
 pub use provenance::{InputHasher, Provenance};
 pub use sampled::{Empirical, Sampled};
