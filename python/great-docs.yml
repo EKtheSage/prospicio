@@ -29,3 +29,16 @@ reference:
     desc: The joint result every model returns.
     contents:
       - distributions.PredictiveDistribution
+  - title: Aggregate loss
+    desc: Compound distributions on a grid, and simulated years of losses.
+    contents:
+      - aggregate.panjer
+      - aggregate.fft
+      - aggregate.CompoundReport
+      - aggregate.simulate_events
+      - aggregate.EventSet
+  - title: Reinsurance
+    desc: Excess-of-loss layers and towers applied to simulated losses.
+    contents:
+      - aggregate.Layer
+      - aggregate.Tower

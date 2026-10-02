@@ -1,9 +1,9 @@
 """Actuarial modeling on a Rust core.
 
-User-facing namespaces follow docs/architecture.md; Phase 0 exposes
-``distributions`` only.
+User-facing namespaces follow docs/architecture.md: ``distributions`` and
+``aggregate`` so far.
 """
 
-from . import distributions
+from . import aggregate, distributions
 
-__all__ = ["distributions"]
+__all__ = ["aggregate", "distributions"]

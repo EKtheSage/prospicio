@@ -2,6 +2,56 @@ from collections.abc import Sequence
 from typing import Any, final
 
 @final
+class CompoundReport:
+    """
+    What a compound calculation produced and the error it introduced.
+    
+    Returned with the aggregate grid by ``panjer`` and ``fft``. Read
+    ``aliasing_error`` first for FFT results: when it is not negligible the
+    grid is unreliable, including ``tail_mass``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aliasing_error(self, /) -> float:
+        """
+        Largest change in any probability when the FFT buffer doubles; 0 for
+        Panjer.
+        """
+    @property
+    def expected_mean(self, /) -> float:
+        """
+        ``E[N] * E[X]`` on the severity grid.
+        """
+    @property
+    def grid_mean(self, /) -> float:
+        """
+        Mean of the aggregate grid.
+        """
+    def mean_error(self, /) -> float:
+        """
+        ``grid_mean - expected_mean``.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def method(self, /) -> str:
+        """
+        Method: ``"panjer"`` or ``"fft"``.
+        """
+    @property
+    def points(self, /) -> int:
+        """
+        Number of points in the aggregate grid.
+        """
+    @property
+    def tail_mass(self, /) -> float:
+        """
+        Aggregate probability above the last point, lumped onto it.
+        """
+
+@final
 class DiscretizationReport:
     """
     How a distribution was discretized, and the error that introduced.
@@ -47,6 +97,61 @@ class DiscretizationReport:
     def tail_mass(self, /) -> float:
         """
         Probability the source puts above the last grid point, lumped onto it.
+        """
+
+@final
+class EventSet:
+    """
+    Simulated years of individual losses, for applying per-loss terms such
+    as reinsurance layers.
+    
+    Created by ``simulate_events``. Year ``i`` was drawn from stream ``i`` of
+    the generator keyed by ``seed``, so results do not depend on the number of
+    threads.
+    """
+    def __repr__(self, /) -> str: ...
+    def counts(self, /) -> list[int]:
+        """
+        Number of losses in each year.
+        
+        Returns
+        -------
+        list of int
+        """
+    def events(self, /, sim: int) -> list[float]:
+        """
+        Year ``sim``'s individual losses, in the order they were drawn.
+        
+        Parameters
+        ----------
+        sim : int
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        IndexError
+            If ``sim`` is not a simulated year.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of simulated years.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        The seed the years were drawn from.
+        """
+    def totals(self, /) -> PredictiveDistribution:
+        """
+        Each year's total loss.
+        
+        Returns
+        -------
+        PredictiveDistribution
         """
 
 @final
@@ -230,6 +335,89 @@ class Grid:
         Returns
         -------
         float
+        """
+
+@final
+class Layer:
+    """
+    A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
+    loss, then annual terms.
+    
+    For one year, ``ceded = share * min(max(sum of per-loss recoveries -
+    aggregate_deductible, 0), aggregate_limit)``.
+    
+    Parameters
+    ----------
+    name : str
+    limit : float
+        Per-occurrence limit; may be ``inf``.
+    attachment : float
+    share : float, default 1.0
+        Placed share, in ``(0, 1]``.
+    aggregate_deductible : float, default 0.0
+    aggregate_limit : float, default inf
+    reinstatements : int, optional
+        Sets ``aggregate_limit`` to ``limit * (reinstatements + 1)``; cannot be
+        combined with ``aggregate_limit``.
+    
+    Raises
+    ------
+    ValueError
+        If a term is out of range, or both ``aggregate_limit`` and
+        ``reinstatements`` are given.
+    
+    Examples
+    --------
+    >>> from actuarialrs.aggregate import Layer
+    >>> layer = Layer("5x5", 5e6, 5e6, reinstatements=1)
+    >>> layer.ceded([7e6])
+    2000000.0
+    >>> layer.ceded([12e6, 20e6, 30e6])
+    10000000.0
+    """
+    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None) -> Layer: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def aggregate_deductible(self, /) -> float:
+        """
+        Annual aggregate deductible.
+        """
+    @property
+    def aggregate_limit(self, /) -> float:
+        """
+        Annual aggregate limit.
+        """
+    @property
+    def attachment(self, /) -> float:
+        """
+        Per-occurrence attachment.
+        """
+    def ceded(self, /, losses: Sequence[float]) -> float:
+        """
+        Ceded loss for one year's losses.
+        
+        Parameters
+        ----------
+        losses : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def limit(self, /) -> float:
+        """
+        Per-occurrence limit.
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        Layer name.
+        """
+    @property
+    def share(self, /) -> float:
+        """
+        Placed share.
         """
 
 @final
@@ -939,3 +1127,136 @@ class Sampled:
         -------
         float
         """
+
+@final
+class Tower:
+    """
+    Layers applied to the same ground-up losses (no inuring order yet).
+    
+    Parameters
+    ----------
+    layers : list of Layer
+        At least one; names must be unique.
+    
+    Raises
+    ------
+    ValueError
+        If there are no layers or two share a name.
+    
+    Examples
+    --------
+    >>> from actuarialrs.aggregate import Layer, Tower, simulate_events
+    >>> from actuarialrs.distributions import Lognormal, Poisson
+    >>> events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 1_000, 7)
+    >>> tower = Tower([Layer("5x5", 5e6, 5e6), Layer("15x10", 15e6, 10e6)])
+    >>> result = tower.apply(events)
+    >>> [k[0] for k in result.aggregate(["kind"]).components()]
+    ['gross', 'ceded', 'net']
+    """
+    def __new__(cls, /, layers: Sequence[Layer]) -> Tower: ...
+    def __repr__(self, /) -> str: ...
+    def apply(self, /, events: EventSet) -> PredictiveDistribution:
+        """
+        Applies the tower to every simulated year.
+        
+        The result has dimensions ``["kind", "layer"]``: ``("gross",
+        "ground_up")``, ``("ceded", name)`` per layer and ``("net",
+        "retained")``. ``aggregate(["kind"])`` gives gross, total ceded and net.
+        
+        Parameters
+        ----------
+        events : EventSet
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def layer_names(self, /) -> list[str]:
+        """
+        Layer names, in order.
+        """
+
+def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
+    """
+    Aggregate loss ``S = X_1 + ... + X_N`` by fast Fourier transform.
+    
+    Works for large claim counts that make ``panjer`` underflow. Check
+    ``report.aliasing_error`` before using the result.
+    
+    Parameters
+    ----------
+    frequency : Poisson or NegativeBinomial
+    severity : Grid
+    points : int
+    
+    Returns
+    -------
+    tuple of (Grid, CompoundReport)
+    
+    Raises
+    ------
+    ValueError
+        If ``points`` is 0.
+    """
+
+def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
+    """
+    Aggregate loss ``S = X_1 + ... + X_N`` by Panjer's recursion.
+    
+    Parameters
+    ----------
+    frequency : Poisson or NegativeBinomial
+    severity : Grid
+        Severity on a grid; the result uses its step.
+    points : int
+        Points in the aggregate grid.
+    
+    Returns
+    -------
+    tuple of (Grid, CompoundReport)
+    
+    Raises
+    ------
+    ValueError
+        If ``points`` is 0 or ``P(S = 0)`` underflows (use ``fft``).
+    
+    Examples
+    --------
+    >>> from actuarialrs.aggregate import panjer
+    >>> from actuarialrs.distributions import Grid, Poisson
+    >>> sev = Grid(1.0, [0.1, 0.3, 0.25, 0.2, 0.1, 0.05])
+    >>> agg, report = panjer(Poisson(3.0), sev, 100)
+    >>> round(agg.mean(), 6)
+    6.15
+    """
+
+def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> EventSet:
+    """
+    Simulates ``n_sims`` years of claims: a count from ``frequency``, then that
+    many independent losses from ``severity``.
+    
+    Parameters
+    ----------
+    frequency : Poisson or NegativeBinomial
+    severity : Lognormal or Grid
+    n_sims : int
+    seed : int
+    
+    Returns
+    -------
+    EventSet
+    
+    Raises
+    ------
+    ValueError
+        If ``n_sims`` is 0.
+    
+    Examples
+    --------
+    >>> from actuarialrs.aggregate import simulate_events
+    >>> from actuarialrs.distributions import Lognormal, Poisson
+    >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
+    >>> abs(events.totals().mean() - 5000.0) < 75.0
+    True
+    """

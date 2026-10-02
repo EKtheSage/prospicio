@@ -13,6 +13,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+mod aggregate;
 mod distributions;
 
 fn to_py(e: act_core::Error) -> PyErr {
@@ -21,6 +22,10 @@ fn to_py(e: act_core::Error) -> PyErr {
 
 #[pymodule]
 mod actuarialrs_native {
+    #[pymodule_export]
+    use super::aggregate::{
+        PyCompoundReport, PyEventSet, PyLayer, PyTower, fft, panjer, simulate_events,
+    };
     #[pymodule_export]
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,

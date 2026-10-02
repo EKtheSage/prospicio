@@ -46,6 +46,7 @@ dependencies = [
 name = "act-python"
 version = "0.0.1"
 dependencies = [
+ "act-aggregate",
  "act-core",
  "act-prob",
  "pyo3",
