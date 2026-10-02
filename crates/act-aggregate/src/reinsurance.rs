@@ -64,6 +64,38 @@ impl Layer {
         })
     }
 
+    /// A quota share ceding `cession` of every loss: unlimited cover from
+    /// the first unit, with `share = cession`.
+    ///
+    /// ```
+    /// use act_aggregate::Layer;
+    ///
+    /// let qs = Layer::quota_share("QS 40%", 0.4).unwrap();
+    /// assert_eq!(qs.ceded(&[10.0, 5.0]), 6.0);
+    /// ```
+    pub fn quota_share(name: impl Into<String>, cession: f64) -> Result<Self> {
+        Self::xol(name, f64::INFINITY, 0.0)?.share(cession)
+    }
+
+    /// An aggregate stop-loss: `limit` xs `retention` on the year's total
+    /// loss. It is an unlimited per-occurrence layer from 0 whose annual
+    /// deductible is `retention` and annual limit `limit`, so it covers
+    /// the total of whatever losses it sees (gross, or net of earlier
+    /// inuring stages).
+    ///
+    /// ```
+    /// use act_aggregate::Layer;
+    ///
+    /// let sl = Layer::stop_loss("SL", 50.0, 100.0).unwrap();
+    /// assert_eq!(sl.ceded(&[60.0, 70.0]), 30.0);
+    /// assert_eq!(sl.ceded(&[60.0, 70.0, 90.0]), 50.0);
+    /// ```
+    pub fn stop_loss(name: impl Into<String>, limit: f64, retention: f64) -> Result<Self> {
+        Self::xol(name, f64::INFINITY, 0.0)?
+            .aggregate_deductible(retention)?
+            .aggregate_limit(limit)
+    }
+
     /// Places `share` of the layer.
     pub fn share(mut self, share: f64) -> Result<Self> {
         if !(share > 0.0 && share <= 1.0) {
@@ -104,36 +136,137 @@ impl Layer {
 
     /// Ceded loss for one year's losses.
     pub fn ceded(&self, losses: &[f64]) -> f64 {
-        let recovery: f64 = losses
+        let recovery: f64 = losses.iter().map(|&x| self.recovery(x)).sum();
+        self.annual(recovery)
+    }
+
+    /// Ceded loss per event for one year, in the order given.
+    ///
+    /// Annual terms are used up in that order (losses are taken as
+    /// chronological): the deductible absorbs the first recoveries and the
+    /// annual limit stops the last ones. Event `k` cedes the increase in
+    /// annual ceded loss it causes, so the entries sum to
+    /// [`ceded`](Self::ceded) up to rounding.
+    ///
+    /// ```
+    /// use act_aggregate::Layer;
+    ///
+    /// // Recoveries 3, 10, 7; deductible 4 and limit 15 leave 0, 9, 6.
+    /// let layer = Layer::xol("L", 10.0, 5.0).unwrap()
+    ///     .aggregate_deductible(4.0).unwrap()
+    ///     .aggregate_limit(15.0).unwrap();
+    /// assert_eq!(layer.ceded_by_event(&[8.0, 20.0, 12.0]), [0.0, 9.0, 6.0]);
+    /// ```
+    pub fn ceded_by_event(&self, losses: &[f64]) -> Vec<f64> {
+        let mut recovery = 0.0;
+        let mut before = 0.0;
+        losses
             .iter()
-            .map(|&x| (x - self.attachment).max(0.0).min(self.limit))
-            .sum();
+            .map(|&x| {
+                recovery += self.recovery(x);
+                let after = self.annual(recovery);
+                let ceded = after - before;
+                before = after;
+                ceded
+            })
+            .collect()
+    }
+
+    /// Per-occurrence recovery at 100%, before annual terms.
+    fn recovery(&self, loss: f64) -> f64 {
+        (loss - self.attachment).max(0.0).min(self.limit)
+    }
+
+    /// Ceded loss for an annual recovery total at 100%.
+    fn annual(&self, recovery: f64) -> f64 {
         let after_aad = (recovery - self.aggregate_deductible).max(0.0);
         self.share * after_aad.min(self.aggregate_limit)
     }
 }
 
-/// Layers applied to the same ground-up losses.
+/// A reinsurance programme: layers in inuring stages.
 ///
-/// Each layer sees the gross losses (no inuring order yet), so layers that
-/// overlap would both pay.
+/// Layers in the same stage see the same losses: the gross losses in the
+/// first stage, and in each later stage the losses net of every earlier
+/// stage, event by event (see [`Layer::ceded_by_event`]). Within a stage,
+/// layers that overlap would both pay.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tower {
     pub layers: Vec<Layer>,
+    /// Stage of each layer, starting at 0 and non-decreasing.
+    pub stages: Vec<usize>,
 }
 
 impl Tower {
-    /// A tower of `layers`; fails if there are none or two share a name.
+    /// A tower of `layers` in one stage, all seeing the gross losses;
+    /// fails if there are none or two share a name.
     pub fn new(layers: Vec<Layer>) -> Result<Self> {
-        if layers.is_empty() {
+        Self::inuring(vec![layers])
+    }
+
+    /// A tower whose stages inure in order: each stage's layers see the
+    /// losses net of all earlier stages. Fails if any stage is empty or
+    /// two layers share a name.
+    ///
+    /// ```
+    /// use act_aggregate::{Layer, Tower};
+    ///
+    /// // A 50% quota share inures to the benefit of a 5 xs 5 cover:
+    /// // a 30 loss is 15 net of the quota share, so the cover pays 5.
+    /// let tower = Tower::inuring(vec![
+    ///     vec![Layer::quota_share("QS", 0.5).unwrap()],
+    ///     vec![Layer::xol("5x5", 5.0, 5.0).unwrap()],
+    /// ])
+    /// .unwrap();
+    /// assert_eq!(tower.ceded(&[30.0]), [15.0, 5.0]);
+    /// ```
+    pub fn inuring(stages: Vec<Vec<Layer>>) -> Result<Self> {
+        if stages.is_empty() || stages.iter().any(Vec::is_empty) {
             return Err(invalid("layers", 0.0, "must not be empty"));
         }
+        let stage_of = stages
+            .iter()
+            .enumerate()
+            .flat_map(|(i, stage)| std::iter::repeat_n(i, stage.len()))
+            .collect();
+        let layers: Vec<Layer> = stages.into_iter().flatten().collect();
         for (i, layer) in layers.iter().enumerate() {
             if layers[..i].iter().any(|l| l.name == layer.name) {
                 return Err(invalid("layers", i as f64, "repeats an earlier layer name"));
             }
         }
-        Ok(Self { layers })
+        Ok(Self {
+            layers,
+            stages: stage_of,
+        })
+    }
+
+    /// Ceded loss of each layer, in tower order, for one year's losses.
+    pub fn ceded(&self, losses: &[f64]) -> Vec<f64> {
+        let mut ceded = Vec::with_capacity(self.layers.len());
+        let mut seen = losses.to_vec();
+        let last_stage = self.stages.last().copied().unwrap_or(0);
+        let mut i = 0;
+        while i < self.layers.len() {
+            let stage = self.stages[i];
+            let end = i + self.stages[i..].iter().take_while(|&&s| s == stage).count();
+            let mut stage_by_event = vec![0.0; seen.len()];
+            for layer in &self.layers[i..end] {
+                ceded.push(layer.ceded(&seen));
+                if stage < last_stage {
+                    for (total, c) in stage_by_event.iter_mut().zip(layer.ceded_by_event(&seen)) {
+                        *total += c;
+                    }
+                }
+            }
+            if stage < last_stage {
+                for (x, c) in seen.iter_mut().zip(&stage_by_event) {
+                    *x -= c;
+                }
+            }
+            i = end;
+        }
+        ceded
     }
 
     /// Applies the tower to every simulated year.
@@ -170,12 +303,9 @@ impl Tower {
             let losses = events.events(sim);
             let gross: f64 = losses.iter().sum();
             draws.push(gross);
-            let mut ceded_total = 0.0;
-            for layer in &self.layers {
-                let ceded = layer.ceded(losses);
-                ceded_total += ceded;
-                draws.push(ceded);
-            }
+            let ceded = self.ceded(losses);
+            let ceded_total: f64 = ceded.iter().sum();
+            draws.extend(ceded);
             draws.push(gross - ceded_total);
         }
 
@@ -189,11 +319,11 @@ impl Tower {
         let mut provenance = Provenance::new("reinsurance_tower")
             .version("act-aggregate", env!("CARGO_PKG_VERSION"))
             .seed(events.seed(), act_prob::provenance::SIM_INDEX_SCHEME);
-        for l in &self.layers {
+        for (l, stage) in self.layers.iter().zip(&self.stages) {
             provenance = provenance.param(
                 format!("layer:{}", l.name),
                 format!(
-                    "{} xs {}, share {}, aad {}, aal {}",
+                    "{} xs {}, share {}, aad {}, aal {}, stage {stage}",
                     l.limit, l.attachment, l.share, l.aggregate_deductible, l.aggregate_limit
                 ),
             );
@@ -325,5 +455,116 @@ mod tests {
             "{} vs {exact}",
             ceded.mean()
         );
+    }
+
+    #[test]
+    fn quota_share_and_stop_loss() {
+        let qs = Layer::quota_share("QS", 0.25).unwrap();
+        assert_eq!(qs.ceded(&[8.0, 4.0]), 3.0);
+        assert!(Layer::quota_share("QS", 0.0).is_err());
+        let sl = Layer::stop_loss("SL", 50.0, 100.0).unwrap();
+        assert_eq!(sl.ceded(&[60.0]), 0.0);
+        assert_eq!(sl.ceded(&[60.0, 70.0]), 30.0);
+        assert_eq!(sl.ceded(&[200.0]), 50.0);
+        assert!(Layer::stop_loss("SL", 50.0, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn ceded_by_event_uses_annual_terms_in_order() {
+        let layer = Layer::xol("L", 10.0, 5.0)
+            .unwrap()
+            .aggregate_deductible(4.0)
+            .unwrap()
+            .aggregate_limit(15.0)
+            .unwrap()
+            .share(0.5)
+            .unwrap();
+        // Recoveries 3, 10, 7: the deductible takes 3 then 1, the limit
+        // stops the last 5.
+        assert_eq!(layer.ceded_by_event(&[8.0, 20.0, 12.0]), [0.0, 4.5, 3.0]);
+        // The same losses in another order use the terms up differently
+        // but cede the same annual total.
+        assert_eq!(layer.ceded_by_event(&[20.0, 12.0, 8.0]), [3.0, 3.5, 1.0]);
+        assert!(layer.ceded_by_event(&[]).is_empty());
+        let big = Layer::xol("5x5", 5e6, 5e6)
+            .unwrap()
+            .aggregate_deductible(2e6)
+            .unwrap()
+            .reinstatements(1)
+            .unwrap();
+        let events = events();
+        for sim in 0..events.n_sims() {
+            let losses = events.events(sim);
+            let split: f64 = big.ceded_by_event(losses).iter().sum();
+            assert!((split - big.ceded(losses)).abs() <= 1e-6);
+        }
+    }
+
+    #[test]
+    fn later_stages_see_losses_net_of_earlier_ones() {
+        // Stage 1: 10 xs 5 with a 15 annual limit; on [20, 20] it pays 10
+        // then 5, leaving 10 and 15. Stage 2: a stop-loss of 20 xs 20 on
+        // that net total of 25 pays 5. A layer in stage 1 alongside it
+        // still sees gross.
+        let tower = Tower::inuring(vec![
+            vec![
+                Layer::xol("A", 10.0, 5.0)
+                    .unwrap()
+                    .aggregate_limit(15.0)
+                    .unwrap(),
+                Layer::xol("B", 100.0, 18.0).unwrap(),
+            ],
+            vec![Layer::stop_loss("SL", 20.0, 20.0).unwrap()],
+        ])
+        .unwrap();
+        assert_eq!(tower.stages, [0, 0, 1]);
+        // B takes 2 + 2 of the gross, so stage 2 sees 8 + 13 = 21.
+        assert_eq!(tower.ceded(&[20.0, 20.0]), [15.0, 4.0, 1.0]);
+        assert!(Tower::inuring(vec![vec![], vec![Layer::xol("A", 1.0, 0.0).unwrap()]]).is_err());
+        assert!(
+            Tower::inuring(vec![
+                vec![Layer::xol("A", 1.0, 0.0).unwrap()],
+                vec![Layer::xol("A", 2.0, 0.0).unwrap()],
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn quota_share_inuring_to_a_layer_scales_it() {
+        // A cession c inuring to l xs a is (1 - c) × (l / (1 - c)) xs
+        // (a / (1 - c)) on gross, in every simulated year.
+        let c = 0.4;
+        let inuring = Tower::inuring(vec![
+            vec![Layer::quota_share("QS", c).unwrap()],
+            vec![
+                Layer::xol("XL", 5e6, 5e6)
+                    .unwrap()
+                    .reinstatements(1)
+                    .unwrap(),
+            ],
+        ])
+        .unwrap();
+        let scaled = Layer::xol("XL", 5e6 / (1.0 - c), 5e6 / (1.0 - c))
+            .unwrap()
+            .reinstatements(1)
+            .unwrap()
+            .share(1.0 - c)
+            .unwrap();
+        let events = events();
+        for sim in 0..events.n_sims() {
+            let losses = events.events(sim);
+            let ceded = inuring.ceded(losses);
+            assert!((ceded[0] - c * losses.iter().sum::<f64>()).abs() <= 1e-6);
+            assert!(
+                (ceded[1] - scaled.ceded(losses)).abs() <= 1e-6,
+                "year {sim}"
+            );
+        }
+        let result = inuring.apply(&events).unwrap();
+        for sim in 0..result.n_sims() {
+            let row = result.row(sim).unwrap();
+            assert!((row[0] - row[1] - row[2] - row[3]).abs() <= 1e-6 * row[0].max(1.0));
+        }
     }
 }
