@@ -114,3 +114,17 @@ fn distortions_match_integration() {
         }
     });
 }
+
+#[test]
+fn special_functions_match_scipy() {
+    use act_math::special::{beta_inc, student_t_cdf};
+    let cases = reference("special_scipy.csv");
+    check(&cases, |c| {
+        let x = c.number("arg")?;
+        match c.get("distribution") {
+            "beta_inc" => Some(beta_inc(c.param("params", "a"), c.param("params", "b"), x)),
+            "student_t" => Some(student_t_cdf(x, c.param("params", "nu"))),
+            _ => None,
+        }
+    });
+}
