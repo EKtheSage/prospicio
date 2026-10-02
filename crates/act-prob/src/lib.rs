@@ -22,7 +22,7 @@ pub mod risk;
 pub mod sampled;
 pub mod severity;
 
-pub use copula::{Copula, GaussianCopula, StudentTCopula};
+pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, StudentTCopula};
 pub use counting::{Counting, NegativeBinomial, Poisson};
 pub use distortion::Distortion;
 pub use distribution::Distribution;
