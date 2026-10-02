@@ -35,10 +35,11 @@ def rows():
             yield ("lognormal", params, "cdf", x, d.cdf(x), 1e-15, 1e-12)
 
 
-# Claim counts: Poisson(lambda) and negative binomial (r, beta), with SciPy's
-# nbinom(n=r, p=1/(1+beta)).
+# Claim counts: Poisson(lambda), negative binomial (r, beta), with SciPy's
+# nbinom(n=r, p=1/(1+beta)), and binomial (n, p).
 POISSONS = [0.5, 3.0, 40.0]
 NEGBINS = [(0.7, 10.0), (2.5, 1.5), (50.0, 0.2)]
+BINOMIALS = [(12, 0.35), (300, 0.02), (40, 0.9)]
 COUNT_PROBS = [0.01, 0.25, 0.5, 0.9, 0.999]
 
 
@@ -58,6 +59,8 @@ def counts():
         yield from count_rows("poisson", f"lambda={lam}", stats.poisson(lam))
     for r, beta in NEGBINS:
         yield from count_rows("negative_binomial", f"r={r};beta={beta}", stats.nbinom(r, 1 / (1 + beta)))
+    for n, p in BINOMIALS:
+        yield from count_rows("binomial", f"n={n};p={p}", stats.binom(n, p))
 
 
 def main():

@@ -59,14 +59,22 @@ fn lognormal_grids_match_textbook_masses() {
 
 #[test]
 fn claim_counts_match_scipy() {
-    use act_prob::{Counting, NegativeBinomial, Poisson};
+    use act_prob::{Binomial, Counting, NegativeBinomial, Poisson};
     let cases: Vec<_> = reference("distributions_scipy.csv")
         .into_iter()
-        .filter(|c| matches!(c.get("distribution"), "poisson" | "negative_binomial"))
+        .filter(|c| {
+            matches!(
+                c.get("distribution"),
+                "poisson" | "negative_binomial" | "binomial"
+            )
+        })
         .collect();
     check(&cases, |c| {
         let n: Box<dyn Counting> = match c.get("distribution") {
             "poisson" => Box::new(Poisson::new(c.param("params", "lambda")).ok()?),
+            "binomial" => {
+                Box::new(Binomial::new(c.param("params", "n") as u64, c.param("params", "p")).ok()?)
+            }
             _ => Box::new(
                 NegativeBinomial::new(c.param("params", "r"), c.param("params", "beta")).ok()?,
             ),

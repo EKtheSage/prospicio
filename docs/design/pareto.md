@@ -304,6 +304,11 @@ alpha_tail)`: `Gpd` gained a location (`Gpd::shifted`) and implements
 `ξ` (series for small `c / β`, where the closed forms cancel). Truncation
 of the generalized Pareto, which the R package also offers, waits for a
 use.
+`Binomial` and `PanjerClass::from_mean_dispersion` complete the Panjer
+class. A binomial needs a whole number of trials, so below dispersion 1
+the trials are `mean / (1 − dispersion)` rounded up: the mean is kept and
+the dispersion moves up to the nearest attainable value, which
+`PanjerClass::dispersion` reports.
 
 | Item | Notes |
 |---|---|
