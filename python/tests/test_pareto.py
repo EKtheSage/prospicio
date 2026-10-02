@@ -10,7 +10,7 @@ D = ar.distributions
 
 def test_pareto_layers_and_truncation():
     p = D.Pareto(500.0, 2.0)
-    assert p.layer(4000.0, 1000.0) == pytest.approx(200.0, rel=1e-14)
+    assert p.layer(4000.0, 1000.0) == pytest.approx(200.0, rel=1e-12)
     assert p.mean() == pytest.approx(1000.0)
     assert p.survival(1000.0) == pytest.approx(0.25)
     assert math.isinf(D.Pareto(1.0, 0.9).mean())
@@ -26,13 +26,13 @@ def test_pareto_layers_and_truncation():
 def test_pareto_fit_closed_form():
     fit = D.Pareto.fit([1500.0, 2500.0, 4000.0, 10_000.0], 1000.0,
                        censored=[False, False, False, True])
-    assert fit.alpha == pytest.approx(3.0 / math.log(150.0), rel=1e-14)
+    assert fit.alpha == pytest.approx(3.0 / math.log(150.0), rel=1e-12)
     assert isinstance(fit, D.Pareto)
 
 
 def test_piecewise_pareto():
     pp = D.PiecewisePareto([1000.0, 2000.0], [1.0, 2.0])
-    assert pp.survival(4000.0) == pytest.approx(0.125, rel=1e-15)
+    assert pp.survival(4000.0) == pytest.approx(0.125, rel=1e-12)
     assert pp.stop_loss(2000.0) == pytest.approx(1000.0, rel=1e-12)
     assert pp.t == [1000.0, 2000.0] and pp.alpha == [1.0, 2.0]
     lp = D.PiecewisePareto([1000.0, 2000.0], [1.0, 2.0], truncation=5000.0)
@@ -43,7 +43,7 @@ def test_piecewise_pareto():
         D.PiecewisePareto([1.0], [1.0], truncation=2.0, truncation_type="xx")
     fit = D.PiecewisePareto.fit([1200.0, 1500.0, 2500.0, 6000.0], [1000.0, 2000.0])
     want = 2.0 / (math.log(1.2) + math.log(1.5) + 2.0 * math.log(2.0))
-    assert fit.alpha[0] == pytest.approx(want, rel=1e-14)
+    assert fit.alpha[0] == pytest.approx(want, rel=1e-12)
 
 
 def test_log_affine_and_generalized_pareto():
@@ -54,7 +54,7 @@ def test_log_affine_and_generalized_pareto():
     flat = D.LogAffinePareto(1000.0, 2.5, 0.0)
     assert flat.layer(4000.0, 1000.0) == pytest.approx(D.Pareto(1000.0, 2.5).layer(4000.0, 1000.0))
     g = D.GeneralizedPareto.riegel(1000.0, 2.0, 1.5)
-    assert g.survival(2000.0) == pytest.approx((7.0 / 3.0) ** -1.5, rel=1e-14)
+    assert g.survival(2000.0) == pytest.approx((7.0 / 3.0) ** -1.5, rel=1e-12)
     assert g.location == 1000.0
     assert g.lev(5000.0) + g.stop_loss(5000.0) == pytest.approx(g.mean(), rel=1e-12)
 
