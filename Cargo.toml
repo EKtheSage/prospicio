@@ -8,6 +8,7 @@ default-members = [
     "crates/act-prob",
     "crates/act-reserving",
     "crates/act-aggregate",
+    "crates/act-pricing",
     "validation",
     "xtask",
 ]
@@ -24,6 +25,7 @@ act-core = { path = "crates/act-core" }
 act-math = { path = "crates/act-math" }
 act-aggregate = { path = "crates/act-aggregate" }
 act-prob = { path = "crates/act-prob" }
+act-pricing = { path = "crates/act-pricing" }
 act-reserving = { path = "crates/act-reserving" }
 # PredictiveDistribution to and from Arrow IPC (act-prob's `arrow`
 # feature). 59.x is the last line that builds on rust-version 1.85.
