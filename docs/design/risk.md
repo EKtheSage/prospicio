@@ -26,6 +26,10 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `apply_discrete`; `Empirical::distortion` and `Grid::distortion`.
 - `PredictiveDistribution::allocate(&Distortion)`: co-measure allocation
   of the total's risk measure to the components (CoTVaR for `Tvar`).
+- `act_prob::copula`: the `Copula` trait, `GaussianCopula`,
+  `StudentTCopula`, and `copula::simulate` to join marginals into a
+  `PredictiveDistribution`. `act_math` gained `linalg::cholesky`,
+  `special::beta_inc` and `special::student_t_cdf` for them.
 
 ## Decisions
 
@@ -54,6 +58,10 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `StreamRng::new(seed, sim)` (the `chacha20/sim-index/v1` scheme), and
   marginals are applied by inverse transform, so any simulation replays
   alone and results do not depend on thread count.
+- **Normals by inverse transform, chi-square by Marsaglia–Tsang.** A
+  copula draw takes its `d` normals first, as `Φ⁻¹(U)`, then (t copula)
+  one chi-square from the same stream. Rejection sampling keeps each draw
+  a pure function of `(seed, sim)`.
 - **Iman-Conover reorders draws**: it imposes a target rank correlation
   on existing marginals (for example, reserve and premium-risk results
   simulated separately) by permuting them, so every marginal keeps its
@@ -77,6 +85,13 @@ weights are a non-decreasing probability vector, and coherence: translation
 and scale equivariance, bounds between the mean and the maximum, and
 monotonicity in each parameter.
 
+`validation/reference/special_scipy.csv` checks `beta_inc` and
+`student_t_cdf` against SciPy at `1e-12`. Copula tests check Kendall's
+tau against `(2 / π) asin(ρ)` for the Gaussian and t copulas (including
+`nu < 1`), uniform margins by a Kolmogorov–Smirnov test, the t copula's
+joint extremes against its tail-dependence coefficient, the gamma
+sampler's moments, and that any simulation replays alone.
+
 Allocation tests check, on simulated dependent lines, that contributions
 sum to the measure of the total for every distortion, that the mean
 allocates to component means, and that CoTVaR equals the conditional tail
@@ -86,7 +101,7 @@ total but split differently give the same allocation in either order.
 
 ## Next
 
-1. Gaussian and t copulas; Iman-Conover.
+1. Iman-Conover.
 2. Archimedean copulas (Clayton, Gumbel, Frank, Joe).
 3. Python and R bindings.
 4. EVT tails (GPD over a threshold) for extrapolating past the draws.

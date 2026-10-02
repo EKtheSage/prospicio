@@ -8,6 +8,7 @@
 //! With the `arrow` feature, [`PredictiveDistribution`] reads and writes
 //! Arrow IPC files; the format is described in `ipc`.
 
+pub mod copula;
 pub mod counting;
 pub mod distortion;
 pub mod distribution;
@@ -21,6 +22,7 @@ pub mod risk;
 pub mod sampled;
 pub mod severity;
 
+pub use copula::{Copula, GaussianCopula, StudentTCopula};
 pub use counting::{Counting, NegativeBinomial, Poisson};
 pub use distortion::Distortion;
 pub use distribution::Distribution;
