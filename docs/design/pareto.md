@@ -346,6 +346,15 @@ reinsurance-specific.
 | `layer` | Increased limit factors (`LEV(limit)/LEV(basic)`), deductible credits (`1 − LEV(d)/E[X]`), Pareto extrapolation, implied alpha from two layers, a frequency and a layer, or two frequencies. Later: MBBEFD exposure curves. | Primary (ILF tables, deductibles, large-loss loads) and reinsurance (rating upper layers) |
 | `tower` | Tower matching (Riegel 2018, above, both selection rules); reference fits; PML-curve fits. | Reinsurance |
 
+Done in `layer`: `ilf`, `loss_elimination_ratio`, `XsLayer`,
+`pareto_extrapolation`, and `alpha_between_layers`,
+`alpha_between_frequency_and_layer` and `alpha_between_frequencies` (all
+with optional truncation). The solvers bisect on `(0, 100]`, where each
+ratio is monotone in alpha, and say which way an impossible input fails.
+As in the R package, a frequency threshold may not lie strictly inside
+the layer, whose loss would then include losses the frequency does not
+count.
+
 Overlapping reference layers need a small linear program. It uses the
 pure-Rust simplex crate `microlp` (Apache-2.0), as a dependency of
 `act-pricing` only; no C or C++ build, so WASM, CRAN and Windows builds
