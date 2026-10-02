@@ -12,6 +12,18 @@ pub fn norm_cdf(x: f64) -> f64 {
     0.5 * libm::erfc(-x * FRAC_1_SQRT_2)
 }
 
+/// Natural log of the gamma function, `ln Γ(x)` for `x > 0`.
+///
+/// ```
+/// use act_math::special::ln_gamma;
+///
+/// // Γ(5) = 4! = 24.
+/// assert!((ln_gamma(5.0) - 24f64.ln()).abs() < 1e-14);
+/// ```
+pub fn ln_gamma(x: f64) -> f64 {
+    libm::lgamma(x)
+}
+
 /// Standard normal quantile (inverse of [`norm_cdf`]).
 ///
 /// Returns `-inf` at 0, `+inf` at 1 and NaN outside `[0, 1]`. Starts from
