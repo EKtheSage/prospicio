@@ -95,6 +95,13 @@ impl Distribution for Lognormal {
         norm_cdf((x.ln() - self.meanlog) / self.sdlog)
     }
 
+    fn survival(&self, x: f64) -> f64 {
+        if x <= 0.0 {
+            return 1.0;
+        }
+        norm_cdf((self.meanlog - x.ln()) / self.sdlog)
+    }
+
     fn quantile(&self, p: f64) -> Result<f64> {
         check_probability(p)?;
         Ok((self.meanlog + self.sdlog * norm_quantile(p)).exp())

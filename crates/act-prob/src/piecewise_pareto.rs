@@ -132,7 +132,7 @@ impl PiecewisePareto {
     }
 
     /// `P(X > x)`.
-    pub fn survival(&self, x: f64) -> f64 {
+    fn survival_at(&self, x: f64) -> f64 {
         match self.truncation {
             Some((tr, Truncation::WholeDistribution)) => {
                 if x >= tr {
@@ -295,7 +295,11 @@ impl Distribution for PiecewisePareto {
     }
 
     fn cdf(&self, x: f64) -> f64 {
-        1.0 - self.survival(x)
+        1.0 - self.survival_at(x)
+    }
+
+    fn survival(&self, x: f64) -> f64 {
+        self.survival_at(x)
     }
 
     /// `p = 1` gives `+∞`, or the truncation point.

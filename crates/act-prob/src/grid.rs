@@ -285,6 +285,16 @@ impl Distribution for Grid {
         self.probs[..=last].iter().sum::<f64>().min(1.0)
     }
 
+    /// Summed from the top, so small tail probabilities keep their
+    /// precision.
+    fn survival(&self, x: f64) -> f64 {
+        if x < 0.0 {
+            return 1.0;
+        }
+        let last = ((x / self.step).floor() as usize).min(self.len() - 1);
+        self.probs[last + 1..].iter().sum::<f64>().min(1.0)
+    }
+
     fn quantile(&self, p: f64) -> Result<f64> {
         check_probability(p)?;
         if p == 0.0 {

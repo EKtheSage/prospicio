@@ -41,3 +41,25 @@ pub trait Severity: Distribution {
         self.layer_second_moment(limit, attachment) - m * m
     }
 }
+
+impl<T: Severity + ?Sized> Severity for Box<T> {
+    fn lev(&self, limit: f64) -> f64 {
+        (**self).lev(limit)
+    }
+
+    fn stop_loss(&self, retention: f64) -> f64 {
+        (**self).stop_loss(retention)
+    }
+
+    fn layer(&self, limit: f64, attachment: f64) -> f64 {
+        (**self).layer(limit, attachment)
+    }
+
+    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+        (**self).layer_second_moment(limit, attachment)
+    }
+
+    fn layer_variance(&self, limit: f64, attachment: f64) -> f64 {
+        (**self).layer_variance(limit, attachment)
+    }
+}

@@ -22,6 +22,12 @@ pub trait Distribution {
     /// `P(X <= x)`.
     fn cdf(&self, x: f64) -> f64;
 
+    /// `P(X > x)`. Representations with a direct form override the
+    /// default `1 - cdf(x)`, which loses all precision far in the tail.
+    fn survival(&self, x: f64) -> f64 {
+        1.0 - self.cdf(x)
+    }
+
     /// Smallest `x` with `cdf(x) >= p`.
     ///
     /// Fails with [`act_core::Error::InvalidProbability`] unless `p` is in
@@ -39,6 +45,38 @@ pub trait Distribution {
                     .expect("next_open01 is always in (0, 1)")
             })
             .collect()
+    }
+}
+
+/// A boxed distribution (for example `Box<dyn Distribution>`) is one too,
+/// so trait objects fit generic models.
+impl<T: Distribution + ?Sized> Distribution for Box<T> {
+    fn mean(&self) -> f64 {
+        (**self).mean()
+    }
+
+    fn variance(&self) -> f64 {
+        (**self).variance()
+    }
+
+    fn std_dev(&self) -> f64 {
+        (**self).std_dev()
+    }
+
+    fn cdf(&self, x: f64) -> f64 {
+        (**self).cdf(x)
+    }
+
+    fn survival(&self, x: f64) -> f64 {
+        (**self).survival(x)
+    }
+
+    fn quantile(&self, p: f64) -> Result<f64> {
+        (**self).quantile(p)
+    }
+
+    fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
+        (**self).sample(rng, n)
     }
 }
 

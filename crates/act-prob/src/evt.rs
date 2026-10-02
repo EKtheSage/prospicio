@@ -72,7 +72,7 @@ impl Gpd {
     /// `pGenPareto(x, t, alpha_ini, alpha_tail)` in the R package Pareto.
     ///
     /// ```
-    /// use act_prob::{Severity, evt::Gpd};
+    /// use act_prob::{Distribution, Severity, evt::Gpd};
     ///
     /// let g = Gpd::riegel(1000.0, 2.0, 1.5).unwrap();
     /// // P(X > 2000) = (1 + 2/1.5)^-1.5.
@@ -117,7 +117,7 @@ impl Gpd {
     }
 
     /// `P(X > x)`.
-    pub fn survival(&self, x: f64) -> f64 {
+    fn survival_at(&self, x: f64) -> f64 {
         self.excess_survival(x - self.location)
     }
 
@@ -280,7 +280,11 @@ impl Distribution for Gpd {
     }
 
     fn cdf(&self, x: f64) -> f64 {
-        1.0 - self.survival(x)
+        1.0 - self.survival_at(x)
+    }
+
+    fn survival(&self, x: f64) -> f64 {
+        self.survival_at(x)
     }
 
     fn quantile(&self, p: f64) -> Result<f64> {
