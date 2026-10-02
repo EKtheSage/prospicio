@@ -1,6 +1,6 @@
 [package]
 name = "act-prob"
-description = "Risk mathematics: distributions, PredictiveDistribution, risk measures (later: dependence)."
+description = "Risk mathematics: distributions, PredictiveDistribution, risk measures and distortions (later: dependence)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

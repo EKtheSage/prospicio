@@ -9,6 +9,7 @@
 //! Arrow IPC files; the format is described in `ipc`.
 
 pub mod counting;
+pub mod distortion;
 pub mod distribution;
 pub mod grid;
 #[cfg(feature = "arrow")]
@@ -21,6 +22,7 @@ pub mod sampled;
 pub mod severity;
 
 pub use counting::{Counting, NegativeBinomial, Poisson};
+pub use distortion::Distortion;
 pub use distribution::Distribution;
 pub use grid::{Discretization, DiscretizationReport, Grid};
 pub use lognormal::Lognormal;
