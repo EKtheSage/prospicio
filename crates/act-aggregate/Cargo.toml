@@ -9,4 +9,5 @@ publish.workspace = true
 [dependencies]
 act-core.workspace = true
 act-prob.workspace = true
+rayon.workspace = true
 rustfft.workspace = true
