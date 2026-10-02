@@ -23,6 +23,10 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
 - `act_aggregate::simulate_events(&frequency, &severity, n_sims, seed)`
   returns an `EventSet`: each simulated year's individual losses, with
   `totals()` as a `PredictiveDistribution`.
+- `act_aggregate::{Layer, Tower}`: per-occurrence excess-of-loss layers
+  with share, annual aggregate deductible and limit, and reinstatements;
+  `Tower::apply(&events)` returns gross, ceded per layer and net as one
+  joint `PredictiveDistribution`.
 
 ## Decisions
 
@@ -55,6 +59,17 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   each severity in order, all by inverse transform. Results are identical
   for any thread count, and any year replays alone (both tested).
 
+- **Reinsurance terms are plain data** (`Layer` has public fields and
+  builder methods), so towers can be stored and replayed. For one year,
+  `ceded = share × min(max(Σ min(max(x - a, 0), l) - AAD, 0), AAL)`;
+  `reinstatements(n)` sets `AAL = l × (n + 1)`.
+- **A tower's result is one joint distribution** with dimensions
+  `["kind", "layer"]`: `(gross, ground_up)`, `(ceded, <name>)` per layer
+  and `(net, retained)`. `aggregate(&["kind"])` gives gross, total ceded and
+  net per year, and `net = gross − Σ ceded` holds in every year (tested).
+- **Not yet:** inuring order (every layer sees gross losses), reinstatement
+  premiums, quota share and surplus, and stop-loss on the annual total.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -67,10 +82,13 @@ tests check `E[S] = E[N] E[X]`, the compound variance
 `E[N] Var[X] + Var[N] E[X]^2`, and `S = N` for a unit severity. Monte
 Carlo totals are tested against the exact FFT result for a discrete
 severity by a Kolmogorov–Smirnov statistic (200,000 years, below the 0.1%
-critical value) under a fixed seed.
+critical value) under a fixed seed. Reinsurance is checked on hand-worked
+layers and annual terms, gross = ceded + net in every simulated year, and
+the simulated mean ceded loss against the exact `E[N] · Severity::layer`
+(within four standard errors).
 
 ## Next
 
-1. Reinsurance: per-occurrence and aggregate layers, reinstatements and
-   towers as data, applied to simulated events, giving gross, ceded and
-   net `PredictiveDistribution`s.
+1. Inuring order, reinstatement premiums, quota share and surplus,
+   aggregate stop-loss.
+2. Python and R bindings for aggregate results.
