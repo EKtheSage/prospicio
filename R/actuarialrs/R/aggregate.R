@@ -118,15 +118,26 @@ S7::method(print, event_set) <- function(x, ...) {
 #' @param share Placed share, in `(0, 1]`.
 #' @param aggregate_deductible Annual aggregate deductible.
 #' @param aggregate_limit Annual aggregate limit; `Inf` for none.
-#' @param reinstatements Number of reinstatements, which sets the annual limit
-#'   to `limit * (reinstatements + 1)`; cannot be combined with a finite
+#' @param reinstatements Number of free reinstatements, which sets the annual
+#'   limit to `limit * (reinstatements + 1)`; cannot be combined with a finite
 #'   `aggregate_limit`.
+#' @param premium Upfront premium for the placed share; used only by
+#'   `reinstatement_rates`.
+#' @param reinstatement_rates Paid reinstatements: one rate per reinstatement,
+#'   as a fraction of `premium` (1 is 100%), pro rata as to amount. Sets the
+#'   annual limit to `limit * (length(reinstatement_rates) + 1)`; cannot be
+#'   combined with `reinstatements` or a finite `aggregate_limit`.
+#' @param ptr Internal: an existing layer to wrap.
 #' @returns An `xol_layer` object with read-only properties for each term.
+#' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
+#'   types, which are layers too.
 #' @export
 #' @examples
 #' l <- xol_layer("5x5", 5e6, 5e6, reinstatements = 1)
 #' ceded(l, 7e6)
 #' ceded(l, c(12e6, 20e6, 30e6))
+#' paid <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
+#' reinstatement_premium(paid, c(22, 12))
 xol_layer <- S7::new_class(
   "xol_layer",
   package = "actuarialrs",
@@ -135,18 +146,65 @@ xol_layer <- S7::new_class(
     name = S7::new_property(S7::class_character, getter = function(self) self@ptr$name()),
     limit = S7::new_property(S7::class_double, getter = function(self) self@ptr$limit()),
     attachment = S7::new_property(S7::class_double, getter = function(self) self@ptr$attachment()),
-    share = S7::new_property(S7::class_double, getter = function(self) self@ptr$share())
+    share = S7::new_property(S7::class_double, getter = function(self) self@ptr$share()),
+    aggregate_deductible = S7::new_property(
+      S7::class_double, getter = function(self) self@ptr$aggregate_deductible()
+    ),
+    aggregate_limit = S7::new_property(S7::class_double, getter = function(self) self@ptr$aggregate_limit()),
+    premium = S7::new_property(S7::class_double, getter = function(self) self@ptr$premium()),
+    reinstatement_rates = S7::new_property(
+      S7::class_double, getter = function(self) self@ptr$reinstatement_rates()
+    )
   ),
   constructor = function(name, limit, attachment, share = 1, aggregate_deductible = 0,
-                         aggregate_limit = Inf, reinstatements = NULL) {
-    reinst <- if (is.null(reinstatements)) -1 else as.double(reinstatements)
-    ptr <- rust_result(XolLayer$new(
-      as.character(name), as.double(limit), as.double(attachment), as.double(share),
-      as.double(aggregate_deductible), as.double(aggregate_limit), reinst
-    ))
+                         aggregate_limit = Inf, reinstatements = NULL, premium = 0,
+                         reinstatement_rates = NULL, ptr = NULL) {
+    if (is.null(ptr)) {
+      reinst <- if (is.null(reinstatements)) -1 else as.double(reinstatements)
+      ptr <- rust_result(XolLayer$new(
+        as.character(name), as.double(limit), as.double(attachment), as.double(share),
+        as.double(aggregate_deductible), as.double(aggregate_limit), reinst,
+        as.double(premium), as.double(reinstatement_rates), !is.null(reinstatement_rates)
+      ))
+    }
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
+
+#' Quota share
+#'
+#' Cedes `cession` of every loss: an [xol_layer] with unlimited cover from 0
+#' and `share = cession`.
+#'
+#' @param name Layer name, unique within a tower.
+#' @param cession Ceded fraction, in `(0, 1]`.
+#' @returns An [xol_layer].
+#' @export
+#' @examples
+#' ceded(quota_share("QS", 0.4), c(10, 5))
+quota_share <- function(name, cession) {
+  xol_layer(ptr = rust_result(XolLayer$quota_share(as.character(name), as.double(cession))))
+}
+
+#' Aggregate stop-loss
+#'
+#' `limit` xs `retention` on the year's total loss: an [xol_layer] with
+#' unlimited cover from 0, annual deductible `retention` and annual limit
+#' `limit`. It covers the total of the losses it sees: gross, or net of
+#' earlier stages in an [inuring_tower()].
+#'
+#' @param name Layer name, unique within a tower.
+#' @param limit Annual limit; may be `Inf`.
+#' @param retention Annual retention.
+#' @returns An [xol_layer].
+#' @export
+#' @examples
+#' ceded(aggregate_stop_loss("SL", 50, 100), c(60, 70))
+aggregate_stop_loss <- function(name, limit, retention) {
+  xol_layer(ptr = rust_result(XolLayer$stop_loss(
+    as.character(name), as.double(limit), as.double(retention)
+  )))
+}
 
 #' Ceded loss for one year
 #'
@@ -160,6 +218,48 @@ xol_layer <- S7::new_class(
 ceded <- S7::new_generic("ceded", "layer", function(layer, losses, ...) S7::S7_dispatch())
 
 S7::method(ceded, xol_layer) <- function(layer, losses, ...) layer@ptr$ceded(as.double(losses))
+
+#' Ceded loss per event
+#'
+#' Takes one year's losses as chronological: the annual deductible absorbs
+#' the first recoveries and the annual limit stops the last ones. The entries
+#' sum to [ceded()].
+#'
+#' @param layer An [xol_layer].
+#' @param losses Numeric vector of one year's losses, in time order.
+#' @param ... Unused; for methods.
+#' @returns A numeric vector, one entry per loss.
+#' @export
+#' @examples
+#' l <- xol_layer("L", 10, 5, aggregate_deductible = 4, aggregate_limit = 15)
+#' ceded_by_event(l, c(8, 20, 12))
+ceded_by_event <- S7::new_generic("ceded_by_event", "layer", function(layer, losses, ...) S7::S7_dispatch())
+
+S7::method(ceded_by_event, xol_layer) <- function(layer, losses, ...) {
+  layer@ptr$ceded_by_event(as.double(losses))
+}
+
+#' Reinstatement premium for one year
+#'
+#' With layer loss `L` at 100% after annual terms,
+#' `premium * sum(rate_k * min(max(L - k * limit, 0), limit) / limit)` over
+#' `k = 0, 1, ...`; zero when reinstatements are free.
+#'
+#' @param layer An [xol_layer].
+#' @param losses Numeric vector of one year's losses.
+#' @param ... Unused; for methods.
+#' @returns A single number.
+#' @export
+#' @examples
+#' l <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
+#' reinstatement_premium(l, c(15, 25))
+reinstatement_premium <- S7::new_generic(
+  "reinstatement_premium", "layer", function(layer, losses, ...) S7::S7_dispatch()
+)
+
+S7::method(reinstatement_premium, xol_layer) <- function(layer, losses, ...) {
+  layer@ptr$reinstatement_premium(as.double(losses))
+}
 S7::method(print, xol_layer) <- function(x, ...) {
   cat(sprintf("<xol_layer> %s: %s xs %s, share %s\n", x@name,
               format(x@limit), format(x@attachment), format(x@share)))
@@ -168,10 +268,13 @@ S7::method(print, xol_layer) <- function(x, ...) {
 
 #' Reinsurance tower
 #'
-#' Layers applied to the same ground-up losses (no inuring order yet).
+#' Layers applied to the same ground-up losses, in one stage. For inuring
+#' order, use [inuring_tower()].
 #'
 #' @param layers A list of [xol_layer] objects with unique names.
-#' @returns A `reinsurance_tower` object; apply it with [apply_tower()].
+#' @param ptr Internal: an existing tower to wrap.
+#' @returns A `reinsurance_tower` object; apply it with [apply_tower()]. Its
+#'   `stages` property gives each layer's stage, from 1.
 #' @export
 #' @examples
 #' tw <- reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6), xol_layer("15x10", 15e6, 10e6)))
@@ -181,13 +284,49 @@ reinsurance_tower <- S7::new_class(
   package = "actuarialrs",
   properties = list(
     ptr = S7::new_S3_class("ReinsuranceTower"),
-    layer_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$layer_names())
+    layer_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$layer_names()),
+    stages = S7::new_property(S7::class_double, getter = function(self) self@ptr$stages())
   ),
-  constructor = function(layers) {
-    ptrs <- lapply(layers, function(l) l@ptr)
-    S7::new_object(S7::S7_object(), ptr = rust_result(ReinsuranceTower$new(ptrs)))
+  constructor = function(layers, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(ReinsuranceTower$new(lapply(layers, function(l) l@ptr)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
+
+#' Reinsurance tower with inuring order
+#'
+#' Stages apply in order: each stage's layers see the losses net of all
+#' earlier stages, event by event, with annual terms used up in event order
+#' (see [ceded_by_event()]).
+#'
+#' @param stages A list of stages, each a list of [xol_layer] objects. Layer
+#'   names must be unique across stages.
+#' @returns A [reinsurance_tower].
+#' @export
+#' @examples
+#' # A 50% quota share inures to the benefit of a 5 xs 5 cover.
+#' tw <- inuring_tower(list(list(quota_share("QS", 0.5)), list(xol_layer("5x5", 5, 5))))
+#' tw@stages
+#' tower_ceded(tw, 30)
+inuring_tower <- function(stages) {
+  ptrs <- lapply(stages, function(stage) lapply(stage, function(l) l@ptr))
+  reinsurance_tower(ptr = rust_result(ReinsuranceTower$inuring(ptrs)))
+}
+
+#' Ceded loss of each layer in a tower for one year
+#'
+#' @param tower A [reinsurance_tower].
+#' @param losses Numeric vector of one year's losses, in time order.
+#' @returns A named numeric vector, one entry per layer.
+#' @export
+#' @examples
+#' tw <- reinsurance_tower(list(xol_layer("5x5", 5, 5), xol_layer("10x10", 10, 10)))
+#' tower_ceded(tw, c(7, 30))
+tower_ceded <- function(tower, losses) {
+  stats::setNames(tower@ptr$ceded(as.double(losses)), tower@layer_names)
+}
 
 #' Apply a reinsurance tower to simulated years
 #'
@@ -195,9 +334,10 @@ reinsurance_tower <- S7::new_class(
 #' @param events An `event_set` from [simulate_events()].
 #' @param ... Unused; for methods.
 #' @returns A [predictive_distribution] with dimensions `kind` and `layer`:
-#'   `("gross", "ground_up")`, `("ceded", <layer name>)` per layer and
-#'   `("net", "retained")`. `aggregate(result, keep = "kind")` gives gross,
-#'   total ceded and net per year.
+#'   `("gross", "ground_up")`, `("ceded", <layer name>)` per layer,
+#'   `("net", "retained")`, then `("reinstatement_premium", <layer name>)` per
+#'   layer with paid reinstatements. `aggregate(result, keep = "kind")` gives
+#'   gross, total ceded and net per year; net is a loss, before premiums.
 #' @export
 #' @examples
 #' ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 1000, seed = 7)

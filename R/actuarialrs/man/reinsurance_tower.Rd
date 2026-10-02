@@ -4,16 +4,20 @@
 \alias{reinsurance_tower}
 \title{Reinsurance tower}
 \usage{
-reinsurance_tower(layers)
+reinsurance_tower(layers, ptr = NULL)
 }
 \arguments{
 \item{layers}{A list of \link{xol_layer} objects with unique names.}
+
+\item{ptr}{Internal: an existing tower to wrap.}
 }
 \value{
-A \code{reinsurance_tower} object; apply it with \code{\link[=apply_tower]{apply_tower()}}.
+A \code{reinsurance_tower} object; apply it with \code{\link[=apply_tower]{apply_tower()}}. Its
+\code{stages} property gives each layer's stage, from 1.
 }
 \description{
-Layers applied to the same ground-up losses (no inuring order yet).
+Layers applied to the same ground-up losses, in one stage. For inuring
+order, use \code{\link[=inuring_tower]{inuring_tower()}}.
 }
 \examples{
 tw <- reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6), xol_layer("15x10", 15e6, 10e6)))

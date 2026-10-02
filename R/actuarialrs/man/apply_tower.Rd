@@ -15,9 +15,10 @@ apply_tower(tower, events, ...)
 }
 \value{
 A \link{predictive_distribution} with dimensions \code{kind} and \code{layer}:
-\verb{("gross", "ground_up")}, \verb{("ceded", <layer name>)} per layer and
-\verb{("net", "retained")}. \code{aggregate(result, keep = "kind")} gives gross,
-total ceded and net per year.
+\verb{("gross", "ground_up")}, \verb{("ceded", <layer name>)} per layer,
+\verb{("net", "retained")}, then \verb{("reinstatement_premium", <layer name>)} per
+layer with paid reinstatements. \code{aggregate(result, keep = "kind")} gives
+gross, total ceded and net per year; net is a loss, before premiums.
 }
 \description{
 Apply a reinsurance tower to simulated years
