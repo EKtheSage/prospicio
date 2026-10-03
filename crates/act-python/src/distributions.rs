@@ -720,6 +720,54 @@ impl PyGrid {
         Ok(Self { inner })
     }
 
+    /// The distribution of ``f(X)`` on the same step.
+    ///
+    /// Each point's mass moves to ``f(x)``. A value between two points is
+    /// split between them so its mean is kept, so the mean is always exact
+    /// and the whole distribution is exact when every value lands on a
+    /// point. ``f`` is a Python callable, evaluated once per point with
+    /// mass.
+    ///
+    /// Parameters
+    /// ----------
+    /// f : callable
+    ///     Maps a loss to a finite, non-negative value.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (Grid, bool)
+    ///     The grid and whether every value landed on a grid point.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``f`` returns a negative or non-finite value.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.distributions import Grid
+    /// >>> x = Grid(1.0, [0.2, 0.3, 0.3, 0.2])
+    /// >>> layer, exact = x.map(lambda v: min(max(v - 1.0, 0.0), 1.0))
+    /// >>> layer.probs, exact
+    /// ([0.5, 0.5], True)
+    fn map(&self, f: &Bound<'_, PyAny>) -> PyResult<(PyGrid, bool)> {
+        let mut error = None;
+        let result = self
+            .inner
+            .map(|x| match f.call1((x,)).and_then(|v| v.extract::<f64>()) {
+                Ok(v) => v,
+                Err(e) => {
+                    error.get_or_insert(e);
+                    f64::NAN
+                }
+            });
+        if let Some(e) = error {
+            return Err(e);
+        }
+        let (inner, exact) = result.map_err(to_py)?;
+        Ok((PyGrid { inner }, exact))
+    }
+
     /// Discretizes a severity by local moment matching on the mean.
     ///
     /// Parameters

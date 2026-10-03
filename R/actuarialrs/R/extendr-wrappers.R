@@ -96,6 +96,8 @@ ReinsuranceTower$stages <- function() .Call(wrap__ReinsuranceTower__stages, self
 
 ReinsuranceTower$ceded <- function(losses) .Call(wrap__ReinsuranceTower__ceded, self, losses)
 
+ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__ReinsuranceTower__on_grid, self, frequency, severity, points)
+
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
 
 #' @export
@@ -197,6 +199,8 @@ Grid$discretize <- function(severity, step, points, method) .Call(wrap__Grid__di
 Grid$step <- function() .Call(wrap__Grid__step, self)
 
 Grid$probs <- function() .Call(wrap__Grid__probs, self)
+
+Grid$map <- function(f) .Call(wrap__Grid__map, self, f)
 
 Grid$report <- function() .Call(wrap__Grid__report, self)
 
@@ -547,6 +551,8 @@ RiskDistortion$g <- function(s) .Call(wrap__RiskDistortion__g, self, s)
 RiskDistortion$weights <- function(n) .Call(wrap__RiskDistortion__weights, self, n)
 
 RiskDistortion$measure <- function(x) .Call(wrap__RiskDistortion__measure, self, x)
+
+RiskDistortion$capital <- function(pd, method) .Call(wrap__RiskDistortion__capital, self, pd, method)
 
 RiskDistortion$allocate <- function(pd) .Call(wrap__RiskDistortion__allocate, self, pd)
 

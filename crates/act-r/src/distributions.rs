@@ -355,6 +355,31 @@ impl Grid {
         self.inner.probs().to_vec()
     }
 
+    /// The distribution of `f(X)` on the same step: `list(grid, on_points)`.
+    fn map(&self, f: Function) -> Result<List> {
+        // An R error inside `f` becomes NaN for the Rust side, which
+        // rejects it; the original error is returned instead.
+        let mut failure = None;
+        let result = self.inner.map(|x| {
+            let value = f.call(pairlist!(x)).and_then(|v| {
+                v.as_real()
+                    .ok_or(Error::Other("f must return a number".into()))
+            });
+            match value {
+                Ok(v) => v,
+                Err(e) => {
+                    failure.get_or_insert(e);
+                    f64::NAN
+                }
+            }
+        });
+        if let Some(e) = failure {
+            return Err(e);
+        }
+        let (inner, on_points) = result.map_err(to_r)?;
+        Ok(list!(grid = Self::wrap(inner), on_points = on_points))
+    }
+
     /// The report of how the grid was made, as a named list, or NULL.
     fn report(&self) -> Robj {
         match &self.report {

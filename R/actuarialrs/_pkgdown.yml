@@ -12,6 +12,7 @@ reference:
       - lognormal_from_mean_cv
       - grid_distribution
       - discretize
+      - map_grid
       - sampled
   - title: Large-loss severities
     contents:
@@ -64,6 +65,7 @@ reference:
       - inuring_tower
       - tower_ceded
       - apply_tower
+      - tower_on_grid
   - title: Pricing
     contents:
       - collective_model
@@ -80,6 +82,7 @@ reference:
       - distortion_g
       - risk_measure
       - allocate
+      - capital_allocation
   - title: Dependence
     contents:
       - copula

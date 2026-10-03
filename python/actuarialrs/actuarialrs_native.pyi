@@ -2,6 +2,51 @@ from collections.abc import Sequence
 from typing import Any, final
 
 @final
+class Allocation:
+    """
+    Capital allocation of a distortion risk measure, from ``capital``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def allocated(self, /) -> list[float]:
+        """
+        Allocated capital of each component.
+        """
+    def diversification(self, /) -> list[float]:
+        """
+        ``standalone - allocated`` per component: each one's share of the
+        diversification benefit.
+        
+        Returns
+        -------
+        list of float
+        """
+    def diversification_benefit(self, /) -> float:
+        """
+        ``sum(standalone) - total``: the capital saved by holding the
+        components together.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def method(self, /) -> str:
+        """
+        The allocation method, as passed to ``capital``.
+        """
+    @property
+    def standalone(self, /) -> list[float]:
+        """
+        Stand-alone measure ``rho(X_j)`` of each component.
+        """
+    @property
+    def total(self, /) -> float:
+        """
+        The portfolio's measure, ``rho(S)``.
+        """
+
+@final
 class ArchimedeanCopula:
     """
     An exchangeable Archimedean copula: Clayton, Gumbel, Frank or Joe.
@@ -987,6 +1032,39 @@ class Grid:
         ------
         ValueError
             If ``step`` is not positive or ``points`` is 0.
+        """
+    def map(self, /, f: Any) -> tuple[Grid, bool]:
+        """
+        The distribution of ``f(X)`` on the same step.
+        
+        Each point's mass moves to ``f(x)``. A value between two points is
+        split between them so its mean is kept, so the mean is always exact
+        and the whole distribution is exact when every value lands on a
+        point. ``f`` is a Python callable, evaluated once per point with
+        mass.
+        
+        Parameters
+        ----------
+        f : callable
+            Maps a loss to a finite, non-negative value.
+        
+        Returns
+        -------
+        tuple of (Grid, bool)
+            The grid and whether every value landed on a grid point.
+        
+        Raises
+        ------
+        ValueError
+            If ``f`` returns a negative or non-finite value.
+        
+        Examples
+        --------
+        >>> from actuarialrs.distributions import Grid
+        >>> x = Grid(1.0, [0.2, 0.3, 0.3, 0.2])
+        >>> layer, exact = x.map(lambda v: min(max(v - 1.0, 0.0), 1.0))
+        >>> layer.probs, exact
+        ([0.5, 0.5], True)
         """
     def mean(self, /) -> float:
         """
@@ -2845,10 +2923,99 @@ class Tower:
         """
         Layer names, in order.
         """
+    def on_grid(self, /, frequency: Any, severity: Grid, points: int) -> TowerGrids:
+        """
+        Gross, ceded and net annual distributions on the grid, by FFT.
+        
+        Each layer's per-occurrence recoveries form a severity grid, which
+        is compounded with the same claim count; annual terms and the share
+        then apply to the total. With boundaries on multiples of the step
+        the grids are exact for the discretized problem, with no sampling
+        error. Grids are marginal (use ``apply`` on simulated events for
+        joint results). ``net`` is given when no layer has annual terms, or
+        when the last stage is a single aggregate cover such as a
+        stop-loss; otherwise it is ``None``.
+        
+        Parameters
+        ----------
+        frequency : Poisson, NegativeBinomial or Binomial
+        severity : Grid
+        points : int
+            Points in every aggregate grid.
+        
+        Returns
+        -------
+        TowerGrids
+        
+        Raises
+        ------
+        ValueError
+            If a layer with annual terms inures to a later stage, or
+            ``points`` is 0.
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.distributions import Grid, Poisson
+        >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+        >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
+        >>> round(r.ceded[0].mean(), 12), r.on_points
+        (1.2, True)
+        """
     @property
     def stages(self, /) -> list[int]:
         """
         Stage of each layer, in order, starting at 0.
+        """
+
+@final
+class TowerGrids:
+    """
+    A tower's annual distributions on the grid, from ``Tower.on_grid``.
+    
+    Every grid is a marginal distribution. Ceded grids are at the placed
+    share and after annual terms; a layer with share ``c`` has step
+    ``c * h``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ceded(self, /) -> list[Grid]:
+        """
+        Annual ceded loss of each layer, in tower order.
+        """
+    @property
+    def ceded_reports(self, /) -> list[CompoundReport]:
+        """
+        The compound calculation behind each layer: its annual recovery at
+        100%, before annual terms.
+        """
+    @property
+    def expected_reinstatement_premium(self, /) -> list[float]:
+        """
+        Expected reinstatement premium of each layer; 0 without paid
+        reinstatements.
+        """
+    @property
+    def gross(self, /) -> Grid:
+        """
+        Annual gross loss.
+        """
+    @property
+    def gross_report(self, /) -> CompoundReport:
+        """
+        The compound calculation behind ``gross``.
+        """
+    @property
+    def net(self, /) -> Grid |None:
+        """
+        Annual net loss, or ``None`` when it is not a single compound total.
+        """
+    @property
+    def on_points(self, /) -> bool:
+        """
+        Whether every boundary and net loss fell on a grid point. When
+        ``False``, means are still exact but shapes are smeared by up to a
+        step.
         """
 
 @final
@@ -2982,6 +3149,53 @@ def alpha_between_layers(a: tuple[float, float, float], b: tuple[float, float, f
     Returns
     -------
     float
+    """
+
+def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "euler") -> Allocation:
+    """
+    Allocates the distortion risk measure of a portfolio's total to its
+    components.
+    
+    Methods:
+    
+    - ``"euler"``: co-measure (for TVaR, the CoTVaRs); consistent with
+      marginal changes to the portfolio.
+    - ``"covariance"``: ``rho(S) Cov(X_j, S) / Var(S)``.
+    - ``"proportional"``: stand-alone measures scaled to ``rho(S)``.
+    - ``"marginal"``: ``rho(S) - rho(S - X_j)`` (Merton-Perold); does not
+      add up to ``rho(S)``.
+    - ``"shapley"``: Shapley value of ``v(T) = rho(sum of T)``; at most 12
+      components.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+        Components that add up to the portfolio.
+    distortion : Distortion
+    method : str, default "euler"
+    
+    Returns
+    -------
+    Allocation
+    
+    Raises
+    ------
+    ValueError
+        For an unknown method, a constant total (``"covariance"``),
+        stand-alone measures summing to 0 (``"proportional"``) or more than
+        12 components (``"shapley"``).
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.risk import Distortion, capital
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> a = capital(pd, Distortion.tvar(0.5))
+    >>> a.total, a.standalone, a.allocated
+    (8.0, [3.5, 5.5], [2.5, 5.5])
+    >>> a.diversification_benefit()
+    1.0
     """
 
 def claim_count(mean: float, dispersion: float) -> Any:

@@ -9,6 +9,7 @@ from actuarialrs.risk import (
     GaussianCopula,
     StudentTCopula,
     allocate,
+    capital,
     iman_conover,
     simulate,
 )
@@ -94,3 +95,23 @@ def test_evt():
     assert tail.tvar(0.99) > tail.var(0.99)
     with pytest.raises(ValueError):
         tail.var(0.5)
+
+
+def test_capital_methods():
+    pd = PredictiveDistribution(
+        ["lob"],
+        [("a",), ("b",), ("c",)],
+        [[float((i * 37) % 101), float((i * 53) % 97), float((i * i) % 89)] for i in range(300)],
+    )
+    d = Distortion.tvar(0.9)
+    euler = capital(pd, d)
+    assert euler.method == "euler"
+    assert euler.allocated == allocate(pd, d)
+    for method in ["euler", "covariance", "proportional", "shapley"]:
+        a = capital(pd, d, method)
+        assert abs(sum(a.allocated) - a.total) < 1e-9
+        assert abs(sum(a.diversification()) - a.diversification_benefit()) < 1e-9
+    marginal = capital(pd, d, "marginal")
+    assert sum(marginal.allocated) < marginal.total
+    with pytest.raises(ValueError):
+        capital(pd, d, "nope")
