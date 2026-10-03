@@ -26,6 +26,11 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `apply_discrete`; `Empirical::distortion` and `Grid::distortion`.
 - `PredictiveDistribution::allocate(&Distortion)`: co-measure allocation
   of the total's risk measure to the components (CoTVaR for `Tvar`).
+- `PredictiveDistribution::capital(&Distortion, AllocationMethod)` in
+  `act_prob::capital`: the total's measure, each component's stand-alone
+  measure and an allocation by `Euler`, `Covariance`, `Proportional`,
+  `Marginal` (Merton–Perold) or `Shapley`, with the diversification
+  benefit overall and per component.
 - `act_prob::copula`: the `Copula` trait, `GaussianCopula`,
   `StudentTCopula`, and `copula::simulate` to join marginals into a
   `PredictiveDistribution`. `act_math` gained `linalg::cholesky`,
@@ -67,6 +72,19 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   rounding), and for `Tvar(p)` they are the CoTVaRs,
   `E[X_j | S in its top 1 - p]`. Simulations tied on `S` share their
   weights equally, so the result does not depend on how ties are sorted.
+- **Several allocation methods, one report.** Euler is the default
+  because it is the only method consistent with marginal changes to the
+  portfolio. The others answer different questions: `Covariance` looks at
+  the whole distribution, not the tail. `Proportional` ignores dependence.
+  `Marginal` (`ρ(S) − ρ(S − X_j)`) does not add up, and the shortfall is
+  capital no single component causes. `Shapley` averages marginal
+  contributions over every joining order. Every method returns the
+  stand-alone measures too, so the diversification benefit
+  `Σ ρ(X_j) − ρ(S)` and its split come with the allocation.
+- **Shapley is exact and capped at 12 components.** It evaluates `ρ` on
+  all `2^m` sub-portfolios, each a sort of `n` draws. Beyond 12 components
+  that cost grows too fast, and a sampled Shapley value would add noise
+  the other methods do not have.
 - **Copulas generate uniforms; marginals stay where they are.** A copula
   draws one vector of uniforms per simulation from
   `StreamRng::new(seed, sim)` (the `chacha20/sim-index/v1` scheme), and
@@ -151,6 +169,17 @@ allocates to component means, and that CoTVaR equals the conditional tail
 mean computed directly. Two exact cases: comonotonic lines (`X_2 = 2 X_1`)
 each receive their own risk measure, and two simulations tied on the
 total but split differently give the same allocation in either order.
+
+`validation/reference/allocation_numpy.csv`
+(`validation/scripts/numpy_allocation.py`) checks every method against
+numpy, using four integer-valued components over 400 simulations with
+many tied totals. The cases are TVaR at 75% and 90%, proportional hazard
+and dual power, at `1e-12`. The script writes each method from its
+definition: the measure over distinct values, Euler with tied weights
+shared, and Shapley over all 24 joining orders rather than the subset
+formula. Unit tests check that full allocations add up, that marginal
+allocations fall short, the two-component Shapley closed form, and that
+comonotonic lines have no diversification benefit.
 
 ## Next
 

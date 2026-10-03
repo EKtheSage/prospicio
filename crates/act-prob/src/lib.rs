@@ -10,6 +10,7 @@
 //! With the `arrow` feature, [`PredictiveDistribution`] reads and writes
 //! Arrow IPC files; the format is described in `ipc`.
 
+pub mod capital;
 pub mod copula;
 pub mod counting;
 pub mod distortion;

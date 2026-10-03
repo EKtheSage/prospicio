@@ -406,3 +406,55 @@ fn log_affine_pareto_matches_r() {
         }
     });
 }
+
+#[test]
+fn allocations_match_numpy() {
+    use act_prob::capital::AllocationMethod;
+    use act_prob::{Distortion, KeyValue, PredictiveDistribution, Provenance};
+    // The draws in validation/scripts/numpy_allocation.py.
+    let (n, m) = (400usize, 4usize);
+    let mut draws = Vec::with_capacity(n * m);
+    for i in 0..n as u64 {
+        let a = (i * 37) % 101;
+        draws.extend(
+            [
+                a,
+                (i * 53) % 97 + a / 2,
+                (i * i) % 89,
+                3 * ((i * 29) % 41) + (a / 10).pow(2),
+            ]
+            .map(|v| v as f64),
+        );
+    }
+    let pd = PredictiveDistribution::from_draws(
+        vec!["line".into()],
+        (0..m).map(|j| vec![KeyValue::from(j as i64)]).collect(),
+        draws,
+        Provenance::new("validation"),
+    )
+    .unwrap();
+    let cases = reference("allocation_numpy.csv");
+    check(&cases, |c| {
+        let arg = c.number("arg")?;
+        let d = match c.get("distortion") {
+            "tvar" => Distortion::tvar(arg),
+            "proportional_hazard" => Distortion::proportional_hazard(arg),
+            "dual_power" => Distortion::dual_power(arg),
+            _ => return None,
+        }
+        .ok()?;
+        let method = match c.get("method") {
+            "covariance" => AllocationMethod::Covariance,
+            "proportional" => AllocationMethod::Proportional,
+            "marginal" => AllocationMethod::Marginal,
+            "shapley" => AllocationMethod::Shapley,
+            _ => AllocationMethod::Euler,
+        };
+        let a = pd.capital(&d, method).ok()?;
+        match c.get("method") {
+            "total" => Some(a.total),
+            "standalone" => Some(a.standalone[c.number("component")? as usize]),
+            _ => Some(a.allocated[c.number("component")? as usize]),
+        }
+    });
+}
