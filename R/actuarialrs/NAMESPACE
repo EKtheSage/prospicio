@@ -121,6 +121,8 @@ export(tower_on_grid)
 export(variance)
 export(xol_layer)
 if (getRversion() < "4.3.0") importFrom(S7, "@")
-importFrom(stats,aggregate)
-importFrom(stats,quantile)
+importFrom(stats,
+  aggregate,
+  quantile
+)
 useDynLib(actuarialrs, .registration = TRUE)
