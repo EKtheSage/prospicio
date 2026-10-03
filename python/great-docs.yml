@@ -19,6 +19,8 @@ reference:
       - distributions.Lognormal
       - distributions.Gamma
       - distributions.Tweedie
+      - distributions.Weibull
+      - distributions.Mixture
       - distributions.Grid
       - distributions.DiscretizationReport
       - distributions.Sampled
@@ -55,6 +57,24 @@ reference:
       - aggregate.Layer
       - aggregate.Tower
       - aggregate.TowerGrids
+  - title: Models
+    desc: Terms and design matrices, GLMs and GAMs, metrics, resampling and MCMC diagnostics.
+    contents:
+      - models.Terms
+      - models.Coding
+      - models.Design
+      - models.Glm
+      - models.GlmFit
+      - models.Gam
+      - models.GamFit
+      - models.deviance
+      - models.gini
+      - models.lift
+      - models.crps
+      - models.k_fold
+      - models.group_k_fold
+      - models.time_ordered
+      - models.mcmc_diagnostics
   - title: Pricing
     desc: The collective model, layer rating, and reinsurance tower matching.
     contents:
@@ -89,3 +109,5 @@ reference:
     contents:
       - risk.Gpd
       - risk.PotTail
+      - risk.mean_excess
+      - risk.hill

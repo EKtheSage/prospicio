@@ -477,6 +477,59 @@ severity_class!(TweedieDist {
     }
 });
 
+/// Weibull distribution.
+#[extendr]
+pub(crate) struct WeibullDist {
+    pub(crate) inner: act_prob::Weibull,
+}
+
+severity_class!(WeibullDist {
+    fn new(shape: f64, scale: f64) -> Result<Self> {
+        let inner = act_prob::Weibull::new(shape, scale).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+});
+
+/// A finite mixture of severities.
+#[extendr]
+pub(crate) struct MixtureDist {
+    pub(crate) inner: std::sync::Arc<act_prob::Mixture>,
+}
+
+severity_class!(MixtureDist {
+    /// `components` is a list of severity pointers, `weights` their
+    /// probabilities.
+    fn new(weights: &[f64], components: List) -> Result<Self> {
+        if weights.len() != components.len() {
+            return Err(Error::Other("give one weight per component".into()));
+        }
+        let parts = weights
+            .iter()
+            .zip(components.values())
+            .map(|(&w, c)| {
+                let sev = crate::distributions::AnySeverity::from_robj(&c)?;
+                Ok((w, Box::new(sev) as Box<dyn Severity + Send + Sync>))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let inner = act_prob::Mixture::new(parts).map_err(to_r)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(inner),
+        })
+    }
+
+    fn weights(&self) -> Vec<f64> {
+        self.inner.weights().to_vec()
+    }
+});
+
 extendr_module! {
     mod pareto;
     fn local_pareto_convert;
@@ -486,6 +539,8 @@ extendr_module! {
     impl GeneralizedPareto;
     impl GammaDist;
     impl TweedieDist;
+    impl WeibullDist;
+    impl MixtureDist;
     impl Binomial;
     fn claim_count_parameters;
 }

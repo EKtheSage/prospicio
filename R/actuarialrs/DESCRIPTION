@@ -16,6 +16,7 @@ Collate:
     'distributions.R'
     'aggregate.R'
     'extendr-wrappers.R'
+    'models.R'
     'pareto.R'
     'pricing.R'
     'risk.R'

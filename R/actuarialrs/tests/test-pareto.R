@@ -93,4 +93,15 @@ stopifnot(inherits(try(tweedie(1, 1, 2), silent = TRUE), "try-error"))
 sg <- discretize(g, 50, 400)
 near(mean(sg), lev(g, 399 * 50), 1e-9)
 
+# Weibull and mixtures.
+w <- weibull_distribution(1, 2)
+near(stop_loss(w, 3), 2 * exp(-1.5), 1e-14)
+near(quantile(w, cdf(w, 1.7)), 1.7, 1e-12)
+mx <- mixture_distribution(c(0.9, 0.1), list(lognormal_from_mean_cv(1e4, 1), pareto(1e5, 2)))
+near(mean(mx), 29000, 1e-12)
+near(mx@weights, c(0.9, 0.1), 1e-15)
+stopifnot(inherits(try(mixture_distribution(0.5, list(w)), silent = TRUE), "try-error"))
+gm <- discretize(mx, 1000, 2000)
+near(mean(gm), lev(mx, 1999 * 1000), 1e-9)
+
 cat("actuarialrs R pareto tests passed\n")

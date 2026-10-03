@@ -201,6 +201,37 @@ class Binomial:
         """
 
 @final
+class Coding:
+    """
+    Terms with factor levels learned from training data, from
+    ``Terms.fit``.
+    """
+    def design(self, /, data: Any, offset: Sequence[float] |None = None, weights: Sequence[float] |None = None) -> Design:
+        """
+        The design matrix for ``data``.
+        
+        Parameters
+        ----------
+        data : dict of str to list
+        offset : list of float, optional
+        weights : list of float, optional
+        
+        Returns
+        -------
+        Design
+        
+        Raises
+        ------
+        ValueError
+            If a column is missing or a factor level was not seen in training.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        Design matrix column names.
+        """
+
+@final
 class CollectiveModel:
     """
     The collective risk model: a claim count and a severity, with layer
@@ -356,6 +387,72 @@ class CompoundReport:
     def tail_mass(self, /) -> float:
         """
         Aggregate probability above the last point, lumped onto it.
+        """
+
+@final
+class Design:
+    """
+    A design matrix with an offset and prior weights.
+    
+    Parameters
+    ----------
+    columns : list of list of float
+        One list per column.
+    names : list of str
+    offset : list of float, optional
+    weights : list of float, optional
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import Design
+    >>> d = Design([[1.0, 1.0], [0.0, 2.0]], ["(Intercept)", "x"])
+    >>> d.n_rows, d.names
+    (2, ['(Intercept)', 'x'])
+    """
+    def __new__(cls, /, columns: Sequence[Sequence[float]], names: Sequence[str], offset: Sequence[float] |None = None, weights: Sequence[float] |None = None) -> Design: ...
+    def column(self, /, j: int) -> list[float]:
+        """
+        Column ``j``.
+        
+        Parameters
+        ----------
+        j : int
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def n_rows(self, /) -> int:
+        """
+        Number of rows.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        Column names.
+        """
+    @property
+    def offset(self, /) -> list[float]:
+        """
+        Offset per row.
+        """
+    def select(self, /, rows: Sequence[int]) -> Design:
+        """
+        The rows ``rows``, in that order.
+        
+        Parameters
+        ----------
+        rows : list of int
+        
+        Returns
+        -------
+        Design
+        """
+    @property
+    def weights(self, /) -> list[float]:
+        """
+        Prior weight per row.
         """
 
 @final
@@ -575,6 +672,123 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+
+@final
+class Gam:
+    """
+    A generalized additive model: a ``Glm`` plus P-spline smooths of
+    numeric design columns, with smoothing chosen by GCV or UBRE.
+    
+    Parameters
+    ----------
+    glm : Glm
+        Family, link and dispersion.
+    smooths : list of str or (str, int)
+        The design columns to smooth, optionally with the number of basis
+        functions (10 by default).
+    smoothing : str or list of float, default "auto"
+        ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
+        ``"ubre"``, or fixed smoothing parameters, one per smooth.
+    
+    Examples
+    --------
+    >>> import math
+    >>> from actuarialrs.models import Design, Gam, Glm
+    >>> x = [i / 99 for i in range(100)]
+    >>> y = [math.sin(6 * v) for v in x]
+    >>> d = Design([[1.0] * 100, x], ["(Intercept)", "x"])
+    >>> fit = Gam(Glm("gaussian"), ["x"]).fit(d, y)
+    >>> abs(fit.predict(d)[50] - y[50]) < 0.01
+    True
+    """
+    def __new__(cls, /, glm: Glm, smooths: Sequence[Any], smoothing: Any |None = None) -> Gam: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> GamFit:
+        """
+        Fits the model.
+        
+        Parameters
+        ----------
+        design : Design
+            Includes the raw columns to smooth.
+        y : list of float
+        
+        Returns
+        -------
+        GamFit
+        """
+
+@final
+class GamFit:
+    """
+    A fitted GAM, from ``Gam.fit``.
+    """
+    @property
+    def coefficients(self, /) -> list[float]:
+        """
+        Coefficients.
+        """
+    @property
+    def deviance(self, /) -> float:
+        """
+        Residual deviance.
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        Dispersion.
+        """
+    @property
+    def edf(self, /) -> float:
+        """
+        Effective degrees of freedom.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        Fitted means on the training data.
+        """
+    @property
+    def lambdas(self, /) -> list[float]:
+        """
+        Smoothing parameter of each smooth.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        Coefficient names: parametric columns, then ``s(x).1``, ...
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row.
+        
+        Parameters
+        ----------
+        design : Design
+            Same columns as the training design, raw smooth columns included.
+        
+        Returns
+        -------
+        list of float
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Joint predictive distribution across the rows, keyed ``row``.
+        
+        Parameters
+        ----------
+        design : Design
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def score(self, /) -> float:
+        """
+        The minimized GCV or UBRE score.
         """
 
 @final
@@ -1067,6 +1281,162 @@ class GeneralizedPareto:
     def xi(self, /) -> float:
         """
         Shape ``xi``.
+        """
+
+@final
+class Glm:
+    """
+    A generalized linear model, fitted by IRLS.
+    
+    Parameters
+    ----------
+    family : str
+        ``"gaussian"``, ``"poisson"``, ``"gamma"``, ``"inverse_gaussian"``,
+        ``"binomial"``, ``"negative_binomial"`` (needs ``theta``) or
+        ``"tweedie"`` (needs ``power``).
+    link : str, optional
+        ``"identity"``, ``"log"``, ``"logit"``, ``"probit"``,
+        ``"cloglog"``, ``"inverse"``, ``"inverse_squared"`` or ``"power"``
+        (needs ``link_power``); the family's canonical link by default.
+    dispersion : str or float, optional
+        ``"pearson"``, ``"deviance"`` or a fixed value. By default 1 for the
+        Poisson, binomial and negative binomial and Pearson's estimate
+        otherwise; ``"pearson"`` with the Poisson is the over-dispersed
+        (quasi-) Poisson.
+    theta : float, optional
+    power : float, optional
+    link_power : float, optional
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import Design, Glm
+    >>> d = Design([[1.0] * 4, [0.0, 0.0, 1.0, 1.0]], ["(Intercept)", "young"],
+    ...            offset=[0.0, 0.0, 0.0, 0.0])
+    >>> fit = Glm("poisson", "log").fit(d, [1.0, 3.0, 4.0, 6.0])
+    >>> round(fit.coefficients[1], 10) == round(__import__("math").log(5 / 2), 10)
+    True
+    """
+    def __new__(cls, /, family: str, link: str |None = None, dispersion: Any |None = None, theta: float |None = None, power: float |None = None, link_power: float |None = None) -> Glm: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> GlmFit:
+        """
+        Fits the model.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        GlmFit
+        
+        Raises
+        ------
+        ValueError
+            If the design is collinear, a response is out of the family's
+            range, or IRLS does not converge.
+        """
+
+@final
+class GlmFit:
+    """
+    A fitted GLM, from ``Glm.fit``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aic(self, /) -> float:
+        """
+        AIC, ``-2 loglik + 2 p``.
+        """
+    @property
+    def coefficients(self, /) -> list[float]:
+        """
+        Estimated coefficients.
+        """
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        Covariance of the coefficients, as a list of rows.
+        """
+    @property
+    def deviance(self, /) -> float:
+        """
+        Residual deviance.
+        """
+    @property
+    def df_resid(self, /) -> float:
+        """
+        Residual degrees of freedom.
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        Dispersion.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        Fitted means on the training data.
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        IRLS iterations used.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        Log-likelihood.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        Coefficient names.
+        """
+    @property
+    def null_deviance(self, /) -> float:
+        """
+        Deviance of the intercept-and-offset model.
+        """
+    @property
+    def p_values(self, /) -> list[float]:
+        """
+        Two-sided p-values (normal for a fixed dispersion, Student's t when
+        it is estimated).
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row.
+        
+        Parameters
+        ----------
+        design : Design
+            Same columns as the training design.
+        
+        Returns
+        -------
+        list of float
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Joint predictive distribution across the rows, with parameter and
+        process uncertainty, keyed ``row = 0, 1, ...``.
+        
+        Parameters
+        ----------
+        design : Design
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def std_errors(self, /) -> list[float]:
+        """
+        Standard errors.
         """
 
 @final
@@ -1954,6 +2324,178 @@ class Lognormal:
         Returns
         -------
         float
+        """
+
+@final
+class Mixture:
+    """
+    A finite mixture of severities: component ``i`` with probability
+    ``w_i``, such as attritional plus large losses.
+    
+    Parameters
+    ----------
+    components : list of (float, severity)
+        Weights (positive, summing to 1) and severities.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Lognormal, Mixture, Pareto
+    >>> m = Mixture([(0.9, Lognormal.from_mean_cv(1e4, 1.0)), (0.1, Pareto(1e5, 2.0))])
+    >>> round(m.mean(), 6)
+    29000.0
+    """
+    def __new__(cls, /, components: Sequence[tuple[float, Any]]) -> Mixture: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def weights(self, /) -> list[float]:
+        """
+        Component weights.
         """
 
 @final
@@ -3058,6 +3600,76 @@ class StudentTCopula:
         """
 
 @final
+class Terms:
+    """
+    The terms of a model: an intercept, numeric columns and factors.
+    
+    Build them up, then ``fit`` them to training data to learn the factor
+    levels; the result builds the same design matrix on any data.
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import Terms
+    >>> data = {"age": [30.0, 45.0, 60.0], "region": ["N", "S", "W"]}
+    >>> coding = Terms().intercept().numeric("age").factor("region").fit(data)
+    >>> coding.names
+    ['(Intercept)', 'age', 'region[S]', 'region[W]']
+    """
+    def __new__(cls, /) -> Terms: ...
+    def factor(self, /, name: str, reference: str |None = None) -> Terms:
+        """
+        Adds a factor in treatment coding.
+        
+        Parameters
+        ----------
+        name : str
+        reference : str, optional
+            Reference level; the first in sorted order by default.
+        
+        Returns
+        -------
+        Terms
+        """
+    def fit(self, /, data: Any) -> Coding:
+        """
+        Learns factor levels from training data.
+        
+        Parameters
+        ----------
+        data : dict of str to list
+            Numeric columns as lists of numbers, factors as lists of strings.
+        
+        Returns
+        -------
+        Coding
+        
+        Raises
+        ------
+        ValueError
+            If a column is missing or has the wrong kind.
+        """
+    def intercept(self, /) -> Terms:
+        """
+        Adds an intercept.
+        
+        Returns
+        -------
+        Terms
+        """
+    def numeric(self, /, name: str) -> Terms:
+        """
+        Adds a numeric column.
+        
+        Parameters
+        ----------
+        name : str
+        
+        Returns
+        -------
+        Terms
+        """
+
+@final
 class Tower:
     """
     A reinsurance programme: layers in inuring stages.
@@ -3513,6 +4125,183 @@ class Tweedie:
         float
         """
 
+@final
+class Weibull:
+    """
+    Weibull distribution with shape ``k`` and scale ``lam``:
+    ``P(X > x) = exp(-(x / lam) ** k)``, as SciPy's ``weibull_min``.
+    
+    Parameters
+    ----------
+    shape : float
+    scale : float
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Weibull
+    >>> Weibull(1.0, 2.0).mean()
+    2.0
+    """
+    def __getnewargs__(self, /) -> tuple[float, float]: ...
+    def __new__(cls, /, shape: float, scale: float) -> Weibull: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        Scale ``lam``.
+        """
+    @property
+    def shape(self, /) -> float:
+        """
+        Shape ``k``.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
 def allocate(pd: PredictiveDistribution, distortion: Distortion) -> list[float]:
     """
     Allocates a distortion risk measure of the total to the components.
@@ -3676,6 +4465,39 @@ def claim_count(mean: float, dispersion: float) -> Any:
     NegativeBinomial(r=2.6666666666666665, beta=1.5)
     """
 
+def crps(draws: Sequence[float], y: float) -> float:
+    """
+    Continuous ranked probability score of equally likely draws for an
+    outcome; lower is better.
+    
+    Parameters
+    ----------
+    draws : list of float
+    y : float
+    
+    Returns
+    -------
+    float
+    """
+
+def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> float:
+    """
+    Deviance ``sum w d(y, mu)`` of a family.
+    
+    Parameters
+    ----------
+    family : str
+    y : list of float
+    mu : list of float
+    weights : list of float, optional
+    theta : float, optional
+    power : float, optional
+    
+    Returns
+    -------
+    float
+    """
+
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
     """
     Aggregate loss ``S = X_1 + ... + X_N`` by fast Fourier transform.
@@ -3745,6 +4567,57 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     160.0
     """
 
+def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
+    """
+    Gini index of the ordered Lorenz curve.
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+    exposure : list of float, optional
+    
+    Returns
+    -------
+    float
+    """
+
+def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[int], list[int]]]:
+    """
+    Grouped ``k``-fold splits: each group's rows stay in one fold.
+    
+    Parameters
+    ----------
+    groups : list of str
+    k : int
+    seed : int
+    
+    Returns
+    -------
+    list of (list of int, list of int)
+    """
+
+def hill(draws: Sequence[float], ks: Sequence[int]) -> list[float]:
+    """
+    Hill estimates of the tail index ``xi`` (``1 / alpha``) from the ``k``
+    largest draws, for each ``k``.
+    
+    Parameters
+    ----------
+    draws : list of float
+    ks : list of int
+    
+    Returns
+    -------
+    list of float
+    
+    Raises
+    ------
+    ValueError
+        If a ``k`` is 0 or not below the number of draws, or the ``k + 1``
+        largest draws are not all positive.
+    """
+
 def ilf(severity: Any, limit: float, basic_limit: float) -> float:
     """
     Increased limit factor ``LEV(limit) / LEV(basic_limit)``.
@@ -3796,6 +4669,40 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     >>> joined = iman_conover(pd, [[1.0, 0.7], [0.7, 1.0]], seed=3)
     >>> sorted(joined.marginal((1,)).draws) == sorted(pd.marginal((1,)).draws)
     True
+    """
+
+def k_fold(n: int, k: int, seed: int) -> list[tuple[list[int], list[int]]]:
+    """
+    ``k``-fold splits of ``n`` rows, shuffled with ``seed``.
+    
+    Parameters
+    ----------
+    n : int
+    k : int
+    seed : int
+    
+    Returns
+    -------
+    list of (list of int, list of int)
+        ``(train, test)`` row indices per fold.
+    """
+
+def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
+    """
+    Lift table: rows sorted by predicted rate, cut into bands of about
+    equal exposure.
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+    exposure : list of float, optional
+    bands : int, default 10
+    
+    Returns
+    -------
+    list of dict
+        ``exposure``, ``expected`` and ``actual`` per band.
     """
 
 def local_pareto_to_piecewise(t: float, alpha: Any, rel_tolerance: float = 1e-4, stop_survival: float = 1e-9, stop_at: float = ...) -> tuple[PiecewisePareto, float, float]:
@@ -3874,6 +4781,54 @@ def match_tower(attachments: Sequence[float], layer_losses: Sequence[float], fre
     >>> m = match_tower([1000.0, 1500.0, 2000.0], [100.0, 90.0, 120.0], [0.25, None, None])
     >>> round(m.layer_loss(500.0, 1500.0), 9)
     90.0
+    """
+
+def mcmc_diagnostics(chains: Sequence[Sequence[float]]) -> dict[str, float]:
+    """
+    MCMC diagnostics of chains of draws (Vehtari et al. 2021, as R's
+    ``posterior``): rank-normalized split R-hat, bulk and tail effective
+    sample sizes, the effective sample size of the mean and its Monte Carlo
+    standard error.
+    
+    Parameters
+    ----------
+    chains : list of list of float
+        Equal-length chains, at least 4 draws each.
+    
+    Returns
+    -------
+    dict
+        ``rhat``, ``ess_bulk``, ``ess_tail``, ``ess_mean``, ``mcse_mean``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import mcmc_diagnostics
+    >>> a = [float((i * 37) % 101) for i in range(400)]
+    >>> b = [float((i * 53 + 7) % 101) for i in range(400)]
+    >>> mcmc_diagnostics([a, b])["rhat"] < 1.01
+    True
+    """
+
+def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tuple[float, float, int]]:
+    """
+    The empirical mean-excess function ``e(u) = E[X - u | X > u]`` at each
+    threshold, linear above a threshold where a GPD fits.
+    
+    Parameters
+    ----------
+    draws : list of float
+    thresholds : list of float
+    
+    Returns
+    -------
+    list of (float, float, int)
+        ``(u, e(u), number of draws above u)``; ``e(u)`` is NaN when none are.
+    
+    Examples
+    --------
+    >>> from actuarialrs.risk import mean_excess
+    >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
+    [(2.0, 1.5, 2)]
     """
 
 def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
@@ -3993,4 +4948,20 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
     >>> abs(events.totals().mean() - 5000.0) < 75.0
     True
+    """
+
+def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], list[int]]]:
+    """
+    Time-ordered splits: for each of the last ``n_test`` periods, train on
+    earlier periods and test on that one (for a triangle, the calendar
+    diagonal backtest).
+    
+    Parameters
+    ----------
+    periods : list of int
+    n_test : int
+    
+    Returns
+    -------
+    list of (list of int, list of int)
     """

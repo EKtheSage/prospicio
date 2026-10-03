@@ -232,6 +232,8 @@ pub(crate) enum AnySeverity {
     GeneralizedPareto(act_prob::evt::Gpd),
     Gamma(act_prob::Gamma),
     Tweedie(act_prob::Tweedie),
+    Weibull(act_prob::Weibull),
+    Mixture(std::sync::Arc<act_prob::Mixture>),
 }
 
 /// Calls `$call` on the inner severity, whichever it is.
@@ -246,6 +248,8 @@ macro_rules! each {
             Self::GeneralizedPareto($d) => $call,
             Self::Gamma($d) => $call,
             Self::Tweedie($d) => $call,
+            Self::Weibull($d) => $call,
+            Self::Mixture($d) => $call,
         }
     };
 }
@@ -253,7 +257,8 @@ macro_rules! each {
 impl AnySeverity {
     pub(crate) fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         use crate::pareto::{
-            PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyPareto, PyPiecewisePareto, PyTweedie,
+            PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyMixture, PyPareto,
+            PyPiecewisePareto, PyTweedie, PyWeibull,
         };
         if let Ok(d) = obj.extract::<PyRef<'_, PyLognormal>>() {
             return Ok(Self::Lognormal(d.inner));
@@ -279,9 +284,15 @@ impl AnySeverity {
         if let Ok(d) = obj.extract::<PyRef<'_, PyTweedie>>() {
             return Ok(Self::Tweedie(d.inner));
         }
+        if let Ok(d) = obj.extract::<PyRef<'_, PyWeibull>>() {
+            return Ok(Self::Weibull(d.inner));
+        }
+        if let Ok(d) = obj.extract::<PyRef<'_, PyMixture>>() {
+            return Ok(Self::Mixture(d.inner.clone()));
+        }
         Err(PyTypeError::new_err(
-            "expected a severity: Lognormal, Gamma, Tweedie, Grid, Pareto, \
-             PiecewisePareto, LogAffinePareto or GeneralizedPareto",
+            "expected a severity: Lognormal, Gamma, Tweedie, Weibull, Mixture, Grid, \
+             Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto",
         ))
     }
 }

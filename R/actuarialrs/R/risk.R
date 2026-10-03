@@ -351,3 +351,34 @@ capital_allocation <- function(x, distortion,
     by_component = out
   )
 }
+
+#' Tail diagnostics
+#'
+#' `mean_excess()` is the empirical mean-excess function
+#' `e(u) = E[X - u | X > u]` at each threshold (linear above a threshold where
+#' a generalized Pareto fits); `hill_estimator()` gives Hill estimates of the
+#' tail index `xi` (`1 / alpha`) from the `k` largest values. Both help
+#' choose a threshold for [pot_tail()].
+#'
+#' @param x Numeric vector of losses or draws.
+#' @param thresholds Thresholds.
+#' @param k Numbers of top values to use.
+#' @returns `mean_excess()`: a data frame with `threshold`, `mean_excess`
+#'   (`NaN` where no value exceeds it) and `n_above`. `hill_estimator()`: a
+#'   numeric vector, one estimate per `k`.
+#' @name tail_diagnostics
+#' @examples
+#' mean_excess(c(1, 2, 3, 4), 2)
+#' x <- (1 - (seq_len(2000) - 0.5) / 2000)^-0.5
+#' hill_estimator(x, c(100, 200))
+NULL
+
+#' @rdname tail_diagnostics
+#' @export
+mean_excess <- function(x, thresholds) {
+  as.data.frame(mean_excess_rust(as.double(x), as.double(thresholds)))
+}
+
+#' @rdname tail_diagnostics
+#' @export
+hill_estimator <- function(x, k) rust_result(hill_rust(as.double(x), as.double(k)))

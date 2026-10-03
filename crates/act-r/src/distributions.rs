@@ -88,6 +88,8 @@ pub(crate) enum AnySeverity {
     GeneralizedPareto(act_prob::evt::Gpd),
     Gamma(act_prob::Gamma),
     Tweedie(act_prob::Tweedie),
+    Weibull(act_prob::Weibull),
+    Mixture(std::sync::Arc<act_prob::Mixture>),
 }
 
 /// Calls `$call` on the inner severity, whichever it is.
@@ -102,6 +104,8 @@ macro_rules! each {
             Self::GeneralizedPareto($d) => $call,
             Self::Gamma($d) => $call,
             Self::Tweedie($d) => $call,
+            Self::Weibull($d) => $call,
+            Self::Mixture($d) => $call,
         }
     };
 }
@@ -109,7 +113,8 @@ macro_rules! each {
 impl AnySeverity {
     pub(crate) fn from_robj(obj: &Robj) -> Result<Self> {
         use crate::pareto::{
-            GammaDist, GeneralizedPareto, LogAffinePareto, Pareto, PiecewisePareto, TweedieDist,
+            GammaDist, GeneralizedPareto, LogAffinePareto, MixtureDist, Pareto, PiecewisePareto,
+            TweedieDist, WeibullDist,
         };
         if let Ok(d) = <&Lognormal>::try_from(obj) {
             return Ok(Self::Lognormal(d.inner));
@@ -135,8 +140,15 @@ impl AnySeverity {
         if let Ok(d) = <&TweedieDist>::try_from(obj) {
             return Ok(Self::Tweedie(d.inner));
         }
+        if let Ok(d) = <&WeibullDist>::try_from(obj) {
+            return Ok(Self::Weibull(d.inner));
+        }
+        if let Ok(d) = <&MixtureDist>::try_from(obj) {
+            return Ok(Self::Mixture(d.inner.clone()));
+        }
         Err(Error::Other(
-            "expected a severity: lognormal, gamma, tweedie, grid, or a Pareto-family distribution"
+            "expected a severity: lognormal, gamma, tweedie, weibull, mixture, grid, or a \
+             Pareto-family distribution"
                 .into(),
         ))
     }

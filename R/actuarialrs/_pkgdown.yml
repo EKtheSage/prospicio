@@ -16,6 +16,8 @@ reference:
       - sampled
       - gamma_distribution
       - tweedie
+      - weibull_distribution
+      - mixture_distribution
       - log_density
   - title: Large-loss severities
     contents:
@@ -86,6 +88,16 @@ reference:
       - risk_measure
       - allocate
       - capital_allocation
+  - title: Models
+    contents:
+      - glm_fit
+      - glm_model
+      - gam_fit
+      - gam_model
+      - predict_distribution
+      - model_metrics
+      - resampling
+      - mcmc_diagnostics
   - title: Dependence
     contents:
       - copula
@@ -95,4 +107,5 @@ reference:
   - title: Extreme value tails
     contents:
       - pot_tail
+      - tail_diagnostics
       - gpd_fit

@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 
 mod aggregate;
 mod distributions;
+mod models;
 mod pareto;
 mod pricing;
 mod risk;
@@ -35,9 +36,14 @@ mod actuarialrs_native {
         PyPredictiveDistribution, PySampled,
     };
     #[pymodule_export]
+    use super::models::{
+        PyCoding, PyDesign, PyGam, PyGamFit, PyGlm, PyGlmFit, PyTerms, crps, deviance, gini,
+        group_k_fold, k_fold, lift, mcmc_diagnostics, time_ordered,
+    };
+    #[pymodule_export]
     use super::pareto::{
-        PyBinomial, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyPareto, PyPiecewisePareto,
-        PyTweedie, claim_count, local_pareto_to_piecewise,
+        PyBinomial, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyMixture, PyPareto,
+        PyPiecewisePareto, PyTweedie, PyWeibull, claim_count, local_pareto_to_piecewise,
     };
     #[pymodule_export]
     use super::pricing::{
@@ -48,6 +54,6 @@ mod actuarialrs_native {
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail,
-        PyStudentTCopula, allocate, capital, iman_conover, simulate,
+        PyStudentTCopula, allocate, capital, hill, iman_conover, mean_excess, simulate,
     };
 }

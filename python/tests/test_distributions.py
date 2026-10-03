@@ -141,3 +141,25 @@ def test_gamma_and_tweedie():
     grid, _ = Grid.local_moment(g, 50.0, 400)
     assert abs(grid.mean() - g.lev(399 * 50.0)) < 1e-9
     assert Poisson(2.0).mean() == 2.0
+
+
+def test_weibull_mixture_and_tail_diagnostics():
+    import math
+
+    from actuarialrs.distributions import Grid, Lognormal, Mixture, Pareto, Weibull
+    from actuarialrs.risk import hill, mean_excess
+
+    w = Weibull(1.0, 2.0)
+    assert abs(w.stop_loss(3.0) - 2.0 * math.exp(-1.5)) < 1e-14
+    assert abs(w.quantile(w.cdf(1.7)) - 1.7) < 1e-12
+    m = Mixture([(0.9, Lognormal.from_mean_cv(1e4, 1.0)), (0.1, Pareto(1e5, 2.0))])
+    assert abs(m.mean() - 29000.0) < 1e-6
+    assert m.weights == [0.9, 0.1]
+    with pytest.raises(ValueError):
+        Mixture([(0.5, w)])
+    grid, _ = Grid.local_moment(m, 1000.0, 2000)
+    assert abs(grid.mean() - m.lev(1999 * 1000.0)) < 1e-6
+    assert mean_excess([1.0, 2.0, 3.0, 4.0], [2.0]) == [(2.0, 1.5, 2)]
+    n = 2000
+    x = [(1 - (i - 0.5) / n) ** -0.5 for i in range(1, n + 1)]
+    assert abs(hill(x, [200])[0] - 0.5) < 0.02

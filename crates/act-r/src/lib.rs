@@ -12,6 +12,7 @@ use extendr_api::{Error, Result};
 
 mod aggregate;
 mod distributions;
+mod models;
 mod pareto;
 mod pricing;
 mod risk;
@@ -35,6 +36,7 @@ extendr_module! {
     mod actuarialrs;
     use aggregate;
     use distributions;
+    use models;
     use pareto;
     use pricing;
     use risk;

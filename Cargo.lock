@@ -95,7 +95,10 @@ name = "act-python"
 version = "0.0.1"
 dependencies = [
  "act-aggregate",
+ "act-bayes",
  "act-core",
+ "act-glm",
+ "act-models",
  "act-pricing",
  "act-prob",
  "pyo3",
@@ -106,7 +109,10 @@ name = "act-r"
 version = "0.0.1"
 dependencies = [
  "act-aggregate",
+ "act-bayes",
  "act-core",
+ "act-glm",
+ "act-models",
  "act-pricing",
  "act-prob",
  "extendr-api",

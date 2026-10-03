@@ -16,8 +16,8 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' `layer_variance(dist, limit, attachment)` is the variance of the loss to
 #' the layer `limit` xs `attachment` (`Inf` for an unlimited layer).
 #' Defined for the Pareto-family severities ([pareto], [piecewise_pareto],
-#' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution]
-#' and [tweedie].
+#' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution],
+#' [tweedie], [weibull_distribution] and [mixture_distribution].
 #'
 #' @param dist A Pareto-family severity.
 #' @param q Numeric vector.
@@ -424,6 +424,68 @@ tweedie_from_poisson_gamma <- function(lambda, shape, scale) {
   tweedie(ptr = rust_result(TweedieDist$from_poisson_gamma(as.double(lambda), as.double(shape), as.double(scale))))
 }
 
+#' Weibull distribution
+#'
+#' `P(X > x) = exp(-(x / scale)^shape)`, as [stats::dweibull()]. Heavier
+#' than exponential below shape 1. Properties: `d@shape`, `d@scale`.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param shape,scale Finite and positive.
+#' @returns A `weibull_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' w <- weibull_distribution(0.7, 1000)
+#' stop_loss(w, 5000)
+weibull_distribution <- S7::new_class(
+  "weibull_distribution",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("WeibullDist"),
+    shape = S7::new_property(S7::class_double, getter = function(self) self@ptr$shape()),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
+  ),
+  constructor = function(shape, scale) {
+    ptr <- rust_result(WeibullDist$new(as.double(shape), as.double(scale)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Mixture of severities
+#'
+#' A loss from component `i` with probability `weights[i]`: attritional and
+#' large losses in one severity. Distribution functions, limited expected
+#' values and layer moments are the weighted sums of the components'.
+#' Property: `d@weights`.
+#'
+#' Supports the same operations as [pareto], and can be discretized or used
+#' in [simulate_events()].
+#'
+#' @param weights Positive weights summing to 1.
+#' @param components A list of severities ([lognormal], [gamma_distribution],
+#'   [weibull_distribution], Pareto-family, ...).
+#' @returns A `mixture_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' m <- mixture_distribution(c(0.9, 0.1), list(lognormal_from_mean_cv(1e4, 1), pareto(1e5, 2)))
+#' mean(m)
+mixture_distribution <- S7::new_class(
+  "mixture_distribution",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("MixtureDist"),
+    weights = S7::new_property(S7::class_double, getter = function(self) self@ptr$weights())
+  ),
+  constructor = function(weights, components) {
+    ptr <- rust_result(MixtureDist$new(as.double(weights), lapply(components, function(c) c@ptr)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
 #' Log density
 #'
 #' The log of the density at `x`. For a [tweedie], `x = 0` gives the log of
@@ -442,7 +504,7 @@ S7::method(log_density, gamma_distribution) <- function(dist, x, ...) dist@ptr$l
 S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.double(x))
 
 for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
-                 gamma_distribution, tweedie)) {
+                 gamma_distribution, tweedie, weibull_distribution, mixture_distribution)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
   S7::method(cdf, cls) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
@@ -497,6 +559,15 @@ S7::method(print, tweedie) <- function(x, ...) {
   cat(sprintf("<tweedie> mean = %s, dispersion = %s, power = %s\n",
               format(x@mean_param, digits = 15), format(x@dispersion, digits = 15),
               format(x@power, digits = 15)))
+  invisible(x)
+}
+S7::method(print, weibull_distribution) <- function(x, ...) {
+  cat(sprintf("<weibull_distribution> shape = %s, scale = %s\n",
+              format(x@shape, digits = 15), format(x@scale, digits = 15)))
+  invisible(x)
+}
+S7::method(print, mixture_distribution) <- function(x, ...) {
+  cat(sprintf("<mixture_distribution> weights %s\n", paste(format(x@weights), collapse = ", ")))
   invisible(x)
 }
 S7::method(print, generalized_pareto) <- function(x, ...) {

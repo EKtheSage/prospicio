@@ -78,4 +78,10 @@ for (m in c("euler", "covariance", "proportional", "shapley")) {
 }
 stopifnot(sum(capital_allocation(cpd, d, "marginal")$by_component$allocated) < eu$total)
 
+# Tail diagnostics.
+me <- mean_excess(c(1, 2, 3, 4), 2)
+stopifnot(me$mean_excess == 1.5, me$n_above == 2)
+hx <- (1 - (seq_len(2000) - 0.5) / 2000)^-0.5
+stopifnot(abs(hill_estimator(hx, 200) - 0.5) < 0.02)
+
 cat("actuarialrs R risk tests passed\n")
