@@ -26,7 +26,7 @@ A \code{gamma_distribution} object, which inherits from \link{distribution}.
 }
 \description{
 Shape \code{shape} and scale \code{scale}: mean \code{shape * scale}, variance
-\code{shape * scale^2}, as in \code{\link[stats:GammaDist]{stats::dgamma()}}. \code{gamma_from_mean_cv()} takes
+\code{shape * scale^2}, as in \code{\link[stats:dgamma]{stats::dgamma()}}. \code{gamma_from_mean_cv()} takes
 the mean and coefficient of variation; \code{gamma_from_mean_dispersion()} the
 GLM parameterization, mean \code{mu} and dispersion \code{phi} (variance
 \code{phi * mu^2}). Properties: \code{d@shape}, \code{d@scale}.
