@@ -229,6 +229,71 @@ impl Grid {
         d.apply_discrete(&values, &self.probs)
     }
 
+    /// The distribution of `f(X)` on the same step, and whether it is
+    /// exact.
+    ///
+    /// Each point's mass moves to `f(x_j)`. A value on a grid point (within
+    /// `1e-9` of a step) keeps its mass there; one between points `k` and
+    /// `k + 1` is split between them so its mean is kept, as local moment
+    /// matching does. The mean is therefore always exact, and the whole
+    /// distribution is exact when the flag is `true`. The result is as long
+    /// as the largest value needs.
+    ///
+    /// For a layer with boundaries on grid points the map is exact:
+    ///
+    /// ```
+    /// use act_prob::{Distribution, Grid};
+    ///
+    /// let x = Grid::new(1.0, vec![0.2, 0.3, 0.3, 0.2]).unwrap();
+    /// // 1 xs 1: values 0, 0, 1, 1.
+    /// let (layer, exact) = x.map(|v| (v - 1.0).clamp(0.0, 1.0)).unwrap();
+    /// assert!(exact);
+    /// assert_eq!(layer.probs(), [0.5, 0.5]);
+    /// // 1.5 xs 0.5 puts 0.5 and 1.5 between points: the mean is kept.
+    /// let (layer, exact) = x.map(|v| (v - 0.5).clamp(0.0, 1.5)).unwrap();
+    /// assert!(!exact);
+    /// assert!((layer.mean() - (0.3 * 0.5 + 0.5 * 1.5)).abs() < 1e-15);
+    /// ```
+    ///
+    /// Fails if `f` returns a negative or non-finite value at a point with
+    /// mass.
+    pub fn map(&self, mut f: impl FnMut(f64) -> f64) -> Result<(Self, bool)> {
+        let mut probs = vec![0.0; 1];
+        let mut exact = true;
+        let add = |probs: &mut Vec<f64>, k: usize, p: f64| {
+            if probs.len() <= k {
+                probs.resize(k + 1, 0.0);
+            }
+            probs[k] += p;
+        };
+        for (x, p) in self.points() {
+            if p == 0.0 {
+                continue;
+            }
+            let y = f(x);
+            if !y.is_finite() || y < 0.0 {
+                return Err(Error::InvalidParameter {
+                    name: "f",
+                    value: y,
+                    reason: "must map every point with mass to a finite, non-negative value",
+                });
+            }
+            let at = y / self.step;
+            let nearest = at.round();
+            if (at - nearest).abs() <= 1e-9 * nearest.max(1.0) {
+                add(&mut probs, nearest as usize, p);
+            } else {
+                exact = false;
+                let k = at.floor();
+                let upper = at - k;
+                add(&mut probs, k as usize, p * (1.0 - upper));
+                add(&mut probs, k as usize + 1, p * upper);
+            }
+        }
+        // The masses only moved, so they still sum to 1 up to rounding.
+        Ok((Self::new(self.step, probs)?, exact))
+    }
+
     fn points(&self) -> impl Iterator<Item = (f64, f64)> + '_ {
         self.probs.iter().enumerate().map(|(j, &p)| (self.x(j), p))
     }
@@ -344,6 +409,27 @@ impl Severity for Grid {
 mod tests {
     use super::*;
     use crate::Lognormal;
+
+    #[test]
+    fn map_keeps_mass_and_mean_off_the_points() {
+        let x = Grid::new(2.0, vec![0.1, 0.2, 0.3, 0.25, 0.15]).unwrap();
+        let f = |v: f64| 0.7 * v + 0.3;
+        let (y, exact) = x.map(f).unwrap();
+        assert!(!exact);
+        assert!((y.probs().iter().sum::<f64>() - 1.0).abs() < 1e-15);
+        let want: f64 = (0..x.len()).map(|j| f(x.x(j)) * x.probs()[j]).sum();
+        assert!((y.mean() - want).abs() < 1e-14);
+        assert_eq!(y.step(), 2.0);
+    }
+
+    #[test]
+    fn map_can_grow_the_grid_and_rejects_negative_values() {
+        let x = Grid::new(1.0, vec![0.5, 0.5]).unwrap();
+        let (y, exact) = x.map(|v| 3.0 * v).unwrap();
+        assert!(exact);
+        assert_eq!(y.probs(), [0.5, 0.0, 0.0, 0.5]);
+        assert!(x.map(|v| v - 0.5).is_err());
+    }
 
     fn sev() -> Lognormal {
         Lognormal::new(7.0, 0.5).unwrap()

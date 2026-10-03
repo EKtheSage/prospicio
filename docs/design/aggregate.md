@@ -101,6 +101,29 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   does not scale it again). Pro rata as to time needs event dates. The
   tower reports them as `(reinstatement_premium, <name>)` components, and
   `net` stays a loss: premiums are not netted against it.
+- **Towers also run exactly on the grid.** `Tower::on_grid(frequency,
+  severity, points)` returns `TowerGrids`: gross, each layer's ceded loss
+  and, where defined, net, as grids by FFT with no sampling error. A
+  per-occurrence layer maps the severity grid through its recovery
+  function (`Grid::map`). Compounding that grid with the same claim count
+  gives the annual recovery, and annual terms map that. A share `c`
+  rescales the step to `c h`, which is exact.
+- **Off-point boundaries keep the mean.** `Grid::map` splits a value that
+  falls between two points between them, so its mean is kept, the same
+  rule as local moment matching. `TowerGrids::on_points` reports whether
+  any split happened. With boundaries on multiples of the step, the grids
+  are exact for the discretized problem.
+- **Grids are marginal; net only when it is one compound total.** Net is
+  returned when no layer has annual terms, where net is a function of each
+  loss, or when the last stage is a single aggregate cover (attachment 0,
+  unlimited per occurrence), where net is a function of the annual total
+  net of earlier stages. Otherwise net depends jointly on several totals
+  and is `None`. Joint results across layers come from `Tower::apply` on
+  simulated events.
+- **Annual terms may not inure on the grid.** A layer with annual terms
+  in an earlier stage takes a share of each event that depends on event
+  order, which a compound distribution does not have. `on_grid` rejects
+  such a tower and points to Monte Carlo.
 - **Not yet:** surplus treaties, which need sums insured per risk that
   events do not carry.
 
@@ -123,6 +146,15 @@ the simulated mean ceded loss against the exact `E[N] · Severity::layer`
 two-stage tower and against the identity that a cession `c` inuring to
 `l` xs `a` equals `(1 - c)` of `l / (1 - c)` xs `a / (1 - c)` on gross, in
 every simulated year.
+
+Grid towers are checked against 200,000 simulated years of the same
+discrete severity by a Kolmogorov–Smirnov statistic at the 0.1% level.
+The check covers gross, every ceded grid and net, for two per-occurrence
+layers (Poisson and negative binomial counts), a layer with a deductible
+and a reinstatement, and an excess-of-loss layer inuring to a stop-loss.
+Expected reinstatement premiums are within four standard errors of the
+simulated mean. Layer means with boundaries between points are exact, and
+gross = Σ ceded + net in mean.
 
 `CollectiveModel` is checked against the R package Pareto's `PPP_Model`
 and `PGP_Model` (`validation/scripts/r_collective.R`): layer means at
