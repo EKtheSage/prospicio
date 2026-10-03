@@ -261,12 +261,12 @@ impl Layer {
     }
 
     /// Per-occurrence recovery at 100%, before annual terms.
-    fn recovery(&self, loss: f64) -> f64 {
+    pub(crate) fn recovery(&self, loss: f64) -> f64 {
         (loss - self.attachment).max(0.0).min(self.limit)
     }
 
     /// Annual terms applied to an annual recovery total at 100%.
-    fn after_terms(&self, recovery: f64) -> f64 {
+    pub(crate) fn after_terms(&self, recovery: f64) -> f64 {
         (recovery - self.aggregate_deductible)
             .max(0.0)
             .min(self.aggregate_limit)
