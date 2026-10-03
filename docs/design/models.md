@@ -195,6 +195,34 @@ a triangle into a design, and the backtest that scores models on it.
 6. `act-nn` on Burn: CANN first.
 7. `act-bayes`, and the boosting adapters.
 
+## Elastic net
+
+`act_glm::net::ElasticNet` minimizes glmnet's objective,
+`Σ wᵢ dᵢ / (2 Σ w) + λ Σ pfⱼ ((1 - α)/2 bⱼ² + α |bⱼ|)`, with `bⱼ` the
+coefficient of column `j` standardized to unit weighted (population)
+standard deviation, by coordinate descent inside IRLS, so it serves every
+family and link the GLM does. The first all-ones column is the
+unpenalized intercept; penalty factors are rescaled as glmnet does;
+coefficients are reported on the design's scale. `lambda_max`,
+`lambda_path` (log-spaced, glmnet's defaults) and `path` (warm starts)
+build the regularization path; λ and α are tuned like any other
+hyperparameter, by `grid_search` on resamples. Predictive distributions
+carry process uncertainty only: penalized estimates have no standard
+errors, so parameter uncertainty comes from bootstrapping the fit.
+
+Parity with glmnet (`validation/scripts/r_glmnet.R`; glmnet is GPL-2 and
+used for reference values only): Gaussian (standardized and not,
+weighted), Poisson with offset (lasso and ridge), binomial and gamma with
+log link, at four λ each. Two notes:
+
+- For the Gaussian, glmnet scales `y` by its standard deviation `s_y`
+  before fitting, which divides the ridge part of its penalty by `s_y`.
+  Our objective is the stated one; the parity test maps glmnet's
+  `(λ, α)` to ours. The lasso (`α = 1`) is unaffected.
+- With correlated columns coordinate descent creeps: glmnet's default
+  `thresh = 1e-7` stops with coefficients off in the third digit, and
+  even `1e-14` leaves them 5e-6 off. The references use `1e-20`.
+
 ## Decisions
 
 - **Burn for neural networks** (replaces PyTorch-only, `architecture.md`).
