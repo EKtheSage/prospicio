@@ -11,6 +11,7 @@ act-reserving.workspace = true
 
 [dev-dependencies]
 act-aggregate.workspace = true
+act-bayes.workspace = true
 act-core.workspace = true
 act-glm.workspace = true
 act-math.workspace = true

@@ -212,3 +212,35 @@ fn gams_match_mgcv() {
     let pred = fit.predict(&design(&data)).unwrap();
     assert!((pred[5] - fit.fitted()[5]).abs() < 1e-9);
 }
+
+#[test]
+fn mcmc_diagnostics_match_posterior() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/mcmc_chains.csv");
+    let text = std::fs::read_to_string(path).expect("mcmc_chains.csv");
+    let mut lines = text.lines();
+    let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let rows: Vec<Vec<f64>> = lines
+        .map(|l| l.split(',').map(|v| v.parse().unwrap()).collect())
+        .collect();
+    let chains_of = |variable: &str| -> Vec<Vec<f64>> {
+        let col = header.iter().position(|h| *h == variable).unwrap();
+        let mut chains = vec![Vec::new(); 4];
+        for r in &rows {
+            chains[r[0] as usize].push(r[col]);
+        }
+        chains
+    };
+    let cases = reference("mcmc_posterior.csv");
+    check(&cases, |c| {
+        let chains = chains_of(c.get("variable"));
+        let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
+        match c.get("quantity") {
+            "rhat" => act_bayes::rhat(&refs).ok(),
+            "ess_bulk" => act_bayes::ess_bulk(&refs).ok(),
+            "ess_tail" => act_bayes::ess_tail(&refs).ok(),
+            "ess_mean" => act_bayes::ess_mean(&refs).ok(),
+            "mcse_mean" => act_bayes::mcse_mean(&refs).ok(),
+            _ => None,
+        }
+    });
+}
