@@ -23,6 +23,7 @@ pub mod ipc;
 pub mod large_losses;
 pub mod local_pareto;
 pub mod lognormal;
+pub mod mixture;
 pub mod pareto;
 pub mod piecewise_pareto;
 pub mod predictive;
@@ -31,6 +32,7 @@ pub mod risk;
 pub mod sampled;
 pub mod severity;
 pub mod tweedie;
+pub mod weibull;
 
 pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, StudentTCopula};
 pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
@@ -43,6 +45,7 @@ pub use local_pareto::{
     LocalParetoApproximation, LocalParetoConversion, LogAffinePareto, local_pareto_to_piecewise,
 };
 pub use lognormal::Lognormal;
+pub use mixture::Mixture;
 pub use pareto::Pareto;
 pub use piecewise_pareto::{PiecewisePareto, Truncation};
 pub use predictive::{ComponentKey, KeyValue, PredictiveDistribution};
@@ -50,3 +53,4 @@ pub use provenance::{InputHasher, Provenance};
 pub use sampled::{Empirical, Sampled};
 pub use severity::Severity;
 pub use tweedie::Tweedie;
+pub use weibull::Weibull;

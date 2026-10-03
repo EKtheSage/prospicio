@@ -542,6 +542,87 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
     }
 }
 
+/// The empirical mean-excess function `e(u) = E[X - u | X > u]` at each
+/// threshold, with the number of draws above it: `(u, e(u), n_u)`, `e(u)`
+/// NaN where no draw exceeds `u`.
+///
+/// Above a threshold where a GPD fits, `e(u)` is linear in `u` with slope
+/// `ξ / (1 - ξ)`, so the plot of `e(u)` against `u` is the classic aid to
+/// choosing a threshold: pick `u` where it turns straight.
+///
+/// ```
+/// use act_prob::evt::mean_excess;
+///
+/// let e = mean_excess(&[1.0, 2.0, 3.0, 4.0], &[2.0, 4.0]);
+/// assert_eq!(e[0], (2.0, 1.5, 2)); // (3 - 2 + 4 - 2) / 2
+/// assert_eq!(e[1].2, 0);
+/// ```
+pub fn mean_excess(draws: &[f64], thresholds: &[f64]) -> Vec<(f64, f64, usize)> {
+    let mut sorted = draws.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    // Suffix sums from the top, so each threshold costs a binary search.
+    let mut suffix = vec![0.0; sorted.len() + 1];
+    for i in (0..sorted.len()).rev() {
+        suffix[i] = suffix[i + 1] + sorted[i];
+    }
+    thresholds
+        .iter()
+        .map(|&u| {
+            let first = sorted.partition_point(|&x| x <= u);
+            let n = sorted.len() - first;
+            let e = if n == 0 {
+                f64::NAN
+            } else {
+                suffix[first] / n as f64 - u
+            };
+            (u, e, n)
+        })
+        .collect()
+}
+
+/// Hill estimates of the tail index `ξ` (`1/α` for a Pareto tail) from the
+/// `k` largest draws, for each `k` in `ks`:
+/// `ξ̂_k = (1/k) Σ_{i=1..k} ln X_(n-i+1) - ln X_(n-k)`.
+///
+/// A plot of `ξ̂_k` against `k` that settles over a range of `k` suggests
+/// a heavy (Pareto-type) tail with that index. Fails if a `k` is 0 or
+/// leaves no draw below the top `k`, or the `k + 1` largest draws are not
+/// all positive.
+///
+/// ```
+/// use act_prob::evt::hill;
+///
+/// // Exact Pareto quantiles with α = 2: ξ̂ is close to 1/2.
+/// let n = 10_000;
+/// let x: Vec<f64> = (1..=n).map(|i| (1.0 - (i as f64 - 0.5) / n as f64).powf(-0.5)).collect();
+/// let xi = hill(&x, &[1000]).unwrap()[0];
+/// assert!((xi - 0.5).abs() < 0.01);
+/// ```
+pub fn hill(draws: &[f64], ks: &[usize]) -> Result<Vec<f64>> {
+    let mut sorted = draws.to_vec();
+    sorted.sort_by(|a, b| b.total_cmp(a)); // descending
+    ks.iter()
+        .map(|&k| {
+            if k == 0 || k >= sorted.len() {
+                return Err(Error::InvalidParameter {
+                    name: "k",
+                    value: k as f64,
+                    reason: "must be at least 1 and below the number of draws",
+                });
+            }
+            if sorted[k].is_nan() || sorted[k] <= 0.0 {
+                return Err(Error::InvalidParameter {
+                    name: "draws",
+                    value: sorted[k],
+                    reason: "the k + 1 largest must be positive",
+                });
+            }
+            let threshold = sorted[k].ln();
+            Ok(sorted[..k].iter().map(|x| x.ln() - threshold).sum::<f64>() / k as f64)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

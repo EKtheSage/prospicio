@@ -50,6 +50,11 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `iman_conover`), and for EVT, Python `Gpd` and `PotTail` and R
   `gpd_fit` and `pot_tail` (with `VaR` and `TVaR` methods).
 
+- EVT diagnostics: `evt::mean_excess` (the empirical mean-excess function
+  with counts above each threshold, linear above a threshold where a GPD
+  fits) and `evt::hill` (Hill estimates of the tail index for a range of
+  `k`), the usual aids to choosing a threshold before `PotTail::fit`.
+
 ## Decisions
 
 - **A distortion is a closed enum** of concave distortions of the
