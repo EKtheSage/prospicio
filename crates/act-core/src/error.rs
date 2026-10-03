@@ -18,6 +18,10 @@ pub enum Error {
     InvalidProbability(f64),
     /// A month number is outside 1 to 12.
     InvalidMonth(u8),
+    /// Input data cannot be used as given: a missing or mistyped column, a
+    /// factor level not seen in training, mismatched lengths. The message
+    /// names what is wrong.
+    Data(String),
 }
 
 impl fmt::Display for Error {
@@ -30,6 +34,7 @@ impl fmt::Display for Error {
             } => write!(f, "invalid parameter {name} = {value}: {reason}"),
             Self::InvalidProbability(p) => write!(f, "probability {p} is not in [0, 1]"),
             Self::InvalidMonth(m) => write!(f, "month {m} is not in 1 to 12"),
+            Self::Data(message) => write!(f, "invalid data: {message}"),
         }
     }
 }
