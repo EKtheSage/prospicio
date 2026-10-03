@@ -176,8 +176,16 @@ impl PiecewisePareto {
     /// `Σ w ln(min(y, t_{k+1}) / max(r, t_k))⁺` inside it, and a truncated
     /// last piece is the truncated Pareto fit of the losses reaching it.
     /// Every piece needs some exposure; a piece where no uncensored loss
-    /// ends gets alpha 0 (the last piece must have one). Truncation of the
-    /// whole distribution couples the alphas and is not supported.
+    /// ends gets alpha 0 (the last piece must have one).
+    ///
+    /// Truncation of the whole distribution at `T` couples the alphas,
+    /// since each loss's likelihood is conditioned through `S(r) − S(T)`.
+    /// The fit then maximizes the likelihood by coordinate ascent from the
+    /// untruncated estimates, each alpha by bisection on its analytic
+    /// partial derivative and clamped to `[1e-3, 1e3]` (as the R package
+    /// clamps to its bounds). `S(a) − S(T)` is computed as
+    /// `S(a) (1 − e^D)` with `D` summed piece by piece over `[a, T]`, so
+    /// losses just below `T` keep their precision.
     ///
     /// ```
     /// use act_prob::{LargeLosses, PiecewisePareto};
@@ -195,12 +203,13 @@ impl PiecewisePareto {
     ) -> Result<Self> {
         // Validates the thresholds.
         PiecewisePareto::new(t.clone(), vec![1.0; t.len()])?;
-        if let Some((_, Truncation::WholeDistribution)) = truncation {
-            return Err(invalid(
-                "truncation",
-                f64::NAN,
-                "fits with whole-distribution truncation are not supported",
-            ));
+        if let Some((tr, Truncation::WholeDistribution)) = truncation {
+            PiecewisePareto::new(t.clone(), vec![1.0; t.len()])?
+                .truncated(tr, Truncation::WholeDistribution)?;
+            let start = PiecewisePareto::fit(t.clone(), data, None)?;
+            let losses = data.above(t[0])?;
+            let alphas = whole_truncated_alphas(&t, &losses, tr, start.alphas())?;
+            return PiecewisePareto::new(t, alphas)?.truncated(tr, Truncation::WholeDistribution);
         }
         let losses = data.above(t[0])?;
         let n = t.len();
@@ -355,6 +364,162 @@ impl Gpd {
         let alpha_tail = count / exposure(k).0;
         Gpd::riegel(t, k * alpha_tail, alpha_tail)
     }
+}
+
+/// The alphas of a piecewise Pareto with thresholds `t`, truncated as a
+/// whole at `tr`, that maximize the conditional likelihood of `losses`:
+/// coordinate ascent from `start`, each alpha by bisection on its partial
+/// derivative.
+///
+/// With `E_k(a)` the log-exposure of `[t_0, a]` in piece `k`,
+/// `ln S(a) = −Σ α_k E_k(a)`, and with `ΔE_k(a) = E_k(T) − E_k(a)` and
+/// `D(a) = −Σ α_k ΔE_k(a)`, `ln(S(a) − S(T)) = ln S(a) + ln(1 − e^D(a))`,
+/// whose derivative in `α_k` is `−E_k(a) + ΔE_k(a) / expm1(−D(a))`.
+fn whole_truncated_alphas(
+    t: &[f64],
+    losses: &[(f64, f64, bool, f64)],
+    tr: f64,
+    start: &[f64],
+) -> Result<Vec<f64>> {
+    let n = t.len();
+    let exposures = |a: f64| -> Vec<f64> {
+        (0..n)
+            .map(|k| {
+                let hi = t.get(k + 1).copied().unwrap_or(f64::INFINITY);
+                if a > t[k] {
+                    (a.min(hi) / t[k]).ln()
+                } else {
+                    0.0
+                }
+            })
+            .collect()
+    };
+    let e_tr = exposures(tr);
+    struct Row {
+        w: f64,
+        censored: bool,
+        piece: usize,
+        e_y: Vec<f64>,
+        d_y: Vec<f64>,
+        e_r: Vec<f64>,
+        d_r: Vec<f64>,
+    }
+    let mut rows = Vec::with_capacity(losses.len());
+    for &(y, r, censored, w) in losses {
+        if y >= tr {
+            return Err(invalid("losses", y, "must lie below the truncation point"));
+        }
+        let (e_y, e_r) = (exposures(y), exposures(r));
+        let diff = |e: &[f64]| e_tr.iter().zip(e).map(|(a, b)| a - b).collect::<Vec<_>>();
+        rows.push(Row {
+            w,
+            censored,
+            piece: t.partition_point(|&x| x <= y) - 1,
+            d_y: diff(&e_y),
+            d_r: diff(&e_r),
+            e_y,
+            e_r,
+        });
+    }
+    if rows.iter().all(|r| r.censored) {
+        return Err(invalid("losses", 0.0, "need at least one uncensored loss"));
+    }
+    let partial = |alphas: &[f64], k: usize| -> f64 {
+        // ∂/∂α_k of ln(S(a) − S(T)).
+        let term = |e: &[f64], d: &[f64]| -> f64 {
+            let minus_d: f64 = alphas.iter().zip(d).map(|(a, x)| a * x).sum();
+            -e[k] + d[k] / minus_d.exp_m1()
+        };
+        rows.iter()
+            .map(|r| {
+                let own = if r.censored {
+                    term(&r.e_y, &r.d_y)
+                } else {
+                    let count = if r.piece == k { 1.0 / alphas[k] } else { 0.0 };
+                    count - r.e_y[k]
+                };
+                r.w * (own - term(&r.e_r, &r.d_r))
+            })
+            .sum()
+    };
+    let mut alphas: Vec<f64> = start
+        .iter()
+        .map(|&a| a.clamp(ALPHA_MIN, ALPHA_MAX))
+        .collect();
+    for _ in 0..5000 {
+        let mut change = 0.0f64;
+        for k in 0..n {
+            let old = alphas[k];
+            let at = |a: f64, alphas: &mut Vec<f64>| {
+                alphas[k] = a;
+                partial(alphas, k)
+            };
+            let new = coordinate_root(old, |a| at(a, &mut alphas));
+            alphas[k] = new;
+            change = change.max((new / old).ln().abs());
+        }
+        if change < 1e-13 {
+            break;
+        }
+    }
+    Ok(alphas)
+}
+
+/// The root in `[ALPHA_MIN, ALPHA_MAX]` of a partial derivative `f` that
+/// falls through 0 at the coordinate's maximum, or the bound it is clamped
+/// to. Brackets around `start` first, then the Illinois method on
+/// `ln α`, which converges in a handful of evaluations.
+fn coordinate_root(start: f64, mut f: impl FnMut(f64) -> f64) -> f64 {
+    let (mut lo, mut hi) = ((start / 1.5).max(ALPHA_MIN), (start * 1.5).min(ALPHA_MAX));
+    let (mut f_lo, mut f_hi) = (f(lo), f(hi));
+    while f_lo <= 0.0 && lo > ALPHA_MIN {
+        hi = lo;
+        f_hi = f_lo;
+        lo = (lo / 4.0).max(ALPHA_MIN);
+        f_lo = f(lo);
+    }
+    if f_lo <= 0.0 {
+        return ALPHA_MIN;
+    }
+    while f_hi > 0.0 && hi < ALPHA_MAX {
+        lo = hi;
+        f_lo = f_hi;
+        hi = (hi * 4.0).min(ALPHA_MAX);
+        f_hi = f(hi);
+    }
+    if f_hi > 0.0 {
+        return ALPHA_MAX;
+    }
+    // Illinois on x = ln α: f(lo) > 0 ≥ f(hi).
+    let (mut x0, mut x1) = (lo.ln(), hi.ln());
+    let (mut f0, mut f1) = (f_lo, f_hi);
+    let mut side = 0;
+    for _ in 0..200 {
+        let x = (x0 * f1 - x1 * f0) / (f1 - f0);
+        if !(x > x0.min(x1) && x < x0.max(x1)) || (x1 - x0).abs() <= 1e-15 * x1.abs().max(1.0) {
+            break;
+        }
+        let fx = f(x.exp());
+        if fx > 0.0 {
+            x0 = x;
+            f0 = fx;
+            if side == -1 {
+                f1 *= 0.5;
+            }
+            side = -1;
+        } else {
+            x1 = x;
+            f1 = fx;
+            if side == 1 {
+                f0 *= 0.5;
+            }
+            side = 1;
+        }
+        if fx == 0.0 {
+            return x.exp();
+        }
+    }
+    (0.5 * (x0 + x1)).exp()
 }
 
 /// `Σ_uncensored w / Σ w ln(y / r)`.
@@ -549,13 +714,15 @@ mod tests {
             fit.alphas()
         );
         assert!(fit.layer(1e4, 1e4) > 0.0);
+        // Draws reach 40,000 exactly only below it, so a whole-distribution
+        // fit at the same point works too.
         assert!(
             PiecewisePareto::fit(
                 vec![1000.0, 3000.0],
                 &data,
                 Some((40_000.0, Truncation::WholeDistribution)),
             )
-            .is_err()
+            .is_ok()
         );
     }
 
@@ -607,6 +774,73 @@ mod tests {
         let draws = p.sample(&mut StreamRng::new(9, 0), 100_000);
         let g = Gpd::fit_riegel(t, &LargeLosses::new(draws).unwrap()).unwrap();
         assert!(((t / g.beta()) * g.xi() - 1.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn whole_truncated_piecewise_fit_maximizes_the_likelihood() {
+        let t = vec![1000.0, 2500.0, 8000.0];
+        let tr = 60_000.0;
+        let data = LargeLosses::new(vec![
+            1100.0, 1300.0, 1750.0, 2000.0, 2600.0, 3500.0, 4100.0, 5200.0, 7000.0, 9000.0,
+            12_000.0, 18_000.0, 25_000.0, 40_000.0,
+        ])
+        .unwrap()
+        .reporting_thresholds(vec![
+            0.0, 1200.0, 0.0, 1500.0, 0.0, 0.0, 3000.0, 0.0, 0.0, 5000.0, 0.0, 0.0, 0.0, 0.0,
+        ])
+        .unwrap()
+        .censored(vec![
+            false, false, false, false, false, true, false, false, false, false, true, false,
+            false, true,
+        ])
+        .unwrap();
+        let ll = |alphas: &[f64]| -> f64 {
+            let open = PiecewisePareto::new(t.clone(), alphas.to_vec()).unwrap();
+            let pp = open
+                .clone()
+                .truncated(tr, Truncation::WholeDistribution)
+                .unwrap();
+            let mass = 1.0 - open.survival(tr);
+            (0..data.len())
+                .map(|i| {
+                    let (y, r) = (data.values[i], data.reporting[i].max(t[0]));
+                    let own = if data.censored[i] {
+                        pp.survival(y).ln()
+                    } else {
+                        // Density α_k S(y) / (y (1 − S(T))), S untruncated.
+                        let k = t.partition_point(|&x| x <= y) - 1;
+                        (alphas[k] * open.survival(y) / (y * mass)).ln()
+                    };
+                    own - pp.survival(r).ln()
+                })
+                .sum()
+        };
+        let fit = PiecewisePareto::fit(t.clone(), &data, Some((tr, Truncation::WholeDistribution)))
+            .unwrap();
+        let a = fit.alphas().to_vec();
+        let best = ll(&a);
+        for k in 0..3 {
+            for f in [1.001, 0.999] {
+                let mut b = a.clone();
+                b[k] *= f;
+                assert!(ll(&b) < best, "{k} {f}");
+            }
+        }
+        // Recovery from simulated data.
+        let truth = PiecewisePareto::new(t.clone(), vec![1.2, 0.8, 1.5])
+            .unwrap()
+            .truncated(tr, Truncation::WholeDistribution)
+            .unwrap();
+        let draws = truth.sample(&mut StreamRng::new(13, 0), 100_000);
+        let fit = PiecewisePareto::fit(
+            t,
+            &LargeLosses::new(draws).unwrap(),
+            Some((tr, Truncation::WholeDistribution)),
+        )
+        .unwrap();
+        for (got, want) in fit.alphas().iter().zip(truth.alphas()) {
+            assert!((got / want - 1.0).abs() < 0.05, "{got} {want}");
+        }
     }
 
     #[test]
