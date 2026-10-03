@@ -8,6 +8,7 @@ use act_math::special::{norm_cdf, norm_pdf};
 
 use crate::distribution::{Distribution, check_probability};
 use crate::pareto::{invalid, power_integral, raw_integral};
+use crate::piecewise_pareto::PiecewisePareto;
 use crate::severity::Severity;
 
 /// Log-affine local Pareto: above the threshold `t` the local Pareto alpha
@@ -231,6 +232,200 @@ impl Severity for LogAffinePareto {
     }
 }
 
+/// Settings for [`local_pareto_to_piecewise`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LocalParetoConversion {
+    /// Largest relative error allowed in the survival function on the
+    /// approximated range.
+    pub rel_tolerance: f64,
+    /// Stop once the survival function falls below this.
+    pub stop_survival: f64,
+    /// Stop at this amount.
+    pub stop_at: f64,
+}
+
+impl Default for LocalParetoConversion {
+    /// Relative error `1e-4`, approximated until `S < 1e-9` (or forever).
+    fn default() -> Self {
+        Self {
+            rel_tolerance: 1e-4,
+            stop_survival: 1e-9,
+            stop_at: f64::INFINITY,
+        }
+    }
+}
+
+/// A piecewise Pareto approximation of a local Pareto distribution, with
+/// the largest relative error of its survival function found at the
+/// checked points.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocalParetoApproximation {
+    pub severity: PiecewisePareto,
+    pub max_relative_error: f64,
+    /// Where the approximated range ends: above it the last piece's alpha,
+    /// the local alpha there, continues unchanged.
+    pub approximated_to: f64,
+}
+
+/// Converts the local Pareto distribution with local alpha `alpha(x)` above
+/// the threshold `t` (and `P(X > x) = 1` below it) to a piecewise Pareto.
+///
+/// With `L = ln(x/t)`, `ln S = −A(L)` where `A(L) = ∫_0^L α(t e^v) dv`. A
+/// piecewise Pareto is a chord interpolant of `A` that matches `S` exactly
+/// at its thresholds, so its relative error in `S` on a piece is
+/// `exp(d) − 1` with `d` the gap between `A` and its chord. Pieces are
+/// grown greedily, each as long as possible with that error within
+/// `rel_tolerance` at 16 checked interior points, `A` coming from 8-point
+/// Gauss–Legendre integration. The conversion stops at
+/// `options.stop_at` or where `S` falls below `options.stop_survival`, and
+/// the local alpha there continues as the tail. `alpha` must be finite and
+/// non-negative, and positive at the end.
+///
+/// ```
+/// use act_prob::{Distribution, LogAffinePareto, local_pareto_to_piecewise, LocalParetoConversion};
+///
+/// let exact = LogAffinePareto::new(1000.0, 1.5, 0.4).unwrap();
+/// let approx = local_pareto_to_piecewise(1000.0, |x| exact.local_alpha(x),
+///     LocalParetoConversion::default()).unwrap();
+/// let x = 7_777.0;
+/// assert!((approx.severity.survival(x) / exact.survival(x) - 1.0).abs() < 1e-4);
+/// ```
+pub fn local_pareto_to_piecewise(
+    t: f64,
+    alpha: impl Fn(f64) -> f64,
+    options: LocalParetoConversion,
+) -> Result<LocalParetoApproximation> {
+    if !t.is_finite() || t <= 0.0 {
+        return Err(invalid("t", t, "must be finite and positive"));
+    }
+    let tol = options.rel_tolerance;
+    if !(tol > 0.0 && tol < 1.0) {
+        return Err(invalid("rel_tolerance", tol, "must be in (0, 1)"));
+    }
+    if !(options.stop_survival > 0.0 && options.stop_survival < 1.0) {
+        return Err(invalid(
+            "stop_survival",
+            options.stop_survival,
+            "must be in (0, 1)",
+        ));
+    }
+    if options.stop_at.is_nan() || options.stop_at <= t {
+        return Err(invalid("stop_at", options.stop_at, "must be above t"));
+    }
+    let a = |v: f64| -> Result<f64> {
+        let x = t * v.exp();
+        let al = alpha(x);
+        if !al.is_finite() || al < 0.0 {
+            return Err(invalid("alpha", al, "must be finite and non-negative"));
+        }
+        Ok(al)
+    };
+    let integrate = |lo: f64, hi: f64| -> Result<f64> { gauss_legendre(&a, lo, hi) };
+    let l_stop = (options.stop_at / t).ln();
+    let (mut thresholds, mut alphas) = (vec![t], Vec::new());
+    let (mut l0, mut a0) = (0.0f64, 0.0f64);
+    let mut h = 0.1f64;
+    let mut max_err = 0.0f64;
+    // One piece [l0, l0 + h]: (rise of A, largest relative error in S).
+    let piece = |l0: f64, h: f64| -> Result<(f64, f64)> {
+        const CHECKS: usize = 16;
+        let mut cum = Vec::with_capacity(CHECKS);
+        let mut acc = 0.0;
+        for j in 0..CHECKS {
+            let (lo, hi) = (
+                h * j as f64 / CHECKS as f64,
+                h * (j + 1) as f64 / CHECKS as f64,
+            );
+            acc += integrate(l0 + lo, l0 + hi)?;
+            cum.push(acc);
+        }
+        let rise = acc;
+        let slope = rise / h;
+        let gap = cum[..CHECKS - 1]
+            .iter()
+            .enumerate()
+            .map(|(j, &c)| (c - slope * h * (j + 1) as f64 / CHECKS as f64).abs())
+            .fold(0.0, f64::max);
+        Ok((rise, gap.exp_m1()))
+    };
+    for _ in 0..100_000 {
+        if l0 >= l_stop || -a0 < options.stop_survival.ln() {
+            break;
+        }
+        // Grow while the piece is within tolerance, then shrink until it is.
+        let mut ok = piece(l0, h)?;
+        if ok.1 <= tol {
+            loop {
+                let next = piece(l0, 2.0 * h)?;
+                if next.1 > tol || h > 1e3 {
+                    break;
+                }
+                h *= 2.0;
+                ok = next;
+            }
+        } else {
+            while ok.1 > tol {
+                h *= 0.5;
+                if h < 1e-12 {
+                    return Err(invalid(
+                        "alpha",
+                        t * l0.exp(),
+                        "varies too fast to approximate here",
+                    ));
+                }
+                ok = piece(l0, h)?;
+            }
+        }
+        // Never step past the stop point.
+        if l0 + h > l_stop {
+            h = l_stop - l0;
+            ok = piece(l0, h)?;
+        }
+        alphas.push(ok.0 / h);
+        max_err = max_err.max(ok.1);
+        l0 += h;
+        a0 += ok.0;
+        thresholds.push(t * l0.exp());
+    }
+    let x_end = t * l0.exp();
+    let tail = a(l0)?;
+    if tail <= 0.0 {
+        return Err(invalid(
+            "alpha",
+            tail,
+            "must be positive where the conversion stops",
+        ));
+    }
+    alphas.push(tail);
+    Ok(LocalParetoApproximation {
+        severity: PiecewisePareto::new(thresholds, alphas)?,
+        max_relative_error: max_err,
+        approximated_to: x_end,
+    })
+}
+
+/// `∫_lo^hi f` by 8-point Gauss–Legendre.
+fn gauss_legendre(f: &impl Fn(f64) -> Result<f64>, lo: f64, hi: f64) -> Result<f64> {
+    const X: [f64; 4] = [
+        0.183_434_642_495_649_8,
+        0.525_532_409_916_329,
+        0.796_666_477_413_626_7,
+        0.960_289_856_497_536_3,
+    ];
+    const W: [f64; 4] = [
+        0.362_683_783_378_362,
+        0.313_706_645_877_887_3,
+        0.222_381_034_453_374_5,
+        0.101_228_536_290_376_3,
+    ];
+    let (mid, half) = (0.5 * (lo + hi), 0.5 * (hi - lo));
+    let mut sum = 0.0;
+    for (x, w) in X.iter().zip(W) {
+        sum += w * (f(mid - half * x)? + f(mid + half * x)?);
+    }
+    Ok(sum * half)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +530,77 @@ mod tests {
         assert!(LogAffinePareto::new(1.0, 0.0, 0.0).is_err());
         assert!(LogAffinePareto::new(1.0, 1.0, -0.1).is_err());
         assert!(LogAffinePareto::from_delta(1.0, 1.0, -0.1).is_err());
+    }
+
+    #[test]
+    fn conversion_reproduces_the_log_affine_survival() {
+        let exact = LogAffinePareto::new(1000.0, 1.2, 0.6).unwrap();
+        for tol in [1e-3, 1e-5] {
+            let opts = LocalParetoConversion {
+                rel_tolerance: tol,
+                ..LocalParetoConversion::default()
+            };
+            let approx = local_pareto_to_piecewise(1000.0, |x| exact.local_alpha(x), opts).unwrap();
+            assert!(approx.max_relative_error <= tol);
+            let end = approx.approximated_to;
+            assert!(exact.survival(end) < 1.0001e-9);
+            let mut x = 1000.0;
+            while x < end {
+                let r = approx.severity.survival(x) / exact.survival(x) - 1.0;
+                assert!(r.abs() <= 1.01 * tol, "{tol} {x} {r}");
+                x *= 1.07;
+            }
+            // Matches exactly at every threshold.
+            for &th in approx.severity.thresholds() {
+                if th < end {
+                    let r = approx.severity.survival(th) / exact.survival(th) - 1.0;
+                    assert!(r.abs() < 1e-12, "{th} {r}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn conversion_of_constant_and_wavy_alphas() {
+        // A constant alpha is one Pareto, at any tolerance.
+        let approx = local_pareto_to_piecewise(
+            10.0,
+            |_| 2.5,
+            LocalParetoConversion {
+                stop_at: 1e4,
+                ..LocalParetoConversion::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            approx
+                .severity
+                .alphas()
+                .iter()
+                .all(|&a| (a - 2.5).abs() < 1e-12)
+        );
+        assert!(approx.max_relative_error < 1e-12);
+        // A wavy alpha: the survival function by direct integration.
+        let alpha = |x: f64| 1.5 + 0.8 * (x / 100.0).ln().sin();
+        let opts = LocalParetoConversion {
+            rel_tolerance: 1e-6,
+            stop_survival: 1e-6,
+            ..LocalParetoConversion::default()
+        };
+        let approx = local_pareto_to_piecewise(100.0, alpha, opts).unwrap();
+        for x in [150.0, 1000.0, 1e4, 3e4] {
+            if x > approx.approximated_to {
+                continue;
+            }
+            // A(L) = 1.5 L + 0.8 (1 − cos L).
+            let l = (x / 100.0f64).ln();
+            let want = (-(1.5 * l + 0.8 * (1.0 - l.cos()))).exp();
+            let r = approx.severity.survival(x) / want - 1.0;
+            assert!(r.abs() <= 1.01e-6, "{x} {r}");
+        }
+        assert!(
+            local_pareto_to_piecewise(1.0, |_| -1.0, LocalParetoConversion::default()).is_err()
+        );
+        assert!(local_pareto_to_piecewise(0.0, |_| 1.0, LocalParetoConversion::default()).is_err());
     }
 }
