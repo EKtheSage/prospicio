@@ -1,0 +1,15 @@
+[package]
+name = "act-nn"
+description = "Neural networks on Burn behind the act-models interface: CANN first (docs/design/models.md)."
+version.workspace = true
+edition.workspace = true
+# Burn 0.21 needs Rust 1.92; this crate is opt-in, so the rest of the
+# workspace keeps its lower minimum.
+rust-version = "1.92"
+publish.workspace = true
+
+[dependencies]
+act-core.workspace = true
+act-models.workspace = true
+act-prob.workspace = true
+burn = { version = "0.21", default-features = false, features = ["std", "ndarray", "autodiff"] }

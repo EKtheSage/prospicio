@@ -12,6 +12,7 @@ default-members = [
     "crates/act-models",
     "crates/act-glm",
     "crates/act-bayes",
+    "crates/act-nn",
     "validation",
     "xtask",
 ]
@@ -32,6 +33,7 @@ act-pricing = { path = "crates/act-pricing" }
 act-models = { path = "crates/act-models" }
 act-glm = { path = "crates/act-glm" }
 act-bayes = { path = "crates/act-bayes" }
+act-nn = { path = "crates/act-nn" }
 act-reserving = { path = "crates/act-reserving" }
 # PredictiveDistribution to and from Arrow IPC (act-prob's `arrow`
 # feature). 59.x is the last line that builds on rust-version 1.85.
