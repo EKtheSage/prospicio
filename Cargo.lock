@@ -22,6 +22,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "act-glm"
+version = "0.0.1"
+dependencies = [
+ "act-core",
+ "act-math",
+ "act-models",
+ "act-prob",
+]
+
+[[package]]
 name = "act-math"
 version = "0.0.1"
 dependencies = [
@@ -96,7 +106,9 @@ version = "0.0.1"
 dependencies = [
  "act-aggregate",
  "act-core",
+ "act-glm",
  "act-math",
+ "act-models",
  "act-pricing",
  "act-prob",
  "act-reserving",

@@ -29,6 +29,21 @@ models and compares them.
     Lorenz curve, lift bands, CRPS of draws, interval coverage;
   - `resample`: k-fold, grouped k-fold and time-ordered (calendar
     diagonal) splits, `cross_validate` and `grid_search`.
+- `act-glm`: `Glm` (family, link, dispersion fixed, Pearson or
+  deviance-based) fitted by IRLS with offsets and prior weights,
+  step-halving, and convergence on both the deviance and the coefficients;
+  `GlmFit` with coefficients, standard errors, p-values, deviance, null
+  deviance, dispersion, log-likelihood and AIC (statsmodels' conventions);
+  `predict`, and `predict_distribution` drawing `β` from its normal
+  approximation and each row's response from the family.
+  `Glm::over_dispersed_poisson()` reproduces the Chain Ladder on a
+  triangle's origin and development factors (tested).
+- Parity: `validation/reference/glm_statsmodels.csv`
+  (`validation/scripts/statsmodels_glm.py`): 10 GLMs on a synthetic
+  600-policy portfolio (Poisson with exposure offset, quasi-Poisson, gamma
+  with log and inverse links and with weights, inverse Gaussian, binomial
+  with trials, negative binomial, Gaussian, Tweedie with weights), 144
+  values at 1e-7 to 1e-9.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 
