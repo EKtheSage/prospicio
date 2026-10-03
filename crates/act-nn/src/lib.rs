@@ -14,19 +14,23 @@
 //! family's weighted deviance by Adam on mini-batches, on the CPU
 //! (`ndarray` backend, `f64`), and is reproducible from its seed.
 
+pub mod attention;
+
+pub use attention::{AttentionCann, AttentionCannFit, TokenAttention};
+
 use act_core::{Error, Result, StreamRng};
 use act_models::{Design, Family, Fitted, Link, Model};
 use act_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 use burn::backend::{Autodiff, NdArray};
-use burn::module::{AutodiffModule, Initializer, Module};
+use burn::module::{AutodiffModule, Initializer, Module, ModuleVisitor, Param};
 use burn::nn::{Linear, LinearConfig};
 use burn::optim::{AdamConfig, GradientsParams, Optimizer};
 use burn::tensor::activation::relu;
 use burn::tensor::backend::Backend;
 use burn::tensor::{Tensor, TensorData};
 
-type Cpu = NdArray<f64>;
-type Train = Autodiff<Cpu>;
+pub(crate) type Cpu = NdArray<f64>;
+pub(crate) type Train = Autodiff<Cpu>;
 
 /// The feed-forward correction: hidden ReLU layers, then a linear output
 /// initialized to zero.
@@ -97,22 +101,7 @@ impl Cann {
     }
 
     fn check(&self) -> Result<()> {
-        self.family.validate()?;
-        let ok = matches!(
-            (self.family, self.link),
-            (
-                Family::Poisson | Family::Gamma | Family::Tweedie { .. },
-                Link::Log
-            ) | (Family::Gaussian, Link::Identity)
-        );
-        if !ok {
-            return Err(Error::Data(format!(
-                "CANN supports Poisson, gamma and Tweedie with the log link and Gaussian \
-                 with the identity link, not {} with {:?}",
-                self.family.name(),
-                self.link
-            )));
-        }
+        check_family(self.family, self.link)?;
         if self.batch_size == 0 || self.learning_rate.is_nan() || self.learning_rate <= 0.0 {
             return Err(Error::InvalidParameter {
                 name: "batch_size",
@@ -124,15 +113,98 @@ impl Cann {
     }
 }
 
+/// The families and links the networks support: Poisson, gamma and
+/// Tweedie with the log link, Gaussian with the identity link.
+pub(crate) fn check_family(family: Family, link: Link) -> Result<()> {
+    family.validate()?;
+    let ok = matches!(
+        (family, link),
+        (
+            Family::Poisson | Family::Gamma | Family::Tweedie { .. },
+            Link::Log
+        ) | (Family::Gaussian, Link::Identity)
+    );
+    if !ok {
+        return Err(Error::Data(format!(
+            "the networks support Poisson, gamma and Tweedie with the log link and Gaussian \
+             with the identity link, not {} with {:?}",
+            family.name(),
+            link
+        )));
+    }
+    Ok(())
+}
+
+/// Draws each row's response from the family at its mean (process
+/// uncertainty only), components keyed `row = 0, 1, …`.
+pub(crate) fn process_draws(
+    family: Family,
+    dispersion: f64,
+    mu: &[f64],
+    weights: &[f64],
+    n_sims: usize,
+    seed: u64,
+    provenance: Provenance,
+) -> Result<PredictiveDistribution> {
+    let components: Vec<ComponentKey> = (0..mu.len())
+        .map(|i| vec![KeyValue::from(i as i64)])
+        .collect();
+    PredictiveDistribution::simulate(
+        vec!["row".into()],
+        components,
+        n_sims,
+        seed,
+        provenance,
+        |rng, row| {
+            for (i, out) in row.iter_mut().enumerate() {
+                *out = family
+                    .draw(mu[i], dispersion, weights[i], rng.next_open01())
+                    .unwrap_or(f64::NAN);
+            }
+        },
+    )
+}
+
+/// Builds a network with the backend's generator seeded by `seed`.
+///
+/// Burn's generator is global to the backend and its parameters are
+/// initialized lazily, on first use. So that a fit is reproducible however
+/// many run in parallel, a lock makes seed, build and initialization of
+/// every parameter one atomic step. Training itself draws nothing (no
+/// dropout).
+pub(crate) fn seeded<B: Backend, M: Module<B>>(
+    device: &B::Device,
+    seed: u64,
+    init: impl FnOnce() -> M,
+) -> M {
+    static INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = INIT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    B::seed(device, seed);
+    let module = init();
+    module.visit(&mut Materialize);
+    module
+}
+
+/// Initializes every float parameter it visits.
+struct Materialize;
+
+impl<B: Backend> ModuleVisitor<B> for Materialize {
+    fn visit_float<const D: usize>(&mut self, param: &Param<Tensor<B, D>>) {
+        let _ = param.val();
+    }
+}
+
 /// Per-column centring and scaling learned on the training design.
 #[derive(Debug, Clone, PartialEq)]
-struct Scaling {
+pub(crate) struct Scaling {
     mean: Vec<f64>,
     scale: Vec<f64>,
 }
 
 impl Scaling {
-    fn fit(design: &Design) -> Self {
+    pub(crate) fn fit(design: &Design) -> Self {
         let n = design.n_rows() as f64;
         let (mut mean, mut scale) = (Vec::new(), Vec::new());
         for j in 0..design.n_cols() {
@@ -146,7 +218,7 @@ impl Scaling {
     }
 
     /// Row-major `n × p` standardized features.
-    fn apply(&self, design: &Design) -> Vec<f64> {
+    pub(crate) fn apply(&self, design: &Design) -> Vec<f64> {
         let (n, p) = (design.n_rows(), design.n_cols());
         let mut out = vec![0.0; n * p];
         for j in 0..p {
@@ -160,7 +232,7 @@ impl Scaling {
 
 /// The training loss: the family's deviance up to terms constant in `η`,
 /// weighted, averaged over the batch.
-fn loss<B: Backend>(
+pub(crate) fn loss<B: Backend>(
     family: Family,
     eta: Tensor<B, 1>,
     y: Tensor<B, 1>,
@@ -203,10 +275,10 @@ impl Model for Cann {
             });
         }
         let device = Default::default();
-        Train::seed(&device, self.seed);
         let scaling = Scaling::fit(design);
         let x = scaling.apply(design);
-        let mut net: Net<Train> = Net::new(p, &self.hidden, &device);
+        let mut net: Net<Train> =
+            seeded::<Train, _>(&device, self.seed, || Net::new(p, &self.hidden, &device));
         let mut optimizer = AdamConfig::new().init();
         let (offset, w) = (design.offset(), design.weights());
         let mut order: Vec<usize> = (0..n).collect();
@@ -323,30 +395,20 @@ impl Fitted for CannFit {
         seed: u64,
     ) -> Result<PredictiveDistribution> {
         let mu = self.predict(design)?;
-        let n = design.n_rows();
-        let components: Vec<ComponentKey> =
-            (0..n).map(|i| vec![KeyValue::from(i as i64)]).collect();
-        let (family, phi) = (self.spec.family, self.dispersion);
-        let weights = design.weights().to_vec();
         let provenance = Provenance::new("cann")
             .version("act-nn", env!("CARGO_PKG_VERSION"))
-            .param("family", family.name())
+            .param("family", self.spec.family.name())
             .param("hidden", format!("{:?}", self.spec.hidden))
             .param("epochs", self.spec.epochs)
             .param("training_seed", self.spec.seed);
-        PredictiveDistribution::simulate(
-            vec!["row".into()],
-            components,
+        process_draws(
+            self.spec.family,
+            self.dispersion,
+            &mu,
+            design.weights(),
             n_sims,
             seed,
             provenance,
-            |rng, row| {
-                for (i, out) in row.iter_mut().enumerate() {
-                    *out = family
-                        .draw(mu[i], phi, weights[i], rng.next_open01())
-                        .unwrap_or(f64::NAN);
-                }
-            },
         )
     }
 }
