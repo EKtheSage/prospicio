@@ -50,7 +50,7 @@ def data():
     gauss = (100.0 + 2.0 * age + 30.0 * np.log(r) + rng.normal(0, 15, N)).round(3)
     # Tweedie pure premium: claims x gamma severities per unit exposure.
     pure = np.array([rng.gamma(2.0, 500.0, k).sum() for k in claims]) / exposure
-    # Non-linear in age, for GAMs; drawn last
+    # Non-linear in age, for GAMs (validation/scripts/r_gam.R); drawn last
     # so the columns above do not change.
     wavy = (50.0 + 20.0 * np.sin(age / 8.0) + rng.normal(0, 5, N)).round(3)
     wavy_claims = rng.poisson(exposure * np.exp(0.5 + 0.8 * np.sin(age / 8.0)))

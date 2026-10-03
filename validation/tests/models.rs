@@ -140,3 +140,75 @@ fn glms_match_statsmodels() {
         }
     });
 }
+
+#[test]
+fn gams_match_mgcv() {
+    use act_glm::gam::{Gam, GamFit, PSpline};
+    use act_models::Fitted;
+    let data = policies();
+    let cases = reference("gam_mgcv.csv");
+    let fit_case = |case: &str| -> GamFit {
+        let d = design(&data);
+        let log_exposure: Vec<f64> = numeric(&data, "exposure").iter().map(|e| e.ln()).collect();
+        let (glm, y, d, k) = match case {
+            "gaussian_identity" => (
+                Glm::new(Family::Gaussian, Link::Identity),
+                numeric(&data, "gauss"),
+                d,
+                10,
+            ),
+            "poisson_log" => (
+                Glm::new(Family::Poisson, Link::Log),
+                numeric(&data, "claims"),
+                d.with_offset(log_exposure).unwrap(),
+                10,
+            ),
+            "gamma_log" => (
+                Glm::new(Family::Gamma, Link::Log),
+                numeric(&data, "severity"),
+                d,
+                10,
+            ),
+            "wavy_gaussian" => (
+                Glm::new(Family::Gaussian, Link::Identity),
+                numeric(&data, "wavy"),
+                d,
+                12,
+            ),
+            "wavy_poisson" => (
+                Glm::new(Family::Poisson, Link::Log),
+                numeric(&data, "wavy_claims"),
+                d.with_offset(log_exposure).unwrap(),
+                12,
+            ),
+            other => panic!("unknown case {other}"),
+        };
+        Gam::new(glm, vec![PSpline::new("age").n_basis(k)])
+            .fit(&d, &y)
+            .unwrap_or_else(|e| panic!("{case}: {e}"))
+    };
+    let mut fits: Vec<(String, GamFit)> = Vec::new();
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !fits.iter().any(|(n, _)| n == name) {
+            fits.push((name.to_string(), fit_case(name)));
+        }
+        let fit = &fits.iter().find(|(n, _)| n == name).unwrap().1;
+        match c.get("quantity") {
+            "deviance" => Some(fit.deviance()),
+            "edf" => Some(fit.edf()),
+            "scale" => Some(fit.dispersion()),
+            "score" => Some(fit.score()),
+            "coef" => {
+                let j = fit.names().iter().position(|n| n == c.get("arg"))?;
+                Some(fit.coefficients()[j])
+            }
+            "fitted" => Some(fit.fitted()[c.number("arg")? as usize]),
+            _ => None,
+        }
+    });
+    // Predicting on the training design reproduces the fitted values.
+    let (_, fit) = &fits[0];
+    let pred = fit.predict(&design(&data)).unwrap();
+    assert!((pred[5] - fit.fitted()[5]).abs() < 1e-9);
+}

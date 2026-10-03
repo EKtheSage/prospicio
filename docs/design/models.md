@@ -44,6 +44,19 @@ models and compares them.
   with log and inverse links and with weights, inverse Gaussian, binomial
   with trials, negative binomial, Gaussian, Tweedie with weights), 144
   values at 1e-7 to 1e-9.
+- GAM (`act_glm::gam`): `Gam` = a `Glm` plus `PSpline` smooths, each
+  replacing a numeric design column with a cubic B-spline basis on
+  mgcv's `"ps"` knots, a second-order difference penalty, and mgcv's
+  sum-to-zero reparameterization. Penalized IRLS; smoothing parameters by
+  GCV (estimated dispersion) or UBRE (fixed), mgcv's `GCV.Cp`, searched on
+  `ln λ` (one smooth) or by coordinate passes (several); or fixed.
+  `GamFit` has effective degrees of freedom, the Bayesian posterior
+  covariance `φ (XᵀWX + S)⁻¹` (mgcv's `Vp`), and the same `predict` and
+  `predict_distribution`. Parity: `validation/reference/gam_mgcv.csv`
+  (`validation/scripts/r_gam.R`), five GAMs (Gaussian, Poisson with
+  offset, gamma): deviance, edf, scale, score, a coefficient and fitted
+  values, at 1e-5 to 1e-6 where the smooth is clearly non-linear and
+  looser where the optimal smoothing is effectively infinite.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 
