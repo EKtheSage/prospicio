@@ -315,8 +315,15 @@ for fixed `k = α_ini/α_tail` the tail alpha is a closed form, so it is a
 one-dimensional profile likelihood in `k`, solved by bisection on its
 analytic score. R's optimizer stops about `2e-5` short of the maximum
 (our estimate has the higher likelihood at 40 digits), so those parity
-rows use `1e-4`. Fits of the local Pareto, and of a piecewise Pareto
-truncated as a whole, come later.
+rows use `1e-4`. `PiecewisePareto::fit` with
+`Truncation::WholeDistribution` maximizes the coupled likelihood by
+coordinate ascent from the untruncated estimates (each alpha by the
+Illinois method on its analytic partial derivative, clamped to
+`[1e-3, 1e3]`), with `S(a) − S(T)` computed without cancellation. Our
+estimates have the higher likelihood than R's in every case; R stops up to
+`2e-3` away (compared at `5e-3`), and on a weighted data set whose
+likelihood is nearly flat it stops 70% away, so that case is left out of
+the parity rows. Fits of the local Pareto come later.
 `LogAffinePareto` (`new(t, α₀, γ)` or `from_delta(t, α₀, δ)`) has its
 layer moments in closed form as above, through the Mills ratio
 (`erfc` below `z = 26`, a continued fraction beyond), so layers far in

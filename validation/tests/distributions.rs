@@ -355,7 +355,13 @@ fn pareto_fits_match_r() {
                 let fit = PiecewisePareto::fit(
                     t,
                     &data,
-                    truncation.map(|tr| (tr, Truncation::LastPiece)),
+                    truncation.map(|tr| {
+                        let kind = match fields.get("type") {
+                            Some(&"wd") => Truncation::WholeDistribution,
+                            _ => Truncation::LastPiece,
+                        };
+                        (tr, kind)
+                    }),
                 )
                 .ok()?;
                 fit.alphas().get(index).copied()
