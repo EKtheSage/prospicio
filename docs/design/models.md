@@ -1,6 +1,6 @@
 # Design note: models and their life cycle
 
-Status: **Proposed** · v0.5 onward · Depends on: `distributions.md`, `predictive-distribution.md`, `triangle.md` · Lane: Models
+Status: **In progress** · v0.5 onward · Depends on: `distributions.md`, `predictive-distribution.md`, `triangle.md` · Lane: Models
 
 ## Goal
 
@@ -11,6 +11,26 @@ and monitor. Every model returns the shared distribution objects, so its
 output feeds aggregation, reinsurance, risk measures and capital like any
 other result. The same machinery fits a reserving triangle with several
 models and compares them.
+
+## What exists
+
+- `act-models`:
+  - `Family` (Gaussian, Poisson, gamma, inverse Gaussian, binomial,
+    negative binomial, Tweedie) with variance function, unit deviance,
+    log-likelihood as statsmodels defines it, and `draw` (the response's
+    process noise, through the `act-prob` distributions);
+  - `Link` (identity, log, logit, probit, cloglog, inverse, inverse
+    squared, power);
+  - `Terms` → `Coding` → `Design`: factor coding learned on training data
+    and replayed on new data (unseen levels are an error), with offset and
+    weights;
+  - the `Model` and `Fitted` traits;
+  - `metrics`: deviance, mean deviance, RMSE, MAE, Gini of the ordered
+    Lorenz curve, lift bands, CRPS of draws, interval coverage;
+  - `resample`: k-fold, grouped k-fold and time-ordered (calendar
+    diagonal) splits, `cross_validate` and `grid_search`.
+- Decision: families and links are closed enums, like `Distortion`, so a
+  fitted model serializes as data.
 
 ## Crates
 
