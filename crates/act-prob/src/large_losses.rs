@@ -9,6 +9,7 @@
 //! Weights count a loss several times (or a fraction of a time).
 
 use act_core::Result;
+use act_math::roots::{bisect, bisect_log, illinois};
 
 use crate::evt::Gpd;
 use crate::pareto::invalid;
@@ -349,18 +350,11 @@ impl Gpd {
             ));
         }
         // The score falls through 0 at the maximum, between the neighbours.
-        let (mut lo, mut hi) = (at(best - 1), at(best + 1));
-        for _ in 0..200 {
-            let mid = (lo * hi).sqrt();
-            if mid <= lo || mid >= hi {
-                break;
-            }
-            match score(mid) {
-                Some(s) if s > 0.0 => lo = mid,
-                _ => hi = mid,
-            }
-        }
-        let k = (lo * hi).sqrt();
+        let k = bisect_log(
+            at(best - 1),
+            at(best + 1),
+            |k| matches!(score(k), Some(s) if s > 0.0),
+        );
         let alpha_tail = count / exposure(k).0;
         Gpd::riegel(t, k * alpha_tail, alpha_tail)
     }
@@ -491,35 +485,7 @@ fn coordinate_root(start: f64, mut f: impl FnMut(f64) -> f64) -> f64 {
         return ALPHA_MAX;
     }
     // Illinois on x = ln α: f(lo) > 0 ≥ f(hi).
-    let (mut x0, mut x1) = (lo.ln(), hi.ln());
-    let (mut f0, mut f1) = (f_lo, f_hi);
-    let mut side = 0;
-    for _ in 0..200 {
-        let x = (x0 * f1 - x1 * f0) / (f1 - f0);
-        if !(x > x0.min(x1) && x < x0.max(x1)) || (x1 - x0).abs() <= 1e-15 * x1.abs().max(1.0) {
-            break;
-        }
-        let fx = f(x.exp());
-        if fx > 0.0 {
-            x0 = x;
-            f0 = fx;
-            if side == -1 {
-                f1 *= 0.5;
-            }
-            side = -1;
-        } else {
-            x1 = x;
-            f1 = fx;
-            if side == 1 {
-                f0 *= 0.5;
-            }
-            side = 1;
-        }
-        if fx == 0.0 {
-            return x.exp();
-        }
-    }
-    (0.5 * (x0 + x1)).exp()
+    illinois(lo.ln(), hi.ln(), f_lo, f_hi, |x| f(x.exp())).exp()
 }
 
 /// `Σ_uncensored w / Σ w ln(y / r)`.
@@ -586,19 +552,7 @@ fn truncated_alpha(losses: &[(f64, f64, bool, f64)], tr: f64) -> Result<f64> {
     let Some(j) = (1..=steps).find(|&j| score(at(j)) <= 0.0) else {
         return Ok(ALPHA_MAX);
     };
-    let (mut lo, mut hi) = (at(j - 1), at(j));
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if mid <= lo || mid >= hi {
-            break;
-        }
-        if score(mid) > 0.0 {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    Ok(0.5 * (lo + hi))
+    Ok(bisect(at(j - 1), at(j), |a| score(a) > 0.0))
 }
 
 #[cfg(test)]

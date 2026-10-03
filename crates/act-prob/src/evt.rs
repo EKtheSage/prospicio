@@ -7,6 +7,7 @@
 //! the share of draws above `u` (see `docs/design/risk.md`).
 
 use act_core::{Error, Result};
+use act_math::roots::bisect;
 
 use crate::distribution::{Distribution, check_probability};
 use crate::severity::Severity;
@@ -239,18 +240,7 @@ impl Gpd {
             }
         }
         let theta = if score(a) > 0.0 && score(b) < 0.0 {
-            for _ in 0..200 {
-                let mid = 0.5 * (a + b);
-                if mid == a || mid == b {
-                    break;
-                }
-                if score(mid) > 0.0 {
-                    a = mid;
-                } else {
-                    b = mid;
-                }
-            }
-            0.5 * (a + b)
+            bisect(a, b, |t| score(t) > 0.0)
         } else {
             // The maximum is at the edge of the scan; keep the best point.
             theta_at(best_k)

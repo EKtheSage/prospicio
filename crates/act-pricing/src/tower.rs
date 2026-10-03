@@ -7,6 +7,9 @@
 //! implemented from the paper as restated in `docs/design/pareto.md`.
 
 use act_core::{Error, Result};
+use act_math::linalg::solve;
+use act_math::optimize::minimize;
+use act_math::roots::bisect;
 use act_prob::{PiecewisePareto, Severity, Truncation};
 use microlp::{ComparisonOp, LinearExpr, OptimizationDirection, Problem};
 
@@ -644,7 +647,7 @@ impl Completion<'_> {
         let gram: Vec<f64> = (0..r * r)
             .map(|k| dot(&rows[k / r], &rows[k % r]))
             .collect();
-        let y = gauss_solve(gram, residual, r)?;
+        let y = solve(gram, residual, r)?;
         let mut x = x0;
         for (i, row) in rows.iter().enumerate() {
             for (xj, aj) in x.iter_mut().zip(row) {
@@ -679,7 +682,7 @@ impl Completion<'_> {
                     }
                 }
             }
-            let step = gauss_solve(hess, grad.clone(), k)?;
+            let step = solve(hess, grad.clone(), k)?;
             let decrement = dot(&grad, &step);
             if decrement < 1e-24 {
                 break;
@@ -775,34 +778,6 @@ fn reduce(a: &[Vec<f64>], b: &[f64]) -> Option<(Vec<Vec<f64>>, Vec<f64>, Vec<Vec
         })
         .collect();
     Some((rows, rhs, null))
-}
-
-/// Solves the `n × n` system `a x = b` (row-major) by Gaussian elimination
-/// with partial pivoting; `None` if it is singular.
-fn gauss_solve(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
-    for col in 0..n {
-        let p = (col..n).max_by(|&i, &j| a[i * n + col].abs().total_cmp(&a[j * n + col].abs()))?;
-        if a[p * n + col] == 0.0 || !a[p * n + col].is_finite() {
-            return None;
-        }
-        for j in 0..n {
-            a.swap(col * n + j, p * n + j);
-        }
-        b.swap(col, p);
-        for i in col + 1..n {
-            let f = a[i * n + col] / a[col * n + col];
-            for j in col..n {
-                a[i * n + j] -= f * a[col * n + j];
-            }
-            b[i] -= f * b[col];
-        }
-    }
-    let mut x = vec![0.0; n];
-    for i in (0..n).rev() {
-        let s: f64 = (i + 1..n).map(|j| a[i * n + j] * x[j]).sum();
-        x[i] = (b[i] - s) / a[i * n + i];
-    }
-    Some(x)
 }
 
 /// Frequencies above each attachment point: given, or from the alpha
@@ -902,13 +877,13 @@ impl LayerFit {
         let tau_l = if single >= self.loss {
             self.a
         } else {
-            root_increasing(self.a, self.b, self.loss, |tau| self.lambda(tau, 0.0))
+            bisect(self.a, self.b, |tau| self.lambda(tau, 0.0) < self.loss)
         };
         let tau_u = if single <= self.loss {
             self.b
         } else {
-            root_increasing(self.a, self.b, self.loss, |tau| {
-                self.lambda(tau, self.alpha_cap(tau))
+            bisect(self.a, self.b, |tau| {
+                self.lambda(tau, self.alpha_cap(tau)) < self.loss
             })
         };
         (tau_l, tau_u)
@@ -916,9 +891,9 @@ impl LayerFit {
 
     /// The lower alpha that matches the layer's loss at `τ`.
     fn alpha_at(&self, tau: f64) -> f64 {
-        // λ falls in α on [0, cap]: bisection on its negative.
+        // λ falls in α on [0, cap].
         let cap = self.alpha_cap(tau);
-        root_increasing(0.0, cap, -self.loss, |alpha| -self.lambda(tau, alpha))
+        bisect(0.0, cap, |alpha| self.lambda(tau, alpha) > self.loss)
     }
 
     /// The pieces under `rule`.
@@ -960,54 +935,6 @@ fn piece_integral(a: f64, b: f64, alpha: f64) -> f64 {
     let z = (1.0 - alpha) * l;
     let exprel = if z == 0.0 { 1.0 } else { z.exp_m1() / z };
     a * l * exprel
-}
-
-/// The `x` in `(lo, hi)` with `f(x) = target`, for `f` increasing, by
-/// bisection to full precision. Never returns an end point.
-fn root_increasing(lo: f64, hi: f64, target: f64, f: impl Fn(f64) -> f64) -> f64 {
-    let (mut lo, mut hi) = (lo, hi);
-    for _ in 0..300 {
-        let mid = 0.5 * (lo + hi);
-        if mid <= lo || mid >= hi {
-            break;
-        }
-        if f(mid) < target {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    0.5 * (lo + hi)
-}
-
-/// Minimizes `f` on the open interval `(lo, hi)`: a scan for the best
-/// cell, then golden-section search inside it.
-fn minimize(lo: f64, hi: f64, f: impl Fn(f64) -> f64) -> f64 {
-    const CELLS: usize = 64;
-    let h = (hi - lo) / CELLS as f64;
-    let x = |j: usize| lo + h * j as f64;
-    let best = (1..CELLS)
-        .min_by(|&i, &j| f(x(i)).total_cmp(&f(x(j))))
-        .expect("CELLS > 1");
-    let (mut a, mut b) = (x(best - 1), x(best + 1));
-    let g = 0.5 * (5f64.sqrt() - 1.0);
-    let (mut c, mut d) = (b - g * (b - a), a + g * (b - a));
-    let (mut fc, mut fd) = (f(c), f(d));
-    for _ in 0..200 {
-        if b - a <= 1e-15 * b.abs() {
-            break;
-        }
-        if fc < fd {
-            (b, d, fd) = (d, c, fc);
-            c = b - g * (b - a);
-            fc = f(c);
-        } else {
-            (a, c, fc) = (c, d, fd);
-            d = a + g * (b - a);
-            fd = f(d);
-        }
-    }
-    0.5 * (a + b)
 }
 
 fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {

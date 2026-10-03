@@ -9,6 +9,7 @@
 //! reinsurance pricing alike. See `docs/design/pareto.md`.
 
 use act_core::{Error, Result};
+use act_math::roots::bisect;
 use act_prob::{Distribution, Pareto, Severity};
 
 /// The layer `limit` xs `attachment` (per loss), for the Pareto helpers.
@@ -248,7 +249,7 @@ fn pareto(t: f64, alpha: f64, truncation: Option<f64>) -> Result<Pareto> {
 /// that decreases strictly in alpha.
 fn solve_alpha(target: f64, ratio: impl Fn(f64) -> Result<f64>) -> Result<f64> {
     // Alpha this small leaves the survival function flat to rounding.
-    let (mut lo, mut hi) = (1e-12, MAX_ALPHA);
+    let (lo, hi) = (1e-12, MAX_ALPHA);
     if target >= ratio(lo)? {
         return Err(invalid(
             "expected loss",
@@ -263,18 +264,20 @@ fn solve_alpha(target: f64, ratio: impl Fn(f64) -> Result<f64>) -> Result<f64> {
             "implies an alpha above MAX_ALPHA",
         ));
     }
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if ratio(mid)? > target {
-            lo = mid;
-        } else {
-            hi = mid;
+    // The ratio is finite on the bracket, so an error inside it is a bug in
+    // the caller's ratio; keep the first one rather than lose it.
+    let mut error = None;
+    let alpha = bisect(lo, hi, |a| match ratio(a) {
+        Ok(r) => r > target,
+        Err(e) => {
+            error.get_or_insert(e);
+            false
         }
-        if hi - lo <= 4.0 * f64::EPSILON * hi {
-            break;
-        }
+    });
+    match error {
+        Some(e) => Err(e),
+        None => Ok(alpha),
     }
-    Ok(0.5 * (lo + hi))
 }
 
 /// Increased limit factor: the expected loss capped at `limit` relative
