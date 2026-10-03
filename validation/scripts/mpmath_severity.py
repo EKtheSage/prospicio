@@ -4,8 +4,8 @@
     python validation/scripts/mpmath_severity.py
 
 Limited expected values, stop-loss and layer means for the lognormal, the
-gamma and the Weibull, by numerically integrating the survival function at 30
-significant digits:
+gamma, the Weibull and the loglogistic, by numerically integrating the
+survival function at 30 significant digits:
 
     LEV(d)          = integral of S(x) from 0 to d
     stop_loss(d)    = integral of S(x) from d to infinity
@@ -79,6 +79,24 @@ def weibull_rows():
             yield "weibull", params, "layer", d, d, integral(S, d, 2 * d, median), 1e-11
 
 
+# Shapes 0.5 and 1 reach the recurrence's zero second argument; 0.8 a
+# negative one.
+LOGLOGISTICS = [(0.5, 100.0), (0.8, 10.0), (1.0, 5.0), (1.5, 1000.0), (4.0, 2.0)]
+
+
+def loglogistic_rows():
+    for shape, scale in LOGLOGISTICS:
+        a, t = mp.mpf(shape), mp.mpf(scale)
+        S = lambda x, a=a, t=t: 1 / (1 + (x / t) ** a)
+        params = f"shape={shape};scale={scale}"
+        for p in PROBS:
+            d = mp.mpf(float(stats.fisk(shape, scale=scale).isf(1 - float(p))))
+            yield "loglogistic", params, "lev", d, "", integral(S, mp.mpf(0), d, t), 1e-12
+            if shape > 1:
+                yield "loglogistic", params, "stop_loss", d, "", integral(S, d, mp.inf, t), 1e-11
+            yield "loglogistic", params, "layer", d, d, integral(S, d, 2 * d, t), 1e-11
+
+
 def rows():
     for mu, sigma in LOGNORMALS:
         S = survival(mp.mpf(mu), mp.mpf(sigma))
@@ -98,7 +116,7 @@ def main():
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "arg2", "expected", "abs_tol", "rel_tol", "source"])
-        for dist, params, qty, arg, arg2, expected, rel in list(rows()) + list(gamma_rows()) + list(weibull_rows()):
+        for dist, params, qty, arg, arg2, expected, rel in list(rows()) + list(gamma_rows()) + list(weibull_rows()) + list(loglogistic_rows()):
             w.writerow([
                 dist, params, qty, repr(float(arg)),
                 repr(float(arg2)) if arg2 != "" else "",

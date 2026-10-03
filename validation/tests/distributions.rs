@@ -66,8 +66,29 @@ fn weibull_matches_scipy() {
 }
 
 #[test]
+fn loglogistic_matches_scipy() {
+    use act_prob::Loglogistic;
+    let cases: Vec<_> = reference("distributions_scipy.csv")
+        .into_iter()
+        .filter(|c| c.get("distribution") == "loglogistic")
+        .collect();
+    check(&cases, |c| {
+        let d = Loglogistic::new(c.param("params", "shape"), c.param("params", "scale")).ok()?;
+        let arg = c.number("arg");
+        match c.get("quantity") {
+            "mean" => Some(d.mean()),
+            "variance" => Some(d.variance()),
+            "cdf" => Some(d.cdf(arg?)),
+            "survival" => Some(d.survival(arg?)),
+            "quantile" => d.quantile(arg?).ok(),
+            _ => None,
+        }
+    });
+}
+
+#[test]
 fn severities_match_integration() {
-    use act_prob::{Gamma, Weibull};
+    use act_prob::{Gamma, Loglogistic, Weibull};
     let cases = reference("severity_mpmath.csv");
     check(&cases, |c| {
         let d: Box<dyn Severity> = match c.get("distribution") {
@@ -80,6 +101,9 @@ fn severities_match_integration() {
             "weibull" => {
                 Box::new(Weibull::new(c.param("params", "shape"), c.param("params", "scale")).ok()?)
             }
+            "loglogistic" => Box::new(
+                Loglogistic::new(c.param("params", "shape"), c.param("params", "scale")).ok()?,
+            ),
             _ => return None,
         };
         let arg = c.number("arg")?;
