@@ -16,7 +16,8 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' `layer_variance(dist, limit, attachment)` is the variance of the loss to
 #' the layer `limit` xs `attachment` (`Inf` for an unlimited layer).
 #' Defined for the Pareto-family severities ([pareto], [piecewise_pareto],
-#' [log_affine_pareto], [generalized_pareto]).
+#' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution]
+#' and [tweedie].
 #'
 #' @param dist A Pareto-family severity.
 #' @param q Numeric vector.
@@ -325,7 +326,123 @@ generalized_pareto_riegel <- function(t, alpha_ini, alpha_tail) {
   generalized_pareto(ptr = ptr)
 }
 
-for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto)) {
+#' Gamma distribution
+#'
+#' Shape `shape` and scale `scale`: mean `shape * scale`, variance
+#' `shape * scale^2`, as in [stats::dgamma()]. `gamma_from_mean_cv()` takes
+#' the mean and coefficient of variation; `gamma_from_mean_dispersion()` the
+#' GLM parameterization, mean `mu` and dispersion `phi` (variance
+#' `phi * mu^2`). Properties: `d@shape`, `d@scale`.
+#'
+#' Supports the same operations as [pareto], plus [log_density()].
+#'
+#' @param shape,scale Finite and positive.
+#' @returns A `gamma_distribution` object, which inherits from [distribution].
+#' @export
+#' @examples
+#' g <- gamma_from_mean_cv(1000, 0.5)
+#' g@shape
+#' layer(g, 1000, 1000)
+gamma_distribution <- S7::new_class(
+  "gamma_distribution",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("GammaDist"),
+    shape = S7::new_property(S7::class_double, getter = function(self) self@ptr$shape()),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
+  ),
+  constructor = function(shape, scale, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(GammaDist$new(as.double(shape), as.double(scale)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' @rdname gamma_distribution
+#' @param mean Mean; finite and positive.
+#' @param cv Coefficient of variation; finite and positive.
+#' @export
+gamma_from_mean_cv <- function(mean, cv) {
+  gamma_distribution(ptr = rust_result(GammaDist$from_mean_cv(as.double(mean), as.double(cv))))
+}
+
+#' @rdname gamma_distribution
+#' @param dispersion GLM dispersion `phi`; finite and positive.
+#' @export
+gamma_from_mean_dispersion <- function(mean, dispersion) {
+  gamma_distribution(ptr = rust_result(GammaDist$from_mean_dispersion(as.double(mean), as.double(dispersion))))
+}
+
+#' Tweedie distribution
+#'
+#' Mean `mean`, dispersion `dispersion` and power `1 < power < 2`: variance
+#' `dispersion * mean^power`, a point mass `exp(-lambda)` at 0 and a
+#' continuous density above it. It is a Poisson number of gamma losses, the
+#' GLM family for pure premium; `tweedie_from_poisson_gamma()` builds it
+#' from those. Properties: `d@mean_param`, `d@dispersion`, `d@power`,
+#' `d@lambda` (expected number of losses) and `d@severity` (a
+#' [gamma_distribution]).
+#'
+#' Supports the same operations as [pareto], plus [log_density()].
+#'
+#' @param mean Mean; finite and positive.
+#' @param dispersion Finite and positive.
+#' @param power In `(1, 2)`.
+#' @returns A `tweedie` object, which inherits from [distribution].
+#' @export
+#' @examples
+#' y <- tweedie(500, 40, 1.6)
+#' cdf(y, 0) - exp(-y@lambda)
+#' log_density(y, c(100, 500))
+tweedie <- S7::new_class(
+  "tweedie",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("TweedieDist"),
+    mean_param = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean()),
+    dispersion = S7::new_property(S7::class_double, getter = function(self) self@ptr$dispersion()),
+    power = S7::new_property(S7::class_double, getter = function(self) self@ptr$power()),
+    lambda = S7::new_property(S7::class_double, getter = function(self) self@ptr$lambda()),
+    severity = S7::new_property(S7::class_any, getter = function(self) {
+      gamma_distribution(ptr = self@ptr$severity())
+    })
+  ),
+  constructor = function(mean, dispersion, power, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(TweedieDist$new(as.double(mean), as.double(dispersion), as.double(power)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' @rdname tweedie
+#' @param lambda Expected number of losses; finite and positive.
+#' @param shape,scale Gamma shape and scale of each loss.
+#' @export
+tweedie_from_poisson_gamma <- function(lambda, shape, scale) {
+  tweedie(ptr = rust_result(TweedieDist$from_poisson_gamma(as.double(lambda), as.double(shape), as.double(scale))))
+}
+
+#' Log density
+#'
+#' The log of the density at `x`. For a [tweedie], `x = 0` gives the log of
+#' the point mass, `-lambda`.
+#'
+#' @param dist A [gamma_distribution] or [tweedie].
+#' @param x Numeric vector.
+#' @param ... Unused; for methods.
+#' @returns Numeric vector the length of `x`.
+#' @export
+#' @examples
+#' log_density(gamma_distribution(2, 3), c(1, 5))
+log_density <- S7::new_generic("log_density", "dist", function(dist, x, ...) S7::S7_dispatch())
+
+S7::method(log_density, gamma_distribution) <- function(dist, x, ...) dist@ptr$ln_pdf(as.double(x))
+S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.double(x))
+
+for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
+                 gamma_distribution, tweedie)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
   S7::method(cdf, cls) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
@@ -371,6 +488,17 @@ S7::method(print, log_affine_pareto) <- function(x, ...) {
   invisible(x)
 }
 
+S7::method(print, gamma_distribution) <- function(x, ...) {
+  cat(sprintf("<gamma_distribution> shape = %s, scale = %s\n",
+              format(x@shape, digits = 15), format(x@scale, digits = 15)))
+  invisible(x)
+}
+S7::method(print, tweedie) <- function(x, ...) {
+  cat(sprintf("<tweedie> mean = %s, dispersion = %s, power = %s\n",
+              format(x@mean_param, digits = 15), format(x@dispersion, digits = 15),
+              format(x@power, digits = 15)))
+  invisible(x)
+}
 S7::method(print, generalized_pareto) <- function(x, ...) {
   cat(sprintf("<generalized_pareto> xi = %s, beta = %s, location = %s\n",
               format(x@xi, digits = 15), format(x@beta, digits = 15),

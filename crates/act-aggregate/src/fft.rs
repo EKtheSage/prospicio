@@ -97,7 +97,27 @@ fn compound_buffer<N: Counting + ?Sized>(frequency: &N, severity: &[f64], len: u
 mod tests {
     use super::*;
     use crate::panjer;
-    use act_prob::{Lognormal, NegativeBinomial, Poisson};
+    use act_prob::{Lognormal, NegativeBinomial, Poisson, Tweedie};
+
+    #[test]
+    fn poisson_gamma_matches_the_tweedie_series() {
+        // A Poisson number of gamma losses is a Tweedie: FFT on a fine
+        // local-moment grid against the closed series.
+        let y = Tweedie::from_poisson_gamma(3.0, 2.0, 10.0).unwrap();
+        let step = 0.01;
+        let (sev, _) = Grid::local_moment(&y.severity(), step, 30_000).unwrap();
+        let (agg, report) = fft(&Poisson::new(3.0).unwrap(), &sev, 100_000).unwrap();
+        assert!(report.aliasing_error < 1e-12);
+        assert!(report.tail_mass < 1e-12);
+        // Local moment matching keeps every limited mean on the grid, so
+        // the layer means agree closely; the distribution function within
+        // a step's worth of mass.
+        for x in [5.0, 40.0, 100.0, 250.0] {
+            use act_prob::{Distribution, Severity};
+            assert!((agg.lev(x) / y.lev(x) - 1.0).abs() < 1e-6, "lev {x}");
+            assert!((agg.cdf(x) - y.cdf(x)).abs() < 2e-4, "cdf {x}");
+        }
+    }
 
     fn small_severity() -> Grid {
         Grid::new(1.0, vec![0.1, 0.3, 0.25, 0.2, 0.1, 0.05]).unwrap()

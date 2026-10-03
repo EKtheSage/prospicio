@@ -115,3 +115,29 @@ def test_predictive_distribution_is_joint():
         ar.distributions.PredictiveDistribution(["x"], [(1,)], [[1.0], [1.0, 2.0]])
     with pytest.raises(ValueError):
         pd.aggregate(["state"])
+
+
+def test_gamma_and_tweedie():
+    import math
+
+    from actuarialrs.distributions import Gamma, Grid, Poisson, Tweedie
+
+    g = Gamma.from_mean_cv(1000.0, 0.5)
+    assert g.shape == 4.0
+    assert abs(g.lev(1500.0) + g.stop_loss(1500.0) - 1000.0) < 1e-9
+    assert abs(Gamma(1.0, 3.0).survival(6.0) - math.exp(-2.0)) < 1e-16
+    assert abs(Gamma.from_mean_dispersion(200.0, 0.25).shape - 4.0) < 1e-12
+
+    y = Tweedie(500.0, 40.0, 1.6)
+    assert abs(y.cdf(0.0) - math.exp(-y.lambda_)) < 1e-15
+    assert abs(y.variance() - 40.0 * 500.0**1.6) < 1e-6
+    assert y.ln_pdf(0.0) == -y.lambda_
+    z = Tweedie.from_poisson_gamma(y.lambda_, y.severity.shape, y.severity.scale)
+    assert abs(z.mean() / 500.0 - 1.0) < 1e-12
+    with pytest.raises(ValueError):
+        Tweedie(1.0, 1.0, 2.0)
+
+    # Severities discretize and compound like any other.
+    grid, _ = Grid.local_moment(g, 50.0, 400)
+    assert abs(grid.mean() - g.lev(399 * 50.0)) < 1e-9
+    assert Poisson(2.0).mean() == 2.0

@@ -19,6 +19,18 @@ conversion reports the error it introduces.
   plus `from_mean_cv`. Parity with SciPy is checked by
   `validation/tests/distributions.rs` against
   `validation/reference/distributions_scipy.csv`.
+- `act_prob::Gamma` (`shape`, `scale`; `from_mean_cv`,
+  `from_mean_dispersion` for the GLM family) on
+  `act_math::special::gamma_inc`, and `act_prob::Tweedie` (mean,
+  dispersion, power in `(1, 2)`; `from_poisson_gamma`), the compound
+  Poisson–gamma: a point mass `e^(-λ)` at 0, every quantity a
+  Poisson-weighted sum over the number of claims of the gamma's, each tail
+  summed directly, and the density by Dunn and Smyth's series in log space.
+  Parity: SciPy and mpmath for the gamma, and
+  `validation/reference/tweedie_mpmath.csv` (40-digit series,
+  `validation/scripts/mpmath_tweedie.py`) for the Tweedie, from about 2 to
+  about 500 expected claims. An FFT of Poisson × gamma on a fine grid
+  agrees with the series (`act-aggregate`).
 - `act_prob::Sampled` and the `Empirical` trait (`draws`, `sorted`,
   `mean_of`, `var`, `tvar`), and `act_prob::risk::{var_sorted, tvar_sorted}`,
   the shared risk measures every domain calls.

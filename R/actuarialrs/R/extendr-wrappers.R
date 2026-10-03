@@ -446,6 +446,88 @@ GeneralizedPareto$sample <- function(n, seed, stream) .Call(wrap__GeneralizedPar
 #' @export
 `[[.GeneralizedPareto` <- `$.GeneralizedPareto`
 
+GammaDist <- new.env(parent = emptyenv())
+
+GammaDist$new <- function(shape, scale) .Call(wrap__GammaDist__new, shape, scale)
+
+GammaDist$from_mean_cv <- function(mean, cv) .Call(wrap__GammaDist__from_mean_cv, mean, cv)
+
+GammaDist$from_mean_dispersion <- function(mean, dispersion) .Call(wrap__GammaDist__from_mean_dispersion, mean, dispersion)
+
+GammaDist$shape <- function() .Call(wrap__GammaDist__shape, self)
+
+GammaDist$scale <- function() .Call(wrap__GammaDist__scale, self)
+
+GammaDist$ln_pdf <- function(x) .Call(wrap__GammaDist__ln_pdf, self, x)
+
+GammaDist$mean <- function() .Call(wrap__GammaDist__mean, self)
+
+GammaDist$variance <- function() .Call(wrap__GammaDist__variance, self)
+
+GammaDist$cdf <- function(x) .Call(wrap__GammaDist__cdf, self, x)
+
+GammaDist$survival <- function(x) .Call(wrap__GammaDist__survival, self, x)
+
+GammaDist$quantile <- function(p) .Call(wrap__GammaDist__quantile, self, p)
+
+GammaDist$lev <- function(limit) .Call(wrap__GammaDist__lev, self, limit)
+
+GammaDist$stop_loss <- function(retention) .Call(wrap__GammaDist__stop_loss, self, retention)
+
+GammaDist$layer <- function(limit, attachment) .Call(wrap__GammaDist__layer, self, limit, attachment)
+
+GammaDist$layer_variance <- function(limit, attachment) .Call(wrap__GammaDist__layer_variance, self, limit, attachment)
+
+GammaDist$sample <- function(n, seed, stream) .Call(wrap__GammaDist__sample, self, n, seed, stream)
+
+#' @export
+`$.GammaDist` <- function (self, name) { func <- GammaDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.GammaDist` <- `$.GammaDist`
+
+TweedieDist <- new.env(parent = emptyenv())
+
+TweedieDist$new <- function(mean, dispersion, power) .Call(wrap__TweedieDist__new, mean, dispersion, power)
+
+TweedieDist$from_poisson_gamma <- function(lambda, shape, scale) .Call(wrap__TweedieDist__from_poisson_gamma, lambda, shape, scale)
+
+TweedieDist$dispersion <- function() .Call(wrap__TweedieDist__dispersion, self)
+
+TweedieDist$power <- function() .Call(wrap__TweedieDist__power, self)
+
+TweedieDist$lambda <- function() .Call(wrap__TweedieDist__lambda, self)
+
+TweedieDist$severity <- function() .Call(wrap__TweedieDist__severity, self)
+
+TweedieDist$ln_pdf <- function(x) .Call(wrap__TweedieDist__ln_pdf, self, x)
+
+TweedieDist$mean <- function() .Call(wrap__TweedieDist__mean, self)
+
+TweedieDist$variance <- function() .Call(wrap__TweedieDist__variance, self)
+
+TweedieDist$cdf <- function(x) .Call(wrap__TweedieDist__cdf, self, x)
+
+TweedieDist$survival <- function(x) .Call(wrap__TweedieDist__survival, self, x)
+
+TweedieDist$quantile <- function(p) .Call(wrap__TweedieDist__quantile, self, p)
+
+TweedieDist$lev <- function(limit) .Call(wrap__TweedieDist__lev, self, limit)
+
+TweedieDist$stop_loss <- function(retention) .Call(wrap__TweedieDist__stop_loss, self, retention)
+
+TweedieDist$layer <- function(limit, attachment) .Call(wrap__TweedieDist__layer, self, limit, attachment)
+
+TweedieDist$layer_variance <- function(limit, attachment) .Call(wrap__TweedieDist__layer_variance, self, limit, attachment)
+
+TweedieDist$sample <- function(n, seed, stream) .Call(wrap__TweedieDist__sample, self, n, seed, stream)
+
+#' @export
+`$.TweedieDist` <- function (self, name) { func <- TweedieDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.TweedieDist` <- `$.TweedieDist`
+
 Binomial <- new.env(parent = emptyenv())
 
 Binomial$new <- function(n, p) .Call(wrap__Binomial__new, n, p)

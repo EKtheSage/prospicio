@@ -1,5 +1,6 @@
 //! `actuarialrs.distributions`: the Pareto family for treaty pricing
-//! (Probability lane; `docs/design/pareto.md`), and claim counts chosen by
+//! (Probability lane; `docs/design/pareto.md`), the gamma and Tweedie
+//! (compound Poisson-gamma) distributions, and claim counts chosen by
 //! dispersion.
 
 use act_core::StreamRng;
@@ -323,6 +324,213 @@ severity_class!(PyPareto {
     fn __repr__(&self) -> String {
         let tr = self.inner.truncation().map_or(String::new(), |t| format!(", truncation={t:?}"));
         format!("Pareto(t={:?}, alpha={:?}{tr})", self.inner.t(), self.inner.alpha())
+    }
+});
+
+/// Gamma distribution with shape ``alpha`` and scale ``theta``: mean
+/// ``alpha * theta``, variance ``alpha * theta**2``.
+///
+/// Parameters
+/// ----------
+/// shape : float
+/// scale : float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is not finite and positive.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Gamma
+/// >>> g = Gamma.from_mean_cv(1000.0, 0.5)
+/// >>> g.shape, round(g.std(), 9)
+/// (4.0, 500.0)
+#[pyclass(name = "Gamma", module = "actuarialrs.distributions", frozen)]
+pub(crate) struct PyGamma {
+    pub(crate) inner: act_prob::Gamma,
+}
+
+severity_class!(PyGamma {
+    #[new]
+    fn new(shape: f64, scale: f64) -> PyResult<Self> {
+        let inner = act_prob::Gamma::new(shape, scale).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Gamma with the given mean and coefficient of variation.
+    ///
+    /// Parameters
+    /// ----------
+    /// mean : float
+    /// cv : float
+    ///
+    /// Returns
+    /// -------
+    /// Gamma
+    #[staticmethod]
+    fn from_mean_cv(mean: f64, cv: f64) -> PyResult<Self> {
+        let inner = act_prob::Gamma::from_mean_cv(mean, cv).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Gamma with mean ``mu`` and GLM dispersion ``phi`` (variance
+    /// ``phi * mu**2``): shape ``1 / phi``.
+    ///
+    /// Parameters
+    /// ----------
+    /// mean : float
+    /// dispersion : float
+    ///
+    /// Returns
+    /// -------
+    /// Gamma
+    #[staticmethod]
+    fn from_mean_dispersion(mean: f64, dispersion: f64) -> PyResult<Self> {
+        let inner = act_prob::Gamma::from_mean_dispersion(mean, dispersion).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Shape ``alpha``.
+    #[getter]
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    /// Scale ``theta``.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    /// Log density at ``x``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn ln_pdf(&self, x: f64) -> f64 {
+        self.inner.ln_pdf(x)
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64) {
+        (self.inner.shape(), self.inner.scale())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Gamma(shape={:?}, scale={:?})", self.inner.shape(), self.inner.scale())
+    }
+});
+
+/// Tweedie distribution with mean ``mu``, dispersion ``phi`` and power
+/// ``1 < p < 2``: variance ``phi * mu**p``, a point mass at 0 and a
+/// continuous density above it.
+///
+/// It is a Poisson number of gamma losses, the GLM family for pure
+/// premium. ``P(Y = 0) = exp(-lambda_)``.
+///
+/// Parameters
+/// ----------
+/// mean : float
+/// dispersion : float
+/// power : float
+///     In ``(1, 2)``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is out of range.
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from actuarialrs.distributions import Tweedie
+/// >>> y = Tweedie(500.0, 40.0, 1.6)
+/// >>> abs(y.cdf(0.0) - math.exp(-y.lambda_)) < 1e-15
+/// True
+#[pyclass(name = "Tweedie", module = "actuarialrs.distributions", frozen)]
+pub(crate) struct PyTweedie {
+    pub(crate) inner: act_prob::Tweedie,
+}
+
+severity_class!(PyTweedie {
+    #[new]
+    fn new(mean: f64, dispersion: f64, power: f64) -> PyResult<Self> {
+        let inner = act_prob::Tweedie::new(mean, dispersion, power).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The Tweedie equal to a Poisson(``lambda_``) number of
+    /// Gamma(``shape``, ``scale``) losses.
+    ///
+    /// Parameters
+    /// ----------
+    /// lambda_ : float
+    /// shape : float
+    /// scale : float
+    ///
+    /// Returns
+    /// -------
+    /// Tweedie
+    #[staticmethod]
+    fn from_poisson_gamma(lambda_: f64, shape: f64, scale: f64) -> PyResult<Self> {
+        let inner = act_prob::Tweedie::from_poisson_gamma(lambda_, shape, scale).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Dispersion ``phi``.
+    #[getter]
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    /// Power ``p``.
+    #[getter]
+    fn power(&self) -> f64 {
+        self.inner.power()
+    }
+
+    /// Poisson mean of the number of losses.
+    #[getter]
+    fn lambda_(&self) -> f64 {
+        self.inner.lambda()
+    }
+
+    /// The gamma distribution of each loss.
+    #[getter]
+    fn severity(&self) -> PyGamma {
+        PyGamma {
+            inner: self.inner.severity(),
+        }
+    }
+
+    /// Log density at ``y > 0``; at ``y = 0``, the log of the point mass.
+    ///
+    /// Parameters
+    /// ----------
+    /// y : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn ln_pdf(&self, y: f64) -> f64 {
+        self.inner.ln_pdf(y)
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        (self.inner.mean(), self.inner.dispersion(), self.inner.power())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Tweedie(mean={:?}, dispersion={:?}, power={:?})",
+            self.inner.mean(),
+            self.inner.dispersion(),
+            self.inner.power()
+        )
     }
 });
 

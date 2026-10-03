@@ -4,6 +4,7 @@ counts, and the joint predictive distribution every model returns."""
 from .actuarialrs_native import (
     Binomial,
     DiscretizationReport,
+    Gamma,
     GeneralizedPareto,
     Grid,
     LogAffinePareto,
@@ -14,12 +15,15 @@ from .actuarialrs_native import (
     Poisson,
     PredictiveDistribution,
     Sampled,
+    Tweedie,
     claim_count,
     local_pareto_to_piecewise,
 )
 
 __all__ = [
     "Lognormal",
+    "Gamma",
+    "Tweedie",
     "Pareto",
     "PiecewisePareto",
     "LogAffinePareto",
