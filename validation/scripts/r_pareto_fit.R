@@ -8,7 +8,8 @@
 # it is used in this repository (docs/design/pareto.md). Rows: maximum
 # likelihood alphas of the Pareto and the piecewise Pareto
 # (act_prob::Pareto::fit, act_prob::PiecewisePareto::fit) on fixed data
-# sets with reporting thresholds, censoring, weights and truncation. The
+# sets with reporting thresholds, censoring, weights and truncation, and
+# of Riegel's generalized Pareto (act_prob::evt::Gpd::fit_riegel, untruncated). The
 # untruncated estimates are closed forms; the package solves truncated
 # ones numerically, so those rows are compared at 1e-6, and at 1e-5 where
 # the estimate sits at the lower bound 0.001 (the package stops at about
@@ -50,6 +51,15 @@ for (cs in cases) {
     a <- Pareto_ML_Estimator_Alpha(losses, 1000, truncation = tr, reporting_thresholds = cs$r,
                                    is.censored = cs$c, weights = cs$w)
     add("pareto", paste0("t=1000;", data, trp), 0, a, tol)
+    if (is.null(tr)) {
+      # Riegel's generalized Pareto: c(alpha_ini, alpha_tail). The package's
+      # optimizer stops about 2e-5 short of the maximum (act_prob's estimate
+      # has the higher likelihood, by up to 6e-10 at 40 digits), so these
+      # are compared at 1e-4.
+      g <- GenPareto_ML_Estimator_Alpha(losses, 1000, reporting_thresholds = cs$r,
+                                        is.censored = cs$c, weights = cs$w)
+      for (j in 1:2) add("gen_pareto", paste0("t=1000;", data), j - 1, g[j], 1e-4)
+    }
     t <- c(1000, 2500, 8000)
     a <- PiecewisePareto_ML_Estimator_Alpha(losses, t, truncation = tr, truncation_type = "lp",
                                             reporting_thresholds = cs$r, is.censored = cs$c,

@@ -310,7 +310,12 @@ bisection when truncated) and `PiecewisePareto::fit` (closed form per
 piece; a truncated last piece is a truncated Pareto fit) estimate alphas
 from it. Truncated estimates are clamped to `[1e-3, 1e3]`, since data
 rising towards the truncation point can put the maximum at or below 0.
-Fits of the generalized and local Pareto, and of a piecewise Pareto
+`Gpd::fit_riegel` fits Riegel's generalized Pareto to the same data:
+for fixed `k = α_ini/α_tail` the tail alpha is a closed form, so it is a
+one-dimensional profile likelihood in `k`, solved by bisection on its
+analytic score. R's optimizer stops about `2e-5` short of the maximum
+(our estimate has the higher likelihood at 40 digits), so those parity
+rows use `1e-4`. Fits of the local Pareto, and of a piecewise Pareto
 truncated as a whole, come later.
 `LogAffinePareto` (`new(t, α₀, γ)` or `from_delta(t, α₀, δ)`) has its
 layer moments in closed form as above, through the Mills ratio

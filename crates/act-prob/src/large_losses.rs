@@ -10,6 +10,7 @@
 
 use act_core::Result;
 
+use crate::evt::Gpd;
 use crate::pareto::invalid;
 use crate::piecewise_pareto::Truncation;
 use crate::{Pareto, PiecewisePareto};
@@ -247,6 +248,115 @@ impl PiecewisePareto {
     }
 }
 
+impl Gpd {
+    /// Maximum likelihood fit of Riegel's generalized Pareto
+    /// ([`Gpd::riegel`]) with threshold `t` to losses at or above `t`,
+    /// with the reporting thresholds, censoring and weights of `data`.
+    ///
+    /// With `z = x/t − 1` and `k = α_ini / α_tail`, `S(x) = (1 + k z)^(−α_tail)`.
+    /// For fixed `k` the likelihood is maximized by
+    /// `α_tail(k) = Σ_uncensored w / Σ w ln((1 + k z_y) / (1 + k z_r))`, so
+    /// the fit is a one-dimensional profile likelihood in `k`: a scan on a
+    /// log grid over `[1e-6, 1e6]` brackets the maximum, and bisection on the
+    /// analytic score pins it. `k = 1` is the Pareto.
+    ///
+    /// ```
+    /// use act_core::StreamRng;
+    /// use act_prob::{Distribution, LargeLosses, evt::Gpd};
+    ///
+    /// let truth = Gpd::riegel(1000.0, 3.0, 1.5).unwrap();
+    /// let draws = truth.sample(&mut StreamRng::new(4, 0), 100_000);
+    /// let fit = Gpd::fit_riegel(1000.0, &LargeLosses::new(draws).unwrap()).unwrap();
+    /// // ξ = 1/α_tail, β = t/α_ini.
+    /// assert!((1.0 / fit.xi() / 1.5 - 1.0).abs() < 0.05);
+    /// assert!((1000.0 / fit.beta() / 3.0 - 1.0).abs() < 0.05);
+    /// ```
+    pub fn fit_riegel(t: f64, data: &LargeLosses) -> Result<Self> {
+        Pareto::new(t, 1.0)?;
+        let losses = data.above(t)?;
+        let count: f64 = losses.iter().filter(|l| !l.2).map(|l| l.3).sum();
+        if count == 0.0 {
+            return Err(invalid("losses", 0.0, "need at least one uncensored loss"));
+        }
+        let z = |x: f64| x / t - 1.0;
+        // Σ w ln((1 + k z_y) / (1 + k z_r)) and its derivative in k.
+        let exposure = |k: f64| -> (f64, f64) {
+            losses.iter().fold((0.0, 0.0), |(e, de), &(y, r, _, w)| {
+                let (zy, zr) = (z(y), z(r));
+                (
+                    e + w * ((k * zy).ln_1p() - (k * zr).ln_1p()),
+                    de + w * (zy / (1.0 + k * zy) - zr / (1.0 + k * zr)),
+                )
+            })
+        };
+        // The profile log-likelihood is n ln(k α_tail(k)) − Σ_uncensored w
+        // ln(1 + k z_y) up to a constant; its derivative in k is
+        // n/k − n E'(k)/E(k) − Σ_uncensored w z_y/(1 + k z_y).
+        let score = |k: f64| -> Option<f64> {
+            let (e, de) = exposure(k);
+            if e <= 0.0 {
+                return None;
+            }
+            let own: f64 = losses
+                .iter()
+                .filter(|l| !l.2)
+                .map(|&(y, _, _, w)| w * z(y) / (1.0 + k * z(y)))
+                .sum();
+            Some(count / k - count * de / e - own)
+        };
+        let profile = |k: f64| -> Option<f64> {
+            let (e, _) = exposure(k);
+            if e <= 0.0 {
+                return None;
+            }
+            let alpha_tail = count / e;
+            let own: f64 = losses
+                .iter()
+                .filter(|l| !l.2)
+                .map(|&(y, _, _, w)| w * (k * z(y)).ln_1p())
+                .sum();
+            // At the optimal α_tail the α_tail-terms sum to −n, a constant.
+            Some(count * (k * alpha_tail).ln() - own)
+        };
+        let steps = 480;
+        let (lo_k, hi_k) = (1e-6f64, 1e6f64);
+        let at = |j: usize| (lo_k.ln() + (hi_k / lo_k).ln() * j as f64 / steps as f64).exp();
+        let best = (0..=steps)
+            .filter_map(|j| profile(at(j)).map(|v| (j, v)))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(j, _)| j)
+            .ok_or_else(|| {
+                invalid(
+                    "losses",
+                    f64::NAN,
+                    "need a loss above its reporting threshold",
+                )
+            })?;
+        if best == 0 || best == steps {
+            return Err(invalid(
+                "losses",
+                at(best),
+                "the likelihood has no maximum with alpha_ini / alpha_tail in [1e-6, 1e6]",
+            ));
+        }
+        // The score falls through 0 at the maximum, between the neighbours.
+        let (mut lo, mut hi) = (at(best - 1), at(best + 1));
+        for _ in 0..200 {
+            let mid = (lo * hi).sqrt();
+            if mid <= lo || mid >= hi {
+                break;
+            }
+            match score(mid) {
+                Some(s) if s > 0.0 => lo = mid,
+                _ => hi = mid,
+            }
+        }
+        let k = (lo * hi).sqrt();
+        let alpha_tail = count / exposure(k).0;
+        Gpd::riegel(t, k * alpha_tail, alpha_tail)
+    }
+}
+
 /// `Σ_uncensored w / Σ w ln(y / r)`.
 fn closed_form_alpha(losses: &[(f64, f64, bool, f64)]) -> Result<f64> {
     let count: f64 = losses.iter().filter(|l| !l.2).map(|l| l.3).sum();
@@ -447,6 +557,56 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn generalized_pareto_fit_maximizes_the_likelihood() {
+        let data = LargeLosses::new(vec![
+            1100.0, 1300.0, 1750.0, 2000.0, 2600.0, 3500.0, 4100.0, 9000.0, 25_000.0, 40_000.0,
+        ])
+        .unwrap()
+        .reporting_thresholds(vec![
+            0.0, 1200.0, 0.0, 1500.0, 0.0, 0.0, 3000.0, 5000.0, 0.0, 0.0,
+        ])
+        .unwrap()
+        .censored(vec![
+            false, false, false, false, false, true, false, false, false, true,
+        ])
+        .unwrap();
+        let t = 1000.0;
+        let ll = |alpha_ini: f64, alpha_tail: f64| -> f64 {
+            let g = Gpd::riegel(t, alpha_ini, alpha_tail).unwrap();
+            let k = alpha_ini / alpha_tail;
+            (0..data.len())
+                .map(|i| {
+                    let (y, r) = (data.values[i], data.reporting[i].max(t));
+                    let own = if data.censored[i] {
+                        g.survival(y).ln()
+                    } else {
+                        (alpha_ini / t).ln() - (alpha_tail + 1.0) * (k * (y / t - 1.0)).ln_1p()
+                    };
+                    own - g.survival(r).ln()
+                })
+                .sum()
+        };
+        let fit = Gpd::fit_riegel(t, &data).unwrap();
+        let (ai, at) = (t / fit.beta(), 1.0 / fit.xi());
+        let best = ll(ai, at);
+        for (da, dt) in [
+            (1.001, 1.0),
+            (0.999, 1.0),
+            (1.0, 1.001),
+            (1.0, 0.999),
+            (1.001, 1.001),
+        ] {
+            assert!(ll(ai * da, at * dt) < best, "{da} {dt}");
+        }
+        // Equal alphas reduce to the Pareto fit's model family: data drawn
+        // from a Pareto give k near 1.
+        let p = Pareto::new(t, 2.0).unwrap();
+        let draws = p.sample(&mut StreamRng::new(9, 0), 100_000);
+        let g = Gpd::fit_riegel(t, &LargeLosses::new(draws).unwrap()).unwrap();
+        assert!(((t / g.beta()) * g.xi() - 1.0).abs() < 0.05);
     }
 
     #[test]

@@ -345,6 +345,12 @@ fn pareto_fits_match_r() {
         let index = c.number("index")? as usize;
         match c.get("model") {
             "pareto" => Some(Pareto::fit(t[0], &data, truncation).ok()?.alpha()),
+            "gen_pareto" => {
+                let g = act_prob::evt::Gpd::fit_riegel(t[0], &data).ok()?;
+                // ξ = 1/α_tail, β = t/α_ini.
+                let alphas = [t[0] / g.beta(), 1.0 / g.xi()];
+                alphas.get(index).copied()
+            }
             "piecewise_pareto" => {
                 let fit = PiecewisePareto::fit(
                     t,
