@@ -69,6 +69,35 @@ def weibull_rows():
             yield ("weibull", params, "survival", x, d.sf(x), 1e-300, 1e-12)
 
 
+# Loglogistics (shape, scale): infinite mean at shape <= 1, infinite variance
+# at shape <= 2. SciPy's fisk computes ppf and sf through 1 - cdf and loses
+# about five digits at p = 0.999999, so these rows use its closed forms at 40
+# digits in mpmath instead; mean and variance are SciPy's.
+LOGLOGISTICS = [(0.5, 100.0), (1.0, 5.0), (1.5, 1000.0), (4.0, 2.0)]
+
+
+def loglogistic_rows():
+    import mpmath as mp
+
+    mp.mp.dps = 40
+    for shape, scale in LOGLOGISTICS:
+        d = stats.fisk(shape, scale=scale)
+        a, t = mp.mpf(shape), mp.mpf(scale)
+        params = f"shape={shape};scale={scale}"
+        if shape > 1:
+            yield ("loglogistic", params, "mean", "", d.mean(), 0.0, 1e-13)
+        if shape > 2:
+            yield ("loglogistic", params, "variance", "", d.var(), 0.0, 1e-12)
+        for p in PROBS:
+            q = mp.mpf(p)
+            x = float(t * (q / (1 - q)) ** (1 / a))
+            z = (mp.mpf(x) / t) ** a
+            src = f"mpmath {mp.__version__} closed form"
+            yield ("loglogistic", params, "quantile", p, t * (q / (1 - q)) ** (1 / a), 0.0, 1e-12, src)
+            yield ("loglogistic", params, "cdf", x, z / (1 + z), 1e-15, 1e-12, src)
+            yield ("loglogistic", params, "survival", x, 1 / (1 + z), 1e-300, 1e-12, src)
+
+
 # Claim counts: Poisson(lambda), negative binomial (r, beta), with SciPy's
 # nbinom(n=r, p=1/(1+beta)), and binomial (n, p).
 POISSONS = [0.5, 3.0, 40.0]
@@ -101,9 +130,9 @@ def main():
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
-        for r in list(rows()) + list(gamma_rows()) + list(counts()) + list(weibull_rows()):
-            dist, params, qty, arg, expected, abs_tol, rel_tol = r
-            w.writerow([dist, params, qty, repr(float(arg)) if arg != "" else "", repr(float(expected)), abs_tol, rel_tol, SOURCE])
+        for r in list(rows()) + list(gamma_rows()) + list(counts()) + list(weibull_rows()) + list(loglogistic_rows()):
+            dist, params, qty, arg, expected, abs_tol, rel_tol, *src = r
+            w.writerow([dist, params, qty, repr(float(arg)) if arg != "" else "", repr(float(expected)), abs_tol, rel_tol, src[0] if src else SOURCE])
     print(f"wrote {OUT}", file=sys.stderr)
 
 

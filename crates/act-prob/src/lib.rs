@@ -22,6 +22,7 @@ pub mod grid;
 pub mod ipc;
 pub mod large_losses;
 pub mod local_pareto;
+pub mod loglogistic;
 pub mod lognormal;
 pub mod mixture;
 pub mod pareto;
@@ -44,6 +45,7 @@ pub use large_losses::LargeLosses;
 pub use local_pareto::{
     LocalParetoApproximation, LocalParetoConversion, LogAffinePareto, local_pareto_to_piecewise,
 };
+pub use loglogistic::Loglogistic;
 pub use lognormal::Lognormal;
 pub use mixture::Mixture;
 pub use pareto::Pareto;

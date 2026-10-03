@@ -37,6 +37,22 @@ conversion reports the error it introduces.
   quantities as weighted sums, variance by the law of total variance,
   quantiles by bisection. Parity for the Weibull: SciPy and the mpmath
   integrals.
+- `act_prob::Loglogistic` (shape `α`, scale `θ` = the median; SciPy's
+  `fisk`), Pareto-tailed: the mean is infinite for `α <= 1`, the variance
+  for `α <= 2`, while limited and layer moments always exist. Limited
+  moments use the unnormalized incomplete beta, reaching a non-positive
+  second argument by recurrence; layers past `θ 2^(1/α)` use a series in
+  `(θ/x)^α`, so far layers of heavy tails do not cancel. Parity: the mpmath
+  integrals, SciPy for the mean and variance, and 40-digit closed forms
+  for the quantile, cdf and survival (SciPy's `fisk` loses about five
+  digits at `p = 0.999999`).
+- **Growth curves.** Clark's LDF and Cape Cod methods model the share of
+  ultimate reported by age `t` as a growth curve `G(t)`, usually the
+  loglogistic `t^ω / (t^ω + θ^ω)` or the Weibull `1 - exp(-(t/θ)^ω)`.
+  These are exactly `Loglogistic::cdf` and `Weibull::cdf` with shape `ω`
+  and scale `θ`, so `act-prob` supplies the curves: any `Distribution` on
+  the positive axis is a valid growth curve through its `cdf`. Fitting
+  them to a triangle belongs to the Reserving lane.
 - `act_prob::Sampled` and the `Empirical` trait (`draws`, `sorted`,
   `mean_of`, `var`, `tvar`), and `act_prob::risk::{var_sorted, tvar_sorted}`,
   the shared risk measures every domain calls.
