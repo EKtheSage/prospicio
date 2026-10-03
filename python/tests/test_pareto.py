@@ -87,3 +87,33 @@ def test_pickle_round_trip():
               D.Binomial(5, 0.2)):
         back = pickle.loads(pickle.dumps(d))
         assert repr(back) == repr(d)
+
+
+def test_generalized_pareto_fit_and_whole_truncation():
+    g = D.GeneralizedPareto.riegel(1000.0, 3.0, 1.5)
+    draws = g.sample(50_000, seed=4)
+    fit = D.GeneralizedPareto.fit_riegel(draws, 1000.0)
+    assert 1000.0 / fit.beta == pytest.approx(3.0, rel=0.05)
+    assert 1.0 / fit.xi == pytest.approx(1.5, rel=0.05)
+    truth = D.PiecewisePareto([1000.0, 2500.0], [1.2, 0.8], truncation=60_000.0, truncation_type="wd")
+    fit = D.PiecewisePareto.fit(truth.sample(50_000, seed=5), [1000.0, 2500.0],
+                                truncation=60_000.0, truncation_type="wd")
+    assert fit.truncation_type == "wd"
+    assert fit.alpha == pytest.approx([1.2, 0.8], rel=0.05)
+
+
+def test_local_pareto_conversion():
+    exact = D.LogAffinePareto(1000.0, 1.5, 0.4)
+    pp, err, end = D.local_pareto_to_piecewise(1000.0, exact.local_alpha, rel_tolerance=1e-5)
+    assert err <= 1e-5 and end > 1000.0
+    for x in (1500.0, 7777.0, 1e5):
+        if x < end:
+            assert pp.survival(x) == pytest.approx(exact.survival(x), rel=1.01e-5)
+
+    def bad(x):
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        D.local_pareto_to_piecewise(1.0, bad)
+    with pytest.raises(ValueError, match="alpha"):
+        D.local_pareto_to_piecewise(1.0, lambda x: -1.0)

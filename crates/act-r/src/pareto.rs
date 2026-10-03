@@ -162,6 +162,7 @@ severity_class!(PiecewisePareto {
         Ok(Self { inner })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn fit(
         losses: &[f64],
         t: &[f64],
@@ -169,9 +170,11 @@ severity_class!(PiecewisePareto {
         censored: &[f64],
         weights: &[f64],
         truncation_at: f64,
+        truncation_type: &str,
     ) -> Result<Self> {
         let data = large_losses(losses, reporting, censored, weights)?;
-        let truncation = truncation(truncation_at).map(|tr| (tr, Truncation::LastPiece));
+        let kind = truncation_kind(truncation_type)?;
+        let truncation = truncation(truncation_at).map(|tr| (tr, kind));
         let inner = act_prob::PiecewisePareto::fit(t.to_vec(), &data, truncation).map_err(to_r)?;
         Ok(Self { inner })
     }
@@ -250,6 +253,18 @@ severity_class!(GeneralizedPareto {
 
     fn riegel(t: f64, alpha_ini: f64, alpha_tail: f64) -> Result<Self> {
         let inner = act_prob::evt::Gpd::riegel(t, alpha_ini, alpha_tail).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn fit_riegel(
+        losses: &[f64],
+        t: f64,
+        reporting: &[f64],
+        censored: &[f64],
+        weights: &[f64],
+    ) -> Result<Self> {
+        let data = large_losses(losses, reporting, censored, weights)?;
+        let inner = act_prob::evt::Gpd::fit_riegel(t, &data).map_err(to_r)?;
         Ok(Self { inner })
     }
 
@@ -341,8 +356,55 @@ fn claim_count_parameters(mean: f64, dispersion: f64) -> Result<List> {
     )
 }
 
+/// Converts a local Pareto with local alpha given by the R function
+/// `alpha` to a piecewise Pareto: `list(severity, max_relative_error,
+/// approximated_to)`.
+#[extendr]
+fn local_pareto_convert(
+    t: f64,
+    alpha: Function,
+    rel_tolerance: f64,
+    stop_survival: f64,
+    stop_at: f64,
+) -> Result<List> {
+    // An R error inside `alpha` becomes NaN for the Rust side, which
+    // rejects it; the original error is returned instead.
+    let failure = std::cell::RefCell::new(None);
+    let call = |x: f64| -> f64 {
+        let value = alpha.call(pairlist!(x)).and_then(|v| {
+            v.as_real()
+                .ok_or(Error::Other("alpha must return a number".into()))
+        });
+        match value {
+            Ok(v) => v,
+            Err(e) => {
+                failure.borrow_mut().get_or_insert(e);
+                f64::NAN
+            }
+        }
+    };
+    let options = act_prob::LocalParetoConversion {
+        rel_tolerance,
+        stop_survival,
+        stop_at,
+    };
+    let result = act_prob::local_pareto_to_piecewise(t, call, options);
+    if let Some(e) = failure.into_inner() {
+        return Err(e);
+    }
+    let approx = result.map_err(to_r)?;
+    Ok(list!(
+        severity = PiecewisePareto {
+            inner: approx.severity
+        },
+        max_relative_error = approx.max_relative_error,
+        approximated_to = approx.approximated_to
+    ))
+}
+
 extendr_module! {
     mod pareto;
+    fn local_pareto_convert;
     impl Pareto;
     impl PiecewisePareto;
     impl LogAffinePareto;

@@ -27,6 +27,7 @@ reference:
       - distributions.PiecewisePareto
       - distributions.LogAffinePareto
       - distributions.GeneralizedPareto
+      - distributions.local_pareto_to_piecewise
   - title: Claim counts
     desc: Frequency distributions for frequency-severity aggregation.
     contents:

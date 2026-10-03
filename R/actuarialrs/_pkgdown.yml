@@ -20,6 +20,7 @@ reference:
       - log_affine_pareto
       - generalized_pareto
       - pareto_fit
+      - local_pareto_to_piecewise
       - pareto_severity
       - local_alpha
   - title: Claim counts

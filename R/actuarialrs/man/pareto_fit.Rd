@@ -3,6 +3,7 @@
 \name{pareto_fit}
 \alias{pareto_fit}
 \alias{piecewise_pareto_fit}
+\alias{generalized_pareto_fit}
 \title{Maximum likelihood fits to large losses}
 \usage{
 pareto_fit(
@@ -20,7 +21,16 @@ piecewise_pareto_fit(
   reporting_thresholds = NULL,
   censored = NULL,
   weights = NULL,
-  truncation = NULL
+  truncation = NULL,
+  truncation_type = "lp"
+)
+
+generalized_pareto_fit(
+  losses,
+  t,
+  reporting_thresholds = NULL,
+  censored = NULL,
+  weights = NULL
 )
 }
 \arguments{
@@ -34,20 +44,28 @@ piecewise_pareto_fit(
 
 \item{weights}{Per-loss weights, or \code{NULL}.}
 
-\item{truncation}{Truncation point (of the last piece), or \code{NULL}.}
+\item{truncation}{Truncation point, or \code{NULL}.}
+
+\item{truncation_type}{For \code{piecewise_pareto_fit()}: \code{"lp"} to truncate
+the last piece, \code{"wd"} the whole distribution.}
 }
 \value{
-A \link{pareto} or \link{piecewise_pareto} object.
+A \link{pareto}, \link{piecewise_pareto} or \link{generalized_pareto} object.
 }
 \description{
-Estimate the alpha of a \link{pareto} or the alphas of a \link{piecewise_pareto}
-from large losses, each conditioned on exceeding its reporting threshold
-(raised to the lowest threshold of the fit), with losses capped by a
-policy limit treated as censored. Untruncated estimates are closed forms;
-a truncated (last) piece is solved numerically and clamped to
-\verb{[0.001, 1000]}.
+Estimate the alpha of a \link{pareto}, the alphas of a \link{piecewise_pareto}, or
+the initial and tail alphas of Riegel's \link{generalized_pareto}, from large
+losses, each conditioned on exceeding its reporting threshold (raised to
+the lowest threshold of the fit), with losses capped by a policy limit
+treated as censored. Untruncated Pareto estimates are closed forms;
+truncated ones are solved numerically and clamped to \verb{[0.001, 1000]}. A
+piecewise Pareto truncated as a whole (\code{truncation_type = "wd"}) couples
+the alphas, which are then solved together. The generalized Pareto fit
+is untruncated; read its alphas as \code{t / g@beta} and \code{1 / g@xi}.
 }
 \examples{
 pareto_fit(c(1500, 2500, 4000, 10000), 1000, censored = c(FALSE, FALSE, FALSE, TRUE))
 piecewise_pareto_fit(c(1200, 1500, 2500, 6000), c(1000, 2000))
+g <- generalized_pareto_fit(c(1100, 1300, 1750, 2600, 4100, 9000, 25000), 1000)
+c(alpha_ini = 1000 / g@beta, alpha_tail = 1 / g@xi)
 }

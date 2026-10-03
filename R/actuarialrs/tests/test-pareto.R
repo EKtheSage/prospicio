@@ -60,4 +60,19 @@ agg <- compound_distribution(binomial_count(20, 0.1), gd, points = 10001)
 near(mean(agg), 2 * mean(gd), 1e-9)
 ev <- simulate_events(claim_count(2, 1.5), pareto(1000, 2), n_sims = 10, seed = 1)
 stopifnot(S7::S7_inherits(ev, event_set))
+# Generalized Pareto fit, whole-distribution truncated fit, local Pareto.
+g <- generalized_pareto_riegel(1000, 3, 1.5)
+fit <- generalized_pareto_fit(draws(g, 50000, seed = 4), 1000)
+stopifnot(abs(1000 / fit@beta / 3 - 1) < 0.05, abs(1 / fit@xi / 1.5 - 1) < 0.05)
+truth <- piecewise_pareto(c(1000, 2500), c(1.2, 0.8), truncation = 60000, truncation_type = "wd")
+wd <- piecewise_pareto_fit(draws(truth, 50000, seed = 5), c(1000, 2500), truncation = 60000,
+                           truncation_type = "wd")
+stopifnot(wd@truncation_type == "wd", all(abs(wd@alpha / c(1.2, 0.8) - 1) < 0.05))
+exact <- log_affine_pareto(1000, 1.5, gamma = 0.4)
+conv <- local_pareto_to_piecewise(1000, function(x) local_alpha(exact, x), rel_tolerance = 1e-5)
+stopifnot(conv$max_relative_error <= 1e-5)
+near(survival(conv$severity, 7777), survival(exact, 7777), 1.01e-5)
+stopifnot(inherits(try(local_pareto_to_piecewise(1, function(x) stop("boom")), silent = TRUE),
+                   "try-error"))
+
 cat("actuarialrs R pareto tests passed\n")

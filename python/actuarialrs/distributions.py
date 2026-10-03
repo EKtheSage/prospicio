@@ -15,6 +15,7 @@ from .actuarialrs_native import (
     PredictiveDistribution,
     Sampled,
     claim_count,
+    local_pareto_to_piecewise,
 )
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "NegativeBinomial",
     "Binomial",
     "claim_count",
+    "local_pareto_to_piecewise",
     "Grid",
     "DiscretizationReport",
     "Sampled",

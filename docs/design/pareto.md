@@ -351,6 +351,10 @@ Bindings: Python `actuarialrs.distributions` (`Pareto`,
 `binomial_count()`, `claim_count()`, with `survival()`,
 `layer_variance()` and `local_alpha()`). Every severity also works with
 grid discretization, compound distributions and event simulation.
+The generalized Pareto fit (`GeneralizedPareto.fit_riegel`,
+`generalized_pareto_fit()`), whole-distribution truncated piecewise fits
+(`truncation_type="wd"`) and `local_pareto_to_piecewise` (taking a Python
+callable or an R function as the local alpha) are bound too.
 `Binomial` and `PanjerClass::from_mean_dispersion` complete the Panjer
 class. A binomial needs a whole number of trials, so below dispersion 1
 the trials are `mean / (1 − dispersion)` rounded up: the mean is kept and
