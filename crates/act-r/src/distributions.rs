@@ -86,6 +86,8 @@ pub(crate) enum AnySeverity {
     PiecewisePareto(act_prob::PiecewisePareto),
     LogAffinePareto(act_prob::LogAffinePareto),
     GeneralizedPareto(act_prob::evt::Gpd),
+    Gamma(act_prob::Gamma),
+    Tweedie(act_prob::Tweedie),
 }
 
 /// Calls `$call` on the inner severity, whichever it is.
@@ -98,13 +100,17 @@ macro_rules! each {
             Self::PiecewisePareto($d) => $call,
             Self::LogAffinePareto($d) => $call,
             Self::GeneralizedPareto($d) => $call,
+            Self::Gamma($d) => $call,
+            Self::Tweedie($d) => $call,
         }
     };
 }
 
 impl AnySeverity {
     pub(crate) fn from_robj(obj: &Robj) -> Result<Self> {
-        use crate::pareto::{GeneralizedPareto, LogAffinePareto, Pareto, PiecewisePareto};
+        use crate::pareto::{
+            GammaDist, GeneralizedPareto, LogAffinePareto, Pareto, PiecewisePareto, TweedieDist,
+        };
         if let Ok(d) = <&Lognormal>::try_from(obj) {
             return Ok(Self::Lognormal(d.inner));
         }
@@ -123,8 +129,15 @@ impl AnySeverity {
         if let Ok(d) = <&GeneralizedPareto>::try_from(obj) {
             return Ok(Self::GeneralizedPareto(d.inner));
         }
+        if let Ok(d) = <&GammaDist>::try_from(obj) {
+            return Ok(Self::Gamma(d.inner));
+        }
+        if let Ok(d) = <&TweedieDist>::try_from(obj) {
+            return Ok(Self::Tweedie(d.inner));
+        }
         Err(Error::Other(
-            "expected a severity: lognormal, grid, or a Pareto-family distribution".into(),
+            "expected a severity: lognormal, gamma, tweedie, grid, or a Pareto-family distribution"
+                .into(),
         ))
     }
 }

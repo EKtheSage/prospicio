@@ -490,3 +490,25 @@ fn allocations_match_numpy() {
         }
     });
 }
+
+#[test]
+fn tweedie_matches_mpmath() {
+    use act_prob::Tweedie;
+    let cases = reference("tweedie_mpmath.csv");
+    check(&cases, |c| {
+        let y = Tweedie::new(
+            c.param("params", "mu"),
+            c.param("params", "phi"),
+            c.param("params", "p"),
+        )
+        .ok()?;
+        let arg = c.number("arg")?;
+        match c.get("quantity") {
+            "ln_pdf" => Some(y.ln_pdf(arg)),
+            "cdf" => Some(y.cdf(arg)),
+            "survival" => Some(y.survival(arg)),
+            "lev" => Some(y.lev(arg)),
+            _ => None,
+        }
+    });
+}

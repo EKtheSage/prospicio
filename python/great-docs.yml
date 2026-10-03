@@ -17,6 +17,8 @@ reference:
     desc: Parametric, discretized and sampled representations.
     contents:
       - distributions.Lognormal
+      - distributions.Gamma
+      - distributions.Tweedie
       - distributions.Grid
       - distributions.DiscretizationReport
       - distributions.Sampled

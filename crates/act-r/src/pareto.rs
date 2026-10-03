@@ -1,5 +1,5 @@
-//! Probability lane: wrappers over the `act_prob` Pareto family and claim
-//! counts by dispersion, for the R `pareto.R` API
+//! Probability lane: wrappers over the `act_prob` Pareto family, the gamma
+//! and Tweedie distributions, and claim counts by dispersion, for the R `pareto.R` API
 //! (`docs/design/pareto.md`). Numeric arguments are vectors where R users
 //! expect them; a truncation of `Inf` means none.
 
@@ -402,6 +402,81 @@ fn local_pareto_convert(
     ))
 }
 
+/// Gamma distribution.
+#[extendr]
+pub(crate) struct GammaDist {
+    pub(crate) inner: act_prob::Gamma,
+}
+
+severity_class!(GammaDist {
+    fn new(shape: f64, scale: f64) -> Result<Self> {
+        let inner = act_prob::Gamma::new(shape, scale).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn from_mean_cv(mean: f64, cv: f64) -> Result<Self> {
+        let inner = act_prob::Gamma::from_mean_cv(mean, cv).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn from_mean_dispersion(mean: f64, dispersion: f64) -> Result<Self> {
+        let inner = act_prob::Gamma::from_mean_dispersion(mean, dispersion).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    fn ln_pdf(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&x| self.inner.ln_pdf(x)).collect()
+    }
+});
+
+/// Tweedie (compound Poisson-gamma) distribution.
+#[extendr]
+pub(crate) struct TweedieDist {
+    pub(crate) inner: act_prob::Tweedie,
+}
+
+severity_class!(TweedieDist {
+    fn new(mean: f64, dispersion: f64, power: f64) -> Result<Self> {
+        let inner = act_prob::Tweedie::new(mean, dispersion, power).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn from_poisson_gamma(lambda: f64, shape: f64, scale: f64) -> Result<Self> {
+        let inner = act_prob::Tweedie::from_poisson_gamma(lambda, shape, scale).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    fn power(&self) -> f64 {
+        self.inner.power()
+    }
+
+    fn lambda(&self) -> f64 {
+        self.inner.lambda()
+    }
+
+    fn severity(&self) -> GammaDist {
+        GammaDist {
+            inner: self.inner.severity(),
+        }
+    }
+
+    fn ln_pdf(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&x| self.inner.ln_pdf(x)).collect()
+    }
+});
+
 extendr_module! {
     mod pareto;
     fn local_pareto_convert;
@@ -409,6 +484,8 @@ extendr_module! {
     impl PiecewisePareto;
     impl LogAffinePareto;
     impl GeneralizedPareto;
+    impl GammaDist;
+    impl TweedieDist;
     impl Binomial;
     fn claim_count_parameters;
 }

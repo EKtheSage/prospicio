@@ -75,4 +75,22 @@ near(survival(conv$severity, 7777), survival(exact, 7777), 1.01e-5)
 stopifnot(inherits(try(local_pareto_to_piecewise(1, function(x) stop("boom")), silent = TRUE),
                    "try-error"))
 
+# Gamma and Tweedie.
+g <- gamma_from_mean_cv(1000, 0.5)
+near(g@shape, 4, 1e-12)
+near(lev(g, 1500) + stop_loss(g, 1500), 1000, 1e-12)
+near(survival(gamma_distribution(1, 3), 6), exp(-2), 1e-15)
+near(log_density(gamma_distribution(1, 2), 3), -1.5 - log(2), 1e-15)
+near(gamma_from_mean_dispersion(200, 0.25)@shape, 4, 1e-12)
+y <- tweedie(500, 40, 1.6)
+near(cdf(y, 0), exp(-y@lambda), 1e-15)
+near(variance(y), 40 * 500^1.6, 1e-12)
+near(lev(y, 800) + stop_loss(y, 800), 500, 1e-12)
+z <- tweedie_from_poisson_gamma(y@lambda, y@severity@shape, y@severity@scale)
+near(z@mean_param, 500, 1e-12)
+near(log_density(y, 0), -y@lambda, 1e-15)
+stopifnot(inherits(try(tweedie(1, 1, 2), silent = TRUE), "try-error"))
+sg <- discretize(g, 50, 400)
+near(mean(sg), lev(g, 399 * 50), 1e-9)
+
 cat("actuarialrs R pareto tests passed\n")

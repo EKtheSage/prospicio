@@ -14,6 +14,9 @@ reference:
       - discretize
       - map_grid
       - sampled
+      - gamma_distribution
+      - tweedie
+      - log_density
   - title: Large-loss severities
     contents:
       - pareto
