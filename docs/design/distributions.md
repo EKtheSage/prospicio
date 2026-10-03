@@ -31,6 +31,12 @@ conversion reports the error it introduces.
   `validation/scripts/mpmath_tweedie.py`) for the Tweedie, from about 2 to
   about 500 expected claims. An FFT of Poisson × gamma on a fine grid
   agrees with the series (`act-aggregate`).
+- `act_prob::Weibull` (shape, scale; SciPy's `weibull_min`), with layer
+  moments through the incomplete gamma, and `act_prob::Mixture`, a finite
+  mixture of any severities (attritional plus large losses): linear
+  quantities as weighted sums, variance by the law of total variance,
+  quantiles by bisection. Parity for the Weibull: SciPy and the mpmath
+  integrals.
 - `act_prob::Sampled` and the `Empirical` trait (`draws`, `sorted`,
   `mean_of`, `var`, `tvar`), and `act_prob::risk::{var_sorted, tvar_sorted}`,
   the shared risk measures every domain calls.

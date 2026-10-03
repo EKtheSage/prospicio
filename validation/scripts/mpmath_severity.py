@@ -3,8 +3,8 @@
     pip install mpmath
     python validation/scripts/mpmath_severity.py
 
-Limited expected values, stop-loss and layer means for the lognormal and
-the gamma, by numerically integrating the survival function at 30
+Limited expected values, stop-loss and layer means for the lognormal, the
+gamma and the Weibull, by numerically integrating the survival function at 30
 significant digits:
 
     LEV(d)          = integral of S(x) from 0 to d
@@ -63,6 +63,22 @@ def gamma_rows():
             yield "gamma", params, "layer", d, d, integral(S, d, 2 * d, median), 1e-11
 
 
+WEIBULLS = [(0.5, 100.0), (2.5, 1000.0)]
+
+
+def weibull_rows():
+    for shape, scale in WEIBULLS:
+        k, lam = mp.mpf(shape), mp.mpf(scale)
+        S = lambda x, k=k, lam=lam: mp.exp(-((x / lam) ** k))
+        median = lam * mp.log(2) ** (1 / k)
+        params = f"shape={shape};scale={scale}"
+        for p in PROBS:
+            d = mp.mpf(float(stats.weibull_min(shape, scale=scale).isf(1 - float(p))))
+            yield "weibull", params, "lev", d, "", integral(S, mp.mpf(0), d, median), 1e-12
+            yield "weibull", params, "stop_loss", d, "", integral(S, d, mp.inf, median), 1e-11
+            yield "weibull", params, "layer", d, d, integral(S, d, 2 * d, median), 1e-11
+
+
 def rows():
     for mu, sigma in LOGNORMALS:
         S = survival(mp.mpf(mu), mp.mpf(sigma))
@@ -82,7 +98,7 @@ def main():
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "arg2", "expected", "abs_tol", "rel_tol", "source"])
-        for dist, params, qty, arg, arg2, expected, rel in list(rows()) + list(gamma_rows()):
+        for dist, params, qty, arg, arg2, expected, rel in list(rows()) + list(gamma_rows()) + list(weibull_rows()):
             w.writerow([
                 dist, params, qty, repr(float(arg)),
                 repr(float(arg2)) if arg2 != "" else "",

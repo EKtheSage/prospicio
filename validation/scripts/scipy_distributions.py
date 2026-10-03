@@ -52,6 +52,23 @@ def gamma_rows():
             yield ("gamma", params, "survival", x, d.sf(x), 1e-300, 1e-12)
 
 
+# Weibulls (shape, scale): heavier than exponential below shape 1.
+WEIBULLS = [(0.5, 100.0), (1.0, 5.0), (2.5, 1000.0)]
+
+
+def weibull_rows():
+    for shape, scale in WEIBULLS:
+        d = stats.weibull_min(shape, scale=scale)
+        params = f"shape={shape};scale={scale}"
+        yield ("weibull", params, "mean", "", d.mean(), 0.0, 1e-13)
+        yield ("weibull", params, "variance", "", d.var(), 0.0, 1e-12)
+        for p in PROBS:
+            x = d.ppf(p)
+            yield ("weibull", params, "quantile", p, x, 0.0, 1e-12)
+            yield ("weibull", params, "cdf", x, d.cdf(x), 1e-15, 1e-12)
+            yield ("weibull", params, "survival", x, d.sf(x), 1e-300, 1e-12)
+
+
 # Claim counts: Poisson(lambda), negative binomial (r, beta), with SciPy's
 # nbinom(n=r, p=1/(1+beta)), and binomial (n, p).
 POISSONS = [0.5, 3.0, 40.0]
@@ -84,7 +101,7 @@ def main():
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
-        for r in list(rows()) + list(gamma_rows()) + list(counts()):
+        for r in list(rows()) + list(gamma_rows()) + list(counts()) + list(weibull_rows()):
             dist, params, qty, arg, expected, abs_tol, rel_tol = r
             w.writerow([dist, params, qty, repr(float(arg)) if arg != "" else "", repr(float(expected)), abs_tol, rel_tol, SOURCE])
     print(f"wrote {OUT}", file=sys.stderr)
