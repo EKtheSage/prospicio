@@ -24,10 +24,40 @@ fn lognormal_matches_scipy() {
 }
 
 #[test]
-fn lognormal_severity_matches_integration() {
+fn gamma_matches_scipy() {
+    use act_prob::Gamma;
+    let cases: Vec<_> = reference("distributions_scipy.csv")
+        .into_iter()
+        .filter(|c| c.get("distribution") == "gamma")
+        .collect();
+    check(&cases, |c| {
+        let d = Gamma::new(c.param("params", "shape"), c.param("params", "scale")).ok()?;
+        let arg = c.number("arg");
+        match c.get("quantity") {
+            "mean" => Some(d.mean()),
+            "variance" => Some(d.variance()),
+            "cdf" => Some(d.cdf(arg?)),
+            "survival" => Some(d.survival(arg?)),
+            "quantile" => d.quantile(arg?).ok(),
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn severities_match_integration() {
+    use act_prob::Gamma;
     let cases = reference("severity_mpmath.csv");
     check(&cases, |c| {
-        let d = Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?;
+        let d: Box<dyn Severity> = match c.get("distribution") {
+            "lognormal" => Box::new(
+                Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?,
+            ),
+            "gamma" => {
+                Box::new(Gamma::new(c.param("params", "shape"), c.param("params", "scale")).ok()?)
+            }
+            _ => return None,
+        };
         let arg = c.number("arg")?;
         match c.get("quantity") {
             "lev" => Some(d.lev(arg)),
@@ -125,13 +155,15 @@ fn distortions_match_integration() {
 
 #[test]
 fn special_functions_match_scipy() {
-    use act_math::special::{beta_inc, student_t_cdf};
+    use act_math::special::{beta_inc, gamma_inc, student_t_cdf};
     let cases = reference("special_scipy.csv");
     check(&cases, |c| {
         let x = c.number("arg")?;
         match c.get("distribution") {
             "beta_inc" => Some(beta_inc(c.param("params", "a"), c.param("params", "b"), x)),
             "student_t" => Some(student_t_cdf(x, c.param("params", "nu"))),
+            "gamma_p" => Some(gamma_inc(c.param("params", "a"), x).0),
+            "gamma_q" => Some(gamma_inc(c.param("params", "a"), x).1),
             _ => None,
         }
     });
