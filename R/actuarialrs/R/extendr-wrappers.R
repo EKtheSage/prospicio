@@ -8,6 +8,26 @@ NULL
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
 
+glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power) .Call(wrap__glm_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power)
+
+gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas)
+
+family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Call(wrap__family_deviance_rust, family_name, theta, power, y, mu, weights)
+
+gini_rust <- function(y, pred, exposure) .Call(wrap__gini_rust, y, pred, exposure)
+
+lift_rust <- function(y, pred, exposure, bands) .Call(wrap__lift_rust, y, pred, exposure, bands)
+
+crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
+
+k_fold_rust <- function(n, k, seed) .Call(wrap__k_fold_rust, n, k, seed)
+
+group_k_fold_rust <- function(groups, k, seed) .Call(wrap__group_k_fold_rust, groups, k, seed)
+
+time_ordered_rust <- function(periods, n_test) .Call(wrap__time_ordered_rust, periods, n_test)
+
+mcmc_diagnostics_rust <- function(draws, n_chains) .Call(wrap__mcmc_diagnostics_rust, draws, n_chains)
+
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
 
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
@@ -27,6 +47,10 @@ pricing_alpha_between_frequencies <- function(threshold_1, frequency_1, threshol
 iman_conover_reorder <- function(pd, correlation, seed) .Call(wrap__iman_conover_reorder, pd, correlation, seed)
 
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
+
+mean_excess_rust <- function(draws, thresholds) .Call(wrap__mean_excess_rust, draws, thresholds)
+
+hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
 EventSet <- new.env(parent = emptyenv())
 
@@ -286,6 +310,74 @@ PredictiveDistribution$provenance <- function() .Call(wrap__PredictiveDistributi
 #' @export
 `[[.PredictiveDistribution` <- `$.PredictiveDistribution`
 
+GlmModel <- new.env(parent = emptyenv())
+
+GlmModel$names <- function() .Call(wrap__GlmModel__names, self)
+
+GlmModel$coefficients <- function() .Call(wrap__GlmModel__coefficients, self)
+
+GlmModel$std_errors <- function() .Call(wrap__GlmModel__std_errors, self)
+
+GlmModel$p_values <- function() .Call(wrap__GlmModel__p_values, self)
+
+GlmModel$covariance <- function() .Call(wrap__GlmModel__covariance, self)
+
+GlmModel$dispersion <- function() .Call(wrap__GlmModel__dispersion, self)
+
+GlmModel$deviance <- function() .Call(wrap__GlmModel__deviance, self)
+
+GlmModel$null_deviance <- function() .Call(wrap__GlmModel__null_deviance, self)
+
+GlmModel$log_likelihood <- function() .Call(wrap__GlmModel__log_likelihood, self)
+
+GlmModel$aic <- function() .Call(wrap__GlmModel__aic, self)
+
+GlmModel$df_resid <- function() .Call(wrap__GlmModel__df_resid, self)
+
+GlmModel$iterations <- function() .Call(wrap__GlmModel__iterations, self)
+
+GlmModel$fitted <- function() .Call(wrap__GlmModel__fitted, self)
+
+GlmModel$family <- function() .Call(wrap__GlmModel__family, self)
+
+GlmModel$predict <- function(x, names, offset) .Call(wrap__GlmModel__predict, self, x, names, offset)
+
+GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+
+#' @export
+`$.GlmModel` <- function (self, name) { func <- GlmModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.GlmModel` <- `$.GlmModel`
+
+GamModel <- new.env(parent = emptyenv())
+
+GamModel$names <- function() .Call(wrap__GamModel__names, self)
+
+GamModel$coefficients <- function() .Call(wrap__GamModel__coefficients, self)
+
+GamModel$lambdas <- function() .Call(wrap__GamModel__lambdas, self)
+
+GamModel$edf <- function() .Call(wrap__GamModel__edf, self)
+
+GamModel$dispersion <- function() .Call(wrap__GamModel__dispersion, self)
+
+GamModel$deviance <- function() .Call(wrap__GamModel__deviance, self)
+
+GamModel$score <- function() .Call(wrap__GamModel__score, self)
+
+GamModel$fitted <- function() .Call(wrap__GamModel__fitted, self)
+
+GamModel$predict <- function(x, names, offset) .Call(wrap__GamModel__predict, self, x, names, offset)
+
+GamModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__GamModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+
+#' @export
+`$.GamModel` <- function (self, name) { func <- GamModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.GamModel` <- `$.GamModel`
+
 Pareto <- new.env(parent = emptyenv())
 
 Pareto$new <- function(t, alpha, truncation_at) .Call(wrap__Pareto__new, t, alpha, truncation_at)
@@ -527,6 +619,72 @@ TweedieDist$sample <- function(n, seed, stream) .Call(wrap__TweedieDist__sample,
 
 #' @export
 `[[.TweedieDist` <- `$.TweedieDist`
+
+WeibullDist <- new.env(parent = emptyenv())
+
+WeibullDist$new <- function(shape, scale) .Call(wrap__WeibullDist__new, shape, scale)
+
+WeibullDist$shape <- function() .Call(wrap__WeibullDist__shape, self)
+
+WeibullDist$scale <- function() .Call(wrap__WeibullDist__scale, self)
+
+WeibullDist$mean <- function() .Call(wrap__WeibullDist__mean, self)
+
+WeibullDist$variance <- function() .Call(wrap__WeibullDist__variance, self)
+
+WeibullDist$cdf <- function(x) .Call(wrap__WeibullDist__cdf, self, x)
+
+WeibullDist$survival <- function(x) .Call(wrap__WeibullDist__survival, self, x)
+
+WeibullDist$quantile <- function(p) .Call(wrap__WeibullDist__quantile, self, p)
+
+WeibullDist$lev <- function(limit) .Call(wrap__WeibullDist__lev, self, limit)
+
+WeibullDist$stop_loss <- function(retention) .Call(wrap__WeibullDist__stop_loss, self, retention)
+
+WeibullDist$layer <- function(limit, attachment) .Call(wrap__WeibullDist__layer, self, limit, attachment)
+
+WeibullDist$layer_variance <- function(limit, attachment) .Call(wrap__WeibullDist__layer_variance, self, limit, attachment)
+
+WeibullDist$sample <- function(n, seed, stream) .Call(wrap__WeibullDist__sample, self, n, seed, stream)
+
+#' @export
+`$.WeibullDist` <- function (self, name) { func <- WeibullDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.WeibullDist` <- `$.WeibullDist`
+
+MixtureDist <- new.env(parent = emptyenv())
+
+MixtureDist$new <- function(weights, components) .Call(wrap__MixtureDist__new, weights, components)
+
+MixtureDist$weights <- function() .Call(wrap__MixtureDist__weights, self)
+
+MixtureDist$mean <- function() .Call(wrap__MixtureDist__mean, self)
+
+MixtureDist$variance <- function() .Call(wrap__MixtureDist__variance, self)
+
+MixtureDist$cdf <- function(x) .Call(wrap__MixtureDist__cdf, self, x)
+
+MixtureDist$survival <- function(x) .Call(wrap__MixtureDist__survival, self, x)
+
+MixtureDist$quantile <- function(p) .Call(wrap__MixtureDist__quantile, self, p)
+
+MixtureDist$lev <- function(limit) .Call(wrap__MixtureDist__lev, self, limit)
+
+MixtureDist$stop_loss <- function(retention) .Call(wrap__MixtureDist__stop_loss, self, retention)
+
+MixtureDist$layer <- function(limit, attachment) .Call(wrap__MixtureDist__layer, self, limit, attachment)
+
+MixtureDist$layer_variance <- function(limit, attachment) .Call(wrap__MixtureDist__layer_variance, self, limit, attachment)
+
+MixtureDist$sample <- function(n, seed, stream) .Call(wrap__MixtureDist__sample, self, n, seed, stream)
+
+#' @export
+`$.MixtureDist` <- function (self, name) { func <- MixtureDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.MixtureDist` <- `$.MixtureDist`
 
 Binomial <- new.env(parent = emptyenv())
 

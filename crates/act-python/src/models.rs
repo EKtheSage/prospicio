@@ -1,0 +1,988 @@
+//! `actuarialrs.models`: model terms and designs, GLMs, GAMs, metrics,
+//! resampling and MCMC diagnostics (Models lane; `docs/design/models.md`).
+
+use std::collections::HashMap;
+
+use act_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+use act_glm::{Dispersion, Glm, GlmFit};
+use act_models::resample::{self, Split};
+use act_models::{Coding, Column, Design, Family, Fitted, Frame, Link, Model, Terms, metrics};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::prelude::*;
+
+use crate::distributions::PyPredictiveDistribution;
+use crate::to_py;
+
+/// A family from its name and parameter.
+fn family(name: &str, theta: Option<f64>, power: Option<f64>) -> PyResult<Family> {
+    let f = match name {
+        "gaussian" => Family::Gaussian,
+        "poisson" => Family::Poisson,
+        "gamma" => Family::Gamma,
+        "inverse_gaussian" => Family::InverseGaussian,
+        "binomial" => Family::Binomial,
+        "negative_binomial" => Family::NegativeBinomial {
+            theta: theta.ok_or_else(|| PyValueError::new_err("negative_binomial needs theta"))?,
+        },
+        "tweedie" => Family::Tweedie {
+            power: power.ok_or_else(|| PyValueError::new_err("tweedie needs power"))?,
+        },
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "family must be gaussian, poisson, gamma, inverse_gaussian, binomial, \
+                 negative_binomial or tweedie, got {other:?}"
+            )));
+        }
+    };
+    f.validate().map_err(to_py)?;
+    Ok(f)
+}
+
+/// A link from its name (`None` for the family's canonical link).
+fn link(name: Option<&str>, family: Family, power: Option<f64>) -> PyResult<Link> {
+    Ok(match name {
+        None => family.canonical_link(),
+        Some("identity") => Link::Identity,
+        Some("log") => Link::Log,
+        Some("logit") => Link::Logit,
+        Some("probit") => Link::Probit,
+        Some("cloglog") => Link::Cloglog,
+        Some("inverse") => Link::Inverse,
+        Some("inverse_squared") => Link::InverseSquared,
+        Some("power") => Link::Power(
+            power.ok_or_else(|| PyValueError::new_err("the power link needs link_power"))?,
+        ),
+        Some(other) => {
+            return Err(PyValueError::new_err(format!(
+                "link must be identity, log, logit, probit, cloglog, inverse, \
+                 inverse_squared or power, got {other:?}"
+            )));
+        }
+    })
+}
+
+fn link_name(link: Link) -> String {
+    match link {
+        Link::Identity => "identity".into(),
+        Link::Log => "log".into(),
+        Link::Logit => "logit".into(),
+        Link::Probit => "probit".into(),
+        Link::Cloglog => "cloglog".into(),
+        Link::Inverse => "inverse".into(),
+        Link::InverseSquared => "inverse_squared".into(),
+        Link::Power(p) => format!("power({p})"),
+    }
+}
+
+/// A frame from a dict of columns: lists of numbers are numeric, lists of
+/// strings are categorical.
+fn frame(data: &Bound<'_, PyAny>) -> PyResult<Frame> {
+    let map: HashMap<String, Bound<'_, PyAny>> = data
+        .extract()
+        .map_err(|_| PyTypeError::new_err("data must be a dict of column name to list"))?;
+    let mut names: Vec<&String> = map.keys().collect();
+    names.sort();
+    let mut columns = Vec::with_capacity(names.len());
+    for name in names {
+        let col = &map[name];
+        let column = if let Ok(v) = col.extract::<Vec<f64>>() {
+            Column::Numeric(v)
+        } else if let Ok(v) = col.extract::<Vec<String>>() {
+            Column::Categorical(v)
+        } else {
+            return Err(PyTypeError::new_err(format!(
+                "column {name:?} must be a list of numbers or of strings"
+            )));
+        };
+        columns.push((name.clone(), column));
+    }
+    Frame::new(columns).map_err(to_py)
+}
+
+fn with_offset_weights(
+    mut d: Design,
+    offset: Option<Vec<f64>>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<Design> {
+    if let Some(o) = offset {
+        d = d.with_offset(o).map_err(to_py)?;
+    }
+    if let Some(w) = weights {
+        d = d.with_weights(w).map_err(to_py)?;
+    }
+    Ok(d)
+}
+
+/// The terms of a model: an intercept, numeric columns and factors.
+///
+/// Build them up, then ``fit`` them to training data to learn the factor
+/// levels; the result builds the same design matrix on any data.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import Terms
+/// >>> data = {"age": [30.0, 45.0, 60.0], "region": ["N", "S", "W"]}
+/// >>> coding = Terms().intercept().numeric("age").factor("region").fit(data)
+/// >>> coding.names
+/// ['(Intercept)', 'age', 'region[S]', 'region[W]']
+#[pyclass(name = "Terms", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyTerms {
+    inner: Terms,
+}
+
+#[pymethods]
+impl PyTerms {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: Terms::new(),
+        }
+    }
+
+    /// Adds an intercept.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn intercept(&self) -> Self {
+        Self {
+            inner: self.inner.clone().intercept(),
+        }
+    }
+
+    /// Adds a numeric column.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn numeric(&self, name: &str) -> Self {
+        Self {
+            inner: self.inner.clone().numeric(name),
+        }
+    }
+
+    /// Adds a factor in treatment coding.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// reference : str, optional
+    ///     Reference level; the first in sorted order by default.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    #[pyo3(signature = (name, reference = None))]
+    fn factor(&self, name: &str, reference: Option<&str>) -> Self {
+        let inner = match reference {
+            Some(r) => self.inner.clone().factor_with_reference(name, r),
+            None => self.inner.clone().factor(name),
+        };
+        Self { inner }
+    }
+
+    /// Learns factor levels from training data.
+    ///
+    /// Parameters
+    /// ----------
+    /// data : dict of str to list
+    ///     Numeric columns as lists of numbers, factors as lists of strings.
+    ///
+    /// Returns
+    /// -------
+    /// Coding
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a column is missing or has the wrong kind.
+    fn fit(&self, data: &Bound<'_, PyAny>) -> PyResult<PyCoding> {
+        let inner = self.inner.fit(&frame(data)?).map_err(to_py)?;
+        Ok(PyCoding { inner })
+    }
+}
+
+/// Terms with factor levels learned from training data, from
+/// ``Terms.fit``.
+#[pyclass(name = "Coding", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyCoding {
+    inner: Coding,
+}
+
+#[pymethods]
+impl PyCoding {
+    /// Design matrix column names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names()
+    }
+
+    /// The design matrix for ``data``.
+    ///
+    /// Parameters
+    /// ----------
+    /// data : dict of str to list
+    /// offset : list of float, optional
+    /// weights : list of float, optional
+    ///
+    /// Returns
+    /// -------
+    /// Design
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a column is missing or a factor level was not seen in training.
+    #[pyo3(signature = (data, offset = None, weights = None))]
+    fn design(
+        &self,
+        data: &Bound<'_, PyAny>,
+        offset: Option<Vec<f64>>,
+        weights: Option<Vec<f64>>,
+    ) -> PyResult<PyDesign> {
+        let d = self.inner.design(&frame(data)?).map_err(to_py)?;
+        Ok(PyDesign {
+            inner: with_offset_weights(d, offset, weights)?,
+        })
+    }
+}
+
+/// A design matrix with an offset and prior weights.
+///
+/// Parameters
+/// ----------
+/// columns : list of list of float
+///     One list per column.
+/// names : list of str
+/// offset : list of float, optional
+/// weights : list of float, optional
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import Design
+/// >>> d = Design([[1.0, 1.0], [0.0, 2.0]], ["(Intercept)", "x"])
+/// >>> d.n_rows, d.names
+/// (2, ['(Intercept)', 'x'])
+#[pyclass(name = "Design", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyDesign {
+    inner: Design,
+}
+
+#[pymethods]
+impl PyDesign {
+    #[new]
+    #[pyo3(signature = (columns, names, offset = None, weights = None))]
+    fn new(
+        columns: Vec<Vec<f64>>,
+        names: Vec<String>,
+        offset: Option<Vec<f64>>,
+        weights: Option<Vec<f64>>,
+    ) -> PyResult<Self> {
+        let d = Design::new(names, columns).map_err(to_py)?;
+        Ok(Self {
+            inner: with_offset_weights(d, offset, weights)?,
+        })
+    }
+
+    /// Column names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// Number of rows.
+    #[getter]
+    fn n_rows(&self) -> usize {
+        self.inner.n_rows()
+    }
+
+    /// Offset per row.
+    #[getter]
+    fn offset(&self) -> Vec<f64> {
+        self.inner.offset().to_vec()
+    }
+
+    /// Prior weight per row.
+    #[getter]
+    fn weights(&self) -> Vec<f64> {
+        self.inner.weights().to_vec()
+    }
+
+    /// Column ``j``.
+    ///
+    /// Parameters
+    /// ----------
+    /// j : int
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn column(&self, j: usize) -> PyResult<Vec<f64>> {
+        if j >= self.inner.n_cols() {
+            return Err(PyValueError::new_err("column index out of range"));
+        }
+        Ok(self.inner.column(j).to_vec())
+    }
+
+    /// The rows ``rows``, in that order.
+    ///
+    /// Parameters
+    /// ----------
+    /// rows : list of int
+    ///
+    /// Returns
+    /// -------
+    /// Design
+    fn select(&self, rows: Vec<usize>) -> PyResult<Self> {
+        if rows.iter().any(|&i| i >= self.inner.n_rows()) {
+            return Err(PyValueError::new_err("row index out of range"));
+        }
+        Ok(Self {
+            inner: self.inner.select(&rows),
+        })
+    }
+}
+
+/// A generalized linear model, fitted by IRLS.
+///
+/// Parameters
+/// ----------
+/// family : str
+///     ``"gaussian"``, ``"poisson"``, ``"gamma"``, ``"inverse_gaussian"``,
+///     ``"binomial"``, ``"negative_binomial"`` (needs ``theta``) or
+///     ``"tweedie"`` (needs ``power``).
+/// link : str, optional
+///     ``"identity"``, ``"log"``, ``"logit"``, ``"probit"``,
+///     ``"cloglog"``, ``"inverse"``, ``"inverse_squared"`` or ``"power"``
+///     (needs ``link_power``); the family's canonical link by default.
+/// dispersion : str or float, optional
+///     ``"pearson"``, ``"deviance"`` or a fixed value. By default 1 for the
+///     Poisson, binomial and negative binomial and Pearson's estimate
+///     otherwise; ``"pearson"`` with the Poisson is the over-dispersed
+///     (quasi-) Poisson.
+/// theta : float, optional
+/// power : float, optional
+/// link_power : float, optional
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import Design, Glm
+/// >>> d = Design([[1.0] * 4, [0.0, 0.0, 1.0, 1.0]], ["(Intercept)", "young"],
+/// ...            offset=[0.0, 0.0, 0.0, 0.0])
+/// >>> fit = Glm("poisson", "log").fit(d, [1.0, 3.0, 4.0, 6.0])
+/// >>> round(fit.coefficients[1], 10) == round(__import__("math").log(5 / 2), 10)
+/// True
+#[pyclass(name = "Glm", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyGlm {
+    inner: Glm,
+}
+
+fn dispersion(arg: Option<&Bound<'_, PyAny>>, default: Dispersion) -> PyResult<Dispersion> {
+    let Some(arg) = arg else {
+        return Ok(default);
+    };
+    if let Ok(v) = arg.extract::<f64>() {
+        return Ok(Dispersion::Fixed(v));
+    }
+    match arg.extract::<String>()?.as_str() {
+        "pearson" => Ok(Dispersion::Pearson),
+        "deviance" => Ok(Dispersion::Deviance),
+        other => Err(PyValueError::new_err(format!(
+            "dispersion must be \"pearson\", \"deviance\" or a number, got {other:?}"
+        ))),
+    }
+}
+
+#[pymethods]
+impl PyGlm {
+    #[new]
+    #[pyo3(signature = (family, link = None, dispersion = None, theta = None, power = None, link_power = None))]
+    fn new(
+        family: &str,
+        link: Option<&str>,
+        dispersion: Option<&Bound<'_, PyAny>>,
+        theta: Option<f64>,
+        power: Option<f64>,
+        link_power: Option<f64>,
+    ) -> PyResult<Self> {
+        let f = self::family(family, theta, power)?;
+        let l = self::link(link, f, link_power)?;
+        let base = Glm::new(f, l);
+        let inner = base.dispersion(self::dispersion(dispersion, base.dispersion)?);
+        Ok(Self { inner })
+    }
+
+    /// Fits the model.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// GlmFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the design is collinear, a response is out of the family's
+    ///     range, or IRLS does not converge.
+    fn fit(&self, py: Python<'_>, design: PyRef<'_, PyDesign>, y: Vec<f64>) -> PyResult<PyGlmFit> {
+        let (glm, d) = (self.inner, &design.inner);
+        let inner = py.detach(|| glm.fit(d, &y)).map_err(to_py)?;
+        Ok(PyGlmFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Glm(family={:?}, link={:?})",
+            self.inner.family.name(),
+            link_name(self.inner.link)
+        )
+    }
+}
+
+/// A fitted GLM, from ``Glm.fit``.
+#[pyclass(name = "GlmFit", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyGlmFit {
+    inner: GlmFit,
+}
+
+#[pymethods]
+impl PyGlmFit {
+    /// Coefficient names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// Estimated coefficients.
+    #[getter]
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    /// Standard errors.
+    #[getter]
+    fn std_errors(&self) -> Vec<f64> {
+        self.inner.std_errors()
+    }
+
+    /// Two-sided p-values (normal for a fixed dispersion, Student's t when
+    /// it is estimated).
+    #[getter]
+    fn p_values(&self) -> Vec<f64> {
+        self.inner.p_values()
+    }
+
+    /// Covariance of the coefficients, as a list of rows.
+    #[getter]
+    fn covariance(&self) -> Vec<Vec<f64>> {
+        let p = self.inner.coefficients().len();
+        self.inner
+            .covariance()
+            .chunks(p)
+            .map(<[f64]>::to_vec)
+            .collect()
+    }
+
+    /// Dispersion.
+    #[getter]
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    /// Residual deviance.
+    #[getter]
+    fn deviance(&self) -> f64 {
+        self.inner.deviance()
+    }
+
+    /// Deviance of the intercept-and-offset model.
+    #[getter]
+    fn null_deviance(&self) -> f64 {
+        self.inner.null_deviance()
+    }
+
+    /// Log-likelihood.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    /// AIC, ``-2 loglik + 2 p``.
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    /// Residual degrees of freedom.
+    #[getter]
+    fn df_resid(&self) -> f64 {
+        self.inner.df_resid()
+    }
+
+    /// IRLS iterations used.
+    #[getter]
+    fn iterations(&self) -> usize {
+        self.inner.iterations()
+    }
+
+    /// Fitted means on the training data.
+    #[getter]
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    /// Expected response for each row.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     Same columns as the training design.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn predict(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        self.inner.predict(&design.inner).map_err(to_py)
+    }
+
+    /// Joint predictive distribution across the rows, with parameter and
+    /// process uncertainty, keyed ``row = 0, 1, ...``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// n_sims : int
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn predict_distribution(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        n_sims: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "GlmFit(family={:?}, deviance={}, n_coefficients={})",
+            self.inner.spec().family.name(),
+            self.inner.deviance(),
+            self.inner.coefficients().len()
+        )
+    }
+}
+
+/// A generalized additive model: a ``Glm`` plus P-spline smooths of
+/// numeric design columns, with smoothing chosen by GCV or UBRE.
+///
+/// Parameters
+/// ----------
+/// glm : Glm
+///     Family, link and dispersion.
+/// smooths : list of str or (str, int)
+///     The design columns to smooth, optionally with the number of basis
+///     functions (10 by default).
+/// smoothing : str or list of float, default "auto"
+///     ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
+///     ``"ubre"``, or fixed smoothing parameters, one per smooth.
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from actuarialrs.models import Design, Gam, Glm
+/// >>> x = [i / 99 for i in range(100)]
+/// >>> y = [math.sin(6 * v) for v in x]
+/// >>> d = Design([[1.0] * 100, x], ["(Intercept)", "x"])
+/// >>> fit = Gam(Glm("gaussian"), ["x"]).fit(d, y)
+/// >>> abs(fit.predict(d)[50] - y[50]) < 0.01
+/// True
+#[pyclass(name = "Gam", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyGam {
+    inner: Gam,
+}
+
+#[pymethods]
+impl PyGam {
+    #[new]
+    #[pyo3(signature = (glm, smooths, smoothing = None))]
+    fn new(
+        glm: PyRef<'_, PyGlm>,
+        smooths: Vec<Bound<'_, PyAny>>,
+        smoothing: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let splines = smooths
+            .iter()
+            .map(|s| {
+                if let Ok(name) = s.extract::<String>() {
+                    Ok(PSpline::new(&name))
+                } else if let Ok((name, k)) = s.extract::<(String, usize)>() {
+                    Ok(PSpline::new(&name).n_basis(k))
+                } else {
+                    Err(PyTypeError::new_err(
+                        "each smooth must be a column name or (column name, n_basis)",
+                    ))
+                }
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let smoothing = match smoothing {
+            None => Smoothing::Auto,
+            Some(s) => {
+                if let Ok(v) = s.extract::<Vec<f64>>() {
+                    Smoothing::Fixed(v)
+                } else {
+                    match s.extract::<String>()?.as_str() {
+                        "auto" => Smoothing::Auto,
+                        "gcv" => Smoothing::Gcv,
+                        "ubre" => Smoothing::Ubre,
+                        other => {
+                            return Err(PyValueError::new_err(format!(
+                                "smoothing must be \"auto\", \"gcv\", \"ubre\" or a list \
+                                 of numbers, got {other:?}"
+                            )));
+                        }
+                    }
+                }
+            }
+        };
+        Ok(Self {
+            inner: Gam::new(glm.inner, splines).smoothing(smoothing),
+        })
+    }
+
+    /// Fits the model.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     Includes the raw columns to smooth.
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// GamFit
+    fn fit(&self, py: Python<'_>, design: PyRef<'_, PyDesign>, y: Vec<f64>) -> PyResult<PyGamFit> {
+        let (gam, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| gam.fit(d, &y)).map_err(to_py)?;
+        Ok(PyGamFit { inner })
+    }
+}
+
+/// A fitted GAM, from ``Gam.fit``.
+#[pyclass(name = "GamFit", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyGamFit {
+    inner: GamFit,
+}
+
+#[pymethods]
+impl PyGamFit {
+    /// Coefficient names: parametric columns, then ``s(x).1``, ...
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// Coefficients.
+    #[getter]
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    /// Smoothing parameter of each smooth.
+    #[getter]
+    fn lambdas(&self) -> Vec<f64> {
+        self.inner.lambdas().to_vec()
+    }
+
+    /// Effective degrees of freedom.
+    #[getter]
+    fn edf(&self) -> f64 {
+        self.inner.edf()
+    }
+
+    /// Dispersion.
+    #[getter]
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    /// Residual deviance.
+    #[getter]
+    fn deviance(&self) -> f64 {
+        self.inner.deviance()
+    }
+
+    /// The minimized GCV or UBRE score.
+    #[getter]
+    fn score(&self) -> f64 {
+        self.inner.score()
+    }
+
+    /// Fitted means on the training data.
+    #[getter]
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    /// Expected response for each row.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     Same columns as the training design, raw smooth columns included.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn predict(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        self.inner.predict(&design.inner).map_err(to_py)
+    }
+
+    /// Joint predictive distribution across the rows, keyed ``row``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// n_sims : int
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn predict_distribution(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        n_sims: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+}
+
+/// Deviance ``sum w d(y, mu)`` of a family.
+///
+/// Parameters
+/// ----------
+/// family : str
+/// y : list of float
+/// mu : list of float
+/// weights : list of float, optional
+/// theta : float, optional
+/// power : float, optional
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+#[pyo3(signature = (family, y, mu, weights = None, theta = None, power = None))]
+pub(crate) fn deviance(
+    family: &str,
+    y: Vec<f64>,
+    mu: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<f64> {
+    let f = self::family(family, theta, power)?;
+    metrics::deviance(f, &y, &mu, weights.as_deref()).map_err(to_py)
+}
+
+/// Gini index of the ordered Lorenz curve.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+/// exposure : list of float, optional
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+#[pyo3(signature = (y, pred, exposure = None))]
+pub(crate) fn gini(y: Vec<f64>, pred: Vec<f64>, exposure: Option<Vec<f64>>) -> PyResult<f64> {
+    metrics::gini(&y, &pred, exposure.as_deref()).map_err(to_py)
+}
+
+/// Lift table: rows sorted by predicted rate, cut into bands of about
+/// equal exposure.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+/// exposure : list of float, optional
+/// bands : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``exposure``, ``expected`` and ``actual`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred, exposure = None, bands = 10))]
+pub(crate) fn lift(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+    bands: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let table = metrics::lift(&y, &pred, exposure.as_deref(), bands).map_err(to_py)?;
+    Ok(table
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("exposure".to_string(), b.exposure),
+                ("expected".to_string(), b.expected),
+                ("actual".to_string(), b.actual),
+            ])
+        })
+        .collect())
+}
+
+/// Continuous ranked probability score of equally likely draws for an
+/// outcome; lower is better.
+///
+/// Parameters
+/// ----------
+/// draws : list of float
+/// y : float
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+pub(crate) fn crps(draws: Vec<f64>, y: f64) -> PyResult<f64> {
+    metrics::crps(&draws, y).map_err(to_py)
+}
+
+fn splits(s: Vec<Split>) -> Vec<(Vec<usize>, Vec<usize>)> {
+    s.into_iter().map(|s| (s.train, s.test)).collect()
+}
+
+/// ``k``-fold splits of ``n`` rows, shuffled with ``seed``.
+///
+/// Parameters
+/// ----------
+/// n : int
+/// k : int
+/// seed : int
+///
+/// Returns
+/// -------
+/// list of (list of int, list of int)
+///     ``(train, test)`` row indices per fold.
+#[pyfunction]
+pub(crate) fn k_fold(n: usize, k: usize, seed: u64) -> PyResult<Vec<(Vec<usize>, Vec<usize>)>> {
+    resample::k_fold(n, k, seed).map(splits).map_err(to_py)
+}
+
+/// Grouped ``k``-fold splits: each group's rows stay in one fold.
+///
+/// Parameters
+/// ----------
+/// groups : list of str
+/// k : int
+/// seed : int
+///
+/// Returns
+/// -------
+/// list of (list of int, list of int)
+#[pyfunction]
+pub(crate) fn group_k_fold(
+    groups: Vec<String>,
+    k: usize,
+    seed: u64,
+) -> PyResult<Vec<(Vec<usize>, Vec<usize>)>> {
+    resample::group_k_fold(&groups, k, seed)
+        .map(splits)
+        .map_err(to_py)
+}
+
+/// Time-ordered splits: for each of the last ``n_test`` periods, train on
+/// earlier periods and test on that one (for a triangle, the calendar
+/// diagonal backtest).
+///
+/// Parameters
+/// ----------
+/// periods : list of int
+/// n_test : int
+///
+/// Returns
+/// -------
+/// list of (list of int, list of int)
+#[pyfunction]
+pub(crate) fn time_ordered(
+    periods: Vec<i64>,
+    n_test: usize,
+) -> PyResult<Vec<(Vec<usize>, Vec<usize>)>> {
+    resample::time_ordered(&periods, n_test)
+        .map(splits)
+        .map_err(to_py)
+}
+
+/// MCMC diagnostics of chains of draws (Vehtari et al. 2021, as R's
+/// ``posterior``): rank-normalized split R-hat, bulk and tail effective
+/// sample sizes, the effective sample size of the mean and its Monte Carlo
+/// standard error.
+///
+/// Parameters
+/// ----------
+/// chains : list of list of float
+///     Equal-length chains, at least 4 draws each.
+///
+/// Returns
+/// -------
+/// dict
+///     ``rhat``, ``ess_bulk``, ``ess_tail``, ``ess_mean``, ``mcse_mean``.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import mcmc_diagnostics
+/// >>> a = [float((i * 37) % 101) for i in range(400)]
+/// >>> b = [float((i * 53 + 7) % 101) for i in range(400)]
+/// >>> mcmc_diagnostics([a, b])["rhat"] < 1.01
+/// True
+#[pyfunction]
+pub(crate) fn mcmc_diagnostics(chains: Vec<Vec<f64>>) -> PyResult<HashMap<String, f64>> {
+    let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
+    Ok(HashMap::from([
+        ("rhat".to_string(), act_bayes::rhat(&refs).map_err(to_py)?),
+        (
+            "ess_bulk".to_string(),
+            act_bayes::ess_bulk(&refs).map_err(to_py)?,
+        ),
+        (
+            "ess_tail".to_string(),
+            act_bayes::ess_tail(&refs).map_err(to_py)?,
+        ),
+        (
+            "ess_mean".to_string(),
+            act_bayes::ess_mean(&refs).map_err(to_py)?,
+        ),
+        (
+            "mcse_mean".to_string(),
+            act_bayes::mcse_mean(&refs).map_err(to_py)?,
+        ),
+    ]))
+}

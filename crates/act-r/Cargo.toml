@@ -13,6 +13,9 @@ crate-type = ["staticlib"]
 [dependencies]
 act-core.workspace = true
 act-aggregate.workspace = true
+act-bayes.workspace = true
+act-glm.workspace = true
+act-models.workspace = true
 act-prob.workspace = true
 act-pricing.workspace = true
 # result_condition: Rust errors come back as R condition objects (raised by

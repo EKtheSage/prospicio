@@ -11,7 +11,9 @@ from .actuarialrs_native import (
     StudentTCopula,
     allocate,
     capital,
+    hill,
     iman_conover,
+    mean_excess,
     simulate,
 )
 
@@ -27,4 +29,6 @@ __all__ = [
     "iman_conover",
     "Gpd",
     "PotTail",
+    "mean_excess",
+    "hill",
 ]

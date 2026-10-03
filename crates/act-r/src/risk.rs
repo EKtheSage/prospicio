@@ -292,10 +292,33 @@ fn gpd_mle(exceedances: &[f64]) -> Result<Vec<f64>> {
     Ok(vec![g.xi(), g.beta()])
 }
 
+/// Mean excess at each threshold: `list(threshold, mean_excess, n_above)`.
+#[extendr]
+fn mean_excess_rust(draws: &[f64], thresholds: &[f64]) -> List {
+    let rows = act_prob::evt::mean_excess(draws, thresholds);
+    list!(
+        threshold = rows.iter().map(|r| r.0).collect::<Vec<_>>(),
+        mean_excess = rows.iter().map(|r| r.1).collect::<Vec<_>>(),
+        n_above = rows.iter().map(|r| r.2 as f64).collect::<Vec<_>>()
+    )
+}
+
+/// Hill estimates of the tail index for each `k`.
+#[extendr]
+fn hill_rust(draws: &[f64], ks: &[f64]) -> Result<Vec<f64>> {
+    let ks = ks
+        .iter()
+        .map(|&k| whole(k, "k").map(|k| k as usize))
+        .collect::<Result<Vec<_>>>()?;
+    act_prob::evt::hill(draws, &ks).map_err(to_r)
+}
+
 extendr_module! {
     mod risk;
     fn iman_conover_reorder;
     fn gpd_mle;
+    fn mean_excess_rust;
+    fn hill_rust;
     impl EvtTail;
     impl RiskDistortion;
     impl RiskCopula;

@@ -914,3 +914,48 @@ impl PyPotTail {
         )
     }
 }
+
+/// The empirical mean-excess function ``e(u) = E[X - u | X > u]`` at each
+/// threshold, linear above a threshold where a GPD fits.
+///
+/// Parameters
+/// ----------
+/// draws : list of float
+/// thresholds : list of float
+///
+/// Returns
+/// -------
+/// list of (float, float, int)
+///     ``(u, e(u), number of draws above u)``; ``e(u)`` is NaN when none are.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.risk import mean_excess
+/// >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
+/// [(2.0, 1.5, 2)]
+#[pyfunction]
+pub(crate) fn mean_excess(draws: Vec<f64>, thresholds: Vec<f64>) -> Vec<(f64, f64, usize)> {
+    act_prob::evt::mean_excess(&draws, &thresholds)
+}
+
+/// Hill estimates of the tail index ``xi`` (``1 / alpha``) from the ``k``
+/// largest draws, for each ``k``.
+///
+/// Parameters
+/// ----------
+/// draws : list of float
+/// ks : list of int
+///
+/// Returns
+/// -------
+/// list of float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a ``k`` is 0 or not below the number of draws, or the ``k + 1``
+///     largest draws are not all positive.
+#[pyfunction]
+pub(crate) fn hill(draws: Vec<f64>, ks: Vec<usize>) -> PyResult<Vec<f64>> {
+    act_prob::evt::hill(&draws, &ks).map_err(to_py)
+}

@@ -534,6 +534,98 @@ severity_class!(PyTweedie {
     }
 });
 
+/// Weibull distribution with shape ``k`` and scale ``lam``:
+/// ``P(X > x) = exp(-(x / lam) ** k)``, as SciPy's ``weibull_min``.
+///
+/// Parameters
+/// ----------
+/// shape : float
+/// scale : float
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Weibull
+/// >>> Weibull(1.0, 2.0).mean()
+/// 2.0
+#[pyclass(name = "Weibull", module = "actuarialrs.distributions", frozen)]
+pub(crate) struct PyWeibull {
+    pub(crate) inner: act_prob::Weibull,
+}
+
+severity_class!(PyWeibull {
+    #[new]
+    fn new(shape: f64, scale: f64) -> PyResult<Self> {
+        let inner = act_prob::Weibull::new(shape, scale).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Shape ``k``.
+    #[getter]
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    /// Scale ``lam``.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64) {
+        (self.inner.shape(), self.inner.scale())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Weibull(shape={:?}, scale={:?})", self.inner.shape(), self.inner.scale())
+    }
+});
+
+/// A finite mixture of severities: component ``i`` with probability
+/// ``w_i``, such as attritional plus large losses.
+///
+/// Parameters
+/// ----------
+/// components : list of (float, severity)
+///     Weights (positive, summing to 1) and severities.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Lognormal, Mixture, Pareto
+/// >>> m = Mixture([(0.9, Lognormal.from_mean_cv(1e4, 1.0)), (0.1, Pareto(1e5, 2.0))])
+/// >>> round(m.mean(), 6)
+/// 29000.0
+#[pyclass(name = "Mixture", module = "actuarialrs.distributions", frozen)]
+pub(crate) struct PyMixture {
+    pub(crate) inner: std::sync::Arc<act_prob::Mixture>,
+}
+
+severity_class!(PyMixture {
+    #[new]
+    fn new(components: Vec<(f64, Bound<'_, PyAny>)>) -> PyResult<Self> {
+        let parts = components
+            .iter()
+            .map(|(w, s)| {
+                let sev = crate::distributions::AnySeverity::extract(s)?;
+                Ok((*w, Box::new(sev) as Box<dyn Severity + Send + Sync>))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let inner = act_prob::Mixture::new(parts).map_err(to_py)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(inner),
+        })
+    }
+
+    /// Component weights.
+    #[getter]
+    fn weights(&self) -> Vec<f64> {
+        self.inner.weights().to_vec()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Mixture(weights={:?})", self.inner.weights())
+    }
+});
+
 /// Piecewise Pareto: alpha ``alpha[k]`` above threshold ``t[k]``, the
 /// general large-loss model and the result of tower matching.
 ///
