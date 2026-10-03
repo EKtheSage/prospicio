@@ -29,7 +29,7 @@ v2 keeps the v1 layering, principle and target scope; it changes priorities, bui
 | Bayesian | Native Gibbs, MH, HMC, NUTS | Own model specs and diagnostics; samplers via nutpie / BridgeStan |
 | GAM | Aim at mgcv's useful portion | P-splines, tensor smooths, GCV/REML for Tweedie/Poisson/Gamma only |
 | Tree boosting | Rust adapters for LightGBM/XGBoost | Adapters in the Python/R layer, emitting shared prediction objects |
-| Neural | Burn-native training | PyTorch in Python implementing the shared protocols; Burn optional later |
+| Neural | Burn-native training | Burn in Rust behind the shared model interface (decided 2026-10-03, `docs/design/models.md`); PyTorch models imported for inference through ONNX |
 | Crates | ~25 crates planned | ~5 crates at start; split when compile time or dependency weight forces it |
 | Core abstractions | Named, not designed | Distribution representations, joint predictive distributions, Triangle model, RNG streams designed in Phase 0 |
 | Front ends | Python + R | Python first; R skeleton in Phase 0, parity later; WASM target added |
@@ -81,7 +81,7 @@ Build natively where the math is actuarial, the implementation is tractable, and
 | GAM | Build, scoped | P-splines, tensor smooths, GCV/REML for Tweedie/Poisson/Gamma; not mgcv parity |
 | MCMC samplers (NUTS/HMC) | Integrate | nutpie (Rust NUTS) or BridgeStan; own model specs and diagnostics |
 | Gradient boosting | Integrate | LightGBM/XGBoost via their Python/R bindings; adapters emit shared objects |
-| Neural networks | Integrate | PyTorch in Python behind shared protocols; revisit Burn once the core is stable |
+| Neural networks | Build, scoped | Burn in `act-nn`, CPU (`ndarray`) by default and GPU opt-in: one network for Python, R and WASM, reproducible under our RNG streams. Actuarial networks (tabular MLPs, CANN) are small |
 | Dataframes | Integrate | Arrow as interchange; Polars optional at the edges, never the numerical core |
 
 **Test for any new build decision:** does a mature, well-maintained engine already exist, and would owning it change what users can do? If yes and no, integrate.
@@ -171,6 +171,12 @@ actuarial-rs/
 │   ├── act-aggregate/     freq-sev, FFT/Panjer/MC, reinsurance contracts, towers
 │   ├── act-pricing/       layer and limit rating (ILF, deductibles, extrapolation),
 │   │                      reinsurance tower matching (see docs/design/pareto.md)
+│   ├── act-models/        model interface and life cycle: specs, designs, families,
+│   │                      resampling, metrics, tuning, comparison, artifacts
+│   │                      (see docs/design/models.md)
+│   ├── act-glm/           GLM, and GAM as a penalized GLM
+│   ├── act-nn/            neural networks on Burn (opt-in)
+│   ├── act-bayes/         Bayesian specs and diagnostics; samplers delegated (opt-in)
 │   ├── act-python/        PyO3 bindings
 │   └── act-r/             extendr bindings
 ├── python/
@@ -178,9 +184,9 @@ actuarial-rs/
 └── validation/            reference datasets + parity suites
 ```
 
-**Expected later splits** (not created until needed): `act-glm` (with GAM), `act-capital`, `act-claims`, `act-survival`, `act-credibility`, `act-evt`, `act-stochastic`. Delegated engines (samplers, GBDT, neural) never become required Rust dependencies.
+**Model crates** (`docs/design/models.md`) split by dependency weight: the light `act-models` holds the interface and life cycle, and each heavy engine (`act-nn` on Burn, `act-bayes` with its samplers) is an opt-in feature. **Expected later splits** (not created until needed): `act-capital`, `act-claims`, `act-survival`, `act-credibility`, `act-evt`, `act-stochastic`. Delegated and heavy engines (samplers, GBDT, Burn) never become required Rust dependencies.
 
-**Feature flags** keep heavy paths optional: `default = ["reserving", "aggregate"]`, with `glm`, `capital`, `claims`, `bayes-bridge`, `polars`, `wasm` opt-in.
+**Feature flags** keep heavy paths optional: `default = ["reserving", "aggregate"]`, with `glm`, `nn`, `capital`, `claims`, `bayes-bridge`, `polars`, `wasm` opt-in.
 
 **Prefix:** internal crates use `act-*` until the public name is chosen; see Open decisions.
 
@@ -224,7 +230,7 @@ model.diagnostics()
 | Survival | Rust | Kaplan-Meier, Cox, parametric, competing risks, multi-state |
 | Bayesian | Specs + diagnostics in Rust; sampling via nutpie or BridgeStan | Hierarchical severity, Bayesian CL, compartmental reserving, credibility; R-hat, ESS, divergences, PPC, WAIC/LOO |
 | Gradient boosting | Python/R adapters over LightGBM, XGBoost | Poisson/Gamma/Tweedie/quantile objectives, monotone constraints, exposure via offsets |
-| Neural | Python (PyTorch) behind the protocol | Tabular MLP with embeddings, multi-task claim models, sequence models for claim trajectories |
+| Neural | Rust (`act-nn`, Burn) behind the protocol; PyTorch models via ONNX import | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
 
 Delegated engines are thin: they convert inputs, call the engine, and wrap outputs in shared objects. They add no evaluation logic of their own.
 
@@ -380,7 +386,7 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 | License | MIT/Apache-2.0 dual (Rust convention); confirm compatibility with CRAN distribution | Before first public commit |
 | IP ownership | Confirm with employer that open-source work in this domain is personal IP | Before first public commit |
 | Bayesian backend | nutpie (Rust-native NUTS) vs BridgeStan (Stan models) vs both | Before v0.7 |
-| Neural backend | PyTorch-only vs adding Burn for WASM/embedded inference | Before v0.9 |
+| ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`) | — |
 | WASM scope | Which crates guarantee `wasm32` builds; single-threaded fallback policy | Before v0.3 |
 | Docs hosting | GitHub Pages (public, needs the repo public or a paid plan) vs private hosting; waits on IP ownership and license | Before v0.1 publish |
 

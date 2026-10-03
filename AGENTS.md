@@ -22,6 +22,7 @@ Work is split by crate so that sessions rarely touch the same file. A lane owns 
 | Reserving | Local | `crates/act-reserving/`, `validation/tests/reserving.rs`, root `src/` | `Triangle` per `docs/design/triangle.md`, Chain Ladder, Mack, parity on RAA / GenIns / ABC; delete the `src/` sandbox once `act-reserving` covers it |
 | Probability | Cloud | `crates/act-prob/`, `crates/act-math/`, `validation/tests/distributions.rs` | v0.4: Pareto-family severities (`Pareto`, `PiecewisePareto`, local Pareto, fits) per `docs/design/pareto.md` (done: distributions, `Grid`, `Counting`, `PredictiveDistribution`, distortions, allocation, copulas, EVT) |
 | Aggregate | Cloud (the Probability session) | `crates/act-aggregate/`, `crates/act-pricing/`, `validation/tests/aggregate.rs`, `validation/tests/pricing.rs`, `docs/design/aggregate.md`, `docs/design/pareto.md` | v0.4: Pareto-family severities and reinsurance pricing per `docs/design/pareto.md` (collective model, layer rating, tower matching) |
+| Models | Cloud (the Probability session) | `crates/act-models/`, `crates/act-glm/`, `crates/act-nn/`, `crates/act-bayes/`, `validation/tests/models.rs`, `docs/design/models.md` | Planned per `docs/design/models.md`: `act-models` (interface, `Design`, families, metrics), then `act-glm`. The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane |
 
 The ODP bootstrap needs both a `Triangle` and a `PredictiveDistribution`. It starts in the Reserving lane after both lanes have merged.
 
