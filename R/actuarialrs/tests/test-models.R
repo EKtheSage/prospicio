@@ -32,6 +32,33 @@ rg <- stats::glm(age ~ region, d, family = Gamma(link = "log"), control = tight)
 near(coef(g), coef(rg), 1e-8)
 near(g@dispersion, summary(rg)$dispersion, 1e-8)
 
+# Elastic net: a path from all-zero to the GLM; glmnet when installed.
+set.seed(2)
+e <- data.frame(x1 = rnorm(60), x2 = rnorm(60), x3 = rnorm(60))
+e$y <- 1 + 2 * e$x1 - e$x2 + rnorm(60)
+en <- elastic_net_fit(y ~ x1 + x2 + x3, e, family = "gaussian", alpha = 1, nlambda = 20,
+                      lambda_min_ratio = 1e-3)
+stopifnot(length(en@lambda) == 20, en@df[1] == 0, en@df[20] == 3)
+stopifnot(all(abs(coef(en)[-1, 1]) < 1e-10), nrow(predict(en, e)) == 60)
+zero <- elastic_net_fit(y ~ x1 + x2 + x3, e, family = "gaussian", lambda = 0)
+near(coef(zero, lambda = 0), coef(stats::lm(y ~ x1 + x2 + x3, e)), 1e-8)
+lam <- en@lambda[10]
+stopifnot(length(predict(en, e, lambda = lam)) == 60)
+stopifnot(inherits(try(coef(en, lambda = 0.123456), silent = TRUE), "try-error"))
+pf <- elastic_net_fit(y ~ x1 + x2 + x3, e, family = "gaussian", lambda = en@lambda[2],
+                      penalty_factor = c(x3 = 0))
+stopifnot(coef(pf, lambda = en@lambda[2])[["x3"]] != 0)
+pd <- predict_distribution(zero, e[1:3, ], n_sims = 100, seed = 1)
+stopifnot(S7::S7_inherits(pd, predictive_distribution), is.finite(mean(pd)))
+if (requireNamespace("glmnet", quietly = TRUE)) {
+  x <- as.matrix(e[, c("x1", "x2", "x3")])
+  gp <- glmnet::glmnet(x, e$claims <- rpois(60, exp(0.2 * e$x1)), family = "poisson",
+                       alpha = 1, lambda = c(0.2, 0.05), thresh = 1e-20)
+  ep <- elastic_net_fit(claims ~ x1 + x2 + x3, e, family = "poisson", alpha = 1,
+                        lambda = c(0.2, 0.05))
+  near(unname(coef(ep)), unname(as.matrix(stats::coef(gp))), 1e-7)
+}
+
 # GAM: a smooth curve.
 s <- data.frame(x = seq(0, 1, length.out = 100))
 s$y <- sin(6 * s$x) + 2

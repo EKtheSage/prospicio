@@ -10,6 +10,8 @@ compound <- function(frequency, severity, points, method) .Call(wrap__compound, 
 
 glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power) .Call(wrap__glm_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power)
 
+elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power) .Call(wrap__elastic_net_fit_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power)
+
 gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas)
 
 family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Call(wrap__family_deviance_rust, family_name, theta, power, y, mu, weights)
@@ -350,6 +352,36 @@ GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, see
 #' @export
 `[[.GlmModel` <- `$.GlmModel`
 
+ElasticNetPath <- new.env(parent = emptyenv())
+
+ElasticNetPath$names <- function() .Call(wrap__ElasticNetPath__names, self)
+
+ElasticNetPath$lambda <- function() .Call(wrap__ElasticNetPath__lambda, self)
+
+ElasticNetPath$coefficients <- function() .Call(wrap__ElasticNetPath__coefficients, self)
+
+ElasticNetPath$deviance <- function() .Call(wrap__ElasticNetPath__deviance, self)
+
+ElasticNetPath$deviance_ratio <- function() .Call(wrap__ElasticNetPath__deviance_ratio, self)
+
+ElasticNetPath$df <- function() .Call(wrap__ElasticNetPath__df, self)
+
+ElasticNetPath$null_deviance <- function() .Call(wrap__ElasticNetPath__null_deviance, self)
+
+ElasticNetPath$alpha <- function() .Call(wrap__ElasticNetPath__alpha, self)
+
+ElasticNetPath$family <- function() .Call(wrap__ElasticNetPath__family, self)
+
+ElasticNetPath$predict <- function(index, x, names, offset) .Call(wrap__ElasticNetPath__predict, self, index, x, names, offset)
+
+ElasticNetPath$predict_distribution <- function(index, x, names, offset, weights, n_sims, seed) .Call(wrap__ElasticNetPath__predict_distribution, self, index, x, names, offset, weights, n_sims, seed)
+
+#' @export
+`$.ElasticNetPath` <- function (self, name) { func <- ElasticNetPath[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ElasticNetPath` <- `$.ElasticNetPath`
+
 GamModel <- new.env(parent = emptyenv())
 
 GamModel$names <- function() .Call(wrap__GamModel__names, self)
@@ -653,6 +685,40 @@ WeibullDist$sample <- function(n, seed, stream) .Call(wrap__WeibullDist__sample,
 
 #' @export
 `[[.WeibullDist` <- `$.WeibullDist`
+
+LoglogisticDist <- new.env(parent = emptyenv())
+
+LoglogisticDist$new <- function(shape, scale) .Call(wrap__LoglogisticDist__new, shape, scale)
+
+LoglogisticDist$shape <- function() .Call(wrap__LoglogisticDist__shape, self)
+
+LoglogisticDist$scale <- function() .Call(wrap__LoglogisticDist__scale, self)
+
+LoglogisticDist$mean <- function() .Call(wrap__LoglogisticDist__mean, self)
+
+LoglogisticDist$variance <- function() .Call(wrap__LoglogisticDist__variance, self)
+
+LoglogisticDist$cdf <- function(x) .Call(wrap__LoglogisticDist__cdf, self, x)
+
+LoglogisticDist$survival <- function(x) .Call(wrap__LoglogisticDist__survival, self, x)
+
+LoglogisticDist$quantile <- function(p) .Call(wrap__LoglogisticDist__quantile, self, p)
+
+LoglogisticDist$lev <- function(limit) .Call(wrap__LoglogisticDist__lev, self, limit)
+
+LoglogisticDist$stop_loss <- function(retention) .Call(wrap__LoglogisticDist__stop_loss, self, retention)
+
+LoglogisticDist$layer <- function(limit, attachment) .Call(wrap__LoglogisticDist__layer, self, limit, attachment)
+
+LoglogisticDist$layer_variance <- function(limit, attachment) .Call(wrap__LoglogisticDist__layer_variance, self, limit, attachment)
+
+LoglogisticDist$sample <- function(n, seed, stream) .Call(wrap__LoglogisticDist__sample, self, n, seed, stream)
+
+#' @export
+`$.LoglogisticDist` <- function (self, name) { func <- LoglogisticDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.LoglogisticDist` <- `$.LoglogisticDist`
 
 MixtureDist <- new.env(parent = emptyenv())
 

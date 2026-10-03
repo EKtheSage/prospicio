@@ -1,9 +1,11 @@
-"""Models: terms and design matrices, GLMs and GAMs, metrics, resampling,
+"""Models: terms and design matrices, GLMs, elastic nets and GAMs, metrics, resampling,
 and MCMC diagnostics (docs/design/models.md)."""
 
 from .actuarialrs_native import (
     Coding,
     Design,
+    ElasticNet,
+    ElasticNetFit,
     Gam,
     GamFit,
     Glm,
@@ -25,6 +27,8 @@ __all__ = [
     "Design",
     "Glm",
     "GlmFit",
+    "ElasticNet",
+    "ElasticNetFit",
     "Gam",
     "GamFit",
     "deviance",

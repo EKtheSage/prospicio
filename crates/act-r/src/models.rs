@@ -1,9 +1,10 @@
-//! Models lane: GLMs, GAMs, metrics, resampling and MCMC diagnostics for
+//! Models lane: GLMs, elastic nets, GAMs, metrics, resampling and MCMC diagnostics for
 //! the R `models.R` API (`docs/design/models.md`). R builds the design
 //! matrix with `model.matrix`; it arrives here column-major with its
 //! column names.
 
 use act_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+use act_glm::net::{ElasticNet, ElasticNetFit};
 use act_glm::{Dispersion, Glm, GlmFit};
 use act_models::resample;
 use act_models::{Design, Family, Fitted, Link, Model, metrics};
@@ -201,6 +202,136 @@ impl GlmModel {
         let d = design(x, names, offset, weights)?;
         let inner = self
             .inner
+            .predict_distribution(&d, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
+/// An elastic-net regularization path: one fit per penalty strength.
+#[extendr]
+pub(crate) struct ElasticNetPath {
+    fits: Vec<ElasticNetFit>,
+}
+
+/// Fits an elastic net at each of `lambdas`, or, when it is empty, along
+/// `nlambda` values log-spaced from lambda_max down to `min_ratio` times it.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn elastic_net_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    family_name: &str,
+    link_name: &str,
+    alpha: f64,
+    lambdas: &[f64],
+    nlambda: f64,
+    min_ratio: f64,
+    standardize: bool,
+    penalty_factor: &[f64],
+    theta: f64,
+    power: f64,
+    link_power: f64,
+) -> Result<ElasticNetPath> {
+    let f = family(family_name, theta, power)?;
+    let l = link(link_name, f, link_power)?;
+    let mut net = ElasticNet::new(f, l, alpha, 0.0).standardize(standardize);
+    if !penalty_factor.is_empty() {
+        net.penalty_factor = Some(penalty_factor.to_vec());
+    }
+    let d = design(x, names, offset, weights)?;
+    let lambdas = if lambdas.is_empty() {
+        let n = whole(nlambda, "nlambda")? as usize;
+        net.lambda_path(&d, y, n, min_ratio).map_err(to_r)?
+    } else {
+        lambdas.to_vec()
+    };
+    let fits = net.path(&d, y, &lambdas).map_err(to_r)?;
+    Ok(ElasticNetPath { fits })
+}
+
+impl ElasticNetPath {
+    fn at(&self, index: f64) -> Result<&ElasticNetFit> {
+        let k = whole(index, "index")? as usize;
+        self.fits
+            .get(k.wrapping_sub(1))
+            .ok_or_else(|| Error::Other(format!("index must be 1 to {}, got {k}", self.fits.len())))
+    }
+}
+
+#[extendr]
+impl ElasticNetPath {
+    fn names(&self) -> Vec<String> {
+        self.fits[0].names().to_vec()
+    }
+
+    fn lambda(&self) -> Vec<f64> {
+        self.fits.iter().map(ElasticNetFit::lambda).collect()
+    }
+
+    /// Column-major `p × k`, one column per lambda.
+    fn coefficients(&self) -> Vec<f64> {
+        self.fits
+            .iter()
+            .flat_map(|f| f.coefficients().to_vec())
+            .collect()
+    }
+
+    fn deviance(&self) -> Vec<f64> {
+        self.fits.iter().map(ElasticNetFit::deviance).collect()
+    }
+
+    fn deviance_ratio(&self) -> Vec<f64> {
+        self.fits
+            .iter()
+            .map(ElasticNetFit::deviance_ratio)
+            .collect()
+    }
+
+    fn df(&self) -> Vec<f64> {
+        self.fits.iter().map(|f| f.df() as f64).collect()
+    }
+
+    fn null_deviance(&self) -> f64 {
+        self.fits[0].null_deviance()
+    }
+
+    fn alpha(&self) -> f64 {
+        self.fits[0].spec().alpha
+    }
+
+    fn family(&self) -> String {
+        self.fits[0].spec().family.name().to_string()
+    }
+
+    fn predict(
+        &self,
+        index: f64,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+    ) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        self.at(index)?.predict(&d).map_err(to_r)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn predict_distribution(
+        &self,
+        index: f64,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        weights: &[f64],
+        n_sims: f64,
+        seed: f64,
+    ) -> Result<PredictiveDistribution> {
+        let d = design(x, names, offset, weights)?;
+        let inner = self
+            .at(index)?
             .predict_distribution(&d, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
             .map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
@@ -425,8 +556,10 @@ fn mcmc_diagnostics_rust(draws: &[f64], n_chains: f64) -> Result<List> {
 extendr_module! {
     mod models;
     fn glm_fit_design;
+    fn elastic_net_fit_design;
     fn gam_fit_design;
     impl GlmModel;
+    impl ElasticNetPath;
     impl GamModel;
     fn family_deviance_rust;
     fn gini_rust;

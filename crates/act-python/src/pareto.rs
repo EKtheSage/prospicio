@@ -580,6 +580,55 @@ severity_class!(PyWeibull {
     }
 });
 
+/// Loglogistic (Fisk) distribution with shape ``alpha`` and scale
+/// ``theta`` (the median): ``F(x) = (x/theta)**alpha / (1 + (x/theta)**alpha)``,
+/// as SciPy's ``fisk``. Its ``cdf`` is Clark's loglogistic growth curve.
+/// The mean is infinite for ``alpha <= 1`` and the variance for
+/// ``alpha <= 2``; limited and layer moments always exist.
+///
+/// Parameters
+/// ----------
+/// shape : float
+/// scale : float
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Loglogistic
+/// >>> Loglogistic(1.0, 2.0).cdf(3.0)
+/// 0.6
+#[pyclass(name = "Loglogistic", module = "actuarialrs.distributions", frozen)]
+pub(crate) struct PyLoglogistic {
+    pub(crate) inner: act_prob::Loglogistic,
+}
+
+severity_class!(PyLoglogistic {
+    #[new]
+    fn new(shape: f64, scale: f64) -> PyResult<Self> {
+        let inner = act_prob::Loglogistic::new(shape, scale).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Shape ``alpha``.
+    #[getter]
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    /// Scale ``theta``, the median.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64) {
+        (self.inner.shape(), self.inner.scale())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Loglogistic(shape={:?}, scale={:?})", self.inner.shape(), self.inner.scale())
+    }
+});
+
 /// A finite mixture of severities: component ``i`` with probability
 /// ``w_i``, such as attritional plus large losses.
 ///

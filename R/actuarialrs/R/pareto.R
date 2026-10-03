@@ -17,7 +17,8 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' the layer `limit` xs `attachment` (`Inf` for an unlimited layer).
 #' Defined for the Pareto-family severities ([pareto], [piecewise_pareto],
 #' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution],
-#' [tweedie], [weibull_distribution] and [mixture_distribution].
+#' [tweedie], [weibull_distribution], [loglogistic_distribution] and
+#' [mixture_distribution].
 #'
 #' @param dist A Pareto-family severity.
 #' @param q Numeric vector.
@@ -453,6 +454,39 @@ weibull_distribution <- S7::new_class(
   }
 )
 
+#' Loglogistic distribution
+#'
+#' `F(x) = (x / scale)^shape / (1 + (x / scale)^shape)`, as actuar's
+#' `dllogis()` and SciPy's `fisk`; `scale` is the median. Its [cdf()] is
+#' Clark's loglogistic growth curve. The mean is infinite for `shape <= 1`
+#' and the variance for `shape <= 2`; limited and layer moments always
+#' exist. Properties: `d@shape`, `d@scale`.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param shape,scale Finite and positive.
+#' @returns A `loglogistic_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' g <- loglogistic_distribution(1.5, 24)
+#' cdf(g, c(12, 24, 48)) # share of ultimate reported by age
+#' lev(g, 120)
+loglogistic_distribution <- S7::new_class(
+  "loglogistic_distribution",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("LoglogisticDist"),
+    shape = S7::new_property(S7::class_double, getter = function(self) self@ptr$shape()),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
+  ),
+  constructor = function(shape, scale) {
+    ptr <- rust_result(LoglogisticDist$new(as.double(shape), as.double(scale)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
 #' Mixture of severities
 #'
 #' A loss from component `i` with probability `weights[i]`: attritional and
@@ -504,7 +538,8 @@ S7::method(log_density, gamma_distribution) <- function(dist, x, ...) dist@ptr$l
 S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.double(x))
 
 for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
-                 gamma_distribution, tweedie, weibull_distribution, mixture_distribution)) {
+                 gamma_distribution, tweedie, weibull_distribution, loglogistic_distribution,
+                 mixture_distribution)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
   S7::method(cdf, cls) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
@@ -563,6 +598,11 @@ S7::method(print, tweedie) <- function(x, ...) {
 }
 S7::method(print, weibull_distribution) <- function(x, ...) {
   cat(sprintf("<weibull_distribution> shape = %s, scale = %s\n",
+              format(x@shape, digits = 15), format(x@scale, digits = 15)))
+  invisible(x)
+}
+S7::method(print, loglogistic_distribution) <- function(x, ...) {
+  cat(sprintf("<loglogistic_distribution> shape = %s, scale = %s\n",
               format(x@shape, digits = 15), format(x@scale, digits = 15)))
   invisible(x)
 }

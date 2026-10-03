@@ -3,6 +3,7 @@ import math
 import pytest
 
 from actuarialrs.models import (
+    ElasticNet,
     Design,
     Gam,
     Glm,
@@ -87,3 +88,25 @@ def test_mcmc_diagnostics():
     assert d["rhat"] < 1.01 and d["ess_bulk"] > 100
     shifted = [v + 200.0 for v in b]
     assert mcmc_diagnostics([a, shifted])["rhat"] > 1.5
+
+
+def test_elastic_net_path():
+    x1 = [i / 4 for i in range(40)]
+    x2 = [math.sin(7.3 * i) for i in range(40)]
+    y = [2.0 + 0.8 * a + 0.3 * b + math.cos(3.1 * i) for i, (a, b) in enumerate(zip(x1, x2))]
+    d = Design([[1.0] * 40, x1, x2], ["(Intercept)", "x1", "x2"])
+    net = ElasticNet("gaussian", alpha=0.5)
+    lams = net.lambda_path(d, y, n=6, min_ratio=1e-3)
+    assert len(lams) == 6 and lams[0] == net.lambda_max(d, y)
+    fits = net.path(d, y, lams)
+    assert all(abs(b) < 1e-10 for b in fits[0].coefficients[1:])
+    assert fits[-1].df == 2 and fits[-1].deviance < fits[0].deviance
+    # At lam = 0 it is the GLM.
+    glm = Glm("gaussian").fit(d, y)
+    zero = net.with_lam(0.0).fit(d, y)
+    assert all(abs(a - b) < 1e-8 for a, b in zip(zero.coefficients, glm.coefficients))
+    assert len(zero.predict(d)) == 40
+    pd = zero.predict_distribution(d, 50, 1)
+    assert pd.n_sims == 50
+    with pytest.raises(ValueError):
+        ElasticNet("gaussian", alpha=2.0).fit(d, y)

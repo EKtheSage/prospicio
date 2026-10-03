@@ -477,6 +477,27 @@ severity_class!(TweedieDist {
     }
 });
 
+/// Loglogistic distribution.
+#[extendr]
+pub(crate) struct LoglogisticDist {
+    pub(crate) inner: act_prob::Loglogistic,
+}
+
+severity_class!(LoglogisticDist {
+    fn new(shape: f64, scale: f64) -> Result<Self> {
+        let inner = act_prob::Loglogistic::new(shape, scale).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+});
+
 /// Weibull distribution.
 #[extendr]
 pub(crate) struct WeibullDist {
@@ -540,6 +561,7 @@ extendr_module! {
     impl GammaDist;
     impl TweedieDist;
     impl WeibullDist;
+    impl LoglogisticDist;
     impl MixtureDist;
     impl Binomial;
     fn claim_count_parameters;

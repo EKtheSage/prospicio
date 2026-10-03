@@ -620,6 +620,217 @@ class Distortion:
         """
 
 @final
+class ElasticNet:
+    """
+    An elastic-net GLM: the lasso (``alpha=1``), ridge (``alpha=0``) and
+    everything between, minimizing glmnet's objective
+    ``sum(w * d) / (2 * sum(w)) + lam * sum(pf * ((1 - alpha) / 2 * b**2 + alpha * |b|))``
+    over coefficients ``b`` of standardized columns. The design's first
+    all-ones column is the unpenalized intercept; coefficients are reported
+    on the design's scale.
+    
+    Parameters
+    ----------
+    family : str
+        As ``Glm``.
+    link : str, optional
+        As ``Glm``; the canonical link by default.
+    alpha : float, default 1.0
+        Mixing between ridge (0) and the lasso (1).
+    lam : float, default 0.0
+        Penalty strength (``lambda`` in glmnet).
+    standardize : bool, default True
+        Penalize the coefficients of columns scaled to unit standard
+        deviation.
+    penalty_factor : list of float, optional
+        One factor per design column (the intercept's is ignored); 0 leaves
+        a column unpenalized.
+    theta : float, optional
+    power : float, optional
+    link_power : float, optional
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import Design, ElasticNet
+    >>> x = [float(i) for i in range(6)]
+    >>> d = Design([[1.0] * 6, x, [1.0, 0.0] * 3], ["(Intercept)", "x1", "x2"])
+    >>> y = [1.0, 3.1, 4.9, 7.2, 9.0, 10.8]
+    >>> net = ElasticNet("gaussian", alpha=1.0)
+    >>> top = net.lambda_max(d, y)
+    >>> net.with_lam(1.01 * top).fit(d, y).coefficients[1:]
+    [0.0, 0.0]
+    """
+    def __new__(cls, /, family: str, link: str |None = None, alpha: float = 1.0, lam: float = 0.0, standardize: bool = True, penalty_factor: Sequence[float] |None = None, theta: float |None = None, power: float |None = None, link_power: float |None = None) -> ElasticNet: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        Mixing parameter.
+        """
+    def fit(self, /, design: Design, y: Sequence[float]) -> ElasticNetFit:
+        """
+        Fits at ``lam``.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        ElasticNetFit
+        
+        Raises
+        ------
+        ValueError
+            If a parameter is out of range, a response is outside the
+            family's range, or the fit does not converge.
+        """
+    @property
+    def lam(self, /) -> float:
+        """
+        Penalty strength.
+        """
+    def lambda_max(self, /, design: Design, y: Sequence[float]) -> float:
+        """
+        The smallest ``lam`` at which every penalized coefficient is zero.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        float
+        """
+    def lambda_path(self, /, design: Design, y: Sequence[float], n: int = 100, min_ratio: float = 1e-4) -> list[float]:
+        """
+        ``n`` penalty strengths, log-spaced from ``lambda_max`` down to
+        ``min_ratio`` times it.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        n : int, default 100
+        min_ratio : float, default 1e-4
+        
+        Returns
+        -------
+        list of float
+        """
+    def path(self, /, design: Design, y: Sequence[float], lams: Sequence[float]) -> list[ElasticNetFit]:
+        """
+        Fits at each of ``lams`` in turn, each from the previous solution.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        lams : list of float
+        
+        Returns
+        -------
+        list of ElasticNetFit
+        """
+    def with_lam(self, /, lam: float) -> ElasticNet:
+        """
+        The same spec at another penalty strength.
+        
+        Parameters
+        ----------
+        lam : float
+        
+        Returns
+        -------
+        ElasticNet
+        """
+
+@final
+class ElasticNetFit:
+    """
+    A fitted elastic net, from ``ElasticNet.fit`` or ``ElasticNet.path``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def coefficients(self, /) -> list[float]:
+        """
+        Coefficients on the design's scale; exact zeros where the penalty
+        dropped a column.
+        """
+    @property
+    def deviance(self, /) -> float:
+        """
+        Residual deviance.
+        """
+    @property
+    def deviance_ratio(self, /) -> float:
+        """
+        Share of the null deviance explained (glmnet's ``dev.ratio``).
+        """
+    @property
+    def df(self, /) -> int:
+        """
+        Number of non-zero coefficients, intercept excluded.
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        Dispersion.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        Fitted means on the training data.
+        """
+    @property
+    def lam(self, /) -> float:
+        """
+        Penalty strength.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        Coefficient names.
+        """
+    @property
+    def null_deviance(self, /) -> float:
+        """
+        Deviance with only the intercept and unpenalized columns.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row.
+        
+        Parameters
+        ----------
+        design : Design
+            Same columns as the training design.
+        
+        Returns
+        -------
+        list of float
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Joint predictive distribution across the rows, keyed
+        ``row = 0, 1, ...``: process uncertainty only (penalized
+        coefficients have no standard errors; bootstrap the fit for
+        parameter uncertainty).
+        
+        Parameters
+        ----------
+        design : Design
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+
+@final
 class EventSet:
     """
     Simulated years of individual losses, for applying per-loss terms such
@@ -2139,6 +2350,186 @@ class LogAffinePareto:
     def t(self, /) -> float:
         """
         Threshold ``t``.
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class Loglogistic:
+    """
+    Loglogistic (Fisk) distribution with shape ``alpha`` and scale
+    ``theta`` (the median): ``F(x) = (x/theta)**alpha / (1 + (x/theta)**alpha)``,
+    as SciPy's ``fisk``. Its ``cdf`` is Clark's loglogistic growth curve.
+    The mean is infinite for ``alpha <= 1`` and the variance for
+    ``alpha <= 2``; limited and layer moments always exist.
+    
+    Parameters
+    ----------
+    shape : float
+    scale : float
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Loglogistic
+    >>> Loglogistic(1.0, 2.0).cdf(3.0)
+    0.6
+    """
+    def __getnewargs__(self, /) -> tuple[float, float]: ...
+    def __new__(cls, /, shape: float, scale: float) -> Loglogistic: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        Scale ``theta``, the median.
+        """
+    @property
+    def shape(self, /) -> float:
+        """
+        Shape ``alpha``.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
         """
     def variance(self, /) -> float:
         """

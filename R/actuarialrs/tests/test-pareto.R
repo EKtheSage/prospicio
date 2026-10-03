@@ -104,4 +104,14 @@ stopifnot(inherits(try(mixture_distribution(0.5, list(w)), silent = TRUE), "try-
 gm <- discretize(mx, 1000, 2000)
 near(mean(gm), lev(mx, 1999 * 1000), 1e-9)
 
+# Loglogistic: shape 1 has F(x) = x / (x + scale), LEV = scale log(1 + u / scale).
+ll <- loglogistic_distribution(1, 2)
+near(cdf(ll, 3), 0.6, 1e-15)
+near(lev(ll, 3), 2 * log(2.5), 1e-13)
+stopifnot(is.infinite(mean(ll)))
+gc <- loglogistic_distribution(1.5, 24)
+near(cdf(gc, 24), 0.5, 1e-15)
+near(lev(gc, 1e4) + stop_loss(gc, 1e4), mean(gc), 1e-12)
+stopifnot(inherits(try(loglogistic_distribution(0, 1), silent = TRUE), "try-error"))
+
 cat("actuarialrs R pareto tests passed\n")
