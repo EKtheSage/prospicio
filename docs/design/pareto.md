@@ -324,8 +324,18 @@ the tail keep full relative precision: `1e-12` against 30-digit mpmath
 integration. The R package LocalPareto computes those moments with
 `stats::integrate` (relative tolerance about `1e-4`), so it is only a
 coarse cross-check (`1e-6`) there, and an exact one for the distribution
-function and quantile. The general local Pareto (any `α(x)`, converted to
-a piecewise Pareto) comes later.
+function and quantile. `local_pareto_to_piecewise(t, α, options)` converts the
+general local Pareto (any `α(x)`) to a piecewise Pareto. In `L = ln(x/t)`,
+`ln S = −A(L)` with `A` the integral of the local alpha; a piecewise
+Pareto is a chord interpolant of `A` that matches `S` exactly at its
+thresholds, so pieces are grown greedily while the gap between `A` and
+its chord keeps the relative error of `S` within the tolerance at 16
+interior points (`A` by Gauss–Legendre). It stops at an amount or a
+survival level and reports the largest error found and where the
+approximated range ends. Tested against the closed-form log-affine
+survival and a wavy alpha with an exact integral; the R package's
+`LocalPareto_2_PiecewisePareto` places its breakpoints differently, so the
+two are not compared piece by piece.
 Bindings: Python `actuarialrs.distributions` (`Pareto`,
 `PiecewisePareto`, `LogAffinePareto`, `GeneralizedPareto` with `riegel`,
 `Binomial`, `claim_count`, and `fit` static methods) and R (`pareto()`,

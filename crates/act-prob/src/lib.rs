@@ -35,7 +35,9 @@ pub use distortion::Distortion;
 pub use distribution::Distribution;
 pub use grid::{Discretization, DiscretizationReport, Grid};
 pub use large_losses::LargeLosses;
-pub use local_pareto::LogAffinePareto;
+pub use local_pareto::{
+    LocalParetoApproximation, LocalParetoConversion, LogAffinePareto, local_pareto_to_piecewise,
+};
 pub use lognormal::Lognormal;
 pub use pareto::Pareto;
 pub use piecewise_pareto::{PiecewisePareto, Truncation};
