@@ -80,7 +80,7 @@ life cycle; each heavy engine sits in its own crate behind a feature flag.
 |---|---|---|
 | `act-models` | The `Model` trait, model specs, `Design`, `Family` and links, resampling, metrics, tuning, comparison and stacking, model artifacts | None |
 | `act-glm` | GLM by IRLS; GAM as a penalized GLM on the same solver (P-splines, tensor smooths, GCV/REML) | `faer` |
-| `act-nn` | Neural networks on Burn, starting with CANN (a GLM offset plus a network correction) | Burn, opt-in feature |
+| `act-nn` | Neural networks on Burn: CANN (a GLM offset plus a network correction) and the attention CANN (a transformer over feature tokens) | Burn, opt-in feature |
 | `act-bayes` | Bayesian model specs and diagnostics (R-hat, ESS, divergences, LOO); sampling through nutpie or BridgeStan | Samplers, opt-in feature |
 | *(no crate)* | Gradient boosting: Python and R adapters over LightGBM and XGBoost that implement the interface and return shared objects | None in Rust |
 
@@ -192,7 +192,7 @@ a triangle into a design, and the backtest that scores models on it.
    against Chain Ladder.
 4. Resampling, tuning and comparison.
 5. GAM in `act-glm`.
-6. `act-nn` on Burn: CANN first.
+6. `act-nn` on Burn: CANN first, then the attention CANN.
 7. `act-bayes`, and the boosting adapters.
 
 ## Elastic net
@@ -222,6 +222,36 @@ log link, at four λ each. Two notes:
 - With correlated columns coordinate descent creeps: glmnet's default
   `thresh = 1e-7` stops with coefficients off in the third digit, and
   even `1e-14` leaves them 5e-6 off. The references use `1e-20`.
+
+## Attention
+
+`act_nn::AttentionCann` is a CANN whose correction is a transformer over
+feature tokens (Gorishniy et al.'s FT-Transformer in Wüthrich and Merz's
+CANN setting; Richman, Scognamiglio and Wüthrich's Credibility Transformer
+develops the same pairing). Each numeric column is a token, and each
+factor's indicator columns (`region[B]`, `region[C]`, …) together form one
+token, so every level gets a learned embedding. A learned `[CLS]` token
+joins them; pre-norm blocks of multi-head self-attention and a
+feed-forward layer mix them; the `[CLS]` state, through a zero-initialized
+head, corrects the GLM's linear predictor. Training starts exactly at the
+GLM.
+
+The point for actuaries is that attention is readable per risk:
+`AttentionCannFit::attention` returns, for every row and head, the last
+block's weight from `[CLS]` to each feature. Averaged over a segment's
+rows, it shows which rating factors the model leans on there, which is how
+attention reaches "different parts of the data": the weights differ by
+row, so they differ by segment, and different heads can specialize. It is
+a diagnostic, not a decomposition of the prediction.
+
+Not yet: attention along development periods or accident years (a
+sequence model over a triangle's cells), which needs the triangle bridge
+from the Reserving lane, and attention across claims of one policy.
+
+Seeding: Burn's generator is global and its parameters initialize lazily,
+so `act-nn` seeds, builds and initializes every parameter under one lock.
+Without it, fits running in parallel (tests, cross-validation) interleave
+their draws and stop being reproducible.
 
 ## Decisions
 
