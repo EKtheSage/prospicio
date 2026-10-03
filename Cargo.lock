@@ -13,6 +13,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "act-bayes"
+version = "0.0.1"
+dependencies = [
+ "act-core",
+ "act-math",
+ "rustfft",
+]
+
+[[package]]
 name = "act-core"
 version = "0.0.1"
 dependencies = [
@@ -105,6 +114,7 @@ name = "act-validation"
 version = "0.0.1"
 dependencies = [
  "act-aggregate",
+ "act-bayes",
  "act-core",
  "act-glm",
  "act-math",

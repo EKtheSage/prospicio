@@ -1,0 +1,26 @@
+variable,quantity,expected,abs_tol,rel_tol,source
+iid,rhat,1.0002992888509878,1e-12,1e-10,posterior 1.5.0
+iid,ess_bulk,3704.2335515226637,1e-12,1e-10,posterior 1.5.0
+iid,ess_tail,3873.9680736764099,1e-12,1e-10,posterior 1.5.0
+iid,ess_mean,3715.8038393320471,1e-12,1e-10,posterior 1.5.0
+iid,mcse_mean,0.016363806535694161,1e-12,1e-10,posterior 1.5.0
+ar_09,rhat,1.0148548527083805,1e-12,1e-10,posterior 1.5.0
+ar_09,ess_bulk,208.11052420868208,1e-12,1e-10,posterior 1.5.0
+ar_09,ess_tail,352.50865695034145,1e-12,1e-10,posterior 1.5.0
+ar_09,ess_mean,207.62944728092202,1e-12,1e-10,posterior 1.5.0
+ar_09,mcse_mean,0.15550496464694774,1e-12,1e-10,posterior 1.5.0
+shifted,rhat,1.1449412239871324,1e-12,1e-10,posterior 1.5.0
+shifted,ess_bulk,18.706010063022042,1e-12,1e-10,posterior 1.5.0
+shifted,ess_tail,82.271398838892807,1e-12,1e-10,posterior 1.5.0
+shifted,ess_mean,18.355765628549712,1e-12,1e-10,posterior 1.5.0
+shifted,mcse_mean,0.30517804422407724,1e-12,1e-10,posterior 1.5.0
+scale,rhat,1.1463609331047091,1e-12,1e-10,posterior 1.5.0
+scale,ess_bulk,3915.8929634077531,1e-12,1e-10,posterior 1.5.0
+scale,ess_tail,48.577912082436974,1e-12,1e-10,posterior 1.5.0
+scale,ess_mean,3873.216481638141,1e-12,1e-10,posterior 1.5.0
+scale,mcse_mean,0.060309147124549746,1e-12,1e-10,posterior 1.5.0
+ties,rhat,1.0008109671722549,1e-12,1e-10,posterior 1.5.0
+ties,ess_bulk,3737.7837984815615,1e-12,1e-10,posterior 1.5.0
+ties,ess_tail,3623.66506342106,1e-12,1e-10,posterior 1.5.0
+ties,ess_mean,3798.4368247245925,1e-12,1e-10,posterior 1.5.0
+ties,mcse_mean,0.023027730448351585,1e-12,1e-10,posterior 1.5.0

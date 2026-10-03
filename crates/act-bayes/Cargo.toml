@@ -1,0 +1,12 @@
+[package]
+name = "act-bayes"
+description = "Bayesian model diagnostics (R-hat, ESS, MCSE); samplers are delegated (docs/design/models.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+act-core.workspace = true
+act-math.workspace = true
+rustfft.workspace = true

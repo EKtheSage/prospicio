@@ -57,6 +57,15 @@ models and compares them.
   offset, gamma): deviance, edf, scale, score, a coefficient and fitted
   values, at 1e-5 to 1e-6 where the smooth is clearly non-linear and
   looser where the optimal smoothing is effectively infinite.
+- `act-bayes`: MCMC diagnostics for any sampler's draws, the estimators
+  of Vehtari et al. (2021) as R's `posterior` implements them:
+  rank-normalized split `rhat` (the larger of the bulk and folded
+  versions), `ess_bulk`, `ess_tail`, `ess_quantile`, `ess_mean` and
+  `mcse_mean`, with Geyer's initial monotone sequence on FFT
+  autocovariances. Parity: `validation/reference/mcmc_posterior.csv`
+  (`validation/scripts/r_mcmc_diagnostics.R`), five sets of four chains
+  (independent, AR(1), a shifted chain, a wider chain, ties), 25 values at
+  1e-10.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 
