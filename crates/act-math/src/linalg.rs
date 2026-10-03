@@ -55,6 +55,47 @@ pub fn lower_solve(l: &[f64], b: &[f64], x: &mut [f64]) {
     }
 }
 
+/// Solves `l lᵀ x = b` for the Cholesky factor `l` (`n × n`, row-major)
+/// of a symmetric positive definite matrix: forward then back
+/// substitution.
+///
+/// ```
+/// use act_math::linalg::{cholesky, cholesky_solve};
+///
+/// let a = [4.0, 2.0, 2.0, 5.0];
+/// let l = cholesky(&a, 2).unwrap();
+/// let x = cholesky_solve(&l, &[6.0, 7.0]);
+/// assert!((x[0] - 1.0).abs() < 1e-15 && (x[1] - 1.0).abs() < 1e-15);
+/// ```
+pub fn cholesky_solve(l: &[f64], b: &[f64]) -> Vec<f64> {
+    let n = b.len();
+    let mut y = vec![0.0; n];
+    lower_solve(l, b, &mut y);
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let dot: f64 = (i + 1..n).map(|k| l[k * n + i] * x[k]).sum();
+        x[i] = (y[i] - dot) / l[i * n + i];
+    }
+    x
+}
+
+/// The inverse of `l lᵀ` from its Cholesky factor `l` (`n × n`,
+/// row-major), row-major: the covariance of coefficients from the factor
+/// of their information matrix.
+pub fn cholesky_inverse(l: &[f64], n: usize) -> Vec<f64> {
+    let mut inv = vec![0.0; n * n];
+    let mut e = vec![0.0; n];
+    for j in 0..n {
+        e.fill(0.0);
+        e[j] = 1.0;
+        let col = cholesky_solve(l, &e);
+        for i in 0..n {
+            inv[i * n + j] = col[i];
+        }
+    }
+    inv
+}
+
 /// Solves the `n × n` system `a x = b` (`a` row-major) by Gaussian
 /// elimination with partial pivoting. `None` if `a` is singular, holds a
 /// non-finite pivot, or the lengths do not match `n`.
@@ -98,6 +139,19 @@ pub fn solve(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cholesky_inverse_inverts() {
+        let a = [4.0, 2.0, 0.6, 2.0, 5.0, 1.0, 0.6, 1.0, 3.0];
+        let l = cholesky(&a, 3).unwrap();
+        let inv = cholesky_inverse(&l, 3);
+        for i in 0..3 {
+            for j in 0..3 {
+                let v: f64 = (0..3).map(|k| a[i * 3 + k] * inv[k * 3 + j]).sum();
+                assert!((v - if i == j { 1.0 } else { 0.0 }).abs() < 1e-14);
+            }
+        }
+    }
 
     #[test]
     fn solve_pivots_past_a_zero_diagonal() {

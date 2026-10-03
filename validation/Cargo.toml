@@ -12,6 +12,8 @@ act-reserving.workspace = true
 [dev-dependencies]
 act-aggregate.workspace = true
 act-core.workspace = true
+act-glm.workspace = true
 act-math.workspace = true
+act-models.workspace = true
 act-pricing.workspace = true
 act-prob = { workspace = true, features = ["arrow"] }
