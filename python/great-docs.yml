@@ -20,6 +20,7 @@ reference:
       - distributions.Gamma
       - distributions.Tweedie
       - distributions.Weibull
+      - distributions.Loglogistic
       - distributions.Mixture
       - distributions.Grid
       - distributions.DiscretizationReport
@@ -65,6 +66,8 @@ reference:
       - models.Design
       - models.Glm
       - models.GlmFit
+      - models.ElasticNet
+      - models.ElasticNetFit
       - models.Gam
       - models.GamFit
       - models.deviance

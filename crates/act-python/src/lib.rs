@@ -37,13 +37,13 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::models::{
-        PyCoding, PyDesign, PyGam, PyGamFit, PyGlm, PyGlmFit, PyTerms, crps, deviance, gini,
-        group_k_fold, k_fold, lift, mcmc_diagnostics, time_ordered,
+        PyCoding, PyDesign, PyElasticNet, PyElasticNetFit, PyGam, PyGamFit, PyGlm, PyGlmFit,
+        PyTerms, crps, deviance, gini, group_k_fold, k_fold, lift, mcmc_diagnostics, time_ordered,
     };
     #[pymodule_export]
     use super::pareto::{
-        PyBinomial, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyMixture, PyPareto,
-        PyPiecewisePareto, PyTweedie, PyWeibull, claim_count, local_pareto_to_piecewise,
+        PyBinomial, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture,
+        PyPareto, PyPiecewisePareto, PyTweedie, PyWeibull, claim_count, local_pareto_to_piecewise,
     };
     #[pymodule_export]
     use super::pricing::{

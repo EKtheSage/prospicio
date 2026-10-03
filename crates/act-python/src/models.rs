@@ -1,9 +1,10 @@
-//! `actuarialrs.models`: model terms and designs, GLMs, GAMs, metrics,
+//! `actuarialrs.models`: model terms and designs, GLMs, elastic nets, GAMs, metrics,
 //! resampling and MCMC diagnostics (Models lane; `docs/design/models.md`).
 
 use std::collections::HashMap;
 
 use act_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+use act_glm::net::{ElasticNet, ElasticNetFit};
 use act_glm::{Dispersion, Glm, GlmFit};
 use act_models::resample::{self, Split};
 use act_models::{Coding, Column, Design, Family, Fitted, Frame, Link, Model, Terms, metrics};
@@ -585,6 +586,325 @@ impl PyGlmFit {
             self.inner.spec().family.name(),
             self.inner.deviance(),
             self.inner.coefficients().len()
+        )
+    }
+}
+
+/// An elastic-net GLM: the lasso (``alpha=1``), ridge (``alpha=0``) and
+/// everything between, minimizing glmnet's objective
+/// ``sum(w * d) / (2 * sum(w)) + lam * sum(pf * ((1 - alpha) / 2 * b**2 + alpha * |b|))``
+/// over coefficients ``b`` of standardized columns. The design's first
+/// all-ones column is the unpenalized intercept; coefficients are reported
+/// on the design's scale.
+///
+/// Parameters
+/// ----------
+/// family : str
+///     As ``Glm``.
+/// link : str, optional
+///     As ``Glm``; the canonical link by default.
+/// alpha : float, default 1.0
+///     Mixing between ridge (0) and the lasso (1).
+/// lam : float, default 0.0
+///     Penalty strength (``lambda`` in glmnet).
+/// standardize : bool, default True
+///     Penalize the coefficients of columns scaled to unit standard
+///     deviation.
+/// penalty_factor : list of float, optional
+///     One factor per design column (the intercept's is ignored); 0 leaves
+///     a column unpenalized.
+/// theta : float, optional
+/// power : float, optional
+/// link_power : float, optional
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import Design, ElasticNet
+/// >>> x = [float(i) for i in range(6)]
+/// >>> d = Design([[1.0] * 6, x, [1.0, 0.0] * 3], ["(Intercept)", "x1", "x2"])
+/// >>> y = [1.0, 3.1, 4.9, 7.2, 9.0, 10.8]
+/// >>> net = ElasticNet("gaussian", alpha=1.0)
+/// >>> top = net.lambda_max(d, y)
+/// >>> net.with_lam(1.01 * top).fit(d, y).coefficients[1:]
+/// [0.0, 0.0]
+#[pyclass(name = "ElasticNet", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyElasticNet {
+    inner: ElasticNet,
+}
+
+#[pymethods]
+impl PyElasticNet {
+    #[new]
+    #[pyo3(signature = (family, link = None, alpha = 1.0, lam = 0.0, standardize = true, penalty_factor = None, theta = None, power = None, link_power = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        family: &str,
+        link: Option<&str>,
+        alpha: f64,
+        lam: f64,
+        standardize: bool,
+        penalty_factor: Option<Vec<f64>>,
+        theta: Option<f64>,
+        power: Option<f64>,
+        link_power: Option<f64>,
+    ) -> PyResult<Self> {
+        let f = self::family(family, theta, power)?;
+        let l = self::link(link, f, link_power)?;
+        let mut inner = ElasticNet::new(f, l, alpha, lam).standardize(standardize);
+        inner.penalty_factor = penalty_factor;
+        Ok(Self { inner })
+    }
+
+    /// Mixing parameter.
+    #[getter]
+    fn alpha(&self) -> f64 {
+        self.inner.alpha
+    }
+
+    /// Penalty strength.
+    #[getter]
+    fn lam(&self) -> f64 {
+        self.inner.lambda
+    }
+
+    /// The same spec at another penalty strength.
+    ///
+    /// Parameters
+    /// ----------
+    /// lam : float
+    ///
+    /// Returns
+    /// -------
+    /// ElasticNet
+    fn with_lam(&self, lam: f64) -> Self {
+        Self {
+            inner: self.inner.with_lambda(lam),
+        }
+    }
+
+    /// Fits at ``lam``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// ElasticNetFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a parameter is out of range, a response is outside the
+    ///     family's range, or the fit does not converge.
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyElasticNetFit> {
+        let (net, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| net.fit(d, &y)).map_err(to_py)?;
+        Ok(PyElasticNetFit { inner })
+    }
+
+    /// The smallest ``lam`` at which every penalized coefficient is zero.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn lambda_max(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<f64> {
+        let (net, d) = (&self.inner, &design.inner);
+        py.detach(|| net.lambda_max(d, &y)).map_err(to_py)
+    }
+
+    /// ``n`` penalty strengths, log-spaced from ``lambda_max`` down to
+    /// ``min_ratio`` times it.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// n : int, default 100
+    /// min_ratio : float, default 1e-4
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (design, y, n = 100, min_ratio = 1e-4))]
+    fn lambda_path(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        n: usize,
+        min_ratio: f64,
+    ) -> PyResult<Vec<f64>> {
+        let (net, d) = (&self.inner, &design.inner);
+        py.detach(|| net.lambda_path(d, &y, n, min_ratio))
+            .map_err(to_py)
+    }
+
+    /// Fits at each of ``lams`` in turn, each from the previous solution.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// lams : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of ElasticNetFit
+    fn path(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        lams: Vec<f64>,
+    ) -> PyResult<Vec<PyElasticNetFit>> {
+        let (net, d) = (&self.inner, &design.inner);
+        let fits = py.detach(|| net.path(d, &y, &lams)).map_err(to_py)?;
+        Ok(fits
+            .into_iter()
+            .map(|inner| PyElasticNetFit { inner })
+            .collect())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ElasticNet(family={:?}, link={:?}, alpha={:?}, lam={:?})",
+            self.inner.family.name(),
+            link_name(self.inner.link),
+            self.inner.alpha,
+            self.inner.lambda
+        )
+    }
+}
+
+/// A fitted elastic net, from ``ElasticNet.fit`` or ``ElasticNet.path``.
+#[pyclass(name = "ElasticNetFit", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyElasticNetFit {
+    inner: ElasticNetFit,
+}
+
+#[pymethods]
+impl PyElasticNetFit {
+    /// Coefficient names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// Coefficients on the design's scale; exact zeros where the penalty
+    /// dropped a column.
+    #[getter]
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    /// Penalty strength.
+    #[getter]
+    fn lam(&self) -> f64 {
+        self.inner.lambda()
+    }
+
+    /// Residual deviance.
+    #[getter]
+    fn deviance(&self) -> f64 {
+        self.inner.deviance()
+    }
+
+    /// Deviance with only the intercept and unpenalized columns.
+    #[getter]
+    fn null_deviance(&self) -> f64 {
+        self.inner.null_deviance()
+    }
+
+    /// Share of the null deviance explained (glmnet's ``dev.ratio``).
+    #[getter]
+    fn deviance_ratio(&self) -> f64 {
+        self.inner.deviance_ratio()
+    }
+
+    /// Number of non-zero coefficients, intercept excluded.
+    #[getter]
+    fn df(&self) -> usize {
+        self.inner.df()
+    }
+
+    /// Dispersion.
+    #[getter]
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    /// Fitted means on the training data.
+    #[getter]
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    /// Expected response for each row.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     Same columns as the training design.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn predict(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        self.inner.predict(&design.inner).map_err(to_py)
+    }
+
+    /// Joint predictive distribution across the rows, keyed
+    /// ``row = 0, 1, ...``: process uncertainty only (penalized
+    /// coefficients have no standard errors; bootstrap the fit for
+    /// parameter uncertainty).
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// n_sims : int
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn predict_distribution(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        n_sims: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ElasticNetFit(family={:?}, lam={}, df={}, deviance={})",
+            self.inner.spec().family.name(),
+            self.inner.lambda(),
+            self.inner.df(),
+            self.inner.deviance()
         )
     }
 }

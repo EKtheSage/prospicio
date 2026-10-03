@@ -1,4 +1,4 @@
-# Models lane: GLMs, GAMs, metrics, resampling and MCMC diagnostics, over
+# Models lane: GLMs, elastic nets, GAMs, metrics, resampling and MCMC diagnostics, over
 # crates/act-r/src/models.rs. R builds the design matrix with
 # model.matrix(), so formulas, factors and contrasts behave as in stats::glm.
 
@@ -131,6 +131,140 @@ glm_model <- S7::new_class(
   }
 )
 
+#' Fit an elastic-net GLM
+#'
+#' The lasso (`alpha = 1`), ridge (`alpha = 0`) and everything between, for
+#' every family and link of [glm_fit()], by coordinate descent inside IRLS.
+#' Minimizes glmnet's objective
+#' `sum(w * d) / (2 * sum(w)) + lambda * sum(pf * ((1 - alpha) / 2 * b^2 + alpha * abs(b)))`,
+#' where `b` are the coefficients of the columns standardized to unit
+#' standard deviation (when `standardize = TRUE`). The intercept is not
+#' penalized; coefficients are reported on the design's scale. Results
+#' match glmnet (`validation/scripts/r_glmnet.R`), except that for the
+#' Gaussian glmnet divides the ridge part of its penalty by `sd(y)`.
+#'
+#' @inheritParams glm_fit
+#' @param alpha Mixing between ridge (0) and the lasso (1).
+#' @param lambda Penalty strengths; `NULL` for a path of `nlambda` values
+#'   log-spaced from the smallest `lambda` that zeroes every coefficient
+#'   down to `lambda_min_ratio` times it.
+#' @param nlambda,lambda_min_ratio The default path.
+#' @param standardize Penalize standardized coefficients.
+#' @param penalty_factor Optional penalty factors: a vector with one per
+#'   design column, or a named vector for some columns (the rest get 1); 0
+#'   leaves a column unpenalized.
+#' @returns An `elastic_net_model` with properties `lambda`, `coefficients`
+#'   (a matrix, one column per `lambda`), `deviance`, `deviance_ratio`,
+#'   `df` (non-zero coefficients), `null_deviance` and `alpha`. Use
+#'   [stats::coef()], [stats::predict()] and [predict_distribution()], each
+#'   with a `lambda` from the path. Tune `lambda` and `alpha` with
+#'   [k_fold()] and [family_deviance()].
+#' @export
+#' @examples
+#' set.seed(1)
+#' d <- data.frame(x1 = rnorm(50), x2 = rnorm(50))
+#' d$y <- 1 + 2 * d$x1 + rnorm(50)
+#' m <- elastic_net_fit(y ~ x1 + x2, d, family = "gaussian", alpha = 1)
+#' m@df[c(1, 20, 100)]
+#' coef(m, lambda = m@lambda[20])
+elastic_net_fit <- function(formula, data, family = "poisson", link = NULL, alpha = 1,
+                            lambda = NULL, nlambda = 100, lambda_min_ratio = 1e-4,
+                            standardize = TRUE, penalty_factor = NULL, offset = NULL,
+                            weights = NULL, theta = NULL, power = NULL, link_power = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  fa <- family_args(theta, power)
+  pf <- double()
+  if (!is.null(penalty_factor)) {
+    pf <- stats::setNames(rep(1, ncol(des$x)), colnames(des$x))
+    if (is.null(names(penalty_factor))) {
+      if (length(penalty_factor) != ncol(des$x)) {
+        stop(sprintf("penalty_factor needs %d values, one per design column", ncol(des$x)))
+      }
+      pf[] <- penalty_factor
+    } else {
+      unknown <- setdiff(names(penalty_factor), names(pf))
+      if (length(unknown)) stop("unknown design columns in penalty_factor: ", toString(unknown))
+      pf[names(penalty_factor)] <- penalty_factor
+    }
+    pf <- as.double(pf)
+  }
+  ptr <- rust_result(elastic_net_fit_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
+    if (is.null(link)) "" else link, as.double(alpha),
+    if (is.null(lambda)) double() else as.double(lambda), as.double(nlambda),
+    as.double(lambda_min_ratio), isTRUE(standardize), pf, fa$theta, fa$power,
+    if (is.null(link_power)) NaN else as.double(link_power)
+  ))
+  elastic_net_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels)
+}
+
+#' Fitted elastic net (class)
+#'
+#' Returned by [elastic_net_fit()]: one fit per `lambda`.
+#'
+#' @param ptr,terms,xlevels Internal.
+#' @returns An `elastic_net_model` object.
+#' @export
+elastic_net_model <- S7::new_class(
+  "elastic_net_model",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("ElasticNetPath"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    lambda = S7::new_property(S7::class_double, getter = function(self) self@ptr$lambda()),
+    coefficients = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$names()
+      lam <- self@ptr$lambda()
+      matrix(self@ptr$coefficients(), length(nm), dimnames = list(nm, format(lam, digits = 6)))
+    }),
+    deviance = S7::new_property(S7::class_double, getter = function(self) self@ptr$deviance()),
+    deviance_ratio = S7::new_property(S7::class_double, getter = function(self) self@ptr$deviance_ratio()),
+    df = S7::new_property(S7::class_double, getter = function(self) self@ptr$df()),
+    null_deviance = S7::new_property(S7::class_double, getter = function(self) self@ptr$null_deviance()),
+    alpha = S7::new_property(S7::class_double, getter = function(self) self@ptr$alpha())
+  ),
+  constructor = function(ptr, terms, xlevels) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels)
+  }
+)
+
+# Position of `lambda` on the path (1-based); NULL means the only one.
+lambda_index <- function(object, lambda) {
+  lam <- object@lambda
+  if (is.null(lambda)) {
+    if (length(lam) == 1) return(1)
+    stop("this path has several lambdas: pass `lambda`, one of object@lambda")
+  }
+  k <- which(abs(lam - lambda) <= 1e-10 * abs(lambda))
+  if (length(k) != 1) stop("`lambda` is not on the path; refit with elastic_net_fit(lambda = ...)")
+  k
+}
+
+S7::method(coef, elastic_net_model) <- function(object, lambda = NULL, ...) {
+  if (is.null(lambda)) return(object@coefficients)
+  stats::setNames(object@coefficients[, lambda_index(object, lambda)], object@ptr$names())
+}
+
+S7::method(predict, elastic_net_model) <- function(object, newdata, lambda = NULL, offset = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  one <- function(k) {
+    rust_result(object@ptr$predict(as.double(k), as.double(nd$x), colnames(nd$x), nd$offset))
+  }
+  if (is.null(lambda) && length(object@lambda) > 1) {
+    return(vapply(seq_along(object@lambda), one, double(nrow(nd$x))))
+  }
+  one(lambda_index(object, lambda))
+}
+
+S7::method(print, elastic_net_model) <- function(x, ...) {
+  lam <- x@lambda
+  cat(sprintf("<elastic_net_model> %s, alpha = %s, %d lambdas from %s to %s\n",
+              x@ptr$family(), format(x@alpha), length(lam), format(max(lam), digits = 6),
+              format(min(lam), digits = 6)))
+  invisible(x)
+}
+
 #' Fit a generalized additive model
 #'
 #' A [glm_fit()] model in which each name in `smooths` (a numeric term of
@@ -210,9 +344,11 @@ for (cls in list(glm_model, gam_model)) {
 #' Draws the response for every row of `newdata` jointly: each simulation
 #' draws the coefficients from their (posterior) normal approximation,
 #' shared by all rows, then each row's response from the family. Rows are
-#' keyed `row = 0, 1, ...`.
+#' keyed `row = 0, 1, ...`. An [elastic_net_model] has no standard errors,
+#' so its draws hold the coefficients fixed (process uncertainty only) and
+#' take a `lambda` from its path.
 #'
-#' @param object A [glm_model] or [gam_model].
+#' @param object A [glm_model], [elastic_net_model] or [gam_model].
 #' @param newdata A data frame with the model's terms.
 #' @param n_sims Number of simulations.
 #' @param seed Generator seed.
@@ -241,6 +377,18 @@ for (cls in list(glm_model, gam_model)) {
     ), s7_call())
     predictive_distribution(ptr = ptr)
   }
+}
+
+S7::method(predict_distribution, elastic_net_model) <- function(object, newdata, n_sims, seed,
+                                                               lambda = NULL, offset = NULL,
+                                                               weights = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  w <- if (is.null(weights)) double() else as.double(weights)
+  ptr <- rust_result(object@ptr$predict_distribution(
+    as.double(lambda_index(object, lambda)), as.double(nd$x), colnames(nd$x), nd$offset, w,
+    as.double(n_sims), as.double(seed)
+  ))
+  predictive_distribution(ptr = ptr)
 }
 
 S7::method(print, glm_model) <- function(x, ...) {

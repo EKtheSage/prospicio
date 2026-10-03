@@ -7,7 +7,7 @@
 predict_distribution(object, newdata, n_sims, seed, ...)
 }
 \arguments{
-\item{object}{A \link{glm_model} or \link{gam_model}.}
+\item{object}{A \link{glm_model}, \link{elastic_net_model} or \link{gam_model}.}
 
 \item{newdata}{A data frame with the model's terms.}
 
@@ -28,7 +28,9 @@ A \link{predictive_distribution}.
 Draws the response for every row of \code{newdata} jointly: each simulation
 draws the coefficients from their (posterior) normal approximation,
 shared by all rows, then each row's response from the family. Rows are
-keyed \verb{row = 0, 1, ...}.
+keyed \verb{row = 0, 1, ...}. An \link{elastic_net_model} has no standard errors,
+so its draws hold the coefficients fixed (process uncertainty only) and
+take a \code{lambda} from its path.
 }
 \examples{
 d <- data.frame(y = c(2, 3, 5, 4, 6, 8), x = 1:6)

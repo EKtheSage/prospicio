@@ -17,6 +17,7 @@ reference:
       - gamma_distribution
       - tweedie
       - weibull_distribution
+      - loglogistic_distribution
       - mixture_distribution
       - log_density
   - title: Large-loss severities
@@ -92,6 +93,8 @@ reference:
     contents:
       - glm_fit
       - glm_model
+      - elastic_net_fit
+      - elastic_net_model
       - gam_fit
       - gam_model
       - predict_distribution

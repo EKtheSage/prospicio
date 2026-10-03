@@ -163,3 +163,23 @@ def test_weibull_mixture_and_tail_diagnostics():
     n = 2000
     x = [(1 - (i - 0.5) / n) ** -0.5 for i in range(1, n + 1)]
     assert abs(hill(x, [200])[0] - 0.5) < 0.02
+
+
+def test_loglogistic_growth_curve_and_heavy_tail():
+    import math
+
+    from actuarialrs.distributions import Grid, Loglogistic
+
+    d = Loglogistic(1.0, 2.0)
+    # Shape 1: F(x) = x / (x + theta), LEV = theta ln(1 + u / theta).
+    assert abs(d.cdf(3.0) - 0.6) < 1e-15
+    assert abs(d.lev(3.0) - 2.0 * math.log(2.5)) < 1e-13
+    assert math.isinf(d.mean())
+    # Clark's growth curve: the median age reports half of ultimate.
+    g = Loglogistic(1.5, 24.0)
+    assert abs(g.cdf(24.0) - 0.5) < 1e-15
+    assert abs(g.lev(1e4) + g.stop_loss(1e4) - g.mean()) < 1e-9 * g.mean()
+    grid, _ = Grid.local_moment(g, 1.0, 500)
+    assert abs(grid.mean() - g.lev(499.0)) < 1e-9
+    with pytest.raises(ValueError):
+        Loglogistic(0.0, 1.0)
