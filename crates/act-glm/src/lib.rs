@@ -9,6 +9,7 @@
 //! B-spline smooths, with smoothing chosen by GCV or UBRE.
 
 pub mod gam;
+pub mod net;
 
 use act_core::{Error, Result};
 use act_math::linalg::{cholesky, cholesky_inverse, cholesky_solve, lower_mul};
@@ -511,7 +512,7 @@ impl Fitted for GlmFit {
             &self.spec,
             self.dispersion,
             &self.coefficients,
-            &self.covariance(),
+            Some(&self.covariance()),
             design,
             n_sims,
             seed,
@@ -522,21 +523,26 @@ impl Fitted for GlmFit {
 
 /// Joint draws of the responses for the rows of `design`: simulation `i`
 /// (stream `i` of `seed`) draws `β ~ N(coefficients, covariance)`, shared
-/// by every row, then each row's response from the family, in row order.
+/// by every row (or keeps `β` fixed without a covariance), then each row's
+/// response from the family, in row order.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn simulate_responses(
     spec: &Glm,
     dispersion: f64,
     coefficients: &[f64],
-    covariance: &[f64],
+    covariance: Option<&[f64]>,
     design: &Design,
     n_sims: usize,
     seed: u64,
     provenance: Provenance,
 ) -> Result<PredictiveDistribution> {
     let p = coefficients.len();
-    let factor = cholesky(covariance, p)
-        .ok_or_else(|| Error::Data("the coefficient covariance is singular".into()))?;
+    let factor = covariance
+        .map(|c| {
+            cholesky(c, p)
+                .ok_or_else(|| Error::Data("the coefficient covariance is singular".into()))
+        })
+        .transpose()?;
     let n = design.n_rows();
     let components: Vec<ComponentKey> = (0..n).map(|i| vec![KeyValue::from(i as i64)]).collect();
     let (family, link, phi) = (spec.family, spec.link, dispersion);
@@ -548,9 +554,11 @@ pub(crate) fn simulate_responses(
         seed,
         provenance,
         |rng, row| {
-            let z: Vec<f64> = (0..p).map(|_| norm_quantile(rng.next_open01())).collect();
             let mut shift = vec![0.0; p];
-            lower_mul(&factor, &z, &mut shift);
+            if let Some(factor) = &factor {
+                let z: Vec<f64> = (0..p).map(|_| norm_quantile(rng.next_open01())).collect();
+                lower_mul(factor, &z, &mut shift);
+            }
             let beta: Vec<f64> = coefficients
                 .iter()
                 .zip(&shift)

@@ -244,3 +244,145 @@ fn mcmc_diagnostics_match_posterior() {
         }
     });
 }
+
+/// Intercept, age, age²/100 and region dummies, as `r_glmnet.R` builds them.
+fn net_design(data: &[(String, Vec<String>)]) -> Design {
+    let age = numeric(data, "age");
+    let region = &data.iter().find(|(n, _)| n == "region").unwrap().1;
+    let dummy = |level: &str| -> Vec<f64> {
+        region
+            .iter()
+            .map(|r| f64::from(u8::from(r == level)))
+            .collect()
+    };
+    Design::new(
+        vec![
+            "(Intercept)".into(),
+            "age".into(),
+            "age2".into(),
+            "region[B]".into(),
+            "region[C]".into(),
+            "region[D]".into(),
+        ],
+        vec![
+            vec![1.0; age.len()],
+            age.clone(),
+            age.iter().map(|a| a * a / 100.0).collect(),
+            dummy("B"),
+            dummy("C"),
+            dummy("D"),
+        ],
+    )
+    .unwrap()
+}
+
+fn net_case(
+    case: &str,
+    data: &[(String, Vec<String>)],
+) -> (act_glm::net::ElasticNet, Design, Vec<f64>) {
+    use act_glm::net::ElasticNet;
+    let d = net_design(data);
+    let log_exposure: Vec<f64> = numeric(data, "exposure").iter().map(|e| e.ln()).collect();
+    let net = |family, link, alpha| ElasticNet::new(family, link, alpha, 0.0);
+    match case {
+        "gaussian_lasso" => (
+            net(Family::Gaussian, Link::Identity, 1.0),
+            d,
+            numeric(data, "gauss"),
+        ),
+        "gaussian_enet_raw" => (
+            net(Family::Gaussian, Link::Identity, 0.5).standardize(false),
+            d,
+            numeric(data, "gauss"),
+        ),
+        "gaussian_weighted" => (
+            net(Family::Gaussian, Link::Identity, 0.7),
+            d.with_weights(numeric(data, "exposure")).unwrap(),
+            numeric(data, "gauss"),
+        ),
+        "poisson_lasso" => (
+            net(Family::Poisson, Link::Log, 1.0),
+            d.with_offset(log_exposure).unwrap(),
+            numeric(data, "claims"),
+        ),
+        "poisson_ridge" => (
+            net(Family::Poisson, Link::Log, 0.0),
+            d.with_offset(log_exposure).unwrap(),
+            numeric(data, "claims"),
+        ),
+        "binomial_enet" => {
+            let trials = numeric(data, "trials");
+            let y = numeric(data, "successes")
+                .iter()
+                .zip(&trials)
+                .map(|(s, n)| s / n)
+                .collect();
+            (
+                net(Family::Binomial, Link::Logit, 0.5),
+                d.with_weights(trials).unwrap(),
+                y,
+            )
+        }
+        "gamma_log_enet" => (
+            net(Family::Gamma, Link::Log, 0.5),
+            d,
+            numeric(data, "severity"),
+        ),
+        other => panic!("unknown case {other}"),
+    }
+}
+
+/// glmnet's `(λ, α)` as ours. For the Gaussian, glmnet scales `y` to unit
+/// (weighted, population) standard deviation `s_y` before fitting and
+/// reports `λ` back on `y`'s scale, which leaves the lasso part of the
+/// penalty as stated but divides the ridge part by `s_y`. The same
+/// solution in our parameterization has `λ α` unchanged and
+/// `λ (1 - α)` divided by `s_y`.
+fn from_glmnet(
+    spec: &act_glm::net::ElasticNet,
+    d: &Design,
+    y: &[f64],
+    lambda: f64,
+) -> act_glm::net::ElasticNet {
+    if spec.family != Family::Gaussian || spec.alpha == 1.0 {
+        return spec.with_lambda(lambda);
+    }
+    let w = d.weights();
+    let total: f64 = w.iter().sum();
+    let mean = y.iter().zip(w).map(|(a, b)| a * b).sum::<f64>() / total;
+    let sd = (y
+        .iter()
+        .zip(w)
+        .map(|(a, b)| b * (a - mean).powi(2))
+        .sum::<f64>()
+        / total)
+        .sqrt();
+    let l1 = lambda * spec.alpha;
+    let l2 = lambda * (1.0 - spec.alpha) / sd;
+    let mut out = spec.with_lambda(l1 + l2);
+    out.alpha = l1 / (l1 + l2);
+    out
+}
+
+#[test]
+fn elastic_nets_match_glmnet() {
+    let data = policies();
+    let cases = reference("elastic_net_glmnet.csv");
+    check(&cases, |c| {
+        let (spec, d, y) = net_case(c.get("case"), &data);
+        match c.get("quantity") {
+            "lambda_max" => spec.lambda_max(&d, &y).ok(),
+            "coef" | "deviance" => {
+                let fit = from_glmnet(&spec, &d, &y, c.number("arg")?)
+                    .fit(&d, &y)
+                    .ok()?;
+                if c.get("quantity") == "deviance" {
+                    return Some(fit.deviance());
+                }
+                let j = fit.names().iter().position(|n| n == c.get("term"))?;
+                Some(fit.coefficients()[j])
+            }
+            _ => None,
+        }
+    });
+}
