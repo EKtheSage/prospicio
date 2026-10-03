@@ -127,16 +127,38 @@ impl Grid {
     ) -> Result<(Self, DiscretizationReport)> {
         check_shape(step, points)?;
         let lev: Vec<f64> = (0..points).map(|j| source.lev(j as f64 * step)).collect();
+        // Above the mean, LEV is close to the mean and its differences
+        // cancel; the stop-loss `mean - LEV` is small there and differences
+        // cleanly. (Clamping the round-off of LEV differences at 0 would
+        // otherwise add mass: 1e-7 over 300,000 points of a gamma.)
+        let mean = source.mean();
+        let tail_from = (0..points)
+            .find(|&j| j as f64 * step >= mean)
+            .unwrap_or(points);
+        let sl: Vec<f64> = (tail_from.saturating_sub(1)..points)
+            .map(|j| source.stop_loss(j as f64 * step))
+            .collect();
+        let sl = |j: usize| sl[j + 1 - tail_from.max(1)];
         let probs = if points == 1 {
             vec![1.0]
         } else {
             let mut probs = Vec::with_capacity(points);
             probs.push(1.0 - lev[1] / step);
             for j in 1..points - 1 {
-                // LEV is concave, so this is non-negative up to rounding.
-                probs.push(((2.0 * lev[j] - lev[j - 1] - lev[j + 1]) / step).max(0.0));
+                // LEV is concave and the stop-loss convex, so this is
+                // non-negative up to rounding.
+                let f = if j > tail_from {
+                    sl(j - 1) - 2.0 * sl(j) + sl(j + 1)
+                } else {
+                    2.0 * lev[j] - lev[j - 1] - lev[j + 1]
+                };
+                probs.push((f / step).max(0.0));
             }
-            probs.push((lev[points - 1] - lev[points - 2]) / step);
+            probs.push(if points - 1 > tail_from {
+                (sl(points - 2) - sl(points - 1)) / step
+            } else {
+                (lev[points - 1] - lev[points - 2]) / step
+            });
             probs
         };
         Self::finish(source, step, probs, Discretization::LocalMoment)
