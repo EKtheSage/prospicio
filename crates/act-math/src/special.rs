@@ -167,6 +167,123 @@ pub fn student_t_cdf(t: f64, nu: f64) -> f64 {
     if t > 0.0 { 1.0 - tail } else { tail }
 }
 
+/// Regularized incomplete gamma functions `(P(a, x), Q(a, x))`, the lower
+/// and upper parts, for shape `a > 0` and `x >= 0`: `P(a, x)` is the
+/// distribution function of a unit-scale gamma with shape `a` at `x`, and
+/// `Q = 1 - P`.
+///
+/// The smaller of the two is computed directly, by the power series below
+/// `x = a + 1` and by Lentz's continued fraction above, so both tails keep
+/// their relative precision; the other is `1` minus it. The common factor
+/// `x^a e^(-x) / Γ(a)` is formed in Stirling form for `a >= 10`, which
+/// keeps full precision for shapes in the thousands. NaN for invalid
+/// arguments.
+///
+/// ```
+/// use act_math::special::gamma_inc;
+///
+/// // Shape 1 is the exponential: P(1, x) = 1 - e^(-x).
+/// let (p, q) = gamma_inc(1.0, 2.0);
+/// assert!((p - (1.0 - (-2f64).exp())).abs() < 1e-15);
+/// assert!((q - (-2f64).exp()).abs() < 1e-16);
+/// ```
+pub fn gamma_inc(a: f64, x: f64) -> (f64, f64) {
+    if a.is_nan() || x.is_nan() || a <= 0.0 || x < 0.0 || a == f64::INFINITY {
+        return (f64::NAN, f64::NAN);
+    }
+    if x == 0.0 {
+        return (0.0, 1.0);
+    }
+    if x == f64::INFINITY {
+        return (1.0, 0.0);
+    }
+    let factor = gamma_inc_factor(a, x).exp();
+    if x < a + 1.0 {
+        // P = factor × Σ_n x^n / (a (a+1) ⋯ (a+n)).
+        let mut term = 1.0 / a;
+        let mut sum = term;
+        for n in 1..100_000 {
+            term *= x / (a + f64::from(n));
+            sum += term;
+            if term <= sum * 1e-17 {
+                break;
+            }
+        }
+        let p = (factor * sum).min(1.0);
+        (p, 1.0 - p)
+    } else {
+        // Q = factor / (x + 1 - a - 1(1 - a) / (x + 3 - a - 2(2 - a) / ⋯)).
+        const TINY: f64 = 1e-300;
+        let mut b = x + 1.0 - a;
+        let mut c = 1.0 / TINY;
+        let mut d = 1.0 / b;
+        let mut h = d;
+        for i in 1..100_000 {
+            let an = -f64::from(i) * (f64::from(i) - a);
+            b += 2.0;
+            d = an * d + b;
+            if d.abs() < TINY {
+                d = TINY;
+            }
+            c = b + an / c;
+            if c.abs() < TINY {
+                c = TINY;
+            }
+            d = 1.0 / d;
+            let delta = d * c;
+            h *= delta;
+            if (delta - 1.0).abs() <= 1e-16 {
+                break;
+            }
+        }
+        let q = (factor * h).min(1.0);
+        (1.0 - q, q)
+    }
+}
+
+/// `ln(x^a e^(-x) / Γ(a))`. For `a >= 10`, as
+/// `a (ln(1 + u) - u) + ln(a / 2π) / 2 - c(a)` with `u = (x - a) / a` and
+/// `c` the Stirling series remainder of `ln Γ(a)`, so the large, nearly
+/// cancelling terms `a ln x`, `x` and `ln Γ(a)` are never formed.
+fn gamma_inc_factor(a: f64, x: f64) -> f64 {
+    if a < 10.0 {
+        return a * x.ln() - x - ln_gamma(a);
+    }
+    let u = (x - a) / a;
+    let log1pmx = if u.abs() < 0.5 {
+        // ln(1 + u) - u = Σ_{k≥2} (-1)^(k+1) u^k / k.
+        let mut sum = 0.0;
+        let mut power = u * u;
+        for k in 2..200 {
+            let term = power / f64::from(k);
+            sum += if k % 2 == 0 { -term } else { term };
+            if term.abs() <= 1e-17 * sum.abs() {
+                break;
+            }
+            power *= u;
+        }
+        sum
+    } else {
+        // ln(x / a) directly: 1 + u would lose x's precision for x << a.
+        (x / a).ln() - u
+    };
+    let inv = 1.0 / a;
+    let inv2 = inv * inv;
+    // ln Γ(a) - ((a - 1/2) ln a - a + ln(2π)/2), to about 1e-17 at a = 10.
+    let stirling_remainder = inv
+        * (1.0 / 12.0
+            - inv2
+                * (1.0 / 360.0
+                    - inv2
+                        * (1.0 / 1260.0
+                            - inv2
+                                * (1.0 / 1680.0
+                                    - inv2
+                                        * (1.0 / 1188.0
+                                            - inv2 * (691.0 / 360_360.0 - inv2 / 156.0))))));
+    a * log1pmx + 0.5 * (a / (2.0 * PI)).ln() - stirling_remainder
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

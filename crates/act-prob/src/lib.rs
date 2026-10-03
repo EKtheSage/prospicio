@@ -16,6 +16,7 @@ pub mod counting;
 pub mod distortion;
 pub mod distribution;
 pub mod evt;
+pub mod gamma;
 pub mod grid;
 #[cfg(feature = "arrow")]
 pub mod ipc;
@@ -34,6 +35,7 @@ pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, Student
 pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
 pub use distortion::Distortion;
 pub use distribution::Distribution;
+pub use gamma::Gamma;
 pub use grid::{Discretization, DiscretizationReport, Grid};
 pub use large_losses::LargeLosses;
 pub use local_pareto::{

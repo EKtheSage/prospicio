@@ -3,8 +3,9 @@
     pip install mpmath
     python validation/scripts/mpmath_severity.py
 
-Limited expected values, stop-loss and layer means for the lognormal, by
-numerically integrating the survival function at 30 significant digits:
+Limited expected values, stop-loss and layer means for the lognormal and
+the gamma, by numerically integrating the survival function at 30
+significant digits:
 
     LEV(d)          = integral of S(x) from 0 to d
     stop_loss(d)    = integral of S(x) from d to infinity
@@ -19,6 +20,7 @@ import csv
 import sys
 
 import mpmath as mp
+from scipy import stats
 
 mp.mp.dps = 30
 OUT = "validation/reference/severity_mpmath.csv"
@@ -44,6 +46,23 @@ def integral(f, a, b, median):
     return mp.quad(f, points)
 
 
+GAMMAS = [(0.3, 2.0), (2.5, 400.0), (250.0, 0.01)]
+
+
+def gamma_rows():
+    for shape, scale in GAMMAS:
+        a, t = mp.mpf(shape), mp.mpf(scale)
+        S = lambda x, a=a, t=t: mp.gammainc(a, x / t, mp.inf, regularized=True)
+        median = a * t
+        params = f"shape={shape};scale={scale}"
+        for p in PROBS:
+            # Evaluation points at quantiles; SciPy only picks the points.
+            d = mp.mpf(float(stats.gamma(shape, scale=scale).isf(1 - float(p))))
+            yield "gamma", params, "lev", d, "", integral(S, mp.mpf(0), d, median), 1e-12
+            yield "gamma", params, "stop_loss", d, "", integral(S, d, mp.inf, median), 1e-11
+            yield "gamma", params, "layer", d, d, integral(S, d, 2 * d, median), 1e-11
+
+
 def rows():
     for mu, sigma in LOGNORMALS:
         S = survival(mp.mpf(mu), mp.mpf(sigma))
@@ -53,19 +72,19 @@ def rows():
             d = quantile(mu, sigma, p)
             # Round the limit to a double so Rust evaluates at the same point.
             d = mp.mpf(float(d))
-            yield params, "lev", d, "", integral(S, mp.mpf(0), d, median), 1e-12
-            yield params, "stop_loss", d, "", integral(S, d, mp.inf, median), 1e-11
+            yield "lognormal", params, "lev", d, "", integral(S, mp.mpf(0), d, median), 1e-12
+            yield "lognormal", params, "stop_loss", d, "", integral(S, d, mp.inf, median), 1e-11
             # Layer of width d attaching at d.
-            yield params, "layer", d, d, integral(S, d, 2 * d, median), 1e-11
+            yield "lognormal", params, "layer", d, d, integral(S, d, 2 * d, median), 1e-11
 
 
 def main():
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "arg2", "expected", "abs_tol", "rel_tol", "source"])
-        for params, qty, arg, arg2, expected, rel in rows():
+        for dist, params, qty, arg, arg2, expected, rel in list(rows()) + list(gamma_rows()):
             w.writerow([
-                "lognormal", params, qty, repr(float(arg)),
+                dist, params, qty, repr(float(arg)),
                 repr(float(arg2)) if arg2 != "" else "",
                 repr(float(expected)),
                 0.0, rel, SOURCE,

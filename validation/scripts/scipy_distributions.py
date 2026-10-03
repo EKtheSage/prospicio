@@ -35,6 +35,23 @@ def rows():
             yield ("lognormal", params, "cdf", x, d.cdf(x), 1e-15, 1e-12)
 
 
+# Gammas (shape, scale): GLM-like small shapes to near-normal ones.
+GAMMAS = [(0.3, 2.0), (1.0, 5.0), (2.5, 400.0), (250.0, 0.01)]
+
+
+def gamma_rows():
+    for shape, scale in GAMMAS:
+        d = stats.gamma(shape, scale=scale)
+        params = f"shape={shape};scale={scale}"
+        yield ("gamma", params, "mean", "", d.mean(), 0.0, 1e-13)
+        yield ("gamma", params, "variance", "", d.var(), 0.0, 1e-12)
+        for p in PROBS:
+            x = d.ppf(p)
+            yield ("gamma", params, "quantile", p, x, 0.0, 1e-12)
+            yield ("gamma", params, "cdf", x, d.cdf(x), 1e-15, 1e-12)
+            yield ("gamma", params, "survival", x, d.sf(x), 1e-300, 1e-12)
+
+
 # Claim counts: Poisson(lambda), negative binomial (r, beta), with SciPy's
 # nbinom(n=r, p=1/(1+beta)), and binomial (n, p).
 POISSONS = [0.5, 3.0, 40.0]
@@ -67,7 +84,7 @@ def main():
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
-        for r in list(rows()) + list(counts()):
+        for r in list(rows()) + list(gamma_rows()) + list(counts()):
             dist, params, qty, arg, expected, abs_tol, rel_tol = r
             w.writerow([dist, params, qty, repr(float(arg)) if arg != "" else "", repr(float(expected)), abs_tol, rel_tol, SOURCE])
     print(f"wrote {OUT}", file=sys.stderr)
