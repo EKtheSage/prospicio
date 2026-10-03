@@ -27,7 +27,7 @@ fn to_py(e: act_core::Error) -> PyErr {
 mod actuarialrs_native {
     #[pymodule_export]
     use super::aggregate::{
-        PyCompoundReport, PyEventSet, PyLayer, PyTower, fft, panjer, simulate_events,
+        PyCompoundReport, PyEventSet, PyLayer, PyTower, PyTowerGrids, fft, panjer, simulate_events,
     };
     #[pymodule_export]
     use super::distributions::{
@@ -47,7 +47,7 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::risk::{
-        PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail, PyStudentTCopula,
-        allocate, iman_conover, simulate,
+        PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail,
+        PyStudentTCopula, allocate, capital, iman_conover, simulate,
     };
 }

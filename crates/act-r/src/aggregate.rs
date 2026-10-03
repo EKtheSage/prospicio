@@ -293,6 +293,37 @@ impl ReinsuranceTower {
         self.inner.ceded(losses)
     }
 
+    /// Gross, ceded and net annual distributions on the grid, by FFT:
+    /// `list(gross, ceded, net, expected_reinstatement_premium, on_points)`,
+    /// with `net` NULL when it is not one compound total.
+    fn on_grid(&self, frequency: Robj, severity: Robj, points: f64) -> Result<List> {
+        let n = AnyCount::from_robj(&frequency)?;
+        let sev = <&Grid>::try_from(&severity)
+            .map_err(|_| Error::Other("severity must be a grid_distribution".into()))?;
+        let points = whole(points, "points")? as usize;
+        let r = self
+            .inner
+            .on_grid(n.as_counting(), &sev.inner, points)
+            .map_err(to_r)?;
+        let ceded: Vec<Robj> = r
+            .ceded
+            .into_iter()
+            .zip(&r.ceded_reports)
+            .map(|(g, report)| Grid::with_report(g, compound_list(report)).into())
+            .collect();
+        let net: Robj = match r.net {
+            Some(g) => Grid::wrap(g).into(),
+            None => ().into(),
+        };
+        Ok(list!(
+            gross = Grid::with_report(r.gross, compound_list(&r.gross_report)),
+            ceded = List::from_values(ceded),
+            net = net,
+            expected_reinstatement_premium = r.expected_reinstatement_premium,
+            on_points = r.on_points
+        ))
+    }
+
     fn apply(&self, events: Robj) -> Result<PredictiveDistribution> {
         let events = <&EventSet>::try_from(&events)
             .map_err(|_| Error::Other("events must be an event_set".into()))?;

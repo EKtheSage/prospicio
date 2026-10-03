@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 import actuarialrs as ar
@@ -108,3 +110,25 @@ def test_ceded_by_event_and_reinstatement_premiums():
     premium = result.marginal(("reinstatement_premium", "5x5")).draws
     for c, p in zip(ceded, premium):
         assert abs(p - 1e6 * min(c, 5e6) / 5e6) <= 1e-6
+
+
+def test_tower_on_grid():
+    sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    tower = Tower([Layer("2x2", 2.0, 2.0), Layer("QS", math.inf, 0.0, share=0.5)])
+    r = tower.on_grid(Poisson(3.0), sev, 200)
+    # Net keeps half of each loss, which falls between unit points.
+    assert not r.on_points
+    assert abs(r.ceded[0].mean() - 1.2) < 1e-12
+    assert r.ceded[1].step == 0.5
+    assert abs(r.gross.mean() - sum(g.mean() for g in r.ceded) - r.net.mean()) < 1e-10
+    assert r.gross_report.tail_mass < 1e-12
+    assert len(r.ceded_reports) == 2
+    assert r.expected_reinstatement_premium == [0.0, 0.0]
+
+    with_terms = Tower([Layer("2x2", 2.0, 2.0, reinstatements=1)]).on_grid(Poisson(3.0), sev, 200)
+    assert with_terms.on_points
+    assert with_terms.net is None
+    with pytest.raises(ValueError):
+        Tower.inuring(
+            [[Layer("A", 2.0, 2.0, reinstatements=1)], [Layer("B", 4.0, 4.0)]]
+        ).on_grid(Poisson(3.0), sev, 100)

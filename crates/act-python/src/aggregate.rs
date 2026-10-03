@@ -1,7 +1,7 @@
 //! `actuarialrs.aggregate`: wrappers over `act_aggregate` (compound
 //! distributions, simulated events, reinsurance).
 
-use act_aggregate::{CompoundMethod, CompoundReport, EventSet, Layer, Tower};
+use act_aggregate::{CompoundMethod, CompoundReport, EventSet, Layer, Tower, TowerGrids};
 use act_prob::{Counting, Grid};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -704,7 +704,138 @@ impl PyTower {
         Ok(PyPredictiveDistribution { inner })
     }
 
+    /// Gross, ceded and net annual distributions on the grid, by FFT.
+    ///
+    /// Each layer's per-occurrence recoveries form a severity grid, which
+    /// is compounded with the same claim count; annual terms and the share
+    /// then apply to the total. With boundaries on multiples of the step
+    /// the grids are exact for the discretized problem, with no sampling
+    /// error. Grids are marginal (use ``apply`` on simulated events for
+    /// joint results). ``net`` is given when no layer has annual terms, or
+    /// when the last stage is a single aggregate cover such as a
+    /// stop-loss; otherwise it is ``None``.
+    ///
+    /// Parameters
+    /// ----------
+    /// frequency : Poisson, NegativeBinomial or Binomial
+    /// severity : Grid
+    /// points : int
+    ///     Points in every aggregate grid.
+    ///
+    /// Returns
+    /// -------
+    /// TowerGrids
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a layer with annual terms inures to a later stage, or
+    ///     ``points`` is 0.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.aggregate import Layer, Tower
+    /// >>> from actuarialrs.distributions import Grid, Poisson
+    /// >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    /// >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
+    /// >>> round(r.ceded[0].mean(), 12), r.on_points
+    /// (1.2, True)
+    fn on_grid(
+        &self,
+        py: Python<'_>,
+        frequency: &Bound<'_, PyAny>,
+        severity: PyRef<'_, PyGrid>,
+        points: usize,
+    ) -> PyResult<PyTowerGrids> {
+        let n = AnyCount::extract(frequency)?;
+        let (tower, sev) = (&self.inner, severity.inner.clone());
+        let inner = py
+            .detach(|| tower.on_grid(n.as_counting(), &sev, points))
+            .map_err(to_py)?;
+        Ok(PyTowerGrids { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!("Tower(layers={:?})", self.layer_names())
+    }
+}
+
+/// A tower's annual distributions on the grid, from ``Tower.on_grid``.
+///
+/// Every grid is a marginal distribution. Ceded grids are at the placed
+/// share and after annual terms; a layer with share ``c`` has step
+/// ``c * h``.
+#[pyclass(name = "TowerGrids", module = "actuarialrs.aggregate", frozen)]
+pub(crate) struct PyTowerGrids {
+    inner: TowerGrids,
+}
+
+#[pymethods]
+impl PyTowerGrids {
+    /// Annual gross loss.
+    #[getter]
+    fn gross(&self) -> PyGrid {
+        PyGrid {
+            inner: self.inner.gross.clone(),
+        }
+    }
+
+    /// The compound calculation behind ``gross``.
+    #[getter]
+    fn gross_report(&self) -> PyCompoundReport {
+        PyCompoundReport {
+            inner: self.inner.gross_report.clone(),
+        }
+    }
+
+    /// Annual ceded loss of each layer, in tower order.
+    #[getter]
+    fn ceded(&self) -> Vec<PyGrid> {
+        self.inner
+            .ceded
+            .iter()
+            .map(|g| PyGrid { inner: g.clone() })
+            .collect()
+    }
+
+    /// The compound calculation behind each layer: its annual recovery at
+    /// 100%, before annual terms.
+    #[getter]
+    fn ceded_reports(&self) -> Vec<PyCompoundReport> {
+        self.inner
+            .ceded_reports
+            .iter()
+            .map(|r| PyCompoundReport { inner: r.clone() })
+            .collect()
+    }
+
+    /// Annual net loss, or ``None`` when it is not a single compound total.
+    #[getter]
+    fn net(&self) -> Option<PyGrid> {
+        self.inner.net.clone().map(|inner| PyGrid { inner })
+    }
+
+    /// Expected reinstatement premium of each layer; 0 without paid
+    /// reinstatements.
+    #[getter]
+    fn expected_reinstatement_premium(&self) -> Vec<f64> {
+        self.inner.expected_reinstatement_premium.clone()
+    }
+
+    /// Whether every boundary and net loss fell on a grid point. When
+    /// ``False``, means are still exact but shapes are smeared by up to a
+    /// step.
+    #[getter]
+    fn on_points(&self) -> bool {
+        self.inner.on_points
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TowerGrids(layers={}, net={}, on_points={})",
+            self.inner.ceded.len(),
+            self.inner.net.is_some(),
+            self.inner.on_points
+        )
     }
 }

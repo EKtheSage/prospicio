@@ -1,6 +1,7 @@
 //! Distortion risk measures, allocation, copulas and Iman-Conover for R.
 
 use act_core::StreamRng;
+use act_prob::capital::AllocationMethod;
 use act_prob::copula::{self, Copula};
 use act_prob::evt::{Gpd, PotTail};
 use act_prob::{
@@ -75,6 +76,31 @@ impl RiskDistortion {
         }
         Err(Error::Other(
             "expected a sampled, grid_distribution or predictive_distribution".into(),
+        ))
+    }
+
+    /// Allocation by `method` ("euler", "covariance", "proportional",
+    /// "marginal" or "shapley"): `list(total, standalone, allocated)`.
+    fn capital(&self, pd: Robj, method: &str) -> Result<List> {
+        let pd = <&PredictiveDistribution>::try_from(&pd)
+            .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
+        let method = match method {
+            "euler" => AllocationMethod::Euler,
+            "covariance" => AllocationMethod::Covariance,
+            "proportional" => AllocationMethod::Proportional,
+            "marginal" => AllocationMethod::Marginal,
+            "shapley" => AllocationMethod::Shapley,
+            other => {
+                return Err(Error::Other(format!(
+                    "method must be euler, covariance, proportional, marginal or shapley, got {other}"
+                )));
+            }
+        };
+        let a = pd.inner.capital(&self.inner, method).map_err(to_r)?;
+        Ok(list!(
+            total = a.total,
+            standalone = a.standalone,
+            allocated = a.allocated
         ))
     }
 

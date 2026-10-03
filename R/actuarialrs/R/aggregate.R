@@ -354,3 +354,48 @@ S7::method(print, reinsurance_tower) <- function(x, ...) {
   cat(sprintf("<reinsurance_tower> %s\n", paste(x@layer_names, collapse = ", ")))
   invisible(x)
 }
+
+#' Reinsurance tower on the aggregate grid
+#'
+#' Exact annual distributions of gross, each layer's ceded loss and net, by
+#' FFT, with no sampling error. Each layer's per-occurrence recoveries form a
+#' severity grid, which is compounded with the same claim count; annual terms
+#' and the share then apply to the total. With attachments, limits and annual
+#' terms on multiples of the step, the grids are exact for the discretized
+#' problem. Otherwise losses between points are split between their
+#' neighbours: means stay exact and `on_points` is `FALSE`.
+#'
+#' The grids are marginal: use [apply_tower()] on simulated events for joint
+#' results. `net` is given when no layer has annual terms, or when the last
+#' stage is a single aggregate cover such as an [aggregate_stop_loss()]; otherwise it is
+#' `NULL`. A tower whose annual terms inure to a later stage is rejected,
+#' because those terms depend on event order.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param frequency A [poisson_count], [negative_binomial_count] or [binomial_count].
+#' @param severity A [grid_distribution].
+#' @param points Number of points in every aggregate grid.
+#' @returns A list with `gross` (a [grid_distribution] whose `report`
+#'   describes the compound calculation), `ceded` (a named list of
+#'   [grid_distribution]s at the placed share; a share `c` gives step
+#'   `c * step`), `net` (a [grid_distribution] or `NULL`),
+#'   `expected_reinstatement_premium` (named, 0 without paid reinstatements)
+#'   and `on_points`.
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))
+#' tw <- reinsurance_tower(list(xol_layer("2x2", 2, 2)))
+#' r <- tower_on_grid(tw, poisson_count(3), sev, points = 200)
+#' mean(r$ceded[["2x2"]])
+#' r$on_points
+tower_on_grid <- function(tower, frequency, severity, points) {
+  r <- rust_result(tower@ptr$on_grid(frequency@ptr, severity@ptr, as.double(points)))
+  names <- tower@layer_names
+  list(
+    gross = grid_distribution(ptr = r$gross),
+    ceded = stats::setNames(lapply(r$ceded, function(p) grid_distribution(ptr = p)), names),
+    net = if (is.null(r$net)) NULL else grid_distribution(ptr = r$net),
+    expected_reinstatement_premium = stats::setNames(r$expected_reinstatement_premium, names),
+    on_points = r$on_points
+  )
+}

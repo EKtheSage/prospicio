@@ -303,3 +303,51 @@ S7::method(print, pot_tail) <- function(x, ...) {
               format(x@threshold), format(x@p_exceed), format(x@xi), format(x@beta)))
   invisible(x)
 }
+
+#' Capital allocation and diversification
+#'
+#' Splits the distortion risk measure of a portfolio's total, `rho(S)`, back
+#' to its components, and reports each component's stand-alone measure.
+#'
+#' | `method` | Allocation to component `j` |
+#' |---|---|
+#' | `"euler"` | co-measure, as [allocate()] (CoTVaR for TVaR) |
+#' | `"covariance"` | `rho(S) Cov(X_j, S) / Var(S)` |
+#' | `"proportional"` | stand-alone measures scaled to `rho(S)` |
+#' | `"marginal"` | `rho(S) - rho(S - X_j)` (Merton-Perold); does not add up |
+#' | `"shapley"` | Shapley value of `v(T) = rho(sum of T)`; at most 12 components |
+#'
+#' Euler is the only method consistent with marginal changes to the
+#' portfolio. The components must add up to the portfolio being allocated.
+#'
+#' @param x A [predictive_distribution].
+#' @param distortion A [distortion].
+#' @param method One of `"euler"`, `"covariance"`, `"proportional"`,
+#'   `"marginal"`, `"shapley"`.
+#' @returns A list with `total` (`rho(S)`), `diversification_benefit`
+#'   (`sum(standalone) - total`) and `by_component`, the `keys` data frame of
+#'   `x` with columns `standalone`, `allocated` and `diversification`
+#'   (`standalone - allocated`).
+#' @export
+#' @examples
+#' pd <- predictive_distribution(
+#'   matrix(c(1, 4, 2, 3, 2, 1, 5, 6), ncol = 2),
+#'   data.frame(lob = c("motor", "property"))
+#' )
+#' a <- capital_allocation(pd, distortion("tvar", 0.5), "shapley")
+#' a$by_component
+#' a$diversification_benefit
+capital_allocation <- function(x, distortion,
+                               method = c("euler", "covariance", "proportional", "marginal", "shapley")) {
+  method <- match.arg(method)
+  r <- rust_result(distortion@ptr$capital(x@ptr, method))
+  out <- x@keys
+  out$standalone <- r$standalone
+  out$allocated <- r$allocated
+  out$diversification <- r$standalone - r$allocated
+  list(
+    total = r$total,
+    diversification_benefit = sum(r$standalone) - r$total,
+    by_component = out
+  )
+}

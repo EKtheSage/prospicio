@@ -63,4 +63,19 @@ stopifnot(abs(tl@p_exceed - 0.1) < 1e-3, length(VaR(tl, c(0.99, 0.999))) == 2)
 stopifnot(TVaR(tl, 0.99) > VaR(tl, 0.99))
 stopifnot(inherits(try(VaR(tl, 0.5), silent = TRUE), "try-error"))
 
+# Capital allocation.
+cpd <- predictive_distribution(
+  t(sapply(0:299, function(i) c((i * 37) %% 101, (i * 53) %% 97, (i * i) %% 89))),
+  data.frame(lob = c("a", "b", "c"))
+)
+d <- distortion("tvar", 0.9)
+eu <- capital_allocation(cpd, d)
+stopifnot(isTRUE(all.equal(eu$by_component$allocated, allocate(cpd, d)$contribution)))
+for (m in c("euler", "covariance", "proportional", "shapley")) {
+  a <- capital_allocation(cpd, d, m)
+  stopifnot(abs(sum(a$by_component$allocated) - a$total) < 1e-9)
+  stopifnot(abs(sum(a$by_component$diversification) - a$diversification_benefit) < 1e-9)
+}
+stopifnot(sum(capital_allocation(cpd, d, "marginal")$by_component$allocated) < eu$total)
+
 cat("actuarialrs R risk tests passed\n")

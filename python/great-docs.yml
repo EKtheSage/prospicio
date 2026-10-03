@@ -48,10 +48,11 @@ reference:
       - aggregate.simulate_events
       - aggregate.EventSet
   - title: Reinsurance
-    desc: Excess-of-loss layers and towers applied to simulated losses.
+    desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:
       - aggregate.Layer
       - aggregate.Tower
+      - aggregate.TowerGrids
   - title: Pricing
     desc: The collective model, layer rating, and reinsurance tower matching.
     contents:
@@ -67,10 +68,12 @@ reference:
       - pricing.fit_references
       - pricing.TowerModel
   - title: Risk measures
-    desc: Distortion risk measures and their allocation to components.
+    desc: Distortion risk measures, and capital allocation to components.
     contents:
       - risk.Distortion
       - risk.allocate
+      - risk.capital
+      - risk.Allocation
   - title: Dependence
     desc: Copulas, and reordering existing draws to a target correlation.
     contents:

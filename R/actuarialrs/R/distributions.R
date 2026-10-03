@@ -357,6 +357,29 @@ discretize <- function(dist, step, points, method = c("local_moment", "rounding"
   grid_distribution(ptr = ptr)
 }
 
+#' Transform a grid distribution
+#'
+#' The distribution of `f(X)` on the same step. Each point's mass moves to
+#' `f(x)`; a value between two points is split between them so its mean is
+#' kept. The mean is therefore always exact, and the whole distribution is
+#' exact when every value lands on a point.
+#'
+#' @param x A [grid_distribution].
+#' @param f A function of one loss returning a finite, non-negative number;
+#'   called once per point with mass.
+#' @returns A list with `grid` (a [grid_distribution]) and `on_points`
+#'   (whether every value landed on a grid point).
+#' @export
+#' @examples
+#' x <- grid_distribution(1, c(0.2, 0.3, 0.3, 0.2))
+#' r <- map_grid(x, function(v) min(max(v - 1, 0), 1))
+#' r$grid@probs
+#' r$on_points
+map_grid <- function(x, f) {
+  r <- rust_result(x@ptr$map(f))
+  list(grid = grid_distribution(ptr = r$grid), on_points = r$on_points)
+}
+
 S7::method(mean, grid_distribution) <- function(x, ...) x@ptr$mean()
 S7::method(variance, grid_distribution) <- function(dist, ...) dist@ptr$variance()
 S7::method(cdf, grid_distribution) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))

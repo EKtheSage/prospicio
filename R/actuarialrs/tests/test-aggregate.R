@@ -78,4 +78,19 @@ stopifnot(identical(res@keys$kind, c("gross", "ceded", "net", "reinstatement_pre
 m <- draw_matrix(res)
 stopifnot(max(abs(m[, 4] - 1e6 * pmin(m[, 2], 5e6) / 5e6)) <= 1e-6)
 
+# Towers on the grid.
+gsev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))
+r <- tower_on_grid(reinsurance_tower(list(xol_layer("2x2", 2, 2))), poisson_count(3), gsev, 200)
+stopifnot(r$on_points, abs(mean(r$ceded[["2x2"]]) - 1.2) < 1e-12)
+stopifnot(abs(mean(r$gross) - mean(r$ceded[["2x2"]]) - mean(r$net)) < 1e-10)
+stopifnot(r$gross@report$tail_mass < 1e-12, r$expected_reinstatement_premium[["2x2"]] == 0)
+r <- tower_on_grid(reinsurance_tower(list(xol_layer("2x2", 2, 2, reinstatements = 1))), poisson_count(3), gsev, 200)
+stopifnot(is.null(r$net))
+bad <- inuring_tower(list(list(xol_layer("A", 2, 2, reinstatements = 1)), list(xol_layer("B", 4, 4))))
+stopifnot(inherits(try(tower_on_grid(bad, poisson_count(3), gsev, 100), silent = TRUE), "try-error"))
+m <- map_grid(gsev, function(v) min(max(v - 1.5, 0), 1))
+stopifnot(!m$on_points, abs(mean(m$grid) - sum(gsev@probs * pmin(pmax(0:4 - 1.5, 0), 1))) < 1e-15)
+stopifnot(inherits(try(map_grid(gsev, function(v) -1), silent = TRUE), "try-error"))
+stopifnot(inherits(try(map_grid(gsev, function(v) stop("boom")), silent = TRUE), "try-error"))
+
 cat("actuarialrs R aggregate tests passed\n")

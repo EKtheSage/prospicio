@@ -2,6 +2,7 @@
 //! Iman-Conover, over `act_prob`.
 
 use act_core::StreamRng;
+use act_prob::capital::{Allocation, AllocationMethod};
 use act_prob::copula::{self, Copula};
 use act_prob::evt::{Gpd, PotTail};
 use act_prob::{
@@ -203,6 +204,149 @@ pub(crate) fn allocate(
 ) -> Vec<f64> {
     let (pd, d) = (&pd.inner, distortion.inner);
     py.detach(|| pd.allocate(&d))
+}
+
+/// Capital allocation of a distortion risk measure, from ``capital``.
+#[pyclass(name = "Allocation", module = "actuarialrs.risk", frozen)]
+pub(crate) struct PyAllocation {
+    inner: Allocation,
+}
+
+#[pymethods]
+impl PyAllocation {
+    /// The allocation method, as passed to ``capital``.
+    #[getter]
+    fn method(&self) -> &'static str {
+        method_name(self.inner.method)
+    }
+
+    /// The portfolio's measure, ``rho(S)``.
+    #[getter]
+    fn total(&self) -> f64 {
+        self.inner.total
+    }
+
+    /// Stand-alone measure ``rho(X_j)`` of each component.
+    #[getter]
+    fn standalone(&self) -> Vec<f64> {
+        self.inner.standalone.clone()
+    }
+
+    /// Allocated capital of each component.
+    #[getter]
+    fn allocated(&self) -> Vec<f64> {
+        self.inner.allocated.clone()
+    }
+
+    /// ``sum(standalone) - total``: the capital saved by holding the
+    /// components together.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn diversification_benefit(&self) -> f64 {
+        self.inner.diversification_benefit()
+    }
+
+    /// ``standalone - allocated`` per component: each one's share of the
+    /// diversification benefit.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn diversification(&self) -> Vec<f64> {
+        self.inner.diversification()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Allocation(method={:?}, total={}, allocated={:?})",
+            self.method(),
+            self.inner.total,
+            self.inner.allocated
+        )
+    }
+}
+
+const METHODS: [(&str, AllocationMethod); 5] = [
+    ("euler", AllocationMethod::Euler),
+    ("covariance", AllocationMethod::Covariance),
+    ("proportional", AllocationMethod::Proportional),
+    ("marginal", AllocationMethod::Marginal),
+    ("shapley", AllocationMethod::Shapley),
+];
+
+fn method_name(method: AllocationMethod) -> &'static str {
+    METHODS
+        .iter()
+        .find(|(_, m)| *m == method)
+        .map(|(name, _)| *name)
+        .expect("every method has a name")
+}
+
+/// Allocates the distortion risk measure of a portfolio's total to its
+/// components.
+///
+/// Methods:
+///
+/// - ``"euler"``: co-measure (for TVaR, the CoTVaRs); consistent with
+///   marginal changes to the portfolio.
+/// - ``"covariance"``: ``rho(S) Cov(X_j, S) / Var(S)``.
+/// - ``"proportional"``: stand-alone measures scaled to ``rho(S)``.
+/// - ``"marginal"``: ``rho(S) - rho(S - X_j)`` (Merton-Perold); does not
+///   add up to ``rho(S)``.
+/// - ``"shapley"``: Shapley value of ``v(T) = rho(sum of T)``; at most 12
+///   components.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+///     Components that add up to the portfolio.
+/// distortion : Distortion
+/// method : str, default "euler"
+///
+/// Returns
+/// -------
+/// Allocation
+///
+/// Raises
+/// ------
+/// ValueError
+///     For an unknown method, a constant total (``"covariance"``),
+///     stand-alone measures summing to 0 (``"proportional"``) or more than
+///     12 components (``"shapley"``).
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import PredictiveDistribution
+/// >>> from actuarialrs.risk import Distortion, capital
+/// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+/// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+/// >>> a = capital(pd, Distortion.tvar(0.5))
+/// >>> a.total, a.standalone, a.allocated
+/// (8.0, [3.5, 5.5], [2.5, 5.5])
+/// >>> a.diversification_benefit()
+/// 1.0
+#[pyfunction]
+#[pyo3(signature = (pd, distortion, method = "euler"))]
+pub(crate) fn capital(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    distortion: PyRef<'_, PyDistortion>,
+    method: &str,
+) -> PyResult<PyAllocation> {
+    let method = METHODS
+        .iter()
+        .find(|(name, _)| *name == method)
+        .map(|(_, m)| *m)
+        .ok_or_else(|| {
+            PyValueError::new_err(
+                "method must be one of euler, covariance, proportional, marginal, shapley",
+            )
+        })?;
+    let (pd, d) = (&pd.inner, distortion.inner);
+    let inner = py.detach(|| pd.capital(&d, method)).map_err(to_py)?;
+    Ok(PyAllocation { inner })
 }
 
 /// One of the copula classes, as a Rust copula.
