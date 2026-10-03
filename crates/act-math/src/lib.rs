@@ -1,8 +1,11 @@
 //! Numerical engine shared by every `act-*` crate.
 //!
-//! Special functions, and the small dense linear algebra dependence models
-//! need. Optimization, integration and root finding join as the phases
-//! that use them land (see `docs/architecture.md`).
+//! Special functions, small dense linear algebra, root finding,
+//! quadrature and one-variable optimization. Domain crates call these
+//! instead of writing their own (see `docs/architecture.md`).
 
+pub mod integrate;
 pub mod linalg;
+pub mod optimize;
+pub mod roots;
 pub mod special;

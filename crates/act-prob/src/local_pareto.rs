@@ -4,6 +4,7 @@
 use std::f64::consts::{LN_2, PI};
 
 use act_core::Result;
+use act_math::integrate::gauss_legendre;
 use act_math::special::{norm_cdf, norm_pdf};
 
 use crate::distribution::{Distribution, check_probability};
@@ -402,28 +403,6 @@ pub fn local_pareto_to_piecewise(
         max_relative_error: max_err,
         approximated_to: x_end,
     })
-}
-
-/// `∫_lo^hi f` by 8-point Gauss–Legendre.
-fn gauss_legendre(f: &impl Fn(f64) -> Result<f64>, lo: f64, hi: f64) -> Result<f64> {
-    const X: [f64; 4] = [
-        0.183_434_642_495_649_8,
-        0.525_532_409_916_329,
-        0.796_666_477_413_626_7,
-        0.960_289_856_497_536_3,
-    ];
-    const W: [f64; 4] = [
-        0.362_683_783_378_362,
-        0.313_706_645_877_887_3,
-        0.222_381_034_453_374_5,
-        0.101_228_536_290_376_3,
-    ];
-    let (mid, half) = (0.5 * (lo + hi), 0.5 * (hi - lo));
-    let mut sum = 0.0;
-    for (x, w) in X.iter().zip(W) {
-        sum += w * (f(mid - half * x)? + f(mid + half * x)?);
-    }
-    Ok(sum * half)
 }
 
 #[cfg(test)]

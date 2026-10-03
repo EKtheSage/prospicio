@@ -1,7 +1,7 @@
 //! Dense linear algebra on small row-major matrices.
 //!
-//! Enough for correlation matrices in dependence models; not a general
-//! linear algebra library.
+//! Enough for correlation matrices in dependence models and the small
+//! Newton systems of fits; not a general linear algebra library.
 
 /// Cholesky factor of a symmetric positive definite `n × n` matrix `a`
 /// (row-major): the lower-triangular `l` with `l lᵀ = a`, row-major with
@@ -55,9 +55,55 @@ pub fn lower_solve(l: &[f64], b: &[f64], x: &mut [f64]) {
     }
 }
 
+/// Solves the `n × n` system `a x = b` (`a` row-major) by Gaussian
+/// elimination with partial pivoting. `None` if `a` is singular, holds a
+/// non-finite pivot, or the lengths do not match `n`.
+///
+/// ```
+/// use act_math::linalg::solve;
+///
+/// let x = solve(vec![2.0, 1.0, 1.0, 3.0], vec![3.0, 5.0], 2).unwrap();
+/// assert!((x[0] - 0.8).abs() < 1e-15 && (x[1] - 1.4).abs() < 1e-15);
+/// assert!(solve(vec![1.0, 2.0, 2.0, 4.0], vec![1.0, 1.0], 2).is_none());
+/// ```
+pub fn solve(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
+    if a.len() != n * n || b.len() != n {
+        return None;
+    }
+    for col in 0..n {
+        let p = (col..n).max_by(|&i, &j| a[i * n + col].abs().total_cmp(&a[j * n + col].abs()))?;
+        if a[p * n + col] == 0.0 || !a[p * n + col].is_finite() {
+            return None;
+        }
+        for j in 0..n {
+            a.swap(col * n + j, p * n + j);
+        }
+        b.swap(col, p);
+        for i in col + 1..n {
+            let f = a[i * n + col] / a[col * n + col];
+            for j in col..n {
+                a[i * n + j] -= f * a[col * n + j];
+            }
+            b[i] -= f * b[col];
+        }
+    }
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let s: f64 = (i + 1..n).map(|j| a[i * n + j] * x[j]).sum();
+        x[i] = (b[i] - s) / a[i * n + i];
+    }
+    Some(x)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn solve_pivots_past_a_zero_diagonal() {
+        let x = solve(vec![0.0, 1.0, 1.0, 0.0], vec![2.0, 3.0], 2).unwrap();
+        assert_eq!(x, [3.0, 2.0]);
+    }
 
     #[test]
     fn factor_reproduces_the_matrix() {
