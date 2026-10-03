@@ -84,24 +84,31 @@ pareto <- S7::new_class(
 
 #' Maximum likelihood fits to large losses
 #'
-#' Estimate the alpha of a [pareto] or the alphas of a [piecewise_pareto]
-#' from large losses, each conditioned on exceeding its reporting threshold
-#' (raised to the lowest threshold of the fit), with losses capped by a
-#' policy limit treated as censored. Untruncated estimates are closed forms;
-#' a truncated (last) piece is solved numerically and clamped to
-#' `[0.001, 1000]`.
+#' Estimate the alpha of a [pareto], the alphas of a [piecewise_pareto], or
+#' the initial and tail alphas of Riegel's [generalized_pareto], from large
+#' losses, each conditioned on exceeding its reporting threshold (raised to
+#' the lowest threshold of the fit), with losses capped by a policy limit
+#' treated as censored. Untruncated Pareto estimates are closed forms;
+#' truncated ones are solved numerically and clamped to `[0.001, 1000]`. A
+#' piecewise Pareto truncated as a whole (`truncation_type = "wd"`) couples
+#' the alphas, which are then solved together. The generalized Pareto fit
+#' is untruncated; read its alphas as `t / g@beta` and `1 / g@xi`.
 #'
 #' @param losses Numeric vector of losses at or above `t` (`t[1]`).
 #' @param t Threshold (`pareto_fit`) or thresholds (`piecewise_pareto_fit`).
 #' @param reporting_thresholds Per-loss reporting thresholds, or `NULL`.
 #' @param censored Logical vector, `TRUE` where a loss was capped, or `NULL`.
 #' @param weights Per-loss weights, or `NULL`.
-#' @param truncation Truncation point (of the last piece), or `NULL`.
-#' @returns A [pareto] or [piecewise_pareto] object.
+#' @param truncation Truncation point, or `NULL`.
+#' @param truncation_type For `piecewise_pareto_fit()`: `"lp"` to truncate
+#'   the last piece, `"wd"` the whole distribution.
+#' @returns A [pareto], [piecewise_pareto] or [generalized_pareto] object.
 #' @export
 #' @examples
 #' pareto_fit(c(1500, 2500, 4000, 10000), 1000, censored = c(FALSE, FALSE, FALSE, TRUE))
 #' piecewise_pareto_fit(c(1200, 1500, 2500, 6000), c(1000, 2000))
+#' g <- generalized_pareto_fit(c(1100, 1300, 1750, 2600, 4100, 9000, 25000), 1000)
+#' c(alpha_ini = 1000 / g@beta, alpha_tail = 1 / g@xi)
 pareto_fit <- function(losses, t, reporting_thresholds = NULL, censored = NULL,
                        weights = NULL, truncation = NULL) {
   ptr <- rust_result(Pareto$fit(
@@ -114,12 +121,56 @@ pareto_fit <- function(losses, t, reporting_thresholds = NULL, censored = NULL,
 #' @rdname pareto_fit
 #' @export
 piecewise_pareto_fit <- function(losses, t, reporting_thresholds = NULL, censored = NULL,
-                                 weights = NULL, truncation = NULL) {
+                                 weights = NULL, truncation = NULL, truncation_type = "lp") {
   ptr <- rust_result(PiecewisePareto$fit(
     as.double(losses), as.double(t), optional_arg(reporting_thresholds),
-    optional_arg(censored), optional_arg(weights), truncation_arg(truncation)
+    optional_arg(censored), optional_arg(weights), truncation_arg(truncation),
+    as.character(truncation_type)
   ))
   piecewise_pareto(ptr = ptr)
+}
+
+#' @rdname pareto_fit
+#' @export
+generalized_pareto_fit <- function(losses, t, reporting_thresholds = NULL, censored = NULL,
+                                   weights = NULL) {
+  ptr <- rust_result(GeneralizedPareto$fit_riegel(
+    as.double(losses), as.double(t), optional_arg(reporting_thresholds),
+    optional_arg(censored), optional_arg(weights)
+  ))
+  generalized_pareto(ptr = ptr)
+}
+
+#' Convert a local Pareto distribution to piecewise Pareto
+#'
+#' The local Pareto distribution with local alpha `alpha(x)` above `t`
+#' (and `P(X > x) = 1` below it), approximated by a [piecewise_pareto]
+#' that matches its survival function exactly at the thresholds and within
+#' `rel_tolerance` between them. The conversion stops at `stop_at` or where
+#' the survival function falls below `stop_survival`; the local alpha there
+#' continues as the tail.
+#'
+#' @param t Threshold; finite and positive.
+#' @param alpha A function of one amount returning the local alpha there:
+#'   finite and non-negative, positive where the conversion stops.
+#' @param rel_tolerance Largest relative error in the survival function.
+#' @param stop_survival,stop_at Where to stop.
+#' @returns A list: `severity` (a [piecewise_pareto]), `max_relative_error`
+#'   and `approximated_to`.
+#' @export
+#' @examples
+#' res <- local_pareto_to_piecewise(1000, function(x) 1.5 + 0.3 * log(x / 1000))
+#' res$max_relative_error
+#' res$severity
+local_pareto_to_piecewise <- function(t, alpha, rel_tolerance = 1e-4, stop_survival = 1e-9,
+                                      stop_at = Inf) {
+  res <- rust_result(local_pareto_convert(
+    as.double(t), function(x) as.double(alpha(x)), as.double(rel_tolerance),
+    as.double(stop_survival), as.double(stop_at)
+  ))
+  list(severity = piecewise_pareto(ptr = res$severity),
+       max_relative_error = res$max_relative_error,
+       approximated_to = res$approximated_to)
 }
 
 #' Piecewise Pareto distribution

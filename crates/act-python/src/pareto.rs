@@ -387,25 +387,33 @@ severity_class!(PyPiecewisePareto {
     /// censored : list of bool, optional
     /// weights : list of float, optional
     /// truncation : float, optional
-    ///     Truncation of the last piece (whole-distribution truncation is
-    ///     not supported for fits).
+    /// truncation_type : {"lp", "wd"}, default "lp"
+    ///     Truncate the last piece only (each alpha a closed form or a
+    ///     one-dimensional solve), or the whole distribution (the alphas
+    ///     are coupled and solved together).
     ///
     /// Returns
     /// -------
     /// PiecewisePareto
     #[staticmethod]
-    #[pyo3(signature = (losses, t, reporting_thresholds = None, censored = None, weights = None, truncation = None))]
+    #[pyo3(signature = (losses, t, reporting_thresholds = None, censored = None, weights = None, truncation = None, truncation_type = "lp"))]
+    #[allow(clippy::too_many_arguments)]
     fn fit(
+        py: Python<'_>,
         losses: Vec<f64>,
         t: Vec<f64>,
         reporting_thresholds: Option<Vec<f64>>,
         censored: Option<Vec<bool>>,
         weights: Option<Vec<f64>>,
         truncation: Option<f64>,
+        truncation_type: &str,
     ) -> PyResult<Self> {
         let data = large_losses(losses, reporting_thresholds, censored, weights)?;
-        let truncation = truncation.map(|tr| (tr, Truncation::LastPiece));
-        let inner = act_prob::PiecewisePareto::fit(t, &data, truncation).map_err(to_py)?;
+        let kind = truncation_kind(truncation_type)?;
+        let truncation = truncation.map(|tr| (tr, kind));
+        let inner = py
+            .detach(|| act_prob::PiecewisePareto::fit(t, &data, truncation))
+            .map_err(to_py)?;
         Ok(Self { inner })
     }
 
@@ -605,6 +613,38 @@ severity_class!(PyGeneralizedPareto {
         Ok(Self { inner })
     }
 
+    /// Maximum likelihood fit of Riegel's generalized Pareto with threshold
+    /// ``t`` to large losses at or above ``t``.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : list of float
+    /// t : float
+    /// reporting_thresholds : list of float, optional
+    /// censored : list of bool, optional
+    /// weights : list of float, optional
+    ///
+    /// Returns
+    /// -------
+    /// GeneralizedPareto
+    ///     Read the alphas as ``t / beta`` (initial) and ``1 / xi`` (tail).
+    #[staticmethod]
+    #[pyo3(signature = (losses, t, reporting_thresholds = None, censored = None, weights = None))]
+    fn fit_riegel(
+        py: Python<'_>,
+        losses: Vec<f64>,
+        t: f64,
+        reporting_thresholds: Option<Vec<f64>>,
+        censored: Option<Vec<bool>>,
+        weights: Option<Vec<f64>>,
+    ) -> PyResult<Self> {
+        let data = large_losses(losses, reporting_thresholds, censored, weights)?;
+        let inner = py
+            .detach(|| act_prob::evt::Gpd::fit_riegel(t, &data))
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
     /// Shape ``xi``.
     #[getter]
     fn xi(&self) -> f64 {
@@ -793,4 +833,74 @@ pub(crate) fn claim_count(py: Python<'_>, mean: f64, dispersion: f64) -> PyResul
             Py::new(py, PyNegativeBinomial { inner })?.into_any()
         }
     })
+}
+
+/// Converts the local Pareto distribution with local alpha ``alpha(x)``
+/// above ``t`` to a piecewise Pareto that matches its survival function
+/// exactly at the thresholds and within ``rel_tolerance`` between them.
+///
+/// Parameters
+/// ----------
+/// t : float
+///     Threshold; ``P(X > x) = 1`` below it.
+/// alpha : callable
+///     ``alpha(x) -> float``, finite and non-negative, positive where the
+///     conversion stops.
+/// rel_tolerance : float, default 1e-4
+/// stop_survival : float, default 1e-9
+///     Stop once the survival function falls below this.
+/// stop_at : float, default inf
+///     Stop at this amount.
+///
+/// Returns
+/// -------
+/// tuple of (PiecewisePareto, float, float)
+///     The approximation, the largest relative error found, and where the
+///     approximated range ends (the last alpha continues above it).
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from actuarialrs.distributions import local_pareto_to_piecewise
+/// >>> pp, err, end = local_pareto_to_piecewise(1000.0, lambda x: 1.5 + 0.3 * math.log(x / 1000.0))
+/// >>> err <= 1e-4
+/// True
+#[pyfunction]
+#[pyo3(signature = (t, alpha, rel_tolerance = 1e-4, stop_survival = 1e-9, stop_at = f64::INFINITY))]
+pub(crate) fn local_pareto_to_piecewise(
+    t: f64,
+    alpha: &Bound<'_, PyAny>,
+    rel_tolerance: f64,
+    stop_survival: f64,
+    stop_at: f64,
+) -> PyResult<(PyPiecewisePareto, f64, f64)> {
+    // A Python error inside the callable becomes NaN for the Rust side,
+    // which rejects it; the original error is raised instead.
+    let failure = std::cell::RefCell::new(None);
+    let call = |x: f64| -> f64 {
+        match alpha.call1((x,)).and_then(|v| v.extract::<f64>()) {
+            Ok(v) => v,
+            Err(e) => {
+                failure.borrow_mut().get_or_insert(e);
+                f64::NAN
+            }
+        }
+    };
+    let options = act_prob::LocalParetoConversion {
+        rel_tolerance,
+        stop_survival,
+        stop_at,
+    };
+    let result = act_prob::local_pareto_to_piecewise(t, call, options);
+    if let Some(e) = failure.into_inner() {
+        return Err(e);
+    }
+    let approx = result.map_err(to_py)?;
+    Ok((
+        PyPiecewisePareto {
+            inner: approx.severity,
+        },
+        approx.max_relative_error,
+        approx.approximated_to,
+    ))
 }

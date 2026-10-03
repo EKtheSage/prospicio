@@ -8,6 +8,8 @@ NULL
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
 
+local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
+
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
 
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
@@ -322,7 +324,7 @@ PiecewisePareto <- new.env(parent = emptyenv())
 
 PiecewisePareto$new <- function(t, alpha, truncation_at, truncation_type) .Call(wrap__PiecewisePareto__new, t, alpha, truncation_at, truncation_type)
 
-PiecewisePareto$fit <- function(losses, t, reporting, censored, weights, truncation_at) .Call(wrap__PiecewisePareto__fit, losses, t, reporting, censored, weights, truncation_at)
+PiecewisePareto$fit <- function(losses, t, reporting, censored, weights, truncation_at, truncation_type) .Call(wrap__PiecewisePareto__fit, losses, t, reporting, censored, weights, truncation_at, truncation_type)
 
 PiecewisePareto$t <- function() .Call(wrap__PiecewisePareto__t, self)
 
@@ -405,6 +407,8 @@ GeneralizedPareto <- new.env(parent = emptyenv())
 GeneralizedPareto$new <- function(xi, beta, location) .Call(wrap__GeneralizedPareto__new, xi, beta, location)
 
 GeneralizedPareto$riegel <- function(t, alpha_ini, alpha_tail) .Call(wrap__GeneralizedPareto__riegel, t, alpha_ini, alpha_tail)
+
+GeneralizedPareto$fit_riegel <- function(losses, t, reporting, censored, weights) .Call(wrap__GeneralizedPareto__fit_riegel, losses, t, reporting, censored, weights)
 
 GeneralizedPareto$xi <- function() .Call(wrap__GeneralizedPareto__xi, self)
 

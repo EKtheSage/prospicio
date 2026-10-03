@@ -620,6 +620,25 @@ class GeneralizedPareto:
         -------
         float
         """
+    @staticmethod
+    def fit_riegel(losses: Sequence[float], t: float, reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> GeneralizedPareto:
+        """
+        Maximum likelihood fit of Riegel's generalized Pareto with threshold
+        ``t`` to large losses at or above ``t``.
+        
+        Parameters
+        ----------
+        losses : list of float
+        t : float
+        reporting_thresholds : list of float, optional
+        censored : list of bool, optional
+        weights : list of float, optional
+        
+        Returns
+        -------
+        GeneralizedPareto
+            Read the alphas as ``t / beta`` (initial) and ``1 / xi`` (tail).
+        """
     def layer(self, /, limit: float, attachment: float) -> float:
         """
         Expected loss to the layer ``limit`` xs ``attachment``.
@@ -2042,7 +2061,7 @@ class PiecewisePareto:
         float
         """
     @staticmethod
-    def fit(losses: Sequence[float], t: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncation: float |None = None) -> PiecewisePareto:
+    def fit(losses: Sequence[float], t: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncation: float |None = None, truncation_type: str = "lp") -> PiecewisePareto:
         """
         Maximum likelihood fit of the alphas for thresholds ``t`` to large
         losses at or above ``t[0]``.
@@ -2056,8 +2075,10 @@ class PiecewisePareto:
         censored : list of bool, optional
         weights : list of float, optional
         truncation : float, optional
-            Truncation of the last piece (whole-distribution truncation is
-            not supported for fits).
+        truncation_type : {"lp", "wd"}, default "lp"
+            Truncate the last piece only (each alpha a closed form or a
+            one-dimensional solve), or the whole distribution (the alphas
+            are coupled and solved together).
         
         Returns
         -------
@@ -3108,6 +3129,40 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     >>> pd = PredictiveDistribution(["lob"], [(0,), (1,)], rows)
     >>> joined = iman_conover(pd, [[1.0, 0.7], [0.7, 1.0]], seed=3)
     >>> sorted(joined.marginal((1,)).draws) == sorted(pd.marginal((1,)).draws)
+    True
+    """
+
+def local_pareto_to_piecewise(t: float, alpha: Any, rel_tolerance: float = 1e-4, stop_survival: float = 1e-9, stop_at: float = ...) -> tuple[PiecewisePareto, float, float]:
+    """
+    Converts the local Pareto distribution with local alpha ``alpha(x)``
+    above ``t`` to a piecewise Pareto that matches its survival function
+    exactly at the thresholds and within ``rel_tolerance`` between them.
+    
+    Parameters
+    ----------
+    t : float
+        Threshold; ``P(X > x) = 1`` below it.
+    alpha : callable
+        ``alpha(x) -> float``, finite and non-negative, positive where the
+        conversion stops.
+    rel_tolerance : float, default 1e-4
+    stop_survival : float, default 1e-9
+        Stop once the survival function falls below this.
+    stop_at : float, default inf
+        Stop at this amount.
+    
+    Returns
+    -------
+    tuple of (PiecewisePareto, float, float)
+        The approximation, the largest relative error found, and where the
+        approximated range ends (the last alpha continues above it).
+    
+    Examples
+    --------
+    >>> import math
+    >>> from actuarialrs.distributions import local_pareto_to_piecewise
+    >>> pp, err, end = local_pareto_to_piecewise(1000.0, lambda x: 1.5 + 0.3 * math.log(x / 1000.0))
+    >>> err <= 1e-4
     True
     """
 
