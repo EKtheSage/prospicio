@@ -3,6 +3,7 @@ import math
 import pytest
 
 from actuarialrs.models import (
+    compare,
     cross_validate,
     deviance_score,
     grid_search,
@@ -209,3 +210,22 @@ def test_robust_covariance():
         fit.robust_covariance(d, y, "HC3")
     with pytest.raises(ValueError):
         fit.robust_covariance(d, y[1:])
+
+
+def test_compare_models():
+    x = [i / 10 for i in range(60)]
+    d = Design([[1.0] * 60, x], ["(Intercept)", "x"])
+    y = [1.0 + 2.0 * v + ((i * 7) % 5 - 2) * 0.2 for i, v in enumerate(x)]
+    splits = k_fold(60, 5, 3)
+    mse = lambda t, p, _: sum((a - b) ** 2 for a, b in zip(t, p)) / len(t)
+    models = {"glm": Glm("gaussian"), "lasso": ElasticNet("gaussian", lam=1.0)}
+    c = compare(models, d, y, splits, {"mse": mse, "dev": deviance_score("gaussian")})
+    assert c.models == ["glm", "lasso"] and c.metrics == ["mse", "dev"]
+    assert c.split_scores[("glm", "mse")] == cross_validate(Glm("gaussian"), d, y, splits, mse)
+    assert c.best("mse") == "glm"
+    assert c.difference_std_error("glm", "mse") == 0.0
+    assert c.difference_std_error("lasso", "mse") > 0.0
+    rows = c.table()
+    assert len(rows) == 4 and rows[0]["model"] == "glm" and rows[0]["metric"] == "mse"
+    with pytest.raises(ValueError):
+        compare({}, d, y, splits, {"mse": mse})

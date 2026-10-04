@@ -146,4 +146,17 @@ if (requireNamespace("loo", quietly = TRUE)) {
   near(wa$estimates[["elpd"]], rw$estimates["elpd_waic", "Estimate"], 1e-12)
 }
 
+# compare_models: one table, consistent with cross_validate.
+cd <- data.frame(x = 1:40 / 10)
+cd$y <- 1 + 2 * cd$x + sin(1:40)
+cf <- k_fold(nrow(cd), 4, seed = 1)
+mse <- function(m, test) mean((test$y - predict(m, test))^2)
+lin <- function(train) glm_fit(y ~ x, train, family = "gaussian")
+cmp <- compare_models(list(linear = lin, flat = function(train) glm_fit(y ~ 1, train, family = "gaussian")),
+                      cd, cf, list(mse = mse, mae = function(m, test) mean(abs(test$y - predict(m, test)))))
+stopifnot(nrow(cmp) == 4, identical(cmp$model, c("linear", "linear", "flat", "flat")))
+near(attr(cmp, "split_scores")["linear", "mse", ], cross_validate(cd, cf, lin, mse), 1e-12)
+stopifnot(cmp$difference_std_error[1] == 0, cmp$mean[3] > cmp$mean[1])
+stopifnot(inherits(try(compare_models(list(lin), cd, cf, list(mse = mse)), silent = TRUE), "try-error"))
+
 cat("actuarialrs R models tests passed\n")

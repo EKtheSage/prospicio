@@ -94,6 +94,8 @@ reference:
       - models.random_search
       - models.log_uniform
       - models.SearchResult
+      - models.compare
+      - models.Comparison
   - title: Pricing
     desc: The collective model, layer rating, and reinsurance tower matching.
     contents:

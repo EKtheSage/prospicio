@@ -29,6 +29,13 @@ models and compares them.
     Lorenz curve, lift bands, CRPS of draws, interval coverage;
   - `resample`: k-fold, grouped k-fold and time-ordered (calendar
     diagonal) splits, `cross_validate` and `grid_search`.
+  - `compare`: `compare(candidates, design, y, splits, metrics)` scores
+    every `Candidate` (any `Model`, or a fit-and-predict function, so
+    different engines sit in one table) on the same splits and metrics.
+    `Comparison` gives per-split scores, means, standard errors and the
+    paired standard error of each model's difference from the best.
+    Python `compare` / `Comparison`, R `compare_models`. The diagonal
+    backtest on a triangle stays in the Reserving lane.
 - `act-glm`: `Glm` (family, link, dispersion fixed, Pearson or
   deviance-based) fitted by IRLS with offsets and prior weights,
   step-halving, and convergence on both the deviance and the coefficients;
