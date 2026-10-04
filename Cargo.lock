@@ -54,6 +54,7 @@ dependencies = [
  "act-core",
  "act-math",
  "act-prob",
+ "rayon",
 ]
 
 [[package]]
