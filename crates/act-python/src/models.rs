@@ -1286,6 +1286,128 @@ pub(crate) fn crps(draws: Vec<f64>, y: f64) -> PyResult<f64> {
     metrics::crps(&draws, y).map_err(to_py)
 }
 
+/// Mean log score ``-(1/n) sum log f(y_i)`` of the outcomes under the
+/// family's predictive distribution; lower is better.
+///
+/// Parameters
+/// ----------
+/// family : str
+/// y : list of float
+/// mu : list of float
+/// dispersion : float, default 1.0
+/// weights : list of float, optional
+/// theta : float, optional
+/// power : float, optional
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import log_score
+/// >>> round(log_score("poisson", [0.0], [1.0]), 12)
+/// 1.0
+#[pyfunction]
+#[pyo3(signature = (family, y, mu, dispersion = 1.0, weights = None, theta = None, power = None))]
+pub(crate) fn log_score(
+    family: &str,
+    y: Vec<f64>,
+    mu: Vec<f64>,
+    dispersion: f64,
+    weights: Option<Vec<f64>>,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<f64> {
+    let f = self::family(family, theta, power)?;
+    metrics::log_score(f, &y, &mu, dispersion, weights.as_deref()).map_err(to_py)
+}
+
+/// Probability integral transform of each outcome under the family's
+/// predictive distribution, randomized where it has atoms (counts, a
+/// Tweedie's zero); uniform when the model is calibrated.
+///
+/// Parameters
+/// ----------
+/// family : str
+/// y : list of float
+/// mu : list of float
+/// dispersion : float, default 1.0
+/// weights : list of float, optional
+/// seed : int, default 0
+///     Seeds the randomization.
+/// theta : float, optional
+/// power : float, optional
+///
+/// Returns
+/// -------
+/// list of float
+#[pyfunction]
+#[pyo3(signature = (family, y, mu, dispersion = 1.0, weights = None, seed = 0, theta = None, power = None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pit(
+    family: &str,
+    y: Vec<f64>,
+    mu: Vec<f64>,
+    dispersion: f64,
+    weights: Option<Vec<f64>>,
+    seed: u64,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<Vec<f64>> {
+    let f = self::family(family, theta, power)?;
+    metrics::pit(f, &y, &mu, dispersion, weights.as_deref(), seed).map_err(to_py)
+}
+
+/// The PIT of ``y`` under the empirical distribution of ``draws``,
+/// randomized over ties by ``u``.
+///
+/// Parameters
+/// ----------
+/// draws : list of float
+/// y : float
+/// u : float, default 0.5
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+#[pyo3(signature = (draws, y, u = 0.5))]
+pub(crate) fn pit_from_draws(draws: Vec<f64>, y: f64, u: f64) -> PyResult<f64> {
+    metrics::pit_from_draws(&draws, y, u).map_err(to_py)
+}
+
+/// Counts of PIT values in ``bins`` equal-width bins of ``[0, 1]``.
+///
+/// Parameters
+/// ----------
+/// pit : list of float
+/// bins : int, default 10
+///
+/// Returns
+/// -------
+/// list of int
+#[pyfunction]
+#[pyo3(signature = (pit, bins = 10))]
+pub(crate) fn pit_histogram(pit: Vec<f64>, bins: usize) -> PyResult<Vec<usize>> {
+    metrics::pit_histogram(&pit, bins).map_err(to_py)
+}
+
+/// Kolmogorov-Smirnov distance from the uniform on ``[0, 1]``; about
+/// ``1.36 / sqrt(n)`` or less 95% of the time under uniformity.
+///
+/// Parameters
+/// ----------
+/// values : list of float
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+pub(crate) fn ks_uniform(values: Vec<f64>) -> PyResult<f64> {
+    metrics::ks_uniform(&values).map_err(to_py)
+}
+
 fn splits(s: Vec<Split>) -> Vec<(Vec<usize>, Vec<usize>)> {
     s.into_iter().map(|s| (s.train, s.test)).collect()
 }

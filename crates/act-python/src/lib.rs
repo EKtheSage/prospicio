@@ -38,8 +38,8 @@ mod actuarialrs_native {
     #[pymodule_export]
     use super::models::{
         PyCoding, PyCvPath, PyDesign, PyElasticNet, PyElasticNetFit, PyGam, PyGamFit, PyGlm,
-        PyGlmFit, PyTerms, crps, deviance, gini, group_k_fold, k_fold, lift, mcmc_diagnostics,
-        time_ordered,
+        PyGlmFit, PyTerms, crps, deviance, gini, group_k_fold, k_fold, ks_uniform, lift, log_score,
+        mcmc_diagnostics, pit, pit_from_draws, pit_histogram, time_ordered,
     };
     #[pymodule_export]
     use super::pareto::{

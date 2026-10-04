@@ -143,3 +143,28 @@ def test_cross_validation_and_search():
     rnd = random_search(5, 1, lambda rng: log_uniform(rng, 1e-3, 1.0),
                         lambda lam: net.with_lam(lam), d, y, splits, score)
     assert len(rnd.scores) == 5 and all(1e-3 <= c <= 1.0 for c, _ in rnd.scores)
+
+
+def test_pit_and_log_score():
+    from actuarialrs.models import ks_uniform, log_score, pit, pit_from_draws, pit_histogram
+
+    import random
+
+    rng = random.Random(3)
+    # Poisson(3) counts by inversion.
+    def draw(lam):
+        u, k, p = rng.random(), 0, math.exp(-lam)
+        c = p
+        while u > c:
+            k += 1
+            p *= lam / k
+            c += p
+        return float(k)
+
+    y = [draw(3.0) for _ in range(2000)]
+    p = pit("poisson", y, [3.0] * 2000, seed=1)
+    assert ks_uniform(p) < 1.63 / math.sqrt(2000)
+    assert ks_uniform(pit("poisson", y, [4.5] * 2000)) > 3 / math.sqrt(2000)
+    assert sum(pit_histogram(p, 10)) == 2000
+    assert log_score("poisson", y, [3.0] * 2000) < log_score("poisson", y, [4.5] * 2000)
+    assert pit_from_draws([1.0, 2.0, 3.0, 4.0], 2.5) == 0.5

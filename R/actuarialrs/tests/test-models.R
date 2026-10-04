@@ -107,4 +107,14 @@ if (requireNamespace("posterior", quietly = TRUE)) {
   near(mcmc_diagnostics(x)[["ess_bulk"]], posterior::ess_bulk(x), 1e-10)
 }
 
+# Log score and PIT.
+set.seed(3)
+yp <- rpois(2000, 3)
+stopifnot(ks_uniform(pit_values("poisson", yp, rep(3, 2000), seed = 1)) < 1.63 / sqrt(2000))
+stopifnot(ks_uniform(pit_values("poisson", yp, rep(4.5, 2000))) > 3 / sqrt(2000))
+near(log_score("poisson", yp, rep(3, 2000)), -mean(dpois(yp, 3, log = TRUE)), 1e-12)
+yg <- rgamma(500, shape = 2, scale = 1.5)
+near(log_score("gamma", yg, rep(3, 500), dispersion = 0.5),
+     -mean(dgamma(yg, shape = 2, scale = 1.5, log = TRUE)), 1e-12)
+
 cat("actuarialrs R models tests passed\n")

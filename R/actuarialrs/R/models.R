@@ -415,6 +415,14 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' predicted rate into bands of about equal exposure; `crps_draws()` the
 #' continuous ranked probability score of draws for an outcome.
 #'
+#' `log_score()` is the mean of `-log f(y)` under each row's predictive
+#' distribution (the family with mean `mu`, `dispersion` and weight);
+#' `pit_values()` the probability integral transform `F(y)`, randomized
+#' where the distribution has atoms (counts, a Tweedie's zero) and uniform
+#' when the model is calibrated; `ks_uniform()` the Kolmogorov-Smirnov
+#' distance of values from the uniform, about `1.36 / sqrt(n)` or less 95%
+#' of the time under uniformity.
+#'
 #' @param family A family name, as in [glm_fit()].
 #' @param y Outcomes.
 #' @param mu,pred Predictions.
@@ -422,14 +430,22 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' @param theta,power Family parameters, as in [glm_fit()].
 #' @param bands Number of lift bands.
 #' @param draws Equally likely draws.
-#' @returns A number, or for `lift_table()` a data frame with columns
-#'   `exposure`, `expected` and `actual`.
+#' @param dispersion The family's dispersion.
+#' @param seed Seed of the PIT's randomization.
+#' @param values Values to compare with the uniform.
+#' @returns A number; for `pit_values()` one value per outcome; for
+#'   `lift_table()` a data frame with columns `exposure`, `expected` and
+#'   `actual`.
 #' @name model_metrics
 #' @examples
 #' family_deviance("poisson", c(1, 0, 3), c(1, 0.5, 2))
 #' gini_index(c(0, 1), c(0.1, 0.9))
 #' lift_table(c(0, 1, 2, 3), c(0.1, 0.9, 2.1, 2.9), bands = 2)
 #' crps_draws(c(1, 2, 3), 2)
+#' log_score("poisson", 0, 1)
+#' set.seed(1)
+#' y <- rpois(500, 3)
+#' ks_uniform(pit_values("poisson", y, rep(3, 500)))
 NULL
 
 #' @rdname model_metrics
@@ -458,6 +474,29 @@ lift_table <- function(y, pred, exposure = NULL, bands = 10) {
 #' @rdname model_metrics
 #' @export
 crps_draws <- function(draws, y) rust_result(crps_rust(as.double(draws), as.double(y)))
+
+#' @rdname model_metrics
+#' @export
+log_score <- function(family, y, mu, dispersion = 1, weights = NULL, theta = NULL, power = NULL) {
+  fa <- family_args(theta, power)
+  rust_result(log_score_rust(family, fa$theta, fa$power, as.double(y), as.double(mu),
+                             as.double(dispersion),
+                             if (is.null(weights)) double() else as.double(weights)))
+}
+
+#' @rdname model_metrics
+#' @export
+pit_values <- function(family, y, mu, dispersion = 1, weights = NULL, seed = 0, theta = NULL,
+                       power = NULL) {
+  fa <- family_args(theta, power)
+  rust_result(pit_rust(family, fa$theta, fa$power, as.double(y), as.double(mu),
+                       as.double(dispersion),
+                       if (is.null(weights)) double() else as.double(weights), as.double(seed)))
+}
+
+#' @rdname model_metrics
+#' @export
+ks_uniform <- function(values) rust_result(ks_uniform_rust(as.double(values)))
 
 #' Resampling splits
 #'

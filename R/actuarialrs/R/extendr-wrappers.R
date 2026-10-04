@@ -24,6 +24,12 @@ lift_rust <- function(y, pred, exposure, bands) .Call(wrap__lift_rust, y, pred, 
 
 crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
 
+log_score_rust <- function(family_name, theta, power, y, mu, dispersion, weights) .Call(wrap__log_score_rust, family_name, theta, power, y, mu, dispersion, weights)
+
+pit_rust <- function(family_name, theta, power, y, mu, dispersion, weights, seed) .Call(wrap__pit_rust, family_name, theta, power, y, mu, dispersion, weights, seed)
+
+ks_uniform_rust <- function(values) .Call(wrap__ks_uniform_rust, values)
+
 k_fold_rust <- function(n, k, seed) .Call(wrap__k_fold_rust, n, k, seed)
 
 group_k_fold_rust <- function(groups, k, seed) .Call(wrap__group_k_fold_rust, groups, k, seed)

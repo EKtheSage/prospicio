@@ -251,6 +251,97 @@ impl Family {
     }
 }
 
+impl Family {
+    /// `(P(Y < y), P(Y ≤ y))` for the response with mean `μ`, dispersion
+    /// `φ` and weight `w`, under the distribution [`draw`](Self::draw)
+    /// samples. The two differ only where `Y` has an atom (the counts, and
+    /// the Tweedie at 0); a randomized PIT draws between them.
+    ///
+    /// ```
+    /// use act_models::Family;
+    ///
+    /// // Poisson(2): P(Y < 1) = e^-2, P(Y ≤ 1) = 3 e^-2.
+    /// let (lo, hi) = Family::Poisson.cdf_bounds(1.0, 2.0, 1.0, 1.0).unwrap();
+    /// assert!((lo - (-2f64).exp()).abs() < 1e-15 && (hi - 3.0 * (-2f64).exp()).abs() < 1e-15);
+    /// ```
+    pub fn cdf_bounds(&self, y: f64, mu: f64, dispersion: f64, weight: f64) -> Result<(f64, f64)> {
+        let (w, phi) = (weight, dispersion);
+        // For a count `k` on a scaled lattice: below and at it.
+        fn lattice(c: &dyn Counting, k: f64) -> (f64, f64) {
+            if k < 0.0 {
+                return (0.0, 0.0);
+            }
+            let (lo, hi) = (k.ceil(), k.floor());
+            let below = if lo >= 1.0 { c.cdf(lo as u64 - 1) } else { 0.0 };
+            (below, c.cdf(hi as u64))
+        }
+        let continuous = |f: f64| (f, f);
+        Ok(match *self {
+            Self::Gaussian => continuous(norm_cdf((y - mu) / (phi / w).sqrt())),
+            Self::Poisson => lattice(&Poisson::new(mu * w / phi)?, snap(y * w / phi)),
+            Self::Binomial => {
+                let trials = w.round().max(1.0);
+                lattice(&Binomial::new(trials as u64, mu)?, snap(y * trials))
+            }
+            Self::NegativeBinomial { theta } => {
+                lattice(&NegativeBinomial::new(theta, mu / theta)?, snap(y))
+            }
+            Self::Gamma => continuous(Gamma::new(w / phi, mu * phi / w)?.cdf(y)),
+            Self::InverseGaussian => continuous(inverse_gaussian_cdf(y, mu, w / phi)),
+            Self::Tweedie { power } => {
+                let t = Tweedie::new(mu, phi / w, power)?;
+                if y < 0.0 {
+                    (0.0, 0.0)
+                } else if y == 0.0 {
+                    (0.0, t.cdf(0.0))
+                } else {
+                    continuous(t.cdf(y))
+                }
+            }
+        })
+    }
+
+    /// The log density (log probability for the counts) of `y` under the
+    /// distribution [`draw`](Self::draw) samples: the log score is its
+    /// negative. It equals [`log_likelihood`](Self::log_likelihood) for the
+    /// continuous families, and for the counts when `φ = 1`; with `φ ≠ 1`
+    /// the over-dispersed Poisson's response is `(φ/w) N` and this is the
+    /// probability of its count `N`. A count off its lattice has log
+    /// density `-∞`.
+    pub fn log_density(&self, y: f64, mu: f64, dispersion: f64, weight: f64) -> Result<f64> {
+        let (w, phi) = (weight, dispersion);
+        let ln_pmf = |c: &dyn Counting, k: f64| -> f64 {
+            if k < 0.0 || k.fract() != 0.0 {
+                f64::NEG_INFINITY
+            } else {
+                c.pmf(k as u64).ln()
+            }
+        };
+        Ok(match *self {
+            Self::Poisson => ln_pmf(&Poisson::new(mu * w / phi)?, snap(y * w / phi)),
+            Self::Binomial => {
+                let trials = w.round().max(1.0);
+                ln_pmf(&Binomial::new(trials as u64, mu)?, snap(y * trials))
+            }
+            Self::NegativeBinomial { theta } => {
+                ln_pmf(&NegativeBinomial::new(theta, mu / theta)?, snap(y))
+            }
+            _ => self.log_likelihood(y, mu, w, phi),
+        })
+    }
+}
+
+/// `x` rounded when within `1e-9` (relative) of a whole number, so that
+/// counts recovered from scaled responses land on the lattice.
+fn snap(x: f64) -> f64 {
+    let r = x.round();
+    if (x - r).abs() <= 1e-9 * r.abs().max(1.0) {
+        r
+    } else {
+        x
+    }
+}
+
 /// `P(X <= x)` for an inverse Gaussian with mean `μ` and shape `λ`.
 fn inverse_gaussian_cdf(x: f64, mu: f64, lambda: f64) -> f64 {
     if x <= 0.0 {

@@ -111,7 +111,7 @@ dependency.
 | Preprocess | `design` | recipes | Builds the design matrix (factor coding, splines, interactions, offset, exposure, weights). Fitted on training data and replayed exactly on new data |
 | Resample | `resample` | rsample | K-fold, grouped and time-ordered splits, plus calendar-diagonal splits for triangles |
 | Fit and predict | `Model` | parsnip, workflows | `fit`, `predict`, `predict_distribution`, `score`, `diagnostics` |
-| Evaluate | `metrics` | yardstick | Deviance, log-likelihood, Gini, Lorenz, lift, double lift, CRPS, PIT, interval coverage, actual vs expected |
+| Evaluate | `metrics` | yardstick | Deviance, log-likelihood, log score, Gini, Lorenz, lift, double lift, CRPS, randomized PIT (with a histogram and KS distance from uniform), interval coverage, actual vs expected; for Bayesian fits, ELPD (PSIS-LOO, WAIC) |
 | Tune | `tune` | tune, dials | Grid or random search over a parameter space, each candidate scored on the resamples. Folds run in parallel (`resample::map_splits`, scoped threads, results in split order) and replay from a seed |
 | Compare and stack | `compare`, `stack` | stacks | One table across engines; stacking weights from out-of-sample scores |
 | Version and monitor | `artifact` | vetiver | A serialized fitted model with its provenance (spec, design, data hash, seed, package version), and a monitor of actual vs expected on new periods |

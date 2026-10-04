@@ -75,6 +75,11 @@ reference:
       - models.gini
       - models.lift
       - models.crps
+      - models.log_score
+      - models.pit
+      - models.pit_from_draws
+      - models.pit_histogram
+      - models.ks_uniform
       - models.k_fold
       - models.group_k_fold
       - models.time_ordered

@@ -564,6 +564,44 @@ fn crps_rust(draws: &[f64], y: f64) -> Result<f64> {
     metrics::crps(draws, y).map_err(to_r)
 }
 
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn log_score_rust(
+    family_name: &str,
+    theta: f64,
+    power: f64,
+    y: &[f64],
+    mu: &[f64],
+    dispersion: f64,
+    weights: &[f64],
+) -> Result<f64> {
+    let f = family(family_name, theta, power)?;
+    let w = (!weights.is_empty()).then_some(weights);
+    metrics::log_score(f, y, mu, dispersion, w).map_err(to_r)
+}
+
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pit_rust(
+    family_name: &str,
+    theta: f64,
+    power: f64,
+    y: &[f64],
+    mu: &[f64],
+    dispersion: f64,
+    weights: &[f64],
+    seed: f64,
+) -> Result<Vec<f64>> {
+    let f = family(family_name, theta, power)?;
+    let w = (!weights.is_empty()).then_some(weights);
+    metrics::pit(f, y, mu, dispersion, w, whole(seed, "seed")?).map_err(to_r)
+}
+
+#[extendr]
+fn ks_uniform_rust(values: &[f64]) -> Result<f64> {
+    metrics::ks_uniform(values).map_err(to_r)
+}
+
 /// Splits as a list of `list(train, test)` with 1-based row numbers.
 fn splits_r(splits: Vec<resample::Split>) -> List {
     let one = |v: Vec<usize>| v.into_iter().map(|i| i as f64 + 1.0).collect::<Vec<f64>>();
@@ -633,6 +671,9 @@ extendr_module! {
     fn gini_rust;
     fn lift_rust;
     fn crps_rust;
+    fn log_score_rust;
+    fn pit_rust;
+    fn ks_uniform_rust;
     fn k_fold_rust;
     fn group_k_fold_rust;
     fn time_ordered_rust;
