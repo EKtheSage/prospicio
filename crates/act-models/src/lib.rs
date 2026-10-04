@@ -15,6 +15,7 @@
 //!
 //! This crate has no heavy dependencies; engines live in their own crates.
 
+pub mod compare;
 pub mod design;
 pub mod family;
 pub mod link;

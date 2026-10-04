@@ -638,6 +638,67 @@ random_search <- function(n, draw, data, splits, fit, score, seed = NULL) {
   grid_search(lapply(seq_len(n), function(i) draw()), data, splits, fit, score)
 }
 
+#' Compare models on the same splits
+#'
+#' Fits every model on each split's training rows and scores it on the test
+#' rows with every metric: one table across engines, comparing like with
+#' like. The paired `difference_std_error` (the standard error of each
+#' split's score minus the best model's) is much less noisy than either
+#' mean; a model within about two of them of the best is not clearly worse.
+#'
+#' @param models A named list of `fit(train)` functions, each returning a
+#'   fitted model (from [glm_fit()], [gam_fit()], [elastic_net_fit()] or
+#'   anything `score` accepts).
+#' @param data A data frame.
+#' @param splits Splits from [k_fold()], [group_k_fold()] or [time_ordered()].
+#' @param scores A named list of `score(model, test)` losses (lower is better).
+#' @returns A data frame with one row per model and metric: `model`,
+#'   `metric`, `mean`, `std_error` (the split scores' standard deviation
+#'   over the square root of their number) and `difference_std_error`, with
+#'   attribute `split_scores`, an array indexed by model, metric and split.
+#' @export
+#' @examples
+#' d <- data.frame(x = 1:40 / 10)
+#' d$y <- 1 + 2 * d$x + sin(1:40)
+#' mse <- function(m, test) mean((test$y - predict(m, test))^2)
+#' compare_models(
+#'   list(linear = function(train) glm_fit(y ~ x, train, family = "gaussian"),
+#'        flat = function(train) glm_fit(y ~ 1, train, family = "gaussian")),
+#'   d, k_fold(nrow(d), 4, seed = 1), list(mse = mse)
+#' )
+compare_models <- function(models, data, splits, scores) {
+  if (!length(models) || is.null(names(models)) || any(names(models) == "")) {
+    stop("models must be a named, non-empty list of fit functions")
+  }
+  if (!length(scores) || is.null(names(scores)) || any(names(scores) == "")) {
+    stop("scores must be a named, non-empty list of score functions")
+  }
+  k <- length(splits)
+  s <- array(NA_real_, c(length(models), length(scores), k),
+             dimnames = list(names(models), names(scores), NULL))
+  for (i in seq_len(k)) {
+    train <- data[splits[[i]]$train, , drop = FALSE]
+    test <- data[splits[[i]]$test, , drop = FALSE]
+    for (m in names(models)) {
+      fitted <- models[[m]](train)
+      for (sc in names(scores)) s[m, sc, i] <- as.double(scores[[sc]](fitted, test))
+    }
+  }
+  se <- function(v) stats::sd(v) / sqrt(length(v))
+  rows <- expand.grid(metric = names(scores), model = names(models), stringsAsFactors = FALSE)
+  rows <- rows[, c("model", "metric")]
+  rows$mean <- mapply(function(m, sc) mean(s[m, sc, ]), rows$model, rows$metric)
+  rows$std_error <- mapply(function(m, sc) se(s[m, sc, ]), rows$model, rows$metric)
+  rows$difference_std_error <- mapply(function(m, sc) {
+    means <- apply(s[, sc, , drop = FALSE], 1, mean)
+    best <- names(models)[which.min(means)]
+    se(s[m, sc, ] - s[best, sc, ])
+  }, rows$model, rows$metric)
+  rownames(rows) <- NULL
+  attr(rows, "split_scores") <- s
+  rows
+}
+
 #' Cross-validate an elastic net
 #'
 #' glmnet's `cv.glmnet()` on the Rust core: on each fold, fits the whole
