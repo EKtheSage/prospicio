@@ -390,6 +390,44 @@ class CompoundReport:
         """
 
 @final
+class CvPath:
+    """
+    Cross-validated scores along an elastic-net path, from
+    ``ElasticNet.cross_validate``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def fold_scores(self, /) -> list[list[float]]:
+        """
+        Each fold's mean deviance per ``lam``.
+        """
+    @property
+    def lam_1se(self, /) -> float:
+        """
+        The largest ``lam`` within one standard error of the lowest.
+        """
+    @property
+    def lam_min(self, /) -> float:
+        """
+        ``lam`` with the lowest mean deviance.
+        """
+    @property
+    def lams(self, /) -> list[float]:
+        """
+        Penalty strengths, in the order given.
+        """
+    @property
+    def mean(self, /) -> list[float]:
+        """
+        Mean deviance over folds (weighted by fold weight), per ``lam``.
+        """
+    @property
+    def se(self, /) -> list[float]:
+        """
+        Standard error of ``mean``, per ``lam``.
+        """
+
+@final
 class Design:
     """
     A design matrix with an offset and prior weights.
@@ -666,6 +704,25 @@ class ElasticNet:
     def alpha(self, /) -> float:
         """
         Mixing parameter.
+        """
+    def cross_validate(self, /, design: Design, y: Sequence[float], lams: Sequence[float], splits: Sequence[tuple[Sequence[int], Sequence[int]]]) -> CvPath:
+        """
+        Cross-validates the path, like glmnet's ``cv.glmnet``: on each
+        split, fits ``lams`` (warm starts) to the training rows and scores
+        the mean deviance on the test rows. Folds run in parallel.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        lams : list of float
+            Penalty strengths, largest first (from ``lambda_path``).
+        splits : list of (list of int, list of int)
+            ``(train, test)`` rows, as ``k_fold`` returns.
+        
+        Returns
+        -------
+        CvPath
         """
     def fit(self, /, design: Design, y: Sequence[float]) -> ElasticNetFit:
         """

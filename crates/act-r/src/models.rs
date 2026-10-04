@@ -253,6 +253,73 @@ fn elastic_net_fit_design(
     Ok(ElasticNetPath { fits })
 }
 
+/// Cross-validates an elastic net on folds given as one fold id per row
+/// (1 to K): the path's mean deviance and standard error per lambda.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn elastic_net_cv_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    family_name: &str,
+    link_name: &str,
+    alpha: f64,
+    lambdas: &[f64],
+    nlambda: f64,
+    min_ratio: f64,
+    standardize: bool,
+    penalty_factor: &[f64],
+    theta: f64,
+    power: f64,
+    link_power: f64,
+    foldid: &[f64],
+) -> Result<List> {
+    let f = family(family_name, theta, power)?;
+    let l = link(link_name, f, link_power)?;
+    let mut net = ElasticNet::new(f, l, alpha, 0.0).standardize(standardize);
+    if !penalty_factor.is_empty() {
+        net.penalty_factor = Some(penalty_factor.to_vec());
+    }
+    let d = design(x, names, offset, weights)?;
+    let lambdas = if lambdas.is_empty() {
+        let n = whole(nlambda, "nlambda")? as usize;
+        net.lambda_path(&d, y, n, min_ratio).map_err(to_r)?
+    } else {
+        lambdas.to_vec()
+    };
+    if foldid.len() != y.len() {
+        return Err(Error::Other(format!(
+            "foldid has {} entries for {} rows",
+            foldid.len(),
+            y.len()
+        )));
+    }
+    let ids: Vec<u64> = foldid
+        .iter()
+        .map(|&v| whole(v, "foldid"))
+        .collect::<Result<_>>()?;
+    let mut distinct = ids.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    let splits: Vec<resample::Split> = distinct
+        .iter()
+        .map(|&k| resample::Split {
+            train: (0..ids.len()).filter(|&i| ids[i] != k).collect(),
+            test: (0..ids.len()).filter(|&i| ids[i] == k).collect(),
+        })
+        .collect();
+    let cv = net.cross_validate(&d, y, &lambdas, &splits).map_err(to_r)?;
+    Ok(list!(
+        lambda = cv.lambdas.clone(),
+        mean = cv.mean.clone(),
+        se = cv.se.clone(),
+        lambda_min = cv.lambda_min(),
+        lambda_1se = cv.lambda_1se()
+    ))
+}
+
 impl ElasticNetPath {
     fn at(&self, index: f64) -> Result<&ElasticNetFit> {
         let k = whole(index, "index")? as usize;
@@ -557,6 +624,7 @@ extendr_module! {
     mod models;
     fn glm_fit_design;
     fn elastic_net_fit_design;
+    fn elastic_net_cv_design;
     fn gam_fit_design;
     impl GlmModel;
     impl ElasticNetPath;

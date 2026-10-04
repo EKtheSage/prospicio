@@ -59,6 +59,31 @@ if (requireNamespace("glmnet", quietly = TRUE)) {
   near(unname(coef(ep)), unname(as.matrix(stats::coef(gp))), 1e-7)
 }
 
+# Cross-validation and search.
+folds <- k_fold(nrow(e), 5, seed = 1)
+mse <- function(m, test) mean((test$y - predict(m, test))^2)
+cvs <- cross_validate(e, folds, function(train) glm_fit(y ~ x1 + x2 + x3, train, family = "gaussian"), mse)
+stopifnot(length(cvs) == 5, all(cvs > 0))
+g <- grid_search(c(0, 0.05, 5), e, folds, function(lam, train) {
+  elastic_net_fit(y ~ x1 + x2 + x3, train, family = "gaussian", lambda = lam)
+}, mse)
+stopifnot(nrow(g) == 3, g$score[3] > g$score[1], attr(g, "best") %in% 1:2)
+r <- random_search(4, function() 10^stats::runif(1, -3, 0), e, folds, function(lam, train) {
+  elastic_net_fit(y ~ x1 + x2 + x3, train, family = "gaussian", lambda = lam)
+}, mse, seed = 1)
+stopifnot(nrow(r) == 4)
+fid <- (seq_len(nrow(e)) - 1) %% 5 + 1
+ecv <- elastic_net_cv(y ~ x1 + x2 + x3, e, family = "gaussian", nlambda = 15,
+                      lambda_min_ratio = 1e-3, foldid = fid)
+stopifnot(ecv$lambda_1se >= ecv$lambda_min, length(ecv$mean) == 15,
+          S7::S7_inherits(ecv$fit, elastic_net_model))
+if (requireNamespace("glmnet", quietly = TRUE)) {
+  gcv <- glmnet::cv.glmnet(as.matrix(e[, c("x1", "x2", "x3")]), e$y, lambda = ecv$lambda,
+                           foldid = fid, thresh = 1e-20, type.measure = "deviance")
+  near(ecv$mean, gcv$cvm, 1e-7)
+  near(ecv$se, gcv$cvsd, 1e-6)
+}
+
 # GAM: a smooth curve.
 s <- data.frame(x = seq(0, 1, length.out = 100))
 s$y <- sin(6 * s$x) + 2

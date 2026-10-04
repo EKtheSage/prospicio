@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use act_glm::gam::{Gam, GamFit, PSpline, Smoothing};
-use act_glm::net::{ElasticNet, ElasticNetFit};
+use act_glm::net::{CvPath, ElasticNet, ElasticNetFit};
 use act_glm::{Dispersion, Glm, GlmFit};
 use act_models::resample::{self, Split};
 use act_models::{Coding, Column, Design, Family, Fitted, Frame, Link, Model, Terms, metrics};
@@ -782,6 +782,41 @@ impl PyElasticNet {
             .collect())
     }
 
+    /// Cross-validates the path, like glmnet's ``cv.glmnet``: on each
+    /// split, fits ``lams`` (warm starts) to the training rows and scores
+    /// the mean deviance on the test rows. Folds run in parallel.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// lams : list of float
+    ///     Penalty strengths, largest first (from ``lambda_path``).
+    /// splits : list of (list of int, list of int)
+    ///     ``(train, test)`` rows, as ``k_fold`` returns.
+    ///
+    /// Returns
+    /// -------
+    /// CvPath
+    fn cross_validate(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        lams: Vec<f64>,
+        splits: Vec<(Vec<usize>, Vec<usize>)>,
+    ) -> PyResult<PyCvPath> {
+        let splits: Vec<Split> = splits
+            .into_iter()
+            .map(|(train, test)| Split { train, test })
+            .collect();
+        let (net, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| net.cross_validate(d, &y, &lams, &splits))
+            .map_err(to_py)?;
+        Ok(PyCvPath { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "ElasticNet(family={:?}, link={:?}, alpha={:?}, lam={:?})",
@@ -789,6 +824,61 @@ impl PyElasticNet {
             link_name(self.inner.link),
             self.inner.alpha,
             self.inner.lambda
+        )
+    }
+}
+
+/// Cross-validated scores along an elastic-net path, from
+/// ``ElasticNet.cross_validate``.
+#[pyclass(name = "CvPath", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyCvPath {
+    inner: CvPath,
+}
+
+#[pymethods]
+impl PyCvPath {
+    /// Penalty strengths, in the order given.
+    #[getter]
+    fn lams(&self) -> Vec<f64> {
+        self.inner.lambdas.clone()
+    }
+
+    /// Mean deviance over folds (weighted by fold weight), per ``lam``.
+    #[getter]
+    fn mean(&self) -> Vec<f64> {
+        self.inner.mean.clone()
+    }
+
+    /// Standard error of ``mean``, per ``lam``.
+    #[getter]
+    fn se(&self) -> Vec<f64> {
+        self.inner.se.clone()
+    }
+
+    /// Each fold's mean deviance per ``lam``.
+    #[getter]
+    fn fold_scores(&self) -> Vec<Vec<f64>> {
+        self.inner.fold_scores.clone()
+    }
+
+    /// ``lam`` with the lowest mean deviance.
+    #[getter]
+    fn lam_min(&self) -> f64 {
+        self.inner.lambda_min()
+    }
+
+    /// The largest ``lam`` within one standard error of the lowest.
+    #[getter]
+    fn lam_1se(&self) -> f64 {
+        self.inner.lambda_1se()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CvPath(n_lams={}, lam_min={}, lam_1se={})",
+            self.inner.lambdas.len(),
+            self.inner.lambda_min(),
+            self.inner.lambda_1se()
         )
     }
 }
