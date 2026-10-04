@@ -17,6 +17,7 @@
 //! checks against glmnet. `α = 1` is the lasso, `α = 0` ridge.
 
 use act_core::{Error, Result};
+use act_models::resample::Split;
 use act_models::{Design, Family, Fitted, Link, Model};
 use act_prob::{PredictiveDistribution, Provenance};
 
@@ -458,6 +459,147 @@ impl ElasticNet {
             iterations: sol.iterations,
             fitted: sol.mu.clone(),
         }
+    }
+}
+
+impl ElasticNet {
+    /// Cross-validates the path: on each split, fits `lambdas` (warm
+    /// starts, as [`path`](Self::path)) to the training rows and scores
+    /// each fit by the family's mean deviance on the test rows,
+    /// `Σ w d / Σ w`. As glmnet's `cv.glmnet`, the score per `λ` is the
+    /// mean over folds weighted by each test fold's total weight, with a
+    /// standard error from the folds' weighted spread. Pass the `λ` values
+    /// from [`lambda_path`](Self::lambda_path) on the full data, largest
+    /// first.
+    ///
+    /// ```
+    /// use act_glm::net::ElasticNet;
+    /// use act_models::resample::k_fold;
+    /// use act_models::{Design, Family, Link};
+    ///
+    /// let n = 60;
+    /// let x: Vec<f64> = (0..n).map(|i| f64::from(i) / 10.0).collect();
+    /// let z: Vec<f64> = (0..n).map(|i| (f64::from(i) * 1.7).sin()).collect();
+    /// let y: Vec<f64> = (0..n).map(|i| 1.0 + x[i as usize] + (f64::from(i) * 2.3).cos()).collect();
+    /// let d = Design::new(
+    ///     vec!["(Intercept)".into(), "x".into(), "z".into()],
+    ///     vec![vec![1.0; n as usize], x, z],
+    /// )
+    /// .unwrap();
+    /// let net = ElasticNet::new(Family::Gaussian, Link::Identity, 1.0, 0.0);
+    /// let lambdas = net.lambda_path(&d, &y, 30, 1e-3).unwrap();
+    /// let cv = net.cross_validate(&d, &y, &lambdas, &k_fold(60, 5, 1).unwrap()).unwrap();
+    /// // The one-standard-error choice is never smaller than the best.
+    /// assert!(cv.lambda_1se() >= cv.lambda_min());
+    /// ```
+    pub fn cross_validate(
+        &self,
+        design: &Design,
+        y: &[f64],
+        lambdas: &[f64],
+        splits: &[Split],
+    ) -> Result<CvPath> {
+        if lambdas.is_empty() || splits.len() < 2 {
+            return Err(Error::Data(
+                "cross-validation needs at least one lambda and two splits".into(),
+            ));
+        }
+        if y.len() != design.n_rows() {
+            return Err(Error::Data(format!(
+                "{} responses for {} design rows",
+                y.len(),
+                design.n_rows()
+            )));
+        }
+        let mut fold_scores = Vec::with_capacity(splits.len());
+        let mut fold_weights = Vec::with_capacity(splits.len());
+        for s in splits {
+            let train = design.select(&s.train);
+            let y_train: Vec<f64> = s.train.iter().map(|&i| y[i]).collect();
+            let test = design.select(&s.test);
+            let y_test: Vec<f64> = s.test.iter().map(|&i| y[i]).collect();
+            let total: f64 = test.weights().iter().sum();
+            let fits = self.path(&train, &y_train, lambdas)?;
+            let scores = fits
+                .iter()
+                .map(|f| {
+                    let mu = f.predict(&test)?;
+                    Ok(dev(self.family, &y_test, &mu, test.weights()) / total)
+                })
+                .collect::<Result<Vec<f64>>>()?;
+            fold_scores.push(scores);
+            fold_weights.push(total);
+        }
+        Ok(CvPath::new(lambdas.to_vec(), fold_scores, &fold_weights))
+    }
+}
+
+/// Cross-validated scores along an elastic-net path, from
+/// [`ElasticNet::cross_validate`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct CvPath {
+    /// The `λ` values, in the order given.
+    pub lambdas: Vec<f64>,
+    /// Weighted mean of the folds' mean deviance, per `λ`.
+    pub mean: Vec<f64>,
+    /// Its standard error, per `λ`.
+    pub se: Vec<f64>,
+    /// Each fold's mean deviance per `λ`: `fold_scores[fold][λ]`.
+    pub fold_scores: Vec<Vec<f64>>,
+    /// Index of the lowest mean.
+    pub best: usize,
+    /// Index of the largest `λ` whose mean is within one standard error of
+    /// the lowest: a sparser model that is not detectably worse.
+    pub one_se: usize,
+}
+
+impl CvPath {
+    fn new(lambdas: Vec<f64>, fold_scores: Vec<Vec<f64>>, weights: &[f64]) -> Self {
+        let k = fold_scores.len() as f64;
+        let total: f64 = weights.iter().sum();
+        let (mut mean, mut se) = (Vec::new(), Vec::new());
+        for j in 0..lambdas.len() {
+            let m = fold_scores
+                .iter()
+                .zip(weights)
+                .map(|(f, w)| w * f[j])
+                .sum::<f64>()
+                / total;
+            let v = fold_scores
+                .iter()
+                .zip(weights)
+                .map(|(f, w)| w * (f[j] - m).powi(2))
+                .sum::<f64>()
+                / total;
+            mean.push(m);
+            se.push((v / (k - 1.0)).sqrt());
+        }
+        let best = (0..mean.len())
+            .min_by(|&a, &b| mean[a].total_cmp(&mean[b]))
+            .expect("at least one lambda");
+        let bar = mean[best] + se[best];
+        let one_se = (0..mean.len())
+            .filter(|&j| mean[j] <= bar)
+            .max_by(|&a, &b| lambdas[a].total_cmp(&lambdas[b]))
+            .unwrap_or(best);
+        Self {
+            lambdas,
+            mean,
+            se,
+            fold_scores,
+            best,
+            one_se,
+        }
+    }
+
+    /// `λ` with the lowest cross-validated deviance.
+    pub fn lambda_min(&self) -> f64 {
+        self.lambdas[self.best]
+    }
+
+    /// The largest `λ` within one standard error of the lowest.
+    pub fn lambda_1se(&self) -> f64 {
+        self.lambdas[self.one_se]
     }
 }
 
