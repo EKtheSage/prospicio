@@ -5,6 +5,7 @@
 //! draw from [`StreamRng`] with a seed, so they replay exactly.
 
 use act_core::{Error, Result, StreamRng};
+use rayon::prelude::*;
 
 use crate::design::Design;
 use crate::model::{Fitted, Model};
@@ -156,45 +157,18 @@ where
     })
 }
 
-/// Runs `f` on every split in parallel, one thread per available core at
-/// most, and returns the results in split order (the first error, in split
-/// order, if any fails). Each split's work is independent and seeded on
-/// its own, so results do not depend on the number of threads.
+/// Runs `f` on every split in parallel on the Rayon pool (the outer loop,
+/// as `docs/architecture.md` prescribes) and returns the results in split
+/// order: the first error in split order, if any fails. Each split's work
+/// is independent and seeded on its own, so results do not depend on the
+/// number of threads.
 pub fn map_splits<T, F>(splits: &[Split], f: F) -> Result<Vec<T>>
 where
     T: Send,
-    F: Fn(&Split) -> Result<T> + Sync,
+    F: Fn(&Split) -> Result<T> + Sync + Send,
 {
-    let workers = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(splits.len())
-        .max(1);
-    if workers == 1 {
-        return splits.iter().map(&f).collect();
-    }
-    let mut slots: Vec<Option<Result<T>>> = (0..splits.len()).map(|_| None).collect();
-    std::thread::scope(|scope| {
-        let f = &f;
-        let handles: Vec<_> = (0..workers)
-            .map(|w| {
-                scope.spawn(move || {
-                    (w..splits.len())
-                        .step_by(workers)
-                        .map(|i| (i, f(&splits[i])))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        for h in handles {
-            for (i, r) in h.join().expect("a cross-validation worker panicked") {
-                slots[i] = Some(r);
-            }
-        }
-    });
-    slots
-        .into_iter()
-        .map(|r| r.expect("every split ran"))
-        .collect()
+    let results: Vec<Result<T>> = splits.par_iter().map(&f).collect();
+    results.into_iter().collect()
 }
 
 /// The result of [`grid_search`]: each candidate's mean score, and the
