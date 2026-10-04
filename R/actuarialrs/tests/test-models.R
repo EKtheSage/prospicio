@@ -196,4 +196,15 @@ stopifnot(identical(en2@lambda, en@lambda), identical(en2@coefficients, en@coeff
 stopifnot(identical(predict(en2, e, lambda = en@lambda[5]), predict(en, e, lambda = en@lambda[5])))
 stopifnot(inherits(try(save_model(list(), gf), silent = TRUE), "try-error"))
 
+# Monitoring: actual against expected by period.
+ae <- actual_vs_expected(rep(2021:2024, each = 2), c(4, 6, 5, 6, 6, 6, 6, 7), rep(5, 8), "poisson")
+stopifnot(identical(ae$period, 2021:2024), identical(ae$actual, c(10, 11, 12, 13)))
+near(attr(ae, "trend")[["slope"]], 0.1, 1e-12)
+near(attr(ae, "trend")[["std_error"]], sqrt(0.1 / 5), 1e-12)
+near(attr(ae, "total")[["z"]], 6 / sqrt(40), 1e-12)
+aw <- actual_vs_expected(c("b", "a", "b"), c(1, 2, 3), c(2, 2, 2), "gamma", weights = c(1, 2, 3),
+                         dispersion = 0.5)
+stopifnot(identical(aw$period, c("a", "b")), identical(aw$expected, c(4, 8)))
+near(aw$std_dev[2], sqrt(0.5 * 4 * 4), 1e-12)
+
 cat("actuarialrs R models tests passed\n")

@@ -289,3 +289,20 @@ def test_gam_and_elastic_net_save_and_load():
     assert pickle.loads(pickle.dumps(net)).predict(d) == net.predict(d)
     with pytest.raises(ValueError):
         GamFit.from_json(net.to_json())
+
+
+def test_actual_vs_expected():
+    from actuarialrs.models import actual_vs_expected
+
+    periods = ["2021", "2021", "2022", "2022", "2023", "2023", "2024", "2024"]
+    y = [4.0, 6.0, 5.0, 6.0, 6.0, 6.0, 6.0, 7.0]
+    m = actual_vs_expected(periods, "poisson", y, [5.0] * 8)
+    assert [p["period"] for p in m["periods"]] == ["2021", "2022", "2023", "2024"]
+    assert [p["actual"] for p in m["periods"]] == [10.0, 11.0, 12.0, 13.0]
+    assert m["trend"] == pytest.approx(0.1)
+    assert m["trend_std_error"] == pytest.approx(math.sqrt(0.1 / 5))
+    assert m["total"]["z"] == pytest.approx(6 / math.sqrt(40))
+    g = actual_vs_expected(periods, "tweedie", y, [5.0] * 8, weights=[2.0] * 8, dispersion=0.5, power=1.5)
+    assert g["periods"][0]["std_dev"] == pytest.approx(math.sqrt(0.5 * 4 * 5 ** 1.5))
+    with pytest.raises(ValueError):
+        actual_vs_expected(periods[:3], "poisson", y, [5.0] * 8)

@@ -98,6 +98,7 @@ reference:
       - models.SearchResult
       - models.compare
       - models.Comparison
+      - models.actual_vs_expected
   - title: Pricing
     desc: The collective model, layer rating, and reinsurance tower matching.
     contents:

@@ -1989,3 +1989,91 @@ pub(crate) fn pseudo_bma_weights(
     py.detach(|| act_models::stack::pseudo_bma_weights(&lpd, bb))
         .map_err(to_py)
 }
+
+/// Actual against expected by period for a stored model's predictions on
+/// new data, with each period's z-score under the model and a test for
+/// drift.
+///
+/// ``A = sum(w * y)`` and ``E = sum(w * mu)`` per period; the z-score is
+/// ``(A - E) / sqrt(dispersion * sum(w * V(mu)))`` with the family's
+/// variance function ``V``, about standard normal while the model holds.
+/// ``trend`` is the slope of ``A / E - 1`` per period step (periods in
+/// sorted order), weighted by each period's precision.
+///
+/// Parameters
+/// ----------
+/// periods : list of int or str
+///     One period label per row.
+/// family : str
+/// y : list of float
+///     Actuals.
+/// mu : list of float
+///     The model's predicted means.
+/// weights : list of float, optional
+///     Prior weights as fitted (exposure for a rate); leave out for counts
+///     with exposure in the offset.
+/// dispersion : float, default 1.0
+/// theta, power : float, optional
+///     Negative binomial ``theta``, Tweedie ``power``.
+///
+/// Returns
+/// -------
+/// dict
+///     ``periods`` (a list of dicts with ``period``, ``n``, ``weight``,
+///     ``actual``, ``expected``, ``ratio``, ``std_dev`` and ``z``),
+///     ``total`` (the same without ``period``), ``trend``,
+///     ``trend_std_error`` and ``trend_z``.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import actual_vs_expected
+/// >>> m = actual_vs_expected([2023, 2023, 2024, 2024], "poisson",
+/// ...                        [1.0, 3.0, 2.0, 6.0], [2.0, 2.0, 2.0, 2.0])
+/// >>> m["periods"][1]["ratio"], m["periods"][1]["z"]
+/// (2.0, 2.0)
+#[pyfunction]
+#[pyo3(signature = (periods, family, y, mu, weights = None, dispersion = 1.0, theta = None, power = None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn actual_vs_expected<'py>(
+    py: Python<'py>,
+    periods: Vec<KeyArg>,
+    family: &str,
+    y: Vec<f64>,
+    mu: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    dispersion: f64,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    use pyo3::types::PyDict;
+    let f = self::family(family, theta, power)?;
+    let keys = key_from_py(periods);
+    let m =
+        act_models::monitor::actual_vs_expected(&keys, &y, &mu, weights.as_deref(), f, dispersion)
+            .map_err(to_py)?;
+    let row = |r: &act_models::monitor::PeriodSummary<act_prob::KeyValue>| -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new(py);
+        if let Some(p) = &r.period {
+            match p {
+                act_prob::KeyValue::Int(i) => d.set_item("period", i)?,
+                other => d.set_item("period", other.to_string())?,
+            }
+        }
+        d.set_item("n", r.n)?;
+        d.set_item("weight", r.weight)?;
+        d.set_item("actual", r.actual)?;
+        d.set_item("expected", r.expected)?;
+        d.set_item("ratio", r.ratio())?;
+        d.set_item("std_dev", r.std_dev)?;
+        d.set_item("z", r.z())?;
+        Ok(d)
+    };
+    let out = PyDict::new(py);
+    let rows = m.periods.iter().map(&row).collect::<PyResult<Vec<_>>>()?;
+    out.set_item("periods", rows)?;
+    out.set_item("total", row(&m.total)?)?;
+    out.set_item("trend", m.trend)?;
+    out.set_item("trend_std_error", m.trend_std_error)?;
+    out.set_item("trend_z", m.trend_z())?;
+    Ok(out)
+}

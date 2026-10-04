@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from .actuarialrs_native import (
+    actual_vs_expected,
     Coding,
     CvPath,
     Design,
@@ -76,6 +77,7 @@ __all__ = [
     "Comparison",
     "stacking_weights",
     "pseudo_bma_weights",
+    "actual_vs_expected",
 ]
 
 

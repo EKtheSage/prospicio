@@ -850,6 +850,52 @@ elpd_result <- function(r) {
   r
 }
 
+#' Monitor a model: actual against expected by period
+#'
+#' For a stored model's predictions on new data, the actual and expected
+#' totals of each period, `A = sum(w * y)` and `E = sum(w * mu)`, with the
+#' z-score `(A - E) / sqrt(dispersion * sum(w * V(mu)))` under the model's
+#' variance function `V`: about standard normal while the model holds. The
+#' trend is the slope of `A / E - 1` per period step (periods in sorted
+#' order), weighted by each period's precision, with its standard error;
+#' `trend_z` beyond about 2 suggests drift.
+#'
+#' @param periods One period label per row (numbers or strings).
+#' @param actual Observed responses.
+#' @param expected The model's predicted means for the same rows, e.g.
+#'   `predict(model, newdata)`.
+#' @param family As in [glm_fit()].
+#' @param weights Optional prior weights as fitted (exposure for a rate);
+#'   leave out for counts with exposure in the offset.
+#' @param dispersion The model's dispersion, e.g. `model@dispersion`.
+#' @param theta,power Negative binomial `theta`, Tweedie `power`.
+#' @returns A data frame with one row per period: `period`, `n`, `weight`,
+#'   `actual`, `expected`, `ratio`, `std_dev` and `z`; attributes `total`
+#'   (the same for all periods) and `trend` (`slope`, `std_error`, `z`).
+#' @export
+#' @examples
+#' actual_vs_expected(c(2023, 2023, 2024, 2024), c(1, 3, 2, 6), rep(2, 4), "poisson")
+actual_vs_expected <- function(periods, actual, expected, family, weights = NULL,
+                               dispersion = 1, theta = NULL, power = NULL) {
+  fa <- family_args(theta, power)
+  r <- rust_result(actual_vs_expected_rust(
+    periods, as.double(actual), as.double(expected),
+    if (is.null(weights)) double() else as.double(weights), family, fa$theta, fa$power,
+    as.double(dispersion)
+  ))
+  out <- data.frame(period = periods[r$first_row], n = r$n, weight = r$weight,
+                    actual = r$actual, expected = r$expected)
+  out$ratio <- out$actual / out$expected
+  out$std_dev <- r$std_dev
+  out$z <- (out$actual - out$expected) / out$std_dev
+  tot <- stats::setNames(r$total, c("n", "weight", "actual", "expected", "std_dev"))
+  attr(out, "total") <- c(tot, ratio = tot[["actual"]] / tot[["expected"]],
+                          z = (tot[["actual"]] - tot[["expected"]]) / tot[["std_dev"]])
+  attr(out, "trend") <- c(slope = r$trend, std_error = r$trend_std_error,
+                          z = r$trend / r$trend_std_error)
+  out
+}
+
 #' Model weights for blending: stacking and pseudo-BMA
 #'
 #' Weights from pointwise held-out log predictive densities (Yao, Vehtari,
