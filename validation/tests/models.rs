@@ -424,3 +424,34 @@ fn elastic_net_cross_validation_matches_cv_glmnet() {
         }
     });
 }
+
+#[test]
+fn tweedie_power_profile_matches_statsmodels() {
+    use act_glm::tweedie::tweedie_profile;
+    let data = policies();
+    let d = net_design(&data);
+    // Intercept, age and region: drop the age² column `net_design` adds.
+    let keep: Vec<usize> = (0..d.n_cols())
+        .filter(|&j| d.names()[j] != "age2")
+        .collect();
+    let d = Design::new(
+        keep.iter().map(|&j| d.names()[j].clone()).collect(),
+        keep.iter().map(|&j| d.column(j).to_vec()).collect(),
+    )
+    .unwrap()
+    .with_weights(numeric(&data, "exposure"))
+    .unwrap();
+    let powers = [1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8];
+    let prof = tweedie_profile(Link::Log, &d, &numeric(&data, "pure"), &powers).unwrap();
+    let cases = reference("tweedie_profile_statsmodels.csv");
+    check(&cases, |c| {
+        let at = |p: f64| powers.iter().position(|&q| q == p);
+        match c.get("quantity") {
+            "log_likelihood" => Some(prof.log_likelihood[at(c.number("arg")?)?]),
+            "dispersion" => Some(prof.dispersion[at(c.number("arg")?)?]),
+            "power" => Some(prof.power),
+            "max_log_likelihood" => Some(prof.max_log_likelihood),
+            _ => None,
+        }
+    });
+}
