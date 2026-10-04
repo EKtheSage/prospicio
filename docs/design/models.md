@@ -250,6 +250,16 @@ Not yet: attention along development periods or accident years (a
 sequence model over a triangle's cells), which needs the triangle bridge
 from the Reserving lane, and attention across claims of one policy.
 
+Tuning the networks: `EarlyStopping` (on `Cann` and `AttentionCann`)
+holds out a share of the training rows, scores the family's mean deviance
+on them after each epoch, and keeps the best epoch once `patience` epochs
+pass without improvement; `best_epoch` and `validation_history` record it.
+Width, depth, learning rate and the like go through
+`act_models::resample::random_search` (with `log_uniform` and
+`uniform_int` draws), which covers several hyperparameters better than a
+grid of the same size. Fits vary by seed, so an average over a few seeds
+often beats finer tuning.
+
 Seeding: Burn's generator is global and its parameters initialize lazily,
 so `act-nn` seeds, builds and initializes every parameter under one lock.
 Without it, fits running in parallel (tests, cross-validation) interleave
