@@ -103,6 +103,7 @@ reference:
       - resampling
       - tuning
       - mcmc_diagnostics
+      - elpd
   - title: Dependence
     contents:
       - copula

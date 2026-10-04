@@ -492,3 +492,40 @@ fn family_scores_match_scipy() {
         }
     });
 }
+
+#[test]
+fn elpd_matches_loo() {
+    use act_bayes::elpd::{loo, lppd, waic};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/loo_loglik.csv");
+    let text = std::fs::read_to_string(path).expect("loo_loglik.csv");
+    let mut lines = text.lines();
+    let n = lines.next().unwrap().split(',').count();
+    // Draws by observations, row-major.
+    let ll: Vec<f64> = lines
+        .flat_map(|l| {
+            l.split(',')
+                .map(|v| v.parse::<f64>().unwrap())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let l = loo(&ll, n, None).unwrap();
+    let w = waic(&ll, n).unwrap();
+    let cases = reference("elpd_loo.csv");
+    check(&cases, |c| {
+        let at = || c.number("index").map(|i| i as usize);
+        match c.get("quantity") {
+            "elpd_loo" => Some(l.estimate.elpd),
+            "p_loo" => Some(l.estimate.p),
+            "looic" => Some(l.estimate.ic),
+            "se_elpd_loo" => Some(l.estimate.se),
+            "pointwise_elpd_loo" => Some(l.estimate.pointwise[at()?]),
+            "pareto_k" => Some(l.pareto_k[at()?]),
+            "elpd_waic" => Some(w.elpd),
+            "p_waic" => Some(w.p),
+            "waic" => Some(w.ic),
+            "se_elpd_waic" => Some(w.se),
+            "lppd" => lppd(&ll, n).ok(),
+            _ => None,
+        }
+    });
+}

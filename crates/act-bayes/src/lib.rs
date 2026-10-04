@@ -29,6 +29,8 @@
 //! assert!(ess_bulk(&chains).unwrap() > 100.0);
 //! ```
 
+pub mod elpd;
+
 use act_core::{Error, Result};
 use act_math::special::norm_quantile;
 use rustfft::FftPlanner;

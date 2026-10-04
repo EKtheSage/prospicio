@@ -168,3 +168,22 @@ def test_pit_and_log_score():
     assert sum(pit_histogram(p, 10)) == 2000
     assert log_score("poisson", y, [3.0] * 2000) < log_score("poisson", y, [4.5] * 2000)
     assert pit_from_draws([1.0, 2.0, 3.0, 4.0], 2.5) == 0.5
+
+
+def test_elpd_loo_and_waic():
+    import random
+
+    from actuarialrs.models import elpd_loo, elpd_waic, lppd
+
+    rng = random.Random(1)
+    y = [rng.gauss(0, 1) for _ in range(20)] + [5.0]
+    draws = [rng.gauss(sum(y) / len(y), 1 / math.sqrt(len(y))) for _ in range(400)]
+    ll = [[-0.5 * (yi - m) ** 2 - 0.5 * math.log(2 * math.pi) for yi in y] for m in draws]
+    loo = elpd_loo(ll)
+    waic = elpd_waic(ll)
+    assert loo.elpd < lppd(ll) and abs(loo.ic + 2 * loo.elpd) < 1e-12
+    assert len(loo.pareto_k) == 21 and waic.pareto_k is None
+    # The outlier has the largest Pareto k and the lowest ELPD.
+    assert max(range(21), key=lambda i: loo.pareto_k[i]) == 20
+    assert min(range(21), key=lambda i: loo.pointwise[i]) == 20
+    assert abs(loo.elpd - waic.elpd) < 0.5

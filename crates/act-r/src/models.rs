@@ -658,6 +658,33 @@ fn mcmc_diagnostics_rust(draws: &[f64], n_chains: f64) -> Result<List> {
     ))
 }
 
+/// An ELPD estimate as an R list.
+fn elpd_list(e: act_bayes::elpd::Elpd) -> List {
+    list!(
+        estimates = vec![e.elpd, e.se, e.p, e.ic],
+        pointwise = e.pointwise
+    )
+}
+
+#[extendr]
+fn elpd_loo_rust(log_lik: &[f64], n: f64, r_eff: &[f64]) -> Result<List> {
+    let n = whole(n, "n")? as usize;
+    let r = (!r_eff.is_empty()).then_some(r_eff);
+    let l = act_bayes::elpd::loo(log_lik, n, r).map_err(to_r)?;
+    Ok(list!(
+        estimates = vec![l.estimate.elpd, l.estimate.se, l.estimate.p, l.estimate.ic],
+        pointwise = l.estimate.pointwise,
+        pareto_k = l.pareto_k,
+        k_threshold = l.k_threshold
+    ))
+}
+
+#[extendr]
+fn elpd_waic_rust(log_lik: &[f64], n: f64) -> Result<List> {
+    let n = whole(n, "n")? as usize;
+    Ok(elpd_list(act_bayes::elpd::waic(log_lik, n).map_err(to_r)?))
+}
+
 extendr_module! {
     mod models;
     fn glm_fit_design;
@@ -678,4 +705,6 @@ extendr_module! {
     fn group_k_fold_rust;
     fn time_ordered_rust;
     fn mcmc_diagnostics_rust;
+    fn elpd_loo_rust;
+    fn elpd_waic_rust;
 }

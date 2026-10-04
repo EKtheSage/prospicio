@@ -888,6 +888,49 @@ class ElasticNetFit:
         """
 
 @final
+class Elpd:
+    """
+    An ELPD estimate from ``elpd_loo`` or ``elpd_waic``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def elpd(self, /) -> float:
+        """
+        Expected log pointwise predictive density, summed.
+        """
+    @property
+    def ic(self, /) -> float:
+        """
+        The information criterion, ``-2 elpd`` (LOOIC or WAIC).
+        """
+    @property
+    def k_threshold(self, /) -> float |None:
+        """
+        PSIS-LOO only: ``min(1 - 1/log10(S), 0.7)``; observations with a
+        larger ``pareto_k`` are unreliable.
+        """
+    @property
+    def p(self, /) -> float:
+        """
+        Effective number of parameters, ``lppd - elpd``.
+        """
+    @property
+    def pareto_k(self, /) -> list[float] |None:
+        """
+        PSIS-LOO only: the fitted Pareto shape per observation.
+        """
+    @property
+    def pointwise(self, /) -> list[float]:
+        """
+        ELPD per observation.
+        """
+    @property
+    def se(self, /) -> float:
+        """
+        Its standard error, ``sqrt(N var(pointwise))``.
+        """
+
+@final
 class EventSet:
     """
     Simulated years of individual losses, for applying per-loss terms such
@@ -4946,6 +4989,42 @@ def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequ
     float
     """
 
+def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:
+    """
+    Leave-one-out cross-validation by Pareto-smoothed importance sampling
+    (PSIS-LOO), from one fit's pointwise log-likelihood draws. Matches the
+    R package ``loo``.
+    
+    Parameters
+    ----------
+    log_lik : list of list of float
+        One row per posterior draw, one column per observation:
+        ``log p(y_i | theta_s)``.
+    r_eff : list of float, optional
+        Relative efficiency of the draws per observation (1 for
+        independent draws).
+    
+    Returns
+    -------
+    Elpd
+        With ``pareto_k`` and ``k_threshold``.
+    """
+
+def elpd_waic(log_lik: Sequence[Sequence[float]]) -> Elpd:
+    """
+    WAIC from pointwise log-likelihood draws: ``lppd`` less the variance of
+    each observation's log-likelihood.
+    
+    Parameters
+    ----------
+    log_lik : list of list of float
+        One row per posterior draw, one column per observation.
+    
+    Returns
+    -------
+    Elpd
+    """
+
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
     """
     Aggregate loss ``S = X_1 + ... + X_N`` by fast Fourier transform.
@@ -5239,6 +5318,28 @@ def loss_elimination_ratio(severity: Any, deductible: float) -> float:
     Returns
     -------
     float
+    """
+
+def lppd(log_lik: Sequence[Sequence[float]]) -> float:
+    """
+    In-sample log pointwise predictive density,
+    ``sum_i log(mean_s p(y_i | theta_s))``.
+    
+    Parameters
+    ----------
+    log_lik : list of list of float
+        One row per posterior draw, one column per observation.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> import math
+    >>> from actuarialrs.models import lppd
+    >>> round(lppd([[math.log(0.5)], [math.log(0.25)]]), 12) == round(math.log(0.375), 12)
+    True
     """
 
 def match_tower(attachments: Sequence[float], layer_losses: Sequence[float], frequencies: Sequence[float |None] |None = None, rule: str = "minimize") -> TowerModel:
