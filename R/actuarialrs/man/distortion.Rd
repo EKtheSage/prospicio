@@ -5,13 +5,13 @@
 \title{Distortion risk measure}
 \usage{
 distortion(
-  kind = c("tvar", "wang", "proportional_hazard", "dual_power"),
+  kind = c("tvar", "wang", "proportional_hazard", "dual_power", "exponential"),
   param
 )
 }
 \arguments{
-\item{kind}{One of \code{"tvar"}, \code{"wang"}, \code{"proportional_hazard"} and
-\code{"dual_power"}.}
+\item{kind}{One of \code{"tvar"}, \code{"wang"}, \code{"proportional_hazard"},
+\code{"dual_power"} and \code{"exponential"}.}
 
 \item{param}{The distortion's parameter.}
 }
@@ -22,7 +22,7 @@ with \code{\link[=risk_measure]{risk_measure()}} and \code{\link[=allocate]{allo
 \description{
 A concave distortion \code{g} of the survival function, giving the coherent
 risk measure \verb{rho(X) = integral of g(S(x)) dx}. Every kind has a parameter
-value that gives the mean.
+value (or limit) that gives the mean.
 }
 \details{
 \tabular{lll}{
@@ -31,7 +31,12 @@ value that gives the mean.
    \code{"wang"} \tab \code{pnorm(qnorm(s) + lambda)} \tab \code{lambda >= 0} \cr
    \code{"proportional_hazard"} \tab \code{s^rho} \tab \code{rho} in \verb{(0, 1]} \cr
    \code{"dual_power"} \tab \code{1 - (1 - s)^beta} \tab \code{beta >= 1} \cr
+   \code{"exponential"} \tab \verb{(1 - exp(-k s)) / (1 - exp(-k))} \tab \code{k > 0} \cr
 }
+
+
+The exponential kind is the spectral measure with exponential risk
+aversion; it gives the mean only in the limit \code{k -> 0}.
 }
 \examples{
 d <- distortion("wang", 0.5)

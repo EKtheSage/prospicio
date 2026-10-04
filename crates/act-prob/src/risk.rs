@@ -1,4 +1,5 @@
-//! Risk measures on sorted draws.
+//! Risk measures on sorted draws, and the exponential-utility measures
+//! (entropic, Esscher) on any draws.
 //!
 //! These are the single implementation every domain uses: reserving,
 //! aggregate and capital call them instead of computing their own
@@ -7,7 +8,7 @@
 //! Both measures treat the draws as an empirical distribution with mass
 //! `1/n` on each draw, so ties and atoms are handled exactly.
 
-use act_core::Result;
+use act_core::{Error, Result};
 
 use crate::distribution::check_probability;
 
@@ -63,6 +64,78 @@ pub fn tvar_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     Ok((partial + tail) / (1.0 - p))
 }
 
+/// Entropic risk measure `(1/θ) log E[e^(θX)]` of equally likely draws
+/// (losses positive), the certainty equivalent under exponential utility
+/// with risk aversion `θ > 0`. It increases from the mean (`θ → 0`) to the
+/// largest draw (`θ → ∞`); for a normal `X` it is `μ + θσ²/2`. Convex and
+/// translation-invariant, but not positively homogeneous.
+///
+/// ```
+/// use act_prob::risk::entropic;
+///
+/// // Two equally likely losses, 0 and 1, at θ = ln 2: log2((1 + 2)/2).
+/// let r = entropic(&[0.0, 1.0], 2f64.ln()).unwrap();
+/// assert!((r - 1.5f64.log2()).abs() < 1e-15);
+/// ```
+pub fn entropic(draws: &[f64], theta: f64) -> Result<f64> {
+    check_draws(draws)?;
+    if !(theta.is_finite() && theta > 0.0) {
+        return Err(Error::InvalidParameter {
+            name: "theta",
+            value: theta,
+            reason: "must be finite and positive",
+        });
+    }
+    let m = draws.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let mean_exp = draws.iter().map(|x| (theta * (x - m)).exp()).sum::<f64>() / draws.len() as f64;
+    Ok(m + mean_exp.ln() / theta)
+}
+
+/// Esscher premium `E[X e^(hX)] / E[e^(hX)]` of equally likely draws: the
+/// mean under the Esscher transform, which tilts probability towards large
+/// losses for `h > 0` (the mean at `h = 0`; `μ + hσ²` for a normal `X`).
+///
+/// ```
+/// use act_prob::risk::esscher;
+///
+/// // Draws 0 and 1 at h = ln 3: weights 1 and 3, so 3/4.
+/// assert!((esscher(&[0.0, 1.0], 3f64.ln()).unwrap() - 0.75).abs() < 1e-15);
+/// ```
+pub fn esscher(draws: &[f64], h: f64) -> Result<f64> {
+    check_draws(draws)?;
+    if !h.is_finite() {
+        return Err(Error::InvalidParameter {
+            name: "h",
+            value: h,
+            reason: "must be finite",
+        });
+    }
+    let w = esscher_weights(draws, h);
+    Ok(w.iter().zip(draws).map(|(w, x)| w * x).sum())
+}
+
+/// Normalized Esscher weights `e^(h xᵢ) / Σ e^(h xⱼ)`, without overflow.
+pub(crate) fn esscher_weights(draws: &[f64], h: f64) -> Vec<f64> {
+    let m = draws
+        .iter()
+        .map(|x| h * x)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let w: Vec<f64> = draws.iter().map(|x| (h * x - m).exp()).collect();
+    let total: f64 = w.iter().sum();
+    w.into_iter().map(|v| v / total).collect()
+}
+
+fn check_draws(draws: &[f64]) -> Result<()> {
+    if draws.is_empty() {
+        return Err(Error::InvalidParameter {
+            name: "draws",
+            value: 0.0,
+            reason: "must not be empty",
+        });
+    }
+    Ok(())
+}
+
 /// Smallest `k` in `1..=n` with `k / n >= p`, using the same division as
 /// the empirical distribution function so the two agree exactly.
 fn rank(n: usize, p: f64) -> usize {
@@ -84,6 +157,25 @@ fn is_sorted(x: &[f64]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Normal draws at plotting positions: entropic `μ + θσ²/2`, Esscher
+    /// `μ + hσ²`.
+    #[test]
+    fn exponential_utility_measures_match_the_normal() {
+        let n = 200_000;
+        let (mu, sigma) = (3.0, 2.0);
+        let x: Vec<f64> = (0..n)
+            .map(|i| mu + sigma * act_math::special::norm_quantile((i as f64 + 0.5) / n as f64))
+            .collect();
+        let theta = 0.4;
+        assert!((entropic(&x, theta).unwrap() - (mu + theta * sigma * sigma / 2.0)).abs() < 2e-3);
+        let h = 0.3;
+        assert!((esscher(&x, h).unwrap() - (mu + h * sigma * sigma)).abs() < 2e-3);
+        assert!((esscher(&x, 0.0).unwrap() - mu).abs() < 1e-9);
+        // Huge draws do not overflow.
+        assert!((entropic(&[1e6, 1e6], 1.0).unwrap() - 1e6).abs() < 1e-6);
+        assert!(entropic(&x, 0.0).is_err() && esscher(&[], 1.0).is_err());
+    }
     use act_core::Error;
 
     const X: [f64; 5] = [10.0, 20.0, 30.0, 40.0, 50.0];

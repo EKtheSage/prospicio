@@ -21,8 +21,9 @@ use crate::to_py;
 /// concave distortion ``g`` of the survival function.
 ///
 /// Make one with ``Distortion.tvar``, ``Distortion.wang``,
-/// ``Distortion.proportional_hazard`` or ``Distortion.dual_power``. Every
-/// one is coherent, and each has a parameter value that gives the mean.
+/// ``Distortion.proportional_hazard``, ``Distortion.dual_power`` or
+/// ``Distortion.exponential``. Every one is coherent, and each has a
+/// parameter value that gives the mean (or a limit that does).
 ///
 /// Examples
 /// --------
@@ -108,6 +109,24 @@ impl PyDistortion {
         })
     }
 
+    /// Exponential spectral measure: ``g(s) = (1 - exp(-k s)) / (1 - exp(-k))``,
+    /// risk aversion that grows exponentially towards the worst outcomes.
+    ///
+    /// Parameters
+    /// ----------
+    /// k : float
+    ///     Risk aversion, positive; the mean as ``k -> 0``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn exponential(k: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::exponential(k).map_err(to_py)?,
+        })
+    }
+
     /// The distortion ``g(s)`` of a survival probability ``s``.
     ///
     /// Parameters
@@ -166,6 +185,7 @@ impl PyDistortion {
             Distortion::Wang(l) => format!("Distortion.wang({l:?})"),
             Distortion::ProportionalHazard(r) => format!("Distortion.proportional_hazard({r:?})"),
             Distortion::DualPower(b) => format!("Distortion.dual_power({b:?})"),
+            Distortion::Exponential(k) => format!("Distortion.exponential({k:?})"),
         }
     }
 }
@@ -204,6 +224,188 @@ pub(crate) fn allocate(
 ) -> Vec<f64> {
     let (pd, d) = (&pd.inner, distortion.inner);
     py.detach(|| pd.allocate(&d))
+}
+
+/// The draws of a ``Sampled``, the total of a ``PredictiveDistribution``,
+/// or a list of floats.
+fn draws_of(dist: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
+    if let Ok(s) = dist.extract::<PyRef<'_, PySampled>>() {
+        return Ok(s.inner.draws().to_vec());
+    }
+    if let Ok(p) = dist.extract::<PyRef<'_, PyPredictiveDistribution>>() {
+        return Ok(p.inner.total().draws().to_vec());
+    }
+    dist.extract::<Vec<f64>>().map_err(|_| {
+        PyTypeError::new_err("expected a Sampled, PredictiveDistribution or list of float")
+    })
+}
+
+/// Entropic risk measure ``(1 / theta) log E[exp(theta X)]``: the certainty
+/// equivalent of a loss under exponential utility.
+///
+/// It rises from the mean (``theta -> 0``) to the largest draw
+/// (``theta -> inf``); for a normal loss it is ``mu + theta sigma**2 / 2``.
+///
+/// Parameters
+/// ----------
+/// dist : Sampled, PredictiveDistribution or list of float
+///     A predictive distribution is measured on its total.
+/// theta : float
+///     Risk aversion, positive.
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from actuarialrs.risk import entropic
+/// >>> round(entropic([0.0, 1.0], math.log(2.0)), 12) == round(math.log2(1.5), 12)
+/// True
+#[pyfunction]
+pub(crate) fn entropic(dist: &Bound<'_, PyAny>, theta: f64) -> PyResult<f64> {
+    act_prob::risk::entropic(&draws_of(dist)?, theta).map_err(to_py)
+}
+
+/// Esscher premium ``E[X exp(h X)] / E[exp(h X)]``: the mean after tilting
+/// probability towards large losses.
+///
+/// The mean at ``h = 0``; ``mu + h sigma**2`` for a normal loss.
+///
+/// Parameters
+/// ----------
+/// dist : Sampled, PredictiveDistribution or list of float
+///     A predictive distribution is measured on its total.
+/// h : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from actuarialrs.risk import esscher
+/// >>> round(esscher([0.0, 1.0], math.log(3.0)), 12)
+/// 0.75
+#[pyfunction]
+pub(crate) fn esscher(dist: &Bound<'_, PyAny>, h: f64) -> PyResult<f64> {
+    act_prob::risk::esscher(&draws_of(dist)?, h).map_err(to_py)
+}
+
+/// Marginal expected shortfall of each component at level ``p``: its mean
+/// over the simulations where the total is in its worst ``1 - p``.
+///
+/// The same as ``allocate(pd, Distortion.tvar(p))``; it sums to the
+/// total's TVaR.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+/// p : float
+///
+/// Returns
+/// -------
+/// list of float
+///     One per component, in ``pd.components()`` order.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import PredictiveDistribution
+/// >>> from actuarialrs.risk import marginal_expected_shortfall
+/// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+/// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+/// >>> marginal_expected_shortfall(pd, 0.5)
+/// [2.5, 5.5]
+#[pyfunction]
+pub(crate) fn marginal_expected_shortfall(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    p: f64,
+) -> PyResult<Vec<f64>> {
+    let pd = &pd.inner;
+    py.detach(|| pd.marginal_expected_shortfall(p))
+        .map_err(to_py)
+}
+
+/// CoVaR of a component: the total's VaR at level ``q`` over the
+/// simulations where the component is at or above its own VaR at ``p``.
+///
+/// Compare it with the total's unconditional VaR at ``q`` to see how much
+/// one segment's bad years drag the portfolio.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+/// key : tuple
+///     The component's key.
+/// p : float
+///     The component's distress level.
+/// q : float
+///     The level of the total's VaR.
+///
+/// Returns
+/// -------
+/// float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If there is no component ``key``.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import PredictiveDistribution
+/// >>> from actuarialrs.risk import covar
+/// >>> pd = PredictiveDistribution(["lob"], [("a",), ("b",)],
+/// ...                             [[1.0, 0.0], [2.0, 1.0], [3.0, 5.0], [4.0, 1.0]])
+/// >>> covar(pd, ("a",), 0.75, 0.5)
+/// 5.0
+#[pyfunction]
+pub(crate) fn covar(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    key: Vec<KeyArg>,
+    p: f64,
+    q: f64,
+) -> PyResult<f64> {
+    let (pd, key) = (&pd.inner, key_from_py(key));
+    py.detach(|| pd.covar(&key, p, q)).map_err(to_py)
+}
+
+/// Esscher allocation: each component's mean under the Esscher transform
+/// of the total, ``E[X_j exp(h S)] / E[exp(h S)]``.
+///
+/// The contributions sum to ``esscher(pd, h)``; at ``h = 0`` they are the
+/// means.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+/// h : float
+///
+/// Returns
+/// -------
+/// list of float
+///     One per component, in ``pd.components()`` order.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import PredictiveDistribution
+/// >>> from actuarialrs.risk import esscher_allocation
+/// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+/// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+/// >>> esscher_allocation(pd, 0.0)
+/// [2.5, 3.5]
+#[pyfunction]
+pub(crate) fn esscher_allocation(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    h: f64,
+) -> PyResult<Vec<f64>> {
+    let pd = &pd.inner;
+    py.detach(|| pd.esscher_allocation(h)).map_err(to_py)
 }
 
 /// Capital allocation of a distortion risk measure, from ``capital``.

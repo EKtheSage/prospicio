@@ -56,6 +56,7 @@ mod actuarialrs_native {
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail,
-        PyStudentTCopula, allocate, capital, hill, iman_conover, mean_excess, simulate,
+        PyStudentTCopula, allocate, capital, covar, entropic, esscher, esscher_allocation, hill,
+        iman_conover, marginal_expected_shortfall, mean_excess, simulate,
     };
 }

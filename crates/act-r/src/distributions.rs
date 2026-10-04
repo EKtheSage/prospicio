@@ -524,6 +524,13 @@ pub(crate) fn components_from_keys(
 }
 
 /// Converts one R key column (character, integer or double) to key values.
+/// A component key from an R list or vector, one entry per dimension.
+pub(crate) fn key_from_list(key: List) -> Result<ComponentKey> {
+    key.values()
+        .map(|v| key_column(&v).map(|mut c| c.remove(0)))
+        .collect()
+}
+
 fn key_column(col: &Robj) -> Result<Vec<KeyValue>> {
     if let Some(s) = col.as_str_vector() {
         return Ok(s.into_iter().map(KeyValue::from).collect());
@@ -639,10 +646,7 @@ impl PredictiveDistribution {
     /// The component with this key (a list or vector, one entry per
     /// dimension), or NULL.
     fn marginal(&self, key: List) -> Result<Robj> {
-        let key: ComponentKey = key
-            .values()
-            .map(|v| key_column(&v).map(|mut c| c.remove(0)))
-            .collect::<Result<_>>()?;
+        let key = key_from_list(key)?;
         Ok(match self.inner.marginal(&key) {
             Some(inner) => Sampled { inner }.into(),
             None => ().into(),

@@ -5,7 +5,7 @@ NULL
 #'
 #' A concave distortion `g` of the survival function, giving the coherent
 #' risk measure `rho(X) = integral of g(S(x)) dx`. Every kind has a parameter
-#' value that gives the mean.
+#' value (or limit) that gives the mean.
 #'
 #' | `kind` | `g(s)` | `param` |
 #' |---|---|---|
@@ -13,9 +13,13 @@ NULL
 #' | `"wang"` | `pnorm(qnorm(s) + lambda)` | `lambda >= 0` |
 #' | `"proportional_hazard"` | `s^rho` | `rho` in `(0, 1]` |
 #' | `"dual_power"` | `1 - (1 - s)^beta` | `beta >= 1` |
+#' | `"exponential"` | `(1 - exp(-k s)) / (1 - exp(-k))` | `k > 0` |
 #'
-#' @param kind One of `"tvar"`, `"wang"`, `"proportional_hazard"` and
-#'   `"dual_power"`.
+#' The exponential kind is the spectral measure with exponential risk
+#' aversion; it gives the mean only in the limit `k -> 0`.
+#'
+#' @param kind One of `"tvar"`, `"wang"`, `"proportional_hazard"`,
+#'   `"dual_power"` and `"exponential"`.
 #' @param param The distortion's parameter.
 #' @returns A `distortion` object with `kind` and `param` properties. Use it
 #'   with [risk_measure()] and [allocate()].
@@ -32,7 +36,8 @@ distortion <- S7::new_class(
     kind = S7::new_property(S7::class_character, getter = function(self) self@ptr$kind()),
     param = S7::new_property(S7::class_double, getter = function(self) self@ptr$param())
   ),
-  constructor = function(kind = c("tvar", "wang", "proportional_hazard", "dual_power"), param) {
+  constructor = function(kind = c("tvar", "wang", "proportional_hazard", "dual_power", "exponential"),
+                         param) {
     kind <- match.arg(kind)
     S7::new_object(S7::S7_object(), ptr = rust_result(RiskDistortion$new(kind, as.double(param))))
   }
@@ -109,6 +114,96 @@ S7::method(allocate, predictive_distribution) <- function(x, distortion, ...) {
   out <- x@keys
   out$contribution <- rust_result(distortion@ptr$allocate(x@ptr), s7_call())
   out
+}
+
+#' Exponential-utility risk measures
+#'
+#' `entropic_risk()` is `(1 / theta) log E[exp(theta X)]`, the certainty
+#' equivalent of a loss under exponential utility: it rises from the mean
+#' (`theta -> 0`) to the largest value (`theta -> Inf`), and is
+#' `mu + theta sigma^2 / 2` for a normal loss. `esscher_premium()` is
+#' `E[X exp(h X)] / E[exp(h X)]`, the mean after tilting probability
+#' towards large losses: the mean at `h = 0`, `mu + h sigma^2` for a normal
+#' loss. Both treat the draws as equally likely.
+#'
+#' @param x A numeric vector of draws, a [sampled] or a
+#'   [predictive_distribution] (measured on its total).
+#' @param theta Risk aversion, positive.
+#' @param h Esscher parameter.
+#' @returns A single number.
+#' @name exponential_utility
+#' @examples
+#' entropic_risk(c(0, 1), log(2))
+#' esscher_premium(c(0, 1), log(3))
+NULL
+
+risk_draws <- function(x) {
+  if (S7::S7_inherits(x, predictive_distribution)) return(x@ptr$total()$draws())
+  if (S7::S7_inherits(x, sampled)) return(x@draws)
+  as.double(x)
+}
+
+#' @rdname exponential_utility
+#' @export
+entropic_risk <- function(x, theta) rust_result(entropic_rust(risk_draws(x), as.double(theta)))
+
+#' @rdname exponential_utility
+#' @export
+esscher_premium <- function(x, h) rust_result(esscher_rust(risk_draws(x), as.double(h)))
+
+#' Systemic risk contributions
+#'
+#' `marginal_expected_shortfall()` is each component's mean over the
+#' simulations where the total is in its worst `1 - p`; it equals
+#' `allocate(x, distortion("tvar", p))` and adds up to the total's TVaR.
+#' `esscher_allocation()` is each component's mean under the Esscher
+#' transform of the total, `E[X_j exp(h S)] / E[exp(h S)]`; it adds up to
+#' `esscher_premium(x, h)`. `covar()` is the total's VaR at level `q` over
+#' the simulations where one component is at or above its own VaR at `p`
+#' (Adrian and Brunnermeier's CoVaR, in the form of Girardi and Ergun):
+#' compare it with `VaR(x, q)` to see how much that component's bad years
+#' drag the portfolio.
+#'
+#' @param x A [predictive_distribution].
+#' @param p Level in `[0, 1]`: the total's tail for
+#'   `marginal_expected_shortfall()`, the component's distress for `covar()`.
+#' @param h Esscher parameter.
+#' @param key The component, a list with one entry per dimension.
+#' @param q Level of the total's VaR.
+#' @returns `marginal_expected_shortfall()` and `esscher_allocation()`: the
+#'   `keys` data frame of `x` with a `contribution` column. `covar()`: a
+#'   single number.
+#' @name systemic_risk
+#' @examples
+#' pd <- predictive_distribution(
+#'   matrix(c(1, 2, 3, 4, 0, 1, 5, 1), ncol = 2),
+#'   data.frame(lob = c("a", "b"))
+#' )
+#' marginal_expected_shortfall(pd, 0.5)
+#' esscher_allocation(pd, 0.1)
+#' covar(pd, list(lob = "a"), 0.75, 0.5)
+NULL
+
+#' @rdname systemic_risk
+#' @export
+marginal_expected_shortfall <- function(x, p) {
+  out <- x@keys
+  out$contribution <- rust_result(mes_rust(x@ptr, as.double(p)))
+  out
+}
+
+#' @rdname systemic_risk
+#' @export
+esscher_allocation <- function(x, h) {
+  out <- x@keys
+  out$contribution <- rust_result(esscher_allocation_rust(x@ptr, as.double(h)))
+  out
+}
+
+#' @rdname systemic_risk
+#' @export
+covar <- function(x, key, p, q) {
+  rust_result(covar_rust(x@ptr, as.list(key), as.double(p), as.double(q)))
 }
 
 #' Copulas

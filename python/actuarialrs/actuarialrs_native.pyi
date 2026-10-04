@@ -548,8 +548,9 @@ class Distortion:
     concave distortion ``g`` of the survival function.
     
     Make one with ``Distortion.tvar``, ``Distortion.wang``,
-    ``Distortion.proportional_hazard`` or ``Distortion.dual_power``. Every
-    one is coherent, and each has a parameter value that gives the mean.
+    ``Distortion.proportional_hazard``, ``Distortion.dual_power`` or
+    ``Distortion.exponential``. Every one is coherent, and each has a
+    parameter value that gives the mean (or a limit that does).
     
     Examples
     --------
@@ -571,6 +572,21 @@ class Distortion:
         ----------
         beta : float
             ``>= 1``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def exponential(k: float) -> Distortion:
+        """
+        Exponential spectral measure: ``g(s) = (1 - exp(-k s)) / (1 - exp(-k))``,
+        risk aversion that grows exponentially towards the worst outcomes.
+        
+        Parameters
+        ----------
+        k : float
+            Risk aversion, positive; the mean as ``k -> 0``.
         
         Returns
         -------
@@ -4956,6 +4972,43 @@ def claim_count(mean: float, dispersion: float) -> Any:
     NegativeBinomial(r=2.6666666666666665, beta=1.5)
     """
 
+def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:
+    """
+    CoVaR of a component: the total's VaR at level ``q`` over the
+    simulations where the component is at or above its own VaR at ``p``.
+    
+    Compare it with the total's unconditional VaR at ``q`` to see how much
+    one segment's bad years drag the portfolio.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+    key : tuple
+        The component's key.
+    p : float
+        The component's distress level.
+    q : float
+        The level of the total's VaR.
+    
+    Returns
+    -------
+    float
+    
+    Raises
+    ------
+    ValueError
+        If there is no component ``key``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.risk import covar
+    >>> pd = PredictiveDistribution(["lob"], [("a",), ("b",)],
+    ...                             [[1.0, 0.0], [2.0, 1.0], [3.0, 5.0], [4.0, 1.0]])
+    >>> covar(pd, ("a",), 0.75, 0.5)
+    5.0
+    """
+
 def crps(draws: Sequence[float], y: float) -> float:
     """
     Continuous ranked probability score of equally likely draws for an
@@ -5023,6 +5076,86 @@ def elpd_waic(log_lik: Sequence[Sequence[float]]) -> Elpd:
     Returns
     -------
     Elpd
+    """
+
+def entropic(dist: Any, theta: float) -> float:
+    """
+    Entropic risk measure ``(1 / theta) log E[exp(theta X)]``: the certainty
+    equivalent of a loss under exponential utility.
+    
+    It rises from the mean (``theta -> 0``) to the largest draw
+    (``theta -> inf``); for a normal loss it is ``mu + theta sigma**2 / 2``.
+    
+    Parameters
+    ----------
+    dist : Sampled, PredictiveDistribution or list of float
+        A predictive distribution is measured on its total.
+    theta : float
+        Risk aversion, positive.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> import math
+    >>> from actuarialrs.risk import entropic
+    >>> round(entropic([0.0, 1.0], math.log(2.0)), 12) == round(math.log2(1.5), 12)
+    True
+    """
+
+def esscher(dist: Any, h: float) -> float:
+    """
+    Esscher premium ``E[X exp(h X)] / E[exp(h X)]``: the mean after tilting
+    probability towards large losses.
+    
+    The mean at ``h = 0``; ``mu + h sigma**2`` for a normal loss.
+    
+    Parameters
+    ----------
+    dist : Sampled, PredictiveDistribution or list of float
+        A predictive distribution is measured on its total.
+    h : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> import math
+    >>> from actuarialrs.risk import esscher
+    >>> round(esscher([0.0, 1.0], math.log(3.0)), 12)
+    0.75
+    """
+
+def esscher_allocation(pd: PredictiveDistribution, h: float) -> list[float]:
+    """
+    Esscher allocation: each component's mean under the Esscher transform
+    of the total, ``E[X_j exp(h S)] / E[exp(h S)]``.
+    
+    The contributions sum to ``esscher(pd, h)``; at ``h = 0`` they are the
+    means.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+    h : float
+    
+    Returns
+    -------
+    list of float
+        One per component, in ``pd.components()`` order.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.risk import esscher_allocation
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> esscher_allocation(pd, 0.0)
+    [2.5, 3.5]
     """
 
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
@@ -5340,6 +5473,34 @@ def lppd(log_lik: Sequence[Sequence[float]]) -> float:
     >>> from actuarialrs.models import lppd
     >>> round(lppd([[math.log(0.5)], [math.log(0.25)]]), 12) == round(math.log(0.375), 12)
     True
+    """
+
+def marginal_expected_shortfall(pd: PredictiveDistribution, p: float) -> list[float]:
+    """
+    Marginal expected shortfall of each component at level ``p``: its mean
+    over the simulations where the total is in its worst ``1 - p``.
+    
+    The same as ``allocate(pd, Distortion.tvar(p))``; it sums to the
+    total's TVaR.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+    p : float
+    
+    Returns
+    -------
+    list of float
+        One per component, in ``pd.components()`` order.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.risk import marginal_expected_shortfall
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> marginal_expected_shortfall(pd, 0.5)
+    [2.5, 5.5]
     """
 
 def match_tower(attachments: Sequence[float], layer_losses: Sequence[float], frequencies: Sequence[float |None] |None = None, rule: str = "minimize") -> TowerModel:

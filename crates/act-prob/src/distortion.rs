@@ -21,9 +21,18 @@ use crate::distribution::check_probability;
 /// | `Wang(λ)` | `Φ(Φ⁻¹(s) + λ)` | `λ >= 0` |
 /// | `ProportionalHazard(ρ)` | `s^ρ` | `ρ` in `(0, 1]` |
 /// | `DualPower(β)` | `1 - (1 - s)^β` | `β >= 1` |
+/// | `Exponential(k)` | `(1 - e^(-k s)) / (1 - e^(-k))` | `k > 0` |
 ///
 /// Each has a parameter value that gives the mean (`Tvar(0)`, `Wang(0)`,
-/// `ProportionalHazard(1)`, `DualPower(1)`).
+/// `ProportionalHazard(1)`, `DualPower(1)`, and `Exponential(k)` as
+/// `k → 0`).
+///
+/// A concave distortion is a spectral risk measure,
+/// `ρ = ∫₀¹ φ(u) VaR_u du` with the non-decreasing risk-aversion spectrum
+/// `φ(u) = g'(1 - u)`. `Exponential(k)` is the spectral measure with
+/// exponential risk aversion, `φ(u) = k e^(-k(1-u)) / (1 - e^(-k))`
+/// (Acerbi, 2002; Dowd, Cotter and Sorwar, 2008); `Tvar(p)` is the one
+/// whose spectrum is flat above `p`.
 ///
 /// ```
 /// use act_prob::Distortion;
@@ -40,6 +49,7 @@ pub enum Distortion {
     Wang(f64),
     ProportionalHazard(f64),
     DualPower(f64),
+    Exponential(f64),
 }
 
 impl Distortion {
@@ -73,6 +83,15 @@ impl Distortion {
         Ok(Self::DualPower(beta))
     }
 
+    /// The spectral measure with exponential risk aversion `k > 0`: the
+    /// larger `k`, the more weight on the worst outcomes.
+    pub fn exponential(k: f64) -> Result<Self> {
+        if !(k.is_finite() && k > 0.0) {
+            return Err(invalid("k", k, "must be finite and positive"));
+        }
+        Ok(Self::Exponential(k))
+    }
+
     /// The distortion `g(s)` of a survival probability `s` in `[0, 1]`.
     pub fn g(&self, s: f64) -> f64 {
         if s <= 0.0 {
@@ -87,6 +106,7 @@ impl Distortion {
             Self::Wang(lambda) => norm_cdf(norm_quantile(s) + lambda),
             Self::ProportionalHazard(rho) => s.powf(rho),
             Self::DualPower(beta) => -((-s).ln_1p() * beta).exp_m1(),
+            Self::Exponential(k) => (-k * s).exp_m1() / (-k).exp_m1(),
         }
     }
 
@@ -170,6 +190,19 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On a uniform, `∫₀¹ φ(u) u du = (e^k (k - 1) + 1) / (k (e^k - 1))`.
+    #[test]
+    fn exponential_spectral_on_a_uniform() {
+        let n = 100_000;
+        let u: Vec<f64> = (0..n).map(|i| (i as f64 + 0.5) / n as f64).collect();
+        for k in [0.5f64, 3.0, 20.0] {
+            let want = (k.exp() * (k - 1.0) + 1.0) / (k * k.exp_m1());
+            let got = Distortion::exponential(k).unwrap().apply_sorted(&u);
+            assert!((got - want).abs() < 1e-6, "{k}: {got} vs {want}");
+        }
+        assert!(Distortion::exponential(0.0).is_err());
+    }
     use crate::risk::tvar_sorted;
 
     const X: [f64; 5] = [10.0, 20.0, 30.0, 40.0, 50.0];

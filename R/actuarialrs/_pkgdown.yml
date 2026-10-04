@@ -89,6 +89,8 @@ reference:
       - risk_measure
       - allocate
       - capital_allocation
+      - exponential_utility
+      - systemic_risk
   - title: Models
     contents:
       - glm_fit
