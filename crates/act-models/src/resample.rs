@@ -101,7 +101,7 @@ pub fn time_ordered(periods: &[i64], n_test: usize) -> Result<Vec<Split>> {
 
 /// Fits `model` on each split's training rows and scores its predictions
 /// on the test rows with `score(y_test, predicted, test_design)`. Returns
-/// one score per split.
+/// one score per split. Splits run in parallel ([`map_splits`]).
 ///
 /// ```
 /// use act_models::resample::{cross_validate, k_fold};
@@ -135,8 +135,8 @@ pub fn cross_validate<M, S>(
     score: S,
 ) -> Result<Vec<f64>>
 where
-    M: Model,
-    S: Fn(&[f64], &[f64], &Design) -> f64,
+    M: Model + Sync,
+    S: Fn(&[f64], &[f64], &Design) -> f64 + Sync,
 {
     if y.len() != design.n_rows() {
         return Err(Error::Data(format!(
@@ -145,17 +145,55 @@ where
             design.n_rows()
         )));
     }
-    splits
-        .iter()
-        .map(|s| {
-            let train = design.select(&s.train);
-            let y_train: Vec<f64> = s.train.iter().map(|&i| y[i]).collect();
-            let fitted = model.fit(&train, &y_train)?;
-            let test = design.select(&s.test);
-            let y_test: Vec<f64> = s.test.iter().map(|&i| y[i]).collect();
-            let pred = fitted.predict(&test)?;
-            Ok(score(&y_test, &pred, &test))
-        })
+    map_splits(splits, |s| {
+        let train = design.select(&s.train);
+        let y_train: Vec<f64> = s.train.iter().map(|&i| y[i]).collect();
+        let fitted = model.fit(&train, &y_train)?;
+        let test = design.select(&s.test);
+        let y_test: Vec<f64> = s.test.iter().map(|&i| y[i]).collect();
+        let pred = fitted.predict(&test)?;
+        Ok(score(&y_test, &pred, &test))
+    })
+}
+
+/// Runs `f` on every split in parallel, one thread per available core at
+/// most, and returns the results in split order (the first error, in split
+/// order, if any fails). Each split's work is independent and seeded on
+/// its own, so results do not depend on the number of threads.
+pub fn map_splits<T, F>(splits: &[Split], f: F) -> Result<Vec<T>>
+where
+    T: Send,
+    F: Fn(&Split) -> Result<T> + Sync,
+{
+    let workers = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(splits.len())
+        .max(1);
+    if workers == 1 {
+        return splits.iter().map(&f).collect();
+    }
+    let mut slots: Vec<Option<Result<T>>> = (0..splits.len()).map(|_| None).collect();
+    std::thread::scope(|scope| {
+        let f = &f;
+        let handles: Vec<_> = (0..workers)
+            .map(|w| {
+                scope.spawn(move || {
+                    (w..splits.len())
+                        .step_by(workers)
+                        .map(|i| (i, f(&splits[i])))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        for h in handles {
+            for (i, r) in h.join().expect("a cross-validation worker panicked") {
+                slots[i] = Some(r);
+            }
+        }
+    });
+    slots
+        .into_iter()
+        .map(|r| r.expect("every split ran"))
         .collect()
 }
 
@@ -181,9 +219,9 @@ pub fn grid_search<P, M, B, S>(
     score: S,
 ) -> Result<GridSearch<P>>
 where
-    M: Model,
+    M: Model + Sync,
     B: Fn(&P) -> M,
-    S: Fn(&[f64], &[f64], &Design) -> f64,
+    S: Fn(&[f64], &[f64], &Design) -> f64 + Sync,
 {
     if candidates.is_empty() {
         return Err(Error::InvalidParameter {
@@ -262,10 +300,10 @@ pub fn random_search<P, M, D, B, S>(
     score: S,
 ) -> Result<GridSearch<P>>
 where
-    M: Model,
+    M: Model + Sync,
     D: FnMut(&mut StreamRng) -> P,
     B: Fn(&P) -> M,
-    S: Fn(&[f64], &[f64], &Design) -> f64,
+    S: Fn(&[f64], &[f64], &Design) -> f64 + Sync,
 {
     let mut rng = StreamRng::new(seed, 0);
     let candidates = (0..n).map(|_| draw(&mut rng)).collect();
@@ -336,6 +374,26 @@ fn complement(n: usize, test: Vec<usize>) -> Split {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn map_splits_keeps_order_and_the_first_error() {
+        let splits = k_fold(40, 8, 3).unwrap();
+        let sums = map_splits(&splits, |s| Ok(s.test.iter().sum::<usize>())).unwrap();
+        let serial: Vec<usize> = splits.iter().map(|s| s.test.iter().sum()).collect();
+        assert_eq!(sums, serial);
+        let err = map_splits(&splits, |s| {
+            if s.test.contains(&splits[5].test[0]) || s.test.contains(&splits[2].test[0]) {
+                Err(Error::Data(format!("fold with {}", s.test[0])))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            Error::Data(format!("fold with {}", splits[2].test[0])).to_string()
+        );
+    }
 
     #[test]
     fn k_fold_partitions_and_replays() {

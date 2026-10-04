@@ -17,7 +17,7 @@
 //! checks against glmnet. `α = 1` is the lasso, `α = 0` ridge.
 
 use act_core::{Error, Result};
-use act_models::resample::Split;
+use act_models::resample::{Split, map_splits};
 use act_models::{Design, Family, Fitted, Link, Model};
 use act_prob::{PredictiveDistribution, Provenance};
 
@@ -470,7 +470,7 @@ impl ElasticNet {
     /// mean over folds weighted by each test fold's total weight, with a
     /// standard error from the folds' weighted spread. Pass the `λ` values
     /// from [`lambda_path`](Self::lambda_path) on the full data, largest
-    /// first.
+    /// first. Folds run in parallel.
     ///
     /// ```
     /// use act_glm::net::ElasticNet;
@@ -511,9 +511,7 @@ impl ElasticNet {
                 design.n_rows()
             )));
         }
-        let mut fold_scores = Vec::with_capacity(splits.len());
-        let mut fold_weights = Vec::with_capacity(splits.len());
-        for s in splits {
+        let folds = map_splits(splits, |s| {
             let train = design.select(&s.train);
             let y_train: Vec<f64> = s.train.iter().map(|&i| y[i]).collect();
             let test = design.select(&s.test);
@@ -527,9 +525,9 @@ impl ElasticNet {
                     Ok(dev(self.family, &y_test, &mu, test.weights()) / total)
                 })
                 .collect::<Result<Vec<f64>>>()?;
-            fold_scores.push(scores);
-            fold_weights.push(total);
-        }
+            Ok((scores, total))
+        })?;
+        let (fold_scores, fold_weights): (Vec<Vec<f64>>, Vec<f64>) = folds.into_iter().unzip();
         Ok(CvPath::new(lambdas.to_vec(), fold_scores, &fold_weights))
     }
 }
