@@ -563,3 +563,29 @@ fn elpd_matches_loo() {
         }
     });
 }
+
+#[test]
+fn stacking_and_pseudo_bma_weights_match_the_reference() {
+    // validation/scripts/stacking_weights.py: held-out log densities of four
+    // claim-count models, one column per model.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/stacking_lpd.csv");
+    let text = std::fs::read_to_string(path).expect("stacking_lpd.csv");
+    let mut lines = text.lines();
+    let models: Vec<String> = lines.next().unwrap().split(',').map(String::from).collect();
+    let mut lpd = vec![Vec::new(); models.len()];
+    for line in lines {
+        for (col, v) in lpd.iter_mut().zip(line.split(',')) {
+            col.push(v.parse::<f64>().unwrap());
+        }
+    }
+    let stacking = act_models::stack::stacking_weights(&lpd).unwrap();
+    let pseudo = act_models::stack::pseudo_bma_weights(&lpd, None).unwrap();
+    check(&reference("stacking_weights.csv"), |c| {
+        let k = models.iter().position(|m| m == c.get("model"))?;
+        match c.get("method") {
+            "stacking" => Some(stacking[k]),
+            "pseudo_bma" => Some(pseudo[k]),
+            _ => None,
+        }
+    });
+}

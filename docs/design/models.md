@@ -36,6 +36,18 @@ models and compares them.
     paired standard error of each model's difference from the best.
     Python `compare` / `Comparison`, R `compare_models`. The diagonal
     backtest on a triangle stays in the Reserving lane.
+  - `stack`: `stacking_weights` (Yao et al., 2018: maximize the log score
+    of the mixture over the simplex; EM, then active-set Newton checked
+    against the KKT conditions) and `pseudo_bma_weights` (softmax of elpd,
+    or pseudo-BMA+ with the Bayesian bootstrap), from pointwise held-out
+    log densities of any model: PSIS-LOO for Bayesian fits, cross-validated
+    log densities otherwise. `PredictiveDistribution::blend` mixes the
+    models' simulations row by row. Parity
+    (`validation/scripts/stacking_weights.py`): SLSQP as in BayesBlend
+    (MIT), polished by Newton, to 1e-10; `loo::stacking_weights` stops
+    early and agrees to about 1e-3. BayesBlend's Bayesian and hierarchical
+    stacking (weights that vary with covariates) need the sampler and come
+    after the Bayesian GLM.
 - `act-glm`: `Glm` (family, link, dispersion fixed, Pearson or
   deviance-based) fitted by IRLS with offsets and prior weights,
   step-halving, and convergence on both the deviance and the coefficients;

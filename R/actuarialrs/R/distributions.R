@@ -592,3 +592,25 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 .onLoad <- function(libname, pkgname) {
   S7::methods_register()
 }
+
+#' Blend predictive distributions
+#'
+#' Simulation `i` of the result is simulation `i` of model `k`, with `k`
+#' drawn with probability `weights[k]` from stream `i` of `seed`. Rows stay
+#' whole, so sums across components remain coherent. Use weights from
+#' [stacking_weights()] or [pseudo_bma_weights()].
+#'
+#' @param models A list of [predictive_distribution]s with the same keys
+#'   and number of simulations.
+#' @param weights Non-negative weights, one per model; normalized.
+#' @param seed Seed, a whole number.
+#' @returns A [predictive_distribution].
+#' @export
+#' @examples
+#' a <- predictive_distribution(matrix(0, 1000, 1), data.frame(lob = "x"))
+#' b <- predictive_distribution(matrix(1, 1000, 1), data.frame(lob = "x"))
+#' mean(blend_predictive(list(a, b), c(0.25, 0.75), seed = 7))
+blend_predictive <- function(models, weights, seed) {
+  ptrs <- lapply(models, function(m) m@ptr)
+  predictive_distribution(ptr = rust_result(blend_rust(ptrs, as.double(weights), as.double(seed))))
+}

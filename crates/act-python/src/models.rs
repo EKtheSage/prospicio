@@ -1839,3 +1839,65 @@ pub(crate) fn mcmc_diagnostics(chains: Vec<Vec<f64>>) -> PyResult<HashMap<String
         ),
     ]))
 }
+
+/// Stacking weights from pointwise held-out log predictive densities
+/// (Yao et al., 2018): the weights on the simplex that maximize the log
+/// score of the mixture of the models' predictive distributions.
+///
+/// Works for any model: pass PSIS-LOO pointwise values (``Elpd.pointwise``)
+/// for a Bayesian fit, or cross-validated log densities for any other. A
+/// model that adds nothing gets weight exactly 0.
+///
+/// Parameters
+/// ----------
+/// lpd : list of list of float
+///     One list per model, each with one log density per observation.
+///
+/// Returns
+/// -------
+/// list of float
+///     One weight per model, summing to 1.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import stacking_weights
+/// >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
+/// >>> [round(x, 9) for x in w]
+/// [0.5, 0.5]
+#[pyfunction]
+pub(crate) fn stacking_weights(py: Python<'_>, lpd: Vec<Vec<f64>>) -> PyResult<Vec<f64>> {
+    py.detach(|| act_models::stack::stacking_weights(&lpd))
+        .map_err(to_py)
+}
+
+/// Pseudo-BMA weights, ``w_k`` proportional to ``exp(elpd_k)``; with
+/// ``bootstrap=True``, pseudo-BMA+ weights averaged over Bayesian-bootstrap
+/// replicates of the observations, which keeps a model that is only
+/// slightly better from taking all the weight.
+///
+/// Parameters
+/// ----------
+/// lpd : list of list of float
+///     One list per model, as for ``stacking_weights``.
+/// bootstrap : bool, default True
+/// n_draws : int, default 1000
+///     Bootstrap replicates.
+/// seed : int, default 0
+///     Replicate ``b`` uses stream ``b`` of ``seed``.
+///
+/// Returns
+/// -------
+/// list of float
+#[pyfunction]
+#[pyo3(signature = (lpd, bootstrap = true, n_draws = 1000, seed = 0))]
+pub(crate) fn pseudo_bma_weights(
+    py: Python<'_>,
+    lpd: Vec<Vec<f64>>,
+    bootstrap: bool,
+    n_draws: usize,
+    seed: u64,
+) -> PyResult<Vec<f64>> {
+    let bb = bootstrap.then_some((n_draws, seed));
+    py.detach(|| act_models::stack::pseudo_bma_weights(&lpd, bb))
+        .map_err(to_py)
+}

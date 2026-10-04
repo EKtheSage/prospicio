@@ -246,3 +246,26 @@ def test_glm_fit_save_and_load():
     assert again.to_json() == fit.to_json()
     with pytest.raises(ValueError):
         GlmFit.from_json('{"format": "other"}')
+
+
+def test_stacking_and_blending():
+    from actuarialrs.distributions import PredictiveDistribution
+    from actuarialrs.models import pseudo_bma_weights, stacking_weights
+
+    a = [-0.1, -0.1, -3.0, -3.0]
+    b = [-3.0, -3.0, -0.1, -0.1]
+    assert stacking_weights([a, b]) == pytest.approx([0.5, 0.5], abs=1e-9)
+    worse = [v - 1.0 for v in a]
+    assert stacking_weights([a, worse]) == [1.0, 0.0]
+    plain = pseudo_bma_weights([a, worse], bootstrap=False)
+    assert plain[0] == pytest.approx(1 / (1 + math.exp(-4.0)))
+    plus = pseudo_bma_weights([a, worse], n_draws=500, seed=3)
+    assert sum(plus) == pytest.approx(1.0) and plus[0] > 0.5
+    with pytest.raises(ValueError):
+        stacking_weights([a])
+    pa = PredictiveDistribution(["lob"], [("x",), ("y",)], [[1.0, -1.0]] * 200)
+    pb = PredictiveDistribution(["lob"], [("x",), ("y",)], [[2.0, -2.0]] * 200)
+    mix = PredictiveDistribution.blend([pa, pb], [1.0, 1.0], 5)
+    assert all(t == 0.0 for t in mix.total().draws)
+    with pytest.raises(ValueError):
+        PredictiveDistribution.blend([pa, pb], [1.0], 5)

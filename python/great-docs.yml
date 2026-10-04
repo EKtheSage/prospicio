@@ -85,6 +85,8 @@ reference:
       - models.time_ordered
       - models.mcmc_diagnostics
       - models.elpd_loo
+      - models.stacking_weights
+      - models.pseudo_bma_weights
       - models.elpd_waic
       - models.lppd
       - models.Elpd

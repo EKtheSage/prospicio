@@ -712,8 +712,25 @@ impl PredictiveDistribution {
     }
 }
 
+/// Blends predictive distributions with `weights`; see
+/// `act_prob::PredictiveDistribution::blend`.
+#[extendr]
+fn blend_rust(models: List, weights: &[f64], seed: f64) -> Result<PredictiveDistribution> {
+    let refs: Vec<&PredictiveDistribution> = models
+        .values()
+        .map(|m| {
+            <&PredictiveDistribution>::try_from(&m)
+                .map_err(|_| Error::Other("every model must be a predictive_distribution".into()))
+        })
+        .collect::<Result<_>>()?;
+    let inner: Vec<&PdInner> = refs.iter().map(|p| &p.inner).collect();
+    let pd = PdInner::blend(&inner, weights, whole(seed, "seed")?).map_err(to_r)?;
+    Ok(PredictiveDistribution { inner: pd })
+}
+
 extendr_module! {
     mod distributions;
+    fn blend_rust;
     impl Lognormal;
     impl Poisson;
     impl NegativeBinomial;

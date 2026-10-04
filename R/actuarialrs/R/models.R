@@ -838,6 +838,58 @@ elpd_result <- function(r) {
   r
 }
 
+#' Model weights for blending: stacking and pseudo-BMA
+#'
+#' Weights from pointwise held-out log predictive densities (Yao, Vehtari,
+#' Simpson and Gelman, 2018), for any model: PSIS-LOO `pointwise` values
+#' from [elpd_loo()] for a Bayesian fit, or cross-validated log densities
+#' for a GLM, GAM or neural network. `stacking_weights()` maximizes the log
+#' score of the mixture of the models' predictive distributions; a model
+#' that adds nothing gets weight exactly 0. `pseudo_bma_weights()` is
+#' proportional to `exp(elpd)`; with `bootstrap = TRUE` (pseudo-BMA+) it is
+#' averaged over Bayesian-bootstrap replicates, which keeps a model that is
+#' only slightly better from taking all the weight. Blend the models'
+#' simulations with [blend_predictive()].
+#'
+#' Stacking matches an SLSQP optimum polished by Newton's method to 1e-10
+#' (`validation/scripts/stacking_weights.py`); `loo::stacking_weights()`
+#' stops earlier and agrees to about 1e-3.
+#'
+#' @param lpd A matrix (or data frame) of log densities, one row per
+#'   observation and one column per model.
+#' @param bootstrap Use the Bayesian bootstrap (pseudo-BMA+).
+#' @param n_draws Bootstrap replicates.
+#' @param seed Seed; replicate `b` uses stream `b`.
+#' @returns A named vector of weights summing to 1, named by the columns
+#'   of `lpd`.
+#' @name model_weights
+#' @examples
+#' lpd <- cbind(a = c(-0.1, -0.1, -3, -3), b = c(-3, -3, -0.1, -0.1))
+#' stacking_weights(lpd)
+#' pseudo_bma_weights(lpd, bootstrap = FALSE)
+NULL
+
+model_weights_names <- function(lpd, w) {
+  nm <- colnames(lpd)
+  if (is.null(nm)) nm <- paste0("model", seq_along(w))
+  stats::setNames(w, nm)
+}
+
+#' @rdname model_weights
+#' @export
+stacking_weights <- function(lpd) {
+  lpd <- as.matrix(lpd)
+  model_weights_names(lpd, rust_result(stacking_weights_rust(as.double(lpd), ncol(lpd))))
+}
+
+#' @rdname model_weights
+#' @export
+pseudo_bma_weights <- function(lpd, bootstrap = TRUE, n_draws = 1000, seed = 0) {
+  lpd <- as.matrix(lpd)
+  w <- pseudo_bma_weights_rust(as.double(lpd), ncol(lpd), if (bootstrap) n_draws else 0, seed)
+  model_weights_names(lpd, rust_result(w))
+}
+
 #' @rdname elpd
 #' @export
 elpd_loo <- function(log_lik, r_eff = NULL) {
