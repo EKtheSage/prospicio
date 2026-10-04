@@ -39,6 +39,17 @@ Uc <- rowsum(U, cl)
 near(robust_vcov(m, cluster = cl), B %*% crossprod(Uc) %*% B * 4 / 3 * 7 / 4, 1e-6)
 stopifnot(inherits(try(robust_vcov(m, cluster = cl[-1]), silent = TRUE), "try-error"))
 
+# Save and load: exact round trip; predictions agree.
+mf <- tempfile(fileext = ".rds")
+save_model(m, mf)
+m2 <- load_model(mf)
+stopifnot(identical(coef(m2), coef(m)), identical(m2@covariance, m@covariance))
+stopifnot(identical(predict(m2, nd), predict(m, nd)))
+stopifnot(identical(m2@ptr$input_hash(), m@ptr$input_hash()))
+stopifnot(inherits(try(robust_vcov(m2), silent = TRUE), "try-error"))
+saveRDS(list(1), mf)
+stopifnot(inherits(try(load_model(mf), silent = TRUE), "try-error"))
+
 g <- glm_fit(age ~ region, d, family = "gamma", link = "log")
 rg <- stats::glm(age ~ region, d, family = Gamma(link = "log"), control = tight)
 near(coef(g), coef(rg), 1e-8)

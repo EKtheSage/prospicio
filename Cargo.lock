@@ -38,6 +38,7 @@ dependencies = [
  "act-math",
  "act-models",
  "act-prob",
+ "serde_json",
 ]
 
 [[package]]

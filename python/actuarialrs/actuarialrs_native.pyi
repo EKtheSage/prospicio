@@ -1670,6 +1670,7 @@ class GlmFit:
     """
     A fitted GLM, from ``Glm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def aic(self, /) -> float:
@@ -1705,6 +1706,30 @@ class GlmFit:
     def fitted(self, /) -> list[float]:
         """
         Fitted means on the training data.
+        """
+    @staticmethod
+    def from_json(text: str) -> GlmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        GlmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
+        """
+    @property
+    def input_hash(self, /) -> str:
+        """
+        Hash of the training data (design, offset, weights, response).
         """
     @property
     def iterations(self, /) -> int:
@@ -1818,6 +1843,28 @@ class GlmFit:
     def std_errors(self, /) -> list[float]:
         """
         Standard errors.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: spec, estimates, covariance,
+        fit statistics, fitted values and provenance (crate version and a
+        hash of the training data). ``GlmFit.from_json`` reads it back
+        exactly; pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from actuarialrs.models import Design, Glm, GlmFit
+        >>> d = Design([[1.0] * 4, [0.0, 1.0, 2.0, 3.0]], ["(Intercept)", "x"])
+        >>> fit = Glm("poisson").fit(d, [1.0, 2.0, 2.0, 5.0])
+        >>> GlmFit.from_json(fit.to_json()).coefficients == fit.coefficients
+        True
+        >>> pickle.loads(pickle.dumps(fit)).input_hash == fit.input_hash
+        True
         """
 
 @final

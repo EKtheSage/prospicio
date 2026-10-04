@@ -348,6 +348,12 @@ GlmModel$covariance <- function() .Call(wrap__GlmModel__covariance, self)
 
 GlmModel$robust_covariance <- function(kind, groups) .Call(wrap__GlmModel__robust_covariance, self, kind, groups)
 
+GlmModel$to_json <- function() .Call(wrap__GlmModel__to_json, self)
+
+GlmModel$from_json <- function(text) .Call(wrap__GlmModel__from_json, text)
+
+GlmModel$input_hash <- function() .Call(wrap__GlmModel__input_hash, self)
+
 GlmModel$dispersion <- function() .Call(wrap__GlmModel__dispersion, self)
 
 GlmModel$deviance <- function() .Call(wrap__GlmModel__deviance, self)

@@ -55,4 +55,6 @@ rayon = "1.12.0"
 # FFT aggregation in act-aggregate. Pure Rust (SIMD via intrinsics, no C), so
 # it builds for the Windows R target and WASM.
 rustfft = "6.4.1"
-serde_json = "1.0.151"
+# float_roundtrip: model artifacts store estimates as JSON numbers and must
+# read back bit for bit.
+serde_json = { version = "1.0.151", features = ["float_roundtrip"] }

@@ -9,6 +9,7 @@
 //! ([`GlmFit::robust_covariance`]). [`gam::Gam`] adds penalized B-spline
 //! smooths, with smoothing chosen by GCV or UBRE.
 
+mod artifact;
 pub mod gam;
 pub mod net;
 mod robust;
@@ -114,6 +115,8 @@ pub struct GlmFit {
     n_obs: usize,
     iterations: usize,
     fitted: Vec<f64>,
+    /// Hash of the training data (design, offset, weights, response).
+    input_hash: String,
 }
 
 impl Model for Glm {
@@ -231,8 +234,21 @@ impl Glm {
             n_obs: n,
             iterations,
             fitted: mu,
+            input_hash: input_hash(design, y),
         })
     }
+}
+
+/// Hash of a fit's training data: column names and values, offset,
+/// weights and response.
+fn input_hash(design: &Design, y: &[f64]) -> String {
+    let mut h = act_prob::InputHasher::new();
+    h.str("glm_fit");
+    for (j, name) in design.names().iter().enumerate() {
+        h.str(name).f64s(design.column(j));
+    }
+    h.f64s(design.offset()).f64s(design.weights()).f64s(y);
+    h.finish()
 }
 
 /// What IRLS returns: coefficients, `Xᵀ W X` (unpenalized) at the
@@ -486,6 +502,12 @@ impl GlmFit {
     /// Fitted means on the training data.
     pub fn fitted(&self) -> &[f64] {
         &self.fitted
+    }
+
+    /// Hash of the training data (`"blake3:"` and 64 hex digits): design
+    /// columns and names, offset, weights and response.
+    pub fn input_hash(&self) -> &str {
+        &self.input_hash
     }
 
     fn check_design(&self, design: &Design) -> Result<()> {
