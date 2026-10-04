@@ -12,7 +12,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
 use crate::distributions::{
-    AnySeverity, Grid, PredictiveDistribution, Sampled, components_from_keys,
+    AnySeverity, Grid, PredictiveDistribution, Sampled, components_from_keys, key_from_list,
 };
 use crate::{to_r, whole};
 
@@ -24,13 +24,15 @@ pub(crate) struct RiskDistortion {
 
 #[extendr]
 impl RiskDistortion {
-    /// `kind` is "tvar", "wang", "proportional_hazard" or "dual_power".
+    /// `kind` is "tvar", "wang", "proportional_hazard", "dual_power" or
+    /// "exponential".
     fn new(kind: &str, param: f64) -> Result<Self> {
         let inner = match kind {
             "tvar" => Distortion::tvar(param),
             "wang" => Distortion::wang(param),
             "proportional_hazard" => Distortion::proportional_hazard(param),
             "dual_power" => Distortion::dual_power(param),
+            "exponential" => Distortion::exponential(param),
             other => return Err(Error::Other(format!("unknown distortion {other:?}"))),
         }
         .map_err(to_r)?;
@@ -43,6 +45,7 @@ impl RiskDistortion {
             Distortion::Wang(_) => "wang",
             Distortion::ProportionalHazard(_) => "proportional_hazard",
             Distortion::DualPower(_) => "dual_power",
+            Distortion::Exponential(_) => "exponential",
         }
     }
 
@@ -51,7 +54,8 @@ impl RiskDistortion {
             Distortion::Tvar(a)
             | Distortion::Wang(a)
             | Distortion::ProportionalHazard(a)
-            | Distortion::DualPower(a) => a,
+            | Distortion::DualPower(a)
+            | Distortion::Exponential(a) => a,
         }
     }
 
@@ -110,6 +114,48 @@ impl RiskDistortion {
             .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
         Ok(pd.inner.allocate(&self.inner))
     }
+}
+
+fn as_predictive(pd: &Robj) -> Result<&PredictiveDistribution> {
+    <&PredictiveDistribution>::try_from(pd)
+        .map_err(|_| Error::Other("expected a predictive_distribution".into()))
+}
+
+/// Entropic risk measure of draws at risk aversion `theta`.
+#[extendr]
+fn entropic_rust(draws: &[f64], theta: f64) -> Result<f64> {
+    act_prob::risk::entropic(draws, theta).map_err(to_r)
+}
+
+/// Esscher premium of draws at `h`.
+#[extendr]
+fn esscher_rust(draws: &[f64], h: f64) -> Result<f64> {
+    act_prob::risk::esscher(draws, h).map_err(to_r)
+}
+
+/// Marginal expected shortfall of each component at level `p`.
+#[extendr]
+fn mes_rust(pd: Robj, p: f64) -> Result<Vec<f64>> {
+    as_predictive(&pd)?
+        .inner
+        .marginal_expected_shortfall(p)
+        .map_err(to_r)
+}
+
+/// CoVaR of the component `key`.
+#[extendr]
+fn covar_rust(pd: Robj, key: List, p: f64, q: f64) -> Result<f64> {
+    let key = key_from_list(key)?;
+    as_predictive(&pd)?.inner.covar(&key, p, q).map_err(to_r)
+}
+
+/// Esscher allocation of the total at `h`, one value per component.
+#[extendr]
+fn esscher_allocation_rust(pd: Robj, h: f64) -> Result<Vec<f64>> {
+    as_predictive(&pd)?
+        .inner
+        .esscher_allocation(h)
+        .map_err(to_r)
 }
 
 enum AnyCopula {
@@ -315,6 +361,11 @@ fn hill_rust(draws: &[f64], ks: &[f64]) -> Result<Vec<f64>> {
 
 extendr_module! {
     mod risk;
+    fn entropic_rust;
+    fn esscher_rust;
+    fn mes_rust;
+    fn covar_rust;
+    fn esscher_allocation_rust;
     fn iman_conover_reorder;
     fn gpd_mle;
     fn mean_excess_rust;

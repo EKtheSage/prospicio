@@ -10,7 +10,12 @@ from actuarialrs.risk import (
     StudentTCopula,
     allocate,
     capital,
+    covar,
+    entropic,
+    esscher,
+    esscher_allocation,
     iman_conover,
+    marginal_expected_shortfall,
     simulate,
 )
 
@@ -115,3 +120,35 @@ def test_capital_methods():
     assert sum(marginal.allocated) < marginal.total
     with pytest.raises(ValueError):
         capital(pd, d, "nope")
+
+
+def test_exponential_utility_and_systemic_measures():
+    k = 3.0
+    u = [(i + 0.5) / 100_000 for i in range(100_000)]
+    want = (math.exp(k) * (k - 1.0) + 1.0) / (k * math.expm1(k))
+    assert Distortion.exponential(k).measure(Sampled(u)) == pytest.approx(want, abs=1e-6)
+    assert repr(Distortion.exponential(k)) == "Distortion.exponential(3.0)"
+    with pytest.raises(ValueError):
+        Distortion.exponential(0.0)
+
+    s = Sampled(X)
+    assert entropic(s, 1e-9) == pytest.approx(30.0, abs=1e-6)
+    assert entropic(X, 50.0) == pytest.approx(50.0, abs=0.1)
+    assert esscher(s, 0.0) == pytest.approx(30.0)
+    with pytest.raises(ValueError):
+        entropic(X, 0.0)
+    with pytest.raises(TypeError):
+        esscher("x", 0.1)
+
+    pd = PredictiveDistribution(
+        ["lob"],
+        [("a",), ("b",)],
+        [[float((i * 37) % 101), float((i * 53) % 97)] for i in range(300)],
+    )
+    assert marginal_expected_shortfall(pd, 0.9) == allocate(pd, Distortion.tvar(0.9))
+    alloc = esscher_allocation(pd, 0.02)
+    assert sum(alloc) == pytest.approx(esscher(pd, 0.02))
+    # At p = 0 every simulation is in distress: the unconditional VaR.
+    assert covar(pd, ("a",), 0.0, 0.5) == pd.total().var(0.5)
+    with pytest.raises(ValueError):
+        covar(pd, ("z",), 0.9, 0.5)

@@ -114,6 +114,11 @@ reference:
       - risk.Distortion
       - risk.allocate
       - risk.capital
+      - risk.entropic
+      - risk.esscher
+      - risk.marginal_expected_shortfall
+      - risk.covar
+      - risk.esscher_allocation
       - risk.Allocation
   - title: Dependence
     desc: Copulas, and reordering existing draws to a target correlation.

@@ -50,6 +50,21 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `iman_conover`), and for EVT, Python `Gpd` and `PotTail` and R
   `gpd_fit` and `pot_tail` (with `VaR` and `TVaR` methods).
 
+- Spectral measures with exponential risk aversion,
+  `Distortion::Exponential(k)`: `g(s) = (1 - e^(-ks)) / (1 - e^(-k))`.
+- Exponential-utility measures, which are not distortions:
+  `risk::entropic` (`(1/θ) log E e^(θX)`, convex but not positively
+  homogeneous) and `risk::esscher` (the Esscher premium).
+- Systemic measures on a `PredictiveDistribution`:
+  `marginal_expected_shortfall(p)` (the CoTVaRs, `allocate` with `Tvar`),
+  `covar(component, p, q)` (the total's VaR at `q` given the component at
+  or above its VaR at `p`, as Girardi and Ergün) and
+  `esscher_allocation(h)` (adds up to the total's Esscher premium).
+  Python `Distortion.exponential`, `entropic`, `esscher`,
+  `marginal_expected_shortfall`, `covar`, `esscher_allocation`; R
+  `distortion("exponential", k)`, `entropic_risk`, `esscher_premium`,
+  `marginal_expected_shortfall`, `covar`, `esscher_allocation`.
+
 - EVT diagnostics: `evt::mean_excess` (the empirical mean-excess function
   with counts above each threshold, linear above a threshold where a GPD
   fits) and `evt::hill` (Hill estimates of the tail index for a range of

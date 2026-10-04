@@ -8,8 +8,9 @@ use act_core::{Error, Period, Result, StreamRng};
 use rayon::prelude::*;
 
 use crate::distortion::Distortion;
-use crate::distribution::Distribution;
+use crate::distribution::{Distribution, check_probability};
 use crate::provenance::{Provenance, SIM_INDEX_SCHEME};
+use crate::risk::var_sorted;
 use crate::sampled::{Empirical, Sampled};
 
 /// One value of a component key: an integer (a layer number), text (a line
@@ -407,6 +408,84 @@ impl PredictiveDistribution {
     }
 }
 
+impl PredictiveDistribution {
+    /// Marginal expected shortfall of each component at level `p`:
+    /// `E[X_j | total ≥ VaR_p(total)]` (Acharya et al., 2017), the
+    /// components' expected losses in the portfolio's worst `1 - p`. It is
+    /// the CoTVaR, the Euler allocation of the total's TVaR
+    /// ([`allocate`](Self::allocate) with [`Distortion::Tvar`]), and sums
+    /// to it.
+    pub fn marginal_expected_shortfall(&self, p: f64) -> Result<Vec<f64>> {
+        Ok(self.allocate(&Distortion::tvar(p)?))
+    }
+
+    /// CoVaR of a component (Adrian and Brunnermeier, 2016, in the form of
+    /// Girardi and Ergün, 2013): the total's VaR at level `q` over the
+    /// simulations where the component is in distress, at or above its own
+    /// VaR at level `p`. Compare it with the total's unconditional VaR at
+    /// `q` to see how much one segment's bad years drag the portfolio.
+    ///
+    /// ```
+    /// use act_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// // Two components over four simulations.
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["lob".into()],
+    ///     vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+    ///     vec![1.0, 0.0, 2.0, 1.0, 3.0, 5.0, 4.0, 1.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// // a is at or above its 75% VaR (3) in the last two simulations,
+    /// // whose totals are 8 and 5; their median (q = 0.5) is 5.
+    /// assert_eq!(pd.covar(&vec![KeyValue::from("a")], 0.75, 0.5).unwrap(), 5.0);
+    /// ```
+    pub fn covar(&self, component: &ComponentKey, p: f64, q: f64) -> Result<f64> {
+        check_probability(q)?;
+        let j = self.component_index(component).ok_or_else(|| {
+            Error::Data(format!("no component {component:?} in this distribution"))
+        })?;
+        let m = self.n_components();
+        let own: Vec<f64> = self.draws.iter().skip(j).step_by(m).copied().collect();
+        let mut sorted = own.clone();
+        sorted.sort_by(f64::total_cmp);
+        let threshold = var_sorted(&sorted, p)?;
+        let totals = self.total().draws();
+        let mut stressed: Vec<f64> = own
+            .iter()
+            .zip(totals)
+            .filter(|(x, _)| **x >= threshold)
+            .map(|(_, t)| *t)
+            .collect();
+        stressed.sort_by(f64::total_cmp);
+        var_sorted(&stressed, q)
+    }
+
+    /// Esscher allocation: `E[X_j e^(h·total)] / E[e^(h·total)]` per
+    /// component, the components' means under the Esscher transform of the
+    /// total. They sum to the total's Esscher premium
+    /// ([`risk::esscher`](crate::risk::esscher)), and with `h = 0` they are
+    /// the means.
+    pub fn esscher_allocation(&self, h: f64) -> Result<Vec<f64>> {
+        if !h.is_finite() {
+            return Err(Error::InvalidParameter {
+                name: "h",
+                value: h,
+                reason: "must be finite",
+            });
+        }
+        let m = self.n_components();
+        let w = crate::risk::esscher_weights(self.total().draws(), h);
+        let mut out = vec![0.0; m];
+        for (wi, row) in w.iter().zip(self.draws.chunks_exact(m)) {
+            for (o, x) in out.iter_mut().zip(row) {
+                *o += wi * x;
+            }
+        }
+        Ok(out)
+    }
+}
+
 impl Distribution for PredictiveDistribution {
     fn mean(&self) -> f64 {
         self.total().mean()
@@ -482,6 +561,43 @@ fn validate_keys(dims: &[String], components: &[ComponentKey]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mes_and_esscher_allocations_add_up() {
+        let mut rng = StreamRng::new(4, 0);
+        let n = 5000;
+        let mut draws = Vec::with_capacity(2 * n);
+        for _ in 0..n {
+            let z = act_math::special::norm_quantile(rng.next_open01());
+            draws.push(10.0 + 2.0 * z);
+            draws.push(5.0 + z + act_math::special::norm_quantile(rng.next_open01()));
+        }
+        let pd = PredictiveDistribution::from_draws(
+            vec!["lob".into()],
+            vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+            draws,
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let mes = pd.marginal_expected_shortfall(0.9).unwrap();
+        let tvar = Distortion::tvar(0.9).unwrap().apply_sorted(&{
+            let mut t = pd.total().draws().to_vec();
+            t.sort_by(f64::total_cmp);
+            t
+        });
+        assert!((mes.iter().sum::<f64>() - tvar).abs() < 1e-9);
+        let es = pd.esscher_allocation(0.2).unwrap();
+        let total = crate::risk::esscher(pd.total().draws(), 0.2).unwrap();
+        assert!((es.iter().sum::<f64>() - total).abs() < 1e-9);
+        let means = pd.esscher_allocation(0.0).unwrap();
+        assert!((means[0] - pd.marginal(&vec![KeyValue::from("a")]).unwrap().mean()).abs() < 1e-9);
+        // Distress in a, which drives the total, raises the total's VaR.
+        let key = vec![KeyValue::from("a")];
+        assert!(
+            pd.covar(&key, 0.95, 0.5).unwrap() > pd.total().draws().iter().sum::<f64>() / n as f64
+        );
+        assert!(pd.covar(&vec![KeyValue::from("z")], 0.9, 0.5).is_err());
+    }
     use crate::Lognormal;
 
     fn key(values: &[KeyValue]) -> ComponentKey {

@@ -84,4 +84,21 @@ stopifnot(me$mean_excess == 1.5, me$n_above == 2)
 hx <- (1 - (seq_len(2000) - 0.5) / 2000)^-0.5
 stopifnot(abs(hill_estimator(hx, 200) - 0.5) < 0.02)
 
+# Exponential spectral, entropic, Esscher, MES, CoVaR.
+k <- 3
+u <- (seq_len(100000) - 0.5) / 100000
+stopifnot(abs(risk_measure(sampled(u), distortion("exponential", k)) -
+  (exp(k) * (k - 1) + 1) / (k * expm1(k))) < 1e-6)
+stopifnot(abs(entropic_risk(c(0, 1), log(2)) - log2(1.5)) < 1e-12)
+stopifnot(abs(esscher_premium(sampled(c(0, 1)), log(3)) - 0.75) < 1e-12)
+stopifnot(inherits(try(entropic_risk(1, 0), silent = TRUE), "try-error"))
+stopifnot(isTRUE(all.equal(marginal_expected_shortfall(cpd, 0.9)$contribution,
+                           allocate(cpd, d)$contribution)))
+ea <- esscher_allocation(cpd, 0.02)
+stopifnot(abs(sum(ea$contribution) - esscher_premium(cpd, 0.02)) < 1e-9)
+spd <- predictive_distribution(matrix(c(1, 2, 3, 4, 0, 1, 5, 1), ncol = 2),
+                               data.frame(lob = c("a", "b")))
+stopifnot(covar(spd, list(lob = "a"), 0.75, 0.5) == 5)
+stopifnot(inherits(try(covar(spd, list(lob = "z"), 0.75, 0.5), silent = TRUE), "try-error"))
+
 cat("actuarialrs R risk tests passed\n")

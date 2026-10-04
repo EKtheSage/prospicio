@@ -58,6 +58,16 @@ pricing_alpha_between_frequency_and_layer <- function(threshold, frequency, limi
 
 pricing_alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, frequency_2, truncation_at) .Call(wrap__pricing_alpha_between_frequencies, threshold_1, frequency_1, threshold_2, frequency_2, truncation_at)
 
+entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
+
+esscher_rust <- function(draws, h) .Call(wrap__esscher_rust, draws, h)
+
+mes_rust <- function(pd, p) .Call(wrap__mes_rust, pd, p)
+
+covar_rust <- function(pd, key, p, q) .Call(wrap__covar_rust, pd, key, p, q)
+
+esscher_allocation_rust <- function(pd, h) .Call(wrap__esscher_allocation_rust, pd, h)
+
 iman_conover_reorder <- function(pd, correlation, seed) .Call(wrap__iman_conover_reorder, pd, correlation, seed)
 
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
