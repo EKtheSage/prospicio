@@ -38,6 +38,8 @@ The ODP bootstrap needs both a `Triangle` and a `PredictiveDistribution`. It sta
 
 `.github/workflows/ci.yml` runs on every PR and on pushes to `main`. A PR merges only when CI is green on its latest commit.
 
+To keep billed minutes down (the repo is private; Windows minutes count double), PRs run Ubuntu only, a push to `main` runs only the Rust job, the docs job builds only when a PR touches the bindings, `python/`, `R/`, `xtask/` or `ci.yml`, and the full matrix with Windows runs weekly and on demand (`workflow_dispatch`). Cargo builds are cached, and a new push cancels the branch's older run. Run the Actions tab's "Run workflow" before a release, or after a change that could break only on Windows.
+
 Run the matching `ci.yml` checks locally before you push, so CI does not go red on something a local run would have caught:
 
 - Always: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
