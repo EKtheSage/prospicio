@@ -5135,6 +5135,20 @@ def k_fold(n: int, k: int, seed: int) -> list[tuple[list[int], list[int]]]:
         ``(train, test)`` row indices per fold.
     """
 
+def ks_uniform(values: Sequence[float]) -> float:
+    """
+    Kolmogorov-Smirnov distance from the uniform on ``[0, 1]``; about
+    ``1.36 / sqrt(n)`` or less 95% of the time under uniformity.
+    
+    Parameters
+    ----------
+    values : list of float
+    
+    Returns
+    -------
+    float
+    """
+
 def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
     """
     Lift table: rows sorted by predicted rate, cut into bands of about
@@ -5185,6 +5199,32 @@ def local_pareto_to_piecewise(t: float, alpha: Any, rel_tolerance: float = 1e-4,
     >>> pp, err, end = local_pareto_to_piecewise(1000.0, lambda x: 1.5 + 0.3 * math.log(x / 1000.0))
     >>> err <= 1e-4
     True
+    """
+
+def log_score(family: str, y: Sequence[float], mu: Sequence[float], dispersion: float = 1.0, weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> float:
+    """
+    Mean log score ``-(1/n) sum log f(y_i)`` of the outcomes under the
+    family's predictive distribution; lower is better.
+    
+    Parameters
+    ----------
+    family : str
+    y : list of float
+    mu : list of float
+    dispersion : float, default 1.0
+    weights : list of float, optional
+    theta : float, optional
+    power : float, optional
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import log_score
+    >>> round(log_score("poisson", [0.0], [1.0]), 12)
+    1.0
     """
 
 def loss_elimination_ratio(severity: Any, deductible: float) -> float:
@@ -5333,6 +5373,59 @@ def pareto_extrapolation(from_: tuple[float, float], to: tuple[float, float], al
     >>> from actuarialrs.pricing import pareto_extrapolation
     >>> round(pareto_extrapolation((1e6, 1e6), (2e6, 2e6), 2.0), 12)
     0.5
+    """
+
+def pit(family: str, y: Sequence[float], mu: Sequence[float], dispersion: float = 1.0, weights: Sequence[float] |None = None, seed: int = 0, theta: float |None = None, power: float |None = None) -> list[float]:
+    """
+    Probability integral transform of each outcome under the family's
+    predictive distribution, randomized where it has atoms (counts, a
+    Tweedie's zero); uniform when the model is calibrated.
+    
+    Parameters
+    ----------
+    family : str
+    y : list of float
+    mu : list of float
+    dispersion : float, default 1.0
+    weights : list of float, optional
+    seed : int, default 0
+        Seeds the randomization.
+    theta : float, optional
+    power : float, optional
+    
+    Returns
+    -------
+    list of float
+    """
+
+def pit_from_draws(draws: Sequence[float], y: float, u: float = 0.5) -> float:
+    """
+    The PIT of ``y`` under the empirical distribution of ``draws``,
+    randomized over ties by ``u``.
+    
+    Parameters
+    ----------
+    draws : list of float
+    y : float
+    u : float, default 0.5
+    
+    Returns
+    -------
+    float
+    """
+
+def pit_histogram(pit: Sequence[float], bins: int = 10) -> list[int]:
+    """
+    Counts of PIT values in ``bins`` equal-width bins of ``[0, 1]``.
+    
+    Parameters
+    ----------
+    pit : list of float
+    bins : int, default 10
+    
+    Returns
+    -------
+    list of int
     """
 
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:

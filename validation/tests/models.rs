@@ -462,3 +462,33 @@ fn tweedie_power_estimate_matches_statsmodels() {
         }
     });
 }
+
+#[test]
+fn family_scores_match_scipy() {
+    let cases = reference("family_scores_scipy.csv");
+    check(&cases, |c| {
+        let family = match c.get("family") {
+            "gaussian" => Family::Gaussian,
+            "poisson" => Family::Poisson,
+            "binomial" => Family::Binomial,
+            "negative_binomial" => Family::NegativeBinomial {
+                theta: c.param("params", "theta"),
+            },
+            "gamma" => Family::Gamma,
+            "inverse_gaussian" => Family::InverseGaussian,
+            _ => return None,
+        };
+        let (mu, phi, w) = (
+            c.param("params", "mu"),
+            c.param("params", "phi"),
+            c.param("params", "w"),
+        );
+        let y = c.number("y")?;
+        match c.get("quantity") {
+            "log_density" => family.log_density(y, mu, phi, w).ok(),
+            "cdf_lower" => family.cdf_bounds(y, mu, phi, w).ok().map(|b| b.0),
+            "cdf_upper" => family.cdf_bounds(y, mu, phi, w).ok().map(|b| b.1),
+            _ => None,
+        }
+    });
+}

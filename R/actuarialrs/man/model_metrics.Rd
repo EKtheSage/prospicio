@@ -6,6 +6,9 @@
 \alias{gini_index}
 \alias{lift_table}
 \alias{crps_draws}
+\alias{log_score}
+\alias{pit_values}
+\alias{ks_uniform}
 \title{Model metrics}
 \usage{
 family_deviance(family, y, mu, weights = NULL, theta = NULL, power = NULL)
@@ -15,6 +18,29 @@ gini_index(y, pred, exposure = NULL)
 lift_table(y, pred, exposure = NULL, bands = 10)
 
 crps_draws(draws, y)
+
+log_score(
+  family,
+  y,
+  mu,
+  dispersion = 1,
+  weights = NULL,
+  theta = NULL,
+  power = NULL
+)
+
+pit_values(
+  family,
+  y,
+  mu,
+  dispersion = 1,
+  weights = NULL,
+  seed = 0,
+  theta = NULL,
+  power = NULL
+)
+
+ks_uniform(values)
 }
 \arguments{
 \item{family}{A family name, as in \code{\link[=glm_fit]{glm_fit()}}.}
@@ -30,10 +56,17 @@ crps_draws(draws, y)
 \item{bands}{Number of lift bands.}
 
 \item{draws}{Equally likely draws.}
+
+\item{dispersion}{The family's dispersion.}
+
+\item{seed}{Seed of the PIT's randomization.}
+
+\item{values}{Values to compare with the uniform.}
 }
 \value{
-A number, or for \code{lift_table()} a data frame with columns
-\code{exposure}, \code{expected} and \code{actual}.
+A number; for \code{pit_values()} one value per outcome; for
+\code{lift_table()} a data frame with columns \code{exposure}, \code{expected} and
+\code{actual}.
 }
 \description{
 \code{family_deviance()} is \verb{sum(w d(y, mu))} for a family; \code{gini_index()} the
@@ -42,9 +75,22 @@ exposure share against loss share); \code{lift_table()} cuts rows sorted by
 predicted rate into bands of about equal exposure; \code{crps_draws()} the
 continuous ranked probability score of draws for an outcome.
 }
+\details{
+\code{log_score()} is the mean of \verb{-log f(y)} under each row's predictive
+distribution (the family with mean \code{mu}, \code{dispersion} and weight);
+\code{pit_values()} the probability integral transform \code{F(y)}, randomized
+where the distribution has atoms (counts, a Tweedie's zero) and uniform
+when the model is calibrated; \code{ks_uniform()} the Kolmogorov-Smirnov
+distance of values from the uniform, about \code{1.36 / sqrt(n)} or less 95\%
+of the time under uniformity.
+}
 \examples{
 family_deviance("poisson", c(1, 0, 3), c(1, 0.5, 2))
 gini_index(c(0, 1), c(0.1, 0.9))
 lift_table(c(0, 1, 2, 3), c(0.1, 0.9, 2.1, 2.9), bands = 2)
 crps_draws(c(1, 2, 3), 2)
+log_score("poisson", 0, 1)
+set.seed(1)
+y <- rpois(500, 3)
+ks_uniform(pit_values("poisson", y, rep(3, 500)))
 }

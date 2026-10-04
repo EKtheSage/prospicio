@@ -1,10 +1,11 @@
 //! Scores for fitted models: deviance-based, ranking (Gini, lift),
-//! calibration (actual vs expected), and probabilistic (CRPS, coverage).
+//! calibration (actual vs expected), and probabilistic (CRPS, coverage,
+//! log score, PIT).
 //!
 //! Every metric takes plain slices, so it scores any engine's output the
 //! same way.
 
-use act_core::{Error, Result};
+use act_core::{Error, Result, StreamRng};
 
 use crate::family::Family;
 
@@ -217,6 +218,130 @@ pub fn coverage(y: &[f64], lo: &[f64], hi: &[f64]) -> Result<f64> {
     Ok(inside as f64 / y.len() as f64)
 }
 
+/// Mean log score, `-(1/n) Σ log f(yᵢ)`, of each outcome under its
+/// predictive distribution: the family with mean `μᵢ`, dispersion `φ` and
+/// weight `wᵢ` ([`Family::log_density`]). Lower is better; it is the
+/// proper score that rewards a sharp and calibrated density, where CRPS
+/// works from draws alone.
+///
+/// ```
+/// use act_models::{Family, metrics};
+///
+/// // Poisson(1) at y = 0: -log e^-1 = 1.
+/// assert!((metrics::log_score(Family::Poisson, &[0.0], &[1.0], 1.0, None).unwrap() - 1.0).abs() < 1e-15);
+/// ```
+pub fn log_score(
+    family: Family,
+    y: &[f64],
+    mu: &[f64],
+    dispersion: f64,
+    weights: Option<&[f64]>,
+) -> Result<f64> {
+    same_length(y.len(), mu.len(), "mu")?;
+    if let Some(w) = weights {
+        same_length(y.len(), w.len(), "weights")?;
+    }
+    let mut total = 0.0;
+    for i in 0..y.len() {
+        let w = weights.map_or(1.0, |w| w[i]);
+        total -= family.log_density(y[i], mu[i], dispersion, w)?;
+    }
+    Ok(total / y.len() as f64)
+}
+
+/// Probability integral transform of each outcome under its predictive
+/// distribution: `F(yᵢ)`, uniform on `(0, 1)` when the model is
+/// calibrated. Where the distribution has an atom (counts, a Tweedie's
+/// zero) the PIT is randomized, `F(y⁻) + u (F(y) - F(y⁻))` with `u` drawn
+/// from stream 0 of `seed` in row order (Czado, Gneiting and Held, 2009),
+/// so it is still uniform under the model. Check it with
+/// [`pit_histogram`] or [`ks_uniform`].
+pub fn pit(
+    family: Family,
+    y: &[f64],
+    mu: &[f64],
+    dispersion: f64,
+    weights: Option<&[f64]>,
+    seed: u64,
+) -> Result<Vec<f64>> {
+    same_length(y.len(), mu.len(), "mu")?;
+    if let Some(w) = weights {
+        same_length(y.len(), w.len(), "weights")?;
+    }
+    let mut rng = StreamRng::new(seed, 0);
+    (0..y.len())
+        .map(|i| {
+            let w = weights.map_or(1.0, |w| w[i]);
+            let (lo, hi) = family.cdf_bounds(y[i], mu[i], dispersion, w)?;
+            Ok(if hi > lo {
+                lo + rng.next_open01() * (hi - lo)
+            } else {
+                hi
+            })
+        })
+        .collect()
+}
+
+/// The PIT of `y` under the empirical distribution of `draws` (one
+/// component of a predictive distribution), randomized over ties:
+/// `(#{x < y} + u #{x = y}) / m`.
+///
+/// ```
+/// use act_models::metrics::pit_from_draws;
+///
+/// assert_eq!(pit_from_draws(&[1.0, 2.0, 3.0, 4.0], 2.5, 0.5).unwrap(), 0.5);
+/// ```
+pub fn pit_from_draws(draws: &[f64], y: f64, u: f64) -> Result<f64> {
+    if draws.is_empty() {
+        return Err(Error::InvalidParameter {
+            name: "draws",
+            value: 0.0,
+            reason: "must not be empty",
+        });
+    }
+    let below = draws.iter().filter(|&&x| x < y).count() as f64;
+    let ties = draws.iter().filter(|&&x| x == y).count() as f64;
+    Ok((below + u * ties) / draws.len() as f64)
+}
+
+/// Counts of PIT values in `bins` equal-width bins of `[0, 1]`: flat for a
+/// calibrated model, U-shaped when it is too sharp, humped when too wide.
+pub fn pit_histogram(pit: &[f64], bins: usize) -> Result<Vec<usize>> {
+    if bins == 0 {
+        return Err(Error::InvalidParameter {
+            name: "bins",
+            value: 0.0,
+            reason: "must be positive",
+        });
+    }
+    let mut counts = vec![0; bins];
+    for &p in pit {
+        let b = ((p * bins as f64) as usize).min(bins - 1);
+        counts[b] += 1;
+    }
+    Ok(counts)
+}
+
+/// Kolmogorov–Smirnov distance between the empirical distribution of
+/// `values` and the uniform on `[0, 1]`: `max |F̂(x) − x|`. Under
+/// uniformity it is about `1.36 / √n` or less 95% of the time.
+pub fn ks_uniform(values: &[f64]) -> Result<f64> {
+    if values.is_empty() {
+        return Err(Error::InvalidParameter {
+            name: "values",
+            value: 0.0,
+            reason: "must not be empty",
+        });
+    }
+    let mut v = values.to_vec();
+    v.sort_by(f64::total_cmp);
+    let n = v.len() as f64;
+    Ok(v.iter()
+        .enumerate()
+        .map(|(i, &x)| (x - i as f64 / n).max((i as f64 + 1.0) / n - x))
+        .fold(0.0, f64::max))
+}
+
 fn same_length(n: usize, m: usize, name: &'static str) -> Result<()> {
     if n == m {
         Ok(())
@@ -232,6 +357,82 @@ fn same_length(n: usize, m: usize, name: &'static str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Responses drawn from each family's own predictive distribution give
+    /// uniform PITs; a model with the wrong mean does not.
+    #[test]
+    fn pit_is_uniform_under_the_model() {
+        let families = [
+            (Family::Gaussian, 2.0),
+            (Family::Poisson, 1.0),
+            (Family::Poisson, 2.5),
+            (Family::Binomial, 1.0),
+            (Family::NegativeBinomial { theta: 1.5 }, 1.0),
+            (Family::Gamma, 0.4),
+            (Family::InverseGaussian, 0.3),
+            (Family::Tweedie { power: 1.5 }, 2.0),
+        ];
+        let n = 4000;
+        for (k, &(family, phi)) in families.iter().enumerate() {
+            let mut rng = StreamRng::new(9, k as u64);
+            let mu: Vec<f64> = (0..n)
+                .map(|i| match family {
+                    Family::Binomial => 0.2 + 0.6 * (i % 7) as f64 / 7.0,
+                    _ => 0.5 + (i % 5) as f64,
+                })
+                .collect();
+            let w: Vec<f64> = (0..n).map(|i| 1.0 + (i % 3) as f64).collect();
+            let y: Vec<f64> = (0..n)
+                .map(|i| family.draw(mu[i], phi, w[i], rng.next_open01()).unwrap())
+                .collect();
+            let p = pit(family, &y, &mu, phi, Some(&w), 1).unwrap();
+            let ks = ks_uniform(&p).unwrap();
+            assert!(ks < 1.63 / (n as f64).sqrt(), "{family:?}: ks {ks}");
+            let off: Vec<f64> = mu
+                .iter()
+                .map(|m| match family {
+                    Family::Binomial => m * 0.7,
+                    _ => m * 1.5,
+                })
+                .collect();
+            let bad = ks_uniform(&pit(family, &y, &off, phi, Some(&w), 1).unwrap()).unwrap();
+            assert!(bad > 3.0 / (n as f64).sqrt(), "{family:?}: misfit ks {bad}");
+            // The true means score better than the wrong ones.
+            let good = log_score(family, &y, &mu, phi, Some(&w)).unwrap();
+            let worse = log_score(family, &y, &off, phi, Some(&w)).unwrap();
+            assert!(good < worse, "{family:?}");
+        }
+    }
+
+    #[test]
+    fn log_density_is_the_log_likelihood_where_they_agree() {
+        for family in [
+            Family::Gaussian,
+            Family::Gamma,
+            Family::InverseGaussian,
+            Family::Tweedie { power: 1.4 },
+        ] {
+            let a = family.log_density(1.7, 2.0, 0.8, 1.5).unwrap();
+            let b = family.log_likelihood(1.7, 2.0, 1.5, 0.8);
+            assert!((a - b).abs() < 1e-12, "{family:?}");
+        }
+        for (family, y) in [
+            (Family::Poisson, 3.0),
+            (Family::NegativeBinomial { theta: 2.0 }, 3.0),
+        ] {
+            let a = family.log_density(y, 2.0, 1.0, 1.0).unwrap();
+            let b = family.log_likelihood(y, 2.0, 1.0, 1.0);
+            assert!((a - b).abs() < 1e-12, "{family:?}");
+        }
+        assert_eq!(
+            Family::Poisson.log_density(1.5, 2.0, 1.0, 1.0).unwrap(),
+            f64::NEG_INFINITY
+        );
+        assert_eq!(
+            pit_histogram(&[0.05, 0.15, 0.95, 1.0], 2).unwrap(),
+            vec![2, 2]
+        );
+    }
 
     #[test]
     fn crps_matches_the_pairwise_definition() {
