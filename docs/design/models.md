@@ -245,10 +245,20 @@ interval for `p` (where the profile is 1.92 below its maximum, found by
 the Illinois method) and flags a power at a search bound: with no zero
 claims the likelihood pushes `p` towards 2, and the bound is then not an
 interior maximum. Standard errors and predictive draws are conditional on
-`p`. Parity: statsmodels
-fits plus an independent NumPy series density
+`p`. Parity: statsmodels fits plus an independent NumPy series density
 (`validation/scripts/statsmodels_tweedie_profile.py`). Cross-validated
 deviance cannot choose `p`, since each `p` has its own deviance scale.
+
+**Decided: no Fourier-inversion density.** Dunn and Smyth (2008) evaluate
+the Tweedie density by Fourier inversion where their series struggles, and
+H2O uses both. Against 40-digit mpmath, `act-prob`'s series is accurate to
+`5e-11` or better, in under 0.4 ms per point, for `p` from 1.01 to 1.99,
+`φ` from 0.001 to 50 and `y` from 0.01 to 10 times the mean. It degrades
+only at `φ = 1e-6` with `p` near 2 (`5e-8`, about 11 ms): a coefficient of
+variation near 0.001, which claims and pure premiums never have. The
+inversion's oscillatory integrals and series acceleration are not worth
+that. If such regimes ever matter, compute the series' large log-gamma
+differences more precisely instead.
 
 ## Attention
 
