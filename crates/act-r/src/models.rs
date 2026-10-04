@@ -5,7 +5,7 @@
 
 use act_glm::gam::{Gam, GamFit, PSpline, Smoothing};
 use act_glm::net::{ElasticNet, ElasticNetFit};
-use act_glm::{Dispersion, Glm, GlmFit};
+use act_glm::{Dispersion, Glm, GlmFit, Robust};
 use act_models::resample;
 use act_models::{Design, Family, Fitted, Link, Model, metrics};
 use extendr_api::prelude::*;
@@ -94,6 +94,9 @@ fn design(x: &[f64], names: Vec<String>, offset: &[f64], weights: &[f64]) -> Res
 #[extendr]
 pub(crate) struct GlmModel {
     inner: GlmFit,
+    /// The training data, for the sandwich covariance.
+    design: Design,
+    y: Vec<f64>,
 }
 
 /// Fits a GLM to the design `x` (column-major, columns `names`).
@@ -123,7 +126,11 @@ fn glm_fit_design(
     )?);
     let d = design(x, names, offset, weights)?;
     let inner = glm.fit(&d, y).map_err(to_r)?;
-    Ok(GlmModel { inner })
+    Ok(GlmModel {
+        inner,
+        design: d,
+        y: y.to_vec(),
+    })
 }
 
 #[extendr]
@@ -147,6 +154,21 @@ impl GlmModel {
     /// Row-major; symmetric, so also column-major.
     fn covariance(&self) -> Vec<f64> {
         self.inner.covariance()
+    }
+
+    /// Sandwich covariance: `kind` "HC0" or "HC1", or "cluster" with one
+    /// positive integer label per training row in `groups`.
+    fn robust_covariance(&self, kind: &str, groups: &[i32]) -> Result<Vec<f64>> {
+        let labels: Vec<usize> = groups.iter().map(|&g| g.max(0) as usize).collect();
+        let kind = match kind {
+            "HC0" => Robust::Hc0,
+            "HC1" => Robust::Hc1,
+            "cluster" => Robust::Cluster(&labels),
+            other => return Err(Error::Other(format!("unknown kind {other:?}"))),
+        };
+        self.inner
+            .robust_covariance(&self.design, &self.y, kind)
+            .map_err(to_r)
     }
 
     fn dispersion(&self) -> f64 {

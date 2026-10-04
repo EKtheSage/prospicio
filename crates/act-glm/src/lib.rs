@@ -5,12 +5,16 @@
 //! [`Glm::fit`](act_models::Model::fit) returns a [`GlmFit`] with
 //! coefficients, standard errors, deviance, log-likelihood and AIC, and
 //! implements [`Fitted`]: predictions and joint predictive distributions
-//! with parameter and process uncertainty. [`gam::Gam`] adds penalized
-//! B-spline smooths, with smoothing chosen by GCV or UBRE.
+//! with parameter and process uncertainty, and sandwich covariances
+//! ([`GlmFit::robust_covariance`]). [`gam::Gam`] adds penalized B-spline
+//! smooths, with smoothing chosen by GCV or UBRE.
 
 pub mod gam;
 pub mod net;
+mod robust;
 pub mod tweedie;
+
+pub use robust::Robust;
 
 use act_core::{Error, Result};
 use act_math::linalg::{cholesky, cholesky_inverse, cholesky_solve, lower_mul};

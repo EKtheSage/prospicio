@@ -1,7 +1,8 @@
 //! Model parity: GLMs against statsmodels on a synthetic portfolio
-//! (`validation/scripts/statsmodels_glm.py`).
+//! (`validation/scripts/statsmodels_glm.py`), with sandwich standard errors
+//! (`statsmodels_glm_robust.py`).
 
-use act_glm::{Dispersion, Glm, GlmFit};
+use act_glm::{Dispersion, Glm, GlmFit, Robust};
 use act_models::{Column, Design, Family, Frame, Link, Model, Terms};
 use act_validation::{check, reference};
 
@@ -49,6 +50,12 @@ fn design(data: &[(String, Vec<String>)]) -> Design {
 }
 
 fn fit_case(case: &str, data: &[(String, Vec<String>)]) -> GlmFit {
+    let (glm, y, d) = case_data(case, data);
+    glm.fit(&d, &y).unwrap_or_else(|e| panic!("{case}: {e}"))
+}
+
+/// The spec, response and design of a statsmodels case.
+fn case_data(case: &str, data: &[(String, Vec<String>)]) -> (Glm, Vec<f64>, Design) {
     let d = design(data);
     let log_exposure: Vec<f64> = numeric(data, "exposure").iter().map(|e| e.ln()).collect();
     let (glm, y, d) = match case {
@@ -112,7 +119,7 @@ fn fit_case(case: &str, data: &[(String, Vec<String>)]) -> GlmFit {
         ),
         other => panic!("unknown case {other}"),
     };
-    glm.fit(&d, &y).unwrap_or_else(|e| panic!("{case}: {e}"))
+    (glm, y, d)
 }
 
 #[test]
@@ -138,6 +145,33 @@ fn glms_match_statsmodels() {
             "aic" => Some(fit.aic()),
             _ => None,
         }
+    });
+}
+
+#[test]
+fn robust_std_errors_match_statsmodels() {
+    let data = policies();
+    let groups: Vec<usize> = numeric(&data, "age")
+        .iter()
+        .map(|a| (a / 5.0).floor() as usize)
+        .collect();
+    let cases = reference("glm_robust_statsmodels.csv");
+    let mut fits: Vec<(String, GlmFit, Design, Vec<f64>)> = Vec::new();
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !fits.iter().any(|f| f.0 == name) {
+            let (glm, y, d) = case_data(name, &data);
+            let fit = glm.fit(&d, &y).unwrap();
+            fits.push((name.to_string(), fit, d, y));
+        }
+        let (_, fit, d, y) = fits.iter().find(|f| f.0 == name).unwrap();
+        let kind = match c.get("kind") {
+            "hc0" => Robust::Hc0,
+            "cluster" => Robust::Cluster(&groups),
+            _ => return None,
+        };
+        let j = fit.names().iter().position(|n| n == c.get("term"))?;
+        Some(fit.robust_std_errors(d, y, kind).unwrap()[j])
     });
 }
 

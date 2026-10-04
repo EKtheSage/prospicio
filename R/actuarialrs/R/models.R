@@ -149,6 +149,46 @@ glm_model <- S7::new_class(
   }
 )
 
+#' Sandwich covariance of a GLM
+#'
+#' Heteroskedasticity- or cluster-robust covariance of the coefficients of
+#' a [glm_fit()] model, valid when the variance function or dispersion is
+#' wrong as long as the mean is right. The dispersion cancels. Results match
+#' statsmodels' `cov_type = "HC0"` and `"cluster"`
+#' (`validation/scripts/statsmodels_glm_robust.py`). For a non-canonical
+#' link (a log-link gamma, say) the bread is the observed information, as
+#' in statsmodels; `sandwich::vcovHC()` uses the expected information, so
+#' the two differ slightly there and agree for canonical links.
+#'
+#' @param object A `glm_model`.
+#' @param type `"HC0"` (White's estimator) or `"HC1"` (scaled by
+#'   `n / (n - p)`). Ignored when `cluster` is given.
+#' @param cluster Optional cluster labels, one per row the model was fitted
+#'   on (a policy or an event, say). The scores are summed within each
+#'   cluster and the result scaled by `G / (G - 1) * (n - 1) / (n - p)` for
+#'   `G` clusters.
+#' @returns A named covariance matrix; `sqrt(diag(.))` gives the robust
+#'   standard errors.
+#' @export
+#' @examples
+#' d <- data.frame(y = c(1, 2, 6, 1, 4, 2), x = c(0, 0, 0, 1, 1, 1),
+#'                 policy = c(1, 1, 2, 2, 3, 3))
+#' m <- glm_fit(y ~ x, d, family = "poisson")
+#' robust_vcov(m)
+#' sqrt(diag(robust_vcov(m, cluster = d$policy)))
+robust_vcov <- function(object, type = c("HC0", "HC1"), cluster = NULL) {
+  if (is.null(cluster)) {
+    kind <- match.arg(type)
+    groups <- integer()
+  } else {
+    kind <- "cluster"
+    groups <- as.integer(factor(cluster))
+  }
+  nm <- object@ptr$names()
+  v <- rust_result(object@ptr$robust_covariance(kind, groups))
+  matrix(v, length(nm), dimnames = list(nm, nm))
+}
+
 #' Fit an elastic-net GLM
 #'
 #' The lasso (`alpha = 1`), ridge (`alpha = 0`) and everything between, for

@@ -5,13 +5,13 @@ use std::collections::HashMap;
 
 use act_glm::gam::{Gam, GamFit, PSpline, Smoothing};
 use act_glm::net::{CvPath, ElasticNet, ElasticNetFit};
-use act_glm::{Dispersion, Glm, GlmFit};
+use act_glm::{Dispersion, Glm, GlmFit, Robust};
 use act_models::resample::{self, Split};
 use act_models::{Coding, Column, Design, Family, Fitted, Frame, Link, Model, Terms, metrics};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
-use crate::distributions::PyPredictiveDistribution;
+use crate::distributions::{KeyArg, PyPredictiveDistribution, key_from_py};
 use crate::to_py;
 
 /// A family from its name and parameter.
@@ -448,6 +448,49 @@ impl PyGlm {
     }
 }
 
+impl PyGlmFit {
+    fn robust(
+        &self,
+        py: Python<'_>,
+        design: &Design,
+        y: &[f64],
+        kind: &str,
+        groups: Option<Vec<KeyArg>>,
+    ) -> PyResult<Vec<f64>> {
+        let labels: Option<Vec<usize>> = groups.map(|g| {
+            let mut index = HashMap::new();
+            key_from_py(g)
+                .into_iter()
+                .map(|k| {
+                    let next = index.len();
+                    *index.entry(k).or_insert(next)
+                })
+                .collect()
+        });
+        let kind = match (kind, &labels) {
+            ("HC0", None) => Robust::Hc0,
+            ("HC1", None) => Robust::Hc1,
+            ("cluster", Some(l)) => Robust::Cluster(l),
+            ("cluster", None) => {
+                return Err(PyValueError::new_err("kind=\"cluster\" needs groups"));
+            }
+            ("HC0" | "HC1", Some(_)) => {
+                return Err(PyValueError::new_err(
+                    "groups are only for kind=\"cluster\"",
+                ));
+            }
+            (other, _) => {
+                return Err(PyValueError::new_err(format!(
+                    "kind must be \"HC0\", \"HC1\" or \"cluster\", got {other:?}"
+                )));
+            }
+        };
+        let fit = &self.inner;
+        py.detach(|| fit.robust_covariance(design, y, kind))
+            .map_err(to_py)
+    }
+}
+
 /// A fitted GLM, from ``Glm.fit``.
 #[pyclass(name = "GlmFit", module = "actuarialrs.models", frozen)]
 pub(crate) struct PyGlmFit {
@@ -479,6 +522,82 @@ impl PyGlmFit {
     #[getter]
     fn p_values(&self) -> Vec<f64> {
         self.inner.p_values()
+    }
+
+    /// Sandwich (heteroskedasticity- or cluster-robust) covariance of the
+    /// coefficients, as statsmodels' ``cov_type="HC0"`` and ``"cluster"``.
+    ///
+    /// It stays valid when the variance function or dispersion is wrong,
+    /// as long as the mean is right. The dispersion cancels. For a
+    /// non-canonical link it uses the observed information, as
+    /// statsmodels does (R's ``sandwich`` uses the expected).
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     The design the model was fitted on.
+    /// y : list of float
+    ///     The response the model was fitted on.
+    /// kind : {"HC0", "HC1", "cluster"}, default "HC0"
+    ///     ``"HC1"`` scales HC0 by ``n / (n - p)``; ``"cluster"`` sums the
+    ///     scores within each cluster and scales by
+    ///     ``G / (G - 1) * (n - 1) / (n - p)``.
+    /// groups : list of int or str, optional
+    ///     One cluster label per row, for ``kind="cluster"``: a policy or
+    ///     an event, say.
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.models import Design, Glm
+    /// >>> d = Design([[1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], ["(Intercept)", "x"])
+    /// >>> y = [1.0, 2.0, 6.0, 1.0, 4.0, 2.0]
+    /// >>> fit = Glm("poisson").fit(d, y)
+    /// >>> round(fit.robust_covariance(d, y)[0][0] * 81, 10)
+    /// 14.0
+    /// >>> se = fit.robust_std_errors(d, y, "cluster", groups=[1, 1, 2, 2, 3, 3])
+    #[pyo3(signature = (design, y, kind = "HC0", groups = None))]
+    fn robust_covariance(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        kind: &str,
+        groups: Option<Vec<KeyArg>>,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let p = self.inner.coefficients().len();
+        let v = self.robust(py, &design.inner, &y, kind, groups)?;
+        Ok(v.chunks(p).map(<[f64]>::to_vec).collect())
+    }
+
+    /// Square roots of the diagonal of ``robust_covariance``, with the same
+    /// arguments.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// kind : {"HC0", "HC1", "cluster"}, default "HC0"
+    /// groups : list of int or str, optional
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (design, y, kind = "HC0", groups = None))]
+    fn robust_std_errors(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        kind: &str,
+        groups: Option<Vec<KeyArg>>,
+    ) -> PyResult<Vec<f64>> {
+        let p = self.inner.coefficients().len();
+        let v = self.robust(py, &design.inner, &y, kind, groups)?;
+        Ok((0..p).map(|j| v[j * p + j].sqrt()).collect())
     }
 
     /// Covariance of the coefficients, as a list of rows.

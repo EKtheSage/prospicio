@@ -1760,6 +1760,60 @@ class GlmFit:
         -------
         PredictiveDistribution
         """
+    def robust_covariance(self, /, design: Design, y: Sequence[float], kind: str = "HC0", groups: Sequence[int |str] |None = None) -> list[list[float]]:
+        """
+        Sandwich (heteroskedasticity- or cluster-robust) covariance of the
+        coefficients, as statsmodels' ``cov_type="HC0"`` and ``"cluster"``.
+        
+        It stays valid when the variance function or dispersion is wrong,
+        as long as the mean is right. The dispersion cancels. For a
+        non-canonical link it uses the observed information, as
+        statsmodels does (R's ``sandwich`` uses the expected).
+        
+        Parameters
+        ----------
+        design : Design
+            The design the model was fitted on.
+        y : list of float
+            The response the model was fitted on.
+        kind : {"HC0", "HC1", "cluster"}, default "HC0"
+            ``"HC1"`` scales HC0 by ``n / (n - p)``; ``"cluster"`` sums the
+            scores within each cluster and scales by
+            ``G / (G - 1) * (n - 1) / (n - p)``.
+        groups : list of int or str, optional
+            One cluster label per row, for ``kind="cluster"``: a policy or
+            an event, say.
+        
+        Returns
+        -------
+        list of list of float
+        
+        Examples
+        --------
+        >>> from actuarialrs.models import Design, Glm
+        >>> d = Design([[1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], ["(Intercept)", "x"])
+        >>> y = [1.0, 2.0, 6.0, 1.0, 4.0, 2.0]
+        >>> fit = Glm("poisson").fit(d, y)
+        >>> round(fit.robust_covariance(d, y)[0][0] * 81, 10)
+        14.0
+        >>> se = fit.robust_std_errors(d, y, "cluster", groups=[1, 1, 2, 2, 3, 3])
+        """
+    def robust_std_errors(self, /, design: Design, y: Sequence[float], kind: str = "HC0", groups: Sequence[int |str] |None = None) -> list[float]:
+        """
+        Square roots of the diagonal of ``robust_covariance``, with the same
+        arguments.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        kind : {"HC0", "HC1", "cluster"}, default "HC0"
+        groups : list of int or str, optional
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def std_errors(self, /) -> list[float]:
         """
