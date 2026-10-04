@@ -117,4 +117,21 @@ yg <- rgamma(500, shape = 2, scale = 1.5)
 near(log_score("gamma", yg, rep(3, 500), dispersion = 0.5),
      -mean(dgamma(yg, shape = 2, scale = 1.5, log = TRUE)), 1e-12)
 
+# ELPD: PSIS-LOO and WAIC, against loo when installed.
+set.seed(5)
+ye <- c(rnorm(20), 5)
+mue <- rnorm(400, mean(ye), 1 / sqrt(21))
+lle <- sapply(ye, function(yi) dnorm(yi, mue, 1, log = TRUE))
+lo <- elpd_loo(lle)
+wa <- elpd_waic(lle)
+stopifnot(which.max(lo$pareto_k) == 21, length(lo$pointwise) == 21)
+near(lo$estimates[["ic"]], -2 * lo$estimates[["elpd"]], 1e-12)
+if (requireNamespace("loo", quietly = TRUE)) {
+  ref <- loo::loo(lle, r_eff = rep(1, 21))
+  near(lo$estimates[["elpd"]], ref$estimates["elpd_loo", "Estimate"], 1e-9)
+  near(lo$pareto_k, ref$diagnostics$pareto_k, 1e-6)
+  rw <- suppressWarnings(loo::waic(lle))
+  near(wa$estimates[["elpd"]], rw$estimates["elpd_waic", "Estimate"], 1e-12)
+}
+
 cat("actuarialrs R models tests passed\n")

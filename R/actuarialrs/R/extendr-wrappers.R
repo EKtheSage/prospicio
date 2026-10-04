@@ -38,6 +38,10 @@ time_ordered_rust <- function(periods, n_test) .Call(wrap__time_ordered_rust, pe
 
 mcmc_diagnostics_rust <- function(draws, n_chains) .Call(wrap__mcmc_diagnostics_rust, draws, n_chains)
 
+elpd_loo_rust <- function(log_lik, n, r_eff) .Call(wrap__elpd_loo_rust, log_lik, n, r_eff)
+
+elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
+
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
 
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)

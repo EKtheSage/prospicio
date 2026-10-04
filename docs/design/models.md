@@ -66,6 +66,19 @@ models and compares them.
   (`validation/scripts/r_mcmc_diagnostics.R`), five sets of four chains
   (independent, AR(1), a shifted chain, a wider chain, ties), 25 values at
   1e-10.
+- `act_bayes::elpd`: the expected log pointwise predictive density from
+  a fit's pointwise log-likelihood draws: `lppd`, `waic` and `loo`
+  (Pareto-smoothed importance sampling: the largest importance ratios of
+  each observation replaced by the expected order statistics of a
+  generalized Pareto fitted by Zhang and Stephens' estimator with Vehtari
+  et al.'s weakly informative prior, truncated at the largest raw ratio),
+  with `k̂` per observation as the reliability diagnostic. Written from the
+  papers; parity with R's `loo` 2.6.0 (`validation/scripts/r_loo.R`):
+  every estimate, pointwise ELPD to `1e-9` and `k̂` to `1e-6`.
+- **Sampling: nutpie** (decided 2026-10-04). Native models (Bayesian GLM,
+  Bayesian chain ladder, credibility) will sample with nutpie's Rust core
+  `nuts-rs`, so R gets NUTS too; Python users can hand nutpie traces of
+  PyMC or Stan models to the same diagnostics and ELPD.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 
@@ -81,7 +94,7 @@ life cycle; each heavy engine sits in its own crate behind a feature flag.
 | `act-models` | The `Model` trait, model specs, `Design`, `Family` and links, resampling, metrics, tuning, comparison and stacking, model artifacts | None |
 | `act-glm` | GLM by IRLS; GAM as a penalized GLM on the same solver (P-splines, tensor smooths, GCV/REML) | `faer` |
 | `act-nn` | Neural networks on Burn: CANN (a GLM offset plus a network correction) and the attention CANN (a transformer over feature tokens) | Burn, opt-in feature |
-| `act-bayes` | Bayesian model specs and diagnostics (R-hat, ESS, divergences, LOO); sampling through nutpie or BridgeStan | Samplers, opt-in feature |
+| `act-bayes` | Bayesian model specs and diagnostics (R-hat, ESS, divergences, ELPD by PSIS-LOO and WAIC); sampling through nutpie | Samplers, opt-in feature |
 | *(no crate)* | Gradient boosting: Python and R adapters over LightGBM and XGBoost that implement the interface and return shared objects | None in Rust |
 
 - **Families live in `act-models`, distributions in `act-prob`.** A

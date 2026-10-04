@@ -1473,6 +1473,152 @@ pub(crate) fn time_ordered(
         .map_err(to_py)
 }
 
+/// An ELPD estimate from ``elpd_loo`` or ``elpd_waic``.
+#[pyclass(name = "Elpd", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyElpd {
+    inner: act_bayes::elpd::Elpd,
+    pareto_k: Option<Vec<f64>>,
+    k_threshold: Option<f64>,
+}
+
+#[pymethods]
+impl PyElpd {
+    /// Expected log pointwise predictive density, summed.
+    #[getter]
+    fn elpd(&self) -> f64 {
+        self.inner.elpd
+    }
+
+    /// Its standard error, ``sqrt(N var(pointwise))``.
+    #[getter]
+    fn se(&self) -> f64 {
+        self.inner.se
+    }
+
+    /// Effective number of parameters, ``lppd - elpd``.
+    #[getter]
+    fn p(&self) -> f64 {
+        self.inner.p
+    }
+
+    /// The information criterion, ``-2 elpd`` (LOOIC or WAIC).
+    #[getter]
+    fn ic(&self) -> f64 {
+        self.inner.ic
+    }
+
+    /// ELPD per observation.
+    #[getter]
+    fn pointwise(&self) -> Vec<f64> {
+        self.inner.pointwise.clone()
+    }
+
+    /// PSIS-LOO only: the fitted Pareto shape per observation.
+    #[getter]
+    fn pareto_k(&self) -> Option<Vec<f64>> {
+        self.pareto_k.clone()
+    }
+
+    /// PSIS-LOO only: ``min(1 - 1/log10(S), 0.7)``; observations with a
+    /// larger ``pareto_k`` are unreliable.
+    #[getter]
+    fn k_threshold(&self) -> Option<f64> {
+        self.k_threshold
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Elpd(elpd={:.4}, se={:.4}, p={:.4}, ic={:.4})",
+            self.inner.elpd, self.inner.se, self.inner.p, self.inner.ic
+        )
+    }
+}
+
+fn flatten_draws(log_lik: &[Vec<f64>]) -> PyResult<(Vec<f64>, usize)> {
+    let n = log_lik.first().map_or(0, Vec::len);
+    if log_lik.iter().any(|r| r.len() != n) {
+        return Err(PyValueError::new_err(
+            "log_lik must be draws × observations with equal-length rows",
+        ));
+    }
+    Ok((log_lik.concat(), n))
+}
+
+/// Leave-one-out cross-validation by Pareto-smoothed importance sampling
+/// (PSIS-LOO), from one fit's pointwise log-likelihood draws. Matches the
+/// R package ``loo``.
+///
+/// Parameters
+/// ----------
+/// log_lik : list of list of float
+///     One row per posterior draw, one column per observation:
+///     ``log p(y_i | theta_s)``.
+/// r_eff : list of float, optional
+///     Relative efficiency of the draws per observation (1 for
+///     independent draws).
+///
+/// Returns
+/// -------
+/// Elpd
+///     With ``pareto_k`` and ``k_threshold``.
+#[pyfunction]
+#[pyo3(signature = (log_lik, r_eff = None))]
+pub(crate) fn elpd_loo(log_lik: Vec<Vec<f64>>, r_eff: Option<Vec<f64>>) -> PyResult<PyElpd> {
+    let (flat, n) = flatten_draws(&log_lik)?;
+    let l = act_bayes::elpd::loo(&flat, n, r_eff.as_deref()).map_err(to_py)?;
+    Ok(PyElpd {
+        inner: l.estimate,
+        pareto_k: Some(l.pareto_k),
+        k_threshold: Some(l.k_threshold),
+    })
+}
+
+/// WAIC from pointwise log-likelihood draws: ``lppd`` less the variance of
+/// each observation's log-likelihood.
+///
+/// Parameters
+/// ----------
+/// log_lik : list of list of float
+///     One row per posterior draw, one column per observation.
+///
+/// Returns
+/// -------
+/// Elpd
+#[pyfunction]
+pub(crate) fn elpd_waic(log_lik: Vec<Vec<f64>>) -> PyResult<PyElpd> {
+    let (flat, n) = flatten_draws(&log_lik)?;
+    let inner = act_bayes::elpd::waic(&flat, n).map_err(to_py)?;
+    Ok(PyElpd {
+        inner,
+        pareto_k: None,
+        k_threshold: None,
+    })
+}
+
+/// In-sample log pointwise predictive density,
+/// ``sum_i log(mean_s p(y_i | theta_s))``.
+///
+/// Parameters
+/// ----------
+/// log_lik : list of list of float
+///     One row per posterior draw, one column per observation.
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from actuarialrs.models import lppd
+/// >>> round(lppd([[math.log(0.5)], [math.log(0.25)]]), 12) == round(math.log(0.375), 12)
+/// True
+#[pyfunction]
+pub(crate) fn lppd(log_lik: Vec<Vec<f64>>) -> PyResult<f64> {
+    let (flat, n) = flatten_draws(&log_lik)?;
+    act_bayes::elpd::lppd(&flat, n).map_err(to_py)
+}
+
 /// MCMC diagnostics of chains of draws (Vehtari et al. 2021, as R's
 /// ``posterior``): rank-normalized split R-hat, bulk and tail effective
 /// sample sizes, the effective sample size of the mean and its Monte Carlo

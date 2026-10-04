@@ -84,6 +84,10 @@ reference:
       - models.group_k_fold
       - models.time_ordered
       - models.mcmc_diagnostics
+      - models.elpd_loo
+      - models.elpd_waic
+      - models.lppd
+      - models.Elpd
       - models.deviance_score
       - models.cross_validate
       - models.grid_search
