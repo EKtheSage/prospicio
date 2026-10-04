@@ -225,6 +225,19 @@ log link, at four λ each. Two notes:
   `thresh = 1e-7` stops with coefficients off in the third digit, and
   even `1e-14` leaves them 5e-6 off. The references use `1e-20`.
 
+## Tweedie power
+
+A Tweedie GLM's power `p` is a hyperparameter: IRLS gives the
+coefficients for a given `p`, and `φ` only scales the variance.
+`act_glm::tweedie::tweedie_profile` chooses `p` by profile likelihood, as
+R's `tweedie.profile`: for each `p` on a grid it fits the GLM, maximizes
+the exact Tweedie log-likelihood (Dunn and Smyth's series density from
+`act-prob`, row `i` at `φ / wᵢ`) over `φ`, and refines the best `p` by
+golden-section search between its grid neighbours. Parity: statsmodels
+fits plus an independent NumPy series density
+(`validation/scripts/statsmodels_tweedie_profile.py`). Cross-validated
+deviance cannot choose `p`, since each `p` has its own deviance scale.
+
 ## Attention
 
 `act_nn::AttentionCann` is a CANN whose correction is a transformer over

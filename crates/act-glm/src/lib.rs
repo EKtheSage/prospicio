@@ -10,6 +10,7 @@
 
 pub mod gam;
 pub mod net;
+pub mod tweedie;
 
 use act_core::{Error, Result};
 use act_math::linalg::{cholesky, cholesky_inverse, cholesky_solve, lower_mul};
