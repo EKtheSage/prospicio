@@ -26,7 +26,7 @@ v2 keeps the v1 layering, principle and target scope; it changes priorities, bui
 | --- | --- | --- |
 | First release | Triangle + deterministic Chain Ladder | Triangle + Chain Ladder + Mack + ODP bootstrap returning a joint `PredictiveDistribution` |
 | Phase order | GLM, GAM, pricing before capital | Aggregate, reinsurance, risk measures and capital pulled forward; GLM/GAM/pricing after |
-| Bayesian | Native Gibbs, MH, HMC, NUTS | Own model specs and diagnostics; samplers via nutpie / BridgeStan |
+| Bayesian | Native Gibbs, MH, HMC, NUTS | Own model specs and diagnostics; sampling via nutpie |
 | GAM | Aim at mgcv's useful portion | P-splines, tensor smooths, GCV/REML for Tweedie/Poisson/Gamma only |
 | Tree boosting | Rust adapters for LightGBM/XGBoost | Adapters in the Python/R layer, emitting shared prediction objects |
 | Neural | Burn-native training | Burn in Rust behind the shared model interface (decided 2026-10-03, `docs/design/models.md`); PyTorch models imported for inference through ONNX |
@@ -79,7 +79,7 @@ Build natively where the math is actuarial, the implementation is tractable, and
 | Triangle, deterministic and stochastic reserving | Build | Needed for the shared kernel and WASM target |
 | GLM (IRLS, Tweedie, offsets, regularization) | Build | Tractable; foundation for GAM and GLM reserving |
 | GAM | Build, scoped | P-splines, tensor smooths, GCV/REML for Tweedie/Poisson/Gamma; not mgcv parity |
-| MCMC samplers (NUTS/HMC) | Integrate | nutpie (Rust NUTS) or BridgeStan; own model specs and diagnostics |
+| MCMC samplers (NUTS/HMC) | Integrate | nutpie (its Rust core, `nuts-rs`, for native models); own model specs and diagnostics |
 | Gradient boosting | Integrate | LightGBM/XGBoost via their Python/R bindings; adapters emit shared objects |
 | Neural networks | Build, scoped | Burn in `act-nn`, CPU (`ndarray`) by default and GPU opt-in: one network for Python, R and WASM, reproducible under our RNG streams. Actuarial networks (tabular MLPs, CANN) are small |
 | Dataframes | Integrate | Arrow as interchange; Polars optional at the edges, never the numerical core |
@@ -228,7 +228,7 @@ model.diagnostics()
 | GLM | Rust | Gaussian, Poisson, Gamma, Tweedie, NB, Binomial, Inverse Gaussian; identity/log/logit/probit/inverse/power links; IRLS, weights, offsets, exposure, elastic net, robust covariance |
 | GAM | Rust (on GLM) | B/P-splines, tensor, cyclic, monotone; penalized IRLS; GCV and REML smoothing selection; Tweedie/Poisson/Gamma families first |
 | Survival | Rust | Kaplan-Meier, Cox, parametric, competing risks, multi-state |
-| Bayesian | Specs + diagnostics in Rust; sampling via nutpie or BridgeStan | Hierarchical severity, Bayesian CL, compartmental reserving, credibility; R-hat, ESS, divergences, PPC, WAIC/LOO |
+| Bayesian | Specs + diagnostics in Rust; sampling via nutpie | Hierarchical severity, Bayesian CL, compartmental reserving, credibility; R-hat, ESS, divergences, PPC, ELPD (LOO, WAIC) |
 | Gradient boosting | Python/R adapters over LightGBM, XGBoost | Poisson/Gamma/Tweedie/quantile objectives, monotone constraints, exposure via offsets |
 | Neural | Rust (`act-nn`, Burn) behind the protocol; PyTorch models via ONNX import | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
 
@@ -246,7 +246,7 @@ No release ships unless its methods reproduce reference implementations on stand
 | Pricing | Gini, Lorenz, lift, double lift, calibration, actual vs expected |
 | Probabilistic | Log score, CRPS, PIT, coverage, quantile calibration |
 | Survival | Concordance, Brier score, calibration |
-| Bayesian | WAIC, LOO, posterior predictive checks |
+| Bayesian | ELPD (PSIS-LOO, WAIC), posterior predictive checks |
 | Reserving | Back-testing on held-out diagonals, CDR distribution checks, martingale diagnostic |
 | Capital | VaR backtests, ES calibration, tail exceedance tests |
 
@@ -353,7 +353,7 @@ Reserving and risk ship before pricing, with four gates on the way to v1.0.
 | ◆ *Gate* | Bootstrap reserve and tower results feed capital allocation end to end |
 | **v0.5 — GLM** | IRLS, Tweedie, NB, regularization, GLM reserving; R feature parity |
 | **v0.6 — GAM and pricing** | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility |
-| **v0.7 — Bayesian** | Model specs and diagnostics; nutpie / BridgeStan sampling; Bayesian reserving and credibility |
+| **v0.7 — Bayesian** | Model specs and diagnostics; nutpie sampling; Bayesian reserving and credibility |
 | **v0.8 — Claim-level reserving** | Event histories, payment and closure hazards, severity, ultimate; aggregate to a joint distribution |
 | **v0.9 — Integrations** | LightGBM / XGBoost and PyTorch adapters on the shared protocol; WASM build |
 | ◆ *Gate* | API review and deprecation pass |
@@ -385,7 +385,7 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 | Working prefix | `actuarial-rs` repo, `act-*` crates, `actuarialrs` Python/R package | Now |
 | License | MIT/Apache-2.0 dual (Rust convention); confirm compatibility with CRAN distribution | Before first public commit |
 | IP ownership | Confirm with employer that open-source work in this domain is personal IP | Before first public commit |
-| Bayesian backend | nutpie (Rust-native NUTS) vs BridgeStan (Stan models) vs both | Before v0.7 |
+| ~~Bayesian backend~~ | Decided 2026-10-04: nutpie. Native models sample with its Rust core `nuts-rs` (from R too); Python users can hand nutpie traces of PyMC or Stan models to the shared diagnostics (`docs/design/models.md`) | — |
 | ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`) | — |
 | WASM scope | Which crates guarantee `wasm32` builds; single-threaded fallback policy | Before v0.3 |
 | Docs hosting | GitHub Pages (public, needs the repo public or a paid plan) vs private hosting; waits on IP ownership and license | Before v0.1 publish |

@@ -74,10 +74,14 @@ scheme version.
 
 ## Open questions
 
-1. **ChaCha20 vs ChaCha8/12.** ChaCha20 is the conservative choice and what
-   exists today. ChaCha8 is about 2× faster and statistically sound for
-   simulation, but a change later would be a scheme bump. Decide before
-   v0.1 ships.
+1. ~~**ChaCha20 vs ChaCha8/12**~~: decided 2026-10-04, ChaCha20, unless an
+   alternative gives a substantial improvement. Measured on 2026-10-04
+   (release build, one core): raw `u64` output is 2.1× faster with ChaCha8
+   (50M draws: 0.30 s ChaCha20, 0.19 s ChaCha12, 0.14 s ChaCha8), but a
+   lognormal draw by inverse transform, the typical use, is only 2.7%
+   faster (10M draws: 2.16 s vs 2.10 s), because the quantile function
+   costs about 30 times the generator. Not substantial; a scheme bump is
+   not worth it.
 2. **Philox** (counter-based, as used by NumPy and JAX) would make streams
    reproducible from NumPy directly. That is worth it only if users
    regenerate our streams in NumPy; ChaCha20 is already reproducible via
