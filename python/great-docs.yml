@@ -68,6 +68,7 @@ reference:
       - models.GlmFit
       - models.ElasticNet
       - models.ElasticNetFit
+      - models.CvPath
       - models.Gam
       - models.GamFit
       - models.deviance
@@ -78,6 +79,12 @@ reference:
       - models.group_k_fold
       - models.time_ordered
       - models.mcmc_diagnostics
+      - models.deviance_score
+      - models.cross_validate
+      - models.grid_search
+      - models.random_search
+      - models.log_uniform
+      - models.SearchResult
   - title: Pricing
     desc: The collective model, layer rating, and reinsurance tower matching.
     contents:

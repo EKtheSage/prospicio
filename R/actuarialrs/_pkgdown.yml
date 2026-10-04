@@ -95,11 +95,13 @@ reference:
       - glm_model
       - elastic_net_fit
       - elastic_net_model
+      - elastic_net_cv
       - gam_fit
       - gam_model
       - predict_distribution
       - model_metrics
       - resampling
+      - tuning
       - mcmc_diagnostics
   - title: Dependence
     contents:

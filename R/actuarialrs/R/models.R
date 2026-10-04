@@ -1,6 +1,7 @@
-# Models lane: GLMs, elastic nets, GAMs, metrics, resampling and MCMC diagnostics, over
-# crates/act-r/src/models.rs. R builds the design matrix with
-# model.matrix(), so formulas, factors and contrasts behave as in stats::glm.
+# Models lane: GLMs, elastic nets, GAMs, metrics, resampling, tuning and
+# MCMC diagnostics, over crates/act-r/src/models.rs. R builds the design
+# matrix with model.matrix(), so formulas, factors and contrasts behave as in
+# stats::glm.
 
 #' @include distributions.R
 #' @importFrom stats coef predict
@@ -30,6 +31,23 @@ new_design <- function(object, newdata, offset) {
   off <- stats::model.offset(mf)
   if (!is.null(offset)) off <- if (is.null(off)) offset else off + offset
   list(x = x, offset = if (is.null(off)) double() else as.double(off))
+}
+
+# Penalty factors per design column, from a full or a named vector.
+penalty_factors <- function(penalty_factor, x) {
+  if (is.null(penalty_factor)) return(double())
+  pf <- stats::setNames(rep(1, ncol(x)), colnames(x))
+  if (is.null(names(penalty_factor))) {
+    if (length(penalty_factor) != ncol(x)) {
+      stop(sprintf("penalty_factor needs %d values, one per design column", ncol(x)))
+    }
+    pf[] <- penalty_factor
+  } else {
+    unknown <- setdiff(names(penalty_factor), names(pf))
+    if (length(unknown)) stop("unknown design columns in penalty_factor: ", toString(unknown))
+    pf[names(penalty_factor)] <- penalty_factor
+  }
+  as.double(pf)
 }
 
 family_args <- function(theta, power) {
@@ -173,21 +191,7 @@ elastic_net_fit <- function(formula, data, family = "poisson", link = NULL, alph
                             weights = NULL, theta = NULL, power = NULL, link_power = NULL) {
   des <- model_design(formula, data, offset, weights)
   fa <- family_args(theta, power)
-  pf <- double()
-  if (!is.null(penalty_factor)) {
-    pf <- stats::setNames(rep(1, ncol(des$x)), colnames(des$x))
-    if (is.null(names(penalty_factor))) {
-      if (length(penalty_factor) != ncol(des$x)) {
-        stop(sprintf("penalty_factor needs %d values, one per design column", ncol(des$x)))
-      }
-      pf[] <- penalty_factor
-    } else {
-      unknown <- setdiff(names(penalty_factor), names(pf))
-      if (length(unknown)) stop("unknown design columns in penalty_factor: ", toString(unknown))
-      pf[names(penalty_factor)] <- penalty_factor
-    }
-    pf <- as.double(pf)
-  }
+  pf <- penalty_factors(penalty_factor, des$x)
   ptr <- rust_result(elastic_net_fit_design(
     as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
     if (is.null(link)) "" else link, as.double(alpha),
@@ -489,6 +493,118 @@ group_k_fold <- function(groups, k, seed) {
 #' @export
 time_ordered <- function(periods, n_test) {
   rust_result(time_ordered_rust(as.double(periods), as.double(n_test)))
+}
+
+#' Cross-validation and hyperparameter search
+#'
+#' `cross_validate()` fits a model to each split's training rows and scores
+#' it on the test rows. `grid_search()` does that for each candidate and
+#' picks the lowest mean score; `random_search()` draws the candidates.
+#' Models are built by your own `fit` function, so any of [glm_fit()],
+#' [elastic_net_fit()] or [gam_fit()] (or anything else) can be tuned.
+#'
+#' @param data A data frame.
+#' @param splits Splits from [k_fold()], [group_k_fold()] or [time_ordered()].
+#' @param fit `fit(train)` for `cross_validate()`, `fit(candidate, train)`
+#'   for the searches: returns a fitted model.
+#' @param score `score(model, test)`: a loss on the test rows (lower is
+#'   better), such as a mean [family_deviance()].
+#' @param candidates A list (or vector) of hyperparameter values.
+#' @param n Number of random candidates.
+#' @param draw `draw()`: one random candidate, using R's generator.
+#' @param seed Seed for R's generator before drawing.
+#' @returns `cross_validate()`: one score per split. The searches: a data
+#'   frame with a `candidate` list column and the `score`, and attribute
+#'   `best`, the row of the lowest score.
+#' @name tuning
+#' @examples
+#' d <- data.frame(x = 1:40 / 10)
+#' d$y <- 1 + 2 * d$x + sin(1:40)
+#' folds <- k_fold(nrow(d), 4, seed = 1)
+#' mse <- function(m, test) mean((test$y - predict(m, test))^2)
+#' cross_validate(d, folds, function(train) glm_fit(y ~ x, train, family = "gaussian"), mse)
+#' g <- grid_search(c(0, 0.1, 1), d, folds,
+#'                  function(lam, train) elastic_net_fit(y ~ x, train, family = "gaussian",
+#'                                                       lambda = lam),
+#'                  mse)
+#' g[attr(g, "best"), ]
+NULL
+
+#' @rdname tuning
+#' @export
+cross_validate <- function(data, splits, fit, score) {
+  vapply(splits, function(s) {
+    model <- fit(data[s$train, , drop = FALSE])
+    as.double(score(model, data[s$test, , drop = FALSE]))
+  }, double(1))
+}
+
+#' @rdname tuning
+#' @export
+grid_search <- function(candidates, data, splits, fit, score) {
+  candidates <- as.list(candidates)
+  if (!length(candidates)) stop("candidates must not be empty")
+  scores <- vapply(candidates, function(cand) {
+    mean(cross_validate(data, splits, function(train) fit(cand, train), score))
+  }, double(1))
+  out <- data.frame(candidate = I(candidates), score = scores)
+  attr(out, "best") <- which.min(scores)
+  out
+}
+
+#' @rdname tuning
+#' @export
+random_search <- function(n, draw, data, splits, fit, score, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  grid_search(lapply(seq_len(n), function(i) draw()), data, splits, fit, score)
+}
+
+#' Cross-validate an elastic net
+#'
+#' glmnet's `cv.glmnet()` on the Rust core: on each fold, fits the whole
+#' `lambda` path to the other folds (warm starts) and scores the family's
+#' mean deviance on the held-out fold; folds run in parallel. The score per
+#' `lambda` is the folds' mean weighted by fold weight, with its standard
+#' error. Matches `cv.glmnet()` on the same folds.
+#'
+#' @inheritParams elastic_net_fit
+#' @param folds Number of folds, used when `foldid` is `NULL`.
+#' @param seed Seed of the fold assignment.
+#' @param foldid Optional fold number per row.
+#' @returns A list with `lambda`, `mean`, `se`, `lambda_min` (lowest mean)
+#'   and `lambda_1se` (the largest `lambda` within one standard error of
+#'   it), and `fit`, the [elastic_net_model] on all rows over `lambda`.
+#' @export
+#' @examples
+#' set.seed(1)
+#' d <- data.frame(x1 = rnorm(80), x2 = rnorm(80))
+#' d$y <- 1 + 2 * d$x1 + rnorm(80)
+#' cv <- elastic_net_cv(y ~ x1 + x2, d, family = "gaussian", nlambda = 30)
+#' coef(cv$fit, lambda = cv$lambda_1se)
+elastic_net_cv <- function(formula, data, family = "poisson", link = NULL, alpha = 1,
+                           lambda = NULL, nlambda = 100, lambda_min_ratio = 1e-4,
+                           standardize = TRUE, penalty_factor = NULL, offset = NULL,
+                           weights = NULL, folds = 10, seed = 1, foldid = NULL,
+                           theta = NULL, power = NULL, link_power = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  if (is.null(foldid)) {
+    foldid <- integer(nrow(des$x))
+    for (k in seq_along(sp <- k_fold(nrow(des$x), folds, seed))) foldid[sp[[k]]$test] <- k
+  }
+  fa <- family_args(theta, power)
+  pf <- penalty_factors(penalty_factor, des$x)
+  cv <- rust_result(elastic_net_cv_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
+    if (is.null(link)) "" else link, as.double(alpha),
+    if (is.null(lambda)) double() else as.double(lambda), as.double(nlambda),
+    as.double(lambda_min_ratio), isTRUE(standardize), pf, fa$theta, fa$power,
+    if (is.null(link_power)) NaN else as.double(link_power), as.double(foldid)
+  ))
+  cv$fit <- elastic_net_fit(formula, data, family = family, link = link, alpha = alpha,
+                            lambda = cv$lambda, standardize = standardize,
+                            penalty_factor = penalty_factor, offset = offset, weights = weights,
+                            theta = theta, power = power, link_power = link_power)
+  cv
 }
 
 #' MCMC convergence diagnostics

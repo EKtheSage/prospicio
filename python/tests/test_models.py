@@ -3,6 +3,11 @@ import math
 import pytest
 
 from actuarialrs.models import (
+    cross_validate,
+    deviance_score,
+    grid_search,
+    log_uniform,
+    random_search,
     ElasticNet,
     Design,
     Gam,
@@ -110,3 +115,31 @@ def test_elastic_net_path():
     assert pd.n_sims == 50
     with pytest.raises(ValueError):
         ElasticNet("gaussian", alpha=2.0).fit(d, y)
+
+
+def test_cross_validation_and_search():
+    x1 = [i / 4 for i in range(60)]
+    x2 = [math.sin(7.3 * i) for i in range(60)]
+    y = [2.0 + 0.8 * a + math.cos(3.1 * i) for i, (a, b) in enumerate(zip(x1, x2))]
+    d = Design([[1.0] * 60, x1, x2], ["(Intercept)", "x1", "x2"])
+    splits = k_fold(60, 5, 1)
+    score = deviance_score("gaussian")
+    glm_scores = cross_validate(Glm("gaussian"), d, y, splits, score)
+    assert len(glm_scores) == 5 and all(s > 0 for s in glm_scores)
+    # Threads give the same scores as one thread.
+    assert cross_validate(Glm("gaussian"), d, y, splits, score, n_jobs=1) == glm_scores
+    # The elastic net's own path cross-validation agrees with refitting.
+    net = ElasticNet("gaussian", alpha=1.0)
+    lams = net.lambda_path(d, y, n=8, min_ratio=1e-3)
+    cv = net.cross_validate(d, y, lams, splits)
+    assert cv.lam_1se >= cv.lam_min and len(cv.mean) == 8 and len(cv.fold_scores) == 5
+    k = 3
+    refit = cross_validate(net.with_lam(lams[k]), d, y, splits, score)
+    fold_w = [len(t) for _, t in splits]
+    weighted = sum(w * s for w, s in zip(fold_w, refit)) / sum(fold_w)
+    assert abs(weighted - cv.mean[k]) < 1e-6 * cv.mean[k]
+    found = grid_search(lams, lambda lam: net.with_lam(lam), d, y, splits, score)
+    assert found.best_candidate == found.scores[found.best][0]
+    rnd = random_search(5, 1, lambda rng: log_uniform(rng, 1e-3, 1.0),
+                        lambda lam: net.with_lam(lam), d, y, splits, score)
+    assert len(rnd.scores) == 5 and all(1e-3 <= c <= 1.0 for c, _ in rnd.scores)
