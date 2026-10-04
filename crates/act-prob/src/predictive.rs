@@ -486,6 +486,91 @@ impl PredictiveDistribution {
     }
 }
 
+impl PredictiveDistribution {
+    /// Blends several models' predictive distributions with `weights`
+    /// (from stacking or pseudo-BMA, say): simulation `i` is simulation `i`
+    /// of model `k`, with `k` drawn with probability `weights[k]` from
+    /// stream `i` of `seed`. Each row stays a joint draw of one model, so
+    /// sums across components remain coherent.
+    ///
+    /// Every distribution must have the same dimensions, components (in
+    /// the same order) and number of simulations. Weights are normalized;
+    /// they must be non-negative and not all zero.
+    ///
+    /// ```
+    /// use act_prob::{Empirical, KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// let one = |v: f64| {
+    ///     PredictiveDistribution::from_draws(
+    ///         vec!["lob".into()],
+    ///         vec![vec![KeyValue::from("a")]],
+    ///         vec![v; 1000],
+    ///         Provenance::new("example"),
+    ///     )
+    ///     .unwrap()
+    /// };
+    /// let blend = PredictiveDistribution::blend(&[&one(0.0), &one(1.0)], &[0.25, 0.75], 7).unwrap();
+    /// let share = blend.total().draws().iter().sum::<f64>() / 1000.0;
+    /// assert!((share - 0.75).abs() < 0.05);
+    /// ```
+    pub fn blend(models: &[&PredictiveDistribution], weights: &[f64], seed: u64) -> Result<Self> {
+        let first = *models
+            .first()
+            .ok_or_else(|| Error::Data("blend needs at least one model".into()))?;
+        if weights.len() != models.len() {
+            return Err(Error::Data(format!(
+                "{} weights for {} models",
+                weights.len(),
+                models.len()
+            )));
+        }
+        if weights.iter().any(|w| !(w.is_finite() && *w >= 0.0)) {
+            return Err(Error::Data(
+                "weights must be finite and non-negative".into(),
+            ));
+        }
+        let total: f64 = weights.iter().sum();
+        if total <= 0.0 {
+            return Err(Error::Data("weights must not all be zero".into()));
+        }
+        for m in &models[1..] {
+            if m.dims != first.dims || m.components != first.components || m.n_sims != first.n_sims
+            {
+                return Err(Error::Data(
+                    "blended distributions need the same dimensions, components and simulations"
+                        .into(),
+                ));
+            }
+        }
+        let mut cumulative = Vec::with_capacity(weights.len());
+        let mut acc = 0.0;
+        for w in weights {
+            acc += w / total;
+            cumulative.push(acc);
+        }
+        let m = first.n_components();
+        let mut draws = Vec::with_capacity(first.draws.len());
+        for i in 0..first.n_sims {
+            let u = StreamRng::new(seed, i as u64).next_open01();
+            let k = cumulative
+                .iter()
+                .position(|&c| u < c)
+                .unwrap_or(models.len() - 1);
+            draws.extend_from_slice(&models[k].draws[i * m..(i + 1) * m]);
+        }
+        let mut provenance = Provenance::new("blend").seed(seed, SIM_INDEX_SCHEME);
+        for (model, w) in models.iter().zip(weights) {
+            provenance = provenance.param(model.provenance.model.clone(), w / total);
+        }
+        Self::from_draws(
+            first.dims.clone(),
+            first.components.clone(),
+            draws,
+            provenance,
+        )
+    }
+}
+
 impl Distribution for PredictiveDistribution {
     fn mean(&self) -> f64 {
         self.total().mean()
@@ -679,6 +764,43 @@ mod tests {
         let pd = lob_origin();
         assert!(pd.aggregate(&["state"]).is_err());
         assert!(pd.aggregate(&["lob", "lob"]).is_err());
+    }
+
+    #[test]
+    fn blend_keeps_rows_whole_and_checks_shapes() {
+        let pd = |v: f64| {
+            PredictiveDistribution::from_draws(
+                vec!["lob".into()],
+                vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+                (0..400)
+                    .flat_map(|i| [v + i as f64, -(v + i as f64)])
+                    .collect(),
+                Provenance::new(format!("m{v}")),
+            )
+            .unwrap()
+        };
+        let (a, b) = (pd(0.0), pd(0.5));
+        let blend = PredictiveDistribution::blend(&[&a, &b], &[1.0, 3.0], 3).unwrap();
+        // Each row comes whole from one model: its components still cancel.
+        assert!(blend.total().draws().iter().all(|t| t.abs() < 1e-12));
+        let from_b = (0..400)
+            .filter(|&i| blend.draws[2 * i].fract() != 0.0)
+            .count() as f64;
+        assert!((from_b / 400.0 - 0.75).abs() < 0.08);
+        assert_eq!(
+            blend.provenance().parameters[1],
+            ("m0.5".into(), "0.75".into())
+        );
+        assert!(PredictiveDistribution::blend(&[&a, &b], &[1.0], 3).is_err());
+        assert!(PredictiveDistribution::blend(&[&a, &b], &[0.0, 0.0], 3).is_err());
+        let short = PredictiveDistribution::from_draws(
+            vec!["lob".into()],
+            vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+            vec![0.0; 4],
+            Provenance::new("short"),
+        )
+        .unwrap();
+        assert!(PredictiveDistribution::blend(&[&a, &short], &[1.0, 1.0], 3).is_err());
     }
 
     #[test]

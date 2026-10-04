@@ -722,8 +722,37 @@ fn elpd_waic_rust(log_lik: &[f64], n: f64) -> Result<List> {
     Ok(elpd_list(act_bayes::elpd::waic(log_lik, n).map_err(to_r)?))
 }
 
+/// Columns of an `n × k` column-major matrix.
+fn columns(x: &[f64], k: usize) -> Result<Vec<Vec<f64>>> {
+    if k == 0 || x.len() % k != 0 {
+        return Err(Error::Other(
+            "lpd must be a matrix with one column per model".into(),
+        ));
+    }
+    Ok(x.chunks(x.len() / k).map(<[f64]>::to_vec).collect())
+}
+
+/// Stacking weights from an `n × k` column-major matrix of pointwise
+/// log predictive densities.
+#[extendr]
+fn stacking_weights_rust(lpd: &[f64], k: f64) -> Result<Vec<f64>> {
+    let cols = columns(lpd, whole(k, "k")? as usize)?;
+    act_models::stack::stacking_weights(&cols).map_err(to_r)
+}
+
+/// Pseudo-BMA(+) weights; `n_draws = 0` for no bootstrap.
+#[extendr]
+fn pseudo_bma_weights_rust(lpd: &[f64], k: f64, n_draws: f64, seed: f64) -> Result<Vec<f64>> {
+    let cols = columns(lpd, whole(k, "k")? as usize)?;
+    let n_draws = whole(n_draws, "n_draws")? as usize;
+    let bb = (n_draws > 0).then_some((n_draws, whole(seed, "seed")?));
+    act_models::stack::pseudo_bma_weights(&cols, bb).map_err(to_r)
+}
+
 extendr_module! {
     mod models;
+    fn stacking_weights_rust;
+    fn pseudo_bma_weights_rust;
     fn glm_fit_design;
     fn elastic_net_fit_design;
     fn elastic_net_cv_design;

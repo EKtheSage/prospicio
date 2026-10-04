@@ -33,6 +33,8 @@ from .actuarialrs_native import (
     pit,
     pit_from_draws,
     pit_histogram,
+    pseudo_bma_weights,
+    stacking_weights,
     time_ordered,
 )
 
@@ -72,6 +74,8 @@ __all__ = [
     "SearchResult",
     "compare",
     "Comparison",
+    "stacking_weights",
+    "pseudo_bma_weights",
 ]
 
 

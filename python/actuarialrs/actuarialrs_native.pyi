@@ -3919,6 +3919,36 @@ class PredictiveDistribution:
         ValueError
             If ``keep`` names an unknown dimension or repeats one.
         """
+    @staticmethod
+    def blend(models: Sequence[PredictiveDistribution], weights: Sequence[float], seed: int) -> PredictiveDistribution:
+        """
+        Blends several models' predictive distributions: simulation ``i`` is
+        simulation ``i`` of model ``k``, with ``k`` drawn with probability
+        ``weights[k]`` from stream ``i`` of ``seed``. Rows stay whole, so sums
+        across components remain coherent. Use weights from
+        ``stacking_weights`` or ``pseudo_bma_weights``.
+        
+        Parameters
+        ----------
+        models : list of PredictiveDistribution
+            Same dimensions, components and number of simulations.
+        weights : list of float
+            Non-negative, not all zero; normalized.
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Examples
+        --------
+        >>> from actuarialrs.distributions import PredictiveDistribution
+        >>> a = PredictiveDistribution(["lob"], [("x",)], [[0.0]] * 1000)
+        >>> b = PredictiveDistribution(["lob"], [("x",)], [[1.0]] * 1000)
+        >>> mix = PredictiveDistribution.blend([a, b], [0.25, 0.75], seed=7)
+        >>> abs(mix.mean() - 0.75) < 0.05
+        True
+        """
     def components(self, /) -> list[Any]:
         """
         Component keys, one tuple per column.
@@ -5791,6 +5821,28 @@ def pit_histogram(pit: Sequence[float], bins: int = 10) -> list[int]:
     list of int
     """
 
+def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n_draws: int = 1000, seed: int = 0) -> list[float]:
+    """
+    Pseudo-BMA weights, ``w_k`` proportional to ``exp(elpd_k)``; with
+    ``bootstrap=True``, pseudo-BMA+ weights averaged over Bayesian-bootstrap
+    replicates of the observations, which keeps a model that is only
+    slightly better from taking all the weight.
+    
+    Parameters
+    ----------
+    lpd : list of list of float
+        One list per model, as for ``stacking_weights``.
+    bootstrap : bool, default True
+    n_draws : int, default 1000
+        Bootstrap replicates.
+    seed : int, default 0
+        Replicate ``b`` uses stream ``b`` of ``seed``.
+    
+    Returns
+    -------
+    list of float
+    """
+
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
     """
     Simulates marginals joined by a copula.
@@ -5852,6 +5904,34 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
     >>> abs(events.totals().mean() - 5000.0) < 75.0
     True
+    """
+
+def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
+    """
+    Stacking weights from pointwise held-out log predictive densities
+    (Yao et al., 2018): the weights on the simplex that maximize the log
+    score of the mixture of the models' predictive distributions.
+    
+    Works for any model: pass PSIS-LOO pointwise values (``Elpd.pointwise``)
+    for a Bayesian fit, or cross-validated log densities for any other. A
+    model that adds nothing gets weight exactly 0.
+    
+    Parameters
+    ----------
+    lpd : list of list of float
+        One list per model, each with one log density per observation.
+    
+    Returns
+    -------
+    list of float
+        One weight per model, summing to 1.
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import stacking_weights
+    >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
+    >>> [round(x, 9) for x in w]
+    [0.5, 0.5]
     """
 
 def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], list[int]]]:

@@ -22,6 +22,7 @@ pub mod link;
 pub mod metrics;
 pub mod model;
 pub mod resample;
+pub mod stack;
 
 pub use design::{Coding, Column, Design, Frame, Term, Terms};
 pub use family::Family;

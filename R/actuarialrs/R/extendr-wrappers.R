@@ -6,7 +6,13 @@
 #' @useDynLib actuarialrs, .registration = TRUE
 NULL
 
+blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
+
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
+
+stacking_weights_rust <- function(lpd, k) .Call(wrap__stacking_weights_rust, lpd, k)
+
+pseudo_bma_weights_rust <- function(lpd, k, n_draws, seed) .Call(wrap__pseudo_bma_weights_rust, lpd, k, n_draws, seed)
 
 glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power) .Call(wrap__glm_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power)
 

@@ -40,7 +40,7 @@ mod actuarialrs_native {
         PyCoding, PyCvPath, PyDesign, PyElasticNet, PyElasticNetFit, PyElpd, PyGam, PyGamFit,
         PyGlm, PyGlmFit, PyTerms, crps, deviance, elpd_loo, elpd_waic, gini, group_k_fold, k_fold,
         ks_uniform, lift, log_score, lppd, mcmc_diagnostics, pit, pit_from_draws, pit_histogram,
-        time_ordered,
+        pseudo_bma_weights, stacking_weights, time_ordered,
     };
     #[pymodule_export]
     use super::pareto::{

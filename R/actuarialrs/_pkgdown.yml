@@ -48,6 +48,7 @@ reference:
   - title: Predictive distributions
     contents:
       - predictive_distribution
+      - blend_predictive
       - marginal
       - total
       - draw_matrix
@@ -109,6 +110,7 @@ reference:
       - compare_models
       - mcmc_diagnostics
       - elpd
+      - model_weights
   - title: Dependence
     contents:
       - copula

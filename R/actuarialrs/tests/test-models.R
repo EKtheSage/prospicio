@@ -170,4 +170,19 @@ near(attr(cmp, "split_scores")["linear", "mse", ], cross_validate(cd, cf, lin, m
 stopifnot(cmp$difference_std_error[1] == 0, cmp$mean[3] > cmp$mean[1])
 stopifnot(inherits(try(compare_models(list(lin), cd, cf, list(mse = mse)), silent = TRUE), "try-error"))
 
+# Stacking and pseudo-BMA weights; blending.
+lpd <- cbind(a = c(-0.1, -0.1, -3, -3), b = c(-3, -3, -0.1, -0.1))
+near(stacking_weights(lpd), c(a = 0.5, b = 0.5), 1e-9)
+dom <- cbind(a = lpd[, 1], worse = lpd[, 1] - 1)
+stopifnot(identical(stacking_weights(dom), c(a = 1, worse = 0)))
+near(pseudo_bma_weights(dom, bootstrap = FALSE)[["a"]], 1 / (1 + exp(-4)), 1e-12)
+pb <- pseudo_bma_weights(dom, n_draws = 500, seed = 3)
+stopifnot(abs(sum(pb) - 1) < 1e-12, pb[["a"]] > 0.5)
+stopifnot(inherits(try(stacking_weights(lpd[, 1, drop = FALSE]), silent = TRUE), "try-error"))
+p1 <- predictive_distribution(cbind(rep(1, 200), rep(-1, 200)), data.frame(lob = c("x", "y")))
+p2 <- predictive_distribution(cbind(rep(2, 200), rep(-2, 200)), data.frame(lob = c("x", "y")))
+mix <- blend_predictive(list(p1, p2), c(1, 1), seed = 5)
+stopifnot(all(rowSums(draw_matrix(mix)) == 0))
+stopifnot(inherits(try(blend_predictive(list(p1, p2), 1, seed = 5), silent = TRUE), "try-error"))
+
 cat("actuarialrs R models tests passed\n")

@@ -1275,6 +1275,46 @@ impl PyPredictiveDistribution {
             .collect()
     }
 
+    /// Blends several models' predictive distributions: simulation ``i`` is
+    /// simulation ``i`` of model ``k``, with ``k`` drawn with probability
+    /// ``weights[k]`` from stream ``i`` of ``seed``. Rows stay whole, so sums
+    /// across components remain coherent. Use weights from
+    /// ``stacking_weights`` or ``pseudo_bma_weights``.
+    ///
+    /// Parameters
+    /// ----------
+    /// models : list of PredictiveDistribution
+    ///     Same dimensions, components and number of simulations.
+    /// weights : list of float
+    ///     Non-negative, not all zero; normalized.
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.distributions import PredictiveDistribution
+    /// >>> a = PredictiveDistribution(["lob"], [("x",)], [[0.0]] * 1000)
+    /// >>> b = PredictiveDistribution(["lob"], [("x",)], [[1.0]] * 1000)
+    /// >>> mix = PredictiveDistribution.blend([a, b], [0.25, 0.75], seed=7)
+    /// >>> abs(mix.mean() - 0.75) < 0.05
+    /// True
+    #[staticmethod]
+    fn blend(
+        py: Python<'_>,
+        models: Vec<PyRef<'_, PyPredictiveDistribution>>,
+        weights: Vec<f64>,
+        seed: u64,
+    ) -> PyResult<Self> {
+        let refs: Vec<&PredictiveDistribution> = models.iter().map(|m| &m.inner).collect();
+        let inner = py
+            .detach(|| PredictiveDistribution::blend(&refs, &weights, seed))
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
     /// One component's draws, or ``None`` if no component has this key.
     ///
     /// Parameters
