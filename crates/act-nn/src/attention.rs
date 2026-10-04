@@ -22,18 +22,19 @@
 //! [`Cann`](crate::Cann): the family's weighted deviance by Adam on
 //! mini-batches, on the CPU in `f64`, reproducible from the seed.
 
-use act_core::{Error, Result, StreamRng};
+use act_core::{Error, Result};
 use act_models::{Design, Family, Fitted, Link, Model};
 use act_prob::{PredictiveDistribution, Provenance};
-use burn::module::{AutodiffModule, Initializer, Module, Param};
+use burn::module::{Initializer, Module, Param};
 use burn::nn::attention::{MhaInput, MultiHeadAttention, MultiHeadAttentionConfig};
 use burn::nn::{LayerNorm, LayerNormConfig, Linear, LinearConfig};
-use burn::optim::{AdamConfig, GradientsParams, Optimizer};
 use burn::tensor::activation::relu;
 use burn::tensor::backend::Backend;
 use burn::tensor::{Tensor, TensorData};
 
-use crate::{Cpu, Scaling, Train, check_family, loss, process_draws, seeded};
+use crate::{
+    Cpu, EarlyStopping, Scaling, Train, Training, check_family, process_draws, seeded, train,
+};
 
 /// One pre-norm transformer block.
 #[derive(Module, Debug)]
@@ -147,6 +148,8 @@ pub struct AttentionCann {
     pub learning_rate: f64,
     /// Seeds the initial weights and the mini-batch order.
     pub seed: u64,
+    /// Hold out rows and keep the best epoch; off by default.
+    pub early_stopping: Option<EarlyStopping>,
 }
 
 impl AttentionCann {
@@ -164,6 +167,7 @@ impl AttentionCann {
             batch_size: 64,
             learning_rate: 1e-3,
             seed: 0,
+            early_stopping: None,
         }
     }
 
@@ -268,37 +272,45 @@ impl Model for AttentionCann {
         let scaling = Scaling::fit(design);
         let x = scaling.apply(design);
         let sizes: Vec<usize> = groups.iter().map(Vec::len).collect();
-        let mut net: TokenNet<Train> =
+        let net: TokenNet<Train> =
             seeded::<Train, _>(&device, self.seed, || TokenNet::new(&sizes, self, &device));
-        let mut optimizer = AdamConfig::new().init();
         let (offset, w) = (design.offset(), design.weights());
-        let mut order: Vec<usize> = (0..n).collect();
-        for epoch in 0..self.epochs {
-            let mut rng = StreamRng::new(self.seed, epoch as u64);
-            for i in (1..n).rev() {
-                let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-                order.swap(i, j);
-            }
-            for batch in order.chunks(self.batch_size) {
-                let m = batch.len();
-                let pick = |v: &[f64]| batch.iter().map(|&i| v[i]).collect::<Vec<f64>>();
-                let inputs = token_inputs::<Train>(&x, p, batch, &groups, &device);
-                let ob = Tensor::<Train, 1>::from_data(TensorData::new(pick(offset), [m]), &device);
-                let yb = Tensor::<Train, 1>::from_data(TensorData::new(pick(y), [m]), &device);
-                let wb = Tensor::<Train, 1>::from_data(TensorData::new(pick(w), [m]), &device);
-                let eta = ob + net.forward(inputs).0;
-                let l = loss(self.family, eta, yb, wb);
-                let grads = GradientsParams::from_grads(l.backward(), &net);
-                net = optimizer.step(self.learning_rate, net, grads);
-            }
-        }
+        let training = Training {
+            family: self.family,
+            link: self.link,
+            epochs: self.epochs,
+            batch_size: self.batch_size,
+            learning_rate: self.learning_rate,
+            seed: self.seed,
+            early_stopping: self.early_stopping,
+            y,
+            weights: w,
+            offset,
+        };
+        let trained = train(
+            &training,
+            net,
+            |net: &TokenNet<Train>, rows| {
+                net.forward(token_inputs::<Train>(&x, p, rows, &groups, &device))
+                    .0
+            },
+            |net: &TokenNet<Cpu>, rows| {
+                net.forward(token_inputs::<Cpu>(&x, p, rows, &groups, &device))
+                    .0
+                    .into_data()
+                    .to_vec::<f64>()
+                    .map_err(|e| Error::Data(format!("network output: {e:?}")))
+            },
+        )?;
         let mut fit = AttentionCannFit {
             spec: self.clone(),
             names: design.names().to_vec(),
             tokens: names,
             groups,
             scaling,
-            net: net.valid(),
+            net: trained.net,
+            best_epoch: trained.best_epoch,
+            validation_history: trained.history,
             dispersion: 1.0,
             fitted: Vec::new(),
         };
@@ -366,6 +378,8 @@ pub struct AttentionCannFit {
     groups: Vec<Vec<usize>>,
     scaling: Scaling,
     net: TokenNet<Cpu>,
+    best_epoch: Option<usize>,
+    validation_history: Vec<f64>,
     dispersion: f64,
     fitted: Vec<f64>,
 }
@@ -434,6 +448,16 @@ impl AttentionCannFit {
         &self.fitted
     }
 
+    /// With early stopping, the epoch (from 1) whose network was kept.
+    pub fn best_epoch(&self) -> Option<usize> {
+        self.best_epoch
+    }
+
+    /// With early stopping, the validation mean deviance after each epoch.
+    pub fn validation_history(&self) -> &[f64] {
+        &self.validation_history
+    }
+
     /// Dispersion: 1 for the Poisson, otherwise Pearson's estimate on the
     /// training data (`Σ w (y - μ)² / V(μ) / n`).
     pub fn dispersion(&self) -> f64 {
@@ -483,6 +507,7 @@ impl Fitted for AttentionCannFit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use act_core::StreamRng;
     use act_models::metrics::mean_deviance;
     use act_prob::{Counting, Poisson};
 

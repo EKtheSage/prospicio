@@ -83,6 +83,8 @@ pub struct Cann {
     pub learning_rate: f64,
     /// Seeds the initial weights and the mini-batch order.
     pub seed: u64,
+    /// Hold out rows and keep the best epoch; off by default.
+    pub early_stopping: Option<EarlyStopping>,
 }
 
 impl Cann {
@@ -97,6 +99,7 @@ impl Cann {
             batch_size: 64,
             learning_rate: 1e-3,
             seed: 0,
+            early_stopping: None,
         }
     }
 
@@ -163,6 +166,161 @@ pub(crate) fn process_draws(
             }
         },
     )
+}
+
+/// Early stopping: hold out a share of the training rows, score the
+/// network on them after every epoch by the family's mean deviance, and
+/// keep the epoch that scored best, stopping once `patience` epochs pass
+/// without improvement. The returned network is that best one, trained on
+/// the remaining rows.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EarlyStopping {
+    /// Share of rows held out for validation, in `(0, 1)`.
+    pub validation_share: f64,
+    /// Epochs without improvement before stopping.
+    pub patience: usize,
+}
+
+impl EarlyStopping {
+    /// A fifth of the rows held out, patience 10 epochs.
+    pub fn new() -> Self {
+        Self {
+            validation_share: 0.2,
+            patience: 10,
+        }
+    }
+
+    fn check(&self) -> Result<()> {
+        if !(self.validation_share > 0.0 && self.validation_share < 1.0) || self.patience == 0 {
+            return Err(Error::InvalidParameter {
+                name: "validation_share",
+                value: self.validation_share,
+                reason: "early stopping needs a share in (0, 1) and a positive patience",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Default for EarlyStopping {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The settings every network trains with.
+pub(crate) struct Training<'a> {
+    pub(crate) family: Family,
+    pub(crate) link: Link,
+    pub(crate) epochs: usize,
+    pub(crate) batch_size: usize,
+    pub(crate) learning_rate: f64,
+    pub(crate) seed: u64,
+    pub(crate) early_stopping: Option<EarlyStopping>,
+    pub(crate) y: &'a [f64],
+    pub(crate) weights: &'a [f64],
+    pub(crate) offset: &'a [f64],
+}
+
+/// A trained network with its early-stopping record.
+pub(crate) struct Trained<M> {
+    pub(crate) net: M,
+    /// Epoch (from 1) whose network was kept; `None` without early stopping.
+    pub(crate) best_epoch: Option<usize>,
+    /// Validation mean deviance after each epoch run.
+    pub(crate) history: Vec<f64>,
+}
+
+/// Adam on mini-batches of the family's weighted deviance. `forward` gives
+/// the network's output for rows during training; `evaluate` gives it for
+/// rows from the inference copy, for validation.
+pub(crate) fn train<M, F, V>(
+    t: &Training<'_>,
+    mut net: M,
+    forward: F,
+    evaluate: V,
+) -> Result<Trained<M::InnerModule>>
+where
+    M: AutodiffModule<Train>,
+    F: Fn(&M, &[usize]) -> Tensor<Train, 1>,
+    V: Fn(&M::InnerModule, &[usize]) -> Result<Vec<f64>>,
+{
+    let n = t.y.len();
+    // Rows: shuffled once on a stream of its own to hold some out.
+    let (mut order, holdout) = match t.early_stopping {
+        None => ((0..n).collect::<Vec<usize>>(), Vec::new()),
+        Some(e) => {
+            e.check()?;
+            let mut all: Vec<usize> = (0..n).collect();
+            let mut rng = StreamRng::new(t.seed, u64::MAX);
+            for i in (1..n).rev() {
+                let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
+                all.swap(i, j);
+            }
+            let k = ((e.validation_share * n as f64).round() as usize).clamp(1, n - 1);
+            let mut holdout = all.split_off(n - k);
+            holdout.sort_unstable();
+            all.sort_unstable();
+            (all, holdout)
+        }
+    };
+    let held_weight: f64 = holdout.iter().map(|&i| t.weights[i]).sum();
+    let device = Default::default();
+    let mut optimizer = AdamConfig::new().init();
+    let mut best: Option<(usize, f64, M::InnerModule)> = None;
+    let mut history = Vec::new();
+    for epoch in 0..t.epochs {
+        // Fisher–Yates on stream `epoch` of the seed.
+        let mut rng = StreamRng::new(t.seed, epoch as u64);
+        for i in (1..order.len()).rev() {
+            let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
+            order.swap(i, j);
+        }
+        for batch in order.chunks(t.batch_size) {
+            let m = batch.len();
+            let pick = |v: &[f64]| batch.iter().map(|&i| v[i]).collect::<Vec<f64>>();
+            let ob = Tensor::<Train, 1>::from_data(TensorData::new(pick(t.offset), [m]), &device);
+            let yb = Tensor::<Train, 1>::from_data(TensorData::new(pick(t.y), [m]), &device);
+            let wb = Tensor::<Train, 1>::from_data(TensorData::new(pick(t.weights), [m]), &device);
+            let eta = ob + forward(&net, batch);
+            let l = loss(t.family, eta, yb, wb);
+            let grads = GradientsParams::from_grads(l.backward(), &net);
+            net = optimizer.step(t.learning_rate, net, grads);
+        }
+        let Some(e) = t.early_stopping else {
+            continue;
+        };
+        let current = net.valid();
+        let out = evaluate(&current, &holdout)?;
+        let score = holdout
+            .iter()
+            .zip(&out)
+            .map(|(&i, c)| {
+                let mu = t.link.inverse(t.offset[i] + c);
+                t.weights[i] * t.family.unit_deviance(t.y[i], mu)
+            })
+            .sum::<f64>()
+            / held_weight;
+        history.push(score);
+        let improved = best.as_ref().is_none_or(|(_, s, _)| score < *s);
+        if improved {
+            best = Some((epoch + 1, score, current));
+        } else if epoch + 1 - best.as_ref().map_or(0, |b| b.0) >= e.patience {
+            break;
+        }
+    }
+    Ok(match best {
+        Some((epoch, _, net)) => Trained {
+            net,
+            best_epoch: Some(epoch),
+            history,
+        },
+        None => Trained {
+            net: net.valid(),
+            best_epoch: None,
+            history,
+        },
+    })
 }
 
 /// Builds a network with the backend's generator seeded by `seed`.
@@ -277,41 +435,48 @@ impl Model for Cann {
         let device = Default::default();
         let scaling = Scaling::fit(design);
         let x = scaling.apply(design);
-        let mut net: Net<Train> =
+        let net: Net<Train> =
             seeded::<Train, _>(&device, self.seed, || Net::new(p, &self.hidden, &device));
-        let mut optimizer = AdamConfig::new().init();
         let (offset, w) = (design.offset(), design.weights());
-        let mut order: Vec<usize> = (0..n).collect();
-        for epoch in 0..self.epochs {
-            // Fisher–Yates on stream `epoch` of the seed.
-            let mut rng = StreamRng::new(self.seed, epoch as u64);
-            for i in (1..n).rev() {
-                let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-                order.swap(i, j);
-            }
-            for batch in order.chunks(self.batch_size) {
-                let m = batch.len();
-                let xb: Vec<f64> = batch
-                    .iter()
-                    .flat_map(|&i| x[i * p..(i + 1) * p].to_vec())
-                    .collect();
-                let pick = |v: &[f64]| batch.iter().map(|&i| v[i]).collect::<Vec<f64>>();
-                let xb = Tensor::<Train, 2>::from_data(TensorData::new(xb, [m, p]), &device);
-                let ob = Tensor::<Train, 1>::from_data(TensorData::new(pick(offset), [m]), &device);
-                let yb = Tensor::<Train, 1>::from_data(TensorData::new(pick(y), [m]), &device);
-                let wb = Tensor::<Train, 1>::from_data(TensorData::new(pick(w), [m]), &device);
-                let eta = ob + net.forward(xb);
-                let l = loss(self.family, eta, yb, wb);
-                let grads = GradientsParams::from_grads(l.backward(), &net);
-                net = optimizer.step(self.learning_rate, net, grads);
-            }
-        }
-        let net = net.valid();
+        let rows_of = |rows: &[usize]| -> Vec<f64> {
+            rows.iter()
+                .flat_map(|&i| x[i * p..(i + 1) * p].to_vec())
+                .collect()
+        };
+        let training = Training {
+            family: self.family,
+            link: self.link,
+            epochs: self.epochs,
+            batch_size: self.batch_size,
+            learning_rate: self.learning_rate,
+            seed: self.seed,
+            early_stopping: self.early_stopping,
+            y,
+            weights: w,
+            offset,
+        };
+        let trained = train(
+            &training,
+            net,
+            |net: &Net<Train>, rows| {
+                let xb = TensorData::new(rows_of(rows), [rows.len(), p]);
+                net.forward(Tensor::from_data(xb, &device))
+            },
+            |net: &Net<Cpu>, rows| {
+                let xb = TensorData::new(rows_of(rows), [rows.len(), p]);
+                net.forward(Tensor::from_data(xb, &device))
+                    .into_data()
+                    .to_vec::<f64>()
+                    .map_err(|e| Error::Data(format!("network output: {e:?}")))
+            },
+        )?;
         let mut fit = CannFit {
             spec: self.clone(),
             names: design.names().to_vec(),
             scaling,
-            net,
+            net: trained.net,
+            best_epoch: trained.best_epoch,
+            validation_history: trained.history,
             dispersion: 1.0,
             fitted: Vec::new(),
         };
@@ -336,6 +501,8 @@ pub struct CannFit {
     names: Vec<String>,
     scaling: Scaling,
     net: Net<Cpu>,
+    best_epoch: Option<usize>,
+    validation_history: Vec<f64>,
     dispersion: f64,
     fitted: Vec<f64>,
 }
@@ -364,6 +531,16 @@ impl CannFit {
     /// Fitted means on the training data.
     pub fn fitted(&self) -> &[f64] {
         &self.fitted
+    }
+
+    /// With early stopping, the epoch (from 1) whose network was kept.
+    pub fn best_epoch(&self) -> Option<usize> {
+        self.best_epoch
+    }
+
+    /// With early stopping, the validation mean deviance after each epoch.
+    pub fn validation_history(&self) -> &[f64] {
+        &self.validation_history
     }
 
     /// Dispersion: 1 for the Poisson, otherwise Pearson's estimate on the
@@ -458,6 +635,40 @@ mod tests {
         // Same seed, same network.
         let again = spec.fit(&d, &y).unwrap();
         assert_eq!(fit.fitted(), again.fitted());
+    }
+
+    #[test]
+    fn early_stopping_keeps_the_best_epoch() {
+        let (d, y, _) = data(300, 4);
+        let base = (y.iter().sum::<f64>() / y.len() as f64).ln();
+        let d = d.with_offset(vec![base; 300]).unwrap();
+        let mut spec = Cann::new(Family::Poisson, Link::Log);
+        spec.hidden = vec![32, 32];
+        spec.epochs = 400;
+        spec.learning_rate = 3e-2;
+        spec.batch_size = 16;
+        spec.early_stopping = Some(EarlyStopping {
+            validation_share: 0.3,
+            patience: 5,
+        });
+        let fit = spec.fit(&d, &y).unwrap();
+        let best = fit.best_epoch().unwrap();
+        let history = fit.validation_history();
+        // Stopped early, `patience` epochs after the best, which scored lowest.
+        assert!(history.len() < 400);
+        assert_eq!(history.len(), best + 5);
+        let low = history.iter().copied().fold(f64::INFINITY, f64::min);
+        assert_eq!(history[best - 1], low);
+        // Without early stopping there is no record.
+        spec.early_stopping = None;
+        spec.epochs = 2;
+        let plain = spec.fit(&d, &y).unwrap();
+        assert!(plain.best_epoch().is_none() && plain.validation_history().is_empty());
+        spec.early_stopping = Some(EarlyStopping {
+            validation_share: 1.0,
+            patience: 5,
+        });
+        assert!(spec.fit(&d, &y).is_err());
     }
 
     #[test]

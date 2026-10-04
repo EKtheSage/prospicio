@@ -1,4 +1,5 @@
-//! Resampling: train/test splits, cross-validation and grid search.
+//! Resampling: train/test splits, cross-validation, and grid and random
+//! search.
 //!
 //! Splits are row indices, so they work with any [`Design`]. Random splits
 //! draw from [`StreamRng`] with a seed, so they replay exactly.
@@ -204,6 +205,83 @@ where
         .map(|(i, _)| i)
         .expect("not empty");
     Ok(GridSearch { scores, best })
+}
+
+/// Random search: draws `n` candidates with `draw` from stream 0 of
+/// `seed`, then scores them as [`grid_search`] does. With several
+/// hyperparameters, random candidates cover each one's range far better
+/// than a grid of the same size (Bergstra and Bengio, 2012), which is what
+/// neural networks need. [`log_uniform`] draws scale parameters such as
+/// learning rates.
+///
+/// ```
+/// use act_models::resample::{k_fold, log_uniform, random_search};
+/// # use act_models::{Design, Fitted, Model};
+/// # struct Shrunk(f64);
+/// # struct Fit(f64);
+/// # impl Model for Shrunk {
+/// #     type Fitted = Fit;
+/// #     fn fit(&self, _: &Design, y: &[f64]) -> act_core::Result<Fit> {
+/// #         Ok(Fit(y.iter().sum::<f64>() / (y.len() as f64 + self.0)))
+/// #     }
+/// # }
+/// # impl Fitted for Fit {
+/// #     fn predict(&self, d: &Design) -> act_core::Result<Vec<f64>> { Ok(vec![self.0; d.n_rows()]) }
+/// #     fn predict_distribution(&self, _: &Design, _: usize, _: u64)
+/// #         -> act_core::Result<act_prob::PredictiveDistribution> { unimplemented!() }
+/// # }
+/// let x = Design::new(vec!["x".into()], vec![vec![1.0; 8]]).unwrap();
+/// let y = [3.0, 5.0, 4.0, 6.0, 5.0, 4.0, 5.0, 4.0];
+/// let splits = k_fold(8, 4, 1).unwrap();
+/// let found = random_search(
+///     20,
+///     7,
+///     |rng| log_uniform(rng, 1e-3, 10.0),
+///     |&shrink| Shrunk(shrink),
+///     &x,
+///     &y,
+///     &splits,
+///     |t, p, _| act_models::metrics::rmse(t, p).unwrap(),
+/// )
+/// .unwrap();
+/// assert_eq!(found.scores.len(), 20);
+/// let best = found.scores[found.best].1;
+/// assert!(found.scores.iter().all(|(_, s)| *s >= best));
+/// // Heavy shrinkage of the mean towards zero loses.
+/// assert!(found.scores[found.best].0 < 1.0);
+/// ```
+#[allow(clippy::too_many_arguments)]
+pub fn random_search<P, M, D, B, S>(
+    n: usize,
+    seed: u64,
+    mut draw: D,
+    make: B,
+    design: &Design,
+    y: &[f64],
+    splits: &[Split],
+    score: S,
+) -> Result<GridSearch<P>>
+where
+    M: Model,
+    D: FnMut(&mut StreamRng) -> P,
+    B: Fn(&P) -> M,
+    S: Fn(&[f64], &[f64], &Design) -> f64,
+{
+    let mut rng = StreamRng::new(seed, 0);
+    let candidates = (0..n).map(|_| draw(&mut rng)).collect();
+    grid_search(candidates, make, design, y, splits, score)
+}
+
+/// A draw log-uniform between `low` and `high` (both positive): uniform
+/// in orders of magnitude, for learning rates and penalties.
+pub fn log_uniform(rng: &mut StreamRng, low: f64, high: f64) -> f64 {
+    (low.ln() + rng.next_open01() * (high.ln() - low.ln())).exp()
+}
+
+/// A draw uniform over `low..=high`, for layer widths and counts.
+pub fn uniform_int(rng: &mut StreamRng, low: usize, high: usize) -> usize {
+    let span = (high - low + 1) as f64;
+    low + ((rng.next_open01() * span) as usize).min(high - low)
 }
 
 fn check_k(n: usize, k: usize) -> Result<()> {
