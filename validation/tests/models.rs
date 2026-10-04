@@ -426,8 +426,8 @@ fn elastic_net_cross_validation_matches_cv_glmnet() {
 }
 
 #[test]
-fn tweedie_power_profile_matches_statsmodels() {
-    use act_glm::tweedie::tweedie_profile;
+fn tweedie_power_estimate_matches_statsmodels() {
+    use act_glm::tweedie::{TweedieGlm, tweedie_profile};
     let data = policies();
     let d = net_design(&data);
     // Intercept, age and region: drop the age² column `net_design` adds.
@@ -441,16 +441,23 @@ fn tweedie_power_profile_matches_statsmodels() {
     .unwrap()
     .with_weights(numeric(&data, "exposure"))
     .unwrap();
+    let y = numeric(&data, "pure");
     let powers = [1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8];
-    let prof = tweedie_profile(Link::Log, &d, &numeric(&data, "pure"), &powers).unwrap();
+    let prof = tweedie_profile(Link::Log, &d, &y, &powers).unwrap();
+    let fit = TweedieGlm::new(Link::Log).fit(&d, &y).unwrap();
+    // The grid's refinement and Brent's method agree.
+    assert!((prof.power - fit.power()).abs() < 1e-3);
     let cases = reference("tweedie_profile_statsmodels.csv");
     check(&cases, |c| {
         let at = |p: f64| powers.iter().position(|&q| q == p);
         match c.get("quantity") {
             "log_likelihood" => Some(prof.log_likelihood[at(c.number("arg")?)?]),
             "dispersion" => Some(prof.dispersion[at(c.number("arg")?)?]),
-            "power" => Some(prof.power),
-            "max_log_likelihood" => Some(prof.max_log_likelihood),
+            "power" => Some(fit.power()),
+            "max_log_likelihood" => Some(fit.log_likelihood()),
+            "dispersion_at_power" => Some(fit.dispersion()),
+            "interval_lower" => Some(fit.interval().0),
+            "interval_upper" => Some(fit.interval().1),
             _ => None,
         }
     });

@@ -233,7 +233,19 @@ coefficients for a given `p`, and `φ` only scales the variance.
 R's `tweedie.profile`: for each `p` on a grid it fits the GLM, maximizes
 the exact Tweedie log-likelihood (Dunn and Smyth's series density from
 `act-prob`, row `i` at `φ / wᵢ`) over `φ`, and refines the best `p` by
-golden-section search between its grid neighbours. Parity: statsmodels
+golden-section search between its grid neighbours.
+
+`act_glm::tweedie::TweedieGlm` estimates `p` as part of the fit. Since the
+coefficients at a fixed `p` do not depend on `φ`, the joint maximum
+likelihood over coefficients, `p` and `φ` (what H2O's GLM does with a free
+variance power) is the maximum of this one-dimensional profile; Brent's
+method (`act_math::optimize::brent`) finds it in about a dozen GLM fits,
+each warm-started from the last. The fit reports a 95% profile-likelihood
+interval for `p` (where the profile is 1.92 below its maximum, found by
+the Illinois method) and flags a power at a search bound: with no zero
+claims the likelihood pushes `p` towards 2, and the bound is then not an
+interior maximum. Standard errors and predictive draws are conditional on
+`p`. Parity: statsmodels
 fits plus an independent NumPy series density
 (`validation/scripts/statsmodels_tweedie_profile.py`). Cross-validated
 deviance cannot choose `p`, since each `p` has its own deviance scale.

@@ -15,3 +15,6 @@ log_likelihood,1.8,-1519.5623021351207,0.0,1e-09,statsmodels 0.15.0 + NumPy seri
 dispersion,1.8,35.83047825784198,0.0,1e-06,statsmodels 0.15.0 + NumPy series
 power,,1.3138461700870496,0.002,0.0,statsmodels 0.15.0 + NumPy series
 max_log_likelihood,,-1416.8692802997296,0.0,1e-09,statsmodels 0.15.0 + NumPy series
+dispersion_at_power,,200.11002281793424,0.0,0.001,statsmodels 0.15.0 + NumPy series
+interval_lower,,1.264486286992601,1e-06,0.0,statsmodels 0.15.0 + NumPy series
+interval_upper,,1.3708782044086671,1e-06,0.0,statsmodels 0.15.0 + NumPy series

@@ -16,7 +16,8 @@ here in log space with NumPy, independently of the Rust code:
 with lam = mu^(2-p) / (phi (2-p)), alpha = (2-p)/(p-1) and
 theta = phi (p-1) mu^(p-1). The best power is refined between the grid
 points around the best one. Records the profile log-likelihood and phi at
-each grid power, and the refined power, its phi and log-likelihood.
+each grid power, the refined power, its phi and log-likelihood, and the
+95% profile-likelihood interval for the power.
 """
 
 import csv
@@ -25,7 +26,7 @@ import sys
 import numpy as np
 import statsmodels
 import statsmodels.api as sm
-from scipy.optimize import minimize_scalar
+from scipy.optimize import brentq, minimize_scalar
 from scipy.special import gammaln, logsumexp
 
 OUT = "validation/reference/tweedie_profile_statsmodels.csv"
@@ -82,6 +83,11 @@ def main():
                           options={"xatol": 1e-7})
     p_hat = float(opt.x)
     ll_hat, phi_hat = profile(X, y, w, p_hat)
+    # 95% profile-likelihood interval: where the profile is 1.92 below its
+    # maximum (half the chi-squared(1) 95% point), bracketed by the grid.
+    drop = lambda p: profile(X, y, w, p)[0] - (ll_hat - 3.841458820694124 / 2)
+    lower = brentq(drop, POWERS[best - 1], p_hat, xtol=1e-12)
+    upper = brentq(drop, p_hat, POWERS[best + 1], xtol=1e-12)
     with open(OUT, "w", newline="") as f:
         out = csv.writer(f, lineterminator="\n")
         out.writerow(["quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
@@ -91,6 +97,9 @@ def main():
         # The profile is flat at its peak: the power agrees to about 1e-3.
         out.writerow(["power", "", repr(p_hat), 2e-3, 0.0, SOURCE])
         out.writerow(["max_log_likelihood", "", repr(float(ll_hat)), 0.0, 1e-9, SOURCE])
+        out.writerow(["dispersion_at_power", "", repr(phi_hat), 0.0, 1e-3, SOURCE])
+        out.writerow(["interval_lower", "", repr(lower), 1e-6, 0.0, SOURCE])
+        out.writerow(["interval_upper", "", repr(upper), 1e-6, 0.0, SOURCE])
     print(f"wrote {OUT}", file=sys.stderr)
 
 

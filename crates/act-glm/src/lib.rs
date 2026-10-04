@@ -122,6 +122,19 @@ impl Model for Glm {
     /// rule). Fails if the design is collinear (not positive definite), a
     /// response is outside the family's range, or IRLS does not converge.
     fn fit(&self, design: &Design, y: &[f64]) -> Result<GlmFit> {
+        self.fit_from(design, y, None)
+    }
+}
+
+impl Glm {
+    /// [`fit`](Model::fit), with IRLS starting from the means `start` (one
+    /// per row) when given: a warm start from a nearby model's fit.
+    pub(crate) fn fit_from(
+        &self,
+        design: &Design,
+        y: &[f64],
+        start: Option<&[f64]>,
+    ) -> Result<GlmFit> {
         self.family.validate()?;
         let n = design.n_rows();
         let p = design.n_cols();
@@ -152,7 +165,10 @@ impl Model for Glm {
             self,
             design,
             y,
-            |i| self.family.initial_mu(y[i], w[i], y_mean),
+            |i| match start {
+                Some(mu) if self.family.valid_mu(mu[i]) => mu[i],
+                _ => self.family.initial_mu(y[i], w[i], y_mean),
+            },
             None,
         )?;
         let l = cholesky(&information, p).ok_or_else(|| {
