@@ -27,6 +27,18 @@ stopifnot(inherits(try(predict(m, data.frame(region = "E", age = 1, exposure = 1
 pd <- predict_distribution(m, nd, n_sims = 2000, seed = 1)
 stopifnot(nrow(draw_matrix(pd)) == 2000)
 
+# Sandwich covariance: for the canonical link, (X'WX)^-1 (U'U) (X'WX)^-1
+# with scores U = X (y - mu).
+X <- model.matrix(r)
+U <- X * (d$claims - fitted(r))
+B <- vcov(r)
+near(robust_vcov(m), B %*% crossprod(U) %*% B, 1e-6)
+near(robust_vcov(m, "HC1"), robust_vcov(m) * 8 / 4, 1e-12)
+cl <- c(1, 1, 2, 2, 3, 3, 4, 4)
+Uc <- rowsum(U, cl)
+near(robust_vcov(m, cluster = cl), B %*% crossprod(Uc) %*% B * 4 / 3 * 7 / 4, 1e-6)
+stopifnot(inherits(try(robust_vcov(m, cluster = cl[-1]), silent = TRUE), "try-error"))
+
 g <- glm_fit(age ~ region, d, family = "gamma", link = "log")
 rg <- stats::glm(age ~ region, d, family = Gamma(link = "log"), control = tight)
 near(coef(g), coef(rg), 1e-8)

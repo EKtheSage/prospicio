@@ -187,3 +187,25 @@ def test_elpd_loo_and_waic():
     assert max(range(21), key=lambda i: loo.pareto_k[i]) == 20
     assert min(range(21), key=lambda i: loo.pointwise[i]) == 20
     assert abs(loo.elpd - waic.elpd) < 0.5
+
+
+def test_robust_covariance():
+    # Two groups of a Poisson: each intercept's HC0 variance is
+    # sum((y - ybar)**2) / (n ybar)**2.
+    d = Design([[1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], ["(Intercept)", "x"])
+    y = [1.0, 2.0, 6.0, 1.0, 4.0, 2.0]
+    fit = Glm("poisson").fit(d, y)
+    v = fit.robust_covariance(d, y)
+    assert v[0][0] == pytest.approx(14.0 / 81.0, rel=1e-10)
+    assert v[0][1] == pytest.approx(v[1][0])
+    hc1 = fit.robust_covariance(d, y, "HC1")
+    assert hc1[1][1] == pytest.approx(v[1][1] * 6 / 4, rel=1e-12)
+    # Singleton clusters are HC1.
+    se = fit.robust_std_errors(d, y, "cluster", groups=["a", "b", "c", "d", "e", "f"])
+    assert se == pytest.approx([math.sqrt(hc1[j][j]) for j in range(2)], rel=1e-10)
+    with pytest.raises(ValueError):
+        fit.robust_covariance(d, y, "cluster")
+    with pytest.raises(ValueError):
+        fit.robust_covariance(d, y, "HC3")
+    with pytest.raises(ValueError):
+        fit.robust_covariance(d, y[1:])

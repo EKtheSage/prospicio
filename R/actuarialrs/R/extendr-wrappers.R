@@ -346,6 +346,8 @@ GlmModel$p_values <- function() .Call(wrap__GlmModel__p_values, self)
 
 GlmModel$covariance <- function() .Call(wrap__GlmModel__covariance, self)
 
+GlmModel$robust_covariance <- function(kind, groups) .Call(wrap__GlmModel__robust_covariance, self, kind, groups)
+
 GlmModel$dispersion <- function() .Call(wrap__GlmModel__dispersion, self)
 
 GlmModel$deviance <- function() .Call(wrap__GlmModel__deviance, self)

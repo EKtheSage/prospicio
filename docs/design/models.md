@@ -44,6 +44,17 @@ models and compares them.
   with log and inverse links and with weights, inverse Gaussian, binomial
   with trials, negative binomial, Gaussian, Tweedie with weights), 144
   values at 1e-7 to 1e-9.
+- Sandwich covariance (`GlmFit::robust_covariance`, `Robust::{Hc0, Hc1,
+  Cluster}`): the bread is the inverse observed information, so a
+  non-canonical link matches statsmodels (R's `sandwich` uses the expected
+  information; the two agree for canonical links). HC1 scales by
+  `n / (n - p)`; clusters use statsmodels' and Stata's
+  `G / (G - 1) · (n - 1) / (n - p)`. Parity:
+  `validation/reference/glm_robust_statsmodels.csv`
+  (`validation/scripts/statsmodels_glm_robust.py`), HC0 and age-band
+  clusters for all 10 GLMs, 100 values at 1e-7. statsmodels' GLM reports
+  HC0 for `"HC1"`, so HC1 is tested as the rescaling. Python
+  `GlmFit.robust_covariance` / `robust_std_errors`, R `robust_vcov`.
 - GAM (`act_glm::gam`): `Gam` = a `Glm` plus `PSpline` smooths, each
   replacing a numeric design column with a cubic B-spline basis on
   mgcv's `"ps"` knots, a second-order difference penalty, and mgcv's

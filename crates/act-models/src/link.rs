@@ -82,6 +82,24 @@ impl Link {
         }
     }
 
+    /// `d²μ/dη²` at `η`, for the observed information of a non-canonical
+    /// link.
+    pub fn mu_eta2(&self, eta: f64) -> f64 {
+        match *self {
+            Self::Identity => 0.0,
+            Self::Log | Self::Power(0.0) => eta.exp(),
+            Self::Logit => {
+                let mu = self.inverse(eta);
+                self.mu_eta(eta) * (1.0 - 2.0 * mu)
+            }
+            Self::Probit => -eta * norm_pdf(eta),
+            Self::Cloglog => self.mu_eta(eta) * (1.0 - eta.exp()),
+            Self::Inverse => 2.0 / (eta * eta * eta),
+            Self::InverseSquared => 0.75 * eta.powf(-2.5),
+            Self::Power(l) => (1.0 / l - 1.0) / l * eta.powf(1.0 / l - 2.0),
+        }
+    }
+
     /// Whether `η` maps to a mean the link can produce (for example, a
     /// positive `η` under the inverse link).
     pub fn valid_eta(&self, eta: f64) -> bool {
@@ -118,6 +136,11 @@ mod tests {
             let numeric = (g.inverse(eta + h) - g.inverse(eta - h)) / (2.0 * h);
             assert!(
                 (g.mu_eta(eta) - numeric).abs() < 1e-7 * numeric.abs().max(1.0),
+                "{g:?}"
+            );
+            let numeric2 = (g.mu_eta(eta + h) - g.mu_eta(eta - h)) / (2.0 * h);
+            assert!(
+                (g.mu_eta2(eta) - numeric2).abs() < 1e-7 * numeric2.abs().max(1.0),
                 "{g:?}"
             );
         }

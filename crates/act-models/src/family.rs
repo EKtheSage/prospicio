@@ -108,6 +108,19 @@ impl Family {
         }
     }
 
+    /// Derivative of the variance function, `V'(μ)`.
+    pub fn variance_deriv(&self, mu: f64) -> f64 {
+        match *self {
+            Self::Gaussian => 0.0,
+            Self::Poisson => 1.0,
+            Self::Gamma => 2.0 * mu,
+            Self::InverseGaussian => 3.0 * mu * mu,
+            Self::Binomial => 1.0 - 2.0 * mu,
+            Self::NegativeBinomial { theta } => 1.0 + 2.0 * mu / theta,
+            Self::Tweedie { power } => power * mu.powf(power - 1.0),
+        }
+    }
+
     /// Whether `y` is a possible response.
     pub fn valid_y(&self, y: f64) -> bool {
         y.is_finite()
@@ -404,6 +417,16 @@ mod tests {
             let gap = f.log_likelihood(y, y, w, phi) - f.log_likelihood(y, mu, w, phi);
             let want = 2.0 * phi * gap / w;
             assert!((f.unit_deviance(y, mu) - want).abs() < 1e-12, "{f:?}");
+        }
+    }
+
+    #[test]
+    fn variance_derivative_matches_a_difference() {
+        for f in FAMILIES {
+            let (_, mu) = sample_point(f);
+            let h = 1e-6;
+            let numeric = (f.variance(mu + h) - f.variance(mu - h)) / (2.0 * h);
+            assert!((f.variance_deriv(mu) - numeric).abs() < 1e-8, "{f:?}");
         }
     }
 
