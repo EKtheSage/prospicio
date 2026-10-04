@@ -12,6 +12,8 @@ from actuarialrs.models import (
     ElasticNet,
     Design,
     Gam,
+    GamFit,
+    ElasticNetFit,
     Glm,
     GlmFit,
     Terms,
@@ -269,3 +271,21 @@ def test_stacking_and_blending():
     assert all(t == 0.0 for t in mix.total().draws)
     with pytest.raises(ValueError):
         PredictiveDistribution.blend([pa, pb], [1.0], 5)
+
+
+def test_gam_and_elastic_net_save_and_load():
+    import pickle
+
+    x = [i / 6 for i in range(60)]
+    d = Design([[1.0] * 60, x], ["(Intercept)", "x"])
+    y = [2.0 + math.sin(v) for v in x]
+    gam = Gam(Glm("gaussian"), [("x", 8)]).fit(d, y)
+    back = GamFit.from_json(gam.to_json())
+    assert back.predict(d) == gam.predict(d) and back.input_hash == gam.input_hash
+    assert pickle.loads(pickle.dumps(gam)).to_json() == gam.to_json()
+    net = ElasticNet("gaussian", alpha=0.5, lam=0.05).fit(d, y)
+    nback = ElasticNetFit.from_json(net.to_json())
+    assert nback.coefficients == net.coefficients
+    assert pickle.loads(pickle.dumps(net)).predict(d) == net.predict(d)
+    with pytest.raises(ValueError):
+        GamFit.from_json(net.to_json())

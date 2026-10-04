@@ -185,4 +185,15 @@ mix <- blend_predictive(list(p1, p2), c(1, 1), seed = 5)
 stopifnot(all(rowSums(draw_matrix(mix)) == 0))
 stopifnot(inherits(try(blend_predictive(list(p1, p2), 1, seed = 5), silent = TRUE), "try-error"))
 
+# Save and load GAMs and elastic nets.
+gf <- tempfile(fileext = ".rds")
+save_model(gm, gf)
+gm2 <- load_model(gf)
+stopifnot(identical(coef(gm2), coef(gm)), identical(predict(gm2, s), predict(gm, s)))
+save_model(en, gf)
+en2 <- load_model(gf)
+stopifnot(identical(en2@lambda, en@lambda), identical(en2@coefficients, en@coefficients))
+stopifnot(identical(predict(en2, e, lambda = en@lambda[5]), predict(en, e, lambda = en@lambda[5])))
+stopifnot(inherits(try(save_model(list(), gf), silent = TRUE), "try-error"))
+
 cat("actuarialrs R models tests passed\n")

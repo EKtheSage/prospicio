@@ -825,6 +825,7 @@ class ElasticNetFit:
     """
     A fitted elastic net, from ``ElasticNet.fit`` or ``ElasticNet.path``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def coefficients(self, /) -> list[float]:
@@ -856,6 +857,30 @@ class ElasticNetFit:
     def fitted(self, /) -> list[float]:
         """
         Fitted means on the training data.
+        """
+    @staticmethod
+    def from_json(text: str) -> ElasticNetFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        ElasticNetFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
+        """
+    @property
+    def input_hash(self, /) -> str:
+        """
+        Hash of the training data (design, offset, weights, response).
         """
     @property
     def lam(self, /) -> float:
@@ -901,6 +926,16 @@ class ElasticNetFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact (spec with its lambda and alpha, coefficients, fit statistics), with provenance (crate
+        version and a hash of the training data). ``ElasticNetFit.from_json`` reads
+        it back exactly; pickling uses it too.
+        
+        Returns
+        -------
+        str
         """
 
 @final
@@ -1050,6 +1085,7 @@ class GamFit:
     """
     A fitted GAM, from ``Gam.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def coefficients(self, /) -> list[float]:
         """
@@ -1074,6 +1110,30 @@ class GamFit:
     def fitted(self, /) -> list[float]:
         """
         Fitted means on the training data.
+        """
+    @staticmethod
+    def from_json(text: str) -> GamFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        GamFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
+        """
+    @property
+    def input_hash(self, /) -> str:
+        """
+        Hash of the training data (design, offset, weights, response).
         """
     @property
     def lambdas(self, /) -> list[float]:
@@ -1116,6 +1176,16 @@ class GamFit:
     def score(self, /) -> float:
         """
         The minimized GCV or UBRE score.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact (GLM spec, smooths with their knots and constraints, smoothing parameters, estimates), with provenance (crate
+        version and a hash of the training data). ``GamFit.from_json`` reads
+        it back exactly; pickling uses it too.
+        
+        Returns
+        -------
+        str
         """
 
 @final

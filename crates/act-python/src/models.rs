@@ -1066,6 +1066,50 @@ pub(crate) struct PyElasticNetFit {
 
 #[pymethods]
 impl PyElasticNetFit {
+    /// The fit as a versioned JSON artifact (spec with its lambda and alpha, coefficients, fit statistics), with provenance (crate
+    /// version and a hash of the training data). ``ElasticNetFit.from_json`` reads
+    /// it back exactly; pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// ElasticNetFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: ElasticNetFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    /// Hash of the training data (design, offset, weights, response).
+    #[getter]
+    fn input_hash(&self) -> &str {
+        self.inner.input_hash()
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.borrow().inner.to_json(),)))
+    }
+
     /// Coefficient names.
     #[getter]
     fn names(&self) -> Vec<String> {
@@ -1277,6 +1321,50 @@ pub(crate) struct PyGamFit {
 
 #[pymethods]
 impl PyGamFit {
+    /// The fit as a versioned JSON artifact (GLM spec, smooths with their knots and constraints, smoothing parameters, estimates), with provenance (crate
+    /// version and a hash of the training data). ``GamFit.from_json`` reads
+    /// it back exactly; pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// GamFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: GamFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    /// Hash of the training data (design, offset, weights, response).
+    #[getter]
+    fn input_hash(&self) -> &str {
+        self.inner.input_hash()
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.borrow().inner.to_json(),)))
+    }
+
     /// Coefficient names: parametric columns, then ``s(x).1``, ...
     #[getter]
     fn names(&self) -> Vec<String> {

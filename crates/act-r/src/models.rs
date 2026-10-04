@@ -372,6 +372,24 @@ impl ElasticNetPath {
         self.fits[0].names().to_vec()
     }
 
+    /// One JSON artifact per lambda.
+    fn to_json(&self) -> Vec<String> {
+        self.fits.iter().map(ElasticNetFit::to_json).collect()
+    }
+
+    fn from_json(texts: Vec<String>) -> Result<Self> {
+        if texts.is_empty() {
+            return Err(Error::Other(
+                "an elastic-net path needs at least one fit".into(),
+            ));
+        }
+        let fits = texts
+            .iter()
+            .map(|t| ElasticNetFit::from_json(t).map_err(to_r))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self { fits })
+    }
+
     fn lambda(&self) -> Vec<f64> {
         self.fits.iter().map(ElasticNetFit::lambda).collect()
     }
@@ -509,6 +527,16 @@ fn gam_fit_design(
 impl GamModel {
     fn names(&self) -> Vec<String> {
         self.inner.names().to_vec()
+    }
+
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: GamFit::from_json(text).map_err(to_r)?,
+        })
     }
 
     fn coefficients(&self) -> Vec<f64> {
