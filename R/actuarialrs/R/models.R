@@ -189,6 +189,46 @@ robust_vcov <- function(object, type = c("HC0", "HC1"), cluster = NULL) {
   matrix(v, length(nm), dimnames = list(nm, nm))
 }
 
+#' Save and load a GLM
+#'
+#' `save_model()` writes a [glm_fit()] model to an RDS file: the Rust fit as
+#' a versioned JSON artifact (spec, estimates, covariance, fit statistics,
+#' fitted values, and provenance with the package version and a hash of
+#' the training data), with the formula terms and factor levels that
+#' [stats::predict()] needs. `load_model()` reads it back; the estimates
+#' round-trip exactly. A loaded model predicts and simulates but has no
+#' training data, so [robust_vcov()] needs the original fit.
+#'
+#' @param model A `glm_model`.
+#' @param file Path of the RDS file.
+#' @returns `save_model()`: `file`, invisibly. `load_model()`: a
+#'   `glm_model`.
+#' @export
+#' @examples
+#' d <- data.frame(claims = c(1, 2, 4, 2, 1, 3), region = c("N", "N", "S", "S", "W", "W"))
+#' m <- glm_fit(claims ~ region, d, family = "poisson")
+#' f <- tempfile(fileext = ".rds")
+#' save_model(m, f)
+#' m2 <- load_model(f)
+#' identical(coef(m2), coef(m))
+save_model <- function(model, file) {
+  if (!S7::S7_inherits(model, glm_model)) stop("model must be a glm_model")
+  saveRDS(list(format = "actuarialrs.glm_model", artifact = model@ptr$to_json(),
+               terms = model@terms, xlevels = model@xlevels), file)
+  invisible(file)
+}
+
+#' @rdname save_model
+#' @export
+load_model <- function(file) {
+  x <- readRDS(file)
+  if (!is.list(x) || !identical(x$format, "actuarialrs.glm_model")) {
+    stop("not a model saved by save_model()")
+  }
+  glm_model(ptr = rust_result(GlmModel$from_json(x$artifact)), terms = x$terms,
+            xlevels = x$xlevels)
+}
+
 #' Fit an elastic-net GLM
 #'
 #' The lasso (`alpha = 1`), ridge (`alpha = 0`) and everything between, for

@@ -96,6 +96,7 @@ reference:
       - glm_fit
       - glm_model
       - robust_vcov
+      - save_model
       - elastic_net_fit
       - elastic_net_model
       - elastic_net_cv

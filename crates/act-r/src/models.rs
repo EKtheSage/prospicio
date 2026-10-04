@@ -94,9 +94,9 @@ fn design(x: &[f64], names: Vec<String>, offset: &[f64], weights: &[f64]) -> Res
 #[extendr]
 pub(crate) struct GlmModel {
     inner: GlmFit,
-    /// The training data, for the sandwich covariance.
-    design: Design,
-    y: Vec<f64>,
+    /// The training data, for the sandwich covariance; not kept by a model
+    /// loaded from an artifact.
+    training: Option<(Design, Vec<f64>)>,
 }
 
 /// Fits a GLM to the design `x` (column-major, columns `names`).
@@ -128,8 +128,7 @@ fn glm_fit_design(
     let inner = glm.fit(&d, y).map_err(to_r)?;
     Ok(GlmModel {
         inner,
-        design: d,
-        y: y.to_vec(),
+        training: Some((d, y.to_vec())),
     })
 }
 
@@ -166,9 +165,25 @@ impl GlmModel {
             "cluster" => Robust::Cluster(&labels),
             other => return Err(Error::Other(format!("unknown kind {other:?}"))),
         };
-        self.inner
-            .robust_covariance(&self.design, &self.y, kind)
-            .map_err(to_r)
+        let (design, y) = self.training.as_ref().ok_or_else(|| {
+            Error::Other("a loaded model has no training data for a sandwich covariance".into())
+        })?;
+        self.inner.robust_covariance(design, y, kind).map_err(to_r)
+    }
+
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: GlmFit::from_json(text).map_err(to_r)?,
+            training: None,
+        })
+    }
+
+    fn input_hash(&self) -> String {
+        self.inner.input_hash().to_string()
     }
 
     fn dispersion(&self) -> f64 {

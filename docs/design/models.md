@@ -187,6 +187,20 @@ the package version. It reuses the `Provenance` that `PredictiveDistribution`
 carries. Monitoring compares a stored model's predictions with actuals as
 new periods arrive, and reports actual vs expected and calibration drift.
 
+Done for GLMs: `GlmFit::to_json` / `from_json` write and read a JSON
+artifact (`format: "risk_rs.glm_fit"`, `format_version: 1`) with the spec,
+estimates, unscaled covariance, fit statistics, fitted values and
+provenance (crate version, `input_hash` of the design, offset, weights and
+response, recorded at fit time). Numbers round-trip bit for bit
+(serde_json's `float_roundtrip`); non-finite values are the strings
+`"NaN"`, `"inf"`, `"-inf"`. A reader refuses a newer format version. The
+artifact holds no training data, so a loaded fit predicts and simulates
+but gives no sandwich covariance. The coding (factor levels) stays with
+the binding: Python keeps its `Coding`, R's `save_model` / `load_model`
+store the formula terms and levels beside the artifact in an RDS file,
+and Python's `GlmFit` pickles through the artifact. GAMs, elastic nets and
+monitoring are still to come.
+
 ## Fitting a triangle with several models
 
 Models never see a `Triangle`. The Reserving lane owns a bridge that turns

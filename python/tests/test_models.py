@@ -13,6 +13,7 @@ from actuarialrs.models import (
     Design,
     Gam,
     Glm,
+    GlmFit,
     Terms,
     crps,
     deviance,
@@ -229,3 +230,19 @@ def test_compare_models():
     assert len(rows) == 4 and rows[0]["model"] == "glm" and rows[0]["metric"] == "mse"
     with pytest.raises(ValueError):
         compare({}, d, y, splits, {"mse": mse})
+
+
+def test_glm_fit_save_and_load():
+    import pickle
+
+    d = Design([[1.0] * 6, [0.1, 0.7, 1.3, 2.2, 2.9, 3.4]], ["(Intercept)", "x"])
+    y = [0.0, 2.3, 0.0, 4.4, 5.2, 6.0]
+    fit = Glm("tweedie", power=1.4).fit(d, y)
+    back = GlmFit.from_json(fit.to_json())
+    assert back.coefficients == fit.coefficients and back.covariance == fit.covariance
+    assert back.predict(d) == fit.predict(d)
+    assert back.input_hash == fit.input_hash and fit.input_hash.startswith("blake3:")
+    again = pickle.loads(pickle.dumps(fit))
+    assert again.to_json() == fit.to_json()
+    with pytest.raises(ValueError):
+        GlmFit.from_json('{"format": "other"}')

@@ -600,6 +600,62 @@ impl PyGlmFit {
         Ok((0..p).map(|j| v[j * p + j].sqrt()).collect())
     }
 
+    /// The fit as a versioned JSON artifact: spec, estimates, covariance,
+    /// fit statistics, fitted values and provenance (crate version and a
+    /// hash of the training data). ``GlmFit.from_json`` reads it back
+    /// exactly; pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from actuarialrs.models import Design, Glm, GlmFit
+    /// >>> d = Design([[1.0] * 4, [0.0, 1.0, 2.0, 3.0]], ["(Intercept)", "x"])
+    /// >>> fit = Glm("poisson").fit(d, [1.0, 2.0, 2.0, 5.0])
+    /// >>> GlmFit.from_json(fit.to_json()).coefficients == fit.coefficients
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).input_hash == fit.input_hash
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// GlmFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: GlmFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    /// Hash of the training data (design, offset, weights, response).
+    #[getter]
+    fn input_hash(&self) -> &str {
+        self.inner.input_hash()
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.borrow().inner.to_json(),)))
+    }
+
     /// Covariance of the coefficients, as a list of rows.
     #[getter]
     fn covariance(&self) -> Vec<Vec<f64>> {
