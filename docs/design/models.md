@@ -205,8 +205,10 @@ family and link the GLM does. The first all-ones column is the
 unpenalized intercept; penalty factors are rescaled as glmnet does;
 coefficients are reported on the design's scale. `lambda_max`,
 `lambda_path` (log-spaced, glmnet's defaults) and `path` (warm starts)
-build the regularization path; λ and α are tuned like any other
-hyperparameter, by `grid_search` on resamples. Predictive distributions
+build the regularization path. `cross_validate` scores the whole path on
+resamples with warm starts (glmnet's `cv.glmnet`: the folds' mean deviance
+weighted by fold weight, its standard error, `lambda_min` and the sparser
+`lambda_1se`); α takes a small grid (0, 0.5, 1) over the same splits. Predictive distributions
 carry process uncertainty only: penalized estimates have no standard
 errors, so parameter uncertainty comes from bootstrapping the fit.
 

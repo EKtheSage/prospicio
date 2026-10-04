@@ -1,4 +1,5 @@
-# Regenerate validation/reference/elastic_net_glmnet.csv.
+# Regenerate validation/reference/elastic_net_glmnet.csv and
+# validation/reference/elastic_net_cv_glmnet.csv.
 #
 #   Rscript validation/scripts/r_glmnet.R
 #
@@ -93,3 +94,38 @@ for (name in names(cases)) {
 out <- do.call(rbind, rows)
 write.csv(out, "validation/reference/elastic_net_glmnet.csv", row.names = FALSE, quote = FALSE)
 cat("wrote validation/reference/elastic_net_glmnet.csv\n")
+
+# Cross-validation: cv.glmnet on fixed folds (row i in fold (i - 1) %% 5 + 1)
+# over 20 lambdas, type.measure = "deviance". Records the cross-validated
+# mean and standard error per lambda, and lambda.min and lambda.1se, in
+# validation/reference/elastic_net_cv_glmnet.csv. Lasso only, so glmnet's
+# Gaussian rescaling of the ridge part does not enter.
+foldid <- (seq_len(n) - 1) %% 5 + 1
+cv_rows <- list()
+cv_add <- function(case, quantity, arg, value, rel) {
+  cv_rows[[length(cv_rows) + 1]] <<- data.frame(
+    case = case, quantity = quantity,
+    arg = if (is.numeric(arg)) sprintf("%.17g", arg) else arg,
+    expected = sprintf("%.17g", value), abs_tol = 1e-12, rel_tol = rel, source = source
+  )
+}
+for (name in c("gaussian_lasso", "poisson_lasso")) {
+  cs <- cases[[name]]
+  args <- list(x = x, y = cs$y, family = cs$family, alpha = cs$alpha,
+               standardize = cs$standardize, thresh = 1e-20, maxit = 1e9)
+  if (!is.null(cs$offset)) args$offset <- cs$offset
+  lmax <- do.call(glmnet, args)$lambda[1]
+  args$lambda <- lmax * 10^(-seq(0, 3, length.out = 20))
+  args$foldid <- foldid
+  args$type.measure <- "deviance"
+  cv <- do.call(cv.glmnet, args)
+  for (k in seq_along(cv$lambda)) {
+    cv_add(name, "mean", cv$lambda[k], cv$cvm[k], 1e-7)
+    cv_add(name, "se", cv$lambda[k], cv$cvsd[k], 1e-6)
+  }
+  cv_add(name, "lambda_min", "", cv$lambda.min, 1e-12)
+  cv_add(name, "lambda_1se", "", cv$lambda.1se, 1e-12)
+}
+write.csv(do.call(rbind, cv_rows), "validation/reference/elastic_net_cv_glmnet.csv",
+          row.names = FALSE, quote = FALSE)
+cat("wrote validation/reference/elastic_net_cv_glmnet.csv\n")

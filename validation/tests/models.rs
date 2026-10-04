@@ -386,3 +386,41 @@ fn elastic_nets_match_glmnet() {
         }
     });
 }
+
+#[test]
+fn elastic_net_cross_validation_matches_cv_glmnet() {
+    use act_models::resample::Split;
+    let data = policies();
+    let cases = reference("elastic_net_cv_glmnet.csv");
+    let n = numeric(&data, "age").len();
+    // Row i (from 0) in fold i mod 5, as the script's foldid.
+    let splits: Vec<Split> = (0..5)
+        .map(|f| Split {
+            train: (0..n).filter(|i| i % 5 != f).collect(),
+            test: (0..n).filter(|i| i % 5 == f).collect(),
+        })
+        .collect();
+    let mut runs: Vec<(String, act_glm::net::CvPath)> = Vec::new();
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !runs.iter().any(|(k, _)| k == name) {
+            let lambdas: Vec<f64> = cases
+                .iter()
+                .filter(|r| r.get("case") == name && r.get("quantity") == "mean")
+                .map(|r| r.number("arg").unwrap())
+                .collect();
+            let (spec, d, y) = net_case(name, &data);
+            let cv = spec.cross_validate(&d, &y, &lambdas, &splits).ok()?;
+            runs.push((name.to_string(), cv));
+        }
+        let cv = &runs.iter().find(|(k, _)| k == name)?.1;
+        let at = |l: f64| cv.lambdas.iter().position(|&x| x == l);
+        match c.get("quantity") {
+            "mean" => Some(cv.mean[at(c.number("arg")?)?]),
+            "se" => Some(cv.se[at(c.number("arg")?)?]),
+            "lambda_min" => Some(cv.lambda_min()),
+            "lambda_1se" => Some(cv.lambda_1se()),
+            _ => None,
+        }
+    });
+}
