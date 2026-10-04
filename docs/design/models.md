@@ -112,7 +112,7 @@ dependency.
 | Resample | `resample` | rsample | K-fold, grouped and time-ordered splits, plus calendar-diagonal splits for triangles |
 | Fit and predict | `Model` | parsnip, workflows | `fit`, `predict`, `predict_distribution`, `score`, `diagnostics` |
 | Evaluate | `metrics` | yardstick | Deviance, log-likelihood, Gini, Lorenz, lift, double lift, CRPS, PIT, interval coverage, actual vs expected |
-| Tune | `tune` | tune, dials | Grid or random search over a parameter space, each candidate scored on the resamples. Parallel over the outer loop and reproducible from a seed |
+| Tune | `tune` | tune, dials | Grid or random search over a parameter space, each candidate scored on the resamples. Folds run in parallel (`resample::map_splits`, scoped threads, results in split order) and replay from a seed |
 | Compare and stack | `compare`, `stack` | stacks | One table across engines; stacking weights from out-of-sample scores |
 | Version and monitor | `artifact` | vetiver | A serialized fitted model with its provenance (spec, design, data hash, seed, package version), and a monitor of actual vs expected on new periods |
 
