@@ -235,8 +235,49 @@ impl PredictiveDistribution {
     }
 
     /// Column of the component with this key.
+    ///
+    /// A key that matches no component exactly may still name a
+    /// [`Period`] by its label, as text or an integer (`"2021"` or `2021`
+    /// for a year, `"2021Q3"` for a quarter): bindings and files carry
+    /// periods as labels. The label match is used only when it names one
+    /// component.
+    ///
+    /// ```
+    /// use act_core::{Grain, Month, Period};
+    /// use act_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// let origin = |y| KeyValue::Period(Period::containing(Month::january(y), Grain::Year));
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["origin".into()],
+    ///     vec![vec![origin(2020)], vec![origin(2021)]],
+    ///     vec![1.0, 2.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// assert_eq!(pd.component_index(&vec![KeyValue::from(2021)]), Some(1));
+    /// assert_eq!(pd.component_index(&vec![KeyValue::from("2020")]), Some(0));
+    /// assert_eq!(pd.component_index(&vec![KeyValue::from("2022")]), None);
+    /// ```
     pub fn component_index(&self, key: &ComponentKey) -> Option<usize> {
-        self.components.iter().position(|k| k == key)
+        if let Some(j) = self.components.iter().position(|k| k == key) {
+            return Some(j);
+        }
+        let by_label = |k: &ComponentKey| {
+            k.len() == key.len() && k.iter().zip(key).all(|(c, v)| {
+                c == v
+                    || matches!((c, v), (KeyValue::Period(p), KeyValue::Int(_) | KeyValue::Text(_))
+                            if p.to_string() == v.to_string())
+            })
+        };
+        let mut matches = self
+            .components
+            .iter()
+            .enumerate()
+            .filter(|(_, k)| by_label(k));
+        match (matches.next(), matches.next()) {
+            (Some((j, _)), None) => Some(j),
+            _ => None,
+        }
     }
 
     /// One component's draws, in simulation order, or `None` if no
@@ -722,6 +763,49 @@ fn validate_keys(dims: &[String], components: &[ComponentKey]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn period_components_match_their_labels() {
+        use act_core::{Grain, Month};
+        let q = |y, m| {
+            KeyValue::Period(Period::containing(
+                Month::new(y, m).unwrap(),
+                Grain::Quarter,
+            ))
+        };
+        let pd = PredictiveDistribution::from_draws(
+            vec!["lob".into(), "origin".into()],
+            vec![
+                vec![KeyValue::from("auto"), q(2021, 1)],
+                vec![KeyValue::from("auto"), q(2021, 7)],
+                vec![KeyValue::from("home"), q(2021, 7)],
+            ],
+            vec![1.0, 2.0, 3.0],
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let key = |lob: &str, origin: &str| vec![KeyValue::from(lob), KeyValue::from(origin)];
+        assert_eq!(pd.component_index(&key("auto", "2021Q3")), Some(1));
+        assert_eq!(pd.marginal(&key("home", "2021Q3")).unwrap().mean(), 3.0);
+        assert_eq!(pd.component_index(&key("home", "2021Q1")), None);
+        // A label must still name the component's own grain.
+        assert_eq!(pd.component_index(&key("auto", "2021")), None);
+        assert_eq!(pd.component_index(&vec![KeyValue::from("auto")]), None);
+
+        // An exact key wins over a label, and a label that names two
+        // components names neither.
+        let year = KeyValue::Period(Period::containing(Month::january(2021), Grain::Year));
+        let both = PredictiveDistribution::from_draws(
+            vec!["origin".into()],
+            vec![vec![KeyValue::from("2021")], vec![year.clone()]],
+            vec![1.0, 2.0],
+            Provenance::new("test"),
+        )
+        .unwrap();
+        assert_eq!(both.component_index(&vec![KeyValue::from("2021")]), Some(0));
+        assert_eq!(both.component_index(&vec![year]), Some(1));
+        assert_eq!(both.component_index(&vec![KeyValue::from(2021)]), Some(1));
+    }
 
     #[test]
     fn mes_and_esscher_allocations_add_up() {

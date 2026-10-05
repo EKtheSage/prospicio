@@ -774,3 +774,89 @@ fn bayesian_and_hierarchical_stacking_match_grid_integration() {
         }
     });
 }
+
+#[test]
+fn nuts_posterior_predictive_matches_the_conjugate_negative_binomial() {
+    use act_bayes::nuts::{LogDensity, Sampler, sample};
+    use act_prob::{Counting, Distribution, KeyValue, NegativeBinomial, Provenance};
+
+    // Poisson counts with a Gamma(2, rate 0.5) prior on the rate λ. The
+    // posterior is Gamma(2 + Σy, 0.5 + n), and next year's count is
+    // negative binomial with shape 2 + Σy and scale 1 / (0.5 + n).
+    let y = [3.0, 5.0, 2.0, 4.0, 6.0, 1.0, 3.0, 4.0];
+    let (a, b) = (2.0 + y.iter().sum::<f64>(), 0.5 + y.len() as f64);
+
+    /// log λ, with the Jacobian: (a) θ - b e^θ.
+    struct LogRate {
+        a: f64,
+        b: f64,
+    }
+    impl LogDensity for LogRate {
+        fn dim(&self) -> usize {
+            1
+        }
+        fn log_density(&self, x: &[f64], g: &mut [f64]) -> Option<f64> {
+            let lambda = x[0].exp();
+            g[0] = self.a - self.b * lambda;
+            Some(self.a * x[0] - self.b * lambda)
+        }
+    }
+
+    let s = Sampler {
+        chains: 4,
+        tune: 500,
+        draws: 2000,
+        seed: 17,
+        ..Sampler::default()
+    };
+    let post = sample(&LogRate { a, b }, &[(a / b).ln()], s).unwrap();
+    let rate = post
+        .transform(vec!["lambda".into()], |x| vec![x[0].exp()])
+        .unwrap();
+    let summary = &rate.summary().unwrap()[0];
+    let (mean, sd) = (a / b, a.sqrt() / b);
+    assert!(summary.rhat < 1.01, "{summary:?}");
+    assert!(
+        (summary.mean - mean).abs() < 4.0 * sd / summary.ess_bulk.sqrt(),
+        "{summary:?}"
+    );
+    assert!((summary.sd / sd - 1.0).abs() < 0.05, "{summary:?}");
+
+    // Posterior predictive count: draw λ, then a Poisson count.
+    let n = 40_000;
+    let pd = rate
+        .predictive(
+            vec!["year".into()],
+            vec![vec![KeyValue::from(2026)]],
+            n,
+            23,
+            Provenance::new("gamma_poisson"),
+            |theta, rng, row| {
+                // Inverse transform of Poisson(λ).
+                let (lambda, u) = (theta[0], rng.next_open01());
+                let (mut k, mut p) = (0.0, (-lambda).exp());
+                let mut cdf = p;
+                while u > cdf {
+                    k += 1.0;
+                    p *= lambda / k;
+                    cdf += p;
+                }
+                row[0] = k;
+            },
+        )
+        .unwrap();
+    let exact = NegativeBinomial::new(a, 1.0 / b).unwrap();
+    let draws = pd.total();
+    for k in 0..12u64 {
+        let want = exact.cdf(k);
+        let got = draws.cdf(k as f64);
+        let se = (want * (1.0 - want) / n as f64).sqrt();
+        // Draws within a simulation are independent, but the posterior
+        // draws repeat across simulations; allow for that.
+        assert!(
+            (got - want).abs() < 6.0 * se + 2e-3,
+            "k = {k}: {got} vs {want}"
+        );
+    }
+    assert!((draws.mean() - Counting::mean(&exact)).abs() < 0.05);
+}

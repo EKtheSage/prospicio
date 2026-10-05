@@ -1144,7 +1144,7 @@ pub(crate) fn key_from_py(key: Vec<KeyArg>) -> ComponentKey {
         .collect()
 }
 
-fn key_to_py<'py>(py: Python<'py>, key: &ComponentKey) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn key_to_py<'py>(py: Python<'py>, key: &ComponentKey) -> PyResult<Bound<'py, PyAny>> {
     let values: Vec<Bound<'py, PyAny>> = key
         .iter()
         .map(|v| {
@@ -1424,6 +1424,10 @@ impl PyPredictiveDistribution {
     }
 
     /// One component's draws, or ``None`` if no component has this key.
+    ///
+    /// An origin period is named by its label, as a string or an integer:
+    /// ``("2021",)`` or ``(2021,)`` for a year, ``("2021Q3",)`` for a
+    /// quarter.
     ///
     /// Parameters
     /// ----------

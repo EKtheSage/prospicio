@@ -111,11 +111,12 @@ d@meanlog; d@sdlog   # read-only S7 properties
 
 Errors raised in Rust surface as Python `ValueError`s and ordinary R errors.
 
-## Reserving (Rust)
+## Reserving
 
 `act-reserving` holds the four-axis, masked `Triangle`
 ([docs/design/triangle.md](docs/design/triangle.md)), development factors,
-`ChainLadder` and `Mack`. Not exposed to Python or R yet.
+`ChainLadder`, `Mack` and the ODP bootstrap (`OdpBootstrap`), whose reserve
+distribution by origin is a `PredictiveDistribution`.
 
 ```rust
 use act_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
@@ -139,5 +140,23 @@ assert!(cl.total_reserve() > 0.0 && mack.total_standard_error > 0.0);
 println!("reserve {} ± {}", cl.total_reserve(), mack.total_standard_error);
 ```
 
+Python and R expose the same objects:
+
+```python
+from actuarialrs.reserving import Mack, OdpBootstrap, Triangle
+tri = Triangle.from_long(origin, development, {"paid": paid})
+Mack().fit(tri, "paid").total_standard_error
+boot = OdpBootstrap(n_sims=10_000, seed=1).fit(tri, "paid")
+boot.reserves.quantile(0.995)   # a PredictiveDistribution keyed by origin
+```
+
+```r
+tri <- triangle(long, "origin", "development", "paid")
+mack(tri)@total_standard_error
+boot <- odp_bootstrap(tri, n_sims = 10000, seed = 1)
+quantile(boot@reserves, 0.995)  # a predictive_distribution keyed by origin
+```
+
 Every Chain Ladder and Mack value is checked against R `ChainLadder` and
-chainladder-python on RAA, GenIns and ABC in `validation/`.
+chainladder-python on RAA, GenIns and ABC in `validation/`; the ODP
+bootstrap is checked against R `BootChainLadder`.

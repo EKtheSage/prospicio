@@ -1,8 +1,11 @@
 """Pricing: the collective model, layer rating shared by primary and
-reinsurance pricing, and reinsurance tower matching (Riegel 2018)."""
+reinsurance pricing, reinsurance tower matching (Riegel 2018), and
+risk-loaded prices from simulated losses."""
 
 from .actuarialrs_native import (
     CollectiveModel,
+    PortfolioPrice,
+    Price,
     TowerModel,
     alpha_between_frequencies,
     alpha_between_frequency_and_layer,
@@ -13,6 +16,8 @@ from .actuarialrs_native import (
     loss_elimination_ratio,
     match_tower,
     pareto_extrapolation,
+    price,
+    price_portfolio,
 )
 
 __all__ = [
@@ -27,4 +32,8 @@ __all__ = [
     "fit_pml_curve",
     "fit_references",
     "TowerModel",
+    "price",
+    "price_portfolio",
+    "Price",
+    "PortfolioPrice",
 ]
