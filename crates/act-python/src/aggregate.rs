@@ -704,6 +704,29 @@ impl PyTower {
         Ok(PyPredictiveDistribution { inner })
     }
 
+    /// Applies the tower to any predictive distribution, each simulation's
+    /// total taken as one aggregate loss: an adverse development cover on a
+    /// reserve bootstrap, a stop-loss or quota share on modelled premium
+    /// risk. An occurrence layer sees the total as one occurrence, so it
+    /// acts as an aggregate excess of loss. Components as ``apply``.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : PredictiveDistribution
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn apply_aggregate(
+        &self,
+        py: Python<'_>,
+        losses: PyRef<'_, PyPredictiveDistribution>,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (tower, pd) = (&self.inner, &losses.inner);
+        let inner = py.detach(|| tower.apply_aggregate(pd)).map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
     /// Gross, ceded and net annual distributions on the grid, by FFT.
     ///
     /// Each layer's per-occurrence recoveries form a severity grid, which

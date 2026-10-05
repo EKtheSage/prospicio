@@ -27,6 +27,7 @@ pub mod lognormal;
 pub mod mixture;
 pub mod pareto;
 pub mod piecewise_pareto;
+pub mod portfolio;
 pub mod predictive;
 pub mod provenance;
 pub mod risk;

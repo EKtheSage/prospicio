@@ -132,3 +132,24 @@ def test_tower_on_grid():
         Tower.inuring(
             [[Layer("A", 2.0, 2.0, reinstatements=1)], [Layer("B", 4.0, 4.0)]]
         ).on_grid(Poisson(3.0), sev, 100)
+
+
+def test_portfolio_join_reorder_and_aggregate_cover():
+    from actuarialrs.distributions import PredictiveDistribution
+
+    n = 3000
+    reserve = PredictiveDistribution(
+        ["origin"], [(2023,), (2024,)],
+        [[float((i * 7919) % n), float((i * 31) % n) + 1.0] for i in range(n)])
+    premium = PredictiveDistribution(["lob"], [("motor",)], [[float((i * 104729) % n)] for i in range(n)])
+    adc = Tower([Layer.stop_loss("adc", 500.0, 3000.0)]).apply_aggregate(reserve)
+    kinds = adc.aggregate(["kind"])
+    assert all(abs(g - c - nt) < 1e-9 for g, c, nt in kinds.draw_matrix())
+    assert max(r[1] for r in kinds.draw_matrix()) == 500.0
+    p = PredictiveDistribution.join([("reserve", reserve), ("premium", premium)], "risk")
+    assert p.dims == ["risk", "origin", "lob"] and p.n_components == 3
+    r = p.reorder_groups("risk", [[1.0, 0.7], [0.7, 1.0]], 5)
+    assert sorted(r.total().draws) != sorted(p.total().draws)
+    assert sorted(r.marginal(("premium", "", "motor")).draws) == sorted(premium.marginal(("motor",)).draws)
+    with pytest.raises(ValueError):
+        PredictiveDistribution.join([("a", reserve), ("a", premium)], "risk")

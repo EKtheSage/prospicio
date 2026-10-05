@@ -49,6 +49,7 @@ reference:
     contents:
       - predictive_distribution
       - blend_predictive
+      - portfolio
       - marginal
       - total
       - draw_matrix

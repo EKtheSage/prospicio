@@ -4567,6 +4567,37 @@ class PredictiveDistribution:
         -------
         list of list of float
         """
+    @staticmethod
+    def join(parts: Sequence[tuple[str, PredictiveDistribution]], dim: str, same_simulations: bool = False) -> PredictiveDistribution:
+        """
+        Joins distributions of different models into one portfolio, with a
+        leading dimension ``dim`` holding each part's label, followed by the
+        union of the parts' dimensions (``""`` where a part lacks one).
+        Simulation ``i`` of the result is simulation ``i`` of every part.
+        
+        Parameters
+        ----------
+        parts : list of (str, PredictiveDistribution)
+        dim : str
+        same_simulations : bool, default False
+            ``False``: the parts were simulated separately, and two with the
+            same seed and stream scheme (which would share random numbers)
+            are refused. ``True``: the parts come from the same scenarios (a
+            cover applied to a reserve) and keep their pairing.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Examples
+        --------
+        >>> from actuarialrs.distributions import PredictiveDistribution
+        >>> a = PredictiveDistribution(["origin"], [(2023,), (2024,)], [[10.0, 20.0], [12.0, 25.0]])
+        >>> b = PredictiveDistribution(["lob"], [("motor",)], [[50.0], [40.0]])
+        >>> p = PredictiveDistribution.join([("reserve", a), ("premium", b)], "risk")
+        >>> p.dims, p.total().draws
+        (['risk', 'origin', 'lob'], [80.0, 77.0])
+        """
     def marginal(self, /, key: Sequence[int |str]) -> Sampled |None:
         """
         One component's draws, or ``None`` if no component has this key.
@@ -4622,6 +4653,25 @@ class PredictiveDistribution:
         ------
         ValueError
             If ``p`` is outside ``[0, 1]``.
+        """
+    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+        """
+        Sets the dependence between the groups of dimension ``dim`` by
+        Iman–Conover on the groups' totals, moving each group's simulations
+        as whole rows: every group keeps its distribution and internal joint
+        structure, and the group totals take a rank correlation close to
+        ``correlation``.
+        
+        Parameters
+        ----------
+        dim : str
+        correlation : list of list of float
+            One row and column per group, in order of first appearance.
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
         """
     def total(self, /) -> Sampled:
         """
@@ -4994,6 +5044,22 @@ class Tower:
         Parameters
         ----------
         events : EventSet
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    def apply_aggregate(self, /, losses: PredictiveDistribution) -> PredictiveDistribution:
+        """
+        Applies the tower to any predictive distribution, each simulation's
+        total taken as one aggregate loss: an adverse development cover on a
+        reserve bootstrap, a stop-loss or quota share on modelled premium
+        risk. An occurrence layer sees the total as one occurrence, so it
+        acts as an aggregate excess of loss. Components as ``apply``.
+        
+        Parameters
+        ----------
+        losses : PredictiveDistribution
         
         Returns
         -------

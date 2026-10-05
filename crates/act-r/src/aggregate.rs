@@ -324,6 +324,15 @@ impl ReinsuranceTower {
         ))
     }
 
+    /// Each simulation's total of a predictive distribution as one
+    /// aggregate loss.
+    fn apply_aggregate(&self, losses: Robj) -> Result<PredictiveDistribution> {
+        let pd = <&PredictiveDistribution>::try_from(&losses)
+            .map_err(|_| Error::Other("losses must be a predictive_distribution".into()))?;
+        let inner = self.inner.apply_aggregate(&pd.inner).map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
     fn apply(&self, events: Robj) -> Result<PredictiveDistribution> {
         let events = <&EventSet>::try_from(&events)
             .map_err(|_| Error::Other("events must be an event_set".into()))?;

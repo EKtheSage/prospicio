@@ -756,8 +756,60 @@ fn blend_by_component_rust(
     Ok(PredictiveDistribution { inner: pd })
 }
 
+/// Joins predictive distributions: `labels` name the `parts`.
+#[extendr]
+fn join_rust(
+    parts: List,
+    labels: Vec<String>,
+    dim: &str,
+    same_simulations: bool,
+) -> Result<PredictiveDistribution> {
+    use act_prob::portfolio::Pairing;
+    let refs: Vec<&PredictiveDistribution> = parts
+        .values()
+        .map(|m| {
+            <&PredictiveDistribution>::try_from(&m)
+                .map_err(|_| Error::Other("every part must be a predictive_distribution".into()))
+        })
+        .collect::<Result<_>>()?;
+    if refs.len() != labels.len() {
+        return Err(Error::Other("one label per part".into()));
+    }
+    let pairs: Vec<(&str, &PdInner)> = labels
+        .iter()
+        .map(String::as_str)
+        .zip(refs.iter().map(|p| &p.inner))
+        .collect();
+    let pairing = if same_simulations {
+        Pairing::SameSimulations
+    } else {
+        Pairing::Independent
+    };
+    let inner = PdInner::join(&pairs, dim, pairing).map_err(to_r)?;
+    Ok(PredictiveDistribution { inner })
+}
+
+/// Iman-Conover on the totals of the groups of `dim`, moving whole rows.
+#[extendr]
+fn reorder_groups_rust(
+    pd: Robj,
+    dim: &str,
+    correlation: &[f64],
+    seed: f64,
+) -> Result<PredictiveDistribution> {
+    let pd = <&PredictiveDistribution>::try_from(&pd)
+        .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
+    let inner = pd
+        .inner
+        .reorder_groups(dim, correlation, whole(seed, "seed")?)
+        .map_err(to_r)?;
+    Ok(PredictiveDistribution { inner })
+}
+
 extendr_module! {
     mod distributions;
+    fn join_rust;
+    fn reorder_groups_rust;
     fn blend_rust;
     fn blend_by_component_rust;
     impl Lognormal;
