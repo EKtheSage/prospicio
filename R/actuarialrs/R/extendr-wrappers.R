@@ -12,7 +12,7 @@ bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link
 
 bayes_stacking_rust <- function(lpd, k, concentration, sampler) .Call(wrap__bayes_stacking_rust, lpd, k, concentration, sampler)
 
-hierarchical_stacking_rust <- function(lpd, k, x, p, priors, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, sampler)
+hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, discrete, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, pooling, adaptive, discrete, sampler)
 
 blend_by_component_rust <- function(models, weights, seed) .Call(wrap__blend_by_component_rust, models, weights, seed)
 
