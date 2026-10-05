@@ -513,8 +513,8 @@ predictive_distribution <- S7::new_class(
 
 #' One component of a predictive distribution
 #'
-#' @param dist A [predictive_distribution].
-#' @param key A named list (or vector) with one value per dimension.
+#' @param key A named list (or vector) with one value per dimension. An origin
+#'   period is named by its label (`"2021"`, `2021`, `"2021Q3"`).
 #' @param ... Unused; for methods.
 #' @returns A [sampled] object, or `NULL` when no component has this key.
 #' @export

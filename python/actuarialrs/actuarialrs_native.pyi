@@ -4664,6 +4664,10 @@ class PredictiveDistribution:
         """
         One component's draws, or ``None`` if no component has this key.
         
+        An origin period is named by its label, as a string or an integer:
+        ``("2021",)`` or ``(2021,)`` for a year, ``("2021Q3",)`` for a
+        quarter.
+        
         Parameters
         ----------
         key : tuple

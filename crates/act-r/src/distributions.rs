@@ -644,7 +644,8 @@ impl PredictiveDistribution {
     }
 
     /// The component with this key (a list or vector, one entry per
-    /// dimension), or NULL.
+    /// dimension), or NULL. An origin period is named by its label
+    /// (`"2021"`, `2021`, `"2021Q3"`).
     fn marginal(&self, key: List) -> Result<Robj> {
         let key = key_from_list(key)?;
         Ok(match self.inner.marginal(&key) {
