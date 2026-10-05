@@ -28,7 +28,7 @@ use act_core::{Error, Result};
 use nuts_rs::{CpuLogpFunc, CpuMathError, HasDims, LogpError};
 use rayon::prelude::*;
 
-use crate::glm::{Sampler, run_chain};
+use crate::nuts::{Sampler, run_chain};
 
 /// Bayesian stacking: a Dirichlet(`concentration`) prior on one weight
 /// vector, and the log score of the mixture as the likelihood.
