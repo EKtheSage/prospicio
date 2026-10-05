@@ -714,13 +714,34 @@ fn every_segment_at_once_on_lob_and_coverage() {
     );
     for s in 0..4 {
         let mean = totals.column("mean").unwrap()[s];
-        let want = by_segment.row(0).unwrap()[s];
-        assert!(mean.is_finite() && want.is_finite());
         let cl_reserve = totals.column("reserve").unwrap()[s];
         assert!(
             (mean / cl_reserve - 1.0).abs() < 0.1,
             "{mean} vs {cl_reserve}"
         );
     }
-    assert_eq!(joint.to_long().n_rows(), 40);
+
+    // Each row's mean and std_dev are those of its own reserve component,
+    // and each segment total's those of its part of the joint draws.
+    let long = joint.to_long();
+    assert_eq!(long.n_rows(), 40);
+    for (j, key) in joint.reserves.components().iter().enumerate() {
+        let component = joint.reserves.marginal(key).unwrap();
+        assert_eq!(long.column("mean").unwrap()[j], component.mean());
+        assert_eq!(long.column("std_dev").unwrap()[j], component.std_dev());
+    }
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-12 * b.abs();
+    for (s, label) in joint.segments.labels.iter().enumerate() {
+        let parts = label.parts();
+        let one = joint
+            .segment(&[("lob", &parts[0]), ("coverage", &parts[1])])
+            .unwrap();
+        let total = one.reserves.total();
+        assert!(close(totals.column("mean").unwrap()[s], total.mean()));
+        assert!(close(totals.column("std_dev").unwrap()[s], total.std_dev()));
+        let by_key = by_segment
+            .marginal(&vec![parts[0].as_str().into(), parts[1].as_str().into()])
+            .unwrap();
+        assert!(close(by_key.mean(), total.mean()));
+    }
 }

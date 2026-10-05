@@ -299,6 +299,8 @@ stopifnot(identical(names(boot_totals), c("lob", "coverage", "latest", "ultimate
 alone <- odp_bootstrap(subset(lc, lob = "Home", coverage = "BI"), "paid", n_sims = 10)
 stopifnot(identical(boot_totals$scale[3], alone@scale), identical(home_bi@scale, alone@scale),
           nrow(as.data.frame(boot_lc)) == 40)
+near(as.data.frame(boot_lc)$mean[11], mean(draw_matrix(r)[, 11]), 1e-12)
+near(boot_totals$mean[3], mean(home_bi@reserves), 1e-12)
 expect_error_like(boot_lc@scale, "use totals_frame()")
 expect_error_like(boot_lc@residuals, "use segment()")
 invisible(utils::capture.output(print(boot_lc)))

@@ -1447,6 +1447,13 @@ pub(crate) struct PyMackFit {
     inner: SegmentFits<MackFit>,
 }
 
+impl PyMackFit {
+    /// The chain ladder of a single-segment fit, for a per-age `field`.
+    fn one(&self, field: &str) -> PyResult<&ChainLadderFit> {
+        Ok(&single(&self.inner, field, "development_frame()")?.chain_ladder)
+    }
+}
+
 #[pymethods]
 impl PyMackFit {
     /// The underlying chain-ladder projection.
@@ -1478,31 +1485,35 @@ impl PyMackFit {
     /// Development ages in months.
     #[getter]
     fn development(&self) -> Vec<Lag> {
-        self.chain_ladder().development()
+        self.inner.fits[0]
+            .chain_ladder
+            .development
+            .development
+            .clone()
     }
 
     /// Age-to-age factors.
     #[getter]
     fn ldf(&self) -> PyResult<Vec<f64>> {
-        self.chain_ladder().ldf()
+        Ok(self.one("ldf")?.development.ldf.clone())
     }
 
     /// Age-to-ultimate factors.
     #[getter]
     fn cdf(&self) -> PyResult<Vec<f64>> {
-        self.chain_ladder().cdf()
+        Ok(self.one("cdf")?.cdf.clone())
     }
 
     /// Variance parameter of each factor.
     #[getter]
     fn sigma(&self) -> PyResult<Vec<f64>> {
-        self.chain_ladder().sigma()
+        Ok(self.one("sigma")?.development.sigma.clone())
     }
 
     /// Standard error of each factor.
     #[getter]
     fn std_err(&self) -> PyResult<Vec<f64>> {
-        self.chain_ladder().std_err()
+        Ok(self.one("std_err")?.development.std_err.clone())
     }
 
     /// Latest observed cumulative value per origin.

@@ -996,7 +996,6 @@ ChainLadderFit$n_segments <- function() .Call(wrap__ChainLadderFit__n_segments, 
 
 ChainLadderFit$keys <- function() .Call(wrap__ChainLadderFit__keys, self)
 
-ChainLadderFit$index_names <- function() .Call(wrap__ChainLadderFit__index_names, self)
 
 ChainLadderFit$row_segments <- function() .Call(wrap__ChainLadderFit__row_segments, self)
 

@@ -518,11 +518,6 @@ impl ChainLadderFit {
         self.inner.key_names.clone()
     }
 
-    /// Segment labels with their parts joined by " / ".
-    fn index_names(&self) -> Vec<String> {
-        self.inner.labels.iter().map(Label::to_string).collect()
-    }
-
     fn row_segments(&self) -> Vec<String> {
         row_segments(&self.inner)
     }

@@ -380,7 +380,12 @@ def test_every_segment_at_once():
     alone = OdpBootstrap(n_sims=10).fit(tri.select(lob="Home", coverage="BI"), "paid")
     assert totals["scale"].iloc[2] == alone.scale
     assert boot.segment(lob="Home", coverage="BI").scale == alone.scale
-    assert len(boot.to_frame()) == 40
+    frame = boot.to_frame()
+    assert len(frame) == 40
+    draws = boot.reserves.draw_matrix()
+    column = [row[10] for row in draws]
+    assert frame["mean"].iloc[10] == pytest.approx(sum(column) / len(column), rel=1e-12)
+    assert totals["mean"].iloc[2] == pytest.approx(one.mean(), rel=1e-12)
     with pytest.raises(ValueError, match="use totals_frame"):
         boot.scale
     with pytest.raises(ValueError, match="use segment"):
