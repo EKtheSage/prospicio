@@ -181,6 +181,68 @@ rows of a `TriangleFrame`.
   `glm(inc ~ factor(origin) + factor(dev), family = quasipoisson)` to
   relative 1e-9 (`validation/scripts/reserving_glm_r.R`).
 
+## Calendar-diagonal backtest
+
+`diagonal_backtest` (`act-reserving/src/backtest.rs`) scores any model of
+the cells of a `TriangleFrame` the way reserving uses it: for each of the
+latest `k` calendar diagonals, refit on the earlier diagonals and forecast
+the held-out one (`docs/design/models.md`, "Fitting a triangle with several
+models").
+
+- A model takes part through the `TriangleModel` trait: `forecast(cells,
+  train, test, n_sims, seed)` returns a `CellForecast` (means, a joint
+  `PredictiveDistribution` over the test rows, and optional pointwise log
+  predictive densities). `GlmCandidate { name, terms, glm }` wraps any
+  `act-glm` GLM; the ODP model is the quasi-Poisson GLM with intercept,
+  origin and development factors.
+- A held-out cell whose origin or development level has no training row
+  (the newest origin, and the oldest origin at an age not seen before)
+  cannot be forecast by a model with origin and development effects. It
+  is left out for every model, so all models score the same cells, and
+  `Backtest::excluded` counts it: two per diagonal on a full triangle.
+  "Training row" means one every model fits on (`TriangleModel::fit_rows`,
+  all of them by default): an age whose only training cell is a response
+  the model does not accept (a negative increment under a Poisson with
+  fixed dispersion) is unseen too.
+- Scores per model and diagonal: mean cell CRPS, coverage of the central
+  `interval` of each cell's draws, actual vs expected on the diagonal
+  total (`Σy / Σμ`), and the CRPS of the diagonal total from the joint
+  draws summed per simulation. One seed serves every model and diagonal,
+  so the models share their random numbers, and results are deterministic.
+- `GlmCandidate` fits the training cells its GLM accepts
+  (`Glm::accepts`): the quasi-Poisson takes negative increments (#114),
+  a Poisson with fixed dispersion does not. Its predictive draws are
+  mean-preserving under a log or identity link, so each cell's simulated
+  mean is its fitted mean.
+- Its log densities are log predictive densities with parameter
+  uncertainty (the response density averaged over coefficient draws);
+  plug-in densities treat the young origins' factors as known and
+  penalize the ODP model where it is least certain. The response density
+  is `Family::log_density`, which scores the over-dispersed Poisson by a
+  normalized density in `y` (#114).
+- Parity: on a held-out diagonal the ODP candidate's means equal Chain
+  Ladder's one-period forecasts from the triangle valued before it
+  (GenIns, three diagonals, to `1e-7`).
+
+### Feeding stacking
+
+`Backtest::log_densities()` returns, per model, the held-out log density
+of every scored cell, diagonals in order, aligned across models (`None`
+for a model that gives none). The models that give one are the input of
+`act_models::stack::stacking_weights` (and `pseudo_bma_weights`), the
+cross-validated counterpart of PSIS-LOO pointwise values (#95, #102); the
+weights then blend the models' predictive distributions of the future
+cells with `PredictiveDistribution::blend`. A held-out cell that a model
+gives zero density (a negative increment under the Poisson) makes its
+log density `-∞`, which stacking rejects: choose diagonals without one.
+
+Findings on the reference triangles, ODP against development factors
+only: on ABC the ODP model wins on cell and total CRPS and stacking
+favours it (about 0.58 to 0.42, three diagonals), though its 90%
+intervals cover only about half the cells. On RAA's latest two diagonals
+development alone scores better (cell CRPS about 1000 against 1400): the
+young origins' factors rest on one or two noisy cells.
+
 ## Migration from the sandbox (done)
 
 `development.rs` and `chain_ladder.rs` (volume and simple averages,

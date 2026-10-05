@@ -133,6 +133,7 @@ version = "0.0.1"
 dependencies = [
  "act-core",
  "act-glm",
+ "act-math",
  "act-models",
  "act-prob",
 ]

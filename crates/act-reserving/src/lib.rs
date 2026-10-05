@@ -27,6 +27,7 @@
 //! # Ok::<(), act_reserving::Error>(())
 //! ```
 
+pub mod backtest;
 pub mod bootstrap;
 pub mod chain_ladder;
 pub mod development;
@@ -37,6 +38,9 @@ pub mod odp_glm;
 pub mod triangle;
 
 pub use act_core::{Grain, Lag, Month, Period};
+pub use backtest::{
+    Backtest, CellForecast, GlmCandidate, METRICS, TriangleModel, diagonal_backtest,
+};
 pub use bootstrap::{OdpBootstrap, OdpBootstrapFit, ProcessDistribution};
 pub use chain_ladder::{ChainLadder, ChainLadderFit};
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};

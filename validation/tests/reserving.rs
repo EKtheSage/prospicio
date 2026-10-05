@@ -7,14 +7,20 @@
 //! the scale and residuals, within Monte Carlo tolerances for the reserve
 //! distribution (`scripts/reserving_bootstrap_r.R`). The ODP GLM is checked
 //! against Chain Ladder, the bootstrap's scale and R's quasi-Poisson `glm`
-//! (`scripts/reserving_glm_r.R`).
+//! (`scripts/reserving_glm_r.R`). The calendar-diagonal backtest is checked
+//! against Chain Ladder on the truncated triangle.
 
 use std::collections::HashMap;
 
+use act_glm::Glm;
+use act_models::Terms;
+use act_models::stack::stacking_weights;
 use act_prob::Distribution;
 use act_reserving::{
-    Average, ChainLadder, ChainLadderFit, Development, Mack, MackFit, OdpBootstrap,
-    OdpBootstrapFit, OdpGlm, OdpGlmFit, Period, ProcessDistribution, SigmaInterpolation,
+    Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, GlmCandidate, Grain,
+    Long, Mack, MackFit, Month, OdpBootstrap, OdpBootstrapFit, OdpGlm, OdpGlmFit, Period,
+    ProcessDistribution, SigmaInterpolation, Triangle, TriangleFrame, TriangleModel,
+    diagonal_backtest,
 };
 use act_validation::{Case, check, reference, triangle};
 
@@ -171,6 +177,152 @@ fn bootstrap_matches_r_bootchainladder() {
             _ => None,
         }
     });
+}
+
+/// The ODP model as a GLM on the cells: quasi-Poisson, intercept, origin
+/// and development factors.
+fn odp_candidate() -> GlmCandidate {
+    GlmCandidate {
+        name: "odp".into(),
+        terms: Terms::new()
+            .intercept()
+            .factor("origin")
+            .factor("development"),
+        glm: Glm::over_dispersed_poisson(),
+    }
+}
+
+/// A deliberately worse model: development only, every origin alike.
+fn development_only() -> GlmCandidate {
+    GlmCandidate {
+        name: "development only".into(),
+        terms: Terms::new().intercept().factor("development"),
+        glm: Glm::over_dispersed_poisson(),
+    }
+}
+
+#[test]
+fn diagonal_backtest_on_raa() {
+    let cells = TriangleFrame::new(&triangle("raa"), "values", None).unwrap();
+    let (odp, worse) = (odp_candidate(), development_only());
+    let bt = diagonal_backtest(&cells, &[&odp, &worse], 2, 4000, 2024, 0.9).unwrap();
+    assert_eq!(bt.models(), ["odp", "development only"]);
+    assert_eq!(
+        bt.metrics(),
+        ["crps", "coverage", "actual_vs_expected", "total_crps"]
+    );
+    assert_eq!(bt.n_splits(), 2);
+    // 1989 and 1990: the newest origin (at 12) and 1981 (at 108, then
+    // 120) have no training level, which leaves 7 and 8 scored cells.
+    assert_eq!(bt.excluded(), [2, 2]);
+    assert_eq!(bt.scored_rows()[0].len(), 7);
+    assert_eq!(bt.scored_rows()[1].len(), 8);
+    for m in 0..2 {
+        assert!(
+            bt.split_scores(m, 1)
+                .iter()
+                .all(|c| (0.0..=1.0).contains(c))
+        );
+        assert!(bt.split_scores(m, 2).iter().all(|ae| ae.is_finite()));
+    }
+    // The ODP model over-predicts the low 1990 diagonal: A/E 1.20, 0.67
+    // (fitted with the negative 1982 increment, which the quasi-Poisson
+    // accepts).
+    let ae = bt.split_scores(0, 2);
+    assert!(
+        (ae[0] - 1.1999).abs() < 1e-3 && (ae[1] - 0.6735).abs() < 1e-3,
+        "{ae:?}"
+    );
+    // On RAA's latest diagonals, development alone scores better than the
+    // ODP model (cell CRPS about 1000 against 1400): its origin effects for
+    // the young origins rest on one or two noisy cells.
+    assert!(bt.mean(1, 0) < bt.mean(0, 0));
+
+    // Aligned held-out log densities: one per scored cell, both splits.
+    let lpd: Vec<Vec<f64>> = bt
+        .log_densities()
+        .iter()
+        .map(|l| l.clone().expect("a GLM gives log densities"))
+        .collect();
+    assert!(lpd.iter().all(|l| l.len() == 15));
+    let w = stacking_weights(&lpd).unwrap();
+    assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+
+    // Deterministic for a seed.
+    let again = diagonal_backtest(&cells, &[&odp, &worse], 2, 4000, 2024, 0.9).unwrap();
+    assert_eq!(again, bt);
+}
+
+#[test]
+fn diagonal_backtest_prefers_the_odp_model_on_abc() {
+    let cells = TriangleFrame::new(&triangle("abc"), "values", None).unwrap();
+    let (odp, worse) = (odp_candidate(), development_only());
+    let bt = diagonal_backtest(&cells, &[&odp, &worse], 3, 4000, 7, 0.9).unwrap();
+    assert_eq!(bt.excluded(), [2, 2, 2]);
+    assert!(bt.mean(0, 0) < bt.mean(1, 0), "ODP wins on cell CRPS");
+    assert!(bt.mean(0, 3) < bt.mean(1, 3), "ODP wins on total CRPS");
+    for &ae in bt.split_scores(0, 2) {
+        assert!((ae - 1.0).abs() < 0.2, "ODP actual vs expected {ae}");
+    }
+    for m in 0..2 {
+        assert!(
+            bt.split_scores(m, 1)
+                .iter()
+                .all(|c| (0.0..=1.0).contains(c))
+        );
+    }
+    let lpd: Vec<Vec<f64>> = bt.log_densities().iter().flatten().cloned().collect();
+    assert_eq!(lpd.len(), 2);
+    let w = stacking_weights(&lpd).unwrap();
+    assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+    assert!(w[0] > w[1], "stacking favours the ODP model: {w:?}");
+}
+
+/// On a held-out diagonal the ODP model's means are Chain Ladder's
+/// one-period forecasts from the triangle valued before it.
+#[test]
+fn backtest_odp_means_match_chain_ladder_on_genins() {
+    let tri = triangle("genins");
+    let cells = TriangleFrame::new(&tri, "values", None).unwrap();
+    let odp = odp_candidate();
+    let splits = cells.diagonal_splits(3).unwrap();
+    let bt = diagonal_backtest(&cells, &[&odp], 3, 10, 1, 0.9).unwrap();
+    let long = tri.to_long();
+    for (split, scored) in splits.iter().zip(bt.scored_rows()) {
+        let forecast = odp.forecast(&cells, &split.train, scored, 10, 1).unwrap();
+        // The triangle as it stood before the held-out diagonal.
+        let cutoff = cells.calendar_of(scored[0]);
+        let keep: Vec<usize> = (0..long.origin.len())
+            .filter(|&i| {
+                let o = long.origin[i].year() - 2001;
+                let d = long.development[i] / 12 - 1;
+                !long.values[0].1[i].is_nan() && i64::from(o) + i64::from(d) < cutoff
+            })
+            .collect();
+        let origin: Vec<Month> = keep.iter().map(|&i| long.origin[i]).collect();
+        let ages: Vec<u32> = keep.iter().map(|&i| long.development[i]).collect();
+        let values: Vec<f64> = keep.iter().map(|&i| long.values[0].1[i]).collect();
+        let before = Triangle::from_long(&Long {
+            index: None,
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("values", &values)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let cl = ChainLadder::default().fit(&before, "values").unwrap();
+        for (&row, &mean) in scored.iter().zip(&forecast.mean) {
+            let (o, d) = (cells.origin_of(row), cells.development_of(row));
+            assert_eq!(cl.latest_position[o], d - 1);
+            let expected = cl.latest[o] * (cl.development.ldf[d - 1] - 1.0);
+            assert!(
+                (mean - expected).abs() <= 1e-7 * expected.abs(),
+                "origin {o} dev {d}: {mean} vs {expected}"
+            );
+        }
+    }
 }
 
 /// Relative difference, with an absolute floor of 1 for values near zero.
