@@ -17,9 +17,7 @@ mack(
 \arguments{
 \item{ptr}{A \code{ChainLadderFit} pointer; used internally.}
 
-\item{triangle}{A single-segment \link{triangle} (use
-\link[=subset.triangle]{subset()} or \link[=aggregate.triangle]{aggregate()} first if
-it has several segments).}
+\item{triangle}{A \link{triangle}, with any number of segments.}
 
 \item{column}{Name of the column to fit; by default the only one.}
 
@@ -38,14 +36,17 @@ Mack's distribution-free chain ladder (Mack 1993, 1999): the chain-ladder
 projection, without a tail, plus the process and parameter standard
 errors of each origin's reserve and of the total, as R ChainLadder's
 \code{MackChainLadder()}. Needs at least three development ages, and every
-sigma estimable or fillable by \code{sigma_interpolation}.
+sigma estimable or fillable by \code{sigma_interpolation}. Every segment of
+the triangle is fitted on its own.
 }
 \details{
 The fit has the properties of a \link{chain_ladder_fit} (and the fit itself
 as \code{m@chain_ladder}), plus per origin \code{process_risk}, \code{parameter_risk}
 and \code{standard_error}, and \code{total_process_risk}, \code{total_parameter_risk},
 \code{total_standard_error} and \code{total_cv} (the total standard error over the
-total reserve). Risks are standard errors, not variances.
+total reserve). Risks are standard errors, not variances. The totals'
+risks need a single-segment fit: with several segments use
+\code{\link[=totals_frame]{totals_frame()}}, which has them per segment, or \code{\link[=segment]{segment()}}.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),

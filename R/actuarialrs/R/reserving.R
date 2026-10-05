@@ -407,6 +407,28 @@ fit_column <- function(triangle, column) {
   triangle@columns
 }
 
+# Names of per-origin values: the origin, or "segment / origin" when the
+# fit has several segments. `p` is a ChainLadderFit pointer.
+origin_names <- function(p) {
+  if (p$n_segments() > 1) paste(p$row_segments(), p$origins(), sep = " / ") else p$origins()
+}
+
+# A long result table from Rust (keys, origin or development, values) as a
+# data.frame; NaN becomes NA.
+fit_table_frame <- function(t) {
+  fixed <- c(if (!is.null(t$origin)) "origin", if (!is.null(t$development)) "development", t$names)
+  clash <- intersect(names(t$keys), fixed)
+  if (length(clash)) {
+    stop(sprintf('key "%s" clashes with the "%s" column of the result', clash[1], clash[1]),
+         call. = FALSE)
+  }
+  out <- t$keys
+  if (!is.null(t$origin)) out$origin <- t$origin
+  if (!is.null(t$development)) out$development <- t$development
+  out[t$names] <- lapply(t$values, function(v) replace(v, is.nan(v), NA_real_))
+  as.data.frame(out, stringsAsFactors = FALSE, optional = TRUE)
+}
+
 # Chain-ladder properties, read through `cl(self)`, a ChainLadderFit
 # pointer. Shared by chain_ladder_fit and mack_fit.
 chain_ladder_properties <- function(cl) {
@@ -416,24 +438,27 @@ chain_ladder_properties <- function(cl) {
   }
   by_origin <- function(f) {
     S7::new_property(S7::class_double, getter = function(self) {
-      stats::setNames(f(cl(self)), cl(self)$origins())
+      stats::setNames(f(cl(self)), origin_names(cl(self)))
+    })
+  }
+  per_age <- function(f, names) {
+    S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(rust_result(f(cl(self)), call = NULL), names(self))
     })
   }
   list(
+    keys = S7::new_property(S7::class_character, getter = function(self) cl(self)$keys()),
+    index = S7::new_property(S7::class_data.frame, getter = function(self) {
+      parts <- cl(self)$totals_table()$keys
+      if (!length(parts)) return(data.frame(matrix(nrow = 1L, ncol = 0L)))
+      as.data.frame(parts, stringsAsFactors = FALSE, optional = TRUE)
+    }),
     origins = S7::new_property(S7::class_character, getter = function(self) cl(self)$origins()),
     development = S7::new_property(S7::class_integer, getter = function(self) cl(self)$development()),
-    ldf = S7::new_property(S7::class_double, getter = function(self) {
-      stats::setNames(cl(self)$ldf(), links(self))
-    }),
-    cdf = S7::new_property(S7::class_double, getter = function(self) {
-      stats::setNames(cl(self)$cdf(), paste0(cl(self)$development(), "-Ult"))
-    }),
-    sigma = S7::new_property(S7::class_double, getter = function(self) {
-      stats::setNames(cl(self)$sigma(), links(self))
-    }),
-    std_err = S7::new_property(S7::class_double, getter = function(self) {
-      stats::setNames(cl(self)$std_err(), links(self))
-    }),
+    ldf = per_age(function(p) p$ldf(), links),
+    cdf = per_age(function(p) p$cdf(), function(self) paste0(cl(self)$development(), "-Ult")),
+    sigma = per_age(function(p) p$sigma(), links),
+    std_err = per_age(function(p) p$std_err(), links),
     alpha = S7::new_property(S7::class_double, getter = function(self) cl(self)$alpha()),
     tail = S7::new_property(S7::class_double, getter = function(self) cl(self)$tail()),
     latest = by_origin(function(p) p$latest()),
@@ -460,16 +485,23 @@ development_args <- function(average, sigma_interpolation) {
 #' `MackChainLadder()` and chainladder-python
 #' (`validation/reference/reserving_chainladder_r.csv`).
 #'
-#' Properties of the fit, per origin (named by origin): `latest`,
-#' `ultimate`, `reserve`; per link (named `"12-24"` and so on): `ldf`,
-#' `sigma` (with unestimable ones interpolated), `std_err`; per age:
-#' `cdf` (age to ultimate, including the tail); and `origins`,
-#' `development`, `alpha`, `tail`, `total_ultimate`, `total_reserve`.
-#' `as.data.frame()` gives the per-origin table.
+#' Every segment of the triangle is fitted on its own. Per-origin
+#' properties run over the origins of each segment in turn, like the rows
+#' of `as.data.frame()`, and are named by origin, or by `"segment /
+#' origin"` (key values joined by `" / "`) when there are several segments;
+#' a single-segment fit has one value per origin.
 #'
-#' @param triangle A single-segment [triangle] (use
-#'   [subset()][subset.triangle] or [aggregate()][aggregate.triangle] first if
-#'   it has several segments).
+#' Properties of the fit, per origin: `latest`, `ultimate`, `reserve`; per
+#' link (named `"12-24"` and so on): `ldf`, `sigma` (with unestimable ones
+#' interpolated), `std_err`; per age: `cdf` (age to ultimate, including the
+#' tail); and `keys`, `index` (one row per segment, as a triangle's),
+#' `origins`, `development`, `alpha`, `tail`, `total_ultimate` and
+#' `total_reserve` (summed over segments). The per-link and per-age
+#' properties need a single-segment fit: with several segments use
+#' [development_frame()] or [segment()]. `as.data.frame()` gives one row
+#' per segment and origin, [totals_frame()] one per segment.
+#'
+#' @param triangle A [triangle], with any number of segments.
 #' @param column Name of the column to fit; by default the only one.
 #' @param average `"volume"`, `"simple"` or `"regression"`.
 #' @param sigma_interpolation How a variance parameter that cannot be
@@ -479,7 +511,7 @@ development_args <- function(average, sigma_interpolation) {
 #' @param tail Factor from the oldest age to ultimate; 1 means no tail.
 #' @param ptr A `ChainLadderFit` pointer; used internally.
 #' @returns A `chain_ladder_fit` object.
-#' @seealso [mack()] for standard errors.
+#' @seealso [mack()] for standard errors, [segment()] for one segment.
 #' @export
 #' @examples
 #' long <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),
@@ -489,6 +521,13 @@ development_args <- function(average, sigma_interpolation) {
 #' fit@ldf
 #' fit@reserve
 #' fit@total_reserve
+#'
+#' # Every line of business at once.
+#' by_lob <- rbind(transform(long, lob = "auto"), transform(long, lob = "home", paid = paid / 2))
+#' fits <- chain_ladder(triangle(by_lob, "year", "age", "paid", keys = "lob"))
+#' fits@reserve
+#' as.data.frame(fits)
+#' totals_frame(fits)
 chain_ladder_fit <- S7::new_class(
   "chain_ladder_fit",
   package = "actuarialrs",
@@ -518,13 +557,16 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
 #' projection, without a tail, plus the process and parameter standard
 #' errors of each origin's reserve and of the total, as R ChainLadder's
 #' `MackChainLadder()`. Needs at least three development ages, and every
-#' sigma estimable or fillable by `sigma_interpolation`.
+#' sigma estimable or fillable by `sigma_interpolation`. Every segment of
+#' the triangle is fitted on its own.
 #'
 #' The fit has the properties of a [chain_ladder_fit] (and the fit itself
 #' as `m@chain_ladder`), plus per origin `process_risk`, `parameter_risk`
 #' and `standard_error`, and `total_process_risk`, `total_parameter_risk`,
 #' `total_standard_error` and `total_cv` (the total standard error over the
-#' total reserve). Risks are standard errors, not variances.
+#' total reserve). Risks are standard errors, not variances. The totals'
+#' risks need a single-segment fit: with several segments use
+#' [totals_frame()], which has them per segment, or [segment()].
 #'
 #' @inheritParams chain_ladder_fit
 #' @returns A `mack_fit` object.
@@ -545,24 +587,26 @@ mack_fit <- S7::new_class(
     chain_ladder_properties(function(self) self@chain_ladder@ptr),
     list(
       process_risk = S7::new_property(S7::class_double, getter = function(self) {
-        stats::setNames(self@ptr$process_risk(), self@origins)
+        stats::setNames(self@ptr$process_risk(), origin_names(self@chain_ladder@ptr))
       }),
       parameter_risk = S7::new_property(S7::class_double, getter = function(self) {
-        stats::setNames(self@ptr$parameter_risk(), self@origins)
+        stats::setNames(self@ptr$parameter_risk(), origin_names(self@chain_ladder@ptr))
       }),
       standard_error = S7::new_property(S7::class_double, getter = function(self) {
-        stats::setNames(self@ptr$standard_error(), self@origins)
+        stats::setNames(self@ptr$standard_error(), origin_names(self@chain_ladder@ptr))
       }),
       total_process_risk = S7::new_property(S7::class_double, getter = function(self) {
-        self@ptr$total_process_risk()
+        rust_result(self@ptr$total_process_risk(), call = NULL)
       }),
       total_parameter_risk = S7::new_property(S7::class_double, getter = function(self) {
-        self@ptr$total_parameter_risk()
+        rust_result(self@ptr$total_parameter_risk(), call = NULL)
       }),
       total_standard_error = S7::new_property(S7::class_double, getter = function(self) {
-        self@ptr$total_standard_error()
+        rust_result(self@ptr$total_standard_error(), call = NULL)
       }),
-      total_cv = S7::new_property(S7::class_double, getter = function(self) self@ptr$total_cv())
+      total_cv = S7::new_property(S7::class_double, getter = function(self) {
+        rust_result(self@ptr$total_cv(), call = NULL)
+      })
     )
   ),
   constructor = function(ptr) {
@@ -578,35 +622,37 @@ mack <- function(triangle, column = NULL, average = "volume", sigma_interpolatio
   mack_fit(ptr = rust_result(triangle@ptr$mack(column, args$average, args$sigma)))
 }
 
-fit_frame <- function(fit) {
-  data.frame(origin = fit@origins, latest = unname(fit@latest),
-             ultimate = unname(fit@ultimate), reserve = unname(fit@reserve))
-}
-
 #' ODP bootstrap
 #'
 #' Over-dispersed Poisson bootstrap of the chain ladder (England and Verrall
 #' 2002), as R ChainLadder's `BootChainLadder()`: adjusted Pearson residuals
 #' of the volume-weighted chain ladder are resampled into pseudo triangles,
 #' each is re-projected, and process error is added to every future
-#' incremental value. Simulation `i` uses random stream `i` of `seed`, so
-#' results do not depend on the number of threads. The scale and residuals
-#' match `BootChainLadder()` exactly, and the reserve distribution within
-#' Monte Carlo error (`validation/reference/reserving_bootstrap_r.csv`).
+#' incremental value. The scale and residuals match `BootChainLadder()`
+#' exactly, and the reserve distribution within Monte Carlo error
+#' (`validation/reference/reserving_bootstrap_r.csv`).
+#'
+#' Every segment of the triangle is bootstrapped on its own, with its own
+#' residuals and scale, into one joint distribution of the reserves.
+#' Simulation `i` uses random stream `i` of `seed` for every segment in
+#' turn, so results do not depend on the number of threads.
 #'
 #' Properties of the fit: `chain_ladder` (the [chain_ladder_fit] the
 #' bootstrap is centred on), `origins`, `development`, `fitted` (fitted
 #' incremental values) and `residuals` (adjusted Pearson residuals
 #' `(x - m) / sqrt(|m|) * sqrt(n / (n - p))`), both origin x development
 #' matrices with `NA` where not observed, `scale` (the dispersion `phi`) and
-#' `reserves`, a [predictive_distribution] of the reserve with dimension
-#' `origin` and one component per origin period. `mean()`, `quantile()`,
-#' [VaR()] and [TVaR()] of `reserves` describe the total reserve. Columns of
-#' [draw_matrix()] follow `origins` ([marginal()] does not match origin labels
-#' yet).
+#' `reserves`, a [predictive_distribution] of the reserve with the
+#' triangle's keys and `origin` as dimensions and one component per segment
+#' and origin, so `aggregate(boot@reserves, keep = "lob")` keeps the
+#' dependence between segments. `mean()`, `quantile()`, [VaR()] and
+#' [TVaR()] of `reserves` describe the total reserve. Columns of
+#' [draw_matrix()] follow `origins`. `fitted`, `residuals` and `scale` need
+#' a single-segment fit: with several segments use [segment()], or
+#' [totals_frame()] for the scales.
 #'
-#' @param triangle A single-segment cumulative [triangle], every origin
-#'   observed from the first age up to its latest.
+#' @param triangle A cumulative [triangle], with any number of segments,
+#'   every origin observed from the first age up to its latest.
 #' @param column Name of the column to fit; by default the only one.
 #' @param n_sims Number of simulations; positive.
 #' @param seed Seed of the simulation streams, a non-negative whole number.
@@ -639,12 +685,14 @@ odp_bootstrap_fit <- S7::new_class(
       self@chain_ladder@development
     }),
     fitted = S7::new_property(S7::class_double, getter = function(self) {
-      origin_matrix(self, self@ptr$fitted())
+      origin_matrix(self, rust_result(self@ptr$fitted(), call = NULL))
     }),
     residuals = S7::new_property(S7::class_double, getter = function(self) {
-      origin_matrix(self, self@ptr$residuals())
+      origin_matrix(self, rust_result(self@ptr$residuals(), call = NULL))
     }),
-    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale()),
+    scale = S7::new_property(S7::class_double, getter = function(self) {
+      rust_result(self@ptr$scale(), call = NULL)
+    }),
     reserves = predictive_distribution
   ),
   constructor = function(ptr) {
@@ -679,30 +727,122 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
   odp_bootstrap_fit(ptr = ptr)
 }
 
-S7::method(as.data.frame, chain_ladder_fit) <- function(x, ...) fit_frame(x)
-S7::method(as.data.frame, mack_fit) <- function(x, ...) {
-  cbind(fit_frame(x), process_risk = unname(x@process_risk),
-        parameter_risk = unname(x@parameter_risk), standard_error = unname(x@standard_error))
+check_fit <- function(fit) {
+  if (!(S7::S7_inherits(fit, chain_ladder_fit) || S7::S7_inherits(fit, mack_fit) ||
+        S7::S7_inherits(fit, odp_bootstrap_fit))) {
+    stop("fit must be a chain_ladder_fit, mack_fit or odp_bootstrap_fit", call. = FALSE)
+  }
 }
+
+#' Long results of a fit over every segment
+#'
+#' Tables of a [chain_ladder_fit], [mack_fit] or [odp_bootstrap_fit] with
+#' the triangle's key columns by name. `as.data.frame(fit)` has one row per
+#' segment and origin: `origin`, `latest`, `ultimate` and `reserve`, plus
+#' for Mack `process_risk`, `parameter_risk` and `standard_error`, and for
+#' the bootstrap the `mean` and `std_dev` of the bootstrapped reserve.
+#' `totals_frame()` has one row per segment with the same quantities for
+#' the segment's total (for the bootstrap also its `scale`).
+#' `development_frame()` has one row per segment and age: `development`,
+#' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
+#' `std_err`; the oldest age has `NA` for `ldf`, `sigma` and `std_err`.
+#'
+#' `segment()` returns the fit of one segment, chosen by key values as in
+#' `segment(fit, lob = "auto")` (compared as character). Keys not named may
+#' take any value, so a fit with one segment needs none; a choice that
+#' matches several segments is an error. For the bootstrap, the segment
+#' keeps its part of the joint `reserves`, with the same dimensions.
+#'
+#' These are Python's `to_frame()`, `totals_frame()`,
+#' `development_frame()` and `segment(**keys)`.
+#'
+#' @param fit A [chain_ladder_fit], [mack_fit] or [odp_bootstrap_fit].
+#' @param ... Key conditions as `key = value`, one value each.
+#' @returns A data.frame, or for `segment()` a fit of the same class.
+#' @name fit_frames
+#' @examples
+#' long <- data.frame(lob = rep(c("auto", "home"), each = 6), year = c(2020, 2020, 2020, 2021, 2021, 2022),
+#'                    age = c(12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 110, 170, 120, 50, 80, 85, 60, 90, 70))
+#' fits <- chain_ladder(triangle(long, "year", "age", "paid", keys = "lob"))
+#' totals_frame(fits)
+#' development_frame(fits)
+#' segment(fits, lob = "home")@ldf
+NULL
+
+#' @rdname fit_frames
+#' @export
+totals_frame <- function(fit) {
+  check_fit(fit)
+  fit_table_frame(fit@ptr$totals_table())
+}
+
+#' @rdname fit_frames
+#' @export
+development_frame <- function(fit) {
+  check_fit(fit)
+  fit_table_frame(fit@ptr$development_table())
+}
+
+#' @rdname fit_frames
+#' @export
+segment <- function(fit, ...) {
+  check_fit(fit)
+  call <- sys.call()
+  conditions <- list(...)
+  keys <- names(conditions)
+  if (length(conditions) && (is.null(keys) || any(keys == ""))) {
+    stop("segment() conditions must be named by key, as in lob = \"auto\"", call. = FALSE)
+  }
+  if (any(lengths(conditions) != 1)) {
+    stop("segment() takes one value per key", call. = FALSE)
+  }
+  values <- vapply(conditions, as.character, "", USE.NAMES = FALSE)
+  ptr <- rust_result(fit@ptr$segment(as.character(keys), values), call = call)
+  S7::S7_class(fit)(ptr = ptr)
+}
+
+S7::method(as.data.frame, chain_ladder_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, mack_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, odp_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+
+# A segment count for print headers when there are several.
+segments_note <- function(p) {
+  n <- p$n_segments()
+  if (n > 1) sprintf(", %d segments", n) else ""
+}
+
 S7::method(print, chain_ladder_fit) <- function(x, ...) {
-  cat(sprintf("<chain_ladder_fit> total reserve %s, tail %s\n",
-              format(x@total_reserve, digits = 10), format(x@tail)))
+  cat(sprintf("<chain_ladder_fit> total reserve %s, tail %s%s\n",
+              format(x@total_reserve, digits = 10), format(x@tail), segments_note(x@ptr)))
   print(as.data.frame(x), row.names = FALSE)
   invisible(x)
 }
 S7::method(print, odp_bootstrap_fit) <- function(x, ...) {
   r <- x@reserves
-  cat(sprintf("<odp_bootstrap_fit> %d simulations, scale %s\n",
-              as.integer(r@n_sims), format(x@scale, digits = 6)))
+  p <- x@chain_ladder@ptr
+  if (p$n_segments() > 1) {
+    cat(sprintf("<odp_bootstrap_fit> %d simulations%s\n", as.integer(r@n_sims), segments_note(p)))
+  } else {
+    cat(sprintf("<odp_bootstrap_fit> %d simulations, scale %s\n",
+                as.integer(r@n_sims), format(x@scale, digits = 6)))
+  }
   cat(sprintf("total reserve: chain ladder %s, bootstrap mean %s, sd %s\n",
               format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
               format(sqrt(variance(r)), digits = 10)))
   invisible(x)
 }
 S7::method(print, mack_fit) <- function(x, ...) {
-  cat(sprintf("<mack_fit> total reserve %s, standard error %s (CV %s)\n",
-              format(x@total_reserve, digits = 10), format(x@total_standard_error, digits = 10),
-              format(x@total_cv, digits = 4)))
-  print(as.data.frame(x), row.names = FALSE)
+  p <- x@chain_ladder@ptr
+  if (p$n_segments() > 1) {
+    cat(sprintf("<mack_fit> total reserve %s%s\n", format(x@total_reserve, digits = 10),
+                segments_note(p)))
+    print(totals_frame(x), row.names = FALSE)
+  } else {
+    cat(sprintf("<mack_fit> total reserve %s, standard error %s (CV %s)\n",
+                format(x@total_reserve, digits = 10), format(x@total_standard_error, digits = 10),
+                format(x@total_cv, digits = 4)))
+    print(as.data.frame(x), row.names = FALSE)
+  }
   invisible(x)
 }

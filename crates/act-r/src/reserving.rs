@@ -8,8 +8,8 @@
 
 use act_reserving::{
     Average, ChainLadder, ChainLadderFit as ChainLadderInner, Development, DevelopmentColumn,
-    Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
-    OdpBootstrapFit as OdpBootstrapInner, ProcessDistribution, SigmaInterpolation,
+    FitTable, Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
+    OdpBootstrapFits, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation,
     Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
@@ -376,7 +376,7 @@ impl Triangle {
             development: development(average, sigma_interpolation)?,
             tail,
         }
-        .fit(&self.inner, column)
+        .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
     }
@@ -385,7 +385,7 @@ impl Triangle {
         let inner = Mack {
             development: development(average, sigma_interpolation)?,
         }
-        .fit(&self.inner, column)
+        .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(MackFit { inner })
     }
@@ -415,63 +415,165 @@ impl Triangle {
             seed: whole(seed, "seed")?,
             process,
         }
-        .fit(&self.inner, column)
+        .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(OdpBootstrapFit { inner })
     }
 }
 
-/// A fitted chain ladder.
+/// The one fit of a single-segment result, or an error naming what to use
+/// instead.
+fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: &str) -> Result<&'a T> {
+    match fits.fits.as_slice() {
+        [one] => Ok(one),
+        _ => Err(Error::Other(format!(
+            "{field} needs a single-segment fit, and this one has {} segments; \
+             use {instead} or segment()",
+            fits.len()
+        ))),
+    }
+}
+
+/// Per-origin values of every segment, in the order of the long rows.
+fn by_origin<T>(fits: &SegmentFits<T>, f: impl Fn(&T) -> Vec<f64>) -> Vec<f64> {
+    fits.fits.iter().flat_map(f).collect()
+}
+
+fn origin_labels<T: ReserveFit>(fits: &SegmentFits<T>) -> Vec<String> {
+    fits.fits
+        .iter()
+        .flat_map(|f| f.chain_ladder().origins.iter().map(ToString::to_string))
+        .collect()
+}
+
+/// The segment label (parts joined by " / ") of each per-origin value.
+fn row_segments<T: ReserveFit>(fits: &SegmentFits<T>) -> Vec<String> {
+    fits.iter()
+        .flat_map(|(l, f)| std::iter::repeat_n(l.to_string(), f.chain_ladder().origins.len()))
+        .collect()
+}
+
+fn ages<T: ReserveFit>(fits: &SegmentFits<T>) -> Vec<i32> {
+    let dev = &fits.fits[0].chain_ladder().development.development;
+    dev.iter().map(|&a| a as i32).collect()
+}
+
+/// The keys choosing one segment as `(key, value)` pairs.
+fn choice<'a>(keys: &'a [String], values: &'a [String]) -> Result<Vec<(&'a str, &'a str)>> {
+    if keys.len() != values.len() {
+        return Err(Error::Other("one value is needed per key".into()));
+    }
+    Ok(keys
+        .iter()
+        .zip(values)
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect())
+}
+
+fn pick<T: Clone>(
+    fits: &SegmentFits<T>,
+    keys: Vec<String>,
+    values: Vec<String>,
+) -> Result<SegmentFits<T>> {
+    fits.segment(&choice(&keys, &values)?).map_err(to_r)
+}
+
+/// A long result table: the key columns (a named list), `origin` (labels)
+/// or `development` (ages), `NULL` where the table has none, and the value
+/// columns with their names.
+fn fit_table(table: FitTable) -> List {
+    let origin: Robj = match table.origin {
+        Some(o) => o.iter().map(ToString::to_string).collect::<Vec<_>>().into(),
+        None => ().into(),
+    };
+    let development: Robj = match table.age {
+        Some(a) => a.iter().map(|&a| a as i32).collect::<Vec<_>>().into(),
+        None => ().into(),
+    };
+    let names: Vec<String> = table.values.iter().map(|(n, _)| n.clone()).collect();
+    let values = List::from_values(table.values.into_iter().map(|(_, v)| v));
+    list!(
+        keys = key_columns(table.keys),
+        origin = origin,
+        development = development,
+        names = names,
+        values = values
+    )
+}
+
+/// A chain ladder fitted to every segment of a triangle column. Per-origin
+/// vectors run over the origins of each segment in turn.
 #[extendr]
 pub(crate) struct ChainLadderFit {
-    inner: ChainLadderInner,
+    inner: SegmentFits<ChainLadderInner>,
 }
 
 #[extendr]
 impl ChainLadderFit {
+    fn n_segments(&self) -> i32 {
+        self.inner.len() as i32
+    }
+
+    fn keys(&self) -> Vec<String> {
+        self.inner.key_names.clone()
+    }
+
+    /// Segment labels with their parts joined by " / ".
+    fn index_names(&self) -> Vec<String> {
+        self.inner.labels.iter().map(Label::to_string).collect()
+    }
+
+    fn row_segments(&self) -> Vec<String> {
+        row_segments(&self.inner)
+    }
+
     fn origins(&self) -> Vec<String> {
-        self.inner.origins.iter().map(ToString::to_string).collect()
+        origin_labels(&self.inner)
     }
 
     fn development(&self) -> Vec<i32> {
-        let ages = &self.inner.development.development;
-        ages.iter().map(|&a| a as i32).collect()
+        ages(&self.inner)
     }
 
-    fn ldf(&self) -> Vec<f64> {
-        self.inner.development.ldf.clone()
+    fn ldf(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "ldf", "development_frame()")?;
+        Ok(f.development.ldf.clone())
     }
 
-    fn sigma(&self) -> Vec<f64> {
-        self.inner.development.sigma.clone()
+    fn sigma(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "sigma", "development_frame()")?;
+        Ok(f.development.sigma.clone())
     }
 
-    fn std_err(&self) -> Vec<f64> {
-        self.inner.development.std_err.clone()
+    fn std_err(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "std_err", "development_frame()")?;
+        Ok(f.development.std_err.clone())
     }
 
     fn alpha(&self) -> f64 {
-        self.inner.development.alpha
+        self.inner.fits[0].development.alpha
     }
 
     fn tail(&self) -> f64 {
-        self.inner.tail
+        self.inner.fits[0].tail
     }
 
-    fn cdf(&self) -> Vec<f64> {
-        self.inner.cdf.clone()
+    fn cdf(&self) -> Result<Vec<f64>> {
+        Ok(single(&self.inner, "cdf", "development_frame()")?
+            .cdf
+            .clone())
     }
 
     fn latest(&self) -> Vec<f64> {
-        self.inner.latest.clone()
+        by_origin(&self.inner, |f| f.latest.clone())
     }
 
     fn ultimate(&self) -> Vec<f64> {
-        self.inner.ultimate.clone()
+        by_origin(&self.inner, |f| f.ultimate.clone())
     }
 
     fn reserve(&self) -> Vec<f64> {
-        self.inner.reserves()
+        by_origin(&self.inner, ChainLadderInner::reserves)
     }
 
     fn total_ultimate(&self) -> f64 {
@@ -481,12 +583,31 @@ impl ChainLadderFit {
     fn total_reserve(&self) -> f64 {
         self.inner.total_reserve()
     }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    /// The fit of the one segment whose `keys` have `values`.
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys, values)?,
+        })
+    }
 }
 
-/// A fitted Mack chain ladder.
+/// A Mack chain ladder fitted to every segment of a triangle column.
 #[extendr]
 pub(crate) struct MackFit {
-    inner: MackInner,
+    inner: SegmentFits<MackInner>,
 }
 
 #[extendr]
@@ -494,44 +615,63 @@ impl MackFit {
     /// The underlying chain-ladder projection.
     fn chain_ladder(&self) -> ChainLadderFit {
         ChainLadderFit {
-            inner: self.inner.chain_ladder.clone(),
+            inner: self.inner.map(|m| m.chain_ladder.clone()),
         }
     }
 
     fn process_risk(&self) -> Vec<f64> {
-        self.inner.process_risk.clone()
+        by_origin(&self.inner, |f| f.process_risk.clone())
     }
 
     fn parameter_risk(&self) -> Vec<f64> {
-        self.inner.parameter_risk.clone()
+        by_origin(&self.inner, |f| f.parameter_risk.clone())
     }
 
     fn standard_error(&self) -> Vec<f64> {
-        self.inner.standard_error.clone()
+        by_origin(&self.inner, |f| f.standard_error.clone())
     }
 
-    fn total_process_risk(&self) -> f64 {
-        self.inner.total_process_risk
+    fn total_process_risk(&self) -> Result<f64> {
+        Ok(single(&self.inner, "total_process_risk", "totals_frame()")?.total_process_risk)
     }
 
-    fn total_parameter_risk(&self) -> f64 {
-        self.inner.total_parameter_risk
+    fn total_parameter_risk(&self) -> Result<f64> {
+        Ok(single(&self.inner, "total_parameter_risk", "totals_frame()")?.total_parameter_risk)
     }
 
-    fn total_standard_error(&self) -> f64 {
-        self.inner.total_standard_error
+    fn total_standard_error(&self) -> Result<f64> {
+        Ok(single(&self.inner, "total_standard_error", "totals_frame()")?.total_standard_error)
     }
 
-    fn total_cv(&self) -> f64 {
-        self.inner.total_cv()
+    fn total_cv(&self) -> Result<f64> {
+        Ok(single(&self.inner, "total_cv", "totals_frame()")?.total_cv())
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys, values)?,
+        })
     }
 }
 
-/// A fitted ODP bootstrap. `fitted` and `residuals` are row-major over
-/// origin x development, NaN where not observed.
+/// An ODP bootstrap of every segment of a triangle column. `fitted` and
+/// `residuals` are row-major over origin x development, NaN where not
+/// observed.
 #[extendr]
 pub(crate) struct OdpBootstrapFit {
-    inner: OdpBootstrapInner,
+    inner: OdpBootstrapFits,
 }
 
 #[extendr]
@@ -539,26 +679,46 @@ impl OdpBootstrapFit {
     /// The chain ladder the bootstrap is centred on.
     fn chain_ladder(&self) -> ChainLadderFit {
         ChainLadderFit {
-            inner: self.inner.chain_ladder.clone(),
+            inner: self.inner.segments.map(|s| s.chain_ladder.clone()),
         }
     }
 
-    fn fitted(&self) -> Vec<f64> {
-        self.inner.fitted.clone()
+    fn fitted(&self) -> Result<Vec<f64>> {
+        let s = single(&self.inner.segments, "fitted", "segment()")?;
+        Ok(s.fitted.clone())
     }
 
-    fn residuals(&self) -> Vec<f64> {
-        self.inner.residuals.clone()
+    fn residuals(&self) -> Result<Vec<f64>> {
+        let s = single(&self.inner.segments, "residuals", "segment()")?;
+        Ok(s.residuals.clone())
     }
 
-    fn scale(&self) -> f64 {
-        self.inner.scale
+    fn scale(&self) -> Result<f64> {
+        Ok(single(&self.inner.segments, "scale", "totals_frame()")?.scale)
     }
 
     fn reserves(&self) -> PredictiveDistribution {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
+        })
     }
 }
 

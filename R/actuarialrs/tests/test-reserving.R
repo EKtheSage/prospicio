@@ -236,7 +236,72 @@ expect_error_like(subset(lc, "Auto"), "must be named by key")
 expect_error_like(subset(lc, lob = "Auto", lob = "Home"), "key lob is supplied twice")
 expect_error_like(aggregate(lc, keep = "line"), "no key named line")
 expect_error_like(aggregate(lc, keep = c("lob", "lob")), "key lob is supplied twice")
-expect_error_like(chain_ladder(by_lob, "paid"), "select one or group_by")
+
+# Every segment at once: each segment's fit equals fitting it alone.
+cl <- chain_ladder(lc, "paid")
+m <- mack(lc, "paid")
+stopifnot(identical(cl@keys, c("lob", "coverage")), identical(cl@index, lc@index),
+          length(cl@reserve) == 40, identical(names(cl@reserve)[11], "Auto / PD / 2011"))
+for (k in seq_len(nrow(lc@index))) {
+  lob <- lc@index$lob[k]
+  coverage <- lc@index$coverage[k]
+  rows <- (10 * (k - 1) + 1):(10 * k)
+  alone <- subset(lc, lob = lob, coverage = coverage)
+  one_cl <- chain_ladder(alone, "paid")
+  one_m <- mack(alone, "paid")
+  stopifnot(identical(unname(cl@reserve[rows]), unname(one_cl@reserve)),
+            identical(cl@origins[rows], one_cl@origins),
+            identical(unname(m@standard_error[rows]), unname(one_m@standard_error)))
+  seg <- segment(m, lob = lob, coverage = coverage)
+  stopifnot(S7::S7_inherits(seg, mack_fit), identical(seg@ldf, one_m@ldf),
+            identical(seg@total_standard_error, one_m@total_standard_error),
+            identical(seg@reserve, one_m@reserve))
+}
+near(cl@total_reserve, sum(cl@reserve))
+# Long results.
+df <- as.data.frame(m)
+stopifnot(identical(names(df), c("lob", "coverage", "origin", "latest", "ultimate", "reserve",
+                                 "process_risk", "parameter_risk", "standard_error")),
+          nrow(df) == 40, identical(df$origin[11], "2011"),
+          identical(df$reserve, unname(m@reserve)))
+totals <- totals_frame(m)
+home_pd <- segment(m, lob = "Home", coverage = "PD")
+stopifnot(identical(totals$lob, c("Auto", "Auto", "Home", "Home")),
+          identical(totals$standard_error[4], home_pd@total_standard_error),
+          identical(totals$reserve[4], home_pd@total_reserve))
+dev <- development_frame(cl)
+stopifnot(identical(names(dev), c("lob", "coverage", "development", "ldf", "cdf", "sigma", "std_err")),
+          nrow(dev) == 40, is.na(dev$ldf[40]),
+          identical(dev$ldf[31:39], unname(segment(cl, lob = "Home", coverage = "PD")@ldf)))
+# Per-age properties and the totals' standard errors need one segment.
+expect_error_like(cl@ldf, "4 segments; use development_frame()")
+expect_error_like(m@total_standard_error, "use totals_frame()")
+expect_error_like(segment(cl, lob = "Auto"), "2 segments match")
+expect_error_like(segment(cl, line = "Auto"), "no key named line")
+expect_error_like(segment(cl, "Auto"), "must be named by key")
+expect_error_like(segment(cl, lob = c("Auto", "Home")), "one value per key")
+invisible(utils::capture.output(print(cl), print(m)))
+# The bootstrap: one joint distribution over lob x coverage x origin.
+boot_lc <- odp_bootstrap(lc, "paid", n_sims = 2000, seed = 3)
+r <- boot_lc@reserves
+stopifnot(identical(r@dims, c("lob", "coverage", "origin")), nrow(r@keys) == 40,
+          identical(r@keys$coverage[11], "PD"))
+home_bi <- segment(boot_lc, lob = "Home", coverage = "BI")
+again <- segment(odp_bootstrap(lc, "paid", n_sims = 2000, seed = 3), lob = "Home", coverage = "BI")
+stopifnot(identical(home_bi@reserves@dims, r@dims), nrow(home_bi@reserves@keys) == 10,
+          identical(draw_matrix(home_bi@reserves), draw_matrix(again@reserves)))
+by_lob_reserves <- aggregate(r, keep = "lob")
+stopifnot(identical(by_lob_reserves@keys$lob, c("Auto", "Home")))
+near(mean(by_lob_reserves), mean(r))
+boot_totals <- totals_frame(boot_lc)
+stopifnot(identical(names(boot_totals), c("lob", "coverage", "latest", "ultimate", "reserve",
+                                          "scale", "mean", "std_dev")))
+alone <- odp_bootstrap(subset(lc, lob = "Home", coverage = "BI"), "paid", n_sims = 10)
+stopifnot(identical(boot_totals$scale[3], alone@scale), identical(home_bi@scale, alone@scale),
+          nrow(as.data.frame(boot_lc)) == 40)
+expect_error_like(boot_lc@scale, "use totals_frame()")
+expect_error_like(boot_lc@residuals, "use segment()")
+invisible(utils::capture.output(print(boot_lc)))
 
 # Grain: quarterly origins and ages to annual origins.
 q <- data.frame(
@@ -258,7 +323,7 @@ stopifnot(ya@development_grain == "Y", identical(ya@values, grain(qt, "Y", "Y")@
 stopifnot(identical(grain(raa, "Y", "Y")@values, raa@values))
 
 # Errors are ordinary R errors carrying the Rust message.
-expect_error_like(chain_ladder(multi, "paid"), "select one or group_by")
+near(chain_ladder(multi, "paid")@total_reserve, 3 * chain_ladder(raa)@total_reserve, 1e-12)
 expect_error_like(chain_ladder(multi), "several columns")
 expect_error_like(chain_ladder(raa, "paid"), "no column named paid")
 expect_error_like(chain_ladder(raa, tail = 0), "tail factor 0")
@@ -355,7 +420,7 @@ expect_error_like(odp_bootstrap(raa, process = "poisson"), "should be one of")
 expect_error_like(odp_bootstrap(raa, n_sims = 0), "n_sims must be positive")
 expect_error_like(odp_bootstrap(raa, n_sims = 1.5), "n_sims must be a non-negative whole number")
 expect_error_like(odp_bootstrap(raa, seed = NA), "seed must be a single number")
-expect_error_like(odp_bootstrap(multi, "paid", n_sims = 10), "select one or group_by")
+stopifnot(identical(odp_bootstrap(multi, "paid", n_sims = 10)@reserves@dims, c("lob", "state", "origin")))
 expect_error_like(odp_bootstrap(raa, "paid", n_sims = 10), "no column named paid")
 tiny <- triangle(data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), paid = c(1, 2, 1)),
                  "year", "age", "paid")

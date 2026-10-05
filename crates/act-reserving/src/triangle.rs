@@ -892,19 +892,27 @@ impl Triangle {
         if self.shape[0] != 1 {
             return Err(Error::MultipleSegments(self.shape[0]));
         }
+        Ok(self.segments(column)?.pop().expect("one index position"))
+    }
+
+    /// The cells of `column` in every index position, in index order, as
+    /// cumulative values.
+    pub(crate) fn segments(&self, column: &str) -> Result<Vec<Segment>> {
         let c = self.column_position(column)?;
         let cum = self.to_cumulative();
-        let [_, _, no, nd] = self.shape;
-        let cells = (0..no)
-            .flat_map(|o| (0..nd).map(move |d| (o, d)))
-            .map(|(o, d)| cum.get(0, c, o, d))
-            .collect();
-        Ok(Segment {
-            cells,
-            n_origins: no,
-            n_dev: nd,
-            origins: self.origins(),
-        })
+        let [ni, _, no, nd] = self.shape;
+        let origins = self.origins();
+        Ok((0..ni)
+            .map(|i| Segment {
+                cells: (0..no)
+                    .flat_map(|o| (0..nd).map(move |d| (o, d)))
+                    .map(|(o, d)| cum.get(i, c, o, d))
+                    .collect(),
+                n_origins: no,
+                n_dev: nd,
+                origins: origins.clone(),
+            })
+            .collect())
     }
 }
 

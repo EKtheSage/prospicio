@@ -18,8 +18,8 @@ odp_bootstrap(
 \arguments{
 \item{ptr}{An \code{OdpBootstrapFit} pointer; used internally.}
 
-\item{triangle}{A single-segment cumulative \link{triangle}, every origin
-observed from the first age up to its latest.}
+\item{triangle}{A cumulative \link{triangle}, with any number of segments,
+every origin observed from the first age up to its latest.}
 
 \item{column}{Name of the column to fit; by default the only one.}
 
@@ -39,22 +39,29 @@ Over-dispersed Poisson bootstrap of the chain ladder (England and Verrall
 2002), as R ChainLadder's \code{BootChainLadder()}: adjusted Pearson residuals
 of the volume-weighted chain ladder are resampled into pseudo triangles,
 each is re-projected, and process error is added to every future
-incremental value. Simulation \code{i} uses random stream \code{i} of \code{seed}, so
-results do not depend on the number of threads. The scale and residuals
-match \code{BootChainLadder()} exactly, and the reserve distribution within
-Monte Carlo error (\code{validation/reference/reserving_bootstrap_r.csv}).
+incremental value. The scale and residuals match \code{BootChainLadder()}
+exactly, and the reserve distribution within Monte Carlo error
+(\code{validation/reference/reserving_bootstrap_r.csv}).
 }
 \details{
+Every segment of the triangle is bootstrapped on its own, with its own
+residuals and scale, into one joint distribution of the reserves.
+Simulation \code{i} uses random stream \code{i} of \code{seed} for every segment in
+turn, so results do not depend on the number of threads.
+
 Properties of the fit: \code{chain_ladder} (the \link{chain_ladder_fit} the
 bootstrap is centred on), \code{origins}, \code{development}, \code{fitted} (fitted
 incremental values) and \code{residuals} (adjusted Pearson residuals
 \verb{(x - m) / sqrt(|m|) * sqrt(n / (n - p))}), both origin x development
 matrices with \code{NA} where not observed, \code{scale} (the dispersion \code{phi}) and
-\code{reserves}, a \link{predictive_distribution} of the reserve with dimension
-\code{origin} and one component per origin period. \code{mean()}, \code{quantile()},
-\code{\link[=VaR]{VaR()}} and \code{\link[=TVaR]{TVaR()}} of \code{reserves} describe the total reserve. Columns of
-\code{\link[=draw_matrix]{draw_matrix()}} follow \code{origins} (\code{\link[=marginal]{marginal()}} does not match origin labels
-yet).
+\code{reserves}, a \link{predictive_distribution} of the reserve with the
+triangle's keys and \code{origin} as dimensions and one component per segment
+and origin, so \code{aggregate(boot@reserves, keep = "lob")} keeps the
+dependence between segments. \code{mean()}, \code{quantile()}, \code{\link[=VaR]{VaR()}} and
+\code{\link[=TVaR]{TVaR()}} of \code{reserves} describe the total reserve. Columns of
+\code{\link[=draw_matrix]{draw_matrix()}} follow \code{origins}. \code{fitted}, \code{residuals} and \code{scale} need
+a single-segment fit: with several segments use \code{\link[=segment]{segment()}}, or
+\code{\link[=totals_frame]{totals_frame()}} for the scales.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),

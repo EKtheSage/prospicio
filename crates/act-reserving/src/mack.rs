@@ -4,7 +4,9 @@
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::development::Development;
 use crate::error::{Error, Result};
-use crate::triangle::Triangle;
+use crate::segments::{SegmentFits, fit_each};
+use crate::triangle::{Segment, Triangle};
+use act_core::Lag;
 
 /// Mack's chain ladder (Mack 1993, 1999), with the process and parameter
 /// risk recursions of R ChainLadder's `MackChainLadder` and no tail.
@@ -53,11 +55,30 @@ impl Mack {
                 found: n_dev,
             });
         }
+        self.fit_segment(&triangle.segment(column)?, triangle.development())
+    }
+
+    /// Fits `column` in every segment of `triangle`, each on its own; see
+    /// [`SegmentFits`] for the long tables. A failure names its segment.
+    pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<SegmentFits<MackFit>> {
+        let n_dev = triangle.shape()[3];
+        if n_dev < 3 {
+            return Err(Error::TooFewAges {
+                needed: 3,
+                found: n_dev,
+            });
+        }
+        fit_each(triangle, column, |s| {
+            self.fit_segment(s, triangle.development())
+        })
+    }
+
+    fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<MackFit> {
         let chain_ladder = ChainLadder {
             development: self.development,
             tail: 1.0,
         }
-        .fit(triangle, column)?;
+        .fit_segment(segment, ages)?;
 
         let dev = &chain_ladder.development;
         let (ldf, sigma, std_err, alpha) = (&dev.ldf, &dev.sigma, &dev.std_err, dev.alpha);

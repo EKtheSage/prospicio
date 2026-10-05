@@ -220,7 +220,7 @@ def test_named_keys_select_and_frame():
                               keys={"lob": long["lob"], "state": long["state"]})
     assert back == tri
     assert Triangle.from_frame(long, "origin", "development", ["paid", "incurred"], keys=tri.keys) == tri
-    with pytest.raises(ValueError, match="select one or group_by"):
+    with pytest.raises(ValueError, match="segment Home / NY: factor"):
         ChainLadder().fit(tri, "paid")
     with pytest.raises(ValueError, match="no column named"):
         tri.select(columns="nope")
@@ -306,8 +306,85 @@ def test_select_and_group_by_lob_and_coverage():
         tri.group_by(["line"])
     with pytest.raises(ValueError, match="key lob is supplied twice"):
         tri.group_by(["lob", "lob"])
-    with pytest.raises(ValueError, match="select one or group_by"):
-        ChainLadder().fit(by_lob, "paid")
+
+
+def test_every_segment_at_once():
+    long = lob_coverage_long()
+    tri = Triangle.from_frame(long, "year", "age", ["paid", "incurred"], keys=["lob", "coverage"])
+    labels = tri.index
+
+    # Each segment's fit equals fitting that segment alone, exactly.
+    cl = ChainLadder().fit(tri, "paid")
+    mack = Mack().fit(tri, "paid")
+    assert cl.keys == ["lob", "coverage"] and cl.index == labels
+    assert len(cl.origins) == len(cl.reserve) == len(mack.standard_error) == 40
+    for k, (lob, coverage) in enumerate(labels):
+        alone = tri.select(lob=lob, coverage=coverage)
+        one_cl, one_mack = ChainLadder().fit(alone, "paid"), Mack().fit(alone, "paid")
+        rows = slice(10 * k, 10 * k + 10)
+        assert cl.reserve[rows] == one_cl.reserve
+        assert cl.origins[rows] == one_cl.origins
+        assert mack.standard_error[rows] == one_mack.standard_error
+        seg = mack.segment(lob=lob, coverage=coverage)
+        assert seg.index == [(lob, coverage)]
+        assert seg.ldf == one_mack.ldf
+        assert seg.total_standard_error == one_mack.total_standard_error
+    assert cl.total_reserve == pytest.approx(sum(cl.reserve), rel=1e-12)
+
+    # Long results.
+    frame = mack.to_frame()
+    assert list(frame.columns) == ["lob", "coverage", "origin", "latest", "ultimate", "reserve",
+                                   "process_risk", "parameter_risk", "standard_error"]
+    assert len(frame) == 40 and frame["origin"].iloc[10] == "2011"
+    assert list(frame["reserve"]) == mack.reserve
+    totals = mack.totals_frame()
+    assert list(totals["lob"]) == ["Auto", "Auto", "Home", "Home"]
+    home_pd = mack.segment(lob="Home", coverage="PD")
+    assert totals["standard_error"].iloc[3] == home_pd.total_standard_error
+    assert totals["reserve"].iloc[3] == home_pd.total_reserve
+    dev = cl.development_frame()
+    assert list(dev.columns) == ["lob", "coverage", "development", "ldf", "cdf", "sigma", "std_err"]
+    assert len(dev) == 40
+    assert list(dev["ldf"].iloc[30:39]) == cl.segment(lob="Home", coverage="PD").ldf
+    assert math.isnan(dev["ldf"].iloc[39])
+
+    # Per-age fields and the totals' standard errors need one segment.
+    with pytest.raises(ValueError, match="4 segments; use development_frame"):
+        cl.ldf
+    with pytest.raises(ValueError, match="use totals_frame"):
+        mack.total_standard_error
+    with pytest.raises(ValueError, match="2 segments match"):
+        cl.segment(lob="Auto")
+    with pytest.raises(ValueError, match="no key named line"):
+        cl.segment(line="Auto")
+    with pytest.raises(ValueError, match="no segment has lob = \"Farm\""):
+        cl.segment(lob="Farm", coverage="BI")
+    assert "segments=4" in repr(cl)
+
+    # The bootstrap: one joint distribution over lob x coverage x origin.
+    boot = OdpBootstrap(n_sims=2000, seed=3).fit(tri, "paid")
+    reserves = boot.reserves
+    assert reserves.dims == ["lob", "coverage", "origin"]
+    assert len(reserves.components()) == 40
+    assert reserves.components()[10] == ("Auto", "PD", "2011")
+    again = OdpBootstrap(n_sims=2000, seed=3).fit(tri, "paid")
+    one = boot.segment(lob="Home", coverage="BI").reserves
+    assert one.dims == reserves.dims and len(one.components()) == 10
+    assert one.draw_matrix() == again.segment(lob="Home", coverage="BI").reserves.draw_matrix()
+    by_lob = reserves.aggregate(["lob"])
+    assert by_lob.components() == [("Auto",), ("Home",)]
+    assert by_lob.mean() == pytest.approx(reserves.mean(), rel=1e-12)
+    totals = boot.totals_frame()
+    assert list(totals.columns) == ["lob", "coverage", "latest", "ultimate", "reserve", "scale",
+                                    "mean", "std_dev"]
+    alone = OdpBootstrap(n_sims=10).fit(tri.select(lob="Home", coverage="BI"), "paid")
+    assert totals["scale"].iloc[2] == alone.scale
+    assert boot.segment(lob="Home", coverage="BI").scale == alone.scale
+    assert len(boot.to_frame()) == 40
+    with pytest.raises(ValueError, match="use totals_frame"):
+        boot.scale
+    with pytest.raises(ValueError, match="use segment"):
+        boot.residuals
 
 
 def test_pandas_frame_and_datetimes():
@@ -590,7 +667,7 @@ def test_bootstrap_errors(triangles):
         "paid": [100.0, 150.0, 110.0, 50.0, 70.0, 60.0],
     }
     multi = Triangle.from_frame(data, "year", "age", "paid", keys="lob")
-    with pytest.raises(ValueError, match="select one or group_by"):
+    with pytest.raises(ValueError, match="segment Auto: bootstrap: too few observed cells"):
         OdpBootstrap(n_sims=10).fit(multi, "paid")
     with pytest.raises(ValueError, match="no column named"):
         OdpBootstrap(n_sims=10).fit(triangles["raa"], "paid")

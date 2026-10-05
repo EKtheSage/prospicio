@@ -8,8 +8,9 @@
 
 use act_core::{Grain, Lag, Month};
 use act_reserving::{
-    Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, Label, Long, Mack,
-    MackFit, OdpBootstrap, OdpBootstrapFit, ProcessDistribution, SigmaInterpolation, Triangle,
+    Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, FitTable, Label, Long,
+    Mack, MackFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
+    ReserveFit, SegmentFits, SigmaInterpolation, Triangle,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -1024,13 +1025,13 @@ impl PyChainLadder {
         self.inner.tail
     }
 
-    /// Fits one measure column of a single-segment triangle.
+    /// Fits one measure column in every segment of a triangle, each on its
+    /// own.
     ///
     /// Parameters
     /// ----------
     /// triangle : Triangle
-    ///     Cumulative or incremental, with one segment: ``select`` or
-    ///     ``group_by`` first.
+    ///     Cumulative or incremental, with any number of segments.
     /// column : str
     ///
     /// Returns
@@ -1040,8 +1041,8 @@ impl PyChainLadder {
     /// Raises
     /// ------
     /// ValueError
-    ///     If the triangle has several segments, the column is unknown, a
-    ///     factor cannot be estimated or the tail is not positive.
+    ///     If the column is unknown, a factor cannot be estimated or the tail
+    ///     is not positive; with keys, the message names the segment.
     fn fit(
         &self,
         py: Python<'_>,
@@ -1049,7 +1050,7 @@ impl PyChainLadder {
         column: &str,
     ) -> PyResult<PyChainLadderFit> {
         let (cl, tri) = (self.inner, &triangle.inner);
-        let inner = py.detach(|| cl.fit(tri, column)).map_err(err)?;
+        let inner = py.detach(|| cl.fit_segments(tri, column)).map_err(err)?;
         Ok(PyChainLadderFit { inner })
     }
 
@@ -1063,92 +1064,283 @@ impl PyChainLadder {
     }
 }
 
-/// A fitted chain-ladder projection. Per-origin lists follow ``origins``;
-/// per-age lists follow ``development``.
+/// The one fit of a single-segment result, or an error naming what to use
+/// instead.
+fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: &str) -> PyResult<&'a T> {
+    match fits.fits.as_slice() {
+        [one] => Ok(one),
+        _ => Err(PyValueError::new_err(format!(
+            "{field} needs a single-segment fit, and this one has {} segments; \
+             use {instead} or segment(...)",
+            fits.len()
+        ))),
+    }
+}
+
+/// Per-origin values of every segment, in the order of the long rows.
+fn by_origin<T>(fits: &SegmentFits<T>, f: impl Fn(&T) -> Vec<f64>) -> Vec<f64> {
+    fits.fits.iter().flat_map(f).collect()
+}
+
+/// Origin labels of every segment, in the order of the long rows.
+fn origin_labels<T: ReserveFit>(fits: &SegmentFits<T>) -> Vec<String> {
+    fits.fits
+        .iter()
+        .flat_map(|f| f.chain_ladder().origins.iter().map(ToString::to_string))
+        .collect()
+}
+
+/// Labels of the segments, as ``Triangle.index``.
+fn segment_labels<'py, T>(
+    py: Python<'py>,
+    fits: &SegmentFits<T>,
+) -> PyResult<Vec<Bound<'py, PyAny>>> {
+    let n_keys = fits.key_names.len();
+    fits.labels
+        .iter()
+        .map(|l| label_to_py(py, n_keys, l))
+        .collect()
+}
+
+/// Key values choosing one segment, compared as ``str()`` of each value.
+fn segment_keys(keys: Option<&Bound<'_, PyDict>>) -> PyResult<Vec<(String, String)>> {
+    match keys {
+        None => Ok(Vec::new()),
+        Some(keys) => keys
+            .iter()
+            .map(|(k, v)| Ok((k.extract::<String>()?, v.str()?.to_string())))
+            .collect(),
+    }
+}
+
+fn pick<T: Clone>(
+    fits: &SegmentFits<T>,
+    keys: Option<&Bound<'_, PyDict>>,
+) -> PyResult<SegmentFits<T>> {
+    let keys = segment_keys(keys)?;
+    let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    fits.segment(&keys).map_err(err)
+}
+
+/// A long result table as a pandas DataFrame: the key columns, then
+/// ``origin`` (str) or ``development`` (age), then the values.
+fn table_frame<'py>(py: Python<'py>, table: FitTable) -> PyResult<Bound<'py, PyAny>> {
+    let mut names: Vec<String> = Vec::new();
+    if table.origin.is_some() {
+        names.push("origin".into());
+    }
+    if table.age.is_some() {
+        names.push("development".into());
+    }
+    names.extend(table.values.iter().map(|(n, _)| n.clone()));
+    if let Some((k, _)) = table.keys.iter().find(|(k, _)| names.contains(k)) {
+        return Err(PyValueError::new_err(format!(
+            "key {k:?} clashes with the {k:?} column of the result"
+        )));
+    }
+    let out = PyDict::new(py);
+    for (name, values) in table.keys {
+        out.set_item(name, values)?;
+    }
+    if let Some(origin) = table.origin {
+        let labels: Vec<String> = origin.iter().map(ToString::to_string).collect();
+        out.set_item("origin", labels)?;
+    }
+    if let Some(age) = table.age {
+        out.set_item("development", age)?;
+    }
+    for (name, values) in table.values {
+        out.set_item(name, values)?;
+    }
+    py.import("pandas")?.call_method1("DataFrame", (out,))
+}
+
+/// The ``repr`` prefix naming the number of segments when there are several.
+fn segments_prefix<T>(fits: &SegmentFits<T>) -> String {
+    if fits.len() > 1 {
+        format!("segments={}, ", fits.len())
+    } else {
+        String::new()
+    }
+}
+
+/// A fitted chain-ladder projection of every segment of a triangle column.
+///
+/// Per-origin lists (``origins``, ``latest``, ``ultimate``, ``reserve``)
+/// run over the origins of each segment in turn, like the rows of
+/// ``to_frame()``, so a single-segment fit has one value per origin.
+/// Per-age lists (``ldf``, ``cdf``, ``sigma``, ``std_err``) need a
+/// single-segment fit; for several segments use ``development_frame()`` or
+/// ``segment(...)``.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import ChainLadder, Triangle
+/// >>> tri = Triangle.from_long(
+/// ...     [2020, 2020, 2021] * 2,
+/// ...     [12, 24, 12] * 2,
+/// ...     {"paid": [100.0, 150.0, 200.0, 10.0, 20.0, 30.0]},
+/// ...     keys={"lob": ["Auto"] * 3 + ["Home"] * 3},
+/// ... )
+/// >>> fit = ChainLadder().fit(tri, "paid")
+/// >>> fit.index, fit.reserve
+/// (['Auto', 'Home'], [0.0, 100.0, 0.0, 30.0])
+/// >>> fit.segment(lob="Home").ldf
+/// [2.0]
 #[pyclass(name = "ChainLadderFit", module = "actuarialrs.reserving", frozen)]
 pub(crate) struct PyChainLadderFit {
-    inner: ChainLadderFit,
+    inner: SegmentFits<ChainLadderFit>,
 }
 
 #[pymethods]
 impl PyChainLadderFit {
-    /// Origin periods, oldest first.
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner)
+    }
+
+    /// Origin period of each per-origin value.
     #[getter]
     fn origins(&self) -> Vec<String> {
-        self.inner.origins.iter().map(|p| p.to_string()).collect()
+        origin_labels(&self.inner)
     }
 
     /// Development ages in months.
     #[getter]
     fn development(&self) -> Vec<Lag> {
-        self.inner.development.development.clone()
+        self.inner.fits[0].development.development.clone()
     }
 
     /// Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
     #[getter]
-    fn ldf(&self) -> Vec<f64> {
-        self.inner.development.ldf.clone()
+    fn ldf(&self) -> PyResult<Vec<f64>> {
+        let f = single(&self.inner, "ldf", "development_frame()")?;
+        Ok(f.development.ldf.clone())
     }
 
     /// Age-to-ultimate factors, one per age, including the tail.
     #[getter]
-    fn cdf(&self) -> Vec<f64> {
-        self.inner.cdf.clone()
+    fn cdf(&self) -> PyResult<Vec<f64>> {
+        Ok(single(&self.inner, "cdf", "development_frame()")?
+            .cdf
+            .clone())
     }
 
     /// Variance parameter of each factor, with unestimable ones
     /// interpolated (``nan`` where that is impossible).
     #[getter]
-    fn sigma(&self) -> Vec<f64> {
-        self.inner.development.sigma.clone()
+    fn sigma(&self) -> PyResult<Vec<f64>> {
+        let f = single(&self.inner, "sigma", "development_frame()")?;
+        Ok(f.development.sigma.clone())
     }
 
     /// Standard error of each factor.
     #[getter]
-    fn std_err(&self) -> Vec<f64> {
-        self.inner.development.std_err.clone()
+    fn std_err(&self) -> PyResult<Vec<f64>> {
+        let f = single(&self.inner, "std_err", "development_frame()")?;
+        Ok(f.development.std_err.clone())
     }
 
     /// Tail factor.
     #[getter]
     fn tail(&self) -> f64 {
-        self.inner.tail
+        self.inner.fits[0].tail
     }
 
     /// Latest observed cumulative value per origin.
     #[getter]
     fn latest(&self) -> Vec<f64> {
-        self.inner.latest.clone()
+        by_origin(&self.inner, |f| f.latest.clone())
     }
 
     /// Projected ultimate per origin.
     #[getter]
     fn ultimate(&self) -> Vec<f64> {
-        self.inner.ultimate.clone()
+        by_origin(&self.inner, |f| f.ultimate.clone())
     }
 
     /// Reserve (ultimate minus latest) per origin.
     #[getter]
     fn reserve(&self) -> Vec<f64> {
-        self.inner.reserves()
+        by_origin(&self.inner, ChainLadderFit::reserves)
     }
 
-    /// Total ultimate across origins.
+    /// Total ultimate across segments and origins.
     #[getter]
     fn total_ultimate(&self) -> f64 {
         self.inner.total_ultimate()
     }
 
-    /// Total reserve across origins.
+    /// Total reserve across segments and origins.
     #[getter]
     fn total_reserve(&self) -> f64 {
         self.inner.total_reserve()
     }
 
+    /// One row per segment and origin: the key columns, ``origin``,
+    /// ``latest``, ``ultimate`` and ``reserve``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row per segment: the key columns and the segment's total
+    /// ``latest``, ``ultimate`` and ``reserve``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// One row per segment and age: the key columns, ``development``,
+    /// ``ldf`` (to the next age), ``cdf`` (to ultimate, with the tail),
+    /// ``sigma`` and ``std_err``; the oldest age has ``nan`` for ``ldf``,
+    /// ``sigma`` and ``std_err``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.development_table())
+    }
+
+    /// The fit of one segment, chosen by key values (compared as ``str()``
+    /// of each value). Keys not named may take any value, so a fit with one
+    /// segment needs none.
+    ///
+    /// Returns
+    /// -------
+    /// ChainLadderFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a key or value is unknown, or the choice matches several
+    ///     segments.
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys)?,
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!(
-            "ChainLadderFit(origins={}, total_ultimate={:?}, total_reserve={:?})",
-            self.inner.origins.len(),
+            "ChainLadderFit({}origins={}, total_ultimate={:?}, total_reserve={:?})",
+            segments_prefix(&self.inner),
+            self.origins().len(),
             self.inner.total_ultimate(),
             self.inner.total_reserve()
         )
@@ -1204,7 +1396,8 @@ impl PyMack {
         sigma_interpolation_name(self.inner.development.sigma_interpolation)
     }
 
-    /// Fits one measure column of a single-segment triangle.
+    /// Fits one measure column in every segment of a triangle, each on its
+    /// own.
     ///
     /// Parameters
     /// ----------
@@ -1228,7 +1421,7 @@ impl PyMack {
         column: &str,
     ) -> PyResult<PyMackFit> {
         let (mack, tri) = (self.inner, &triangle.inner);
-        let inner = py.detach(|| mack.fit(tri, column)).map_err(err)?;
+        let inner = py.detach(|| mack.fit_segments(tri, column)).map_err(err)?;
         Ok(PyMackFit { inner })
     }
 
@@ -1241,12 +1434,17 @@ impl PyMack {
     }
 }
 
-/// A fitted Mack model: the chain-ladder fields, plus standard errors of
-/// each origin's reserve and of the total. Per-origin lists follow
-/// ``origins``.
+/// A fitted Mack model of every segment: the chain-ladder fields, plus
+/// standard errors of each origin's reserve and of each segment's total.
+///
+/// Per-origin lists run over the origins of each segment in turn, like the
+/// rows of ``to_frame()``. Per-age lists and the totals' standard errors
+/// need a single-segment fit; for several segments use
+/// ``development_frame()``, ``totals_frame()`` or ``segment(...)``.
+/// ``total_ultimate`` and ``total_reserve`` sum over every segment.
 #[pyclass(name = "MackFit", module = "actuarialrs.reserving", frozen)]
 pub(crate) struct PyMackFit {
-    inner: MackFit,
+    inner: SegmentFits<MackFit>,
 }
 
 #[pymethods]
@@ -1255,125 +1453,187 @@ impl PyMackFit {
     #[getter]
     fn chain_ladder(&self) -> PyChainLadderFit {
         PyChainLadderFit {
-            inner: self.inner.chain_ladder.clone(),
+            inner: self.inner.map(|m| m.chain_ladder.clone()),
         }
     }
 
-    /// Origin periods, oldest first.
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner)
+    }
+
+    /// Origin period of each per-origin value.
     #[getter]
     fn origins(&self) -> Vec<String> {
-        self.chain_ladder().origins()
+        origin_labels(&self.inner)
     }
 
     /// Development ages in months.
     #[getter]
     fn development(&self) -> Vec<Lag> {
-        self.inner.chain_ladder.development.development.clone()
+        self.chain_ladder().development()
     }
 
     /// Age-to-age factors.
     #[getter]
-    fn ldf(&self) -> Vec<f64> {
-        self.inner.chain_ladder.development.ldf.clone()
+    fn ldf(&self) -> PyResult<Vec<f64>> {
+        self.chain_ladder().ldf()
     }
 
     /// Age-to-ultimate factors.
     #[getter]
-    fn cdf(&self) -> Vec<f64> {
-        self.inner.chain_ladder.cdf.clone()
+    fn cdf(&self) -> PyResult<Vec<f64>> {
+        self.chain_ladder().cdf()
     }
 
     /// Variance parameter of each factor.
     #[getter]
-    fn sigma(&self) -> Vec<f64> {
-        self.inner.chain_ladder.development.sigma.clone()
+    fn sigma(&self) -> PyResult<Vec<f64>> {
+        self.chain_ladder().sigma()
     }
 
     /// Standard error of each factor.
     #[getter]
-    fn std_err(&self) -> Vec<f64> {
-        self.inner.chain_ladder.development.std_err.clone()
+    fn std_err(&self) -> PyResult<Vec<f64>> {
+        self.chain_ladder().std_err()
     }
 
     /// Latest observed cumulative value per origin.
     #[getter]
     fn latest(&self) -> Vec<f64> {
-        self.inner.chain_ladder.latest.clone()
+        by_origin(&self.inner, |f| f.chain_ladder.latest.clone())
     }
 
     /// Projected ultimate per origin.
     #[getter]
     fn ultimate(&self) -> Vec<f64> {
-        self.inner.chain_ladder.ultimate.clone()
+        by_origin(&self.inner, |f| f.chain_ladder.ultimate.clone())
     }
 
     /// Reserve per origin.
     #[getter]
     fn reserve(&self) -> Vec<f64> {
-        self.inner.chain_ladder.reserves()
+        by_origin(&self.inner, |f| f.chain_ladder.reserves())
     }
 
-    /// Total ultimate across origins.
+    /// Total ultimate across segments and origins.
     #[getter]
     fn total_ultimate(&self) -> f64 {
-        self.inner.chain_ladder.total_ultimate()
+        self.inner.total_ultimate()
     }
 
-    /// Total reserve across origins.
+    /// Total reserve across segments and origins.
     #[getter]
     fn total_reserve(&self) -> f64 {
-        self.inner.chain_ladder.total_reserve()
+        self.inner.total_reserve()
     }
 
     /// Process standard error per origin.
     #[getter]
     fn process_risk(&self) -> Vec<f64> {
-        self.inner.process_risk.clone()
+        by_origin(&self.inner, |f| f.process_risk.clone())
     }
 
     /// Parameter (estimation) standard error per origin.
     #[getter]
     fn parameter_risk(&self) -> Vec<f64> {
-        self.inner.parameter_risk.clone()
+        by_origin(&self.inner, |f| f.parameter_risk.clone())
     }
 
     /// Mack standard error per origin: ``sqrt(process**2 + parameter**2)``.
     #[getter]
     fn standard_error(&self) -> Vec<f64> {
-        self.inner.standard_error.clone()
+        by_origin(&self.inner, |f| f.standard_error.clone())
     }
 
     /// Process standard error of the total reserve.
     #[getter]
-    fn total_process_risk(&self) -> f64 {
-        self.inner.total_process_risk
+    fn total_process_risk(&self) -> PyResult<f64> {
+        Ok(single(&self.inner, "total_process_risk", "totals_frame()")?.total_process_risk)
     }
 
     /// Parameter standard error of the total reserve, including the
     /// correlation between origins that share estimated factors.
     #[getter]
-    fn total_parameter_risk(&self) -> f64 {
-        self.inner.total_parameter_risk
+    fn total_parameter_risk(&self) -> PyResult<f64> {
+        Ok(single(&self.inner, "total_parameter_risk", "totals_frame()")?.total_parameter_risk)
     }
 
     /// Mack standard error of the total reserve.
     #[getter]
-    fn total_standard_error(&self) -> f64 {
-        self.inner.total_standard_error
+    fn total_standard_error(&self) -> PyResult<f64> {
+        Ok(single(&self.inner, "total_standard_error", "totals_frame()")?.total_standard_error)
     }
 
     /// Coefficient of variation of the total reserve.
     #[getter]
-    fn total_cv(&self) -> f64 {
-        self.inner.total_cv()
+    fn total_cv(&self) -> PyResult<f64> {
+        Ok(single(&self.inner, "total_cv", "totals_frame()")?.total_cv())
+    }
+
+    /// One row per segment and origin: the key columns, ``origin``,
+    /// ``latest``, ``ultimate``, ``reserve``, ``process_risk``,
+    /// ``parameter_risk`` and ``standard_error``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row per segment: the key columns, the segment's total
+    /// ``latest``, ``ultimate`` and ``reserve``, and the ``process_risk``,
+    /// ``parameter_risk`` and ``standard_error`` of its total reserve.
+    /// Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// One row per segment and age, as ``ChainLadderFit.development_frame``.
+    /// Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.development_table())
+    }
+
+    /// The fit of one segment, chosen by key values as
+    /// ``ChainLadderFit.segment``.
+    ///
+    /// Returns
+    /// -------
+    /// MackFit
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys)?,
+        })
     }
 
     fn __repr__(&self) -> String {
+        let se = match self.inner.fits.as_slice() {
+            [one] => format!(", total_standard_error={:?}", one.total_standard_error),
+            _ => String::new(),
+        };
         format!(
-            "MackFit(origins={}, total_reserve={:?}, total_standard_error={:?})",
-            self.inner.chain_ladder.origins.len(),
-            self.inner.chain_ladder.total_reserve(),
-            self.inner.total_standard_error
+            "MackFit({}origins={}, total_reserve={:?}{se})",
+            segments_prefix(&self.inner),
+            self.origins().len(),
+            self.inner.total_reserve(),
         )
     }
 }
@@ -1383,7 +1643,8 @@ impl PyMackFit {
 /// residuals of the volume-weighted chain ladder are resampled into pseudo
 /// triangles, each is re-projected, and process error is added to every
 /// future incremental value. Simulation ``i`` uses random stream ``i`` of
-/// ``seed``, so results do not depend on the number of threads.
+/// ``seed`` for every segment in turn, so results do not depend on the
+/// number of threads.
 ///
 /// Parameters
 /// ----------
@@ -1457,14 +1718,15 @@ impl PyOdpBootstrap {
         process_name(self.inner.process)
     }
 
-    /// Bootstraps one measure column of a single-segment cumulative
-    /// triangle. Every origin must be observed from the first age up to its
-    /// latest.
+    /// Bootstraps one measure column in every segment of a cumulative
+    /// triangle, each with its own residuals and scale, into one joint
+    /// distribution of the reserves. Every origin must be observed from the
+    /// first age up to its latest.
     ///
     /// Parameters
     /// ----------
     /// triangle : Triangle
-    ///     Cumulative, with one segment: ``select`` or ``group_by`` first.
+    ///     Cumulative, with any number of segments.
     /// column : str
     ///
     /// Returns
@@ -1475,7 +1737,7 @@ impl PyOdpBootstrap {
     /// ------
     /// ValueError
     ///     As ``ChainLadder.fit``, and if an origin has a gap before its
-    ///     latest age or the triangle has too few observed cells for the
+    ///     latest age or a segment has too few observed cells for the
     ///     degrees of freedom to be positive.
     fn fit(
         &self,
@@ -1484,7 +1746,7 @@ impl PyOdpBootstrap {
         column: &str,
     ) -> PyResult<PyOdpBootstrapFit> {
         let (boot, tri) = (self.inner, &triangle.inner);
-        let inner = py.detach(|| boot.fit(tri, column)).map_err(err)?;
+        let inner = py.detach(|| boot.fit_segments(tri, column)).map_err(err)?;
         Ok(PyOdpBootstrapFit { inner })
     }
 
@@ -1498,19 +1760,31 @@ impl PyOdpBootstrap {
     }
 }
 
-/// A fitted ODP bootstrap. ``fitted`` and ``residuals`` are nested lists
+/// A fitted ODP bootstrap of every segment.
+///
+/// ``reserves`` is one joint distribution with the triangle's keys and
+/// ``"origin"`` as dimensions, so ``reserves.aggregate(["lob"])`` keeps the
+/// dependence between segments. Per-origin lists run over the origins of
+/// each segment in turn, like the rows of ``to_frame()`` and the
+/// components of ``reserves``. ``fitted``, ``residuals`` and ``scale``
+/// need a single-segment fit; for several segments use ``segment(...)`` or
+/// ``totals_frame()``. ``fitted`` and ``residuals`` are nested lists
 /// indexed ``[origin][development]``, like one segment of
 /// ``Triangle.values``, with ``nan`` where the triangle is not observed.
 #[pyclass(name = "OdpBootstrapFit", module = "actuarialrs.reserving", frozen)]
 pub(crate) struct PyOdpBootstrapFit {
-    inner: OdpBootstrapFit,
+    inner: OdpBootstrapFits,
 }
 
 impl PyOdpBootstrapFit {
     /// A row-major origin x development vector as nested lists.
     fn grid(&self, flat: &[f64]) -> Vec<Vec<f64>> {
-        let n_dev = self.inner.chain_ladder.development.development.len();
+        let n_dev = self.development().len();
         flat.chunks(n_dev.max(1)).map(<[f64]>::to_vec).collect()
+    }
+
+    fn one(&self, field: &str, instead: &str) -> PyResult<&OdpBootstrapSegment> {
+        single(&self.inner.segments, field, instead)
     }
 }
 
@@ -1521,48 +1795,64 @@ impl PyOdpBootstrapFit {
     #[getter]
     fn chain_ladder(&self) -> PyChainLadderFit {
         PyChainLadderFit {
-            inner: self.inner.chain_ladder.clone(),
+            inner: self.inner.segments.map(|s| s.chain_ladder.clone()),
         }
     }
 
-    /// Origin periods, oldest first.
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.segments.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner.segments)
+    }
+
+    /// Origin period of each per-origin value and reserve component.
     #[getter]
     fn origins(&self) -> Vec<String> {
-        self.chain_ladder().origins()
+        origin_labels(&self.inner.segments)
     }
 
     /// Development ages in months.
     #[getter]
     fn development(&self) -> Vec<Lag> {
-        self.inner.chain_ladder.development.development.clone()
+        self.inner.segments.fits[0]
+            .chain_ladder
+            .development
+            .development
+            .clone()
     }
 
     /// Fitted incremental values, ``[origin][development]``.
     #[getter]
-    fn fitted(&self) -> Vec<Vec<f64>> {
-        self.grid(&self.inner.fitted)
+    fn fitted(&self) -> PyResult<Vec<Vec<f64>>> {
+        Ok(self.grid(&self.one("fitted", "segment(...)")?.fitted))
     }
 
     /// Adjusted Pearson residuals ``(x - m) / sqrt(|m|) * sqrt(n / (n - p))``,
     /// ``[origin][development]``; ``nan`` where not observed or where the
     /// fitted value is zero.
     #[getter]
-    fn residuals(&self) -> Vec<Vec<f64>> {
-        self.grid(&self.inner.residuals)
+    fn residuals(&self) -> PyResult<Vec<Vec<f64>>> {
+        Ok(self.grid(&self.one("residuals", "segment(...)")?.residuals))
     }
 
     /// The scale parameter ``phi``: the sum of squared unadjusted residuals
     /// over the degrees of freedom ``n - p``.
     #[getter]
-    fn scale(&self) -> f64 {
-        self.inner.scale
+    fn scale(&self) -> PyResult<f64> {
+        Ok(self.one("scale", "totals_frame()")?.scale)
     }
 
     /// Joint distribution of the reserve (the sum of future incremental
-    /// values) by origin: dimension ``"origin"``, one component per origin
-    /// period, one row per simulation. Its ``mean`` and ``quantile`` describe
-    /// the total reserve. Columns of ``draw_matrix()`` follow ``origins``
-    /// (``marginal`` does not match origin labels yet).
+    /// values) by segment and origin: the triangle's keys and ``"origin"``
+    /// are its dimensions, one component per segment and origin, one row
+    /// per simulation. Its ``mean`` and ``quantile`` describe the total
+    /// reserve. Columns of ``draw_matrix()`` follow ``origins``.
     #[getter]
     fn reserves(&self) -> PyPredictiveDistribution {
         PyPredictiveDistribution {
@@ -1570,12 +1860,64 @@ impl PyOdpBootstrapFit {
         }
     }
 
+    /// One row per segment and origin: the key columns, ``origin``, the
+    /// chain ladder's ``latest``, ``ultimate`` and ``reserve``, and the
+    /// ``mean`` and ``std_dev`` of the bootstrapped reserve. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row per segment: the key columns, the chain ladder's totals, the
+    /// ``scale``, and the ``mean`` and ``std_dev`` of the segment's
+    /// bootstrapped total reserve. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// The chain ladders' development factors, one row per segment and
+    /// age, as ``ChainLadderFit.development_frame``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.development_table())
+    }
+
+    /// The bootstrap of one segment, chosen by key values as
+    /// ``ChainLadderFit.segment``, with its part of the joint reserves
+    /// (same dimensions).
+    ///
+    /// Returns
+    /// -------
+    /// OdpBootstrapFit
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let keys = segment_keys(keys)?;
+        let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        Ok(Self {
+            inner: self.inner.segment(&keys).map_err(err)?,
+        })
+    }
+
     fn __repr__(&self) -> String {
+        let scale = match self.inner.segments.fits.as_slice() {
+            [one] => format!(", scale={:?}", one.scale),
+            _ => String::new(),
+        };
         format!(
-            "OdpBootstrapFit(origins={}, n_sims={}, scale={:?})",
-            self.inner.chain_ladder.origins.len(),
+            "OdpBootstrapFit({}origins={}, n_sims={}{scale})",
+            segments_prefix(&self.inner.segments),
+            self.origins().len(),
             self.inner.reserves.n_sims(),
-            self.inner.scale
         )
     }
 }

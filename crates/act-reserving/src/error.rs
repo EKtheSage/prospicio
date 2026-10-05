@@ -44,6 +44,10 @@ pub enum Error {
     /// A method needs a triangle with a single segment; select or group
     /// first.
     MultipleSegments(usize),
+    /// A segment choice matches several segments of a fit.
+    AmbiguousSegment(usize),
+    /// Fitting one segment of a triangle failed; `label` names it.
+    InSegment { label: String, source: Box<Error> },
     /// A grain change that is not a coarsening of the current grain.
     InvalidGrain(&'static str),
     /// An origin has no observed value, so it has no latest diagonal.
@@ -98,6 +102,10 @@ impl fmt::Display for Error {
                 f,
                 "triangle has {n} segments; select one or group_by before fitting"
             ),
+            Self::AmbiguousSegment(n) => {
+                write!(f, "{n} segments match; name more keys to pick one")
+            }
+            Self::InSegment { label, source } => write!(f, "segment {label}: {source}"),
             Self::InvalidGrain(why) => write!(f, "invalid grain change: {why}"),
             Self::EmptyOrigin(o) => write!(f, "origin {o} has no observed values"),
             Self::Factor { age, reason } => {

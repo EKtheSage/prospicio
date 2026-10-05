@@ -18,9 +18,9 @@ use act_models::stack::stacking_weights;
 use act_prob::Distribution;
 use act_reserving::{
     Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, GlmCandidate, Grain,
-    Long, Mack, MackFit, Month, OdpBootstrap, OdpBootstrapFit, OdpGlm, OdpGlmFit, Period,
-    ProcessDistribution, SigmaInterpolation, Triangle, TriangleFrame, TriangleModel,
-    diagonal_backtest,
+    Label, Long, Mack, MackFit, Month, OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpGlm,
+    OdpGlmFit, Period, ProcessDistribution, SigmaInterpolation, Triangle, TriangleFrame,
+    TriangleModel, diagonal_backtest,
 };
 use act_validation::{Case, check, reference, triangle};
 
@@ -584,4 +584,143 @@ fn select_and_group_by_on_lob_and_coverage() {
     assert!(tri.select(&[("coverage", &["GL"])]).is_err());
     assert!(tri.select_columns(&["reported"]).is_err());
     assert!(tri.group_by(&["coverage", "coverage"]).is_err());
+}
+
+#[test]
+fn every_segment_at_once_on_lob_and_coverage() {
+    let rows = lob_coverage_rows();
+    let tri = keyed_triangle(&rows, &[("lob", &rows.0), ("coverage", &rows.1)]);
+    let alone = |label: &Label| {
+        let parts = label.parts();
+        tri.select(&[
+            ("lob", &[parts[0].as_str()]),
+            ("coverage", &[parts[1].as_str()]),
+        ])
+        .unwrap()
+    };
+
+    // Each segment's fit equals fitting that segment alone, exactly.
+    let cl = ChainLadder::default().fit_segments(&tri, "paid").unwrap();
+    let mack = Mack::default().fit_segments(&tri, "paid").unwrap();
+    assert_eq!(cl.key_names, ["lob", "coverage"]);
+    assert_eq!(cl.labels, tri.index());
+    for (label, fit) in cl.iter() {
+        assert_eq!(
+            *fit,
+            ChainLadder::default().fit(&alone(label), "paid").unwrap()
+        );
+        let m = mack.get(label).unwrap();
+        assert_eq!(*m, Mack::default().fit(&alone(label), "paid").unwrap());
+    }
+
+    // Long results: one row per segment × origin, segment, or segment × age.
+    let long = mack.to_long();
+    assert_eq!(long.n_rows(), 40);
+    assert_eq!(long.keys[0].0, "lob");
+    assert_eq!(long.keys[1].1[10], "PD");
+    assert_eq!(long.origin.as_ref().unwrap()[10], Period::year(2011));
+    let reserve: Vec<f64> = mack
+        .fits
+        .iter()
+        .flat_map(|f| f.chain_ladder.reserves())
+        .collect();
+    assert_eq!(long.column("reserve").unwrap(), reserve);
+    let se: Vec<f64> = mack
+        .fits
+        .iter()
+        .flat_map(|f| f.standard_error.clone())
+        .collect();
+    assert_eq!(long.column("standard_error").unwrap(), se);
+    let totals = mack.totals();
+    assert_eq!(totals.n_rows(), 4);
+    for (s, fit) in mack.fits.iter().enumerate() {
+        assert_eq!(
+            totals.column("reserve").unwrap()[s],
+            fit.chain_ladder.total_reserve()
+        );
+        assert_eq!(
+            totals.column("standard_error").unwrap()[s],
+            fit.total_standard_error
+        );
+    }
+    let sum: f64 = totals.column("reserve").unwrap().iter().sum();
+    assert!((mack.total_reserve() - sum).abs() < 1e-9 * sum);
+    assert!((cl.total_reserve() - sum).abs() < 1e-9 * sum);
+    let dev = cl.development_table();
+    assert_eq!(dev.n_rows(), 40);
+    assert_eq!(dev.age.as_ref().unwrap()[..2], [12, 24]);
+    assert_eq!(
+        dev.column("ldf").unwrap()[10..19],
+        cl.fits[1].development.ldf[..]
+    );
+    assert!(dev.column("ldf").unwrap()[19].is_nan());
+    assert_eq!(dev.column("cdf").unwrap()[19], 1.0);
+
+    // Picking one segment by name.
+    let home_pd = cl.segment(&[("lob", "Home"), ("coverage", "PD")]).unwrap();
+    assert_eq!(home_pd.labels, [Label::new(["Home", "PD"])]);
+    assert_eq!(home_pd.fits[0], cl.fits[3]);
+    assert_eq!(
+        cl.position(&[("lob", "Auto")]),
+        Err(act_reserving::Error::AmbiguousSegment(2))
+    );
+    assert!(cl.position(&[("line", "Auto")]).is_err());
+    assert!(cl.position(&[("lob", "Farm")]).is_err());
+
+    // The bootstrap of every segment: one joint distribution over
+    // lob × coverage × origin, each segment's scale its own.
+    let boot = OdpBootstrap {
+        n_sims: 2_000,
+        seed: 11,
+        process: ProcessDistribution::Gamma,
+    };
+    let joint = boot.fit_segments(&tri, "paid").unwrap();
+    assert_eq!(joint.reserves.dims(), ["lob", "coverage", "origin"]);
+    assert_eq!(joint.reserves.n_components(), 40);
+    for (label, fit) in joint.segments.iter() {
+        let single = boot.fit(&alone(label), "paid").unwrap();
+        assert_eq!(fit.scale, single.scale);
+        assert_eq!(fit.residuals.len(), single.residuals.len());
+        assert_eq!(fit.chain_ladder, single.chain_ladder);
+    }
+    let again = boot.fit_segments(&tri, "paid").unwrap();
+    assert_eq!(joint.reserves.draw_matrix(), again.reserves.draw_matrix());
+    let marginal = |fits: &OdpBootstrapFits| {
+        fits.segment(&[("lob", "Home"), ("coverage", "BI")])
+            .unwrap()
+            .reserves
+    };
+    let home_bi = marginal(&joint);
+    assert_eq!(home_bi.n_components(), 10);
+    assert_eq!(home_bi.draw_matrix(), marginal(&again).draw_matrix());
+    let key = vec!["Home".into(), "BI".into(), Period::year(2015).into()];
+    assert_eq!(
+        joint.reserves.marginal(&key).unwrap().mean(),
+        home_bi.marginal(&key).unwrap().mean()
+    );
+
+    // Aggregating over origin keeps the dependence between segments: the
+    // total is the same however it is grouped.
+    let by_lob = joint.reserves.aggregate(&["lob"]).unwrap();
+    assert_eq!(by_lob.n_components(), 2);
+    let by_segment = joint.reserves.aggregate(&["lob", "coverage"]).unwrap();
+    assert_eq!(by_segment.n_components(), 4);
+    let total = joint.reserves.total().mean();
+    assert!((by_lob.total().mean() - total).abs() < 1e-9 * total);
+    let totals = joint.totals();
+    assert_eq!(
+        totals.column("scale").unwrap()[2],
+        joint.segments.fits[2].scale
+    );
+    for s in 0..4 {
+        let mean = totals.column("mean").unwrap()[s];
+        let want = by_segment.row(0).unwrap()[s];
+        assert!(mean.is_finite() && want.is_finite());
+        let cl_reserve = totals.column("reserve").unwrap()[s];
+        assert!(
+            (mean / cl_reserve - 1.0).abs() < 0.1,
+            "{mean} vs {cl_reserve}"
+        );
+    }
+    assert_eq!(joint.to_long().n_rows(), 40);
 }
