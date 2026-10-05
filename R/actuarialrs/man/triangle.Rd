@@ -26,7 +26,7 @@ origin period) or whole-number years.}
 \item{development}{Name of the development column: ages in months (12,
 24, ...), or valuation dates when \code{valuation = TRUE}.}
 
-\item{columns}{Names of the value columns.}
+\item{columns}{Names of the value columns (numeric).}
 
 \item{index}{Names of the index columns, or \code{NULL} for a single segment
 labelled \code{"Total"}. Several columns make multi-part labels.}

@@ -71,7 +71,10 @@ fit_for <- function(dataset, method) {
   key <- paste(dataset, method)
   if (is.null(fits[[key]])) {
     s <- settings[[method]]
-    fits[[key]] <<- mack(tris[[dataset]], average = s[1], sigma_interpolation = s[2])
+    if (is.null(s)) stop("no settings for reference method ", method, call. = FALSE)
+    # Chain-ladder rows go through chain_ladder(), the rest through mack().
+    fit <- if (startsWith(method, "chain_ladder")) chain_ladder else mack
+    fits[[key]] <<- fit(tris[[dataset]], average = s[1], sigma_interpolation = s[2])
   }
   fits[[key]]
 }
@@ -184,6 +187,13 @@ expect_error_like(chain_ladder(multi), "several columns")
 expect_error_like(chain_ladder(raa, "paid"), "no column or index named paid")
 expect_error_like(chain_ladder(raa, tail = 0), "tail factor 0")
 expect_error_like(chain_ladder(raa, average = "median"), "should be one of")
+expect_error_like(chain_ladder(raa, tail = NA), "tail must be a single number")
+expect_error_like(triangle(transform(raw, value = factor(value)), "origin", "development", "value"),
+                  "value column value must be numeric")
+expect_error_like(triangle(transform(raw, value = as.character(value)), "origin", "development", "value"),
+                  "value column value must be numeric")
+expect_error_like(triangle(transform(raw, development = factor(development)), "origin", "development",
+                           "value"), "development column development must be numeric")
 expect_error_like(grain(qt, "X"), "origin_grain must be")
 expect_error_like(grain(raa, "Q", "Q"), "invalid grain change")
 expect_error_like(subset(multi, columns = c("paid", "paid")), "supplied twice")

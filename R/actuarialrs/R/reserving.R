@@ -64,7 +64,7 @@ label_list <- function(index) {
 #'   origin period) or whole-number years.
 #' @param development Name of the development column: ages in months (12,
 #'   24, ...), or valuation dates when `valuation = TRUE`.
-#' @param columns Names of the value columns.
+#' @param columns Names of the value columns (numeric).
 #' @param index Names of the index columns, or `NULL` for a single segment
 #'   labelled `"Total"`. Several columns make multi-part labels.
 #' @param origin_grain,development_grain Length of an origin period and
@@ -132,18 +132,27 @@ triangle <- S7::new_class(
     if (length(missing_cols)) {
       stop("no columns named ", toString(missing_cols), " in data", call. = FALSE)
     }
+    # as.double() would turn a factor into its level codes and a character
+    # column into NA with only a warning, so insist on numbers.
+    numeric_column <- function(name, what) {
+      x <- data[[name]]
+      if (!is.numeric(x)) {
+        stop(sprintf("%s column %s must be numeric, not %s", what, name, class(x)[1]), call. = FALSE)
+      }
+      as.double(x)
+    }
     o <- year_month(data[[origin]], "origin", 1L)
     if (valuation) {
       v <- year_month(data[[development]], "development", 12L)
       ages <- double()
     } else {
       v <- list(year = integer(), month = integer())
-      ages <- as.double(data[[development]])
+      ages <- numeric_column(development, "development")
       if (anyNA(ages)) stop("development has missing values", call. = FALSE)
     }
     labels <- unlist(lapply(index, function(c) as.character(data[[c]])))
     if (anyNA(labels)) stop("index has missing values", call. = FALSE)
-    values <- unlist(lapply(columns, function(c) as.double(data[[c]])))
+    values <- unlist(lapply(columns, numeric_column, what = "value"))
     ptr <- rust_result(Triangle$from_long(
       as.character(labels), as.double(length(index)), o$year, o$month,
       ages, v$year, v$month, isTRUE(valuation),
@@ -422,6 +431,9 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
                          sigma_interpolation = "log-linear", tail = 1) {
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation)
+  if (!is.numeric(tail) || length(tail) != 1 || is.na(tail)) {
+    stop("tail must be a single number", call. = FALSE)
+  }
   ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, as.double(tail)))
   chain_ladder_fit(ptr = ptr)
 }
