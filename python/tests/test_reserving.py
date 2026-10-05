@@ -179,7 +179,8 @@ def test_long_round_trip():
     assert long["origin"][0] == datetime.date(2020, 1, 1)
     back = Triangle.from_long(long["origin"], long["development"], {"paid": long["paid"]})
     assert back == tri
-    assert tri.slice(index="Total") == tri
+    assert tri.select() == tri
+    assert tri.group_by([]) == tri
 
 
 def test_link_ratios():
@@ -189,7 +190,7 @@ def test_link_ratios():
     assert math.isnan(lr.values[0][0][2][0])
 
 
-def test_named_keys_slice_and_frame():
+def test_named_keys_select_and_frame():
     data = {
         "lob": ["Auto", "Auto", "Auto", "Home", "Home"],
         "state": ["CA", "CA", "CA", "NY", "NY"],
@@ -204,11 +205,11 @@ def test_named_keys_slice_and_frame():
     assert "keys=[\"lob\", \"state\"]" in repr(tri)
     assert tri.columns == ["paid", "incurred"]
     assert tri.shape == (2, 2, 2, 2)
-    home = tri.slice(index=("Home", "NY"), columns="incurred")
+    home = tri.select(lob="Home", state="NY", columns="incurred")
     assert home.shape == (1, 1, 2, 2)
     assert home.values[0][0][0][0] == 70.0
-    both = tri.slice(index=[("Home", "NY"), ("Auto", "CA")])
-    assert both.index == [("Home", "NY"), ("Auto", "CA")]
+    both = tri.select(state=["NY", "CA"])
+    assert both.index == [("Auto", "CA"), ("Home", "NY")]
     assert both.keys == ["lob", "state"]
     long = tri.to_long()
     assert list(long) == ["lob", "state", "origin", "development", "paid", "incurred"]
@@ -219,12 +220,94 @@ def test_named_keys_slice_and_frame():
                               keys={"lob": long["lob"], "state": long["state"]})
     assert back == tri
     assert Triangle.from_frame(long, "origin", "development", ["paid", "incurred"], keys=tri.keys) == tri
-    with pytest.raises(ValueError, match="slice to one"):
+    with pytest.raises(ValueError, match="select one or group_by"):
         ChainLadder().fit(tri, "paid")
-    with pytest.raises(ValueError, match="no column or index named"):
-        tri.slice(columns="nope")
+    with pytest.raises(ValueError, match="no column named"):
+        tri.select(columns="nope")
     with pytest.raises(ValueError, match="twice"):
-        tri.slice(columns=["paid", "paid"])
+        tri.select(columns=["paid", "paid"])
+
+
+def lob_coverage_long():
+    """Two keys (lob x coverage) with paid and incurred: Auto from RAA and
+    Home from GenIns (scaled), origins re-based to 2011, each coverage a
+    different share of the line with its own tilt by origin."""
+    long = {"lob": [], "coverage": [], "year": [], "age": [], "paid": [], "incurred": []}
+    for lob, name, scale in [("Auto", "raa", 1.0), ("Home", "genins", 1e-3)]:
+        rows = read_csv(VALIDATION / "data" / f"{name}.csv")
+        first = min(int(r["origin"]) for r in rows)
+        for coverage, share in [("BI", 0.7), ("PD", 0.3)]:
+            for k, r in enumerate(rows):
+                offset = int(r["origin"]) - first
+                paid = float(r["value"]) * scale * share * (1 + share * offset / 20)
+                long["lob"].append(lob)
+                long["coverage"].append(coverage)
+                long["year"].append(2011 + offset)
+                long["age"].append(int(r["development"]))
+                long["paid"].append(paid)
+                long["incurred"].append(paid * 1.2 + 10.0 * (k % 3))
+    return long
+
+
+def test_select_and_group_by_lob_and_coverage():
+    long = lob_coverage_long()
+    measures = ["paid", "incurred"]
+    tri = Triangle.from_frame(long, "year", "age", measures, keys=["lob", "coverage"])
+    assert tri.shape == (4, 2, 10, 10)
+
+    # Selection by name; values may be one or a list, ANDed across keys.
+    auto_bi = tri.select(lob="Auto", coverage="BI")
+    assert auto_bi.index == [("Auto", "BI")]
+    assert tri.select(lob="Auto", coverage=["PD", "BI"]).index == [("Auto", "BI"), ("Auto", "PD")]
+    paid_bi = tri.select(coverage="BI", columns=["incurred", "paid"])
+    assert paid_bi.index == [("Auto", "BI"), ("Home", "BI")]
+    assert paid_bi.columns == ["incurred", "paid"]
+    assert tri.select(columns="paid").shape == (4, 1, 10, 10)
+
+    # Grouping equals building with fewer keys, and totals are sums of segments.
+    by_lob = tri.group_by(["lob"])
+    assert by_lob.keys == ["lob"]
+    assert by_lob.index == ["Auto", "Home"]
+    assert by_lob == Triangle.from_frame(long, "year", "age", measures, keys=["lob"])
+    total = tri.group_by([])
+    assert total.index == ["Total"]
+    assert total == Triangle.from_frame(long, "year", "age", measures)
+    for c in range(2):
+        segments = sum(x for i in tri.latest_diagonal() for x in i[c])
+        assert sum(x for i in by_lob.latest_diagonal() for x in i[c]) == pytest.approx(segments)
+        assert sum(total.latest_diagonal()[0][c]) == pytest.approx(segments)
+    swapped = tri.group_by(["coverage", "lob"])
+    assert swapped.index[0] == ("BI", "Auto")
+
+    # Chain ladder on a group equals chain ladder on the summed triangle.
+    auto_rows = [i for i, lob in enumerate(long["lob"]) if lob == "Auto"]
+    summed = Triangle.from_frame({k: [v[i] for i in auto_rows] for k, v in long.items()},
+                                 "year", "age", measures)
+    for column in measures:
+        grouped = ChainLadder().fit(by_lob.select(lob="Auto"), column)
+        direct = ChainLadder().fit(summed, column)
+        assert grouped.ultimate == pytest.approx(direct.ultimate, rel=1e-12)
+        assert grouped.ldf == pytest.approx(direct.ldf, rel=1e-12)
+
+    # Incremental triangles are summed as cumulative values.
+    assert tri.to_incremental().group_by("lob") == by_lob.to_incremental()
+
+    with pytest.raises(ValueError, match="no key named line"):
+        tri.select(line="Auto")
+    with pytest.raises(ValueError, match="no segment has coverage = \"GL\""):
+        tri.select(coverage="GL")
+    with pytest.raises(ValueError, match="supplied twice"):
+        tri.select(lob=["Auto", "Auto"])
+    with pytest.raises(ValueError, match="at least one value"):
+        tri.select(lob=[])
+    with pytest.raises(ValueError, match="no column named reported"):
+        tri.select(columns="reported")
+    with pytest.raises(ValueError, match="no key named line"):
+        tri.group_by(["line"])
+    with pytest.raises(ValueError, match="key lob is supplied twice"):
+        tri.group_by(["lob", "lob"])
+    with pytest.raises(ValueError, match="select one or group_by"):
+        ChainLadder().fit(by_lob, "paid")
 
 
 def test_pandas_frame_and_datetimes():
@@ -259,6 +342,19 @@ def test_pandas_frame_and_datetimes():
     back = Triangle.from_frame(frame, "origin", "development", "paid",
                                origin_grain="Q", development_grain="Q")
     assert back == tri
+
+
+def test_select_with_numpy_and_pandas_values():
+    pd = pytest.importorskip("pandas")
+    np = pytest.importorskip("numpy")
+    df = pd.DataFrame({"lob": ["A", "A", "B", "C"], "company": [7, 8, 8, 8],
+                       "year": 2020, "age": 12, "paid": [1.0, 2.0, 3.0, 4.0]})
+    tri = Triangle.from_frame(df, "year", "age", "paid", keys=["lob", "company"])
+    # Arrays, Series and tuples are lists of values; numbers match as str().
+    wanted = df.loc[df["paid"] > 2.5, "lob"].unique()
+    assert tri.select(lob=wanted).index == [("B", "8"), ("C", "8")]
+    assert tri.select(lob=pd.Series(["B", "C"]), company=np.int64(8)).shape[0] == 2
+    assert tri.select(lob=("A",), company=[7]).index == [("A", "7")]
 
 
 def test_grain():
@@ -298,7 +394,7 @@ def test_errors():
         Mack(sigma_interpolation="linear")
     with pytest.raises(ValueError, match="tail"):
         ChainLadder(tail=0.0).fit(small(), "paid")
-    with pytest.raises(ValueError, match="no column or index named"):
+    with pytest.raises(ValueError, match="no column named"):
         ChainLadder().fit(small(), "incurred")
     two = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], [1.0, 2.0, 1.0])
     with pytest.raises(ValueError, match="at least 3"):
@@ -494,9 +590,9 @@ def test_bootstrap_errors(triangles):
         "paid": [100.0, 150.0, 110.0, 50.0, 70.0, 60.0],
     }
     multi = Triangle.from_frame(data, "year", "age", "paid", keys="lob")
-    with pytest.raises(ValueError, match="slice to one"):
+    with pytest.raises(ValueError, match="select one or group_by"):
         OdpBootstrap(n_sims=10).fit(multi, "paid")
-    with pytest.raises(ValueError, match="no column or index named"):
+    with pytest.raises(ValueError, match="no column named"):
         OdpBootstrap(n_sims=10).fit(triangles["raa"], "paid")
     with pytest.raises(ValueError, match="degrees of freedom"):
         two = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], [1.0, 2.0, 1.0])

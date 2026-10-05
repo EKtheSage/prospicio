@@ -71,7 +71,8 @@ pub struct Triangle {
 | `latest_diagonal()` | per index × column × origin |
 | `link_ratios()` | age-to-age ratios as a Triangle (masked where either side is missing) |
 | `grain(origin, development)` | coarsen periods |
-| `slice(index=…, column=…)` | select segments and measures |
+| `select(key = values)` / `select_columns(names)` | segments by key value (conditions ANDed), measures by name |
+| `group_by(keys)` | sum segments over the other keys; `group_by([])` is the total |
 | `from_long` / `to_long` | long ↔ wide: rows of (key columns by name, origin, development or valuation, value columns) |
 
 ## Arrow boundary
@@ -99,9 +100,31 @@ pub struct Triangle {
   idiom: values become strings with each language's own conversion
   (Python `str(7.0)` is `"7.0"`, R `as.character(7)` is `"7"`); without
   keys Python's `index` is `["Total"]` while R's `@index` is a data.frame
-  with one row and no columns; R's `subset()` matches a data.frame of
-  labels to the keys by column name, Python's `slice()` takes tuples in
-  key order.
+  with one row and no columns.
+- **Select and group by name (implemented, decision 5 step 2).**
+  `select(&[(key, &[values])])` keeps the segments whose value of each
+  named key is one of its values (conditions ANDed, segments keep their
+  sorted order, no conditions keep everything); `select_columns(&[names])`
+  keeps measures in the order given. `group_by(&[keys])` sums the segments
+  that share the named keys' values and drops the other keys: the result's
+  keys are in the order given and its segments sorted; `group_by(&[])` is
+  one total segment without keys. Cumulative values are summed cell by
+  cell and a cell is observed if any member is; an incremental triangle is
+  summed as cumulative values and returned incremental, so grouping then
+  fitting equals fitting the triangle built from the summed rows. Unknown
+  keys, values or columns, repeats, empty value lists and a selection that
+  matches nothing are errors. Selection by position (`slice`) is gone.
+  Bindings, same semantics:
+  - Python: `tri.select(columns=None, **keys)` (per key one value, or any
+    iterable of values that is not a string, such as a list, NumPy array
+    or pandas Series; compared as `str()`), `tri.group_by(keys)`.
+  - R: `subset(tri, key = values, columns = NULL)` and
+    `aggregate(tri, keep = keys)` (default `character()`, the total). They
+    are methods on base generics rather than `select()`, `filter()` or
+    `group_by()`, which would mask dplyr's verbs of other meanings, and
+    `aggregate(keep =)` is what the package already uses to sum a
+    `predictive_distribution` over its keys. A key named `columns` (or
+    `x` in R) cannot be selected by keyword.
 
 ## Relationship to reserving methods
 
@@ -109,8 +132,9 @@ Methods take `&Triangle` and a column. Output per origin is keyed by the
 Triangle's `Period`s, so a reserve `PredictiveDistribution` component
 `{lob, origin}` joins back to the triangle without conversion.
 
-v0.1 methods fit a triangle with a single index position (slice first);
-fitting every segment at once, as chainladder-python broadcasts, comes later.
+v0.1 methods fit a triangle with a single segment (`select` or `group_by`
+first); fitting every segment at once, as chainladder-python broadcasts,
+comes later.
 
 Development factors (`Development`) follow Mack's weighted regression, as
 R ChainLadder and chainladder-python do:

@@ -972,7 +972,9 @@ Triangle$latest_diagonal <- function() .Call(wrap__Triangle__latest_diagonal, se
 
 Triangle$link_ratios <- function() .Call(wrap__Triangle__link_ratios, self)
 
-Triangle$slice <- function(index, columns) .Call(wrap__Triangle__slice, self, index, columns)
+Triangle$select <- function(keys, values, columns) .Call(wrap__Triangle__select, self, keys, values, columns)
+
+Triangle$group_by <- function(keys) .Call(wrap__Triangle__group_by, self, keys)
 
 Triangle$grain <- function(origin_grain, development_grain) .Call(wrap__Triangle__grain, self, origin_grain, development_grain)
 

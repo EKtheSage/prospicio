@@ -2,29 +2,41 @@
 % Please edit documentation in R/reserving.R
 \name{subset.triangle}
 \alias{subset.triangle}
-\title{Subset a triangle}
+\title{Select segments and columns of a triangle by name}
 \arguments{
 \item{x}{A \link{triangle}.}
 
-\item{index}{Index labels to keep, or \code{NULL} for all: a character vector
-of labels for a triangle with one key, a list of character vectors (the
-key values of each label, in key order), or a data.frame with one row
-per label and one column per key, matched by name, as \code{x@index} gives. A triangle without keys has the one label \code{"Total"}.}
+\item{...}{Key conditions as \code{key = values}.}
 
-\item{columns}{Column names to keep, or \code{NULL} for all.}
-
-\item{...}{Unused.}
+\item{columns}{Column names to keep, in order, or \code{NULL} for all.}
 }
 \value{
 A \link{triangle}.
 }
 \description{
-Keeps the named index positions and columns, in the order given. Naming
-a label or column twice, or one that does not exist, is an error.
+Keeps the segments whose key values match and the measure columns named:
+\code{subset(tri, lob = "auto", state = c("CA", "NY"), columns = "paid")}.
+Each key argument gives the values to keep (compared as character, as
+keys are stored); segments must match every key argument and keep their
+order. Columns are kept in the order given. This is Python's
+\verb{Triangle.select(columns=None, **keys)}.
+}
+\details{
+The method is on base R's \code{\link[=subset]{subset()}} generic rather than a new verb, so
+it does not mask \code{dplyr::filter()} or \code{dplyr::select()}. A key named \code{x}
+or \code{columns} cannot be selected this way.
+
+Errors: a key, value or column that does not exist or is given twice, an
+empty set of values, an unnamed argument, or a selection that matches no
+segment.
 }
 \examples{
 long <- data.frame(lob = rep(c("auto", "home"), each = 3), year = c(2020, 2020, 2021),
                    age = c(12, 24, 12), paid = 1:6, incurred = 2 * (1:6))
 tri <- triangle(long, "year", "age", c("paid", "incurred"), keys = "lob")
-subset(tri, index = "home", columns = "incurred")@values
+subset(tri, lob = "home", columns = "incurred")@values
+subset(tri, columns = c("incurred", "paid"))@columns
+}
+\seealso{
+\link[=aggregate.triangle]{aggregate()} to sum segments over keys.
 }

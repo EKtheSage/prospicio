@@ -13,7 +13,7 @@ use act_reserving::{
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyBytes, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyString, PyTuple};
 
 use crate::distributions::PyPredictiveDistribution;
 use crate::to_py;
@@ -176,18 +176,6 @@ fn floats(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Vec<f64>> {
         .map_err(|_| PyTypeError::new_err(format!("column {name:?} must hold numbers")))
 }
 
-fn label(item: &Bound<'_, PyAny>) -> PyResult<Label> {
-    if item.is_instance_of::<PyTuple>() || item.is_instance_of::<PyList>() {
-        let parts = item
-            .try_iter()?
-            .map(|p| p?.str().map(|s| s.to_string()))
-            .collect::<PyResult<Vec<_>>>()?;
-        Ok(Label::new(parts))
-    } else {
-        Ok(Label::from(item.str()?.to_string()))
-    }
-}
-
 /// Values of the key column `name` as strings (`str()` of each value).
 /// `None`, float NaN and pandas' `NA` and `NaT` are missing values, which a
 /// key may not have.
@@ -225,27 +213,17 @@ fn label_to_py<'py>(py: Python<'py>, n_keys: usize, label: &Label) -> PyResult<B
     }
 }
 
-/// Index labels to keep: one label (a str or a tuple) or a list of them.
-/// Without keys, the only label is ``"Total"``.
-fn label_selection(obj: &Bound<'_, PyAny>, n_keys: usize) -> PyResult<Vec<Label>> {
-    let labels: Vec<Label> = if obj.is_instance_of::<PyList>() {
-        obj.try_iter()?
-            .map(|item| label(&item?))
-            .collect::<PyResult<_>>()?
-    } else {
-        vec![label(obj)?]
-    };
-    let total = Label::from("Total");
-    Ok(labels
-        .into_iter()
-        .map(|l| {
-            if n_keys == 0 && l == total {
-                Label::default()
-            } else {
-                l
-            }
-        })
-        .collect())
+/// Key values to select: one value (a string, number, date, ...) or any
+/// other iterable of values (a list, tuple, set, NumPy array or pandas
+/// Series); each compared as ``str()`` of it, as key columns are stored.
+fn selection_values(obj: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+    if obj.is_instance_of::<PyString>() || obj.is_instance_of::<PyBytes>() {
+        return Ok(vec![obj.str()?.to_string()]);
+    }
+    match obj.try_iter() {
+        Ok(items) => items.map(|item| Ok(item?.str()?.to_string())).collect(),
+        Err(_) => Ok(vec![obj.str()?.to_string()]),
+    }
 }
 
 fn names(obj: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
@@ -812,16 +790,21 @@ impl PyTriangle {
         wrap(self.inner.link_ratios())
     }
 
-    /// The triangle restricted to some segments and measure columns, in the
-    /// order given.
+    /// The segments whose key values match, and the measure columns named.
+    ///
+    /// Each keyword names a key and gives one value or a list of values to
+    /// keep; segments must match every keyword, and keep their order.
+    /// Values are compared as strings, as keys are stored (``str()`` of a
+    /// value). A key named ``columns`` cannot be selected this way.
     ///
     /// Parameters
     /// ----------
-    /// index : str, tuple or list, optional
-    ///     One label, or a list of labels, as ``index`` shows them. By
-    ///     default every segment.
     /// columns : str or list of str, optional
-    ///     By default every column.
+    ///     Measure columns to keep, in this order. By default every column.
+    /// **keys : value or list of values
+    ///     For example ``lob="Auto"`` or ``state=["CA", "NY"]``; any
+    ///     iterable that is not a string (a tuple, set, NumPy array or
+    ///     pandas Series) is a list of values.
     ///
     /// Returns
     /// -------
@@ -830,23 +813,93 @@ impl PyTriangle {
     /// Raises
     /// ------
     /// ValueError
-    ///     If a label or column is unknown or named twice.
-    #[pyo3(signature = (index = None, columns = None))]
-    fn slice(
+    ///     If a key, value or column is unknown or given twice, a list of
+    ///     values is empty, or no segment matches.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020, 2020],
+    /// ...     [12, 12, 12],
+    /// ...     {"paid": [1.0, 2.0, 3.0], "incurred": [2.0, 3.0, 4.0]},
+    /// ...     keys={"lob": ["Auto", "Auto", "Home"], "state": ["CA", "NY", "NY"]},
+    /// ... )
+    /// >>> tri.select(state="NY").index
+    /// [('Auto', 'NY'), ('Home', 'NY')]
+    /// >>> tri.select(lob="Auto", state=["CA", "NY"], columns="paid").shape
+    /// (2, 1, 1, 1)
+    #[pyo3(signature = (columns = None, **keys))]
+    fn select(
         &self,
-        index: Option<&Bound<'_, PyAny>>,
         columns: Option<&Bound<'_, PyAny>>,
+        keys: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
-        let n_keys = self.inner.key_names().len();
-        let index = index.map(|i| label_selection(i, n_keys)).transpose()?;
-        let columns = columns.map(names).transpose()?;
-        let columns: Option<Vec<&str>> = columns
-            .as_ref()
-            .map(|c| c.iter().map(String::as_str).collect());
-        self.inner
-            .slice(index.as_deref(), columns.as_deref())
-            .map(wrap)
-            .map_err(err)
+        let conditions: Vec<(String, Vec<String>)> = match keys {
+            None => Vec::new(),
+            Some(keys) => keys
+                .iter()
+                .map(|(k, v)| Ok((k.extract::<String>()?, selection_values(&v)?)))
+                .collect::<PyResult<_>>()?,
+        };
+        let values: Vec<Vec<&str>> = conditions
+            .iter()
+            .map(|(_, v)| v.iter().map(String::as_str).collect())
+            .collect();
+        let conditions: Vec<(&str, &[&str])> = conditions
+            .iter()
+            .zip(&values)
+            .map(|((k, _), v)| (k.as_str(), v.as_slice()))
+            .collect();
+        let mut out = self.inner.select(&conditions).map_err(err)?;
+        if let Some(columns) = columns {
+            let columns = names(columns)?;
+            let columns: Vec<&str> = columns.iter().map(String::as_str).collect();
+            out = out.select_columns(&columns).map_err(err)?;
+        }
+        Ok(wrap(out))
+    }
+
+    /// Sums the segments that share the values of ``keys``, dropping the
+    /// other keys.
+    ///
+    /// Cumulative values are summed cell by cell, and a cell is observed if
+    /// any segment in the group observes it. An incremental triangle is
+    /// summed as cumulative values and returned incremental.
+    ///
+    /// Parameters
+    /// ----------
+    /// keys : str or list of str
+    ///     The keys to keep, in the order the result has them. ``[]`` sums
+    ///     every segment into one, labelled ``"Total"``.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a key is unknown or named twice.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020, 2020],
+    /// ...     [12, 12, 12],
+    /// ...     {"paid": [1.0, 2.0, 3.0]},
+    /// ...     keys={"lob": ["Auto", "Auto", "Home"], "state": ["CA", "NY", "NY"]},
+    /// ... )
+    /// >>> by_lob = tri.group_by("lob")
+    /// >>> by_lob.index, by_lob.to_long()["paid"]
+    /// (['Auto', 'Home'], [3.0, 3.0])
+    /// >>> tri.group_by([]).to_long()["paid"]
+    /// [6.0]
+    fn group_by(&self, keys: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let keys = names(keys)?;
+        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+        self.inner.group_by(&keys).map(wrap).map_err(err)
     }
 
     /// The triangle at a coarser origin and/or development grain.
@@ -976,7 +1029,8 @@ impl PyChainLadder {
     /// Parameters
     /// ----------
     /// triangle : Triangle
-    ///     Cumulative or incremental; slice to one segment first.
+    ///     Cumulative or incremental, with one segment: ``select`` or
+    ///     ``group_by`` first.
     /// column : str
     ///
     /// Returns
@@ -1410,7 +1464,7 @@ impl PyOdpBootstrap {
     /// Parameters
     /// ----------
     /// triangle : Triangle
-    ///     Cumulative; slice to one segment first.
+    ///     Cumulative, with one segment: ``select`` or ``group_by`` first.
     /// column : str
     ///
     /// Returns
