@@ -30,6 +30,7 @@
 //! ```
 
 pub mod elpd;
+pub mod glm;
 
 use act_core::{Error, Result};
 use act_math::special::norm_quantile;

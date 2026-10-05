@@ -66,6 +66,8 @@ reference:
       - models.Design
       - models.Glm
       - models.GlmFit
+      - models.BayesGlm
+      - models.BayesGlmFit
       - models.ElasticNet
       - models.ElasticNetFit
       - models.CvPath

@@ -109,6 +109,21 @@ models and compares them.
   Bayesian chain ladder, credibility) will sample with nutpie's Rust core
   `nuts-rs`, so R gets NUTS too; Python users can hand nutpie traces of
   PyMC or Stan models to the same diagnostics and ELPD.
+- **Bayesian GLM** (`act_bayes::glm`): `BayesGlm` samples a GLM's
+  posterior with `nuts-rs` 0.19 (MIT): normal priors on the coefficients
+  (`intercept_sd`, `prior_sd`), and for the Gaussian, gamma and inverse
+  Gaussian a half-normal prior on the dispersion, sampled on the log scale
+  with an analytic gradient (`act_math::special::digamma` for the gamma).
+  Chains run on Rayon, start at the maximum-likelihood fit with a small
+  jitter, and replay exactly: chain `c` keys its ChaCha20 generator from
+  stream `c` of the seed. `BayesGlmFit` gives draws, a summary (mean, sd,
+  quantiles, R̂, bulk and tail ESS), divergences, the pointwise
+  log-likelihood, PSIS-LOO with `r_eff` from the chains, posterior-mean
+  predictions and posterior predictive draws. Parity
+  (`validation/scripts/bayes_glm_grid.py`): exact posterior moments by
+  grid integration for a Poisson with exposure and a Gaussian with
+  sampled dispersion; means within 0.1 posterior sd, sds within 8%.
+  Python `BayesGlm` / `BayesGlmFit`, R `bayes_glm_fit`, `bayes_loo`.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

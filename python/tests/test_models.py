@@ -306,3 +306,36 @@ def test_actual_vs_expected():
     assert g["periods"][0]["std_dev"] == pytest.approx(math.sqrt(0.5 * 4 * 5 ** 1.5))
     with pytest.raises(ValueError):
         actual_vs_expected(periods[:3], "poisson", y, [5.0] * 8)
+
+
+def test_bayes_glm():
+    from actuarialrs.models import BayesGlm, elpd_loo, stacking_weights
+
+    x = [(i % 4) - 1.5 for i in range(80)]
+    y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(80)]
+    d = Design([[1.0] * 80, x], ["(Intercept)", "x"])
+    spec = BayesGlm("poisson", chains=2, tune=300, draws=300, seed=4)
+    fit = spec.fit(d, y)
+    again = spec.fit(d, y)
+    assert fit.coefficient_draws == again.coefficient_draws
+    summary = fit.summary()
+    assert [s["name"] for s in summary] == ["(Intercept)", "x"]
+    assert all(s["rhat"] < 1.05 for s in summary)
+    mle = Glm("poisson").fit(d, y)
+    assert abs(fit.posterior_mean[1] - mle.coefficients[1]) < 0.5 * mle.std_errors[1]
+    assert len(fit.coefficient_draws) == 600 and fit.divergences == 0
+    loo = fit.loo(d, y)
+    assert len(loo.pointwise) == 80
+    ll = fit.log_likelihood(d, y)
+    assert len(ll) == 600 and len(ll[0]) == 80
+    assert elpd_loo(ll).elpd == pytest.approx(loo.elpd, abs=0.5)
+    pd = fit.predict_distribution(d, 200, 1)
+    assert pd.n_sims == 200
+    g = BayesGlm("gaussian", chains=2, tune=300, draws=300).fit(d, y)
+    assert g.summary()[-1]["name"] == "dispersion"
+    flat = BayesGlm("poisson", chains=2, tune=300, draws=300).fit(
+        Design([[1.0] * 80], ["(Intercept)"]), y)
+    w = stacking_weights([loo.pointwise, flat.loo(Design([[1.0] * 80], ["(Intercept)"]), y).pointwise])
+    assert w[0] > 0.9
+    with pytest.raises(ValueError):
+        BayesGlm("poisson", dispersion_scale=1.0, dispersion=None, draws=1).fit(d, y)

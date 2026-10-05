@@ -822,8 +822,155 @@ fn actual_vs_expected_rust(
     ))
 }
 
+/// A sampled Bayesian GLM, with its training data for LOO.
+#[extendr]
+pub(crate) struct BayesGlmModel {
+    inner: act_bayes::glm::BayesGlmFit,
+    training: (Design, Vec<f64>),
+}
+
+/// Samples a Bayesian GLM on the design `x` (column-major, columns
+/// `names`). `dispersion` NaN means the family default (sampled for the
+/// Gaussian, gamma and inverse Gaussian).
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn bayes_glm_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    family_name: &str,
+    link_name: &str,
+    theta: f64,
+    power: f64,
+    link_power: f64,
+    prior_sd: f64,
+    intercept_sd: f64,
+    dispersion: f64,
+    dispersion_scale: f64,
+    sampler: &[f64],
+) -> Result<BayesGlmModel> {
+    use act_bayes::glm::{BayesGlm, DispersionPrior, Sampler};
+    let f = family(family_name, theta, power)?;
+    let l = link(link_name, f, link_power)?;
+    let [chains, tune, draws, seed, target_accept, max_depth] = sampler else {
+        return Err(Error::Other("sampler needs six settings".into()));
+    };
+    let mut spec = BayesGlm::new(f, l).sampler(Sampler {
+        chains: whole(*chains, "chains")? as usize,
+        tune: whole(*tune, "tune")? as usize,
+        draws: whole(*draws, "draws")? as usize,
+        seed: whole(*seed, "seed")?,
+        target_accept: *target_accept,
+        max_depth: whole(*max_depth, "max_depth")?,
+    });
+    spec.prior_sd = prior_sd;
+    spec.intercept_sd = intercept_sd;
+    spec.dispersion = match spec.dispersion {
+        _ if !dispersion.is_nan() => DispersionPrior::Fixed(dispersion),
+        DispersionPrior::HalfNormal(_) => DispersionPrior::HalfNormal(dispersion_scale),
+        fixed => fixed,
+    };
+    let d = design(x, names, offset, weights)?;
+    let inner = spec.fit(&d, y).map_err(to_r)?;
+    Ok(BayesGlmModel {
+        inner,
+        training: (d, y.to_vec()),
+    })
+}
+
+#[extendr]
+impl BayesGlmModel {
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    fn posterior_mean(&self) -> Vec<f64> {
+        self.inner.posterior_mean()
+    }
+
+    /// Row-major `n_draws × p`.
+    fn coefficient_draws(&self) -> Vec<f64> {
+        self.inner.coefficient_draws().to_vec()
+    }
+
+    fn dispersion_draws(&self) -> Vec<f64> {
+        self.inner.dispersion_draws().to_vec()
+    }
+
+    fn chains(&self) -> f64 {
+        self.inner.chains() as f64
+    }
+
+    fn divergences(&self) -> f64 {
+        self.inner.divergences() as f64
+    }
+
+    fn summary(&self) -> Result<List> {
+        let s = self.inner.summary().map_err(to_r)?;
+        let col =
+            |g: fn(&act_bayes::glm::ParamSummary) -> f64| s.iter().map(g).collect::<Vec<f64>>();
+        Ok(list!(
+            parameter = s.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+            mean = col(|p| p.mean),
+            sd = col(|p| p.sd),
+            q05 = col(|p| p.q05),
+            q50 = col(|p| p.q50),
+            q95 = col(|p| p.q95),
+            rhat = col(|p| p.rhat),
+            ess_bulk = col(|p| p.ess_bulk),
+            ess_tail = col(|p| p.ess_tail)
+        ))
+    }
+
+    /// PSIS-LOO on the training data: `list(estimates, pointwise, pareto_k,
+    /// k_threshold)`.
+    fn loo(&self) -> Result<List> {
+        let (d, y) = &self.training;
+        let l = self.inner.loo(d, y).map_err(to_r)?;
+        let e = &l.estimate;
+        Ok(list!(
+            estimates = vec![e.elpd, e.se, e.p, e.ic],
+            pointwise = e.pointwise.clone(),
+            pareto_k = l.pareto_k,
+            k_threshold = l.k_threshold
+        ))
+    }
+
+    /// Training log-likelihood, row-major `n_draws × n`.
+    fn log_likelihood(&self) -> Result<Vec<f64>> {
+        let (d, y) = &self.training;
+        self.inner.log_likelihood(d, y).map_err(to_r)
+    }
+
+    fn predict(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        self.inner.predict(&d).map_err(to_r)
+    }
+
+    fn predict_distribution(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        weights: &[f64],
+        n_sims: f64,
+        seed: f64,
+    ) -> Result<PredictiveDistribution> {
+        let d = design(x, names, offset, weights)?;
+        let inner = self
+            .inner
+            .predict_distribution(&d, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
 extendr_module! {
     mod models;
+    fn bayes_glm_fit_design;
+    impl BayesGlmModel;
     fn actual_vs_expected_rust;
     fn stacking_weights_rust;
     fn pseudo_bma_weights_rust;

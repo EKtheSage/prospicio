@@ -51,6 +51,8 @@ blake3 = { version = "1.8.7", default-features = false, features = ["std", "pure
 # version bump must be a deliberate, reviewed change.
 rand_chacha = "=0.10.0"
 rand_core = "=0.10.1"
+# NUTS sampler: the Rust core of nutpie (MIT).
+nuts-rs = "0.19.0"
 rayon = "1.12.0"
 # FFT aggregation in act-aggregate. Pure Rust (SIMD via intrinsics, no C), so
 # it builds for the Windows R target and WASM.

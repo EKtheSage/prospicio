@@ -427,7 +427,118 @@ gam_model <- S7::new_class(
   }
 )
 
-for (cls in list(glm_model, gam_model)) {
+#' Fit a Bayesian GLM by NUTS
+#'
+#' Samples the posterior of a GLM with nuts-rs, the Rust core of nutpie.
+#' The design is R's `model.matrix()`, as for [glm_fit()]. Coefficients
+#' have normal priors with mean 0: standard deviation `intercept_sd` for the
+#' intercept and `prior_sd` for the rest (on the link scale; standardize
+#' covariates). For the Gaussian, gamma and inverse Gaussian the dispersion
+#' is sampled with a half-normal prior of scale `dispersion_scale`, unless
+#' `dispersion` fixes it. Chains run in parallel, start near the
+#' maximum-likelihood fit, and replay exactly from `seed`. Posterior means
+#' and standard deviations match exact grid integration
+#' (`validation/scripts/bayes_glm_grid.py`).
+#'
+#' @inheritParams glm_fit
+#' @param prior_sd,intercept_sd Prior standard deviations of the slopes and
+#'   the intercept.
+#' @param dispersion A fixed dispersion, or `NULL` for the family's default.
+#' @param dispersion_scale Scale of the half-normal prior on a sampled
+#'   dispersion.
+#' @param chains,tune,draws Chains, warm-up draws and kept draws per chain.
+#' @param seed Seed, a whole number.
+#' @param target_accept Target acceptance rate for step-size adaptation.
+#' @param max_depth Largest tree depth.
+#' @returns A `bayes_glm_model` with properties `coefficients` (posterior
+#'   means), `summary` (a data frame of mean, sd, quantiles, R-hat and ESS
+#'   per parameter), `draws` (a matrix, one row per draw), `dispersion_draws`
+#'   and `divergences`. Use [stats::coef()], [stats::predict()],
+#'   [predict_distribution()] and [bayes_loo()].
+#' @export
+#' @examples
+#' d <- data.frame(claims = rep(c(1, 2, 3, 5), 10), x = rep(c(-1.5, -0.5, 0.5, 1.5), 10))
+#' m <- bayes_glm_fit(claims ~ x, d, family = "poisson", chains = 2, tune = 300, draws = 300)
+#' m@summary
+bayes_glm_fit <- function(formula, data, family = "poisson", link = NULL, offset = NULL,
+                          weights = NULL, prior_sd = 2.5, intercept_sd = 10, dispersion = NULL,
+                          dispersion_scale = 10, chains = 4, tune = 1000, draws = 1000, seed = 0,
+                          target_accept = 0.8, max_depth = 10, theta = NULL, power = NULL,
+                          link_power = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  fa <- family_args(theta, power)
+  ptr <- rust_result(bayes_glm_fit_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
+    if (is.null(link)) "" else link, fa$theta, fa$power,
+    if (is.null(link_power)) NaN else as.double(link_power), as.double(prior_sd),
+    as.double(intercept_sd), if (is.null(dispersion)) NaN else as.double(dispersion),
+    as.double(dispersion_scale),
+    as.double(c(chains, tune, draws, seed, target_accept, max_depth))
+  ))
+  bayes_glm_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels)
+}
+
+#' Sampled Bayesian GLM (class)
+#'
+#' Returned by [bayes_glm_fit()].
+#'
+#' @param ptr,terms,xlevels Internal.
+#' @returns A `bayes_glm_model` object.
+#' @export
+bayes_glm_model <- S7::new_class(
+  "bayes_glm_model",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("BayesGlmModel"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$posterior_mean(), self@ptr$names())
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(self@ptr$summary())
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$names()
+      matrix(self@ptr$coefficient_draws(), ncol = length(nm), byrow = TRUE,
+             dimnames = list(NULL, nm))
+    }),
+    dispersion_draws = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$dispersion_draws()
+    }),
+    divergences = S7::new_property(S7::class_double, getter = function(self) self@ptr$divergences())
+  ),
+  constructor = function(ptr, terms, xlevels) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels)
+  }
+)
+
+S7::method(print, bayes_glm_model) <- function(x, ...) {
+  cat(sprintf("<bayes_glm_model> %d chains, %d divergences\n", as.integer(x@ptr$chains()),
+              as.integer(x@divergences)))
+  print(x@summary)
+  invisible(x)
+}
+
+#' PSIS-LOO of a Bayesian GLM
+#'
+#' Leave-one-out expected log predictive density on the training data, by
+#' Pareto-smoothed importance sampling ([elpd_loo()]), with each
+#' observation's relative efficiency estimated from the chains. Its
+#' `pointwise` values feed [stacking_weights()].
+#'
+#' @param model A [bayes_glm_model].
+#' @returns As [elpd_loo()].
+#' @export
+#' @examples
+#' d <- data.frame(claims = rep(c(1, 2, 3, 5), 10), x = rep(c(-1.5, -0.5, 0.5, 1.5), 10))
+#' m <- bayes_glm_fit(claims ~ x, d, family = "poisson", chains = 2, tune = 300, draws = 300)
+#' bayes_loo(m)$estimates
+bayes_loo <- function(model) {
+  elpd_result(rust_result(model@ptr$loo()))
+}
+
+for (cls in list(glm_model, gam_model, bayes_glm_model)) {
   S7::method(coef, cls) <- function(object, ...) object@coefficients
   S7::method(predict, cls) <- function(object, newdata, offset = NULL, ...) {
     nd <- new_design(object, newdata, offset)
@@ -444,7 +555,8 @@ for (cls in list(glm_model, gam_model)) {
 #' so its draws hold the coefficients fixed (process uncertainty only) and
 #' take a `lambda` from its path.
 #'
-#' @param object A [glm_model], [elastic_net_model] or [gam_model].
+#' @param object A [glm_model], [elastic_net_model], [gam_model] or
+#'   [bayes_glm_model] (posterior predictive draws).
 #' @param newdata A data frame with the model's terms.
 #' @param n_sims Number of simulations.
 #' @param seed Generator seed.
@@ -463,7 +575,7 @@ predict_distribution <- S7::new_generic(
   function(object, newdata, n_sims, seed, ...) S7::S7_dispatch()
 )
 
-for (cls in list(glm_model, gam_model)) {
+for (cls in list(glm_model, gam_model, bayes_glm_model)) {
   S7::method(predict_distribution, cls) <- function(object, newdata, n_sims, seed,
                                                      offset = NULL, weights = NULL, ...) {
     nd <- new_design(object, newdata, offset)

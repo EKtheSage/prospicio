@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 from .actuarialrs_native import (
     actual_vs_expected,
+    BayesGlm,
+    BayesGlmFit,
     Coding,
     CvPath,
     Design,
@@ -78,6 +80,8 @@ __all__ = [
     "stacking_weights",
     "pseudo_bma_weights",
     "actual_vs_expected",
+    "BayesGlm",
+    "BayesGlmFit",
 ]
 
 

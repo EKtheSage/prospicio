@@ -2077,3 +2077,248 @@ pub(crate) fn actual_vs_expected<'py>(
     out.set_item("trend_z", m.trend_z())?;
     Ok(out)
 }
+
+/// A Bayesian GLM sampled with NUTS (nuts-rs, the Rust core of nutpie).
+///
+/// Normal priors with mean 0 on the coefficients: standard deviation
+/// ``intercept_sd`` for an all-ones column, ``prior_sd`` for the others
+/// (on the link scale; standardize covariates). For the Gaussian, gamma
+/// and inverse Gaussian the dispersion is sampled too, with a half-normal
+/// prior of scale ``dispersion_scale``, unless ``dispersion`` fixes it.
+/// Chains run in parallel, start near the maximum-likelihood fit, and
+/// replay exactly from ``seed``.
+///
+/// Parameters
+/// ----------
+/// family : str
+/// link : str, optional
+/// prior_sd : float, default 2.5
+/// intercept_sd : float, default 10.0
+/// dispersion : float, optional
+///     A fixed dispersion; 1 by default for the Poisson, binomial and
+///     negative binomial. A Tweedie needs one.
+/// dispersion_scale : float, default 10.0
+/// chains, tune, draws : int, default 4, 1000, 1000
+/// seed : int, default 0
+/// target_accept : float, default 0.8
+/// max_depth : int, default 10
+/// theta, power, link_power : float, optional
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import BayesGlm, Design
+/// >>> x = [(i % 4) - 1.5 for i in range(40)]
+/// >>> y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(40)]
+/// >>> d = Design([[1.0] * 40, x], ["(Intercept)", "x"])
+/// >>> fit = BayesGlm("poisson", chains=2, tune=300, draws=300).fit(d, y)
+/// >>> all(s["rhat"] < 1.05 for s in fit.summary())
+/// True
+#[pyclass(name = "BayesGlm", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyBayesGlm {
+    inner: act_bayes::glm::BayesGlm,
+}
+
+#[pymethods]
+impl PyBayesGlm {
+    #[new]
+    #[pyo3(signature = (family, link = None, prior_sd = 2.5, intercept_sd = 10.0, dispersion = None, dispersion_scale = 10.0, chains = 4, tune = 1000, draws = 1000, seed = 0, target_accept = 0.8, max_depth = 10, theta = None, power = None, link_power = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        family: &str,
+        link: Option<&str>,
+        prior_sd: f64,
+        intercept_sd: f64,
+        dispersion: Option<f64>,
+        dispersion_scale: f64,
+        chains: usize,
+        tune: usize,
+        draws: usize,
+        seed: u64,
+        target_accept: f64,
+        max_depth: u64,
+        theta: Option<f64>,
+        power: Option<f64>,
+        link_power: Option<f64>,
+    ) -> PyResult<Self> {
+        use act_bayes::glm::{BayesGlm, DispersionPrior, Sampler};
+        let f = self::family(family, theta, power)?;
+        let l = self::link(link, f, link_power)?;
+        let mut inner = BayesGlm::new(f, l).sampler(Sampler {
+            chains,
+            tune,
+            draws,
+            seed,
+            target_accept,
+            max_depth,
+        });
+        inner.prior_sd = prior_sd;
+        inner.intercept_sd = intercept_sd;
+        inner.dispersion = match (dispersion, inner.dispersion) {
+            (Some(v), _) => DispersionPrior::Fixed(v),
+            (None, DispersionPrior::HalfNormal(_)) => DispersionPrior::HalfNormal(dispersion_scale),
+            (None, fixed) => fixed,
+        };
+        Ok(Self { inner })
+    }
+
+    /// Samples the posterior.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// BayesGlmFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyBayesGlmFit> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &y)).map_err(to_py)?;
+        Ok(PyBayesGlmFit { inner })
+    }
+}
+
+/// A sampled Bayesian GLM, from ``BayesGlm.fit``.
+#[pyclass(name = "BayesGlmFit", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyBayesGlmFit {
+    inner: act_bayes::glm::BayesGlmFit,
+}
+
+#[pymethods]
+impl PyBayesGlmFit {
+    /// Coefficient names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// Posterior means of the coefficients.
+    #[getter]
+    fn posterior_mean(&self) -> Vec<f64> {
+        self.inner.posterior_mean()
+    }
+
+    /// Coefficient draws, one row per draw (chain by chain).
+    #[getter]
+    fn coefficient_draws(&self) -> Vec<Vec<f64>> {
+        let p = self.inner.names().len();
+        self.inner
+            .coefficient_draws()
+            .chunks(p)
+            .map(<[f64]>::to_vec)
+            .collect()
+    }
+
+    /// Dispersion draws, one per draw (constant when fixed).
+    #[getter]
+    fn dispersion_draws(&self) -> Vec<f64> {
+        self.inner.dispersion_draws().to_vec()
+    }
+
+    /// Number of chains.
+    #[getter]
+    fn chains(&self) -> usize {
+        self.inner.chains()
+    }
+
+    /// Divergent transitions among the kept draws.
+    #[getter]
+    fn divergences(&self) -> usize {
+        self.inner.divergences()
+    }
+
+    /// Posterior summary: one dict per parameter with ``name``, ``mean``,
+    /// ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and
+    /// ``ess_tail``; the dispersion last when it was sampled.
+    ///
+    /// Returns
+    /// -------
+    /// list of dict
+    fn summary<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        self.inner
+            .summary()
+            .map_err(to_py)?
+            .into_iter()
+            .map(|s| {
+                let d = pyo3::types::PyDict::new(py);
+                d.set_item("name", s.name)?;
+                d.set_item("mean", s.mean)?;
+                d.set_item("sd", s.sd)?;
+                d.set_item("q05", s.q05)?;
+                d.set_item("q50", s.q50)?;
+                d.set_item("q95", s.q95)?;
+                d.set_item("rhat", s.rhat)?;
+                d.set_item("ess_bulk", s.ess_bulk)?;
+                d.set_item("ess_tail", s.ess_tail)?;
+                Ok(d)
+            })
+            .collect()
+    }
+
+    /// Pointwise log-likelihood of ``y`` given ``design``: one row per draw,
+    /// one column per observation, for ``elpd_loo`` or ``elpd_waic``.
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    fn log_likelihood(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let n = y.len().max(1);
+        let ll = py.detach(|| fit.log_likelihood(d, &y)).map_err(to_py)?;
+        Ok(ll.chunks(n).map(<[f64]>::to_vec).collect())
+    }
+
+    /// PSIS-LOO of ``y`` given ``design``, with each observation's relative
+    /// efficiency estimated from the chains.
+    ///
+    /// Returns
+    /// -------
+    /// Elpd
+    fn loo(&self, py: Python<'_>, design: PyRef<'_, PyDesign>, y: Vec<f64>) -> PyResult<PyElpd> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let l = py.detach(|| fit.loo(d, &y)).map_err(to_py)?;
+        Ok(PyElpd {
+            inner: l.estimate,
+            pareto_k: Some(l.pareto_k),
+            k_threshold: Some(l.k_threshold),
+        })
+    }
+
+    /// Posterior mean of each row's mean.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn predict(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        self.inner.predict(&design.inner).map_err(to_py)
+    }
+
+    /// Posterior predictive draws across the rows, keyed ``row = 0, 1, ...``.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn predict_distribution(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        n_sims: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+}
