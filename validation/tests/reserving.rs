@@ -434,3 +434,154 @@ fn odp_glm_predictive_distribution_matches_its_mean() {
         }
     }
 }
+
+/// Rows of a two-key (lob × coverage) long table with paid and incurred:
+/// Auto from RAA and Home from GenIns (scaled), with origins re-based to
+/// 2011, each coverage a different share of the line. Returns the key
+/// columns, origins, ages, paid and incurred.
+type KeyedRows = (
+    Vec<&'static str>,
+    Vec<&'static str>,
+    Vec<Month>,
+    Vec<u32>,
+    Vec<f64>,
+    Vec<f64>,
+);
+
+fn lob_coverage_rows() -> KeyedRows {
+    let mut rows: KeyedRows = Default::default();
+    for (lob, dataset, scale) in [("Auto", "raa", 1.0), ("Home", "genins", 1e-3)] {
+        let long = triangle(dataset).to_long();
+        let first = long.origin[0].year();
+        for (coverage, share) in [("BI", 0.7), ("PD", 0.3)] {
+            for (k, ((origin, &age), &paid)) in long
+                .origin
+                .iter()
+                .zip(&long.development)
+                .zip(&long.values[0].1)
+                .enumerate()
+            {
+                // A coverage-specific tilt by origin so the segments develop
+                // differently.
+                let tilt = 1.0 + share * (origin.year() - first) as f64 / 20.0;
+                let paid = paid * scale * share * tilt;
+                rows.0.push(lob);
+                rows.1.push(coverage);
+                rows.2.push(Month::january(2011 + origin.year() - first));
+                rows.3.push(age);
+                rows.4.push(paid);
+                rows.5.push(paid * 1.2 + 10.0 * (k % 3) as f64);
+            }
+        }
+    }
+    rows
+}
+
+fn keyed_triangle(rows: &KeyedRows, keys: &[(&str, &[&str])]) -> Triangle {
+    Triangle::from_long(&Long {
+        keys,
+        origin: &rows.2,
+        development: DevelopmentColumn::Age(&rows.3),
+        values: &[("paid", &rows.4), ("incurred", &rows.5)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap()
+}
+
+#[test]
+fn select_and_group_by_on_lob_and_coverage() {
+    let rows = lob_coverage_rows();
+    let tri = keyed_triangle(&rows, &[("lob", &rows.0), ("coverage", &rows.1)]);
+    assert_eq!(tri.shape(), [4, 2, 10, 10]);
+
+    // Selecting one segment equals building it alone.
+    let auto_bi = tri
+        .select(&[("lob", &["Auto"]), ("coverage", &["BI"])])
+        .unwrap();
+    let keep: Vec<usize> = (0..rows.0.len())
+        .filter(|&r| rows.0[r] == "Auto" && rows.1[r] == "BI")
+        .collect();
+    let pick = |c: &[f64]| keep.iter().map(|&r| c[r]).collect::<Vec<_>>();
+    let alone = Triangle::from_long(&Long {
+        keys: &[
+            ("lob", &vec!["Auto"; keep.len()]),
+            ("coverage", &vec!["BI"; keep.len()]),
+        ],
+        origin: &keep.iter().map(|&r| rows.2[r]).collect::<Vec<_>>(),
+        development: DevelopmentColumn::Age(&keep.iter().map(|&r| rows.3[r]).collect::<Vec<_>>()),
+        values: &[("paid", &pick(&rows.4)), ("incurred", &pick(&rows.5))],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap();
+    assert_eq!(auto_bi, alone);
+    let bi = tri.select(&[("coverage", &["BI"])]).unwrap();
+    assert_eq!(bi.shape()[0], 2);
+
+    // Grouping equals building with fewer keys (from_long sums the rows),
+    // and its totals are the sums of the segments'.
+    let by_lob = tri.group_by(&["lob"]).unwrap();
+    assert_eq!(by_lob, keyed_triangle(&rows, &[("lob", &rows.0)]));
+    let total = tri.group_by(&[]).unwrap();
+    assert_eq!(total, keyed_triangle(&rows, &[]));
+    let diagonal = |t: &Triangle, c: usize| -> f64 {
+        let d = t.latest_diagonal();
+        (0..t.shape()[0])
+            .map(|i| d.values(i, c).iter().sum::<f64>())
+            .sum()
+    };
+    for c in 0..2 {
+        let segments = diagonal(&tri, c);
+        assert!((diagonal(&by_lob, c) - segments).abs() < 1e-6 * segments);
+        assert!((diagonal(&total, c) - segments).abs() < 1e-6 * segments);
+    }
+
+    // Chain ladder on a group equals chain ladder on the summed triangle.
+    let auto = by_lob.select(&[("lob", &["Auto"])]).unwrap();
+    let auto_rows: Vec<usize> = (0..rows.0.len()).filter(|&r| rows.0[r] == "Auto").collect();
+    let summed = Triangle::from_long(&Long {
+        keys: &[],
+        origin: &auto_rows.iter().map(|&r| rows.2[r]).collect::<Vec<_>>(),
+        development: DevelopmentColumn::Age(
+            &auto_rows.iter().map(|&r| rows.3[r]).collect::<Vec<_>>(),
+        ),
+        values: &[
+            (
+                "paid",
+                &auto_rows.iter().map(|&r| rows.4[r]).collect::<Vec<_>>(),
+            ),
+            (
+                "incurred",
+                &auto_rows.iter().map(|&r| rows.5[r]).collect::<Vec<_>>(),
+            ),
+        ],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap();
+    for column in ["paid", "incurred"] {
+        let grouped = ChainLadder::default().fit(&auto, column).unwrap();
+        let direct = ChainLadder::default().fit(&summed, column).unwrap();
+        for (a, b) in grouped.ultimate.iter().zip(&direct.ultimate) {
+            assert!((a - b).abs() <= 1e-9 * b.abs(), "{column}: {a} vs {b}");
+        }
+        assert_eq!(grouped.development.ldf, direct.development.ldf);
+    }
+    let all = ChainLadder::default().fit(&total, "paid").unwrap();
+    let direct = ChainLadder::default()
+        .fit(&keyed_triangle(&rows, &[]), "paid")
+        .unwrap();
+    assert_eq!(all.ultimate, direct.ultimate);
+
+    // Fitting needs one segment.
+    assert!(ChainLadder::default().fit(&tri, "paid").is_err());
+    // Errors by name.
+    assert!(tri.select(&[("line", &["Auto"])]).is_err());
+    assert!(tri.select(&[("coverage", &["GL"])]).is_err());
+    assert!(tri.select_columns(&["reported"]).is_err());
+    assert!(tri.group_by(&["coverage", "coverage"]).is_err());
+}

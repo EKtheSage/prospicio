@@ -127,7 +127,7 @@ stopifnot(identical(names(long), c("origin", "development", "value")),
           inherits(long$origin, "Date"), nrow(long) == 55)
 back <- triangle(long, "origin", "development", "value")
 stopifnot(identical(back@values, raa@values), identical(back@origins, raa@origins))
-stopifnot(identical(subset(raa, index = "Total")@values, raa@values))
+stopifnot(identical(subset(raa)@values, raa@values), identical(aggregate(raa)@values, raa@values))
 
 # Incremental and cumulative.
 inc <- to_incremental(raa)
@@ -150,7 +150,7 @@ stopifnot(identical(triangle(by_year, "origin", "development", "value",
                              development_is_valuation = TRUE)@values,
                     raa@values))
 
-# Several key columns and value columns; subset.
+# Several key columns and value columns; subset and aggregate by name.
 two <- rbind(transform(raw, lob = "auto", state = "CA", paid = value, incurred = 1.5 * value),
              transform(raw, lob = "home", state = "NY", paid = 2 * value, incurred = 3 * value))
 multi <- triangle(two, "origin", "development", c("paid", "incurred"), keys = c("lob", "state"))
@@ -160,14 +160,10 @@ stopifnot(
   identical(multi@index, data.frame(lob = c("auto", "home"), state = c("CA", "NY"))),
   identical(dimnames(multi@values)$index, c("auto / CA", "home / NY"))
 )
-home <- subset(multi, index = list(c("home", "NY")), columns = "incurred")
+home <- subset(multi, lob = "home", state = "NY", columns = "incurred")
 near(home@values[!is.na(home@values)], 3 * raa@values[!is.na(raa@values)])
-swapped <- subset(multi, index = data.frame(lob = c("home", "auto"), state = c("NY", "CA")))
-stopifnot(identical(swapped@index$lob, c("home", "auto")), identical(swapped@keys, c("lob", "state")))
-# data.frame columns are matched to the keys by name, not position.
-by_name <- subset(multi, index = data.frame(state = "CA", lob = "auto"))
-stopifnot(identical(by_name@index, data.frame(lob = "auto", state = "CA")))
-expect_error_like(subset(multi, index = data.frame(lob = "auto")), "index columns must be the keys")
+both <- subset(multi, state = c("NY", "CA"))
+stopifnot(identical(both@index$lob, c("auto", "home")), identical(both@keys, c("lob", "state")))
 multi_long <- as.data.frame(multi)
 stopifnot(identical(names(multi_long), c("lob", "state", "origin", "development", "paid", "incurred")))
 again <- triangle(multi_long, "origin", "development", c("paid", "incurred"), keys = multi@keys)
@@ -181,8 +177,66 @@ by_company <- triangle(coded, "origin", "development", "value", keys = "company"
 stopifnot(identical(by_company@index$company, c("7", "8")),
           identical(as.data.frame(by_company)$company[1], "7"))
 one <- triangle(two, "origin", "development", "paid", keys = "lob")
-near(chain_ladder(subset(one, index = "home"))@total_reserve, 2 * chain_ladder(raa)@total_reserve,
+near(chain_ladder(subset(one, lob = "home"))@total_reserve, 2 * chain_ladder(raa)@total_reserve,
      1e-12)
+
+# Two keys (lob x coverage) with paid and incurred, as in the Python and
+# Rust tests: Auto from RAA and Home from GenIns (scaled), origins re-based
+# to 2011, each coverage a share of the line with its own tilt by origin.
+lob_coverage <- do.call(rbind, lapply(list(list("Auto", "raa", 1), list("Home", "genins", 1e-3)), function(l) {
+  rows <- read_long(l[[2]])
+  offset <- rows$origin - min(rows$origin)
+  do.call(rbind, lapply(list(list("BI", 0.7), list("PD", 0.3)), function(cv) {
+    paid <- rows$value * l[[3]] * cv[[2]] * (1 + cv[[2]] * offset / 20)
+    data.frame(lob = l[[1]], coverage = cv[[1]], year = 2011 + offset, age = rows$development,
+               paid = paid, incurred = paid * 1.2 + 10 * ((seq_along(paid) - 1) %% 3))
+  }))
+}))
+measures <- c("paid", "incurred")
+lc <- triangle(lob_coverage, "year", "age", measures, keys = c("lob", "coverage"))
+stopifnot(identical(unname(lc@shape), c(4L, 2L, 10L, 10L)))
+# Selection by name: one value or several per key, ANDed across keys.
+stopifnot(
+  identical(subset(lc, lob = "Auto", coverage = "BI")@index, data.frame(lob = "Auto", coverage = "BI")),
+  identical(subset(lc, lob = "Auto", coverage = c("PD", "BI"))@index$coverage, c("BI", "PD")),
+  identical(subset(lc, coverage = "BI", columns = c("incurred", "paid"))@columns, c("incurred", "paid")),
+  identical(subset(lc, coverage = "BI")@index$lob, c("Auto", "Home")),
+  identical(unname(subset(lc, columns = "paid")@shape), c(4L, 1L, 10L, 10L))
+)
+# Grouping equals building with fewer keys; totals are sums of segments.
+by_lob <- aggregate(lc, keep = "lob")
+stopifnot(identical(by_lob@keys, "lob"), identical(by_lob@index, data.frame(lob = c("Auto", "Home"))))
+stopifnot(identical(by_lob@values, triangle(lob_coverage, "year", "age", measures, keys = "lob")@values))
+total <- aggregate(lc)
+stopifnot(identical(total@keys, character()),
+          identical(total@values, triangle(lob_coverage, "year", "age", measures)@values))
+for (m in measures) {
+  segments <- sum(latest_diagonal(lc)[, m, ])
+  near(sum(latest_diagonal(by_lob)[, m, ]), segments, 1e-12)
+  near(sum(latest_diagonal(total)[, m, ]), segments, 1e-12)
+}
+stopifnot(identical(aggregate(lc, keep = c("coverage", "lob"))@index[1, ],
+                    data.frame(coverage = "BI", lob = "Auto")))
+# Chain ladder on a group equals chain ladder on the summed triangle.
+summed <- triangle(lob_coverage[lob_coverage$lob == "Auto", ], "year", "age", measures)
+for (m in measures) {
+  grouped <- chain_ladder(subset(by_lob, lob = "Auto"), m)
+  direct <- chain_ladder(summed, m)
+  near(grouped@ultimate, direct@ultimate)
+  near(grouped@ldf, direct@ldf)
+}
+# Incremental triangles are summed as cumulative values.
+stopifnot(identical(aggregate(to_incremental(lc), keep = "lob")@values, to_incremental(by_lob)@values))
+expect_error_like(subset(lc, line = "Auto"), "no key named line")
+expect_error_like(subset(lc, coverage = "GL"), "no segment has coverage = \"GL\"")
+expect_error_like(subset(lc, lob = c("Auto", "Auto")), "supplied twice")
+expect_error_like(subset(lc, lob = character()), "at least one value")
+expect_error_like(subset(lc, lob = "Home", columns = "reported"), "no column named reported")
+expect_error_like(subset(lc, "Auto"), "must be named by key")
+expect_error_like(subset(lc, lob = "Auto", lob = "Home"), "key lob is supplied twice")
+expect_error_like(aggregate(lc, keep = "line"), "no key named line")
+expect_error_like(aggregate(lc, keep = c("lob", "lob")), "key lob is supplied twice")
+expect_error_like(chain_ladder(by_lob, "paid"), "select one or group_by")
 
 # Grain: quarterly origins and ages to annual origins.
 q <- data.frame(
@@ -204,9 +258,9 @@ stopifnot(ya@development_grain == "Y", identical(ya@values, grain(qt, "Y", "Y")@
 stopifnot(identical(grain(raa, "Y", "Y")@values, raa@values))
 
 # Errors are ordinary R errors carrying the Rust message.
-expect_error_like(chain_ladder(multi, "paid"), "slice to one")
+expect_error_like(chain_ladder(multi, "paid"), "select one or group_by")
 expect_error_like(chain_ladder(multi), "several columns")
-expect_error_like(chain_ladder(raa, "paid"), "no column or index named paid")
+expect_error_like(chain_ladder(raa, "paid"), "no column named paid")
 expect_error_like(chain_ladder(raa, tail = 0), "tail factor 0")
 expect_error_like(chain_ladder(raa, average = "median"), "should be one of")
 expect_error_like(chain_ladder(raa, tail = NA), "tail must be a single number")
@@ -220,7 +274,7 @@ expect_error_like(grain(qt, "X"), "origin_grain must be")
 expect_error_like(grain(qt), "origin_grain")
 expect_error_like(grain(raa, "Q", "Q"), "invalid grain change")
 expect_error_like(subset(multi, columns = c("paid", "paid")), "supplied twice")
-expect_error_like(subset(multi, index = "nope"), "no column or index named nope")
+expect_error_like(subset(multi, lob = "nope"), "no segment has lob = \"nope\"")
 expect_error_like(mack(raa, sigma_interpolation = "x"), "should be one of")
 short <- triangle(data.frame(y = c(2020, 2020, 2021), d = c(12, 24, 12), v = c(1, 2, 3)), "y", "d", "v")
 expect_error_like(mack(short), "at least 3 development ages")
@@ -301,8 +355,8 @@ expect_error_like(odp_bootstrap(raa, process = "poisson"), "should be one of")
 expect_error_like(odp_bootstrap(raa, n_sims = 0), "n_sims must be positive")
 expect_error_like(odp_bootstrap(raa, n_sims = 1.5), "n_sims must be a non-negative whole number")
 expect_error_like(odp_bootstrap(raa, seed = NA), "seed must be a single number")
-expect_error_like(odp_bootstrap(multi, "paid", n_sims = 10), "slice to one")
-expect_error_like(odp_bootstrap(raa, "paid", n_sims = 10), "no column or index named paid")
+expect_error_like(odp_bootstrap(multi, "paid", n_sims = 10), "select one or group_by")
+expect_error_like(odp_bootstrap(raa, "paid", n_sims = 10), "no column named paid")
 tiny <- triangle(data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), paid = c(1, 2, 1)),
                  "year", "age", "paid")
 expect_error_like(odp_bootstrap(tiny, n_sims = 10), "degrees of freedom")

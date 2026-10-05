@@ -24,23 +24,6 @@ year_month <- function(x, arg, month) {
 # First day of each (year, month).
 month_start <- function(year, month) as.Date(sprintf("%04d-%02d-01", year, month))
 
-# Index labels as a list of character vectors (one per label): from a
-# character vector of one-part labels, a list of parts, or a data.frame
-# with one row per label and one column per key, matched to `keys` by name.
-label_list <- function(index, keys) {
-  if (is.data.frame(index)) {
-    if (!setequal(names(index), keys) || anyDuplicated(names(index))) {
-      stop("index columns must be the keys: ", toString(keys), call. = FALSE)
-    }
-    parts <- lapply(index[keys], as.character)
-    lapply(seq_len(nrow(index)), function(r) vapply(parts, `[`, "", r, USE.NAMES = FALSE))
-  } else if (is.list(index)) {
-    lapply(index, as.character)
-  } else {
-    as.list(as.character(index))
-  }
-}
-
 #' Loss triangle
 #'
 #' A loss triangle with four axes, in chainladder-python's order: index
@@ -91,7 +74,7 @@ label_list <- function(index, keys) {
 #' @param ptr A `Triangle` pointer; used internally.
 #' @returns A `triangle` object.
 #' @seealso [chain_ladder()], [mack()], [to_incremental()], [grain()],
-#'   [subset()][subset.triangle].
+#'   [subset()][subset.triangle], [aggregate()][aggregate.triangle].
 #' @export
 #' @examples
 #' long <- data.frame(
@@ -234,34 +217,87 @@ S7::method(as.data.frame, triangle) <- function(x, ...) {
   as.data.frame(out, stringsAsFactors = FALSE, optional = TRUE)
 }
 
-#' Subset a triangle
+#' Select segments and columns of a triangle by name
 #'
-#' Keeps the named index positions and columns, in the order given. Naming
-#' a label or column twice, or one that does not exist, is an error.
+#' Keeps the segments whose key values match and the measure columns named:
+#' `subset(tri, lob = "auto", state = c("CA", "NY"), columns = "paid")`.
+#' Each key argument gives the values to keep (compared as character, as
+#' keys are stored); segments must match every key argument and keep their
+#' order. Columns are kept in the order given. This is Python's
+#' `Triangle.select(columns=None, **keys)`.
+#'
+#' The method is on base R's [subset()] generic rather than a new verb, so
+#' it does not mask `dplyr::filter()` or `dplyr::select()`. A key named `x`
+#' or `columns` cannot be selected this way.
+#'
+#' Errors: a key, value or column that does not exist or is given twice, an
+#' empty set of values, an unnamed argument, or a selection that matches no
+#' segment.
 #'
 #' @param x A [triangle].
-#' @param index Index labels to keep, or `NULL` for all: a character vector
-#'   of labels for a triangle with one key, a list of character vectors (the
-#'   key values of each label, in key order), or a data.frame with one row
-#'   per label and one column per key, matched by name, as `x@index` gives. A triangle without keys has the one label `"Total"`.
-#' @param columns Column names to keep, or `NULL` for all.
-#' @param ... Unused.
+#' @param ... Key conditions as `key = values`.
+#' @param columns Column names to keep, in order, or `NULL` for all.
 #' @returns A [triangle].
+#' @seealso [aggregate()][aggregate.triangle] to sum segments over keys.
 #' @name subset.triangle
 #' @examples
 #' long <- data.frame(lob = rep(c("auto", "home"), each = 3), year = c(2020, 2020, 2021),
 #'                    age = c(12, 24, 12), paid = 1:6, incurred = 2 * (1:6))
 #' tri <- triangle(long, "year", "age", c("paid", "incurred"), keys = "lob")
-#' subset(tri, index = "home", columns = "incurred")@values
+#' subset(tri, lob = "home", columns = "incurred")@values
+#' subset(tri, columns = c("incurred", "paid"))@columns
 NULL
 
-S7::method(subset, triangle) <- function(x, index = NULL, columns = NULL, ...) {
-  labels <- if (is.null(index)) NULL else label_list(index, x@keys)
-  cols <- if (is.null(columns)) NULL else as.character(columns)
+S7::method(subset, triangle) <- function(x, ..., columns = NULL) {
   # Name the generic in errors, not the S7-registered method.
   call <- sys.call()
   call[[1]] <- quote(subset)
-  new_triangle(x, rust_result(x@ptr$slice(labels, cols), call = call))
+  conditions <- list(...)
+  keys <- names(conditions)
+  if (length(conditions) && (is.null(keys) || any(keys == ""))) {
+    stop("subset() conditions must be named by key, as in lob = \"auto\"", call. = FALSE)
+  }
+  values <- lapply(unname(conditions), as.character)
+  cols <- if (is.null(columns)) NULL else as.character(columns)
+  new_triangle(x, rust_result(x@ptr$select(as.character(keys), values, cols), call = call))
+}
+
+#' Sum a triangle over keys
+#'
+#' Sums the segments that share the values of the `keep` keys and drops the
+#' other keys: `aggregate(tri, keep = "lob")` sums states within each line,
+#' and the default `keep = character()` sums every segment into one. The
+#' result has the `keep` keys in the order given and its segments sorted by
+#' them. Cumulative values are summed cell by cell, and a cell is observed
+#' if any segment in the group observes it; an incremental triangle is
+#' summed as cumulative values and returned incremental. This is Python's
+#' `Triangle.group_by(keys)`.
+#'
+#' The method is on [stats::aggregate()], the generic this package already
+#' uses for the same operation on a [predictive_distribution] (also with
+#' `keep`), rather than `group_by()`, which would mask dplyr's lazy
+#' grouping verb of a different meaning.
+#'
+#' @param x A [triangle].
+#' @param keep Names of the keys to keep; unknown or repeated keys are an
+#'   error.
+#' @param ... Unused.
+#' @returns A [triangle].
+#' @seealso [subset()][subset.triangle] to select segments by key value.
+#' @name aggregate.triangle
+#' @examples
+#' long <- data.frame(lob = c("auto", "auto", "home"), state = c("CA", "NY", "NY"),
+#'                    year = 2020, age = 12, paid = c(1, 2, 3))
+#' tri <- triangle(long, "year", "age", "paid", keys = c("lob", "state"))
+#' aggregate(tri, keep = "lob")@index
+#' as.data.frame(aggregate(tri, keep = "lob"))
+#' aggregate(tri)@values[1, "paid", , ]
+NULL
+
+S7::method(aggregate, triangle) <- function(x, keep = character(), ...) {
+  call <- sys.call()
+  call[[1]] <- quote(aggregate)
+  new_triangle(x, rust_result(x@ptr$group_by(as.character(keep)), call = call))
 }
 
 check_triangle <- function(x) {
@@ -432,7 +468,8 @@ development_args <- function(average, sigma_interpolation) {
 #' `as.data.frame()` gives the per-origin table.
 #'
 #' @param triangle A single-segment [triangle] (use
-#'   [subset()][subset.triangle] first if it has several index positions).
+#'   [subset()][subset.triangle] or [aggregate()][aggregate.triangle] first if
+#'   it has several segments).
 #' @param column Name of the column to fit; by default the only one.
 #' @param average `"volume"`, `"simple"` or `"regression"`.
 #' @param sigma_interpolation How a variance parameter that cannot be

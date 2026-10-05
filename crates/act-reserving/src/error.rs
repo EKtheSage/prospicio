@@ -22,8 +22,8 @@ pub enum Error {
     DuplicateKey(String),
     /// A key column and a value column share a name.
     KeyClash(String),
-    /// An index label is named twice.
-    DuplicateLabel(String),
+    /// A key value is given twice in a selection.
+    DuplicateKeyValue { key: String, value: String },
     /// A value is infinite (NaN marks a missing value).
     NonFinite { column: String, row: usize },
     /// A development age is zero, or a valuation is before its origin starts.
@@ -31,9 +31,18 @@ pub enum Error {
     /// A development age is not on the triangle's development grid (a whole
     /// number of development periods from the youngest age).
     OffGrid { row: usize, age: u32 },
-    /// No column or index position has this name.
-    UnknownLabel(String),
-    /// A method needs a triangle with a single index position; slice first.
+    /// No measure column has this name.
+    UnknownColumn(String),
+    /// No key column has this name.
+    UnknownKey(String),
+    /// No segment has this value of the key.
+    UnknownKeyValue { key: String, value: String },
+    /// A selection matches no segment.
+    NoSegments,
+    /// A selection lists no values for a key, or no columns.
+    EmptySelection,
+    /// A method needs a triangle with a single segment; select or group
+    /// first.
     MultipleSegments(usize),
     /// A grain change that is not a coarsening of the current grain.
     InvalidGrain(&'static str),
@@ -65,7 +74,9 @@ impl fmt::Display for Error {
             Self::DuplicateColumn(c) => write!(f, "column {c} is supplied twice"),
             Self::DuplicateKey(k) => write!(f, "key {k} is supplied twice"),
             Self::KeyClash(k) => write!(f, "{k} is both a key and a value column"),
-            Self::DuplicateLabel(l) => write!(f, "index label {l} is supplied twice"),
+            Self::DuplicateKeyValue { key, value } => {
+                write!(f, "value {value:?} of key {key} is supplied twice")
+            }
             Self::NonFinite { column, row } => {
                 write!(f, "column {column}, row {row} is infinite")
             }
@@ -76,10 +87,16 @@ impl fmt::Display for Error {
                 f,
                 "row {row}: age {age} months is not on the development grid"
             ),
-            Self::UnknownLabel(l) => write!(f, "no column or index named {l}"),
+            Self::UnknownColumn(c) => write!(f, "no column named {c}"),
+            Self::UnknownKey(k) => write!(f, "no key named {k}"),
+            Self::UnknownKeyValue { key, value } => {
+                write!(f, "no segment has {key} = {value:?}")
+            }
+            Self::NoSegments => write!(f, "no segment matches the selection"),
+            Self::EmptySelection => write!(f, "a selection must list at least one value"),
             Self::MultipleSegments(n) => write!(
                 f,
-                "triangle has {n} index positions; slice to one before fitting"
+                "triangle has {n} segments; select one or group_by before fitting"
             ),
             Self::InvalidGrain(why) => write!(f, "invalid grain change: {why}"),
             Self::EmptyOrigin(o) => write!(f, "origin {o} has no observed values"),

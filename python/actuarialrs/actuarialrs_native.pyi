@@ -404,7 +404,8 @@ class ChainLadder:
         Parameters
         ----------
         triangle : Triangle
-            Cumulative or incremental; slice to one segment first.
+            Cumulative or incremental, with one segment: ``select`` or
+            ``group_by`` first.
         column : str
         
         Returns
@@ -3899,7 +3900,7 @@ class OdpBootstrap:
         Parameters
         ----------
         triangle : Triangle
-            Cumulative; slice to one segment first.
+            Cumulative, with one segment: ``select`` or ``group_by`` first.
         column : str
         
         Returns
@@ -5700,6 +5701,45 @@ class Triangle:
         >>> y.origins, y.development_grain
         (['2020'], 'Y')
         """
+    def group_by(self, /, keys: Any) -> Triangle:
+        """
+        Sums the segments that share the values of ``keys``, dropping the
+        other keys.
+        
+        Cumulative values are summed cell by cell, and a cell is observed if
+        any segment in the group observes it. An incremental triangle is
+        summed as cumulative values and returned incremental.
+        
+        Parameters
+        ----------
+        keys : str or list of str
+            The keys to keep, in the order the result has them. ``[]`` sums
+            every segment into one, labelled ``"Total"``.
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            If a key is unknown or named twice.
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2020],
+        ...     [12, 12, 12],
+        ...     {"paid": [1.0, 2.0, 3.0]},
+        ...     keys={"lob": ["Auto", "Auto", "Home"], "state": ["CA", "NY", "NY"]},
+        ... )
+        >>> by_lob = tri.group_by("lob")
+        >>> by_lob.index, by_lob.to_long()["paid"]
+        (['Auto', 'Home'], [3.0, 3.0])
+        >>> tri.group_by([]).to_long()["paid"]
+        [6.0]
+        """
     @property
     def index(self, /) -> list[Any]:
         """
@@ -5747,23 +5787,21 @@ class Triangle:
         Origin periods, oldest first: ``"2021"``, ``"2021H1"``,
         ``"2021Q3"`` or ``"2021-07"`` by grain.
         """
-    @property
-    def shape(self, /) -> tuple[int, int, int, int]:
+    def select(self, /, columns: Any |None = None, **keys) -> Triangle:
         """
-        Axis lengths: ``(index, column, origin, development)``.
-        """
-    def slice(self, /, index: Any |None = None, columns: Any |None = None) -> Triangle:
-        """
-        The triangle restricted to some segments and measure columns, in the
-        order given.
+        The segments whose key values match, and the measure columns named.
+        
+        Each keyword names a key and gives one value or a list of values to
+        keep; segments must match every keyword, and keep their order.
+        Values are compared as strings, as keys are stored (``str()`` of a
+        value). A key named ``columns`` cannot be selected this way.
         
         Parameters
         ----------
-        index : str, tuple or list, optional
-            One label, or a list of labels, as ``index`` shows them. By
-            default every segment.
         columns : str or list of str, optional
-            By default every column.
+            Measure columns to keep, in this order. By default every column.
+        **keys : value or list of values
+            For example ``lob="Auto"`` or ``state=["CA", "NY"]``.
         
         Returns
         -------
@@ -5772,7 +5810,27 @@ class Triangle:
         Raises
         ------
         ValueError
-            If a label or column is unknown or named twice.
+            If a key, value or column is unknown or given twice, a list of
+            values is empty, or no segment matches.
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2020],
+        ...     [12, 12, 12],
+        ...     {"paid": [1.0, 2.0, 3.0], "incurred": [2.0, 3.0, 4.0]},
+        ...     keys={"lob": ["Auto", "Auto", "Home"], "state": ["CA", "NY", "NY"]},
+        ... )
+        >>> tri.select(state="NY").index
+        [('Auto', 'NY'), ('Home', 'NY')]
+        >>> tri.select(lob="Auto", state=["CA", "NY"], columns="paid").shape
+        (2, 1, 1, 1)
+        """
+    @property
+    def shape(self, /) -> tuple[int, int, int, int]:
+        """
+        Axis lengths: ``(index, column, origin, development)``.
         """
     def to_cumulative(self, /) -> Triangle:
         """

@@ -173,6 +173,28 @@ tri@keys; tri@index   # a data.frame with columns lob and state
 as.data.frame(tri)    # columns lob, state, origin, development, paid, incurred
 ```
 
+Select segments and columns by key name, and sum segments over keys:
+
+```rust
+let auto = tri.select(&[("lob", &["Auto"]), ("state", &["CA", "NY"])])?;
+let paid = tri.select_columns(&["paid"])?;
+let by_lob = tri.group_by(&["lob"])?;   // sums states; group_by(&[]) is the total
+```
+
+```python
+tri.select(lob="Auto", state=["CA", "NY"], columns="paid")
+ChainLadder().fit(tri.group_by(["lob"]).select(lob="Auto"), "paid")
+```
+
+```r
+subset(tri, lob = "Auto", state = c("CA", "NY"), columns = "paid")
+chain_ladder(subset(aggregate(tri, keep = "lob"), lob = "Auto"), "paid")
+```
+
+R uses base generics (`subset()`, `aggregate()` with `keep`, as for a
+`predictive_distribution`) so it does not mask dplyr's `filter()`,
+`select()` or `group_by()`.
+
 Every Chain Ladder and Mack value is checked against R `ChainLadder` and
 chainladder-python on RAA, GenIns and ABC in `validation/`; the ODP
 bootstrap is checked against R `BootChainLadder`.

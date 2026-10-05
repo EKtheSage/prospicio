@@ -312,37 +312,46 @@ impl Triangle {
         self.inner.link_ratios().into()
     }
 
-    /// Keeps the given index labels (each a list element of key values)
-    /// and columns; `NULL` keeps an axis whole. Without keys the only label
-    /// is "Total".
-    fn slice(&self, index: Nullable<List>, columns: Nullable<Vec<String>>) -> Result<Self> {
-        let labels: Option<Vec<Label>> = match index {
-            Nullable::Null => None,
-            Nullable::NotNull(list) => Some(
-                list.values()
-                    .map(|parts| {
-                        Vec::<String>::try_from(parts)
-                            .map(|parts| {
-                                if self.inner.key_names().is_empty() && parts == ["Total"] {
-                                    Label::default()
-                                } else {
-                                    Label::new(parts)
-                                }
-                            })
-                            .map_err(|_| Error::Other("index labels must be character".into()))
-                    })
-                    .collect::<Result<_>>()?,
-            ),
-        };
-        let names: Option<Vec<String>> = columns.into_option();
-        let names: Option<Vec<&str>> = names
-            .as_ref()
-            .map(|n| n.iter().map(String::as_str).collect());
-        let inner = self
-            .inner
-            .slice(labels.as_deref(), names.as_deref())
-            .map_err(to_r)?;
+    /// Keeps the segments whose value of `keys[k]` is in `values[[k]]` (a
+    /// character vector) for every `k`, then the named columns (`NULL`
+    /// keeps every column).
+    fn select(
+        &self,
+        keys: Vec<String>,
+        values: List,
+        columns: Nullable<Vec<String>>,
+    ) -> Result<Self> {
+        let values: Vec<Vec<String>> = values
+            .values()
+            .map(|v| {
+                Vec::<String>::try_from(v)
+                    .map_err(|_| Error::Other("key values must be character".into()))
+            })
+            .collect::<Result<_>>()?;
+        if values.len() != keys.len() {
+            return Err(Error::Other("one set of values is needed per key".into()));
+        }
+        let values: Vec<Vec<&str>> = values
+            .iter()
+            .map(|v| v.iter().map(String::as_str).collect())
+            .collect();
+        let conditions: Vec<(&str, &[&str])> = keys
+            .iter()
+            .zip(&values)
+            .map(|(k, v)| (k.as_str(), v.as_slice()))
+            .collect();
+        let mut inner = self.inner.select(&conditions).map_err(to_r)?;
+        if let Nullable::NotNull(columns) = columns {
+            let columns: Vec<&str> = columns.iter().map(String::as_str).collect();
+            inner = inner.select_columns(&columns).map_err(to_r)?;
+        }
         Ok(inner.into())
+    }
+
+    /// Sums the segments that share the values of `keys`.
+    fn group_by(&self, keys: Vec<String>) -> Result<Self> {
+        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+        Ok(self.inner.group_by(&keys).map_err(to_r)?.into())
     }
 
     fn grain(&self, origin_grain: &str, development_grain: &str) -> Result<Self> {

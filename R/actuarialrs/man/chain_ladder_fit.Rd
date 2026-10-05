@@ -19,7 +19,8 @@ chain_ladder(
 \item{ptr}{A \code{ChainLadderFit} pointer; used internally.}
 
 \item{triangle}{A single-segment \link{triangle} (use
-\link[=subset.triangle]{subset()} first if it has several index positions).}
+\link[=subset.triangle]{subset()} or \link[=aggregate.triangle]{aggregate()} first if
+it has several segments).}
 
 \item{column}{Name of the column to fit; by default the only one.}
 

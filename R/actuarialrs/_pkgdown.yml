@@ -134,6 +134,7 @@ reference:
     contents:
       - triangle
       - subset.triangle
+      - aggregate.triangle
       - to_incremental
       - latest_diagonal
       - link_ratios

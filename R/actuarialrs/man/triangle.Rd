@@ -103,5 +103,5 @@ as.data.frame(tri)
 }
 \seealso{
 \code{\link[=chain_ladder]{chain_ladder()}}, \code{\link[=mack]{mack()}}, \code{\link[=to_incremental]{to_incremental()}}, \code{\link[=grain]{grain()}},
-\link[=subset.triangle]{subset()}.
+\link[=subset.triangle]{subset()}, \link[=aggregate.triangle]{aggregate()}.
 }

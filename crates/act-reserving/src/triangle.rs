@@ -400,9 +400,7 @@ impl Triangle {
         &self.keys
     }
 
-    /// Labels of the index axis, one part per key: sorted by
-    /// [`Triangle::from_long`], in the requested order after
-    /// [`Triangle::slice`].
+    /// Labels of the index axis, one part per key, sorted.
     pub fn index(&self) -> &[Label] {
         &self.index
     }
@@ -417,7 +415,7 @@ impl Triangle {
         self.columns
             .iter()
             .position(|c| c == name)
-            .ok_or_else(|| Error::UnknownLabel(name.to_string()))
+            .ok_or_else(|| Error::UnknownColumn(name.to_string()))
     }
 
     /// The origin periods, oldest first.
@@ -575,50 +573,187 @@ impl Triangle {
         out
     }
 
-    /// A triangle with only the named index positions and columns, in the
-    /// order given. `None` keeps an axis whole. Naming a label or column
-    /// twice is an error.
-    pub fn slice(&self, index: Option<&[Label]>, columns: Option<&[&str]>) -> Result<Self> {
-        let index_pos: Vec<usize> = match index {
-            None => (0..self.shape[0]).collect(),
-            Some(labels) => labels
-                .iter()
-                .map(|l| {
-                    self.index
-                        .iter()
-                        .position(|x| x == l)
-                        .ok_or_else(|| Error::UnknownLabel(l.to_string()))
-                })
-                .collect::<Result<_>>()?,
-        };
-        let column_pos: Vec<usize> = match columns {
-            None => (0..self.shape[1]).collect(),
-            Some(names) => names
-                .iter()
-                .map(|n| self.column_position(n))
-                .collect::<Result<_>>()?,
-        };
-        if index_pos.is_empty() || column_pos.is_empty() {
-            return Err(Error::Empty);
+    /// The segments whose key values satisfy every condition: each
+    /// `(key, values)` keeps segments whose value of `key` is one of
+    /// `values`, and conditions combine with AND. Segments keep their order;
+    /// no conditions keep every segment.
+    ///
+    /// Errors: a key that does not exist or is named twice, a value that no
+    /// segment has or that is given twice, an empty value list, and a
+    /// selection that matches no segment.
+    ///
+    /// ```
+    /// use act_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    ///
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[("lob", &["Auto", "Auto", "Home"]), ("state", &["CA", "NY", "NY"])],
+    ///     origin: &[Month::january(2020); 3],
+    ///     development: DevelopmentColumn::Age(&[12, 12, 12]),
+    ///     values: &[("paid", &[1.0, 2.0, 3.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })
+    /// .unwrap();
+    /// let ny = tri.select(&[("state", &["NY"])]).unwrap();
+    /// assert_eq!(ny.shape()[0], 2);
+    /// let auto_ny = tri.select(&[("lob", &["Auto"]), ("state", &["NY"])]).unwrap();
+    /// assert_eq!(auto_ny.get(0, 0, 0, 0), Some(2.0));
+    /// ```
+    pub fn select(&self, conditions: &[(&str, &[&str])]) -> Result<Self> {
+        let mut seen: Vec<usize> = Vec::with_capacity(conditions.len());
+        for (key, values) in conditions {
+            let k = self.key_position(key)?;
+            if seen.contains(&k) {
+                return Err(Error::DuplicateKey(key.to_string()));
+            }
+            seen.push(k);
+            if values.is_empty() {
+                return Err(Error::EmptySelection);
+            }
+            for (n, value) in values.iter().enumerate() {
+                if values[..n].contains(value) {
+                    return Err(Error::DuplicateKeyValue {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                    });
+                }
+                if !self.index.iter().any(|l| l.parts()[k] == *value) {
+                    return Err(Error::UnknownKeyValue {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                    });
+                }
+            }
         }
-        if let Some(k) = (1..index_pos.len()).find(|&k| index_pos[..k].contains(&index_pos[k])) {
-            return Err(Error::DuplicateLabel(self.index[index_pos[k]].to_string()));
+        let index_pos: Vec<usize> = (0..self.shape[0])
+            .filter(|&i| {
+                let parts = self.index[i].parts();
+                conditions
+                    .iter()
+                    .zip(&seen)
+                    .all(|((_, values), &k)| values.contains(&parts[k].as_str()))
+            })
+            .collect();
+        if index_pos.is_empty() {
+            return Err(Error::NoSegments);
         }
+        let column_pos: Vec<usize> = (0..self.shape[1]).collect();
+        Ok(self.take(&index_pos, &column_pos))
+    }
+
+    /// The named measure columns, in the order given. Naming a column twice,
+    /// one that does not exist, or none is an error.
+    pub fn select_columns(&self, columns: &[&str]) -> Result<Self> {
+        if columns.is_empty() {
+            return Err(Error::EmptySelection);
+        }
+        let column_pos: Vec<usize> = columns
+            .iter()
+            .map(|n| self.column_position(n))
+            .collect::<Result<_>>()?;
         if let Some(k) = (1..column_pos.len()).find(|&k| column_pos[..k].contains(&column_pos[k])) {
             return Err(Error::DuplicateColumn(self.columns[column_pos[k]].clone()));
         }
+        let index_pos: Vec<usize> = (0..self.shape[0]).collect();
+        Ok(self.take(&index_pos, &column_pos))
+    }
+
+    /// Sums the segments that share the values of `keys`, dropping the other
+    /// keys. The result has `keys` as its keys, in the order given, and its
+    /// segments sorted by them; `&[]` sums everything into one segment
+    /// without keys.
+    ///
+    /// Cumulative values are summed cell by cell, and a cell is observed if
+    /// any of its members is. An incremental triangle is summed as
+    /// cumulative values and returned incremental. Unknown or repeated keys
+    /// are an error.
+    ///
+    /// ```
+    /// use act_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    ///
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[("lob", &["Auto", "Auto", "Home"]), ("state", &["CA", "NY", "NY"])],
+    ///     origin: &[Month::january(2020); 3],
+    ///     development: DevelopmentColumn::Age(&[12, 12, 12]),
+    ///     values: &[("paid", &[1.0, 2.0, 3.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })
+    /// .unwrap();
+    /// let by_lob = tri.group_by(&["lob"]).unwrap();
+    /// assert_eq!(by_lob.key_names(), ["lob"]);
+    /// assert_eq!(by_lob.get(0, 0, 0, 0), Some(3.0));
+    /// assert_eq!(tri.group_by(&[]).unwrap().get(0, 0, 0, 0), Some(6.0));
+    /// ```
+    pub fn group_by(&self, keys: &[&str]) -> Result<Self> {
+        let mut positions: Vec<usize> = Vec::with_capacity(keys.len());
+        for key in keys {
+            let k = self.key_position(key)?;
+            if positions.contains(&k) {
+                return Err(Error::DuplicateKey(key.to_string()));
+            }
+            positions.push(k);
+        }
+        let source = self.to_cumulative();
+        let mut groups: BTreeMap<Label, Vec<usize>> = BTreeMap::new();
+        for (i, label) in self.index.iter().enumerate() {
+            let parts = positions.iter().map(|&k| label.parts()[k].clone());
+            groups.entry(Label::new(parts)).or_default().push(i);
+        }
+        let [_, nc, no, nd] = self.shape;
+        let block = nc * no * nd;
+        let mut values = vec![0.0; groups.len() * block];
+        let mut mask = vec![false; groups.len() * block];
+        for (g, members) in groups.values().enumerate() {
+            for &i in members {
+                let from = source.offset(i, 0, 0, 0);
+                for at in 0..block {
+                    if source.mask[from + at] {
+                        values[g * block + at] += source.values[from + at];
+                        mask[g * block + at] = true;
+                    }
+                }
+            }
+        }
+        let out = Self {
+            values,
+            mask,
+            shape: [groups.len(), nc, no, nd],
+            keys: keys.iter().map(|k| k.to_string()).collect(),
+            index: groups.into_keys().collect(),
+            ..source
+        };
+        Ok(if self.cumulative {
+            out
+        } else {
+            out.to_incremental()
+        })
+    }
+
+    /// Position of the key column named `name`.
+    fn key_position(&self, name: &str) -> Result<usize> {
+        self.keys
+            .iter()
+            .position(|k| k == name)
+            .ok_or_else(|| Error::UnknownKey(name.to_string()))
+    }
+
+    /// The given index positions and columns, in that order.
+    fn take(&self, index_pos: &[usize], column_pos: &[usize]) -> Self {
         let [_, _, no, nd] = self.shape;
         let block = no * nd;
         let mut values = Vec::with_capacity(index_pos.len() * column_pos.len() * block);
         let mut mask = Vec::with_capacity(values.capacity());
-        for &i in &index_pos {
-            for &c in &column_pos {
+        for &i in index_pos {
+            for &c in column_pos {
                 let at = self.offset(i, c, 0, 0);
                 values.extend_from_slice(&self.values[at..at + block]);
                 mask.extend_from_slice(&self.mask[at..at + block]);
             }
         }
-        Ok(Self {
+        Self {
             values,
             mask,
             shape: [index_pos.len(), column_pos.len(), no, nd],
@@ -628,7 +763,7 @@ impl Triangle {
                 .map(|&c| self.columns[c].clone())
                 .collect(),
             ..self.clone()
-        })
+        }
     }
 
     /// A calendar view: the development axis as valuation months.
@@ -1097,9 +1232,11 @@ pub(crate) mod tests {
         assert_eq!(long.keys[1].1, ["CA", "CA", "TX", "NY", "NY", "NY"]);
         assert_eq!(long.values[0].1, [4.0, 5.0, 6.0, 1.0, 2.0, 3.0]);
         assert_eq!(from_long_table(&long, Grain::Year).unwrap(), t);
-        // Keys survive slicing and a grain change.
+        // Keys survive selection and a grain change.
         let s = t
-            .slice(Some(&[Label::new(["Home", "NY"])]), Some(&["incurred"]))
+            .select(&[("lob", &["Home"]), ("state", &["NY"])])
+            .unwrap()
+            .select_columns(&["incurred"])
             .unwrap();
         assert_eq!(s.key_names(), ["lob", "state"]);
         assert_eq!(s.to_long().keys[1].1, ["NY"; 3]);
@@ -1187,15 +1324,120 @@ pub(crate) mod tests {
         })
         .unwrap();
         let s = t
-            .slice(Some(&[Label::from("B")]), Some(&["incurred", "paid"]))
+            .select(&[("lob", &["B"])])
+            .unwrap()
+            .select_columns(&["incurred", "paid"])
             .unwrap();
         assert_eq!(s.shape(), [1, 2, 1, 1]);
         assert_eq!(s.columns(), ["incurred", "paid"]);
         assert_eq!(s.get(0, 0, 0, 0), Some(4.0));
         assert_eq!(s.get(0, 1, 0, 0), Some(2.0));
+        assert_eq!(t.select(&[]).unwrap(), t);
         assert_eq!(
-            t.slice(None, Some(&["reported"])),
-            Err(Error::UnknownLabel("reported".into()))
+            t.select_columns(&["reported"]),
+            Err(Error::UnknownColumn("reported".into()))
+        );
+    }
+
+    #[test]
+    fn select_combines_conditions() {
+        let t = multi_key();
+        let auto = t.select(&[("lob", &["Auto"])]).unwrap();
+        assert_eq!(
+            auto.index(),
+            [Label::new(["Auto", "CA"]), Label::new(["Auto", "TX"])]
+        );
+        // Segments keep their order whatever the order of the values.
+        let both = t.select(&[("state", &["NY", "CA"])]).unwrap();
+        assert_eq!(
+            both.index(),
+            [Label::new(["Auto", "CA"]), Label::new(["Home", "NY"])]
+        );
+        let one = t
+            .select(&[("lob", &["Auto", "Home"]), ("state", &["TX"])])
+            .unwrap();
+        assert_eq!(one.index(), [Label::new(["Auto", "TX"])]);
+        assert_eq!(one.key_names(), ["lob", "state"]);
+        assert_eq!(one.get(0, 0, 1, 0), Some(6.0));
+    }
+
+    #[test]
+    fn select_rejects_bad_conditions() {
+        let t = multi_key();
+        assert_eq!(
+            t.select(&[("line", &["Auto"])]),
+            Err(Error::UnknownKey("line".into()))
+        );
+        assert_eq!(
+            t.select(&[("lob", &["Boat"])]),
+            Err(Error::UnknownKeyValue {
+                key: "lob".into(),
+                value: "Boat".into()
+            })
+        );
+        assert_eq!(
+            t.select(&[("lob", &["Auto", "Auto"])]),
+            Err(Error::DuplicateKeyValue {
+                key: "lob".into(),
+                value: "Auto".into()
+            })
+        );
+        assert_eq!(
+            t.select(&[("lob", &["Auto"]), ("lob", &["Home"])]),
+            Err(Error::DuplicateKey("lob".into()))
+        );
+        assert_eq!(t.select(&[("lob", &[])]), Err(Error::EmptySelection));
+        // Both values exist, but not together.
+        assert_eq!(
+            t.select(&[("lob", &["Home"]), ("state", &["CA"])]),
+            Err(Error::NoSegments)
+        );
+        assert_eq!(t.select_columns(&[]), Err(Error::EmptySelection));
+    }
+
+    #[test]
+    fn group_by_sums_other_keys() {
+        let t = multi_key();
+        let lob = t.group_by(&["lob"]).unwrap();
+        assert_eq!(lob.key_names(), ["lob"]);
+        assert_eq!(lob.index(), [Label::from("Auto"), Label::from("Home")]);
+        assert_eq!(lob.columns(), t.columns());
+        // Auto paid: CA 2020 [4, 5], TX 2021 [6].
+        assert_eq!(lob.get(0, 0, 0, 0), Some(4.0));
+        assert_eq!(lob.get(0, 0, 0, 1), Some(5.0));
+        assert_eq!(lob.get(0, 0, 1, 0), Some(6.0));
+        // TX incurred is missing, so Auto 2021 incurred is unobserved.
+        assert_eq!(lob.get(0, 1, 1, 0), None);
+        // Keys follow the order given.
+        let swapped = t.group_by(&["state", "lob"]).unwrap();
+        assert_eq!(swapped.key_names(), ["state", "lob"]);
+        assert_eq!(swapped.index()[0], Label::new(["CA", "Auto"]));
+        // No keys: one total segment, equal to grouping the groups.
+        let total = t.group_by(&[]).unwrap();
+        assert_eq!(total.index(), [Label::default()]);
+        assert!(total.key_names().is_empty());
+        assert_eq!(total.get(0, 0, 0, 0), Some(5.0));
+        assert_eq!(total.get(0, 0, 1, 0), Some(9.0));
+        assert_eq!(lob.group_by(&[]).unwrap(), total);
+        // Grouping by every key changes nothing.
+        assert_eq!(t.group_by(&["lob", "state"]).unwrap(), t);
+    }
+
+    #[test]
+    fn group_by_incremental_sums_cumulative_values() {
+        let t = multi_key();
+        let inc = t.to_incremental().group_by(&["lob"]).unwrap();
+        assert!(!inc.is_cumulative());
+        assert_eq!(inc, t.group_by(&["lob"]).unwrap().to_incremental());
+    }
+
+    #[test]
+    fn group_by_rejects_bad_keys() {
+        let t = multi_key();
+        assert_eq!(t.group_by(&["line"]), Err(Error::UnknownKey("line".into())));
+        assert_eq!(
+            t.group_by(&["lob", "lob"]),
+            Err(Error::DuplicateKey("lob".into()))
         );
     }
 
@@ -1296,7 +1538,7 @@ pub(crate) mod tests {
         assert_eq!(s.link_pairs(8), vec![(18662.0, 18834.0)]);
         assert_eq!(
             t.segment("paid").unwrap_err(),
-            Error::UnknownLabel("paid".into())
+            Error::UnknownColumn("paid".into())
         );
     }
 
@@ -1379,15 +1621,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn slice_rejects_duplicates() {
+    fn select_columns_rejects_duplicates() {
         let t = sparse_quarterly(&[("A", &[0]), ("B", &[0])]);
-        let a = Label::from("A");
         assert_eq!(
-            t.slice(Some(&[a.clone(), a]), None),
-            Err(Error::DuplicateLabel("A".into()))
-        );
-        assert_eq!(
-            t.slice(None, Some(&["paid", "paid"])),
+            t.select_columns(&["paid", "paid"]),
             Err(Error::DuplicateColumn("paid".into()))
         );
     }
