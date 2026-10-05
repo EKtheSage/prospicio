@@ -21,6 +21,13 @@ predict_distribution(object, newdata, n_sims, seed, ...)
 \item{offset}{Optional offset added to any \code{offset()} terms.}
 
 \item{weights}{Optional prior weights.}
+
+\item{parameters}{For a \link{glm_model}, how the coefficients are drawn:
+\code{"normal"} (\code{beta ~ N(beta_hat, Sigma)}; through a log link the draws'
+mean is \verb{mu_hat * exp(x' Sigma x / 2)}), \code{"mean_preserving"} (the same,
+with each row's linear predictor shifted so its draws average the
+fitted mean exactly; log or identity link) or \code{"fixed"} (process
+uncertainty only).}
 }
 \value{
 A \link{predictive_distribution}.

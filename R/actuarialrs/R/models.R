@@ -563,6 +563,12 @@ for (cls in list(glm_model, gam_model, bayes_glm_model)) {
 #' @param seed Generator seed.
 #' @param offset Optional offset added to any `offset()` terms.
 #' @param weights Optional prior weights.
+#' @param parameters For a [glm_model], how the coefficients are drawn:
+#'   `"normal"` (`beta ~ N(beta_hat, Sigma)`; through a log link the draws'
+#'   mean is `mu_hat * exp(x' Sigma x / 2)`), `"mean_preserving"` (the same,
+#'   with each row's linear predictor shifted so its draws average the
+#'   fitted mean exactly; log or identity link) or `"fixed"` (process
+#'   uncertainty only).
 #' @param ... Unused; for methods.
 #' @returns A [predictive_distribution].
 #' @export
@@ -576,7 +582,20 @@ predict_distribution <- S7::new_generic(
   function(object, newdata, n_sims, seed, ...) S7::S7_dispatch()
 )
 
-for (cls in list(glm_model, gam_model, bayes_glm_model)) {
+S7::method(predict_distribution, glm_model) <- function(object, newdata, n_sims, seed,
+                                                       offset = NULL, weights = NULL,
+                                                       parameters = c("normal", "mean_preserving",
+                                                                      "fixed"), ...) {
+  parameters <- match.arg(parameters)
+  nd <- new_design(object, newdata, offset)
+  w <- if (is.null(weights)) double() else as.double(weights)
+  ptr <- rust_result(object@ptr$predict_distribution(
+    as.double(nd$x), colnames(nd$x), nd$offset, w, as.double(n_sims), as.double(seed), parameters
+  ), s7_call())
+  predictive_distribution(ptr = ptr)
+}
+
+for (cls in list(gam_model, bayes_glm_model)) {
   S7::method(predict_distribution, cls) <- function(object, newdata, n_sims, seed,
                                                      offset = NULL, weights = NULL, ...) {
     nd <- new_design(object, newdata, offset)

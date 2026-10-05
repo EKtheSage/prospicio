@@ -394,3 +394,17 @@ def test_over_dispersed_poisson_accepts_negative_responses():
     assert fit.coefficients[1] == pytest.approx(math.log(3 / (8 / 3)), rel=1e-10)
     with pytest.raises(ValueError):
         Glm("poisson").fit(d, y)
+
+
+def test_glm_mean_preserving_parameter_draws():
+    d = Design([[1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], ["(Intercept)", "x"])
+    fit = Glm("poisson", dispersion="pearson").fit(d, [3.0, 9.0, 1.0, 8.0, 20.0, 5.0])
+    want = sum(fit.predict(d))
+    centred = fit.predict_distribution(d, 20_000, 1, parameters="mean_preserving")
+    fixed = fit.predict_distribution(d, 20_000, 1, parameters="fixed")
+    normal = fit.predict_distribution(d, 20_000, 1)
+    assert sum(centred.total().draws) / 20_000 == pytest.approx(want, rel=0.02)
+    assert sum(fixed.total().draws) / 20_000 == pytest.approx(want, rel=0.02)
+    assert sum(normal.total().draws) > sum(centred.total().draws)
+    with pytest.raises(ValueError):
+        fit.predict_distribution(d, 10, 1, parameters="other")

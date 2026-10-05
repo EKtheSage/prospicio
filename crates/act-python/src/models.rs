@@ -738,20 +738,39 @@ impl PyGlmFit {
     /// design : Design
     /// n_sims : int
     /// seed : int
+    /// parameters : {"normal", "mean_preserving", "fixed"}, default "normal"
+    ///     How the coefficients are drawn: ``beta ~ N(beta_hat, Sigma)``
+    ///     (through a log link the draws' mean is
+    ///     ``mu_hat * exp(x' Sigma x / 2)``); the same with each row's linear
+    ///     predictor shifted so its draws average the fitted mean exactly
+    ///     (log or identity link); or fixed at ``beta_hat`` (process
+    ///     uncertainty only).
     ///
     /// Returns
     /// -------
     /// PredictiveDistribution
+    #[pyo3(signature = (design, n_sims, seed, parameters = "normal"))]
     fn predict_distribution(
         &self,
         py: Python<'_>,
         design: PyRef<'_, PyDesign>,
         n_sims: usize,
         seed: u64,
+        parameters: &str,
     ) -> PyResult<PyPredictiveDistribution> {
+        let parameters = match parameters {
+            "normal" => act_glm::ParameterDraws::Normal,
+            "mean_preserving" => act_glm::ParameterDraws::MeanPreserving,
+            "fixed" => act_glm::ParameterDraws::Fixed,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "parameters must be \"normal\", \"mean_preserving\" or \"fixed\"",
+                ));
+            }
+        };
         let (fit, d) = (&self.inner, &design.inner);
         let inner = py
-            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .detach(|| fit.predict_distribution_with(d, n_sims, seed, parameters))
             .map_err(to_py)?;
         Ok(PyPredictiveDistribution { inner })
     }

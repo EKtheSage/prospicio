@@ -255,4 +255,13 @@ qm <- glm_fit(y ~ g, qd, family = "poisson", dispersion = "pearson")
 near(unname(coef(qm)), c(log(8 / 3), log(3 / (8 / 3))), 1e-10)
 stopifnot(inherits(try(glm_fit(y ~ g, qd, family = "poisson"), silent = TRUE), "try-error"))
 
+# Mean-preserving parameter draws centre on the fitted means.
+pm <- glm_fit(y ~ g, data.frame(y = c(3, 9, 1, 8, 20, 5), g = rep(c("a", "b"), each = 3)),
+              family = "poisson", dispersion = "pearson")
+pnew <- data.frame(g = c("a", "b"))
+pc <- predict_distribution(pm, pnew, n_sims = 20000, seed = 1, parameters = "mean_preserving")
+stopifnot(abs(mean(rowSums(draw_matrix(pc))) / sum(predict(pm, pnew)) - 1) < 0.02)
+pn <- predict_distribution(pm, pnew, n_sims = 20000, seed = 1)
+stopifnot(mean(rowSums(draw_matrix(pn))) > mean(rowSums(draw_matrix(pc))))
+
 cat("actuarialrs R models tests passed\n")

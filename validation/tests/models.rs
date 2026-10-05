@@ -861,52 +861,58 @@ fn nuts_posterior_predictive_matches_the_conjugate_negative_binomial() {
     assert!((draws.mean() - Counting::mean(&exact)).abs() < 0.05);
 }
 
-#[test]
-fn over_dispersed_poisson_fits_raa_with_its_negative_increment() {
-    // RAA's 1982 origin loses 103 between 72 and 84 months. The
-    // over-dispersed Poisson GLM with origin and development factors
-    // still reproduces the Chain Ladder reserve.
-    use act_glm::Glm;
-    use act_models::{Design, Model};
+/// RAA as an over-dispersed Poisson GLM on incremental cells (intercept,
+/// origin and development dummies, first level dropped): the observed
+/// cells' design and responses, the future cells' design, and the Chain
+/// Ladder reserve.
+fn raa_odp() -> (act_models::Design, Vec<f64>, act_models::Design, f64) {
+    use act_models::Design;
 
     let text = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/raa.csv"),
     )
     .unwrap();
-    let rows: Vec<(usize, usize, f64)> = text
-        .lines()
-        .filter(|l| !l.starts_with('#') && !l.starts_with("origin"))
-        .map(|l| {
-            let v: Vec<f64> = l.split(',').map(|x| x.parse().unwrap()).collect();
-            ((v[0] - 1981.0) as usize, (v[1] / 12.0) as usize - 1, v[2])
-        })
-        .collect();
     let n = 10;
     let mut cum = vec![vec![f64::NAN; n]; n];
-    for &(i, j, v) in &rows {
-        cum[i][j] = v;
+    for l in text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("origin"))
+    {
+        let v: Vec<f64> = l.split(',').map(|x| x.parse().unwrap()).collect();
+        cum[(v[0] - 1981.0) as usize][(v[1] / 12.0) as usize - 1] = v[2];
     }
-    // Incremental cells, one design row each: intercept, origin and
-    // development dummies (first level dropped).
-    let (mut y, mut cols) = (Vec::new(), vec![Vec::new(); 1 + 2 * (n - 1)]);
     let dummies = |i: usize, j: usize| -> Vec<f64> {
         let mut r = vec![1.0];
         r.extend((1..n).map(|k| f64::from(u8::from(i == k))));
         r.extend((1..n).map(|k| f64::from(u8::from(j == k))));
         r
     };
-    for (i, row) in cum.iter().enumerate() {
-        for j in 0..n - i {
-            y.push(if j == 0 { row[0] } else { row[j] - row[j - 1] });
+    let design = |cells: &[(usize, usize)]| {
+        let mut cols = vec![Vec::new(); 1 + 2 * (n - 1)];
+        for &(i, j) in cells {
             for (c, v) in cols.iter_mut().zip(dummies(i, j)) {
                 c.push(v);
             }
         }
-    }
-    assert!(y.iter().any(|v| *v < 0.0));
-    let names = (0..cols.len()).map(|k| format!("x{k}")).collect();
-    let design = Design::new(names, cols).unwrap();
-    let fit = Glm::over_dispersed_poisson().fit(&design, &y).unwrap();
+        let names = (0..cols.len()).map(|k| format!("x{k}")).collect();
+        Design::new(names, cols).unwrap()
+    };
+    let observed: Vec<(usize, usize)> = (0..n)
+        .flat_map(|i| (0..n - i).map(move |j| (i, j)))
+        .collect();
+    let future: Vec<(usize, usize)> = (1..n)
+        .flat_map(|i| (n - i..n).map(move |j| (i, j)))
+        .collect();
+    let y = observed
+        .iter()
+        .map(|&(i, j)| {
+            if j == 0 {
+                cum[i][0]
+            } else {
+                cum[i][j] - cum[i][j - 1]
+            }
+        })
+        .collect();
 
     // Chain Ladder: volume-weighted development factors.
     let mut ultimate: Vec<f64> = (0..n).map(|i| cum[i][n - 1 - i]).collect();
@@ -920,16 +926,26 @@ fn over_dispersed_poisson_fits_raa_with_its_negative_increment() {
         }
     }
     let latest: f64 = (0..n).map(|i| cum[i][n - 1 - i]).sum();
-    let cl_reserve = ultimate.iter().sum::<f64>() - latest;
+    (
+        design(&observed),
+        y,
+        design(&future),
+        ultimate.iter().sum::<f64>() - latest,
+    )
+}
 
-    let beta = fit.coefficients();
-    let mut glm_reserve = 0.0;
-    for i in 1..n {
-        for j in n - i..n {
-            let eta: f64 = dummies(i, j).iter().zip(beta).map(|(x, b)| x * b).sum();
-            glm_reserve += eta.exp();
-        }
-    }
+#[test]
+fn over_dispersed_poisson_fits_raa_with_its_negative_increment() {
+    // RAA's 1982 origin loses 103 between 72 and 84 months. The
+    // over-dispersed Poisson GLM with origin and development factors
+    // still reproduces the Chain Ladder reserve.
+    use act_glm::Glm;
+    use act_models::{Fitted, Model};
+
+    let (design, y, future, cl_reserve) = raa_odp();
+    assert!(y.iter().any(|v| *v < 0.0));
+    let fit = Glm::over_dispersed_poisson().fit(&design, &y).unwrap();
+    let glm_reserve: f64 = fit.predict(&future).unwrap().iter().sum();
     assert!(
         (glm_reserve - cl_reserve).abs() < 1e-6 * cl_reserve,
         "{glm_reserve} vs {cl_reserve}"
@@ -941,4 +957,39 @@ fn over_dispersed_poisson_fits_raa_with_its_negative_increment() {
             .fit(&design, &y)
             .is_err()
     );
+}
+
+#[test]
+fn mean_preserving_draws_centre_the_odp_reserve_on_the_chain_ladder() {
+    use act_glm::{Glm, ParameterDraws};
+    use act_models::Model;
+    use act_prob::Distribution;
+
+    let (design, y, future, cl_reserve) = raa_odp();
+    let fit = Glm::over_dispersed_poisson().fit(&design, &y).unwrap();
+    let n = 20_000;
+    let reserve = |parameters| {
+        let total = fit
+            .predict_distribution_with(&future, n, 5, parameters)
+            .unwrap()
+            .total()
+            .clone();
+        (total.mean(), total.std_dev() / (n as f64).sqrt())
+    };
+    // Normal draws of β overstate the mean through exp(); shifting each
+    // cell by -x'Σx/2 removes that, keeping parameter and process error.
+    let (normal, se) = reserve(ParameterDraws::Normal);
+    let (centred, se_c) = reserve(ParameterDraws::MeanPreserving);
+    let (fixed, se_f) = reserve(ParameterDraws::Fixed);
+    assert!(
+        (centred - cl_reserve).abs() < 4.0 * se_c,
+        "{centred} vs {cl_reserve}"
+    );
+    assert!(
+        (fixed - cl_reserve).abs() < 4.0 * se_f,
+        "{fixed} vs {cl_reserve}"
+    );
+    assert!(normal - cl_reserve > 4.0 * se, "{normal} vs {cl_reserve}");
+    // Parameter error widens the distribution.
+    assert!(se_c > se_f);
 }
