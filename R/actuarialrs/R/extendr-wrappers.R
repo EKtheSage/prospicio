@@ -448,7 +448,7 @@ GlmModel$family <- function() .Call(wrap__GlmModel__family, self)
 
 GlmModel$predict <- function(x, names, offset) .Call(wrap__GlmModel__predict, self, x, names, offset)
 
-GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed, parameters) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed, parameters)
 
 #' @export
 `$.GlmModel` <- function (self, name) { func <- GlmModel[[name]]; environment(func) <- environment(); func }

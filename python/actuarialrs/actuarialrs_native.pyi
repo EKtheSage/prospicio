@@ -1996,7 +1996,8 @@ class Glm:
         ``"pearson"``, ``"deviance"`` or a fixed value. By default 1 for the
         Poisson, binomial and negative binomial and Pearson's estimate
         otherwise; ``"pearson"`` with the Poisson is the over-dispersed
-        (quasi-) Poisson.
+        (quasi-) Poisson, which accepts negative responses as long as the
+        fitted means stay positive.
     theta : float, optional
     power : float, optional
     link_power : float, optional
@@ -2137,7 +2138,7 @@ class GlmFit:
         -------
         list of float
         """
-    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int, parameters: str = "normal") -> PredictiveDistribution:
         """
         Joint predictive distribution across the rows, with parameter and
         process uncertainty, keyed ``row = 0, 1, ...``.
@@ -2147,6 +2148,13 @@ class GlmFit:
         design : Design
         n_sims : int
         seed : int
+        parameters : {"normal", "mean_preserving", "fixed"}, default "normal"
+            How the coefficients are drawn: ``beta ~ N(beta_hat, Sigma)``
+            (through a log link the draws' mean is
+            ``mu_hat * exp(x' Sigma x / 2)``); the same with each row's linear
+            predictor shifted so its draws average the fitted mean exactly
+            (log or identity link); or fixed at ``beta_hat`` (process
+            uncertainty only).
         
         Returns
         -------

@@ -248,4 +248,20 @@ pw <- predict(ps, data.frame(r1 = 0, r2 = 0, r3 = c(0, 1), x = 0))
 stopifnot(pw[1, "a"] > 0.7, pw[2, "a"] < 0.3)
 stopifnot(inherits(try(hierarchical_stacking(pl, px, discrete = 5), silent = TRUE), "try-error"))
 
+# The over-dispersed Poisson accepts a negative response (R's quasipoisson
+# refuses it); with a group dummy the fitted means are the group means.
+qd <- data.frame(y = c(5, -1, 4, 2, 3, 4), g = rep(c("a", "b"), each = 3))
+qm <- glm_fit(y ~ g, qd, family = "poisson", dispersion = "pearson")
+near(unname(coef(qm)), c(log(8 / 3), log(3 / (8 / 3))), 1e-10)
+stopifnot(inherits(try(glm_fit(y ~ g, qd, family = "poisson"), silent = TRUE), "try-error"))
+
+# Mean-preserving parameter draws centre on the fitted means.
+pm <- glm_fit(y ~ g, data.frame(y = c(3, 9, 1, 8, 20, 5), g = rep(c("a", "b"), each = 3)),
+              family = "poisson", dispersion = "pearson")
+pnew <- data.frame(g = c("a", "b"))
+pc <- predict_distribution(pm, pnew, n_sims = 20000, seed = 1, parameters = "mean_preserving")
+stopifnot(abs(mean(rowSums(draw_matrix(pc))) / sum(predict(pm, pnew)) - 1) < 0.02)
+pn <- predict_distribution(pm, pnew, n_sims = 20000, seed = 1)
+stopifnot(mean(rowSums(draw_matrix(pn))) > mean(rowSums(draw_matrix(pc))))
+
 cat("actuarialrs R models tests passed\n")

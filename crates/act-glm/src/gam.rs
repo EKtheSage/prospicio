@@ -531,6 +531,7 @@ impl Fitted for GamFit {
             self.dispersion,
             &self.coefficients,
             Some(&self.covariance),
+            None,
             &x,
             n_sims,
             seed,

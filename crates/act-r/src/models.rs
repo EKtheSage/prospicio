@@ -227,6 +227,8 @@ impl GlmModel {
         self.inner.predict(&d).map_err(to_r)
     }
 
+    /// `parameters` is "normal", "mean_preserving" or "fixed".
+    #[allow(clippy::too_many_arguments)]
     fn predict_distribution(
         &self,
         x: &[f64],
@@ -235,11 +237,27 @@ impl GlmModel {
         weights: &[f64],
         n_sims: f64,
         seed: f64,
+        parameters: &str,
     ) -> Result<PredictiveDistribution> {
         let d = design(x, names, offset, weights)?;
+        let parameters = match parameters {
+            "normal" => act_glm::ParameterDraws::Normal,
+            "mean_preserving" => act_glm::ParameterDraws::MeanPreserving,
+            "fixed" => act_glm::ParameterDraws::Fixed,
+            other => {
+                return Err(Error::Other(format!(
+                    "parameters must be normal, mean_preserving or fixed, got {other}"
+                )));
+            }
+        };
         let inner = self
             .inner
-            .predict_distribution(&d, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .predict_distribution_with(
+                &d,
+                whole(n_sims, "n_sims")? as usize,
+                whole(seed, "seed")?,
+                parameters,
+            )
             .map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
