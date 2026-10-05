@@ -5505,6 +5505,10 @@ class Triangle:
     A loss triangle with four axes: index (segment), column (measure), origin
     and development age, in chainladder-python's order.
     
+    Segments are named by key columns such as ``"lob"`` and ``"state"``:
+    ``keys`` gives their names and ``index`` one label per segment. A
+    triangle without keys has one segment, ``"Total"``.
+    
     Build one from a long table with ``from_long`` or ``from_frame``. Ages
     are whole months from the start of the origin period, so age 12 on a
     2021 accident year is valued at December 2021. Cells that were not
@@ -5543,7 +5547,7 @@ class Triangle:
         Development grain: ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
         """
     @staticmethod
-    def from_frame(data: Any, origin: str, development: str, columns: Any, index: Any |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
+    def from_frame(data: Any, origin: str, development: str, columns: Any, keys: Any |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
         """
         Builds a triangle from a data frame in long format.
         
@@ -5560,10 +5564,9 @@ class Triangle:
             dates when ``development_is_valuation`` is true).
         columns : str or list of str
             Names of the measure columns.
-        index : str or list of str, optional
-            Names of the segment columns; several make multi-part labels. A
-            single column may hold tuples, as ``to_long`` writes multi-part
-            labels.
+        keys : str or list of str, optional
+            Names of the key columns, such as ``["lob", "state"]``. By
+            default every row is in one segment, ``"Total"``.
         origin_grain : {"Y", "S", "Q", "M"}, default "Y"
         development_grain : {"Y", "S", "Q", "M"}, default "Y"
         cumulative : bool, default True
@@ -5587,19 +5590,19 @@ class Triangle:
         ...     "age": [12, 24, 12, 12],
         ...     "paid": [100.0, 150.0, 110.0, 50.0],
         ... }
-        >>> tri = Triangle.from_frame(df, "year", "age", "paid", index="lob")
-        >>> tri.index, tri.shape
-        (['Auto', 'Home'], (2, 1, 2, 2))
+        >>> tri = Triangle.from_frame(df, "year", "age", "paid", keys="lob")
+        >>> tri.keys, tri.index, tri.shape
+        (['lob'], ['Auto', 'Home'], (2, 1, 2, 2))
         """
     @staticmethod
-    def from_long(origin: Any, development: Any, values: Any, index: Any |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
+    def from_long(origin: Any, development: Any, values: Any, keys: Any |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
         """
         Builds a triangle from the columns of a long table, one row per
-        (index, origin, development).
+        (keys, origin, development).
         
         Origins span every period from the earliest to the latest row and
         ages every development period from the youngest to the oldest. Rows
-        with the same (index, origin, age) are summed; ``nan`` values are
+        with the same (keys, origin, age) are summed; ``nan`` values are
         missing. Incremental input treats a missing row as a period without
         movement, as chainladder-python does.
         
@@ -5614,9 +5617,11 @@ class Triangle:
         values : dict of str to array-like, or array-like
             Measure columns by name. A single array-like is one column named
             ``"values"``.
-        index : array-like, optional
-            Segment of each row: a str, or a tuple of str for a multi-part
-            label. By default every row is in one segment, ``"Total"``.
+        keys : dict of str to array-like, optional
+            Key columns by name, such as ``{"lob": [...], "state": [...]}``,
+            in key order. Values are stored as strings (``str()`` of each);
+            ``None`` and ``nan`` are not allowed. Each distinct combination is
+            a segment. By default every row is in one segment, ``"Total"``.
         origin_grain : {"Y", "S", "Q", "M"}, default "Y"
             Length of an origin period.
         development_grain : {"Y", "S", "Q", "M"}, default "Y"
@@ -5634,10 +5639,23 @@ class Triangle:
         ------
         ValueError
             If columns differ in length, an age is not on the development
-            grid, a value is infinite, or the grains are incompatible.
+            grid, a value is infinite, the grains are incompatible, a key name
+            is repeated or also a value column, or a key has missing values.
         
         Examples
         --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> tri = Triangle.from_long(
+        ...     origin=[2020, 2020, 2021, 2020],
+        ...     development=[12, 24, 12, 12],
+        ...     values={"paid": [100.0, 150.0, 110.0, 50.0]},
+        ...     keys={"lob": ["Auto", "Auto", "Auto", "Home"], "state": ["CA", "CA", "CA", "NY"]},
+        ... )
+        >>> tri.keys, tri.index
+        (['lob', 'state'], [('Auto', 'CA'), ('Home', 'NY')])
+        
+        Valuation dates instead of ages:
+        
         >>> import datetime
         >>> from actuarialrs.reserving import Triangle
         >>> d = datetime.date
@@ -5685,12 +5703,18 @@ class Triangle:
     @property
     def index(self, /) -> list[Any]:
         """
-        Segment labels: a str each, or a tuple for a multi-part label.
+        Segment labels: a str each with one key, a tuple of key values with
+        several, and ``["Total"]`` without keys.
         """
     @property
     def is_cumulative(self, /) -> bool:
         """
         Whether the values are cumulative (otherwise incremental).
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the key columns, in key order; empty without keys.
         """
     def latest_diagonal(self, /) -> list[list[list[float]]]:
         """
@@ -5736,7 +5760,8 @@ class Triangle:
         Parameters
         ----------
         index : str, tuple or list, optional
-            One label, or a list of labels. By default every segment.
+            One label, or a list of labels, as ``index`` shows them. By
+            default every segment.
         columns : str or list of str, optional
             By default every column.
         
@@ -5776,12 +5801,12 @@ class Triangle:
         """
     def to_long(self, /) -> dict:
         """
-        The triangle as a long table: a dict of equal-length lists with keys
-        ``"index"``, ``"origin"`` (start of the origin period, a
-        ``datetime.date``), ``"development"`` (age in months) and one per
-        measure column, with a row per (index, origin, age) that has an
-        observed measure. It feeds back into ``from_long`` or
-        ``pandas.DataFrame``.
+        The triangle as a long table: a dict of equal-length lists with one
+        entry per key column (by name), ``"origin"`` (start of the origin
+        period, a ``datetime.date``), ``"development"`` (age in months) and
+        one per measure column, with a row per (segment, origin, age) that
+        has an observed measure. It feeds back into ``from_frame`` (with
+        ``keys=tri.keys``) or ``pandas.DataFrame``.
         
         Returns
         -------
@@ -5790,8 +5815,18 @@ class Triangle:
         Raises
         ------
         ValueError
-            If a measure column is named ``index``, ``origin`` or
+            If a key or measure column is named ``origin`` or
             ``development``.
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020], [12, 12], {"paid": [1.0, 2.0]}, keys={"lob": ["Auto", "Home"]}
+        ... )
+        >>> long = tri.to_long()
+        >>> list(long), long["lob"]
+        (['lob', 'origin', 'development', 'paid'], ['Auto', 'Home'])
         """
     @property
     def valuation(self, /) -> date:

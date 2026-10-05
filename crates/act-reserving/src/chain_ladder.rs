@@ -13,7 +13,7 @@ use act_core::Period;
 ///
 /// let origin = [2020, 2020, 2021].map(Month::january);
 /// let tri = Triangle::from_long(&Long {
-///     index: None,
+///     keys: &[],
 ///     origin: &origin,
 ///     development: DevelopmentColumn::Age(&[12, 24, 12]),
 ///     values: &[("paid", &[100.0, 150.0, 200.0])],
@@ -204,7 +204,7 @@ mod tests {
         // factor, but its value at 36 months is its latest.
         let origin = [2019, 2019, 2019, 2020, 2020, 2021, 2021, 2022].map(Month::january);
         let t = Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&[12, 24, 36, 12, 36, 12, 24, 12]),
             values: &[("paid", &[1.0, 2.0, 4.0, 1.0, 3.0, 1.0, 2.0, 1.0])],

@@ -10,7 +10,8 @@ use crate::error::{Error, Result};
 use act_core::{Grain, Lag, Month, Period};
 
 /// A position on the index axis (a segment such as a company or line of
-/// business). Labels have one or more parts, like a pandas `MultiIndex` row.
+/// business): one value per key of the triangle, in key order. A triangle
+/// without keys has one segment with an empty label, displayed as `Total`.
 ///
 /// ```
 /// use act_reserving::Label;
@@ -18,9 +19,10 @@ use act_core::{Grain, Lag, Month, Period};
 /// let l = Label::new(["Auto", "CA"]);
 /// assert_eq!(l.parts(), ["Auto", "CA"]);
 /// assert_eq!(l.to_string(), "Auto / CA");
-/// assert_eq!(Label::from("Total").parts(), ["Total"]);
+/// assert!(Label::default().parts().is_empty());
+/// assert_eq!(Label::default().to_string(), "Total");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Label(Vec<String>);
 
 impl Label {
@@ -29,7 +31,7 @@ impl Label {
         Self(parts.into_iter().map(Into::into).collect())
     }
 
-    /// The label's parts, outermost first.
+    /// The label's values, one per key, in key order.
     pub fn parts(&self) -> &[String] {
         &self.0
     }
@@ -49,7 +51,11 @@ impl From<String> for Label {
 
 impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0.join(" / "))
+        if self.0.is_empty() {
+            f.write_str("Total")
+        } else {
+            f.write_str(&self.0.join(" / "))
+        }
     }
 }
 
@@ -71,13 +77,16 @@ impl DevelopmentColumn<'_> {
     }
 }
 
-/// A long table borrowed from the caller: one row per (index, origin,
+/// A long table borrowed from the caller: one row per (keys, origin,
 /// development) with one or more measure columns. This is the shape of a
 /// claims extract and of the Arrow tables the bindings pass in.
 #[derive(Debug, Clone, Copy)]
 pub struct Long<'a> {
-    /// Segment of each row; `None` puts every row in one segment, `Total`.
-    pub index: Option<&'a [Label]>,
+    /// Key columns as `(name, values)`, one value per row, such as
+    /// `("lob", ...)` and `("state", ...)`. Each distinct combination of
+    /// key values is a segment. No keys (`&[]`) puts every row in one
+    /// segment with an empty label.
+    pub keys: &'a [(&'a str, &'a [&'a str])],
     /// Any month inside each row's origin period.
     pub origin: &'a [Month],
     /// Development age or valuation of each row.
@@ -95,7 +104,9 @@ pub struct Long<'a> {
 /// A long table owned by the caller, as returned by [`Triangle::to_long`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct LongTable {
-    pub index: Vec<Label>,
+    /// Key columns as `(name, values)`, in the triangle's key order; empty
+    /// for a triangle without keys.
+    pub keys: Vec<(String, Vec<String>)>,
     /// Start month of each row's origin period.
     pub origin: Vec<Month>,
     pub development: Vec<Lag>,
@@ -116,7 +127,7 @@ pub struct LongTable {
 ///
 /// let origin = [2020, 2020, 2021].map(Month::january);
 /// let tri = Triangle::from_long(&Long {
-///     index: None,
+///     keys: &[("lob", &["Auto", "Auto", "Home"])],
 ///     origin: &origin,
 ///     development: DevelopmentColumn::Age(&[12, 24, 12]),
 ///     values: &[("paid", &[100.0, 150.0, 110.0])],
@@ -125,9 +136,12 @@ pub struct LongTable {
 ///     cumulative: true,
 /// })
 /// .unwrap();
-/// assert_eq!(tri.shape(), [1, 1, 2, 2]);
-/// assert_eq!(tri.get(0, 0, 1, 0), Some(110.0));
-/// assert_eq!(tri.get(0, 0, 1, 1), None);
+/// assert_eq!(tri.key_names(), ["lob"]);
+/// assert_eq!(tri.shape(), [2, 1, 2, 2]);
+/// assert_eq!(tri.index()[1].parts(), ["Home"]);
+/// assert_eq!(tri.get(0, 0, 0, 1), Some(150.0));
+/// assert_eq!(tri.get(1, 0, 1, 0), Some(110.0));
+/// assert_eq!(tri.get(1, 0, 0, 0), None);
 /// assert_eq!(tri.valuation(), Month::new(2021, 12).unwrap());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
@@ -135,6 +149,8 @@ pub struct Triangle {
     values: Vec<f64>,
     mask: Vec<bool>,
     shape: [usize; 4],
+    /// Names of the key columns; each index label has one part per key.
+    keys: Vec<String>,
     index: Vec<Label>,
     columns: Vec<String>,
     /// Start month of each origin period, contiguous at `origin_grain`.
@@ -152,8 +168,9 @@ impl Triangle {
     ///
     /// Origins span every period from the earliest to the latest row, and
     /// ages every development period from the youngest to the oldest.
-    /// Rows with the same (index, origin, age) are summed. NaN values are
-    /// treated as missing.
+    /// Rows with the same (keys, origin, age) are summed. NaN values are
+    /// treated as missing. Key names must differ from each other and from
+    /// the measure names.
     ///
     /// Cumulative input: periods with no rows are unobserved. Incremental
     /// input: as in chainladder-python, a missing row is a period without
@@ -181,8 +198,13 @@ impl Triangle {
                 })
             }
         };
-        if let Some(index) = long.index {
-            check_len("index", index.len())?;
+        let mut keys: Vec<String> = Vec::with_capacity(long.keys.len());
+        for (name, values) in long.keys {
+            check_len(name, values.len())?;
+            if keys.iter().any(|k| k == name) {
+                return Err(Error::DuplicateKey(name.to_string()));
+            }
+            keys.push(name.to_string());
         }
         check_len("development", long.development.len())?;
         let mut columns: Vec<String> = Vec::with_capacity(long.values.len());
@@ -196,6 +218,9 @@ impl Triangle {
                     column: name.to_string(),
                     row,
                 });
+            }
+            if keys.iter().any(|k| k == name) {
+                return Err(Error::KeyClash(name.to_string()));
             }
             columns.push(name.to_string());
         }
@@ -217,9 +242,10 @@ impl Triangle {
             return Err(Error::NonPositiveAge { row });
         }
 
-        let default_label = Label::from("Total");
-        let label_of = |row: usize| long.index.map_or(&default_label, |ix| &ix[row]);
-        let mut index: Vec<Label> = (0..n).map(|r| label_of(r).clone()).collect();
+        let row_labels: Vec<Label> = (0..n)
+            .map(|row| Label::new(long.keys.iter().map(|(_, values)| values[row])))
+            .collect();
+        let mut index = row_labels.clone();
         index.sort();
         index.dedup();
 
@@ -266,6 +292,7 @@ impl Triangle {
             values: vec![0.0; size],
             mask: vec![false; size],
             shape,
+            keys,
             index,
             columns,
             origins,
@@ -279,7 +306,7 @@ impl Triangle {
         for row in 0..n {
             let i = tri
                 .index
-                .binary_search(label_of(row))
+                .binary_search(&row_labels[row])
                 .expect("label collected above");
             let o = (starts[row].months_since(first) / step) as usize;
             let d = ((ages[row] - youngest) / dev_step) as usize;
@@ -322,12 +349,13 @@ impl Triangle {
         }
     }
 
-    /// The triangle as a long table: one row per (index, origin, age) with
-    /// at least one observed measure, in axis order.
+    /// The triangle as a long table: one row per (segment, origin, age) with
+    /// at least one observed measure, in axis order, with the segment's key
+    /// values as named columns.
     pub fn to_long(&self) -> LongTable {
         let [ni, nc, no, nd] = self.shape;
         let mut out = LongTable {
-            index: Vec::new(),
+            keys: self.keys.iter().map(|k| (k.clone(), Vec::new())).collect(),
             origin: Vec::new(),
             development: Vec::new(),
             values: self
@@ -342,7 +370,9 @@ impl Triangle {
                     if !(0..nc).any(|c| self.mask[self.offset(i, c, o, d)]) {
                         continue;
                     }
-                    out.index.push(self.index[i].clone());
+                    for ((_, column), part) in out.keys.iter_mut().zip(self.index[i].parts()) {
+                        column.push(part.clone());
+                    }
                     out.origin.push(self.origins[o]);
                     out.development.push(self.development[d]);
                     for (c, (_, column)) in out.values.iter_mut().enumerate() {
@@ -364,8 +394,15 @@ impl Triangle {
         self.shape
     }
 
-    /// Labels of the index axis: sorted by [`Triangle::from_long`], in the
-    /// requested order after [`Triangle::slice`].
+    /// Names of the key columns, in the order supplied to
+    /// [`Triangle::from_long`]; empty for a triangle without keys.
+    pub fn key_names(&self) -> &[String] {
+        &self.keys
+    }
+
+    /// Labels of the index axis, one part per key: sorted by
+    /// [`Triangle::from_long`], in the requested order after
+    /// [`Triangle::slice`].
     pub fn index(&self) -> &[Label] {
         &self.index
     }
@@ -656,7 +693,7 @@ impl Triangle {
             }
         }
 
-        let mut index = Vec::new();
+        let mut index: Vec<usize> = Vec::new();
         let mut origin = Vec::new();
         let mut ages = Vec::new();
         let mut columns: Vec<Vec<f64>> = vec![Vec::new(); nc];
@@ -669,7 +706,7 @@ impl Triangle {
                         sums[c] = if sums[c].is_nan() { x } else { sums[c] + x };
                     }
                 }
-                index.push(self.index[i].clone());
+                index.push(i);
                 origin.push(new_origin);
                 ages.push((valuation.months_since(new_origin) + 1) as Lag);
                 for (column, sum) in columns.iter_mut().zip(sums) {
@@ -684,8 +721,22 @@ impl Triangle {
             .zip(&columns)
             .map(|(name, v)| (name.as_str(), v.as_slice()))
             .collect();
+        let key_values: Vec<Vec<&str>> = (0..self.keys.len())
+            .map(|k| {
+                index
+                    .iter()
+                    .map(|&i| self.index[i].parts()[k].as_str())
+                    .collect()
+            })
+            .collect();
+        let keys: Vec<(&str, &[&str])> = self
+            .keys
+            .iter()
+            .zip(&key_values)
+            .map(|(name, v)| (name.as_str(), v.as_slice()))
+            .collect();
         let out = Self::from_long(&Long {
-            index: Some(&index),
+            keys: &keys,
             origin: &origin,
             development: DevelopmentColumn::Age(&ages),
             values: &values,
@@ -853,7 +904,7 @@ pub(crate) mod tests {
             }
         }
         Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&ages),
             values: &[("values", &values)],
@@ -880,7 +931,9 @@ pub(crate) mod tests {
         assert_eq!(t.origins()[0], Period::year(1981));
         assert_eq!(t.origins()[9].to_string(), "1990");
         assert_eq!(t.valuation(), m(1990, 12));
-        assert_eq!(t.index(), [Label::from("Total")]);
+        assert_eq!(t.index(), [Label::default()]);
+        assert!(t.key_names().is_empty());
+        assert_eq!(t.index()[0].to_string(), "Total");
         assert!(t.is_cumulative());
     }
 
@@ -898,7 +951,7 @@ pub(crate) mod tests {
     fn incremental_round_trips_with_holes() {
         let origin = [2020, 2020, 2020, 2021].map(Month::january);
         let t = Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&[12, 36, 48, 12]),
             values: &[("paid", &[10.0, 25.0, 25.0, 7.0])],
@@ -932,16 +985,13 @@ pub(crate) mod tests {
 
     #[test]
     fn from_long_by_valuation_with_segments_and_duplicates() {
-        let index = [
-            Label::new(["B", "x"]),
-            Label::new(["A", "y"]),
-            Label::new(["A", "y"]),
-            Label::new(["A", "y"]),
-        ];
         let origin = [m(2020, 5), m(2020, 2), m(2020, 3), m(2020, 1)];
         let valuation = [m(2020, 6), m(2020, 3), m(2020, 3), m(2020, 6)];
         let t = Triangle::from_long(&Long {
-            index: Some(&index),
+            keys: &[
+                ("lob", &["B", "A", "A", "A"]),
+                ("state", &["x", "y", "y", "y"]),
+            ],
             origin: &origin,
             development: DevelopmentColumn::Valuation(&valuation),
             values: &[("paid", &[1.0, 2.0, 3.0, f64::NAN]), ("count", &[1.0; 4])],
@@ -963,27 +1013,131 @@ pub(crate) mod tests {
         assert_eq!(t.valuation(), m(2020, 6));
     }
 
-    #[test]
-    fn to_long_round_trips() {
-        let t = raa();
-        let long = t.to_long();
-        assert_eq!(long.origin.len(), 55);
+    /// Rebuilds a triangle from its own long table.
+    fn from_long_table(long: &LongTable, grain: Grain) -> Result<Triangle> {
+        let key_values: Vec<Vec<&str>> = long
+            .keys
+            .iter()
+            .map(|(_, v)| v.iter().map(String::as_str).collect())
+            .collect();
+        let keys: Vec<(&str, &[&str])> = long
+            .keys
+            .iter()
+            .zip(&key_values)
+            .map(|((n, _), v)| (n.as_str(), v.as_slice()))
+            .collect();
         let values: Vec<(&str, &[f64])> = long
             .values
             .iter()
             .map(|(n, v)| (n.as_str(), v.as_slice()))
             .collect();
-        let back = Triangle::from_long(&Long {
-            index: Some(&long.index),
+        Triangle::from_long(&Long {
+            keys: &keys,
             origin: &long.origin,
             development: DevelopmentColumn::Age(&long.development),
             values: &values,
+            origin_grain: grain,
+            development_grain: grain,
+            cumulative: true,
+        })
+    }
+
+    #[test]
+    fn to_long_round_trips() {
+        let t = raa();
+        let long = t.to_long();
+        assert_eq!(long.origin.len(), 55);
+        assert!(long.keys.is_empty());
+        assert_eq!(from_long_table(&long, Grain::Year).unwrap(), t);
+    }
+
+    /// Two lines by two states, two measures: paid and incurred.
+    fn multi_key() -> Triangle {
+        let origin = [2020, 2020, 2021, 2020, 2020, 2021].map(Month::january);
+        Triangle::from_long(&Long {
+            keys: &[
+                ("lob", &["Home", "Home", "Home", "Auto", "Auto", "Auto"]),
+                ("state", &["NY", "NY", "NY", "CA", "CA", "TX"]),
+            ],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 12, 12, 24, 12]),
+            values: &[
+                ("paid", &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+                ("incurred", &[2.0, 3.0, 4.0, 5.0, 6.0, f64::NAN]),
+            ],
             origin_grain: Grain::Year,
             development_grain: Grain::Year,
             cumulative: true,
         })
-        .unwrap();
-        assert_eq!(back, t);
+        .unwrap()
+    }
+
+    #[test]
+    fn named_keys_round_trip() {
+        let t = multi_key();
+        assert_eq!(t.key_names(), ["lob", "state"]);
+        assert_eq!(
+            t.index(),
+            [
+                Label::new(["Auto", "CA"]),
+                Label::new(["Auto", "TX"]),
+                Label::new(["Home", "NY"])
+            ]
+        );
+        assert_eq!(t.shape(), [3, 2, 2, 2]);
+        assert_eq!(t.get(1, 0, 1, 0), Some(6.0));
+        assert_eq!(t.get(1, 1, 1, 0), None);
+        let long = t.to_long();
+        assert_eq!(long.keys[0].0, "lob");
+        assert_eq!(long.keys[1].0, "state");
+        assert_eq!(
+            long.keys[0].1,
+            ["Auto", "Auto", "Auto", "Home", "Home", "Home"]
+        );
+        assert_eq!(long.keys[1].1, ["CA", "CA", "TX", "NY", "NY", "NY"]);
+        assert_eq!(long.values[0].1, [4.0, 5.0, 6.0, 1.0, 2.0, 3.0]);
+        assert_eq!(from_long_table(&long, Grain::Year).unwrap(), t);
+        // Keys survive slicing and a grain change.
+        let s = t
+            .slice(Some(&[Label::new(["Home", "NY"])]), Some(&["incurred"]))
+            .unwrap();
+        assert_eq!(s.key_names(), ["lob", "state"]);
+        assert_eq!(s.to_long().keys[1].1, ["NY"; 3]);
+        let g = t.grain(Grain::Year, Grain::Year).unwrap();
+        assert_eq!(g, t);
+    }
+
+    #[test]
+    fn rejects_bad_keys() {
+        let origin = [Month::january(2020); 2];
+        let build = |keys: &[(&str, &[&str])]| {
+            Triangle::from_long(&Long {
+                keys,
+                origin: &origin,
+                development: DevelopmentColumn::Age(&[12, 24]),
+                values: &[("paid", &[1.0, 2.0])],
+                origin_grain: Grain::Year,
+                development_grain: Grain::Year,
+                cumulative: true,
+            })
+        };
+        assert_eq!(
+            build(&[("lob", &["A", "A"]), ("lob", &["B", "B"])]),
+            Err(Error::DuplicateKey("lob".into()))
+        );
+        assert_eq!(
+            build(&[("paid", &["A", "A"])]),
+            Err(Error::KeyClash("paid".into()))
+        );
+        assert_eq!(
+            build(&[("lob", &["A"])]),
+            Err(Error::LengthMismatch {
+                column: "lob".into(),
+                expected: 2,
+                found: 1
+            })
+        );
+        assert_eq!(build(&[("lob", &["A", "A"])]).unwrap().shape()[0], 1);
     }
 
     #[test]
@@ -991,7 +1145,7 @@ pub(crate) mod tests {
         let origin = [Month::january(2020); 2];
         let base = |dev: &[Lag], paid: &[f64]| {
             Triangle::from_long(&Long {
-                index: None,
+                keys: &[],
                 origin: &origin,
                 development: DevelopmentColumn::Age(dev),
                 values: &[("paid", paid)],
@@ -1021,10 +1175,9 @@ pub(crate) mod tests {
 
     #[test]
     fn slice_selects_segments_and_columns() {
-        let index = [Label::from("A"), Label::from("B")];
         let origin = [Month::january(2020); 2];
         let t = Triangle::from_long(&Long {
-            index: Some(&index),
+            keys: &[("lob", &["A", "B"])],
             origin: &origin,
             development: DevelopmentColumn::Age(&[12, 12]),
             values: &[("paid", &[1.0, 2.0]), ("incurred", &[3.0, 4.0])],
@@ -1075,7 +1228,7 @@ pub(crate) mod tests {
             }
         }
         Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&ages),
             values: &[("paid", &values)],
@@ -1155,7 +1308,7 @@ pub(crate) mod tests {
             for &q in *quarters {
                 let start = m(2020, 1).add_months(3 * q);
                 for k in 1..=(4 - q) {
-                    index.push(Label::from(*label));
+                    index.push(*label);
                     origin.push(start);
                     ages.push(3 * k as Lag);
                     values.push(k as f64);
@@ -1163,7 +1316,7 @@ pub(crate) mod tests {
             }
         }
         Triangle::from_long(&Long {
-            index: Some(&index),
+            keys: &[("segment", &index)],
             origin: &origin,
             development: DevelopmentColumn::Age(&ages),
             values: &[("paid", &values)],
@@ -1200,7 +1353,7 @@ pub(crate) mod tests {
     fn missing_incremental_rows_are_zero_increments() {
         let origin = [2018, 2018, 2018, 2019, 2019, 2020, 2020, 2021].map(Month::january);
         let t = Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12, 24, 12]),
             values: &[(

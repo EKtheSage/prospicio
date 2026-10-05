@@ -153,7 +153,7 @@ pub fn triangle(name: &str) -> Triangle {
         .collect();
     let values: Vec<f64> = rows.iter().map(|r| parse(r, "value")).collect();
     Triangle::from_long(&Long {
-        index: None,
+        keys: &[],
         origin: &origin,
         development: DevelopmentColumn::Age(&ages),
         values: &[("values", &values)],

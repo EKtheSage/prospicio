@@ -9,7 +9,7 @@ triangle(
   origin,
   development,
   columns,
-  index = NULL,
+  keys = NULL,
   origin_grain = "Y",
   development_grain = "Y",
   cumulative = TRUE,
@@ -18,7 +18,7 @@ triangle(
 )
 }
 \arguments{
-\item{data}{A data.frame with one row per (index, origin, development).}
+\item{data}{A data.frame with one row per (keys, origin, development).}
 
 \item{origin}{Name of the origin column: Date, POSIXct (any day in the
 origin period) or whole-number years.}
@@ -28,8 +28,10 @@ origin period) or whole-number years.}
 
 \item{columns}{Names of the value columns (numeric).}
 
-\item{index}{Names of the index columns, or \code{NULL} for a single segment
-labelled \code{"Total"}. Several columns make multi-part labels.}
+\item{keys}{Names of the key columns, such as \code{c("lob", "state")}, or
+\code{NULL} for a single segment labelled \code{"Total"}. Key values are stored
+as character and may not be \code{NA}; key names must differ from each other
+and from \code{columns}.}
 
 \item{origin_grain, development_grain}{Length of an origin period and
 spacing of the development ages: \code{"M"} (month), \code{"Q"} (quarter), \code{"S"}
@@ -55,20 +57,26 @@ and incurred) x origin period x development age in months. Cells that
 are not observed are \code{NA}; a zero is an observation.
 }
 \details{
-\code{triangle()} builds one from a long table, one row per (index, origin,
+Segments are named by key columns such as \code{lob} and \code{state}. A triangle
+without keys has one segment, labelled \code{"Total"}.
+
+\code{triangle()} builds one from a long table, one row per (keys, origin,
 development). Origins span every period from the earliest to the latest
 row and ages every development period from the youngest to the oldest.
-Rows with the same (index, origin, development) are summed, and \code{NA}
+Rows with the same (keys, origin, development) are summed, and \code{NA}
 values are missing. Incremental input (\code{cumulative = FALSE}) follows
 chainladder-python: a missing row is a period without movement.
 
 Read-only properties: \code{x@shape} (index, column, origin and development
-lengths), \code{x@index} (a data.frame of index labels, one row per index
-position), \code{x@columns}, \code{x@origins} (period labels such as \code{"1981"},
+lengths), \code{x@keys} (the key names), \code{x@index} (a data.frame with one
+column per key and one row per segment; no columns without keys),
+\code{x@columns}, \code{x@origins} (period labels such as \code{"1981"},
 \code{"2021Q3"}, \code{"2021H2"} or \code{"2021-08"}), \code{x@development} (ages in months),
 \code{x@valuation} (the last day of the latest valuation month), \code{x@origin_grain},
 \code{x@development_grain}, \code{x@is_cumulative} and \code{x@values} (a 4-D array with
-dimnames). \code{as.data.frame()} gives the long table back.
+dimnames, whose index names join the key values with \code{" / "}).
+\code{as.data.frame()} gives the long table back, with the key columns by
+name.
 }
 \examples{
 long <- data.frame(
@@ -80,6 +88,18 @@ tri <- triangle(long, origin = "year", development = "age", columns = "paid")
 tri
 tri@values[1, "paid", , ]
 tri@valuation
+
+# Two lines of business as a key column.
+by_lob <- data.frame(
+  lob = c("auto", "auto", "home"),
+  year = c(2020, 2020, 2020),
+  age = c(12, 24, 12),
+  paid = c(100, 150, 40)
+)
+tri <- triangle(by_lob, "year", "age", "paid", keys = "lob")
+tri@keys
+tri@index
+as.data.frame(tri)
 }
 \seealso{
 \code{\link[=chain_ladder]{chain_ladder()}}, \code{\link[=mack]{mack()}}, \code{\link[=to_incremental]{to_incremental()}}, \code{\link[=grain]{grain()}},

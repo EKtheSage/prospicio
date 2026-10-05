@@ -7,8 +7,9 @@
 \item{x}{A \link{triangle}.}
 
 \item{index}{Index labels to keep, or \code{NULL} for all: a character vector
-of one-part labels, a list of character vectors (the parts of each
-label), or a data.frame with one row per label.}
+of labels for a triangle with one key, a list of character vectors (the
+key values of each label, in key order), or a data.frame with one row
+per label and one column per key, matched by name, as \code{x@index} gives. A triangle without keys has the one label \code{"Total"}.}
 
 \item{columns}{Column names to keep, or \code{NULL} for all.}
 
@@ -24,6 +25,6 @@ a label or column twice, or one that does not exist, is an error.
 \examples{
 long <- data.frame(lob = rep(c("auto", "home"), each = 3), year = c(2020, 2020, 2021),
                    age = c(12, 24, 12), paid = 1:6, incurred = 2 * (1:6))
-tri <- triangle(long, "year", "age", c("paid", "incurred"), index = "lob")
+tri <- triangle(long, "year", "age", c("paid", "incurred"), keys = "lob")
 subset(tri, index = "home", columns = "incurred")@values
 }

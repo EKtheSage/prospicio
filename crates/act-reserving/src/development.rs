@@ -52,7 +52,7 @@ pub enum SigmaInterpolation {
 /// # use act_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
 /// # let origin = [2020, 2020, 2021].map(Month::january);
 /// # let tri = Triangle::from_long(&Long {
-/// #     index: None,
+/// #     keys: &[],
 /// #     origin: &origin,
 /// #     development: DevelopmentColumn::Age(&[12, 24, 12]),
 /// #     values: &[("paid", &[100.0, 150.0, 110.0])],

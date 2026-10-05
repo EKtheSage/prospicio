@@ -39,7 +39,9 @@ stopifnot(
   identical(raa@origins, as.character(1981:1990)),
   identical(raa@development, seq(12L, 120L, by = 12L)),
   identical(raa@columns, "value"),
-  identical(raa@index$index, "Total"),
+  identical(raa@keys, character()),
+  identical(dim(raa@index), c(1L, 0L)),
+  identical(dimnames(raa@values)$index, "Total"),
   identical(raa@valuation, as.Date("1990-12-31")),
   raa@is_cumulative,
   raa@origin_grain == "Y", raa@development_grain == "Y",
@@ -125,6 +127,7 @@ stopifnot(identical(names(long), c("origin", "development", "value")),
           inherits(long$origin, "Date"), nrow(long) == 55)
 back <- triangle(long, "origin", "development", "value")
 stopifnot(identical(back@values, raa@values), identical(back@origins, raa@origins))
+stopifnot(identical(subset(raa, index = "Total")@values, raa@values))
 
 # Incremental and cumulative.
 inc <- to_incremental(raa)
@@ -147,11 +150,12 @@ stopifnot(identical(triangle(by_year, "origin", "development", "value",
                              development_is_valuation = TRUE)@values,
                     raa@values))
 
-# Several index columns and value columns; subset.
+# Several key columns and value columns; subset.
 two <- rbind(transform(raw, lob = "auto", state = "CA", paid = value, incurred = 1.5 * value),
              transform(raw, lob = "home", state = "NY", paid = 2 * value, incurred = 3 * value))
-multi <- triangle(two, "origin", "development", c("paid", "incurred"), index = c("lob", "state"))
+multi <- triangle(two, "origin", "development", c("paid", "incurred"), keys = c("lob", "state"))
 stopifnot(
+  identical(multi@keys, c("lob", "state")),
   identical(unname(multi@shape), c(2L, 2L, 10L, 10L)),
   identical(multi@index, data.frame(lob = c("auto", "home"), state = c("CA", "NY"))),
   identical(dimnames(multi@values)$index, c("auto / CA", "home / NY"))
@@ -159,12 +163,24 @@ stopifnot(
 home <- subset(multi, index = list(c("home", "NY")), columns = "incurred")
 near(home@values[!is.na(home@values)], 3 * raa@values[!is.na(raa@values)])
 swapped <- subset(multi, index = data.frame(lob = c("home", "auto"), state = c("NY", "CA")))
-stopifnot(identical(swapped@index$lob, c("home", "auto")))
+stopifnot(identical(swapped@index$lob, c("home", "auto")), identical(swapped@keys, c("lob", "state")))
+# data.frame columns are matched to the keys by name, not position.
+by_name <- subset(multi, index = data.frame(state = "CA", lob = "auto"))
+stopifnot(identical(by_name@index, data.frame(lob = "auto", state = "CA")))
+expect_error_like(subset(multi, index = data.frame(lob = "auto")), "index columns must be the keys")
 multi_long <- as.data.frame(multi)
 stopifnot(identical(names(multi_long), c("lob", "state", "origin", "development", "paid", "incurred")))
-again <- triangle(multi_long, "origin", "development", c("paid", "incurred"), index = c("lob", "state"))
-stopifnot(identical(again@values, multi@values))
-one <- triangle(two, "origin", "development", "paid", index = "lob")
+again <- triangle(multi_long, "origin", "development", c("paid", "incurred"), keys = multi@keys)
+stopifnot(identical(again@values, multi@values), identical(as.data.frame(again), multi_long))
+# Key order follows the argument; factor and numeric keys become character.
+flipped <- triangle(multi_long, "origin", "development", "paid", keys = c("state", "lob"))
+stopifnot(identical(flipped@index, data.frame(state = c("CA", "NY"), lob = c("auto", "home"))),
+          identical(names(as.data.frame(flipped))[1:2], c("state", "lob")))
+coded <- transform(raw, company = factor(ifelse(origin < 1985, 7, 8)))
+by_company <- triangle(coded, "origin", "development", "value", keys = "company")
+stopifnot(identical(by_company@index$company, c("7", "8")),
+          identical(as.data.frame(by_company)$company[1], "7"))
+one <- triangle(two, "origin", "development", "paid", keys = "lob")
 near(chain_ladder(subset(one, index = "home"))@total_reserve, 2 * chain_ladder(raa)@total_reserve,
      1e-12)
 
@@ -210,7 +226,16 @@ short <- triangle(data.frame(y = c(2020, 2020, 2021), d = c(12, 24, 12), v = c(1
 expect_error_like(mack(short), "at least 3 development ages")
 expect_error_like(triangle(transform(raw, value = Inf), "origin", "development", "value"), "infinite")
 expect_error_like(triangle(raw, "origin", "development", "value", origin_grain = "Y",
-                           development_grain = "Y", cumulative = TRUE, index = "lob"), "no columns named lob")
+                           development_grain = "Y", cumulative = TRUE, keys = "lob"), "no columns named lob")
+expect_error_like(triangle(two, "origin", "development", "paid", keys = c("lob", "lob")),
+                  "key lob is supplied twice")
+expect_error_like(triangle(two, "origin", "development", "paid", keys = "paid"),
+                  "paid is both a key and a value column")
+expect_error_like(triangle(transform(two, lob = replace(lob, 3, NA)), "origin", "development", "paid",
+                           keys = "lob"), "key column lob has missing values")
+clash <- triangle(transform(raw, year = origin, origin = "x"), "year", "development", "value",
+                  keys = "origin")
+expect_error_like(as.data.frame(clash), "clashes with the")
 expect_error_like(triangle(transform(raw, development = replace(development, 2, 25)), "origin", "development",
                            "value", development_grain = "Y"), "not on the development grid")
 expect_error_like(triangle(transform(raw, origin = origin + 0.5), "origin", "development", "value"),
