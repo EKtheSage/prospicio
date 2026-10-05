@@ -8,5 +8,6 @@ publish.workspace = true
 
 [dependencies]
 act-core.workspace = true
+act-glm.workspace = true
 act-models.workspace = true
 act-prob.workspace = true

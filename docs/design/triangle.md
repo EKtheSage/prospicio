@@ -144,6 +144,43 @@ projects the resampled triangles):
   deviations and total quantiles match R within four Monte Carlo standard
   errors (`validation/scripts/reserving_bootstrap_r.R`).
 
+### ODP GLM
+
+`OdpGlm` is the same over-dispersed Poisson model fitted as a GLM
+(`docs/design/models.md`, "Fitting a triangle with several models"):
+`ln E[X_od] = c + a_o + b_d`, `Var X_od = φ E[X_od]`, by
+`act_glm::Glm::over_dispersed_poisson()` (Pearson's `φ`) on the observed
+rows of a `TriangleFrame`.
+
+- Coding: `Terms` with an intercept and `origin` and `development`
+  factors, levels learned on every cell so the future rows code with the
+  training columns. The references are the first origin and the first age,
+  as in R's `factor()`; the other levels are in string order
+  (`development[108]` before `development[24]`).
+- `OdpGlmFit` holds the `GlmFit` (coefficients, standard errors, `φ`), the
+  `Coding`, the future cells `(Period, age)` with their fitted means, and
+  reserves by origin (0 for a fully developed origin).
+- `predict_distribution(n_sims, seed)` re-keys the GLM's joint draws over
+  the future cells to dimensions `["origin", "development"]`;
+  `aggregate(["origin"])` gives reserves by origin. Each draw takes the
+  coefficients from their normal approximation (parameter uncertainty) and
+  each cell as `φ · Poisson(μ / φ)` (process uncertainty). Drawing the
+  coefficients on the log scale lifts each cell's mean by `exp(v / 2)`, with
+  `v = xᵀ Σ x` (`predictive_means()`), so the draws' mean is above the
+  Chain Ladder reserve: +7.2% on GenIns, +0.4% on ABC. The bootstrap's
+  mean stays at the Chain Ladder.
+- The fit fails, naming the cell or level, on a hole (a past cell with no
+  increment), on an origin or age with no observed increment (a level only
+  in future cells), and on a negative increment: the Poisson family needs
+  non-negative responses, as R's `quasipoisson` does. RAA has one (1982 at
+  84 months, -103), so the GLM does not fit RAA.
+- Parity (`validation/tests/reserving.rs`): on GenIns and ABC the future
+  cells summed by origin equal the Chain Ladder reserves and `φ` equals the
+  bootstrap's scale (relative 1e-8; Renshaw and Verrall 1998), and the
+  coefficients, standard errors, `φ` and reserves match R's
+  `glm(inc ~ factor(origin) + factor(dev), family = quasipoisson)` to
+  relative 1e-9 (`validation/scripts/reserving_glm_r.R`).
+
 ## Migration from the sandbox (done)
 
 `development.rs` and `chain_ladder.rs` (volume and simple averages,

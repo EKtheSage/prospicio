@@ -5,14 +5,16 @@
 //! `scripts/reserving_r.R` and `scripts/reserving_chainladder_python.py`.
 //! The ODP bootstrap is checked against R's `BootChainLadder`: exactly for
 //! the scale and residuals, within Monte Carlo tolerances for the reserve
-//! distribution (`scripts/reserving_bootstrap_r.R`).
+//! distribution (`scripts/reserving_bootstrap_r.R`). The ODP GLM is checked
+//! against Chain Ladder, the bootstrap's scale and R's quasi-Poisson `glm`
+//! (`scripts/reserving_glm_r.R`).
 
 use std::collections::HashMap;
 
 use act_prob::Distribution;
 use act_reserving::{
     Average, ChainLadder, ChainLadderFit, Development, Mack, MackFit, OdpBootstrap,
-    OdpBootstrapFit, Period, ProcessDistribution, SigmaInterpolation,
+    OdpBootstrapFit, OdpGlm, OdpGlmFit, Period, ProcessDistribution, SigmaInterpolation,
 };
 use act_validation::{Case, check, reference, triangle};
 
@@ -169,4 +171,124 @@ fn bootstrap_matches_r_bootchainladder() {
             _ => None,
         }
     });
+}
+
+/// Relative difference, with an absolute floor of 1 for values near zero.
+fn rel_diff(a: f64, b: f64) -> f64 {
+    (a - b).abs() / b.abs().max(1.0)
+}
+
+#[test]
+fn odp_glm_matches_r_glm() {
+    let mut fits: HashMap<String, OdpGlmFit> = HashMap::new();
+    check(&reference("reserving_glm_r.csv"), |case| {
+        let dataset = case.get("dataset");
+        assert_eq!(case.get("method"), "odp_glm");
+        let fit = fits.entry(dataset.to_string()).or_insert_with(|| {
+            OdpGlm::default()
+                .fit(&triangle(dataset), "values")
+                .unwrap_or_else(|e| panic!("{dataset}: {e}"))
+        });
+        let arg = case.get("arg");
+        let coefficient = || fit.glm.names().iter().position(|n| n == arg);
+        let origin = || {
+            let year: i32 = arg.parse().ok()?;
+            fit.origins.iter().position(|&p| p == Period::year(year))
+        };
+        match case.get("quantity") {
+            "coefficient" => Some(fit.glm.coefficients()[coefficient()?]),
+            "std_error" => Some(fit.glm.std_errors()[coefficient()?]),
+            "dispersion" => Some(fit.glm.dispersion()),
+            "reserve" => Some(fit.reserves[origin()?]),
+            "total_reserve" => Some(fit.total_reserve()),
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn odp_glm_reproduces_chain_ladder_and_bootstrap_scale() {
+    for dataset in ["genins", "abc"] {
+        let tri = triangle(dataset);
+        let fit = OdpGlm::default().fit(&tri, "values").unwrap();
+        // Renshaw and Verrall: the fitted future cells summed by origin are
+        // the volume-weighted Chain Ladder reserves.
+        let cl = ChainLadder::default().fit(&tri, "values").unwrap();
+        assert_eq!(fit.origins, cl.origins);
+        for (k, (a, b)) in fit.reserves.iter().zip(cl.reserves()).enumerate() {
+            assert!(rel_diff(*a, b) < 1e-8, "{dataset} origin {k}: {a} vs {b}");
+        }
+        assert!(rel_diff(fit.total_reserve(), cl.total_reserve()) < 1e-8);
+        // Pearson's dispersion is the ODP bootstrap's scale.
+        let boot = OdpBootstrap {
+            n_sims: 1,
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .unwrap();
+        let phi = fit.glm.dispersion();
+        assert!(
+            rel_diff(phi, boot.scale) < 1e-8,
+            "{dataset}: {phi} vs {}",
+            boot.scale
+        );
+    }
+}
+
+#[test]
+fn odp_glm_rejects_raa_negative_increment() {
+    // RAA 1982 falls from 15,599 to 15,496 at 84 months. R's quasipoisson
+    // family rejects it too.
+    let msg = OdpGlm::default()
+        .fit(&triangle("raa"), "values")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        msg.contains("origin 1982 at 84 months has a negative increment (-103)"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn odp_glm_predictive_distribution_matches_its_mean() {
+    const SIMS: usize = 20_000;
+    for dataset in ["genins", "abc"] {
+        let tri = triangle(dataset);
+        let fit = OdpGlm::default().fit(&tri, "values").unwrap();
+        let cl = ChainLadder::default().fit(&tri, "values").unwrap();
+        let pd = fit.predict_distribution(SIMS, 20_261_005).unwrap();
+        assert_eq!(pd.dims(), ["origin", "development"]);
+        assert_eq!(pd.n_components(), fit.future.len());
+        let mc_se = pd.std_dev() / (SIMS as f64).sqrt();
+        let predictive: f64 = fit.predictive_means().iter().sum();
+        // The draws' mean is the fitted reserve (Chain Ladder's) times the
+        // lognormal factor exp(v / 2) per cell, from drawing the
+        // coefficients on the log scale: +7.2% on GenIns, +0.4% on ABC.
+        assert!((pd.mean() - predictive).abs() < 4.0 * mc_se, "{dataset}");
+        assert!(predictive > cl.total_reserve(), "{dataset}");
+        // Reserves by origin: one component per origin with a future cell.
+        let by_origin = pd.aggregate(&["origin"]).unwrap();
+        assert_eq!(by_origin.n_components(), cl.origins.len() - 1);
+        for (k, key) in by_origin.components().iter().enumerate() {
+            let o = cl
+                .origins
+                .iter()
+                .position(|p| key[0] == (*p).into())
+                .unwrap();
+            assert!(o > 0, "{dataset}: the oldest origin is fully developed");
+            let m = by_origin.marginal(key).unwrap();
+            let se = m.std_dev() / (SIMS as f64).sqrt();
+            let want: f64 = fit
+                .future
+                .iter()
+                .zip(fit.predictive_means())
+                .filter(|((origin, _), _)| *origin == cl.origins[o])
+                .map(|(_, mean)| mean)
+                .sum();
+            assert!(
+                (m.mean() - want).abs() < 4.0 * se,
+                "{dataset} component {k}"
+            );
+        }
+    }
 }
