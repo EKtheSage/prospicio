@@ -9,7 +9,7 @@ requires-python = ">=3.9"
 dynamic = ["version"]
 
 [dependency-groups]
-dev = ["maturin>=1.7,<2", "pytest", "scipy"]
+dev = ["maturin>=1.7,<2", "pandas", "pytest", "scipy"]
 docs = [
     "great-docs>=0.17 ; python_full_version >= '3.11'",
 ]
