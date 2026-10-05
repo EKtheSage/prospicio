@@ -41,6 +41,10 @@ pub enum Error {
     InvalidTail(f64),
     /// The method needs more development ages than the triangle has.
     TooFewAges { needed: usize, found: usize },
+    /// The bootstrap cannot run on this input or with these settings.
+    Bootstrap(&'static str),
+    /// An error from a shared crate (simulation, distributions).
+    Core(act_core::Error),
 }
 
 impl fmt::Display for Error {
@@ -79,8 +83,16 @@ impl fmt::Display for Error {
                 f,
                 "method needs at least {needed} development ages, triangle has {found}"
             ),
+            Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
+            Self::Core(e) => e.fmt(f),
         }
     }
 }
 
 impl std::error::Error for Error {}
+
+impl From<act_core::Error> for Error {
+    fn from(e: act_core::Error) -> Self {
+        Self::Core(e)
+    }
+}

@@ -2,7 +2,7 @@
 //! one-year view.
 //!
 //! v0.1 so far: the [`Triangle`] (`docs/design/triangle.md`), development
-//! factors, [`ChainLadder`] and [`Mack`]. Results are checked against R
+//! factors, [`ChainLadder`], [`Mack`] and the [`OdpBootstrap`]. Results are checked against R
 //! ChainLadder and chainladder-python in `validation/tests/reserving.rs`.
 //!
 //! ```
@@ -27,6 +27,7 @@
 //! # Ok::<(), act_reserving::Error>(())
 //! ```
 
+pub mod bootstrap;
 pub mod chain_ladder;
 pub mod development;
 pub mod error;
@@ -34,6 +35,7 @@ pub mod mack;
 pub mod triangle;
 
 pub use act_core::{Grain, Lag, Month, Period};
+pub use bootstrap::{OdpBootstrap, OdpBootstrapFit, ProcessDistribution};
 pub use chain_ladder::{ChainLadder, ChainLadderFit};
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
 pub use error::{Error, Result};
