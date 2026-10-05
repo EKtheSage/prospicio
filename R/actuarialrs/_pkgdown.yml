@@ -126,3 +126,13 @@ reference:
       - pot_tail
       - tail_diagnostics
       - gpd_fit
+  - title: Reserving
+    contents:
+      - triangle
+      - subset.triangle
+      - to_incremental
+      - latest_diagonal
+      - link_ratios
+      - grain
+      - chain_ladder_fit
+      - mack_fit

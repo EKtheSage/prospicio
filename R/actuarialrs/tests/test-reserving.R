@@ -1,0 +1,202 @@
+suppressMessages(library(actuarialrs))
+
+# Reports the values on failure, so a CI log shows what diverged.
+near <- function(a, b, rel = 1e-12) {
+  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
+    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
+         call. = FALSE)
+  }
+}
+
+# The error message of `expr`, which must fail.
+error_of <- function(expr) {
+  msg <- tryCatch({
+    expr
+    NULL
+  }, error = conditionMessage)
+  if (is.null(msg)) stop("expected an error", call. = FALSE)
+  msg
+}
+
+expect_error_like <- function(expr, pattern) {
+  msg <- error_of(expr)
+  if (!grepl(pattern, msg, fixed = TRUE)) {
+    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
+  }
+}
+
+# Tests run from the repository root (CI and `cargo xtask r`).
+validation <- function(...) file.path("validation", ...)
+read_long <- function(name) utils::read.csv(validation("data", paste0(name, ".csv")), comment.char = "#")
+load_triangle <- function(name) triangle(read_long(name), "origin", "development", "value")
+
+tris <- list(raa = load_triangle("raa"), genins = load_triangle("genins"), abc = load_triangle("abc"))
+
+# Shapes and accessors.
+raa <- tris$raa
+stopifnot(
+  identical(unname(raa@shape), c(1L, 1L, 10L, 10L)),
+  identical(raa@origins, as.character(1981:1990)),
+  identical(raa@development, seq(12L, 120L, by = 12L)),
+  identical(raa@columns, "value"),
+  identical(raa@index$index, "Total"),
+  identical(raa@valuation, as.Date("1990-12-31")),
+  raa@is_cumulative,
+  raa@origin_grain == "Y", raa@development_grain == "Y",
+  identical(dim(raa@values), c(1L, 1L, 10L, 10L)),
+  is.na(raa@values[1, 1, "1990", "24"])
+)
+near(raa@values[1, "value", "1981", "12"], 5012)
+near(sum(latest_diagonal(raa)), 160987)
+near(sum(latest_diagonal(tris$genins)), 34358090)
+near(sum(latest_diagonal(tris$abc)), 10221194)
+near(link_ratios(raa)@values[1, 1, "1981", "12"], 8269 / 5012)
+stopifnot(!link_ratios(raa)@is_cumulative, link_ratios(raa)@shape[["development"]] == 9L)
+
+# Chain ladder and Mack against R ChainLadder: every reference row, with
+# its own tolerance (a case passes if it meets either).
+# The free-text `source` column holds unquoted commas, so keep the first
+# seven fields of each line.
+lines <- grep("^#", readLines(validation("reference", "reserving_chainladder_r.csv")),
+              value = TRUE, invert = TRUE)
+fields <- lapply(strsplit(lines, ",", fixed = TRUE), `[`, 1:7)
+ref <- utils::read.csv(text = vapply(fields, paste, "", collapse = ","))
+settings <- list(
+  chain_ladder = c("volume", "log-linear"), mack = c("volume", "log-linear"),
+  chain_ladder_simple = c("simple", "log-linear"), mack_alpha0 = c("simple", "log-linear"),
+  mack_alpha2 = c("regression", "log-linear"), mack_sigma_mack = c("volume", "mack")
+)
+fits <- list()
+fit_for <- function(dataset, method) {
+  key <- paste(dataset, method)
+  if (is.null(fits[[key]])) {
+    s <- settings[[method]]
+    fits[[key]] <<- mack(tris[[dataset]], average = s[1], sigma_interpolation = s[2])
+  }
+  fits[[key]]
+}
+value_of <- function(fit, quantity, arg) {
+  k <- as.integer(arg) + 1L
+  o <- as.character(arg)
+  switch(quantity,
+    ata_factor = fit@ldf[[k]], cdf = fit@cdf[[k]], sigma = fit@sigma[[k]], f_se = fit@std_err[[k]],
+    ultimate = fit@ultimate[[o]], reserve = fit@reserve[[o]], se = fit@standard_error[[o]],
+    process_risk = fit@process_risk[[o]], parameter_risk = fit@parameter_risk[[o]],
+    total_ultimate = fit@total_ultimate, total_reserve = fit@total_reserve,
+    total_standard_error = fit@total_standard_error, total_process_risk = fit@total_process_risk,
+    total_parameter_risk = fit@total_parameter_risk,
+    stop("unknown quantity ", quantity)
+  )
+}
+for (r in seq_len(nrow(ref))) {
+  row <- ref[r, ]
+  got <- value_of(fit_for(row$dataset, row$method), row$quantity, row$arg)
+  err <- abs(got - row$expected)
+  if (!(got == row$expected || err <= row$abs_tol || err <= row$rel_tol * abs(row$expected))) {
+    stop(sprintf("%s %s %s[%s]: got %.17g, want %.17g", row$dataset, row$method, row$quantity,
+                 row$arg, got, row$expected), call. = FALSE)
+  }
+}
+stopifnot(nrow(ref) > 700)
+
+# The deterministic chain ladder gives the projection Mack builds on.
+for (name in names(tris)) {
+  cl <- chain_ladder(tris[[name]])
+  m <- mack(tris[[name]])
+  stopifnot(identical(cl@ultimate, m@ultimate), identical(cl@ldf, m@chain_ladder@ldf))
+  near(m@total_cv, m@total_standard_error / m@total_reserve)
+  near(sum(cl@reserve), cl@total_reserve, 1e-12)
+}
+cl <- chain_ladder(raa, "value", tail = 1.05)
+near(cl@cdf[["120-Ult"]], 1.05)
+near(cl@ultimate[["1981"]], 18834 * 1.05)
+stopifnot(identical(names(cl@ldf)[1], "12-24"), cl@alpha == 1, cl@tail == 1.05)
+df <- as.data.frame(mack(raa))
+stopifnot(identical(names(df), c("origin", "latest", "ultimate", "reserve", "process_risk",
+                                 "parameter_risk", "standard_error")), nrow(df) == 10)
+invisible(utils::capture.output(print(raa), print(cl), print(mack(raa))))
+
+# Long-table round trip.
+long <- as.data.frame(raa)
+stopifnot(identical(names(long), c("origin", "development", "value")),
+          inherits(long$origin, "Date"), nrow(long) == 55)
+back <- triangle(long, "origin", "development", "value")
+stopifnot(identical(back@values, raa@values), identical(back@origins, raa@origins))
+
+# Incremental and cumulative.
+inc <- to_incremental(raa)
+stopifnot(!inc@is_cumulative)
+near(inc@values[1, 1, "1981", "24"], 8269 - 5012)
+stopifnot(identical(to_cumulative(inc)@values, raa@values))
+inc_long <- as.data.frame(inc)
+from_inc <- triangle(inc_long, "origin", "development", "value", cumulative = FALSE)
+stopifnot(identical(to_cumulative(from_inc)@values, raa@values))
+
+# Development as valuation dates (and as valuation years).
+raw <- read_long("raa")
+by_val <- raw
+by_val$development <- as.Date(sprintf("%d-12-31", raw$origin + raw$development / 12 - 1))
+stopifnot(identical(triangle(by_val, "origin", "development", "value", valuation = TRUE)@values,
+                    raa@values))
+by_year <- transform(raw, development = origin + development / 12 - 1)
+stopifnot(identical(triangle(by_year, "origin", "development", "value", valuation = TRUE)@values,
+                    raa@values))
+
+# Several index columns and value columns; subset.
+two <- rbind(transform(raw, lob = "auto", state = "CA", paid = value, incurred = 1.5 * value),
+             transform(raw, lob = "home", state = "NY", paid = 2 * value, incurred = 3 * value))
+multi <- triangle(two, "origin", "development", c("paid", "incurred"), index = c("lob", "state"))
+stopifnot(
+  identical(unname(multi@shape), c(2L, 2L, 10L, 10L)),
+  identical(multi@index, data.frame(lob = c("auto", "home"), state = c("CA", "NY"))),
+  identical(dimnames(multi@values)$index, c("auto / CA", "home / NY"))
+)
+home <- subset(multi, index = list(c("home", "NY")), columns = "incurred")
+near(home@values[!is.na(home@values)], 3 * raa@values[!is.na(raa@values)])
+swapped <- subset(multi, index = data.frame(lob = c("home", "auto"), state = c("NY", "CA")))
+stopifnot(identical(swapped@index$lob, c("home", "auto")))
+multi_long <- as.data.frame(multi)
+stopifnot(identical(names(multi_long), c("lob", "state", "origin", "development", "paid", "incurred")))
+again <- triangle(multi_long, "origin", "development", c("paid", "incurred"), index = c("lob", "state"))
+stopifnot(identical(again@values, multi@values))
+one <- triangle(two, "origin", "development", "paid", index = "lob")
+near(chain_ladder(subset(one, index = "home"))@total_reserve, 2 * chain_ladder(raa)@total_reserve,
+     1e-12)
+
+# Grain: quarterly origins and ages to annual origins.
+q <- data.frame(
+  origin = as.Date(rep(c("2020-01-01", "2020-04-01", "2020-07-01", "2020-10-01"), 4:1)),
+  age = c(3, 6, 9, 12, 3, 6, 9, 3, 6, 3),
+  paid = 10
+)
+qt <- triangle(q, "origin", "age", "paid", origin_grain = "Q", development_grain = "Q")
+stopifnot(identical(qt@origins, c("2020Q1", "2020Q2", "2020Q3", "2020Q4")),
+          identical(qt@development, c(3L, 6L, 9L, 12L)))
+yt <- grain(qt, "Y", "Q")
+stopifnot(identical(yt@origins, "2020"), yt@origin_grain == "Y", yt@development_grain == "Q")
+near(yt@values[1, 1, "2020", ], c(10, 20, 30, 40))
+near(grain(qt, "Y", "Y")@values[1, 1, "2020", "12"], 40)
+stopifnot(identical(grain(raa, "Y", "Y")@values, raa@values))
+
+# Errors are ordinary R errors carrying the Rust message.
+expect_error_like(chain_ladder(multi, "paid"), "slice to one")
+expect_error_like(chain_ladder(multi), "several columns")
+expect_error_like(chain_ladder(raa, "paid"), "no column or index named paid")
+expect_error_like(chain_ladder(raa, tail = 0), "tail factor 0")
+expect_error_like(chain_ladder(raa, average = "median"), "should be one of")
+expect_error_like(grain(qt, "X"), "origin_grain must be")
+expect_error_like(grain(raa, "Q", "Q"), "invalid grain change")
+expect_error_like(subset(multi, columns = c("paid", "paid")), "supplied twice")
+expect_error_like(subset(multi, index = "nope"), "no column or index named nope")
+expect_error_like(mack(raa, sigma_interpolation = "x"), "should be one of")
+short <- triangle(data.frame(y = c(2020, 2020, 2021), d = c(12, 24, 12), v = c(1, 2, 3)), "y", "d", "v")
+expect_error_like(mack(short), "at least 3 development ages")
+expect_error_like(triangle(transform(raw, value = Inf), "origin", "development", "value"), "infinite")
+expect_error_like(triangle(raw, "origin", "development", "value", origin_grain = "Y",
+                           development_grain = "Y", cumulative = TRUE, index = "lob"), "no columns named lob")
+expect_error_like(triangle(transform(raw, development = replace(development, 2, 25)), "origin", "development",
+                           "value", development_grain = "Y"), "not on the development grid")
+expect_error_like(triangle(transform(raw, origin = origin + 0.5), "origin", "development", "value"),
+                  "whole-number years")
+
+cat("actuarialrs R reserving tests passed\n")

@@ -15,6 +15,7 @@ mod distributions;
 mod models;
 mod pareto;
 mod pricing;
+mod reserving;
 mod risk;
 
 pub(crate) fn to_r(e: act_core::Error) -> Error {
@@ -39,5 +40,6 @@ extendr_module! {
     use models;
     use pareto;
     use pricing;
+    use reserving;
     use risk;
 }

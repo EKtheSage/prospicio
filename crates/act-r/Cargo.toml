@@ -18,6 +18,7 @@ act-glm.workspace = true
 act-models.workspace = true
 act-prob.workspace = true
 act-pricing.workspace = true
+act-reserving.workspace = true
 # result_condition: Rust errors come back as R condition objects (raised by
 # R/actuarialrs/R/distributions.R) instead of panics, so R prints no Rust
 # panic message for ordinary input errors.
