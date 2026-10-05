@@ -63,7 +63,9 @@ for (name in DATASETS) {
   src <- sprintf("R ChainLadder %s: BootChainLadder(tri, R=%d, process.distr='gamma')", VER, N_R)
 
   resid <- boot$ChainLadder.Residuals[, , 1]
-  nobs <- sum(!is.na(resid))
+  # R's own nobs: every observed cell, even one whose residual is NaN
+  # because its fitted value is zero.
+  nobs <- n * (n + 1) / 2
   emit(name, "odp_bootstrap", "scale", "", sum(resid^2, na.rm = TRUE) / nobs, 0, 1e-9,
        paste0(src, " sum(ChainLadder.Residuals^2)/nobs"))
   for (i in seq_len(nrow(resid))) for (k in seq_len(ncol(resid))) {

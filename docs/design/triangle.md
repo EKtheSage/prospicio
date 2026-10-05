@@ -124,7 +124,9 @@ between origins through the shared factors.
 
 `OdpBootstrap` follows R ChainLadder's `BootChainLadder` (England and
 Verrall 2002), not chainladder-python's `BootstrapODPSample`, which uses
-hat-matrix residuals, drops zero residuals and adds no process error:
+hat-matrix residuals, drops zero residuals and re-centres the rest to mean
+zero (its Gamma process error is added later, when a downstream estimator
+projects the resampled triangles):
 
 - Residuals are unscaled Pearson residuals on every observed incremental
   cell, adjusted by `sqrt(n / (n - p))` with `p = origins + ages - 1`, zero
