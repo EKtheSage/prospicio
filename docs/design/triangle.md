@@ -165,7 +165,45 @@ root sandbox crate is deleted.
 2. **Development axis storage:** always ages in months. `dev_to_val()`
    returns a borrowed `CalendarView` keyed by valuation month;
    `val_to_dev()` returns the triangle.
-3. **Multi-part index labels:** `Label` is a tuple of strings, like a pandas
-   `MultiIndex` row.
+3. **Multi-part index labels:** superseded by decision 5. A `Label` is a
+   tuple of strings, one per named key column.
 4. **Exclusions** (chainladder's `drop`): a parameter of the development
    estimator, keeping the Triangle pure data. Not implemented yet.
+5. **Several measures, lines and other identifiers** (decided 2026-10-05).
+   The four-axis storage stays as the engine. What users see is a long
+   table with named key columns, plus 2-D views on demand. Chainladder's
+   cube is hard to read because of how it is presented: its keys have no
+   names, you select by position over four axes, and it prints well only
+   once you have narrowed it to one segment and one measure.
+   - **Named key columns.** A triangle knows its keys by name, for example
+     `["lob", "coverage", "company"]`. Each index position's `Label` holds
+     one value per key. With no keys there is one segment and an empty
+     label.
+   - **Measures are columns.** Paid, incurred and counts are columns of one
+     triangle, not separate triangles. They share keys, origins and ages,
+     so methods that combine them (Munich chain ladder, paid–incurred) get
+     aligned data.
+   - **Long table in, long table out.** `from_long` takes named key columns,
+     and `to_long` returns them. Method results are long tables with one
+     row per key × origin and quantities (ultimate, reserve, standard
+     error) as columns.
+   - **Select and group by name.** `select(key = values)` filters segments
+     and `group_by(keys)` sums the other keys away. Neither works by
+     position.
+   - **Every segment at once.** Methods fit each segment of a column and
+     return one long table. Stochastic methods return one joint
+     `PredictiveDistribution` with the key names and `origin` as
+     dimensions, so `aggregate(["lob"])` keeps the dependence between
+     segments.
+   - **Views for reading.** The bindings give a plain origin × development
+     table for one segment and measure (`view`). A triangle with many
+     segments prints a summary: one row per segment and measure, with its
+     origins, valuation and latest diagonal total.
+   - **Build order** (one PR each):
+     1. named keys in `from_long`, `to_long` and the bindings;
+     2. `select` and `group_by`;
+     3. fitting every segment, with long results;
+     4. `view` and the summary printout.
+
+     `TriangleFrame` gains the key columns as features, so one model can
+     share information across segments.
