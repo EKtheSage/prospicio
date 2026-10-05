@@ -214,7 +214,14 @@ and Python's `GlmFit` pickles through the artifact. `GamFit`
 (`"risk_rs.gam_fit"`, with each smooth's knots and centering constraint,
 so new data gets exactly the training basis) and `ElasticNetFit`
 (`"risk_rs.elastic_net_fit"`, one per `λ`; R saves the whole path) work
-the same way. Monitoring is still to come.
+the same way.
+
+Monitoring (`act_models::monitor::actual_vs_expected`): a stored model's
+predictions against actuals by period, `A = Σ w y` and `E = Σ w μ`, each
+period's z-score `(A - E) / √(φ Σ w V(μ))` from the model's own variance
+function, and a drift test: the precision-weighted slope of `A / E - 1`
+across periods with its standard error. `metrics::lift` gives the same
+split by predicted rate. Python and R `actual_vs_expected`.
 
 ## Fitting a triangle with several models
 

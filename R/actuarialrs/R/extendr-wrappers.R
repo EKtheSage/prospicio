@@ -6,6 +6,8 @@
 #' @useDynLib actuarialrs, .registration = TRUE
 NULL
 
+actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta, power, dispersion) .Call(wrap__actual_vs_expected_rust, periods, y, mu, weights, family_name, theta, power, dispersion)
+
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)

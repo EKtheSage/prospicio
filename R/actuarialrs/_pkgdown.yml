@@ -108,6 +108,7 @@ reference:
       - resampling
       - tuning
       - compare_models
+      - actual_vs_expected
       - mcmc_diagnostics
       - elpd
       - model_weights

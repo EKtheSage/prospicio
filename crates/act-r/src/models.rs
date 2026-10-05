@@ -777,8 +777,54 @@ fn pseudo_bma_weights_rust(lpd: &[f64], k: f64, n_draws: f64, seed: f64) -> Resu
     act_models::stack::pseudo_bma_weights(&cols, bb).map_err(to_r)
 }
 
+/// Actual against expected by period: `list(periods, n, weight, actual,
+/// expected, std_dev, total, trend, trend_std_error)`; `periods` are the
+/// sorted distinct labels' positions in `labels`.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn actual_vs_expected_rust(
+    periods: Robj,
+    y: &[f64],
+    mu: &[f64],
+    weights: &[f64],
+    family_name: &str,
+    theta: f64,
+    power: f64,
+    dispersion: f64,
+) -> Result<List> {
+    let keys = crate::distributions::key_column(&periods)?;
+    let f = family(family_name, theta, power)?;
+    let w = (!weights.is_empty()).then_some(weights);
+    let m =
+        act_models::monitor::actual_vs_expected(&keys, y, mu, w, f, dispersion).map_err(to_r)?;
+    let first: Vec<f64> = m
+        .periods
+        .iter()
+        .map(|r| {
+            let k = r.period.as_ref().expect("a period row has a period");
+            (keys.iter().position(|x| x == k).expect("a key") + 1) as f64
+        })
+        .collect();
+    let col = |g: fn(&act_models::monitor::PeriodSummary<act_prob::KeyValue>) -> f64| {
+        m.periods.iter().map(g).collect::<Vec<f64>>()
+    };
+    let t = &m.total;
+    Ok(list!(
+        first_row = first,
+        n = col(|r| r.n as f64),
+        weight = col(|r| r.weight),
+        actual = col(|r| r.actual),
+        expected = col(|r| r.expected),
+        std_dev = col(|r| r.std_dev),
+        total = vec![t.n as f64, t.weight, t.actual, t.expected, t.std_dev],
+        trend = m.trend,
+        trend_std_error = m.trend_std_error
+    ))
+}
+
 extendr_module! {
     mod models;
+    fn actual_vs_expected_rust;
     fn stacking_weights_rust;
     fn pseudo_bma_weights_rust;
     fn glm_fit_design;

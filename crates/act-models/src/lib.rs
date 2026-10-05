@@ -21,6 +21,7 @@ pub mod family;
 pub mod link;
 pub mod metrics;
 pub mod model;
+pub mod monitor;
 pub mod resample;
 pub mod stack;
 

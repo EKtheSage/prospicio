@@ -531,7 +531,7 @@ pub(crate) fn key_from_list(key: List) -> Result<ComponentKey> {
         .collect()
 }
 
-fn key_column(col: &Robj) -> Result<Vec<KeyValue>> {
+pub(crate) fn key_column(col: &Robj) -> Result<Vec<KeyValue>> {
     if let Some(s) = col.as_str_vector() {
         return Ok(s.into_iter().map(KeyValue::from).collect());
     }

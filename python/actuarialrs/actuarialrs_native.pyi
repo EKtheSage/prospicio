@@ -5010,6 +5010,51 @@ class Weibull:
         float
         """
 
+def actual_vs_expected(periods: Sequence[int |str], family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, dispersion: float = 1.0, theta: float |None = None, power: float |None = None) -> dict:
+    """
+    Actual against expected by period for a stored model's predictions on
+    new data, with each period's z-score under the model and a test for
+    drift.
+    
+    ``A = sum(w * y)`` and ``E = sum(w * mu)`` per period; the z-score is
+    ``(A - E) / sqrt(dispersion * sum(w * V(mu)))`` with the family's
+    variance function ``V``, about standard normal while the model holds.
+    ``trend`` is the slope of ``A / E - 1`` per period step (periods in
+    sorted order), weighted by each period's precision.
+    
+    Parameters
+    ----------
+    periods : list of int or str
+        One period label per row.
+    family : str
+    y : list of float
+        Actuals.
+    mu : list of float
+        The model's predicted means.
+    weights : list of float, optional
+        Prior weights as fitted (exposure for a rate); leave out for counts
+        with exposure in the offset.
+    dispersion : float, default 1.0
+    theta, power : float, optional
+        Negative binomial ``theta``, Tweedie ``power``.
+    
+    Returns
+    -------
+    dict
+        ``periods`` (a list of dicts with ``period``, ``n``, ``weight``,
+        ``actual``, ``expected``, ``ratio``, ``std_dev`` and ``z``),
+        ``total`` (the same without ``period``), ``trend``,
+        ``trend_std_error`` and ``trend_z``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import actual_vs_expected
+    >>> m = actual_vs_expected([2023, 2023, 2024, 2024], "poisson",
+    ...                        [1.0, 3.0, 2.0, 6.0], [2.0, 2.0, 2.0, 2.0])
+    >>> m["periods"][1]["ratio"], m["periods"][1]["z"]
+    (2.0, 2.0)
+    """
+
 def allocate(pd: PredictiveDistribution, distortion: Distortion) -> list[float]:
     """
     Allocates a distortion risk measure of the total to the components.
