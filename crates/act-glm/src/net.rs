@@ -458,6 +458,7 @@ impl ElasticNet {
             dispersion,
             iterations: sol.iterations,
             fitted: sol.mu.clone(),
+            input_hash: crate::input_hash(design, y),
         }
     }
 }
@@ -784,18 +785,24 @@ struct Solution {
 /// A fitted elastic net at one `λ`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ElasticNetFit {
-    spec: ElasticNet,
-    names: Vec<String>,
-    coefficients: Vec<f64>,
-    deviance: f64,
-    null_deviance: f64,
-    df: usize,
-    dispersion: f64,
-    iterations: usize,
-    fitted: Vec<f64>,
+    pub(crate) spec: ElasticNet,
+    pub(crate) names: Vec<String>,
+    pub(crate) coefficients: Vec<f64>,
+    pub(crate) deviance: f64,
+    pub(crate) null_deviance: f64,
+    pub(crate) df: usize,
+    pub(crate) dispersion: f64,
+    pub(crate) iterations: usize,
+    pub(crate) fitted: Vec<f64>,
+    pub(crate) input_hash: String,
 }
 
 impl ElasticNetFit {
+    /// Hash of the training data, as [`GlmFit::input_hash`](crate::GlmFit::input_hash).
+    pub fn input_hash(&self) -> &str {
+        &self.input_hash
+    }
+
     /// The specification that was fitted, including its `λ`.
     pub fn spec(&self) -> &ElasticNet {
         &self.spec

@@ -392,6 +392,10 @@ ElasticNetPath <- new.env(parent = emptyenv())
 
 ElasticNetPath$names <- function() .Call(wrap__ElasticNetPath__names, self)
 
+ElasticNetPath$to_json <- function() .Call(wrap__ElasticNetPath__to_json, self)
+
+ElasticNetPath$from_json <- function(texts) .Call(wrap__ElasticNetPath__from_json, texts)
+
 ElasticNetPath$lambda <- function() .Call(wrap__ElasticNetPath__lambda, self)
 
 ElasticNetPath$coefficients <- function() .Call(wrap__ElasticNetPath__coefficients, self)
@@ -421,6 +425,10 @@ ElasticNetPath$predict_distribution <- function(index, x, names, offset, weights
 GamModel <- new.env(parent = emptyenv())
 
 GamModel$names <- function() .Call(wrap__GamModel__names, self)
+
+GamModel$to_json <- function() .Call(wrap__GamModel__to_json, self)
+
+GamModel$from_json <- function(text) .Call(wrap__GamModel__from_json, text)
 
 GamModel$coefficients <- function() .Call(wrap__GamModel__coefficients, self)
 

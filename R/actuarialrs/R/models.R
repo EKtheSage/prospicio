@@ -189,20 +189,22 @@ robust_vcov <- function(object, type = c("HC0", "HC1"), cluster = NULL) {
   matrix(v, length(nm), dimnames = list(nm, nm))
 }
 
-#' Save and load a GLM
+#' Save and load a model
 #'
-#' `save_model()` writes a [glm_fit()] model to an RDS file: the Rust fit as
-#' a versioned JSON artifact (spec, estimates, covariance, fit statistics,
-#' fitted values, and provenance with the package version and a hash of
-#' the training data), with the formula terms and factor levels that
+#' `save_model()` writes a [glm_fit()], [gam_fit()] or [elastic_net_fit()]
+#' model to an RDS file: the Rust fit as a versioned JSON artifact (spec,
+#' estimates, covariance, fit statistics, fitted values, and provenance
+#' with the package version and a hash of the training data; for a GAM
+#' also the spline knots and constraints; for an elastic net one artifact
+#' per lambda), with the formula terms and factor levels that
 #' [stats::predict()] needs. `load_model()` reads it back; the estimates
 #' round-trip exactly. A loaded model predicts and simulates but has no
 #' training data, so [robust_vcov()] needs the original fit.
 #'
-#' @param model A `glm_model`.
+#' @param model A `glm_model`, `gam_model` or `elastic_net_model`.
 #' @param file Path of the RDS file.
-#' @returns `save_model()`: `file`, invisibly. `load_model()`: a
-#'   `glm_model`.
+#' @returns `save_model()`: `file`, invisibly. `load_model()`: a model of
+#'   the class saved.
 #' @export
 #' @examples
 #' d <- data.frame(claims = c(1, 2, 4, 2, 1, 3), region = c("N", "N", "S", "S", "W", "W"))
@@ -212,8 +214,11 @@ robust_vcov <- function(object, type = c("HC0", "HC1"), cluster = NULL) {
 #' m2 <- load_model(f)
 #' identical(coef(m2), coef(m))
 save_model <- function(model, file) {
-  if (!S7::S7_inherits(model, glm_model)) stop("model must be a glm_model")
-  saveRDS(list(format = "actuarialrs.glm_model", artifact = model@ptr$to_json(),
+  kind <- if (S7::S7_inherits(model, glm_model)) "glm_model"
+    else if (S7::S7_inherits(model, gam_model)) "gam_model"
+    else if (S7::S7_inherits(model, elastic_net_model)) "elastic_net_model"
+    else stop("model must be a glm_model, gam_model or elastic_net_model")
+  saveRDS(list(format = paste0("actuarialrs.", kind), artifact = model@ptr$to_json(),
                terms = model@terms, xlevels = model@xlevels), file)
   invisible(file)
 }
@@ -222,11 +227,18 @@ save_model <- function(model, file) {
 #' @export
 load_model <- function(file) {
   x <- readRDS(file)
-  if (!is.list(x) || !identical(x$format, "actuarialrs.glm_model")) {
+  format <- if (is.list(x)) x$format else NULL
+  switch(if (is.character(format)) format else "",
+    actuarialrs.glm_model = glm_model(ptr = rust_result(GlmModel$from_json(x$artifact)),
+                                      terms = x$terms, xlevels = x$xlevels),
+    actuarialrs.gam_model = gam_model(ptr = rust_result(GamModel$from_json(x$artifact)),
+                                      terms = x$terms, xlevels = x$xlevels),
+    actuarialrs.elastic_net_model = elastic_net_model(
+      ptr = rust_result(ElasticNetPath$from_json(x$artifact)),
+      terms = x$terms, xlevels = x$xlevels
+    ),
     stop("not a model saved by save_model()")
-  }
-  glm_model(ptr = rust_result(GlmModel$from_json(x$artifact)), terms = x$terms,
-            xlevels = x$xlevels)
+  )
 }
 
 #' Fit an elastic-net GLM

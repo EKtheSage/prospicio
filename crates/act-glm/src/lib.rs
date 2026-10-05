@@ -241,7 +241,7 @@ impl Glm {
 
 /// Hash of a fit's training data: column names and values, offset,
 /// weights and response.
-fn input_hash(design: &Design, y: &[f64]) -> String {
+pub(crate) fn input_hash(design: &Design, y: &[f64]) -> String {
     let mut h = act_prob::InputHasher::new();
     h.str("glm_fit");
     for (j, name) in design.names().iter().enumerate() {

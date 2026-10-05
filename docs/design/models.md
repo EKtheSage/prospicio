@@ -210,8 +210,11 @@ artifact holds no training data, so a loaded fit predicts and simulates
 but gives no sandwich covariance. The coding (factor levels) stays with
 the binding: Python keeps its `Coding`, R's `save_model` / `load_model`
 store the formula terms and levels beside the artifact in an RDS file,
-and Python's `GlmFit` pickles through the artifact. GAMs, elastic nets and
-monitoring are still to come.
+and Python's `GlmFit` pickles through the artifact. `GamFit`
+(`"risk_rs.gam_fit"`, with each smooth's knots and centering constraint,
+so new data gets exactly the training basis) and `ElasticNetFit`
+(`"risk_rs.elastic_net_fit"`, one per `λ`; R saves the whole path) work
+the same way. Monitoring is still to come.
 
 ## Fitting a triangle with several models
 

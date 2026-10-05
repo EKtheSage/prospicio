@@ -116,10 +116,10 @@ impl Gam {
 /// A smooth's basis as fitted: knots from the training data and the
 /// constraint's null space `Z` (`k × (k - 1)`, row-major).
 #[derive(Debug, Clone, PartialEq)]
-struct Basis {
-    spline: PSpline,
-    knots: Vec<f64>,
-    z: Vec<f64>,
+pub(crate) struct Basis {
+    pub(crate) spline: PSpline,
+    pub(crate) knots: Vec<f64>,
+    pub(crate) z: Vec<f64>,
 }
 
 impl Basis {
@@ -238,17 +238,18 @@ fn expand(design: &Design, bases: &[Basis]) -> Result<Design> {
 /// A fitted GAM.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GamFit {
-    spec: Gam,
-    bases: Vec<Basis>,
-    names: Vec<String>,
-    coefficients: Vec<f64>,
-    lambdas: Vec<f64>,
-    edf: f64,
-    covariance: Vec<f64>,
-    dispersion: f64,
-    deviance: f64,
-    score: f64,
-    fitted: Vec<f64>,
+    pub(crate) spec: Gam,
+    pub(crate) bases: Vec<Basis>,
+    pub(crate) names: Vec<String>,
+    pub(crate) coefficients: Vec<f64>,
+    pub(crate) lambdas: Vec<f64>,
+    pub(crate) edf: f64,
+    pub(crate) covariance: Vec<f64>,
+    pub(crate) dispersion: f64,
+    pub(crate) deviance: f64,
+    pub(crate) score: f64,
+    pub(crate) fitted: Vec<f64>,
+    pub(crate) input_hash: String,
 }
 
 /// One penalized fit at fixed smoothing parameters.
@@ -433,11 +434,17 @@ impl Model for Gam {
             dispersion,
             deviance: best.deviance,
             fitted: best.irls.mu,
+            input_hash: crate::input_hash(design, y),
         })
     }
 }
 
 impl GamFit {
+    /// Hash of the training data, as [`GlmFit::input_hash`](crate::GlmFit::input_hash).
+    pub fn input_hash(&self) -> &str {
+        &self.input_hash
+    }
+
     /// Coefficient names: the parametric columns, then `s(x).1`, … for
     /// each smooth.
     pub fn names(&self) -> &[String] {
