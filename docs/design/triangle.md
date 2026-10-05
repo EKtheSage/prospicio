@@ -95,7 +95,13 @@ pub struct Triangle {
   `Total`. Key names may not repeat or equal a value column's name. The
   bindings store key values as strings and reject missing ones; Python
   takes `keys={"lob": [...]}` in `from_long` and `keys=["lob"]` in
-  `from_frame`, R takes `keys = c("lob")` in `triangle()`.
+  `from_frame`, R takes `keys = c("lob")` in `triangle()`. Differences by
+  idiom: values become strings with each language's own conversion
+  (Python `str(7.0)` is `"7.0"`, R `as.character(7)` is `"7"`); without
+  keys Python's `index` is `["Total"]` while R's `@index` is a data.frame
+  with one row and no columns; R's `subset()` matches a data.frame of
+  labels to the keys by column name, Python's `slice()` takes tuples in
+  key order.
 
 ## Relationship to reserving methods
 

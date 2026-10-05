@@ -26,10 +26,13 @@ month_start <- function(year, month) as.Date(sprintf("%04d-%02d-01", year, month
 
 # Index labels as a list of character vectors (one per label): from a
 # character vector of one-part labels, a list of parts, or a data.frame
-# with one row per label.
-label_list <- function(index) {
+# with one row per label and one column per key, matched to `keys` by name.
+label_list <- function(index, keys) {
   if (is.data.frame(index)) {
-    parts <- lapply(index, as.character)
+    if (!setequal(names(index), keys) || anyDuplicated(names(index))) {
+      stop("index columns must be the keys: ", toString(keys), call. = FALSE)
+    }
+    parts <- lapply(index[keys], as.character)
     lapply(seq_len(nrow(index)), function(r) vapply(parts, `[`, "", r, USE.NAMES = FALSE))
   } else if (is.list(index)) {
     lapply(index, as.character)
@@ -208,6 +211,7 @@ S7::method(print, triangle) <- function(x, ...) {
               s[1], s[2], s[3], s[4], if (x@is_cumulative) "cumulative" else "incremental",
               format(x@valuation)))
   cat(sprintf("origin grain %s, development grain %s\n", x@origin_grain, x@development_grain))
+  if (length(x@keys)) cat("keys:", toString(x@keys), "\n")
   if (s[1] == 1 && s[2] == 1) {
     v <- x@values[1, 1, , , drop = FALSE]
     print(matrix(v, s[3], s[4], dimnames = dimnames(x@values)[3:4]))
@@ -238,8 +242,8 @@ S7::method(as.data.frame, triangle) <- function(x, ...) {
 #' @param x A [triangle].
 #' @param index Index labels to keep, or `NULL` for all: a character vector
 #'   of labels for a triangle with one key, a list of character vectors (the
-#'   key values of each label), or a data.frame with one row per label, as
-#'   `x@index` gives. A triangle without keys has the one label `"Total"`.
+#'   key values of each label, in key order), or a data.frame with one row
+#'   per label and one column per key, matched by name, as `x@index` gives. A triangle without keys has the one label `"Total"`.
 #' @param columns Column names to keep, or `NULL` for all.
 #' @param ... Unused.
 #' @returns A [triangle].
@@ -252,7 +256,7 @@ S7::method(as.data.frame, triangle) <- function(x, ...) {
 NULL
 
 S7::method(subset, triangle) <- function(x, index = NULL, columns = NULL, ...) {
-  labels <- if (is.null(index)) NULL else label_list(index)
+  labels <- if (is.null(index)) NULL else label_list(index, x@keys)
   cols <- if (is.null(columns)) NULL else as.character(columns)
   # Name the generic in errors, not the S7-registered method.
   call <- sys.call()

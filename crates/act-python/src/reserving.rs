@@ -189,18 +189,26 @@ fn label(item: &Bound<'_, PyAny>) -> PyResult<Label> {
 }
 
 /// Values of the key column `name` as strings (`str()` of each value).
-/// `None` and float NaN are missing values, which a key may not have.
+/// `None`, float NaN and pandas' `NA` and `NaT` are missing values, which a
+/// key may not have.
 fn key_values(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Vec<String>> {
+    let missing_error = || PyValueError::new_err(format!("key column {name:?} has missing values"));
+    // A pandas series knows its own missing values, whatever its dtype.
+    if obj.hasattr("isna")? && obj.call_method0("isna")?.call_method0("any")?.is_truthy()? {
+        return Err(missing_error());
+    }
     plain(obj)?
         .try_iter()?
         .map(|item| {
             let item = item?;
             let missing = item.is_none()
-                || (item.is_instance_of::<PyFloat>() && item.extract::<f64>()?.is_nan());
+                || (item.is_instance_of::<PyFloat>() && item.extract::<f64>()?.is_nan())
+                || matches!(
+                    item.get_type().name()?.extract::<String>()?.as_str(),
+                    "NAType" | "NaTType"
+                );
             if missing {
-                return Err(PyValueError::new_err(format!(
-                    "key column {name:?} has missing values"
-                )));
+                return Err(missing_error());
             }
             Ok(item.str()?.to_string())
         })

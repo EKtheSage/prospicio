@@ -8,8 +8,8 @@
 
 \item{index}{Index labels to keep, or \code{NULL} for all: a character vector
 of labels for a triangle with one key, a list of character vectors (the
-key values of each label), or a data.frame with one row per label, as
-\code{x@index} gives. A triangle without keys has the one label \code{"Total"}.}
+key values of each label, in key order), or a data.frame with one row
+per label and one column per key, matched by name, as \code{x@index} gives. A triangle without keys has the one label \code{"Total"}.}
 
 \item{columns}{Column names to keep, or \code{NULL} for all.}
 

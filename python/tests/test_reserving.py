@@ -352,6 +352,25 @@ def test_key_validation():
     assert codes.index == ["7"] and codes.to_long()["company"] == ["7", "7"]
 
 
+def test_pandas_missing_keys():
+    pd = pytest.importorskip("pandas")
+    base = {"o": [2020, 2020], "d": [12, 24], "paid": [1.0, 2.0]}
+    missing = [
+        pd.array(["A", pd.NA], dtype="string"),
+        pd.array([7, pd.NA], dtype="Int64"),
+        pd.to_datetime(["2020-01-01", None]),
+        pd.Categorical(["A", None]),
+    ]
+    for column in missing:
+        frame = pd.DataFrame({"lob": column, **base})
+        with pytest.raises(ValueError, match="missing values"):
+            Triangle.from_frame(frame, "o", "d", "paid", keys="lob")
+    with pytest.raises(ValueError, match="missing values"):
+        Triangle.from_long(base["o"], base["d"], {"paid": base["paid"]}, keys={"lob": ["A", pd.NA]})
+    with pytest.raises(ValueError, match="missing values"):
+        Triangle.from_long(base["o"], base["d"], {"paid": base["paid"]}, keys={"lob": ["A", pd.NaT]})
+
+
 def test_numpy_integer_years():
     np = pytest.importorskip("numpy")
     years = list(np.array([2020, 2020, 2021]))
