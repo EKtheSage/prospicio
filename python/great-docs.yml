@@ -115,6 +115,14 @@ reference:
       - pricing.fit_pml_curve
       - pricing.fit_references
       - pricing.TowerModel
+  - title: Reserving
+    desc: Loss triangles, the chain ladder and Mack's model.
+    contents:
+      - reserving.Triangle
+      - reserving.ChainLadder
+      - reserving.ChainLadderFit
+      - reserving.Mack
+      - reserving.MackFit
   - title: Risk measures
     desc: Distortion risk measures, and capital allocation to components.
     contents:

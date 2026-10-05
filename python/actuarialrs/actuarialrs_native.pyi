@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import date
 from typing import Any, final
 
 @final
@@ -332,6 +333,139 @@ class Binomial:
         Returns
         -------
         float
+        """
+
+@final
+class ChainLadder:
+    """
+    The chain-ladder method: each origin's latest value projected to
+    ultimate with age-to-age factors estimated from the triangle and a tail
+    factor.
+    
+    Parameters
+    ----------
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged into one factor per age: volume
+        weighted, their mean, or least squares through the origin (Mack's
+        ``alpha`` of 1, 0 and 2).
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+        How a variance parameter with a single link ratio is filled in.
+    tail : float, default 1.0
+        Factor from the oldest age to ultimate.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ChainLadder, Triangle
+    >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+    >>> fit = ChainLadder().fit(tri, "paid")
+    >>> fit.ldf, fit.ultimate, fit.total_reserve
+    ([1.5], [150.0, 300.0], 100.0)
+    """
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> ChainLadder: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    def fit(self, /, triangle: Triangle, column: str) -> ChainLadderFit:
+        """
+        Fits one measure column of a single-segment triangle.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative or incremental; slice to one segment first.
+        column : str
+        
+        Returns
+        -------
+        ChainLadderFit
+        
+        Raises
+        ------
+        ValueError
+            If the triangle has several segments, the column is unknown, a
+            factor cannot be estimated or the tail is not positive.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        Tail factor.
+        """
+
+@final
+class ChainLadderFit:
+    """
+    A fitted chain-ladder projection. Per-origin lists follow ``origins``;
+    per-age lists follow ``development``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def cdf(self, /) -> list[float]:
+        """
+        Age-to-ultimate factors, one per age, including the tail.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed cumulative value per origin.
+        """
+    @property
+    def ldf(self, /) -> list[float]:
+        """
+        Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods, oldest first.
+        """
+    @property
+    def reserve(self, /) -> list[float]:
+        """
+        Reserve (ultimate minus latest) per origin.
+        """
+    @property
+    def sigma(self, /) -> list[float]:
+        """
+        Variance parameter of each factor, with unestimable ones
+        interpolated (``nan`` where that is impossible).
+        """
+    @property
+    def std_err(self, /) -> list[float]:
+        """
+        Standard error of each factor.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        Tail factor.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Total reserve across origins.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        Total ultimate across origins.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Projected ultimate per origin.
         """
 
 @final
@@ -3139,6 +3273,168 @@ class Lognormal:
         """
 
 @final
+class Mack:
+    """
+    Mack's distribution-free chain ladder: the chain-ladder projection plus
+    the standard error of each origin's reserve and of the total, split into
+    process and parameter risk (Mack 1993, 1999). No tail factor.
+    
+    Parameters
+    ----------
+    average : {"volume", "simple", "regression"}, default "volume"
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import Mack, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = Mack().fit(tri, "values")
+    >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
+    True
+    """
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear") -> Mack: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    def fit(self, /, triangle: Triangle, column: str) -> MackFit:
+        """
+        Fits one measure column of a single-segment triangle.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        MackFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ChainLadder.fit``, and if the triangle has fewer than three
+            ages or a variance parameter can be neither estimated nor
+            interpolated.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+
+@final
+class MackFit:
+    """
+    A fitted Mack model: the chain-ladder fields, plus standard errors of
+    each origin's reserve and of the total. Per-origin lists follow
+    ``origins``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def cdf(self, /) -> list[float]:
+        """
+        Age-to-ultimate factors.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The underlying chain-ladder projection.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed cumulative value per origin.
+        """
+    @property
+    def ldf(self, /) -> list[float]:
+        """
+        Age-to-age factors.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods, oldest first.
+        """
+    @property
+    def parameter_risk(self, /) -> list[float]:
+        """
+        Parameter (estimation) standard error per origin.
+        """
+    @property
+    def process_risk(self, /) -> list[float]:
+        """
+        Process standard error per origin.
+        """
+    @property
+    def reserve(self, /) -> list[float]:
+        """
+        Reserve per origin.
+        """
+    @property
+    def sigma(self, /) -> list[float]:
+        """
+        Variance parameter of each factor.
+        """
+    @property
+    def standard_error(self, /) -> list[float]:
+        """
+        Mack standard error per origin: ``sqrt(process**2 + parameter**2)``.
+        """
+    @property
+    def std_err(self, /) -> list[float]:
+        """
+        Standard error of each factor.
+        """
+    @property
+    def total_cv(self, /) -> float:
+        """
+        Coefficient of variation of the total reserve.
+        """
+    @property
+    def total_parameter_risk(self, /) -> float:
+        """
+        Parameter standard error of the total reserve, including the
+        correlation between origins that share estimated factors.
+        """
+    @property
+    def total_process_risk(self, /) -> float:
+        """
+        Process standard error of the total reserve.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Total reserve across origins.
+        """
+    @property
+    def total_standard_error(self, /) -> float:
+        """
+        Mack standard error of the total reserve.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        Total ultimate across origins.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Projected ultimate per origin.
+        """
+
+@final
 class Mixture:
     """
     A finite mixture of severities: component ``i`` with probability
@@ -4737,6 +5033,313 @@ class TowerModel:
     def severity(self, /) -> PiecewisePareto:
         """
         The fitted severity.
+        """
+
+@final
+class Triangle:
+    """
+    A loss triangle with four axes: index (segment), column (measure), origin
+    and development age, in chainladder-python's order.
+    
+    Build one from a long table with ``from_long`` or ``from_frame``. Ages
+    are whole months from the start of the origin period, so age 12 on a
+    2021 accident year is valued at December 2021. Cells that were not
+    observed are ``nan`` in ``values``; an observed zero stays zero.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import Triangle
+    >>> tri = Triangle.from_long(
+    ...     origin=[2020, 2020, 2021],
+    ...     development=[12, 24, 12],
+    ...     values={"paid": [100.0, 150.0, 110.0]},
+    ... )
+    >>> tri.shape
+    (1, 1, 2, 2)
+    >>> tri.origins, tri.development, tri.valuation
+    (['2020', '2021'], [12, 24], datetime.date(2021, 12, 31))
+    >>> tri.values[0][0]
+    [[100.0, 150.0], [110.0, nan]]
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def columns(self, /) -> list[str]:
+        """
+        Measure column names.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months, youngest first.
+        """
+    @property
+    def development_grain(self, /) -> str:
+        """
+        Development grain: ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
+        """
+    @staticmethod
+    def from_frame(data: Any, origin: str, development: str, columns: Any, index: Any |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
+        """
+        Builds a triangle from a data frame in long format.
+        
+        Columns are looked up with ``data[name]``, so a pandas or Polars
+        DataFrame works, as does a dict of columns.
+        
+        Parameters
+        ----------
+        data : DataFrame or dict
+        origin : str
+            Name of the origin column (dates or integer years).
+        development : str
+            Name of the development column (ages in months, or valuation
+            dates when ``development_is_valuation`` is true).
+        columns : str or list of str
+            Names of the measure columns.
+        index : str or list of str, optional
+            Names of the segment columns; several make multi-part labels. A
+            single column may hold tuples, as ``to_long`` writes multi-part
+            labels.
+        origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+        development_grain : {"Y", "S", "Q", "M"}, default "Y"
+        cumulative : bool, default True
+        development_is_valuation : bool, default False
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            As for ``from_long``.
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> df = {
+        ...     "lob": ["Auto", "Auto", "Auto", "Home"],
+        ...     "year": [2020, 2020, 2021, 2020],
+        ...     "age": [12, 24, 12, 12],
+        ...     "paid": [100.0, 150.0, 110.0, 50.0],
+        ... }
+        >>> tri = Triangle.from_frame(df, "year", "age", "paid", index="lob")
+        >>> tri.index, tri.shape
+        (['Auto', 'Home'], (2, 1, 2, 2))
+        """
+    @staticmethod
+    def from_long(origin: Any, development: Any, values: Any, index: Any |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
+        """
+        Builds a triangle from the columns of a long table, one row per
+        (index, origin, development).
+        
+        Origins span every period from the earliest to the latest row and
+        ages every development period from the youngest to the oldest. Rows
+        with the same (index, origin, age) are summed; ``nan`` values are
+        missing. Incremental input treats a missing row as a period without
+        movement, as chainladder-python does.
+        
+        Parameters
+        ----------
+        origin : array-like
+            Any date in each row's origin period (numpy ``datetime64``,
+            ``datetime.date``, pandas ``Timestamp``), or integer years.
+        development : array-like
+            Development age of each row in months (12, 24, ...), or its
+            valuation date when ``development_is_valuation`` is true.
+        values : dict of str to array-like, or array-like
+            Measure columns by name. A single array-like is one column named
+            ``"values"``.
+        index : array-like, optional
+            Segment of each row: a str, or a tuple of str for a multi-part
+            label. By default every row is in one segment, ``"Total"``.
+        origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+            Length of an origin period.
+        development_grain : {"Y", "S", "Q", "M"}, default "Y"
+            Spacing of development ages; must divide the origin grain.
+        cumulative : bool, default True
+            Whether the values are cumulative (otherwise incremental).
+        development_is_valuation : bool, default False
+            Whether ``development`` holds valuation dates instead of ages.
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            If columns differ in length, an age is not on the development
+            grid, a value is infinite, or the grains are incompatible.
+        
+        Examples
+        --------
+        >>> import datetime
+        >>> from actuarialrs.reserving import Triangle
+        >>> d = datetime.date
+        >>> tri = Triangle.from_long(
+        ...     origin=[d(2021, 2, 1), d(2021, 2, 1), d(2021, 5, 1)],
+        ...     development=[d(2021, 3, 31), d(2021, 6, 30), d(2021, 6, 30)],
+        ...     values=[10.0, 25.0, 7.0],
+        ...     origin_grain="Q",
+        ...     development_grain="Q",
+        ...     development_is_valuation=True,
+        ... )
+        >>> tri.origins, tri.development
+        (['2021Q1', '2021Q2'], [3, 6])
+        """
+    def grain(self, /, origin_grain: str, development_grain: str |None = None) -> Triangle:
+        """
+        The triangle at a coarser origin and/or development grain.
+        
+        Parameters
+        ----------
+        origin_grain : {"Y", "S", "Q", "M"}
+        development_grain : {"Y", "S", "Q", "M"}, optional
+            By default ``origin_grain``.
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            If a grain is finer than the current one, or the development
+            grain does not divide the origin grain.
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> q = Triangle.from_long(
+        ...     [2020, 2020], [3, 6], [1.0, 2.0], origin_grain="Q", development_grain="Q"
+        ... )
+        >>> y = q.grain("Y")
+        >>> y.origins, y.development_grain
+        (['2020'], 'Y')
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Segment labels: a str each, or a tuple for a multi-part label.
+        """
+    @property
+    def is_cumulative(self, /) -> bool:
+        """
+        Whether the values are cumulative (otherwise incremental).
+        """
+    def latest_diagonal(self, /) -> list[list[list[float]]]:
+        """
+        The latest observed value of each origin, as nested lists indexed
+        ``[index][column][origin]``, ``nan`` for an origin with no value.
+        
+        Returns
+        -------
+        list of list of list of float
+        """
+    def link_ratios(self, /) -> Triangle:
+        """
+        Age-to-age link ratios of the cumulative values. Development
+        position ``d`` holds the ratio from age ``d`` to age ``d + 1``,
+        observed where both ages are observed and the earlier value is not
+        zero.
+        
+        Returns
+        -------
+        Triangle
+        """
+    @property
+    def origin_grain(self, /) -> str:
+        """
+        Origin grain: ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods, oldest first: ``"2021"``, ``"2021H1"``,
+        ``"2021Q3"`` or ``"2021-07"`` by grain.
+        """
+    @property
+    def shape(self, /) -> tuple[int, int, int, int]:
+        """
+        Axis lengths: ``(index, column, origin, development)``.
+        """
+    def slice(self, /, index: Any |None = None, columns: Any |None = None) -> Triangle:
+        """
+        The triangle restricted to some segments and measure columns, in the
+        order given.
+        
+        Parameters
+        ----------
+        index : str, tuple or list, optional
+            One label, or a list of labels. By default every segment.
+        columns : str or list of str, optional
+            By default every column.
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            If a label or column is unknown or named twice.
+        """
+    def to_cumulative(self, /) -> Triangle:
+        """
+        Cumulative values: running sums of the observed increments.
+        
+        Returns
+        -------
+        Triangle
+        """
+    def to_frame(self, /) -> Any:
+        """
+        The long table of ``to_long`` as a pandas DataFrame. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_incremental(self, /) -> Triangle:
+        """
+        Incremental values: each observed value minus the previous observed
+        value in its row.
+        
+        Returns
+        -------
+        Triangle
+        """
+    def to_long(self, /) -> dict:
+        """
+        The triangle as a long table: a dict of equal-length lists with keys
+        ``"index"``, ``"origin"`` (start of the origin period, a
+        ``datetime.date``), ``"development"`` (age in months) and one per
+        measure column, with a row per (index, origin, age) that has an
+        observed measure. It feeds back into ``from_long`` or
+        ``pandas.DataFrame``.
+        
+        Returns
+        -------
+        dict of str to list
+        
+        Raises
+        ------
+        ValueError
+            If a measure column is named ``index``, ``origin`` or
+            ``development``.
+        """
+    @property
+    def valuation(self, /) -> date:
+        """
+        Valuation date of the latest diagonal: the last day of its month,
+        as a ``datetime.date``.
+        """
+    @property
+    def values(self, /) -> list[list[list[list[float]]]]:
+        """
+        Values as nested lists indexed ``[index][column][origin][development]``,
+        ``nan`` where unobserved. ``numpy.asarray`` gives the 4-D array.
         """
 
 @final
