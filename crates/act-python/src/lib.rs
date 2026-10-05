@@ -51,9 +51,9 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::pricing::{
-        PyCollectiveModel, PyTowerModel, alpha_between_frequencies,
+        PyCollectiveModel, PyPortfolioPrice, PyPrice, PyTowerModel, alpha_between_frequencies,
         alpha_between_frequency_and_layer, alpha_between_layers, fit_pml_curve, fit_references,
-        ilf, loss_elimination_ratio, match_tower, pareto_extrapolation,
+        ilf, loss_elimination_ratio, match_tower, pareto_extrapolation, price, price_portfolio,
     };
     #[pymodule_export]
     use super::reserving::{PyChainLadder, PyChainLadderFit, PyMack, PyMackFit, PyTriangle};

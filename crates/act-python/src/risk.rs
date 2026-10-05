@@ -36,7 +36,7 @@ use crate::to_py;
 /// [0.0, 0.0, 0.5, 0.5]
 #[pyclass(name = "Distortion", module = "actuarialrs.risk", frozen)]
 pub(crate) struct PyDistortion {
-    inner: Distortion,
+    pub(crate) inner: Distortion,
 }
 
 #[pymethods]
