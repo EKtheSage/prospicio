@@ -85,6 +85,21 @@ models and compares them.
   with log and inverse links and with weights, inverse Gaussian, binomial
   with trials, negative binomial, Gaussian, Tweedie with weights), 144
   values at 1e-7 to 1e-9.
+- Parity at scale: `validation/reference/fremtpl2_statsmodels.csv`
+  (`validation/scripts/statsmodels_fremtpl2.py`), the claim frequency GLM
+  of Noll, Salzmann and Wüthrich (2018) on all 678,013 policies of
+  freMTPL2freq (OpenML 41214, fetched and prepared by
+  `validation/scripts/fetch_fremtpl2.py`, checked by SHA-256, not
+  committed): 49 coefficients from `Terms` (Area, VehPower, VehAge and
+  DrivAge classes, BonusMalus, VehBrand, VehGas, log Density, Region),
+  offset log(Exposure). Poisson coefficients at 1e-8, standard errors,
+  quasi-Poisson and HC0 standard errors at 1e-7, deviance, null deviance,
+  log-likelihood and AIC at 1e-10: 202 values. The fits take about 30 s in
+  a release build (statsmodels: 1 m 45 s); `validation/tests/fremtpl2.rs`
+  skips unoptimized builds and a missing file unless
+  `RISK_RS_REQUIRE_FREMTPL2` is set, as CI's `fremtpl2` job sets it. Not
+  done: glum (its elastic-net objective differs from glmnet's, which
+  `ElasticNet` follows).
 - Sandwich covariance (`GlmFit::robust_covariance`, `Robust::{Hc0, Hc1,
   Cluster}`): the bread is the inverse observed information, so a
   non-canonical link matches statsmodels (R's `sandwich` uses the expected
