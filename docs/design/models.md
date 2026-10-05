@@ -45,9 +45,22 @@ models and compares them.
     models' simulations row by row. Parity
     (`validation/scripts/stacking_weights.py`): SLSQP as in BayesBlend
     (MIT), polished by Newton, to 1e-10; `loo::stacking_weights` stops
-    early and agrees to about 1e-3. BayesBlend's Bayesian and hierarchical
-    stacking (weights that vary with covariates) need the sampler and come
-    after the Bayesian GLM.
+    early and agrees to about 1e-3.
+  - Bayesian and hierarchical stacking (`act_bayes::stacking`), sampled by
+    NUTS: `BayesStacking` (a Dirichlet prior on one weight vector, by the
+    additive-logistic map with its Jacobian) and `HierarchicalStacking`
+    (Yao, Pirš, Vehtari and Gelman, 2022: `wᵢ = softmax(α + Bᵀ xᵢ)` against
+    the last model, non-centred normal priors, as BayesBlend's
+    `HierarchicalBayesStacking` without partial pooling). `StackingFit`
+    gives posterior mean weights at any covariates, the draws, R̂ and ESS.
+    `PredictiveDistribution::blend_by_component` blends with per-component
+    weights, every component drawing its model from the simulation's
+    common uniform. Parity (`validation/scripts/stacking_grid.py`): exact
+    posterior moments by grid integration, on the claim models' held-out
+    densities (weakly informative) and on a synthetic case where the
+    covariate decides the weights; means within 0.1 posterior sd, sds
+    within 8%. Partial pooling across covariates and BayesBlend's adaptive
+    priors are not done yet.
 - `act-glm`: `Glm` (family, link, dispersion fixed, Pearson or
   deviance-based) fitted by IRLS with offsets and prior weights,
   step-halving, and convergence on both the deviance and the coefficients;

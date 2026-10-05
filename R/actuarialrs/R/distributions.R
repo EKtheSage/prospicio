@@ -600,9 +600,15 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' whole, so sums across components remain coherent. Use weights from
 #' [stacking_weights()] or [pseudo_bma_weights()].
 #'
+#' With a matrix of weights (one row per component, one column per model,
+#' as [hierarchical_stacking()] gives them) each component draws its model
+#' from the simulation's common uniform against its own weights, so
+#' components with equal weights take the same model.
+#'
 #' @param models A list of [predictive_distribution]s with the same keys
 #'   and number of simulations.
-#' @param weights Non-negative weights, one per model; normalized.
+#' @param weights Non-negative weights, one per model, or a matrix with one
+#'   row per component; normalized.
 #' @param seed Seed, a whole number.
 #' @returns A [predictive_distribution].
 #' @export
@@ -612,5 +618,10 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' mean(blend_predictive(list(a, b), c(0.25, 0.75), seed = 7))
 blend_predictive <- function(models, weights, seed) {
   ptrs <- lapply(models, function(m) m@ptr)
-  predictive_distribution(ptr = rust_result(blend_rust(ptrs, as.double(weights), as.double(seed))))
+  ptr <- if (is.matrix(weights)) {
+    blend_by_component_rust(ptrs, as.double(weights), as.double(seed))
+  } else {
+    blend_rust(ptrs, as.double(weights), as.double(seed))
+  }
+  predictive_distribution(ptr = rust_result(ptr))
 }

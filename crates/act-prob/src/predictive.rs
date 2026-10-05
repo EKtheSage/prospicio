@@ -571,6 +571,82 @@ impl PredictiveDistribution {
     }
 }
 
+impl PredictiveDistribution {
+    /// Blends models with weights that differ by component, as
+    /// hierarchical stacking gives them (`weights[j]` is component `j`'s
+    /// weight vector, one entry per model). In simulation `i` every
+    /// component draws its model from the same uniform (stream `i` of
+    /// `seed`) against its own cumulative weights, so components with the
+    /// same weights take the same model and dependence across components
+    /// is kept as far as the weights allow. With equal weights everywhere
+    /// it is [`blend`](Self::blend).
+    pub fn blend_by_component(
+        models: &[&PredictiveDistribution],
+        weights: &[Vec<f64>],
+        seed: u64,
+    ) -> Result<Self> {
+        let first = *models
+            .first()
+            .ok_or_else(|| Error::Data("blend needs at least one model".into()))?;
+        for m in &models[1..] {
+            if m.dims != first.dims || m.components != first.components || m.n_sims != first.n_sims
+            {
+                return Err(Error::Data(
+                    "blended distributions need the same dimensions, components and simulations"
+                        .into(),
+                ));
+            }
+        }
+        let c = first.n_components();
+        if weights.len() != c {
+            return Err(Error::Data(format!(
+                "{} weight vectors for {c} components",
+                weights.len()
+            )));
+        }
+        let mut cumulative = Vec::with_capacity(c);
+        for w in weights {
+            if w.len() != models.len() || w.iter().any(|v| !(v.is_finite() && *v >= 0.0)) {
+                return Err(Error::Data(format!(
+                    "each component needs {} finite non-negative weights",
+                    models.len()
+                )));
+            }
+            let total: f64 = w.iter().sum();
+            if total <= 0.0 {
+                return Err(Error::Data("weights must not all be zero".into()));
+            }
+            let mut acc = 0.0;
+            cumulative.push(
+                w.iter()
+                    .map(|v| {
+                        acc += v / total;
+                        acc
+                    })
+                    .collect::<Vec<f64>>(),
+            );
+        }
+        let mut draws = Vec::with_capacity(first.draws.len());
+        for i in 0..first.n_sims {
+            let u = StreamRng::new(seed, i as u64).next_open01();
+            for (j, cum) in cumulative.iter().enumerate() {
+                let k = cum.iter().position(|&v| u < v).unwrap_or(models.len() - 1);
+                draws.push(models[k].draws[i * c + j]);
+            }
+        }
+        let mut provenance = Provenance::new("blend_by_component").seed(seed, SIM_INDEX_SCHEME);
+        for model in models {
+            provenance = provenance.param("model", model.provenance.model.clone());
+        }
+        Self::from_draws(
+            first.dims.clone(),
+            first.components.clone(),
+            draws,
+            provenance,
+        )
+    }
+}
+
 impl Distribution for PredictiveDistribution {
     fn mean(&self) -> f64 {
         self.total().mean()
@@ -801,6 +877,42 @@ mod tests {
         )
         .unwrap();
         assert!(PredictiveDistribution::blend(&[&a, &short], &[1.0, 1.0], 3).is_err());
+    }
+
+    #[test]
+    fn blend_by_component_matches_blend_with_equal_weights() {
+        let pd = |v: f64| {
+            PredictiveDistribution::from_draws(
+                vec!["lob".into()],
+                vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+                (0..300)
+                    .flat_map(|i| [v + i as f64, v - i as f64])
+                    .collect(),
+                Provenance::new(format!("m{v}")),
+            )
+            .unwrap()
+        };
+        let (a, b) = (pd(0.0), pd(0.5));
+        let same = PredictiveDistribution::blend_by_component(
+            &[&a, &b],
+            &[vec![1.0, 3.0], vec![1.0, 3.0]],
+            4,
+        )
+        .unwrap();
+        let plain = PredictiveDistribution::blend(&[&a, &b], &[1.0, 3.0], 4).unwrap();
+        assert_eq!(same.draws, plain.draws);
+        // Component b all from model a, component a all from model b.
+        let split = PredictiveDistribution::blend_by_component(
+            &[&a, &b],
+            &[vec![0.0, 1.0], vec![1.0, 0.0]],
+            4,
+        )
+        .unwrap();
+        assert!((0..300).all(|i| split.draws[2 * i] == b.draws[2 * i]
+            && split.draws[2 * i + 1] == a.draws[2 * i + 1]));
+        assert!(
+            PredictiveDistribution::blend_by_component(&[&a, &b], &[vec![1.0, 1.0]], 4).is_err()
+        );
     }
 
     #[test]

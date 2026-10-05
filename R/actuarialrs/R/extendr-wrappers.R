@@ -10,6 +10,12 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+bayes_stacking_rust <- function(lpd, k, concentration, sampler) .Call(wrap__bayes_stacking_rust, lpd, k, concentration, sampler)
+
+hierarchical_stacking_rust <- function(lpd, k, x, p, priors, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, sampler)
+
+blend_by_component_rust <- function(models, weights, seed) .Call(wrap__blend_by_component_rust, models, weights, seed)
+
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
@@ -343,6 +349,24 @@ PredictiveDistribution$provenance <- function() .Call(wrap__PredictiveDistributi
 
 #' @export
 `[[.PredictiveDistribution` <- `$.PredictiveDistribution`
+
+StackingModel <- new.env(parent = emptyenv())
+
+StackingModel$weights <- function(x, p) .Call(wrap__StackingModel__weights, self, x, p)
+
+StackingModel$alpha_draws <- function() .Call(wrap__StackingModel__alpha_draws, self)
+
+StackingModel$beta_draws <- function() .Call(wrap__StackingModel__beta_draws, self)
+
+StackingModel$divergences <- function() .Call(wrap__StackingModel__divergences, self)
+
+StackingModel$rhat_ess <- function() .Call(wrap__StackingModel__rhat_ess, self)
+
+#' @export
+`$.StackingModel` <- function (self, name) { func <- StackingModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.StackingModel` <- `$.StackingModel`
 
 BayesGlmModel <- new.env(parent = emptyenv())
 

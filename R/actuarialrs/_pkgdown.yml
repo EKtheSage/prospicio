@@ -115,6 +115,8 @@ reference:
       - mcmc_diagnostics
       - elpd
       - model_weights
+      - bayesian_stacking
+      - stacking_fit
   - title: Dependence
     contents:
       - copula

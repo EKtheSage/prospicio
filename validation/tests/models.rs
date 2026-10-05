@@ -661,3 +661,116 @@ fn bayes_glm_posteriors_match_grid_integration() {
         }
     });
 }
+
+/// Columns of a CSV in `validation/data/` with a header row.
+fn data_columns(name: &str) -> Vec<(String, Vec<f64>)> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data")
+        .join(name);
+    let text = std::fs::read_to_string(path).expect(name);
+    let mut lines = text.lines();
+    let header: Vec<String> = lines.next().unwrap().split(',').map(String::from).collect();
+    let mut cols = vec![Vec::new(); header.len()];
+    for line in lines {
+        for (c, v) in cols.iter_mut().zip(line.split(',')) {
+            c.push(v.parse::<f64>().unwrap());
+        }
+    }
+    header.into_iter().zip(cols).collect()
+}
+
+#[test]
+fn bayesian_and_hierarchical_stacking_match_grid_integration() {
+    // validation/scripts/stacking_grid.py: exact posterior moments by grid
+    // integration.
+    use act_bayes::glm::Sampler;
+    use act_bayes::stacking::{BayesStacking, HierarchicalStacking};
+    let col =
+        |cols: &[(String, Vec<f64>)], n: &str| cols.iter().find(|c| c.0 == n).unwrap().1.clone();
+    let lpd = data_columns("stacking_lpd.csv");
+    let pair = vec![
+        col(&lpd, "poisson_intercept"),
+        col(&lpd, "poisson_age_region"),
+    ];
+    let age = numeric(&policies(), "age");
+    let n = age.len() as f64;
+    let mean = age.iter().sum::<f64>() / n;
+    let sd = (age.iter().map(|a| (a - mean).powi(2)).sum::<f64>() / n).sqrt();
+    let x: Vec<f64> = age.iter().map(|a| (a - mean) / (2.0 * sd)).collect();
+    let syn = data_columns("stacking_synthetic.csv");
+    let sampler = Sampler {
+        chains: 4,
+        tune: 1000,
+        draws: 1000,
+        seed: 20261005,
+        ..Sampler::default()
+    };
+    let bayes = BayesStacking {
+        sampler,
+        ..BayesStacking::default()
+    }
+    .fit(&pair)
+    .unwrap();
+    let spec = HierarchicalStacking {
+        sampler,
+        ..HierarchicalStacking::default()
+    };
+    let hier = spec.fit(&pair, std::slice::from_ref(&x)).unwrap();
+    let synth = spec
+        .fit(&[col(&syn, "lpd_a"), col(&syn, "lpd_b")], &[col(&syn, "x")])
+        .unwrap();
+    for f in [&bayes, &hier, &synth] {
+        assert_eq!(f.divergences(), 0);
+        assert!(
+            f.rhat_ess()
+                .unwrap()
+                .iter()
+                .all(|(r, e)| *r < 1.01 && *e > 400.0)
+        );
+    }
+    let moments = |v: &[f64]| {
+        let n = v.len() as f64;
+        let m = v.iter().sum::<f64>() / n;
+        (
+            m,
+            (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (n - 1.0)).sqrt(),
+        )
+    };
+    // The first model's weight in each Bayesian-stacking draw.
+    let w_bayes: Vec<f64> = bayes
+        .alpha_draws()
+        .iter()
+        .map(|z| 1.0 / (1.0 + (-z).exp()))
+        .collect();
+    check(&reference("stacking_grid.csv"), |c| {
+        let fit = match c.get("case") {
+            "bayes" => {
+                let (m, s) = moments(&w_bayes);
+                return match c.get("quantity") {
+                    "mean" => Some(m),
+                    "sd" => Some(s),
+                    _ => None,
+                };
+            }
+            "hierarchical" => &hier,
+            "synthetic" => &synth,
+            _ => return None,
+        };
+        let param = c.get("param");
+        if let Some(at) = param.strip_prefix("weight_at_") {
+            let xv: f64 = at.parse().ok()?;
+            return Some(fit.weights(&[vec![xv]]).unwrap()[0]);
+        }
+        let draws = match param {
+            "alpha" => fit.alpha_draws(),
+            "beta" => fit.beta_draws(),
+            _ => return None,
+        };
+        let (m, s) = moments(&draws);
+        match c.get("quantity") {
+            "mean" => Some(m),
+            "sd" => Some(s),
+            _ => None,
+        }
+    });
+}

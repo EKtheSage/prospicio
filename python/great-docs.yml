@@ -89,6 +89,9 @@ reference:
       - models.elpd_loo
       - models.stacking_weights
       - models.pseudo_bma_weights
+      - models.BayesStacking
+      - models.HierarchicalStacking
+      - models.StackingFit
       - models.elpd_waic
       - models.lppd
       - models.Elpd

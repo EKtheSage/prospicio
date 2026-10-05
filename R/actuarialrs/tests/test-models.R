@@ -223,4 +223,18 @@ stopifnot(nrow(draw_matrix(bpd)) == 100)
 bg <- bayes_glm_fit(claims ~ x, bd, family = "gaussian", chains = 2, tune = 300, draws = 300)
 stopifnot(tail(bg@summary$parameter, 1) == "dispersion")
 
+# Bayesian and hierarchical stacking.
+hx <- seq(-0.5, 0.5, length.out = 100)
+hl <- cbind(a = ifelse(hx < 0, -0.5, -2), b = ifelse(hx < 0, -2, -0.5))
+hs <- hierarchical_stacking(hl, data.frame(x = hx), chains = 2, tune = 300, draws = 300, seed = 2)
+hw <- predict(hs, data.frame(x = c(-0.4, 0, 0.4)))
+stopifnot(identical(colnames(hw), c("a", "b")), all(abs(rowSums(hw) - 1) < 1e-12))
+stopifnot(hw[1, "a"] > 0.7, hw[3, "a"] < 0.3, nrow(hs@weights) == 100, hs@divergences == 0)
+bs <- bayes_stacking(hl, chains = 2, tune = 300, draws = 300)
+stopifnot(nrow(bs@weights) == 1, abs(bs@weights[1, "a"] - 0.5) < 0.1)
+q1 <- predictive_distribution(cbind(rep(1, 50), rep(1, 50)), data.frame(lob = c("x", "y")))
+q2 <- predictive_distribution(cbind(rep(2, 50), rep(2, 50)), data.frame(lob = c("x", "y")))
+qm <- blend_predictive(list(q1, q2), rbind(c(1, 0), c(0, 1)), seed = 3)
+stopifnot(all(draw_matrix(qm)[, 1] == 1), all(draw_matrix(qm)[, 2] == 2))
+
 cat("actuarialrs R models tests passed\n")

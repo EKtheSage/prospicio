@@ -10,7 +10,8 @@ blend_predictive(models, weights, seed)
 \item{models}{A list of \link{predictive_distribution}s with the same keys
 and number of simulations.}
 
-\item{weights}{Non-negative weights, one per model; normalized.}
+\item{weights}{Non-negative weights, one per model, or a matrix with one
+row per component; normalized.}
 
 \item{seed}{Seed, a whole number.}
 }
@@ -22,6 +23,12 @@ Simulation \code{i} of the result is simulation \code{i} of model \code{k}, with
 drawn with probability \code{weights[k]} from stream \code{i} of \code{seed}. Rows stay
 whole, so sums across components remain coherent. Use weights from
 \code{\link[=stacking_weights]{stacking_weights()}} or \code{\link[=pseudo_bma_weights]{pseudo_bma_weights()}}.
+}
+\details{
+With a matrix of weights (one row per component, one column per model,
+as \code{\link[=hierarchical_stacking]{hierarchical_stacking()}} gives them) each component draws its model
+from the simulation's common uniform against its own weights, so
+components with equal weights take the same model.
 }
 \examples{
 a <- predictive_distribution(matrix(0, 1000, 1), data.frame(lob = "x"))

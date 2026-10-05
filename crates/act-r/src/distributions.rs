@@ -728,9 +728,38 @@ fn blend_rust(models: List, weights: &[f64], seed: f64) -> Result<PredictiveDist
     Ok(PredictiveDistribution { inner: pd })
 }
 
+/// Blends with one weight vector per component: `weights` is
+/// `components × models` column-major.
+#[extendr]
+fn blend_by_component_rust(
+    models: List,
+    weights: &[f64],
+    seed: f64,
+) -> Result<PredictiveDistribution> {
+    let refs: Vec<&PredictiveDistribution> = models
+        .values()
+        .map(|m| {
+            <&PredictiveDistribution>::try_from(&m)
+                .map_err(|_| Error::Other("every model must be a predictive_distribution".into()))
+        })
+        .collect::<Result<_>>()?;
+    let k = refs.len();
+    if k == 0 || weights.len() % k != 0 {
+        return Err(Error::Other("weights need one column per model".into()));
+    }
+    let c = weights.len() / k;
+    let rows: Vec<Vec<f64>> = (0..c)
+        .map(|j| (0..k).map(|m| weights[m * c + j]).collect())
+        .collect();
+    let inner: Vec<&PdInner> = refs.iter().map(|p| &p.inner).collect();
+    let pd = PdInner::blend_by_component(&inner, &rows, whole(seed, "seed")?).map_err(to_r)?;
+    Ok(PredictiveDistribution { inner: pd })
+}
+
 extendr_module! {
     mod distributions;
     fn blend_rust;
+    fn blend_by_component_rust;
     impl Lognormal;
     impl Poisson;
     impl NegativeBinomial;
