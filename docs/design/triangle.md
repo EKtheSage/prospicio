@@ -115,8 +115,9 @@ pub struct Triangle {
   keys, values or columns, repeats, empty value lists and a selection that
   matches nothing are errors. Selection by position (`slice`) is gone.
   Bindings, same semantics:
-  - Python: `tri.select(columns=None, **keys)` (a value or a list of
-    values per key, compared as `str()`), `tri.group_by(keys)`.
+  - Python: `tri.select(columns=None, **keys)` (per key one value, or any
+    iterable of values that is not a string, such as a list, NumPy array
+    or pandas Series; compared as `str()`), `tri.group_by(keys)`.
   - R: `subset(tri, key = values, columns = NULL)` and
     `aggregate(tri, keep = keys)` (default `character()`, the total). They
     are methods on base generics rather than `select()`, `filter()` or

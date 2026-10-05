@@ -344,6 +344,19 @@ def test_pandas_frame_and_datetimes():
     assert back == tri
 
 
+def test_select_with_numpy_and_pandas_values():
+    pd = pytest.importorskip("pandas")
+    np = pytest.importorskip("numpy")
+    df = pd.DataFrame({"lob": ["A", "A", "B", "C"], "company": [7, 8, 8, 8],
+                       "year": 2020, "age": 12, "paid": [1.0, 2.0, 3.0, 4.0]})
+    tri = Triangle.from_frame(df, "year", "age", "paid", keys=["lob", "company"])
+    # Arrays, Series and tuples are lists of values; numbers match as str().
+    wanted = df.loc[df["paid"] > 2.5, "lob"].unique()
+    assert tri.select(lob=wanted).index == [("B", "8"), ("C", "8")]
+    assert tri.select(lob=pd.Series(["B", "C"]), company=np.int64(8)).shape[0] == 2
+    assert tri.select(lob=("A",), company=[7]).index == [("A", "7")]
+
+
 def test_grain():
     q = Triangle.from_long(
         origin=[2020, 2020, 2020, 2020],

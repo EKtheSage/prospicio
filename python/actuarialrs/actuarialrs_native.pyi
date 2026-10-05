@@ -5801,7 +5801,9 @@ class Triangle:
         columns : str or list of str, optional
             Measure columns to keep, in this order. By default every column.
         **keys : value or list of values
-            For example ``lob="Auto"`` or ``state=["CA", "NY"]``.
+            For example ``lob="Auto"`` or ``state=["CA", "NY"]``; any
+            iterable that is not a string (a tuple, set, NumPy array or
+            pandas Series) is a list of values.
         
         Returns
         -------

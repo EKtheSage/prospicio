@@ -1311,7 +1311,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn slice_selects_segments_and_columns() {
+    fn select_keeps_segments_and_columns() {
         let origin = [Month::january(2020); 2];
         let t = Triangle::from_long(&Long {
             keys: &[("lob", &["A", "B"])],
@@ -1429,6 +1429,25 @@ pub(crate) mod tests {
         let inc = t.to_incremental().group_by(&["lob"]).unwrap();
         assert!(!inc.is_cumulative());
         assert_eq!(inc, t.group_by(&["lob"]).unwrap().to_incremental());
+
+        // Members observed to different ages in one origin: A to 24 months,
+        // B to 12. The group's cumulative values are 1 + 10 = 11 at 12 and
+        // 3 at 24 (only A is observed), so its increment at 24 is 3 - 11,
+        // not A's own increment 3 - 1.
+        let t = Triangle::from_long(&Long {
+            keys: &[("seg", &["A", "A", "B"])],
+            origin: &[Month::january(2020); 3],
+            development: DevelopmentColumn::Age(&[12, 24, 12]),
+            values: &[("paid", &[1.0, 3.0, 10.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let summed = t.to_incremental().group_by(&[]).unwrap();
+        assert_eq!(summed.get(0, 0, 0, 0), Some(11.0));
+        assert_eq!(summed.get(0, 0, 0, 1), Some(-8.0));
+        assert_eq!(summed, t.group_by(&[]).unwrap().to_incremental());
     }
 
     #[test]

@@ -13,9 +13,7 @@ use act_reserving::{
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{
-    PyBool, PyDate, PyDelta, PyDict, PyFloat, PyFrozenSet, PyInt, PyList, PySet, PyString, PyTuple,
-};
+use pyo3::types::{PyBool, PyBytes, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyString, PyTuple};
 
 use crate::distributions::PyPredictiveDistribution;
 use crate::to_py;
@@ -215,19 +213,16 @@ fn label_to_py<'py>(py: Python<'py>, n_keys: usize, label: &Label) -> PyResult<B
     }
 }
 
-/// Key values to select: a list, tuple or set of values, or one value; each
-/// compared as ``str()`` of it, as key columns are stored.
+/// Key values to select: one value (a string, number, date, ...) or any
+/// other iterable of values (a list, tuple, set, NumPy array or pandas
+/// Series); each compared as ``str()`` of it, as key columns are stored.
 fn selection_values(obj: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
-    if obj.is_instance_of::<PyList>()
-        || obj.is_instance_of::<PyTuple>()
-        || obj.is_instance_of::<PySet>()
-        || obj.is_instance_of::<PyFrozenSet>()
-    {
-        obj.try_iter()?
-            .map(|item| Ok(item?.str()?.to_string()))
-            .collect()
-    } else {
-        Ok(vec![obj.str()?.to_string()])
+    if obj.is_instance_of::<PyString>() || obj.is_instance_of::<PyBytes>() {
+        return Ok(vec![obj.str()?.to_string()]);
+    }
+    match obj.try_iter() {
+        Ok(items) => items.map(|item| Ok(item?.str()?.to_string())).collect(),
+        Err(_) => Ok(vec![obj.str()?.to_string()]),
     }
 }
 
@@ -807,7 +802,9 @@ impl PyTriangle {
     /// columns : str or list of str, optional
     ///     Measure columns to keep, in this order. By default every column.
     /// **keys : value or list of values
-    ///     For example ``lob="Auto"`` or ``state=["CA", "NY"]``.
+    ///     For example ``lob="Auto"`` or ``state=["CA", "NY"]``; any
+    ///     iterable that is not a string (a tuple, set, NumPy array or
+    ///     pandas Series) is a list of values.
     ///
     /// Returns
     /// -------
