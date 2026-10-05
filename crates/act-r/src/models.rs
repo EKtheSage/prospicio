@@ -967,8 +967,115 @@ impl BayesGlmModel {
     }
 }
 
+/// Posterior stacking weights.
+#[extendr]
+pub(crate) struct StackingModel {
+    inner: act_bayes::stacking::StackingFit,
+    k: usize,
+}
+
+fn stacking_sampler(sampler: &[f64]) -> Result<act_bayes::glm::Sampler> {
+    let [chains, tune, draws, seed] = sampler else {
+        return Err(Error::Other("sampler needs four settings".into()));
+    };
+    Ok(act_bayes::glm::Sampler {
+        chains: whole(*chains, "chains")? as usize,
+        tune: whole(*tune, "tune")? as usize,
+        draws: whole(*draws, "draws")? as usize,
+        seed: whole(*seed, "seed")?,
+        ..act_bayes::glm::Sampler::default()
+    })
+}
+
+/// Bayesian stacking of an `n × k` column-major matrix of log densities;
+/// `concentration` empty for a uniform Dirichlet.
+#[extendr]
+fn bayes_stacking_rust(
+    lpd: &[f64],
+    k: f64,
+    concentration: &[f64],
+    sampler: &[f64],
+) -> Result<StackingModel> {
+    let k = whole(k, "k")? as usize;
+    let cols = columns(lpd, k)?;
+    let spec = act_bayes::stacking::BayesStacking {
+        concentration: (!concentration.is_empty()).then(|| concentration.to_vec()),
+        sampler: stacking_sampler(sampler)?,
+    };
+    let inner = spec.fit(&cols).map_err(to_r)?;
+    Ok(StackingModel { inner, k })
+}
+
+/// Hierarchical stacking; `x` is `n × p` column-major covariates, `priors`
+/// is `c(alpha_loc, alpha_scale, beta_loc, beta_scale)`.
+#[extendr]
+fn hierarchical_stacking_rust(
+    lpd: &[f64],
+    k: f64,
+    x: &[f64],
+    p: f64,
+    priors: &[f64],
+    sampler: &[f64],
+) -> Result<StackingModel> {
+    let k = whole(k, "k")? as usize;
+    let cols = columns(lpd, k)?;
+    let xs = columns(x, whole(p, "p")? as usize)?;
+    let [alpha_loc, alpha_scale, beta_loc, beta_scale] = priors else {
+        return Err(Error::Other("priors needs four values".into()));
+    };
+    let spec = act_bayes::stacking::HierarchicalStacking {
+        alpha_loc: *alpha_loc,
+        alpha_scale: *alpha_scale,
+        beta_loc: *beta_loc,
+        beta_scale: *beta_scale,
+        sampler: stacking_sampler(sampler)?,
+    };
+    let inner = spec.fit(&cols, &xs).map_err(to_r)?;
+    Ok(StackingModel { inner, k })
+}
+
+#[extendr]
+impl StackingModel {
+    /// Posterior mean weights, `n × k` column-major, for `n × p`
+    /// column-major covariates (`p = 0`: one row).
+    fn weights(&self, x: &[f64], p: f64) -> Result<Vec<f64>> {
+        let p = whole(p, "p")? as usize;
+        let xs = if p == 0 { Vec::new() } else { columns(x, p)? };
+        let w = self.inner.weights(&xs).map_err(to_r)?;
+        let n = w.len() / self.k;
+        Ok((0..self.k)
+            .flat_map(|j| (0..n).map(move |i| (i, j)))
+            .map(|(i, j)| w[i * self.k + j])
+            .collect())
+    }
+
+    fn alpha_draws(&self) -> Vec<f64> {
+        self.inner.alpha_draws()
+    }
+
+    fn beta_draws(&self) -> Vec<f64> {
+        self.inner.beta_draws()
+    }
+
+    fn divergences(&self) -> f64 {
+        self.inner.divergences() as f64
+    }
+
+    /// `list(rhat, ess_bulk)` per sampled parameter.
+    fn rhat_ess(&self) -> Result<List> {
+        let r = self.inner.rhat_ess().map_err(to_r)?;
+        Ok(list!(
+            rhat = r.iter().map(|v| v.0).collect::<Vec<_>>(),
+            ess_bulk = r.iter().map(|v| v.1).collect::<Vec<_>>()
+        ))
+    }
+}
+
 extendr_module! {
     mod models;
+    fn bayes_stacking_rust;
+    fn hierarchical_stacking_rust;
+    impl StackingModel;
     fn bayes_glm_fit_design;
     impl BayesGlmModel;
     fn actual_vs_expected_rust;

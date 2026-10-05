@@ -236,6 +236,35 @@ class BayesGlmFit:
         """
 
 @final
+class BayesStacking:
+    """
+    Bayesian stacking: a posterior for the stacking weights, with a
+    Dirichlet prior, sampled by NUTS from pointwise held-out log densities
+    (Yao et al., 2018). ``stacking_weights`` gives the optimum alone.
+    
+    Parameters
+    ----------
+    concentration : list of float, optional
+        Dirichlet concentration, one per model (default 1, uniform).
+    chains, tune, draws : int, default 4, 1000, 1000
+    seed : int, default 0
+    """
+    def __new__(cls, /, concentration: Sequence[float] |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> BayesStacking: ...
+    def fit(self, /, lpd: Sequence[Sequence[float]]) -> StackingFit:
+        """
+        Samples the weights.
+        
+        Parameters
+        ----------
+        lpd : list of list of float
+            One list per model, one held-out log density per observation.
+        
+        Returns
+        -------
+        StackingFit
+        """
+
+@final
 class Binomial:
     """
     Binomial claim counts: ``n`` risks, each claiming with probability
@@ -2503,6 +2532,53 @@ class Grid:
         """
 
 @final
+class HierarchicalStacking:
+    """
+    Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
+    weights that vary with covariates, ``w = softmax(alpha + B x)`` against
+    the last model as reference, so a model can be trusted in one part of
+    the portfolio and not another. Normal priors, as BayesBlend's
+    ``HierarchicalBayesStacking`` without partial pooling; sampled by NUTS.
+    
+    Scale continuous covariates (BayesBlend divides by twice the standard
+    deviation) and dummy-code discrete ones before fitting.
+    
+    Parameters
+    ----------
+    alpha_loc, alpha_scale : float, default 0.0, 1.0
+    beta_loc, beta_scale : float, default 0.0, 1.0
+    chains, tune, draws : int, default 4, 1000, 1000
+    seed : int, default 0
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import HierarchicalStacking
+    >>> x = [i / 99 - 0.5 for i in range(100)]
+    >>> a = [-0.5 if v < 0 else -2.0 for v in x]
+    >>> b = [-2.0 if v < 0 else -0.5 for v in x]
+    >>> fit = HierarchicalStacking(chains=2, tune=300, draws=300).fit([a, b], [x])
+    >>> w = fit.weights([[-0.4, 0.4]])
+    >>> w[0][0] > 0.7 and w[1][0] < 0.3
+    True
+    """
+    def __new__(cls, /, alpha_loc: float = 0.0, alpha_scale: float = 1.0, beta_loc: float = 0.0, beta_scale: float = 1.0, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalStacking: ...
+    def fit(self, /, lpd: Sequence[Sequence[float]], covariates: Sequence[Sequence[float]]) -> StackingFit:
+        """
+        Samples the intercepts and slopes.
+        
+        Parameters
+        ----------
+        lpd : list of list of float
+            One list per model, one held-out log density per observation.
+        covariates : list of list of float
+            One list per covariate, one value per observation.
+        
+        Returns
+        -------
+        StackingFit
+        """
+
+@final
 class Layer:
     """
     A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
@@ -4449,6 +4525,27 @@ class PredictiveDistribution:
         >>> abs(mix.mean() - 0.75) < 0.05
         True
         """
+    @staticmethod
+    def blend_by_component(models: Sequence[PredictiveDistribution], weights: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+        """
+        Blends models with weights that differ by component, as
+        ``HierarchicalStacking`` gives them: in simulation ``i`` every
+        component draws its model from the same uniform against its own
+        cumulative weights, so components with equal weights take the same
+        model and dependence is kept as far as the weights allow.
+        
+        Parameters
+        ----------
+        models : list of PredictiveDistribution
+        weights : list of list of float
+            One weight vector per component (in ``components()`` order), one
+            weight per model.
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
     def components(self, /) -> list[Any]:
         """
         Component keys, one tuple per column.
@@ -4686,6 +4783,52 @@ class Sampled:
         Returns
         -------
         float
+        """
+
+@final
+class StackingFit:
+    """
+    Posterior stacking weights, from ``BayesStacking.fit`` or
+    ``HierarchicalStacking.fit``.
+    """
+    @property
+    def alpha_draws(self, /) -> list[float]:
+        """
+        Intercept draws (the logits for Bayesian stacking), one row per draw,
+        one per model but the reference (last).
+        """
+    @property
+    def beta_draws(self, /) -> list[float]:
+        """
+        Slope draws, flattened draw by draw, model by model, covariate by
+        covariate.
+        """
+    @property
+    def divergences(self, /) -> int:
+        """
+        Divergent transitions among the kept draws.
+        """
+    def rhat_ess(self, /) -> list[tuple[float, float]]:
+        """
+        R-hat and bulk ESS of each sampled parameter.
+        
+        Returns
+        -------
+        list of (float, float)
+        """
+    def weights(self, /, covariates: Sequence[Sequence[float]] |None = None) -> list[list[float]]:
+        """
+        Posterior mean weights: one row per observation of ``covariates``
+        (one list per covariate), one weight per model. For Bayesian
+        stacking leave ``covariates`` empty: one row.
+        
+        Parameters
+        ----------
+        covariates : list of list of float, optional
+        
+        Returns
+        -------
+        list of list of float
         """
 
 @final

@@ -295,12 +295,15 @@ impl Model for BayesGlm {
 }
 
 /// Runs one chain; returns its kept draws (row-major) and divergences.
-fn run_chain(
-    density: Posterior<'_>,
+pub(crate) fn run_chain<F>(
+    density: F,
     start: &[f64],
     s: Sampler,
     chain: usize,
-) -> Result<(Vec<f64>, usize)> {
+) -> Result<(Vec<f64>, usize)>
+where
+    F: CpuLogpFunc<FlowParameters = (), ExpandedVector = Vec<f64>>,
+{
     let dim = start.len();
     // The chain's random numbers: ChaCha20 keyed from stream `chain` of
     // the seed, so chains are independent and replay exactly.

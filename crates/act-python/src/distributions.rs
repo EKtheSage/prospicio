@@ -1315,6 +1315,37 @@ impl PyPredictiveDistribution {
         Ok(Self { inner })
     }
 
+    /// Blends models with weights that differ by component, as
+    /// ``HierarchicalStacking`` gives them: in simulation ``i`` every
+    /// component draws its model from the same uniform against its own
+    /// cumulative weights, so components with equal weights take the same
+    /// model and dependence is kept as far as the weights allow.
+    ///
+    /// Parameters
+    /// ----------
+    /// models : list of PredictiveDistribution
+    /// weights : list of list of float
+    ///     One weight vector per component (in ``components()`` order), one
+    ///     weight per model.
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    #[staticmethod]
+    fn blend_by_component(
+        py: Python<'_>,
+        models: Vec<PyRef<'_, PyPredictiveDistribution>>,
+        weights: Vec<Vec<f64>>,
+        seed: u64,
+    ) -> PyResult<Self> {
+        let refs: Vec<&PredictiveDistribution> = models.iter().map(|m| &m.inner).collect();
+        let inner = py
+            .detach(|| PredictiveDistribution::blend_by_component(&refs, &weights, seed))
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
     /// One component's draws, or ``None`` if no component has this key.
     ///
     /// Parameters

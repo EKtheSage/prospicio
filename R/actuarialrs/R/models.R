@@ -1008,6 +1008,107 @@ actual_vs_expected <- function(periods, actual, expected, family, weights = NULL
   out
 }
 
+#' Bayesian and hierarchical stacking
+#'
+#' Model weights with a posterior, sampled by NUTS from pointwise held-out
+#' log densities, the log score of the mixture as the likelihood (Yao et
+#' al., 2018 and 2022). `bayes_stacking()` puts a Dirichlet prior on one
+#' weight vector. `hierarchical_stacking()` lets the weights vary with
+#' covariates, `w = softmax(alpha + B x)` against the last model as
+#' reference, with normal priors as BayesBlend's `HierarchicalBayesStacking`
+#' without partial pooling: a model can be trusted in one part of the
+#' portfolio and not another. Scale continuous covariates (BayesBlend
+#' divides by twice their standard deviation) and dummy-code discrete ones
+#' first. Posterior moments match exact grid integration
+#' (`validation/scripts/stacking_grid.py`).
+#'
+#' @param lpd A matrix of held-out log densities, one row per observation
+#'   and one column per model (for example each model's
+#'   `bayes_loo(m)$pointwise`, as columns).
+#' @param covariates A matrix or data frame of numeric covariates, one row
+#'   per observation.
+#' @param concentration Dirichlet concentration, one per model; `NULL` is
+#'   uniform.
+#' @param alpha_loc,alpha_scale,beta_loc,beta_scale Normal priors on the
+#'   intercepts and slopes.
+#' @param chains,tune,draws,seed Sampler settings.
+#' @returns A `stacking_fit` with properties `weights` (posterior mean
+#'   weights: one row per observation for hierarchical stacking, one row
+#'   otherwise), `alpha_draws`, `beta_draws` and `divergences`. Use
+#'   [stats::predict()] with new covariates for their weights, and
+#'   [blend_predictive()] with the weight matrix.
+#' @name bayesian_stacking
+#' @examples
+#' x <- seq(-0.5, 0.5, length.out = 100)
+#' lpd <- cbind(a = ifelse(x < 0, -0.5, -2), b = ifelse(x < 0, -2, -0.5))
+#' h <- hierarchical_stacking(lpd, data.frame(x = x), chains = 2, tune = 300, draws = 300)
+#' predict(h, data.frame(x = c(-0.4, 0.4)))
+#' bayes_stacking(lpd, chains = 2, tune = 300, draws = 300)@weights
+NULL
+
+#' @rdname bayesian_stacking
+#' @export
+bayes_stacking <- function(lpd, concentration = NULL, chains = 4, tune = 1000, draws = 1000,
+                           seed = 0) {
+  lpd <- as.matrix(lpd)
+  ptr <- rust_result(bayes_stacking_rust(
+    as.double(lpd), ncol(lpd), if (is.null(concentration)) double() else as.double(concentration),
+    as.double(c(chains, tune, draws, seed))
+  ))
+  stacking_fit(ptr = ptr, models = model_weights_names(lpd, seq_len(ncol(lpd))), covariates = NULL)
+}
+
+#' @rdname bayesian_stacking
+#' @export
+hierarchical_stacking <- function(lpd, covariates, alpha_loc = 0, alpha_scale = 1, beta_loc = 0,
+                                  beta_scale = 1, chains = 4, tune = 1000, draws = 1000,
+                                  seed = 0) {
+  lpd <- as.matrix(lpd)
+  x <- as.matrix(covariates)
+  ptr <- rust_result(hierarchical_stacking_rust(
+    as.double(lpd), ncol(lpd), as.double(x), ncol(x),
+    as.double(c(alpha_loc, alpha_scale, beta_loc, beta_scale)),
+    as.double(c(chains, tune, draws, seed))
+  ))
+  stacking_fit(ptr = ptr, models = model_weights_names(lpd, seq_len(ncol(lpd))), covariates = x)
+}
+
+#' Posterior stacking weights (class)
+#'
+#' Returned by [bayes_stacking()] and [hierarchical_stacking()].
+#'
+#' @param ptr,models,covariates Internal.
+#' @returns A `stacking_fit` object.
+#' @export
+stacking_fit <- S7::new_class(
+  "stacking_fit",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("StackingModel"),
+    models = S7::class_any,
+    covariates = S7::class_any,
+    weights = S7::new_property(S7::class_any, getter = function(self) {
+      stacking_weights_at(self, self@covariates)
+    }),
+    alpha_draws = S7::new_property(S7::class_double, getter = function(self) self@ptr$alpha_draws()),
+    beta_draws = S7::new_property(S7::class_double, getter = function(self) self@ptr$beta_draws()),
+    divergences = S7::new_property(S7::class_double, getter = function(self) self@ptr$divergences())
+  ),
+  constructor = function(ptr, models, covariates) {
+    S7::new_object(S7::S7_object(), ptr = ptr, models = models, covariates = covariates)
+  }
+)
+
+stacking_weights_at <- function(fit, x) {
+  x <- if (is.null(x)) matrix(0, 0, 0) else as.matrix(x)
+  w <- rust_result(fit@ptr$weights(as.double(x), ncol(x)))
+  matrix(w, ncol = length(fit@models), dimnames = list(NULL, names(fit@models)))
+}
+
+S7::method(predict, stacking_fit) <- function(object, newdata = NULL, ...) {
+  stacking_weights_at(object, newdata)
+}
+
 #' Model weights for blending: stacking and pseudo-BMA
 #'
 #' Weights from pointwise held-out log predictive densities (Yao, Vehtari,

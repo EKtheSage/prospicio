@@ -10,6 +10,9 @@ from .actuarialrs_native import (
     actual_vs_expected,
     BayesGlm,
     BayesGlmFit,
+    BayesStacking,
+    HierarchicalStacking,
+    StackingFit,
     Coding,
     CvPath,
     Design,
@@ -82,6 +85,9 @@ __all__ = [
     "actual_vs_expected",
     "BayesGlm",
     "BayesGlmFit",
+    "BayesStacking",
+    "HierarchicalStacking",
+    "StackingFit",
 ]
 
 
