@@ -37,6 +37,7 @@ pub mod mack;
 pub mod odp_glm;
 pub mod segments;
 pub mod triangle;
+pub mod view;
 
 pub use act_core::{Grain, Lag, Month, Period};
 pub use backtest::{
@@ -53,3 +54,4 @@ pub use mack::{Mack, MackFit};
 pub use odp_glm::{OdpGlm, OdpGlmFit};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
 pub use triangle::{CalendarView, DevelopmentColumn, Diagonal, Label, Long, LongTable, Triangle};
+pub use view::{SummaryRow, TriangleSummary, TriangleView};

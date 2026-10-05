@@ -106,37 +106,7 @@ impl<T> SegmentFits<T> {
     /// An unknown or repeated key, a value no segment has, or a choice that
     /// matches several segments is an error.
     pub fn position(&self, keys: &[(&str, &str)]) -> Result<usize> {
-        let mut positions: Vec<usize> = Vec::with_capacity(keys.len());
-        for (key, value) in keys {
-            let k = self
-                .key_names
-                .iter()
-                .position(|n| n == key)
-                .ok_or_else(|| Error::UnknownKey(key.to_string()))?;
-            if positions.contains(&k) {
-                return Err(Error::DuplicateKey(key.to_string()));
-            }
-            if !self.labels.iter().any(|l| l.parts()[k] == *value) {
-                return Err(Error::UnknownKeyValue {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                });
-            }
-            positions.push(k);
-        }
-        let matches: Vec<usize> = (0..self.labels.len())
-            .filter(|&i| {
-                let parts = self.labels[i].parts();
-                keys.iter()
-                    .zip(&positions)
-                    .all(|((_, value), &k)| parts[k] == *value)
-            })
-            .collect();
-        match matches[..] {
-            [i] => Ok(i),
-            [] => Err(Error::NoSegments),
-            _ => Err(Error::AmbiguousSegment(matches.len())),
-        }
+        find_segment(&self.key_names, &self.labels, keys)
     }
 
     /// The one segment chosen as in [`position`](Self::position), as a
@@ -384,6 +354,47 @@ impl<T: ReserveFit> SegmentFits<T> {
             .iter()
             .map(|f| f.chain_ladder().total_reserve())
             .sum()
+    }
+}
+
+/// Position of the one label whose keys have the given values, as
+/// [`SegmentFits::position`] and [`Triangle::view`] choose a segment. Keys
+/// not named may take any value. An unknown or repeated key, a value no
+/// label has, or a choice that matches several labels is an error.
+pub(crate) fn find_segment(
+    key_names: &[String],
+    labels: &[Label],
+    keys: &[(&str, &str)],
+) -> Result<usize> {
+    let mut positions: Vec<usize> = Vec::with_capacity(keys.len());
+    for (key, value) in keys {
+        let k = key_names
+            .iter()
+            .position(|n| n == key)
+            .ok_or_else(|| Error::UnknownKey(key.to_string()))?;
+        if positions.contains(&k) {
+            return Err(Error::DuplicateKey(key.to_string()));
+        }
+        if !labels.iter().any(|l| l.parts()[k] == *value) {
+            return Err(Error::UnknownKeyValue {
+                key: key.to_string(),
+                value: value.to_string(),
+            });
+        }
+        positions.push(k);
+    }
+    let matches: Vec<usize> = (0..labels.len())
+        .filter(|&i| {
+            let parts = labels[i].parts();
+            keys.iter()
+                .zip(&positions)
+                .all(|((_, value), &k)| parts[k] == *value)
+        })
+        .collect();
+    match matches[..] {
+        [i] => Ok(i),
+        [] => Err(Error::NoSegments),
+        _ => Err(Error::AmbiguousSegment(matches.len())),
     }
 }
 

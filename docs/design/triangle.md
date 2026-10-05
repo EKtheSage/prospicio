@@ -74,6 +74,35 @@ pub struct Triangle {
 | `select(key = values)` / `select_columns(names)` | segments by key value (conditions ANDed), measures by name |
 | `group_by(keys)` | sum segments over the other keys; `group_by([])` is the total |
 | `from_long` / `to_long` | long ↔ wide: rows of (key columns by name, origin, development or valuation, value columns) |
+| `view(keys, column)` / `summary()` | one segment × measure as a grid; one row per segment × measure |
+
+**Views for reading (implemented, decision 5 step 4).** `view` takes one
+value per key, chosen as `SegmentFits::segment` chooses (keys not named
+may take any value, several matches are `AmbiguousSegment`), and a column
+that may be left out when there is only one (`MultipleColumns`
+otherwise). It returns a `TriangleView`: origins, ages and the cells,
+`None` where unobserved. `summary()` gives a `SummaryRow` per segment ×
+measure: `n_origins` (origins with an observed value), `first_origin`
+and `last_origin` of those, `valuation` (the latest valuation with an
+observed value), and `latest`, the sum over origins of the latest
+cumulative value, so an incremental triangle sums its increments and
+gives the same total as its cumulative form. `Display` (and
+`to_text(max_rows, max_cols)`, `to_html`) prints the grid for one segment
+and measure and the summary table otherwise, rounding numbers by the
+size of a typical value (whole amounts, three decimals for link ratios)
+and showing the first and last 20 origins and 12 ages around a `...`.
+The printout lives in Rust so Python and R print the same text.
+
+| | Python | R |
+|---|---|---|
+| one segment × measure | `tri.view(column=None, **keys)`: DataFrame, origins × ages (a dict of lists without pandas) | `as.matrix(tri, ..., column = NULL)`: matrix with origin and age dimnames |
+| summary | `tri.summary()`: DataFrame (dict without pandas) | `summary(tri)`: data.frame |
+| printout | `repr`, `_repr_html_`, `tri.to_string(max_rows, max_cols)` | `print`, `format(tri, max_rows, max_cols)` |
+
+R uses base `as.matrix()` rather than a `view()` verb, which would mask
+`tibble::view()` under the tidyverse; for the same reason `summary` and
+`format` are base generics. Summary valuations are dates (the last day of
+the month) in both bindings, as `valuation` is.
 
 ## Arrow boundary
 

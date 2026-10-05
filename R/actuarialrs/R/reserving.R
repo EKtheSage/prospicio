@@ -74,7 +74,8 @@ month_start <- function(year, month) as.Date(sprintf("%04d-%02d-01", year, month
 #' @param ptr A `Triangle` pointer; used internally.
 #' @returns A `triangle` object.
 #' @seealso [chain_ladder()], [mack()], [to_incremental()], [grain()],
-#'   [subset()][subset.triangle], [aggregate()][aggregate.triangle].
+#'   [subset()][subset.triangle], [aggregate()][aggregate.triangle],
+#'   [as.matrix()][triangle_views], [summary()][triangle_views].
 #' @export
 #' @examples
 #' long <- data.frame(
@@ -188,17 +189,117 @@ triangle_array <- function(x, flat, development) {
 
 new_triangle <- function(x, ptr) triangle(ptr = ptr)
 
-S7::method(print, triangle) <- function(x, ...) {
-  s <- x@shape
-  cat(sprintf("<triangle> %d index x %d column x %d origin x %d development, %s, valuation %s\n",
-              s[1], s[2], s[3], s[4], if (x@is_cumulative) "cumulative" else "incremental",
-              format(x@valuation)))
-  cat(sprintf("origin grain %s, development grain %s\n", x@origin_grain, x@development_grain))
-  if (length(x@keys)) cat("keys:", toString(x@keys), "\n")
-  if (s[1] == 1 && s[2] == 1) {
-    v <- x@values[1, 1, , , drop = FALSE]
-    print(matrix(v, s[3], s[4], dimnames = dimnames(x@values)[3:4]))
+# Last day of each "YYYY-MM" month; NA for "" or NA.
+month_end <- function(ym) {
+  out <- rep(as.Date(NA), length(ym))
+  ok <- !is.na(ym) & nzchar(ym)
+  n <- nchar(ym[ok])
+  y <- as.integer(substr(ym[ok], 1, n - 3))
+  m <- as.integer(substr(ym[ok], n - 1, n))
+  out[ok] <- month_start(y + m %/% 12, m %% 12 + 1) - 1
+  out
+}
+
+#' View, summarise and print a triangle
+#'
+#' `as.matrix()` gives one segment and measure of a [triangle] as an
+#' origin x development matrix: origin labels as row names, ages in months
+#' as column names, `NA` where a cell is not observed. Key arguments choose
+#' the segment, one value each (compared as character); keys not named may
+#' take any value, but the choice must leave one segment, so a triangle
+#' with one segment needs none. `column` names the measure and may be left
+#' out when there is only one. This is Python's
+#' `Triangle.view(column=None, **keys)`.
+#'
+#' `summary()` gives one row per segment and measure: the key columns,
+#' `column`, `n_origins` (origins with an observed value), `first_origin`
+#' and `last_origin` of those, `valuation` (the last day of the latest
+#' valuation with an observed value), `latest` (the sum over origins of the
+#' latest cumulative value, so for an incremental triangle the sum of every
+#' increment) and `cumulative`. Origins and valuation are `NA` for a
+#' segment with no observed value of the measure.
+#'
+#' `print()` and `format()` show the grid of `as.matrix()` for a triangle
+#' with one segment and one measure, and the `summary()` table otherwise,
+#' with numbers rounded for reading; long tables show their first and last
+#' rows around a `...`. Python prints the same text.
+#'
+#' `as.matrix()` is a method on base R's generic rather than a new `view()`
+#' verb, which would mask `tibble::view()` once the tidyverse is attached.
+#' A key named `x` or `column` cannot be chosen this way; use
+#' [subset()][subset.triangle] first.
+#'
+#' Errors: an unknown key, value or column, a choice that matches several
+#' segments, a missing `column` with several measures, or a key with the
+#' name of a summary column.
+#'
+#' @param x,object A [triangle].
+#' @param column Name of the measure, or `NULL` for the only one.
+#' @param max_rows,max_cols Rows and development ages shown before the
+#'   middle ones are left out; 0 for no limit.
+#' @param ... For `as.matrix()`, key conditions as `key = value`; unused
+#'   otherwise.
+#' @returns `as.matrix()`: a numeric matrix. `summary()`: a data.frame.
+#'   `format()`: a character vector of lines. `print()`: `x`, invisibly.
+#' @name triangle_views
+#' @examples
+#' long <- data.frame(lob = rep(c("auto", "home"), each = 3), year = c(2020, 2020, 2021),
+#'                    age = c(12, 24, 12), paid = c(100, 150, 110, 40, 60, 45))
+#' tri <- triangle(long, "year", "age", "paid", keys = "lob")
+#' tri
+#' as.matrix(tri, lob = "auto")
+#' summary(tri)
+#' subset(tri, lob = "home")
+NULL
+
+S7::method(as.matrix, triangle) <- function(x, ..., column = NULL) {
+  call <- sys.call()
+  call[[1]] <- quote(as.matrix)
+  conditions <- list(...)
+  keys <- names(conditions)
+  if (length(conditions) && (is.null(keys) || any(keys == ""))) {
+    stop("as.matrix() conditions must be named by key, as in lob = \"auto\"", call. = FALSE)
   }
+  if (any(lengths(conditions) != 1)) {
+    stop("as.matrix() takes one value per key", call. = FALSE)
+  }
+  values <- vapply(conditions, as.character, "", USE.NAMES = FALSE)
+  col <- if (is.null(column)) NULL else as.character(column)
+  v <- rust_result(x@ptr$view(as.character(keys), values, col), call = call)
+  m <- matrix(v$values, nrow = length(v$origins), ncol = length(v$development), byrow = TRUE,
+              dimnames = list(origin = v$origins, development = as.character(v$development)))
+  m[is.nan(m)] <- NA_real_
+  m
+}
+
+S7::method(summary, triangle) <- function(object, ...) {
+  fixed <- c("column", "n_origins", "first_origin", "last_origin", "valuation", "latest",
+             "cumulative")
+  clash <- intersect(object@keys, fixed)
+  if (length(clash)) {
+    stop(sprintf('key "%s" clashes with the "%s" column of the summary', clash[1], clash[1]),
+         call. = FALSE)
+  }
+  s <- object@ptr$summary()
+  blank_na <- function(v) replace(v, !nzchar(v), NA_character_)
+  out <- s$keys
+  out$column <- s$column
+  out$n_origins <- s$n_origins
+  out$first_origin <- blank_na(s$first_origin)
+  out$last_origin <- blank_na(s$last_origin)
+  out$valuation <- month_end(s$valuation)
+  out$latest <- s$latest
+  out$cumulative <- rep(s$cumulative, length(s$column))
+  as.data.frame(out, stringsAsFactors = FALSE, optional = TRUE)
+}
+
+S7::method(format, triangle) <- function(x, max_rows = 20, max_cols = 12, ...) {
+  strsplit(rust_result(x@ptr$to_text(as.double(max_rows), as.double(max_cols))), "\n",
+           fixed = TRUE)[[1]]
+}
+
+S7::method(print, triangle) <- function(x, ...) {
+  cat(format(x, ...), sep = "\n")
   invisible(x)
 }
 

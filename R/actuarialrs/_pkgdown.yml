@@ -135,6 +135,7 @@ reference:
       - triangle
       - subset.triangle
       - aggregate.triangle
+      - triangle_views
       - to_incremental
       - latest_diagonal
       - link_ratios

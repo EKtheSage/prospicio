@@ -365,6 +365,90 @@ impl Triangle {
         Ok(inner.into())
     }
 
+    /// One segment (chosen by `keys` = `values`, one value each) and
+    /// measure (`NULL`: the only one) as `origins`, `development` and
+    /// `values` row-major over origin × development, NaN where unobserved.
+    fn view(
+        &self,
+        keys: Vec<String>,
+        values: Vec<String>,
+        column: Nullable<String>,
+    ) -> Result<List> {
+        let column = match &column {
+            Nullable::NotNull(c) => Some(c.as_str()),
+            Nullable::Null => None,
+        };
+        let view = self
+            .inner
+            .view(&choice(&keys, &values)?, column)
+            .map_err(to_r)?;
+        let (no, nd) = (view.origins.len(), view.development.len());
+        let cells: Vec<f64> = (0..no)
+            .flat_map(|o| (0..nd).map(move |d| (o, d)))
+            .map(|(o, d)| view.get(o, d).unwrap_or(f64::NAN))
+            .collect();
+        Ok(list!(
+            origins = view
+                .origins
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            development = view
+                .development
+                .iter()
+                .map(|&a| a as i32)
+                .collect::<Vec<_>>(),
+            values = cells
+        ))
+    }
+
+    /// One row per segment and measure: the key columns (a named list),
+    /// `column`, `n_origins`, `first_origin` and `last_origin` (period
+    /// labels), `valuation` ("YYYY-MM"), with "" where the segment has no
+    /// observed value, `latest` and `cumulative`.
+    fn summary(&self) -> List {
+        let summary = self.inner.summary();
+        let rows = &summary.rows;
+        let keys = summary
+            .key_names
+            .iter()
+            .enumerate()
+            .map(|(k, name)| {
+                let values = rows.iter().map(|r| r.label.parts()[k].clone()).collect();
+                (name.clone(), values)
+            })
+            .collect();
+        let text = |x: Option<String>| x.unwrap_or_default();
+        list!(
+            keys = key_columns(keys),
+            column = rows.iter().map(|r| r.column.clone()).collect::<Vec<_>>(),
+            n_origins = rows.iter().map(|r| r.n_origins as i32).collect::<Vec<_>>(),
+            first_origin = rows
+                .iter()
+                .map(|r| text(r.first_origin.map(|p| p.to_string())))
+                .collect::<Vec<_>>(),
+            last_origin = rows
+                .iter()
+                .map(|r| text(r.last_origin.map(|p| p.to_string())))
+                .collect::<Vec<_>>(),
+            valuation = rows
+                .iter()
+                .map(|r| text(r.valuation.map(|m| m.to_string())))
+                .collect::<Vec<_>>(),
+            latest = rows.iter().map(|r| r.latest).collect::<Vec<_>>(),
+            cumulative = summary.cumulative
+        )
+    }
+
+    /// The printout: the grid of one segment and measure, otherwise the
+    /// summary table, with at most `max_rows` rows and `max_cols` ages (0
+    /// for no limit).
+    fn to_text(&self, max_rows: f64, max_cols: f64) -> Result<String> {
+        let max_rows = whole(max_rows, "max_rows")? as usize;
+        let max_cols = whole(max_cols, "max_cols")? as usize;
+        Ok(self.inner.to_text(max_rows, max_cols))
+    }
+
     fn chain_ladder(
         &self,
         column: &str,
