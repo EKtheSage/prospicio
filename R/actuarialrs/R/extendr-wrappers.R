@@ -66,6 +66,10 @@ local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at
 
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
 
+pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
+
+pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
+
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
 
 pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)

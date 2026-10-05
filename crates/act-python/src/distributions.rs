@@ -1144,7 +1144,7 @@ pub(crate) fn key_from_py(key: Vec<KeyArg>) -> ComponentKey {
         .collect()
 }
 
-fn key_to_py<'py>(py: Python<'py>, key: &ComponentKey) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn key_to_py<'py>(py: Python<'py>, key: &ComponentKey) -> PyResult<Bound<'py, PyAny>> {
     let values: Vec<Bound<'py, PyAny>> = key
         .iter()
         .map(|v| {

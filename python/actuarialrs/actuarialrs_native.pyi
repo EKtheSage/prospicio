@@ -4367,6 +4367,48 @@ class Poisson:
         """
 
 @final
+class PortfolioPrice:
+    """
+    Prices of a portfolio's components and of the portfolio as a whole.
+    
+    Returned by ``price_portfolio``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def allocated(self, /) -> list[Price]:
+        """
+        Each component's share of the portfolio price; these add up to
+        ``total``.
+        """
+    def components(self, /) -> list[Any]:
+        """
+        Component keys, one tuple per component.
+        
+        Returns
+        -------
+        list of tuple
+        """
+    def diversification(self, /) -> float:
+        """
+        Premium saved by writing the components together: the sum of the
+        standalone premiums less the portfolio premium.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def standalone(self, /) -> list[Price]:
+        """
+        Each component priced on its own.
+        """
+    @property
+    def total(self, /) -> Price:
+        """
+        The portfolio, priced on the total of its components.
+        """
+
+@final
 class PotTail:
     """
     A peaks-over-threshold tail: draws above a threshold modelled by a
@@ -4722,6 +4764,51 @@ class PredictiveDistribution:
         Returns
         -------
         float
+        """
+
+@final
+class Price:
+    """
+    The risk-loaded price of a cover, or of one component's share of a
+    portfolio: expected loss, premium and the assets backing the loss.
+    
+    Returned by ``price`` and ``price_portfolio``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def assets(self, /) -> float:
+        """
+        Assets ``a`` backing the loss.
+        """
+    @property
+    def capital(self, /) -> float:
+        """
+        Capital ``a - P``: the assets the premium does not fund.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        Expected loss ``E[X]``.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        Loss ratio ``E[X] / P``.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        Margin ``P - E[X]``.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        Premium ``P``.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        Return on capital, margin over capital.
         """
 
 @final
@@ -6880,6 +6967,85 @@ def pit_histogram(pit: Sequence[float], bins: int = 10) -> list[int]:
     Returns
     -------
     list of int
+    """
+
+def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> Price:
+    """
+    Risk-loaded price of a cover from its simulated losses.
+    
+    The assets backing the loss are a distortion risk measure of it. The
+    premium is either a pricing distortion of the loss, or set by a
+    constant cost of capital ``r`` on the capital ``a - P``, which gives
+    ``P = (E[X] + r a) / (1 + r)``.
+    
+    Parameters
+    ----------
+    losses : Sampled or PredictiveDistribution
+        Loss draws; for a ``PredictiveDistribution``, its total.
+    assets : Distortion
+        The measure that sets the assets, for example ``Distortion.tvar(0.99)``.
+    cost_of_capital : float, optional
+        Positive rate. Give this or ``distortion``.
+    distortion : Distortion, optional
+        Pricing distortion; it must load less than ``assets``.
+    
+    Returns
+    -------
+    Price
+    
+    Raises
+    ------
+    ValueError
+        Unless exactly one rule is given, or if the premium exceeds the
+        assets.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Sampled
+    >>> from actuarialrs.pricing import price
+    >>> from actuarialrs.risk import Distortion
+    >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
+    >>> p.premium, p.capital
+    (2.4, 1.6)
+    """
+
+def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PortfolioPrice:
+    """
+    Prices a portfolio and allocates the price to its components.
+    
+    Premium and assets are each allocated by co-measure (the natural
+    allocation): component prices add up to the portfolio's, and a
+    component that diversifies the portfolio is priced below its
+    standalone price. With a cost of capital, every component earns the
+    rate on its allocated capital.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+        Components that add up to the portfolio: segments or covers, not
+        gross, ceded and net side by side.
+    assets : Distortion
+    cost_of_capital : float, optional
+    distortion : Distortion, optional
+        Exactly one of ``cost_of_capital`` and ``distortion``, as in
+        ``price``.
+    
+    Returns
+    -------
+    PortfolioPrice
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.pricing import price_portfolio
+    >>> from actuarialrs.risk import Distortion
+    >>> pd = PredictiveDistribution(["cover"], [("a",), ("b",)],
+    ...                             [[0.0, 2.0], [1.0, 1.0], [4.0, 0.0], [8.0, 0.0]])
+    >>> p = price_portfolio(pd, Distortion.tvar(0.5), cost_of_capital=0.1)
+    >>> [round(c.premium, 6) for c in p.allocated]
+    [3.5, 0.681818]
+    >>> p.allocated[1].margin < 0  # the second cover hedges the first
+    True
     """
 
 def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n_draws: int = 1000, seed: int = 0) -> list[float]:
