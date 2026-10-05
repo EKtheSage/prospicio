@@ -263,7 +263,7 @@ impl OdpBootstrap {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
         let segment = triangle.segment(column)?;
-        let ages = triangle.development();
+        let ages = &segment.ages;
         let (fit, pool) = prepare(&segment, ages)?;
 
         let mut hasher = InputHasher::new();
@@ -307,9 +307,8 @@ impl OdpBootstrap {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
-        let ages = triangle.development();
         let prepared = fit_each(triangle, column, |s| {
-            let (fit, pool) = prepare(s, ages)?;
+            let (fit, pool) = prepare(s, &s.ages)?;
             Ok((fit, pool, s.clone()))
         })?;
 
@@ -321,7 +320,7 @@ impl OdpBootstrap {
         let mut sims = Vec::with_capacity(prepared.len());
         for (label, (fit, pool, segment)) in prepared.iter() {
             hasher.str(&label.to_string());
-            hash_segment(&mut hasher, segment, &fit.chain_ladder, ages);
+            hash_segment(&mut hasher, segment, &fit.chain_ladder, &segment.ages);
             for &origin in &segment.origins {
                 let mut key: Vec<KeyValue> =
                     label.parts().iter().map(|p| p.as_str().into()).collect();
