@@ -360,7 +360,9 @@ fn odp_glm_matches_r_glm() {
 
 #[test]
 fn odp_glm_reproduces_chain_ladder_and_bootstrap_scale() {
-    for dataset in ["genins", "abc"] {
+    // RAA included: its negative 1982 increment at 84 months (-103) is
+    // fitted by the quasi-likelihood, which R's quasipoisson refuses.
+    for dataset in ["raa", "genins", "abc"] {
         let tri = triangle(dataset);
         let fit = OdpGlm::default().fit(&tri, "values").unwrap();
         // Renshaw and Verrall: the fitted future cells summed by origin are
@@ -388,23 +390,9 @@ fn odp_glm_reproduces_chain_ladder_and_bootstrap_scale() {
 }
 
 #[test]
-fn odp_glm_rejects_raa_negative_increment() {
-    // RAA 1982 falls from 15,599 to 15,496 at 84 months. R's quasipoisson
-    // family rejects it too.
-    let msg = OdpGlm::default()
-        .fit(&triangle("raa"), "values")
-        .unwrap_err()
-        .to_string();
-    assert!(
-        msg.contains("origin 1982 at 84 months has a negative increment (-103)"),
-        "{msg}"
-    );
-}
-
-#[test]
 fn odp_glm_predictive_distribution_matches_its_mean() {
     const SIMS: usize = 20_000;
-    for dataset in ["genins", "abc"] {
+    for dataset in ["raa", "genins", "abc"] {
         let tri = triangle(dataset);
         let fit = OdpGlm::default().fit(&tri, "values").unwrap();
         let cl = ChainLadder::default().fit(&tri, "values").unwrap();
@@ -412,12 +400,14 @@ fn odp_glm_predictive_distribution_matches_its_mean() {
         assert_eq!(pd.dims(), ["origin", "development"]);
         assert_eq!(pd.n_components(), fit.future.len());
         let mc_se = pd.std_dev() / (SIMS as f64).sqrt();
-        let predictive: f64 = fit.predictive_means().iter().sum();
-        // The draws' mean is the fitted reserve (Chain Ladder's) times the
-        // lognormal factor exp(v / 2) per cell, from drawing the
-        // coefficients on the log scale: +7.2% on GenIns, +0.4% on ABC.
-        assert!((pd.mean() - predictive).abs() < 4.0 * mc_se, "{dataset}");
-        assert!(predictive > cl.total_reserve(), "{dataset}");
+        // Mean-preserving parameter draws: the draws average the Chain
+        // Ladder reserve.
+        assert!(
+            (pd.mean() - cl.total_reserve()).abs() < 4.0 * mc_se,
+            "{dataset}: {} vs {}",
+            pd.mean(),
+            cl.total_reserve()
+        );
         // Reserves by origin: one component per origin with a future cell.
         let by_origin = pd.aggregate(&["origin"]).unwrap();
         assert_eq!(by_origin.n_components(), cl.origins.len() - 1);
@@ -433,7 +423,7 @@ fn odp_glm_predictive_distribution_matches_its_mean() {
             let want: f64 = fit
                 .future
                 .iter()
-                .zip(fit.predictive_means())
+                .zip(fit.future_means.iter().copied())
                 .filter(|((origin, _), _)| *origin == cl.origins[o])
                 .map(|(_, mean)| mean)
                 .sum();

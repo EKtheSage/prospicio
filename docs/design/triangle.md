@@ -164,22 +164,26 @@ rows of a `TriangleFrame`.
   the future cells to dimensions `["origin", "development"]`;
   `aggregate(["origin"])` gives reserves by origin. Each draw takes the
   coefficients from their normal approximation (parameter uncertainty) and
-  each cell as `φ · Poisson(μ / φ)` (process uncertainty). Drawing the
-  coefficients on the log scale lifts each cell's mean by `exp(v / 2)`, with
-  `v = xᵀ Σ x` (`predictive_means()`), so the draws' mean is above the
-  Chain Ladder reserve: +7.2% on GenIns, +0.4% on ABC. The bootstrap's
-  mean stays at the Chain Ladder.
+  each cell as `φ · Poisson(μ / φ)` (process uncertainty). The parameter
+  draws are mean-preserving by default (`act_glm::ParameterDraws`, #114):
+  each cell's linear predictor is shifted by `-v / 2`, `v = xᵀ Σ x`, so the
+  draws average the Chain Ladder reserve. `predict_distribution_with` takes
+  `Normal` (unshifted: each cell's mean is `predictive_means()`, +7.2% on
+  GenIns, +0.4% on ABC) or `Fixed` (process uncertainty only).
 - The fit fails, naming the cell or level, on a hole (a past cell with no
-  increment), on an origin or age with no observed increment (a level only
-  in future cells), and on a negative increment: the Poisson family needs
-  non-negative responses, as R's `quasipoisson` does. RAA has one (1982 at
-  84 months, -103), so the GLM does not fit RAA.
-- Parity (`validation/tests/reserving.rs`): on GenIns and ABC the future
-  cells summed by origin equal the Chain Ladder reserves and `φ` equals the
-  bootstrap's scale (relative 1e-8; Renshaw and Verrall 1998), and the
-  coefficients, standard errors, `φ` and reserves match R's
-  `glm(inc ~ factor(origin) + factor(dev), family = quasipoisson)` to
-  relative 1e-9 (`validation/scripts/reserving_glm_r.R`).
+  increment) and on an origin or age with no observed increment (a level
+  only in future cells). Negative increments are fitted by the
+  quasi-likelihood, which needs only `V(μ) = μ` and `μ > 0` (#114); R's
+  `quasipoisson` refuses them. A level whose only increments are negative
+  has no positive mean, and the GLM fails.
+- Parity (`validation/tests/reserving.rs`): on RAA, GenIns and ABC the
+  future cells summed by origin equal the Chain Ladder reserves and `φ`
+  equals the bootstrap's scale (relative 1e-8; Renshaw and Verrall 1998);
+  on GenIns and ABC the coefficients, standard errors, `φ` and reserves
+  match R's `glm(inc ~ factor(origin) + factor(dev), family = quasipoisson)`
+  to relative 1e-9 (`validation/scripts/reserving_glm_r.R`). RAA has no R
+  reference: its negative increment (1982 at 84 months, -103) makes R
+  refuse it.
 
 ## Calendar-diagonal backtest
 
