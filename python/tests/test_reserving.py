@@ -285,3 +285,31 @@ def test_errors():
     two = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], [1.0, 2.0, 1.0])
     with pytest.raises(ValueError, match="at least 3"):
         Mack().fit(two, "values")
+
+
+def test_frame_round_trip_multi_part_index():
+    pd = pytest.importorskip("pandas")
+    data = {
+        "lob": ["Auto", "Auto", "Home"],
+        "state": ["CA", "CA", "NY"],
+        "year": [2020, 2020, 2020],
+        "age": [12, 24, 12],
+        "paid": [100.0, 150.0, 50.0],
+    }
+    tri = Triangle.from_frame(data, "year", "age", "paid", index=["lob", "state"])
+    frame = tri.to_frame()
+    assert isinstance(frame, pd.DataFrame)
+    back = Triangle.from_frame(frame, "origin", "development", "paid", index="index")
+    assert back.index == [("Auto", "CA"), ("Home", "NY")]
+    assert back == tri
+
+
+def test_numpy_integer_years():
+    np = pytest.importorskip("numpy")
+    years = list(np.array([2020, 2020, 2021]))
+    tri = Triangle.from_long(years, [12, 24, 12], [1.0, 2.0, 3.0])
+    assert tri == Triangle.from_long([2020, 2020, 2021], [12, 24, 12], [1.0, 2.0, 3.0])
+    with pytest.raises(TypeError, match="dates or integer years"):
+        Triangle.from_long([True], [12], [1.0])
+    with pytest.raises(TypeError, match="dates or integer years"):
+        Triangle.from_long([2020.0], [12], [1.0])

@@ -86,7 +86,10 @@ fn plain<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
 }
 
 fn month_of(item: &Bound<'_, PyAny>, what: &str) -> PyResult<Month> {
-    if item.is_instance_of::<PyInt>() && !item.is_instance_of::<PyBool>() {
+    // Python ints and integer scalars such as `numpy.int64` (via `__index__`).
+    if !item.is_instance_of::<PyBool>()
+        && (item.is_instance_of::<PyInt>() || item.hasattr("__index__")?)
+    {
         return Ok(Month::january(item.extract()?));
     }
     if item.hasattr("year")? && item.hasattr("month")? {
@@ -413,7 +416,9 @@ impl PyTriangle {
     /// columns : str or list of str
     ///     Names of the measure columns.
     /// index : str or list of str, optional
-    ///     Names of the segment columns; several make multi-part labels.
+    ///     Names of the segment columns; several make multi-part labels. A
+    ///     single column may hold tuples, as ``to_long`` writes multi-part
+    ///     labels.
     /// origin_grain : {"Y", "S", "Q", "M"}, default "Y"
     /// development_grain : {"Y", "S", "Q", "M"}, default "Y"
     /// cumulative : bool, default True
@@ -465,24 +470,31 @@ impl PyTriangle {
         let index = match index {
             None => None,
             Some(index) => {
-                let parts = names(index)?
-                    .iter()
-                    .map(|name| {
-                        plain(&data.get_item(name)?)?
-                            .try_iter()?
-                            .map(|v| v?.str().map(|s| s.to_string()))
-                            .collect::<PyResult<Vec<String>>>()
-                    })
-                    .collect::<PyResult<Vec<_>>>()?;
-                let n = parts.first().map_or(0, Vec::len);
-                if parts.iter().any(|p| p.len() != n) {
-                    return Err(PyValueError::new_err("index columns differ in length"));
+                let index = names(index)?;
+                if let [name] = index.as_slice() {
+                    // One column: its values may already be multi-part
+                    // labels (tuples), as `to_long` writes them.
+                    Some(labels(&data.get_item(name)?)?)
+                } else {
+                    let parts = index
+                        .iter()
+                        .map(|name| {
+                            plain(&data.get_item(name)?)?
+                                .try_iter()?
+                                .map(|v| v?.str().map(|s| s.to_string()))
+                                .collect::<PyResult<Vec<String>>>()
+                        })
+                        .collect::<PyResult<Vec<_>>>()?;
+                    let n = parts.first().map_or(0, Vec::len);
+                    if parts.iter().any(|p| p.len() != n) {
+                        return Err(PyValueError::new_err("index columns differ in length"));
+                    }
+                    Some(
+                        (0..n)
+                            .map(|row| Label::new(parts.iter().map(|p| p[row].clone())))
+                            .collect(),
+                    )
                 }
-                Some(
-                    (0..n)
-                        .map(|row| Label::new(parts.iter().map(|p| p[row].clone())))
-                        .collect(),
-                )
             }
         };
         LongArgs::new(

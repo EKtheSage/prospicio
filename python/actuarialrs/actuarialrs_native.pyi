@@ -5096,7 +5096,9 @@ class Triangle:
         columns : str or list of str
             Names of the measure columns.
         index : str or list of str, optional
-            Names of the segment columns; several make multi-part labels.
+            Names of the segment columns; several make multi-part labels. A
+            single column may hold tuples, as ``to_long`` writes multi-part
+            labels.
         origin_grain : {"Y", "S", "Q", "M"}, default "Y"
         development_grain : {"Y", "S", "Q", "M"}, default "Y"
         cumulative : bool, default True
