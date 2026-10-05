@@ -229,7 +229,7 @@ fn diagonal_backtest_on_raa() {
         "{ae:?}"
     );
     // On RAA's latest diagonals, development alone scores better than the
-    // ODP model (cell CRPS about 980 against 1380): its origin effects for
+    // ODP model (cell CRPS about 1000 against 1400): its origin effects for
     // the young origins rest on one or two noisy cells.
     assert!(bt.mean(1, 0) < bt.mean(0, 0));
 

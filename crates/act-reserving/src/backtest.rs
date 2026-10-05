@@ -51,6 +51,15 @@ pub trait TriangleModel: Sync {
         n_sims: usize,
         seed: u64,
     ) -> Result<CellForecast>;
+
+    /// The `train` rows the model actually fits on: all of them unless the
+    /// model drops some (a Poisson GLM drops negative increments).
+    /// [`diagonal_backtest`] scores only held-out rows whose origin and
+    /// development levels appear among every model's fit rows.
+    fn fit_rows(&self, cells: &TriangleFrame, train: &[usize]) -> Vec<usize> {
+        let _ = cells;
+        train.to_vec()
+    }
 }
 
 /// A GLM on the features of [`TriangleFrame`]: the ODP model is a
@@ -107,13 +116,7 @@ impl TriangleModel for GlmCandidate {
         n_sims: usize,
         seed: u64,
     ) -> Result<CellForecast> {
-        let family = self.glm.family;
-        let response = cells.response();
-        let train: Vec<usize> = train
-            .iter()
-            .copied()
-            .filter(|&r| family.valid_y(response[r]))
-            .collect();
+        let train = self.fit_rows(cells, train);
         let both: Vec<usize> = train.iter().chain(test).copied().collect();
         let coding = self.terms.fit(&cells.select(&both)?)?;
         let train_design = coding.design(&cells.select(&train)?)?;
@@ -133,6 +136,16 @@ impl TriangleModel for GlmCandidate {
             distribution,
             log_density: Some(log_density),
         })
+    }
+
+    /// The `train` rows whose response is in the family's range.
+    fn fit_rows(&self, cells: &TriangleFrame, train: &[usize]) -> Vec<usize> {
+        let response = cells.response();
+        train
+            .iter()
+            .copied()
+            .filter(|&r| self.glm.family.valid_y(response[r]))
+            .collect()
     }
 }
 
@@ -251,7 +264,8 @@ impl Backtest {
     }
 
     /// Number of held-out rows left out of scoring in each split because
-    /// their origin or development level has no training row.
+    /// their origin or development level has no training row that every
+    /// model fits on.
     pub fn excluded(&self) -> &[usize] {
         &self.excluded
     }
@@ -277,8 +291,10 @@ impl Backtest {
 /// split, so the models share their random numbers).
 ///
 /// A held-out row whose origin or development level has no training row
-/// (the newest origin and the oldest age on the diagonal) cannot be
-/// forecast by a model with origin and development effects; it is left
+/// that every model fits on ([`TriangleModel::fit_rows`]) cannot be
+/// forecast by a model with origin and development effects: the newest
+/// origin and the oldest age on the diagonal, or an age whose only
+/// training cell is a negative increment a Poisson GLM drops. It is left
 /// out for every model, and [`Backtest::excluded`] counts it.
 ///
 /// Scores per model and split ([`METRICS`]): the mean CRPS of the cells,
@@ -345,14 +361,20 @@ pub fn diagonal_backtest(
     let mut excluded = Vec::with_capacity(n_splits);
     let mut scored = Vec::with_capacity(n_splits);
     for s in &splits {
-        let has = |level: &dyn Fn(usize) -> usize, r: usize| {
-            s.train.iter().any(|&t| level(t) == level(r))
+        let fit_rows: Vec<Vec<usize>> =
+            models.iter().map(|m| m.fit_rows(cells, &s.train)).collect();
+        let seen = |rows: &[usize], r: usize| {
+            rows.iter()
+                .any(|&t| cells.origin_of(t) == cells.origin_of(r))
+                && rows
+                    .iter()
+                    .any(|&t| cells.development_of(t) == cells.development_of(r))
         };
         let keep: Vec<usize> = s
             .test
             .iter()
             .copied()
-            .filter(|&r| has(&|x| cells.origin_of(x), r) && has(&|x| cells.development_of(x), r))
+            .filter(|&r| fit_rows.iter().all(|rows| seen(rows, r)))
             .collect();
         if keep.is_empty() {
             return Err(data(format!(
@@ -526,6 +548,147 @@ mod tests {
         assert_eq!(bt.log_densities()[0].as_ref().unwrap().len(), 15);
         assert!(bt.log_densities()[1].is_none());
         assert_eq!(bt.models(), ["odp", "no density"]);
+    }
+
+    /// A triangle of yearly cumulative rows, oldest origin first.
+    fn small(rows: &[&[f64]]) -> TriangleFrame {
+        use crate::{DevelopmentColumn, Grain, Long, Month, Triangle};
+        let (mut origin, mut age, mut value) = (vec![], vec![], vec![]);
+        for (i, row) in rows.iter().enumerate() {
+            for (j, &v) in row.iter().enumerate() {
+                origin.push(Month::january(2018 + i as i32));
+                age.push(12 * (j as u32 + 1));
+                value.push(v);
+            }
+        }
+        let tri = Triangle::from_long(&Long {
+            index: None,
+            origin: &origin,
+            development: DevelopmentColumn::Age(&age),
+            values: &[("paid", &value)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        TriangleFrame::new(&tri, "paid", None).unwrap()
+    }
+
+    /// Four draws per test row, off-centre from the outcome and alternating in
+    /// direction, so that the draws of neighbouring rows cancel in the
+    /// total; the mean is the outcome plus one, and the log density is the
+    /// row number.
+    struct Fixed;
+
+    impl TriangleModel for Fixed {
+        fn name(&self) -> &str {
+            "fixed"
+        }
+
+        fn forecast(
+            &self,
+            cells: &TriangleFrame,
+            _: &[usize],
+            test: &[usize],
+            _: usize,
+            _: u64,
+        ) -> Result<CellForecast> {
+            let y = cells.response_of(test);
+            let n = y.len();
+            let mut draws = vec![0.0; 4 * n];
+            for i in 0..4 {
+                for (j, yj) in y.iter().enumerate() {
+                    let sign = if j % 2 == 0 { 1.0 } else { -1.0 };
+                    draws[i * n + j] = yj + sign * (2.0 * i as f64 - 5.0);
+                }
+            }
+            let keys = (0..n).map(|j| vec![(j as i64).into()]).collect();
+            let distribution = PredictiveDistribution::from_draws(
+                vec!["row".into()],
+                keys,
+                draws,
+                act_prob::Provenance::new("fixed"),
+            )?;
+            Ok(CellForecast {
+                mean: y.iter().map(|v| v + 1.0).collect(),
+                distribution,
+                log_density: Some(test.iter().map(|&r| r as f64).collect()),
+            })
+        }
+    }
+
+    #[test]
+    fn scores_of_known_draws() {
+        // Latest diagonal: 2019 at 36 (increment 10) and 2020 at 24 (55)
+        // are scored; 2021 at 12 and 2018 at 48 have no training level.
+        let cells = small(&[
+            &[100.0, 150.0, 165.0, 170.0],
+            &[110.0, 170.0, 180.0],
+            &[120.0, 175.0],
+            &[130.0],
+        ]);
+        let bt = diagonal_backtest(&cells, &[&Fixed], 1, 4, 1, 0.9).unwrap();
+        assert_eq!(bt.excluded(), [2]);
+        let cell = |y: f64, s: f64| {
+            let d: Vec<f64> = (0..4).map(|i| y + s * (2.0 * i as f64 - 5.0)).collect();
+            crps(&d, y).unwrap()
+        };
+        let expected = (cell(10.0, 1.0) + cell(55.0, -1.0)) / 2.0;
+        assert!((bt.split_scores(0, 0)[0] - expected).abs() < 1e-12);
+        // Central 90% of {y-5, y-3, y-1, y+1}: [y - 4.7, y + 0.7], which
+        // holds y (and its mirror image for the second cell).
+        assert_eq!(bt.split_scores(0, 1), [1.0]);
+        assert!((bt.split_scores(0, 2)[0] - 65.0 / 67.0).abs() < 1e-15);
+        // The joint draws' totals are all 65, the outcome: CRPS zero.
+        assert!(bt.split_scores(0, 3)[0].abs() < 1e-12);
+
+        // The central 50%, [y - 3.5, y - 0.75], misses both cells.
+        let half = diagonal_backtest(&cells, &[&Fixed], 1, 4, 1, 0.5).unwrap();
+        assert_eq!(half.split_scores(0, 1), [0.0]);
+    }
+
+    #[test]
+    fn log_densities_follow_the_scored_rows() {
+        let cells = TriangleFrame::new(&raa(), "values", None).unwrap();
+        let bt = diagonal_backtest(&cells, &[&Fixed, &Fixed], 3, 4, 1, 0.9).unwrap();
+        let rows: Vec<f64> = bt
+            .scored_rows()
+            .concat()
+            .iter()
+            .map(|&r| r as f64)
+            .collect();
+        assert_eq!(rows.len(), 6 + 7 + 8);
+        for l in bt.log_densities() {
+            assert_eq!(l.as_deref(), Some(&rows[..]));
+        }
+    }
+
+    #[test]
+    fn an_age_seen_only_in_a_dropped_increment_is_excluded() {
+        // 2018 at 48 is the only training cell at 48 and a negative
+        // increment, which the Poisson GLM drops: 2019 at 48 cannot be
+        // forecast, and is excluded with 2022 at 12 and 2018 at 60.
+        let cells = small(&[
+            &[100.0, 150.0, 165.0, 160.0, 162.0],
+            &[110.0, 160.0, 180.0, 185.0],
+            &[120.0, 175.0, 190.0],
+            &[125.0, 180.0],
+            &[130.0],
+        ]);
+        let odp = GlmCandidate {
+            name: "odp".into(),
+            terms: Terms::new()
+                .intercept()
+                .factor("origin")
+                .factor("development"),
+            glm: Glm::over_dispersed_poisson(),
+        };
+        let bt = diagonal_backtest(&cells, &[&odp], 1, 100, 7, 0.9).unwrap();
+        assert_eq!(bt.excluded(), [3]);
+        assert_eq!(bt.scored_rows()[0].len(), 2);
+        // A model that fits every row still scores only the shared rows.
+        let both = diagonal_backtest(&cells, &[&odp, &Fixed], 1, 100, 7, 0.9).unwrap();
+        assert_eq!(both.scored_rows(), bt.scored_rows());
     }
 
     #[test]

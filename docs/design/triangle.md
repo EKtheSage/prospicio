@@ -163,6 +163,9 @@ models").
   cannot be forecast by a model with origin and development effects. It
   is left out for every model, so all models score the same cells, and
   `Backtest::excluded` counts it: two per diagonal on a full triangle.
+  "Training row" means one every model fits on (`TriangleModel::fit_rows`,
+  all of them by default): an age whose only training cell is a negative
+  increment, which the Poisson GLM drops, is unseen too.
 - Scores per model and diagonal: mean cell CRPS, coverage of the central
   `interval` of each cell's draws, actual vs expected on the diagonal
   total (`Σy / Σμ`), and the CRPS of the diagonal total from the joint
@@ -198,7 +201,7 @@ Findings on the reference triangles, ODP against development factors
 only: on ABC the ODP model wins on cell and total CRPS and stacking
 favours it (about 0.58 to 0.42, three diagonals), though its 90%
 intervals cover only about half the cells. On RAA's latest two diagonals
-development alone scores better (cell CRPS about 980 against 1380): the
+development alone scores better (cell CRPS about 1000 against 1400): the
 young origins' factors rest on one or two noisy cells.
 
 ## Migration from the sandbox (done)
