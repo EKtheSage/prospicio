@@ -43,6 +43,8 @@ pub enum Error {
     TooFewAges { needed: usize, found: usize },
     /// The bootstrap cannot run on this input or with these settings.
     Bootstrap(&'static str),
+    /// The ODP GLM cannot be fitted to this triangle.
+    OdpGlm(String),
     /// An error from a shared crate (simulation, distributions).
     Core(act_core::Error),
 }
@@ -84,6 +86,7 @@ impl fmt::Display for Error {
                 "method needs at least {needed} development ages, triangle has {found}"
             ),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
+            Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::Core(e) => e.fmt(f),
         }
     }
