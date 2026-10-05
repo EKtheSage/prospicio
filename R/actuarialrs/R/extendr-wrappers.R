@@ -944,6 +944,8 @@ Triangle$chain_ladder <- function(column, average, sigma_interpolation, tail) .C
 
 Triangle$mack <- function(column, average, sigma_interpolation) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation)
 
+Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process)
+
 #' @export
 `$.Triangle` <- function (self, name) { func <- Triangle[[name]]; environment(func) <- environment(); func }
 
@@ -1007,6 +1009,24 @@ MackFit$total_cv <- function() .Call(wrap__MackFit__total_cv, self)
 
 #' @export
 `[[.MackFit` <- `$.MackFit`
+
+OdpBootstrapFit <- new.env(parent = emptyenv())
+
+OdpBootstrapFit$chain_ladder <- function() .Call(wrap__OdpBootstrapFit__chain_ladder, self)
+
+OdpBootstrapFit$fitted <- function() .Call(wrap__OdpBootstrapFit__fitted, self)
+
+OdpBootstrapFit$residuals <- function() .Call(wrap__OdpBootstrapFit__residuals, self)
+
+OdpBootstrapFit$scale <- function() .Call(wrap__OdpBootstrapFit__scale, self)
+
+OdpBootstrapFit$reserves <- function() .Call(wrap__OdpBootstrapFit__reserves, self)
+
+#' @export
+`$.OdpBootstrapFit` <- function (self, name) { func <- OdpBootstrapFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.OdpBootstrapFit` <- `$.OdpBootstrapFit`
 
 EvtTail <- new.env(parent = emptyenv())
 

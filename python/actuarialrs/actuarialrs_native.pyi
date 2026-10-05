@@ -3742,6 +3742,138 @@ class NegativeBinomial:
         """
 
 @final
+class OdpBootstrap:
+    """
+    Over-dispersed Poisson bootstrap of the chain ladder (England and
+    Verrall 2002), as R ChainLadder's ``BootChainLadder``: adjusted Pearson
+    residuals of the volume-weighted chain ladder are resampled into pseudo
+    triangles, each is re-projected, and process error is added to every
+    future incremental value. Simulation ``i`` uses random stream ``i`` of
+    ``seed``, so results do not depend on the number of threads.
+    
+    Parameters
+    ----------
+    n_sims : int, default 10000
+        Number of simulations; positive.
+    seed : int, default 0
+    process : {"gamma", "none"}, default "gamma"
+        Process error on each simulated future incremental value: Gamma with
+        the expected value as mean and variance ``scale * |mean|`` (R's
+        ``process.distr = "gamma"``), or none for parameter error only.
+    
+    Raises
+    ------
+    ValueError
+        If ``n_sims`` is zero or ``process`` is unknown.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import OdpBootstrap, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = OdpBootstrap(n_sims=2000, seed=42).fit(tri, "values")
+    >>> fit.reserves.components()
+    [('2020',), ('2021',), ('2022',), ('2023',)]
+    >>> fit.reserves.mean() > 0
+    True
+    """
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma") -> OdpBootstrap: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle, column: str) -> OdpBootstrapFit:
+        """
+        Bootstraps one measure column of a single-segment cumulative
+        triangle. Every origin must be observed from the first age up to its
+        latest.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative; slice to one segment first.
+        column : str
+        
+        Returns
+        -------
+        OdpBootstrapFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ChainLadder.fit``, and if an origin has a gap before its
+            latest age or the triangle has too few observed cells for the
+            degrees of freedom to be positive.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of simulations.
+        """
+    @property
+    def process(self, /) -> str:
+        """
+        Process error: ``"gamma"`` or ``"none"``.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        Seed of the simulation streams.
+        """
+
+@final
+class OdpBootstrapFit:
+    """
+    A fitted ODP bootstrap. ``fitted`` and ``residuals`` are nested lists
+    indexed ``[origin][development]``, like one segment of
+    ``Triangle.values``, with ``nan`` where the triangle is not observed.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The deterministic volume-weighted chain ladder the bootstrap is
+        centred on.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    @property
+    def fitted(self, /) -> list[list[float]]:
+        """
+        Fitted incremental values, ``[origin][development]``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods, oldest first.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the reserve (the sum of future incremental
+        values) by origin: dimension ``"origin"``, one component per origin
+        period, one row per simulation. Its ``mean`` and ``quantile`` describe
+        the total reserve. Columns of ``draw_matrix()`` follow ``origins``
+        (``marginal`` does not match origin labels yet).
+        """
+    @property
+    def residuals(self, /) -> list[list[float]]:
+        """
+        Adjusted Pearson residuals ``(x - m) / sqrt(|m|) * sqrt(n / (n - p))``,
+        ``[origin][development]``; ``nan`` where not observed or where the
+        fitted value is zero.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The scale parameter ``phi``: the sum of squared unadjusted residuals
+        over the degrees of freedom ``n - p``.
+        """
+
+@final
 class Pareto:
     """
     Single-parameter Pareto: ``P(X > x) = (t / x) ** alpha`` for ``x >= t``,

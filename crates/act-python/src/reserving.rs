@@ -1,5 +1,6 @@
 //! `actuarialrs.reserving` (Reserving lane): the loss triangle, the chain
-//! ladder and Mack's model over `act_reserving` (`docs/design/triangle.md`).
+//! ladder, Mack's model and the ODP bootstrap over `act_reserving`
+//! (`docs/design/triangle.md`).
 //!
 //! Long tables come in as array-likes (lists, numpy arrays, pandas or
 //! Polars columns) and go out as dicts of lists; numpy and pandas are used
@@ -8,12 +9,13 @@
 use act_core::{Grain, Lag, Month};
 use act_reserving::{
     Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, Label, Long, Mack,
-    MackFit, SigmaInterpolation, Triangle,
+    MackFit, OdpBootstrap, OdpBootstrapFit, ProcessDistribution, SigmaInterpolation, Triangle,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDate, PyDelta, PyDict, PyInt, PyList, PyString, PyTuple};
 
+use crate::distributions::PyPredictiveDistribution;
 use crate::to_py;
 
 fn err(e: act_reserving::Error) -> PyErr {
@@ -58,6 +60,23 @@ fn sigma_interpolation(name: &str) -> PyResult<SigmaInterpolation> {
         _ => Err(PyValueError::new_err(format!(
             "sigma_interpolation must be \"log-linear\" or \"mack\", got {name:?}"
         ))),
+    }
+}
+
+fn process_distribution(name: &str) -> PyResult<ProcessDistribution> {
+    match name {
+        "gamma" => Ok(ProcessDistribution::Gamma),
+        "none" => Ok(ProcessDistribution::None),
+        _ => Err(PyValueError::new_err(format!(
+            "process must be \"gamma\" or \"none\", got {name:?}"
+        ))),
+    }
+}
+
+fn process_name(p: ProcessDistribution) -> &'static str {
+    match p {
+        ProcessDistribution::Gamma => "gamma",
+        ProcessDistribution::None => "none",
     }
 }
 
@@ -1218,6 +1237,204 @@ impl PyMackFit {
             self.inner.chain_ladder.origins.len(),
             self.inner.chain_ladder.total_reserve(),
             self.inner.total_standard_error
+        )
+    }
+}
+
+/// Over-dispersed Poisson bootstrap of the chain ladder (England and
+/// Verrall 2002), as R ChainLadder's ``BootChainLadder``: adjusted Pearson
+/// residuals of the volume-weighted chain ladder are resampled into pseudo
+/// triangles, each is re-projected, and process error is added to every
+/// future incremental value. Simulation ``i`` uses random stream ``i`` of
+/// ``seed``, so results do not depend on the number of threads.
+///
+/// Parameters
+/// ----------
+/// n_sims : int, default 10000
+///     Number of simulations; positive.
+/// seed : int, default 0
+/// process : {"gamma", "none"}, default "gamma"
+///     Process error on each simulated future incremental value: Gamma with
+///     the expected value as mean and variance ``scale * |mean|`` (R's
+///     ``process.distr = "gamma"``), or none for parameter error only.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``n_sims`` is zero or ``process`` is unknown.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import OdpBootstrap, Triangle
+/// >>> tri = Triangle.from_long(
+/// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+/// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+/// ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+/// ... )
+/// >>> fit = OdpBootstrap(n_sims=2000, seed=42).fit(tri, "values")
+/// >>> fit.reserves.components()
+/// [('2020',), ('2021',), ('2022',), ('2023',)]
+/// >>> fit.reserves.mean() > 0
+/// True
+#[pyclass(name = "OdpBootstrap", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyOdpBootstrap {
+    inner: OdpBootstrap,
+}
+
+#[pymethods]
+impl PyOdpBootstrap {
+    #[new]
+    #[pyo3(signature = (n_sims = 10_000, seed = 0, process = "gamma"))]
+    fn new(n_sims: usize, seed: u64, process: &str) -> PyResult<Self> {
+        if n_sims == 0 {
+            return Err(PyValueError::new_err("n_sims must be positive"));
+        }
+        Ok(Self {
+            inner: OdpBootstrap {
+                n_sims,
+                seed,
+                process: process_distribution(process)?,
+            },
+        })
+    }
+
+    /// Number of simulations.
+    #[getter]
+    fn n_sims(&self) -> usize {
+        self.inner.n_sims
+    }
+
+    /// Seed of the simulation streams.
+    #[getter]
+    fn seed(&self) -> u64 {
+        self.inner.seed
+    }
+
+    /// Process error: ``"gamma"`` or ``"none"``.
+    #[getter]
+    fn process(&self) -> &'static str {
+        process_name(self.inner.process)
+    }
+
+    /// Bootstraps one measure column of a single-segment cumulative
+    /// triangle. Every origin must be observed from the first age up to its
+    /// latest.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative; slice to one segment first.
+    /// column : str
+    ///
+    /// Returns
+    /// -------
+    /// OdpBootstrapFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``ChainLadder.fit``, and if an origin has a gap before its
+    ///     latest age or the triangle has too few observed cells for the
+    ///     degrees of freedom to be positive.
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+    ) -> PyResult<PyOdpBootstrapFit> {
+        let (boot, tri) = (self.inner, &triangle.inner);
+        let inner = py.detach(|| boot.fit(tri, column)).map_err(err)?;
+        Ok(PyOdpBootstrapFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "OdpBootstrap(n_sims={}, seed={}, process={:?})",
+            self.inner.n_sims,
+            self.inner.seed,
+            self.process()
+        )
+    }
+}
+
+/// A fitted ODP bootstrap. ``fitted`` and ``residuals`` are nested lists
+/// indexed ``[origin][development]``, like one segment of
+/// ``Triangle.values``, with ``nan`` where the triangle is not observed.
+#[pyclass(name = "OdpBootstrapFit", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyOdpBootstrapFit {
+    inner: OdpBootstrapFit,
+}
+
+impl PyOdpBootstrapFit {
+    /// A row-major origin x development vector as nested lists.
+    fn grid(&self, flat: &[f64]) -> Vec<Vec<f64>> {
+        let n_dev = self.inner.chain_ladder.development.development.len();
+        flat.chunks(n_dev.max(1)).map(<[f64]>::to_vec).collect()
+    }
+}
+
+#[pymethods]
+impl PyOdpBootstrapFit {
+    /// The deterministic volume-weighted chain ladder the bootstrap is
+    /// centred on.
+    #[getter]
+    fn chain_ladder(&self) -> PyChainLadderFit {
+        PyChainLadderFit {
+            inner: self.inner.chain_ladder.clone(),
+        }
+    }
+
+    /// Origin periods, oldest first.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.chain_ladder().origins()
+    }
+
+    /// Development ages in months.
+    #[getter]
+    fn development(&self) -> Vec<Lag> {
+        self.inner.chain_ladder.development.development.clone()
+    }
+
+    /// Fitted incremental values, ``[origin][development]``.
+    #[getter]
+    fn fitted(&self) -> Vec<Vec<f64>> {
+        self.grid(&self.inner.fitted)
+    }
+
+    /// Adjusted Pearson residuals ``(x - m) / sqrt(|m|) * sqrt(n / (n - p))``,
+    /// ``[origin][development]``; ``nan`` where not observed or where the
+    /// fitted value is zero.
+    #[getter]
+    fn residuals(&self) -> Vec<Vec<f64>> {
+        self.grid(&self.inner.residuals)
+    }
+
+    /// The scale parameter ``phi``: the sum of squared unadjusted residuals
+    /// over the degrees of freedom ``n - p``.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale
+    }
+
+    /// Joint distribution of the reserve (the sum of future incremental
+    /// values) by origin: dimension ``"origin"``, one component per origin
+    /// period, one row per simulation. Its ``mean`` and ``quantile`` describe
+    /// the total reserve. Columns of ``draw_matrix()`` follow ``origins``
+    /// (``marginal`` does not match origin labels yet).
+    #[getter]
+    fn reserves(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "OdpBootstrapFit(origins={}, n_sims={}, scale={:?})",
+            self.inner.chain_ladder.origins.len(),
+            self.inner.reserves.n_sims(),
+            self.inner.scale
         )
     }
 }

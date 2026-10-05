@@ -116,13 +116,15 @@ reference:
       - pricing.fit_references
       - pricing.TowerModel
   - title: Reserving
-    desc: Loss triangles, the chain ladder and Mack's model.
+    desc: Loss triangles, the chain ladder, Mack's model and the ODP bootstrap.
     contents:
       - reserving.Triangle
       - reserving.ChainLadder
       - reserving.ChainLadderFit
       - reserving.Mack
       - reserving.MackFit
+      - reserving.OdpBootstrap
+      - reserving.OdpBootstrapFit
   - title: Risk measures
     desc: Distortion risk measures, and capital allocation to components.
     contents:
