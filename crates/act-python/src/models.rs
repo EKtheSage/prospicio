@@ -2322,3 +2322,246 @@ impl PyBayesGlmFit {
         Ok(PyPredictiveDistribution { inner })
     }
 }
+
+fn stacking_sampler(
+    chains: usize,
+    tune: usize,
+    draws: usize,
+    seed: u64,
+) -> act_bayes::glm::Sampler {
+    act_bayes::glm::Sampler {
+        chains,
+        tune,
+        draws,
+        seed,
+        ..act_bayes::glm::Sampler::default()
+    }
+}
+
+/// Bayesian stacking: a posterior for the stacking weights, with a
+/// Dirichlet prior, sampled by NUTS from pointwise held-out log densities
+/// (Yao et al., 2018). ``stacking_weights`` gives the optimum alone.
+///
+/// Parameters
+/// ----------
+/// concentration : list of float, optional
+///     Dirichlet concentration, one per model (default 1, uniform).
+/// chains, tune, draws : int, default 4, 1000, 1000
+/// seed : int, default 0
+#[pyclass(name = "BayesStacking", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyBayesStacking {
+    inner: act_bayes::stacking::BayesStacking,
+}
+
+#[pymethods]
+impl PyBayesStacking {
+    #[new]
+    #[pyo3(signature = (concentration = None, chains = 4, tune = 1000, draws = 1000, seed = 0))]
+    fn new(
+        concentration: Option<Vec<f64>>,
+        chains: usize,
+        tune: usize,
+        draws: usize,
+        seed: u64,
+    ) -> Self {
+        Self {
+            inner: act_bayes::stacking::BayesStacking {
+                concentration,
+                sampler: stacking_sampler(chains, tune, draws, seed),
+            },
+        }
+    }
+
+    /// Samples the weights.
+    ///
+    /// Parameters
+    /// ----------
+    /// lpd : list of list of float
+    ///     One list per model, one held-out log density per observation.
+    ///
+    /// Returns
+    /// -------
+    /// StackingFit
+    fn fit(&self, py: Python<'_>, lpd: Vec<Vec<f64>>) -> PyResult<PyStackingFit> {
+        let spec = &self.inner;
+        let inner = py.detach(|| spec.fit(&lpd)).map_err(to_py)?;
+        Ok(PyStackingFit { inner })
+    }
+}
+
+/// Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
+/// weights that vary with covariates, ``w = softmax(alpha + B x)`` against
+/// the last model as reference, so a model can be trusted in one part of
+/// the portfolio and not another. The priors are those of BayesBlend's
+/// ``HierarchicalBayesStacking``; sampled by NUTS.
+///
+/// Scale continuous covariates (BayesBlend divides by twice the standard
+/// deviation) and dummy-code discrete ones before fitting, with the
+/// dummies first.
+///
+/// With ``partial_pooling``, each model's slopes on the discrete
+/// covariates, and separately on the continuous ones, are drawn around a
+/// model-level mean, itself drawn around a global mean. A scale of 0
+/// removes a level: ``tau_mu_global=0`` fixes the global mean at 0,
+/// ``tau_mu_*=0`` pools completely and ``tau_sigma_*=0`` sets every slope
+/// to its model's mean. BayesBlend warns that pooling needs at least three
+/// covariates. ``adaptive`` multiplies the prior scales by ``N**lambda``
+/// with ``lambda ~ Exponential(adaptive)``, weakening them as the data
+/// grow.
+///
+/// Parameters
+/// ----------
+/// discrete : int, default 0
+///     Number of leading covariates that are dummy codes.
+/// alpha_loc, alpha_scale : float, default 0.0, 1.0
+/// beta_loc, beta_scale : float, default 0.0, 1.0
+///     Slope prior without pooling.
+/// partial_pooling : bool, default False
+/// tau_mu_global, tau_mu_discrete, tau_mu_continuous : float, default 1.0
+/// tau_sigma_discrete, tau_sigma_continuous : float, default 1.0
+///     Pooling scales, BayesBlend's defaults.
+/// adaptive : float, optional
+///     Rate of the exponential prior on ``lambda`` (BayesBlend uses 4).
+/// chains, tune, draws : int, default 4, 1000, 1000
+/// seed : int, default 0
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import HierarchicalStacking
+/// >>> x = [i / 99 - 0.5 for i in range(100)]
+/// >>> a = [-0.5 if v < 0 else -2.0 for v in x]
+/// >>> b = [-2.0 if v < 0 else -0.5 for v in x]
+/// >>> fit = HierarchicalStacking(chains=2, tune=300, draws=300).fit([a, b], [x])
+/// >>> w = fit.weights([[-0.4, 0.4]])
+/// >>> w[0][0] > 0.7 and w[1][0] < 0.3
+/// True
+#[pyclass(name = "HierarchicalStacking", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyHierarchicalStacking {
+    inner: act_bayes::stacking::HierarchicalStacking,
+}
+
+#[pymethods]
+impl PyHierarchicalStacking {
+    #[new]
+    #[pyo3(signature = (discrete = 0, alpha_loc = 0.0, alpha_scale = 1.0, beta_loc = 0.0, beta_scale = 1.0, partial_pooling = false, tau_mu_global = 1.0, tau_mu_discrete = 1.0, tau_mu_continuous = 1.0, tau_sigma_discrete = 1.0, tau_sigma_continuous = 1.0, adaptive = None, chains = 4, tune = 1000, draws = 1000, seed = 0))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        discrete: usize,
+        alpha_loc: f64,
+        alpha_scale: f64,
+        beta_loc: f64,
+        beta_scale: f64,
+        partial_pooling: bool,
+        tau_mu_global: f64,
+        tau_mu_discrete: f64,
+        tau_mu_continuous: f64,
+        tau_sigma_discrete: f64,
+        tau_sigma_continuous: f64,
+        adaptive: Option<f64>,
+        chains: usize,
+        tune: usize,
+        draws: usize,
+        seed: u64,
+    ) -> Self {
+        let pooling = partial_pooling.then_some(act_bayes::stacking::Pooling {
+            tau_mu_global,
+            tau_mu_discrete,
+            tau_mu_continuous,
+            tau_sigma_discrete,
+            tau_sigma_continuous,
+        });
+        Self {
+            inner: act_bayes::stacking::HierarchicalStacking {
+                alpha_loc,
+                alpha_scale,
+                beta_loc,
+                beta_scale,
+                pooling,
+                adaptive,
+                discrete,
+                sampler: stacking_sampler(chains, tune, draws, seed),
+            },
+        }
+    }
+
+    /// Samples the intercepts and slopes.
+    ///
+    /// Parameters
+    /// ----------
+    /// lpd : list of list of float
+    ///     One list per model, one held-out log density per observation.
+    /// covariates : list of list of float
+    ///     One list per covariate, one value per observation.
+    ///
+    /// Returns
+    /// -------
+    /// StackingFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        lpd: Vec<Vec<f64>>,
+        covariates: Vec<Vec<f64>>,
+    ) -> PyResult<PyStackingFit> {
+        let spec = &self.inner;
+        let inner = py.detach(|| spec.fit(&lpd, &covariates)).map_err(to_py)?;
+        Ok(PyStackingFit { inner })
+    }
+}
+
+/// Posterior stacking weights, from ``BayesStacking.fit`` or
+/// ``HierarchicalStacking.fit``.
+#[pyclass(name = "StackingFit", module = "actuarialrs.models", frozen)]
+pub(crate) struct PyStackingFit {
+    inner: act_bayes::stacking::StackingFit,
+}
+
+#[pymethods]
+impl PyStackingFit {
+    /// Posterior mean weights: one row per observation of ``covariates``
+    /// (one list per covariate), one weight per model. For Bayesian
+    /// stacking leave ``covariates`` empty: one row.
+    ///
+    /// Parameters
+    /// ----------
+    /// covariates : list of list of float, optional
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    #[pyo3(signature = (covariates = None))]
+    fn weights(&self, covariates: Option<Vec<Vec<f64>>>) -> PyResult<Vec<Vec<f64>>> {
+        let x = covariates.unwrap_or_default();
+        let w = self.inner.weights(&x).map_err(to_py)?;
+        let k = w.len() / if x.is_empty() { 1 } else { x[0].len().max(1) };
+        Ok(w.chunks(k.max(1)).map(<[f64]>::to_vec).collect())
+    }
+
+    /// Intercept draws (the logits for Bayesian stacking), one row per draw,
+    /// one per model but the reference (last).
+    #[getter]
+    fn alpha_draws(&self) -> Vec<f64> {
+        self.inner.alpha_draws()
+    }
+
+    /// Slope draws, flattened draw by draw, model by model, covariate by
+    /// covariate.
+    #[getter]
+    fn beta_draws(&self) -> Vec<f64> {
+        self.inner.beta_draws()
+    }
+
+    /// Divergent transitions among the kept draws.
+    #[getter]
+    fn divergences(&self) -> usize {
+        self.inner.divergences()
+    }
+
+    /// R-hat and bulk ESS of each sampled parameter.
+    ///
+    /// Returns
+    /// -------
+    /// list of (float, float)
+    fn rhat_ess(&self) -> PyResult<Vec<(f64, f64)>> {
+        self.inner.rhat_ess().map_err(to_py)
+    }
+}

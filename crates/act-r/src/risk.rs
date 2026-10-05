@@ -19,7 +19,7 @@ use crate::{to_r, whole};
 /// A distortion risk measure.
 #[extendr]
 pub(crate) struct RiskDistortion {
-    inner: Distortion,
+    pub(crate) inner: Distortion,
 }
 
 #[extendr]

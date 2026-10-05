@@ -283,6 +283,68 @@ pub fn simulate(
     })
 }
 
+/// Iman–Conover target ranks: for each of `m` columns, the rank (0-based,
+/// ascending) that each of `n` rows should take so that the columns' rank
+/// correlation is close to `correlation`. Column `j > 0` shuffles its
+/// normal scores with stream `j` of `seed`.
+pub(crate) fn target_ranks(
+    n: usize,
+    m: usize,
+    correlation: &[f64],
+    seed: u64,
+) -> Result<Vec<Vec<usize>>> {
+    let target = correlation_factor(correlation, m)?;
+    if n < m + 1 {
+        return Err(invalid(
+            "n_sims",
+            n as f64,
+            "must exceed the number of components",
+        ));
+    }
+
+    // Shuffled normal scores, column-major.
+    let scores: Vec<f64> = (1..=n)
+        .map(|i| norm_quantile(i as f64 / (n + 1) as f64))
+        .collect();
+    let mut cols: Vec<Vec<f64>> = (0..m)
+        .map(|j| {
+            let mut c = scores.clone();
+            if j > 0 {
+                shuffle(&mut c, &mut StreamRng::new(seed, j as u64));
+            }
+            c
+        })
+        .collect();
+
+    // Rotate to exactly the target correlation: T = M F^-T P^T, row by row.
+    let actual = correlation_factor(&sample_correlation(&cols), m)
+        .map_err(|_| invalid("n_sims", n as f64, "too few to decorrelate the scores"))?;
+    let (mut row, mut y, mut t) = (vec![0.0; m], vec![0.0; m], vec![0.0; m]);
+    for i in 0..n {
+        for (r, col) in row.iter_mut().zip(&cols) {
+            *r = col[i];
+        }
+        lower_solve(&actual, &row, &mut y);
+        lower_mul(&target, &y, &mut t);
+        for (col, v) in cols.iter_mut().zip(&t) {
+            col[i] = *v;
+        }
+    }
+
+    Ok(cols
+        .iter()
+        .map(|col| {
+            let mut order: Vec<usize> = (0..n).collect();
+            order.sort_by(|&a, &b| col[a].total_cmp(&col[b]));
+            let mut rank = vec![0; n];
+            for (r, &i) in order.iter().enumerate() {
+                rank[i] = r;
+            }
+            rank
+        })
+        .collect())
+}
+
 /// Reorders each component's draws so the components have (close to) the
 /// target correlation of normal scores, by Iman and Conover (1982). Every component
 /// keeps exactly its own draws; only their pairing across simulations
@@ -325,53 +387,15 @@ pub fn iman_conover(
 ) -> Result<PredictiveDistribution> {
     let m = pd.n_components();
     let n = pd.n_sims();
-    let target = correlation_factor(correlation, m)?;
-    if n < m + 1 {
-        return Err(invalid(
-            "n_sims",
-            n as f64,
-            "must exceed the number of components",
-        ));
-    }
+    let ranks = target_ranks(n, m, correlation, seed)?;
 
-    // Shuffled normal scores, column-major.
-    let scores: Vec<f64> = (1..=n)
-        .map(|i| norm_quantile(i as f64 / (n + 1) as f64))
-        .collect();
-    let mut cols: Vec<Vec<f64>> = (0..m)
-        .map(|j| {
-            let mut c = scores.clone();
-            if j > 0 {
-                shuffle(&mut c, &mut StreamRng::new(seed, j as u64));
-            }
-            c
-        })
-        .collect();
-
-    // Rotate to exactly the target correlation: T = M F^-T P^T, row by row.
-    let actual = correlation_factor(&sample_correlation(&cols), m)
-        .map_err(|_| invalid("n_sims", n as f64, "too few to decorrelate the scores"))?;
-    let (mut row, mut y, mut t) = (vec![0.0; m], vec![0.0; m], vec![0.0; m]);
-    for i in 0..n {
-        for (r, col) in row.iter_mut().zip(&cols) {
-            *r = col[i];
-        }
-        lower_solve(&actual, &row, &mut y);
-        lower_mul(&target, &y, &mut t);
-        for (col, v) in cols.iter_mut().zip(&t) {
-            col[i] = *v;
-        }
-    }
-
-    // Each component takes its sorted draws in the ranks of its column.
+    // Each component takes its sorted draws in the target ranks.
     let mut draws = vec![0.0; n * m];
-    for (j, col) in cols.iter().enumerate() {
+    for (j, rank) in ranks.iter().enumerate() {
         let mut sorted: Vec<f64> = (0..n).map(|i| pd.row(i).expect("in range")[j]).collect();
         sorted.sort_by(f64::total_cmp);
-        let mut order: Vec<usize> = (0..n).collect();
-        order.sort_by(|&a, &b| col[a].total_cmp(&col[b]));
-        for (rank, &i) in order.iter().enumerate() {
-            draws[i * m + j] = sorted[rank];
+        for (i, &r) in rank.iter().enumerate() {
+            draws[i * m + j] = sorted[r];
         }
     }
     let provenance = pd

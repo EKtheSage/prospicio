@@ -128,3 +128,71 @@ fn pml_curve_fit_matches_r() {
         }
     });
 }
+
+#[test]
+fn simulated_layers_are_priced_and_allocated() {
+    use act_aggregate::{CollectiveModel, Layer, Tower, simulate_events};
+    use act_pricing::risk_load::{PremiumRule, price_portfolio};
+    use act_prob::{Distortion, KeyValue, Lognormal, Poisson, PredictiveDistribution};
+
+    // A per-risk programme of two XOL layers on 10,000 simulated years.
+    let n = 10_000;
+    let freq = Poisson::new(6.0).unwrap();
+    let sev = Lognormal::from_mean_cv(1_000.0, 2.0).unwrap();
+    let events = simulate_events(&freq, &sev, n, 21).unwrap();
+    let layers = [("1x1", 1_000.0, 1_000.0), ("8x2", 8_000.0, 2_000.0)];
+    let result = Tower::new(
+        layers
+            .iter()
+            .map(|&(name, l, a)| Layer::xol(name, l, a).unwrap())
+            .collect(),
+    )
+    .unwrap()
+    .apply(&events)
+    .unwrap();
+
+    // Keep only the ceded losses, one component per layer.
+    let ceded: Vec<Vec<f64>> = layers
+        .iter()
+        .map(|&(name, _, _)| {
+            let key = vec![KeyValue::from("ceded"), KeyValue::from(name)];
+            result.marginal(&key).unwrap().into_draws()
+        })
+        .collect();
+    let draws: Vec<f64> = (0..n)
+        .flat_map(|i| ceded.iter().map(move |c| c[i]))
+        .collect();
+    let pd = PredictiveDistribution::from_draws(
+        vec!["layer".into()],
+        layers
+            .iter()
+            .map(|&(name, _, _)| vec![KeyValue::from(name)])
+            .collect(),
+        draws,
+        result.provenance().clone(),
+    )
+    .unwrap();
+
+    let rule = PremiumRule::cost_of_capital(0.10).unwrap();
+    let p = price_portfolio(&pd, &rule, &Distortion::tvar(0.99).unwrap()).unwrap();
+
+    // Expected ceded losses agree with the collective model in closed form.
+    let model = CollectiveModel::new(freq, sev);
+    for (price, &(_, l, a)) in p.allocated.iter().zip(&layers) {
+        let mean = model.layer_mean(l, a);
+        let se = (model.layer_variance(l, a) / n as f64).sqrt();
+        assert!((price.expected_loss - mean).abs() < 4.0 * se, "{l} xs {a}");
+    }
+    // Allocated prices add up to the programme's price.
+    let premium: f64 = p.allocated.iter().map(|c| c.premium).sum();
+    assert!((premium - p.total.premium).abs() < 1e-9 * p.total.premium);
+    // Every allocated layer earns the cost of capital on its capital.
+    for c in &p.allocated {
+        assert!((c.return_on_capital() - 0.10).abs() < 1e-9);
+    }
+    // The high layer carries more capital per unit of loss, so it prices
+    // at a lower loss ratio; writing both saves premium.
+    assert!(p.allocated[1].loss_ratio() < p.allocated[0].loss_ratio());
+    assert!(p.diversification() > 0.0);
+    assert!(p.total.expected_loss < p.total.premium && p.total.premium < p.total.assets);
+}

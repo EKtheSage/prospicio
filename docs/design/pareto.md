@@ -188,6 +188,8 @@ layer costs, frequencies, PML ──tower matching──► collective model
                                                               AAD/AAL, reinstatements)
                                                             → PredictiveDistribution
                                                             → Distortion / allocate
+                                                            → risk_load: premium,
+                                                              margin, capital
 ```
 
 A collective model is any `Counting` with any `Severity`, so everything
@@ -396,6 +398,7 @@ reinsurance-specific.
 |---|---|---|
 | `layer` | Increased limit factors (`LEV(limit)/LEV(basic)`), deductible credits (`1 − LEV(d)/E[X]`), Pareto extrapolation, implied alpha from two layers, a frequency and a layer, or two frequencies. Later: MBBEFD exposure curves. | Primary (ILF tables, deductibles, large-loss loads) and reinsurance (rating upper layers) |
 | `tower` | Tower matching (Riegel 2018, above, both selection rules); reference fits; PML-curve fits. | Reinsurance |
+| `risk_load` | Risk-loaded prices from simulated losses: a pricing distortion or a constant cost of capital on distortion-measured assets, for one cover or allocated across a portfolio's components. | Primary and reinsurance (technical price of a simulated cover or programme) |
 
 Done in `layer`: `ilf`, `loss_elimination_ratio`, `XsLayer`,
 `pareto_extrapolation`, and `alpha_between_layers`,
@@ -462,6 +465,33 @@ functions, `match_tower`, `fit_pml_curve`, `fit_references`,
 `excess_frequency()`, `ilf()`, `loss_elimination_ratio()`,
 `pareto_extrapolation()`, `alpha_between_*()`, `match_tower()`,
 `fit_pml_curve()`, `fit_references()`, `tower_model`).
+
+Done in `risk_load`: `price(losses, rule, assets)` on any `Empirical`
+and `price_portfolio(pd, rule, assets)` on a `PredictiveDistribution`,
+with `PremiumRule::{Distortion, CostOfCapital}`. This is where simulated
+results meet pricing: a ceded result from `Tower::apply` or
+`apply_aggregate`, a reserve bootstrap, or a blended model's draws.
+Decisions:
+
+- **Assets are a distortion measure** `a = ρ(X)` (say `TVaR_0.99`); the
+  capital is `a − P`, so the premium funds part of the assets.
+- **Cost of capital** `r` sets the margin to `r (a − P)`, so
+  `P = (E[X] + r a) / (1 + r)`.
+- **Natural allocation** (Mildenhall and Major, *Pricing Insurance Risk*,
+  2022): premium and assets are each allocated by co-measure
+  (`PredictiveDistribution::allocate`), so component prices add up to the
+  portfolio's and every component earns `r` on its allocated capital. A
+  hedge gets a negative margin. Standalone prices are reported beside the
+  allocated ones, and their difference is the diversification credit.
+- **Funding check**: a distortion premium above the assets is an error
+  for a cover or portfolio, not for a component's standalone price.
+- `Sampled` still does not implement `Severity` (`distributions.md`):
+  ILFs and layer costs from draws stay `Empirical::mean_of`, an explicit
+  estimate, while the pricing here needs only measures that are exact on
+  the draws.
+
+Bindings: Python `price`, `price_portfolio`, `Price`, `PortfolioPrice`;
+R `risk_loaded_price()` and `price_portfolio()`.
 
 `Layer` and `Tower` (contract terms) still live in `act-aggregate`;
 `docs/architecture.md` gives them their own `reinsurance` namespace, and

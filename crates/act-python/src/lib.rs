@@ -38,11 +38,11 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::models::{
-        PyBayesGlm, PyBayesGlmFit, PyCoding, PyCvPath, PyDesign, PyElasticNet, PyElasticNetFit,
-        PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyTerms, actual_vs_expected, crps, deviance,
-        elpd_loo, elpd_waic, gini, group_k_fold, k_fold, ks_uniform, lift, log_score, lppd,
-        mcmc_diagnostics, pit, pit_from_draws, pit_histogram, pseudo_bma_weights, stacking_weights,
-        time_ordered,
+        PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,
+        PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyHierarchicalStacking,
+        PyStackingFit, PyTerms, actual_vs_expected, crps, deviance, elpd_loo, elpd_waic, gini,
+        group_k_fold, k_fold, ks_uniform, lift, log_score, lppd, mcmc_diagnostics, pit,
+        pit_from_draws, pit_histogram, pseudo_bma_weights, stacking_weights, time_ordered,
     };
     #[pymodule_export]
     use super::pareto::{
@@ -51,9 +51,9 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::pricing::{
-        PyCollectiveModel, PyTowerModel, alpha_between_frequencies,
+        PyCollectiveModel, PyPortfolioPrice, PyPrice, PyTowerModel, alpha_between_frequencies,
         alpha_between_frequency_and_layer, alpha_between_layers, fit_pml_curve, fit_references,
-        ilf, loss_elimination_ratio, match_tower, pareto_extrapolation,
+        ilf, loss_elimination_ratio, match_tower, pareto_extrapolation, price, price_portfolio,
     };
     #[pymodule_export]
     use super::reserving::{

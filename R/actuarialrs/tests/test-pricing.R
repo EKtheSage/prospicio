@@ -50,4 +50,24 @@ fr <- fit_references(
 near(layer(fr, 1500, 1500), 110, 1e-11)
 near(excess_frequency(fr, 2500), 0.05, 1e-11)
 
+
+# Risk-loaded prices from simulated losses.
+pd <- predictive_distribution(
+  matrix(c(0, 1, 4, 8, 2, 1, 0, 0), ncol = 2),
+  data.frame(cover = c("a", "b"))
+)
+assets <- distortion("tvar", 0.5)
+p <- price_portfolio(pd, assets, cost_of_capital = 0.1)
+stopifnot(
+  isTRUE(all.equal(sum(p$by_component$premium), p$total$premium)),
+  isTRUE(all.equal(p$by_component$return_on_capital, c(0.1, 0.1))),
+  isTRUE(all.equal(p$by_component$premium, c(3.5, 0.75 / 1.1))),
+  p$diversification > 0
+)
+one <- risk_loaded_price(sampled(c(0, 0, 2, 6)), assets, cost_of_capital = 0.25)
+stopifnot(isTRUE(all.equal(one$premium, 2.4)), isTRUE(all.equal(one$return_on_capital, 0.25)))
+w <- risk_loaded_price(pd, assets, distortion = distortion("wang", 0.2))
+stopifnot(w$expected_loss < w$premium, w$premium < w$assets)
+stopifnot(inherits(try(risk_loaded_price(pd, assets), silent = TRUE), "try-error"))
+
 cat("actuarialrs R pricing tests passed\n")

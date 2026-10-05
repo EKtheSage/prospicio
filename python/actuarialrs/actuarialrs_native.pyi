@@ -236,6 +236,35 @@ class BayesGlmFit:
         """
 
 @final
+class BayesStacking:
+    """
+    Bayesian stacking: a posterior for the stacking weights, with a
+    Dirichlet prior, sampled by NUTS from pointwise held-out log densities
+    (Yao et al., 2018). ``stacking_weights`` gives the optimum alone.
+    
+    Parameters
+    ----------
+    concentration : list of float, optional
+        Dirichlet concentration, one per model (default 1, uniform).
+    chains, tune, draws : int, default 4, 1000, 1000
+    seed : int, default 0
+    """
+    def __new__(cls, /, concentration: Sequence[float] |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> BayesStacking: ...
+    def fit(self, /, lpd: Sequence[Sequence[float]]) -> StackingFit:
+        """
+        Samples the weights.
+        
+        Parameters
+        ----------
+        lpd : list of list of float
+            One list per model, one held-out log density per observation.
+        
+        Returns
+        -------
+        StackingFit
+        """
+
+@final
 class Binomial:
     """
     Binomial claim counts: ``n`` risks, each claiming with probability
@@ -2503,6 +2532,73 @@ class Grid:
         """
 
 @final
+class HierarchicalStacking:
+    """
+    Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
+    weights that vary with covariates, ``w = softmax(alpha + B x)`` against
+    the last model as reference, so a model can be trusted in one part of
+    the portfolio and not another. The priors are those of BayesBlend's
+    ``HierarchicalBayesStacking``; sampled by NUTS.
+    
+    Scale continuous covariates (BayesBlend divides by twice the standard
+    deviation) and dummy-code discrete ones before fitting, with the
+    dummies first.
+    
+    With ``partial_pooling``, each model's slopes on the discrete
+    covariates, and separately on the continuous ones, are drawn around a
+    model-level mean, itself drawn around a global mean. A scale of 0
+    removes a level: ``tau_mu_global=0`` fixes the global mean at 0,
+    ``tau_mu_*=0`` pools completely and ``tau_sigma_*=0`` sets every slope
+    to its model's mean. BayesBlend warns that pooling needs at least three
+    covariates. ``adaptive`` multiplies the prior scales by ``N**lambda``
+    with ``lambda ~ Exponential(adaptive)``, weakening them as the data
+    grow.
+    
+    Parameters
+    ----------
+    discrete : int, default 0
+        Number of leading covariates that are dummy codes.
+    alpha_loc, alpha_scale : float, default 0.0, 1.0
+    beta_loc, beta_scale : float, default 0.0, 1.0
+        Slope prior without pooling.
+    partial_pooling : bool, default False
+    tau_mu_global, tau_mu_discrete, tau_mu_continuous : float, default 1.0
+    tau_sigma_discrete, tau_sigma_continuous : float, default 1.0
+        Pooling scales, BayesBlend's defaults.
+    adaptive : float, optional
+        Rate of the exponential prior on ``lambda`` (BayesBlend uses 4).
+    chains, tune, draws : int, default 4, 1000, 1000
+    seed : int, default 0
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import HierarchicalStacking
+    >>> x = [i / 99 - 0.5 for i in range(100)]
+    >>> a = [-0.5 if v < 0 else -2.0 for v in x]
+    >>> b = [-2.0 if v < 0 else -0.5 for v in x]
+    >>> fit = HierarchicalStacking(chains=2, tune=300, draws=300).fit([a, b], [x])
+    >>> w = fit.weights([[-0.4, 0.4]])
+    >>> w[0][0] > 0.7 and w[1][0] < 0.3
+    True
+    """
+    def __new__(cls, /, discrete: int = 0, alpha_loc: float = 0.0, alpha_scale: float = 1.0, beta_loc: float = 0.0, beta_scale: float = 1.0, partial_pooling: bool = False, tau_mu_global: float = 1.0, tau_mu_discrete: float = 1.0, tau_mu_continuous: float = 1.0, tau_sigma_discrete: float = 1.0, tau_sigma_continuous: float = 1.0, adaptive: float |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalStacking: ...
+    def fit(self, /, lpd: Sequence[Sequence[float]], covariates: Sequence[Sequence[float]]) -> StackingFit:
+        """
+        Samples the intercepts and slopes.
+        
+        Parameters
+        ----------
+        lpd : list of list of float
+            One list per model, one held-out log density per observation.
+        covariates : list of list of float
+            One list per covariate, one value per observation.
+        
+        Returns
+        -------
+        StackingFit
+        """
+
+@final
 class Layer:
     """
     A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
@@ -4427,6 +4523,48 @@ class Poisson:
         """
 
 @final
+class PortfolioPrice:
+    """
+    Prices of a portfolio's components and of the portfolio as a whole.
+    
+    Returned by ``price_portfolio``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def allocated(self, /) -> list[Price]:
+        """
+        Each component's share of the portfolio price; these add up to
+        ``total``.
+        """
+    def components(self, /) -> list[Any]:
+        """
+        Component keys, one tuple per component.
+        
+        Returns
+        -------
+        list of tuple
+        """
+    def diversification(self, /) -> float:
+        """
+        Premium saved by writing the components together: the sum of the
+        standalone premiums less the portfolio premium.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def standalone(self, /) -> list[Price]:
+        """
+        Each component priced on its own.
+        """
+    @property
+    def total(self, /) -> Price:
+        """
+        The portfolio, priced on the total of its components.
+        """
+
+@final
 class PotTail:
     """
     A peaks-over-threshold tail: draws above a threshold modelled by a
@@ -4585,6 +4723,27 @@ class PredictiveDistribution:
         >>> abs(mix.mean() - 0.75) < 0.05
         True
         """
+    @staticmethod
+    def blend_by_component(models: Sequence[PredictiveDistribution], weights: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+        """
+        Blends models with weights that differ by component, as
+        ``HierarchicalStacking`` gives them: in simulation ``i`` every
+        component draws its model from the same uniform against its own
+        cumulative weights, so components with equal weights take the same
+        model and dependence is kept as far as the weights allow.
+        
+        Parameters
+        ----------
+        models : list of PredictiveDistribution
+        weights : list of list of float
+            One weight vector per component (in ``components()`` order), one
+            weight per model.
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
     def components(self, /) -> list[Any]:
         """
         Component keys, one tuple per column.
@@ -4605,6 +4764,37 @@ class PredictiveDistribution:
         Returns
         -------
         list of list of float
+        """
+    @staticmethod
+    def join(parts: Sequence[tuple[str, PredictiveDistribution]], dim: str, same_simulations: bool = False) -> PredictiveDistribution:
+        """
+        Joins distributions of different models into one portfolio, with a
+        leading dimension ``dim`` holding each part's label, followed by the
+        union of the parts' dimensions (``""`` where a part lacks one).
+        Simulation ``i`` of the result is simulation ``i`` of every part.
+        
+        Parameters
+        ----------
+        parts : list of (str, PredictiveDistribution)
+        dim : str
+        same_simulations : bool, default False
+            ``False``: the parts were simulated separately, and two with the
+            same seed and stream scheme (which would share random numbers)
+            are refused. ``True``: the parts come from the same scenarios (a
+            cover applied to a reserve) and keep their pairing.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Examples
+        --------
+        >>> from actuarialrs.distributions import PredictiveDistribution
+        >>> a = PredictiveDistribution(["origin"], [(2023,), (2024,)], [[10.0, 20.0], [12.0, 25.0]])
+        >>> b = PredictiveDistribution(["lob"], [("motor",)], [[50.0], [40.0]])
+        >>> p = PredictiveDistribution.join([("reserve", a), ("premium", b)], "risk")
+        >>> p.dims, p.total().draws
+        (['risk', 'origin', 'lob'], [80.0, 77.0])
         """
     def marginal(self, /, key: Sequence[int |str]) -> Sampled |None:
         """
@@ -4662,6 +4852,25 @@ class PredictiveDistribution:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
+    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+        """
+        Sets the dependence between the groups of dimension ``dim`` by
+        Iman–Conover on the groups' totals, moving each group's simulations
+        as whole rows: every group keeps its distribution and internal joint
+        structure, and the group totals take a rank correlation close to
+        ``correlation``.
+        
+        Parameters
+        ----------
+        dim : str
+        correlation : list of list of float
+            One row and column per group, in order of first appearance.
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
     def total(self, /) -> Sampled:
         """
         The total over all components, one value per simulation.
@@ -4711,6 +4920,51 @@ class PredictiveDistribution:
         Returns
         -------
         float
+        """
+
+@final
+class Price:
+    """
+    The risk-loaded price of a cover, or of one component's share of a
+    portfolio: expected loss, premium and the assets backing the loss.
+    
+    Returned by ``price`` and ``price_portfolio``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def assets(self, /) -> float:
+        """
+        Assets ``a`` backing the loss.
+        """
+    @property
+    def capital(self, /) -> float:
+        """
+        Capital ``a - P``: the assets the premium does not fund.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        Expected loss ``E[X]``.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        Loss ratio ``E[X] / P``.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        Margin ``P - E[X]``.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        Premium ``P``.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        Return on capital, margin over capital.
         """
 
 @final
@@ -4822,6 +5076,52 @@ class Sampled:
         Returns
         -------
         float
+        """
+
+@final
+class StackingFit:
+    """
+    Posterior stacking weights, from ``BayesStacking.fit`` or
+    ``HierarchicalStacking.fit``.
+    """
+    @property
+    def alpha_draws(self, /) -> list[float]:
+        """
+        Intercept draws (the logits for Bayesian stacking), one row per draw,
+        one per model but the reference (last).
+        """
+    @property
+    def beta_draws(self, /) -> list[float]:
+        """
+        Slope draws, flattened draw by draw, model by model, covariate by
+        covariate.
+        """
+    @property
+    def divergences(self, /) -> int:
+        """
+        Divergent transitions among the kept draws.
+        """
+    def rhat_ess(self, /) -> list[tuple[float, float]]:
+        """
+        R-hat and bulk ESS of each sampled parameter.
+        
+        Returns
+        -------
+        list of (float, float)
+        """
+    def weights(self, /, covariates: Sequence[Sequence[float]] |None = None) -> list[list[float]]:
+        """
+        Posterior mean weights: one row per observation of ``covariates``
+        (one list per covariate), one weight per model. For Bayesian
+        stacking leave ``covariates`` empty: one row.
+        
+        Parameters
+        ----------
+        covariates : list of list of float, optional
+        
+        Returns
+        -------
+        list of list of float
         """
 
 @final
@@ -4987,6 +5287,22 @@ class Tower:
         Parameters
         ----------
         events : EventSet
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    def apply_aggregate(self, /, losses: PredictiveDistribution) -> PredictiveDistribution:
+        """
+        Applies the tower to any predictive distribution, each simulation's
+        total taken as one aggregate loss: an adverse development cover on a
+        reserve bootstrap, a stop-loss or quota share on modelled premium
+        risk. An occurrence layer sees the total as one occurrence, so it
+        acts as an aggregate excess of loss. Components as ``apply``.
+        
+        Parameters
+        ----------
+        losses : PredictiveDistribution
         
         Returns
         -------
@@ -6807,6 +7123,85 @@ def pit_histogram(pit: Sequence[float], bins: int = 10) -> list[int]:
     Returns
     -------
     list of int
+    """
+
+def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> Price:
+    """
+    Risk-loaded price of a cover from its simulated losses.
+    
+    The assets backing the loss are a distortion risk measure of it. The
+    premium is either a pricing distortion of the loss, or set by a
+    constant cost of capital ``r`` on the capital ``a - P``, which gives
+    ``P = (E[X] + r a) / (1 + r)``.
+    
+    Parameters
+    ----------
+    losses : Sampled or PredictiveDistribution
+        Loss draws; for a ``PredictiveDistribution``, its total.
+    assets : Distortion
+        The measure that sets the assets, for example ``Distortion.tvar(0.99)``.
+    cost_of_capital : float, optional
+        Positive rate. Give this or ``distortion``.
+    distortion : Distortion, optional
+        Pricing distortion; it must load less than ``assets``.
+    
+    Returns
+    -------
+    Price
+    
+    Raises
+    ------
+    ValueError
+        Unless exactly one rule is given, or if the premium exceeds the
+        assets.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Sampled
+    >>> from actuarialrs.pricing import price
+    >>> from actuarialrs.risk import Distortion
+    >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
+    >>> p.premium, p.capital
+    (2.4, 1.6)
+    """
+
+def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PortfolioPrice:
+    """
+    Prices a portfolio and allocates the price to its components.
+    
+    Premium and assets are each allocated by co-measure (the natural
+    allocation): component prices add up to the portfolio's, and a
+    component that diversifies the portfolio is priced below its
+    standalone price. With a cost of capital, every component earns the
+    rate on its allocated capital.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+        Components that add up to the portfolio: segments or covers, not
+        gross, ceded and net side by side.
+    assets : Distortion
+    cost_of_capital : float, optional
+    distortion : Distortion, optional
+        Exactly one of ``cost_of_capital`` and ``distortion``, as in
+        ``price``.
+    
+    Returns
+    -------
+    PortfolioPrice
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.pricing import price_portfolio
+    >>> from actuarialrs.risk import Distortion
+    >>> pd = PredictiveDistribution(["cover"], [("a",), ("b",)],
+    ...                             [[0.0, 2.0], [1.0, 1.0], [4.0, 0.0], [8.0, 0.0]])
+    >>> p = price_portfolio(pd, Distortion.tvar(0.5), cost_of_capital=0.1)
+    >>> [round(c.premium, 6) for c in p.allocated]
+    [3.5, 0.681818]
+    >>> p.allocated[1].margin < 0  # the second cover hedges the first
+    True
     """
 
 def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n_draws: int = 1000, seed: int = 0) -> list[float]:

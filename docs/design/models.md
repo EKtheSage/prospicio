@@ -45,9 +45,31 @@ models and compares them.
     models' simulations row by row. Parity
     (`validation/scripts/stacking_weights.py`): SLSQP as in BayesBlend
     (MIT), polished by Newton, to 1e-10; `loo::stacking_weights` stops
-    early and agrees to about 1e-3. BayesBlend's Bayesian and hierarchical
-    stacking (weights that vary with covariates) need the sampler and come
-    after the Bayesian GLM.
+    early and agrees to about 1e-3.
+  - Bayesian and hierarchical stacking (`act_bayes::stacking`), sampled by
+    NUTS: `BayesStacking` (a Dirichlet prior on one weight vector, by the
+    additive-logistic map with its Jacobian) and `HierarchicalStacking`
+    (Yao, Pirš, Vehtari and Gelman, 2022: `wᵢ = softmax(α + Bᵀ xᵢ)` against
+    the last model, non-centred, with the priors of BayesBlend's
+    `HierarchicalBayesStacking`, both its models: no pooling, and partial
+    pooling (`Pooling`), where each model's slopes on the discrete
+    covariates, and separately on the continuous ones, are drawn around a
+    model-level mean drawn around a global mean, with half-normal slope
+    scales; the first `discrete` covariates are the dummy codes. Adaptive
+    priors multiply the prior scales by `δ = N^λ`, `λ ~ Exponential(rate)`,
+    as BayesBlend's `adaptive`). `StackingFit`
+    gives posterior mean weights at any covariates, the draws, R̂ and ESS.
+    `PredictiveDistribution::blend_by_component` blends with per-component
+    weights, every component drawing its model from the simulation's
+    common uniform. Parity (`validation/scripts/stacking_grid.py`): exact
+    posterior moments by grid integration, on the claim models' held-out
+    densities (weakly informative) and on a synthetic case where the
+    covariate decides the weights; means within 0.1 posterior sd, sds
+    within 8%. The pooling model has too many parameters for a grid: its
+    gradient is checked against finite differences, scales of 0 against
+    the slopes they fix, and a four-region fit for convergence and the
+    weights it should find. As BayesBlend warns, pooling with fewer than
+    three covariates gives a funnel and divergences.
 - `act-glm`: `Glm` (family, link, dispersion fixed, Pearson or
   deviance-based) fitted by IRLS with offsets and prior weights,
   step-halving, and convergence on both the deviance and the coefficients;
@@ -124,6 +146,22 @@ models and compares them.
   grid integration for a Poisson with exposure and a Gaussian with
   sampled dispersion; means within 0.1 posterior sd, sds within 8%.
   Python `BayesGlm` / `BayesGlmFit`, R `bayes_glm_fit`, `bayes_loo`.
+- **Any posterior** (`act_bayes::nuts`): the NUTS driver is public. A
+  model implements `LogDensity` (dimension, log density and gradient on an
+  unconstrained vector, `None` outside the support) and `sample(&density,
+  start, Sampler)` returns `PosteriorDraws`: chains, divergences, a
+  summary, `transform` to the natural scale (keeping chains, so the
+  diagnostics are on that scale), and `predictive`, which picks a
+  posterior draw per simulation and lets the model simulate the outcome,
+  giving a `PredictiveDistribution` with parameter and process
+  uncertainty. Bayesian models in other crates (for example a Bayesian
+  reserving model) sample through it without touching `nuts-rs`.
+  `BayesGlm` and stacking share the driver. Tests: a correlated normal,
+  a half-line support, exact replay, and the gamma-Poisson posterior
+  predictive against the exact negative binomial. No Python or R
+  binding: a density written in Python or R would call back into the
+  interpreter at every gradient; those users hand nutpie or Stan traces
+  to the diagnostics instead.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

@@ -593,6 +593,56 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
   S7::methods_register()
 }
 
+#' Join predictive distributions into a portfolio
+#'
+#' `join_predictive()` puts distributions of different models side by side
+#' (a reserve bootstrap by origin, premium risk by line, a tower's net),
+#' with a new leading key column `dim` holding each part's name, followed by
+#' the union of the parts' key columns (`""` where a part lacks one).
+#' Simulation `i` of the result is simulation `i` of every part.
+#' `reorder_groups()` then sets the dependence between the groups of `dim`
+#' by Iman-Conover on the group totals, moving each group's simulations as
+#' whole rows: every group keeps its distribution and internal joint
+#' structure. Use [aggregate()], [VaR()], [TVaR()] and [capital_allocation()]
+#' on the result.
+#'
+#' @param parts A named list of [predictive_distribution]s with the same
+#'   number of simulations.
+#' @param dim Name of the new key column.
+#' @param same_simulations `FALSE`: the parts were simulated separately, and
+#'   two with the same seed (which would share random numbers) are refused.
+#'   `TRUE`: the parts come from the same scenarios (a cover applied to a
+#'   reserve) and keep their pairing.
+#' @param x A [predictive_distribution].
+#' @param correlation Correlation matrix, one row and column per group in
+#'   order of first appearance.
+#' @param seed Seed, a whole number.
+#' @returns A [predictive_distribution].
+#' @name portfolio
+#' @examples
+#' a <- predictive_distribution(cbind(c(10, 12), c(20, 25)), data.frame(origin = c(2023, 2024)))
+#' b <- predictive_distribution(matrix(c(50, 40), ncol = 1), data.frame(lob = "motor"))
+#' p <- join_predictive(list(reserve = a, premium = b), "risk")
+#' p@keys
+NULL
+
+#' @rdname portfolio
+#' @export
+join_predictive <- function(parts, dim, same_simulations = FALSE) {
+  if (is.null(names(parts)) || any(names(parts) == "")) stop("parts must be a named list")
+  ptr <- join_rust(lapply(parts, function(p) p@ptr), names(parts), dim, isTRUE(same_simulations))
+  predictive_distribution(ptr = rust_result(ptr))
+}
+
+#' @rdname portfolio
+#' @export
+reorder_groups <- function(x, dim, correlation, seed) {
+  correlation <- as.matrix(correlation)
+  predictive_distribution(ptr = rust_result(
+    reorder_groups_rust(x@ptr, dim, as.double(t(correlation)), as.double(seed))
+  ))
+}
+
 #' Blend predictive distributions
 #'
 #' Simulation `i` of the result is simulation `i` of model `k`, with `k`
@@ -600,9 +650,15 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' whole, so sums across components remain coherent. Use weights from
 #' [stacking_weights()] or [pseudo_bma_weights()].
 #'
+#' With a matrix of weights (one row per component, one column per model,
+#' as [hierarchical_stacking()] gives them) each component draws its model
+#' from the simulation's common uniform against its own weights, so
+#' components with equal weights take the same model.
+#'
 #' @param models A list of [predictive_distribution]s with the same keys
 #'   and number of simulations.
-#' @param weights Non-negative weights, one per model; normalized.
+#' @param weights Non-negative weights, one per model, or a matrix with one
+#'   row per component; normalized.
 #' @param seed Seed, a whole number.
 #' @returns A [predictive_distribution].
 #' @export
@@ -612,5 +668,10 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' mean(blend_predictive(list(a, b), c(0.25, 0.75), seed = 7))
 blend_predictive <- function(models, weights, seed) {
   ptrs <- lapply(models, function(m) m@ptr)
-  predictive_distribution(ptr = rust_result(blend_rust(ptrs, as.double(weights), as.double(seed))))
+  ptr <- if (is.matrix(weights)) {
+    blend_by_component_rust(ptrs, as.double(weights), as.double(seed))
+  } else {
+    blend_rust(ptrs, as.double(weights), as.double(seed))
+  }
+  predictive_distribution(ptr = rust_result(ptr))
 }

@@ -331,8 +331,16 @@ tower_ceded <- function(tower, losses) {
 
 #' Apply a reinsurance tower to simulated years
 #'
+#' With an `event_set` each year's individual losses go through the tower.
+#' With a [predictive_distribution] (a reserve bootstrap, modelled premium
+#' risk) each simulation's total is one aggregate loss: an adverse
+#' development cover or loss portfolio transfer on reserves, a stop-loss or
+#' quota share on premium risk. An occurrence layer then sees the total as
+#' one occurrence, so it acts as an aggregate excess of loss.
+#'
 #' @param tower A [reinsurance_tower].
-#' @param events An `event_set` from [simulate_events()].
+#' @param events An `event_set` from [simulate_events()], or a
+#'   [predictive_distribution].
 #' @param ... Unused; for methods.
 #' @returns A [predictive_distribution] with dimensions `kind` and `layer`:
 #'   `("gross", "ground_up")`, `("ceded", <layer name>)` per layer,
@@ -348,7 +356,12 @@ tower_ceded <- function(tower, losses) {
 apply_tower <- S7::new_generic("apply_tower", "tower", function(tower, events, ...) S7::S7_dispatch())
 
 S7::method(apply_tower, reinsurance_tower) <- function(tower, events, ...) {
-  predictive_distribution(ptr = rust_result(tower@ptr$apply(events@ptr), s7_call()))
+  ptr <- if (S7::S7_inherits(events, predictive_distribution)) {
+    tower@ptr$apply_aggregate(events@ptr)
+  } else {
+    tower@ptr$apply(events@ptr)
+  }
+  predictive_distribution(ptr = rust_result(ptr, s7_call()))
 }
 S7::method(print, reinsurance_tower) <- function(x, ...) {
   cat(sprintf("<reinsurance_tower> %s\n", paste(x@layer_names, collapse = ", ")))

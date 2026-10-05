@@ -4,13 +4,15 @@
 
 use act_aggregate::CollectiveModel;
 use act_pricing::layer::XsLayer;
+use act_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
 use act_pricing::tower::{Reference, SelectionRule, TowerModel};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::aggregate::{AnyCount, PyEventSet};
-use crate::distributions::AnySeverity;
+use crate::distributions::{AnySeverity, PyPredictiveDistribution, PySampled, key_to_py};
 use crate::pareto::PyPiecewisePareto;
+use crate::risk::PyDistortion;
 use crate::to_py;
 
 /// The collective risk model: a claim count and a severity, with layer
@@ -517,4 +519,257 @@ pub(crate) fn fit_references(
         .detach(|| act_pricing::tower::fit_references(&refs, default_alpha, rule))
         .map_err(to_py)?;
     Ok(PyTowerModel { inner })
+}
+
+/// The premium rule from the keyword arguments: exactly one of a cost of
+/// capital and a pricing distortion.
+fn premium_rule(
+    cost_of_capital: Option<f64>,
+    distortion: Option<PyRef<'_, PyDistortion>>,
+) -> PyResult<PremiumRule> {
+    match (cost_of_capital, distortion) {
+        (Some(r), None) => PremiumRule::cost_of_capital(r).map_err(to_py),
+        (None, Some(d)) => Ok(PremiumRule::Distortion(d.inner)),
+        _ => Err(PyValueError::new_err(
+            "give exactly one of cost_of_capital and distortion",
+        )),
+    }
+}
+
+/// The risk-loaded price of a cover, or of one component's share of a
+/// portfolio: expected loss, premium and the assets backing the loss.
+///
+/// Returned by ``price`` and ``price_portfolio``.
+#[pyclass(name = "Price", module = "actuarialrs.pricing", frozen)]
+pub(crate) struct PyPrice {
+    inner: Price,
+}
+
+#[pymethods]
+impl PyPrice {
+    /// Expected loss ``E[X]``.
+    #[getter]
+    fn expected_loss(&self) -> f64 {
+        self.inner.expected_loss
+    }
+
+    /// Premium ``P``.
+    #[getter]
+    fn premium(&self) -> f64 {
+        self.inner.premium
+    }
+
+    /// Assets ``a`` backing the loss.
+    #[getter]
+    fn assets(&self) -> f64 {
+        self.inner.assets
+    }
+
+    /// Margin ``P - E[X]``.
+    #[getter]
+    fn margin(&self) -> f64 {
+        self.inner.margin()
+    }
+
+    /// Capital ``a - P``: the assets the premium does not fund.
+    #[getter]
+    fn capital(&self) -> f64 {
+        self.inner.capital()
+    }
+
+    /// Loss ratio ``E[X] / P``.
+    #[getter]
+    fn loss_ratio(&self) -> f64 {
+        self.inner.loss_ratio()
+    }
+
+    /// Return on capital, margin over capital.
+    #[getter]
+    fn return_on_capital(&self) -> f64 {
+        self.inner.return_on_capital()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Price(expected_loss={}, premium={}, assets={})",
+            self.inner.expected_loss, self.inner.premium, self.inner.assets
+        )
+    }
+}
+
+fn prices(v: &[Price]) -> Vec<PyPrice> {
+    v.iter().map(|&inner| PyPrice { inner }).collect()
+}
+
+/// Prices of a portfolio's components and of the portfolio as a whole.
+///
+/// Returned by ``price_portfolio``.
+#[pyclass(name = "PortfolioPrice", module = "actuarialrs.pricing", frozen)]
+pub(crate) struct PyPortfolioPrice {
+    inner: PortfolioPrice,
+}
+
+#[pymethods]
+impl PyPortfolioPrice {
+    /// Component keys, one tuple per component.
+    ///
+    /// Returns
+    /// -------
+    /// list of tuple
+    fn components<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        self.inner
+            .components
+            .iter()
+            .map(|k| key_to_py(py, k))
+            .collect()
+    }
+
+    /// Each component's share of the portfolio price; these add up to
+    /// ``total``.
+    #[getter]
+    fn allocated(&self) -> Vec<PyPrice> {
+        prices(&self.inner.allocated)
+    }
+
+    /// Each component priced on its own.
+    #[getter]
+    fn standalone(&self) -> Vec<PyPrice> {
+        prices(&self.inner.standalone)
+    }
+
+    /// The portfolio, priced on the total of its components.
+    #[getter]
+    fn total(&self) -> PyPrice {
+        PyPrice {
+            inner: self.inner.total,
+        }
+    }
+
+    /// Premium saved by writing the components together: the sum of the
+    /// standalone premiums less the portfolio premium.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn diversification(&self) -> f64 {
+        self.inner.diversification()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PortfolioPrice(components={}, premium={})",
+            self.inner.components.len(),
+            self.inner.total.premium
+        )
+    }
+}
+
+/// Risk-loaded price of a cover from its simulated losses.
+///
+/// The assets backing the loss are a distortion risk measure of it. The
+/// premium is either a pricing distortion of the loss, or set by a
+/// constant cost of capital ``r`` on the capital ``a - P``, which gives
+/// ``P = (E[X] + r a) / (1 + r)``.
+///
+/// Parameters
+/// ----------
+/// losses : Sampled or PredictiveDistribution
+///     Loss draws; for a ``PredictiveDistribution``, its total.
+/// assets : Distortion
+///     The measure that sets the assets, for example ``Distortion.tvar(0.99)``.
+/// cost_of_capital : float, optional
+///     Positive rate. Give this or ``distortion``.
+/// distortion : Distortion, optional
+///     Pricing distortion; it must load less than ``assets``.
+///
+/// Returns
+/// -------
+/// Price
+///
+/// Raises
+/// ------
+/// ValueError
+///     Unless exactly one rule is given, or if the premium exceeds the
+///     assets.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Sampled
+/// >>> from actuarialrs.pricing import price
+/// >>> from actuarialrs.risk import Distortion
+/// >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
+/// >>> p.premium, p.capital
+/// (2.4, 1.6)
+#[pyfunction]
+#[pyo3(signature = (losses, assets, *, cost_of_capital = None, distortion = None))]
+pub(crate) fn price(
+    losses: &Bound<'_, PyAny>,
+    assets: PyRef<'_, PyDistortion>,
+    cost_of_capital: Option<f64>,
+    distortion: Option<PyRef<'_, PyDistortion>>,
+) -> PyResult<PyPrice> {
+    let rule = premium_rule(cost_of_capital, distortion)?;
+    let inner = if let Ok(s) = losses.extract::<PyRef<'_, PySampled>>() {
+        risk_load::price(&s.inner, &rule, &assets.inner)
+    } else if let Ok(pd) = losses.extract::<PyRef<'_, PyPredictiveDistribution>>() {
+        risk_load::price(pd.inner.total(), &rule, &assets.inner)
+    } else {
+        return Err(PyTypeError::new_err(
+            "losses must be a Sampled or a PredictiveDistribution",
+        ));
+    }
+    .map_err(to_py)?;
+    Ok(PyPrice { inner })
+}
+
+/// Prices a portfolio and allocates the price to its components.
+///
+/// Premium and assets are each allocated by co-measure (the natural
+/// allocation): component prices add up to the portfolio's, and a
+/// component that diversifies the portfolio is priced below its
+/// standalone price. With a cost of capital, every component earns the
+/// rate on its allocated capital.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+///     Components that add up to the portfolio: segments or covers, not
+///     gross, ceded and net side by side.
+/// assets : Distortion
+/// cost_of_capital : float, optional
+/// distortion : Distortion, optional
+///     Exactly one of ``cost_of_capital`` and ``distortion``, as in
+///     ``price``.
+///
+/// Returns
+/// -------
+/// PortfolioPrice
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import PredictiveDistribution
+/// >>> from actuarialrs.pricing import price_portfolio
+/// >>> from actuarialrs.risk import Distortion
+/// >>> pd = PredictiveDistribution(["cover"], [("a",), ("b",)],
+/// ...                             [[0.0, 2.0], [1.0, 1.0], [4.0, 0.0], [8.0, 0.0]])
+/// >>> p = price_portfolio(pd, Distortion.tvar(0.5), cost_of_capital=0.1)
+/// >>> [round(c.premium, 6) for c in p.allocated]
+/// [3.5, 0.681818]
+/// >>> p.allocated[1].margin < 0  # the second cover hedges the first
+/// True
+#[pyfunction]
+#[pyo3(signature = (pd, assets, *, cost_of_capital = None, distortion = None))]
+pub(crate) fn price_portfolio(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    assets: PyRef<'_, PyDistortion>,
+    cost_of_capital: Option<f64>,
+    distortion: Option<PyRef<'_, PyDistortion>>,
+) -> PyResult<PyPortfolioPrice> {
+    let rule = premium_rule(cost_of_capital, distortion)?;
+    let (pd, a) = (&pd.inner, assets.inner);
+    let inner = py
+        .detach(|| risk_load::price_portfolio(pd, &rule, &a))
+        .map_err(to_py)?;
+    Ok(PyPortfolioPrice { inner })
 }
