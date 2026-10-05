@@ -4,6 +4,7 @@
 \alias{bayesian_stacking}
 \alias{bayes_stacking}
 \alias{hierarchical_stacking}
+\alias{pooling_scales}
 \title{Bayesian and hierarchical stacking}
 \usage{
 bayes_stacking(
@@ -18,14 +19,26 @@ bayes_stacking(
 hierarchical_stacking(
   lpd,
   covariates,
+  discrete = 0,
   alpha_loc = 0,
   alpha_scale = 1,
   beta_loc = 0,
   beta_scale = 1,
+  partial_pooling = FALSE,
+  pooling = pooling_scales(),
+  adaptive = NULL,
   chains = 4,
   tune = 1000,
   draws = 1000,
   seed = 0
+)
+
+pooling_scales(
+  tau_mu_global = 1,
+  tau_mu_discrete = 1,
+  tau_mu_continuous = 1,
+  tau_sigma_discrete = 1,
+  tau_sigma_continuous = 1
 )
 }
 \arguments{
@@ -41,8 +54,21 @@ uniform.}
 \item{covariates}{A matrix or data frame of numeric covariates, one row
 per observation.}
 
+\item{discrete}{Number of leading columns of \code{covariates} that are dummy
+codes of discrete covariates.}
+
 \item{alpha_loc, alpha_scale, beta_loc, beta_scale}{Normal priors on the
-intercepts and slopes.}
+intercepts and (without pooling) slopes.}
+
+\item{partial_pooling}{Pool the slopes (BayesBlend's pooling model).}
+
+\item{pooling}{Pooling scales, from \code{pooling_scales()}.}
+
+\item{adaptive}{\code{NULL}, or the rate of the exponential prior on \code{lambda}
+(BayesBlend's default is 4).}
+
+\item{tau_mu_global, tau_mu_discrete, tau_mu_continuous, tau_sigma_discrete, tau_sigma_continuous}{Scales of the global mean, the model-level means and the slopes around
+them; BayesBlend's defaults are all 1.}
 }
 \value{
 A \code{stacking_fit} with properties \code{weights} (posterior mean
@@ -57,12 +83,23 @@ log densities, the log score of the mixture as the likelihood (Yao et
 al., 2018 and 2022). \code{bayes_stacking()} puts a Dirichlet prior on one
 weight vector. \code{hierarchical_stacking()} lets the weights vary with
 covariates, \verb{w = softmax(alpha + B x)} against the last model as
-reference, with normal priors as BayesBlend's \code{HierarchicalBayesStacking}
-without partial pooling: a model can be trusted in one part of the
-portfolio and not another. Scale continuous covariates (BayesBlend
-divides by twice their standard deviation) and dummy-code discrete ones
-first. Posterior moments match exact grid integration
-(\code{validation/scripts/stacking_grid.py}).
+reference, with the priors of BayesBlend's \code{HierarchicalBayesStacking}:
+a model can be trusted in one part of the portfolio and not another.
+Scale continuous covariates (BayesBlend divides by twice their standard
+deviation) and dummy-code discrete ones first, with the dummies as the
+first \code{discrete} columns. Without pooling, posterior moments match exact
+grid integration (\code{validation/scripts/stacking_grid.py}).
+}
+\details{
+With \code{partial_pooling = TRUE}, each model's slopes on the discrete
+columns, and separately on the continuous ones, are drawn around a
+model-level mean, which is drawn around a global mean; \code{pooling_scales()}
+sets the scales (0 removes a level: \code{tau_mu_global = 0} fixes the global
+mean at 0, \verb{tau_mu_* = 0} pools completely, \verb{tau_sigma_* = 0} sets every
+slope to its model's mean). BayesBlend warns that pooling needs at least
+three covariates. \code{adaptive}, the rate of an exponential prior on
+\code{lambda}, multiplies the prior scales by \code{N^lambda}, which weakens them
+as the data grow.
 }
 \examples{
 x <- seq(-0.5, 0.5, length.out = 100)

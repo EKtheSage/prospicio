@@ -227,6 +227,8 @@ impl GlmModel {
         self.inner.predict(&d).map_err(to_r)
     }
 
+    /// `parameters` is "normal", "mean_preserving" or "fixed".
+    #[allow(clippy::too_many_arguments)]
     fn predict_distribution(
         &self,
         x: &[f64],
@@ -235,11 +237,27 @@ impl GlmModel {
         weights: &[f64],
         n_sims: f64,
         seed: f64,
+        parameters: &str,
     ) -> Result<PredictiveDistribution> {
         let d = design(x, names, offset, weights)?;
+        let parameters = match parameters {
+            "normal" => act_glm::ParameterDraws::Normal,
+            "mean_preserving" => act_glm::ParameterDraws::MeanPreserving,
+            "fixed" => act_glm::ParameterDraws::Fixed,
+            other => {
+                return Err(Error::Other(format!(
+                    "parameters must be normal, mean_preserving or fixed, got {other}"
+                )));
+            }
+        };
         let inner = self
             .inner
-            .predict_distribution(&d, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .predict_distribution_with(
+                &d,
+                whole(n_sims, "n_sims")? as usize,
+                whole(seed, "seed")?,
+                parameters,
+            )
             .map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
@@ -1009,12 +1027,16 @@ fn bayes_stacking_rust(
 /// Hierarchical stacking; `x` is `n × p` column-major covariates, `priors`
 /// is `c(alpha_loc, alpha_scale, beta_loc, beta_scale)`.
 #[extendr]
+#[allow(clippy::too_many_arguments)]
 fn hierarchical_stacking_rust(
     lpd: &[f64],
     k: f64,
     x: &[f64],
     p: f64,
     priors: &[f64],
+    pooling: &[f64],
+    adaptive: Option<f64>,
+    discrete: f64,
     sampler: &[f64],
 ) -> Result<StackingModel> {
     let k = whole(k, "k")? as usize;
@@ -1028,6 +1050,19 @@ fn hierarchical_stacking_rust(
         alpha_scale: *alpha_scale,
         beta_loc: *beta_loc,
         beta_scale: *beta_scale,
+        pooling: match pooling {
+            [] => None,
+            [g, md, mc, sd, sc] => Some(act_bayes::stacking::Pooling {
+                tau_mu_global: *g,
+                tau_mu_discrete: *md,
+                tau_mu_continuous: *mc,
+                tau_sigma_discrete: *sd,
+                tau_sigma_continuous: *sc,
+            }),
+            _ => return Err(Error::Other("pooling needs five scales".into())),
+        },
+        adaptive,
+        discrete: whole(discrete, "discrete")? as usize,
         sampler: stacking_sampler(sampler)?,
     };
     let inner = spec.fit(&cols, &xs).map_err(to_r)?;

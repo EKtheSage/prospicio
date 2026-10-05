@@ -12,11 +12,11 @@
 //! [`act_models::stack::stacking_weights`].
 
 use act_core::{Error as CoreError, StreamRng};
-use act_glm::{Glm, GlmFit};
+use act_glm::{Glm, GlmFit, ParameterDraws};
 use act_math::linalg::{cholesky, lower_mul};
-use act_math::special::{ln_gamma, norm_quantile};
+use act_math::special::norm_quantile;
 use act_models::metrics::{coverage, crps};
-use act_models::{Design, Family, Fitted, Model, Terms};
+use act_models::{Design, Fitted, Link, Model, Terms};
 use act_prob::PredictiveDistribution;
 
 use crate::error::{Error, Result};
@@ -66,23 +66,20 @@ pub trait TriangleModel: Sync {
 /// quasi-Poisson GLM with intercept, origin and development factors.
 ///
 /// The frame is coded with factor levels learned on the train and test
-/// rows together, the GLM is fitted on the train rows and the test rows
-/// get [`Fitted::predict_distribution`]. Training rows whose response is
-/// outside the family's range (a negative increment for the Poisson) are
-/// left out of the fit.
+/// rows together, the GLM is fitted on the train rows it accepts
+/// ([`Glm::accepts`]: the quasi-Poisson takes negative increments) and the
+/// test rows get [`GlmFit::predict_distribution_with`], with mean-preserving
+/// parameter draws under a log or identity link so each cell's simulated
+/// mean is its fitted mean.
 ///
 /// The log density of each test response is a log predictive density with
 /// parameter uncertainty: the log of the mean, over `n_sims` draws of the
 /// coefficients from their normal approximation, of the response density
-/// at the fitted dispersion. Without the averaging a model with many
-/// poorly identified parameters (an origin factor for the newest origins)
-/// is scored as if they were known. The response density is
-/// [`Family::log_density`], except for the Poisson: the over-dispersed
-/// Poisson's response `φ N` lives on a lattice of spacing `φ`, which
-/// observed increments are not on. Its log density is the count's log
-/// probability at `k = y/φ`, continued to every `k ≥ 0` by `ln Γ`, less
-/// `ln φ`: a density per unit of `y`, comparable with other models'. (At
-/// `φ = 1` and a whole `y` it is the Poisson log probability.)
+/// at the fitted dispersion ([`act_models::Family::log_density`], which
+/// scores the over-dispersed Poisson by a normalized density in `y`).
+/// Without the averaging a model with many poorly identified parameters
+/// (an origin factor for the newest origins) is scored as if they were
+/// known.
 ///
 /// ```
 /// use act_glm::Glm;
@@ -123,7 +120,14 @@ impl TriangleModel for GlmCandidate {
         let test_design = coding.design(&cells.select(test)?)?;
         let fit = self.glm.fit(&train_design, &cells.response_of(&train))?;
         let mean = fit.predict(&test_design)?;
-        let distribution = fit.predict_distribution(&test_design, n_sims, seed)?;
+        // Mean-preserving draws keep each cell's simulated mean at its fitted
+        // mean under a log or identity link (plain normal draws through a log
+        // link overstate it by exp(x'Σx/2)).
+        let parameters = match self.glm.link {
+            Link::Log | Link::Identity => ParameterDraws::MeanPreserving,
+            _ => ParameterDraws::Normal,
+        };
+        let distribution = fit.predict_distribution_with(&test_design, n_sims, seed, parameters)?;
         let log_density = parameter_averaged_log_density(
             &fit,
             &test_design,
@@ -138,13 +142,14 @@ impl TriangleModel for GlmCandidate {
         })
     }
 
-    /// The `train` rows whose response is in the family's range.
+    /// The `train` rows whose response the GLM accepts ([`Glm::accepts`]):
+    /// the family's range, and any finite value for the quasi-Poisson.
     fn fit_rows(&self, cells: &TriangleFrame, train: &[usize]) -> Vec<usize> {
         let response = cells.response();
         train
             .iter()
             .copied()
-            .filter(|&r| self.glm.family.valid_y(response[r]))
+            .filter(|&r| self.glm.accepts(response[r]))
             .collect()
     }
 }
@@ -167,8 +172,6 @@ fn parameter_averaged_log_density(
     let density = |y: f64, mu: f64| -> act_core::Result<f64> {
         if !family.valid_mu(mu) {
             Ok(f64::NEG_INFINITY)
-        } else if family == Family::Poisson {
-            Ok(continuous_poisson_log_density(y, mu, phi))
         } else {
             family.log_density(y, mu, phi, 1.0)
         }
@@ -203,18 +206,6 @@ fn parameter_averaged_log_density(
             m + (l.iter().map(|v| (v - m).exp()).sum::<f64>() / n_sims as f64).ln()
         })
         .collect())
-}
-
-/// `ln[λ^k e^{-λ} / Γ(k + 1)] - ln φ` with `k = y/φ`, `λ = μ/φ`: the
-/// over-dispersed Poisson's log probability continued off its lattice, per
-/// unit of `y`. `-∞` for a negative `y`.
-fn continuous_poisson_log_density(y: f64, mu: f64, phi: f64) -> f64 {
-    if y < 0.0 || !y.is_finite() {
-        return f64::NEG_INFINITY;
-    }
-    let (k, lambda) = (y / phi, mu / phi);
-    let ln_term = if k == 0.0 { 0.0 } else { k * lambda.ln() };
-    ln_term - lambda - ln_gamma(k + 1.0) - phi.ln()
 }
 
 /// Metric names of a [`Backtest`], in the order of its metric indices.
@@ -491,22 +482,6 @@ mod tests {
         assert!((quantile(&d, 0.25) - 1.75).abs() < 1e-15);
     }
 
-    #[test]
-    fn continuous_poisson_matches_the_lattice() {
-        // At φ = 1 and a whole y it is the Poisson log probability.
-        let exact = Family::Poisson.log_density(3.0, 2.5, 1.0, 1.0).unwrap();
-        assert!((continuous_poisson_log_density(3.0, 2.5, 1.0) - exact).abs() < 1e-12);
-        // On the lattice of spacing φ: the count's probability over φ.
-        let lattice = Family::Poisson.log_density(40.0, 25.0, 10.0, 1.0).unwrap();
-        let continued = continuous_poisson_log_density(40.0, 25.0, 10.0);
-        assert!((continued - (lattice - 10f64.ln())).abs() < 1e-12);
-        assert_eq!(
-            continuous_poisson_log_density(-1.0, 2.0, 1.0),
-            f64::NEG_INFINITY
-        );
-        assert!(continuous_poisson_log_density(0.0, 2.0, 3.0).is_finite());
-    }
-
     struct NoDensity;
 
     impl TriangleModel for NoDensity {
@@ -525,7 +500,8 @@ mod tests {
             let mut f = GlmCandidate {
                 name: String::new(),
                 terms: Terms::new().intercept().factor("development"),
-                glm: Glm::new(Family::Poisson, Link::Log).dispersion(act_glm::Dispersion::Pearson),
+                glm: Glm::new(act_models::Family::Poisson, Link::Log)
+                    .dispersion(act_glm::Dispersion::Pearson),
             }
             .forecast(cells, train, test, n_sims, seed)?;
             f.log_density = None;
@@ -666,7 +642,9 @@ mod tests {
     #[test]
     fn an_age_seen_only_in_a_dropped_increment_is_excluded() {
         // 2018 at 48 is the only training cell at 48 and a negative
-        // increment, which the Poisson GLM drops: 2019 at 48 cannot be
+        // increment. A Poisson GLM with fixed dispersion does not accept it
+        // (the quasi-Poisson would, and then fails: no positive mean fits a
+        // level seen only in a negative cell), so 2019 at 48 cannot be
         // forecast, and is excluded with 2022 at 12 and 2018 at 60.
         let cells = small(&[
             &[100.0, 150.0, 165.0, 160.0, 162.0],
@@ -681,7 +659,7 @@ mod tests {
                 .intercept()
                 .factor("origin")
                 .factor("development"),
-            glm: Glm::over_dispersed_poisson(),
+            glm: Glm::new(act_models::Family::Poisson, Link::Log),
         };
         let bt = diagonal_backtest(&cells, &[&odp], 1, 100, 7, 0.9).unwrap();
         assert_eq!(bt.excluded(), [3]);

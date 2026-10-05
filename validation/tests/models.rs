@@ -774,3 +774,222 @@ fn bayesian_and_hierarchical_stacking_match_grid_integration() {
         }
     });
 }
+
+#[test]
+fn nuts_posterior_predictive_matches_the_conjugate_negative_binomial() {
+    use act_bayes::nuts::{LogDensity, Sampler, sample};
+    use act_prob::{Counting, Distribution, KeyValue, NegativeBinomial, Provenance};
+
+    // Poisson counts with a Gamma(2, rate 0.5) prior on the rate λ. The
+    // posterior is Gamma(2 + Σy, 0.5 + n), and next year's count is
+    // negative binomial with shape 2 + Σy and scale 1 / (0.5 + n).
+    let y = [3.0, 5.0, 2.0, 4.0, 6.0, 1.0, 3.0, 4.0];
+    let (a, b) = (2.0 + y.iter().sum::<f64>(), 0.5 + y.len() as f64);
+
+    /// log λ, with the Jacobian: (a) θ - b e^θ.
+    struct LogRate {
+        a: f64,
+        b: f64,
+    }
+    impl LogDensity for LogRate {
+        fn dim(&self) -> usize {
+            1
+        }
+        fn log_density(&self, x: &[f64], g: &mut [f64]) -> Option<f64> {
+            let lambda = x[0].exp();
+            g[0] = self.a - self.b * lambda;
+            Some(self.a * x[0] - self.b * lambda)
+        }
+    }
+
+    let s = Sampler {
+        chains: 4,
+        tune: 500,
+        draws: 2000,
+        seed: 17,
+        ..Sampler::default()
+    };
+    let post = sample(&LogRate { a, b }, &[(a / b).ln()], s).unwrap();
+    let rate = post
+        .transform(vec!["lambda".into()], |x| vec![x[0].exp()])
+        .unwrap();
+    let summary = &rate.summary().unwrap()[0];
+    let (mean, sd) = (a / b, a.sqrt() / b);
+    assert!(summary.rhat < 1.01, "{summary:?}");
+    assert!(
+        (summary.mean - mean).abs() < 4.0 * sd / summary.ess_bulk.sqrt(),
+        "{summary:?}"
+    );
+    assert!((summary.sd / sd - 1.0).abs() < 0.05, "{summary:?}");
+
+    // Posterior predictive count: draw λ, then a Poisson count.
+    let n = 40_000;
+    let pd = rate
+        .predictive(
+            vec!["year".into()],
+            vec![vec![KeyValue::from(2026)]],
+            n,
+            23,
+            Provenance::new("gamma_poisson"),
+            |theta, rng, row| {
+                // Inverse transform of Poisson(λ).
+                let (lambda, u) = (theta[0], rng.next_open01());
+                let (mut k, mut p) = (0.0, (-lambda).exp());
+                let mut cdf = p;
+                while u > cdf {
+                    k += 1.0;
+                    p *= lambda / k;
+                    cdf += p;
+                }
+                row[0] = k;
+            },
+        )
+        .unwrap();
+    let exact = NegativeBinomial::new(a, 1.0 / b).unwrap();
+    let draws = pd.total();
+    for k in 0..12u64 {
+        let want = exact.cdf(k);
+        let got = draws.cdf(k as f64);
+        let se = (want * (1.0 - want) / n as f64).sqrt();
+        // Draws within a simulation are independent, but the posterior
+        // draws repeat across simulations; allow for that.
+        assert!(
+            (got - want).abs() < 6.0 * se + 2e-3,
+            "k = {k}: {got} vs {want}"
+        );
+    }
+    assert!((draws.mean() - Counting::mean(&exact)).abs() < 0.05);
+}
+
+/// RAA as an over-dispersed Poisson GLM on incremental cells (intercept,
+/// origin and development dummies, first level dropped): the observed
+/// cells' design and responses, the future cells' design, and the Chain
+/// Ladder reserve.
+fn raa_odp() -> (act_models::Design, Vec<f64>, act_models::Design, f64) {
+    use act_models::Design;
+
+    let text = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/raa.csv"),
+    )
+    .unwrap();
+    let n = 10;
+    let mut cum = vec![vec![f64::NAN; n]; n];
+    for l in text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("origin"))
+    {
+        let v: Vec<f64> = l.split(',').map(|x| x.parse().unwrap()).collect();
+        cum[(v[0] - 1981.0) as usize][(v[1] / 12.0) as usize - 1] = v[2];
+    }
+    let dummies = |i: usize, j: usize| -> Vec<f64> {
+        let mut r = vec![1.0];
+        r.extend((1..n).map(|k| f64::from(u8::from(i == k))));
+        r.extend((1..n).map(|k| f64::from(u8::from(j == k))));
+        r
+    };
+    let design = |cells: &[(usize, usize)]| {
+        let mut cols = vec![Vec::new(); 1 + 2 * (n - 1)];
+        for &(i, j) in cells {
+            for (c, v) in cols.iter_mut().zip(dummies(i, j)) {
+                c.push(v);
+            }
+        }
+        let names = (0..cols.len()).map(|k| format!("x{k}")).collect();
+        Design::new(names, cols).unwrap()
+    };
+    let observed: Vec<(usize, usize)> = (0..n)
+        .flat_map(|i| (0..n - i).map(move |j| (i, j)))
+        .collect();
+    let future: Vec<(usize, usize)> = (1..n)
+        .flat_map(|i| (n - i..n).map(move |j| (i, j)))
+        .collect();
+    let y = observed
+        .iter()
+        .map(|&(i, j)| {
+            if j == 0 {
+                cum[i][0]
+            } else {
+                cum[i][j] - cum[i][j - 1]
+            }
+        })
+        .collect();
+
+    // Chain Ladder: volume-weighted development factors.
+    let mut ultimate: Vec<f64> = (0..n).map(|i| cum[i][n - 1 - i]).collect();
+    for j in 0..n - 1 {
+        let (num, den) =
+            (0..n - 1 - j).fold((0.0, 0.0), |(a, b), i| (a + cum[i][j + 1], b + cum[i][j]));
+        for (i, u) in ultimate.iter_mut().enumerate() {
+            if j >= n - 1 - i {
+                *u *= num / den;
+            }
+        }
+    }
+    let latest: f64 = (0..n).map(|i| cum[i][n - 1 - i]).sum();
+    (
+        design(&observed),
+        y,
+        design(&future),
+        ultimate.iter().sum::<f64>() - latest,
+    )
+}
+
+#[test]
+fn over_dispersed_poisson_fits_raa_with_its_negative_increment() {
+    // RAA's 1982 origin loses 103 between 72 and 84 months. The
+    // over-dispersed Poisson GLM with origin and development factors
+    // still reproduces the Chain Ladder reserve.
+    use act_glm::Glm;
+    use act_models::{Fitted, Model};
+
+    let (design, y, future, cl_reserve) = raa_odp();
+    assert!(y.iter().any(|v| *v < 0.0));
+    let fit = Glm::over_dispersed_poisson().fit(&design, &y).unwrap();
+    let glm_reserve: f64 = fit.predict(&future).unwrap().iter().sum();
+    assert!(
+        (glm_reserve - cl_reserve).abs() < 1e-6 * cl_reserve,
+        "{glm_reserve} vs {cl_reserve}"
+    );
+    assert!(fit.dispersion() > 0.0 && fit.log_likelihood().is_nan());
+    // A Poisson with the dispersion fixed at 1 still refuses it.
+    assert!(
+        Glm::new(act_models::Family::Poisson, act_models::Link::Log)
+            .fit(&design, &y)
+            .is_err()
+    );
+}
+
+#[test]
+fn mean_preserving_draws_centre_the_odp_reserve_on_the_chain_ladder() {
+    use act_glm::{Glm, ParameterDraws};
+    use act_models::Model;
+    use act_prob::Distribution;
+
+    let (design, y, future, cl_reserve) = raa_odp();
+    let fit = Glm::over_dispersed_poisson().fit(&design, &y).unwrap();
+    let n = 20_000;
+    let reserve = |parameters| {
+        let total = fit
+            .predict_distribution_with(&future, n, 5, parameters)
+            .unwrap()
+            .total()
+            .clone();
+        (total.mean(), total.std_dev() / (n as f64).sqrt())
+    };
+    // Normal draws of β overstate the mean through exp(); shifting each
+    // cell by -x'Σx/2 removes that, keeping parameter and process error.
+    let (normal, se) = reserve(ParameterDraws::Normal);
+    let (centred, se_c) = reserve(ParameterDraws::MeanPreserving);
+    let (fixed, se_f) = reserve(ParameterDraws::Fixed);
+    assert!(
+        (centred - cl_reserve).abs() < 4.0 * se_c,
+        "{centred} vs {cl_reserve}"
+    );
+    assert!(
+        (fixed - cl_reserve).abs() < 4.0 * se_f,
+        "{fixed} vs {cl_reserve}"
+    );
+    assert!(normal - cl_reserve > 4.0 * se, "{normal} vs {cl_reserve}");
+    // Parameter error widens the distribution.
+    assert!(se_c > se_f);
+}

@@ -36,7 +36,8 @@ glm_fit(
 
 \item{dispersion}{\code{NULL} (1 for the Poisson, binomial and negative
 binomial; Pearson's estimate otherwise), \code{"pearson"} (with the Poisson,
-the over-dispersed Poisson), \code{"deviance"} or a fixed number.}
+the over-dispersed Poisson, which accepts negative responses as long
+as the fitted means stay positive), \code{"deviance"} or a fixed number.}
 
 \item{theta}{Negative binomial \code{theta} (variance \code{mu + mu^2 / theta}).}
 

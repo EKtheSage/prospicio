@@ -95,8 +95,24 @@ impl Glm {
     /// The over-dispersed Poisson (quasi-Poisson) with log link: Poisson
     /// estimates and Pearson's dispersion. Its fitted values on a triangle
     /// with origin and development factors are the Chain Ladder's.
+    ///
+    /// Responses may be negative (a negative incremental loss), as long as
+    /// the fitted means stay positive: the quasi-likelihood needs only
+    /// `V(μ) = μ` and `μ > 0` (R's `quasipoisson` refuses them). The
+    /// deviance of a negative response is the quasi-deviance (see
+    /// [`Family::unit_deviance`]) and its log-likelihood is NaN.
     pub fn over_dispersed_poisson() -> Self {
         Self::new(Family::Poisson, Link::Log).dispersion(Dispersion::Pearson)
+    }
+
+    /// Whether `y` is a response this GLM can fit: the family's range, and
+    /// for the Poisson with an estimated dispersion (quasi-Poisson) any
+    /// finite value.
+    pub fn accepts(&self, y: f64) -> bool {
+        self.family.valid_y(y)
+            || (matches!(self.family, Family::Poisson)
+                && !matches!(self.dispersion, Dispersion::Fixed(_))
+                && y.is_finite())
     }
 }
 
@@ -156,12 +172,25 @@ impl Glm {
                 "{n} observations for {p} coefficients"
             )));
         }
-        if let Some(bad) = y.iter().find(|&&v| !self.family.valid_y(v)) {
+        if let Some(bad) = y.iter().find(|&&v| !self.accepts(v)) {
             return Err(invalid("y", *bad, "is outside the family's range"));
         }
         let w = design.weights();
         let offset = design.offset();
         let y_mean = y.iter().zip(w).map(|(a, b)| a * b).sum::<f64>() / w.iter().sum::<f64>();
+        if y.iter().any(|v| !self.family.valid_y(*v)) && !self.family.valid_mu(y_mean) {
+            return Err(invalid(
+                "y",
+                y_mean,
+                "has a weighted mean outside the family's range",
+            ));
+        }
+        // A negative response (quasi-Poisson) has no valid mean of its own
+        // to start from: start it at the overall mean.
+        let initial = |i: usize| {
+            let m = self.family.initial_mu(y[i], w[i], y_mean);
+            if self.family.valid_mu(m) { m } else { y_mean }
+        };
 
         let Irls {
             beta,
@@ -174,7 +203,7 @@ impl Glm {
             y,
             |i| match start {
                 Some(mu) if self.family.valid_mu(mu[i]) => mu[i],
-                _ => self.family.initial_mu(y[i], w[i], y_mean),
+                _ => initial(i),
             },
             None,
         )?;
@@ -189,13 +218,7 @@ impl Glm {
             let ones = Design::new(vec!["(Intercept)".into()], vec![vec![1.0; n]])?
                 .with_offset(offset.to_vec())?
                 .with_weights(w.to_vec())?;
-            let null = irls(
-                self,
-                &ones,
-                y,
-                |i| self.family.initial_mu(y[i], w[i], y_mean),
-                None,
-            )?;
+            let null = irls(self, &ones, y, initial, None)?;
             dev(self.family, y, &null.mu, w)
         } else {
             let mu0: Vec<f64> = offset.iter().map(|&o| self.link.inverse(o)).collect();
@@ -539,23 +562,119 @@ impl Fitted for GlmFit {
     /// then each row's response from the family with that row's mean,
     /// the dispersion and the row's weight (process uncertainty), in row
     /// order.
+    ///
+    /// The draws of `β` are [`ParameterDraws::Normal`]; see
+    /// [`GlmFit::predict_distribution_with`] for the others.
     fn predict_distribution(
         &self,
         design: &Design,
         n_sims: usize,
         seed: u64,
     ) -> Result<PredictiveDistribution> {
+        self.predict_distribution_with(design, n_sims, seed, ParameterDraws::Normal)
+    }
+}
+
+/// How [`GlmFit::predict_distribution_with`] draws the coefficients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ParameterDraws {
+    /// `β ~ N(β̂, Σ)`. Through a non-linear link the draws' mean differs
+    /// from the fitted mean: with a log link each row's is
+    /// `μ̂ exp(xᵀ Σ x / 2)`.
+    #[default]
+    Normal,
+    /// `β ~ N(β̂, Σ)`, with each row's linear predictor shifted so that the
+    /// mean of its draws is the fitted mean `μ̂` exactly: by `-xᵀ Σ x / 2`
+    /// with a log link, by nothing with the identity link. The rows keep
+    /// their dependence. Other links are refused.
+    MeanPreserving,
+    /// `β = β̂`: process uncertainty only.
+    Fixed,
+}
+
+impl ParameterDraws {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::MeanPreserving => "mean_preserving",
+            Self::Fixed => "fixed",
+        }
+    }
+}
+
+impl GlmFit {
+    /// [`predict_distribution`](Fitted::predict_distribution) with the
+    /// coefficients drawn as `parameters` says.
+    ///
+    /// ```
+    /// use act_glm::{Glm, ParameterDraws};
+    /// use act_models::{Design, Fitted, Model};
+    /// use act_prob::Distribution;
+    ///
+    /// let design = Design::new(
+    ///     vec!["(Intercept)".into(), "x".into()],
+    ///     vec![vec![1.0; 6], vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]],
+    /// )
+    /// .unwrap();
+    /// let fit = Glm::over_dispersed_poisson()
+    ///     .fit(&design, &[3.0, 9.0, 1.0, 8.0, 20.0, 5.0])
+    ///     .unwrap();
+    /// let pd = fit
+    ///     .predict_distribution_with(&design, 20_000, 1, ParameterDraws::MeanPreserving)
+    ///     .unwrap();
+    /// // The draws centre on the fitted means, 13/3 and 11.
+    /// let total = pd.total().mean();
+    /// assert!((total - 3.0 * (13.0 / 3.0 + 11.0)).abs() < 0.02 * total);
+    /// ```
+    pub fn predict_distribution_with(
+        &self,
+        design: &Design,
+        n_sims: usize,
+        seed: u64,
+        parameters: ParameterDraws,
+    ) -> Result<PredictiveDistribution> {
         self.check_design(design)?;
+        let covariance = self.covariance();
+        let p = self.coefficients.len();
+        let shift = match parameters {
+            ParameterDraws::MeanPreserving => match self.spec.link {
+                Link::Log => Some(
+                    (0..design.n_rows())
+                        .map(|i| {
+                            let x: Vec<f64> = (0..p).map(|j| design.column(j)[i]).collect();
+                            let v: f64 = (0..p)
+                                .map(|a| {
+                                    x[a] * (0..p).map(|b| covariance[a * p + b] * x[b]).sum::<f64>()
+                                })
+                                .sum();
+                            -0.5 * v
+                        })
+                        .collect::<Vec<f64>>(),
+                ),
+                Link::Identity => None,
+                other => {
+                    return Err(Error::Data(format!(
+                        "mean-preserving draws need a log or identity link, not {other:?}"
+                    )));
+                }
+            },
+            _ => None,
+        };
         let provenance = Provenance::new("glm")
             .version("act-glm", env!("CARGO_PKG_VERSION"))
             .param("family", self.spec.family.name())
             .param("link", format!("{:?}", self.spec.link))
-            .param("dispersion", self.dispersion);
+            .param("dispersion", self.dispersion)
+            .param("parameters", parameters.name());
         simulate_responses(
             &self.spec,
             self.dispersion,
             &self.coefficients,
-            Some(&self.covariance()),
+            match parameters {
+                ParameterDraws::Fixed => None,
+                _ => Some(&covariance),
+            },
+            shift.as_deref(),
             design,
             n_sims,
             seed,
@@ -566,14 +685,16 @@ impl Fitted for GlmFit {
 
 /// Joint draws of the responses for the rows of `design`: simulation `i`
 /// (stream `i` of `seed`) draws `β ~ N(coefficients, covariance)`, shared
-/// by every row (or keeps `β` fixed without a covariance), then each row's
-/// response from the family, in row order.
+/// by every row (or keeps `β` fixed without a covariance), adds each row's
+/// `eta_shift` to its linear predictor, then draws each row's response
+/// from the family, in row order.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn simulate_responses(
     spec: &Glm,
     dispersion: f64,
     coefficients: &[f64],
     covariance: Option<&[f64]>,
+    eta_shift: Option<&[f64]>,
     design: &Design,
     n_sims: usize,
     seed: u64,
@@ -609,7 +730,7 @@ pub(crate) fn simulate_responses(
                 .collect();
             let eta = design.linear_predictor(&beta);
             for (i, out) in row.iter_mut().enumerate() {
-                let mu = link.inverse(eta[i]);
+                let mu = link.inverse(eta[i] + eta_shift.map_or(0.0, |d| d[i]));
                 *out = if family.valid_mu(mu) {
                     family
                         .draw(mu, phi, weights[i], rng.next_open01())

@@ -364,7 +364,8 @@ impl PyDesign {
 ///     ``"pearson"``, ``"deviance"`` or a fixed value. By default 1 for the
 ///     Poisson, binomial and negative binomial and Pearson's estimate
 ///     otherwise; ``"pearson"`` with the Poisson is the over-dispersed
-///     (quasi-) Poisson.
+///     (quasi-) Poisson, which accepts negative responses as long as the
+///     fitted means stay positive.
 /// theta : float, optional
 /// power : float, optional
 /// link_power : float, optional
@@ -737,20 +738,39 @@ impl PyGlmFit {
     /// design : Design
     /// n_sims : int
     /// seed : int
+    /// parameters : {"normal", "mean_preserving", "fixed"}, default "normal"
+    ///     How the coefficients are drawn: ``beta ~ N(beta_hat, Sigma)``
+    ///     (through a log link the draws' mean is
+    ///     ``mu_hat * exp(x' Sigma x / 2)``); the same with each row's linear
+    ///     predictor shifted so its draws average the fitted mean exactly
+    ///     (log or identity link); or fixed at ``beta_hat`` (process
+    ///     uncertainty only).
     ///
     /// Returns
     /// -------
     /// PredictiveDistribution
+    #[pyo3(signature = (design, n_sims, seed, parameters = "normal"))]
     fn predict_distribution(
         &self,
         py: Python<'_>,
         design: PyRef<'_, PyDesign>,
         n_sims: usize,
         seed: u64,
+        parameters: &str,
     ) -> PyResult<PyPredictiveDistribution> {
+        let parameters = match parameters {
+            "normal" => act_glm::ParameterDraws::Normal,
+            "mean_preserving" => act_glm::ParameterDraws::MeanPreserving,
+            "fixed" => act_glm::ParameterDraws::Fixed,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "parameters must be \"normal\", \"mean_preserving\" or \"fixed\"",
+                ));
+            }
+        };
         let (fit, d) = (&self.inner, &design.inner);
         let inner = py
-            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .detach(|| fit.predict_distribution_with(d, n_sims, seed, parameters))
             .map_err(to_py)?;
         Ok(PyPredictiveDistribution { inner })
     }
@@ -2392,16 +2412,36 @@ impl PyBayesStacking {
 /// Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
 /// weights that vary with covariates, ``w = softmax(alpha + B x)`` against
 /// the last model as reference, so a model can be trusted in one part of
-/// the portfolio and not another. Normal priors, as BayesBlend's
-/// ``HierarchicalBayesStacking`` without partial pooling; sampled by NUTS.
+/// the portfolio and not another. The priors are those of BayesBlend's
+/// ``HierarchicalBayesStacking``; sampled by NUTS.
 ///
 /// Scale continuous covariates (BayesBlend divides by twice the standard
-/// deviation) and dummy-code discrete ones before fitting.
+/// deviation) and dummy-code discrete ones before fitting, with the
+/// dummies first.
+///
+/// With ``partial_pooling``, each model's slopes on the discrete
+/// covariates, and separately on the continuous ones, are drawn around a
+/// model-level mean, itself drawn around a global mean. A scale of 0
+/// removes a level: ``tau_mu_global=0`` fixes the global mean at 0,
+/// ``tau_mu_*=0`` pools completely and ``tau_sigma_*=0`` sets every slope
+/// to its model's mean. BayesBlend warns that pooling needs at least three
+/// covariates. ``adaptive`` multiplies the prior scales by ``N**lambda``
+/// with ``lambda ~ Exponential(adaptive)``, weakening them as the data
+/// grow.
 ///
 /// Parameters
 /// ----------
+/// discrete : int, default 0
+///     Number of leading covariates that are dummy codes.
 /// alpha_loc, alpha_scale : float, default 0.0, 1.0
 /// beta_loc, beta_scale : float, default 0.0, 1.0
+///     Slope prior without pooling.
+/// partial_pooling : bool, default False
+/// tau_mu_global, tau_mu_discrete, tau_mu_continuous : float, default 1.0
+/// tau_sigma_discrete, tau_sigma_continuous : float, default 1.0
+///     Pooling scales, BayesBlend's defaults.
+/// adaptive : float, optional
+///     Rate of the exponential prior on ``lambda`` (BayesBlend uses 4).
 /// chains, tune, draws : int, default 4, 1000, 1000
 /// seed : int, default 0
 ///
@@ -2423,24 +2463,42 @@ pub(crate) struct PyHierarchicalStacking {
 #[pymethods]
 impl PyHierarchicalStacking {
     #[new]
-    #[pyo3(signature = (alpha_loc = 0.0, alpha_scale = 1.0, beta_loc = 0.0, beta_scale = 1.0, chains = 4, tune = 1000, draws = 1000, seed = 0))]
+    #[pyo3(signature = (discrete = 0, alpha_loc = 0.0, alpha_scale = 1.0, beta_loc = 0.0, beta_scale = 1.0, partial_pooling = false, tau_mu_global = 1.0, tau_mu_discrete = 1.0, tau_mu_continuous = 1.0, tau_sigma_discrete = 1.0, tau_sigma_continuous = 1.0, adaptive = None, chains = 4, tune = 1000, draws = 1000, seed = 0))]
     #[allow(clippy::too_many_arguments)]
     fn new(
+        discrete: usize,
         alpha_loc: f64,
         alpha_scale: f64,
         beta_loc: f64,
         beta_scale: f64,
+        partial_pooling: bool,
+        tau_mu_global: f64,
+        tau_mu_discrete: f64,
+        tau_mu_continuous: f64,
+        tau_sigma_discrete: f64,
+        tau_sigma_continuous: f64,
+        adaptive: Option<f64>,
         chains: usize,
         tune: usize,
         draws: usize,
         seed: u64,
     ) -> Self {
+        let pooling = partial_pooling.then_some(act_bayes::stacking::Pooling {
+            tau_mu_global,
+            tau_mu_discrete,
+            tau_mu_continuous,
+            tau_sigma_discrete,
+            tau_sigma_continuous,
+        });
         Self {
             inner: act_bayes::stacking::HierarchicalStacking {
                 alpha_loc,
                 alpha_scale,
                 beta_loc,
                 beta_scale,
+                pooling,
+                adaptive,
+                discrete,
                 sampler: stacking_sampler(chains, tune, draws, seed),
             },
         }

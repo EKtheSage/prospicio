@@ -907,6 +907,7 @@ impl Fitted for ElasticNetFit {
             self.dispersion,
             &self.coefficients,
             None,
+            None,
             design,
             n_sims,
             seed,

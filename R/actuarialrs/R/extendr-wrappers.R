@@ -12,7 +12,7 @@ bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link
 
 bayes_stacking_rust <- function(lpd, k, concentration, sampler) .Call(wrap__bayes_stacking_rust, lpd, k, concentration, sampler)
 
-hierarchical_stacking_rust <- function(lpd, k, x, p, priors, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, sampler)
+hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, discrete, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, pooling, adaptive, discrete, sampler)
 
 blend_by_component_rust <- function(models, weights, seed) .Call(wrap__blend_by_component_rust, models, weights, seed)
 
@@ -65,6 +65,10 @@ elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
 
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
+
+pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
+
+pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
 
@@ -444,7 +448,7 @@ GlmModel$family <- function() .Call(wrap__GlmModel__family, self)
 
 GlmModel$predict <- function(x, names, offset) .Call(wrap__GlmModel__predict, self, x, names, offset)
 
-GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed, parameters) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed, parameters)
 
 #' @export
 `$.GlmModel` <- function (self, name) { func <- GlmModel[[name]]; environment(func) <- environment(); func }
@@ -974,6 +978,8 @@ Triangle$chain_ladder <- function(column, average, sigma_interpolation, tail) .C
 
 Triangle$mack <- function(column, average, sigma_interpolation) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation)
 
+Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process)
+
 #' @export
 `$.Triangle` <- function (self, name) { func <- Triangle[[name]]; environment(func) <- environment(); func }
 
@@ -1037,6 +1043,24 @@ MackFit$total_cv <- function() .Call(wrap__MackFit__total_cv, self)
 
 #' @export
 `[[.MackFit` <- `$.MackFit`
+
+OdpBootstrapFit <- new.env(parent = emptyenv())
+
+OdpBootstrapFit$chain_ladder <- function() .Call(wrap__OdpBootstrapFit__chain_ladder, self)
+
+OdpBootstrapFit$fitted <- function() .Call(wrap__OdpBootstrapFit__fitted, self)
+
+OdpBootstrapFit$residuals <- function() .Call(wrap__OdpBootstrapFit__residuals, self)
+
+OdpBootstrapFit$scale <- function() .Call(wrap__OdpBootstrapFit__scale, self)
+
+OdpBootstrapFit$reserves <- function() .Call(wrap__OdpBootstrapFit__reserves, self)
+
+#' @export
+`$.OdpBootstrapFit` <- function (self, name) { func <- OdpBootstrapFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.OdpBootstrapFit` <- `$.OdpBootstrapFit`
 
 EvtTail <- new.env(parent = emptyenv())
 
