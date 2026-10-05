@@ -18,9 +18,7 @@ chain_ladder(
 \arguments{
 \item{ptr}{A \code{ChainLadderFit} pointer; used internally.}
 
-\item{triangle}{A single-segment \link{triangle} (use
-\link[=subset.triangle]{subset()} or \link[=aggregate.triangle]{aggregate()} first if
-it has several segments).}
+\item{triangle}{A \link{triangle}, with any number of segments.}
 
 \item{column}{Name of the column to fit; by default the only one.}
 
@@ -47,12 +45,20 @@ through the origin (\code{alpha = 2}). Results match R ChainLadder's
 (\code{validation/reference/reserving_chainladder_r.csv}).
 }
 \details{
-Properties of the fit, per origin (named by origin): \code{latest},
-\code{ultimate}, \code{reserve}; per link (named \code{"12-24"} and so on): \code{ldf},
-\code{sigma} (with unestimable ones interpolated), \code{std_err}; per age:
-\code{cdf} (age to ultimate, including the tail); and \code{origins},
-\code{development}, \code{alpha}, \code{tail}, \code{total_ultimate}, \code{total_reserve}.
-\code{as.data.frame()} gives the per-origin table.
+Every segment of the triangle is fitted on its own. Per-origin
+properties run over the origins of each segment in turn, like the rows
+of \code{as.data.frame()}, and are named by origin, or by \code{"segment / origin"} (key values joined by \code{" / "}) when there are several segments;
+a single-segment fit has one value per origin.
+
+Properties of the fit, per origin: \code{latest}, \code{ultimate}, \code{reserve}; per
+link (named \code{"12-24"} and so on): \code{ldf}, \code{sigma} (with unestimable ones
+interpolated), \code{std_err}; per age: \code{cdf} (age to ultimate, including the
+tail); and \code{keys}, \code{index} (one row per segment, as a triangle's),
+\code{origins}, \code{development}, \code{alpha}, \code{tail}, \code{total_ultimate} and
+\code{total_reserve} (summed over segments). The per-link and per-age
+properties need a single-segment fit: with several segments use
+\code{\link[=development_frame]{development_frame()}} or \code{\link[=segment]{segment()}}. \code{as.data.frame()} gives one row
+per segment and origin, \code{\link[=totals_frame]{totals_frame()}} one per segment.
 }
 \examples{
 long <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),
@@ -62,7 +68,14 @@ fit <- chain_ladder(triangle(long, "year", "age", "paid"), tail = 1.05)
 fit@ldf
 fit@reserve
 fit@total_reserve
+
+# Every line of business at once.
+by_lob <- rbind(transform(long, lob = "auto"), transform(long, lob = "home", paid = paid / 2))
+fits <- chain_ladder(triangle(by_lob, "year", "age", "paid", keys = "lob"))
+fits@reserve
+as.data.frame(fits)
+totals_frame(fits)
 }
 \seealso{
-\code{\link[=mack]{mack()}} for standard errors.
+\code{\link[=mack]{mack()}} for standard errors, \code{\link[=segment]{segment()}} for one segment.
 }

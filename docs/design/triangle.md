@@ -132,9 +132,59 @@ Methods take `&Triangle` and a column. Output per origin is keyed by the
 Triangle's `Period`s, so a reserve `PredictiveDistribution` component
 `{lob, origin}` joins back to the triangle without conversion.
 
-v0.1 methods fit a triangle with a single segment (`select` or `group_by`
-first); fitting every segment at once, as chainladder-python broadcasts,
-comes later.
+**Every segment at once (implemented, decision 5 step 3).** `fit` still
+needs a single-segment triangle. `fit_segments` on `ChainLadder`, `Mack`
+and `OdpBootstrap` fits one column in every segment, each on its own (the
+same numbers as selecting the segment and calling `fit`), and a failure
+names its segment (`Error::InSegment`) when the triangle has keys.
+Each segment fits on the origins and ages it observes, from its first to
+its last: a line that starts later, or has fewer ages than the triangle,
+fits on its own range (as does a column with empty trailing origins or
+ages). An empty origin inside that range is still an error. Long tables
+have one row per origin the segment covers.
+
+- `ChainLadder` and `Mack` return `SegmentFits<T>`: `key_names`, `labels`
+  and `fits` in index order, `get(&Label)`, and `segment(&[(key, value)])`
+  for the one segment matching those values (keys not named may take any
+  value; several matches are `AmbiguousSegment`). Its long tables
+  (`FitTable`: key columns, then `origin` or `age`, then values) are
+  `to_long()` (one row per segment × origin: `latest`, `ultimate`,
+  `reserve`, and for Mack `process_risk`, `parameter_risk`,
+  `standard_error`), `totals()` (one row per segment, the same for the
+  segment total) and `development_table()` (one row per segment × age:
+  `ldf`, `cdf`, `sigma`, `std_err`; NaN past the oldest link).
+- `OdpBootstrap::fit_segments` returns `OdpBootstrapFits`: per segment the
+  chain ladder, fitted values, residuals and scale (`SegmentFits<
+  OdpBootstrapSegment>`), and one joint `PredictiveDistribution` whose
+  dimensions are the key names and `origin`, with components segment-major
+  like the rows of `to_long()`. Segments are independent; simulation `i`
+  uses stream `i` for every segment in index order, so the draws are
+  reproducible and independent of the thread count, but a segment's draws
+  differ from bootstrapping it alone. Its tables add the `mean` and
+  `std_dev` of the bootstrapped reserve per row, and `totals()` the
+  `scale`; `segment()` keeps that segment's part of the joint draws with
+  the same dimensions.
+
+The bindings always fit every segment. Per-origin fields follow the long
+rows (segment by segment), so a single-segment fit reads as before;
+per-age fields (`ldf`, `cdf`, `sigma`, `std_err`), Mack's total standard
+errors and CV, and the bootstrap's `scale`, `fitted` and `residuals` need
+one segment and otherwise raise an error pointing to the frames or
+`segment()`. `total_ultimate` and `total_reserve` sum over segments.
+
+| | Python | R |
+|---|---|---|
+| Per-origin table | `fit.to_frame()` | `as.data.frame(fit)` |
+| Per-segment totals | `fit.totals_frame()` | `totals_frame(fit)` |
+| Development factors | `fit.development_frame()` | `development_frame(fit)` |
+| One segment | `fit.segment(lob="Auto")` | `segment(fit, lob = "Auto")` |
+| Keys, segment labels | `fit.keys`, `fit.index` | `fit@keys`, `fit@index` |
+
+Differences by idiom: R's per-origin vectors are named by origin, or by
+`"segment / origin"` with several segments; R turns NaN into `NA` in the
+frames; the frames' `origin` is the period label in both. With keys, the
+bootstrap's `reserves` has the key dimensions even for one segment (a
+keyless triangle keeps the single `origin` dimension).
 
 Development factors (`Development`) follow Mack's weighted regression, as
 R ChainLadder and chainladder-python do:

@@ -195,6 +195,43 @@ R uses base generics (`subset()`, `aggregate()` with `keep`, as for a
 `predictive_distribution`) so it does not mask dplyr's `filter()`,
 `select()` or `group_by()`.
 
+Methods fit every segment at once, each on its own, and give long
+results with the key columns by name: one row per segment and origin,
+per segment (totals), or per segment and age (development factors). The
+bootstrap gives one joint `PredictiveDistribution` with the keys and
+`origin` as dimensions, so aggregating over origins keeps the dependence
+between segments:
+
+```rust
+let fits = Mack::default().fit_segments(&tri, "paid")?;
+let by_origin = fits.to_long();          // keys, origin, latest, ..., standard_error
+let totals = fits.totals();              // one row per segment
+let factors = fits.development_table();  // keys, age, ldf, cdf, sigma, std_err
+let auto_ca = fits.segment(&[("lob", "Auto"), ("state", "CA")])?;
+let boot = OdpBootstrap::default().fit_segments(&tri, "paid")?;
+let by_lob = boot.reserves.aggregate(&["lob"])?;
+```
+
+```python
+fit = Mack().fit(tri, "paid")      # any number of segments
+fit.to_frame(); fit.totals_frame(); fit.development_frame()
+fit.segment(lob="Auto", state="CA").ldf
+OdpBootstrap(seed=1).fit(tri, "paid").reserves.aggregate(["lob"])
+```
+
+```r
+fit <- mack(tri, "paid")
+as.data.frame(fit); totals_frame(fit); development_frame(fit)
+segment(fit, lob = "Auto", state = "CA")@ldf
+aggregate(odp_bootstrap(tri, "paid", seed = 1)@reserves, keep = "lob")
+```
+
+Per-origin fields (`reserve`, `standard_error`, ...) follow the rows of
+the long table, so a single-segment fit reads as before. Per-age fields
+(`ldf`, `cdf`, `sigma`, `std_err`), Mack's total standard errors and the
+bootstrap's `scale`, `fitted` and `residuals` need one segment; with
+several they raise an error that points to the frames or `segment()`.
+
 Every Chain Ladder and Mack value is checked against R `ChainLadder` and
 chainladder-python on RAA, GenIns and ABC in `validation/`; the ODP
 bootstrap is checked against R `BootChainLadder`.

@@ -892,19 +892,45 @@ impl Triangle {
         if self.shape[0] != 1 {
             return Err(Error::MultipleSegments(self.shape[0]));
         }
+        Ok(self.segments(column)?.pop().expect("one index position"))
+    }
+
+    /// The cells of `column` in every index position, in index order, as
+    /// cumulative values. Each segment is trimmed to the origins and ages
+    /// it observes (from its first to its last), so a line that starts
+    /// later or has fewer ages than the triangle fits on its own range.
+    pub(crate) fn segments(&self, column: &str) -> Result<Vec<Segment>> {
         let c = self.column_position(column)?;
         let cum = self.to_cumulative();
-        let [_, _, no, nd] = self.shape;
-        let cells = (0..no)
-            .flat_map(|o| (0..nd).map(move |d| (o, d)))
-            .map(|(o, d)| cum.get(0, c, o, d))
-            .collect();
-        Ok(Segment {
-            cells,
-            n_origins: no,
-            n_dev: nd,
-            origins: self.origins(),
-        })
+        let [ni, _, no, nd] = self.shape;
+        let origins = self.origins();
+        (0..ni)
+            .map(|i| {
+                let seen = |o: usize, d: usize| cum.get(i, c, o, d).is_some();
+                let rows: Vec<usize> = (0..no).filter(|&o| (0..nd).any(|d| seen(o, d))).collect();
+                let cols: Vec<usize> = (0..nd).filter(|&d| (0..no).any(|o| seen(o, d))).collect();
+                let (Some(&o0), Some(&o1), Some(&d0), Some(&d1)) =
+                    (rows.first(), rows.last(), cols.first(), cols.last())
+                else {
+                    return Err(Error::EmptyOrigin(format!(
+                        "every origin of {} in {}",
+                        column, self.index[i]
+                    )));
+                };
+                Ok(Segment {
+                    cells: (o0..=o1)
+                        .flat_map(|o| (d0..=d1).map(move |d| (o, d)))
+                        .map(|(o, d)| cum.get(i, c, o, d))
+                        .collect(),
+                    n_origins: o1 - o0 + 1,
+                    n_dev: d1 - d0 + 1,
+                    origins: origins[o0..=o1].to_vec(),
+                    ages: self.development[d0..=d1].to_vec(),
+                    origin_offset: o0,
+                    dev_offset: d0,
+                })
+            })
+            .collect()
     }
 }
 
@@ -977,6 +1003,12 @@ pub(crate) struct Segment {
     pub(crate) n_origins: usize,
     pub(crate) n_dev: usize,
     pub(crate) origins: Vec<Period>,
+    /// Ages of the segment's development positions.
+    pub(crate) ages: Vec<Lag>,
+    /// Triangle origin position of the segment's first origin.
+    pub(crate) origin_offset: usize,
+    /// Triangle development position of the segment's first age.
+    pub(crate) dev_offset: usize,
 }
 
 impl Segment {

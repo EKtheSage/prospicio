@@ -399,13 +399,13 @@ class ChainLadder:
         """
     def fit(self, /, triangle: Triangle, column: str) -> ChainLadderFit:
         """
-        Fits one measure column of a single-segment triangle.
+        Fits one measure column in every segment of a triangle, each on its
+        own.
         
         Parameters
         ----------
         triangle : Triangle
-            Cumulative or incremental, with one segment: ``select`` or
-            ``group_by`` first.
+            Cumulative or incremental, with any number of segments.
         column : str
         
         Returns
@@ -415,8 +415,8 @@ class ChainLadder:
         Raises
         ------
         ValueError
-            If the triangle has several segments, the column is unknown, a
-            factor cannot be estimated or the tail is not positive.
+            If the column is unknown, a factor cannot be estimated or the tail
+            is not positive; with keys, the message names the segment.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -432,8 +432,29 @@ class ChainLadder:
 @final
 class ChainLadderFit:
     """
-    A fitted chain-ladder projection. Per-origin lists follow ``origins``;
-    per-age lists follow ``development``.
+    A fitted chain-ladder projection of every segment of a triangle column.
+    
+    Per-origin lists (``origins``, ``latest``, ``ultimate``, ``reserve``)
+    run over the origins of each segment in turn, like the rows of
+    ``to_frame()``, so a single-segment fit has one value per origin.
+    Per-age lists (``ldf``, ``cdf``, ``sigma``, ``std_err``) need a
+    single-segment fit; for several segments use ``development_frame()`` or
+    ``segment(...)``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ChainLadder, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021] * 2,
+    ...     [12, 24, 12] * 2,
+    ...     {"paid": [100.0, 150.0, 200.0, 10.0, 20.0, 30.0]},
+    ...     keys={"lob": ["Auto"] * 3 + ["Home"] * 3},
+    ... )
+    >>> fit = ChainLadder().fit(tri, "paid")
+    >>> fit.index, fit.reserve
+    (['Auto', 'Home'], [0.0, 100.0, 0.0, 30.0])
+    >>> fit.segment(lob="Home").ldf
+    [2.0]
     """
     def __repr__(self, /) -> str: ...
     @property
@@ -445,6 +466,27 @@ class ChainLadderFit:
     def development(self, /) -> list[int]:
         """
         Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        One row per segment and age: the key columns, ``development``,
+        ``ldf`` (to the next age), ``cdf`` (to ultimate, with the tail),
+        ``sigma`` and ``std_err``; the oldest age has ``nan`` for ``ldf``,
+        ``sigma`` and ``std_err``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
         """
     @property
     def latest(self, /) -> list[float]:
@@ -459,12 +501,28 @@ class ChainLadderFit:
     @property
     def origins(self, /) -> list[str]:
         """
-        Origin periods, oldest first.
+        Origin period of each per-origin value.
         """
     @property
     def reserve(self, /) -> list[float]:
         """
         Reserve (ultimate minus latest) per origin.
+        """
+    def segment(self, /, **keys) -> ChainLadderFit:
+        """
+        The fit of one segment, chosen by key values (compared as ``str()``
+        of each value). Keys not named may take any value, so a fit with one
+        segment needs none.
+        
+        Returns
+        -------
+        ChainLadderFit
+        
+        Raises
+        ------
+        ValueError
+            If a key or value is unknown, or the choice matches several
+            segments.
         """
     @property
     def sigma(self, /) -> list[float]:
@@ -482,15 +540,33 @@ class ChainLadderFit:
         """
         Tail factor.
         """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``ultimate`` and ``reserve``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
     @property
     def total_reserve(self, /) -> float:
         """
-        Total reserve across origins.
+        Total reserve across segments and origins.
         """
     @property
     def total_ultimate(self, /) -> float:
         """
-        Total ultimate across origins.
+        Total ultimate across segments and origins.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns and the segment's total
+        ``latest``, ``ultimate`` and ``reserve``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
         """
     @property
     def ultimate(self, /) -> list[float]:
@@ -3410,7 +3486,8 @@ class Mack:
         """
     def fit(self, /, triangle: Triangle, column: str) -> MackFit:
         """
-        Fits one measure column of a single-segment triangle.
+        Fits one measure column in every segment of a triangle, each on its
+        own.
         
         Parameters
         ----------
@@ -3437,9 +3514,14 @@ class Mack:
 @final
 class MackFit:
     """
-    A fitted Mack model: the chain-ladder fields, plus standard errors of
-    each origin's reserve and of the total. Per-origin lists follow
-    ``origins``.
+    A fitted Mack model of every segment: the chain-ladder fields, plus
+    standard errors of each origin's reserve and of each segment's total.
+    
+    Per-origin lists run over the origins of each segment in turn, like the
+    rows of ``to_frame()``. Per-age lists and the totals' standard errors
+    need a single-segment fit; for several segments use
+    ``development_frame()``, ``totals_frame()`` or ``segment(...)``.
+    ``total_ultimate`` and ``total_reserve`` sum over every segment.
     """
     def __repr__(self, /) -> str: ...
     @property
@@ -3457,6 +3539,25 @@ class MackFit:
         """
         Development ages in months.
         """
+    def development_frame(self, /) -> Any:
+        """
+        One row per segment and age, as ``ChainLadderFit.development_frame``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
     @property
     def latest(self, /) -> list[float]:
         """
@@ -3470,7 +3571,7 @@ class MackFit:
     @property
     def origins(self, /) -> list[str]:
         """
-        Origin periods, oldest first.
+        Origin period of each per-origin value.
         """
     @property
     def parameter_risk(self, /) -> list[float]:
@@ -3487,6 +3588,15 @@ class MackFit:
         """
         Reserve per origin.
         """
+    def segment(self, /, **keys) -> MackFit:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``.
+        
+        Returns
+        -------
+        MackFit
+        """
     @property
     def sigma(self, /) -> list[float]:
         """
@@ -3501,6 +3611,16 @@ class MackFit:
     def std_err(self, /) -> list[float]:
         """
         Standard error of each factor.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``ultimate``, ``reserve``, ``process_risk``,
+        ``parameter_risk`` and ``standard_error``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
         """
     @property
     def total_cv(self, /) -> float:
@@ -3521,7 +3641,7 @@ class MackFit:
     @property
     def total_reserve(self, /) -> float:
         """
-        Total reserve across origins.
+        Total reserve across segments and origins.
         """
     @property
     def total_standard_error(self, /) -> float:
@@ -3531,7 +3651,18 @@ class MackFit:
     @property
     def total_ultimate(self, /) -> float:
         """
-        Total ultimate across origins.
+        Total ultimate across segments and origins.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the segment's total
+        ``latest``, ``ultimate`` and ``reserve``, and the ``process_risk``,
+        ``parameter_risk`` and ``standard_error`` of its total reserve.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
         """
     @property
     def ultimate(self, /) -> list[float]:
@@ -3854,7 +3985,8 @@ class OdpBootstrap:
     residuals of the volume-weighted chain ladder are resampled into pseudo
     triangles, each is re-projected, and process error is added to every
     future incremental value. Simulation ``i`` uses random stream ``i`` of
-    ``seed``, so results do not depend on the number of threads.
+    ``seed`` for every segment in turn, so results do not depend on the
+    number of threads.
     
     Parameters
     ----------
@@ -3893,14 +4025,15 @@ class OdpBootstrap:
     def __repr__(self, /) -> str: ...
     def fit(self, /, triangle: Triangle, column: str) -> OdpBootstrapFit:
         """
-        Bootstraps one measure column of a single-segment cumulative
-        triangle. Every origin must be observed from the first age up to its
-        latest.
+        Bootstraps one measure column in every segment of a cumulative
+        triangle, each with its own residuals and scale, into one joint
+        distribution of the reserves. Every origin must be observed from the
+        first age up to its latest.
         
         Parameters
         ----------
         triangle : Triangle
-            Cumulative, with one segment: ``select`` or ``group_by`` first.
+            Cumulative, with any number of segments.
         column : str
         
         Returns
@@ -3911,7 +4044,7 @@ class OdpBootstrap:
         ------
         ValueError
             As ``ChainLadder.fit``, and if an origin has a gap before its
-            latest age or the triangle has too few observed cells for the
+            latest age or a segment has too few observed cells for the
             degrees of freedom to be positive.
         """
     @property
@@ -3933,7 +4066,15 @@ class OdpBootstrap:
 @final
 class OdpBootstrapFit:
     """
-    A fitted ODP bootstrap. ``fitted`` and ``residuals`` are nested lists
+    A fitted ODP bootstrap of every segment.
+    
+    ``reserves`` is one joint distribution with the triangle's keys and
+    ``"origin"`` as dimensions, so ``reserves.aggregate(["lob"])`` keeps the
+    dependence between segments. Per-origin lists run over the origins of
+    each segment in turn, like the rows of ``to_frame()`` and the
+    components of ``reserves``. ``fitted``, ``residuals`` and ``scale``
+    need a single-segment fit; for several segments use ``segment(...)`` or
+    ``totals_frame()``. ``fitted`` and ``residuals`` are nested lists
     indexed ``[origin][development]``, like one segment of
     ``Triangle.values``, with ``nan`` where the triangle is not observed.
     """
@@ -3949,24 +4090,43 @@ class OdpBootstrapFit:
         """
         Development ages in months.
         """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladders' development factors, one row per segment and
+        age, as ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
     @property
     def fitted(self, /) -> list[list[float]]:
         """
         Fitted incremental values, ``[origin][development]``.
         """
     @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
     def origins(self, /) -> list[str]:
         """
-        Origin periods, oldest first.
+        Origin period of each per-origin value and reserve component.
         """
     @property
     def reserves(self, /) -> PredictiveDistribution:
         """
         Joint distribution of the reserve (the sum of future incremental
-        values) by origin: dimension ``"origin"``, one component per origin
-        period, one row per simulation. Its ``mean`` and ``quantile`` describe
-        the total reserve. Columns of ``draw_matrix()`` follow ``origins``
-        (``marginal`` does not match origin labels yet).
+        values) by segment and origin: the triangle's keys and ``"origin"``
+        are its dimensions, one component per segment and origin, one row
+        per simulation. Its ``mean`` and ``quantile`` describe the total
+        reserve. Columns of ``draw_matrix()`` follow ``origins``.
         """
     @property
     def residuals(self, /) -> list[list[float]]:
@@ -3980,6 +4140,36 @@ class OdpBootstrapFit:
         """
         The scale parameter ``phi``: the sum of squared unadjusted residuals
         over the degrees of freedom ``n - p``.
+        """
+    def segment(self, /, **keys) -> OdpBootstrapFit:
+        """
+        The bootstrap of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint reserves
+        (same dimensions).
+        
+        Returns
+        -------
+        OdpBootstrapFit
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``, the
+        chain ladder's ``latest``, ``ultimate`` and ``reserve``, and the
+        ``mean`` and ``std_dev`` of the bootstrapped reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the chain ladder's totals, the
+        ``scale``, and the ``mean`` and ``std_dev`` of the segment's
+        bootstrapped total reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
         """
 
 @final

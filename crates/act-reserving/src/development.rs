@@ -91,7 +91,7 @@ impl Development {
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<DevelopmentFit> {
         let segment = triangle.segment(column)?;
         let mut fit = self.fit_segment(&segment)?;
-        fit.development = triangle.development().to_vec();
+        fit.development = segment.ages.clone();
         Ok(fit)
     }
 

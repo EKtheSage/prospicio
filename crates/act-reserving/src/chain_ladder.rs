@@ -2,8 +2,9 @@
 
 use crate::development::{Development, DevelopmentFit, cumulative_factors};
 use crate::error::{Error, Result};
+use crate::segments::{SegmentFits, fit_each};
 use crate::triangle::{Segment, Triangle};
-use act_core::Period;
+use act_core::{Lag, Period};
 
 /// Chain-ladder method: project each origin's latest value to ultimate with
 /// the estimated age-to-age factors and a tail factor.
@@ -67,16 +68,25 @@ impl ChainLadder {
     /// Fits `column` of a single-segment triangle.
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<ChainLadderFit> {
         let segment = triangle.segment(column)?;
-        let mut fit = self.fit_segment(&segment)?;
-        fit.development.development = triangle.development().to_vec();
-        Ok(fit)
+        self.fit_segment(&segment, &segment.ages)
     }
 
-    pub(crate) fn fit_segment(&self, segment: &Segment) -> Result<ChainLadderFit> {
+    /// Fits `column` in every segment of `triangle`, each on its own; see
+    /// [`SegmentFits`] for the long tables. A failure names its segment.
+    pub fn fit_segments(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+    ) -> Result<SegmentFits<ChainLadderFit>> {
+        fit_each(triangle, column, |s| self.fit_segment(s, &s.ages))
+    }
+
+    pub(crate) fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<ChainLadderFit> {
         if !self.tail.is_finite() || self.tail <= 0.0 {
             return Err(Error::InvalidTail(self.tail));
         }
-        let development = self.development.fit_segment(segment)?;
+        let mut development = self.development.fit_segment(segment)?;
+        development.development = ages.to_vec();
         let cdf = cumulative_factors(&development.ldf, self.tail);
         let (latest_position, latest): (Vec<usize>, Vec<f64>) = (0..segment.n_origins)
             .map(|o| segment.latest(o))

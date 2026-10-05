@@ -15,11 +15,14 @@
 //! (`PredictiveDistribution::simulate`), so results do not depend on the
 //! number of threads.
 
-use act_core::StreamRng;
-use act_prob::{Distribution, Gamma, InputHasher, PredictiveDistribution, Provenance};
+use act_core::{Lag, StreamRng};
+use act_prob::{
+    Distribution, Gamma, InputHasher, KeyValue, PredictiveDistribution, Provenance, Sampled,
+};
 
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::error::{Error, Result};
+use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::triangle::{Segment, Triangle};
 
 /// Process error added to each simulated future incremental value.
@@ -97,6 +100,161 @@ pub struct OdpBootstrapFit {
     pub reserves: PredictiveDistribution,
 }
 
+/// What the bootstrap estimates in one segment before simulating: the
+/// fields of [`OdpBootstrapFit`] but the reserves.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OdpBootstrapSegment {
+    /// The volume-weighted chain ladder of the segment.
+    pub chain_ladder: ChainLadderFit,
+    /// Fitted incremental values, row-major over origin × development.
+    pub fitted: Vec<f64>,
+    /// Adjusted Pearson residuals, laid out like `fitted`.
+    pub residuals: Vec<f64>,
+    /// The segment's scale parameter `phi`.
+    pub scale: f64,
+}
+
+impl ReserveFit for OdpBootstrapSegment {
+    fn chain_ladder(&self) -> &ChainLadderFit {
+        &self.chain_ladder
+    }
+
+    fn total_columns(&self) -> Vec<(&'static str, f64)> {
+        vec![("scale", self.scale)]
+    }
+}
+
+/// An ODP bootstrap of every segment of a triangle column.
+///
+/// Segments are bootstrapped independently, each with its own residuals
+/// and scale. Simulation `i` uses stream `i` for every segment, in index
+/// order, so the result is reproducible and does not depend on the number
+/// of threads; a segment's draws differ from bootstrapping it alone.
+///
+/// ```
+/// use act_reserving::{DevelopmentColumn, Grain, Long, Month, OdpBootstrap, Triangle};
+/// use act_prob::Distribution;
+///
+/// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+/// let ages = [12, 24, 36, 12, 24, 12];
+/// let paid = [100.0, 150.0, 165.0, 110.0, 170.0, 120.0];
+/// let tri = Triangle::from_long(&Long {
+///     keys: &[("lob", &[["Auto"; 6], ["Home"; 6]].concat())],
+///     origin: &[origin, origin].concat(),
+///     development: DevelopmentColumn::Age(&[ages, ages].concat()),
+///     values: &[("paid", &[paid, paid.map(|v| v * 2.0)].concat())],
+///     origin_grain: Grain::Year,
+///     development_grain: Grain::Year,
+///     cumulative: true,
+/// })?;
+/// let boot = OdpBootstrap { n_sims: 1_000, seed: 1, ..Default::default() }
+///     .fit_segments(&tri, "paid")?;
+/// assert_eq!(boot.reserves.dims(), ["lob", "origin"]);
+/// assert_eq!(boot.reserves.n_components(), 6);
+/// let by_lob = boot.reserves.aggregate(&["lob"])?;
+/// assert_eq!(by_lob.n_components(), 2);
+/// assert_eq!(boot.totals().column("scale").unwrap().len(), 2);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone)]
+pub struct OdpBootstrapFits {
+    /// Each segment's chain ladder, fitted values, residuals and scale.
+    pub segments: SegmentFits<OdpBootstrapSegment>,
+    /// Joint distribution of the reserve by segment and origin: the key
+    /// names and `origin` are its dimensions, and its components run over
+    /// the origins of each segment in turn, like the rows of
+    /// [`to_long`](Self::to_long).
+    pub reserves: PredictiveDistribution,
+}
+
+impl OdpBootstrapFits {
+    /// One row per segment × origin: the chain ladder's `latest`,
+    /// `ultimate` and `reserve`, and the `mean` and `std_dev` of the
+    /// bootstrapped reserve.
+    pub fn to_long(&self) -> FitTable {
+        let mut table = self.segments.to_long();
+        let marginals: Vec<Sampled> = (0..self.reserves.n_components())
+            .map(|j| self.sums(j..j + 1))
+            .collect();
+        push_moments(&mut table, &marginals);
+        table
+    }
+
+    /// One row per segment: the chain ladder's totals, the `scale`, and the
+    /// `mean` and `std_dev` of the segment's bootstrapped total reserve.
+    pub fn totals(&self) -> FitTable {
+        let mut table = self.segments.totals();
+        let totals: Vec<Sampled> = (0..self.segments.len())
+            .map(|s| self.sums(self.components_of(s)))
+            .collect();
+        push_moments(&mut table, &totals);
+        table
+    }
+
+    /// The chain ladders' development factors, one row per segment × age.
+    pub fn development_table(&self) -> FitTable {
+        self.segments.development_table()
+    }
+
+    /// The one segment chosen as in [`SegmentFits::position`], with its
+    /// part of the joint reserves (same dimensions).
+    pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
+        let s = self.segments.position(keys)?;
+        let range = self.components_of(s);
+        let n = self.reserves.n_components();
+        let draws = self
+            .reserves
+            .draw_matrix()
+            .chunks_exact(n)
+            .flat_map(|row| row[range.clone()].iter().copied())
+            .collect();
+        let reserves = PredictiveDistribution::from_draws(
+            self.reserves.dims().to_vec(),
+            self.reserves.components()[range].to_vec(),
+            draws,
+            self.reserves.provenance().clone(),
+        )?;
+        Ok(Self {
+            segments: SegmentFits {
+                key_names: self.segments.key_names.clone(),
+                labels: vec![self.segments.labels[s].clone()],
+                fits: vec![self.segments.fits[s].clone()],
+            },
+            reserves,
+        })
+    }
+
+    /// Positions of segment `s`'s components in `reserves`.
+    fn components_of(&self, s: usize) -> std::ops::Range<usize> {
+        let n_origins = |f: &OdpBootstrapSegment| f.chain_ladder.origins.len();
+        let start: usize = self.segments.fits[..s].iter().map(n_origins).sum();
+        start..start + n_origins(&self.segments.fits[s])
+    }
+
+    /// Per simulation, the sum of the components in `range`.
+    fn sums(&self, range: std::ops::Range<usize>) -> Sampled {
+        let n = self.reserves.n_components();
+        let sums = self
+            .reserves
+            .draw_matrix()
+            .chunks_exact(n)
+            .map(|row| row[range.clone()].iter().sum())
+            .collect();
+        Sampled::new(sums).expect("draws are finite and non-empty")
+    }
+}
+
+/// Appends the `mean` and `std_dev` of each row's draws to `table`.
+fn push_moments(table: &mut FitTable, draws: &[Sampled]) {
+    table
+        .values
+        .push(("mean".into(), draws.iter().map(|d| d.mean()).collect()));
+    table.values.push((
+        "std_dev".into(),
+        draws.iter().map(|d| d.std_dev()).collect(),
+    ));
+}
+
 impl OdpBootstrap {
     /// Bootstraps `column` of a single-segment cumulative triangle. Every
     /// origin must be observed at every age from the first up to its latest.
@@ -105,93 +263,18 @@ impl OdpBootstrap {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
         let segment = triangle.segment(column)?;
-        let (no, nd) = (segment.n_origins, segment.n_dev);
-        let chain_ladder = ChainLadder::default().fit(triangle, column)?;
-        let ldf = &chain_ladder.development.ldf;
-        let latest = &chain_ladder.latest_position;
-        for (o, &last) in latest.iter().enumerate() {
-            if (0..=last).any(|d| segment.get(o, d).is_none()) {
-                return Err(Error::Bootstrap(
-                    "every origin must be observed from the first age to its latest",
-                ));
-            }
-        }
-
-        // Fitted cumulative values back from the latest diagonal, then
-        // incrementals.
-        let mut fitted = vec![f64::NAN; no * nd];
-        let mut observed = vec![f64::NAN; no * nd];
-        for o in 0..no {
-            let mut cum = vec![0.0; latest[o] + 1];
-            cum[latest[o]] = chain_ladder.latest[o];
-            for d in (0..latest[o]).rev() {
-                cum[d] = cum[d + 1] / ldf[d];
-            }
-            let mut previous_fit = 0.0;
-            let mut previous_obs = 0.0;
-            for d in 0..=latest[o] {
-                let obs = segment.get(o, d).expect("checked above");
-                fitted[o * nd + d] = cum[d] - previous_fit;
-                observed[o * nd + d] = obs - previous_obs;
-                previous_fit = cum[d];
-                previous_obs = obs;
-            }
-        }
-
-        let n_obs = fitted.iter().filter(|m| !m.is_nan()).count();
-        let n_params = no + nd - 1;
-        if n_obs <= n_params {
-            return Err(Error::Bootstrap(
-                "too few observed cells: degrees of freedom must be positive",
-            ));
-        }
-        let unscaled: Vec<f64> = fitted
-            .iter()
-            .zip(&observed)
-            .map(|(&m, &x)| {
-                if m.is_nan() || m == 0.0 {
-                    f64::NAN
-                } else {
-                    (x - m) / m.abs().sqrt()
-                }
-            })
-            .collect();
-        let dof = (n_obs - n_params) as f64;
-        let scale = unscaled
-            .iter()
-            .filter(|r| !r.is_nan())
-            .map(|r| r * r)
-            .sum::<f64>()
-            / dof;
-        let adjust = (n_obs as f64 / dof).sqrt();
-        let residuals: Vec<f64> = unscaled.iter().map(|r| r * adjust).collect();
-        let pool: Vec<f64> = residuals.iter().copied().filter(|r| !r.is_nan()).collect();
-        if pool.is_empty() {
-            return Err(Error::Bootstrap("no residuals to resample"));
-        }
+        let ages = &segment.ages;
+        let (fit, pool) = prepare(&segment, ages)?;
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
-        for (o, &last) in latest.iter().enumerate() {
-            hasher.str(&segment.origins[o].to_string());
-            for d in 0..=last {
-                hasher.i64(triangle.development()[d] as i64);
-                hasher.f64s(&[segment.get(o, d).expect("checked above")]);
-            }
-        }
-        let provenance = Provenance::new("odp_bootstrap")
-            .param("n_sims", self.n_sims)
-            .param("process", format!("{:?}", self.process))
-            .param("column", column)
-            .version("act-reserving", env!("CARGO_PKG_VERSION"))
-            .input_hash(hasher.finish());
-
+        hash_segment(&mut hasher, &segment, &fit.chain_ladder, ages);
         let sim = Simulation {
             segment: &segment,
-            latest,
-            fitted: &fitted,
+            latest: &fit.chain_ladder.latest_position,
+            fitted: &fit.fitted,
             pool: &pool,
-            scale,
+            scale: fit.scale,
             process: self.process,
         };
         let reserves = PredictiveDistribution::simulate(
@@ -199,10 +282,15 @@ impl OdpBootstrap {
             segment.origins.iter().map(|&p| vec![p.into()]).collect(),
             self.n_sims,
             self.seed,
-            provenance,
+            self.provenance(column, hasher),
             |rng, row| sim.run(rng, row),
         )?;
-
+        let OdpBootstrapSegment {
+            chain_ladder,
+            fitted,
+            residuals,
+            scale,
+        } = fit;
         Ok(OdpBootstrapFit {
             chain_ladder,
             fitted,
@@ -211,6 +299,162 @@ impl OdpBootstrap {
             reserves,
         })
     }
+
+    /// Bootstraps `column` in every segment of a cumulative triangle, each
+    /// with its own residuals and scale, into one joint distribution of the
+    /// reserves; see [`OdpBootstrapFits`]. A failure names its segment.
+    pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<OdpBootstrapFits> {
+        if self.n_sims == 0 {
+            return Err(Error::Bootstrap("n_sims must be positive"));
+        }
+        let prepared = fit_each(triangle, column, |s| {
+            let (fit, pool) = prepare(s, &s.ages)?;
+            Ok((fit, pool, s.clone()))
+        })?;
+
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        let mut dims = prepared.key_names.clone();
+        dims.push("origin".into());
+        let mut components = Vec::new();
+        let mut sims = Vec::with_capacity(prepared.len());
+        for (label, (fit, pool, segment)) in prepared.iter() {
+            hasher.str(&label.to_string());
+            hash_segment(&mut hasher, segment, &fit.chain_ladder, &segment.ages);
+            for &origin in &segment.origins {
+                let mut key: Vec<KeyValue> =
+                    label.parts().iter().map(|p| p.as_str().into()).collect();
+                key.push(origin.into());
+                components.push(key);
+            }
+            sims.push(Simulation {
+                segment,
+                latest: &fit.chain_ladder.latest_position,
+                fitted: &fit.fitted,
+                pool,
+                scale: fit.scale,
+                process: self.process,
+            });
+        }
+        let reserves = PredictiveDistribution::simulate(
+            dims,
+            components,
+            self.n_sims,
+            self.seed,
+            self.provenance(column, hasher)
+                .param("segments", prepared.len()),
+            |rng, row| {
+                let mut start = 0;
+                for sim in &sims {
+                    let end = start + sim.segment.n_origins;
+                    sim.run(rng, &mut row[start..end]);
+                    start = end;
+                }
+            },
+        )?;
+        Ok(OdpBootstrapFits {
+            segments: prepared.map(|(fit, _, _)| fit.clone()),
+            reserves,
+        })
+    }
+
+    fn provenance(&self, column: &str, hasher: InputHasher) -> Provenance {
+        Provenance::new("odp_bootstrap")
+            .param("n_sims", self.n_sims)
+            .param("process", format!("{:?}", self.process))
+            .param("column", column)
+            .version("act-reserving", env!("CARGO_PKG_VERSION"))
+            .input_hash(hasher.finish())
+    }
+}
+
+/// Hashes the observed cells of `segment` that the bootstrap uses.
+fn hash_segment(hasher: &mut InputHasher, segment: &Segment, cl: &ChainLadderFit, ages: &[Lag]) {
+    for (o, &last) in cl.latest_position.iter().enumerate() {
+        hasher.str(&segment.origins[o].to_string());
+        for (d, &age) in ages[..=last].iter().enumerate() {
+            hasher.i64(age as i64);
+            hasher.f64s(&[segment.get(o, d).expect("checked when prepared")]);
+        }
+    }
+}
+
+/// The chain ladder, fitted values, residuals and scale of one segment,
+/// and the pool of residuals to resample.
+fn prepare(segment: &Segment, ages: &[Lag]) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
+    let (no, nd) = (segment.n_origins, segment.n_dev);
+    let chain_ladder = ChainLadder::default().fit_segment(segment, ages)?;
+    let ldf = &chain_ladder.development.ldf;
+    let latest = &chain_ladder.latest_position;
+    for (o, &last) in latest.iter().enumerate() {
+        if (0..=last).any(|d| segment.get(o, d).is_none()) {
+            return Err(Error::Bootstrap(
+                "every origin must be observed from the first age to its latest",
+            ));
+        }
+    }
+
+    // Fitted cumulative values back from the latest diagonal, then
+    // incrementals.
+    let mut fitted = vec![f64::NAN; no * nd];
+    let mut observed = vec![f64::NAN; no * nd];
+    for o in 0..no {
+        let mut cum = vec![0.0; latest[o] + 1];
+        cum[latest[o]] = chain_ladder.latest[o];
+        for d in (0..latest[o]).rev() {
+            cum[d] = cum[d + 1] / ldf[d];
+        }
+        let mut previous_fit = 0.0;
+        let mut previous_obs = 0.0;
+        for d in 0..=latest[o] {
+            let obs = segment.get(o, d).expect("checked above");
+            fitted[o * nd + d] = cum[d] - previous_fit;
+            observed[o * nd + d] = obs - previous_obs;
+            previous_fit = cum[d];
+            previous_obs = obs;
+        }
+    }
+
+    let n_obs = fitted.iter().filter(|m| !m.is_nan()).count();
+    let n_params = no + nd - 1;
+    if n_obs <= n_params {
+        return Err(Error::Bootstrap(
+            "too few observed cells: degrees of freedom must be positive",
+        ));
+    }
+    let unscaled: Vec<f64> = fitted
+        .iter()
+        .zip(&observed)
+        .map(|(&m, &x)| {
+            if m.is_nan() || m == 0.0 {
+                f64::NAN
+            } else {
+                (x - m) / m.abs().sqrt()
+            }
+        })
+        .collect();
+    let dof = (n_obs - n_params) as f64;
+    let scale = unscaled
+        .iter()
+        .filter(|r| !r.is_nan())
+        .map(|r| r * r)
+        .sum::<f64>()
+        / dof;
+    let adjust = (n_obs as f64 / dof).sqrt();
+    let residuals: Vec<f64> = unscaled.iter().map(|r| r * adjust).collect();
+    let pool: Vec<f64> = residuals.iter().copied().filter(|r| !r.is_nan()).collect();
+    if pool.is_empty() {
+        return Err(Error::Bootstrap("no residuals to resample"));
+    }
+    Ok((
+        OdpBootstrapSegment {
+            chain_ladder,
+            fitted,
+            residuals,
+            scale,
+        },
+        pool,
+    ))
 }
 
 /// Inputs shared by every simulation.

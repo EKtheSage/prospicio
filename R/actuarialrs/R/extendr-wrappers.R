@@ -992,6 +992,13 @@ Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Tr
 
 ChainLadderFit <- new.env(parent = emptyenv())
 
+ChainLadderFit$n_segments <- function() .Call(wrap__ChainLadderFit__n_segments, self)
+
+ChainLadderFit$keys <- function() .Call(wrap__ChainLadderFit__keys, self)
+
+
+ChainLadderFit$row_segments <- function() .Call(wrap__ChainLadderFit__row_segments, self)
+
 ChainLadderFit$origins <- function() .Call(wrap__ChainLadderFit__origins, self)
 
 ChainLadderFit$development <- function() .Call(wrap__ChainLadderFit__development, self)
@@ -1018,6 +1025,14 @@ ChainLadderFit$total_ultimate <- function() .Call(wrap__ChainLadderFit__total_ul
 
 ChainLadderFit$total_reserve <- function() .Call(wrap__ChainLadderFit__total_reserve, self)
 
+ChainLadderFit$long_table <- function() .Call(wrap__ChainLadderFit__long_table, self)
+
+ChainLadderFit$totals_table <- function() .Call(wrap__ChainLadderFit__totals_table, self)
+
+ChainLadderFit$development_table <- function() .Call(wrap__ChainLadderFit__development_table, self)
+
+ChainLadderFit$segment <- function(keys, values) .Call(wrap__ChainLadderFit__segment, self, keys, values)
+
 #' @export
 `$.ChainLadderFit` <- function (self, name) { func <- ChainLadderFit[[name]]; environment(func) <- environment(); func }
 
@@ -1042,6 +1057,14 @@ MackFit$total_standard_error <- function() .Call(wrap__MackFit__total_standard_e
 
 MackFit$total_cv <- function() .Call(wrap__MackFit__total_cv, self)
 
+MackFit$long_table <- function() .Call(wrap__MackFit__long_table, self)
+
+MackFit$totals_table <- function() .Call(wrap__MackFit__totals_table, self)
+
+MackFit$development_table <- function() .Call(wrap__MackFit__development_table, self)
+
+MackFit$segment <- function(keys, values) .Call(wrap__MackFit__segment, self, keys, values)
+
 #' @export
 `$.MackFit` <- function (self, name) { func <- MackFit[[name]]; environment(func) <- environment(); func }
 
@@ -1059,6 +1082,14 @@ OdpBootstrapFit$residuals <- function() .Call(wrap__OdpBootstrapFit__residuals, 
 OdpBootstrapFit$scale <- function() .Call(wrap__OdpBootstrapFit__scale, self)
 
 OdpBootstrapFit$reserves <- function() .Call(wrap__OdpBootstrapFit__reserves, self)
+
+OdpBootstrapFit$long_table <- function() .Call(wrap__OdpBootstrapFit__long_table, self)
+
+OdpBootstrapFit$totals_table <- function() .Call(wrap__OdpBootstrapFit__totals_table, self)
+
+OdpBootstrapFit$development_table <- function() .Call(wrap__OdpBootstrapFit__development_table, self)
+
+OdpBootstrapFit$segment <- function(keys, values) .Call(wrap__OdpBootstrapFit__segment, self, keys, values)
 
 #' @export
 `$.OdpBootstrapFit` <- function (self, name) { func <- OdpBootstrapFit[[name]]; environment(func) <- environment(); func }

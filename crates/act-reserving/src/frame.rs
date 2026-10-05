@@ -91,12 +91,13 @@ impl TriangleFrame {
                 }));
             }
         }
-        let ages = triangle.development().to_vec();
+        let ages = segment.ages.clone();
+        let (o_off, d_off) = (segment.origin_offset, segment.dev_offset);
         let grain = triangle.development_grain();
         let step = grain.months() as i64;
         let first_valuation = (0..no)
             .flat_map(|o| (0..nd).map(move |d| (o, d)))
-            .map(|(o, d)| triangle.valuation_of(o, d))
+            .map(|(o, d)| triangle.valuation_of(o + o_off, d + d_off))
             .min()
             .expect("a triangle has at least one cell");
 
@@ -110,7 +111,7 @@ impl TriangleFrame {
         for o in 0..no {
             for (d, age) in ages.iter().enumerate() {
                 let row = o * nd + d;
-                let valuation = triangle.valuation_of(o, d);
+                let valuation = triangle.valuation_of(o + o_off, d + d_off);
                 origin.push(o);
                 development.push(d);
                 calendar.push(valuation.months_since(first_valuation).div_euclid(step));
