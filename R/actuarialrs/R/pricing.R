@@ -283,3 +283,78 @@ alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, fre
     as.double(frequency_2), truncation_arg(truncation)
   ))
 }
+
+#' Risk-loaded prices from simulated losses
+#'
+#' `risk_loaded_price()` prices one cover from its loss draws;
+#' `price_portfolio()` prices a portfolio and allocates the price to its
+#' components. The assets backing the loss are the distortion risk measure
+#' `assets` of it. The premium is either the pricing distortion
+#' `distortion` of the loss, or set by a constant cost of capital `r` on
+#' the capital `a - P`, which gives `P = (E[X] + r a) / (1 + r)`.
+#'
+#' In a portfolio, premium and assets are each allocated by co-measure
+#' (the natural allocation of Mildenhall and Major, 2022): component prices
+#' add up to the portfolio's, a component that diversifies the portfolio is
+#' priced below its standalone price, and with a cost of capital every
+#' component earns the rate on its allocated capital.
+#'
+#' @param x A [sampled] or a [predictive_distribution] (its total) for
+#'   `risk_loaded_price()`; a [predictive_distribution] whose components add
+#'   up to the portfolio (segments or covers, not gross, ceded and net side
+#'   by side) for `price_portfolio()`.
+#' @param assets A [distortion] that sets the assets, for example
+#'   `distortion("tvar", 0.99)`.
+#' @param cost_of_capital A positive rate, or `NULL`.
+#' @param distortion A pricing [distortion], or `NULL`; it must load less
+#'   than `assets`. Give exactly one of `cost_of_capital` and `distortion`.
+#' @returns `risk_loaded_price()`: a list with `expected_loss`, `premium`,
+#'   `assets`, `margin` (`P - E[X]`), `capital` (`a - P`), `loss_ratio` and
+#'   `return_on_capital`. `price_portfolio()`: a list with `total` (the
+#'   portfolio's price, as above), `diversification` (the sum of standalone
+#'   premiums less the portfolio premium) and `by_component`, the `keys`
+#'   data frame of `x` with the allocated `expected_loss`, `premium`,
+#'   `assets`, `margin`, `capital` and `return_on_capital`, and
+#'   `standalone_premium`.
+#' @name risk_loaded_price
+#' @examples
+#' risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
+#'                   cost_of_capital = 0.25)$premium
+#' pd <- predictive_distribution(
+#'   matrix(c(0, 1, 4, 8, 2, 1, 0, 0), ncol = 2),
+#'   data.frame(cover = c("a", "b"))
+#' )
+#' p <- price_portfolio(pd, distortion("tvar", 0.5), cost_of_capital = 0.1)
+#' p$by_component
+#' p$diversification
+NULL
+
+#' @rdname risk_loaded_price
+#' @export
+risk_loaded_price <- function(x, assets, cost_of_capital = NULL, distortion = NULL) {
+  rust_result(pricing_price(x@ptr, assets@ptr, rate_arg(cost_of_capital), pricing_arg(distortion)))
+}
+
+#' @rdname risk_loaded_price
+#' @export
+price_portfolio <- function(x, assets, cost_of_capital = NULL, distortion = NULL) {
+  r <- rust_result(pricing_price_portfolio(x@ptr, assets@ptr, rate_arg(cost_of_capital),
+                                           pricing_arg(distortion)))
+  out <- x@keys
+  a <- r$allocated
+  out$expected_loss <- a$expected_loss
+  out$premium <- a$premium
+  out$assets <- a$assets
+  out$margin <- a$premium - a$expected_loss
+  out$capital <- a$assets - a$premium
+  out$return_on_capital <- out$margin / out$capital
+  out$standalone_premium <- r$standalone$premium
+  list(
+    total = r$total,
+    diversification = sum(r$standalone$premium) - r$total$premium,
+    by_component = out
+  )
+}
+
+rate_arg <- function(rate) if (is.null(rate)) NA_real_ else as.double(rate)
+pricing_arg <- function(d) if (is.null(d)) NULL else d@ptr

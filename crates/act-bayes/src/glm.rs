@@ -16,16 +16,15 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use act_core::{Error, Result, StreamRng};
+use act_core::{Error, Result};
 use act_math::special::digamma;
 use act_models::{Design, Family, Fitted, Link, Model};
 use act_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
-use nuts_rs::rand::SeedableRng;
-use nuts_rs::rand::rngs::ChaCha20Rng;
-use nuts_rs::{
-    Chain, CpuLogpFunc, CpuMath, CpuMathError, DiagNutsSettings, HasDims, LogpError, Settings,
-};
+use nuts_rs::{CpuLogpFunc, CpuMathError, HasDims, LogpError};
 use rayon::prelude::*;
+
+pub use crate::nuts::{ParamSummary, Sampler};
+use crate::nuts::{run_chain, summarize};
 
 /// How the dispersion `φ` is set.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,37 +34,6 @@ pub enum DispersionPrior {
     /// Sampled, with a half-normal prior of this scale on `φ`. For the
     /// Gaussian, gamma and inverse Gaussian.
     HalfNormal(f64),
-}
-
-/// NUTS settings.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Sampler {
-    pub chains: usize,
-    /// Warm-up draws per chain (step size and mass matrix adaptation),
-    /// discarded.
-    pub tune: usize,
-    /// Kept draws per chain.
-    pub draws: usize,
-    pub seed: u64,
-    /// Target mean acceptance rate for step-size adaptation.
-    pub target_accept: f64,
-    /// Largest tree depth (at most `2^max_depth` leapfrog steps a draw).
-    pub max_depth: u64,
-}
-
-impl Default for Sampler {
-    /// Four chains of 1000 warm-up and 1000 kept draws, target acceptance
-    /// 0.8, tree depth at most 10, seed 0.
-    fn default() -> Self {
-        Self {
-            chains: 4,
-            tune: 1000,
-            draws: 1000,
-            seed: 0,
-            target_accept: 0.8,
-            max_depth: 10,
-        }
-    }
 }
 
 /// A Bayesian GLM: family, link, priors and sampler.
@@ -167,36 +135,8 @@ impl BayesGlm {
                 }
             }
         }
-        let s = &self.sampler;
-        if s.chains == 0 || s.draws < 2 {
-            return Err(Error::Data(
-                "the sampler needs at least one chain and two draws".into(),
-            ));
-        }
-        if !(s.target_accept > 0.0 && s.target_accept < 1.0) {
-            return Err(Error::InvalidParameter {
-                name: "target_accept",
-                value: s.target_accept,
-                reason: "must be in (0, 1)",
-            });
-        }
-        Ok(())
+        self.sampler.validate()
     }
-}
-
-/// Posterior summary of one parameter.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParamSummary {
-    pub name: String,
-    pub mean: f64,
-    pub sd: f64,
-    /// 5%, 50% and 95% quantiles.
-    pub q05: f64,
-    pub q50: f64,
-    pub q95: f64,
-    pub rhat: f64,
-    pub ess_bulk: f64,
-    pub ess_tail: f64,
 }
 
 /// A sampled Bayesian GLM.
@@ -292,56 +232,6 @@ impl Model for BayesGlm {
             divergences,
         })
     }
-}
-
-/// Runs one chain; returns its kept draws (row-major) and divergences.
-pub(crate) fn run_chain<F>(
-    density: F,
-    start: &[f64],
-    s: Sampler,
-    chain: usize,
-) -> Result<(Vec<f64>, usize)>
-where
-    F: CpuLogpFunc<FlowParameters = (), ExpandedVector = Vec<f64>>,
-{
-    let dim = start.len();
-    // The chain's random numbers: ChaCha20 keyed from stream `chain` of
-    // the seed, so chains are independent and replay exactly.
-    let mut key_stream = StreamRng::new(s.seed, chain as u64);
-    let mut key = [0u8; 32];
-    for chunk in key.chunks_exact_mut(8) {
-        chunk.copy_from_slice(&key_stream.next_u64().to_le_bytes());
-    }
-    let mut rng = ChaCha20Rng::from_seed(key);
-    let mut settings = DiagNutsSettings {
-        num_tune: s.tune as u64,
-        num_draws: s.draws as u64,
-        maxdepth: s.max_depth,
-        ..DiagNutsSettings::default()
-    };
-    settings.adapt_options.step_size_settings.target_accept = s.target_accept;
-    let mut sampler = settings
-        .new_chain(chain as u64, CpuMath::new(density), &mut rng)
-        .map_err(|e| Error::Data(format!("NUTS setup failed: {e}")))?;
-    let init: Vec<f64> = start
-        .iter()
-        .map(|v| v + 0.02 * (key_stream.next_open01() - 0.5))
-        .collect();
-    sampler
-        .set_position(&init)
-        .map_err(|e| Error::Data(format!("NUTS could not start: {e}")))?;
-    let mut draws = Vec::with_capacity(s.draws * dim);
-    let mut divergences = 0;
-    for i in 0..s.tune + s.draws {
-        let (draw, progress) = sampler
-            .draw()
-            .map_err(|e| Error::Data(format!("NUTS failed: {e}")))?;
-        if i >= s.tune {
-            draws.extend_from_slice(&draw);
-            divergences += usize::from(progress.diverging);
-        }
-    }
-    Ok((draws, divergences))
 }
 
 /// The log posterior density on the unconstrained scale: `β`, then
@@ -544,24 +434,7 @@ impl BayesGlmFit {
         let p = self.names.len();
         let mut out = Vec::with_capacity(p + 1);
         let mut one = |name: String, chains: Vec<Vec<f64>>| -> Result<()> {
-            let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
-            let mut all: Vec<f64> = chains.concat();
-            let n = all.len() as f64;
-            let mean = all.iter().sum::<f64>() / n;
-            let sd = (all.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
-            all.sort_by(f64::total_cmp);
-            let q = |prob: f64| quantile_sorted(&all, prob);
-            out.push(ParamSummary {
-                name,
-                mean,
-                sd,
-                q05: q(0.05),
-                q50: q(0.5),
-                q95: q(0.95),
-                rhat: crate::rhat(&refs)?,
-                ess_bulk: crate::ess_bulk(&refs)?,
-                ess_tail: crate::ess_tail(&refs)?,
-            });
+            out.push(summarize(name, &chains)?);
             Ok(())
         };
         for j in 0..p {
@@ -639,14 +512,6 @@ impl BayesGlmFit {
         }
         Ok(())
     }
-}
-
-fn quantile_sorted(sorted: &[f64], prob: f64) -> f64 {
-    // Linear interpolation (R's type 7).
-    let h = (sorted.len() - 1) as f64 * prob;
-    let lo = h.floor() as usize;
-    let hi = (lo + 1).min(sorted.len() - 1);
-    sorted[lo] + (h - lo as f64) * (sorted[hi] - sorted[lo])
 }
 
 impl Fitted for BayesGlmFit {

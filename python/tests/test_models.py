@@ -363,3 +363,23 @@ def test_bayesian_and_hierarchical_stacking():
     pb = PredictiveDistribution(["lob"], [("x",), ("y",)], [[2.0, 2.0]] * 50)
     mix = PredictiveDistribution.blend_by_component([pa, pb], [[1.0, 0.0], [0.0, 1.0]], 3)
     assert all(r == [1.0, 2.0] for r in mix.draw_matrix())
+
+
+def test_hierarchical_stacking_with_partial_pooling():
+    from actuarialrs.models import HierarchicalStacking
+
+    n = 120
+    region = [i % 4 for i in range(n)]
+    dummies = [[float(g == r) for g in region] for r in (1, 2, 3)]
+    x = [((i * 37) % 101) / 100 - 0.5 for i in range(n)]
+    a = [-0.5 if g < 2 else -2.0 for g in region]
+    b = [-2.0 if g < 2 else -0.5 for g in region]
+    spec = HierarchicalStacking(
+        discrete=3, partial_pooling=True, adaptive=4.0, chains=2, tune=300, draws=300, seed=9
+    )
+    fit = spec.fit([a, b], dummies + [x])
+    # Region 0 (no dummy set) and region 3.
+    w = fit.weights([[0.0, 0.0], [0.0, 0.0], [0.0, 1.0], [0.0, 0.0]])
+    assert w[0][0] > 0.7 and w[1][0] < 0.3
+    with pytest.raises(ValueError):
+        HierarchicalStacking(discrete=5).fit([a, b], [x])

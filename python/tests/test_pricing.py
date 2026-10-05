@@ -58,3 +58,25 @@ def test_pml_and_reference_fits():
     assert r.excess_frequency(2500.0) == pytest.approx(0.05, rel=1e-11)
     # The fitted severity is a PiecewisePareto usable anywhere.
     assert isinstance(r.severity, D.PiecewisePareto)
+
+
+def test_risk_loaded_prices():
+    R = ar.risk
+    pd = D.PredictiveDistribution(
+        ["cover"], [("a",), ("b",)], [[0.0, 2.0], [1.0, 1.0], [4.0, 0.0], [8.0, 0.0]]
+    )
+    assets = R.Distortion.tvar(0.5)
+    p = P.price_portfolio(pd, assets, cost_of_capital=0.1)
+    assert p.components() == [("a",), ("b",)]
+    assert sum(c.premium for c in p.allocated) == pytest.approx(p.total.premium)
+    for c in p.allocated:
+        assert c.return_on_capital == pytest.approx(0.1)
+    assert p.diversification() > 0.0
+    total = P.price(pd, assets, cost_of_capital=0.1)
+    assert total.premium == pytest.approx(p.total.premium)
+    wang = P.price(pd, assets, distortion=R.Distortion.wang(0.2))
+    assert wang.expected_loss < wang.premium < wang.assets
+    with pytest.raises(ValueError):
+        P.price(pd, assets)
+    with pytest.raises(ValueError):
+        P.price(pd, assets, distortion=R.Distortion.tvar(0.9))

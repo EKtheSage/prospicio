@@ -2537,16 +2537,36 @@ class HierarchicalStacking:
     Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
     weights that vary with covariates, ``w = softmax(alpha + B x)`` against
     the last model as reference, so a model can be trusted in one part of
-    the portfolio and not another. Normal priors, as BayesBlend's
-    ``HierarchicalBayesStacking`` without partial pooling; sampled by NUTS.
+    the portfolio and not another. The priors are those of BayesBlend's
+    ``HierarchicalBayesStacking``; sampled by NUTS.
     
     Scale continuous covariates (BayesBlend divides by twice the standard
-    deviation) and dummy-code discrete ones before fitting.
+    deviation) and dummy-code discrete ones before fitting, with the
+    dummies first.
+    
+    With ``partial_pooling``, each model's slopes on the discrete
+    covariates, and separately on the continuous ones, are drawn around a
+    model-level mean, itself drawn around a global mean. A scale of 0
+    removes a level: ``tau_mu_global=0`` fixes the global mean at 0,
+    ``tau_mu_*=0`` pools completely and ``tau_sigma_*=0`` sets every slope
+    to its model's mean. BayesBlend warns that pooling needs at least three
+    covariates. ``adaptive`` multiplies the prior scales by ``N**lambda``
+    with ``lambda ~ Exponential(adaptive)``, weakening them as the data
+    grow.
     
     Parameters
     ----------
+    discrete : int, default 0
+        Number of leading covariates that are dummy codes.
     alpha_loc, alpha_scale : float, default 0.0, 1.0
     beta_loc, beta_scale : float, default 0.0, 1.0
+        Slope prior without pooling.
+    partial_pooling : bool, default False
+    tau_mu_global, tau_mu_discrete, tau_mu_continuous : float, default 1.0
+    tau_sigma_discrete, tau_sigma_continuous : float, default 1.0
+        Pooling scales, BayesBlend's defaults.
+    adaptive : float, optional
+        Rate of the exponential prior on ``lambda`` (BayesBlend uses 4).
     chains, tune, draws : int, default 4, 1000, 1000
     seed : int, default 0
     
@@ -2561,7 +2581,7 @@ class HierarchicalStacking:
     >>> w[0][0] > 0.7 and w[1][0] < 0.3
     True
     """
-    def __new__(cls, /, alpha_loc: float = 0.0, alpha_scale: float = 1.0, beta_loc: float = 0.0, beta_scale: float = 1.0, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalStacking: ...
+    def __new__(cls, /, discrete: int = 0, alpha_loc: float = 0.0, alpha_scale: float = 1.0, beta_loc: float = 0.0, beta_scale: float = 1.0, partial_pooling: bool = False, tau_mu_global: float = 1.0, tau_mu_discrete: float = 1.0, tau_mu_continuous: float = 1.0, tau_sigma_discrete: float = 1.0, tau_sigma_continuous: float = 1.0, adaptive: float |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalStacking: ...
     def fit(self, /, lpd: Sequence[Sequence[float]], covariates: Sequence[Sequence[float]]) -> StackingFit:
         """
         Samples the intercepts and slopes.
@@ -3818,6 +3838,142 @@ class NegativeBinomial:
         """
 
 @final
+class OdpBootstrap:
+    """
+    Over-dispersed Poisson bootstrap of the chain ladder (England and
+    Verrall 2002), as R ChainLadder's ``BootChainLadder``: adjusted Pearson
+    residuals of the volume-weighted chain ladder are resampled into pseudo
+    triangles, each is re-projected, and process error is added to every
+    future incremental value. Simulation ``i`` uses random stream ``i`` of
+    ``seed``, so results do not depend on the number of threads.
+    
+    Parameters
+    ----------
+    n_sims : int, default 10000
+        Number of simulations; positive.
+    seed : int, default 0
+        Seed of the simulation streams, from 0 to ``2**64 - 1``. R accepts
+        seeds below ``2**53``; a seed in both ranges gives the same draws.
+    process : {"gamma", "none"}, default "gamma"
+        Process error on each simulated future incremental value: Gamma with
+        the expected value as mean and variance ``scale * |mean|`` (R's
+        ``process.distr = "gamma"``), or none for parameter error only.
+    
+    Raises
+    ------
+    ValueError
+        If ``n_sims`` is zero or ``process`` is unknown.
+    OverflowError
+        If ``n_sims`` or ``seed`` is negative or too large.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import OdpBootstrap, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = OdpBootstrap(n_sims=2000, seed=42).fit(tri, "values")
+    >>> fit.reserves.components()
+    [('2020',), ('2021',), ('2022',), ('2023',)]
+    >>> fit.reserves.mean() > 0
+    True
+    """
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma") -> OdpBootstrap: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle, column: str) -> OdpBootstrapFit:
+        """
+        Bootstraps one measure column of a single-segment cumulative
+        triangle. Every origin must be observed from the first age up to its
+        latest.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative; slice to one segment first.
+        column : str
+        
+        Returns
+        -------
+        OdpBootstrapFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ChainLadder.fit``, and if an origin has a gap before its
+            latest age or the triangle has too few observed cells for the
+            degrees of freedom to be positive.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of simulations.
+        """
+    @property
+    def process(self, /) -> str:
+        """
+        Process error: ``"gamma"`` or ``"none"``.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        Seed of the simulation streams.
+        """
+
+@final
+class OdpBootstrapFit:
+    """
+    A fitted ODP bootstrap. ``fitted`` and ``residuals`` are nested lists
+    indexed ``[origin][development]``, like one segment of
+    ``Triangle.values``, with ``nan`` where the triangle is not observed.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The deterministic volume-weighted chain ladder the bootstrap is
+        centred on.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    @property
+    def fitted(self, /) -> list[list[float]]:
+        """
+        Fitted incremental values, ``[origin][development]``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods, oldest first.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the reserve (the sum of future incremental
+        values) by origin: dimension ``"origin"``, one component per origin
+        period, one row per simulation. Its ``mean`` and ``quantile`` describe
+        the total reserve. Columns of ``draw_matrix()`` follow ``origins``
+        (``marginal`` does not match origin labels yet).
+        """
+    @property
+    def residuals(self, /) -> list[list[float]]:
+        """
+        Adjusted Pearson residuals ``(x - m) / sqrt(|m|) * sqrt(n / (n - p))``,
+        ``[origin][development]``; ``nan`` where not observed or where the
+        fitted value is zero.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The scale parameter ``phi``: the sum of squared unadjusted residuals
+        over the degrees of freedom ``n - p``.
+        """
+
+@final
 class Pareto:
     """
     Single-parameter Pareto: ``P(X > x) = (t / x) ** alpha`` for ``x >= t``,
@@ -4367,6 +4523,48 @@ class Poisson:
         """
 
 @final
+class PortfolioPrice:
+    """
+    Prices of a portfolio's components and of the portfolio as a whole.
+    
+    Returned by ``price_portfolio``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def allocated(self, /) -> list[Price]:
+        """
+        Each component's share of the portfolio price; these add up to
+        ``total``.
+        """
+    def components(self, /) -> list[Any]:
+        """
+        Component keys, one tuple per component.
+        
+        Returns
+        -------
+        list of tuple
+        """
+    def diversification(self, /) -> float:
+        """
+        Premium saved by writing the components together: the sum of the
+        standalone premiums less the portfolio premium.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def standalone(self, /) -> list[Price]:
+        """
+        Each component priced on its own.
+        """
+    @property
+    def total(self, /) -> Price:
+        """
+        The portfolio, priced on the total of its components.
+        """
+
+@final
 class PotTail:
     """
     A peaks-over-threshold tail: draws above a threshold modelled by a
@@ -4722,6 +4920,51 @@ class PredictiveDistribution:
         Returns
         -------
         float
+        """
+
+@final
+class Price:
+    """
+    The risk-loaded price of a cover, or of one component's share of a
+    portfolio: expected loss, premium and the assets backing the loss.
+    
+    Returned by ``price`` and ``price_portfolio``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def assets(self, /) -> float:
+        """
+        Assets ``a`` backing the loss.
+        """
+    @property
+    def capital(self, /) -> float:
+        """
+        Capital ``a - P``: the assets the premium does not fund.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        Expected loss ``E[X]``.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        Loss ratio ``E[X] / P``.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        Margin ``P - E[X]``.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        Premium ``P``.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        Return on capital, margin over capital.
         """
 
 @final
@@ -6880,6 +7123,85 @@ def pit_histogram(pit: Sequence[float], bins: int = 10) -> list[int]:
     Returns
     -------
     list of int
+    """
+
+def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> Price:
+    """
+    Risk-loaded price of a cover from its simulated losses.
+    
+    The assets backing the loss are a distortion risk measure of it. The
+    premium is either a pricing distortion of the loss, or set by a
+    constant cost of capital ``r`` on the capital ``a - P``, which gives
+    ``P = (E[X] + r a) / (1 + r)``.
+    
+    Parameters
+    ----------
+    losses : Sampled or PredictiveDistribution
+        Loss draws; for a ``PredictiveDistribution``, its total.
+    assets : Distortion
+        The measure that sets the assets, for example ``Distortion.tvar(0.99)``.
+    cost_of_capital : float, optional
+        Positive rate. Give this or ``distortion``.
+    distortion : Distortion, optional
+        Pricing distortion; it must load less than ``assets``.
+    
+    Returns
+    -------
+    Price
+    
+    Raises
+    ------
+    ValueError
+        Unless exactly one rule is given, or if the premium exceeds the
+        assets.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Sampled
+    >>> from actuarialrs.pricing import price
+    >>> from actuarialrs.risk import Distortion
+    >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
+    >>> p.premium, p.capital
+    (2.4, 1.6)
+    """
+
+def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PortfolioPrice:
+    """
+    Prices a portfolio and allocates the price to its components.
+    
+    Premium and assets are each allocated by co-measure (the natural
+    allocation): component prices add up to the portfolio's, and a
+    component that diversifies the portfolio is priced below its
+    standalone price. With a cost of capital, every component earns the
+    rate on its allocated capital.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+        Components that add up to the portfolio: segments or covers, not
+        gross, ceded and net side by side.
+    assets : Distortion
+    cost_of_capital : float, optional
+    distortion : Distortion, optional
+        Exactly one of ``cost_of_capital`` and ``distortion``, as in
+        ``price``.
+    
+    Returns
+    -------
+    PortfolioPrice
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import PredictiveDistribution
+    >>> from actuarialrs.pricing import price_portfolio
+    >>> from actuarialrs.risk import Distortion
+    >>> pd = PredictiveDistribution(["cover"], [("a",), ("b",)],
+    ...                             [[0.0, 2.0], [1.0, 1.0], [4.0, 0.0], [8.0, 0.0]])
+    >>> p = price_portfolio(pd, Distortion.tvar(0.5), cost_of_capital=0.1)
+    >>> [round(c.premium, 6) for c in p.allocated]
+    [3.5, 0.681818]
+    >>> p.allocated[1].margin < 0  # the second cover hedges the first
+    True
     """
 
 def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n_draws: int = 1000, seed: int = 0) -> list[float]:
