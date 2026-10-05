@@ -40,7 +40,7 @@ use crate::triangle::Triangle;
 ///
 /// let origin = [2020, 2020, 2021].map(Month::january);
 /// let tri = Triangle::from_long(&Long {
-///     index: None,
+///     keys: &[],
 ///     origin: &origin,
 ///     development: DevelopmentColumn::Age(&[12, 24, 12]),
 ///     values: &[("paid", &[100.0, 150.0, 110.0])],
@@ -351,7 +351,7 @@ mod tests {
     fn cell_after_a_hole_is_neither_observed_nor_future() {
         let origin = [2019, 2019, 2019, 2020, 2020, 2021].map(Month::january);
         let tri = Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&[12, 24, 36, 12, 36, 12]),
             values: &[("paid", &[1.0, 2.0, 3.0, 1.0, 3.0, 1.0])],
@@ -374,7 +374,7 @@ mod tests {
     fn quarterly_calendar_labels() {
         let origin = [2020, 2020, 2020].map(|y| Month::new(y, 1).unwrap());
         let tri = Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&[3, 6, 9]),
             values: &[("paid", &[1.0, 2.0, 3.0])],

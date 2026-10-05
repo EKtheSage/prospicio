@@ -110,7 +110,7 @@ fn reserve_and_tower_feed_capital_end_to_end() {
     let age: Vec<u32> = rows.iter().map(|r| r[1] as u32).collect();
     let value: Vec<f64> = rows.iter().map(|r| r[2]).collect();
     let tri = Triangle::from_long(&Long {
-        index: None,
+        keys: &[],
         origin: &origin,
         development: DevelopmentColumn::Age(&age),
         values: &[("paid", &value)],

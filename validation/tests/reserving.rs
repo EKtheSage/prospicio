@@ -303,7 +303,7 @@ fn backtest_odp_means_match_chain_ladder_on_genins() {
         let ages: Vec<u32> = keep.iter().map(|&i| long.development[i]).collect();
         let values: Vec<f64> = keep.iter().map(|&i| long.values[0].1[i]).collect();
         let before = Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&ages),
             values: &[("values", &values)],

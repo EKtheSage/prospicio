@@ -303,7 +303,7 @@ impl Backtest {
 ///
 /// let origin = [2019, 2019, 2019, 2019, 2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
 /// let tri = Triangle::from_long(&Long {
-///     index: None,
+///     keys: &[],
 ///     origin: &origin,
 ///     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
 ///     values: &[(
@@ -538,7 +538,7 @@ mod tests {
             }
         }
         let tri = Triangle::from_long(&Long {
-            index: None,
+            keys: &[],
             origin: &origin,
             development: DevelopmentColumn::Age(&age),
             values: &[("paid", &value)],
