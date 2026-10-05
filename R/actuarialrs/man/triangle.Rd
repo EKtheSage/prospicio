@@ -13,7 +13,7 @@ triangle(
   origin_grain = "Y",
   development_grain = "Y",
   cumulative = TRUE,
-  valuation = FALSE,
+  development_is_valuation = FALSE,
   ptr = NULL
 )
 }
@@ -24,7 +24,7 @@ triangle(
 origin period) or whole-number years.}
 
 \item{development}{Name of the development column: ages in months (12,
-24, ...), or valuation dates when \code{valuation = TRUE}.}
+24, ...), or valuation dates when \code{development_is_valuation = TRUE}.}
 
 \item{columns}{Names of the value columns (numeric).}
 
@@ -39,7 +39,7 @@ origin grain.}
 \item{cumulative}{Whether the values are cumulative (otherwise
 incremental).}
 
-\item{valuation}{Whether \code{development} holds valuation dates (Date,
+\item{development_is_valuation}{Whether \code{development} holds valuation dates (Date,
 POSIXct, or whole-number years meaning December of that year) instead
 of ages.}
 

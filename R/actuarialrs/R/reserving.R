@@ -63,7 +63,7 @@ label_list <- function(index) {
 #' @param origin Name of the origin column: Date, POSIXct (any day in the
 #'   origin period) or whole-number years.
 #' @param development Name of the development column: ages in months (12,
-#'   24, ...), or valuation dates when `valuation = TRUE`.
+#'   24, ...), or valuation dates when `development_is_valuation = TRUE`.
 #' @param columns Names of the value columns (numeric).
 #' @param index Names of the index columns, or `NULL` for a single segment
 #'   labelled `"Total"`. Several columns make multi-part labels.
@@ -73,7 +73,7 @@ label_list <- function(index) {
 #'   origin grain.
 #' @param cumulative Whether the values are cumulative (otherwise
 #'   incremental).
-#' @param valuation Whether `development` holds valuation dates (Date,
+#' @param development_is_valuation Whether `development` holds valuation dates (Date,
 #'   POSIXct, or whole-number years meaning December of that year) instead
 #'   of ages.
 #' @param ptr A `Triangle` pointer; used internally.
@@ -123,7 +123,8 @@ triangle <- S7::new_class(
   ),
   constructor = function(data, origin, development, columns, index = NULL,
                          origin_grain = "Y", development_grain = "Y",
-                         cumulative = TRUE, valuation = FALSE, ptr = NULL) {
+                         cumulative = TRUE, development_is_valuation = FALSE,
+                         ptr = NULL) {
     if (!is.null(ptr)) {
       return(S7::new_object(S7::S7_object(), ptr = ptr, index_names = as.character(index)))
     }
@@ -142,7 +143,7 @@ triangle <- S7::new_class(
       as.double(x)
     }
     o <- year_month(data[[origin]], "origin", 1L)
-    if (valuation) {
+    if (isTRUE(development_is_valuation)) {
       v <- year_month(data[[development]], "development", 12L)
       ages <- double()
     } else {
@@ -155,7 +156,7 @@ triangle <- S7::new_class(
     values <- unlist(lapply(columns, numeric_column, what = "value"))
     ptr <- rust_result(Triangle$from_long(
       as.character(labels), as.double(length(index)), o$year, o$month,
-      ages, v$year, v$month, isTRUE(valuation),
+      ages, v$year, v$month, isTRUE(development_is_valuation),
       as.character(columns), as.double(values),
       as.character(origin_grain), as.character(development_grain), isTRUE(cumulative)
     ))
@@ -308,7 +309,9 @@ link_ratios <- function(x) {
 #' partial latest period keeps its exact latest diagonal.
 #'
 #' @param x A [triangle].
-#' @param origin_grain,development_grain `"M"`, `"Q"`, `"S"` or `"Y"`.
+#' @param origin_grain The new origin grain: `"M"`, `"Q"`, `"S"` or `"Y"`.
+#' @param development_grain The new development grain, by default the same
+#'   as `origin_grain`.
 #' @returns A [triangle].
 #' @export
 #' @examples
@@ -318,7 +321,8 @@ link_ratios <- function(x) {
 #' )
 #' q <- triangle(long, "origin", "age", "paid", origin_grain = "Q", development_grain = "Q")
 #' grain(q, "Y", "Q")@values[1, 1, , ]
-grain <- function(x, origin_grain = "Y", development_grain = x@development_grain) {
+#' grain(q, "Y")@development
+grain <- function(x, origin_grain, development_grain = origin_grain) {
   check_triangle(x)
   ptr <- rust_result(x@ptr$grain(as.character(origin_grain), as.character(development_grain)))
   new_triangle(x, ptr)

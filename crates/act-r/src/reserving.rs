@@ -110,8 +110,8 @@ impl From<TriangleInner> for Triangle {
 impl Triangle {
     /// Builds a triangle from a long table. `index` holds `n_parts` label
     /// parts per row, part by part (column-major); `values` the value
-    /// columns, column by column. Development is `ages` unless `valuation`,
-    /// then the valuation months.
+    /// columns, column by column. Development is `ages`, or the valuation
+    /// months when `development_is_valuation`.
     #[allow(clippy::too_many_arguments)]
     fn from_long(
         index: Vec<String>,
@@ -121,7 +121,7 @@ impl Triangle {
         ages: &[f64],
         valuation_year: &[i32],
         valuation_month: &[i32],
-        valuation: bool,
+        development_is_valuation: bool,
         names: Vec<String>,
         values: &[f64],
         origin_grain: &str,
@@ -156,7 +156,7 @@ impl Triangle {
             .collect();
         let valuations;
         let lags: Vec<Lag>;
-        let development = if valuation {
+        let development = if development_is_valuation {
             valuations = months(valuation_year, valuation_month, "development")?;
             DevelopmentColumn::Valuation(&valuations)
         } else {

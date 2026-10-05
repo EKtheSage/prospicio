@@ -902,7 +902,7 @@ TowerModel$fit_references <- function(limits, attachments, losses, thresholds, f
 
 Triangle <- new.env(parent = emptyenv())
 
-Triangle$from_long <- function(index, n_parts, origin_year, origin_month, ages, valuation_year, valuation_month, valuation, names, values, origin_grain, development_grain, cumulative) .Call(wrap__Triangle__from_long, index, n_parts, origin_year, origin_month, ages, valuation_year, valuation_month, valuation, names, values, origin_grain, development_grain, cumulative)
+Triangle$from_long <- function(index, n_parts, origin_year, origin_month, ages, valuation_year, valuation_month, development_is_valuation, names, values, origin_grain, development_grain, cumulative) .Call(wrap__Triangle__from_long, index, n_parts, origin_year, origin_month, ages, valuation_year, valuation_month, development_is_valuation, names, values, origin_grain, development_grain, cumulative)
 
 Triangle$shape <- function() .Call(wrap__Triangle__shape, self)
 

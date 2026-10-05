@@ -139,10 +139,12 @@ stopifnot(identical(to_cumulative(from_inc)@values, raa@values))
 raw <- read_long("raa")
 by_val <- raw
 by_val$development <- as.Date(sprintf("%d-12-31", raw$origin + raw$development / 12 - 1))
-stopifnot(identical(triangle(by_val, "origin", "development", "value", valuation = TRUE)@values,
+stopifnot(identical(triangle(by_val, "origin", "development", "value",
+                             development_is_valuation = TRUE)@values,
                     raa@values))
 by_year <- transform(raw, development = origin + development / 12 - 1)
-stopifnot(identical(triangle(by_year, "origin", "development", "value", valuation = TRUE)@values,
+stopifnot(identical(triangle(by_year, "origin", "development", "value",
+                             development_is_valuation = TRUE)@values,
                     raa@values))
 
 # Several index columns and value columns; subset.
@@ -179,6 +181,10 @@ yt <- grain(qt, "Y", "Q")
 stopifnot(identical(yt@origins, "2020"), yt@origin_grain == "Y", yt@development_grain == "Q")
 near(yt@values[1, 1, "2020", ], c(10, 20, 30, 40))
 near(grain(qt, "Y", "Y")@values[1, 1, "2020", "12"], 40)
+# development_grain defaults to origin_grain.
+ya <- grain(qt, "Y")
+stopifnot(ya@development_grain == "Y", identical(ya@values, grain(qt, "Y", "Y")@values),
+          identical(ya@valuation, as.Date("2020-12-31")))
 stopifnot(identical(grain(raa, "Y", "Y")@values, raa@values))
 
 # Errors are ordinary R errors carrying the Rust message.
@@ -195,6 +201,7 @@ expect_error_like(triangle(transform(raw, value = as.character(value)), "origin"
 expect_error_like(triangle(transform(raw, development = factor(development)), "origin", "development",
                            "value"), "development column development must be numeric")
 expect_error_like(grain(qt, "X"), "origin_grain must be")
+expect_error_like(grain(qt), "origin_grain")
 expect_error_like(grain(raa, "Q", "Q"), "invalid grain change")
 expect_error_like(subset(multi, columns = c("paid", "paid")), "supplied twice")
 expect_error_like(subset(multi, index = "nope"), "no column or index named nope")

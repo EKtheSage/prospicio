@@ -4,12 +4,15 @@
 \alias{grain}
 \title{Change the grain of a triangle}
 \usage{
-grain(x, origin_grain = "Y", development_grain = x@development_grain)
+grain(x, origin_grain, development_grain = origin_grain)
 }
 \arguments{
 \item{x}{A \link{triangle}.}
 
-\item{origin_grain, development_grain}{\code{"M"}, \code{"Q"}, \code{"S"} or \code{"Y"}.}
+\item{origin_grain}{The new origin grain: \code{"M"}, \code{"Q"}, \code{"S"} or \code{"Y"}.}
+
+\item{development_grain}{The new development grain, by default the same
+as \code{origin_grain}.}
 }
 \value{
 A \link{triangle}.
@@ -28,4 +31,5 @@ long <- data.frame(
 )
 q <- triangle(long, "origin", "age", "paid", origin_grain = "Q", development_grain = "Q")
 grain(q, "Y", "Q")@values[1, 1, , ]
+grain(q, "Y")@development
 }
