@@ -3,11 +3,16 @@
 //!
 //! Every row of both reference files is evaluated; see
 //! `scripts/reserving_r.R` and `scripts/reserving_chainladder_python.py`.
+//! The ODP bootstrap is checked against R's `BootChainLadder`: exactly for
+//! the scale and residuals, within Monte Carlo tolerances for the reserve
+//! distribution (`scripts/reserving_bootstrap_r.R`).
 
 use std::collections::HashMap;
 
+use act_prob::Distribution;
 use act_reserving::{
-    Average, ChainLadder, ChainLadderFit, Development, Mack, MackFit, Period, SigmaInterpolation,
+    Average, ChainLadder, ChainLadderFit, Development, Mack, MackFit, OdpBootstrap,
+    OdpBootstrapFit, Period, ProcessDistribution, SigmaInterpolation,
 };
 use act_validation::{Case, check, reference, triangle};
 
@@ -116,4 +121,52 @@ fn dataset_shapes() {
         let latest: f64 = tri.latest_diagonal().values(0, 0).iter().sum();
         assert_eq!(latest, latest_total, "{name}");
     }
+}
+
+/// Simulations per bootstrap; the reference tolerances assume this many.
+const BOOTSTRAP_SIMS: usize = 20_000;
+
+#[test]
+fn bootstrap_matches_r_bootchainladder() {
+    let mut fits: HashMap<(String, String), OdpBootstrapFit> = HashMap::new();
+    check(&reference("reserving_bootstrap_r.csv"), |case| {
+        let (dataset, method) = (case.get("dataset"), case.get("method"));
+        let process = match method {
+            "odp_bootstrap" | "odp_bootstrap_gamma" => ProcessDistribution::Gamma,
+            "odp_bootstrap_param" => ProcessDistribution::None,
+            other => panic!("unknown method {other}"),
+        };
+        let fit = fits
+            .entry((dataset.to_string(), method.to_string()))
+            .or_insert_with(|| {
+                OdpBootstrap {
+                    n_sims: BOOTSTRAP_SIMS,
+                    seed: 20_261_004,
+                    process,
+                }
+                .fit(&triangle(dataset), "values")
+                .unwrap_or_else(|e| panic!("{dataset} {method}: {e}"))
+            });
+        let origins = &fit.chain_ladder.origins;
+        let origin = |year: &str| {
+            let year: i32 = year.parse().ok()?;
+            origins.iter().position(|&p| p == Period::year(year))
+        };
+        let reserves = &fit.reserves;
+        let marginal = |year: &str| reserves.marginal(&vec![origins[origin(year)?].into()]);
+        match case.get("quantity") {
+            "scale" => Some(fit.scale),
+            "residual" => {
+                let (year, k) = case.get("arg").split_once(':')?;
+                let n_dev = fit.residuals.len() / origins.len();
+                Some(fit.residuals[origin(year)? * n_dev + k.parse::<usize>().ok()?])
+            }
+            "mean_reserve" => Some(marginal(case.get("arg"))?.mean()),
+            "sd_reserve" => Some(marginal(case.get("arg"))?.std_dev()),
+            "mean_total" => Some(reserves.mean()),
+            "sd_total" => Some(reserves.std_dev()),
+            "quantile_total" => reserves.quantile(case.number("arg")?).ok(),
+            _ => None,
+        }
+    });
 }

@@ -12,7 +12,7 @@ core abstractions: [docs/design/](docs/design/).
 | `crates/act-core` | Error type, reproducible RNG streams |
 | `crates/act-math` | Numerical engine (Phase 0: normal special functions) |
 | `crates/act-prob` | Distributions (Phase 0: `Distribution` trait, `Lognormal`) |
-| `crates/act-reserving` | Reserving (v0.1 so far: Triangle, Chain Ladder, Mack) |
+| `crates/act-reserving` | Reserving (v0.1 so far: Triangle, Chain Ladder, Mack, ODP bootstrap) |
 | `crates/act-aggregate` | Aggregate loss and reinsurance (empty until v0.3) |
 | `crates/act-python`, `python/` | Python package `actuarialrs` (PyO3 + maturin) |
 | `crates/act-r`, `R/actuarialrs` | R package `actuarialrs` (extendr) |

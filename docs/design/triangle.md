@@ -122,6 +122,26 @@ R ChainLadder and chainladder-python do:
 parameter risk, and a total parameter risk that carries the covariance
 between origins through the shared factors.
 
+`OdpBootstrap` follows R ChainLadder's `BootChainLadder` (England and
+Verrall 2002), not chainladder-python's `BootstrapODPSample`, which uses
+hat-matrix residuals, drops zero residuals and adds no process error:
+
+- Residuals are unscaled Pearson residuals on every observed incremental
+  cell, adjusted by `sqrt(n / (n - p))` with `p = origins + ages - 1`, zero
+  corner residuals included; the scale is `sum(r^2) / (n - p)`.
+- Process error is Gamma (signed like the mean, variance `phi |m|`), or none
+  for parameter error only. R's over-dispersed Poisson (a negative
+  binomial draw) is not offered yet: our inverse-transform count sampler is
+  too slow for incremental means in the hundreds of thousands.
+- Unlike R, triangles need not be square, but every origin must be observed
+  from its first age to its latest.
+- The result is a `PredictiveDistribution` with dimension `origin`, keyed by
+  the triangle's `Period`s. Simulation `i` uses stream `i`, so results are
+  identical for any thread count.
+- Parity: the scale and residuals match R exactly; reserve means, standard
+  deviations and total quantiles match R within four Monte Carlo standard
+  errors (`validation/scripts/reserving_bootstrap_r.R`).
+
 ## Migration from the sandbox (done)
 
 `development.rs` and `chain_ladder.rs` (volume and simple averages,
