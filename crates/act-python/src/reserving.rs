@@ -1253,6 +1253,8 @@ impl PyMackFit {
 /// n_sims : int, default 10000
 ///     Number of simulations; positive.
 /// seed : int, default 0
+///     Seed of the simulation streams, from 0 to ``2**64 - 1``. R accepts
+///     seeds below ``2**53``; a seed in both ranges gives the same draws.
 /// process : {"gamma", "none"}, default "gamma"
 ///     Process error on each simulated future incremental value: Gamma with
 ///     the expected value as mean and variance ``scale * |mean|`` (R's
@@ -1262,6 +1264,8 @@ impl PyMackFit {
 /// ------
 /// ValueError
 ///     If ``n_sims`` is zero or ``process`` is unknown.
+/// OverflowError
+///     If ``n_sims`` or ``seed`` is negative or too large.
 ///
 /// Examples
 /// --------
