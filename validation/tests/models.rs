@@ -1,5 +1,6 @@
 //! Model parity: GLMs against statsmodels on a synthetic portfolio
-//! (`validation/scripts/statsmodels_glm.py`), with sandwich standard errors
+//! (`validation/scripts/statsmodels_glm.py`) and on a sample of freMTPL2freq
+//! (`statsmodels_fremtpl2.py`), with sandwich standard errors
 //! (`statsmodels_glm_robust.py`).
 
 use act_glm::{Dispersion, Glm, GlmFit, Robust};
@@ -657,6 +658,100 @@ fn bayes_glm_posteriors_match_grid_integration() {
         match c.get("quantity") {
             "mean" => Some(s[k].mean),
             "sd" => Some(s[k].sd),
+            _ => None,
+        }
+    });
+}
+
+/// `validation/data/fremtpl2_sample.csv` (a fixed-seed sample of freMTPL2freq)
+/// as named string columns.
+fn fremtpl2() -> Vec<(String, Vec<String>)> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/fremtpl2_sample.csv");
+    let text = std::fs::read_to_string(path).expect("fremtpl2_sample.csv");
+    let mut lines = text.lines();
+    let header: Vec<String> = lines.next().unwrap().split(',').map(String::from).collect();
+    let mut cols: Vec<Vec<String>> = vec![Vec::new(); header.len()];
+    for line in lines {
+        for (c, v) in cols.iter_mut().zip(line.split(',')) {
+            c.push(v.to_string());
+        }
+    }
+    header.into_iter().zip(cols).collect()
+}
+
+/// Intercept, `DrivAge`, `BonusMalus`, `log_Density` and the factors `Area`,
+/// `VehPower`, `VehBrand`, `VehGas`, `Region` in treatment coding.
+fn fremtpl2_design(data: &[(String, Vec<String>)]) -> Design {
+    let text = |name: &str| data.iter().find(|(n, _)| n == name).unwrap().1.clone();
+    let log_density: Vec<f64> = numeric(data, "Density").iter().map(|d| d.ln()).collect();
+    let mut cols = vec![
+        (
+            "DrivAge".to_string(),
+            Column::Numeric(numeric(data, "DrivAge")),
+        ),
+        (
+            "BonusMalus".to_string(),
+            Column::Numeric(numeric(data, "BonusMalus")),
+        ),
+        ("log_Density".to_string(), Column::Numeric(log_density)),
+    ];
+    let factors = ["Area", "VehPower", "VehBrand", "VehGas", "Region"];
+    for f in factors {
+        cols.push((f.to_string(), Column::Categorical(text(f))));
+    }
+    let frame = Frame::new(cols).unwrap();
+    let mut terms = Terms::new()
+        .intercept()
+        .numeric("DrivAge")
+        .numeric("BonusMalus")
+        .numeric("log_Density");
+    for f in factors {
+        terms = terms.factor(f);
+    }
+    terms.fit(&frame).unwrap().design(&frame).unwrap()
+}
+
+#[test]
+fn fremtpl2_glms_match_statsmodels() {
+    let data = fremtpl2();
+    let log_exposure: Vec<f64> = numeric(&data, "Exposure").iter().map(|e| e.ln()).collect();
+    let design = fremtpl2_design(&data);
+    let cases = reference("glm_fremtpl2_statsmodels.csv");
+    let mut fits: Vec<(String, GlmFit)> = Vec::new();
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !fits.iter().any(|(n, _)| n == name) {
+            let (glm, y, d) = match name {
+                "poisson_log" => (
+                    Glm::new(Family::Poisson, Link::Log),
+                    numeric(&data, "ClaimNb"),
+                    design.clone().with_offset(log_exposure.clone()).unwrap(),
+                ),
+                "quasi_poisson_log" => (
+                    Glm::new(Family::Poisson, Link::Log).dispersion(Dispersion::Pearson),
+                    numeric(&data, "ClaimNb"),
+                    design.clone().with_offset(log_exposure.clone()).unwrap(),
+                ),
+                "binomial_logit" => (
+                    Glm::new(Family::Binomial, Link::Logit),
+                    numeric(&data, "HasClaim"),
+                    design.clone(),
+                ),
+                other => panic!("unknown case {other}"),
+            };
+            fits.push((
+                name.to_string(),
+                glm.fit(&d, &y).unwrap_or_else(|e| panic!("{name}: {e}")),
+            ));
+        }
+        let fit = &fits.iter().find(|(n, _)| n == name).unwrap().1;
+        let j = fit.names().iter().position(|n| n == c.get("term"));
+        match c.get("quantity") {
+            "coef" => Some(fit.coefficients()[j?]),
+            "std_error" => Some(fit.std_errors()[j?]),
+            "deviance" => Some(fit.deviance()),
+            "null_deviance" => Some(fit.null_deviance()),
+            "scale" => Some(fit.dispersion()),
             _ => None,
         }
     });
