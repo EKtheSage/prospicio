@@ -1275,6 +1275,83 @@ impl PyPredictiveDistribution {
             .collect()
     }
 
+    /// Joins distributions of different models into one portfolio, with a
+    /// leading dimension ``dim`` holding each part's label, followed by the
+    /// union of the parts' dimensions (``""`` where a part lacks one).
+    /// Simulation ``i`` of the result is simulation ``i`` of every part.
+    ///
+    /// Parameters
+    /// ----------
+    /// parts : list of (str, PredictiveDistribution)
+    /// dim : str
+    /// same_simulations : bool, default False
+    ///     ``False``: the parts were simulated separately, and two with the
+    ///     same seed and stream scheme (which would share random numbers)
+    ///     are refused. ``True``: the parts come from the same scenarios (a
+    ///     cover applied to a reserve) and keep their pairing.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.distributions import PredictiveDistribution
+    /// >>> a = PredictiveDistribution(["origin"], [(2023,), (2024,)], [[10.0, 20.0], [12.0, 25.0]])
+    /// >>> b = PredictiveDistribution(["lob"], [("motor",)], [[50.0], [40.0]])
+    /// >>> p = PredictiveDistribution.join([("reserve", a), ("premium", b)], "risk")
+    /// >>> p.dims, p.total().draws
+    /// (['risk', 'origin', 'lob'], [80.0, 77.0])
+    #[staticmethod]
+    #[pyo3(signature = (parts, dim, same_simulations = false))]
+    fn join(
+        parts: Vec<(String, PyRef<'_, PyPredictiveDistribution>)>,
+        dim: &str,
+        same_simulations: bool,
+    ) -> PyResult<Self> {
+        use act_prob::portfolio::Pairing;
+        let refs: Vec<(&str, &PredictiveDistribution)> =
+            parts.iter().map(|(l, p)| (l.as_str(), &p.inner)).collect();
+        let pairing = if same_simulations {
+            Pairing::SameSimulations
+        } else {
+            Pairing::Independent
+        };
+        let inner = PredictiveDistribution::join(&refs, dim, pairing).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Sets the dependence between the groups of dimension ``dim`` by
+    /// Iman–Conover on the groups' totals, moving each group's simulations
+    /// as whole rows: every group keeps its distribution and internal joint
+    /// structure, and the group totals take a rank correlation close to
+    /// ``correlation``.
+    ///
+    /// Parameters
+    /// ----------
+    /// dim : str
+    /// correlation : list of list of float
+    ///     One row and column per group, in order of first appearance.
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn reorder_groups(
+        &self,
+        py: Python<'_>,
+        dim: &str,
+        correlation: Vec<Vec<f64>>,
+        seed: u64,
+    ) -> PyResult<Self> {
+        let flat: Vec<f64> = correlation.into_iter().flatten().collect();
+        let pd = &self.inner;
+        let inner = py
+            .detach(|| pd.reorder_groups(dim, &flat, seed))
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
     /// Blends several models' predictive distributions: simulation ``i`` is
     /// simulation ``i`` of model ``k``, with ``k`` drawn with probability
     /// ``weights[k]`` from stream ``i`` of ``seed``. Rows stay whole, so sums

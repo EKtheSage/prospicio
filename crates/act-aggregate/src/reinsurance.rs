@@ -394,15 +394,71 @@ impl Tower {
     /// assert_eq!(by_kind.n_components(), 3); // gross, ceded, net
     /// ```
     pub fn apply(&self, events: &EventSet) -> Result<PredictiveDistribution> {
+        let provenance = Provenance::new("reinsurance_tower")
+            .version("act-aggregate", env!("CARGO_PKG_VERSION"))
+            .seed(events.seed(), act_prob::provenance::SIM_INDEX_SCHEME);
+        self.apply_years(
+            (0..events.n_sims()).map(|i| events.events(i)),
+            events.n_sims(),
+            provenance,
+        )
+    }
+
+    /// Applies the tower to any predictive distribution, taking each
+    /// simulation's total as one aggregate loss: an adverse development
+    /// cover or loss portfolio transfer on a reserve bootstrap, a stop-loss
+    /// or quota share on premium risk from a GLM or a collective model.
+    /// Aggregate terms (stop-loss, quota share, annual deductible and
+    /// limit) read as usual; an occurrence layer sees the year's total as
+    /// one occurrence, so it acts as an aggregate excess of loss. To cover
+    /// some components only, `aggregate` or select them first.
+    ///
+    /// The result has the components of [`apply`](Self::apply), and keeps
+    /// the input's seed in its provenance.
+    ///
+    /// ```
+    /// use act_aggregate::{Layer, Tower};
+    /// use act_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// // Reserves by origin in three simulations; an ADC of 50 xs 100.
+    /// let reserve = PredictiveDistribution::from_draws(
+    ///     vec!["origin".into()],
+    ///     vec![vec![KeyValue::Int(2023)], vec![KeyValue::Int(2024)]],
+    ///     vec![40.0, 50.0, 60.0, 70.0, 80.0, 100.0],
+    ///     Provenance::new("odp_bootstrap"),
+    /// )
+    /// .unwrap();
+    /// let adc = Tower::new(vec![Layer::stop_loss("adc", 50.0, 100.0).unwrap()]).unwrap();
+    /// let result = adc.apply_aggregate(&reserve).unwrap();
+    /// let ceded = result.marginal(&vec![KeyValue::from("ceded"), KeyValue::from("adc")]).unwrap();
+    /// assert_eq!(act_prob::Empirical::draws(&ceded), [0.0, 30.0, 50.0]);
+    /// ```
+    pub fn apply_aggregate(&self, pd: &PredictiveDistribution) -> Result<PredictiveDistribution> {
+        let totals = act_prob::Empirical::draws(pd.total()).to_vec();
+        let source = pd.provenance();
+        let mut provenance = Provenance::new("reinsurance_tower")
+            .version("act-aggregate", env!("CARGO_PKG_VERSION"))
+            .param("loss", format!("total of {}", source.model));
+        if let (Some(seed), Some(scheme)) = (source.seed, source.stream_scheme.clone()) {
+            provenance = provenance.seed(seed, scheme);
+        }
+        self.apply_years(totals.chunks(1), totals.len(), provenance)
+    }
+
+    fn apply_years<'a>(
+        &self,
+        years: impl Iterator<Item = &'a [f64]>,
+        n_sims: usize,
+        base: Provenance,
+    ) -> Result<PredictiveDistribution> {
         let paid: Vec<bool> = self
             .layers
             .iter()
             .map(|l| !l.reinstatement_rates.is_empty())
             .collect();
         let n_components = self.layers.len() + 2 + paid.iter().filter(|&&p| p).count();
-        let mut draws = Vec::with_capacity(events.n_sims() * n_components);
-        for sim in 0..events.n_sims() {
-            let losses = events.events(sim);
+        let mut draws = Vec::with_capacity(n_sims * n_components);
+        for losses in years {
             let gross: f64 = losses.iter().sum();
             draws.push(gross);
             let year = self.year(losses);
@@ -430,9 +486,7 @@ impl Tower {
                 .map(|l| key("reinstatement_premium", &l.name)),
         );
 
-        let mut provenance = Provenance::new("reinsurance_tower")
-            .version("act-aggregate", env!("CARGO_PKG_VERSION"))
-            .seed(events.seed(), act_prob::provenance::SIM_INDEX_SCHEME);
+        let mut provenance = base;
         for (l, stage) in self.layers.iter().zip(&self.stages) {
             let mut terms = format!(
                 "{} xs {}, share {}, aad {}, aal {}, stage {stage}",

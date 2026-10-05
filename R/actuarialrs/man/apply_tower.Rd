@@ -9,7 +9,8 @@ apply_tower(tower, events, ...)
 \arguments{
 \item{tower}{A \link{reinsurance_tower}.}
 
-\item{events}{An \code{event_set} from \code{\link[=simulate_events]{simulate_events()}}.}
+\item{events}{An \code{event_set} from \code{\link[=simulate_events]{simulate_events()}}, or a
+\link{predictive_distribution}.}
 
 \item{...}{Unused; for methods.}
 }
@@ -21,7 +22,12 @@ layer with paid reinstatements. \code{aggregate(result, keep = "kind")} gives
 gross, total ceded and net per year; net is a loss, before premiums.
 }
 \description{
-Apply a reinsurance tower to simulated years
+With an \code{event_set} each year's individual losses go through the tower.
+With a \link{predictive_distribution} (a reserve bootstrap, modelled premium
+risk) each simulation's total is one aggregate loss: an adverse
+development cover or loss portfolio transfer on reserves, a stop-loss or
+quota share on premium risk. An occurrence layer then sees the total as
+one occurrence, so it acts as an aggregate excess of loss.
 }
 \examples{
 ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 1000, seed = 7)

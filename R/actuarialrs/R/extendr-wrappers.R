@@ -16,6 +16,10 @@ hierarchical_stacking_rust <- function(lpd, k, x, p, priors, sampler) .Call(wrap
 
 blend_by_component_rust <- function(models, weights, seed) .Call(wrap__blend_by_component_rust, models, weights, seed)
 
+join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
+
+reorder_groups_rust <- function(pd, dim, correlation, seed) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed)
+
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
@@ -161,6 +165,8 @@ ReinsuranceTower$stages <- function() .Call(wrap__ReinsuranceTower__stages, self
 ReinsuranceTower$ceded <- function(losses) .Call(wrap__ReinsuranceTower__ceded, self, losses)
 
 ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__ReinsuranceTower__on_grid, self, frequency, severity, points)
+
+ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
 
