@@ -383,3 +383,14 @@ def test_hierarchical_stacking_with_partial_pooling():
     assert w[0][0] > 0.7 and w[1][0] < 0.3
     with pytest.raises(ValueError):
         HierarchicalStacking(discrete=5).fit([a, b], [x])
+
+
+def test_over_dispersed_poisson_accepts_negative_responses():
+    # Log link and a group dummy: the fitted means are the group means.
+    d = Design([[1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], ["(Intercept)", "b"])
+    y = [5.0, -1.0, 4.0, 2.0, 3.0, 4.0]
+    fit = Glm("poisson", dispersion="pearson").fit(d, y)
+    assert fit.coefficients[0] == pytest.approx(math.log(8 / 3), rel=1e-10)
+    assert fit.coefficients[1] == pytest.approx(math.log(3 / (8 / 3)), rel=1e-10)
+    with pytest.raises(ValueError):
+        Glm("poisson").fit(d, y)

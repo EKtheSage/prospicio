@@ -860,3 +860,85 @@ fn nuts_posterior_predictive_matches_the_conjugate_negative_binomial() {
     }
     assert!((draws.mean() - Counting::mean(&exact)).abs() < 0.05);
 }
+
+#[test]
+fn over_dispersed_poisson_fits_raa_with_its_negative_increment() {
+    // RAA's 1982 origin loses 103 between 72 and 84 months. The
+    // over-dispersed Poisson GLM with origin and development factors
+    // still reproduces the Chain Ladder reserve.
+    use act_glm::Glm;
+    use act_models::{Design, Model};
+
+    let text = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/raa.csv"),
+    )
+    .unwrap();
+    let rows: Vec<(usize, usize, f64)> = text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("origin"))
+        .map(|l| {
+            let v: Vec<f64> = l.split(',').map(|x| x.parse().unwrap()).collect();
+            ((v[0] - 1981.0) as usize, (v[1] / 12.0) as usize - 1, v[2])
+        })
+        .collect();
+    let n = 10;
+    let mut cum = vec![vec![f64::NAN; n]; n];
+    for &(i, j, v) in &rows {
+        cum[i][j] = v;
+    }
+    // Incremental cells, one design row each: intercept, origin and
+    // development dummies (first level dropped).
+    let (mut y, mut cols) = (Vec::new(), vec![Vec::new(); 1 + 2 * (n - 1)]);
+    let dummies = |i: usize, j: usize| -> Vec<f64> {
+        let mut r = vec![1.0];
+        r.extend((1..n).map(|k| f64::from(u8::from(i == k))));
+        r.extend((1..n).map(|k| f64::from(u8::from(j == k))));
+        r
+    };
+    for (i, row) in cum.iter().enumerate() {
+        for j in 0..n - i {
+            y.push(if j == 0 { row[0] } else { row[j] - row[j - 1] });
+            for (c, v) in cols.iter_mut().zip(dummies(i, j)) {
+                c.push(v);
+            }
+        }
+    }
+    assert!(y.iter().any(|v| *v < 0.0));
+    let names = (0..cols.len()).map(|k| format!("x{k}")).collect();
+    let design = Design::new(names, cols).unwrap();
+    let fit = Glm::over_dispersed_poisson().fit(&design, &y).unwrap();
+
+    // Chain Ladder: volume-weighted development factors.
+    let mut ultimate: Vec<f64> = (0..n).map(|i| cum[i][n - 1 - i]).collect();
+    for j in 0..n - 1 {
+        let (num, den) =
+            (0..n - 1 - j).fold((0.0, 0.0), |(a, b), i| (a + cum[i][j + 1], b + cum[i][j]));
+        for (i, u) in ultimate.iter_mut().enumerate() {
+            if j >= n - 1 - i {
+                *u *= num / den;
+            }
+        }
+    }
+    let latest: f64 = (0..n).map(|i| cum[i][n - 1 - i]).sum();
+    let cl_reserve = ultimate.iter().sum::<f64>() - latest;
+
+    let beta = fit.coefficients();
+    let mut glm_reserve = 0.0;
+    for i in 1..n {
+        for j in n - i..n {
+            let eta: f64 = dummies(i, j).iter().zip(beta).map(|(x, b)| x * b).sum();
+            glm_reserve += eta.exp();
+        }
+    }
+    assert!(
+        (glm_reserve - cl_reserve).abs() < 1e-6 * cl_reserve,
+        "{glm_reserve} vs {cl_reserve}"
+    );
+    assert!(fit.dispersion() > 0.0 && fit.log_likelihood().is_nan());
+    // A Poisson with the dispersion fixed at 1 still refuses it.
+    assert!(
+        Glm::new(act_models::Family::Poisson, act_models::Link::Log)
+            .fit(&design, &y)
+            .is_err()
+    );
+}

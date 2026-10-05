@@ -152,7 +152,16 @@ impl Family {
     }
 
     /// Unit deviance `d(y, μ)`; the deviance is `Σ w d(y, μ)`.
+    ///
+    /// For the over-dispersed Poisson a response may be negative (a
+    /// negative incremental loss): there `d = 2 (y ln(|y|/μ) - (y - μ))`,
+    /// the quasi-deviance. It has the Poisson's derivative in `μ`, so it
+    /// gives the same quasi-likelihood estimates, but no saturated model
+    /// exists and it can be negative; it is not a distance.
     pub fn unit_deviance(&self, y: f64, mu: f64) -> f64 {
+        if matches!(self, Self::Poisson) && y < 0.0 {
+            return 2.0 * (y * (-y / mu).ln() - (y - mu));
+        }
         // y ln(y / μ), 0 at y = 0.
         let ylog = |y: f64, m: f64| if y == 0.0 { 0.0 } else { y * (y / m).ln() };
         let d = match *self {
@@ -186,6 +195,8 @@ impl Family {
             Self::Gaussian => {
                 -0.5 * (w * (y - mu) * (y - mu) / phi + (2.0 * std::f64::consts::PI * phi / w).ln())
             }
+            // No likelihood exists for a negative (quasi-Poisson) response.
+            Self::Poisson if y < 0.0 => f64::NAN,
             Self::Poisson => w / phi * (y * mu.ln() - mu - ln_gamma(y + 1.0)),
             Self::Gamma => {
                 let s = w / phi;

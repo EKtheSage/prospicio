@@ -95,8 +95,24 @@ impl Glm {
     /// The over-dispersed Poisson (quasi-Poisson) with log link: Poisson
     /// estimates and Pearson's dispersion. Its fitted values on a triangle
     /// with origin and development factors are the Chain Ladder's.
+    ///
+    /// Responses may be negative (a negative incremental loss), as long as
+    /// the fitted means stay positive: the quasi-likelihood needs only
+    /// `V(μ) = μ` and `μ > 0` (R's `quasipoisson` refuses them). The
+    /// deviance of a negative response is the quasi-deviance (see
+    /// [`Family::unit_deviance`]) and its log-likelihood is NaN.
     pub fn over_dispersed_poisson() -> Self {
         Self::new(Family::Poisson, Link::Log).dispersion(Dispersion::Pearson)
+    }
+
+    /// Whether `y` is a response this GLM can fit: the family's range, and
+    /// for the Poisson with an estimated dispersion (quasi-Poisson) any
+    /// finite value.
+    pub fn accepts(&self, y: f64) -> bool {
+        self.family.valid_y(y)
+            || (matches!(self.family, Family::Poisson)
+                && !matches!(self.dispersion, Dispersion::Fixed(_))
+                && y.is_finite())
     }
 }
 
@@ -156,12 +172,25 @@ impl Glm {
                 "{n} observations for {p} coefficients"
             )));
         }
-        if let Some(bad) = y.iter().find(|&&v| !self.family.valid_y(v)) {
+        if let Some(bad) = y.iter().find(|&&v| !self.accepts(v)) {
             return Err(invalid("y", *bad, "is outside the family's range"));
         }
         let w = design.weights();
         let offset = design.offset();
         let y_mean = y.iter().zip(w).map(|(a, b)| a * b).sum::<f64>() / w.iter().sum::<f64>();
+        if y.iter().any(|v| !self.family.valid_y(*v)) && !self.family.valid_mu(y_mean) {
+            return Err(invalid(
+                "y",
+                y_mean,
+                "has a weighted mean outside the family's range",
+            ));
+        }
+        // A negative response (quasi-Poisson) has no valid mean of its own
+        // to start from: start it at the overall mean.
+        let initial = |i: usize| {
+            let m = self.family.initial_mu(y[i], w[i], y_mean);
+            if self.family.valid_mu(m) { m } else { y_mean }
+        };
 
         let Irls {
             beta,
@@ -174,7 +203,7 @@ impl Glm {
             y,
             |i| match start {
                 Some(mu) if self.family.valid_mu(mu[i]) => mu[i],
-                _ => self.family.initial_mu(y[i], w[i], y_mean),
+                _ => initial(i),
             },
             None,
         )?;
@@ -189,13 +218,7 @@ impl Glm {
             let ones = Design::new(vec!["(Intercept)".into()], vec![vec![1.0; n]])?
                 .with_offset(offset.to_vec())?
                 .with_weights(w.to_vec())?;
-            let null = irls(
-                self,
-                &ones,
-                y,
-                |i| self.family.initial_mu(y[i], w[i], y_mean),
-                None,
-            )?;
+            let null = irls(self, &ones, y, initial, None)?;
             dev(self.family, y, &null.mu, w)
         } else {
             let mu0: Vec<f64> = offset.iter().map(|&o| self.link.inverse(o)).collect();

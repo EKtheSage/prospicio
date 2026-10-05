@@ -80,7 +80,8 @@ dispersion_args <- function(dispersion) {
 #' @param weights Optional prior weights.
 #' @param dispersion `NULL` (1 for the Poisson, binomial and negative
 #'   binomial; Pearson's estimate otherwise), `"pearson"` (with the Poisson,
-#'   the over-dispersed Poisson), `"deviance"` or a fixed number.
+#'   the over-dispersed Poisson, which accepts negative responses as long
+#'   as the fitted means stay positive), `"deviance"` or a fixed number.
 #' @param theta Negative binomial `theta` (variance `mu + mu^2 / theta`).
 #' @param power Tweedie power in `(1, 2)`.
 #' @param link_power Exponent of the power link.

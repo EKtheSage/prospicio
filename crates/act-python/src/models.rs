@@ -364,7 +364,8 @@ impl PyDesign {
 ///     ``"pearson"``, ``"deviance"`` or a fixed value. By default 1 for the
 ///     Poisson, binomial and negative binomial and Pearson's estimate
 ///     otherwise; ``"pearson"`` with the Poisson is the over-dispersed
-///     (quasi-) Poisson.
+///     (quasi-) Poisson, which accepts negative responses as long as the
+///     fitted means stay positive.
 /// theta : float, optional
 /// power : float, optional
 /// link_power : float, optional
