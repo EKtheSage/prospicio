@@ -237,4 +237,15 @@ q2 <- predictive_distribution(cbind(rep(2, 50), rep(2, 50)), data.frame(lob = c(
 qm <- blend_predictive(list(q1, q2), rbind(c(1, 0), c(0, 1)), seed = 3)
 stopifnot(all(draw_matrix(qm)[, 1] == 1), all(draw_matrix(qm)[, 2] == 2))
 
+# Partial pooling with discrete dummies first, and adaptive priors.
+region <- (seq_len(120) - 1) %% 4
+px <- data.frame(r1 = as.double(region == 1), r2 = as.double(region == 2),
+                 r3 = as.double(region == 3), x = ((seq_len(120) - 1) * 37) %% 101 / 100 - 0.5)
+pl <- cbind(a = ifelse(region < 2, -0.5, -2), b = ifelse(region < 2, -2, -0.5))
+ps <- hierarchical_stacking(pl, px, discrete = 3, partial_pooling = TRUE, adaptive = 4,
+                            chains = 2, tune = 300, draws = 300, seed = 9)
+pw <- predict(ps, data.frame(r1 = 0, r2 = 0, r3 = c(0, 1), x = 0))
+stopifnot(pw[1, "a"] > 0.7, pw[2, "a"] < 0.3)
+stopifnot(inherits(try(hierarchical_stacking(pl, px, discrete = 5), silent = TRUE), "try-error"))
+
 cat("actuarialrs R models tests passed\n")

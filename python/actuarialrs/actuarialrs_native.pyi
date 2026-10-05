@@ -2537,16 +2537,36 @@ class HierarchicalStacking:
     Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
     weights that vary with covariates, ``w = softmax(alpha + B x)`` against
     the last model as reference, so a model can be trusted in one part of
-    the portfolio and not another. Normal priors, as BayesBlend's
-    ``HierarchicalBayesStacking`` without partial pooling; sampled by NUTS.
+    the portfolio and not another. The priors are those of BayesBlend's
+    ``HierarchicalBayesStacking``; sampled by NUTS.
     
     Scale continuous covariates (BayesBlend divides by twice the standard
-    deviation) and dummy-code discrete ones before fitting.
+    deviation) and dummy-code discrete ones before fitting, with the
+    dummies first.
+    
+    With ``partial_pooling``, each model's slopes on the discrete
+    covariates, and separately on the continuous ones, are drawn around a
+    model-level mean, itself drawn around a global mean. A scale of 0
+    removes a level: ``tau_mu_global=0`` fixes the global mean at 0,
+    ``tau_mu_*=0`` pools completely and ``tau_sigma_*=0`` sets every slope
+    to its model's mean. BayesBlend warns that pooling needs at least three
+    covariates. ``adaptive`` multiplies the prior scales by ``N**lambda``
+    with ``lambda ~ Exponential(adaptive)``, weakening them as the data
+    grow.
     
     Parameters
     ----------
+    discrete : int, default 0
+        Number of leading covariates that are dummy codes.
     alpha_loc, alpha_scale : float, default 0.0, 1.0
     beta_loc, beta_scale : float, default 0.0, 1.0
+        Slope prior without pooling.
+    partial_pooling : bool, default False
+    tau_mu_global, tau_mu_discrete, tau_mu_continuous : float, default 1.0
+    tau_sigma_discrete, tau_sigma_continuous : float, default 1.0
+        Pooling scales, BayesBlend's defaults.
+    adaptive : float, optional
+        Rate of the exponential prior on ``lambda`` (BayesBlend uses 4).
     chains, tune, draws : int, default 4, 1000, 1000
     seed : int, default 0
     
@@ -2561,7 +2581,7 @@ class HierarchicalStacking:
     >>> w[0][0] > 0.7 and w[1][0] < 0.3
     True
     """
-    def __new__(cls, /, alpha_loc: float = 0.0, alpha_scale: float = 1.0, beta_loc: float = 0.0, beta_scale: float = 1.0, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalStacking: ...
+    def __new__(cls, /, discrete: int = 0, alpha_loc: float = 0.0, alpha_scale: float = 1.0, beta_loc: float = 0.0, beta_scale: float = 1.0, partial_pooling: bool = False, tau_mu_global: float = 1.0, tau_mu_discrete: float = 1.0, tau_mu_continuous: float = 1.0, tau_sigma_discrete: float = 1.0, tau_sigma_continuous: float = 1.0, adaptive: float |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalStacking: ...
     def fit(self, /, lpd: Sequence[Sequence[float]], covariates: Sequence[Sequence[float]]) -> StackingFit:
         """
         Samples the intercepts and slopes.
