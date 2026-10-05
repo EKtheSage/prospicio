@@ -1,6 +1,6 @@
 //! Model parity: GLMs against statsmodels on a synthetic portfolio
 //! (`validation/scripts/statsmodels_glm.py`) and on a sample of freMTPL2freq
-//! (`statsmodels_fremtpl2.py`), with sandwich standard errors
+//! (`statsmodels_fremtpl2.py`, frequency and gamma severity), with sandwich standard errors
 //! (`statsmodels_glm_robust.py`).
 
 use act_glm::{Dispersion, Glm, GlmFit, Robust};
@@ -663,11 +663,14 @@ fn bayes_glm_posteriors_match_grid_integration() {
     });
 }
 
-/// `validation/data/fremtpl2_sample.csv` (a fixed-seed sample of freMTPL2freq)
-/// as named string columns.
-fn fremtpl2() -> Vec<(String, Vec<String>)> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/fremtpl2_sample.csv");
-    let text = std::fs::read_to_string(path).expect("fremtpl2_sample.csv");
+/// A freMTPL2 sample in `validation/data` (`fremtpl2_sample.csv`, a
+/// fixed-seed sample of freMTPL2freq, or `fremtpl2_sev_sample.csv`, its
+/// policies with claim amounts) as named string columns.
+fn fremtpl2(file: &str) -> Vec<(String, Vec<String>)> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data")
+        .join(file);
+    let text = std::fs::read_to_string(path).expect(file);
     let mut lines = text.lines();
     let header: Vec<String> = lines.next().unwrap().split(',').map(String::from).collect();
     let mut cols: Vec<Vec<String>> = vec![Vec::new(); header.len()];
@@ -713,9 +716,13 @@ fn fremtpl2_design(data: &[(String, Vec<String>)]) -> Design {
 
 #[test]
 fn fremtpl2_glms_match_statsmodels() {
-    let data = fremtpl2();
+    let data = fremtpl2("fremtpl2_sample.csv");
+    let sev = fremtpl2("fremtpl2_sev_sample.csv");
     let log_exposure: Vec<f64> = numeric(&data, "Exposure").iter().map(|e| e.ln()).collect();
     let design = fremtpl2_design(&data);
+    let sev_design = fremtpl2_design(&sev)
+        .with_weights(numeric(&sev, "NSev"))
+        .unwrap();
     let cases = reference("glm_fremtpl2_statsmodels.csv");
     let mut fits: Vec<(String, GlmFit)> = Vec::new();
     check(&cases, |c| {
@@ -736,6 +743,11 @@ fn fremtpl2_glms_match_statsmodels() {
                     Glm::new(Family::Binomial, Link::Logit),
                     numeric(&data, "HasClaim"),
                     design.clone(),
+                ),
+                "gamma_log_weighted" => (
+                    Glm::new(Family::Gamma, Link::Log),
+                    numeric(&sev, "AvgClaim"),
+                    sev_design.clone(),
                 ),
                 other => panic!("unknown case {other}"),
             };
