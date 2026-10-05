@@ -328,10 +328,19 @@ impl Family {
     /// The log density (log probability for the counts) of `y` under the
     /// distribution [`draw`](Self::draw) samples: the log score is its
     /// negative. It equals [`log_likelihood`](Self::log_likelihood) for the
-    /// continuous families, and for the counts when `φ = 1`; with `φ ≠ 1`
-    /// the over-dispersed Poisson's response is `(φ/w) N` and this is the
-    /// probability of its count `N`. A count off its lattice has log
-    /// density `-∞`.
+    /// continuous families, and for the counts when `φ = 1`. A count off
+    /// its lattice has log density `-∞`.
+    ///
+    /// The over-dispersed Poisson (`φ ≠ 1`) is scored by a density in `y`,
+    /// so that it compares with continuous models (stacking, log scores
+    /// on claim amounts): the Poisson probability of `N = w y / φ`,
+    /// continued to real `N` through `Γ`, normalized to integrate to 1, and
+    /// scaled by `w / φ`:
+    /// `f(y) = (w/φ) λᴺ e^(-λ) / (Γ(N + 1) C(λ))` with `λ = w μ / φ` and
+    /// `C(λ) = ∫₀^∞ λˣ e^(-λ) / Γ(x + 1) dx` by quadrature (`C ≈ 1` unless
+    /// `λ` is small). On the lattice it is the count's probability times
+    /// `w / C φ`; [`draw`](Self::draw) still samples the lattice. A
+    /// negative `y` has log density `-∞`.
     pub fn log_density(&self, y: f64, mu: f64, dispersion: f64, weight: f64) -> Result<f64> {
         let (w, phi) = (weight, dispersion);
         let ln_pmf = |c: &dyn Counting, k: f64| -> f64 {
@@ -342,6 +351,20 @@ impl Family {
             }
         };
         Ok(match *self {
+            Self::Poisson if phi != 1.0 => {
+                let lambda = mu * w / phi;
+                Poisson::new(lambda)?;
+                if y < 0.0 {
+                    f64::NEG_INFINITY
+                } else {
+                    let n = y * w / phi;
+                    n * lambda.ln()
+                        - lambda
+                        - ln_gamma(n + 1.0)
+                        - continuous_poisson_mass(lambda).ln()
+                        + (w / phi).ln()
+                }
+            }
             Self::Poisson => ln_pmf(&Poisson::new(mu * w / phi)?, snap(y * w / phi)),
             Self::Binomial => {
                 let trials = w.round().max(1.0);
@@ -353,6 +376,37 @@ impl Family {
             _ => self.log_likelihood(y, mu, w, phi),
         })
     }
+}
+
+/// `C(λ) = ∫₀^∞ λˣ e^(-λ) / Γ(x + 1) dx`, the mass of the Poisson
+/// probability continued to real counts.
+///
+/// By Euler–Maclaurin `C` differs from the lattice's mass 1 only through
+/// terms in `e^(-λ)` at 0 (the periodic remainder is of order
+/// `e^(-2π²λ)`), so from `λ = 40` on `C = 1` to within `4e-15` and is
+/// taken as 1. Below, 8-point Gauss–Legendre panels half a unit or a
+/// quarter of a standard deviation wide cover `λ ± 40 √λ + 40`, beyond
+/// which the integrand is below `1e-300` of its peak.
+pub(crate) fn continuous_poisson_mass(lambda: f64) -> f64 {
+    if lambda >= 40.0 {
+        return 1.0;
+    }
+    let sd = lambda.sqrt();
+    let (lo, hi) = (
+        (lambda - 40.0 * sd - 40.0).max(0.0),
+        lambda + 40.0 * sd + 40.0,
+    );
+    let width = (0.25 * sd).max(0.5);
+    let panels = ((hi - lo) / width).ceil().max(1.0) as usize;
+    let h = (hi - lo) / panels as f64;
+    let ln_lambda = lambda.ln();
+    let g = |x: f64| Ok::<_, ()>((x * ln_lambda - lambda - ln_gamma(x + 1.0)).exp());
+    (0..panels)
+        .map(|k| {
+            let a = lo + k as f64 * h;
+            act_math::integrate::gauss_legendre(g, a, a + h).unwrap_or(0.0)
+        })
+        .sum()
 }
 
 /// `x` rounded when within `1e-9` (relative) of a whole number, so that
@@ -394,6 +448,64 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_over_dispersed_poisson_density_integrates_to_one() {
+        // Independent check: the density integrated over y on a fine grid.
+        for (mu, phi, w) in [
+            (0.3, 2.0, 1.0),
+            (2.5, 3.0, 1.0),
+            (30.0, 4.0, 2.0),
+            (400.0, 7.0, 1.0),
+        ] {
+            let f = |y: f64| Family::Poisson.log_density(y, mu, phi, w).unwrap().exp();
+            let hi = mu * 3.0 + 60.0 * phi;
+            let panels = 4000;
+            let h = hi / panels as f64;
+            let total: f64 = (0..panels)
+                .map(|k| {
+                    act_math::integrate::gauss_legendre(
+                        |y| Ok::<_, ()>(f(y)),
+                        k as f64 * h,
+                        (k + 1) as f64 * h,
+                    )
+                    .unwrap()
+                })
+                .sum();
+            assert!((total - 1.0).abs() < 1e-9, "{mu} {phi} {w}: {total}");
+        }
+    }
+
+    #[test]
+    fn the_over_dispersed_poisson_density_matches_the_lattice() {
+        // On the lattice y = kφ/w, for λ ≥ 40, the density is the count's
+        // probability times w/φ.
+        let (mu, phi, w) = (300.0, 5.0, 1.0);
+        for k in [40u64, 60, 75] {
+            let y = k as f64 * phi / w;
+            let got = Family::Poisson.log_density(y, mu, phi, w).unwrap();
+            let pmf = Poisson::new(mu * w / phi).unwrap().pmf(k).ln();
+            assert!((got - (pmf + (w / phi).ln())).abs() < 1e-10, "{k}");
+        }
+        // Off the lattice it is finite; negative responses are not in it.
+        assert!(
+            Family::Poisson
+                .log_density(301.7, mu, phi, w)
+                .unwrap()
+                .is_finite()
+        );
+        assert_eq!(
+            Family::Poisson.log_density(-3.0, mu, phi, w).unwrap(),
+            f64::NEG_INFINITY
+        );
+        // A Poisson with φ = 1 keeps its probabilities.
+        assert_eq!(
+            Family::Poisson.log_density(1.5, 2.0, 1.0, 1.0).unwrap(),
+            f64::NEG_INFINITY
+        );
+        assert!((continuous_poisson_mass(1.0) - 0.833_811_448_088_410_6).abs() < 1e-12);
+    }
+
     use act_core::StreamRng;
 
     const FAMILIES: [Family; 7] = [

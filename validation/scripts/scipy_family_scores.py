@@ -9,6 +9,10 @@ phi and weight w:
 
 - gaussian: norm(mu, sqrt(phi / w));
 - poisson: (phi / w) N with N ~ poisson(mu w / phi), at N = y w / phi;
+  with phi != 1 the log density is that of the continuous extension in y,
+  (w / phi) lam^N e^-lam / (Gamma(N + 1) C(lam)), lam = mu w / phi,
+  C(lam) = integral over x >= 0 of lam^x e^-lam / Gamma(x + 1) (by
+  scipy.integrate.quad), at any y >= 0, on the lattice or off it;
 - binomial: N / w with N ~ binom(w, mu), at N = y w;
 - negative_binomial: nbinom(theta, theta / (theta + mu)) (w, phi unused);
 - gamma: gamma(w / phi, scale = mu phi / w);
@@ -18,8 +22,10 @@ phi and weight w:
 import csv
 import sys
 
+import math
+
 import scipy
-from scipy import stats
+from scipy import integrate, special, stats
 
 OUT = "validation/reference/family_scores_scipy.csv"
 SOURCE = f"scipy {scipy.__version__}"
@@ -32,6 +38,11 @@ CASES = [
     ("poisson", 0.3, 1.0, 1.0, None, 0.0),
     ("poisson", 4.0, 2.0, 1.0, None, 6.0),
     ("poisson", 1.5, 1.0, 3.0, None, 4.0 / 3.0),
+    # Over-dispersed Poisson off its lattice (log density only): small,
+    # moderate and large lam.
+    ("poisson", 0.8, 2.0, 1.0, None, 1.1),
+    ("poisson", 9.0, 1.5, 2.0, None, 8.3),
+    ("poisson", 120.0, 2.5, 1.0, None, 117.3),
     ("binomial", 0.3, 1.0, 10.0, None, 0.4),
     ("binomial", 0.8, 1.0, 1.0, None, 1.0),
     ("negative_binomial", 3.0, 1.0, 1.0, 1.5, 5.0),
@@ -58,6 +69,21 @@ def dist(family, mu, phi, w, theta):
     return stats.invgauss(mu / lam, scale=lam), 1.0
 
 
+def odp_log_density(y, mu, phi, w):
+    lam = mu * w / phi
+    n = y * w / phi
+    c, _ = integrate.quad(
+        lambda x: math.exp(x * math.log(lam) - lam - special.gammaln(x + 1.0)),
+        0.0,
+        lam + 40.0 * math.sqrt(lam) + 40.0,
+        epsabs=0.0,
+        epsrel=1e-13,
+        limit=500,
+        points=[lam],
+    )
+    return n * math.log(lam) - lam - special.gammaln(n + 1.0) - math.log(c) + math.log(w / phi)
+
+
 def main():
     with open(OUT, "w", newline="") as f:
         out = csv.writer(f, lineterminator="\n")
@@ -66,14 +92,20 @@ def main():
             d, scale = dist(family, mu, phi, w, theta)
             params = f"mu={mu};phi={phi};w={w}" + (f";theta={theta}" if theta else "")
             discrete = family in ("poisson", "binomial", "negative_binomial")
+            on_lattice = not discrete or abs(y * scale - round(y * scale)) < 1e-9
             if discrete:
                 k = round(y * scale)
                 logp, lo, hi = d.logpmf(k), d.cdf(k - 1), d.cdf(k)
             else:
                 logp, lo, hi = d.logpdf(y), d.cdf(y), d.cdf(y)
-            out.writerow([family, params, repr(y), "log_density", repr(float(logp)), 1e-13, 1e-12, SOURCE])
-            out.writerow([family, params, repr(y), "cdf_lower", repr(float(lo)), 1e-15, 1e-11, SOURCE])
-            out.writerow([family, params, repr(y), "cdf_upper", repr(float(hi)), 1e-15, 1e-11, SOURCE])
+            if family == "poisson" and phi != 1.0:
+                logp = odp_log_density(y, mu, phi, w)
+            # The quadrature in C agrees to about 1e-12.
+            tol = (1e-11, 1e-11) if family == "poisson" and phi != 1.0 else (1e-13, 1e-12)
+            out.writerow([family, params, repr(y), "log_density", repr(float(logp)), *tol, SOURCE])
+            if on_lattice:
+                out.writerow([family, params, repr(y), "cdf_lower", repr(float(lo)), 1e-15, 1e-11, SOURCE])
+                out.writerow([family, params, repr(y), "cdf_upper", repr(float(hi)), 1e-15, 1e-11, SOURCE])
     print(f"wrote {OUT}", file=sys.stderr)
 
 
