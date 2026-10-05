@@ -31,6 +31,7 @@
 
 pub mod elpd;
 pub mod glm;
+pub mod nuts;
 pub mod stacking;
 
 use act_core::{Error, Result};

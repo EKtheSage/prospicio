@@ -137,6 +137,22 @@ models and compares them.
   grid integration for a Poisson with exposure and a Gaussian with
   sampled dispersion; means within 0.1 posterior sd, sds within 8%.
   Python `BayesGlm` / `BayesGlmFit`, R `bayes_glm_fit`, `bayes_loo`.
+- **Any posterior** (`act_bayes::nuts`): the NUTS driver is public. A
+  model implements `LogDensity` (dimension, log density and gradient on an
+  unconstrained vector, `None` outside the support) and `sample(&density,
+  start, Sampler)` returns `PosteriorDraws`: chains, divergences, a
+  summary, `transform` to the natural scale (keeping chains, so the
+  diagnostics are on that scale), and `predictive`, which picks a
+  posterior draw per simulation and lets the model simulate the outcome,
+  giving a `PredictiveDistribution` with parameter and process
+  uncertainty. Bayesian models in other crates (for example a Bayesian
+  reserving model) sample through it without touching `nuts-rs`.
+  `BayesGlm` and stacking share the driver. Tests: a correlated normal,
+  a half-line support, exact replay, and the gamma-Poisson posterior
+  predictive against the exact negative binomial. No Python or R
+  binding: a density written in Python or R would call back into the
+  interpreter at every gradient; those users hand nutpie or Stan traces
+  to the diagnostics instead.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 
