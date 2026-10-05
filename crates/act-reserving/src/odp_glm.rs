@@ -10,7 +10,7 @@
 //! the ODP bootstrap's scale. See `docs/design/triangle.md`, "ODP GLM".
 
 use act_core::{Lag, Period};
-use act_glm::{Glm, GlmFit};
+use act_glm::{Glm, GlmFit, ParameterDraws};
 use act_models::{Coding, Design, Fitted, Model, Terms};
 use act_prob::{ComponentKey, KeyValue, PredictiveDistribution};
 
@@ -104,8 +104,10 @@ impl OdpGlm {
     /// Fails if an origin or development age has no observed increment
     /// (its factor level would appear only in future cells), if a past
     /// cell has no increment (a hole: a missing value, or a value after
-    /// one), if an increment is negative (the quasi-Poisson family needs
-    /// non-negative responses), or if the GLM does not converge.
+    /// one), or if the GLM does not converge (for example when a level's
+    /// only observed increments are negative, so no positive mean fits).
+    /// Negative increments are otherwise fitted: the quasi-likelihood needs
+    /// only `V(μ) = μ` and `μ > 0` (`act_glm::Glm::over_dispersed_poisson`).
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<OdpGlmFit> {
         let cells = TriangleFrame::new(triangle, column, None)?;
         let origins = cells.origins().to_vec();
@@ -154,13 +156,6 @@ impl OdpGlm {
             )));
         }
         let y = cells.response_of(observed);
-        if let Some((k, &v)) = y.iter().enumerate().find(|(_, v)| **v < 0.0) {
-            return Err(Error::OdpGlm(format!(
-                "{} has a negative increment ({v}); the quasi-Poisson GLM needs \
-                 non-negative increments",
-                label(observed[k])
-            )));
-        }
 
         // Levels are learned on every cell so the future rows code with the
         // same columns as the observed ones.
@@ -206,8 +201,10 @@ impl OdpGlmFit {
         &self.future_design
     }
 
-    /// Mean of each future cell under
-    /// [`predict_distribution`](Self::predict_distribution): `exp(η + v / 2)`,
+    /// Mean of each future cell under normal parameter draws
+    /// ([`ParameterDraws::Normal`] in
+    /// [`predict_distribution_with`](Self::predict_distribution_with)):
+    /// `exp(η + v / 2)`,
     /// with `η` the linear predictor and `v = xᵀ Σ x` its variance under the
     /// coefficients' normal approximation. It exceeds the fitted mean
     /// `exp(η)` (the Chain Ladder's) by the factor `exp(v / 2)`, the
@@ -232,24 +229,39 @@ impl OdpGlmFit {
     /// `["origin", "development"]` and keys `(origin period, age in
     /// months)` in the order of [`future`](Self::future).
     ///
-    /// These are the GLM's predictive draws
-    /// ([`GlmFit::predict_distribution`](act_models::Fitted::predict_distribution)):
-    /// simulation `i` (stream `i` of `seed`) draws the coefficients from
+    /// Simulation `i` (stream `i` of `seed`) draws the coefficients from
     /// their normal approximation (parameter uncertainty, shared by every
     /// cell) and then each cell as `φ · Poisson(μ / φ)` (process
-    /// uncertainty). `aggregate(&["origin"])` gives the reserves by origin
-    /// with a future cell, and the total is the reserve.
+    /// uncertainty). The parameter draws are mean-preserving
+    /// ([`ParameterDraws::MeanPreserving`]): each cell's linear predictor is
+    /// shifted by `-v / 2`, so its draws average its fitted mean and the
+    /// total averages the Chain Ladder reserve. `aggregate(&["origin"])`
+    /// gives the reserves by origin with a future cell.
     ///
     /// Fails if `n_sims` is 0 or the triangle has no future cells.
     pub fn predict_distribution(&self, n_sims: usize, seed: u64) -> Result<PredictiveDistribution> {
+        self.predict_distribution_with(n_sims, seed, ParameterDraws::MeanPreserving)
+    }
+
+    /// [`predict_distribution`](Self::predict_distribution) with another
+    /// treatment of parameter uncertainty: [`ParameterDraws::Normal`]
+    /// (unshifted, so each cell's mean is
+    /// [`predictive_means`](Self::predictive_means)) or
+    /// [`ParameterDraws::Fixed`] (process uncertainty only).
+    pub fn predict_distribution_with(
+        &self,
+        n_sims: usize,
+        seed: u64,
+        parameters: ParameterDraws,
+    ) -> Result<PredictiveDistribution> {
         if self.future.is_empty() {
             return Err(Error::OdpGlm(
                 "the triangle is fully developed: there are no future cells to simulate".into(),
             ));
         }
-        let draws = self
-            .glm
-            .predict_distribution(&self.future_design, n_sims, seed)?;
+        let draws =
+            self.glm
+                .predict_distribution_with(&self.future_design, n_sims, seed, parameters)?;
         let components: Vec<ComponentKey> = self
             .future
             .iter()
@@ -326,14 +338,23 @@ mod tests {
         // Same seed, same draws.
         let again = fit.predict_distribution(4_000, 7).unwrap();
         assert_eq!(pd.draw_matrix(), again.draw_matrix());
-        // The draws' mean is the lognormal-corrected mean, above the fitted
-        // (Chain Ladder) reserve.
+        // Mean-preserving draws average the fitted (Chain Ladder) reserve;
+        // normal draws average the lognormal-corrected mean above it.
         let se = pd.std_dev() / 4_000f64.sqrt();
+        assert!(
+            (pd.mean() - fit.total_reserve()).abs() < 4.0 * se,
+            "{} vs {}",
+            pd.mean(),
+            fit.total_reserve()
+        );
+        let normal = fit
+            .predict_distribution_with(4_000, 7, ParameterDraws::Normal)
+            .unwrap();
         let want: f64 = fit.predictive_means().iter().sum();
         assert!(
-            (pd.mean() - want).abs() < 4.0 * se,
+            (normal.mean() - want).abs() < 4.0 * normal.std_dev() / 4_000f64.sqrt(),
             "{} vs {want}",
-            pd.mean()
+            normal.mean()
         );
         assert!(want > fit.total_reserve());
         assert!(fit.predict_distribution(0, 7).is_err());
@@ -382,13 +403,26 @@ mod tests {
     }
 
     #[test]
-    fn negative_increments_are_rejected() {
-        let tri = annual(2020, &[&[100.0, 90.0], &[110.0]]);
-        let msg = OdpGlm::default()
-            .fit(&tri, "values")
-            .unwrap_err()
-            .to_string();
-        assert!(msg.contains("negative increment (-10)"), "{msg}");
+    fn negative_increments_are_fitted() {
+        // 2020 falls by 10 at 36 months; the level still has a positive
+        // mean, and the Chain Ladder identity holds.
+        let tri = annual(
+            2020,
+            &[
+                &[100.0, 150.0, 140.0],
+                &[110.0, 170.0, 190.0],
+                &[120.0, 180.0],
+                &[130.0],
+            ],
+        );
+        let fit = OdpGlm::default().fit(&tri, "values").unwrap();
+        let cl = ChainLadder::default().fit(&tri, "values").unwrap();
+        for (a, b) in fit.reserves.iter().zip(cl.reserves()) {
+            assert!((a - b).abs() <= 1e-8 * b.abs().max(1.0), "{a} vs {b}");
+        }
+        // A level seen only in a negative increment has no positive mean.
+        let only_negative = annual(2020, &[&[100.0, 90.0], &[110.0]]);
+        assert!(OdpGlm::default().fit(&only_negative, "values").is_err());
     }
 
     #[test]
