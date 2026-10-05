@@ -308,6 +308,9 @@ stopifnot(length(big_out) == 1 + 1 + 20 + 1 + 1,
           length(format(big, max_rows = 0, max_cols = 0)) == 42,
           identical(dim(as.matrix(big)), c(40L, 40L)))
 invisible(utils::capture.output(print(big), print(holey)))
+bad_rows <- tryCatch(format(big, max_rows = -1), error = function(e) e)
+stopifnot(grepl("max_rows", conditionMessage(bad_rows)),
+          identical(conditionCall(bad_rows)[[1]], quote(format)))
 expect_error_like(summary(triangle(data.frame(column = "a", year = 2020, age = 12, paid = 1),
                                    "year", "age", "paid", keys = "column")), "clashes")
 

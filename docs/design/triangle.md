@@ -90,7 +90,8 @@ gives the same total as its cumulative form. `Display` (and
 `to_text(max_rows, max_cols)`, `to_html`) prints the grid for one segment
 and measure and the summary table otherwise, rounding numbers by the
 size of a typical value (whole amounts, three decimals for link ratios)
-and showing the first and last 20 origins and 12 ages around a `...`.
+and showing at most 20 origins and 12 ages, the first and last halves
+around a `...` (`max_rows` and `max_cols`; 0 for no limit).
 The printout lives in Rust so Python and R print the same text.
 
 | | Python | R |

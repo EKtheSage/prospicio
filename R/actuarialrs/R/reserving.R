@@ -294,8 +294,10 @@ S7::method(summary, triangle) <- function(object, ...) {
 }
 
 S7::method(format, triangle) <- function(x, max_rows = 20, max_cols = 12, ...) {
-  strsplit(rust_result(x@ptr$to_text(as.double(max_rows), as.double(max_cols))), "\n",
-           fixed = TRUE)[[1]]
+  call <- sys.call()
+  call[[1]] <- quote(format)
+  text <- rust_result(x@ptr$to_text(as.double(max_rows), as.double(max_cols)), call = call)
+  strsplit(text, "\n", fixed = TRUE)[[1]]
 }
 
 S7::method(print, triangle) <- function(x, ...) {
