@@ -7,9 +7,8 @@
 marginal(dist, key, ...)
 }
 \arguments{
-\item{dist}{A \link{predictive_distribution}.}
-
-\item{key}{A named list (or vector) with one value per dimension.}
+\item{key}{A named list (or vector) with one value per dimension. An origin
+period is named by its label (\code{"2021"}, \code{2021}, \code{"2021Q3"}).}
 
 \item{...}{Unused; for methods.}
 }
