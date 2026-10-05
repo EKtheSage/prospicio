@@ -141,7 +141,7 @@ def test_accessors_and_values():
     tri = small()
     assert tri.shape == (1, 1, 3, 3)
     assert tri.development == [12, 24, 36]
-    assert tri.valuation == "2022-12"
+    assert tri.valuation == datetime.date(2022, 12, 31)
     assert tri.origin_grain == "Y" and tri.development_grain == "Y"
     v = tri.values[0][0]
     assert v[0] == [100.0, 150.0, 160.0]
@@ -227,7 +227,7 @@ def test_pandas_frame_and_datetimes():
     )
     assert tri.origins == ["2021Q1", "2021Q2"]
     assert tri.development == [3, 6]
-    assert tri.valuation == "2021-06"
+    assert tri.valuation == datetime.date(2021, 6, 30)
     assert np.asarray(tri.values).shape == (1, 1, 2, 2)
     # numpy datetime64 and integer arrays work directly.
     same = Triangle.from_long(
@@ -256,7 +256,9 @@ def test_grain():
     y = q.grain("Y", "Y")
     assert y.origins == ["2020"] and y.development == [12]
     assert y.values[0][0][0] == [4.0]
-    assert q.grain("Y").development_grain == "Q"
+    # The development grain defaults to the origin grain.
+    assert q.grain("Y") == y
+    assert q.grain("Y", "Q").development_grain == "Q"
     with pytest.raises(ValueError, match="grain"):
         y.grain("Q")
     with pytest.raises(ValueError, match="grain must be"):
@@ -313,3 +315,14 @@ def test_numpy_integer_years():
         Triangle.from_long([True], [12], [1.0])
     with pytest.raises(TypeError, match="dates or integer years"):
         Triangle.from_long([2020.0], [12], [1.0])
+
+
+def test_valuation_is_last_day_of_month():
+    tri = Triangle.from_long(
+        origin=[datetime.date(2024, 2, 1)],
+        development=[1],
+        values=[1.0],
+        origin_grain="M",
+        development_grain="M",
+    )
+    assert tri.valuation == datetime.date(2024, 2, 29)

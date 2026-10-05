@@ -12,7 +12,7 @@ use act_reserving::{
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyInt, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyDate, PyDelta, PyDict, PyInt, PyList, PyString, PyTuple};
 
 use crate::to_py;
 
@@ -301,7 +301,7 @@ impl LongArgs {
 /// >>> tri.shape
 /// (1, 1, 2, 2)
 /// >>> tri.origins, tri.development, tri.valuation
-/// (['2020', '2021'], [12, 24], '2021-12')
+/// (['2020', '2021'], [12, 24], datetime.date(2021, 12, 31))
 /// >>> tri.values[0][0]
 /// [[100.0, 150.0], [110.0, nan]]
 #[pyclass(name = "Triangle", module = "actuarialrs.reserving", frozen)]
@@ -558,10 +558,19 @@ impl PyTriangle {
         self.inner.development_grain().to_string()
     }
 
-    /// Month of the latest diagonal, as ``"YYYY-MM"``.
+    /// Valuation date of the latest diagonal: the last day of its month,
+    /// as a ``datetime.date``.
     #[getter]
-    fn valuation(&self) -> String {
-        self.inner.valuation().to_string()
+    fn valuation<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDate>> {
+        let month = self.inner.valuation();
+        // The first of the next month, minus one day.
+        let next = month.add_months(1);
+        let first_of_next = PyDate::new(py, next.year(), next.month(), 1)?;
+        let one_day = PyDelta::new(py, 1, 0, 0, false)?;
+        first_of_next
+            .call_method1("__sub__", (one_day,))?
+            .cast_into::<PyDate>()
+            .map_err(Into::into)
     }
 
     /// Whether the values are cumulative (otherwise incremental).
@@ -745,7 +754,7 @@ impl PyTriangle {
     /// ----------
     /// origin_grain : {"Y", "S", "Q", "M"}
     /// development_grain : {"Y", "S", "Q", "M"}, optional
-    ///     By default the current development grain.
+    ///     By default ``origin_grain``.
     ///
     /// Returns
     /// -------
@@ -763,14 +772,15 @@ impl PyTriangle {
     /// >>> q = Triangle.from_long(
     /// ...     [2020, 2020], [3, 6], [1.0, 2.0], origin_grain="Q", development_grain="Q"
     /// ... )
-    /// >>> q.grain("Y").origins
-    /// ['2020']
+    /// >>> y = q.grain("Y")
+    /// >>> y.origins, y.development_grain
+    /// (['2020'], 'Y')
     #[pyo3(signature = (origin_grain, development_grain = None))]
     fn grain(&self, origin_grain: &str, development_grain: Option<&str>) -> PyResult<Self> {
         let origin = grain(origin_grain)?;
         let dev = match development_grain {
             Some(g) => grain(g)?,
-            None => self.inner.development_grain(),
+            None => origin,
         };
         self.inner.grain(origin, dev).map(wrap).map_err(err)
     }

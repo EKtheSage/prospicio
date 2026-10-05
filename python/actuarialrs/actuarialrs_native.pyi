@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import date
 from typing import Any, final
 
 @final
@@ -5056,7 +5057,7 @@ class Triangle:
     >>> tri.shape
     (1, 1, 2, 2)
     >>> tri.origins, tri.development, tri.valuation
-    (['2020', '2021'], [12, 24], '2021-12')
+    (['2020', '2021'], [12, 24], datetime.date(2021, 12, 31))
     >>> tri.values[0][0]
     [[100.0, 150.0], [110.0, nan]]
     """
@@ -5195,7 +5196,7 @@ class Triangle:
         ----------
         origin_grain : {"Y", "S", "Q", "M"}
         development_grain : {"Y", "S", "Q", "M"}, optional
-            By default the current development grain.
+            By default ``origin_grain``.
         
         Returns
         -------
@@ -5213,8 +5214,9 @@ class Triangle:
         >>> q = Triangle.from_long(
         ...     [2020, 2020], [3, 6], [1.0, 2.0], origin_grain="Q", development_grain="Q"
         ... )
-        >>> q.grain("Y").origins
-        ['2020']
+        >>> y = q.grain("Y")
+        >>> y.origins, y.development_grain
+        (['2020'], 'Y')
         """
     @property
     def index(self, /) -> list[Any]:
@@ -5328,9 +5330,10 @@ class Triangle:
             ``development``.
         """
     @property
-    def valuation(self, /) -> str:
+    def valuation(self, /) -> date:
         """
-        Month of the latest diagonal, as ``"YYYY-MM"``.
+        Valuation date of the latest diagonal: the last day of its month,
+        as a ``datetime.date``.
         """
     @property
     def values(self, /) -> list[list[list[list[float]]]]:
