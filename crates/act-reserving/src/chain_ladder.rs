@@ -67,7 +67,8 @@ pub struct ChainLadderFit {
 impl ChainLadder {
     /// Fits `column` of a single-segment triangle.
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<ChainLadderFit> {
-        self.fit_segment(&triangle.segment(column)?, triangle.development())
+        let segment = triangle.segment(column)?;
+        self.fit_segment(&segment, &segment.ages)
     }
 
     /// Fits `column` in every segment of `triangle`, each on its own; see
@@ -77,9 +78,7 @@ impl ChainLadder {
         triangle: &Triangle,
         column: &str,
     ) -> Result<SegmentFits<ChainLadderFit>> {
-        fit_each(triangle, column, |s| {
-            self.fit_segment(s, triangle.development())
-        })
+        fit_each(triangle, column, |s| self.fit_segment(s, &s.ages))
     }
 
     pub(crate) fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<ChainLadderFit> {

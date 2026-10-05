@@ -167,6 +167,11 @@ needs a single-segment triangle. `fit_segments` on `ChainLadder`, `Mack`
 and `OdpBootstrap` fits one column in every segment, each on its own (the
 same numbers as selecting the segment and calling `fit`), and a failure
 names its segment (`Error::InSegment`) when the triangle has keys.
+Each segment fits on the origins and ages it observes, from its first to
+its last: a line that starts later, or has fewer ages than the triangle,
+fits on its own range (as does a column with empty trailing origins or
+ages). An empty origin inside that range is still an error. Long tables
+have one row per origin the segment covers.
 
 - `ChainLadder` and `Mack` return `SegmentFits<T>`: `key_names`, `labels`
   and `fits` in index order, `get(&Label)`, and `segment(&[(key, value)])`

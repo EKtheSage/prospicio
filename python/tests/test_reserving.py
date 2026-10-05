@@ -386,8 +386,11 @@ def test_named_keys_select_and_frame():
                               keys={"lob": long["lob"], "state": long["state"]})
     assert back == tri
     assert Triangle.from_frame(long, "origin", "development", ["paid", "incurred"], keys=tri.keys) == tri
-    with pytest.raises(ValueError, match="segment Home / NY: factor"):
-        ChainLadder().fit(tri, "paid")
+    # Home is observed at 12 months only: it fits on its own single age
+    # (no development, so no reserve), not on the triangle's two.
+    home_fit = ChainLadder().fit(tri, "paid").segment(lob="Home", state="NY")
+    assert home_fit.ldf == []
+    assert all(r == 0.0 for r in home_fit.reserve)
     with pytest.raises(ValueError, match="no column named"):
         tri.select(columns="nope")
     with pytest.raises(ValueError, match="twice"):

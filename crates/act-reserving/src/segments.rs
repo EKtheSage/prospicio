@@ -416,9 +416,86 @@ mod tests {
         .unwrap()
     }
 
+    /// Auto covers 2019-2022 at four ages; Home starts in 2020, has an
+    /// empty 2021 inside its range when `gap`, and three ages.
+    fn ragged(gap: bool) -> Triangle {
+        let mut keys = Vec::new();
+        let (mut origin, mut ages, mut paid) = (Vec::new(), Vec::new(), Vec::new());
+        let auto: [&[f64]; 4] = [
+            &[100.0, 150.0, 165.0, 170.0],
+            &[110.0, 160.0, 180.0],
+            &[120.0, 175.0],
+            &[130.0],
+        ];
+        for (k, row) in auto.iter().enumerate() {
+            for (d, v) in row.iter().enumerate() {
+                keys.push("Auto");
+                origin.push(Month::january(2019 + k as i32));
+                ages.push(12 * (d as u32 + 1));
+                paid.push(*v);
+            }
+        }
+        let home: [(i32, &[f64]); 3] = [
+            (2020, &[10.0, 15.0, 16.0]),
+            (2021, if gap { &[] } else { &[11.0, 17.0] }),
+            (2022, &[12.0]),
+        ];
+        for (year, row) in home {
+            for (d, v) in row.iter().enumerate() {
+                keys.push("Home");
+                origin.push(Month::january(year));
+                ages.push(12 * (d as u32 + 1));
+                paid.push(*v);
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[("lob", &keys)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn segments_fit_on_their_own_origins_and_ages() {
+        // Home starts a year after Auto and has one age fewer: it fits on
+        // 2020-2022 and three ages, exactly as on its own.
+        let tri = ragged(false);
+        let fits = ChainLadder::default().fit_segments(&tri, "paid").unwrap();
+        let home = fits.segment(&[("lob", "Home")]).unwrap();
+        let alone = ChainLadder::default()
+            .fit(&tri.select(&[("lob", &["Home"])]).unwrap(), "paid")
+            .unwrap();
+        // Equal up to the unestimable last sigma (NaN in both).
+        let (h, a) = (&home.fits[0], &alone);
+        assert_eq!(h.origins, a.origins);
+        assert_eq!(h.development.ldf, a.development.ldf);
+        assert_eq!(h.latest, a.latest);
+        assert_eq!(h.ultimate, a.ultimate);
+        assert_eq!(alone.origins.len(), 3);
+        assert_eq!(alone.development.development, [12, 24, 36]);
+        assert_eq!(alone.development.ldf.len(), 2);
+        let auto = fits.segment(&[("lob", "Auto")]).unwrap();
+        assert_eq!(auto.fits[0].origins.len(), 4);
+        // The bootstrap runs on the ragged segments too: one joint
+        // distribution with 4 + 3 origin components.
+        let boot = crate::OdpBootstrap {
+            n_sims: 50,
+            ..Default::default()
+        }
+        .fit_segments(&tri, "paid")
+        .unwrap();
+        assert_eq!(boot.reserves.n_components(), 7);
+    }
+
     #[test]
     fn a_failing_segment_is_named() {
-        let tri = two_segments(&[10.0, 20.0, f64::NAN]);
+        // A gap inside Home's range (2021) is still an error.
+        let tri = ragged(true);
         assert_eq!(
             ChainLadder::default().fit_segments(&tri, "paid"),
             Err(Error::InSegment {

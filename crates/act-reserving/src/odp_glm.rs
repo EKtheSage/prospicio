@@ -361,29 +361,36 @@ mod tests {
     }
 
     #[test]
-    fn origin_with_only_future_cells_is_rejected() {
-        let tri = annual(2020, &[&[100.0, 150.0], &[110.0], &[f64::NAN]]);
-        let err = OdpGlm::default().fit(&tri, "values").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("origin 2022") && msg.contains("only in future"),
-            "{msg}"
-        );
-    }
-
-    #[test]
-    fn age_with_only_future_cells_is_rejected() {
-        // 2020 at 36 months is after the valuation, so age 36 has no
-        // observed increment.
-        let tri = annual(2020, &[&[100.0, 150.0, f64::NAN], &[110.0]]);
+    fn origin_with_no_increment_is_rejected() {
+        // 2021 is empty inside the triangle's range: no increment to fit
+        // its origin factor on.
+        let tri = annual(2020, &[&[100.0, 150.0, 160.0], &[f64::NAN], &[120.0]]);
         let msg = OdpGlm::default()
             .fit(&tri, "values")
             .unwrap_err()
             .to_string();
-        assert!(
-            msg.contains("development age 36 months") && msg.contains("only in future"),
-            "{msg}"
+        assert!(msg.contains("2021"), "{msg}");
+    }
+
+    #[test]
+    fn empty_trailing_origins_and_ages_are_dropped() {
+        // No value at 48 months or for 2023: the segment is trimmed to the
+        // origins and ages it observes, and fits as without them.
+        let full = annual(2020, &[&[100.0, 150.0, 160.0], &[110.0, 165.0], &[120.0]]);
+        let padded = annual(
+            2020,
+            &[
+                &[100.0, 150.0, 160.0, f64::NAN],
+                &[110.0, 165.0],
+                &[120.0],
+                &[f64::NAN],
+            ],
         );
+        let a = OdpGlm::default().fit(&full, "values").unwrap();
+        let b = OdpGlm::default().fit(&padded, "values").unwrap();
+        assert_eq!(a.origins, b.origins);
+        assert_eq!(a.future, b.future);
+        assert_eq!(a.reserves, b.reserves);
     }
 
     #[test]
