@@ -27,6 +27,8 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
+      # The knowledge bundle conforms to OKF v0.2 (knowledge/index.md).
+      - run: python3 -m pip install --quiet pyyaml && python3 validation/scripts/check_okf.py knowledge
       # Default members: pure-Rust crates and the parity suite.
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
