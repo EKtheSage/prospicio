@@ -232,6 +232,34 @@ the long table, so a single-segment fit reads as before. Per-age fields
 bootstrap's `scale`, `fitted` and `residuals` need one segment; with
 several they raise an error that points to the frames or `segment()`.
 
+To read a triangle, view one segment and measure as an origin ×
+development table, or summarise every segment and measure. A triangle
+with one segment and one measure prints as that table; otherwise it prints
+the summary, one row per segment and measure with its origins, valuation
+and latest diagonal total. The text comes from Rust, so both bindings
+print the same thing:
+
+```rust
+let grid = tri.view(&[("lob", "Auto"), ("state", "CA")], Some("paid"))?;
+let rows = tri.summary().rows;   // n_origins, first/last origin, valuation, latest
+println!("{tri}");               // the grid or the summary table
+```
+
+```python
+tri.view("paid", lob="Auto", state="CA")   # DataFrame: origins x ages
+tri.summary()                              # one row per segment and measure
+tri                                        # prints the grid or the summary
+```
+
+```r
+as.matrix(tri, lob = "Auto", state = "CA", column = "paid")  # origins x ages
+summary(tri)                                                  # a data.frame
+tri                                                           # same printout
+```
+
+R uses `as.matrix()` rather than a `view()` verb, which would mask
+`tibble::view()`.
+
 Every Chain Ladder and Mack value is checked against R `ChainLadder` and
 chainladder-python on RAA, GenIns and ABC in `validation/`; the ODP
 bootstrap is checked against R `BootChainLadder`.

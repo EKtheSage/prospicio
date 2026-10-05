@@ -978,6 +978,12 @@ Triangle$group_by <- function(keys) .Call(wrap__Triangle__group_by, self, keys)
 
 Triangle$grain <- function(origin_grain, development_grain) .Call(wrap__Triangle__grain, self, origin_grain, development_grain)
 
+Triangle$view <- function(keys, values, column) .Call(wrap__Triangle__view, self, keys, values, column)
+
+Triangle$summary <- function() .Call(wrap__Triangle__summary, self)
+
+Triangle$to_text <- function(max_rows, max_cols) .Call(wrap__Triangle__to_text, self, max_rows, max_cols)
+
 Triangle$chain_ladder <- function(column, average, sigma_interpolation, tail) .Call(wrap__Triangle__chain_ladder, self, column, average, sigma_interpolation, tail)
 
 Triangle$mack <- function(column, average, sigma_interpolation) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation)

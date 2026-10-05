@@ -237,6 +237,83 @@ expect_error_like(subset(lc, lob = "Auto", lob = "Home"), "key lob is supplied t
 expect_error_like(aggregate(lc, keep = "line"), "no key named line")
 expect_error_like(aggregate(lc, keep = c("lob", "lob")), "key lob is supplied twice")
 
+# Views: as.matrix() is one segment x measure of @values; summary() one row
+# per segment x measure; print() the grid or the summary, as in Python.
+for (k in seq_len(nrow(lc@index))) {
+  for (col in measures) {
+    v <- as.matrix(lc, lob = lc@index$lob[k], coverage = lc@index$coverage[k], column = col)
+    stopifnot(is.matrix(v), identical(dimnames(v), list(origin = lc@origins,
+                                                        development = as.character(lc@development))),
+              identical(unname(v), unname(lc@values[k, col, , ])))
+  }
+}
+auto_bi <- as.matrix(lc, lob = "Auto", coverage = "BI", column = "paid")
+long_lc <- as.data.frame(lc)
+row <- long_lc[long_lc$lob == "Auto" & long_lc$coverage == "BI", ][5, ]
+near(auto_bi[format(row$origin, "%Y"), as.character(row$development)], row$paid)
+stopifnot(identical(unname(as.matrix(raa)), unname(raa@values[1, 1, , ])),
+          identical(as.matrix(raa), as.matrix(raa, column = "value")))
+expect_error_like(as.matrix(lc, lob = "Auto", column = "paid"), "2 segments match")
+expect_error_like(as.matrix(lc, lob = "Auto", coverage = "BI"), "2 columns")
+expect_error_like(as.matrix(lc, lob = "Auto", coverage = "BI", column = "x"), "no column named x")
+expect_error_like(as.matrix(lc, line = "Auto", column = "paid"), "no key named line")
+expect_error_like(as.matrix(lc, lob = c("Auto", "Home"), column = "paid"), "one value per key")
+expect_error_like(as.matrix(lc, "Auto"), "must be named by key")
+
+s <- summary(lc)
+stopifnot(
+  is.data.frame(s), nrow(s) == 8,
+  identical(names(s), c("lob", "coverage", "column", "n_origins", "first_origin", "last_origin",
+                        "valuation", "latest", "cumulative")),
+  identical(s$lob, rep(c("Auto", "Home"), each = 4)),
+  identical(s$column, rep(measures, 4)),
+  identical(s$n_origins, rep(10L, 8)),
+  identical(s$first_origin, rep("2011", 8)), identical(s$last_origin, rep("2020", 8)),
+  identical(s$valuation, rep(as.Date("2020-12-31"), 8)),
+  all(s$cumulative)
+)
+# The latest totals are the latest diagonal's sums.
+near(s$latest, as.vector(t(apply(latest_diagonal(lc), c(1, 2), sum, na.rm = TRUE))))
+near(summary(to_incremental(lc))$latest, s$latest, 1e-9)
+stopifnot(!any(summary(to_incremental(lc))$cumulative))
+
+words <- function(lines) strsplit(trimws(lines), "[[:space:]]+")
+out <- format(lc)
+stopifnot(startsWith(out[1], "Triangle: 4 segments x 2 columns, keys lob, coverage"),
+          identical(words(out[2])[[1]], c("lob", "coverage", "column", "n_origins", "first_origin",
+                                          "last_origin", "valuation", "latest")),
+          identical(words(out[3])[[1]][1:5], c("Auto", "BI", "paid", "10", "2011")),
+          length(out) == 2 + 8,
+          identical(utils::capture.output(print(lc)), out))
+raa_out <- format(raa)
+stopifnot(identical(raa_out[1], "Triangle: value (cumulative, valuation 1990-12)"),
+          identical(words(raa_out[3])[[1]][1:3], c("1981", "5,012", "8,269")),
+          identical(words(raa_out[12])[[1]], c("1990", "2,063")),
+          identical(words(format(link_ratios(raa))[3])[[1]][2], "1.650"))
+# Empty and holey segments, and a large triangle, print.
+holey <- triangle(data.frame(lob = c("auto", "auto", "home"), year = 2020, age = c(12, 36, 12),
+                             paid = c(1, 3, NA)), "year", "age", "paid", keys = "lob")
+stopifnot(any(grepl("home", format(holey))),
+          identical(is.na(summary(holey)$first_origin), c(FALSE, TRUE)),
+          is.na(summary(holey)$valuation[2]), summary(holey)$latest[2] == 0,
+          identical(words(format(subset(holey, lob = "home"))[3])[[1]], "2020"),
+          identical(words(format(subset(holey, lob = "auto"))[3])[[1]], c("2020", "1", "3")),
+          all(is.na(as.matrix(holey, lob = "home"))))
+big_rows <- do.call(rbind, lapply(0:39, function(k) data.frame(year = 2000 + k, age = 12 * seq_len(40 - k))))
+big <- triangle(transform(big_rows, paid = 1), "year", "age", "paid")
+big_out <- format(big)
+stopifnot(length(big_out) == 1 + 1 + 20 + 1 + 1,
+          identical(big_out[length(big_out)], "[40 origins x 40 ages]"),
+          length(words(big_out[2])[[1]]) == 12 + 1,
+          length(format(big, max_rows = 0, max_cols = 0)) == 42,
+          identical(dim(as.matrix(big)), c(40L, 40L)))
+invisible(utils::capture.output(print(big), print(holey)))
+bad_rows <- tryCatch(format(big, max_rows = -1), error = function(e) e)
+stopifnot(grepl("max_rows", conditionMessage(bad_rows)),
+          identical(conditionCall(bad_rows)[[1]], quote(format)))
+expect_error_like(summary(triangle(data.frame(column = "a", year = 2020, age = 12, paid = 1),
+                                   "year", "age", "paid", keys = "column")), "clashes")
+
 # Every segment at once: each segment's fit equals fitting it alone.
 cl <- chain_ladder(lc, "paid")
 m <- mack(lc, "paid")

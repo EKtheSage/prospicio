@@ -5722,6 +5722,7 @@ class Triangle:
     """
     def __eq__(self, other: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
+    def _repr_html_(self, /) -> str: ...
     @property
     def columns(self, /) -> list[str]:
         """
@@ -6024,6 +6025,40 @@ class Triangle:
         """
         Axis lengths: ``(index, column, origin, development)``.
         """
+    def summary(self, /) -> Any:
+        """
+        One row per segment and measure: the key values, ``column``,
+        ``n_origins`` (origins with an observed value), ``first_origin`` and
+        ``last_origin`` of those, ``valuation`` (the last day of the latest
+        valuation with an observed value), ``latest`` (the sum over origins of
+        the latest cumulative value, so for an incremental triangle the sum
+        of every increment) and ``cumulative``. An origin or valuation is
+        missing (``None``, which pandas may show as ``NaN``) when the segment
+        has no observed value of the measure.
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+            A DataFrame with pandas installed, a dict of lists otherwise.
+        
+        Raises
+        ------
+        ValueError
+            If a key has the name of one of the summary's columns.
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2021, 2020],
+        ...     [12, 24, 12, 12],
+        ...     {"paid": [100.0, 150.0, 110.0, 50.0]},
+        ...     keys={"lob": ["Auto", "Auto", "Auto", "Home"]},
+        ... )
+        >>> s = tri.summary()
+        >>> s["lob"].tolist(), s["n_origins"].tolist(), s["latest"].tolist()
+        (['Auto', 'Home'], [2, 1], [260.0, 50.0])
+        """
     def to_cumulative(self, /) -> Triangle:
         """
         Cumulative values: running sums of the observed increments.
@@ -6078,6 +6113,35 @@ class Triangle:
         >>> list(long), long["lob"]
         (['lob', 'origin', 'development', 'paid'], ['Auto', 'Home'])
         """
+    def to_string(self, /, max_rows: int = ..., max_cols: int = ...) -> str:
+        """
+        The printout as text: the origin × development grid for a triangle
+        with one segment and one measure (as ``view``), otherwise the
+        ``summary`` table. Numbers are rounded for reading; ``view`` and
+        ``summary`` give exact values.
+        
+        Parameters
+        ----------
+        max_rows : int, default 20
+            Rows shown before the middle ones are left out; 0 for no limit.
+        max_cols : int, default 12
+            Development ages shown before the middle ones are left out; 0
+            for no limit.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [1000.0, 1500.0, 1100.0]})
+        >>> print(tri.to_string())
+        Triangle: paid (cumulative, valuation 2021-12)
+                 12     24
+        2020  1,000  1,500
+        2021  1,100
+        """
     @property
     def valuation(self, /) -> date:
         """
@@ -6089,6 +6153,48 @@ class Triangle:
         """
         Values as nested lists indexed ``[index][column][origin][development]``,
         ``nan`` where unobserved. ``numpy.asarray`` gives the 4-D array.
+        """
+    def view(self, /, column: str |None = None, **keys) -> Any:
+        """
+        One segment and measure as an origin × development table.
+        
+        Parameters
+        ----------
+        column : str, optional
+            The measure; may be left out when the triangle has one column.
+        **keys : value
+            One value per key, such as ``lob="Auto"``, compared as ``str()``
+            of it. Keys not named may take any value, but the choice must
+            leave one segment; a triangle with one segment needs none. A key
+            named ``column`` cannot be chosen this way (``select`` it first).
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+            With pandas installed, a DataFrame with the origin labels as its
+            index (named ``origin``), the ages in months as its columns
+            (named ``development``) and ``nan`` where a cell is not observed.
+            Without pandas, a dict of lists as the other tables of this
+            module: ``"origin"``, then one list per age keyed by the age.
+        
+        Raises
+        ------
+        ValueError
+            If a key, value or column is unknown, the keys match several
+            segments, or the column is left out and there are several.
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2021, 2020],
+        ...     [12, 24, 12, 12],
+        ...     {"paid": [100.0, 150.0, 110.0, 50.0]},
+        ...     keys={"lob": ["Auto", "Auto", "Auto", "Home"]},
+        ... )
+        >>> v = tri.view(lob="Auto")
+        >>> list(v.index), list(v.columns), float(v.loc["2021", 12])
+        (['2020', '2021'], [12, 24], 110.0)
         """
 
 @final

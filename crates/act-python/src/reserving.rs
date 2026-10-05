@@ -10,11 +10,13 @@ use act_core::{Grain, Lag, Month};
 use act_reserving::{
     Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, FitTable, Label, Long,
     Mack, MackFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
-    ReserveFit, SegmentFits, SigmaInterpolation, Triangle,
+    ReserveFit, SegmentFits, SigmaInterpolation, Triangle, view,
 };
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyString, PyTuple};
+use pyo3::types::{
+    PyBool, PyBytes, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyModule, PyString, PyTuple,
+};
 
 use crate::distributions::PyPredictiveDistribution;
 use crate::to_py;
@@ -365,6 +367,28 @@ fn wrap(inner: Triangle) -> PyTriangle {
     PyTriangle { inner }
 }
 
+/// The last day of `month` as a ``datetime.date``.
+fn month_end<'py>(py: Python<'py>, month: Month) -> PyResult<Bound<'py, PyDate>> {
+    // The first of the next month, minus one day.
+    let next = month.add_months(1);
+    let first_of_next = PyDate::new(py, next.year(), next.month(), 1)?;
+    let one_day = PyDelta::new(py, 1, 0, 0, false)?;
+    first_of_next
+        .call_method1("__sub__", (one_day,))?
+        .cast_into::<PyDate>()
+        .map_err(Into::into)
+}
+
+/// pandas when it is installed, so tables come out as DataFrames; the
+/// tables are dicts of lists otherwise.
+fn pandas(py: Python<'_>) -> PyResult<Option<Bound<'_, PyModule>>> {
+    match py.import("pandas") {
+        Ok(module) => Ok(Some(module)),
+        Err(e) if e.is_instance_of::<PyImportError>(py) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 #[pymethods]
 impl PyTriangle {
     /// Builds a triangle from the columns of a long table, one row per
@@ -632,15 +656,7 @@ impl PyTriangle {
     /// as a ``datetime.date``.
     #[getter]
     fn valuation<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDate>> {
-        let month = self.inner.valuation();
-        // The first of the next month, minus one day.
-        let next = month.add_months(1);
-        let first_of_next = PyDate::new(py, next.year(), next.month(), 1)?;
-        let one_day = PyDelta::new(py, 1, 0, 0, false)?;
-        first_of_next
-            .call_method1("__sub__", (one_day,))?
-            .cast_into::<PyDate>()
-            .map_err(Into::into)
+        month_end(py, self.inner.valuation())
     }
 
     /// Whether the values are cumulative (otherwise incremental).
@@ -946,24 +962,216 @@ impl PyTriangle {
             .is_ok_and(|o| o.inner == self.inner)
     }
 
-    fn __repr__(&self) -> String {
-        let [i, c, o, d] = self.inner.shape();
-        let origins = self.inner.origins();
-        let span = match (origins.first(), origins.last()) {
-            (Some(a), Some(b)) => format!("{a}..{b}"),
-            _ => String::new(),
-        };
-        format!(
-            "Triangle(shape=({i}, {c}, {o}, {d}), keys={:?}, columns={:?}, origins={span}, valuation={}, cumulative={})",
-            self.inner.key_names(),
-            self.inner.columns(),
-            self.inner.valuation(),
-            if self.inner.is_cumulative() {
-                "True"
-            } else {
-                "False"
+    /// One segment and measure as an origin × development table.
+    ///
+    /// Parameters
+    /// ----------
+    /// column : str, optional
+    ///     The measure; may be left out when the triangle has one column.
+    /// **keys : value
+    ///     One value per key, such as ``lob="Auto"``, compared as ``str()``
+    ///     of it. Keys not named may take any value, but the choice must
+    ///     leave one segment; a triangle with one segment needs none. A key
+    ///     named ``column`` cannot be chosen this way (``select`` it first).
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame or dict
+    ///     With pandas installed, a DataFrame with the origin labels as its
+    ///     index (named ``origin``), the ages in months as its columns
+    ///     (named ``development``) and ``nan`` where a cell is not observed.
+    ///     Without pandas, a dict of lists as the other tables of this
+    ///     module: ``"origin"``, then one list per age keyed by the age.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a key, value or column is unknown, the keys match several
+    ///     segments, or the column is left out and there are several.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020, 2021, 2020],
+    /// ...     [12, 24, 12, 12],
+    /// ...     {"paid": [100.0, 150.0, 110.0, 50.0]},
+    /// ...     keys={"lob": ["Auto", "Auto", "Auto", "Home"]},
+    /// ... )
+    /// >>> v = tri.view(lob="Auto")
+    /// >>> list(v.index), list(v.columns), float(v.loc["2021", 12])
+    /// (['2020', '2021'], [12, 24], 110.0)
+    #[pyo3(signature = (column = None, **keys))]
+    fn view<'py>(
+        &self,
+        py: Python<'py>,
+        column: Option<&str>,
+        keys: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let keys = segment_keys(keys)?;
+        let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let view = self.inner.view(&keys, column).map_err(err)?;
+        let origins: Vec<String> = view.origins.iter().map(ToString::to_string).collect();
+        let (no, nd) = (view.origins.len(), view.development.len());
+        let cell = |o: usize, d: usize| view.get(o, d).unwrap_or(f64::NAN);
+        match pandas(py)? {
+            Some(pd) => {
+                let rows: Vec<Vec<f64>> = (0..no)
+                    .map(|o| (0..nd).map(|d| cell(o, d)).collect())
+                    .collect();
+                let index_args = PyDict::new(py);
+                index_args.set_item("name", "origin")?;
+                let index = pd.call_method("Index", (origins,), Some(&index_args))?;
+                let columns_args = PyDict::new(py);
+                columns_args.set_item("name", "development")?;
+                let columns =
+                    pd.call_method("Index", (view.development.clone(),), Some(&columns_args))?;
+                let args = PyDict::new(py);
+                args.set_item("index", index)?;
+                args.set_item("columns", columns)?;
+                pd.call_method("DataFrame", (rows,), Some(&args))
             }
-        )
+            None => {
+                let out = PyDict::new(py);
+                out.set_item("origin", origins)?;
+                for (d, age) in view.development.iter().enumerate() {
+                    let values: Vec<f64> = (0..no).map(|o| cell(o, d)).collect();
+                    out.set_item(age, values)?;
+                }
+                Ok(out.into_any())
+            }
+        }
+    }
+
+    /// One row per segment and measure: the key values, ``column``,
+    /// ``n_origins`` (origins with an observed value), ``first_origin`` and
+    /// ``last_origin`` of those, ``valuation`` (the last day of the latest
+    /// valuation with an observed value), ``latest`` (the sum over origins of
+    /// the latest cumulative value, so for an incremental triangle the sum
+    /// of every increment) and ``cumulative``. An origin or valuation is
+    /// missing (``None``, which pandas may show as ``NaN``) when the segment
+    /// has no observed value of the measure.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame or dict
+    ///     A DataFrame with pandas installed, a dict of lists otherwise.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a key has the name of one of the summary's columns.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020, 2021, 2020],
+    /// ...     [12, 24, 12, 12],
+    /// ...     {"paid": [100.0, 150.0, 110.0, 50.0]},
+    /// ...     keys={"lob": ["Auto", "Auto", "Auto", "Home"]},
+    /// ... )
+    /// >>> s = tri.summary()
+    /// >>> s["lob"].tolist(), s["n_origins"].tolist(), s["latest"].tolist()
+    /// (['Auto', 'Home'], [2, 1], [260.0, 50.0])
+    fn summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        const COLUMNS: [&str; 7] = [
+            "column",
+            "n_origins",
+            "first_origin",
+            "last_origin",
+            "valuation",
+            "latest",
+            "cumulative",
+        ];
+        if let Some(k) = self
+            .inner
+            .key_names()
+            .iter()
+            .find(|k| COLUMNS.contains(&k.as_str()))
+        {
+            return Err(PyValueError::new_err(format!(
+                "key {k:?} clashes with the {k:?} column of the summary"
+            )));
+        }
+        let summary = self.inner.summary();
+        let rows = &summary.rows;
+        let out = PyDict::new(py);
+        for (k, name) in summary.key_names.iter().enumerate() {
+            let values: Vec<&str> = rows.iter().map(|r| r.label.parts()[k].as_str()).collect();
+            out.set_item(name, values)?;
+        }
+        let label = |p: Option<act_core::Period>| p.map(|p| p.to_string());
+        out.set_item(
+            "column",
+            rows.iter().map(|r| r.column.as_str()).collect::<Vec<_>>(),
+        )?;
+        out.set_item(
+            "n_origins",
+            rows.iter().map(|r| r.n_origins).collect::<Vec<_>>(),
+        )?;
+        out.set_item(
+            "first_origin",
+            rows.iter()
+                .map(|r| label(r.first_origin))
+                .collect::<Vec<_>>(),
+        )?;
+        out.set_item(
+            "last_origin",
+            rows.iter()
+                .map(|r| label(r.last_origin))
+                .collect::<Vec<_>>(),
+        )?;
+        let valuation = rows
+            .iter()
+            .map(|r| r.valuation.map(|m| month_end(py, m)).transpose())
+            .collect::<PyResult<Vec<_>>>()?;
+        out.set_item("valuation", valuation)?;
+        out.set_item("latest", rows.iter().map(|r| r.latest).collect::<Vec<_>>())?;
+        out.set_item("cumulative", vec![summary.cumulative; rows.len()])?;
+        match pandas(py)? {
+            Some(pd) => pd.call_method1("DataFrame", (out,)),
+            None => Ok(out.into_any()),
+        }
+    }
+
+    /// The printout as text: the origin × development grid for a triangle
+    /// with one segment and one measure (as ``view``), otherwise the
+    /// ``summary`` table. Numbers are rounded for reading; ``view`` and
+    /// ``summary`` give exact values.
+    ///
+    /// Parameters
+    /// ----------
+    /// max_rows : int, default 20
+    ///     Rows shown before the middle ones are left out; 0 for no limit.
+    /// max_cols : int, default 12
+    ///     Development ages shown before the middle ones are left out; 0
+    ///     for no limit.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [1000.0, 1500.0, 1100.0]})
+    /// >>> print(tri.to_string())
+    /// Triangle: paid (cumulative, valuation 2021-12)
+    ///          12     24
+    /// 2020  1,000  1,500
+    /// 2021  1,100
+    #[pyo3(signature = (max_rows = view::MAX_ROWS, max_cols = view::MAX_COLS))]
+    fn to_string(&self, max_rows: usize, max_cols: usize) -> String {
+        self.inner.to_text(max_rows, max_cols)
+    }
+
+    fn __repr__(&self) -> String {
+        self.inner.to_string()
+    }
+
+    fn _repr_html_(&self) -> String {
+        self.inner.to_html(view::MAX_ROWS, view::MAX_COLS)
     }
 }
 

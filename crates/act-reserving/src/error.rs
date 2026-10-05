@@ -44,8 +44,10 @@ pub enum Error {
     /// A method needs a triangle with a single segment; select or group
     /// first.
     MultipleSegments(usize),
-    /// A segment choice matches several segments of a fit.
+    /// A segment choice matches several segments of a fit or triangle.
     AmbiguousSegment(usize),
+    /// A view needs one measure column and the triangle has several.
+    MultipleColumns(usize),
     /// Fitting one segment of a triangle failed; `label` names it.
     InSegment { label: String, source: Box<Error> },
     /// A grain change that is not a coarsening of the current grain.
@@ -104,6 +106,9 @@ impl fmt::Display for Error {
             ),
             Self::AmbiguousSegment(n) => {
                 write!(f, "{n} segments match; name more keys to pick one")
+            }
+            Self::MultipleColumns(n) => {
+                write!(f, "triangle has {n} columns; name the one to view")
             }
             Self::InSegment { label, source } => write!(f, "segment {label}: {source}"),
             Self::InvalidGrain(why) => write!(f, "invalid grain change: {why}"),

@@ -156,7 +156,7 @@ def test_accessors_and_values():
     assert v[0] == [100.0, 150.0, 160.0]
     assert v[2][0] == 120.0 and math.isnan(v[2][1]) and math.isnan(v[2][2])
     assert tri.latest_diagonal() == [[[160.0, 170.0, 120.0]]]
-    assert "Triangle(shape=(1, 1, 3, 3)" in repr(tri)
+    assert repr(tri).startswith("Triangle: paid (cumulative, valuation 2022-12)")
 
 
 def test_incremental_cumulative_round_trip():
@@ -183,6 +183,172 @@ def test_long_round_trip():
     assert tri.group_by([]) == tri
 
 
+def two_keys():
+    """Two lobs x two states, paid and incurred; Home / NY has no paid
+    value in 2021."""
+    data = {
+        "lob": ["Auto", "Auto", "Auto", "Auto", "Home", "Home", "Home"],
+        "state": ["CA", "CA", "CA", "NY", "CA", "NY", "NY"],
+        "year": [2020, 2020, 2021, 2020, 2020, 2020, 2021],
+        "age": [12, 24, 12, 12, 12, 12, 12],
+        "paid": [100.0, 150.0, 110.0, 50.0, 30.0, 20.0, math.nan],
+        "incurred": [120.0, 160.0, 130.0, 60.0, 35.0, 25.0, 15.0],
+    }
+    return Triangle.from_frame(data, "year", "age", ["paid", "incurred"], keys=["lob", "state"])
+
+
+def same(a, b):
+    return a == b or (math.isnan(a) and math.isnan(b))
+
+
+def test_view_matches_values():
+    tri = two_keys()
+    values = tri.values
+    for i, (lob, state) in enumerate(tri.index):
+        for c, column in enumerate(tri.columns):
+            v = tri.view(column, lob=lob, state=state)
+            assert list(v.index) == tri.origins
+            assert list(v.columns) == tri.development
+            assert v.index.name == "origin" and v.columns.name == "development"
+            for o in range(len(tri.origins)):
+                for d in range(len(tri.development)):
+                    assert same(float(v.iat[o, d]), values[i][c][o][d])
+
+
+def test_view_matches_to_frame():
+    tri = two_keys()
+    long = tri.to_frame()
+    for _, row in long.iterrows():
+        v = tri.view("incurred", lob=row["lob"], state=row["state"])
+        origin = str(row["origin"].year)
+        assert same(float(v.loc[origin, row["development"]]), row["incurred"])
+
+
+def test_view_one_segment_and_errors():
+    tri = small()
+    assert tri.view().loc["2020", 36] == 160.0
+    assert tri.view("paid").equals(tri.view())
+    keyed = two_keys()
+    with pytest.raises(ValueError, match="2 segments match"):
+        keyed.view("paid", lob="Auto")
+    with pytest.raises(ValueError, match="2 columns"):
+        keyed.view(lob="Auto", state="CA")
+    with pytest.raises(ValueError, match="no column named"):
+        keyed.view("x", lob="Auto", state="CA")
+    with pytest.raises(ValueError, match="no key named"):
+        keyed.view("paid", line="Auto")
+    with pytest.raises(ValueError, match="no segment has"):
+        keyed.view("paid", lob="Boat")
+
+
+def test_summary_of_two_keys_and_two_measures():
+    s = two_keys().summary()
+    assert list(s.columns) == [
+        "lob",
+        "state",
+        "column",
+        "n_origins",
+        "first_origin",
+        "last_origin",
+        "valuation",
+        "latest",
+        "cumulative",
+    ]
+    rows = list(zip(s["lob"], s["state"], s["column"], s["n_origins"].tolist(), s["latest"].tolist()))
+    assert rows == [
+        ("Auto", "CA", "paid", 2, 260.0),
+        ("Auto", "CA", "incurred", 2, 290.0),
+        ("Auto", "NY", "paid", 1, 50.0),
+        ("Auto", "NY", "incurred", 1, 60.0),
+        ("Home", "CA", "paid", 1, 30.0),
+        ("Home", "CA", "incurred", 1, 35.0),
+        ("Home", "NY", "paid", 1, 20.0),
+        ("Home", "NY", "incurred", 2, 40.0),
+    ]
+    assert s["first_origin"].tolist()[6:] == ["2020", "2020"]
+    assert s["last_origin"].tolist()[6:] == ["2020", "2021"]
+    assert s["valuation"].tolist()[6:] == [datetime.date(2020, 12, 31), datetime.date(2021, 12, 31)]
+    assert s["cumulative"].all()
+    # The latest totals are the latest diagonal's sums.
+    diagonal = two_keys().latest_diagonal()
+    totals = [sum(v for v in diagonal[i][c] if not math.isnan(v)) for i in range(4) for c in range(2)]
+    assert s["latest"].tolist() == totals
+    # Incremental: the sum of the increments, the same totals.
+    inc = two_keys().to_incremental().summary()
+    assert inc["latest"].tolist() == pytest.approx(totals)
+    assert not inc["cumulative"].any()
+
+
+def test_views_without_pandas(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "pandas", None)
+    tri = two_keys()
+    v = tri.view("paid", lob="Auto", state="CA")
+    assert list(v) == ["origin", 12, 24]
+    assert v["origin"] == ["2020", "2021"] and v[12] == [100.0, 110.0]
+    assert v[24][0] == 150.0 and math.isnan(v[24][1])
+    s = tri.summary()
+    assert isinstance(s, dict) and s["n_origins"] == [2, 2, 1, 1, 1, 1, 1, 2]
+    assert s["lob"][0] == "Auto" and s["first_origin"][0] == "2020"
+
+
+def test_summary_key_clash():
+    tri = Triangle.from_long([2020], [12], {"paid": [1.0]}, keys={"column": ["a"]})
+    with pytest.raises(ValueError, match="clashes"):
+        tri.summary()
+
+
+def words(text):
+    return [line.split() for line in text.splitlines()]
+
+
+def test_printout_of_one_segment_is_the_grid():
+    lines = words(repr(small()))
+    assert lines[0][:2] == ["Triangle:", "paid"]
+    assert lines[1] == ["12", "24", "36"]
+    assert lines[2] == ["2020", "100", "150", "160"]
+    assert lines[4] == ["2022", "120"]
+    assert "<table" in small()._repr_html_()
+    ratios = words(small().link_ratios().to_string())
+    assert ratios[2] == ["2020", "1.500", "1.067"]
+
+
+def test_printout_of_several_segments_is_the_summary():
+    tri = two_keys()
+    lines = words(repr(tri))
+    assert lines[1] == ["lob", "state", "column", "n_origins", "first_origin", "last_origin", "valuation", "latest"]
+    assert lines[2] == ["Auto", "CA", "paid", "2", "2020", "2021", "2021-12", "260"]
+    assert len(lines) == 2 + 8
+    html = tri._repr_html_()
+    assert html.count("<tr>") == 1 + 8 and "Home" in html
+    one = words(repr(tri.select(lob="Home", state="NY", columns="paid")))
+    assert one[0][:3] == ["Triangle:", "paid,", "lob=Home,"]
+    assert one[2] == ["2020", "20"]
+
+
+def test_printout_of_empty_holey_and_large_triangles():
+    # A segment with no observed value, and one with a hole at age 24.
+    holey = Triangle.from_long(
+        [2020, 2020, 2020], [12, 36, 12], {"paid": [1.0, 3.0, math.nan]}, keys={"lob": ["Auto", "Auto", "Home"]}
+    )
+    assert "Home" in repr(holey)
+    first = holey.summary()["first_origin"]
+    assert first[0] == "2020" and first.isna().tolist() == [False, True]
+    assert words(repr(holey.select(lob="Home")))[2] == ["2020"]
+    assert words(repr(holey.select(lob="Auto")))[2] == ["2020", "1", "3"]
+    # Forty origins and ages: truncated to 20 rows and 12 ages around "...".
+    origin = [2000 + k for k in range(40) for _ in range(40 - k)]
+    age = [12 * (d + 1) for k in range(40) for d in range(40 - k)]
+    big = Triangle.from_long(origin, age, [1.0] * len(origin))
+    lines = words(repr(big))
+    assert len(lines) == 1 + 1 + 20 + 1 + 1
+    assert lines[-1] == ["[40", "origins", "x", "40", "ages]"]
+    assert len(lines[1]) == 12 + 1 and "..." in lines[1]
+    assert len(words(big.to_string(max_rows=0, max_cols=0))) == 42
+    assert big.view().shape == (40, 40)
+
+
 def test_link_ratios():
     lr = small().link_ratios()
     assert lr.shape == (1, 1, 3, 2)
@@ -202,7 +368,7 @@ def test_named_keys_select_and_frame():
     tri = Triangle.from_frame(data, "year", "age", ["paid", "incurred"], keys=["lob", "state"])
     assert tri.keys == ["lob", "state"]
     assert tri.index == [("Auto", "CA"), ("Home", "NY")]
-    assert "keys=[\"lob\", \"state\"]" in repr(tri)
+    assert repr(tri).startswith("Triangle: 2 segments x 2 columns, keys lob, state")
     assert tri.columns == ["paid", "incurred"]
     assert tri.shape == (2, 2, 2, 2)
     home = tri.select(lob="Home", state="NY", columns="incurred")
