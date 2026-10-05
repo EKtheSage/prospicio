@@ -351,6 +351,21 @@ mod tests {
     }
 
     #[test]
+    fn age_with_only_future_cells_is_rejected() {
+        // 2020 at 36 months is after the valuation, so age 36 has no
+        // observed increment.
+        let tri = annual(2020, &[&[100.0, 150.0, f64::NAN], &[110.0]]);
+        let msg = OdpGlm::default()
+            .fit(&tri, "values")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("development age 36 months") && msg.contains("only in future"),
+            "{msg}"
+        );
+    }
+
+    #[test]
     fn holes_are_rejected() {
         let tri = annual(
             2020,
