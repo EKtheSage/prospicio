@@ -84,17 +84,10 @@ fn age(x: f64) -> Result<Lag> {
         .map_err(|_| Error::Other(format!("development age {x} is too large")))
 }
 
-/// Label parts as one character vector per part, over `labels`. Labels
-/// built from R all have the same number of parts; shorter ones are padded
-/// with "".
-fn label_columns<'a>(labels: impl Iterator<Item = &'a Label> + Clone) -> List {
-    let n_parts = labels.clone().map(|l| l.parts().len()).max().unwrap_or(0);
-    List::from_values((0..n_parts).map(|p| {
-        labels
-            .clone()
-            .map(|l| l.parts().get(p).cloned().unwrap_or_default())
-            .collect::<Vec<String>>()
-    }))
+/// Key columns as a named list of character vectors.
+fn key_columns(keys: Vec<(String, Vec<String>)>) -> List {
+    let (names, values): (Vec<String>, Vec<Vec<String>>) = keys.into_iter().unzip();
+    List::from_names_and_values(names, values).expect("one name per key")
 }
 
 /// A loss triangle: index × column × origin × development.
@@ -111,14 +104,14 @@ impl From<TriangleInner> for Triangle {
 
 #[extendr]
 impl Triangle {
-    /// Builds a triangle from a long table. `index` holds `n_parts` label
-    /// parts per row, part by part (column-major); `values` the value
-    /// columns, column by column. Development is `ages`, or the valuation
-    /// months when `development_is_valuation`.
+    /// Builds a triangle from a long table. `keys` holds the key columns
+    /// named `key_names`, column by column; `values` the value columns,
+    /// column by column. Development is `ages`, or the valuation months
+    /// when `development_is_valuation`.
     #[allow(clippy::too_many_arguments)]
     fn from_long(
-        index: Vec<String>,
-        n_parts: f64,
+        key_names: Vec<String>,
+        keys: Vec<String>,
         origin_year: &[i32],
         origin_month: &[i32],
         ages: &[f64],
@@ -133,18 +126,26 @@ impl Triangle {
     ) -> Result<Self> {
         let origin = months(origin_year, origin_month, "origin")?;
         let n = origin.len();
-        let n_parts = whole(n_parts, "n_parts")? as usize;
-        if index.len() != n * n_parts {
+        if keys.len() != n * key_names.len() {
             return Err(Error::Other(format!(
-                "index has {} entries, expected {n} rows times {n_parts} parts",
-                index.len()
+                "keys has {} entries, expected {n} rows times {} keys",
+                keys.len(),
+                key_names.len()
             )));
         }
-        let labels: Option<Vec<Label>> = (n_parts > 0).then(|| {
-            (0..n)
-                .map(|r| Label::new((0..n_parts).map(|p| index[p * n + r].as_str())))
-                .collect()
-        });
+        let key_values: Vec<Vec<&str>> = (0..key_names.len())
+            .map(|k| {
+                keys[k * n..(k + 1) * n]
+                    .iter()
+                    .map(String::as_str)
+                    .collect()
+            })
+            .collect();
+        let key_columns: Vec<(&str, &[&str])> = key_names
+            .iter()
+            .zip(&key_values)
+            .map(|(name, v)| (name.as_str(), v.as_slice()))
+            .collect();
         if values.len() != n * names.len() {
             return Err(Error::Other(format!(
                 "values has {} entries, expected {n} rows times {} columns",
@@ -167,7 +168,7 @@ impl Triangle {
             DevelopmentColumn::Age(&lags)
         };
         let inner = TriangleInner::from_long(&Long {
-            index: labels.as_deref(),
+            keys: &key_columns,
             origin: &origin,
             development,
             values: &columns,
@@ -183,12 +184,28 @@ impl Triangle {
         self.inner.shape().iter().map(|&n| n as i32).collect()
     }
 
-    /// Index labels, one character vector per label part.
-    fn index(&self) -> List {
-        label_columns(self.inner.index().iter())
+    /// Names of the key columns.
+    fn keys(&self) -> Vec<String> {
+        self.inner.key_names().to_vec()
     }
 
-    /// Index labels with their parts joined by " / ".
+    /// Index labels as a named list of key columns, one row per label.
+    fn index(&self) -> List {
+        let index = self.inner.index();
+        key_columns(
+            self.inner
+                .key_names()
+                .iter()
+                .enumerate()
+                .map(|(k, name)| {
+                    let values = index.iter().map(|l| l.parts()[k].clone()).collect();
+                    (name.clone(), values)
+                })
+                .collect(),
+        )
+    }
+
+    /// Index labels with their parts joined by " / " ("Total" without keys).
     fn index_names(&self) -> Vec<String> {
         self.inner.index().iter().map(Label::to_string).collect()
     }
@@ -242,14 +259,15 @@ impl Triangle {
         out
     }
 
-    /// The long table: index parts, origin start (year, month), age and the
-    /// value columns (NaN where a measure is not observed on a row).
+    /// The long table: the key columns (a named list), origin start (year,
+    /// month), age and the value columns (NaN where a measure is not
+    /// observed on a row).
     fn to_long(&self) -> List {
         let long = self.inner.to_long();
         let values = List::from_values(long.values.iter().map(|(_, v)| v.clone()));
         let names: Vec<String> = long.values.iter().map(|(n, _)| n.clone()).collect();
         list!(
-            index = label_columns(long.index.iter()),
+            keys = key_columns(long.keys),
             origin_year = long.origin.iter().map(|m| m.year()).collect::<Vec<i32>>(),
             origin_month = long
                 .origin
@@ -294,8 +312,9 @@ impl Triangle {
         self.inner.link_ratios().into()
     }
 
-    /// Keeps the given index labels (each a list element of parts) and
-    /// columns; `NULL` keeps an axis whole.
+    /// Keeps the given index labels (each a list element of key values)
+    /// and columns; `NULL` keeps an axis whole. Without keys the only label
+    /// is "Total".
     fn slice(&self, index: Nullable<List>, columns: Nullable<Vec<String>>) -> Result<Self> {
         let labels: Option<Vec<Label>> = match index {
             Nullable::Null => None,
@@ -303,7 +322,13 @@ impl Triangle {
                 list.values()
                     .map(|parts| {
                         Vec::<String>::try_from(parts)
-                            .map(Label::new)
+                            .map(|parts| {
+                                if self.inner.key_names().is_empty() && parts == ["Total"] {
+                                    Label::default()
+                                } else {
+                                    Label::new(parts)
+                                }
+                            })
                             .map_err(|_| Error::Other("index labels must be character".into()))
                     })
                     .collect::<Result<_>>()?,

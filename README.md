@@ -123,7 +123,7 @@ use act_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Tr
 
 let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
 let tri = Triangle::from_long(&Long {
-    index: None,
+    keys: &[],
     origin: &origin,
     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
     values: &[(
@@ -155,6 +155,22 @@ tri <- triangle(long, "origin", "development", "paid")
 mack(tri)@total_standard_error
 boot <- odp_bootstrap(tri, n_sims = 10000, seed = 1)
 quantile(boot@reserves, 0.995)  # a predictive_distribution keyed by origin
+```
+
+Segments are named by key columns. `keys` (Rust `Long::keys`, Python
+`keys=`, R `keys =`) lists them, and the long table comes back with them
+by name:
+
+```python
+tri = Triangle.from_frame(df, "year", "age", ["paid", "incurred"], keys=["lob", "state"])
+tri.keys, tri.index   # ['lob', 'state'], [('Auto', 'CA'), ...]
+tri.to_frame()        # columns lob, state, origin, development, paid, incurred
+```
+
+```r
+tri <- triangle(df, "year", "age", c("paid", "incurred"), keys = c("lob", "state"))
+tri@keys; tri@index   # a data.frame with columns lob and state
+as.data.frame(tri)    # columns lob, state, origin, development, paid, incurred
 ```
 
 Every Chain Ladder and Mack value is checked against R `ChainLadder` and

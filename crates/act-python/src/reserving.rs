@@ -13,7 +13,7 @@ use act_reserving::{
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDate, PyDelta, PyDict, PyInt, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 
 use crate::distributions::PyPredictiveDistribution;
 use crate::to_py;
@@ -188,25 +188,56 @@ fn label(item: &Bound<'_, PyAny>) -> PyResult<Label> {
     }
 }
 
-fn labels(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Label>> {
-    plain(obj)?.try_iter()?.map(|item| label(&item?)).collect()
+/// Values of the key column `name` as strings (`str()` of each value).
+/// `None` and float NaN are missing values, which a key may not have.
+fn key_values(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Vec<String>> {
+    plain(obj)?
+        .try_iter()?
+        .map(|item| {
+            let item = item?;
+            let missing = item.is_none()
+                || (item.is_instance_of::<PyFloat>() && item.extract::<f64>()?.is_nan());
+            if missing {
+                return Err(PyValueError::new_err(format!(
+                    "key column {name:?} has missing values"
+                )));
+            }
+            Ok(item.str()?.to_string())
+        })
+        .collect()
 }
 
-/// A one-part label as a str, a multi-part label as a tuple.
-fn label_to_py<'py>(py: Python<'py>, label: &Label) -> PyResult<Bound<'py, PyAny>> {
-    match label.parts() {
-        [one] => Ok(PyString::new(py, one).into_any()),
-        parts => Ok(PyTuple::new(py, parts)?.into_any()),
+/// A label as Python sees it: ``"Total"`` without keys, a str with one key,
+/// a tuple with several.
+fn label_to_py<'py>(py: Python<'py>, n_keys: usize, label: &Label) -> PyResult<Bound<'py, PyAny>> {
+    match (n_keys, label.parts()) {
+        (0, _) => Ok(PyString::new(py, &label.to_string()).into_any()),
+        (1, [one]) => Ok(PyString::new(py, one).into_any()),
+        (_, parts) => Ok(PyTuple::new(py, parts)?.into_any()),
     }
 }
 
 /// Index labels to keep: one label (a str or a tuple) or a list of them.
-fn label_selection(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Label>> {
-    if obj.is_instance_of::<PyList>() {
-        obj.try_iter()?.map(|item| label(&item?)).collect()
+/// Without keys, the only label is ``"Total"``.
+fn label_selection(obj: &Bound<'_, PyAny>, n_keys: usize) -> PyResult<Vec<Label>> {
+    let labels: Vec<Label> = if obj.is_instance_of::<PyList>() {
+        obj.try_iter()?
+            .map(|item| label(&item?))
+            .collect::<PyResult<_>>()?
     } else {
-        Ok(vec![label(obj)?])
-    }
+        vec![label(obj)?]
+    };
+    let total = Label::from("Total");
+    Ok(labels
+        .into_iter()
+        .map(|l| {
+            if n_keys == 0 && l == total {
+                Label::default()
+            } else {
+                l
+            }
+        })
+        .collect())
 }
 
 fn names(obj: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
@@ -241,7 +272,7 @@ struct LongArgs {
     valuations: Vec<Month>,
     development_is_valuation: bool,
     values: Vec<(String, Vec<f64>)>,
-    index: Option<Vec<Label>>,
+    keys: Vec<(String, Vec<String>)>,
     origin_grain: Grain,
     development_grain: Grain,
     cumulative: bool,
@@ -254,7 +285,7 @@ impl LongArgs {
         development: &Bound<'_, PyAny>,
         development_is_valuation: bool,
         values: Vec<(String, Vec<f64>)>,
-        index: Option<Vec<Label>>,
+        keys: Vec<(String, Vec<String>)>,
         origin_grain: &str,
         development_grain: &str,
         cumulative: bool,
@@ -270,7 +301,7 @@ impl LongArgs {
             valuations,
             development_is_valuation,
             values,
-            index,
+            keys,
             origin_grain: grain(origin_grain)?,
             development_grain: grain(development_grain)?,
             cumulative,
@@ -283,8 +314,19 @@ impl LongArgs {
             .iter()
             .map(|(n, v)| (n.as_str(), v.as_slice()))
             .collect();
+        let key_values: Vec<Vec<&str>> = self
+            .keys
+            .iter()
+            .map(|(_, v)| v.iter().map(String::as_str).collect())
+            .collect();
+        let keys: Vec<(&str, &[&str])> = self
+            .keys
+            .iter()
+            .zip(&key_values)
+            .map(|((n, _), v)| (n.as_str(), v.as_slice()))
+            .collect();
         let long = Long {
-            index: self.index.as_deref(),
+            keys: &keys,
             origin: &self.origin,
             development: if self.development_is_valuation {
                 DevelopmentColumn::Valuation(&self.valuations)
@@ -303,6 +345,10 @@ impl LongArgs {
 
 /// A loss triangle with four axes: index (segment), column (measure), origin
 /// and development age, in chainladder-python's order.
+///
+/// Segments are named by key columns such as ``"lob"`` and ``"state"``:
+/// ``keys`` gives their names and ``index`` one label per segment. A
+/// triangle without keys has one segment, ``"Total"``.
 ///
 /// Build one from a long table with ``from_long`` or ``from_frame``. Ages
 /// are whole months from the start of the origin period, so age 12 on a
@@ -335,11 +381,11 @@ fn wrap(inner: Triangle) -> PyTriangle {
 #[pymethods]
 impl PyTriangle {
     /// Builds a triangle from the columns of a long table, one row per
-    /// (index, origin, development).
+    /// (keys, origin, development).
     ///
     /// Origins span every period from the earliest to the latest row and
     /// ages every development period from the youngest to the oldest. Rows
-    /// with the same (index, origin, age) are summed; ``nan`` values are
+    /// with the same (keys, origin, age) are summed; ``nan`` values are
     /// missing. Incremental input treats a missing row as a period without
     /// movement, as chainladder-python does.
     ///
@@ -354,9 +400,11 @@ impl PyTriangle {
     /// values : dict of str to array-like, or array-like
     ///     Measure columns by name. A single array-like is one column named
     ///     ``"values"``.
-    /// index : array-like, optional
-    ///     Segment of each row: a str, or a tuple of str for a multi-part
-    ///     label. By default every row is in one segment, ``"Total"``.
+    /// keys : dict of str to array-like, optional
+    ///     Key columns by name, such as ``{"lob": [...], "state": [...]}``,
+    ///     in key order. Values are stored as strings (``str()`` of each);
+    ///     ``None`` and ``nan`` are not allowed. Each distinct combination is
+    ///     a segment. By default every row is in one segment, ``"Total"``.
     /// origin_grain : {"Y", "S", "Q", "M"}, default "Y"
     ///     Length of an origin period.
     /// development_grain : {"Y", "S", "Q", "M"}, default "Y"
@@ -374,10 +422,23 @@ impl PyTriangle {
     /// ------
     /// ValueError
     ///     If columns differ in length, an age is not on the development
-    ///     grid, a value is infinite, or the grains are incompatible.
+    ///     grid, a value is infinite, the grains are incompatible, a key name
+    ///     is repeated or also a value column, or a key has missing values.
     ///
     /// Examples
     /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     origin=[2020, 2020, 2021, 2020],
+    /// ...     development=[12, 24, 12, 12],
+    /// ...     values={"paid": [100.0, 150.0, 110.0, 50.0]},
+    /// ...     keys={"lob": ["Auto", "Auto", "Auto", "Home"], "state": ["CA", "CA", "CA", "NY"]},
+    /// ... )
+    /// >>> tri.keys, tri.index
+    /// (['lob', 'state'], [('Auto', 'CA'), ('Home', 'NY')])
+    ///
+    /// Valuation dates instead of ages:
+    ///
     /// >>> import datetime
     /// >>> from actuarialrs.reserving import Triangle
     /// >>> d = datetime.date
@@ -392,26 +453,42 @@ impl PyTriangle {
     /// >>> tri.origins, tri.development
     /// (['2021Q1', '2021Q2'], [3, 6])
     #[staticmethod]
-    #[pyo3(signature = (origin, development, values, index = None, origin_grain = "Y", development_grain = "Y", cumulative = true, development_is_valuation = false))]
+    #[pyo3(signature = (origin, development, values, keys = None, origin_grain = "Y", development_grain = "Y", cumulative = true, development_is_valuation = false))]
     #[allow(clippy::too_many_arguments)]
     fn from_long(
         py: Python<'_>,
         origin: &Bound<'_, PyAny>,
         development: &Bound<'_, PyAny>,
         values: &Bound<'_, PyAny>,
-        index: Option<&Bound<'_, PyAny>>,
+        keys: Option<&Bound<'_, PyAny>>,
         origin_grain: &str,
         development_grain: &str,
         cumulative: bool,
         development_is_valuation: bool,
     ) -> PyResult<Self> {
-        let index = index.map(labels).transpose()?;
+        let keys = match keys {
+            None => Vec::new(),
+            Some(keys) => {
+                let dict = keys.cast::<PyDict>().map_err(|_| {
+                    PyTypeError::new_err("keys must be a dict of key name to column")
+                })?;
+                dict.iter()
+                    .map(|(k, v)| {
+                        let name: String = k
+                            .extract()
+                            .map_err(|_| PyTypeError::new_err("key names must be strings"))?;
+                        let column = key_values(&v, &name)?;
+                        Ok((name, column))
+                    })
+                    .collect::<PyResult<_>>()?
+            }
+        };
         LongArgs::new(
             origin,
             development,
             development_is_valuation,
             value_columns(values)?,
-            index,
+            keys,
             origin_grain,
             development_grain,
             cumulative,
@@ -434,10 +511,9 @@ impl PyTriangle {
     ///     dates when ``development_is_valuation`` is true).
     /// columns : str or list of str
     ///     Names of the measure columns.
-    /// index : str or list of str, optional
-    ///     Names of the segment columns; several make multi-part labels. A
-    ///     single column may hold tuples, as ``to_long`` writes multi-part
-    ///     labels.
+    /// keys : str or list of str, optional
+    ///     Names of the key columns, such as ``["lob", "state"]``. By
+    ///     default every row is in one segment, ``"Total"``.
     /// origin_grain : {"Y", "S", "Q", "M"}, default "Y"
     /// development_grain : {"Y", "S", "Q", "M"}, default "Y"
     /// cumulative : bool, default True
@@ -461,11 +537,11 @@ impl PyTriangle {
     /// ...     "age": [12, 24, 12, 12],
     /// ...     "paid": [100.0, 150.0, 110.0, 50.0],
     /// ... }
-    /// >>> tri = Triangle.from_frame(df, "year", "age", "paid", index="lob")
-    /// >>> tri.index, tri.shape
-    /// (['Auto', 'Home'], (2, 1, 2, 2))
+    /// >>> tri = Triangle.from_frame(df, "year", "age", "paid", keys="lob")
+    /// >>> tri.keys, tri.index, tri.shape
+    /// (['lob'], ['Auto', 'Home'], (2, 1, 2, 2))
     #[staticmethod]
-    #[pyo3(signature = (data, origin, development, columns, index = None, origin_grain = "Y", development_grain = "Y", cumulative = true, development_is_valuation = false))]
+    #[pyo3(signature = (data, origin, development, columns, keys = None, origin_grain = "Y", development_grain = "Y", cumulative = true, development_is_valuation = false))]
     #[allow(clippy::too_many_arguments)]
     fn from_frame(
         py: Python<'_>,
@@ -473,7 +549,7 @@ impl PyTriangle {
         origin: &str,
         development: &str,
         columns: &Bound<'_, PyAny>,
-        index: Option<&Bound<'_, PyAny>>,
+        keys: Option<&Bound<'_, PyAny>>,
         origin_grain: &str,
         development_grain: &str,
         cumulative: bool,
@@ -486,42 +562,22 @@ impl PyTriangle {
                 Ok((name, column))
             })
             .collect::<PyResult<Vec<_>>>()?;
-        let index = match index {
-            None => None,
-            Some(index) => {
-                let index = names(index)?;
-                if let [name] = index.as_slice() {
-                    // One column: its values may already be multi-part
-                    // labels (tuples), as `to_long` writes them.
-                    Some(labels(&data.get_item(name)?)?)
-                } else {
-                    let parts = index
-                        .iter()
-                        .map(|name| {
-                            plain(&data.get_item(name)?)?
-                                .try_iter()?
-                                .map(|v| v?.str().map(|s| s.to_string()))
-                                .collect::<PyResult<Vec<String>>>()
-                        })
-                        .collect::<PyResult<Vec<_>>>()?;
-                    let n = parts.first().map_or(0, Vec::len);
-                    if parts.iter().any(|p| p.len() != n) {
-                        return Err(PyValueError::new_err("index columns differ in length"));
-                    }
-                    Some(
-                        (0..n)
-                            .map(|row| Label::new(parts.iter().map(|p| p[row].clone())))
-                            .collect(),
-                    )
-                }
-            }
+        let keys = match keys {
+            None => Vec::new(),
+            Some(keys) => names(keys)?
+                .into_iter()
+                .map(|name| {
+                    let column = key_values(&data.get_item(&name)?, &name)?;
+                    Ok((name, column))
+                })
+                .collect::<PyResult<_>>()?,
         };
         LongArgs::new(
             &data.get_item(origin)?,
             &data.get_item(development)?,
             development_is_valuation,
             values,
-            index,
+            keys,
             origin_grain,
             development_grain,
             cumulative,
@@ -536,13 +592,21 @@ impl PyTriangle {
         (i, c, o, d)
     }
 
-    /// Segment labels: a str each, or a tuple for a multi-part label.
+    /// Names of the key columns, in key order; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.key_names().to_vec()
+    }
+
+    /// Segment labels: a str each with one key, a tuple of key values with
+    /// several, and ``["Total"]`` without keys.
     #[getter]
     fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        let n_keys = self.inner.key_names().len();
         self.inner
             .index()
             .iter()
-            .map(|l| label_to_py(py, l))
+            .map(|l| label_to_py(py, n_keys, l))
             .collect()
     }
 
@@ -620,12 +684,12 @@ impl PyTriangle {
             .collect()
     }
 
-    /// The triangle as a long table: a dict of equal-length lists with keys
-    /// ``"index"``, ``"origin"`` (start of the origin period, a
-    /// ``datetime.date``), ``"development"`` (age in months) and one per
-    /// measure column, with a row per (index, origin, age) that has an
-    /// observed measure. It feeds back into ``from_long`` or
-    /// ``pandas.DataFrame``.
+    /// The triangle as a long table: a dict of equal-length lists with one
+    /// entry per key column (by name), ``"origin"`` (start of the origin
+    /// period, a ``datetime.date``), ``"development"`` (age in months) and
+    /// one per measure column, with a row per (segment, origin, age) that
+    /// has an observed measure. It feeds back into ``from_frame`` (with
+    /// ``keys=tri.keys``) or ``pandas.DataFrame``.
     ///
     /// Returns
     /// -------
@@ -634,33 +698,41 @@ impl PyTriangle {
     /// Raises
     /// ------
     /// ValueError
-    ///     If a measure column is named ``index``, ``origin`` or
+    ///     If a key or measure column is named ``origin`` or
     ///     ``development``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020], [12, 12], {"paid": [1.0, 2.0]}, keys={"lob": ["Auto", "Home"]}
+    /// ... )
+    /// >>> long = tri.to_long()
+    /// >>> list(long), long["lob"]
+    /// (['lob', 'origin', 'development', 'paid'], ['Auto', 'Home'])
     fn to_long<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         if let Some(c) = self
             .inner
-            .columns()
+            .key_names()
             .iter()
-            .find(|c| ["index", "origin", "development"].contains(&c.as_str()))
+            .chain(self.inner.columns())
+            .find(|c| ["origin", "development"].contains(&c.as_str()))
         {
             return Err(PyValueError::new_err(format!(
-                "measure column {c:?} clashes with a key column of the long table"
+                "column {c:?} clashes with the {c:?} column of the long table"
             )));
         }
         let long = self.inner.to_long();
         let date = py.import("datetime")?.getattr("date")?;
         let out = PyDict::new(py);
-        let index = long
-            .index
-            .iter()
-            .map(|l| label_to_py(py, l))
-            .collect::<PyResult<Vec<_>>>()?;
         let origin = long
             .origin
             .iter()
             .map(|m| date.call1((m.year(), m.month(), 1)))
             .collect::<PyResult<Vec<_>>>()?;
-        out.set_item("index", index)?;
+        for (name, values) in long.keys {
+            out.set_item(name, values)?;
+        }
         out.set_item("origin", origin)?;
         out.set_item("development", long.development)?;
         for (name, values) in long.values {
@@ -738,7 +810,8 @@ impl PyTriangle {
     /// Parameters
     /// ----------
     /// index : str, tuple or list, optional
-    ///     One label, or a list of labels. By default every segment.
+    ///     One label, or a list of labels, as ``index`` shows them. By
+    ///     default every segment.
     /// columns : str or list of str, optional
     ///     By default every column.
     ///
@@ -756,7 +829,8 @@ impl PyTriangle {
         index: Option<&Bound<'_, PyAny>>,
         columns: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let index = index.map(label_selection).transpose()?;
+        let n_keys = self.inner.key_names().len();
+        let index = index.map(|i| label_selection(i, n_keys)).transpose()?;
         let columns = columns.map(names).transpose()?;
         let columns: Option<Vec<&str>> = columns
             .as_ref()
@@ -818,7 +892,8 @@ impl PyTriangle {
             _ => String::new(),
         };
         format!(
-            "Triangle(shape=({i}, {c}, {o}, {d}), columns={:?}, origins={span}, valuation={}, cumulative={})",
+            "Triangle(shape=({i}, {c}, {o}, {d}), keys={:?}, columns={:?}, origins={span}, valuation={}, cumulative={})",
+            self.inner.key_names(),
             self.inner.columns(),
             self.inner.valuation(),
             if self.inner.is_cumulative() {

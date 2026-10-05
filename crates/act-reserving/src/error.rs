@@ -18,6 +18,10 @@ pub enum Error {
     },
     /// Two value columns share a name.
     DuplicateColumn(String),
+    /// Two key columns share a name.
+    DuplicateKey(String),
+    /// A key column and a value column share a name.
+    KeyClash(String),
     /// An index label is named twice.
     DuplicateLabel(String),
     /// A value is infinite (NaN marks a missing value).
@@ -57,6 +61,8 @@ impl fmt::Display for Error {
                 found,
             } => write!(f, "column {column} has {found} rows, expected {expected}"),
             Self::DuplicateColumn(c) => write!(f, "column {c} is supplied twice"),
+            Self::DuplicateKey(k) => write!(f, "key {k} is supplied twice"),
+            Self::KeyClash(k) => write!(f, "{k} is both a key and a value column"),
             Self::DuplicateLabel(l) => write!(f, "index label {l} is supplied twice"),
             Self::NonFinite { column, row } => {
                 write!(f, "column {column}, row {row} is infinite")

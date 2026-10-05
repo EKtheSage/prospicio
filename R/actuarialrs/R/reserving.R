@@ -45,29 +45,37 @@ label_list <- function(index) {
 #' and incurred) x origin period x development age in months. Cells that
 #' are not observed are `NA`; a zero is an observation.
 #'
-#' `triangle()` builds one from a long table, one row per (index, origin,
+#' Segments are named by key columns such as `lob` and `state`. A triangle
+#' without keys has one segment, labelled `"Total"`.
+#'
+#' `triangle()` builds one from a long table, one row per (keys, origin,
 #' development). Origins span every period from the earliest to the latest
 #' row and ages every development period from the youngest to the oldest.
-#' Rows with the same (index, origin, development) are summed, and `NA`
+#' Rows with the same (keys, origin, development) are summed, and `NA`
 #' values are missing. Incremental input (`cumulative = FALSE`) follows
 #' chainladder-python: a missing row is a period without movement.
 #'
 #' Read-only properties: `x@shape` (index, column, origin and development
-#' lengths), `x@index` (a data.frame of index labels, one row per index
-#' position), `x@columns`, `x@origins` (period labels such as `"1981"`,
+#' lengths), `x@keys` (the key names), `x@index` (a data.frame with one
+#' column per key and one row per segment; no columns without keys),
+#' `x@columns`, `x@origins` (period labels such as `"1981"`,
 #' `"2021Q3"`, `"2021H2"` or `"2021-08"`), `x@development` (ages in months),
 #' `x@valuation` (the last day of the latest valuation month), `x@origin_grain`,
 #' `x@development_grain`, `x@is_cumulative` and `x@values` (a 4-D array with
-#' dimnames). `as.data.frame()` gives the long table back.
+#' dimnames, whose index names join the key values with `" / "`).
+#' `as.data.frame()` gives the long table back, with the key columns by
+#' name.
 #'
-#' @param data A data.frame with one row per (index, origin, development).
+#' @param data A data.frame with one row per (keys, origin, development).
 #' @param origin Name of the origin column: Date, POSIXct (any day in the
 #'   origin period) or whole-number years.
 #' @param development Name of the development column: ages in months (12,
 #'   24, ...), or valuation dates when `development_is_valuation = TRUE`.
 #' @param columns Names of the value columns (numeric).
-#' @param index Names of the index columns, or `NULL` for a single segment
-#'   labelled `"Total"`. Several columns make multi-part labels.
+#' @param keys Names of the key columns, such as `c("lob", "state")`, or
+#'   `NULL` for a single segment labelled `"Total"`. Key values are stored
+#'   as character and may not be `NA`; key names must differ from each other
+#'   and from `columns`.
 #' @param origin_grain,development_grain Length of an origin period and
 #'   spacing of the development ages: `"M"` (month), `"Q"` (quarter), `"S"`
 #'   (semester) or `"Y"` (year). The development grain must divide the
@@ -92,18 +100,31 @@ label_list <- function(index) {
 #' tri
 #' tri@values[1, "paid", , ]
 #' tri@valuation
+#'
+#' # Two lines of business as a key column.
+#' by_lob <- data.frame(
+#'   lob = c("auto", "auto", "home"),
+#'   year = c(2020, 2020, 2020),
+#'   age = c(12, 24, 12),
+#'   paid = c(100, 150, 40)
+#' )
+#' tri <- triangle(by_lob, "year", "age", "paid", keys = "lob")
+#' tri@keys
+#' tri@index
+#' as.data.frame(tri)
 triangle <- S7::new_class(
   "triangle",
   package = "actuarialrs",
   properties = list(
     ptr = S7::new_S3_class("Triangle"),
-    index_names = S7::class_character,
     shape = S7::new_property(S7::class_integer, getter = function(self) {
       stats::setNames(self@ptr$shape(), c("index", "column", "origin", "development"))
     }),
+    keys = S7::new_property(S7::class_character, getter = function(self) self@ptr$keys()),
     index = S7::new_property(S7::class_data.frame, getter = function(self) {
       parts <- self@ptr$index()
-      names(parts) <- if (length(self@index_names)) self@index_names else "index"
+      # No keys: one segment, no columns.
+      if (!length(parts)) return(data.frame(matrix(nrow = 1L, ncol = 0L)))
       as.data.frame(parts, stringsAsFactors = FALSE, optional = TRUE)
     }),
     columns = S7::new_property(S7::class_character, getter = function(self) self@ptr$columns()),
@@ -122,15 +143,14 @@ triangle <- S7::new_class(
       triangle_array(self, self@ptr$values(), self@development)
     })
   ),
-  constructor = function(data, origin, development, columns, index = NULL,
+  constructor = function(data, origin, development, columns, keys = NULL,
                          origin_grain = "Y", development_grain = "Y",
                          cumulative = TRUE, development_is_valuation = FALSE,
                          ptr = NULL) {
-    if (!is.null(ptr)) {
-      return(S7::new_object(S7::S7_object(), ptr = ptr, index_names = as.character(index)))
-    }
+    if (!is.null(ptr)) return(S7::new_object(S7::S7_object(), ptr = ptr))
     if (!is.data.frame(data)) stop("data must be a data.frame", call. = FALSE)
-    missing_cols <- setdiff(c(origin, development, columns, index), names(data))
+    keys <- as.character(keys)
+    missing_cols <- setdiff(c(origin, development, columns, keys), names(data))
     if (length(missing_cols)) {
       stop("no columns named ", toString(missing_cols), " in data", call. = FALSE)
     }
@@ -152,16 +172,19 @@ triangle <- S7::new_class(
       ages <- numeric_column(development, "development")
       if (anyNA(ages)) stop("development has missing values", call. = FALSE)
     }
-    labels <- unlist(lapply(index, function(c) as.character(data[[c]])))
-    if (anyNA(labels)) stop("index has missing values", call. = FALSE)
+    key_values <- lapply(keys, function(k) {
+      v <- as.character(data[[k]])
+      if (anyNA(v)) stop(sprintf("key column %s has missing values", k), call. = FALSE)
+      v
+    })
     values <- unlist(lapply(columns, numeric_column, what = "value"))
     ptr <- rust_result(Triangle$from_long(
-      as.character(labels), as.double(length(index)), o$year, o$month,
+      keys, as.character(unlist(key_values)), o$year, o$month,
       ages, v$year, v$month, isTRUE(development_is_valuation),
       as.character(columns), as.double(values),
       as.character(origin_grain), as.character(development_grain), isTRUE(cumulative)
     ))
-    S7::new_object(S7::S7_object(), ptr = ptr, index_names = as.character(index))
+    S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
 
@@ -177,7 +200,7 @@ triangle_array <- function(x, flat, development) {
   a
 }
 
-new_triangle <- function(x, ptr) triangle(ptr = ptr, index = x@index_names)
+new_triangle <- function(x, ptr) triangle(ptr = ptr)
 
 S7::method(print, triangle) <- function(x, ...) {
   s <- x@shape
@@ -193,9 +216,13 @@ S7::method(print, triangle) <- function(x, ...) {
 }
 
 S7::method(as.data.frame, triangle) <- function(x, ...) {
+  clash <- intersect(c(x@keys, x@columns), c("origin", "development"))
+  if (length(clash)) {
+    stop(sprintf('column "%s" clashes with the "%s" column of the long table', clash[1], clash[1]),
+         call. = FALSE)
+  }
   long <- x@ptr$to_long()
-  out <- list()
-  if (length(x@index_names)) out <- stats::setNames(long$index, x@index_names)
+  out <- long$keys
   out$origin <- month_start(long$origin_year, long$origin_month)
   out$development <- long$development
   values <- lapply(long$values, function(v) replace(v, is.nan(v), NA_real_))
@@ -210,8 +237,9 @@ S7::method(as.data.frame, triangle) <- function(x, ...) {
 #'
 #' @param x A [triangle].
 #' @param index Index labels to keep, or `NULL` for all: a character vector
-#'   of one-part labels, a list of character vectors (the parts of each
-#'   label), or a data.frame with one row per label.
+#'   of labels for a triangle with one key, a list of character vectors (the
+#'   key values of each label), or a data.frame with one row per label, as
+#'   `x@index` gives. A triangle without keys has the one label `"Total"`.
 #' @param columns Column names to keep, or `NULL` for all.
 #' @param ... Unused.
 #' @returns A [triangle].
@@ -219,7 +247,7 @@ S7::method(as.data.frame, triangle) <- function(x, ...) {
 #' @examples
 #' long <- data.frame(lob = rep(c("auto", "home"), each = 3), year = c(2020, 2020, 2021),
 #'                    age = c(12, 24, 12), paid = 1:6, incurred = 2 * (1:6))
-#' tri <- triangle(long, "year", "age", c("paid", "incurred"), index = "lob")
+#' tri <- triangle(long, "year", "age", c("paid", "incurred"), keys = "lob")
 #' subset(tri, index = "home", columns = "incurred")@values
 NULL
 

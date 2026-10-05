@@ -133,7 +133,7 @@ def test_dataset_shapes(triangles):
         tri = triangles[name]
         assert tri.shape == (1, 1, n, n)
         assert tri.origins[0] == first
-        assert tri.index == ["Total"] and tri.columns == ["values"]
+        assert tri.keys == [] and tri.index == ["Total"] and tri.columns == ["values"]
         assert tri.is_cumulative
         assert sum(tri.latest_diagonal()[0][0]) == latest
 
@@ -175,11 +175,11 @@ def test_incremental_cumulative_round_trip():
 def test_long_round_trip():
     tri = small()
     long = tri.to_long()
-    assert list(long) == ["index", "origin", "development", "paid"]
+    assert list(long) == ["origin", "development", "paid"]
     assert long["origin"][0] == datetime.date(2020, 1, 1)
-    assert long["index"] == ["Total"] * 6
-    back = Triangle.from_long(long["origin"], long["development"], {"paid": long["paid"]}, index=long["index"])
+    back = Triangle.from_long(long["origin"], long["development"], {"paid": long["paid"]})
     assert back == tri
+    assert tri.slice(index="Total") == tri
 
 
 def test_link_ratios():
@@ -189,7 +189,7 @@ def test_link_ratios():
     assert math.isnan(lr.values[0][0][2][0])
 
 
-def test_multi_part_index_slice_and_frame():
+def test_named_keys_slice_and_frame():
     data = {
         "lob": ["Auto", "Auto", "Auto", "Home", "Home"],
         "state": ["CA", "CA", "CA", "NY", "NY"],
@@ -198,8 +198,10 @@ def test_multi_part_index_slice_and_frame():
         "paid": [100.0, 150.0, 110.0, 50.0, 60.0],
         "incurred": [120.0, 160.0, 130.0, 70.0, 80.0],
     }
-    tri = Triangle.from_frame(data, "year", "age", ["paid", "incurred"], index=["lob", "state"])
+    tri = Triangle.from_frame(data, "year", "age", ["paid", "incurred"], keys=["lob", "state"])
+    assert tri.keys == ["lob", "state"]
     assert tri.index == [("Auto", "CA"), ("Home", "NY")]
+    assert "keys=[\"lob\", \"state\"]" in repr(tri)
     assert tri.columns == ["paid", "incurred"]
     assert tri.shape == (2, 2, 2, 2)
     home = tri.slice(index=("Home", "NY"), columns="incurred")
@@ -207,11 +209,16 @@ def test_multi_part_index_slice_and_frame():
     assert home.values[0][0][0][0] == 70.0
     both = tri.slice(index=[("Home", "NY"), ("Auto", "CA")])
     assert both.index == [("Home", "NY"), ("Auto", "CA")]
+    assert both.keys == ["lob", "state"]
     long = tri.to_long()
-    assert long["index"][0] == ("Auto", "CA")
+    assert list(long) == ["lob", "state", "origin", "development", "paid", "incurred"]
+    assert long["lob"] == ["Auto"] * 3 + ["Home"] * 2
+    assert long["state"] == ["CA"] * 3 + ["NY"] * 2
     back = Triangle.from_long(long["origin"], long["development"],
-                              {"paid": long["paid"], "incurred": long["incurred"]}, index=long["index"])
+                              {"paid": long["paid"], "incurred": long["incurred"]},
+                              keys={"lob": long["lob"], "state": long["state"]})
     assert back == tri
+    assert Triangle.from_frame(long, "origin", "development", ["paid", "incurred"], keys=tri.keys) == tri
     with pytest.raises(ValueError, match="slice to one"):
         ChainLadder().fit(tri, "paid")
     with pytest.raises(ValueError, match="no column or index named"):
@@ -248,8 +255,8 @@ def test_pandas_frame_and_datetimes():
     )
     assert same == tri
     frame = tri.to_frame()
-    assert list(frame.columns) == ["index", "origin", "development", "paid"]
-    back = Triangle.from_frame(frame, "origin", "development", "paid", index="index",
+    assert list(frame.columns) == ["origin", "development", "paid"]
+    back = Triangle.from_frame(frame, "origin", "development", "paid",
                                origin_grain="Q", development_grain="Q")
     assert back == tri
 
@@ -298,7 +305,7 @@ def test_errors():
         Mack().fit(two, "values")
 
 
-def test_frame_round_trip_multi_part_index():
+def test_frame_round_trip_named_keys():
     pd = pytest.importorskip("pandas")
     data = {
         "lob": ["Auto", "Auto", "Home"],
@@ -307,12 +314,42 @@ def test_frame_round_trip_multi_part_index():
         "age": [12, 24, 12],
         "paid": [100.0, 150.0, 50.0],
     }
-    tri = Triangle.from_frame(data, "year", "age", "paid", index=["lob", "state"])
+    tri = Triangle.from_frame(data, "year", "age", "paid", keys=["lob", "state"])
     frame = tri.to_frame()
     assert isinstance(frame, pd.DataFrame)
-    back = Triangle.from_frame(frame, "origin", "development", "paid", index="index")
+    assert list(frame.columns) == ["lob", "state", "origin", "development", "paid"]
+    back = Triangle.from_frame(frame, "origin", "development", "paid", keys=["lob", "state"])
     assert back.index == [("Auto", "CA"), ("Home", "NY")]
     assert back == tri
+    # One key: labels are plain strings; key order follows the argument.
+    one = Triangle.from_frame(frame, "origin", "development", "paid", keys="lob")
+    assert one.keys == ["lob"] and one.index == ["Auto", "Home"]
+    swapped = Triangle.from_frame(frame, "origin", "development", "paid", keys=["state", "lob"])
+    assert swapped.index == [("CA", "Auto"), ("NY", "Home")]
+    assert list(swapped.to_frame().columns)[:2] == ["state", "lob"]
+
+
+def test_key_validation():
+    origin, dev = [2020, 2020], [12, 24]
+    with pytest.raises(ValueError, match="key lob is supplied twice"):
+        Triangle.from_frame({"lob": ["A", "A"], "o": origin, "d": dev, "paid": [1.0, 2.0]},
+                            "o", "d", "paid", keys=["lob", "lob"])
+    with pytest.raises(ValueError, match="paid is both a key and a value column"):
+        Triangle.from_long(origin, dev, {"paid": [1.0, 2.0]}, keys={"paid": ["A", "A"]})
+    with pytest.raises(ValueError, match="column lob has 1 rows, expected 2"):
+        Triangle.from_long(origin, dev, {"paid": [1.0, 2.0]}, keys={"lob": ["A"]})
+    with pytest.raises(ValueError, match="missing values"):
+        Triangle.from_long(origin, dev, {"paid": [1.0, 2.0]}, keys={"lob": ["A", None]})
+    with pytest.raises(ValueError, match="missing values"):
+        Triangle.from_long(origin, dev, {"paid": [1.0, 2.0]}, keys={"lob": ["A", math.nan]})
+    with pytest.raises(TypeError, match="dict"):
+        Triangle.from_long(origin, dev, {"paid": [1.0, 2.0]}, keys=["A", "A"])
+    clash = Triangle.from_long(origin, dev, {"paid": [1.0, 2.0]}, keys={"origin": ["A", "A"]})
+    with pytest.raises(ValueError, match="clashes"):
+        clash.to_long()
+    # Non-string key values are stored as strings.
+    codes = Triangle.from_long(origin, dev, {"paid": [1.0, 2.0]}, keys={"company": [7, 7]})
+    assert codes.index == ["7"] and codes.to_long()["company"] == ["7", "7"]
 
 
 def test_numpy_integer_years():
@@ -437,7 +474,7 @@ def test_bootstrap_errors(triangles):
         "age": [12, 24, 12] * 2,
         "paid": [100.0, 150.0, 110.0, 50.0, 70.0, 60.0],
     }
-    multi = Triangle.from_frame(data, "year", "age", "paid", index="lob")
+    multi = Triangle.from_frame(data, "year", "age", "paid", keys="lob")
     with pytest.raises(ValueError, match="slice to one"):
         OdpBootstrap(n_sims=10).fit(multi, "paid")
     with pytest.raises(ValueError, match="no column or index named"):

@@ -10,7 +10,7 @@
 //!
 //! let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
 //! let tri = Triangle::from_long(&Long {
-//!     index: None,
+//!     keys: &[],
 //!     origin: &origin,
 //!     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
 //!     values: &[(

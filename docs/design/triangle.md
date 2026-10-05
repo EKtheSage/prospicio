@@ -26,7 +26,8 @@ pub struct Triangle {
     values: Vec<f64>,        // dense, row-major over (index, column, origin, development)
     mask: Vec<bool>,         // true where a value is observed
     shape: [usize; 4],
-    index: Vec<Label>,       // one label per index position (possibly multi-part)
+    keys: Vec<String>,       // names of the key columns, e.g. ["lob", "state"]
+    index: Vec<Label>,       // one label per index position, one part per key
     columns: Vec<String>,
     origins: Vec<Month>,     // start month of each origin period
     origin_grain: Grain,     // M, Q, S, Y
@@ -71,7 +72,7 @@ pub struct Triangle {
 | `link_ratios()` | age-to-age ratios as a Triangle (masked where either side is missing) |
 | `grain(origin, development)` | coarsen periods |
 | `slice(index=…, column=…)` | select segments and measures |
-| `from_long` / `to_long` | long ↔ wide: rows of (index…, origin, development or valuation, value columns) |
+| `from_long` / `to_long` | long ↔ wide: rows of (key columns by name, origin, development or valuation, value columns) |
 
 ## Arrow boundary
 
@@ -84,9 +85,17 @@ pub struct Triangle {
   (`from_long(&[origin], &[development], &[value], …)`). Arrow conversion
   lives behind an `arrow` feature, enabled in the Python and R bindings and
   off for WASM. **Not built yet:** it arrives with the Python and R
-  Triangle bindings. The core takes `Long` (borrowed slices, with an
-  optional `Label` per row and ages or valuation months) and returns
-  `LongTable`.
+  Triangle bindings. The core takes `Long` (borrowed slices: named key
+  columns, ages or valuation months, named value columns) and returns
+  `LongTable` with the same named key columns.
+- **Key columns (implemented, decision 5 step 1).** `Long::keys` is
+  `&[(name, &[value])]`, one string per row per key; `key_names()` gives
+  the names and each index `Label` has one part per key, in key order.
+  Without keys there is one segment with an empty `Label`, displayed as
+  `Total`. Key names may not repeat or equal a value column's name. The
+  bindings store key values as strings and reject missing ones; Python
+  takes `keys={"lob": [...]}` in `from_long` and `keys=["lob"]` in
+  `from_frame`, R takes `keys = c("lob")` in `triangle()`.
 
 ## Relationship to reserving methods
 
