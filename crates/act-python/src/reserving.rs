@@ -1,0 +1,1201 @@
+//! `actuarialrs.reserving` (Reserving lane): the loss triangle, the chain
+//! ladder and Mack's model over `act_reserving` (`docs/design/triangle.md`).
+//!
+//! Long tables come in as array-likes (lists, numpy arrays, pandas or
+//! Polars columns) and go out as dicts of lists; numpy and pandas are used
+//! when the caller passes them but are not required.
+
+use act_core::{Grain, Lag, Month};
+use act_reserving::{
+    Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, Label, Long, Mack,
+    MackFit, SigmaInterpolation, Triangle,
+};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::prelude::*;
+use pyo3::types::{PyBool, PyDict, PyInt, PyList, PyString, PyTuple};
+
+use crate::to_py;
+
+fn err(e: act_reserving::Error) -> PyErr {
+    PyValueError::new_err(e.to_string())
+}
+
+fn grain(name: &str) -> PyResult<Grain> {
+    match name.to_ascii_uppercase().as_str() {
+        "M" => Ok(Grain::Month),
+        "Q" => Ok(Grain::Quarter),
+        "S" => Ok(Grain::Semester),
+        "Y" => Ok(Grain::Year),
+        _ => Err(PyValueError::new_err(format!(
+            "grain must be \"M\", \"Q\", \"S\" or \"Y\", got {name:?}"
+        ))),
+    }
+}
+
+fn average(name: &str) -> PyResult<Average> {
+    match name {
+        "volume" => Ok(Average::Volume),
+        "simple" => Ok(Average::Simple),
+        "regression" => Ok(Average::Regression),
+        _ => Err(PyValueError::new_err(format!(
+            "average must be \"volume\", \"simple\" or \"regression\", got {name:?}"
+        ))),
+    }
+}
+
+fn average_name(a: Average) -> &'static str {
+    match a {
+        Average::Volume => "volume",
+        Average::Simple => "simple",
+        Average::Regression => "regression",
+    }
+}
+
+fn sigma_interpolation(name: &str) -> PyResult<SigmaInterpolation> {
+    match name {
+        "log-linear" => Ok(SigmaInterpolation::LogLinear),
+        "mack" => Ok(SigmaInterpolation::Mack),
+        _ => Err(PyValueError::new_err(format!(
+            "sigma_interpolation must be \"log-linear\" or \"mack\", got {name:?}"
+        ))),
+    }
+}
+
+fn sigma_interpolation_name(s: SigmaInterpolation) -> &'static str {
+    match s {
+        SigmaInterpolation::LogLinear => "log-linear",
+        SigmaInterpolation::Mack => "mack",
+    }
+}
+
+fn development(average_: &str, sigma_interpolation_: &str) -> PyResult<Development> {
+    Ok(Development {
+        average: average(average_)?,
+        sigma_interpolation: sigma_interpolation(sigma_interpolation_)?,
+    })
+}
+
+/// A column as a plain Python sequence: numpy arrays and pandas or Polars
+/// series become lists.
+fn plain<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    if obj.hasattr("tolist")? {
+        obj.call_method0("tolist")
+    } else {
+        Ok(obj.clone())
+    }
+}
+
+fn month_of(item: &Bound<'_, PyAny>, what: &str) -> PyResult<Month> {
+    if item.is_instance_of::<PyInt>() && !item.is_instance_of::<PyBool>() {
+        return Ok(Month::january(item.extract()?));
+    }
+    if item.hasattr("year")? && item.hasattr("month")? {
+        let year: i32 = item.getattr("year")?.extract()?;
+        let month: u8 = item.getattr("month")?.extract()?;
+        return Month::new(year, month).map_err(to_py);
+    }
+    Err(PyTypeError::new_err(format!(
+        "{what} must hold dates or integer years, got {}",
+        item.repr()?
+    )))
+}
+
+/// Months of a column of dates (numpy `datetime64`, `datetime.date`,
+/// pandas `Timestamp`) or integer years.
+fn months(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Vec<Month>> {
+    let py = obj.py();
+    if obj.hasattr("dtype")? {
+        // A numpy array or a pandas/Polars series: convert datetimes in bulk.
+        let np = py.import("numpy")?;
+        let arr = np.call_method1("asarray", (obj,))?;
+        let kind: String = arr.getattr("dtype")?.getattr("kind")?.extract()?;
+        if kind == "M" {
+            let ordinals: Vec<i64> = arr
+                .call_method1("astype", ("datetime64[M]",))?
+                .call_method1("astype", ("int64",))?
+                .call_method0("tolist")?
+                .extract()?;
+            return ordinals
+                .into_iter()
+                .map(|o| {
+                    if o == i64::MIN {
+                        Err(PyValueError::new_err(format!("{what} has a missing date")))
+                    } else {
+                        Ok(Month::january(1970).add_months(o))
+                    }
+                })
+                .collect();
+        }
+        return arr
+            .call_method0("tolist")?
+            .try_iter()?
+            .map(|item| month_of(&item?, what))
+            .collect();
+    }
+    obj.try_iter()?.map(|item| month_of(&item?, what)).collect()
+}
+
+fn ages(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Lag>> {
+    let raw: Vec<i64> = plain(obj)?
+        .extract()
+        .map_err(|_| PyTypeError::new_err("development must hold integer ages in months"))?;
+    raw.into_iter()
+        .map(|a| {
+            Lag::try_from(a).map_err(|_| {
+                PyValueError::new_err(format!("development age {a} is not a positive month count"))
+            })
+        })
+        .collect()
+}
+
+fn floats(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Vec<f64>> {
+    plain(obj)?
+        .extract()
+        .map_err(|_| PyTypeError::new_err(format!("column {name:?} must hold numbers")))
+}
+
+fn label(item: &Bound<'_, PyAny>) -> PyResult<Label> {
+    if item.is_instance_of::<PyTuple>() || item.is_instance_of::<PyList>() {
+        let parts = item
+            .try_iter()?
+            .map(|p| p?.str().map(|s| s.to_string()))
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Label::new(parts))
+    } else {
+        Ok(Label::from(item.str()?.to_string()))
+    }
+}
+
+fn labels(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Label>> {
+    plain(obj)?.try_iter()?.map(|item| label(&item?)).collect()
+}
+
+/// A one-part label as a str, a multi-part label as a tuple.
+fn label_to_py<'py>(py: Python<'py>, label: &Label) -> PyResult<Bound<'py, PyAny>> {
+    match label.parts() {
+        [one] => Ok(PyString::new(py, one).into_any()),
+        parts => Ok(PyTuple::new(py, parts)?.into_any()),
+    }
+}
+
+/// Index labels to keep: one label (a str or a tuple) or a list of them.
+fn label_selection(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Label>> {
+    if obj.is_instance_of::<PyList>() {
+        obj.try_iter()?.map(|item| label(&item?)).collect()
+    } else {
+        Ok(vec![label(obj)?])
+    }
+}
+
+fn names(obj: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+    if let Ok(name) = obj.extract::<String>() {
+        Ok(vec![name])
+    } else {
+        obj.extract()
+    }
+}
+
+/// Measure columns from a dict of name to column, or one unnamed column
+/// (named ``"values"``).
+fn value_columns(values: &Bound<'_, PyAny>) -> PyResult<Vec<(String, Vec<f64>)>> {
+    if let Ok(dict) = values.cast::<PyDict>() {
+        dict.iter()
+            .map(|(k, v)| {
+                let name: String = k
+                    .extract()
+                    .map_err(|_| PyTypeError::new_err("value column names must be strings"))?;
+                let column = floats(&v, &name)?;
+                Ok((name, column))
+            })
+            .collect()
+    } else {
+        Ok(vec![("values".to_string(), floats(values, "values")?)])
+    }
+}
+
+struct LongArgs {
+    origin: Vec<Month>,
+    development: Vec<Lag>,
+    valuations: Vec<Month>,
+    development_is_valuation: bool,
+    values: Vec<(String, Vec<f64>)>,
+    index: Option<Vec<Label>>,
+    origin_grain: Grain,
+    development_grain: Grain,
+    cumulative: bool,
+}
+
+impl LongArgs {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        origin: &Bound<'_, PyAny>,
+        development: &Bound<'_, PyAny>,
+        development_is_valuation: bool,
+        values: Vec<(String, Vec<f64>)>,
+        index: Option<Vec<Label>>,
+        origin_grain: &str,
+        development_grain: &str,
+        cumulative: bool,
+    ) -> PyResult<Self> {
+        let (development, valuations) = if development_is_valuation {
+            (Vec::new(), months(development, "development")?)
+        } else {
+            (ages(development)?, Vec::new())
+        };
+        Ok(Self {
+            origin: months(origin, "origin")?,
+            development,
+            valuations,
+            development_is_valuation,
+            values,
+            index,
+            origin_grain: grain(origin_grain)?,
+            development_grain: grain(development_grain)?,
+            cumulative,
+        })
+    }
+
+    fn build(&self, py: Python<'_>) -> PyResult<PyTriangle> {
+        let values: Vec<(&str, &[f64])> = self
+            .values
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_slice()))
+            .collect();
+        let long = Long {
+            index: self.index.as_deref(),
+            origin: &self.origin,
+            development: if self.development_is_valuation {
+                DevelopmentColumn::Valuation(&self.valuations)
+            } else {
+                DevelopmentColumn::Age(&self.development)
+            },
+            values: &values,
+            origin_grain: self.origin_grain,
+            development_grain: self.development_grain,
+            cumulative: self.cumulative,
+        };
+        let inner = py.detach(|| Triangle::from_long(&long)).map_err(err)?;
+        Ok(PyTriangle { inner })
+    }
+}
+
+/// A loss triangle with four axes: index (segment), column (measure), origin
+/// and development age, in chainladder-python's order.
+///
+/// Build one from a long table with ``from_long`` or ``from_frame``. Ages
+/// are whole months from the start of the origin period, so age 12 on a
+/// 2021 accident year is valued at December 2021. Cells that were not
+/// observed are ``nan`` in ``values``; an observed zero stays zero.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import Triangle
+/// >>> tri = Triangle.from_long(
+/// ...     origin=[2020, 2020, 2021],
+/// ...     development=[12, 24, 12],
+/// ...     values={"paid": [100.0, 150.0, 110.0]},
+/// ... )
+/// >>> tri.shape
+/// (1, 1, 2, 2)
+/// >>> tri.origins, tri.development, tri.valuation
+/// (['2020', '2021'], [12, 24], '2021-12')
+/// >>> tri.values[0][0]
+/// [[100.0, 150.0], [110.0, nan]]
+#[pyclass(name = "Triangle", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyTriangle {
+    inner: Triangle,
+}
+
+fn wrap(inner: Triangle) -> PyTriangle {
+    PyTriangle { inner }
+}
+
+#[pymethods]
+impl PyTriangle {
+    /// Builds a triangle from the columns of a long table, one row per
+    /// (index, origin, development).
+    ///
+    /// Origins span every period from the earliest to the latest row and
+    /// ages every development period from the youngest to the oldest. Rows
+    /// with the same (index, origin, age) are summed; ``nan`` values are
+    /// missing. Incremental input treats a missing row as a period without
+    /// movement, as chainladder-python does.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : array-like
+    ///     Any date in each row's origin period (numpy ``datetime64``,
+    ///     ``datetime.date``, pandas ``Timestamp``), or integer years.
+    /// development : array-like
+    ///     Development age of each row in months (12, 24, ...), or its
+    ///     valuation date when ``development_is_valuation`` is true.
+    /// values : dict of str to array-like, or array-like
+    ///     Measure columns by name. A single array-like is one column named
+    ///     ``"values"``.
+    /// index : array-like, optional
+    ///     Segment of each row: a str, or a tuple of str for a multi-part
+    ///     label. By default every row is in one segment, ``"Total"``.
+    /// origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+    ///     Length of an origin period.
+    /// development_grain : {"Y", "S", "Q", "M"}, default "Y"
+    ///     Spacing of development ages; must divide the origin grain.
+    /// cumulative : bool, default True
+    ///     Whether the values are cumulative (otherwise incremental).
+    /// development_is_valuation : bool, default False
+    ///     Whether ``development`` holds valuation dates instead of ages.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If columns differ in length, an age is not on the development
+    ///     grid, a value is infinite, or the grains are incompatible.
+    ///
+    /// Examples
+    /// --------
+    /// >>> import datetime
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> d = datetime.date
+    /// >>> tri = Triangle.from_long(
+    /// ...     origin=[d(2021, 2, 1), d(2021, 2, 1), d(2021, 5, 1)],
+    /// ...     development=[d(2021, 3, 31), d(2021, 6, 30), d(2021, 6, 30)],
+    /// ...     values=[10.0, 25.0, 7.0],
+    /// ...     origin_grain="Q",
+    /// ...     development_grain="Q",
+    /// ...     development_is_valuation=True,
+    /// ... )
+    /// >>> tri.origins, tri.development
+    /// (['2021Q1', '2021Q2'], [3, 6])
+    #[staticmethod]
+    #[pyo3(signature = (origin, development, values, index = None, origin_grain = "Y", development_grain = "Y", cumulative = true, development_is_valuation = false))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_long(
+        py: Python<'_>,
+        origin: &Bound<'_, PyAny>,
+        development: &Bound<'_, PyAny>,
+        values: &Bound<'_, PyAny>,
+        index: Option<&Bound<'_, PyAny>>,
+        origin_grain: &str,
+        development_grain: &str,
+        cumulative: bool,
+        development_is_valuation: bool,
+    ) -> PyResult<Self> {
+        let index = index.map(labels).transpose()?;
+        LongArgs::new(
+            origin,
+            development,
+            development_is_valuation,
+            value_columns(values)?,
+            index,
+            origin_grain,
+            development_grain,
+            cumulative,
+        )?
+        .build(py)
+    }
+
+    /// Builds a triangle from a data frame in long format.
+    ///
+    /// Columns are looked up with ``data[name]``, so a pandas or Polars
+    /// DataFrame works, as does a dict of columns.
+    ///
+    /// Parameters
+    /// ----------
+    /// data : DataFrame or dict
+    /// origin : str
+    ///     Name of the origin column (dates or integer years).
+    /// development : str
+    ///     Name of the development column (ages in months, or valuation
+    ///     dates when ``development_is_valuation`` is true).
+    /// columns : str or list of str
+    ///     Names of the measure columns.
+    /// index : str or list of str, optional
+    ///     Names of the segment columns; several make multi-part labels.
+    /// origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+    /// development_grain : {"Y", "S", "Q", "M"}, default "Y"
+    /// cumulative : bool, default True
+    /// development_is_valuation : bool, default False
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As for ``from_long``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> df = {
+    /// ...     "lob": ["Auto", "Auto", "Auto", "Home"],
+    /// ...     "year": [2020, 2020, 2021, 2020],
+    /// ...     "age": [12, 24, 12, 12],
+    /// ...     "paid": [100.0, 150.0, 110.0, 50.0],
+    /// ... }
+    /// >>> tri = Triangle.from_frame(df, "year", "age", "paid", index="lob")
+    /// >>> tri.index, tri.shape
+    /// (['Auto', 'Home'], (2, 1, 2, 2))
+    #[staticmethod]
+    #[pyo3(signature = (data, origin, development, columns, index = None, origin_grain = "Y", development_grain = "Y", cumulative = true, development_is_valuation = false))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_frame(
+        py: Python<'_>,
+        data: &Bound<'_, PyAny>,
+        origin: &str,
+        development: &str,
+        columns: &Bound<'_, PyAny>,
+        index: Option<&Bound<'_, PyAny>>,
+        origin_grain: &str,
+        development_grain: &str,
+        cumulative: bool,
+        development_is_valuation: bool,
+    ) -> PyResult<Self> {
+        let values = names(columns)?
+            .into_iter()
+            .map(|name| {
+                let column = floats(&data.get_item(&name)?, &name)?;
+                Ok((name, column))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let index = match index {
+            None => None,
+            Some(index) => {
+                let parts = names(index)?
+                    .iter()
+                    .map(|name| {
+                        plain(&data.get_item(name)?)?
+                            .try_iter()?
+                            .map(|v| v?.str().map(|s| s.to_string()))
+                            .collect::<PyResult<Vec<String>>>()
+                    })
+                    .collect::<PyResult<Vec<_>>>()?;
+                let n = parts.first().map_or(0, Vec::len);
+                if parts.iter().any(|p| p.len() != n) {
+                    return Err(PyValueError::new_err("index columns differ in length"));
+                }
+                Some(
+                    (0..n)
+                        .map(|row| Label::new(parts.iter().map(|p| p[row].clone())))
+                        .collect(),
+                )
+            }
+        };
+        LongArgs::new(
+            &data.get_item(origin)?,
+            &data.get_item(development)?,
+            development_is_valuation,
+            values,
+            index,
+            origin_grain,
+            development_grain,
+            cumulative,
+        )?
+        .build(py)
+    }
+
+    /// Axis lengths: ``(index, column, origin, development)``.
+    #[getter]
+    fn shape(&self) -> (usize, usize, usize, usize) {
+        let [i, c, o, d] = self.inner.shape();
+        (i, c, o, d)
+    }
+
+    /// Segment labels: a str each, or a tuple for a multi-part label.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        self.inner
+            .index()
+            .iter()
+            .map(|l| label_to_py(py, l))
+            .collect()
+    }
+
+    /// Measure column names.
+    #[getter]
+    fn columns(&self) -> Vec<String> {
+        self.inner.columns().to_vec()
+    }
+
+    /// Origin periods, oldest first: ``"2021"``, ``"2021H1"``,
+    /// ``"2021Q3"`` or ``"2021-07"`` by grain.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.inner.origins().iter().map(|p| p.to_string()).collect()
+    }
+
+    /// Origin grain: ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
+    #[getter]
+    fn origin_grain(&self) -> String {
+        self.inner.origin_grain().to_string()
+    }
+
+    /// Development ages in months, youngest first.
+    #[getter]
+    fn development(&self) -> Vec<Lag> {
+        self.inner.development().to_vec()
+    }
+
+    /// Development grain: ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
+    #[getter]
+    fn development_grain(&self) -> String {
+        self.inner.development_grain().to_string()
+    }
+
+    /// Month of the latest diagonal, as ``"YYYY-MM"``.
+    #[getter]
+    fn valuation(&self) -> String {
+        self.inner.valuation().to_string()
+    }
+
+    /// Whether the values are cumulative (otherwise incremental).
+    #[getter]
+    fn is_cumulative(&self) -> bool {
+        self.inner.is_cumulative()
+    }
+
+    /// Values as nested lists indexed ``[index][column][origin][development]``,
+    /// ``nan`` where unobserved. ``numpy.asarray`` gives the 4-D array.
+    #[getter]
+    fn values(&self) -> Vec<Vec<Vec<Vec<f64>>>> {
+        let [ni, nc, no, nd] = self.inner.shape();
+        (0..ni)
+            .map(|i| {
+                (0..nc)
+                    .map(|c| {
+                        (0..no)
+                            .map(|o| {
+                                (0..nd)
+                                    .map(|d| self.inner.get(i, c, o, d).unwrap_or(f64::NAN))
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// The triangle as a long table: a dict of equal-length lists with keys
+    /// ``"index"``, ``"origin"`` (start of the origin period, a
+    /// ``datetime.date``), ``"development"`` (age in months) and one per
+    /// measure column, with a row per (index, origin, age) that has an
+    /// observed measure. It feeds back into ``from_long`` or
+    /// ``pandas.DataFrame``.
+    ///
+    /// Returns
+    /// -------
+    /// dict of str to list
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a measure column is named ``index``, ``origin`` or
+    ///     ``development``.
+    fn to_long<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        if let Some(c) = self
+            .inner
+            .columns()
+            .iter()
+            .find(|c| ["index", "origin", "development"].contains(&c.as_str()))
+        {
+            return Err(PyValueError::new_err(format!(
+                "measure column {c:?} clashes with a key column of the long table"
+            )));
+        }
+        let long = self.inner.to_long();
+        let date = py.import("datetime")?.getattr("date")?;
+        let out = PyDict::new(py);
+        let index = long
+            .index
+            .iter()
+            .map(|l| label_to_py(py, l))
+            .collect::<PyResult<Vec<_>>>()?;
+        let origin = long
+            .origin
+            .iter()
+            .map(|m| date.call1((m.year(), m.month(), 1)))
+            .collect::<PyResult<Vec<_>>>()?;
+        out.set_item("index", index)?;
+        out.set_item("origin", origin)?;
+        out.set_item("development", long.development)?;
+        for (name, values) in long.values {
+            out.set_item(name, values)?;
+        }
+        Ok(out)
+    }
+
+    /// The long table of ``to_long`` as a pandas DataFrame. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let long = self.to_long(py)?;
+        py.import("pandas")?.call_method1("DataFrame", (long,))
+    }
+
+    /// Incremental values: each observed value minus the previous observed
+    /// value in its row.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    fn to_incremental(&self) -> Self {
+        wrap(self.inner.to_incremental())
+    }
+
+    /// Cumulative values: running sums of the observed increments.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    fn to_cumulative(&self) -> Self {
+        wrap(self.inner.to_cumulative())
+    }
+
+    /// The latest observed value of each origin, as nested lists indexed
+    /// ``[index][column][origin]``, ``nan`` for an origin with no value.
+    ///
+    /// Returns
+    /// -------
+    /// list of list of list of float
+    fn latest_diagonal(&self) -> Vec<Vec<Vec<f64>>> {
+        let diagonal = self.inner.latest_diagonal();
+        let [ni, nc, no] = diagonal.shape();
+        (0..ni)
+            .map(|i| {
+                (0..nc)
+                    .map(|c| {
+                        (0..no)
+                            .map(|o| diagonal.get(i, c, o).map_or(f64::NAN, |(_, v)| v))
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Age-to-age link ratios of the cumulative values. Development
+    /// position ``d`` holds the ratio from age ``d`` to age ``d + 1``,
+    /// observed where both ages are observed and the earlier value is not
+    /// zero.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    fn link_ratios(&self) -> Self {
+        wrap(self.inner.link_ratios())
+    }
+
+    /// The triangle restricted to some segments and measure columns, in the
+    /// order given.
+    ///
+    /// Parameters
+    /// ----------
+    /// index : str, tuple or list, optional
+    ///     One label, or a list of labels. By default every segment.
+    /// columns : str or list of str, optional
+    ///     By default every column.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a label or column is unknown or named twice.
+    #[pyo3(signature = (index = None, columns = None))]
+    fn slice(
+        &self,
+        index: Option<&Bound<'_, PyAny>>,
+        columns: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let index = index.map(label_selection).transpose()?;
+        let columns = columns.map(names).transpose()?;
+        let columns: Option<Vec<&str>> = columns
+            .as_ref()
+            .map(|c| c.iter().map(String::as_str).collect());
+        self.inner
+            .slice(index.as_deref(), columns.as_deref())
+            .map(wrap)
+            .map_err(err)
+    }
+
+    /// The triangle at a coarser origin and/or development grain.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin_grain : {"Y", "S", "Q", "M"}
+    /// development_grain : {"Y", "S", "Q", "M"}, optional
+    ///     By default the current development grain.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a grain is finer than the current one, or the development
+    ///     grain does not divide the origin grain.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> q = Triangle.from_long(
+    /// ...     [2020, 2020], [3, 6], [1.0, 2.0], origin_grain="Q", development_grain="Q"
+    /// ... )
+    /// >>> q.grain("Y").origins
+    /// ['2020']
+    #[pyo3(signature = (origin_grain, development_grain = None))]
+    fn grain(&self, origin_grain: &str, development_grain: Option<&str>) -> PyResult<Self> {
+        let origin = grain(origin_grain)?;
+        let dev = match development_grain {
+            Some(g) => grain(g)?,
+            None => self.inner.development_grain(),
+        };
+        self.inner.grain(origin, dev).map(wrap).map_err(err)
+    }
+
+    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+        other
+            .extract::<PyRef<'_, PyTriangle>>()
+            .is_ok_and(|o| o.inner == self.inner)
+    }
+
+    fn __repr__(&self) -> String {
+        let [i, c, o, d] = self.inner.shape();
+        let origins = self.inner.origins();
+        let span = match (origins.first(), origins.last()) {
+            (Some(a), Some(b)) => format!("{a}..{b}"),
+            _ => String::new(),
+        };
+        format!(
+            "Triangle(shape=({i}, {c}, {o}, {d}), columns={:?}, origins={span}, valuation={}, cumulative={})",
+            self.inner.columns(),
+            self.inner.valuation(),
+            if self.inner.is_cumulative() {
+                "True"
+            } else {
+                "False"
+            }
+        )
+    }
+}
+
+/// The chain-ladder method: each origin's latest value projected to
+/// ultimate with age-to-age factors estimated from the triangle and a tail
+/// factor.
+///
+/// Parameters
+/// ----------
+/// average : {"volume", "simple", "regression"}, default "volume"
+///     How link ratios are averaged into one factor per age: volume
+///     weighted, their mean, or least squares through the origin (Mack's
+///     ``alpha`` of 1, 0 and 2).
+/// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+///     How a variance parameter with a single link ratio is filled in.
+/// tail : float, default 1.0
+///     Factor from the oldest age to ultimate.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import ChainLadder, Triangle
+/// >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+/// >>> fit = ChainLadder().fit(tri, "paid")
+/// >>> fit.ldf, fit.ultimate, fit.total_reserve
+/// ([1.5], [150.0, 300.0], 100.0)
+#[pyclass(name = "ChainLadder", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyChainLadder {
+    inner: ChainLadder,
+}
+
+#[pymethods]
+impl PyChainLadder {
+    #[new]
+    #[pyo3(signature = (average = "volume", sigma_interpolation = "log-linear", tail = 1.0))]
+    fn new(average: &str, sigma_interpolation: &str, tail: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: ChainLadder {
+                development: development(average, sigma_interpolation)?,
+                tail,
+            },
+        })
+    }
+
+    /// How link ratios are averaged.
+    #[getter]
+    fn average(&self) -> &'static str {
+        average_name(self.inner.development.average)
+    }
+
+    /// How unestimable variance parameters are filled in.
+    #[getter]
+    fn sigma_interpolation(&self) -> &'static str {
+        sigma_interpolation_name(self.inner.development.sigma_interpolation)
+    }
+
+    /// Tail factor.
+    #[getter]
+    fn tail(&self) -> f64 {
+        self.inner.tail
+    }
+
+    /// Fits one measure column of a single-segment triangle.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative or incremental; slice to one segment first.
+    /// column : str
+    ///
+    /// Returns
+    /// -------
+    /// ChainLadderFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the triangle has several segments, the column is unknown, a
+    ///     factor cannot be estimated or the tail is not positive.
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+    ) -> PyResult<PyChainLadderFit> {
+        let (cl, tri) = (self.inner, &triangle.inner);
+        let inner = py.detach(|| cl.fit(tri, column)).map_err(err)?;
+        Ok(PyChainLadderFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ChainLadder(average={:?}, sigma_interpolation={:?}, tail={:?})",
+            self.average(),
+            self.sigma_interpolation(),
+            self.inner.tail
+        )
+    }
+}
+
+/// A fitted chain-ladder projection. Per-origin lists follow ``origins``;
+/// per-age lists follow ``development``.
+#[pyclass(name = "ChainLadderFit", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyChainLadderFit {
+    inner: ChainLadderFit,
+}
+
+#[pymethods]
+impl PyChainLadderFit {
+    /// Origin periods, oldest first.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.inner.origins.iter().map(|p| p.to_string()).collect()
+    }
+
+    /// Development ages in months.
+    #[getter]
+    fn development(&self) -> Vec<Lag> {
+        self.inner.development.development.clone()
+    }
+
+    /// Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
+    #[getter]
+    fn ldf(&self) -> Vec<f64> {
+        self.inner.development.ldf.clone()
+    }
+
+    /// Age-to-ultimate factors, one per age, including the tail.
+    #[getter]
+    fn cdf(&self) -> Vec<f64> {
+        self.inner.cdf.clone()
+    }
+
+    /// Variance parameter of each factor, with unestimable ones
+    /// interpolated (``nan`` where that is impossible).
+    #[getter]
+    fn sigma(&self) -> Vec<f64> {
+        self.inner.development.sigma.clone()
+    }
+
+    /// Standard error of each factor.
+    #[getter]
+    fn std_err(&self) -> Vec<f64> {
+        self.inner.development.std_err.clone()
+    }
+
+    /// Tail factor.
+    #[getter]
+    fn tail(&self) -> f64 {
+        self.inner.tail
+    }
+
+    /// Latest observed cumulative value per origin.
+    #[getter]
+    fn latest(&self) -> Vec<f64> {
+        self.inner.latest.clone()
+    }
+
+    /// Projected ultimate per origin.
+    #[getter]
+    fn ultimate(&self) -> Vec<f64> {
+        self.inner.ultimate.clone()
+    }
+
+    /// Reserve (ultimate minus latest) per origin.
+    #[getter]
+    fn reserve(&self) -> Vec<f64> {
+        self.inner.reserves()
+    }
+
+    /// Total ultimate across origins.
+    #[getter]
+    fn total_ultimate(&self) -> f64 {
+        self.inner.total_ultimate()
+    }
+
+    /// Total reserve across origins.
+    #[getter]
+    fn total_reserve(&self) -> f64 {
+        self.inner.total_reserve()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ChainLadderFit(origins={}, total_ultimate={:?}, total_reserve={:?})",
+            self.inner.origins.len(),
+            self.inner.total_ultimate(),
+            self.inner.total_reserve()
+        )
+    }
+}
+
+/// Mack's distribution-free chain ladder: the chain-ladder projection plus
+/// the standard error of each origin's reserve and of the total, split into
+/// process and parameter risk (Mack 1993, 1999). No tail factor.
+///
+/// Parameters
+/// ----------
+/// average : {"volume", "simple", "regression"}, default "volume"
+/// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import Mack, Triangle
+/// >>> tri = Triangle.from_long(
+/// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+/// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+/// ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+/// ... )
+/// >>> fit = Mack().fit(tri, "values")
+/// >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
+/// True
+#[pyclass(name = "Mack", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyMack {
+    inner: Mack,
+}
+
+#[pymethods]
+impl PyMack {
+    #[new]
+    #[pyo3(signature = (average = "volume", sigma_interpolation = "log-linear"))]
+    fn new(average: &str, sigma_interpolation: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: Mack {
+                development: development(average, sigma_interpolation)?,
+            },
+        })
+    }
+
+    /// How link ratios are averaged.
+    #[getter]
+    fn average(&self) -> &'static str {
+        average_name(self.inner.development.average)
+    }
+
+    /// How unestimable variance parameters are filled in.
+    #[getter]
+    fn sigma_interpolation(&self) -> &'static str {
+        sigma_interpolation_name(self.inner.development.sigma_interpolation)
+    }
+
+    /// Fits one measure column of a single-segment triangle.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    ///
+    /// Returns
+    /// -------
+    /// MackFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``ChainLadder.fit``, and if the triangle has fewer than three
+    ///     ages or a variance parameter can be neither estimated nor
+    ///     interpolated.
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+    ) -> PyResult<PyMackFit> {
+        let (mack, tri) = (self.inner, &triangle.inner);
+        let inner = py.detach(|| mack.fit(tri, column)).map_err(err)?;
+        Ok(PyMackFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Mack(average={:?}, sigma_interpolation={:?})",
+            self.average(),
+            self.sigma_interpolation()
+        )
+    }
+}
+
+/// A fitted Mack model: the chain-ladder fields, plus standard errors of
+/// each origin's reserve and of the total. Per-origin lists follow
+/// ``origins``.
+#[pyclass(name = "MackFit", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyMackFit {
+    inner: MackFit,
+}
+
+#[pymethods]
+impl PyMackFit {
+    /// The underlying chain-ladder projection.
+    #[getter]
+    fn chain_ladder(&self) -> PyChainLadderFit {
+        PyChainLadderFit {
+            inner: self.inner.chain_ladder.clone(),
+        }
+    }
+
+    /// Origin periods, oldest first.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.chain_ladder().origins()
+    }
+
+    /// Development ages in months.
+    #[getter]
+    fn development(&self) -> Vec<Lag> {
+        self.inner.chain_ladder.development.development.clone()
+    }
+
+    /// Age-to-age factors.
+    #[getter]
+    fn ldf(&self) -> Vec<f64> {
+        self.inner.chain_ladder.development.ldf.clone()
+    }
+
+    /// Age-to-ultimate factors.
+    #[getter]
+    fn cdf(&self) -> Vec<f64> {
+        self.inner.chain_ladder.cdf.clone()
+    }
+
+    /// Variance parameter of each factor.
+    #[getter]
+    fn sigma(&self) -> Vec<f64> {
+        self.inner.chain_ladder.development.sigma.clone()
+    }
+
+    /// Standard error of each factor.
+    #[getter]
+    fn std_err(&self) -> Vec<f64> {
+        self.inner.chain_ladder.development.std_err.clone()
+    }
+
+    /// Latest observed cumulative value per origin.
+    #[getter]
+    fn latest(&self) -> Vec<f64> {
+        self.inner.chain_ladder.latest.clone()
+    }
+
+    /// Projected ultimate per origin.
+    #[getter]
+    fn ultimate(&self) -> Vec<f64> {
+        self.inner.chain_ladder.ultimate.clone()
+    }
+
+    /// Reserve per origin.
+    #[getter]
+    fn reserve(&self) -> Vec<f64> {
+        self.inner.chain_ladder.reserves()
+    }
+
+    /// Total ultimate across origins.
+    #[getter]
+    fn total_ultimate(&self) -> f64 {
+        self.inner.chain_ladder.total_ultimate()
+    }
+
+    /// Total reserve across origins.
+    #[getter]
+    fn total_reserve(&self) -> f64 {
+        self.inner.chain_ladder.total_reserve()
+    }
+
+    /// Process standard error per origin.
+    #[getter]
+    fn process_risk(&self) -> Vec<f64> {
+        self.inner.process_risk.clone()
+    }
+
+    /// Parameter (estimation) standard error per origin.
+    #[getter]
+    fn parameter_risk(&self) -> Vec<f64> {
+        self.inner.parameter_risk.clone()
+    }
+
+    /// Mack standard error per origin: ``sqrt(process**2 + parameter**2)``.
+    #[getter]
+    fn standard_error(&self) -> Vec<f64> {
+        self.inner.standard_error.clone()
+    }
+
+    /// Process standard error of the total reserve.
+    #[getter]
+    fn total_process_risk(&self) -> f64 {
+        self.inner.total_process_risk
+    }
+
+    /// Parameter standard error of the total reserve, including the
+    /// correlation between origins that share estimated factors.
+    #[getter]
+    fn total_parameter_risk(&self) -> f64 {
+        self.inner.total_parameter_risk
+    }
+
+    /// Mack standard error of the total reserve.
+    #[getter]
+    fn total_standard_error(&self) -> f64 {
+        self.inner.total_standard_error
+    }
+
+    /// Coefficient of variation of the total reserve.
+    #[getter]
+    fn total_cv(&self) -> f64 {
+        self.inner.total_cv()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MackFit(origins={}, total_reserve={:?}, total_standard_error={:?})",
+            self.inner.chain_ladder.origins.len(),
+            self.inner.chain_ladder.total_reserve(),
+            self.inner.total_standard_error
+        )
+    }
+}

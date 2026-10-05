@@ -18,6 +18,7 @@ mod distributions;
 mod models;
 mod pareto;
 mod pricing;
+mod reserving;
 mod risk;
 
 fn to_py(e: act_core::Error) -> PyErr {
@@ -54,6 +55,8 @@ mod actuarialrs_native {
         alpha_between_frequency_and_layer, alpha_between_layers, fit_pml_curve, fit_references,
         ilf, loss_elimination_ratio, match_tower, pareto_extrapolation,
     };
+    #[pymodule_export]
+    use super::reserving::{PyChainLadder, PyChainLadderFit, PyMack, PyMackFit, PyTriangle};
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail,

@@ -108,6 +108,7 @@ dependencies = [
  "act-models",
  "act-pricing",
  "act-prob",
+ "act-reserving",
  "pyo3",
 ]
 
