@@ -1,5 +1,6 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
-//! ladder and Mack, `docs/design/triangle.md`) for the R `reserving.R` API.
+//! ladder, Mack and the ODP bootstrap, `docs/design/triangle.md`) for the R
+//! `reserving.R` API.
 //!
 //! Arrays cross the boundary flattened row-major over the Rust axes
 //! (index, column, origin, development) with NaN where a cell is not
@@ -7,12 +8,14 @@
 
 use act_reserving::{
     Average, ChainLadder, ChainLadderFit as ChainLadderInner, Development, DevelopmentColumn,
-    Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, SigmaInterpolation,
+    Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
+    OdpBootstrapFit as OdpBootstrapInner, ProcessDistribution, SigmaInterpolation,
     Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
+use crate::distributions::PredictiveDistribution;
 use crate::whole;
 
 fn to_r(e: act_reserving::Error) -> Error {
@@ -352,6 +355,36 @@ impl Triangle {
         .map_err(to_r)?;
         Ok(MackFit { inner })
     }
+
+    fn odp_bootstrap(
+        &self,
+        column: &str,
+        n_sims: f64,
+        seed: f64,
+        process: &str,
+    ) -> Result<OdpBootstrapFit> {
+        let n_sims = whole(n_sims, "n_sims")? as usize;
+        if n_sims == 0 {
+            return Err(Error::Other("n_sims must be positive".into()));
+        }
+        let process = match process {
+            "gamma" => ProcessDistribution::Gamma,
+            "none" => ProcessDistribution::None,
+            _ => {
+                return Err(Error::Other(format!(
+                    "process must be \"gamma\" or \"none\", got \"{process}\""
+                )));
+            }
+        };
+        let inner = OdpBootstrap {
+            n_sims,
+            seed: whole(seed, "seed")?,
+            process,
+        }
+        .fit(&self.inner, column)
+        .map_err(to_r)?;
+        Ok(OdpBootstrapFit { inner })
+    }
 }
 
 /// A fitted chain ladder.
@@ -460,9 +493,45 @@ impl MackFit {
     }
 }
 
+/// A fitted ODP bootstrap. `fitted` and `residuals` are row-major over
+/// origin x development, NaN where not observed.
+#[extendr]
+pub(crate) struct OdpBootstrapFit {
+    inner: OdpBootstrapInner,
+}
+
+#[extendr]
+impl OdpBootstrapFit {
+    /// The chain ladder the bootstrap is centred on.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self.inner.chain_ladder.clone(),
+        }
+    }
+
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted.clone()
+    }
+
+    fn residuals(&self) -> Vec<f64> {
+        self.inner.residuals.clone()
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale
+    }
+
+    fn reserves(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+}
+
 extendr_module! {
     mod reserving;
     impl Triangle;
     impl ChainLadderFit;
     impl MackFit;
+    impl OdpBootstrapFit;
 }

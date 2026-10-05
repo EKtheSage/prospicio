@@ -216,4 +216,70 @@ expect_error_like(triangle(transform(raw, development = replace(development, 2, 
 expect_error_like(triangle(transform(raw, origin = origin + 0.5), "origin", "development", "value"),
                   "whole-number years")
 
+# ODP bootstrap against R ChainLadder's BootChainLadder
+# (validation/reference/reserving_bootstrap_r.csv). The tolerances for
+# simulated quantities assume 20000 simulations with this seed, as in
+# validation/tests/reserving.rs.
+boot_lines <- grep("^#", readLines(validation("reference", "reserving_bootstrap_r.csv")),
+                   value = TRUE, invert = TRUE)
+boot_fields <- lapply(strsplit(boot_lines, ",", fixed = TRUE), `[`, 1:7)
+boot_ref <- utils::read.csv(text = vapply(boot_fields, paste, "", collapse = ","),
+                            colClasses = c(arg = "character"))
+boot_ref <- boot_ref[boot_ref$dataset == "raa", ]
+boot <- odp_bootstrap(raa, n_sims = 20000, seed = 20261004)
+stopifnot(S7::S7_inherits(boot, odp_bootstrap_fit),
+          S7::S7_inherits(boot@reserves, predictive_distribution),
+          S7::S7_inherits(boot@chain_ladder, chain_ladder_fit))
+near(boot@scale, boot_ref$expected[boot_ref$quantity == "scale"], 1e-9)
+res_ref <- boot_ref[boot_ref$quantity == "residual", ]
+stopifnot(nrow(res_ref) == 55)
+for (r in seq_len(nrow(res_ref))) {
+  at <- strsplit(res_ref$arg[r], ":", fixed = TRUE)[[1]]
+  got <- boot@residuals[at[1], as.integer(at[2]) + 1L]
+  want <- res_ref$expected[r]
+  if (!(abs(got - want) <= 1e-9 * max(abs(want), 1))) {
+    stop(sprintf("residual %s: got %.17g, want %.17g", res_ref$arg[r], got, want), call. = FALSE)
+  }
+}
+# Origin x development matrices, NA below the latest diagonal.
+stopifnot(identical(dim(boot@residuals), c(10L, 10L)),
+          identical(dimnames(boot@fitted)$origin, raa@origins),
+          is.na(boot@residuals["1990", "24"]), is.na(boot@fitted["1990", "24"]))
+near(rowSums(boot@fitted, na.rm = TRUE), unname(boot@chain_ladder@latest), 1e-12)
+near(boot@chain_ladder@total_reserve, chain_ladder(raa)@total_reserve)
+for (quantity in c("mean_total", "sd_total")) {
+  row <- boot_ref[boot_ref$method == "odp_bootstrap_gamma" & boot_ref$quantity == quantity, ]
+  got <- if (quantity == "mean_total") mean(boot@reserves) else sqrt(variance(boot@reserves))
+  if (!(abs(got - row$expected) <= row$abs_tol)) {
+    stop(sprintf("%s: got %.17g, want %.17g +- %g", quantity, got, row$expected, row$abs_tol),
+         call. = FALSE)
+  }
+}
+# One component per origin period; the oldest origin is fully developed.
+stopifnot(identical(boot@reserves@dims, "origin"),
+          identical(boot@reserves@keys$origin, raa@origins),
+          identical(boot@origins, raa@origins),
+          identical(boot@development, raa@development),
+          boot@reserves@n_sims == 20000,
+          identical(dim(draw_matrix(boot@reserves)), c(20000L, 10L)),
+          all(draw_matrix(boot@reserves)[, 1] == 0),
+          provenance(boot@reserves)$model == "odp_bootstrap")
+# Same seed, same draws; process error adds variance.
+a <- odp_bootstrap(raa, n_sims = 500, seed = 7)
+stopifnot(identical(draw_matrix(a@reserves), draw_matrix(odp_bootstrap(raa, n_sims = 500, seed = 7)@reserves)),
+          !identical(draw_matrix(a@reserves), draw_matrix(odp_bootstrap(raa, n_sims = 500, seed = 8)@reserves)))
+gamma <- odp_bootstrap(raa, "value", n_sims = 5000, seed = 1, process = "gamma")
+param <- odp_bootstrap(raa, "value", n_sims = 5000, seed = 1, process = "none")
+stopifnot(variance(param@reserves) < variance(gamma@reserves), param@scale == gamma@scale)
+invisible(utils::capture.output(print(boot)))
+expect_error_like(odp_bootstrap(raa, process = "poisson"), "should be one of")
+expect_error_like(odp_bootstrap(raa, n_sims = 0), "n_sims must be positive")
+expect_error_like(odp_bootstrap(raa, n_sims = 1.5), "n_sims must be a non-negative whole number")
+expect_error_like(odp_bootstrap(raa, seed = NA), "seed must be a single number")
+expect_error_like(odp_bootstrap(multi, "paid", n_sims = 10), "slice to one")
+expect_error_like(odp_bootstrap(raa, "paid", n_sims = 10), "no column or index named paid")
+tiny <- triangle(data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), paid = c(1, 2, 1)),
+                 "year", "age", "paid")
+expect_error_like(odp_bootstrap(tiny, n_sims = 10), "degrees of freedom")
+
 cat("actuarialrs R reserving tests passed\n")

@@ -56,7 +56,10 @@ mod actuarialrs_native {
         ilf, loss_elimination_ratio, match_tower, pareto_extrapolation, price, price_portfolio,
     };
     #[pymodule_export]
-    use super::reserving::{PyChainLadder, PyChainLadderFit, PyMack, PyMackFit, PyTriangle};
+    use super::reserving::{
+        PyChainLadder, PyChainLadderFit, PyMack, PyMackFit, PyOdpBootstrap, PyOdpBootstrapFit,
+        PyTriangle,
+    };
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail,
