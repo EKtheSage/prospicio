@@ -339,3 +339,72 @@ def test_bayes_glm():
     assert w[0] > 0.9
     with pytest.raises(ValueError):
         BayesGlm("poisson", dispersion_scale=1.0, dispersion=None, draws=1).fit(d, y)
+
+
+def test_bayesian_and_hierarchical_stacking():
+    from actuarialrs.distributions import PredictiveDistribution
+    from actuarialrs.models import BayesStacking, HierarchicalStacking
+
+    x = [i / 99 - 0.5 for i in range(100)]
+    a = [-0.5 if v < 0 else -2.0 for v in x]
+    b = [-2.0 if v < 0 else -0.5 for v in x]
+    fit = HierarchicalStacking(chains=2, tune=300, draws=300, seed=2).fit([a, b], [x])
+    w = fit.weights([[-0.4, 0.0, 0.4]])
+    assert len(w) == 3 and all(abs(sum(r) - 1) < 1e-12 for r in w)
+    assert w[0][0] > 0.7 and w[2][0] < 0.3
+    assert fit.divergences == 0 and all(r < 1.05 for r, _ in fit.rhat_ess())
+    assert len(fit.alpha_draws) == 600 and len(fit.beta_draws) == 600
+    bayes = BayesStacking(chains=2, tune=300, draws=300).fit([a, b])
+    (row,) = bayes.weights()
+    assert abs(row[0] - 0.5) < 0.1
+    with pytest.raises(ValueError):
+        HierarchicalStacking().fit([a, b], [x[:3]])
+    pa = PredictiveDistribution(["lob"], [("x",), ("y",)], [[1.0, 1.0]] * 50)
+    pb = PredictiveDistribution(["lob"], [("x",), ("y",)], [[2.0, 2.0]] * 50)
+    mix = PredictiveDistribution.blend_by_component([pa, pb], [[1.0, 0.0], [0.0, 1.0]], 3)
+    assert all(r == [1.0, 2.0] for r in mix.draw_matrix())
+
+
+def test_hierarchical_stacking_with_partial_pooling():
+    from actuarialrs.models import HierarchicalStacking
+
+    n = 120
+    region = [i % 4 for i in range(n)]
+    dummies = [[float(g == r) for g in region] for r in (1, 2, 3)]
+    x = [((i * 37) % 101) / 100 - 0.5 for i in range(n)]
+    a = [-0.5 if g < 2 else -2.0 for g in region]
+    b = [-2.0 if g < 2 else -0.5 for g in region]
+    spec = HierarchicalStacking(
+        discrete=3, partial_pooling=True, adaptive=4.0, chains=2, tune=300, draws=300, seed=9
+    )
+    fit = spec.fit([a, b], dummies + [x])
+    # Region 0 (no dummy set) and region 3.
+    w = fit.weights([[0.0, 0.0], [0.0, 0.0], [0.0, 1.0], [0.0, 0.0]])
+    assert w[0][0] > 0.7 and w[1][0] < 0.3
+    with pytest.raises(ValueError):
+        HierarchicalStacking(discrete=5).fit([a, b], [x])
+
+
+def test_over_dispersed_poisson_accepts_negative_responses():
+    # Log link and a group dummy: the fitted means are the group means.
+    d = Design([[1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], ["(Intercept)", "b"])
+    y = [5.0, -1.0, 4.0, 2.0, 3.0, 4.0]
+    fit = Glm("poisson", dispersion="pearson").fit(d, y)
+    assert fit.coefficients[0] == pytest.approx(math.log(8 / 3), rel=1e-10)
+    assert fit.coefficients[1] == pytest.approx(math.log(3 / (8 / 3)), rel=1e-10)
+    with pytest.raises(ValueError):
+        Glm("poisson").fit(d, y)
+
+
+def test_glm_mean_preserving_parameter_draws():
+    d = Design([[1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], ["(Intercept)", "x"])
+    fit = Glm("poisson", dispersion="pearson").fit(d, [3.0, 9.0, 1.0, 8.0, 20.0, 5.0])
+    want = sum(fit.predict(d))
+    centred = fit.predict_distribution(d, 20_000, 1, parameters="mean_preserving")
+    fixed = fit.predict_distribution(d, 20_000, 1, parameters="fixed")
+    normal = fit.predict_distribution(d, 20_000, 1)
+    assert sum(centred.total().draws) / 20_000 == pytest.approx(want, rel=0.02)
+    assert sum(fixed.total().draws) / 20_000 == pytest.approx(want, rel=0.02)
+    assert sum(normal.total().draws) > sum(centred.total().draws)
+    with pytest.raises(ValueError):
+        fit.predict_distribution(d, 10, 1, parameters="other")

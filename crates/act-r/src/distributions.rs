@@ -644,7 +644,8 @@ impl PredictiveDistribution {
     }
 
     /// The component with this key (a list or vector, one entry per
-    /// dimension), or NULL.
+    /// dimension), or NULL. An origin period is named by its label
+    /// (`"2021"`, `2021`, `"2021Q3"`).
     fn marginal(&self, key: List) -> Result<Robj> {
         let key = key_from_list(key)?;
         Ok(match self.inner.marginal(&key) {
@@ -728,9 +729,90 @@ fn blend_rust(models: List, weights: &[f64], seed: f64) -> Result<PredictiveDist
     Ok(PredictiveDistribution { inner: pd })
 }
 
+/// Blends with one weight vector per component: `weights` is
+/// `components × models` column-major.
+#[extendr]
+fn blend_by_component_rust(
+    models: List,
+    weights: &[f64],
+    seed: f64,
+) -> Result<PredictiveDistribution> {
+    let refs: Vec<&PredictiveDistribution> = models
+        .values()
+        .map(|m| {
+            <&PredictiveDistribution>::try_from(&m)
+                .map_err(|_| Error::Other("every model must be a predictive_distribution".into()))
+        })
+        .collect::<Result<_>>()?;
+    let k = refs.len();
+    if k == 0 || weights.len() % k != 0 {
+        return Err(Error::Other("weights need one column per model".into()));
+    }
+    let c = weights.len() / k;
+    let rows: Vec<Vec<f64>> = (0..c)
+        .map(|j| (0..k).map(|m| weights[m * c + j]).collect())
+        .collect();
+    let inner: Vec<&PdInner> = refs.iter().map(|p| &p.inner).collect();
+    let pd = PdInner::blend_by_component(&inner, &rows, whole(seed, "seed")?).map_err(to_r)?;
+    Ok(PredictiveDistribution { inner: pd })
+}
+
+/// Joins predictive distributions: `labels` name the `parts`.
+#[extendr]
+fn join_rust(
+    parts: List,
+    labels: Vec<String>,
+    dim: &str,
+    same_simulations: bool,
+) -> Result<PredictiveDistribution> {
+    use act_prob::portfolio::Pairing;
+    let refs: Vec<&PredictiveDistribution> = parts
+        .values()
+        .map(|m| {
+            <&PredictiveDistribution>::try_from(&m)
+                .map_err(|_| Error::Other("every part must be a predictive_distribution".into()))
+        })
+        .collect::<Result<_>>()?;
+    if refs.len() != labels.len() {
+        return Err(Error::Other("one label per part".into()));
+    }
+    let pairs: Vec<(&str, &PdInner)> = labels
+        .iter()
+        .map(String::as_str)
+        .zip(refs.iter().map(|p| &p.inner))
+        .collect();
+    let pairing = if same_simulations {
+        Pairing::SameSimulations
+    } else {
+        Pairing::Independent
+    };
+    let inner = PdInner::join(&pairs, dim, pairing).map_err(to_r)?;
+    Ok(PredictiveDistribution { inner })
+}
+
+/// Iman-Conover on the totals of the groups of `dim`, moving whole rows.
+#[extendr]
+fn reorder_groups_rust(
+    pd: Robj,
+    dim: &str,
+    correlation: &[f64],
+    seed: f64,
+) -> Result<PredictiveDistribution> {
+    let pd = <&PredictiveDistribution>::try_from(&pd)
+        .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
+    let inner = pd
+        .inner
+        .reorder_groups(dim, correlation, whole(seed, "seed")?)
+        .map_err(to_r)?;
+    Ok(PredictiveDistribution { inner })
+}
+
 extendr_module! {
     mod distributions;
+    fn join_rust;
+    fn reorder_groups_rust;
     fn blend_rust;
+    fn blend_by_component_rust;
     impl Lognormal;
     impl Poisson;
     impl NegativeBinomial;

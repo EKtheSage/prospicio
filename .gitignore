@@ -18,3 +18,6 @@ R/actuarialrs/src/*.so
 python/great-docs/
 R/actuarialrs/docs/
 .quarto/
+
+# Downloaded validation data (validation/scripts/fetch_fremtpl2.py)
+validation/data/external/

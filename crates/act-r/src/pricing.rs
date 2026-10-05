@@ -4,13 +4,15 @@
 
 use act_aggregate::CollectiveModel as CollectiveInner;
 use act_pricing::layer::XsLayer;
+use act_pricing::risk_load::{self, PremiumRule, Price};
 use act_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
 use crate::aggregate::{AnyCount, EventSet};
-use crate::distributions::AnySeverity;
+use crate::distributions::{AnySeverity, PredictiveDistribution, Sampled};
 use crate::pareto::PiecewisePareto;
+use crate::risk::RiskDistortion;
 use crate::{to_r, whole};
 
 fn truncation(t: f64) -> Option<f64> {
@@ -266,10 +268,91 @@ fn pricing_alpha_between_frequencies(
     .map_err(to_r)
 }
 
+fn distortion_arg(d: &Robj, name: &str) -> Result<act_prob::Distortion> {
+    <&RiskDistortion>::try_from(d)
+        .map(|d| d.inner)
+        .map_err(|_| Error::Other(format!("{name} must be a distortion")))
+}
+
+/// The premium rule: a cost of capital `rate`, or (`rate` NA) the
+/// pricing distortion `pricing`.
+fn premium_rule(rate: Option<f64>, pricing: &Robj) -> Result<PremiumRule> {
+    match (rate, pricing.is_null()) {
+        (Some(r), true) => PremiumRule::cost_of_capital(r).map_err(to_r),
+        (None, false) => Ok(PremiumRule::Distortion(distortion_arg(
+            pricing,
+            "distortion",
+        )?)),
+        _ => Err(Error::Other(
+            "give exactly one of cost_of_capital and distortion".into(),
+        )),
+    }
+}
+
+fn price_list(p: &Price) -> List {
+    list!(
+        expected_loss = p.expected_loss,
+        premium = p.premium,
+        assets = p.assets,
+        margin = p.margin(),
+        capital = p.capital(),
+        loss_ratio = p.loss_ratio(),
+        return_on_capital = p.return_on_capital()
+    )
+}
+
+/// Risk-loaded price of a sampled or a predictive distribution's total.
+#[extendr]
+fn pricing_price(losses: Robj, assets: Robj, rate: Option<f64>, pricing: Robj) -> Result<List> {
+    let rule = premium_rule(rate, &pricing)?;
+    let assets = distortion_arg(&assets, "assets")?;
+    let p = if let Ok(s) = <&Sampled>::try_from(&losses) {
+        risk_load::price(&s.inner, &rule, &assets)
+    } else if let Ok(pd) = <&PredictiveDistribution>::try_from(&losses) {
+        risk_load::price(pd.inner.total(), &rule, &assets)
+    } else {
+        return Err(Error::Other(
+            "losses must be a sampled or a predictive_distribution".into(),
+        ));
+    }
+    .map_err(to_r)?;
+    Ok(price_list(&p))
+}
+
+/// Portfolio price: `list(total, allocated, standalone)`, the last two
+/// as lists of columns, one value per component.
+#[extendr]
+fn pricing_price_portfolio(
+    pd: Robj,
+    assets: Robj,
+    rate: Option<f64>,
+    pricing: Robj,
+) -> Result<List> {
+    let rule = premium_rule(rate, &pricing)?;
+    let assets = distortion_arg(&assets, "assets")?;
+    let pd = <&PredictiveDistribution>::try_from(&pd)
+        .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
+    let p = risk_load::price_portfolio(&pd.inner, &rule, &assets).map_err(to_r)?;
+    let columns = |v: &[Price]| {
+        list!(
+            expected_loss = v.iter().map(|p| p.expected_loss).collect::<Vec<_>>(),
+            premium = v.iter().map(|p| p.premium).collect::<Vec<_>>(),
+            assets = v.iter().map(|p| p.assets).collect::<Vec<_>>()
+        )
+    };
+    Ok(list!(
+        total = price_list(&p.total),
+        allocated = columns(&p.allocated),
+        standalone = columns(&p.standalone)
+    ))
+}
+
 extendr_module! {
     mod pricing;
     impl CollectiveModel;
     impl TowerModel;
+    fn pricing_price;
+    fn pricing_price_portfolio;
     fn pricing_ilf;
     fn pricing_loss_elimination_ratio;
     fn pricing_pareto_extrapolation;

@@ -128,3 +128,47 @@ jobs:
         with:
           name: docs-site
           path: target/docs-site
+
+  # GLM parity at scale: the freMTPL2 claim frequency GLM (678,013
+  # policies) against statsmodels, in a release build (about 30 s; six
+  # minutes unoptimized). The data is downloaded from OpenML once and
+  # cached. On a pull request it runs only when the GLM code or the
+  # freMTPL2 parity files change; otherwise its steps are skipped.
+  fremtpl2:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether the GLM inputs changed
+        id: changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+              | grep -qE '^(crates/act-glm/|crates/act-models/|crates/act-math/|validation/(tests|scripts|reference)/.*fremtpl2|\.github/workflows/ci\.yml)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No GLM inputs changed; skipping the freMTPL2 parity."
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - if: steps.changes.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - if: steps.changes.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: validation/data/external
+          key: fremtpl2-${{ hashFiles('validation/scripts/fetch_fremtpl2.py') }}
+      - if: steps.changes.outputs.run == 'true'
+        name: Fetch freMTPL2freq
+        run: test -f validation/data/external/freMTPL2freq_glm.csv || python3 validation/scripts/fetch_fremtpl2.py
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo test --release -p act-validation --test fremtpl2
+        env:
+          RISK_RS_REQUIRE_FREMTPL2: "1"

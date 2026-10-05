@@ -31,6 +31,8 @@
 
 pub mod elpd;
 pub mod glm;
+pub mod nuts;
+pub mod stacking;
 
 use act_core::{Error, Result};
 use act_math::special::norm_quantile;

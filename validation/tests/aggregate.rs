@@ -83,3 +83,131 @@ fn collective_model_matches_r() {
         }
     });
 }
+
+/// The roadmap's gate: a reserve bootstrap and a reinsurance tower feed
+/// capital allocation end to end. RAA reserves by origin (ODP bootstrap)
+/// with an adverse development cover, premium risk from a collective model
+/// net of an excess-of-loss layer, joined into one portfolio with a rank
+/// correlation between the two risks, then measured and allocated.
+#[test]
+fn reserve_and_tower_feed_capital_end_to_end() {
+    use act_aggregate::{Layer, Tower, simulate_events};
+    use act_prob::capital::AllocationMethod;
+    use act_prob::portfolio::Pairing;
+    use act_prob::{
+        Distortion, Distribution, Empirical, KeyValue, Lognormal, PredictiveDistribution,
+    };
+    use act_reserving::{DevelopmentColumn, Grain, Long, Month, OdpBootstrap, Triangle};
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/raa.csv");
+    let text = std::fs::read_to_string(path).unwrap();
+    let rows: Vec<Vec<f64>> = text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("origin"))
+        .map(|l| l.split(',').map(|v| v.parse().unwrap()).collect())
+        .collect();
+    let origin: Vec<Month> = rows.iter().map(|r| Month::january(r[0] as i32)).collect();
+    let age: Vec<u32> = rows.iter().map(|r| r[1] as u32).collect();
+    let value: Vec<f64> = rows.iter().map(|r| r[2]).collect();
+    let tri = Triangle::from_long(&Long {
+        index: None,
+        origin: &origin,
+        development: DevelopmentColumn::Age(&age),
+        values: &[("paid", &value)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap();
+    let n = 20_000;
+    let boot = OdpBootstrap {
+        n_sims: n,
+        seed: 11,
+        ..Default::default()
+    }
+    .fit(&tri, "paid")
+    .unwrap();
+    let reserve = &boot.reserves;
+
+    // An adverse development cover: 10,000 xs the reserve's 75th percentile.
+    let retention = reserve.quantile(0.75).unwrap();
+    let adc = Tower::new(vec![Layer::stop_loss("adc", 10_000.0, retention).unwrap()])
+        .unwrap()
+        .apply_aggregate(reserve)
+        .unwrap()
+        .aggregate(&["kind"])
+        .unwrap();
+    let ceded = adc.marginal(&vec![KeyValue::from("ceded")]).unwrap();
+    let net = adc.marginal(&vec![KeyValue::from("net")]).unwrap();
+    assert!((ceded.mean() + net.mean() - reserve.mean()).abs() < 1e-9 * reserve.mean());
+    // The cover caps the reserve's tail.
+    assert!(net.quantile(0.995).unwrap() < reserve.quantile(0.995).unwrap());
+
+    // Premium risk for next year, net of a 2,000 xs 1,000 per-risk layer.
+    let events = simulate_events(
+        &act_prob::Poisson::new(8.0).unwrap(),
+        &Lognormal::from_mean_cv(800.0, 1.5).unwrap(),
+        n,
+        12,
+    )
+    .unwrap();
+    let premium = Tower::new(vec![Layer::xol("2x1", 2_000.0, 1_000.0).unwrap()])
+        .unwrap()
+        .apply(&events)
+        .unwrap();
+    let premium_net = PredictiveDistribution::from_draws(
+        vec!["lob".into()],
+        vec![vec![KeyValue::from("property")]],
+        premium
+            .aggregate(&["kind"])
+            .unwrap()
+            .marginal(&vec![KeyValue::from("net")])
+            .unwrap()
+            .draws()
+            .to_vec(),
+        premium.provenance().clone(),
+    )
+    .unwrap();
+
+    // The reserve by origin, gross, and the cover as a negative line, so
+    // capital can still be allocated to origins. The cover is a function
+    // of the reserve simulations: refused as an independent part, joined
+    // to the reserve scenario by scenario.
+    let cover = PredictiveDistribution::from_draws(
+        vec!["layer".into()],
+        vec![vec![KeyValue::from("adc")]],
+        ceded.draws().iter().map(|c| -c).collect(),
+        adc.provenance().clone(),
+    )
+    .unwrap();
+    let reserve_parts = [("reserve", reserve), ("adc", &cover)];
+    assert!(PredictiveDistribution::join(&reserve_parts, "part", Pairing::Independent).is_err());
+    let reserve_with_cover =
+        PredictiveDistribution::join(&reserve_parts, "part", Pairing::SameSimulations).unwrap();
+    let parts = [("reserve", &reserve_with_cover), ("premium", &premium_net)];
+    let portfolio = PredictiveDistribution::join(&parts, "risk", Pairing::Independent)
+        .unwrap()
+        .reorder_groups("risk", &[1.0, 0.5, 0.5, 1.0], 13)
+        .unwrap();
+    assert_eq!(portfolio.dims(), ["risk", "part", "origin", "layer", "lob"]);
+
+    // The total is the reserve net of the cover plus premium net of the layer.
+    let expected_mean = net.mean() + premium_net.mean();
+    assert!((portfolio.mean() - expected_mean).abs() < 1e-9 * expected_mean);
+
+    // Capital: TVaR 99% of the total, allocated to risks and to origins.
+    let tvar = Distortion::tvar(0.99).unwrap();
+    let by_risk = portfolio.aggregate(&["risk"]).unwrap();
+    let alloc = by_risk.capital(&tvar, AllocationMethod::Euler).unwrap();
+    assert!((alloc.allocated.iter().sum::<f64>() - alloc.total).abs() < 1e-6 * alloc.total);
+    assert!(alloc.diversification_benefit() > 0.0);
+    let by_component = portfolio.allocate(&tvar);
+    assert_eq!(by_component.len(), portfolio.n_components());
+    assert!((by_component.iter().sum::<f64>() - alloc.total).abs() < 1e-6 * alloc.total);
+    // Positive dependence between the risks costs capital.
+    let independent = PredictiveDistribution::join(&parts, "risk", Pairing::Independent)
+        .unwrap()
+        .reorder_groups("risk", &[1.0, 0.0, 0.0, 1.0], 13)
+        .unwrap();
+    assert!(portfolio.distortion(&tvar) > independent.distortion(&tvar));
+}

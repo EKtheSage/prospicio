@@ -159,6 +159,109 @@ projects the resampled triangles):
   deviations and total quantiles match R within four Monte Carlo standard
   errors (`validation/scripts/reserving_bootstrap_r.R`).
 
+### ODP GLM
+
+`OdpGlm` is the same over-dispersed Poisson model fitted as a GLM
+(`docs/design/models.md`, "Fitting a triangle with several models"):
+`ln E[X_od] = c + a_o + b_d`, `Var X_od = φ E[X_od]`, by
+`act_glm::Glm::over_dispersed_poisson()` (Pearson's `φ`) on the observed
+rows of a `TriangleFrame`.
+
+- Coding: `Terms` with an intercept and `origin` and `development`
+  factors, levels learned on every cell so the future rows code with the
+  training columns. The references are the first origin and the first age,
+  as in R's `factor()`; the other levels are in string order
+  (`development[108]` before `development[24]`).
+- `OdpGlmFit` holds the `GlmFit` (coefficients, standard errors, `φ`), the
+  `Coding`, the future cells `(Period, age)` with their fitted means, and
+  reserves by origin (0 for a fully developed origin).
+- `predict_distribution(n_sims, seed)` re-keys the GLM's joint draws over
+  the future cells to dimensions `["origin", "development"]`;
+  `aggregate(["origin"])` gives reserves by origin. Each draw takes the
+  coefficients from their normal approximation (parameter uncertainty) and
+  each cell as `φ · Poisson(μ / φ)` (process uncertainty). The parameter
+  draws are mean-preserving by default (`act_glm::ParameterDraws`, #114):
+  each cell's linear predictor is shifted by `-v / 2`, `v = xᵀ Σ x`, so the
+  draws average the Chain Ladder reserve. `predict_distribution_with` takes
+  `Normal` (unshifted: each cell's mean is `predictive_means()`, +7.2% on
+  GenIns, +0.4% on ABC) or `Fixed` (process uncertainty only).
+- The fit fails, naming the cell or level, on a hole (a past cell with no
+  increment) and on an origin or age with no observed increment (a level
+  only in future cells). Negative increments are fitted by the
+  quasi-likelihood, which needs only `V(μ) = μ` and `μ > 0` (#114); R's
+  `quasipoisson` refuses them. A level whose only increments are negative
+  has no positive mean, and the GLM fails.
+- Parity (`validation/tests/reserving.rs`): on RAA, GenIns and ABC the
+  future cells summed by origin equal the Chain Ladder reserves and `φ`
+  equals the bootstrap's scale (relative 1e-8; Renshaw and Verrall 1998);
+  on GenIns and ABC the coefficients, standard errors, `φ` and reserves
+  match R's `glm(inc ~ factor(origin) + factor(dev), family = quasipoisson)`
+  to relative 1e-9 (`validation/scripts/reserving_glm_r.R`). RAA has no R
+  reference: its negative increment (1982 at 84 months, -103) makes R
+  refuse it.
+
+## Calendar-diagonal backtest
+
+`diagonal_backtest` (`act-reserving/src/backtest.rs`) scores any model of
+the cells of a `TriangleFrame` the way reserving uses it: for each of the
+latest `k` calendar diagonals, refit on the earlier diagonals and forecast
+the held-out one (`docs/design/models.md`, "Fitting a triangle with several
+models").
+
+- A model takes part through the `TriangleModel` trait: `forecast(cells,
+  train, test, n_sims, seed)` returns a `CellForecast` (means, a joint
+  `PredictiveDistribution` over the test rows, and optional pointwise log
+  predictive densities). `GlmCandidate { name, terms, glm }` wraps any
+  `act-glm` GLM; the ODP model is the quasi-Poisson GLM with intercept,
+  origin and development factors.
+- A held-out cell whose origin or development level has no training row
+  (the newest origin, and the oldest origin at an age not seen before)
+  cannot be forecast by a model with origin and development effects. It
+  is left out for every model, so all models score the same cells, and
+  `Backtest::excluded` counts it: two per diagonal on a full triangle.
+  "Training row" means one every model fits on (`TriangleModel::fit_rows`,
+  all of them by default): an age whose only training cell is a response
+  the model does not accept (a negative increment under a Poisson with
+  fixed dispersion) is unseen too.
+- Scores per model and diagonal: mean cell CRPS, coverage of the central
+  `interval` of each cell's draws, actual vs expected on the diagonal
+  total (`Σy / Σμ`), and the CRPS of the diagonal total from the joint
+  draws summed per simulation. One seed serves every model and diagonal,
+  so the models share their random numbers, and results are deterministic.
+- `GlmCandidate` fits the training cells its GLM accepts
+  (`Glm::accepts`): the quasi-Poisson takes negative increments (#114),
+  a Poisson with fixed dispersion does not. Its predictive draws are
+  mean-preserving under a log or identity link, so each cell's simulated
+  mean is its fitted mean.
+- Its log densities are log predictive densities with parameter
+  uncertainty (the response density averaged over coefficient draws);
+  plug-in densities treat the young origins' factors as known and
+  penalize the ODP model where it is least certain. The response density
+  is `Family::log_density`, which scores the over-dispersed Poisson by a
+  normalized density in `y` (#114).
+- Parity: on a held-out diagonal the ODP candidate's means equal Chain
+  Ladder's one-period forecasts from the triangle valued before it
+  (GenIns, three diagonals, to `1e-7`).
+
+### Feeding stacking
+
+`Backtest::log_densities()` returns, per model, the held-out log density
+of every scored cell, diagonals in order, aligned across models (`None`
+for a model that gives none). The models that give one are the input of
+`act_models::stack::stacking_weights` (and `pseudo_bma_weights`), the
+cross-validated counterpart of PSIS-LOO pointwise values (#95, #102); the
+weights then blend the models' predictive distributions of the future
+cells with `PredictiveDistribution::blend`. A held-out cell that a model
+gives zero density (a negative increment under the Poisson) makes its
+log density `-∞`, which stacking rejects: choose diagonals without one.
+
+Findings on the reference triangles, ODP against development factors
+only: on ABC the ODP model wins on cell and total CRPS and stacking
+favours it (about 0.58 to 0.42, three diagonals), though its 90%
+intervals cover only about half the cells. On RAA's latest two diagonals
+development alone scores better (cell CRPS about 1000 against 1400): the
+young origins' factors rest on one or two noisy cells.
+
 ## Migration from the sandbox (done)
 
 `development.rs` and `chain_ladder.rs` (volume and simple averages,
@@ -180,7 +283,45 @@ root sandbox crate is deleted.
 2. **Development axis storage:** always ages in months. `dev_to_val()`
    returns a borrowed `CalendarView` keyed by valuation month;
    `val_to_dev()` returns the triangle.
-3. **Multi-part index labels:** `Label` is a tuple of strings, like a pandas
-   `MultiIndex` row.
+3. **Multi-part index labels:** superseded by decision 5. A `Label` is a
+   tuple of strings, one per named key column.
 4. **Exclusions** (chainladder's `drop`): a parameter of the development
    estimator, keeping the Triangle pure data. Not implemented yet.
+5. **Several measures, lines and other identifiers** (decided 2026-10-05).
+   The four-axis storage stays as the engine. What users see is a long
+   table with named key columns, plus 2-D views on demand. Chainladder's
+   cube is hard to read because of how it is presented: its keys have no
+   names, you select by position over four axes, and it prints well only
+   once you have narrowed it to one segment and one measure.
+   - **Named key columns.** A triangle knows its keys by name, for example
+     `["lob", "coverage", "company"]`. Each index position's `Label` holds
+     one value per key. With no keys there is one segment and an empty
+     label.
+   - **Measures are columns.** Paid, incurred and counts are columns of one
+     triangle, not separate triangles. They share keys, origins and ages,
+     so methods that combine them (Munich chain ladder, paid–incurred) get
+     aligned data.
+   - **Long table in, long table out.** `from_long` takes named key columns,
+     and `to_long` returns them. Method results are long tables with one
+     row per key × origin and quantities (ultimate, reserve, standard
+     error) as columns.
+   - **Select and group by name.** `select(key = values)` filters segments
+     and `group_by(keys)` sums the other keys away. Neither works by
+     position.
+   - **Every segment at once.** Methods fit each segment of a column and
+     return one long table. Stochastic methods return one joint
+     `PredictiveDistribution` with the key names and `origin` as
+     dimensions, so `aggregate(["lob"])` keeps the dependence between
+     segments.
+   - **Views for reading.** The bindings give a plain origin × development
+     table for one segment and measure (`view`). A triangle with many
+     segments prints a summary: one row per segment and measure, with its
+     origins, valuation and latest diagonal total.
+   - **Build order** (one PR each):
+     1. named keys in `from_long`, `to_long` and the bindings;
+     2. `select` and `group_by`;
+     3. fitting every segment, with long results;
+     4. `view` and the summary printout.
+
+     `TriangleFrame` gains the key columns as features, so one model can
+     share information across segments.

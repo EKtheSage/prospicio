@@ -18,6 +18,18 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   describe the total and go through `risk::*`;
 - `Provenance` with `model`, `parameters`, `seed`, `stream_scheme`,
   `versions` (starting with `act-prob`) and `input_hash`;
+- `act_prob::portfolio`: `join(parts, dim, Pairing)` puts distributions of
+  different models side by side under a new leading dimension (the union
+  of their dimensions after it, `""` where a part lacks one), pairing
+  simulation `i` of every part; `Pairing::Independent` refuses two parts
+  with the same seed and stream scheme, which would share random numbers,
+  and `Pairing::SameSimulations` is for parts derived from the same
+  scenarios. `reorder_groups(dim, correlation, seed)` sets the dependence
+  between groups by Iman–Conover on their totals, moving each group's
+  simulations as whole rows so its internal joint structure is kept. With
+  `Tower::apply_aggregate` this closes the v0.4 gate: a reserve bootstrap
+  and a tower feed capital allocation end to end
+  (`validation/tests/aggregate.rs`);
 - with the `arrow` feature, `write_ipc` / `read_ipc` (Arrow IPC files) and
   `to_record_batch` / `from_record_batch`, in `act_prob::ipc`.
 

@@ -80,7 +80,8 @@ dispersion_args <- function(dispersion) {
 #' @param weights Optional prior weights.
 #' @param dispersion `NULL` (1 for the Poisson, binomial and negative
 #'   binomial; Pearson's estimate otherwise), `"pearson"` (with the Poisson,
-#'   the over-dispersed Poisson), `"deviance"` or a fixed number.
+#'   the over-dispersed Poisson, which accepts negative responses as long
+#'   as the fitted means stay positive), `"deviance"` or a fixed number.
 #' @param theta Negative binomial `theta` (variance `mu + mu^2 / theta`).
 #' @param power Tweedie power in `(1, 2)`.
 #' @param link_power Exponent of the power link.
@@ -562,6 +563,12 @@ for (cls in list(glm_model, gam_model, bayes_glm_model)) {
 #' @param seed Generator seed.
 #' @param offset Optional offset added to any `offset()` terms.
 #' @param weights Optional prior weights.
+#' @param parameters For a [glm_model], how the coefficients are drawn:
+#'   `"normal"` (`beta ~ N(beta_hat, Sigma)`; through a log link the draws'
+#'   mean is `mu_hat * exp(x' Sigma x / 2)`), `"mean_preserving"` (the same,
+#'   with each row's linear predictor shifted so its draws average the
+#'   fitted mean exactly; log or identity link) or `"fixed"` (process
+#'   uncertainty only).
 #' @param ... Unused; for methods.
 #' @returns A [predictive_distribution].
 #' @export
@@ -575,7 +582,20 @@ predict_distribution <- S7::new_generic(
   function(object, newdata, n_sims, seed, ...) S7::S7_dispatch()
 )
 
-for (cls in list(glm_model, gam_model, bayes_glm_model)) {
+S7::method(predict_distribution, glm_model) <- function(object, newdata, n_sims, seed,
+                                                       offset = NULL, weights = NULL,
+                                                       parameters = c("normal", "mean_preserving",
+                                                                      "fixed"), ...) {
+  parameters <- match.arg(parameters)
+  nd <- new_design(object, newdata, offset)
+  w <- if (is.null(weights)) double() else as.double(weights)
+  ptr <- rust_result(object@ptr$predict_distribution(
+    as.double(nd$x), colnames(nd$x), nd$offset, w, as.double(n_sims), as.double(seed), parameters
+  ), s7_call())
+  predictive_distribution(ptr = ptr)
+}
+
+for (cls in list(gam_model, bayes_glm_model)) {
   S7::method(predict_distribution, cls) <- function(object, newdata, n_sims, seed,
                                                      offset = NULL, weights = NULL, ...) {
     nd <- new_design(object, newdata, offset)
@@ -1006,6 +1026,141 @@ actual_vs_expected <- function(periods, actual, expected, family, weights = NULL
   attr(out, "trend") <- c(slope = r$trend, std_error = r$trend_std_error,
                           z = r$trend / r$trend_std_error)
   out
+}
+
+#' Bayesian and hierarchical stacking
+#'
+#' Model weights with a posterior, sampled by NUTS from pointwise held-out
+#' log densities, the log score of the mixture as the likelihood (Yao et
+#' al., 2018 and 2022). `bayes_stacking()` puts a Dirichlet prior on one
+#' weight vector. `hierarchical_stacking()` lets the weights vary with
+#' covariates, `w = softmax(alpha + B x)` against the last model as
+#' reference, with the priors of BayesBlend's `HierarchicalBayesStacking`:
+#' a model can be trusted in one part of the portfolio and not another.
+#' Scale continuous covariates (BayesBlend divides by twice their standard
+#' deviation) and dummy-code discrete ones first, with the dummies as the
+#' first `discrete` columns. Without pooling, posterior moments match exact
+#' grid integration (`validation/scripts/stacking_grid.py`).
+#'
+#' With `partial_pooling = TRUE`, each model's slopes on the discrete
+#' columns, and separately on the continuous ones, are drawn around a
+#' model-level mean, which is drawn around a global mean; `pooling_scales()`
+#' sets the scales (0 removes a level: `tau_mu_global = 0` fixes the global
+#' mean at 0, `tau_mu_* = 0` pools completely, `tau_sigma_* = 0` sets every
+#' slope to its model's mean). BayesBlend warns that pooling needs at least
+#' three covariates. `adaptive`, the rate of an exponential prior on
+#' `lambda`, multiplies the prior scales by `N^lambda`, which weakens them
+#' as the data grow.
+#'
+#' @param lpd A matrix of held-out log densities, one row per observation
+#'   and one column per model (for example each model's
+#'   `bayes_loo(m)$pointwise`, as columns).
+#' @param covariates A matrix or data frame of numeric covariates, one row
+#'   per observation.
+#' @param concentration Dirichlet concentration, one per model; `NULL` is
+#'   uniform.
+#' @param discrete Number of leading columns of `covariates` that are dummy
+#'   codes of discrete covariates.
+#' @param alpha_loc,alpha_scale,beta_loc,beta_scale Normal priors on the
+#'   intercepts and (without pooling) slopes.
+#' @param partial_pooling Pool the slopes (BayesBlend's pooling model).
+#' @param pooling Pooling scales, from `pooling_scales()`.
+#' @param tau_mu_global,tau_mu_discrete,tau_mu_continuous,tau_sigma_discrete,tau_sigma_continuous
+#'   Scales of the global mean, the model-level means and the slopes around
+#'   them; BayesBlend's defaults are all 1.
+#' @param adaptive `NULL`, or the rate of the exponential prior on `lambda`
+#'   (BayesBlend's default is 4).
+#' @param chains,tune,draws,seed Sampler settings.
+#' @returns A `stacking_fit` with properties `weights` (posterior mean
+#'   weights: one row per observation for hierarchical stacking, one row
+#'   otherwise), `alpha_draws`, `beta_draws` and `divergences`. Use
+#'   [stats::predict()] with new covariates for their weights, and
+#'   [blend_predictive()] with the weight matrix.
+#' @name bayesian_stacking
+#' @examples
+#' x <- seq(-0.5, 0.5, length.out = 100)
+#' lpd <- cbind(a = ifelse(x < 0, -0.5, -2), b = ifelse(x < 0, -2, -0.5))
+#' h <- hierarchical_stacking(lpd, data.frame(x = x), chains = 2, tune = 300, draws = 300)
+#' predict(h, data.frame(x = c(-0.4, 0.4)))
+#' bayes_stacking(lpd, chains = 2, tune = 300, draws = 300)@weights
+NULL
+
+#' @rdname bayesian_stacking
+#' @export
+bayes_stacking <- function(lpd, concentration = NULL, chains = 4, tune = 1000, draws = 1000,
+                           seed = 0) {
+  lpd <- as.matrix(lpd)
+  ptr <- rust_result(bayes_stacking_rust(
+    as.double(lpd), ncol(lpd), if (is.null(concentration)) double() else as.double(concentration),
+    as.double(c(chains, tune, draws, seed))
+  ))
+  stacking_fit(ptr = ptr, models = model_weights_names(lpd, seq_len(ncol(lpd))), covariates = NULL)
+}
+
+#' @rdname bayesian_stacking
+#' @export
+hierarchical_stacking <- function(lpd, covariates, discrete = 0, alpha_loc = 0, alpha_scale = 1,
+                                  beta_loc = 0, beta_scale = 1, partial_pooling = FALSE,
+                                  pooling = pooling_scales(), adaptive = NULL, chains = 4,
+                                  tune = 1000, draws = 1000, seed = 0) {
+  lpd <- as.matrix(lpd)
+  x <- as.matrix(covariates)
+  ptr <- rust_result(hierarchical_stacking_rust(
+    as.double(lpd), ncol(lpd), as.double(x), ncol(x),
+    as.double(c(alpha_loc, alpha_scale, beta_loc, beta_scale)),
+    if (partial_pooling) as.double(pooling[c("tau_mu_global", "tau_mu_discrete",
+                                              "tau_mu_continuous", "tau_sigma_discrete",
+                                              "tau_sigma_continuous")]) else double(),
+    if (is.null(adaptive)) NA_real_ else as.double(adaptive),
+    as.double(discrete),
+    as.double(c(chains, tune, draws, seed))
+  ))
+  stacking_fit(ptr = ptr, models = model_weights_names(lpd, seq_len(ncol(lpd))), covariates = x)
+}
+
+#' @rdname bayesian_stacking
+#' @export
+pooling_scales <- function(tau_mu_global = 1, tau_mu_discrete = 1, tau_mu_continuous = 1,
+                           tau_sigma_discrete = 1, tau_sigma_continuous = 1) {
+  c(tau_mu_global = tau_mu_global, tau_mu_discrete = tau_mu_discrete,
+    tau_mu_continuous = tau_mu_continuous, tau_sigma_discrete = tau_sigma_discrete,
+    tau_sigma_continuous = tau_sigma_continuous)
+}
+
+#' Posterior stacking weights (class)
+#'
+#' Returned by [bayes_stacking()] and [hierarchical_stacking()].
+#'
+#' @param ptr,models,covariates Internal.
+#' @returns A `stacking_fit` object.
+#' @export
+stacking_fit <- S7::new_class(
+  "stacking_fit",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("StackingModel"),
+    models = S7::class_any,
+    covariates = S7::class_any,
+    weights = S7::new_property(S7::class_any, getter = function(self) {
+      stacking_weights_at(self, self@covariates)
+    }),
+    alpha_draws = S7::new_property(S7::class_double, getter = function(self) self@ptr$alpha_draws()),
+    beta_draws = S7::new_property(S7::class_double, getter = function(self) self@ptr$beta_draws()),
+    divergences = S7::new_property(S7::class_double, getter = function(self) self@ptr$divergences())
+  ),
+  constructor = function(ptr, models, covariates) {
+    S7::new_object(S7::S7_object(), ptr = ptr, models = models, covariates = covariates)
+  }
+)
+
+stacking_weights_at <- function(fit, x) {
+  x <- if (is.null(x)) matrix(0, 0, 0) else as.matrix(x)
+  w <- rust_result(fit@ptr$weights(as.double(x), ncol(x)))
+  matrix(w, ncol = length(fit@models), dimnames = list(NULL, names(fit@models)))
+}
+
+S7::method(predict, stacking_fit) <- function(object, newdata = NULL, ...) {
+  stacking_weights_at(object, newdata)
 }
 
 #' Model weights for blending: stacking and pseudo-BMA

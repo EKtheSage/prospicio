@@ -29,6 +29,11 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   (`Layer::stop_loss`); `Tower::inuring` stages layers so later ones see
   losses net of earlier ones. `Tower::apply(&events)` returns gross, ceded
   per layer and net as one joint `PredictiveDistribution`.
+- `Tower::apply_aggregate(&pd)`: the tower on any
+  `PredictiveDistribution`, each simulation's total as one aggregate loss
+  (an adverse development cover or loss portfolio transfer on a reserve
+  bootstrap, a stop-loss or quota share on modelled premium risk). Same
+  components as `apply`.
 - `act_aggregate::CollectiveModel<N, X>`: a claim count and a severity
   with closed-form layer mean, layer variance
   (`E[N] Var[Y] + Var[N] E[Y]^2`) and excess frequency, the treaty

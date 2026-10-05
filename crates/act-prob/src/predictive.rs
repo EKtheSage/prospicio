@@ -235,8 +235,49 @@ impl PredictiveDistribution {
     }
 
     /// Column of the component with this key.
+    ///
+    /// A key that matches no component exactly may still name a
+    /// [`Period`] by its label, as text or an integer (`"2021"` or `2021`
+    /// for a year, `"2021Q3"` for a quarter): bindings and files carry
+    /// periods as labels. The label match is used only when it names one
+    /// component.
+    ///
+    /// ```
+    /// use act_core::{Grain, Month, Period};
+    /// use act_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// let origin = |y| KeyValue::Period(Period::containing(Month::january(y), Grain::Year));
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["origin".into()],
+    ///     vec![vec![origin(2020)], vec![origin(2021)]],
+    ///     vec![1.0, 2.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// assert_eq!(pd.component_index(&vec![KeyValue::from(2021)]), Some(1));
+    /// assert_eq!(pd.component_index(&vec![KeyValue::from("2020")]), Some(0));
+    /// assert_eq!(pd.component_index(&vec![KeyValue::from("2022")]), None);
+    /// ```
     pub fn component_index(&self, key: &ComponentKey) -> Option<usize> {
-        self.components.iter().position(|k| k == key)
+        if let Some(j) = self.components.iter().position(|k| k == key) {
+            return Some(j);
+        }
+        let by_label = |k: &ComponentKey| {
+            k.len() == key.len() && k.iter().zip(key).all(|(c, v)| {
+                c == v
+                    || matches!((c, v), (KeyValue::Period(p), KeyValue::Int(_) | KeyValue::Text(_))
+                            if p.to_string() == v.to_string())
+            })
+        };
+        let mut matches = self
+            .components
+            .iter()
+            .enumerate()
+            .filter(|(_, k)| by_label(k));
+        match (matches.next(), matches.next()) {
+            (Some((j, _)), None) => Some(j),
+            _ => None,
+        }
     }
 
     /// One component's draws, in simulation order, or `None` if no
@@ -571,6 +612,82 @@ impl PredictiveDistribution {
     }
 }
 
+impl PredictiveDistribution {
+    /// Blends models with weights that differ by component, as
+    /// hierarchical stacking gives them (`weights[j]` is component `j`'s
+    /// weight vector, one entry per model). In simulation `i` every
+    /// component draws its model from the same uniform (stream `i` of
+    /// `seed`) against its own cumulative weights, so components with the
+    /// same weights take the same model and dependence across components
+    /// is kept as far as the weights allow. With equal weights everywhere
+    /// it is [`blend`](Self::blend).
+    pub fn blend_by_component(
+        models: &[&PredictiveDistribution],
+        weights: &[Vec<f64>],
+        seed: u64,
+    ) -> Result<Self> {
+        let first = *models
+            .first()
+            .ok_or_else(|| Error::Data("blend needs at least one model".into()))?;
+        for m in &models[1..] {
+            if m.dims != first.dims || m.components != first.components || m.n_sims != first.n_sims
+            {
+                return Err(Error::Data(
+                    "blended distributions need the same dimensions, components and simulations"
+                        .into(),
+                ));
+            }
+        }
+        let c = first.n_components();
+        if weights.len() != c {
+            return Err(Error::Data(format!(
+                "{} weight vectors for {c} components",
+                weights.len()
+            )));
+        }
+        let mut cumulative = Vec::with_capacity(c);
+        for w in weights {
+            if w.len() != models.len() || w.iter().any(|v| !(v.is_finite() && *v >= 0.0)) {
+                return Err(Error::Data(format!(
+                    "each component needs {} finite non-negative weights",
+                    models.len()
+                )));
+            }
+            let total: f64 = w.iter().sum();
+            if total <= 0.0 {
+                return Err(Error::Data("weights must not all be zero".into()));
+            }
+            let mut acc = 0.0;
+            cumulative.push(
+                w.iter()
+                    .map(|v| {
+                        acc += v / total;
+                        acc
+                    })
+                    .collect::<Vec<f64>>(),
+            );
+        }
+        let mut draws = Vec::with_capacity(first.draws.len());
+        for i in 0..first.n_sims {
+            let u = StreamRng::new(seed, i as u64).next_open01();
+            for (j, cum) in cumulative.iter().enumerate() {
+                let k = cum.iter().position(|&v| u < v).unwrap_or(models.len() - 1);
+                draws.push(models[k].draws[i * c + j]);
+            }
+        }
+        let mut provenance = Provenance::new("blend_by_component").seed(seed, SIM_INDEX_SCHEME);
+        for model in models {
+            provenance = provenance.param("model", model.provenance.model.clone());
+        }
+        Self::from_draws(
+            first.dims.clone(),
+            first.components.clone(),
+            draws,
+            provenance,
+        )
+    }
+}
+
 impl Distribution for PredictiveDistribution {
     fn mean(&self) -> f64 {
         self.total().mean()
@@ -646,6 +763,49 @@ fn validate_keys(dims: &[String], components: &[ComponentKey]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn period_components_match_their_labels() {
+        use act_core::{Grain, Month};
+        let q = |y, m| {
+            KeyValue::Period(Period::containing(
+                Month::new(y, m).unwrap(),
+                Grain::Quarter,
+            ))
+        };
+        let pd = PredictiveDistribution::from_draws(
+            vec!["lob".into(), "origin".into()],
+            vec![
+                vec![KeyValue::from("auto"), q(2021, 1)],
+                vec![KeyValue::from("auto"), q(2021, 7)],
+                vec![KeyValue::from("home"), q(2021, 7)],
+            ],
+            vec![1.0, 2.0, 3.0],
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let key = |lob: &str, origin: &str| vec![KeyValue::from(lob), KeyValue::from(origin)];
+        assert_eq!(pd.component_index(&key("auto", "2021Q3")), Some(1));
+        assert_eq!(pd.marginal(&key("home", "2021Q3")).unwrap().mean(), 3.0);
+        assert_eq!(pd.component_index(&key("home", "2021Q1")), None);
+        // A label must still name the component's own grain.
+        assert_eq!(pd.component_index(&key("auto", "2021")), None);
+        assert_eq!(pd.component_index(&vec![KeyValue::from("auto")]), None);
+
+        // An exact key wins over a label, and a label that names two
+        // components names neither.
+        let year = KeyValue::Period(Period::containing(Month::january(2021), Grain::Year));
+        let both = PredictiveDistribution::from_draws(
+            vec!["origin".into()],
+            vec![vec![KeyValue::from("2021")], vec![year.clone()]],
+            vec![1.0, 2.0],
+            Provenance::new("test"),
+        )
+        .unwrap();
+        assert_eq!(both.component_index(&vec![KeyValue::from("2021")]), Some(0));
+        assert_eq!(both.component_index(&vec![year]), Some(1));
+        assert_eq!(both.component_index(&vec![KeyValue::from(2021)]), Some(1));
+    }
 
     #[test]
     fn mes_and_esscher_allocations_add_up() {
@@ -801,6 +961,42 @@ mod tests {
         )
         .unwrap();
         assert!(PredictiveDistribution::blend(&[&a, &short], &[1.0, 1.0], 3).is_err());
+    }
+
+    #[test]
+    fn blend_by_component_matches_blend_with_equal_weights() {
+        let pd = |v: f64| {
+            PredictiveDistribution::from_draws(
+                vec!["lob".into()],
+                vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+                (0..300)
+                    .flat_map(|i| [v + i as f64, v - i as f64])
+                    .collect(),
+                Provenance::new(format!("m{v}")),
+            )
+            .unwrap()
+        };
+        let (a, b) = (pd(0.0), pd(0.5));
+        let same = PredictiveDistribution::blend_by_component(
+            &[&a, &b],
+            &[vec![1.0, 3.0], vec![1.0, 3.0]],
+            4,
+        )
+        .unwrap();
+        let plain = PredictiveDistribution::blend(&[&a, &b], &[1.0, 3.0], 4).unwrap();
+        assert_eq!(same.draws, plain.draws);
+        // Component b all from model a, component a all from model b.
+        let split = PredictiveDistribution::blend_by_component(
+            &[&a, &b],
+            &[vec![0.0, 1.0], vec![1.0, 0.0]],
+            4,
+        )
+        .unwrap();
+        assert!((0..300).all(|i| split.draws[2 * i] == b.draws[2 * i]
+            && split.draws[2 * i + 1] == a.draws[2 * i + 1]));
+        assert!(
+            PredictiveDistribution::blend_by_component(&[&a, &b], &[vec![1.0, 1.0]], 4).is_err()
+        );
     }
 
     #[test]

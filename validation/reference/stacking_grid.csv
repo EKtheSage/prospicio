@@ -1,0 +1,17 @@
+case,param,quantity,expected,abs_tol,rel_tol,source
+bayes,w,mean,0.47849489691211844,0.025041955948868544,0.0,NumPy grid integration
+bayes,w,sd,0.25041955948868544,0.0,0.08,NumPy grid integration
+hierarchical,alpha,mean,-0.05505679772991945,0.08925913640332529,0.0,NumPy grid integration
+hierarchical,alpha,sd,0.8925913640332529,0.0,0.08,NumPy grid integration
+hierarchical,beta,mean,-0.2649257423618365,0.09575398261453771,0.0,NumPy grid integration
+hierarchical,beta,sd,0.957539826145377,0.0,0.08,NumPy grid integration
+hierarchical,weight_at_-1,mean,0.5405789297859743,0.024878952049618628,0.0,NumPy grid integration
+hierarchical,weight_at_0,mean,0.48815108345287694,0.01903401168487615,0.0,NumPy grid integration
+hierarchical,weight_at_1,mean,0.4384992513176459,0.024402734713083508,0.0,NumPy grid integration
+synthetic,alpha,mean,0.14079019531124143,0.030623308651908855,0.0,NumPy grid integration
+synthetic,alpha,sd,0.30623308651908854,0.0,0.08,NumPy grid integration
+synthetic,beta,mean,-3.208670776864053,0.06310678528862099,0.0,NumPy grid integration
+synthetic,beta,sd,0.6310678528862098,0.0,0.08,NumPy grid integration
+synthetic,weight_at_-1,mean,0.9580003779022632,0.0028758211901861574,0.0,NumPy grid integration
+synthetic,weight_at_0,mean,0.5343462785407631,0.0074453761246888505,0.0,NumPy grid integration
+synthetic,weight_at_1,mean,0.053498527273821025,0.003397660326860254,0.0,NumPy grid integration

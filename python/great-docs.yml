@@ -89,6 +89,9 @@ reference:
       - models.elpd_loo
       - models.stacking_weights
       - models.pseudo_bma_weights
+      - models.BayesStacking
+      - models.HierarchicalStacking
+      - models.StackingFit
       - models.elpd_waic
       - models.lppd
       - models.Elpd
@@ -102,7 +105,7 @@ reference:
       - models.Comparison
       - models.actual_vs_expected
   - title: Pricing
-    desc: The collective model, layer rating, and reinsurance tower matching.
+    desc: The collective model, layer rating, reinsurance tower matching, and risk-loaded prices from simulated losses.
     contents:
       - pricing.CollectiveModel
       - pricing.ilf
@@ -115,6 +118,10 @@ reference:
       - pricing.fit_pml_curve
       - pricing.fit_references
       - pricing.TowerModel
+      - pricing.price
+      - pricing.price_portfolio
+      - pricing.Price
+      - pricing.PortfolioPrice
   - title: Reserving
     desc: Loss triangles, the chain ladder, Mack's model and the ODP bootstrap.
     contents:

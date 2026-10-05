@@ -10,6 +10,16 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+bayes_stacking_rust <- function(lpd, k, concentration, sampler) .Call(wrap__bayes_stacking_rust, lpd, k, concentration, sampler)
+
+hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, discrete, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, pooling, adaptive, discrete, sampler)
+
+blend_by_component_rust <- function(models, weights, seed) .Call(wrap__blend_by_component_rust, models, weights, seed)
+
+join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
+
+reorder_groups_rust <- function(pd, dim, correlation, seed) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed)
+
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
@@ -55,6 +65,10 @@ elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
 
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
+
+pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
+
+pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
 
@@ -155,6 +169,8 @@ ReinsuranceTower$stages <- function() .Call(wrap__ReinsuranceTower__stages, self
 ReinsuranceTower$ceded <- function(losses) .Call(wrap__ReinsuranceTower__ceded, self, losses)
 
 ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__ReinsuranceTower__on_grid, self, frequency, severity, points)
+
+ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
 
@@ -344,6 +360,24 @@ PredictiveDistribution$provenance <- function() .Call(wrap__PredictiveDistributi
 #' @export
 `[[.PredictiveDistribution` <- `$.PredictiveDistribution`
 
+StackingModel <- new.env(parent = emptyenv())
+
+StackingModel$weights <- function(x, p) .Call(wrap__StackingModel__weights, self, x, p)
+
+StackingModel$alpha_draws <- function() .Call(wrap__StackingModel__alpha_draws, self)
+
+StackingModel$beta_draws <- function() .Call(wrap__StackingModel__beta_draws, self)
+
+StackingModel$divergences <- function() .Call(wrap__StackingModel__divergences, self)
+
+StackingModel$rhat_ess <- function() .Call(wrap__StackingModel__rhat_ess, self)
+
+#' @export
+`$.StackingModel` <- function (self, name) { func <- StackingModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.StackingModel` <- `$.StackingModel`
+
 BayesGlmModel <- new.env(parent = emptyenv())
 
 BayesGlmModel$names <- function() .Call(wrap__BayesGlmModel__names, self)
@@ -414,7 +448,7 @@ GlmModel$family <- function() .Call(wrap__GlmModel__family, self)
 
 GlmModel$predict <- function(x, names, offset) .Call(wrap__GlmModel__predict, self, x, names, offset)
 
-GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed, parameters) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed, parameters)
 
 #' @export
 `$.GlmModel` <- function (self, name) { func <- GlmModel[[name]]; environment(func) <- environment(); func }

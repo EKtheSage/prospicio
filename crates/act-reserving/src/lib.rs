@@ -27,17 +27,25 @@
 //! # Ok::<(), act_reserving::Error>(())
 //! ```
 
+pub mod backtest;
 pub mod bootstrap;
 pub mod chain_ladder;
 pub mod development;
 pub mod error;
+pub mod frame;
 pub mod mack;
+pub mod odp_glm;
 pub mod triangle;
 
 pub use act_core::{Grain, Lag, Month, Period};
+pub use backtest::{
+    Backtest, CellForecast, GlmCandidate, METRICS, TriangleModel, diagonal_backtest,
+};
 pub use bootstrap::{OdpBootstrap, OdpBootstrapFit, ProcessDistribution};
 pub use chain_ladder::{ChainLadder, ChainLadderFit};
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
 pub use error::{Error, Result};
+pub use frame::TriangleFrame;
 pub use mack::{Mack, MackFit};
+pub use odp_glm::{OdpGlm, OdpGlmFit};
 pub use triangle::{CalendarView, DevelopmentColumn, Diagonal, Label, Long, LongTable, Triangle};

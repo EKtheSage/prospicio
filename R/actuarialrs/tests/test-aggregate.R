@@ -93,4 +93,21 @@ stopifnot(!m$on_points, abs(mean(m$grid) - sum(gsev@probs * pmin(pmax(0:4 - 1.5,
 stopifnot(inherits(try(map_grid(gsev, function(v) -1), silent = TRUE), "try-error"))
 stopifnot(inherits(try(map_grid(gsev, function(v) stop("boom")), silent = TRUE), "try-error"))
 
+# Portfolio: aggregate cover on any predictive distribution, join, reorder.
+n <- 3000
+res <- predictive_distribution(cbind(((0:(n - 1)) * 7919) %% n, ((0:(n - 1)) * 31) %% n + 1),
+                               data.frame(origin = c(2023, 2024)))
+prem <- predictive_distribution(matrix(((0:(n - 1)) * 104729) %% n, ncol = 1),
+                                data.frame(lob = "motor"))
+adc <- apply_tower(reinsurance_tower(list(aggregate_stop_loss("adc", 500, 3000))), res)
+k <- draw_matrix(aggregate(adc, keep = "kind"))
+stopifnot(all(abs(k[, 1] - k[, 2] - k[, 3]) < 1e-9), max(k[, 2]) == 500)
+pf <- join_predictive(list(reserve = res, premium = prem), "risk")
+stopifnot(identical(names(pf@keys), c("risk", "origin", "lob")), nrow(pf@keys) == 3)
+ro <- reorder_groups(pf, "risk", matrix(c(1, 0.7, 0.7, 1), 2), seed = 5)
+stopifnot(identical(sort(draw_matrix(ro)[, 3]), sort(draw_matrix(prem)[, 1])))
+tot <- draw_matrix(aggregate(ro, keep = "risk"))
+stopifnot(cor(tot[, 1], tot[, 2], method = "spearman") > 0.5)
+stopifnot(inherits(try(join_predictive(list(res, prem), "risk"), silent = TRUE), "try-error"))
+
 cat("actuarialrs R aggregate tests passed\n")

@@ -183,3 +183,19 @@ def test_loglogistic_growth_curve_and_heavy_tail():
     assert abs(grid.mean() - g.lev(499.0)) < 1e-9
     with pytest.raises(ValueError):
         Loglogistic(0.0, 1.0)
+
+
+def test_marginal_selects_an_origin_period_by_its_label():
+    from actuarialrs.reserving import OdpBootstrap, Triangle
+
+    tri = Triangle.from_long(
+        [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    )
+    reserves = OdpBootstrap(n_sims=500, seed=1).fit(tri, "values").reserves
+    by_text = reserves.marginal(("2023",))
+    by_int = reserves.marginal((2023,))
+    assert by_text is not None and by_int is not None
+    assert by_text.draws == by_int.draws
+    assert reserves.marginal(("2024",)) is None

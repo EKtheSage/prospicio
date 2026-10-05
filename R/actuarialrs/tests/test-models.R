@@ -223,4 +223,45 @@ stopifnot(nrow(draw_matrix(bpd)) == 100)
 bg <- bayes_glm_fit(claims ~ x, bd, family = "gaussian", chains = 2, tune = 300, draws = 300)
 stopifnot(tail(bg@summary$parameter, 1) == "dispersion")
 
+# Bayesian and hierarchical stacking.
+hx <- seq(-0.5, 0.5, length.out = 100)
+hl <- cbind(a = ifelse(hx < 0, -0.5, -2), b = ifelse(hx < 0, -2, -0.5))
+hs <- hierarchical_stacking(hl, data.frame(x = hx), chains = 2, tune = 300, draws = 300, seed = 2)
+hw <- predict(hs, data.frame(x = c(-0.4, 0, 0.4)))
+stopifnot(identical(colnames(hw), c("a", "b")), all(abs(rowSums(hw) - 1) < 1e-12))
+stopifnot(hw[1, "a"] > 0.7, hw[3, "a"] < 0.3, nrow(hs@weights) == 100, hs@divergences == 0)
+bs <- bayes_stacking(hl, chains = 2, tune = 300, draws = 300)
+stopifnot(nrow(bs@weights) == 1, abs(bs@weights[1, "a"] - 0.5) < 0.1)
+q1 <- predictive_distribution(cbind(rep(1, 50), rep(1, 50)), data.frame(lob = c("x", "y")))
+q2 <- predictive_distribution(cbind(rep(2, 50), rep(2, 50)), data.frame(lob = c("x", "y")))
+qm <- blend_predictive(list(q1, q2), rbind(c(1, 0), c(0, 1)), seed = 3)
+stopifnot(all(draw_matrix(qm)[, 1] == 1), all(draw_matrix(qm)[, 2] == 2))
+
+# Partial pooling with discrete dummies first, and adaptive priors.
+region <- (seq_len(120) - 1) %% 4
+px <- data.frame(r1 = as.double(region == 1), r2 = as.double(region == 2),
+                 r3 = as.double(region == 3), x = ((seq_len(120) - 1) * 37) %% 101 / 100 - 0.5)
+pl <- cbind(a = ifelse(region < 2, -0.5, -2), b = ifelse(region < 2, -2, -0.5))
+ps <- hierarchical_stacking(pl, px, discrete = 3, partial_pooling = TRUE, adaptive = 4,
+                            chains = 2, tune = 300, draws = 300, seed = 9)
+pw <- predict(ps, data.frame(r1 = 0, r2 = 0, r3 = c(0, 1), x = 0))
+stopifnot(pw[1, "a"] > 0.7, pw[2, "a"] < 0.3)
+stopifnot(inherits(try(hierarchical_stacking(pl, px, discrete = 5), silent = TRUE), "try-error"))
+
+# The over-dispersed Poisson accepts a negative response (R's quasipoisson
+# refuses it); with a group dummy the fitted means are the group means.
+qd <- data.frame(y = c(5, -1, 4, 2, 3, 4), g = rep(c("a", "b"), each = 3))
+qm <- glm_fit(y ~ g, qd, family = "poisson", dispersion = "pearson")
+near(unname(coef(qm)), c(log(8 / 3), log(3 / (8 / 3))), 1e-10)
+stopifnot(inherits(try(glm_fit(y ~ g, qd, family = "poisson"), silent = TRUE), "try-error"))
+
+# Mean-preserving parameter draws centre on the fitted means.
+pm <- glm_fit(y ~ g, data.frame(y = c(3, 9, 1, 8, 20, 5), g = rep(c("a", "b"), each = 3)),
+              family = "poisson", dispersion = "pearson")
+pnew <- data.frame(g = c("a", "b"))
+pc <- predict_distribution(pm, pnew, n_sims = 20000, seed = 1, parameters = "mean_preserving")
+stopifnot(abs(mean(rowSums(draw_matrix(pc))) / sum(predict(pm, pnew)) - 1) < 0.02)
+pn <- predict_distribution(pm, pnew, n_sims = 20000, seed = 1)
+stopifnot(mean(rowSums(draw_matrix(pn))) > mean(rowSums(draw_matrix(pc))))
+
 cat("actuarialrs R models tests passed\n")
