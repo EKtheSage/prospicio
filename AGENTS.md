@@ -11,6 +11,7 @@ A local session and one or more cloud sessions may be working on this repo at th
 - **Stay inside your assigned scope.** The user gives each session its own work (crates, files, or a phase). Do not edit files outside that scope without asking. If you must, say so clearly in your PR.
 - **Merge through PRs into `main`.** Only the user merges. After a merge, other sessions rebase onto or merge `main` before they continue.
 - **Record shared decisions in the repo.** Put them in this file or in `docs/`, not only in chat, so every session picks them up on its next pull.
+- **Record collected knowledge in `knowledge/`.** Facts found while working (datasets, reference implementations and their quirks, numerical findings, environment facts) go into the bundle in `knowledge/`, in the [Open Knowledge Format v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md): one markdown file per concept with YAML frontmatter (`type`, `title`, `description`, `tags`, `sources`, `generated`, and `verified` when a test that CI runs confirms it), listed in its directory's `index.md`, with a dated entry in `knowledge/log.md`. Design decisions stay in `docs/design/`. `validation/scripts/check_okf.py` checks the bundle in CI.
 - **Messages go one way.** A local session can send a cloud session a message, but the cloud session cannot reply. Leave status and questions in your PR description or in commit messages, where the user and other sessions can read them.
 
 ## Work lanes
