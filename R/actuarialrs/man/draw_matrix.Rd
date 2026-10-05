@@ -7,8 +7,6 @@
 draw_matrix(dist, ...)
 }
 \arguments{
-\item{dist}{A \link{predictive_distribution}.}
-
 \item{...}{Unused; for methods.}
 }
 \value{

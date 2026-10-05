@@ -5,7 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from actuarialrs.reserving import ChainLadder, ChainLadderFit, Mack, MackFit, Triangle
+from actuarialrs.distributions import PredictiveDistribution
+from actuarialrs.reserving import (
+    ChainLadder,
+    ChainLadderFit,
+    Mack,
+    MackFit,
+    OdpBootstrap,
+    OdpBootstrapFit,
+    Triangle,
+)
 
 VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
@@ -326,3 +335,113 @@ def test_valuation_is_last_day_of_month():
         development_grain="M",
     )
     assert tri.valuation == datetime.date(2024, 2, 29)
+
+
+# ODP bootstrap against R ChainLadder's BootChainLadder
+# (validation/reference/reserving_bootstrap_r.csv). The reference tolerances
+# for simulated quantities assume 20000 simulations with this seed, as in
+# validation/tests/reserving.rs.
+BOOT_SIMS = 20_000
+BOOT_SEED = 20_261_004
+
+
+@pytest.fixture(scope="module")
+def raa_boot(triangles):
+    return OdpBootstrap(n_sims=BOOT_SIMS, seed=BOOT_SEED).fit(triangles["raa"], "values")
+
+
+def bootstrap_reference(quantity, method="odp_bootstrap"):
+    rows = read_csv(VALIDATION / "reference" / "reserving_bootstrap_r.csv")
+    return [r for r in rows if r["dataset"] == "raa" and r["method"] == method and r["quantity"] == quantity]
+
+
+def test_bootstrap_scale_and_residuals_match_r(raa_boot):
+    assert isinstance(raa_boot, OdpBootstrapFit)
+    (scale,) = bootstrap_reference("scale")
+    assert raa_boot.scale == pytest.approx(float(scale["expected"]), rel=1e-9)
+    residuals = bootstrap_reference("residual")
+    assert len(residuals) == 55
+    origins = raa_boot.origins
+    for row in residuals:
+        year, k = row["arg"].split(":")
+        got = raa_boot.residuals[origins.index(year)][int(k)]
+        want = float(row["expected"])
+        assert got == pytest.approx(want, rel=1e-9, abs=1e-9), row
+    # Laid out like Triangle.values: nan below the latest diagonal.
+    assert len(raa_boot.residuals) == 10 and len(raa_boot.residuals[0]) == 10
+    assert math.isnan(raa_boot.residuals[9][1]) and math.isnan(raa_boot.fitted[9][1])
+    # Fitted incrementals add up to each origin's latest cumulative value.
+    latest = raa_boot.chain_ladder.latest
+    for o, row in enumerate(raa_boot.fitted):
+        assert sum(m for m in row if not math.isnan(m)) == pytest.approx(latest[o], rel=1e-12)
+
+
+def test_bootstrap_reserves_match_r(raa_boot):
+    reserves = raa_boot.reserves
+    assert isinstance(reserves, PredictiveDistribution)
+    assert reserves.n_sims == BOOT_SIMS
+    total = {r["quantity"]: r for r in bootstrap_reference("mean_total", "odp_bootstrap_gamma")}
+    total.update({r["quantity"]: r for r in bootstrap_reference("sd_total", "odp_bootstrap_gamma")})
+    got = {"mean_total": reserves.mean(), "sd_total": math.sqrt(reserves.variance())}
+    for quantity, row in total.items():
+        assert abs(got[quantity] - float(row["expected"])) <= float(row["abs_tol"]), (row, got[quantity])
+    # The chain ladder the bootstrap is centred on.
+    assert raa_boot.chain_ladder.total_reserve == pytest.approx(52_135.228261210155, rel=1e-9)
+
+
+def test_bootstrap_components_are_origins(raa_boot):
+    reserves = raa_boot.reserves
+    assert reserves.dims == ["origin"]
+    assert reserves.components() == [(str(y),) for y in range(1981, 1991)]
+    assert raa_boot.origins == [str(y) for y in range(1981, 1991)]
+    assert raa_boot.development == list(range(12, 121, 12))
+    # The fully developed origin has no reserve.
+    draws = reserves.draw_matrix()
+    assert len(draws) == BOOT_SIMS and len(draws[0]) == 10
+    assert all(row[0] == 0.0 for row in draws)
+
+
+def test_bootstrap_is_reproducible(triangles):
+    raa = triangles["raa"]
+    a = OdpBootstrap(n_sims=500, seed=7).fit(raa, "values")
+    b = OdpBootstrap(n_sims=500, seed=7).fit(raa, "values")
+    c = OdpBootstrap(n_sims=500, seed=8).fit(raa, "values")
+    assert a.reserves.draw_matrix() == b.reserves.draw_matrix()
+    assert a.reserves.draw_matrix() != c.reserves.draw_matrix()
+    assert a.reserves.provenance()["model"] == "odp_bootstrap"
+
+
+def test_bootstrap_process_error(triangles):
+    raa = triangles["raa"]
+    gamma = OdpBootstrap(n_sims=5_000, seed=1, process="gamma").fit(raa, "values")
+    param = OdpBootstrap(n_sims=5_000, seed=1, process="none").fit(raa, "values")
+    assert OdpBootstrap().process == "gamma" and OdpBootstrap().n_sims == 10_000
+    assert OdpBootstrap(process="none").process == "none"
+    # Process error adds variance; the residuals and scale do not change.
+    assert param.reserves.variance() < gamma.reserves.variance()
+    assert param.scale == gamma.scale
+    assert "OdpBootstrap(n_sims=10000, seed=0, process=\"gamma\")" == repr(OdpBootstrap())
+    assert repr(param).startswith("OdpBootstrapFit(origins=10, n_sims=5000")
+
+
+def test_bootstrap_errors(triangles):
+    with pytest.raises(ValueError, match="process must be"):
+        OdpBootstrap(process="poisson")
+    with pytest.raises(ValueError, match="n_sims must be positive"):
+        OdpBootstrap(n_sims=0)
+    with pytest.raises(OverflowError):
+        OdpBootstrap(n_sims=-1)
+    data = {
+        "lob": ["Auto"] * 3 + ["Home"] * 3,
+        "year": [2020, 2020, 2021] * 2,
+        "age": [12, 24, 12] * 2,
+        "paid": [100.0, 150.0, 110.0, 50.0, 70.0, 60.0],
+    }
+    multi = Triangle.from_frame(data, "year", "age", "paid", index="lob")
+    with pytest.raises(ValueError, match="slice to one"):
+        OdpBootstrap(n_sims=10).fit(multi, "paid")
+    with pytest.raises(ValueError, match="no column or index named"):
+        OdpBootstrap(n_sims=10).fit(triangles["raa"], "paid")
+    with pytest.raises(ValueError, match="degrees of freedom"):
+        two = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], [1.0, 2.0, 1.0])
+        OdpBootstrap(n_sims=10).fit(two, "values")

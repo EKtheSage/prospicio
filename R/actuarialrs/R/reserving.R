@@ -1,4 +1,5 @@
-# Reserving lane: the loss triangle, the chain ladder and Mack, over
+# Reserving lane: the loss triangle, the chain ladder, Mack and the ODP
+# bootstrap, over
 # crates/act-r/src/reserving.rs (docs/design/triangle.md). S7 classes and
 # functions over the Rust objects, as in distributions.R.
 
@@ -513,6 +514,102 @@ fit_frame <- function(fit) {
              ultimate = unname(fit@ultimate), reserve = unname(fit@reserve))
 }
 
+#' ODP bootstrap
+#'
+#' Over-dispersed Poisson bootstrap of the chain ladder (England and Verrall
+#' 2002), as R ChainLadder's `BootChainLadder()`: adjusted Pearson residuals
+#' of the volume-weighted chain ladder are resampled into pseudo triangles,
+#' each is re-projected, and process error is added to every future
+#' incremental value. Simulation `i` uses random stream `i` of `seed`, so
+#' results do not depend on the number of threads. The scale and residuals
+#' match `BootChainLadder()` exactly, and the reserve distribution within
+#' Monte Carlo error (`validation/reference/reserving_bootstrap_r.csv`).
+#'
+#' Properties of the fit: `chain_ladder` (the [chain_ladder_fit] the
+#' bootstrap is centred on), `origins`, `development`, `fitted` (fitted
+#' incremental values) and `residuals` (adjusted Pearson residuals
+#' `(x - m) / sqrt(|m|) * sqrt(n / (n - p))`), both origin x development
+#' matrices with `NA` where not observed, `scale` (the dispersion `phi`) and
+#' `reserves`, a [predictive_distribution] of the reserve with dimension
+#' `origin` and one component per origin period. `mean()`, `quantile()`,
+#' [VaR()] and [TVaR()] of `reserves` describe the total reserve. Columns of
+#' [draw_matrix()] follow `origins` ([marginal()] does not match origin labels
+#' yet).
+#'
+#' @param triangle A single-segment cumulative [triangle], every origin
+#'   observed from the first age up to its latest.
+#' @param column Name of the column to fit; by default the only one.
+#' @param n_sims Number of simulations; positive.
+#' @param seed Seed of the simulation streams, a non-negative whole number.
+#' @param process Process error on each simulated future incremental value:
+#'   `"gamma"` (mean the expected value, variance `scale * |mean|`, R's
+#'   `process.distr = "gamma"`) or `"none"` for parameter error only.
+#' @param ptr An `OdpBootstrapFit` pointer; used internally.
+#' @returns An `odp_bootstrap_fit` object.
+#' @seealso [chain_ladder()], [mack()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' boot <- odp_bootstrap(triangle(long, "year", "age", "paid"), n_sims = 2000, seed = 42)
+#' boot@scale
+#' boot@reserves@keys
+#' mean(boot@reserves)
+#' quantile(boot@reserves, 0.995)
+odp_bootstrap_fit <- S7::new_class(
+  "odp_bootstrap_fit",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("OdpBootstrapFit"),
+    chain_ladder = chain_ladder_fit,
+    origins = S7::new_property(S7::class_character, getter = function(self) {
+      self@chain_ladder@origins
+    }),
+    development = S7::new_property(S7::class_integer, getter = function(self) {
+      self@chain_ladder@development
+    }),
+    fitted = S7::new_property(S7::class_double, getter = function(self) {
+      origin_matrix(self, self@ptr$fitted())
+    }),
+    residuals = S7::new_property(S7::class_double, getter = function(self) {
+      origin_matrix(self, self@ptr$residuals())
+    }),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale()),
+    reserves = predictive_distribution
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
+                   reserves = predictive_distribution(ptr = ptr$reserves()))
+  }
+)
+
+# A row-major origin x development vector as a matrix with dimnames; NaN
+# (unobserved) becomes NA.
+origin_matrix <- function(fit, flat) {
+  m <- matrix(flat, nrow = length(fit@origins), byrow = TRUE,
+              dimnames = list(origin = fit@origins, development = as.character(fit@development)))
+  m[is.nan(m)] <- NA_real_
+  m
+}
+
+#' @rdname odp_bootstrap_fit
+#' @export
+odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
+                          process = c("gamma", "none")) {
+  column <- fit_column(triangle, column)
+  process <- match.arg(process)
+  for (arg in c("n_sims", "seed")) {
+    value <- get(arg)
+    if (!is.numeric(value) || length(value) != 1 || is.na(value)) {
+      stop(sprintf("%s must be a single number", arg), call. = FALSE)
+    }
+  }
+  ptr <- rust_result(triangle@ptr$odp_bootstrap(column, as.double(n_sims), as.double(seed), process))
+  odp_bootstrap_fit(ptr = ptr)
+}
+
 S7::method(as.data.frame, chain_ladder_fit) <- function(x, ...) fit_frame(x)
 S7::method(as.data.frame, mack_fit) <- function(x, ...) {
   cbind(fit_frame(x), process_risk = unname(x@process_risk),
@@ -522,6 +619,15 @@ S7::method(print, chain_ladder_fit) <- function(x, ...) {
   cat(sprintf("<chain_ladder_fit> total reserve %s, tail %s\n",
               format(x@total_reserve, digits = 10), format(x@tail)))
   print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+S7::method(print, odp_bootstrap_fit) <- function(x, ...) {
+  r <- x@reserves
+  cat(sprintf("<odp_bootstrap_fit> %d simulations, scale %s\n",
+              as.integer(r@n_sims), format(x@scale, digits = 6)))
+  cat(sprintf("total reserve: chain ladder %s, bootstrap mean %s, sd %s\n",
+              format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
+              format(sqrt(variance(r)), digits = 10)))
   invisible(x)
 }
 S7::method(print, mack_fit) <- function(x, ...) {
