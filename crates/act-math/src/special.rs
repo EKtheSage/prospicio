@@ -24,6 +24,34 @@ pub fn ln_gamma(x: f64) -> f64 {
     libm::lgamma(x)
 }
 
+/// Digamma function `ψ(x) = d ln Γ(x) / dx` for `x > 0`: the recurrence
+/// `ψ(x) = ψ(x + 1) - 1/x` up to `x ≥ 10`, then the asymptotic series.
+///
+/// ```
+/// use act_math::special::digamma;
+///
+/// // ψ(1) = -γ (Euler's constant).
+/// assert!((digamma(1.0) + 0.5772156649015329).abs() < 1e-14);
+/// ```
+pub fn digamma(x: f64) -> f64 {
+    if x.is_nan() || x <= 0.0 {
+        return f64::NAN;
+    }
+    let mut x = x;
+    let mut acc = 0.0;
+    while x < 10.0 {
+        acc -= 1.0 / x;
+        x += 1.0;
+    }
+    let f = 1.0 / (x * x);
+    let series = f
+        * (-1.0 / 12.0
+            + f * (1.0 / 120.0
+                + f * (-1.0 / 252.0
+                    + f * (1.0 / 240.0 + f * (-1.0 / 132.0 + f * 691.0 / 32760.0)))));
+    acc + x.ln() - 0.5 / x + series
+}
+
 /// Standard normal quantile (inverse of [`norm_cdf`]).
 ///
 /// Returns `-inf` at 0, `+inf` at 1 and NaN outside `[0, 1]`. Starts from
@@ -287,6 +315,23 @@ fn gamma_inc_factor(a: f64, x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn digamma_matches_the_derivative_of_ln_gamma() {
+        // ψ(1/2) = -γ - 2 ln 2; ψ(n) = H_{n-1} - γ.
+        let gamma = 0.5772156649015329;
+        assert!((digamma(0.5) + gamma + 2.0 * 2f64.ln()).abs() < 1e-14);
+        assert!((digamma(10.0) - (7129.0 / 2520.0 - gamma)).abs() < 1e-14);
+        for x in [0.01, 0.3, 2.7, 45.0, 1e4] {
+            let h = 1e-5 * x;
+            let numeric = (ln_gamma(x + h) - ln_gamma(x - h)) / (2.0 * h);
+            assert!(
+                (digamma(x) - numeric).abs() < 1e-7 * numeric.abs().max(1.0),
+                "{x}"
+            );
+        }
+        assert!(digamma(0.0).is_nan());
+    }
 
     #[test]
     fn quantile_inverts_cdf() {

@@ -589,3 +589,75 @@ fn stacking_and_pseudo_bma_weights_match_the_reference() {
         }
     });
 }
+
+#[test]
+fn bayes_glm_posteriors_match_grid_integration() {
+    // validation/scripts/bayes_glm_grid.py: exact posterior moments by grid
+    // integration; the first 200 policies, x = (age - 50) / 10.
+    use act_bayes::glm::{BayesGlm, Sampler};
+    let data = policies();
+    let n = 200;
+    let x: Vec<f64> = numeric(&data, "age")[..n]
+        .iter()
+        .map(|a| (a - 50.0) / 10.0)
+        .collect();
+    let design = |offset: Option<Vec<f64>>| {
+        let d = Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; n], x.clone()],
+        )
+        .unwrap();
+        match offset {
+            Some(o) => d.with_offset(o).unwrap(),
+            None => d,
+        }
+    };
+    let sampler = Sampler {
+        chains: 4,
+        tune: 1000,
+        draws: 1000,
+        seed: 20261005,
+        ..Sampler::default()
+    };
+    let log_e: Vec<f64> = numeric(&data, "exposure")[..n]
+        .iter()
+        .map(|e| e.ln())
+        .collect();
+    let poisson = BayesGlm::new(Family::Poisson, Link::Log)
+        .sampler(sampler)
+        .fit(&design(Some(log_e)), &numeric(&data, "claims")[..n])
+        .unwrap();
+    let gauss: Vec<f64> = numeric(&data, "gauss")[..n]
+        .iter()
+        .map(|g| (g - 200.0) / 10.0)
+        .collect();
+    let gaussian = BayesGlm::new(Family::Gaussian, Link::Identity)
+        .sampler(sampler)
+        .fit(&design(None), &gauss)
+        .unwrap();
+    let summaries = [
+        ("poisson", poisson.summary().unwrap()),
+        ("gaussian", gaussian.summary().unwrap()),
+    ];
+    for (_, s) in &summaries {
+        assert!(
+            s.iter().all(|p| p.rhat < 1.01 && p.ess_bulk > 400.0),
+            "{s:?}"
+        );
+    }
+    assert_eq!(poisson.divergences() + gaussian.divergences(), 0);
+    check(&reference("bayes_glm_grid.csv"), |c| {
+        let s = &summaries.iter().find(|(n, _)| *n == c.get("case"))?.1;
+        let k = match c.get("param") {
+            "b0" => 0,
+            "b1" => 1,
+            "dispersion" => 2,
+            _ => return None,
+        };
+        match c.get("quantity") {
+            "mean" => Some(s[k].mean),
+            "sd" => Some(s[k].sd),
+            _ => None,
+        }
+    });
+}

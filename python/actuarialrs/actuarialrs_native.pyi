@@ -101,6 +101,140 @@ class ArchimedeanCopula:
         """
 
 @final
+class BayesGlm:
+    """
+    A Bayesian GLM sampled with NUTS (nuts-rs, the Rust core of nutpie).
+    
+    Normal priors with mean 0 on the coefficients: standard deviation
+    ``intercept_sd`` for an all-ones column, ``prior_sd`` for the others
+    (on the link scale; standardize covariates). For the Gaussian, gamma
+    and inverse Gaussian the dispersion is sampled too, with a half-normal
+    prior of scale ``dispersion_scale``, unless ``dispersion`` fixes it.
+    Chains run in parallel, start near the maximum-likelihood fit, and
+    replay exactly from ``seed``.
+    
+    Parameters
+    ----------
+    family : str
+    link : str, optional
+    prior_sd : float, default 2.5
+    intercept_sd : float, default 10.0
+    dispersion : float, optional
+        A fixed dispersion; 1 by default for the Poisson, binomial and
+        negative binomial. A Tweedie needs one.
+    dispersion_scale : float, default 10.0
+    chains, tune, draws : int, default 4, 1000, 1000
+    seed : int, default 0
+    target_accept : float, default 0.8
+    max_depth : int, default 10
+    theta, power, link_power : float, optional
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import BayesGlm, Design
+    >>> x = [(i % 4) - 1.5 for i in range(40)]
+    >>> y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(40)]
+    >>> d = Design([[1.0] * 40, x], ["(Intercept)", "x"])
+    >>> fit = BayesGlm("poisson", chains=2, tune=300, draws=300).fit(d, y)
+    >>> all(s["rhat"] < 1.05 for s in fit.summary())
+    True
+    """
+    def __new__(cls, /, family: str, link: str |None = None, prior_sd: float = 2.5, intercept_sd: float = 10.0, dispersion: float |None = None, dispersion_scale: float = 10.0, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0, target_accept: float = 0.8, max_depth: int = 10, theta: float |None = None, power: float |None = None, link_power: float |None = None) -> BayesGlm: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> BayesGlmFit:
+        """
+        Samples the posterior.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        BayesGlmFit
+        """
+
+@final
+class BayesGlmFit:
+    """
+    A sampled Bayesian GLM, from ``BayesGlm.fit``.
+    """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains.
+        """
+    @property
+    def coefficient_draws(self, /) -> list[list[float]]:
+        """
+        Coefficient draws, one row per draw (chain by chain).
+        """
+    @property
+    def dispersion_draws(self, /) -> list[float]:
+        """
+        Dispersion draws, one per draw (constant when fixed).
+        """
+    @property
+    def divergences(self, /) -> int:
+        """
+        Divergent transitions among the kept draws.
+        """
+    def log_likelihood(self, /, design: Design, y: Sequence[float]) -> list[list[float]]:
+        """
+        Pointwise log-likelihood of ``y`` given ``design``: one row per draw,
+        one column per observation, for ``elpd_loo`` or ``elpd_waic``.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    def loo(self, /, design: Design, y: Sequence[float]) -> Elpd:
+        """
+        PSIS-LOO of ``y`` given ``design``, with each observation's relative
+        efficiency estimated from the chains.
+        
+        Returns
+        -------
+        Elpd
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        Coefficient names.
+        """
+    @property
+    def posterior_mean(self, /) -> list[float]:
+        """
+        Posterior means of the coefficients.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Posterior mean of each row's mean.
+        
+        Returns
+        -------
+        list of float
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Posterior predictive draws across the rows, keyed ``row = 0, 1, ...``.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    def summary(self, /) -> list[dict]:
+        """
+        Posterior summary: one dict per parameter with ``name``, ``mean``,
+        ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and
+        ``ess_tail``; the dispersion last when it was sampled.
+        
+        Returns
+        -------
+        list of dict
+        """
+
+@final
 class Binomial:
     """
     Binomial claim counts: ``n`` risks, each claiming with probability

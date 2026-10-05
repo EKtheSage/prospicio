@@ -207,4 +207,20 @@ aw <- actual_vs_expected(c("b", "a", "b"), c(1, 2, 3), c(2, 2, 2), "gamma", weig
 stopifnot(identical(aw$period, c("a", "b")), identical(aw$expected, c(4, 8)))
 near(aw$std_dev[2], sqrt(0.5 * 4 * 4), 1e-12)
 
+# Bayesian GLM by NUTS.
+bd <- data.frame(claims = rep(c(1, 2, 3, 5), 20), x = rep(c(-1.5, -0.5, 0.5, 1.5), 20))
+bm <- bayes_glm_fit(claims ~ x, bd, family = "poisson", chains = 2, tune = 300, draws = 300, seed = 4)
+bm2 <- bayes_glm_fit(claims ~ x, bd, family = "poisson", chains = 2, tune = 300, draws = 300, seed = 4)
+stopifnot(identical(bm@draws, bm2@draws), nrow(bm@draws) == 600, bm@divergences == 0)
+stopifnot(all(bm@summary$rhat < 1.05), identical(bm@summary$parameter, c("(Intercept)", "x")))
+gm_b <- glm_fit(claims ~ x, bd, family = "poisson")
+stopifnot(abs(coef(bm)[["x"]] - coef(gm_b)[["x"]]) < 0.5 * gm_b@std_errors[["x"]])
+bl <- bayes_loo(bm)
+stopifnot(length(bl$pointwise) == 80, is.finite(bl$estimates[["elpd"]]))
+stopifnot(length(predict(bm, data.frame(x = c(0, 1)))) == 2)
+bpd <- predict_distribution(bm, data.frame(x = c(0, 1)), n_sims = 100, seed = 1)
+stopifnot(nrow(draw_matrix(bpd)) == 100)
+bg <- bayes_glm_fit(claims ~ x, bd, family = "gaussian", chains = 2, tune = 300, draws = 300)
+stopifnot(tail(bg@summary$parameter, 1) == "dispersion")
+
 cat("actuarialrs R models tests passed\n")

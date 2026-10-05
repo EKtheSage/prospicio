@@ -8,6 +8,8 @@ NULL
 
 actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta, power, dispersion) .Call(wrap__actual_vs_expected_rust, periods, y, mu, weights, family_name, theta, power, dispersion)
 
+bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
+
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
@@ -341,6 +343,36 @@ PredictiveDistribution$provenance <- function() .Call(wrap__PredictiveDistributi
 
 #' @export
 `[[.PredictiveDistribution` <- `$.PredictiveDistribution`
+
+BayesGlmModel <- new.env(parent = emptyenv())
+
+BayesGlmModel$names <- function() .Call(wrap__BayesGlmModel__names, self)
+
+BayesGlmModel$posterior_mean <- function() .Call(wrap__BayesGlmModel__posterior_mean, self)
+
+BayesGlmModel$coefficient_draws <- function() .Call(wrap__BayesGlmModel__coefficient_draws, self)
+
+BayesGlmModel$dispersion_draws <- function() .Call(wrap__BayesGlmModel__dispersion_draws, self)
+
+BayesGlmModel$chains <- function() .Call(wrap__BayesGlmModel__chains, self)
+
+BayesGlmModel$divergences <- function() .Call(wrap__BayesGlmModel__divergences, self)
+
+BayesGlmModel$summary <- function() .Call(wrap__BayesGlmModel__summary, self)
+
+BayesGlmModel$loo <- function() .Call(wrap__BayesGlmModel__loo, self)
+
+BayesGlmModel$log_likelihood <- function() .Call(wrap__BayesGlmModel__log_likelihood, self)
+
+BayesGlmModel$predict <- function(x, names, offset) .Call(wrap__BayesGlmModel__predict, self, x, names, offset)
+
+BayesGlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__BayesGlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+
+#' @export
+`$.BayesGlmModel` <- function (self, name) { func <- BayesGlmModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesGlmModel` <- `$.BayesGlmModel`
 
 GlmModel <- new.env(parent = emptyenv())
 

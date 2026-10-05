@@ -7,7 +7,8 @@
 predict_distribution(object, newdata, n_sims, seed, ...)
 }
 \arguments{
-\item{object}{A \link{glm_model}, \link{elastic_net_model} or \link{gam_model}.}
+\item{object}{A \link{glm_model}, \link{elastic_net_model}, \link{gam_model} or
+\link{bayes_glm_model} (posterior predictive draws).}
 
 \item{newdata}{A data frame with the model's terms.}
 

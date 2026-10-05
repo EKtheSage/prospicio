@@ -1,0 +1,11 @@
+case,param,quantity,expected,abs_tol,rel_tol,source
+poisson,b0,mean,-1.0314335570682724,0.015677849578791467,0.0,NumPy grid integration
+poisson,b0,sd,0.15677849578791467,0.0,0.08,NumPy grid integration
+poisson,b1,mean,-0.1416841946341863,0.008281633408079135,0.0,NumPy grid integration
+poisson,b1,sd,0.08281633408079134,0.0,0.08,NumPy grid integration
+gaussian,b0,mean,0.29653169051430983,0.011394692813814814,0.0,NumPy grid integration
+gaussian,b0,sd,0.11394692813814813,0.0,0.08,NumPy grid integration
+gaussian,b1,mean,2.006401087707884,0.0061691826954911365,0.0,NumPy grid integration
+gaussian,b1,sd,0.061691826954911363,0.0,0.08,NumPy grid integration
+gaussian,dispersion,mean,2.5684291674221207,0.026185453965501926,0.0,NumPy grid integration
+gaussian,dispersion,sd,0.26185453965501926,0.0,0.08,NumPy grid integration
