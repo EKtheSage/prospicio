@@ -8,7 +8,8 @@ tail_bondy(earliest_age = NULL, attachment_age = NULL)
 }
 \arguments{
 \item{earliest_age}{First age in months whose factor enters the fit (the
-first age at or after it), or \code{NULL} for the age of the last factor.}
+last age at or before it, as chainladder-python reads it), or \code{NULL}
+for the age of the last factor.}
 
 \item{attachment_age}{The factor from this age (the last age at or before
 it) to the next is kept and the fitted ones replace those after it;

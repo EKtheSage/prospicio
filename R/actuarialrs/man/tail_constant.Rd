@@ -14,7 +14,9 @@ positive (checked when the tail is fitted).}
 to 1.}
 
 \item{attachment_age}{Age in months the factor attaches at (the first age
-at or after it), or \code{NULL} for the oldest age.}
+at or after it), or \code{NULL} for the oldest age. An age at or before the
+youngest replaces every estimated factor (chainladder-python ignores
+such an attachment).}
 }
 \value{
 A \code{tail_constant} object.

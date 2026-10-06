@@ -439,9 +439,10 @@ class ChainLadderFit:
     Per-origin lists (``origins``, ``latest``, ``ultimate``, ``reserve``)
     run over the origins of each segment in turn, like the rows of
     ``to_frame()``, so a single-segment fit has one value per origin.
-    Per-age lists (``ldf``, ``cdf``, ``sigma``, ``std_err``) need a
-    single-segment fit; for several segments use ``development_frame()`` or
-    ``segment(...)``.
+    Per-age lists (``ldf``, ``cdf``, ``sigma``, ``std_err``) and the tail
+    need a single-segment fit; for several segments use
+    ``development_frame()`` (per age), ``totals_frame()`` (``tail``,
+    ``tail_sigma``, ``tail_std_err``) or ``segment(...)``.
     
     Examples
     --------
@@ -480,6 +481,11 @@ class ChainLadderFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    @property
+    def estimated_ldf(self, /) -> list[float]:
+        """
+        Age-to-age factors as estimated, before the tail replaced any.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -546,6 +552,12 @@ class ChainLadderFit:
         Tail factor from the oldest age to ultimate.
         """
     @property
+    def tail_attachment_age(self, /) -> int:
+        """
+        Age from which ``ldf`` holds the tail's factors rather than the
+        estimated ones; the oldest age when the tail replaced none.
+        """
+    @property
     def tail_ldf(self, /) -> list[float]:
         """
         Factors past the oldest age, which multiply to ``tail``: one per
@@ -557,7 +569,9 @@ class ChainLadderFit:
     def tail_sigma(self, /) -> float:
         """
         The tail's variance parameter, extrapolated log-linearly; 0 without
-        a tail above 1, ``nan`` if it cannot be extrapolated.
+        a tail (a factor of 1), ``nan`` if it cannot be extrapolated. A tail
+        below 1 is read where a tail of 1.001 would be, as chainladder-python
+        does.
         """
     @property
     def tail_std_err(self, /) -> float:
@@ -585,8 +599,9 @@ class ChainLadderFit:
         """
     def totals_frame(self, /) -> Any:
         """
-        One row per segment: the key columns and the segment's total
-        ``latest``, ``ultimate`` and ``reserve``. Needs pandas.
+        One row per segment: the key columns, the segment's total
+        ``latest``, ``ultimate`` and ``reserve``, and its ``tail``,
+        ``tail_sigma`` and ``tail_std_err``. Needs pandas.
         
         Returns
         -------
@@ -3484,10 +3499,13 @@ class Mack:
     the standard error of each origin's reserve and of the total, split into
     process and parameter risk (Mack 1993, 1999).
     
-    A tail above 1 is one more development step, from the oldest age to
-    ultimate, with its own sigma and standard error, as R ChainLadder's
+    A tail other than 1 is one more development step, from the oldest age
+    to ultimate, with its own sigma and standard error, as R ChainLadder's
     ``MackChainLadder(tail = ...)``; unless given, both are extrapolated
     log-linearly. Every origin, the oldest included, carries the tail's risk.
+    A tail below 1 follows chainladder-python: it scales the ultimates and
+    carries the risk read where a tail of 1.001 would be. R's
+    ``MackChainLadder`` ignores a tail below 1 altogether.
     
     Parameters
     ----------
@@ -3497,10 +3515,10 @@ class Mack:
         As ``ChainLadder``; no tail by default.
     tail_sigma : float, optional
         The tail's sigma (R's ``tail.sigma``); extrapolated if not given.
-        Used only when the tail factor is above 1.
+        Unused when the tail factor is 1.
     tail_std_err : float, optional
         The tail factor's standard error (R's ``tail.se``); extrapolated if
-        not given. Used only when the tail factor is above 1.
+        not given. Unused when the tail factor is 1.
     
     Examples
     --------
@@ -3572,9 +3590,10 @@ class MackFit:
     standard errors of each origin's reserve and of each segment's total.
     
     Per-origin lists run over the origins of each segment in turn, like the
-    rows of ``to_frame()``. Per-age lists and the totals' standard errors
-    need a single-segment fit; for several segments use
-    ``development_frame()``, ``totals_frame()`` or ``segment(...)``.
+    rows of ``to_frame()``. Per-age lists, the tail and the totals'
+    standard errors need a single-segment fit; for several segments use
+    ``development_frame()``, ``totals_frame()`` (the totals' standard errors
+    and the tail) or ``segment(...)``.
     ``total_ultimate`` and ``total_reserve`` sum over every segment.
     """
     def __repr__(self, /) -> str: ...
@@ -3601,6 +3620,11 @@ class MackFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    @property
+    def estimated_ldf(self, /) -> list[float]:
+        """
+        Factors as estimated, as ``ChainLadderFit.estimated_ldf``.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -3672,6 +3696,12 @@ class MackFit:
         Tail factor from the oldest age to ultimate.
         """
     @property
+    def tail_attachment_age(self, /) -> int:
+        """
+        Age from which ``ldf`` holds the tail's factors, as
+        ``ChainLadderFit.tail_attachment_age``.
+        """
+    @property
     def tail_ldf(self, /) -> list[float]:
         """
         Factors past the oldest age, as ``ChainLadderFit.tail_ldf``.
@@ -3680,13 +3710,13 @@ class MackFit:
     def tail_sigma(self, /) -> float:
         """
         The tail's sigma used in the process risk: given, or extrapolated
-        log-linearly; 0 without a tail above 1.
+        log-linearly; 0 without a tail (a factor of 1).
         """
     @property
     def tail_std_err(self, /) -> float:
         """
         The tail factor's standard error used in the parameter risk: given,
-        or extrapolated log-linearly; 0 without a tail above 1.
+        or extrapolated log-linearly; 0 without a tail (a factor of 1).
         """
     def to_frame(self, /) -> Any:
         """
@@ -5467,8 +5497,9 @@ class TailBondy:
     Parameters
     ----------
     earliest_age : int, optional
-        First age in months whose factor enters the fit (the first age at or
-        after it); the age of the last factor by default.
+        First age in months whose factor enters the fit (the last age at or
+        before it, as chainladder-python reads it); the age of the last
+        factor by default.
     attachment_age : int, optional
         The factor from this age (the last age at or before it) to the next
         is kept and the fitted ones replace those after it; the age of the
@@ -5520,7 +5551,9 @@ class TailConstant:
         Share of each period's development kept in the next, from 0 to 1.
     attachment_age : int, optional
         Age in months the factor attaches at (the first age at or after
-        it); the oldest age by default.
+        it); the oldest age by default. An age at or before the youngest
+        replaces every estimated factor (chainladder-python ignores such an
+        attachment).
     
     Examples
     --------
@@ -5564,8 +5597,10 @@ class TailCurve:
     ----------
     curve : {"exponential", "inverse_power"}, default "exponential"
     fit_period : tuple of (int or None, int or None), default (None, None)
-        Ages in months whose factors enter the fit: from the first
-        (inclusive) to the second (exclusive); ``None`` is open-ended.
+        Ages in months whose factors enter the fit: from the last age at or
+        before the first (inclusive) to the last age at or before the second
+        (exclusive), as chainladder-python reads them; ``None`` is
+        open-ended.
     extrap_periods : int, default 100
         Number of periods past the oldest age the curve is extrapolated.
     attachment_age : int, optional

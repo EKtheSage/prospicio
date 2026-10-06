@@ -137,12 +137,15 @@ tail_methods <- list(
   tail_constant = list(tail = tail_constant(1.05)),
   tail_constant_decay = list(tail = tail_constant(1.1, decay = 0.75)),
   tail_constant_attach = list(tail = tail_constant(1.05, attachment_age = 72)),
+  tail_constant_below_one = list(tail = tail_constant(0.98)),
   tail_curve_exponential = list(tail = tail_curve()),
   tail_curve_inverse_power = list(tail = tail_curve("inverse_power")),
   tail_curve_fit_period = list(tail = tail_curve(fit_period = c(36, 108), extrap_periods = 50)),
+  tail_curve_off_grid = list(tail = tail_curve(fit_period = c(30, 102))),
   tail_curve_attach = list(tail = tail_curve(attachment_age = 60)),
   tail_bondy = list(tail = tail_bondy()),
   tail_bondy_generalized = list(tail = tail_bondy(earliest_age = 36)),
+  tail_bondy_off_grid = list(tail = tail_bondy(earliest_age = 30)),
   tail_bondy_attach = list(tail = tail_bondy(earliest_age = 36, attachment_age = 72))
 )
 given_tail <- function(tri) {
@@ -212,7 +215,10 @@ stopifnot(identical(utils::capture.output(print(curve)),
 fit <- chain_ladder(raa, tail = curve)
 base <- chain_ladder(raa)
 stopifnot(identical(fit@ldf[1:4], base@ldf[1:4]), fit@ldf[[5]] != base@ldf[[5]],
-          identical(names(fit@ldf), names(base@ldf)))
+          identical(names(fit@ldf), names(base@ldf)),
+          identical(fit@estimated_ldf, base@ldf), identical(fit@tail_attachment_age, 60L),
+          identical(base@tail_attachment_age, 120L),
+          identical(mack(raa, tail = curve)@estimated_ldf, base@ldf))
 near(prod(fit@tail_ldf), fit@tail, 1e-12)
 near(fit@cdf[["120-Ult"]], fit@tail, 1e-12)
 # A number is a constant tail; without a tail above 1 there is no tail risk.
@@ -239,7 +245,14 @@ lc_tail <- triangle(rbind(transform(raa_long, lob = "a"),
                     "origin", "development", "value", keys = "lob")
 seg_fit <- chain_ladder(lc_tail, tail = tail_bondy())
 stopifnot(segment(seg_fit, lob = "a")@tail == chain_ladder(raa, tail = tail_bondy())@tail)
-expect_error_like(seg_fit@tail, "2 segments; use development_frame()")
+expect_error_like(seg_fit@tail, "2 segments; use totals_frame() or segment()")
+expect_error_like(seg_fit@tail_ldf, "2 segments; use segment()")
+expect_error_like(seg_fit@estimated_ldf, "2 segments; use segment()")
+seg_totals <- totals_frame(seg_fit)
+stopifnot(identical(names(seg_totals), c("lob", "latest", "ultimate", "reserve", "tail",
+                                         "tail_sigma", "tail_std_err")),
+          identical(seg_totals$tail[1], segment(seg_fit, lob = "a")@tail),
+          identical(seg_totals$tail_sigma[2], segment(seg_fit, lob = "b")@tail_sigma))
 invisible(utils::capture.output(print(seg_fit)))
 
 # Long-table round trip.

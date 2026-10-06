@@ -204,6 +204,20 @@ impl ReserveFit for ChainLadderFit {
     fn chain_ladder(&self) -> &ChainLadderFit {
         self
     }
+
+    fn total_columns(&self) -> Vec<(&'static str, f64)> {
+        tail_columns(self)
+    }
+}
+
+/// The segment's tail: its factor from the oldest age to ultimate, sigma
+/// and standard error.
+fn tail_columns(cl: &ChainLadderFit) -> Vec<(&'static str, f64)> {
+    vec![
+        ("tail", cl.tail.factor),
+        ("tail_sigma", cl.tail.sigma),
+        ("tail_std_err", cl.tail.std_err),
+    ]
 }
 
 impl ReserveFit for MackFit {
@@ -220,11 +234,13 @@ impl ReserveFit for MackFit {
     }
 
     fn total_columns(&self) -> Vec<(&'static str, f64)> {
-        vec![
+        let mut columns = vec![
             ("process_risk", self.total_process_risk),
             ("parameter_risk", self.total_parameter_risk),
             ("standard_error", self.total_standard_error),
-        ]
+        ];
+        columns.extend(tail_columns(&self.chain_ladder));
+        columns
     }
 }
 
@@ -278,7 +294,9 @@ impl<T: ReserveFit> SegmentFits<T> {
     }
 
     /// One row per segment: total `latest`, `ultimate`, `reserve` and the
-    /// method's own totals (for Mack the standard errors of the total).
+    /// method's own totals (for Mack the standard errors of the total; for
+    /// the chain ladder and Mack the segment's `tail`, `tail_sigma` and
+    /// `tail_std_err`).
     pub fn totals(&self) -> FitTable {
         let mut values = Vec::new();
         push_columns(
@@ -532,6 +550,8 @@ mod tests {
         let one = fits.segment(&[("lob", "Home")]).unwrap();
         assert_eq!(one.labels, [Label::new(["Home"])]);
         assert_eq!(one.totals().column("reserve").unwrap(), [30.0]);
+        assert_eq!(fits.totals().column("tail").unwrap(), [1.0, 1.0]);
+        assert_eq!(fits.totals().column("tail_sigma").unwrap(), [0.0, 0.0]);
         assert_eq!(fits.position(&[]), Err(Error::AmbiguousSegment(2)));
         assert_eq!(
             fits.position(&[("lob", "Auto"), ("lob", "Auto")]),

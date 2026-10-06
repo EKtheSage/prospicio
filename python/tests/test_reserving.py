@@ -132,12 +132,15 @@ TAIL_METHODS = {
     "tail_constant": dict(tail=TailConstant(1.05)),
     "tail_constant_decay": dict(tail=TailConstant(1.1, decay=0.75)),
     "tail_constant_attach": dict(tail=TailConstant(1.05, attachment_age=72)),
+    "tail_constant_below_one": dict(tail=TailConstant(0.98)),
     "tail_curve_exponential": dict(tail=TailCurve()),
     "tail_curve_inverse_power": dict(tail=TailCurve("inverse_power")),
     "tail_curve_fit_period": dict(tail=TailCurve(fit_period=(36, 108), extrap_periods=50)),
+    "tail_curve_off_grid": dict(tail=TailCurve(fit_period=(30, 102))),
     "tail_curve_attach": dict(tail=TailCurve(attachment_age=60)),
     "tail_bondy": dict(tail=TailBondy()),
     "tail_bondy_generalized": dict(tail=TailBondy(earliest_age=36)),
+    "tail_bondy_off_grid": dict(tail=TailBondy(earliest_age=30)),
     "tail_bondy_attach": dict(tail=TailBondy(earliest_age=36, attachment_age=72)),
 }
 
@@ -202,6 +205,10 @@ def test_tail_arguments(triangles):
     fit = ChainLadder(tail=curve).fit(raa, "values")
     base = ChainLadder().fit(raa, "values")
     assert fit.ldf[:4] == base.ldf[:4] and fit.ldf[4] != base.ldf[4]
+    assert fit.estimated_ldf == base.ldf and fit.tail_attachment_age == 60
+    assert base.tail_attachment_age == 120
+    tailed_mack = Mack(tail=curve).fit(raa, "values")
+    assert tailed_mack.estimated_ldf == base.ldf and tailed_mack.tail_attachment_age == 60
     assert math.prod(fit.tail_ldf) == pytest.approx(fit.tail, rel=1e-12)
     assert fit.cdf[-1] == pytest.approx(fit.tail, rel=1e-12)
     # Without a tail above 1 there is no tail risk.
@@ -628,6 +635,18 @@ def test_every_segment_at_once():
         cl.ldf
     with pytest.raises(ValueError, match="use totals_frame"):
         mack.total_standard_error
+    # Each segment's tail is in totals_frame(); the tail's factors need one.
+    assert list(totals.columns)[-3:] == ["tail", "tail_sigma", "tail_std_err"]
+    assert list(totals["tail"]) == [1.0] * 4 and list(totals["tail_sigma"]) == [0.0] * 4
+    assert list(cl.totals_frame().columns)[-3:] == ["tail", "tail_sigma", "tail_std_err"]
+    with pytest.raises(ValueError, match="4 segments; use totals_frame"):
+        mack.tail_sigma
+    with pytest.raises(ValueError, match="4 segments; use totals_frame"):
+        cl.tail
+    with pytest.raises(ValueError, match=r"4 segments; use segment\(\.\.\.\)$"):
+        cl.tail_ldf
+    with pytest.raises(ValueError, match=r"4 segments; use segment\(\.\.\.\)$"):
+        mack.estimated_ldf
     with pytest.raises(ValueError, match="2 segments match"):
         cl.segment(lob="Auto")
     with pytest.raises(ValueError, match="no key named line"):

@@ -659,15 +659,22 @@ impl ReservingTail {
 }
 
 /// The one fit of a single-segment result, or an error naming what to use
-/// instead.
+/// instead: the long table `instead` (if any) or `segment()`.
 fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: &str) -> Result<&'a T> {
     match fits.fits.as_slice() {
         [one] => Ok(one),
-        _ => Err(Error::Other(format!(
-            "{field} needs a single-segment fit, and this one has {} segments; \
-             use {instead} or segment()",
-            fits.len()
-        ))),
+        _ => {
+            let table = if instead.is_empty() {
+                String::new()
+            } else {
+                format!("{instead} or ")
+            };
+            Err(Error::Other(format!(
+                "{field} needs a single-segment fit, and this one has {} segments; \
+                 use {table}segment()",
+                fits.len()
+            )))
+        }
     }
 }
 
@@ -788,26 +795,41 @@ impl ChainLadderFit {
         self.inner.fits[0].development.alpha
     }
 
+    /// The factors as estimated, before the tail replaced any.
+    fn estimated_ldf(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "estimated_ldf", "")?;
+        Ok(f.development.ldf.clone())
+    }
+
+    /// Age from which `ldf` holds the tail's factors; the oldest age when
+    /// the tail replaced none.
+    fn tail_attachment_age(&self) -> Result<i32> {
+        let f = single(&self.inner, "tail_attachment_age", "")?;
+        f.development
+            .development
+            .get(f.tail.attachment)
+            .map(|&a| a as i32)
+            .ok_or_else(|| Error::Other("the fit has no development ages".into()))
+    }
+
     fn tail(&self) -> Result<f64> {
-        Ok(single(&self.inner, "tail", "development_frame()")?
-            .tail
-            .factor)
+        Ok(single(&self.inner, "tail", "totals_frame()")?.tail.factor)
     }
 
     /// Factors past the oldest age, which multiply to the tail.
     fn tail_ldf(&self) -> Result<Vec<f64>> {
-        let f = single(&self.inner, "tail_ldf", "development_frame()")?;
+        let f = single(&self.inner, "tail_ldf", "")?;
         Ok(f.tail.ldf[f.development.ldf.len()..].to_vec())
     }
 
     fn tail_sigma(&self) -> Result<f64> {
-        Ok(single(&self.inner, "tail_sigma", "development_frame()")?
+        Ok(single(&self.inner, "tail_sigma", "totals_frame()")?
             .tail
             .sigma)
     }
 
     fn tail_std_err(&self) -> Result<f64> {
-        Ok(single(&self.inner, "tail_std_err", "development_frame()")?
+        Ok(single(&self.inner, "tail_std_err", "totals_frame()")?
             .tail
             .std_err)
     }
@@ -938,12 +960,12 @@ impl OdpBootstrapFit {
     }
 
     fn fitted(&self) -> Result<Vec<f64>> {
-        let s = single(&self.inner.segments, "fitted", "segment()")?;
+        let s = single(&self.inner.segments, "fitted", "")?;
         Ok(s.fitted.clone())
     }
 
     fn residuals(&self) -> Result<Vec<f64>> {
-        let s = single(&self.inner.segments, "residuals", "segment()")?;
+        let s = single(&self.inner.segments, "residuals", "")?;
         Ok(s.residuals.clone())
     }
 

@@ -1193,7 +1193,9 @@ impl PyTriangle {
 ///     Share of each period's development kept in the next, from 0 to 1.
 /// attachment_age : int, optional
 ///     Age in months the factor attaches at (the first age at or after
-///     it); the oldest age by default.
+///     it); the oldest age by default. An age at or before the youngest
+///     replaces every estimated factor (chainladder-python ignores such an
+///     attachment).
 ///
 /// Examples
 /// --------
@@ -1257,8 +1259,10 @@ impl PyTailConstant {
 /// ----------
 /// curve : {"exponential", "inverse_power"}, default "exponential"
 /// fit_period : tuple of (int or None, int or None), default (None, None)
-///     Ages in months whose factors enter the fit: from the first
-///     (inclusive) to the second (exclusive); ``None`` is open-ended.
+///     Ages in months whose factors enter the fit: from the last age at or
+///     before the first (inclusive) to the last age at or before the second
+///     (exclusive), as chainladder-python reads them; ``None`` is
+///     open-ended.
 /// extrap_periods : int, default 100
 ///     Number of periods past the oldest age the curve is extrapolated.
 /// attachment_age : int, optional
@@ -1352,8 +1356,9 @@ impl PyTailCurve {
 /// Parameters
 /// ----------
 /// earliest_age : int, optional
-///     First age in months whose factor enters the fit (the first age at or
-///     after it); the age of the last factor by default.
+///     First age in months whose factor enters the fit (the last age at or
+///     before it, as chainladder-python reads it); the age of the last
+///     factor by default.
 /// attachment_age : int, optional
 ///     The factor from this age (the last age at or before it) to the next
 ///     is kept and the fitted ones replace those after it; the age of the
@@ -1633,16 +1638,32 @@ impl PyChainLadder {
 }
 
 /// The one fit of a single-segment result, or an error naming what to use
-/// instead.
+/// instead: the long table `instead` (if any) or `segment(...)`.
 fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: &str) -> PyResult<&'a T> {
     match fits.fits.as_slice() {
         [one] => Ok(one),
-        _ => Err(PyValueError::new_err(format!(
-            "{field} needs a single-segment fit, and this one has {} segments; \
-             use {instead} or segment(...)",
-            fits.len()
-        ))),
+        _ => {
+            let table = if instead.is_empty() {
+                String::new()
+            } else {
+                format!("{instead} or ")
+            };
+            Err(PyValueError::new_err(format!(
+                "{field} needs a single-segment fit, and this one has {} segments; \
+                 use {table}segment(...)",
+                fits.len()
+            )))
+        }
     }
+}
+
+/// Age from which a fit's selected factors are the tail's.
+fn attachment_age(fit: &ChainLadderFit) -> PyResult<Lag> {
+    fit.development
+        .development
+        .get(fit.tail.attachment)
+        .copied()
+        .ok_or_else(|| PyValueError::new_err("the fit has no development ages"))
 }
 
 /// Per-origin values of every segment, in the order of the long rows.
@@ -1737,9 +1758,10 @@ fn segments_prefix<T>(fits: &SegmentFits<T>) -> String {
 /// Per-origin lists (``origins``, ``latest``, ``ultimate``, ``reserve``)
 /// run over the origins of each segment in turn, like the rows of
 /// ``to_frame()``, so a single-segment fit has one value per origin.
-/// Per-age lists (``ldf``, ``cdf``, ``sigma``, ``std_err``) need a
-/// single-segment fit; for several segments use ``development_frame()`` or
-/// ``segment(...)``.
+/// Per-age lists (``ldf``, ``cdf``, ``sigma``, ``std_err``) and the tail
+/// need a single-segment fit; for several segments use
+/// ``development_frame()`` (per age), ``totals_frame()`` (``tail``,
+/// ``tail_sigma``, ``tail_std_err``) or ``segment(...)``.
 ///
 /// Examples
 /// --------
@@ -1818,12 +1840,24 @@ impl PyChainLadderFit {
         Ok(f.development.std_err.clone())
     }
 
+    /// Age-to-age factors as estimated, before the tail replaced any.
+    #[getter]
+    fn estimated_ldf(&self) -> PyResult<Vec<f64>> {
+        let f = single(&self.inner, "estimated_ldf", "")?;
+        Ok(f.development.ldf.clone())
+    }
+
+    /// Age from which ``ldf`` holds the tail's factors rather than the
+    /// estimated ones; the oldest age when the tail replaced none.
+    #[getter]
+    fn tail_attachment_age(&self) -> PyResult<Lag> {
+        attachment_age(single(&self.inner, "tail_attachment_age", "")?)
+    }
+
     /// Tail factor from the oldest age to ultimate.
     #[getter]
     fn tail(&self) -> PyResult<f64> {
-        Ok(single(&self.inner, "tail", "development_frame()")?
-            .tail
-            .factor)
+        Ok(single(&self.inner, "tail", "totals_frame()")?.tail.factor)
     }
 
     /// Factors past the oldest age, which multiply to ``tail``: one per
@@ -1832,15 +1866,17 @@ impl PyChainLadderFit {
     /// ``TailLogLinear``).
     #[getter]
     fn tail_ldf(&self) -> PyResult<Vec<f64>> {
-        let f = single(&self.inner, "tail_ldf", "segment(...)")?;
+        let f = single(&self.inner, "tail_ldf", "")?;
         Ok(f.tail.ldf[f.development.ldf.len()..].to_vec())
     }
 
     /// The tail's variance parameter, extrapolated log-linearly; 0 without
-    /// a tail above 1, ``nan`` if it cannot be extrapolated.
+    /// a tail (a factor of 1), ``nan`` if it cannot be extrapolated. A tail
+    /// below 1 is read where a tail of 1.001 would be, as chainladder-python
+    /// does.
     #[getter]
     fn tail_sigma(&self) -> PyResult<f64> {
-        Ok(single(&self.inner, "tail_sigma", "segment(...)")?
+        Ok(single(&self.inner, "tail_sigma", "totals_frame()")?
             .tail
             .sigma)
     }
@@ -1848,7 +1884,7 @@ impl PyChainLadderFit {
     /// Standard error of the tail factor, extrapolated log-linearly.
     #[getter]
     fn tail_std_err(&self) -> PyResult<f64> {
-        Ok(single(&self.inner, "tail_std_err", "segment(...)")?
+        Ok(single(&self.inner, "tail_std_err", "totals_frame()")?
             .tail
             .std_err)
     }
@@ -1893,8 +1929,9 @@ impl PyChainLadderFit {
         table_frame(py, self.inner.to_long())
     }
 
-    /// One row per segment: the key columns and the segment's total
-    /// ``latest``, ``ultimate`` and ``reserve``. Needs pandas.
+    /// One row per segment: the key columns, the segment's total
+    /// ``latest``, ``ultimate`` and ``reserve``, and its ``tail``,
+    /// ``tail_sigma`` and ``tail_std_err``. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -1951,10 +1988,13 @@ impl PyChainLadderFit {
 /// the standard error of each origin's reserve and of the total, split into
 /// process and parameter risk (Mack 1993, 1999).
 ///
-/// A tail above 1 is one more development step, from the oldest age to
-/// ultimate, with its own sigma and standard error, as R ChainLadder's
+/// A tail other than 1 is one more development step, from the oldest age
+/// to ultimate, with its own sigma and standard error, as R ChainLadder's
 /// ``MackChainLadder(tail = ...)``; unless given, both are extrapolated
 /// log-linearly. Every origin, the oldest included, carries the tail's risk.
+/// A tail below 1 follows chainladder-python: it scales the ultimates and
+/// carries the risk read where a tail of 1.001 would be. R's
+/// ``MackChainLadder`` ignores a tail below 1 altogether.
 ///
 /// Parameters
 /// ----------
@@ -1964,10 +2004,10 @@ impl PyChainLadderFit {
 ///     As ``ChainLadder``; no tail by default.
 /// tail_sigma : float, optional
 ///     The tail's sigma (R's ``tail.sigma``); extrapolated if not given.
-///     Used only when the tail factor is above 1.
+///     Unused when the tail factor is 1.
 /// tail_std_err : float, optional
 ///     The tail factor's standard error (R's ``tail.se``); extrapolated if
-///     not given. Used only when the tail factor is above 1.
+///     not given. Unused when the tail factor is 1.
 ///
 /// Examples
 /// --------
@@ -2091,9 +2131,10 @@ impl PyMack {
 /// standard errors of each origin's reserve and of each segment's total.
 ///
 /// Per-origin lists run over the origins of each segment in turn, like the
-/// rows of ``to_frame()``. Per-age lists and the totals' standard errors
-/// need a single-segment fit; for several segments use
-/// ``development_frame()``, ``totals_frame()`` or ``segment(...)``.
+/// rows of ``to_frame()``. Per-age lists, the tail and the totals'
+/// standard errors need a single-segment fit; for several segments use
+/// ``development_frame()``, ``totals_frame()`` (the totals' standard errors
+/// and the tail) or ``segment(...)``.
 /// ``total_ultimate`` and ``total_reserve`` sum over every segment.
 #[pyclass(name = "MackFit", module = "actuarialrs.reserving", frozen)]
 pub(crate) struct PyMackFit {
@@ -2101,9 +2142,10 @@ pub(crate) struct PyMackFit {
 }
 
 impl PyMackFit {
-    /// The chain ladder of a single-segment fit, for a per-age `field`.
-    fn one(&self, field: &str) -> PyResult<&ChainLadderFit> {
-        Ok(&single(&self.inner, field, "development_frame()")?.chain_ladder)
+    /// The chain ladder of a single-segment fit, for a `field` found in the
+    /// long table `instead` (if any) of a fit with several segments.
+    fn one(&self, field: &str, instead: &str) -> PyResult<&ChainLadderFit> {
+        Ok(&single(&self.inner, field, instead)?.chain_ladder)
     }
 }
 
@@ -2148,52 +2190,73 @@ impl PyMackFit {
     /// Selected age-to-age factors, as ``ChainLadderFit.ldf``.
     #[getter]
     fn ldf(&self) -> PyResult<Vec<f64>> {
-        Ok(self.one("ldf")?.ldf().to_vec())
+        Ok(self.one("ldf", "development_frame()")?.ldf().to_vec())
     }
 
     /// Age-to-ultimate factors, including the tail.
     #[getter]
     fn cdf(&self) -> PyResult<Vec<f64>> {
-        Ok(self.one("cdf")?.cdf.clone())
+        Ok(self.one("cdf", "development_frame()")?.cdf.clone())
     }
 
     /// Tail factor from the oldest age to ultimate.
     #[getter]
     fn tail(&self) -> PyResult<f64> {
-        Ok(self.one("tail")?.tail.factor)
+        Ok(self.one("tail", "totals_frame()")?.tail.factor)
+    }
+
+    /// Factors as estimated, as ``ChainLadderFit.estimated_ldf``.
+    #[getter]
+    fn estimated_ldf(&self) -> PyResult<Vec<f64>> {
+        Ok(self.one("estimated_ldf", "")?.development.ldf.clone())
+    }
+
+    /// Age from which ``ldf`` holds the tail's factors, as
+    /// ``ChainLadderFit.tail_attachment_age``.
+    #[getter]
+    fn tail_attachment_age(&self) -> PyResult<Lag> {
+        attachment_age(self.one("tail_attachment_age", "")?)
     }
 
     /// Factors past the oldest age, as ``ChainLadderFit.tail_ldf``.
     #[getter]
     fn tail_ldf(&self) -> PyResult<Vec<f64>> {
-        let cl = self.one("tail_ldf")?;
+        let cl = self.one("tail_ldf", "")?;
         Ok(cl.tail.ldf[cl.development.ldf.len()..].to_vec())
     }
 
     /// The tail's sigma used in the process risk: given, or extrapolated
-    /// log-linearly; 0 without a tail above 1.
+    /// log-linearly; 0 without a tail (a factor of 1).
     #[getter]
     fn tail_sigma(&self) -> PyResult<f64> {
-        Ok(self.one("tail_sigma")?.tail.sigma)
+        Ok(self.one("tail_sigma", "totals_frame()")?.tail.sigma)
     }
 
     /// The tail factor's standard error used in the parameter risk: given,
-    /// or extrapolated log-linearly; 0 without a tail above 1.
+    /// or extrapolated log-linearly; 0 without a tail (a factor of 1).
     #[getter]
     fn tail_std_err(&self) -> PyResult<f64> {
-        Ok(self.one("tail_std_err")?.tail.std_err)
+        Ok(self.one("tail_std_err", "totals_frame()")?.tail.std_err)
     }
 
     /// Variance parameter of each factor.
     #[getter]
     fn sigma(&self) -> PyResult<Vec<f64>> {
-        Ok(self.one("sigma")?.development.sigma.clone())
+        Ok(self
+            .one("sigma", "development_frame()")?
+            .development
+            .sigma
+            .clone())
     }
 
     /// Standard error of each factor.
     #[getter]
     fn std_err(&self) -> PyResult<Vec<f64>> {
-        Ok(self.one("std_err")?.development.std_err.clone())
+        Ok(self
+            .one("std_err", "development_frame()")?
+            .development
+            .std_err
+            .clone())
     }
 
     /// Latest observed cumulative value per origin.
@@ -2521,7 +2584,7 @@ impl PyOdpBootstrapFit {
     /// Fitted incremental values, ``[origin][development]``.
     #[getter]
     fn fitted(&self) -> PyResult<Vec<Vec<f64>>> {
-        Ok(self.grid(&self.one("fitted", "segment(...)")?.fitted))
+        Ok(self.grid(&self.one("fitted", "")?.fitted))
     }
 
     /// Adjusted Pearson residuals ``(x - m) / sqrt(|m|) * sqrt(n / (n - p))``,
@@ -2529,7 +2592,7 @@ impl PyOdpBootstrapFit {
     /// fitted value is zero.
     #[getter]
     fn residuals(&self) -> PyResult<Vec<Vec<f64>>> {
-        Ok(self.grid(&self.one("residuals", "segment(...)")?.residuals))
+        Ok(self.grid(&self.one("residuals", "")?.residuals))
     }
 
     /// The scale parameter ``phi``: the sum of squared unadjusted residuals

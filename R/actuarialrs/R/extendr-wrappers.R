@@ -1037,7 +1037,11 @@ ChainLadderFit$std_err <- function() .Call(wrap__ChainLadderFit__std_err, self)
 
 ChainLadderFit$alpha <- function() .Call(wrap__ChainLadderFit__alpha, self)
 
-ChainLadderFit$tail <- function() .Call(wrap__ChainLadderFit__tail, self)
+ChainLadderFit$estimated_ldf <- function() .Call(wrap__ChainLadderFit__estimated_ldf, self)
+
+ChainLadderFit$tail_attachment_age <- function() .Call(wrap__ChainLadderFit__tail_attachment_age, self)
+
+ChainLadderFit$tail <-function() .Call(wrap__ChainLadderFit__tail, self)
 
 ChainLadderFit$tail_ldf <- function() .Call(wrap__ChainLadderFit__tail_ldf, self)
 

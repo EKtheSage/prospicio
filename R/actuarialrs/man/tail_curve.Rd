@@ -15,8 +15,9 @@ tail_curve(
 \item{curve}{\code{"exponential"} or \code{"inverse_power"}.}
 
 \item{fit_period}{The ages in months whose factors enter the fit, from
-the first (inclusive) to the second (exclusive), \code{NA} for an open end;
-\code{NULL} fits every factor.}
+the last age at or before the first (inclusive) to the last age at or
+before the second (exclusive), as chainladder-python reads them; \code{NA}
+for an open end, \code{NULL} fits every factor.}
 
 \item{extrap_periods}{Number of periods past the oldest age the curve is
 extrapolated; a whole number.}
