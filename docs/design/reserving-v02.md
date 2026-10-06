@@ -171,8 +171,12 @@ Data: `validation/data/mw2008.csv` and `mw2014.csv` are R ChainLadder's
 `MW2008` and `MW2014`, origins relabelled from 2001. The paper's Table 4
 totals (reserves 2,237,826, one-year 81,080, Mack 108,401) are unit tests;
 its two oldest open origins differ from R in the fourth digit
-(`knowledge/references/r-chainladder-cdr.md`). R bindings follow in a
-later PR.
+(`knowledge/references/r-chainladder-cdr.md`).
+
+Bindings: Python `MackFit.claims_development_result()` returns a
+`ClaimsDevelopmentResult`; R `claims_development_result(fit)` takes a
+`mack_fit` and returns the S7 class of that name, with `by_calendar_year`
+as an origin x calendar-year matrix. Both need a single-segment fit.
 
 ### 5. Clark's growth curves
 
