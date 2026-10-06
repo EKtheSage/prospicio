@@ -2,6 +2,7 @@
 
 ## 2026-10-06
 
+* **Correction**: [The ODP one-year bootstrap against Merz-Wuthrich](/findings/one-year-bootstrap-vs-merz-wuthrich.md): the next cell is now projected from the pseudo latest value, as the lifetime ODP bootstrap does, so the ratios changed (RAA total 0.46 to 0.61); the one-cell origin now matches BootChainLadder without an allowance; the Mack-bootstrap re-reserving check is a CI unit test (within 0.6% on GenIns), and the ratio test is labelled a seed-pinned regression. From the review of branch claude/one-year-bootstrap.
 * **Update**: [Local checks](/environment/local-checks.md): how to check a hand-edited `extendr-wrappers.R` against `wrap__make_actuarialrs_wrappers`, and roxygen's link warnings for a new topic; and [The ODP one-year bootstrap against Merz-Wuthrich](/findings/one-year-bootstrap-vs-merz-wuthrich.md): the R and Python tests hold the same ratios. From R's `odp_one_year()` (branch claude/one-year-bootstrap).
 * **Creation**: [The ODP one-year bootstrap against Merz-Wuthrich](/findings/one-year-bootstrap-vs-merz-wuthrich.md), from building `OdpBootstrap::one_year` (reserving v0.2, decision 8, branch claude/one-year-bootstrap): the measured ratios, why the ODP and Mack differ, and what England, Verrall and Wuthrich (2019) and Boumezoued et al. (2011) publish.
 * **Update**: [Local checks](/environment/local-checks.md): the roxygen churn is a link-target rewrite, so a real change to those Rd files is kept and only the link restored.
