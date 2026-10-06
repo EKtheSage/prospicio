@@ -5,7 +5,8 @@ description: The MBBEFD class behind act_pricing::exposure; its four closed-form
 resource: https://doi.org/10.2143/AST.27.1.563208
 tags: [pricing, exposure-rating, mbbefd, property, reinsurance]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-06T04:00:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-06T03:30:00Z }
+verified: { by: process:ci, at: 2026-10-06T03:51:51Z }
 sources:
   - id: bernegger
     resource: https://doi.org/10.2143/AST.27.1.563208

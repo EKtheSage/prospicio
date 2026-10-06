@@ -28,10 +28,12 @@ sources:
 * Bare `openml.org` is refused (CONNECT 403), though OpenML's metadata
   links to it; the same paths work on `www.openml.org` (see
   [freMTPL2](/datasets/fremtpl2.md)).
-* CRAN is refused (CONNECT 403): `cloud.r-project.org` and
-  `packagemanager.posit.co`, checked 2026-10-06. R packages that are not
-  already installed (`lightgbm`, `xgboost`) cannot be installed in the
-  container; CI's runners can install them.
+* CRAN: the user allowlisted `cloud.r-project.org` and
+  `packagemanager.posit.co` on 2026-10-06, and the environment picked it up
+  without a new session. Posit's binary URLs redirect to
+  `rspm-sync.rstudio.com`, which stays refused, so install from source:
+  `install.packages(..., repos = "https://cloud.r-project.org")`.
+  `lightgbm` and `xgboost` build from source in about 15 minutes.
 * pkgdown's site build (`cargo xtask r`, last step) fails with CONNECT 403
   on a host it fetches; the R tests before it are unaffected.
 

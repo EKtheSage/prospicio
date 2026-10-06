@@ -1,6 +1,6 @@
 # Design note: distribution representations
 
-Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`) · Depends on: nothing · Next: `Dist` enum with the second severity family
+Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`, `Dist`) · Depends on: nothing · Next: the bindings on `Dist`, then `Custom`
 
 ## Goal
 
@@ -176,6 +176,16 @@ pub enum Dist {
   the Python/R boundary, pickle and serialize without trait objects.
 - `Custom` is the single "slow path" door the plan describes; code that
   sees it runs single-threaded and records that in diagnostics.
+
+Done: `act_prob::Dist` with the eleven severity families (`Lognormal`,
+`Pareto`, `PiecewisePareto`, `LogAffinePareto`, `GeneralizedPareto`,
+`Gamma`, `Tweedie`, `Weibull`, `Loglogistic`, `Mixture` in an `Arc`,
+`Grid`) and `Sampled`. It implements `Distribution` by `match` (no
+vtable), names its `family()`, and `as_severity()` gives the `Severity`
+of every variant but `Sampled`, which has no exact layer moments (the
+compile-time absence above becomes a `None` at the boundary). `From` each
+family. Not yet: `Custom` (a Python or R callback), serialization, and
+moving the bindings' own `AnySeverity` enums onto `Dist`.
 
 ## Sampling
 
