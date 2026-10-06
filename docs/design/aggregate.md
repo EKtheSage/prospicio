@@ -166,6 +166,20 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   which now depends on act-aggregate (`EventSet`). Python `RiskProfile`,
   R `risk_profile()`, `profile_simulate()`, `profile_layer_loss()`,
   `profile_surplus_loss()`.
+- **Sums insured spread within a band.** Bounds are optional per band
+  (`Band::with_bounds(lower, upper)`; Python `lower=`/`upper=` with `None`,
+  R `lower`/`upper` with `NA`). A band with bounds has its risks' sums
+  insured uniform by count between them, with the same loss frequency per
+  risk, so each simulated loss draws its SI uniformly and the band's mean
+  SI is `(L + U) / 2`; that replaces the band's SI in the expected count.
+  The exposure-rated expectations average over the band weighted by sum
+  insured, `∫ s f(s) ds / ∫ s ds` (a risk's expected loss is proportional
+  to its SI), by Gauss–Legendre on 256 pieces. With bounds, the band's
+  given SI is not used: a profile whose total SI over its risks differs
+  from `(L + U) / 2` would need a tilted spread to match both, which is a
+  later option. Tested: a band from 1m to 5m against a 2m surplus cedes
+  3/8 (closed form), where its 3m mean risk cedes 1/3, and simulation
+  agrees within four standard errors.
 
 ## Validation
 
@@ -206,5 +220,5 @@ binomial counts. A unit test checks the layer mean and variance against
 ## Next
 
 1. Pro rata as to time reinstatement premiums, once events carry dates.
-2. Sums insured spread within a band (between its bounds) rather than one
-   representative risk, if profiles call for it.
+2. A spread within a band that matches both its bounds and its total sum
+   insured (a tilted, not uniform, density), if profiles call for it.

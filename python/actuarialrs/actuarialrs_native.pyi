@@ -6818,6 +6818,13 @@ class RiskProfile:
         Premium per band, with ``loss_ratio``.
     loss_ratio : float or list of float, optional
         Expected loss ratio, one for all bands or one per band.
+    lower, upper : list of float or None, optional
+        Bounds of each band's sums insured (``None`` for a band without).
+        A band with bounds spreads its risks' sums insured uniformly between
+        them: its mean ``SI`` is ``(lower + upper) / 2`` (in place of
+        ``sums_insured``), each simulated loss draws its own ``SI`` between
+        the bounds, and the exposure-rated expectations average over the
+        band, weighted by sum insured.
     
     Examples
     --------
@@ -6830,7 +6837,7 @@ class RiskProfile:
     >>> events.has_sums_insured
     True
     """
-    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None) -> RiskProfile: ...
+    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None, lower: Sequence[float |None] |None = None, upper: Sequence[float |None] |None = None) -> RiskProfile: ...
     def __repr__(self, /) -> str: ...
     def expected_claims(self, /) -> list[float]:
         """

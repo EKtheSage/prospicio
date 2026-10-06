@@ -2,6 +2,7 @@
 
 ## 2026-10-06
 
+* **Update**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md): a band spread between bounds cedes on its SI-weighted average, not its mean risk (3/8 against 1/3 in the test), from band bounds in the risk profile.
 * **Update**: [Local checks](/environment/local-checks.md): the roxygen churn is a link-target rewrite, so a real change to those Rd files is kept and only the link restored.
 * **Update**: [R ChainLadder CDR](/references/r-chainladder-cdr.md): what counts as no tail for the one-year view now that the chain ladder fits a `TailFit` (a factor of 1 that replaces no estimated factor), from merging `main` into claude/v02-one-year.
 * **Verification**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md) verified by CI's Rust job on #140 (tabulated-curve and risk-profile tests).
