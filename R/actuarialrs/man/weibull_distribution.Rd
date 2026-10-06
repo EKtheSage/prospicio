@@ -4,10 +4,12 @@
 \alias{weibull_distribution}
 \title{Weibull distribution}
 \usage{
-weibull_distribution(shape, scale)
+weibull_distribution(shape, scale, ptr = NULL)
 }
 \arguments{
 \item{shape, scale}{Finite and positive.}
+
+\item{ptr}{Internal: an existing object to wrap.}
 }
 \value{
 A \code{weibull_distribution} object, which inherits from

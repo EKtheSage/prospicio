@@ -15,7 +15,7 @@ use crate::{to_r, whole};
 /// Lognormal distribution: `ln X ~ Normal(meanlog, sdlog^2)`.
 #[extendr]
 pub(crate) struct Lognormal {
-    inner: act_prob::Lognormal,
+    pub(crate) inner: act_prob::Lognormal,
 }
 
 #[extendr]
@@ -126,6 +126,44 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     Err(Error::Other(format!(
         "expected a distribution ({SEVERITIES}, or a sampled distribution)"
     )))
+}
+
+/// A distribution as a JSON document (`Dist::to_json`).
+#[extendr]
+fn dist_to_json_rust(dist: Robj) -> Result<String> {
+    dist_from_robj(&dist)?.to_json().map_err(to_r)
+}
+
+/// A distribution from a JSON document: `list(family, ptr)`, the pointer
+/// of the family's Rust type for R to wrap in its class.
+#[extendr]
+fn dist_from_json_rust(text: &str) -> Result<List> {
+    use crate::pareto::{
+        GammaDist, GeneralizedPareto, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
+        PiecewisePareto, TweedieDist, WeibullDist,
+    };
+    let d = Dist::from_json(text).map_err(to_r)?;
+    let family = d.family();
+    let ptr: Robj = match d {
+        Dist::Lognormal(inner) => Lognormal { inner }.into(),
+        Dist::Pareto(inner) => Pareto { inner }.into(),
+        Dist::PiecewisePareto(inner) => PiecewisePareto { inner }.into(),
+        Dist::LogAffinePareto(inner) => LogAffinePareto { inner }.into(),
+        Dist::GeneralizedPareto(inner) => GeneralizedPareto { inner }.into(),
+        Dist::Gamma(inner) => GammaDist { inner }.into(),
+        Dist::Tweedie(inner) => TweedieDist { inner }.into(),
+        Dist::Weibull(inner) => WeibullDist { inner }.into(),
+        Dist::Loglogistic(inner) => LoglogisticDist { inner }.into(),
+        Dist::Mixture(inner) => MixtureDist { inner }.into(),
+        Dist::Grid(inner) => Grid::wrap(inner).into(),
+        Dist::Sampled(inner) => Sampled { inner }.into(),
+        Dist::Custom(_) => {
+            return Err(Error::Other(
+                "a custom distribution cannot be loaded".into(),
+            ));
+        }
+    };
+    Ok(list!(family = family, ptr = ptr))
 }
 
 /// The distributions accepted as a severity, for error messages.
@@ -772,4 +810,6 @@ extendr_module! {
     impl Grid;
     impl Sampled;
     impl PredictiveDistribution;
+    fn dist_to_json_rust;
+    fn dist_from_json_rust;
 }

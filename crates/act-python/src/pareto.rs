@@ -653,12 +653,9 @@ severity_class!(PyMixture {
     fn new(components: Vec<(f64, Bound<'_, PyAny>)>) -> PyResult<Self> {
         let parts = components
             .iter()
-            .map(|(w, s)| {
-                let sev = crate::distributions::extract_severity(s)?;
-                Ok((*w, Box::new(sev) as Box<dyn Severity + Send + Sync>))
-            })
+            .map(|(w, s)| Ok((*w, crate::distributions::extract_severity(s)?)))
             .collect::<PyResult<Vec<_>>>()?;
-        let inner = act_prob::Mixture::new(parts).map_err(to_py)?;
+        let inner = act_prob::Mixture::from_dists(parts).map_err(to_py)?;
         Ok(Self {
             inner: std::sync::Arc::new(inner),
         })

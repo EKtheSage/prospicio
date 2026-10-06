@@ -536,12 +536,9 @@ severity_class!(MixtureDist {
         let parts = weights
             .iter()
             .zip(components.values())
-            .map(|(&w, c)| {
-                let sev = crate::distributions::severity_from_robj(&c)?;
-                Ok((w, Box::new(sev) as Box<dyn Severity + Send + Sync>))
-            })
+            .map(|(&w, c)| Ok((w, crate::distributions::severity_from_robj(&c)?)))
             .collect::<Result<Vec<_>>>()?;
-        let inner = act_prob::Mixture::new(parts).map_err(to_r)?;
+        let inner = act_prob::Mixture::from_dists(parts).map_err(to_r)?;
         Ok(Self {
             inner: std::sync::Arc::new(inner),
         })

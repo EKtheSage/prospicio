@@ -2,6 +2,7 @@
 
 ## 2026-10-06
 
+* **Update**: [Local checks](/environment/local-checks.md): the roxygen churn is a link-target rewrite, so a real change to those Rd files is kept and only the link restored.
 * **Update**: [R ChainLadder CDR](/references/r-chainladder-cdr.md): what counts as no tail for the one-year view now that the chain ladder fits a `TailFit` (a factor of 1 that replaces no estimated factor), from merging `main` into claude/v02-one-year.
 * **Verification**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md) verified by CI's Rust job on #140 (tabulated-curve and risk-profile tests).
 * **Verification**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md) verified again by CI's R and Python jobs on #139 (quantile objectives and the dispersion model, both engines).

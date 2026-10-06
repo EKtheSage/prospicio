@@ -4,13 +4,15 @@
 \alias{mixture_distribution}
 \title{Mixture of severities}
 \usage{
-mixture_distribution(weights, components)
+mixture_distribution(weights, components, ptr = NULL)
 }
 \arguments{
 \item{weights}{Positive weights summing to 1.}
 
 \item{components}{A list of severities (\link{lognormal}, \link{gamma_distribution},
 \link{weibull_distribution}, Pareto-family, ...).}
+
+\item{ptr}{Internal: an existing object to wrap.}
 }
 \value{
 A \code{mixture_distribution} object, which inherits from

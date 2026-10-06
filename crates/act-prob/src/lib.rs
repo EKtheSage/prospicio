@@ -34,6 +34,7 @@ pub mod predictive;
 pub mod provenance;
 pub mod risk;
 pub mod sampled;
+pub mod serial;
 pub mod severity;
 pub mod tweedie;
 pub mod weibull;
