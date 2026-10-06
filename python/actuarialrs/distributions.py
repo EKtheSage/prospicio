@@ -21,7 +21,9 @@ from .actuarialrs_native import (
     Tweedie,
     Weibull,
     claim_count,
+    from_json,
     local_pareto_to_piecewise,
+    to_json,
 )
 
 __all__ = [
@@ -45,4 +47,6 @@ __all__ = [
     "DiscretizationReport",
     "Sampled",
     "PredictiveDistribution",
+    "to_json",
+    "from_json",
 ]

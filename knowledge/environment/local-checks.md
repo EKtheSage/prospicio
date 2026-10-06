@@ -4,7 +4,7 @@ title: Local checks in the cloud container and their noise
 description: What runs locally before a push, what cannot, and the generated-file churn cargo xtask r leaves to revert.
 tags: [environment, ci, bindings, r, python]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-05T22:05:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-06T18:30:00Z }
 stale_after: 2027-01-05T00:00:00Z
 sources:
   - id: agents
@@ -26,11 +26,18 @@ sources:
 
 # Noise to revert after `cargo xtask r`
 
-The container's roxygen2 differs from the committed output. Revert:
+The container's roxygen2 and R differ from the committed output. Undo
+only these:
 
-* `R/actuarialrs/DESCRIPTION`;
-* `man/gamma_distribution.Rd`, `man/lognormal.Rd`,
-  `man/weibull_distribution.Rd`;
+* the `RoxygenNote: 7.3.1` line it adds to `R/actuarialrs/DESCRIPTION`
+  (keep a real `Collate` or `Suggests` change);
+* the link targets it rewrites in `man/gamma_distribution.Rd`,
+  `man/lognormal.Rd` and `man/weibull_distribution.Rd`: this R resolves
+  `[stats::dgamma()]` to `\link[stats:GammaDist]`, `dlnorm` to
+  `stats:Lognormal` and `dweibull` to `stats:Weibull`, where the committed
+  files (and CI) have `stats:dgamma`, `stats:dlnorm`, `stats:dweibull`.
+  When one of these files changes for real (a new argument), keep that
+  change and restore only the link; reverting the whole file loses it;
 * `NAMESPACE`'s multi-line `importFrom(stats, aggregate, coef, predict,
   quantile)`, which it splits into four lines.
 

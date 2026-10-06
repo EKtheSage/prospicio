@@ -4,7 +4,7 @@
 \alias{log_affine_pareto}
 \title{Log-affine local Pareto distribution}
 \usage{
-log_affine_pareto(t, alpha0, gamma = NULL, delta = NULL)
+log_affine_pareto(t, alpha0, gamma = NULL, delta = NULL, ptr = NULL)
 }
 \arguments{
 \item{t}{Threshold; finite and positive.}
@@ -14,6 +14,8 @@ log_affine_pareto(t, alpha0, gamma = NULL, delta = NULL)
 \item{gamma}{Non-negative; 0 gives the Pareto.}
 
 \item{delta}{Alternative to \code{gamma}.}
+
+\item{ptr}{Internal: an existing object to wrap.}
 }
 \value{
 A \code{log_affine_pareto} object, which inherits from \link{distribution}.

@@ -8311,6 +8311,26 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     160.0
     """
 
+def from_json(text: str) -> Any:
+    """
+    A distribution from a document written by ``to_json``, as the class of
+    its family.
+    
+    Parameters
+    ----------
+    text : str
+    
+    Returns
+    -------
+    a distribution
+    
+    Raises
+    ------
+    ValueError
+        If the document is malformed, of another format or a newer
+        version, or its parameters are out of range.
+    """
+
 def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     Gini index of the ordered Lorenz curve.
@@ -9070,4 +9090,34 @@ def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], l
     Returns
     -------
     list of (list of int, list of int)
+    """
+
+def to_json(dist: Any) -> str:
+    """
+    A distribution as a JSON document: the family and the parameters its
+    constructor takes, versioned, numbers bit for bit. ``from_json`` reads
+    it back to an equal distribution of the same class.
+    
+    A ``Custom`` cannot be saved: it is a Python function.
+    
+    Parameters
+    ----------
+    dist : a distribution
+        Any distribution class, ``Sampled`` and ``Mixture`` included.
+    
+    Returns
+    -------
+    str
+    
+    Raises
+    ------
+    ValueError
+        For a ``Custom``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Lognormal, from_json, to_json
+    >>> text = to_json(Lognormal(7.0, 0.5))
+    >>> from_json(text).mean() == Lognormal(7.0, 0.5).mean()
+    True
     """

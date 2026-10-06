@@ -203,3 +203,33 @@ def test_marginal_selects_an_origin_period_by_its_label():
     assert by_text is not None and by_int is not None
     assert by_text.draws == by_int.draws
     assert reserves.marginal(("2024",)) is None
+
+
+def test_distributions_save_and_load_as_json():
+    import json
+    import math
+
+    from actuarialrs.distributions import (
+        Custom, Gamma, GeneralizedPareto, Grid, LogAffinePareto, Loglogistic, Lognormal,
+        Mixture, Pareto, PiecewisePareto, Sampled, Tweedie, Weibull, from_json, to_json,
+    )
+
+    dists = [
+        Lognormal(7.0, 0.5), Pareto(1e5, 1.5), Pareto(1e5, 1.5, 1e7),
+        PiecewisePareto([1.0, 10.0, 100.0], [1.2, 1.8, 2.5]), LogAffinePareto(100.0, 1.5, 0.3),
+        GeneralizedPareto(0.25, 3.0), Gamma(2.0, 500.0), Tweedie(1000.0, 2.0, 1.5),
+        Weibull(1.5, 1000.0), Loglogistic(4.0, 900.0),
+        Mixture([(0.7, Lognormal(7.0, 0.5)), (0.3, Pareto(1e5, 2.0))]),
+        Grid(0.5, [0.1, 0.4, 0.3, 0.2]), Sampled([3.0, 1.0, 2.0]),
+    ]
+    for d in dists:
+        text = to_json(d)
+        assert json.loads(text)["format"] == "risk_rs.distribution"
+        back = from_json(text)
+        assert type(back) is type(d)
+        assert to_json(back) == text
+        assert back.mean() == d.mean() or (math.isinf(d.mean()) and math.isinf(back.mean()))
+    with pytest.raises(ValueError, match="cannot be saved"):
+        to_json(Custom(lambda x: 1 - math.exp(-x)))
+    with pytest.raises(ValueError):
+        from_json('{"format": "risk_rs.distribution", "format_version": 1, "family": "gamma", "shape": -1, "scale": 1}')

@@ -39,6 +39,7 @@ distribution <- S7::new_class("distribution", package = "actuarialrs", abstract 
 #'
 #' @param meanlog Mean of `log(X)`; finite.
 #' @param sdlog Standard deviation of `log(X)`; finite and positive.
+#' @param ptr Internal: an existing object to wrap.
 #' @returns A `lognormal` object, which inherits from [distribution].
 #' @seealso [lognormal_from_mean_cv()] to parameterize by mean and CV.
 #' @export
@@ -56,8 +57,8 @@ lognormal <- S7::new_class(
     meanlog = S7::new_property(S7::class_double, getter = function(self) self@ptr$meanlog()),
     sdlog = S7::new_property(S7::class_double, getter = function(self) self@ptr$sdlog())
   ),
-  constructor = function(meanlog, sdlog) {
-    ptr <- rust_result(Lognormal$new(as.double(meanlog), as.double(sdlog)))
+  constructor = function(meanlog, sdlog, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(Lognormal$new(as.double(meanlog), as.double(sdlog)))
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )

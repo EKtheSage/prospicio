@@ -1,6 +1,6 @@
 # Design note: distribution representations
 
-Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`, `Dist` and the bindings on it, `Custom`) · Depends on: nothing · Next: serialization
+Status: **Decided; implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`, `Dist` and the bindings on it, `Custom`, saving and loading) · Depends on: nothing
 
 ## Goal
 
@@ -208,8 +208,22 @@ family; false for a `Custom` built with `parallel_safe = false`, which
 both bindings use, and for a mixture holding one): `simulate_events` and
 copula simulation (`PredictiveDistribution::simulate_with`) then run on
 the calling thread, which for R is its main thread, the only one R may be
-entered from. The draws are identical either way. Not yet:
-serialization.
+entered from. The draws are identical either way.
+
+Done: saving and loading (`act_prob::serial`). `Dist::to_json` writes a
+versioned document (`format: "risk_rs.distribution"`, `format_version:
+1`) with the family and the parameters its constructor takes, numbers
+bit for bit (non-finite ones as `"NaN"`, `"inf"`, `"-inf"`, as the GLM
+artifacts do); `Dist::from_json` rebuilds it through the same validated
+constructor, so a document with out-of-range parameters is refused.
+Every family round-trips to the identical document and bit-identical
+moments and quantiles. A mixture is saved with its components, which
+needs it built by `Mixture::from_dists` (it keeps the components as
+`SeverityDist`s; the bindings now build mixtures this way); a mixture of
+bare trait objects, and a `Custom` (a function in the caller's language),
+are refused with the reason. Python `distributions.to_json(d)` /
+`from_json(text)` (the loaded object has its family's class), R
+`dist_to_json()` / `dist_from_json()`.
 
 ## Sampling
 
