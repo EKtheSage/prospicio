@@ -2489,7 +2489,7 @@ class EventSet:
             If ``sim`` is not a simulated year.
         """
     @staticmethod
-    def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0) -> EventSet:
+    def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0, times: Sequence[Sequence[float]] |None = None) -> EventSet:
         """
         Years of losses from elsewhere (your own simulation, or a
         catastrophe model's event loss table by year), optionally with the
@@ -2503,6 +2503,10 @@ class EventSet:
             The same shape: each loss's sum insured, at least the loss.
         seed : int, default 0
             Recorded in results' provenance.
+        times : list of list of float, optional
+            The same shape: each loss's time, as the fraction of the year
+            elapsed (in ``[0, 1]``, non-decreasing within a year), which
+            reinstatements pro rata as to time need.
         
         Returns
         -------
@@ -2519,6 +2523,11 @@ class EventSet:
     def has_sums_insured(self, /) -> bool:
         """
         Whether the losses carry sums insured.
+        """
+    @property
+    def has_times(self, /) -> bool:
+        """
+        Whether the losses carry times.
         """
     @property
     def n_sims(self, /) -> int:
@@ -2542,6 +2551,18 @@ class EventSet:
         -------
         list of float or None
         """
+    def times(self, /, sim: int) -> list[float] |None:
+        """
+        Year ``sim``'s times, one per loss, or ``None``.
+        
+        Parameters
+        ----------
+        sim : int
+        
+        Returns
+        -------
+        list of float or None
+        """
     def totals(self, /) -> PredictiveDistribution:
         """
         Each year's total loss.
@@ -2549,6 +2570,26 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+    def with_uniform_times(self, /) -> EventSet:
+        """
+        The same events at times spread uniformly over the year.
+        
+        Year ``i``'s losses take sorted uniform draws, in their order, from
+        a stream of the generator keyed by the set's seed apart from the
+        losses' own, so the losses are unchanged and any year replays alone.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0, 7.0]], seed=3).with_uniform_times()
+        >>> t = e.times(0)
+        >>> t == sorted(t) and e.has_times
+        True
         """
 
 @final
@@ -4073,6 +4114,12 @@ class Layer:
         ``premium`` (1.0 is 100%), pro rata as to amount. Sets
         ``aggregate_limit`` to ``limit * (len(reinstatement_rates) + 1)``;
         cannot be combined with ``aggregate_limit`` or ``reinstatements``.
+    pro_rata_time : bool, default False
+        Paid reinstatements also pro rata as to time: the limit a loss at
+        time ``t`` (the fraction of the year elapsed) uses up is charged at
+        ``1 - t``. Needs ``reinstatement_rates``, and events with times
+        (``EventSet.with_uniform_times``, or ``times=`` in
+        ``EventSet.from_years``).
     
     Raises
     ------
@@ -4091,8 +4138,12 @@ class Layer:
     >>> paid = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
     >>> paid.reinstatement_premium([22.0, 12.0])
     2.2
+    >>> timed = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5],
+    ...               pro_rata_time=True)
+    >>> round(timed.reinstatement_premium([22.0, 12.0], times=[0.25, 0.5]), 12)
+    1.6
     """
-    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None) -> Layer: ...
+    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None, pro_rata_time: bool = False) -> Layer: ...
     def __repr__(self, /) -> str: ...
     @property
     def aggregate_deductible(self, /) -> float:
@@ -4177,6 +4228,11 @@ class Layer:
         """
         Upfront premium for the placed share.
         """
+    @property
+    def pro_rata_time(self, /) -> bool:
+        """
+        Whether paid reinstatements are pro rata as to time.
+        """
     @staticmethod
     def quota_share(name: str, cession: float) -> Layer:
         """
@@ -4200,21 +4256,27 @@ class Layer:
         >>> Layer.quota_share("QS", 0.4).ceded([10.0, 5.0])
         6.0
         """
-    def reinstatement_premium(self, /, losses: Sequence[float]) -> float:
+    def reinstatement_premium(self, /, losses: Sequence[float], times: Sequence[float] |None = None) -> float:
         """
         Reinstatement premium for one year's losses.
         
         With layer loss ``L`` at 100% after annual terms, ``premium *
         sum(rate_k * min(max(L - k * limit, 0), limit) / limit)``; zero when
-        reinstatements are free.
+        reinstatements are free. Pro rata as to time, the limit each loss
+        uses up is charged at ``1 - t``, its time's share of the year left.
         
         Parameters
         ----------
         losses : list of float
+            In time order.
+        times : list of float, optional
+            Each loss's time, as the fraction of the year elapsed; needed
+            (and only used) when the layer is pro rata as to time.
         
         Returns
         -------
         float
+            NaN for a layer pro rata as to time without ``times``.
         """
     @property
     def reinstatement_rates(self, /) -> list[float]:

@@ -9,9 +9,12 @@ reinstatement_premium(layer, losses, ...)
 \arguments{
 \item{layer}{An \link{xol_layer}.}
 
-\item{losses}{Numeric vector of one year's losses.}
+\item{losses}{Numeric vector of one year's losses, in time order.}
 
 \item{...}{Unused; for methods.}
+
+\item{times}{For a layer pro rata as to time, each loss's time as the
+fraction of the year elapsed; without them its premium is \code{NaN}.}
 }
 \value{
 A single number.
@@ -19,7 +22,9 @@ A single number.
 \description{
 With layer loss \code{L} at 100\% after annual terms,
 \code{premium * sum(rate_k * min(max(L - k * limit, 0), limit) / limit)} over
-\verb{k = 0, 1, ...}; zero when reinstatements are free.
+\verb{k = 0, 1, ...}; zero when reinstatements are free. Pro rata as to time,
+the limit each loss uses up is charged at \code{1 - t}, its time's share of the
+year left.
 }
 \examples{
 l <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
