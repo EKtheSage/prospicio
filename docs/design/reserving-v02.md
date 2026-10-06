@@ -141,8 +141,12 @@ As implemented (`crates/act-reserving/src/expected_loss.rs`, parity in
 * Python: `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and `CapeCod`
   take the settings above plus `average`, `sigma_interpolation` and `tail`
   for the chain ladder, and `fit(triangle, column, exposure)` fits every
-  segment, returning `ExpectedLossFit` or `CapeCodFit`. R bindings follow
-  in a later PR.
+  segment, returning `ExpectedLossFit` or `CapeCodFit`.
+* R: `expected_loss()`, `bornhuetter_ferguson()`, `benktander()` and
+  `cape_cod()` take `(triangle, column, exposure, ...)` with the same
+  settings and return an `expected_loss_fit` or `cape_cod_fit` with the
+  properties of the Python fits; `as.data.frame()`, `totals_frame()`,
+  `development_frame()` and `segment()` work on both.
 
 ### 3. Tails
 
