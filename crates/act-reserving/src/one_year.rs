@@ -142,9 +142,9 @@ impl MackFit {
                 diagonal / (volume[k] + diagonal)
             })
             .collect();
-        // Product of (1 - share_i) over the `years` factors ending at k
-        // (R's `y`): how much of the estimate of factor k the diagonals
-        // before the CDR's year leave to be revised.
+        // Product of (1 - share_i) for i in k + 1 - years ..= k (R's `y`):
+        // the factors' estimates are diluted by each diagonal observed
+        // before the CDR's year.
         let kept = |k: usize, years: usize| -> f64 {
             (k + 1 - years..=k).map(|i| 1.0 - share[i]).product()
         };
