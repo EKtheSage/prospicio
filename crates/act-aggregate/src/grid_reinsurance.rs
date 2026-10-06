@@ -87,6 +87,13 @@ impl Tower {
     ) -> Result<TowerGrids> {
         let stages = self.stage_ranges();
         let (last_start, last_end) = *stages.last().expect("a tower has a layer");
+        if let Some(l) = self.layers.iter().find(|l| l.needs_sums_insured()) {
+            return Err(Error::Data(format!(
+                "layer {:?} is a surplus treaty, which works risk by risk; a compound \
+                 distribution has no sums insured: use Tower::apply on events from a risk profile",
+                l.name
+            )));
+        }
         for &(start, end) in &stages[..stages.len() - 1] {
             if let Some(l) = self.layers[start..end].iter().find(|l| has_annual_terms(l)) {
                 return Err(Error::InvalidParameter {

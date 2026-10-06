@@ -12,7 +12,13 @@
 //!   curves `c = 1.5, 2, 3, 4` (and Lloyd's `c = 5`) as
 //!   [`Mbbefd::swiss_re`].
 //! - [`SeverityCurve`]: the exposure curve of any [`Severity`] capped at
-//!   an MPL, `LEV(x M) / LEV(M)`.
+//!   an MPL, `LEV(x M) / LEV(M)` (a Pareto gives Riebesell's scale).
+//! - [`TabulatedCurve`]: a published table of `(x, G(x))` points (Salzmann,
+//!   Ludwig, ISO PSOLD, a reinsurer's curves), interpolated linearly.
+//!
+//! Every curve is also a destruction-rate distribution: the survival is
+//! `G'(x) / G'(0)`, so [`ExposureCurve::rate_quantile`] draws the loss as a
+//! share of the MPL and [`ExposureCurve::mean_rate`] is `1 / G'(0)`.
 //!
 //! Bernegger, S. (1997). The Swiss Re exposure curves and the MBBEFD
 //! distribution class. ASTIN Bulletin 27(1), 99–111.
@@ -25,6 +31,16 @@ use act_prob::Severity;
 pub trait ExposureCurve {
     /// `G(x)`; `x` is clamped to `[0, 1]`.
     fn g(&self, x: f64) -> f64;
+
+    /// The destruction rate (loss over MPL, in `[0, 1]`) at probability
+    /// `u` in `(0, 1)`: the quantile of the distribution whose survival is
+    /// `G'(x) / G'(0)`. Simulating `mpl × rate_quantile(u)` gives losses
+    /// whose expected layer shares are this curve's.
+    fn rate_quantile(&self, u: f64) -> f64;
+
+    /// Mean destruction rate, `1 / G'(0)`: a risk's expected loss is its
+    /// MPL times this.
+    fn mean_rate(&self) -> f64;
 
     /// Share of a risk's expected loss in the layer `limit` xs
     /// `attachment`, for a risk with maximum possible loss `mpl`.
@@ -180,6 +196,26 @@ enum Case {
 }
 
 impl ExposureCurve for Mbbefd {
+    fn rate_quantile(&self, u: f64) -> f64 {
+        let (b, g) = (self.b, self.g);
+        if u >= 1.0 - 1.0 / g {
+            return 1.0;
+        }
+        let x = match self.case() {
+            Case::Linear => 1.0,
+            Case::BOne => (1.0 / (1.0 - u) - 1.0) / (g - 1.0),
+            Case::BgOne => (1.0 - u).ln() / b.ln(),
+            Case::General => {
+                1.0 - (((1.0 - b) / (1.0 - u) - 1.0 + g * b) / (g - 1.0)).ln() / b.ln()
+            }
+        };
+        x.clamp(0.0, 1.0)
+    }
+
+    fn mean_rate(&self) -> f64 {
+        self.mean()
+    }
+
     fn g(&self, x: f64) -> f64 {
         let x = x.clamp(0.0, 1.0);
         let (b, g) = (self.b, self.g);
@@ -234,6 +270,132 @@ impl<'a, S: Severity + ?Sized> SeverityCurve<'a, S> {
 impl<S: Severity + ?Sized> ExposureCurve for SeverityCurve<'_, S> {
     fn g(&self, x: f64) -> f64 {
         self.severity.lev(x.clamp(0.0, 1.0) * self.mpl) / self.lev_mpl
+    }
+
+    /// `min(q(u), mpl) / mpl` for the severity's quantile `q`.
+    fn rate_quantile(&self, u: f64) -> f64 {
+        let q = self.severity.quantile(u).unwrap_or(f64::NAN);
+        (q / self.mpl).min(1.0)
+    }
+
+    fn mean_rate(&self) -> f64 {
+        self.lev_mpl / self.mpl
+    }
+}
+
+/// A tabulated exposure curve: points `(x, G(x))` from `(0, 0)` to
+/// `(1, 1)`, interpolated linearly, as published curves are given
+/// (Salzmann's homeowners scale, Ludwig's, ISO PSOLD tables, the
+/// reinsurers' own).
+///
+/// The table must be concave (slopes that never increase), as every
+/// exposure curve is. Linear interpolation keeps it so, and makes the
+/// destruction rate discrete: it takes the value `xₖ` with probability
+/// `(sₖ − sₖ₊₁)/s₁` for the slopes `s`, and a total loss with probability
+/// `sₙ/s₁`. Its mean rate is `x₁ / G(x₁)`, the first chord's: a curve is
+/// steepest near 0, so a table needs fine first points for the expected
+/// loss of a risk (MPL × mean rate) to be right.
+///
+/// ```
+/// use act_pricing::exposure::{ExposureCurve, TabulatedCurve};
+///
+/// let t = TabulatedCurve::new(&[0.0, 0.1, 0.5, 1.0], &[0.0, 0.4, 0.8, 1.0]).unwrap();
+/// assert!((t.g(0.3) - 0.6).abs() < 1e-15);
+/// // Slopes 4, 1, 0.4: a total loss with probability 0.4 / 4.
+/// assert_eq!(t.rate_quantile(0.95), 1.0);
+/// assert!((t.mean_rate() - 0.25).abs() < 1e-15);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabulatedCurve {
+    x: Vec<f64>,
+    g: Vec<f64>,
+    /// `F(xₖ)` at each point after the first: `1 − s_{k+1}/s₁` at interior
+    /// points, 1 at `x = 1`.
+    cdf: Vec<f64>,
+}
+
+impl TabulatedCurve {
+    /// The curve through the points; `x` increases from 0 to 1 and `g`
+    /// from 0 to 1 (both ends within 1e-9), concave.
+    pub fn new(x: &[f64], g: &[f64]) -> Result<Self> {
+        if x.len() != g.len() || x.len() < 2 {
+            return Err(Error::Data(
+                "a tabulated curve needs at least two points, as many x as g".into(),
+            ));
+        }
+        let n = x.len();
+        if x[0].abs() > 1e-9 || (x[n - 1] - 1.0).abs() > 1e-9 {
+            return Err(invalid("x", x[0], "must run from 0 to 1"));
+        }
+        if g[0].abs() > 1e-9 || (g[n - 1] - 1.0).abs() > 1e-9 {
+            return Err(invalid("g", g[0], "must run from G(0) = 0 to G(1) = 1"));
+        }
+        let mut slopes = Vec::with_capacity(n - 1);
+        for k in 1..n {
+            let dx = x[k] - x[k - 1];
+            if dx.is_nan() || dx <= 0.0 {
+                return Err(invalid("x", x[k], "must increase strictly"));
+            }
+            let s = (g[k] - g[k - 1]) / dx;
+            if s.is_nan() || s < 0.0 {
+                return Err(invalid("g", g[k], "must not decrease"));
+            }
+            if let Some(&prev) = slopes.last()
+                && s > prev * (1.0 + 1e-9) + 1e-12
+            {
+                return Err(invalid(
+                    "g",
+                    g[k],
+                    "must be concave: its slopes may not increase",
+                ));
+            }
+            slopes.push(s);
+        }
+        let s1 = slopes[0];
+        let cdf = slopes[1..]
+            .iter()
+            .map(|s| 1.0 - s / s1)
+            .chain(std::iter::once(1.0))
+            .collect();
+        let mut x = x.to_vec();
+        let mut g = g.to_vec();
+        x[0] = 0.0;
+        g[0] = 0.0;
+        x[n - 1] = 1.0;
+        g[n - 1] = 1.0;
+        Ok(Self { x, g, cdf })
+    }
+
+    /// The points' `x`.
+    pub fn x(&self) -> &[f64] {
+        &self.x
+    }
+
+    /// The points' `G(x)`.
+    pub fn g_values(&self) -> &[f64] {
+        &self.g
+    }
+}
+
+impl ExposureCurve for TabulatedCurve {
+    fn g(&self, x: f64) -> f64 {
+        let x = x.clamp(0.0, 1.0);
+        let k = self
+            .x
+            .partition_point(|&p| p < x)
+            .clamp(1, self.x.len() - 1);
+        let (x0, x1, g0, g1) = (self.x[k - 1], self.x[k], self.g[k - 1], self.g[k]);
+        g0 + (g1 - g0) * (x - x0) / (x1 - x0)
+    }
+
+    /// The smallest point `xₖ` (k ≥ 1) with `F(xₖ) ≥ u`.
+    fn rate_quantile(&self, u: f64) -> f64 {
+        let k = self.cdf.partition_point(|&f| f < u);
+        self.x[(k + 1).min(self.x.len() - 1)]
+    }
+
+    fn mean_rate(&self) -> f64 {
+        (self.x[1] - self.x[0]) / (self.g[1] - self.g[0])
     }
 }
 
@@ -308,6 +470,65 @@ mod tests {
         let line = Mbbefd::swiss_re(0.0).unwrap();
         assert_eq!(line.g(0.3), 0.3);
         assert_eq!(line.total_loss_probability(), 1.0);
+    }
+
+    /// Draws' mean of `min(D, x)` over the curve's `mean_rate` must be
+    /// `G(x)`: the sampled destruction rate has this exposure curve.
+    fn check_sampling(c: &dyn ExposureCurve) {
+        let n = 200_000;
+        let draws: Vec<f64> = (0..n)
+            .map(|i| c.rate_quantile((i as f64 + 0.5) / n as f64))
+            .collect();
+        let mean: f64 = draws.iter().sum::<f64>() / n as f64;
+        assert!(
+            (mean / c.mean_rate() - 1.0).abs() < 1e-3,
+            "{mean} vs {}",
+            c.mean_rate()
+        );
+        for x in [0.05, 0.3, 0.7] {
+            let lev = draws.iter().map(|d| d.min(x)).sum::<f64>() / n as f64;
+            assert!((lev / c.mean_rate() - c.g(x)).abs() < 2e-3, "at {x}");
+        }
+    }
+
+    #[test]
+    fn every_curve_is_a_destruction_rate_distribution() {
+        for c in [0.0, 1.5, 3.0, 5.0] {
+            check_sampling(&Mbbefd::swiss_re(c).unwrap());
+        }
+        check_sampling(&Mbbefd::new(1.0, 7.0).unwrap());
+        check_sampling(&Mbbefd::new(0.25, 4.0).unwrap());
+        let sev = act_prob::Lognormal::from_mean_cv(2e5, 2.0).unwrap();
+        check_sampling(&SeverityCurve::new(&sev, 1e6).unwrap());
+        let t = TabulatedCurve::new(&[0.0, 0.1, 0.5, 1.0], &[0.0, 0.4, 0.8, 1.0]).unwrap();
+        check_sampling(&t);
+        // P(D = 0.1) = (4 − 1)/4, P(D = 0.5) = (1 − 0.4)/4, P(D = 1) = 0.4/4.
+        assert_eq!(t.rate_quantile(0.75), 0.1);
+        assert_eq!(t.rate_quantile(0.76), 0.5);
+        assert_eq!(t.rate_quantile(0.9), 0.5);
+        assert_eq!(t.rate_quantile(0.91), 1.0);
+    }
+
+    #[test]
+    fn tabulated_curves_are_checked() {
+        let t = TabulatedCurve::new(&[0.0, 0.5, 1.0], &[0.0, 0.7, 1.0]).unwrap();
+        assert!((t.g(0.25) - 0.35).abs() < 1e-15);
+        assert_eq!(t.g(2.0), 1.0);
+        assert!(TabulatedCurve::new(&[0.0, 0.5, 1.0], &[0.0, 0.3, 1.0]).is_err()); // convex
+        assert!(TabulatedCurve::new(&[0.0, 0.5, 1.0], &[0.0, 0.7, 0.9]).is_err()); // G(1) ≠ 1
+        assert!(TabulatedCurve::new(&[0.1, 0.5, 1.0], &[0.0, 0.7, 1.0]).is_err());
+        assert!(TabulatedCurve::new(&[0.0, 0.5, 0.5, 1.0], &[0.0, 0.7, 0.7, 1.0]).is_err());
+        assert!(TabulatedCurve::new(&[0.0, 1.0], &[0.0]).is_err());
+        // A Swiss Re curve tabulated finely matches the curve.
+        let m = Mbbefd::swiss_re(3.0).unwrap();
+        let xs: Vec<f64> = (0..=1000).map(|i| i as f64 / 1000.0).collect();
+        let gs: Vec<f64> = xs.iter().map(|&x| m.g(x)).collect();
+        let t = TabulatedCurve::new(&xs, &gs).unwrap();
+        assert!((t.g(0.3333) - m.g(0.3333)).abs() < 1e-6);
+        // The table's mean rate is its first chord's, 0.001 / G(0.001):
+        // the curve is steep near 0, so a table needs fine first points.
+        assert!((t.mean_rate() - 0.001 / m.g(0.001)).abs() < 1e-15);
+        assert!(t.mean_rate() > m.mean_rate());
     }
 
     #[test]

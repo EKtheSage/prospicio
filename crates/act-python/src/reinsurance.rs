@@ -120,6 +120,65 @@ impl PyLayer {
         Ok(Self { inner })
     }
 
+    /// A surplus treaty: each risk cedes the part of its sum insured above
+    /// the retention line ``retention``, up to ``lines`` lines, and the
+    /// same share of every loss on it.
+    ///
+    /// With a retention of 1m and 9 lines (a capacity of 9m), a 5m risk
+    /// cedes 80% and a 20m risk 45%. The events must carry sums insured
+    /// (``EventSet.from_years(..., sums_insured=...)``); it can inure to a
+    /// per-risk excess of loss in a later stage of a ``Tower``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// retention : float
+    ///     The retention line; positive.
+    /// lines : float
+    ///     Number of lines of capacity; positive.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reinsurance import Layer
+    /// >>> s = Layer.surplus("surplus", 1e6, 9.0)
+    /// >>> round(s.ceded_with_sums_insured([2e6, 2e6], [5e6, 20e6]))
+    /// 2500000
+    #[staticmethod]
+    fn surplus(name: String, retention: f64, lines: f64) -> PyResult<Self> {
+        let inner = Layer::surplus(name, retention, lines).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Ceded loss for one year's losses on risks with the given sums
+    /// insured, one per loss.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : list of float
+    /// sums_insured : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn ceded_with_sums_insured(&self, losses: Vec<f64>, sums_insured: Vec<f64>) -> PyResult<f64> {
+        if losses.len() != sums_insured.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "give one sum insured per loss",
+            ));
+        }
+        Ok(self.inner.ceded_with_sums_insured(&losses, &sums_insured))
+    }
+
+    /// Whether the layer is a surplus treaty, which needs sums insured.
+    #[getter]
+    fn needs_sums_insured(&self) -> bool {
+        self.inner.needs_sums_insured()
+    }
+
     /// An aggregate stop-loss: ``limit`` xs ``retention`` on the year's total.
     ///
     /// Covers the total of the losses it sees: gross, or net of earlier

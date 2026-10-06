@@ -70,6 +70,22 @@ impl XolLayer {
         Ok(Self { inner })
     }
 
+    fn surplus(name: &str, retention: f64, lines: f64) -> Result<Self> {
+        let inner = Layer::surplus(name, retention, lines).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn ceded_with_sums_insured(&self, losses: &[f64], sums_insured: &[f64]) -> Result<f64> {
+        if losses.len() != sums_insured.len() {
+            return Err(Error::Other("give one sum insured per loss".into()));
+        }
+        Ok(self.inner.ceded_with_sums_insured(losses, sums_insured))
+    }
+
+    fn needs_sums_insured(&self) -> bool {
+        self.inner.needs_sums_insured()
+    }
+
     fn name(&self) -> String {
         self.inner.name.clone()
     }

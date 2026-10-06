@@ -6,6 +6,7 @@
 \alias{exposure_curve}
 \alias{exposure_layer_share}
 \alias{severity_exposure_curve}
+\alias{rate_quantile}
 \title{MBBEFD exposure curves}
 \usage{
 mbbefd(b, g, ptr = NULL)
@@ -17,13 +18,15 @@ exposure_curve(curve, x)
 exposure_layer_share(curve, limit, attachment, mpl)
 
 severity_exposure_curve(severity, mpl, x)
+
+rate_quantile(curve, u)
 }
 \arguments{
 \item{b, g}{MBBEFD parameters, \code{b >= 0}, \code{g >= 1}.}
 
 \item{c}{Swiss Re curve parameter, non-negative (0 is the straight line).}
 
-\item{curve}{An \code{mbbefd} object.}
+\item{curve}{An \code{mbbefd} or \link{tabulated_curve} object.}
 
 \item{x}{Fractions of the MPL.}
 
@@ -33,6 +36,8 @@ severity_exposure_curve(severity, mpl, x)
 
 \item{severity}{A severity: \link{lognormal}, \link{grid_distribution} or a
 Pareto-family distribution.}
+
+\item{u}{Probabilities in \verb{(0, 1)}.}
 }
 \value{
 \code{mbbefd()} and \code{swiss_re_curve()}: an \code{mbbefd} object with

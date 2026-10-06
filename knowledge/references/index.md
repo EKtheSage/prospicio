@@ -9,3 +9,4 @@
 * [LightGBM and XGBoost](lightgbm-xgboost.md) - The engines behind actuarialrs.boosting; how offsets, starting scores and precision behave, and which wheels to install.
 * [MBBEFD exposure curves](mbbefd.md) - The MBBEFD class behind act_pricing::exposure; its four closed-form cases, the Swiss Re c curves, and numerical points found while building it.
 * [chainladder-python expected-loss estimators](chainladder-python-expected-loss.md) - chainladder-python 0.10.1's ExpectedLoss, BornhuetterFerguson, Benktander and CapeCod, the reference for act_reserving's expected-loss family; how its arithmetic and Cape Cod trend work.
+* [Property exposure curves beyond MBBEFD](property-exposure-curves.md) - First-loss scales, PSOLD, Lloyd's and reinsurer curves, and how act_pricing::exposure covers them with MBBEFD, tabulated and severity curves.

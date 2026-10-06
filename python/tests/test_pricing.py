@@ -80,3 +80,53 @@ def test_risk_loaded_prices():
         P.price(pd, assets)
     with pytest.raises(ValueError):
         P.price(pd, assets, distortion=R.Distortion.tvar(0.9))
+
+
+def test_tabulated_curve_and_destruction_rates():
+    from actuarialrs.pricing import Mbbefd, TabulatedCurve
+
+    t = TabulatedCurve([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0])
+    assert t.curve([0.3])[0] == pytest.approx(0.6, abs=1e-15)
+    assert t.mean_rate() == pytest.approx(0.25)
+    # Atoms at 0.1, 0.5 and 1 with probabilities 0.75, 0.15, 0.1.
+    assert t.rate_quantile([0.75, 0.76, 0.91]) == [0.1, 0.5, 1.0]
+    assert t.layer_share(5e6, 5e6, 10e6) == pytest.approx(0.2)
+    with pytest.raises(ValueError):
+        TabulatedCurve([0.0, 0.5, 1.0], [0.0, 0.3, 1.0])  # convex
+    # MBBEFD rate quantiles reproduce the curve's mean.
+    c3 = Mbbefd.swiss_re(3.0)
+    n = 100_000
+    rates = c3.rate_quantile([(i + 0.5) / n for i in range(n)])
+    assert sum(rates) / n == pytest.approx(c3.mean(), rel=1e-3)
+    import pickle
+    assert pickle.loads(pickle.dumps(t)).x == t.x
+
+
+def test_risk_profile_simulation_matches_exposure_rating():
+    from actuarialrs.pricing import Mbbefd, RiskProfile, TabulatedCurve
+    from actuarialrs.reinsurance import Layer, Tower
+
+    curves = [Mbbefd.swiss_re(2.0), Mbbefd.swiss_re(3.0),
+              TabulatedCurve([0.0, 0.02, 0.2, 1.0], [0.0, 0.3, 0.8, 1.0])]
+    p = RiskProfile([0.5e6, 3e6, 20e6], [2000, 300, 20], curves,
+                    expected_losses=[0.6e6, 0.5e6, 0.4e6])
+    assert p.expected_loss() == pytest.approx(1.5e6)
+    events = p.simulate(50_000, 11)
+    tower = Tower.inuring([[Layer.surplus("surplus", 1e6, 5.0)], [Layer("xl", 1e6, 0.5e6)]])
+    pd = tower.apply(events)
+    n = 50_000
+    for key, want in [(("ceded", "surplus"), p.expected_surplus_loss(1e6, 5.0)),
+                      (("ceded", "xl"), p.expected_layer_loss(1e6, 0.5e6, 1e6, 5.0))]:
+        m = pd.marginal(key)
+        assert abs(m.mean() - want) < 4 * m.variance() ** 0.5 / n ** 0.5, key
+    # Premium times loss ratio; one curve for all bands.
+    q = RiskProfile([1e6, 10e6], [800, 50], Mbbefd.swiss_re(3.0), premiums=[2e6, 1e6],
+                    loss_ratio=[0.6, 0.5])
+    assert q.expected_loss() == pytest.approx(1.7e6)
+    assert q.expected_layer_loss(math.inf, 0.0) == pytest.approx(1.7e6)
+    with pytest.raises(ValueError):
+        RiskProfile([1e6], [1], Mbbefd.swiss_re(3.0), premiums=[1.0])
+    with pytest.raises(ValueError):
+        RiskProfile([1e6], [1], Mbbefd.swiss_re(3.0), expected_losses=[1.0], premiums=[1.0])
+    with pytest.raises(TypeError):
+        RiskProfile([1e6], [1], "curve", expected_losses=[1.0])

@@ -52,10 +52,10 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::pricing::{
-        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyTowerModel,
-        alpha_between_frequencies, alpha_between_frequency_and_layer, alpha_between_layers,
-        fit_pml_curve, fit_references, ilf, loss_elimination_ratio, match_tower,
-        pareto_extrapolation, price, price_portfolio, severity_exposure_curve,
+        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyRiskProfile, PyTabulatedCurve,
+        PyTowerModel, alpha_between_frequencies, alpha_between_frequency_and_layer,
+        alpha_between_layers, fit_pml_curve, fit_references, ilf, loss_elimination_ratio,
+        match_tower, pareto_extrapolation, price, price_portfolio, severity_exposure_curve,
     };
     #[pymodule_export]
     use super::reinsurance::{PyLayer, PyTower, PyTowerGrids};
