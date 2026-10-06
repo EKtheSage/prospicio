@@ -472,15 +472,30 @@ Per simulation, on its own `StreamRng` stream:
    the volume-weighted factors, as the ODP bootstrap does (parameter
    error).
 2. Simulate the next calendar diagonal: each origin's next incremental has
-   mean `C_latest * (f*_k - 1)` and the bootstrap's process error with
-   scale `phi`. An origin already at the triangle's last age gets no new
-   cell.
-3. Append that diagonal to the observed triangle (exposure columns carry
-   each origin's latest value forward) and refit `method` on it. Cape Cod
-   trends to the valuation one development period later.
+   mean `C*_latest * (f*_k - 1)`, from the pseudo triangle's latest value
+   `C*_latest`, and the bootstrap's process error with scale `phi`. That
+   is how the lifetime ODP bootstrap projects (England 2002), and the
+   pseudo latest value carries the estimation error of the origin's level,
+   part of the ODP's parameter error: projecting from the observed latest
+   value would leave it out (RAA's total standard deviation 30% lower). So
+   an origin with one cell left has a one-year view distributed as its
+   lifetime bootstrap reserve. An origin already at the triangle's last
+   age gets no new cell.
+3. Add each increment to the origin's observed latest value, append that
+   diagonal to the observed triangle (exposure columns carry each origin's
+   latest value forward) and refit `method` on it. Cape Cod trends to the
+   valuation a year later.
 4. `CDR_i = U0_i - U1_i`, the opening ultimate less the re-estimated one,
    which equals the opening reserve less the year's simulated payment and
    the closing reserve.
+
+The development grain must be a year, so that one development period is
+the coming year (a quarterly triangle would otherwise give a one-quarter
+CDR), and every origin short of the last age must have its latest value on
+its segment's latest diagonal (segments may end on different diagonals),
+so that its next cell is in the coming year; anything else is
+`Error::Bootstrap`. Simulating several cells per origin within the year,
+or catching up a lagging origin, is left for later.
 
 The CDR is joint across origins (and segments), so its quantiles, VaR and
 TVaR come from `PredictiveDistribution`. A new origin period written in the
@@ -493,30 +508,41 @@ the end, and the call returns `Error::OneYear { failed, n_sims, source }`
 with the number that failed and, as `source`, the failure whose message
 sorts first, so the error does not depend on the threads.
 
-Check: for the volume-weighted chain ladder without a tail, the standard
-deviation of the simulated CDR is compared with the Merz–Wüthrich one-year
-standard error on RAA, GenIns and ABC. They differ by the process model,
-not by the re-reserving: the ODP's variance is `phi` times the mean, Mack's
-`sigma_k^2` times the cumulative value. The ratio is measured per origin
-(0.30 to 5.95) and in total (RAA 0.46, GenIns 1.02, ABC 0.97), recorded in
-`knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`, and the
-validation test holds each standard deviation to R's value times that
-ratio within five Monte Carlo standard errors. Re-reserving with Mack's
-own bootstrap reproduces Merz–Wüthrich within 0.2%, which is what England,
-Verrall and Wüthrich (2019) publish: their simulated one-year view (Table
-4) bootstraps Mack's model (their Appendix 1), not the ODP, so it is not a
-reference for this method. Their analytic Table 2 (Mack and Merz–Wüthrich
-on Taylor–Ashe, Mack's rule for the last sigma) is checked instead. The
-origin with one cell left has a one-year view equal to its run-off, so its
-standard deviation matches R `BootChainLadder`'s for that origin. A
-triangle that lies exactly on its chain-ladder pattern has scale zero and a
-CDR of zero in every simulation.
+Checks. No published one-year standard deviation of the ODP bootstrap
+was found, so the independent checks are these:
+
+* The origin with one cell left has a one-year view equal to its run-off,
+  so its standard deviation matches R `BootChainLadder`'s for that origin
+  within the Monte Carlo tolerance (RAA, GenIns, ABC), and every other
+  origin's is below its lifetime one.
+* The re-reserving (append the diagonal, refit, `U0 - U1`) is checked with
+  Mack's process instead of the ODP's: England, Verrall and Wüthrich's
+  (2019) bootstrap of Mack's model (their Appendix 1), fed through the
+  same re-reserving in a unit test, reproduces Merz–Wüthrich on GenIns per
+  origin and in total within five Monte Carlo standard errors (measured
+  within 0.6%). Their simulated one-year view (Table 4) bootstraps Mack's
+  model, not the ODP, so it is not a reference for this method; their
+  analytic Table 2 (Mack and Merz–Wüthrich on Taylor–Ashe, Mack's rule for
+  the last sigma) is checked.
+* A triangle that lies exactly on its chain-ladder pattern has scale zero
+  and a CDR of zero in every simulation.
+
+On the volume-weighted chain ladder the ODP's standard deviation is not
+Merz–Wüthrich's: the ODP's variance is `phi` times the mean, Mack's
+`sigma_k^2` times the cumulative value. The ratio, per origin 0.50 to 5.98
+and in total RAA 0.61, GenIns 1.36, ABC 1.13, is recorded in
+`knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`, and a
+seed-pinned regression test holds each standard deviation to R's value
+times that ratio within five Monte Carlo standard errors. It pins this
+implementation's output; it is not a check against Merz–Wüthrich.
 
 Bindings: Python `OdpBootstrap.one_year(triangle, column, method,
 exposure=None)`, `method` a `ChainLadder`, `ExpectedLoss`,
 `BornhuetterFerguson`, `Benktander` or `CapeCod` (exposure required for the
 last four), returns a `OneYearFit` over every segment, with `cdr` the
-`PredictiveDistribution`. R has no method objects (its fitting functions
+`PredictiveDistribution`, the bootstrap's `development`, `fitted`,
+`residuals` and `scale`, and `to_frame()`, `totals_frame()`,
+`development_frame()` and `segment()` as the other fits. R has no method objects (its fitting functions
 fit at once), so the method is named by a string, next to
 `odp_bootstrap()`: `odp_one_year(triangle, column = NULL, method =
 c("chain_ladder", "expected_loss", "bornhuetter_ferguson", "benktander",
