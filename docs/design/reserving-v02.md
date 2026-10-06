@@ -145,12 +145,34 @@ pub struct ClaimsDevelopmentResult {
     pub by_calendar_year: Vec<Vec<f64>>,         // [year][origin], R dev = "all"
     pub total_by_calendar_year: Vec<f64>,
 }
+
+impl ClaimsDevelopmentResult {
+    pub fn run_off_standard_error(&self) -> Vec<f64>;   // sqrt of summed yearly MSEPs
+    pub fn total_run_off_standard_error(&self) -> f64;
+}
 ```
 
 Merz and Wüthrich's formulas assume volume-weighted factors and no tail, so
-any other `alpha` or a tail other than 1 is an error. R reports Mack's
-ultimate standard error beside the full run-off; the parity test checks
-both.
+any other `alpha` or a tail other than 1 is an error (R only warns for
+`alpha != 1`). They also assume a full trapezoid, the latest values on one
+calendar diagonal with one new origin per period, as R reads it
+positionally; any other shape is an error. The formulas need the volume
+`S_k` behind each factor, so `DevelopmentFit` gains `volume: Vec<f64>`
+(`sum(C[k]^alpha)` over the link pairs).
+
+`by_calendar_year` has one year per age-to-age factor. R reports one per
+age, so its last year, `CDR(n)S.E.`, is past the run-off and always zero;
+the parity test reads it as zero. R's `Mack.S.E.` column is the square
+root of the summed yearly MSEPs, which equals Mack's ultimate standard
+error; the parity test checks it against both `MackFit::standard_error`
+and `run_off_standard_error`.
+
+Data: `validation/data/mw2008.csv` and `mw2014.csv` are R ChainLadder's
+`MW2008` and `MW2014`, origins relabelled from 2001. The paper's Table 4
+totals (reserves 2,237,826, one-year 81,080, Mack 108,401) are unit tests;
+its two oldest open origins differ from R in the fourth digit
+(`knowledge/references/r-chainladder-cdr.md`). R bindings follow in a
+later PR.
 
 ### 5. Clark's growth curves
 
