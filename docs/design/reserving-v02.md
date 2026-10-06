@@ -67,6 +67,15 @@ fitted, matching chainladder-python's use of `sample_weight.latest_diagonal`.
 An origin with no observed, finite, positive exposure is an error that names
 the origin. `fit_segments` reads each segment's own exposure.
 
+As implemented: the value read is the latest *cumulative* value, since
+segments are read cumulatively (an incremental triangle's exposure is
+cumulated like its losses, so a premium repeated on every age of an
+incremental triangle counts once per age; chainladder-python's
+`premium.latest_diagonal` reads the last increment). Origins are matched by position in the
+triangle, so the exposure column may observe more origins or ages than the
+losses. The error is `Error::InvalidExposure { column, origin }`; an
+unknown exposure column is `Error::UnknownColumn`.
+
 ### 2. The expected-loss family
 
 ```rust
@@ -106,6 +115,48 @@ trended apriori before detrending (chainladder-python's `apriori_`).
 `ReserveFit` gains `fn ultimate(&self) -> &[f64]`, defaulting to the chain
 ladder's, and the long tables use it, so `SegmentFits` of any method report
 that method's ultimate and reserve.
+
+As implemented (`crates/act-reserving/src/expected_loss.rs`, parity in
+`validation/tests/reserving_expected_loss.rs`, every row of
+`reserving_expected_loss_python.csv` to 1e-9 relative):
+
+* Defaults follow chainladder-python: `apriori = 1`, `n_iters = 1`,
+  `trend = 0`, `decay = 1`. `apriori` must be finite and positive, `trend`
+  finite and above -1, `decay` in `[0, 1]`; otherwise
+  `Error::InvalidSetting { name, value, expected }`. chainladder-python
+  checks none of these.
+* Cape Cod's trend factor is `(1 + trend)^(m / 12)`, `m` the months from the
+  last month of the origin period to the triangle's valuation (at least 0),
+  as chainladder-python's `Triangle.trend(axis="origin")`; in `fit_segments`
+  every segment trends to the whole triangle's valuation. The ultimates do
+  not depend on that choice, since each origin is detrended by its own
+  factor. The decay weight uses the distance between origin positions.
+* `CapeCodFit` is `{ expected_loss: ExpectedLossFit, trended_apriori:
+  Vec<f64> }`; `ExpectedLossFit::apriori` holds the detrended apriori
+  (chainladder-python's `detrended_apriori_`). chainladder-python's
+  `CapeCod(n_iters)` is not offered; ours is its default, `n_iters = 1`.
+* Benktander uses chainladder-python's closed form
+  `sum(p^k, k < n) latest + p^n U0`, `p = 1 - q`, with `p^n` and the sum
+  built by repeated squaring, so a huge `n_iters` is cheap. Stepping one at
+  a time is not: with negative development (`cdf < 1`, so `p < 0`) the
+  floating-point steps can end in a two-cycle and never stop. Where
+  `cdf < 1/2`, `|p| > 1` and the ultimate diverges as `n_iters` grows.
+* An origin without a value on the valuation diagonal uses its latest
+  observed value and the cdf at that age, as the chain ladder does, and
+  Cape Cod pools it with the other origins. chainladder-python gives such
+  an origin a NaN ultimate and leaves it out of the Cape Cod pool, so there
+  one hole changes the apriori and ultimates of every other origin.
+* Long tables add `exposure` and `apriori` per origin (Cape Cod also
+  `trended_apriori`) and the total `exposure` per segment.
+* Python: `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and `CapeCod`
+  take the settings above plus `average`, `sigma_interpolation` and `tail`
+  for the chain ladder, and `fit(triangle, column, exposure)` fits every
+  segment, returning `ExpectedLossFit` or `CapeCodFit`.
+* R: `expected_loss()`, `bornhuetter_ferguson()`, `benktander()` and
+  `cape_cod()` take `(triangle, column, exposure, ...)` with the same
+  settings and return an `expected_loss_fit` or `cape_cod_fit` with the
+  properties of the Python fits; `as.data.frame()`, `totals_frame()`,
+  `development_frame()` and `segment()` work on both.
 
 ### 3. Tails
 
@@ -199,8 +250,10 @@ pub struct Mack {
 
 Bindings: Python `ChainLadder(tail=...)` and `Mack(tail=...)` accept a float
 or a `TailConstant`, `TailCurve`, `TailBondy` or `TailLogLinear`; R accepts a
-number or the matching constructor. In Python the default is `tail=None`
-(no tail); `Mack` also takes `tail_sigma` and `tail_std_err`, and the fits
+number or the matching constructor. The expected-loss methods
+(`ExpectedLoss`, `BornhuetterFerguson`, `Benktander`, `CapeCod`; R
+`expected_loss()` and the rest) take the same `tail` for their chain
+ladder. In Python the default is `tail=None` (no tail); `Mack` also takes `tail_sigma` and `tail_std_err`, and the fits
 report `tail`, `tail_ldf`, `tail_sigma`, `tail_std_err`,
 `tail_attachment_age` and `estimated_ldf` (the factors before the tail
 replaced any). With several segments, `totals_frame()` has each segment's

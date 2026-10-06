@@ -265,6 +265,91 @@ class BayesStacking:
         """
 
 @final
+class Benktander:
+    """
+    The Benktander (iterated Bornhuetter–Ferguson) method: starting from
+    ``U(0) = apriori * exposure``, ``U(k) = latest + (1 - 1 / cdf) * U(k-1)``
+    for ``n_iters`` steps, as chainladder-python's ``Benktander``.
+    ``n_iters=0`` is the expected loss method, 1 is Bornhuetter–Ferguson,
+    and many iterations approach the chain ladder. The steps are summed in
+    closed form, so a large ``n_iters`` is cheap; where an origin's ``cdf``
+    is below 1/2 they diverge instead.
+    
+    Parameters
+    ----------
+    apriori : float, default 1.0
+        Expected loss ratio of the starting ultimate; positive.
+    n_iters : int, default 1
+        Number of Bornhuetter–Ferguson steps.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged, as in ``ChainLadder``.
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import Benktander, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = Benktander(apriori=0.5, n_iters=2).fit(tri, "paid", "premium")
+    >>> [round(u, 2) for u in fit.ultimate]
+    [150.0, 288.89]
+    """
+    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> Benktander: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        Expected loss ratio of the starting ultimate.
+        """
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure (an incremental triangle's is cumulated).
+        
+        Returns
+        -------
+        ExpectedLossFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ExpectedLoss.fit``.
+        """
+    @property
+    def n_iters(self, /) -> int:
+        """
+        Number of Bornhuetter–Ferguson steps.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> Any:
+        """
+        The tail: a constant factor as a number, otherwise its estimator.
+        """
+
+@final
 class Binomial:
     """
     Binomial claim counts: ``n`` risks, each claiming with probability
@@ -362,6 +447,320 @@ class Binomial:
         Returns
         -------
         float
+        """
+
+@final
+class BornhuetterFerguson:
+    """
+    The Bornhuetter–Ferguson method: each origin's latest value plus the
+    expected loss ``apriori * exposure`` times the share still to develop,
+    ``1 - 1 / cdf``, as chainladder-python's ``BornhuetterFerguson``.
+    
+    The exposure is a measure column of the same triangle (premium, say):
+    each origin's latest observed cumulative value in the segment fitted.
+    
+    Parameters
+    ----------
+    apriori : float, default 1.0
+        Expected loss ratio: the expected ultimate per unit of exposure;
+        positive.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged, as in ``ChainLadder``.
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import BornhuetterFerguson, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
+    >>> [round(u, 2) for u in fit.ultimate]
+    [150.0, 266.67]
+    """
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> BornhuetterFerguson: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        Expected loss ratio.
+        """
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure (an incremental triangle's is cumulated).
+        
+        Returns
+        -------
+        ExpectedLossFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ExpectedLoss.fit``.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> Any:
+        """
+        The tail: a constant factor as a number, otherwise its estimator.
+        """
+
+@final
+class CapeCod:
+    """
+    The Cape Cod (Stanard–Bühlmann) method: Bornhuetter–Ferguson with each
+    origin's apriori estimated from the triangle, as chainladder-python's
+    ``CapeCod``.
+    
+    Origin ``j``'s used-up exposure is ``exposure[j] / cdf[j]`` and its
+    latest value is trended to the triangle's valuation by
+    ``(1 + trend) ** (months / 12)``, the months running from the end of
+    the origin period. Origin ``i``'s trended apriori is the sum of the
+    trended latest values weighted by ``decay ** abs(i - j)`` over the same
+    weighted sum of used-up exposures; dividing by its own trend factor
+    gives the apriori of its Bornhuetter–Ferguson ultimate.
+    
+    Parameters
+    ----------
+    trend : float, default 0.0
+        Annual trend of the loss ratio; above -1.
+    decay : float, default 1.0
+        Weight of an origin ``n`` periods away, ``decay ** n``; from 0 to 1.
+        With 1 every origin shares one loss ratio.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged, as in ``ChainLadder``.
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import CapeCod, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = CapeCod().fit(tri, "paid", "premium")
+    >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
+    ([0.6774, 0.6774], [150.0, 290.32])
+    """
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> CapeCod: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    @property
+    def decay(self, /) -> float:
+        """
+        Weight of an origin one period away.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> CapeCodFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure and apriori. Trend runs to the triangle's valuation.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure (an incremental triangle's is cumulated).
+        
+        Returns
+        -------
+        CapeCodFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ChainLadder.fit``, if ``trend`` or ``decay`` is out of
+            range, or if an origin has no observed, finite, positive exposure.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> Any:
+        """
+        The tail: a constant factor as a number, otherwise its estimator.
+        """
+    @property
+    def trend(self, /) -> float:
+        """
+        Annual trend of the loss ratio.
+        """
+
+@final
+class CapeCodFit:
+    """
+    A fitted Cape Cod of every segment of a triangle column: the fields of
+    ``ExpectedLossFit``, with ``apriori`` the detrended loss ratio applied
+    to each origin (chainladder-python's ``detrended_apriori_``), plus
+    ``trended_apriori`` before detrending (its ``apriori_``).
+    
+    Per-origin lists run over the origins of each segment in turn, like the
+    rows of ``to_frame()``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import CapeCod, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = CapeCod(trend=0.1).fit(tri, "paid", "premium")
+    >>> round(fit.trended_apriori[0] / fit.apriori[0], 10)
+    1.1
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> list[float]:
+        """
+        Detrended expected loss ratio applied per origin.
+        """
+    @property
+    def cdf(self, /) -> list[float]:
+        """
+        Age-to-ultimate factors, one per age, including the tail.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The underlying chain-ladder projection, with the chain ladder's
+        ultimate.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        One row per segment and age, as ``ChainLadderFit.development_frame``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def expected_loss(self, /) -> ExpectedLossFit:
+        """
+        The expected-loss fit: ultimates, exposures and the detrended
+        apriori.
+        """
+    @property
+    def exposure(self, /) -> list[float]:
+        """
+        Exposure per origin: the exposure column's latest observed cumulative
+        value.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed cumulative value per origin.
+        """
+    @property
+    def ldf(self, /) -> list[float]:
+        """
+        Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value.
+        """
+    @property
+    def reserve(self, /) -> list[float]:
+        """
+        Reserve (ultimate minus latest) per origin.
+        """
+    def segment(self, /, **keys) -> CapeCodFit:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``.
+        
+        Returns
+        -------
+        CapeCodFit
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``ultimate``, ``reserve``, ``exposure``, ``apriori`` and
+        ``trended_apriori``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Total reserve across segments and origins.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        Total ultimate across segments and origins.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns and the segment's total
+        ``latest``, ``ultimate``, ``reserve`` and ``exposure``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def trended_apriori(self, /) -> list[float]:
+        """
+        Expected loss ratio per origin at the valuation's cost level, before
+        detrending.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Cape Cod ultimate per origin.
         """
 
 @final
@@ -1447,6 +1846,224 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+
+@final
+class ExpectedLoss:
+    """
+    The expected loss ratio method: each origin's ultimate is ``apriori``
+    times its exposure, whatever has been observed. The chain ladder is
+    still fitted for the development pattern the fit reports.
+    
+    The exposure is a measure column of the same triangle (premium, say):
+    each origin's latest observed cumulative value in the segment fitted.
+    
+    Parameters
+    ----------
+    apriori : float, default 1.0
+        Expected loss ratio: the ultimate per unit of exposure; positive.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged, as in ``ChainLadder``.
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ExpectedLoss, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = ExpectedLoss(apriori=0.5).fit(tri, "paid", "premium")
+    >>> fit.ultimate, fit.reserve
+    ([125.0, 200.0], [-25.0, 0.0])
+    """
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> ExpectedLoss: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        Expected loss ratio.
+        """
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure (an incremental triangle's is cumulated).
+        
+        Returns
+        -------
+        ExpectedLossFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ChainLadder.fit``, if ``apriori`` is not positive, or if an
+            origin has no observed, finite, positive exposure (the message
+            names it and, with keys, its segment).
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> Any:
+        """
+        The tail: a constant factor as a number, otherwise its estimator.
+        """
+
+@final
+class ExpectedLossFit:
+    """
+    A fitted expected-loss method (``ExpectedLoss``,
+    ``BornhuetterFerguson`` or ``Benktander``) of every segment of a
+    triangle column.
+    
+    Per-origin lists (``origins``, ``latest``, ``exposure``, ``apriori``,
+    ``ultimate``, ``reserve``) run over the origins of each segment in turn,
+    like the rows of ``to_frame()``. ``ultimate`` and ``reserve`` are this
+    method's; ``chain_ladder`` holds the chain ladder's. Per-age lists need
+    a single-segment fit; for several segments use ``development_frame()``
+    or ``segment(...)``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import BornhuetterFerguson, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021] * 2,
+    ...     [12, 24, 12] * 2,
+    ...     {"paid": [100.0, 150.0, 200.0, 10.0, 20.0, 30.0],
+    ...      "premium": [250.0, 250.0, 400.0, 500.0, 500.0, 800.0]},
+    ...     keys={"lob": ["Auto"] * 3 + ["Home"] * 3},
+    ... )
+    >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
+    >>> fit.exposure, fit.segment(lob="Home").ultimate
+    ([250.0, 400.0, 500.0, 800.0], [20.0, 230.0])
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> list[float]:
+        """
+        Expected loss ratio applied per origin.
+        """
+    @property
+    def cdf(self, /) -> list[float]:
+        """
+        Age-to-ultimate factors, one per age, including the tail.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The underlying chain-ladder projection, with the chain ladder's
+        ultimate.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        One row per segment and age, as ``ChainLadderFit.development_frame``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def exposure(self, /) -> list[float]:
+        """
+        Exposure per origin: the exposure column's latest observed cumulative
+        value.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed cumulative value per origin.
+        """
+    @property
+    def ldf(self, /) -> list[float]:
+        """
+        Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value.
+        """
+    @property
+    def reserve(self, /) -> list[float]:
+        """
+        Reserve (ultimate minus latest) per origin.
+        """
+    def segment(self, /, **keys) -> ExpectedLossFit:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``ultimate``, ``reserve``, ``exposure`` and ``apriori``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Total reserve across segments and origins.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        Total ultimate across segments and origins.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns and the segment's total
+        ``latest``, ``ultimate``, ``reserve`` and ``exposure``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        This method's ultimate per origin.
         """
 
 @final
@@ -2762,7 +3379,7 @@ class Layer:
     
     Examples
     --------
-    >>> from actuarialrs.aggregate import Layer
+    >>> from actuarialrs.reinsurance import Layer
     >>> layer = Layer("5x5", 5e6, 5e6, reinstatements=1)
     >>> layer.ceded([7e6])
     2000000.0
@@ -2818,7 +3435,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=15.0)
         >>> layer.ceded_by_event([8.0, 20.0, 12.0])
         [0.0, 9.0, 6.0]
@@ -2857,7 +3474,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> Layer.quota_share("QS", 0.4).ceded([10.0, 5.0])
         6.0
         """
@@ -2908,7 +3525,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
         30.0
         """
@@ -3774,6 +4391,115 @@ class MackFit:
     def ultimate(self, /) -> list[float]:
         """
         Projected ultimate per origin.
+        """
+
+@final
+class Mbbefd:
+    """
+    The MBBEFD exposure curve and destruction-rate distribution (Bernegger,
+    1997), with ``b >= 0`` and ``g >= 1``; ``1/g`` is the probability of a
+    total loss.
+    
+    ``G(x)`` is the share of a risk's expected loss below the fraction
+    ``x`` of its maximum possible loss (MPL). ``Mbbefd.swiss_re(c)`` gives
+    Bernegger's one-parameter family: ``c = 1.5, 2, 3, 4`` are the Swiss Re
+    curves and ``c = 5`` the Lloyd's curve.
+    
+    Parameters
+    ----------
+    b : float
+    g : float
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import Mbbefd
+    >>> c3 = Mbbefd.swiss_re(3.0)
+    >>> top = c3.layer_share(5e6, 5e6, 10e6)
+    >>> bottom = c3.layer_share(5e6, 0.0, 10e6)
+    >>> round(top + bottom, 12), top < bottom
+    (1.0, True)
+    """
+    def __new__(cls, /, b: float, g: float) -> Mbbefd: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def b(self, /) -> float:
+        """
+        Parameter ``b``.
+        """
+    def cdf(self, /, x: Sequence[float]) -> list[float]:
+        """
+        Distribution function of the destruction rate at each ``x``.
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    def curve(self, /, x: Sequence[float]) -> list[float]:
+        """
+        The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def g(self, /) -> float:
+        """
+        Parameter ``g``.
+        """
+    def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
+        """
+        Share of a risk's expected loss in the layer ``limit`` xs
+        ``attachment``, for a risk with maximum possible loss ``mpl``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        mpl : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean destruction rate, ``1 / G'(0)``.
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def swiss_re(c: float) -> Mbbefd:
+        """
+        Bernegger's curve ``c``: ``b = exp(3.1 - 0.15 (1 + c) c)``,
+        ``g = exp((0.78 + 0.12 c) c)``.
+        
+        Parameters
+        ----------
+        c : float
+            Non-negative; 0 is the straight line.
+        
+        Returns
+        -------
+        Mbbefd
+        """
+    def total_loss_probability(self, /) -> float:
+        """
+        Probability of a total loss, ``1/g``.
+        
+        Returns
+        -------
+        float
         """
 
 @final
@@ -5759,7 +6485,8 @@ class Tower:
     
     Examples
     --------
-    >>> from actuarialrs.aggregate import Layer, Tower, simulate_events
+    >>> from actuarialrs.aggregate import simulate_events
+    >>> from actuarialrs.reinsurance import Layer, Tower
     >>> from actuarialrs.distributions import Lognormal, Poisson
     >>> events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 1_000, 7)
     >>> tower = Tower([Layer("5x5", 5e6, 5e6), Layer("15x10", 15e6, 10e6)])
@@ -5834,7 +6561,7 @@ class Tower:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.reinsurance import Layer, Tower
         >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
         >>> tower.ceded([30.0])
         [15.0, 5.0]
@@ -5876,7 +6603,7 @@ class Tower:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.reinsurance import Layer, Tower
         >>> from actuarialrs.distributions import Grid, Poisson
         >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
         >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
@@ -7921,6 +8648,30 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
     list of float
     """
 
+def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> list[float]:
+    """
+    The exposure curve of a severity capped at the maximum possible loss
+    ``mpl``: ``G(x) = LEV(x mpl) / LEV(mpl)`` at each ``x``.
+    
+    Parameters
+    ----------
+    severity : a severity
+    mpl : float
+    x : list of float
+    
+    Returns
+    -------
+    list of float
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Pareto
+    >>> from actuarialrs.pricing import severity_exposure_curve
+    >>> g = severity_exposure_curve(Pareto(1e5, 1.5), 1e7, [0.0, 0.5, 1.0])
+    >>> g[0], round(g[2], 12), g[1] > 0.5
+    (0.0, 1.0, True)
+    """
+
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
     """
     Simulates marginals joined by a copula.
@@ -7982,6 +8733,43 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
     >>> abs(events.totals().mean() - 5000.0) < 75.0
     True
+    """
+
+def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: int, seed: int, dispersion: float = 1.0, weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> PredictiveDistribution:
+    """
+    Joint predictive draws from fitted means, for engines that give only
+    a mean per row (the boosting adapters): the family adds process noise
+    and several mean vectors (bootstrap refits) add parameter uncertainty.
+    
+    Simulation ``i`` uses stream ``i`` of ``seed``: it picks one mean vector
+    uniformly, then draws each row's response from the family with that
+    mean, the dispersion and the row's weight. Components are keyed
+    ``row = 0, 1, ...``, as ``GlmFit.predict_distribution`` keys them.
+    
+    Parameters
+    ----------
+    family : str
+        As in ``Glm``.
+    means : list of list of float
+        One or more mean vectors, one value per row each.
+    n_sims : int
+    seed : int
+    dispersion : float, default 1.0
+    weights : list of float, optional
+        Prior weights; 1 by default.
+    theta, power : float, optional
+        Negative binomial ``theta``, Tweedie ``power``.
+    
+    Returns
+    -------
+    PredictiveDistribution
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import simulate_from_means
+    >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
+    >>> round(pd.mean(), 1)
+    0.5
     """
 
 def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:

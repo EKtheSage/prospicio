@@ -7,8 +7,14 @@ import pytest
 
 from actuarialrs.distributions import PredictiveDistribution
 from actuarialrs.reserving import (
+    Benktander,
+    BornhuetterFerguson,
+    CapeCod,
+    CapeCodFit,
     ChainLadder,
     ChainLadderFit,
+    ExpectedLoss,
+    ExpectedLossFit,
     Mack,
     MackFit,
     OdpBootstrap,
@@ -973,3 +979,181 @@ def test_bootstrap_errors(triangles):
     with pytest.raises(ValueError, match="degrees of freedom"):
         two = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], [1.0, 2.0, 1.0])
         OdpBootstrap(n_sims=10).fit(two, "values")
+
+
+# Expected-loss methods: parity with chainladder-python 0.10.1
+# (validation/reference/reserving_expected_loss_python.csv).
+
+PREMIUM_DATASETS = ["clrd_wkcomp", "genins_premium"]
+
+
+def premium_rows(name):
+    return read_csv(VALIDATION / "data" / f"{name}.csv")
+
+
+def premium_dataset(name):
+    rows = premium_rows(name)
+    return Triangle.from_long(
+        origin=[int(r["origin"]) for r in rows],
+        development=[int(r["development"]) for r in rows],
+        values={c: [float(r[c]) for r in rows] for c in ["paid", "premium"]},
+    )
+
+
+def expected_loss_method(method):
+    """The estimator a reference `method` (name;key=value;...) describes."""
+    name, *settings = method.split(";")
+    kw = dict(s.split("=") for s in settings)
+    average = kw.pop("average")
+    cls = {
+        "expected_loss": ExpectedLoss,
+        "bornhuetter_ferguson": BornhuetterFerguson,
+        "benktander": Benktander,
+        "cape_cod": CapeCod,
+    }[name]
+    kw = {k: int(v) if k == "n_iters" else float(v) for k, v in kw.items()}
+    return cls(average=average, **kw)
+
+
+def test_expected_loss_matches_chainladder_python():
+    tris = {name: premium_dataset(name) for name in PREMIUM_DATASETS}
+    cases = read_csv(VALIDATION / "reference" / "reserving_expected_loss_python.csv")
+    assert cases
+    fits = {}
+    for case in cases:
+        key = (case["dataset"], case["method"])
+        if key not in fits:
+            model = expected_loss_method(case["method"])
+            fits[key] = model.fit(tris[case["dataset"]], "paid", "premium")
+        fit = fits[key]
+        quantity, arg = case["quantity"], case["arg"]
+        if quantity.startswith("total_"):
+            got = getattr(fit, quantity)
+        else:
+            per_origin = {
+                "ultimate": lambda: fit.ultimate,
+                "reserve": lambda: fit.reserve,
+                "apriori": lambda: fit.trended_apriori,
+                "detrended_apriori": lambda: fit.apriori,
+            }[quantity]()
+            got = per_origin[fit.origins.index(arg)]
+        want = float(case["expected"])
+        err = abs(got - want)
+        abs_tol, rel_tol = float(case["abs_tol"] or 0), float(case["rel_tol"] or 0)
+        assert got == want or err <= abs_tol or err <= rel_tol * abs(want), (case, got)
+
+
+def test_expected_loss_family_identities():
+    tri = premium_dataset("clrd_wkcomp")
+    el = ExpectedLoss(apriori=0.7).fit(tri, "paid", "premium")
+    bf = BornhuetterFerguson(apriori=0.7).fit(tri, "paid", "premium")
+    assert isinstance(el, ExpectedLossFit) and isinstance(bf, ExpectedLossFit)
+    assert Benktander(apriori=0.7, n_iters=0).fit(tri, "paid", "premium").ultimate == el.ultimate
+    assert Benktander(apriori=0.7, n_iters=1).fit(tri, "paid", "premium").ultimate == bf.ultimate
+    assert el.ultimate == pytest.approx([0.7 * e for e in el.exposure], rel=1e-15)
+    assert el.apriori == [0.7] * 10
+    assert el.exposure[0] == 1_691_130.0
+    cl = ChainLadder().fit(tri, "paid")
+    many = Benktander(apriori=0.7, n_iters=10_000).fit(tri, "paid", "premium")
+    assert many.ultimate == pytest.approx(cl.ultimate, rel=1e-12)
+    assert bf.chain_ladder.ultimate == cl.ultimate
+    assert bf.ldf == cl.ldf and bf.cdf == cl.cdf and bf.latest == cl.latest
+    assert bf.development == cl.development
+    assert bf.total_reserve == pytest.approx(sum(bf.reserve), rel=1e-12)
+    # Cape Cod without decay keeps each origin's own loss ratio: the chain ladder.
+    cc = CapeCod(trend=0.05, decay=0.0).fit(tri, "paid", "premium")
+    assert isinstance(cc, CapeCodFit)
+    assert cc.ultimate == pytest.approx(cl.ultimate, rel=1e-12)
+    assert cc.trended_apriori[-1] == cc.apriori[-1]
+    assert cc.trended_apriori[0] / cc.apriori[0] == pytest.approx(1.05**9, rel=1e-12)
+    assert cc.expected_loss.apriori == cc.apriori
+    assert repr(Benktander(apriori=0.7, n_iters=3)) == (
+        'Benktander(apriori=0.7, n_iters=3, average="volume", '
+        'sigma_interpolation="log-linear", tail=1.0)'
+    )
+    assert repr(CapeCod()).startswith("CapeCod(trend=0.0, decay=1.0, ")
+    assert repr(cc).startswith("CapeCodFit(origins=10, total_ultimate=")
+    model = CapeCod(trend=0.05, decay=0.75, average="simple", tail=1.01)
+    assert (model.trend, model.decay, model.average, model.tail) == (0.05, 0.75, "simple", 1.01)
+    assert BornhuetterFerguson(apriori=0.6).apriori == 0.6
+    assert Benktander(n_iters=4).n_iters == 4
+    # The tail is ChainLadder's: a number or a tail estimator.
+    bondy = BornhuetterFerguson(apriori=0.7, tail=TailBondy()).fit(tri, "paid", "premium")
+    assert bondy.cdf == ChainLadder(tail=TailBondy()).fit(tri, "paid").cdf
+    assert bondy.cdf != bf.cdf
+    assert isinstance(CapeCod(tail=TailBondy()).tail, TailBondy)
+    assert "tail=TailBondy(" in repr(Benktander(tail=TailBondy()))
+    with pytest.raises(TypeError, match="tail must be"):
+        ExpectedLoss(tail="1.05")
+
+
+def test_expected_loss_every_segment_at_once():
+    pytest.importorskip("pandas")
+    origin, development, paid, premium, lob = [], [], [], [], []
+    for name in PREMIUM_DATASETS:
+        for r in premium_rows(name):
+            origin.append(int(r["origin"]))
+            development.append(int(r["development"]))
+            paid.append(float(r["paid"]))
+            premium.append(float(r["premium"]))
+            lob.append(name)
+    both = Triangle.from_long(
+        origin, development, {"paid": paid, "premium": premium}, keys={"lob": lob}
+    )
+    assert both.index == PREMIUM_DATASETS
+    wkcomp = premium_dataset("clrd_wkcomp")
+    for model in [BornhuetterFerguson(apriori=0.6), CapeCod(trend=0.02, decay=0.8)]:
+        fit = model.fit(both, "paid", "premium")
+        assert fit.keys == ["lob"] and len(fit.origins) == 20
+        alone = model.fit(wkcomp, "paid", "premium")
+        seg = fit.segment(lob="clrd_wkcomp")
+        assert seg.exposure == alone.exposure
+        # Cape Cod trends to the triangle's valuation (2010 here, 1997
+        # alone) and back, so the two agree to rounding.
+        assert seg.ultimate == pytest.approx(alone.ultimate, rel=1e-14)
+        assert fit.ultimate[:10] == seg.ultimate
+        frame = fit.to_frame()
+        assert list(frame["ultimate"]) == fit.ultimate
+        assert list(frame["reserve"]) == fit.reserve
+        assert list(frame["apriori"]) == fit.apriori
+        totals = fit.totals_frame()
+        assert totals["reserve"].iloc[0] == pytest.approx(alone.total_reserve, rel=1e-12)
+        assert totals["exposure"].iloc[0] == sum(alone.exposure)
+        assert len(fit.development_frame()) == 20
+        with pytest.raises(ValueError, match="2 segments; use development_frame"):
+            fit.ldf
+        assert "segments=2" in repr(fit)
+    cc = CapeCod().fit(both, "paid", "premium")
+    assert list(cc.to_frame().columns) == [
+        "lob", "origin", "latest", "ultimate", "reserve", "exposure", "apriori", "trended_apriori",
+    ]
+    # The chain ladder's ultimate is not the method's.
+    assert cc.chain_ladder.ultimate != cc.ultimate
+
+
+def test_expected_loss_errors():
+    tri = Triangle.from_long(
+        [2020, 2020, 2021],
+        [12, 24, 12],
+        {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, float("nan")]},
+    )
+    msg = "origin 2021 has no observed, finite, positive exposure in column premium"
+    with pytest.raises(ValueError, match=msg):
+        BornhuetterFerguson().fit(tri, "paid", "premium")
+    with pytest.raises(ValueError, match="no column named exposure"):
+        ExpectedLoss().fit(tri, "paid", "exposure")
+    good = Triangle.from_long(
+        [2020, 2020, 2021],
+        [12, 24, 12],
+        {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    )
+    with pytest.raises(ValueError, match="apriori = 0 is invalid"):
+        BornhuetterFerguson(apriori=0.0).fit(good, "paid", "premium")
+    with pytest.raises(ValueError, match="decay = 2 is invalid"):
+        CapeCod(decay=2.0).fit(good, "paid", "premium")
+    with pytest.raises(ValueError, match="trend = -1 is invalid"):
+        CapeCod(trend=-1.0).fit(good, "paid", "premium")
+    with pytest.raises(OverflowError):
+        Benktander(n_iters=-1)
+    with pytest.raises(ValueError):
+        ExpectedLoss(average="median")

@@ -3,6 +3,7 @@
 //! `act_pricing` (`docs/design/pareto.md`).
 
 use act_aggregate::CollectiveModel;
+use act_pricing::exposure::{ExposureCurve, Mbbefd, SeverityCurve};
 use act_pricing::layer::XsLayer;
 use act_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
 use act_pricing::tower::{Reference, SelectionRule, TowerModel};
@@ -10,7 +11,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::aggregate::{AnyCount, PyEventSet};
-use crate::distributions::{AnySeverity, PyPredictiveDistribution, PySampled, key_to_py};
+use crate::distributions::{PyPredictiveDistribution, PySampled, extract_severity, key_to_py};
 use crate::pareto::PyPiecewisePareto;
 use crate::risk::PyDistortion;
 use crate::to_py;
@@ -38,17 +39,15 @@ use crate::to_py;
 /// 0.5
 #[pyclass(name = "CollectiveModel", module = "actuarialrs.pricing", frozen)]
 pub(crate) struct PyCollectiveModel {
-    inner: CollectiveModel<AnyCount, AnySeverity>,
+    inner: CollectiveModel<AnyCount, act_prob::SeverityDist>,
 }
 
 #[pymethods]
 impl PyCollectiveModel {
     #[new]
     fn new(frequency: &Bound<'_, PyAny>, severity: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = CollectiveModel::new(
-            AnyCount::extract(frequency)?,
-            AnySeverity::extract(severity)?,
-        );
+        let inner =
+            CollectiveModel::new(AnyCount::extract(frequency)?, extract_severity(severity)?);
         Ok(Self { inner })
     }
 
@@ -238,7 +237,7 @@ fn rule(name: &str) -> PyResult<SelectionRule> {
 /// 1.266666666667
 #[pyfunction]
 pub(crate) fn ilf(severity: &Bound<'_, PyAny>, limit: f64, basic_limit: f64) -> PyResult<f64> {
-    let sev = AnySeverity::extract(severity)?;
+    let sev = extract_severity(severity)?;
     act_pricing::layer::ilf(&sev, limit, basic_limit).map_err(to_py)
 }
 
@@ -257,7 +256,7 @@ pub(crate) fn loss_elimination_ratio(
     severity: &Bound<'_, PyAny>,
     deductible: f64,
 ) -> PyResult<f64> {
-    let sev = AnySeverity::extract(severity)?;
+    let sev = extract_severity(severity)?;
     act_pricing::layer::loss_elimination_ratio(&sev, deductible).map_err(to_py)
 }
 
@@ -772,4 +771,172 @@ pub(crate) fn price_portfolio(
         .detach(|| risk_load::price_portfolio(pd, &rule, &a))
         .map_err(to_py)?;
     Ok(PyPortfolioPrice { inner })
+}
+
+/// The MBBEFD exposure curve and destruction-rate distribution (Bernegger,
+/// 1997), with ``b >= 0`` and ``g >= 1``; ``1/g`` is the probability of a
+/// total loss.
+///
+/// ``G(x)`` is the share of a risk's expected loss below the fraction
+/// ``x`` of its maximum possible loss (MPL). ``Mbbefd.swiss_re(c)`` gives
+/// Bernegger's one-parameter family: ``c = 1.5, 2, 3, 4`` are the Swiss Re
+/// curves and ``c = 5`` the Lloyd's curve.
+///
+/// Parameters
+/// ----------
+/// b : float
+/// g : float
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.pricing import Mbbefd
+/// >>> c3 = Mbbefd.swiss_re(3.0)
+/// >>> top = c3.layer_share(5e6, 5e6, 10e6)
+/// >>> bottom = c3.layer_share(5e6, 0.0, 10e6)
+/// >>> round(top + bottom, 12), top < bottom
+/// (1.0, True)
+#[pyclass(name = "Mbbefd", module = "actuarialrs.pricing", frozen)]
+pub(crate) struct PyMbbefd {
+    inner: Mbbefd,
+}
+
+#[pymethods]
+impl PyMbbefd {
+    #[new]
+    fn new(b: f64, g: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Mbbefd::new(b, g).map_err(to_py)?,
+        })
+    }
+
+    /// Bernegger's curve ``c``: ``b = exp(3.1 - 0.15 (1 + c) c)``,
+    /// ``g = exp((0.78 + 0.12 c) c)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// c : float
+    ///     Non-negative; 0 is the straight line.
+    ///
+    /// Returns
+    /// -------
+    /// Mbbefd
+    #[staticmethod]
+    fn swiss_re(c: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Mbbefd::swiss_re(c).map_err(to_py)?,
+        })
+    }
+
+    /// Parameter ``b``.
+    #[getter]
+    fn b(&self) -> f64 {
+        self.inner.b()
+    }
+
+    /// Parameter ``g``.
+    #[getter]
+    fn g(&self) -> f64 {
+        self.inner.g_parameter()
+    }
+
+    /// The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+    ///
+    /// Parameters
+    /// ----------
+    /// x : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn curve(&self, x: Vec<f64>) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.g(v)).collect()
+    }
+
+    /// Distribution function of the destruction rate at each ``x``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn cdf(&self, x: Vec<f64>) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.cdf(v)).collect()
+    }
+
+    /// Mean destruction rate, ``1 / G'(0)``.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// Probability of a total loss, ``1/g``.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn total_loss_probability(&self) -> f64 {
+        self.inner.total_loss_probability()
+    }
+
+    /// Share of a risk's expected loss in the layer ``limit`` xs
+    /// ``attachment``, for a risk with maximum possible loss ``mpl``.
+    ///
+    /// Parameters
+    /// ----------
+    /// limit : float
+    /// attachment : float
+    /// mpl : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn layer_share(&self, limit: f64, attachment: f64, mpl: f64) -> PyResult<f64> {
+        self.inner
+            .layer_share(limit, attachment, mpl)
+            .map_err(to_py)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Mbbefd(b={}, g={})",
+            self.inner.b(),
+            self.inner.g_parameter()
+        )
+    }
+}
+
+/// The exposure curve of a severity capped at the maximum possible loss
+/// ``mpl``: ``G(x) = LEV(x mpl) / LEV(mpl)`` at each ``x``.
+///
+/// Parameters
+/// ----------
+/// severity : a severity
+/// mpl : float
+/// x : list of float
+///
+/// Returns
+/// -------
+/// list of float
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Pareto
+/// >>> from actuarialrs.pricing import severity_exposure_curve
+/// >>> g = severity_exposure_curve(Pareto(1e5, 1.5), 1e7, [0.0, 0.5, 1.0])
+/// >>> g[0], round(g[2], 12), g[1] > 0.5
+/// (0.0, 1.0, True)
+#[pyfunction]
+pub(crate) fn severity_exposure_curve(
+    severity: &Bound<'_, PyAny>,
+    mpl: f64,
+    x: Vec<f64>,
+) -> PyResult<Vec<f64>> {
+    let sev = extract_severity(severity)?;
+    let curve = SeverityCurve::new(&sev, mpl).map_err(to_py)?;
+    Ok(x.iter().map(|&v| curve.g(v)).collect())
 }

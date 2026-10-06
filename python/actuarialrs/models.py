@@ -40,6 +40,7 @@ from .actuarialrs_native import (
     pit_from_draws,
     pit_histogram,
     pseudo_bma_weights,
+    simulate_from_means,
     stacking_weights,
     time_ordered,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "group_k_fold",
     "time_ordered",
     "mcmc_diagnostics",
+    "simulate_from_means",
     "elpd_loo",
     "elpd_waic",
     "lppd",

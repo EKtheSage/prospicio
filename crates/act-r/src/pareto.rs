@@ -536,7 +536,7 @@ severity_class!(MixtureDist {
             .iter()
             .zip(components.values())
             .map(|(&w, c)| {
-                let sev = crate::distributions::AnySeverity::from_robj(&c)?;
+                let sev = crate::distributions::severity_from_robj(&c)?;
                 Ok((w, Box::new(sev) as Box<dyn Severity + Send + Sync>))
             })
             .collect::<Result<Vec<_>>>()?;

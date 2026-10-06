@@ -1,7 +1,8 @@
-# Reserving lane: the loss triangle, the chain ladder, Mack and the ODP
-# bootstrap, over
-# crates/act-r/src/reserving.rs (docs/design/triangle.md). S7 classes and
-# functions over the Rust objects, as in distributions.R.
+# Reserving lane: the loss triangle, the chain ladder, Mack, the
+# expected-loss methods and the ODP bootstrap, over
+# crates/act-r/src/reserving.rs (docs/design/triangle.md,
+# docs/design/reserving-v02.md). S7 classes and functions over the Rust
+# objects, as in distributions.R.
 
 #' @include distributions.R
 NULL
@@ -1019,6 +1020,262 @@ mack <- function(triangle, column = NULL, average = "volume", sigma_interpolatio
   mack_fit(ptr = ptr)
 }
 
+# Checks that `value` is a single number and returns it as a double.
+single_number <- function(value, arg) {
+  if (!is.numeric(value) || length(value) != 1 || is.na(value)) {
+    stop(sprintf("%s must be a single number", arg), call. = FALSE)
+  }
+  as.double(value)
+}
+
+# The loss and exposure columns of an expected-loss method.
+exposure_columns <- function(triangle, column, exposure) {
+  check_triangle(triangle)
+  for (arg in c("column", "exposure")) {
+    value <- get(arg)
+    if (!is.character(value) || length(value) != 1 || is.na(value)) {
+      stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
+    }
+  }
+  c(column, exposure)
+}
+
+# Properties of an expected-loss fit, read through `el(self)`, an
+# ExpectedLossFit pointer, and `cl(self)`, the ChainLadderFit pointer of its
+# development pattern. Shared by expected_loss_fit and cape_cod_fit.
+expected_loss_properties <- function(el, cl) {
+  by_origin <- function(f) {
+    S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(f(el(self)), origin_names(cl(self)))
+    })
+  }
+  c(
+    chain_ladder_properties(cl)[c("keys", "index", "origins", "development", "ldf", "cdf",
+                                  "latest")],
+    list(
+      exposure = by_origin(function(p) p$exposure()),
+      apriori = by_origin(function(p) p$apriori()),
+      ultimate = by_origin(function(p) p$ultimate()),
+      reserve = by_origin(function(p) p$reserve()),
+      total_ultimate = S7::new_property(S7::class_double, getter = function(self) {
+        el(self)$total_ultimate()
+      }),
+      total_reserve = S7::new_property(S7::class_double, getter = function(self) {
+        el(self)$total_reserve()
+      })
+    )
+  )
+}
+
+#' Expected loss, Bornhuetter-Ferguson and Benktander
+#'
+#' Methods that credit each origin's latest value and an expected ultimate,
+#' `apriori` times the origin's exposure, by how developed the origin is.
+#' With `q = 1 / cdf` the share of the ultimate developed at the origin's
+#' latest age:
+#'
+#' * `expected_loss()`: the ultimate is `apriori * exposure`, whatever has
+#'   been observed;
+#' * `bornhuetter_ferguson()`: the ultimate is
+#'   `latest + (1 - q) * apriori * exposure`;
+#' * `benktander()`: starting from `U(0) = apriori * exposure`,
+#'   `U(k) = latest + (1 - q) * U(k - 1)` for `n_iters` steps, so
+#'   `n_iters = 0` is the expected loss method, 1 is Bornhuetter-Ferguson,
+#'   and many iterations approach the chain ladder. The steps are summed in
+#'   closed form, so a large `n_iters` is cheap; where an origin's `cdf` is
+#'   below 1/2 they diverge instead.
+#'
+#' The development pattern is a [chain_ladder()] fit of the loss column,
+#' with the same `average`, `sigma_interpolation` and `tail`. The exposure
+#' (premium, say) is another column of the same triangle: each origin's
+#' latest observed cumulative value in the segment fitted, which must be
+#' finite and positive. Results match chainladder-python's `ExpectedLoss`,
+#' `BornhuetterFerguson` and `Benktander` with
+#' `sample_weight = premium.latest_diagonal`
+#' (`validation/reference/reserving_expected_loss_python.csv`).
+#'
+#' Every segment of the triangle is fitted on its own, with its own
+#' exposure. Per-origin properties run over the origins of each segment in
+#' turn and are named as a [chain_ladder_fit]'s.
+#'
+#' Properties of the fit, per origin: `latest`, `exposure`, `apriori` (the
+#' expected loss ratio), `ultimate` and `reserve` (`ultimate - latest`; the
+#' method's own, not the chain ladder's); `ldf` and `cdf` of the
+#' development pattern, which need a single-segment fit; `chain_ladder`
+#' (the [chain_ladder_fit] of the pattern), `keys`, `index`, `origins`,
+#' `development`, `total_ultimate` and `total_reserve` (summed over
+#' segments). `as.data.frame()` gives one row per segment and origin with
+#' `exposure` and `apriori` after the reserve, [totals_frame()] one per
+#' segment with the total `exposure`.
+#'
+#' Errors: an unknown column, an origin without an observed, finite,
+#' positive exposure (naming the origin and, with keys, the segment), an
+#' `apriori` that is not finite and positive, or a negative or fractional
+#' `n_iters`.
+#'
+#' These are Python's `ExpectedLoss`, `BornhuetterFerguson` and
+#' `Benktander`, whose `fit()` returns an `ExpectedLossFit`.
+#'
+#' @param triangle A [triangle], with any number of segments.
+#' @param column Name of the loss column to project.
+#' @param exposure Name of the exposure column; each origin's latest
+#'   observed value is its exposure.
+#' @param apriori Expected loss ratio: the expected ultimate per unit of
+#'   exposure; positive.
+#' @param n_iters Number of Bornhuetter-Ferguson steps; a non-negative whole
+#'   number.
+#' @param average,sigma_interpolation,tail The development pattern, as in
+#'   [chain_ladder()].
+#' @param ptr An `ExpectedLossFit` pointer; used internally.
+#' @returns An `expected_loss_fit` object.
+#' @seealso [cape_cod()] to estimate the apriori from the triangle,
+#'   [segment()] for one segment.
+#' @export
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12),
+#'                    paid = c(100, 150, 200), premium = c(250, 250, 400))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' expected_loss(tri, "paid", "premium", apriori = 0.5)@ultimate
+#'
+#' # The 2021 origin is a third developed (cdf 1.5): 200 + (1/3) * 0.5 * 400.
+#' bf <- bornhuetter_ferguson(tri, "paid", "premium", apriori = 0.5)
+#' bf@ultimate
+#' bf@cdf
+#' as.data.frame(bf)
+#'
+#' benktander(tri, "paid", "premium", apriori = 0.5, n_iters = 2)@ultimate
+expected_loss_fit <- S7::new_class(
+  "expected_loss_fit",
+  package = "actuarialrs",
+  properties = c(
+    list(ptr = S7::new_S3_class("ExpectedLossFit"), chain_ladder = chain_ladder_fit),
+    expected_loss_properties(function(self) self@ptr, function(self) self@chain_ladder@ptr)
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr, chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()))
+  }
+)
+
+#' @rdname expected_loss_fit
+#' @export
+expected_loss <- function(triangle, column, exposure, apriori = 1, average = "volume",
+                          sigma_interpolation = "log-linear", tail = 1) {
+  cols <- exposure_columns(triangle, column, exposure)
+  args <- development_args(average, sigma_interpolation)
+  ptr <- rust_result(triangle@ptr$expected_loss(
+    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma,
+    tail_ptr(tail)
+  ))
+  expected_loss_fit(ptr = ptr)
+}
+
+#' @rdname expected_loss_fit
+#' @export
+bornhuetter_ferguson <- function(triangle, column, exposure, apriori = 1, average = "volume",
+                                 sigma_interpolation = "log-linear", tail = 1) {
+  cols <- exposure_columns(triangle, column, exposure)
+  args <- development_args(average, sigma_interpolation)
+  ptr <- rust_result(triangle@ptr$bornhuetter_ferguson(
+    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma,
+    tail_ptr(tail)
+  ))
+  expected_loss_fit(ptr = ptr)
+}
+
+#' @rdname expected_loss_fit
+#' @export
+benktander <- function(triangle, column, exposure, apriori = 1, n_iters = 1, average = "volume",
+                       sigma_interpolation = "log-linear", tail = 1) {
+  cols <- exposure_columns(triangle, column, exposure)
+  args <- development_args(average, sigma_interpolation)
+  ptr <- rust_result(triangle@ptr$benktander(
+    cols[1], cols[2], single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    args$average, args$sigma, tail_ptr(tail)
+  ))
+  expected_loss_fit(ptr = ptr)
+}
+
+#' Cape Cod
+#'
+#' The Cape Cod (Stanard-Buhlmann) method: Bornhuetter-Ferguson with each
+#' origin's apriori estimated from the triangle itself, as
+#' chainladder-python's `CapeCod`
+#' (`validation/reference/reserving_expected_loss_python.csv`).
+#'
+#' Origin `j`'s used-up exposure is `exposure[j] / cdf[j]`. Its latest value
+#' is trended to the triangle's valuation by `(1 + trend)^(m[j] / 12)`,
+#' `m[j]` the months from the end of the origin period to the valuation.
+#' Origin `i`'s trended apriori is the sum over `j` of the trended latest
+#' values weighted by `decay^|i - j|`, over the same weighted sum of used-up
+#' exposures; dividing by `i`'s own trend factor gives the apriori its
+#' Bornhuetter-Ferguson ultimate uses. With `decay = 1` every origin shares
+#' one loss ratio; with `decay = 0` each origin keeps its own and the method
+#' returns the chain ladder. The exposure and development pattern are as
+#' for [bornhuetter_ferguson()]. Every segment of the triangle is fitted on
+#' its own, with its own exposure and apriori, trended to the whole
+#' triangle's valuation.
+#'
+#' The fit has the properties of an [expected_loss_fit], with `apriori` the
+#' detrended apriori (chainladder-python's `detrended_apriori_`), and the
+#' Bornhuetter-Ferguson fit itself as `expected_loss`; plus per origin
+#' `trended_apriori` (chainladder-python's `apriori_`).
+#' `as.data.frame()` adds a `trended_apriori` column.
+#'
+#' Errors: as [bornhuetter_ferguson()], or a `trend` that is not finite and
+#' above -1, or a `decay` outside 0 to 1.
+#'
+#' This is Python's `CapeCod`, whose `fit()` returns a `CapeCodFit`.
+#'
+#' @inheritParams expected_loss_fit
+#' @param trend Annual trend rate of the losses, above -1.
+#' @param decay Weight `decay^|i - j|` of origin `j` in origin `i`'s
+#'   apriori, between 0 and 1.
+#' @param ptr A `CapeCodFit` pointer; used internally.
+#' @returns A `cape_cod_fit` object.
+#' @seealso [segment()] for one segment.
+#' @export
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12),
+#'                    paid = c(100, 150, 200), premium = c(250, 250, 400))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' # Loss ratio (150 + 200) / (250 + 400 / 1.5) on both origins.
+#' cc <- cape_cod(tri, "paid", "premium")
+#' cc@apriori
+#' cc@ultimate
+#' cape_cod(tri, "paid", "premium", trend = 0.05, decay = 0.5)@trended_apriori
+cape_cod_fit <- S7::new_class(
+  "cape_cod_fit",
+  package = "actuarialrs",
+  properties = c(
+    list(ptr = S7::new_S3_class("CapeCodFit"), expected_loss = expected_loss_fit,
+         chain_ladder = chain_ladder_fit),
+    expected_loss_properties(function(self) self@expected_loss@ptr,
+                             function(self) self@chain_ladder@ptr),
+    list(
+      trended_apriori = S7::new_property(S7::class_double, getter = function(self) {
+        stats::setNames(self@ptr$trended_apriori(), origin_names(self@chain_ladder@ptr))
+      })
+    )
+  ),
+  constructor = function(ptr) {
+    el <- expected_loss_fit(ptr = ptr$expected_loss())
+    S7::new_object(S7::S7_object(), ptr = ptr, expected_loss = el, chain_ladder = el@chain_ladder)
+  }
+)
+
+#' @rdname cape_cod_fit
+#' @export
+cape_cod <- function(triangle, column, exposure, trend = 0, decay = 1, average = "volume",
+                     sigma_interpolation = "log-linear", tail = 1) {
+  cols <- exposure_columns(triangle, column, exposure)
+  args <- development_args(average, sigma_interpolation)
+  ptr <- rust_result(triangle@ptr$cape_cod(
+    cols[1], cols[2], single_number(trend, "trend"), single_number(decay, "decay"),
+    args$average, args$sigma, tail_ptr(tail)
+  ))
+  cape_cod_fit(ptr = ptr)
+}
+
 #' ODP bootstrap
 #'
 #' Over-dispersed Poisson bootstrap of the chain ladder (England and Verrall
@@ -1125,21 +1382,25 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 }
 
 check_fit <- function(fit) {
-  if (!(S7::S7_inherits(fit, chain_ladder_fit) || S7::S7_inherits(fit, mack_fit) ||
-        S7::S7_inherits(fit, odp_bootstrap_fit))) {
-    stop("fit must be a chain_ladder_fit, mack_fit or odp_bootstrap_fit", call. = FALSE)
+  classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit)
+  if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
+    stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit or ",
+         "odp_bootstrap_fit", call. = FALSE)
   }
 }
 
 #' Long results of a fit over every segment
 #'
-#' Tables of a [chain_ladder_fit], [mack_fit] or [odp_bootstrap_fit] with
-#' the triangle's key columns by name. `as.data.frame(fit)` has one row per
-#' segment and origin: `origin`, `latest`, `ultimate` and `reserve`, plus
-#' for Mack `process_risk`, `parameter_risk` and `standard_error`, and for
-#' the bootstrap the `mean` and `std_dev` of the bootstrapped reserve.
-#' `totals_frame()` has one row per segment with the same quantities for
-#' the segment's total (for the bootstrap also its `scale`).
+#' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
+#' [cape_cod_fit] or [odp_bootstrap_fit] with the triangle's key columns by
+#' name. `as.data.frame(fit)` has one row per segment and origin: `origin`,
+#' `latest`, `ultimate` and `reserve` (the method's own), plus for Mack
+#' `process_risk`, `parameter_risk` and `standard_error`, for the
+#' expected-loss methods `exposure` and `apriori` (and Cape Cod's
+#' `trended_apriori`), and for the bootstrap the `mean` and `std_dev` of the
+#' bootstrapped reserve. `totals_frame()` has one row per segment with the
+#' same quantities for the segment's total (for the expected-loss methods
+#' the total `exposure`, for the bootstrap also its `scale`).
 #' `development_frame()` has one row per segment and age: `development`,
 #' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
 #' `std_err`; the oldest age has `NA` for `ldf`, `sigma` and `std_err`.
@@ -1153,7 +1414,8 @@ check_fit <- function(fit) {
 #' These are Python's `to_frame()`, `totals_frame()`,
 #' `development_frame()` and `segment(**keys)`.
 #'
-#' @param fit A [chain_ladder_fit], [mack_fit] or [odp_bootstrap_fit].
+#' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
+#'   [cape_cod_fit] or [odp_bootstrap_fit].
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -1201,6 +1463,8 @@ segment <- function(fit, ...) {
 
 S7::method(as.data.frame, chain_ladder_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, mack_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, expected_loss_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, cape_cod_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, odp_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 
 # A segment count for print headers when there are several.
@@ -1245,3 +1509,14 @@ S7::method(print, mack_fit) <- function(x, ...) {
   }
   invisible(x)
 }
+# Prints the totals of an expected-loss fit (`name` its class) and its
+# long table.
+print_expected_loss <- function(x, name) {
+  cat(sprintf("<%s> total ultimate %s, total reserve %s%s\n", name,
+              format(x@total_ultimate, digits = 10), format(x@total_reserve, digits = 10),
+              segments_note(x@chain_ladder@ptr)))
+  print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+S7::method(print, expected_loss_fit) <- function(x, ...) print_expected_loss(x, "expected_loss_fit")
+S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape_cod_fit")

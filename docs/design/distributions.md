@@ -1,6 +1,6 @@
 # Design note: distribution representations
 
-Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`) · Depends on: nothing · Next: `Dist` enum with the second severity family
+Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`, `Dist` and the bindings on it) · Depends on: nothing · Next: `Custom`
 
 ## Goal
 
@@ -176,6 +176,21 @@ pub enum Dist {
   the Python/R boundary, pickle and serialize without trait objects.
 - `Custom` is the single "slow path" door the plan describes; code that
   sees it runs single-threaded and records that in diagnostics.
+
+Done: `act_prob::Dist` with the eleven severity families (`Lognormal`,
+`Pareto`, `PiecewisePareto`, `LogAffinePareto`, `GeneralizedPareto`,
+`Gamma`, `Tweedie`, `Weibull`, `Loglogistic`, `Mixture` in an `Arc`,
+`Grid`) and `Sampled`. It implements `Distribution` by `match` (no
+vtable), names its `family()`, and `as_severity()` gives the `Severity`
+of every variant but `Sampled`, which has no exact layer moments (the
+compile-time absence above becomes a `None` at the boundary). `From` each
+family. `SeverityDist` is a `Dist` known not to be `Sampled`, so it is a
+`Severity` by `match` too (`TryFrom<Dist>` hands a `Sampled` back). The
+Python and R bindings read any distribution object into a `Dist`
+(`extract_dist`, `dist_from_robj`) and every severity argument into a
+`SeverityDist`, so a family added to `Dist` reaches every binding function
+at once; a `Sampled` passed as a severity is refused with the reason. Not
+yet: `Custom` (a Python or R callback) and serialization.
 
 ## Sampling
 

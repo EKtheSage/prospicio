@@ -72,8 +72,16 @@ jobs:
           targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || '' }}
       - uses: Swatinem/rust-cache@v2
       - uses: r-lib/actions/setup-r@v2  # installs Rtools on Windows
+        with:
+          # Binary packages: lightgbm and xgboost take minutes to compile.
+          use-public-rspm: true
       - run: cargo clippy -p act-r -- -D warnings
-      - run: Rscript -e "install.packages('S7', repos = 'https://cloud.r-project.org')"
+      # lightgbm and xgboost are optional engines for booster_fit(). The
+      # boosting tests skip a missing engine and install.packages() only
+      # warns on failure, so check that each one loads.
+      - run: >-
+          Rscript -e "pkgs <- c('S7', 'lightgbm', 'xgboost'); install.packages(pkgs);
+          for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - run: R CMD INSTALL R/actuarialrs
       - name: Run the R tests
         shell: bash
