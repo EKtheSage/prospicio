@@ -990,6 +990,10 @@ Triangle$mack <- function(column, average, sigma_interpolation) .Call(wrap__Tria
 
 Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process)
 
+Triangle$clark_ldf <- function(column, curve, max_age) .Call(wrap__Triangle__clark_ldf, self, column, curve, max_age)
+
+Triangle$clark_cape_cod <- function(column, exposure, curve, max_age) .Call(wrap__Triangle__clark_cape_cod, self, column, exposure, curve, max_age)
+
 #' @export
 `$.Triangle` <- function (self, name) { func <- Triangle[[name]]; environment(func) <- environment(); func }
 
@@ -1102,6 +1106,64 @@ OdpBootstrapFit$segment <- function(keys, values) .Call(wrap__OdpBootstrapFit__s
 
 #' @export
 `[[.OdpBootstrapFit` <- `$.OdpBootstrapFit`
+
+ClarkFit <- new.env(parent = emptyenv())
+
+ClarkFit$chain_ladder <- function() .Call(wrap__ClarkFit__chain_ladder, self)
+
+ClarkFit$method <- function() .Call(wrap__ClarkFit__method, self)
+
+ClarkFit$curve <- function() .Call(wrap__ClarkFit__curve, self)
+
+ClarkFit$max_age <- function() .Call(wrap__ClarkFit__max_age, self)
+
+ClarkFit$omega <- function() .Call(wrap__ClarkFit__omega, self)
+
+ClarkFit$theta <- function() .Call(wrap__ClarkFit__theta, self)
+
+ClarkFit$elr <- function() .Call(wrap__ClarkFit__elr, self)
+
+ClarkFit$scale <- function() .Call(wrap__ClarkFit__scale, self)
+
+ClarkFit$covariance <- function() .Call(wrap__ClarkFit__covariance, self)
+
+ClarkFit$exposure <- function() .Call(wrap__ClarkFit__exposure, self)
+
+ClarkFit$expected_ultimate <- function() .Call(wrap__ClarkFit__expected_ultimate, self)
+
+ClarkFit$ultimate <- function() .Call(wrap__ClarkFit__ultimate, self)
+
+ClarkFit$reserve <- function() .Call(wrap__ClarkFit__reserve, self)
+
+ClarkFit$process_risk <- function() .Call(wrap__ClarkFit__process_risk, self)
+
+ClarkFit$parameter_risk <- function() .Call(wrap__ClarkFit__parameter_risk, self)
+
+ClarkFit$standard_error <- function() .Call(wrap__ClarkFit__standard_error, self)
+
+ClarkFit$total_ultimate <- function() .Call(wrap__ClarkFit__total_ultimate, self)
+
+ClarkFit$total_reserve <- function() .Call(wrap__ClarkFit__total_reserve, self)
+
+ClarkFit$total_process_risk <- function() .Call(wrap__ClarkFit__total_process_risk, self)
+
+ClarkFit$total_parameter_risk <- function() .Call(wrap__ClarkFit__total_parameter_risk, self)
+
+ClarkFit$total_standard_error <- function() .Call(wrap__ClarkFit__total_standard_error, self)
+
+ClarkFit$growth <- function(age) .Call(wrap__ClarkFit__growth, self, age)
+
+ClarkFit$long_table <- function() .Call(wrap__ClarkFit__long_table, self)
+
+ClarkFit$totals_table <- function() .Call(wrap__ClarkFit__totals_table, self)
+
+ClarkFit$segment <- function(keys, values) .Call(wrap__ClarkFit__segment, self, keys, values)
+
+#' @export
+`$.ClarkFit` <- function (self, name) { func <- ClarkFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ClarkFit` <- `$.ClarkFit`
 
 EvtTail <- new.env(parent = emptyenv())
 
