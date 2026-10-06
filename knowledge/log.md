@@ -2,6 +2,7 @@
 
 ## 2026-10-06
 
+* **Creation**: [The ODP one-year bootstrap against Merz-Wuthrich](/findings/one-year-bootstrap-vs-merz-wuthrich.md), from building `OdpBootstrap::one_year` (reserving v0.2, decision 8, branch claude/one-year-bootstrap): the measured ratios, why the ODP and Mack differ, and what England, Verrall and Wuthrich (2019) and Boumezoued et al. (2011) publish.
 * **Update**: [Local checks](/environment/local-checks.md): the roxygen churn is a link-target rewrite, so a real change to those Rd files is kept and only the link restored.
 * **Update**: [R ChainLadder CDR](/references/r-chainladder-cdr.md): what counts as no tail for the one-year view now that the chain ladder fits a `TailFit` (a factor of 1 that replaces no estimated factor), from merging `main` into claude/v02-one-year.
 * **Verification**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md) verified by CI's Rust job on #140 (tabulated-curve and risk-profile tests).

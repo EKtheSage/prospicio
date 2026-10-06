@@ -6,3 +6,4 @@
 * [Stacking pooling funnel](stacking-pooling-funnel.md) - With one slope per pooled group, the group scale and the slope trade off; NUTS diverges. Three or more covariates mix well.
 * [R callbacks must stay on R's main thread](r-callbacks-main-thread.md) - An R function held inside a Rust object may be called only from R's thread; parallel code that meets one runs in order on the calling thread.
 * [Bondy least squares](bondy-least-squares-stop.md) - TailBondy fits b with scipy least_squares at default tolerances, which stop on a 1e-8 relative cost change; b is off by up to 4e-6, the tail's results by up to 3e-5.
+* [The ODP one-year bootstrap against Merz-Wuthrich](one-year-bootstrap-vs-merz-wuthrich.md) - Re-reserving on the ODP bootstrap gives 0.30 to 5.95 times Merz-Wuthrich's one-year SD per origin; the ODP's process variance is the gap, and with Mack's bootstrap the same re-reserving matches within 0.2%.
