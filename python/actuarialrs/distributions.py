@@ -3,6 +3,7 @@ counts, and the joint predictive distribution every model returns."""
 
 from .actuarialrs_native import (
     Binomial,
+    Custom,
     DiscretizationReport,
     Gamma,
     GeneralizedPareto,
@@ -30,6 +31,7 @@ __all__ = [
     "Weibull",
     "Loglogistic",
     "Mixture",
+    "Custom",
     "Pareto",
     "PiecewisePareto",
     "LogAffinePareto",

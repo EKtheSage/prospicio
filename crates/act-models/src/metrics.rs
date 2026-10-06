@@ -61,6 +61,40 @@ pub fn mae(y: &[f64], pred: &[f64]) -> Result<f64> {
     Ok(y.iter().zip(pred).map(|(a, b)| (a - b).abs()).sum::<f64>() / n)
 }
 
+/// Weighted mean pinball (quantile) loss of predictions `pred` of the
+/// `alpha` quantile, `Σ w ρ(y − q) / Σ w` with `ρ(u) = u (alpha − 1{u < 0})`.
+/// Its expectation is smallest at the true `alpha` quantile, so it scores a
+/// quantile model as the deviance scores a mean model; at `alpha = 0.5` it
+/// is half the mean absolute error.
+///
+/// ```
+/// use act_models::metrics::pinball;
+///
+/// // Under-predicting the 90% quantile by 1 costs 0.9; over-predicting, 0.1.
+/// assert!((pinball(&[1.0, 0.0], &[0.0, 1.0], 0.9, None).unwrap() - 0.5).abs() < 1e-15);
+/// ```
+pub fn pinball(y: &[f64], pred: &[f64], alpha: f64, weights: Option<&[f64]>) -> Result<f64> {
+    same_length(y.len(), pred.len(), "pred")?;
+    if !(alpha > 0.0 && alpha < 1.0) {
+        return Err(Error::InvalidParameter {
+            name: "alpha",
+            value: alpha,
+            reason: "must be in (0, 1)",
+        });
+    }
+    if let Some(w) = weights {
+        same_length(y.len(), w.len(), "weights")?;
+    }
+    let (mut loss, mut total) = (0.0, 0.0);
+    for (i, (&y, &q)) in y.iter().zip(pred).enumerate() {
+        let w = weights.map_or(1.0, |w| w[i]);
+        let u = y - q;
+        loss += w * u * if u < 0.0 { alpha - 1.0 } else { alpha };
+        total += w;
+    }
+    Ok(loss / total)
+}
+
 /// Gini index of the ordered Lorenz curve: rows sorted by prediction
 /// ascending, cumulative exposure share against cumulative loss share.
 /// Twice the area between the diagonal and the curve, so 0 for a model

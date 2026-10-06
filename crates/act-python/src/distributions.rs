@@ -225,8 +225,8 @@ impl PyLognormal {
 /// or a ``Sampled``.
 pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
     use crate::pareto::{
-        PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
-        PyPiecewisePareto, PyTweedie, PyWeibull,
+        PyCustom, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture,
+        PyPareto, PyPiecewisePareto, PyTweedie, PyWeibull,
     };
     if let Ok(d) = obj.extract::<PyRef<'_, PyLognormal>>() {
         return Ok(d.inner.into());
@@ -264,6 +264,9 @@ pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
     if let Ok(s) = obj.extract::<PyRef<'_, PySampled>>() {
         return Ok(s.inner.clone().into());
     }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyCustom>>() {
+        return Ok(d.inner.clone().into());
+    }
     Err(PyTypeError::new_err(format!(
         "expected a distribution ({SEVERITIES} or Sampled), got {}",
         type_name(obj)
@@ -272,7 +275,7 @@ pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
 
 /// The classes accepted as a severity, for error messages.
 const SEVERITIES: &str = "Lognormal, Gamma, Tweedie, Weibull, Loglogistic, Mixture, Grid, \
-                          Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto";
+                          Pareto, PiecewisePareto, LogAffinePareto, GeneralizedPareto or Custom";
 
 fn type_name(obj: &Bound<'_, PyAny>) -> String {
     obj.get_type()

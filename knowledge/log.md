@@ -2,8 +2,10 @@
 
 ## 2026-10-06
 
+* **Update**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md): why the dispersion model cross-fits its residuals, and the positive-label floor.
+* **Update**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md): the quantile objectives' parameter names and the crossing fix, from the quantile boosters.
+* **Creation**: [R callbacks must stay on R's main thread](/findings/r-callbacks-main-thread.md), from building `Custom` and its R binding.
 * **Creation**: [Local Windows R](/environment/local-windows-r.md), from setting up local R binding checks for reserving v0.2.
-
 * **Verification**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md) verified again by CI's R job on #128, which now fails unless both engines install, so `test-boosting.R` ran both.
 * **Update**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md): the R packages' prediction calls and how `init_score` and `base_margin` come back, from building R's `booster_fit()`; `verified` is dropped until CI runs the R tests.
 * **Verification**: [MBBEFD exposure curves](/references/mbbefd.md) verified by CI's Rust job on #124 (the mpmath parity test).

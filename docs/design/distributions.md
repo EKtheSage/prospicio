@@ -1,6 +1,6 @@
 # Design note: distribution representations
 
-Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`, `Dist` and the bindings on it) · Depends on: nothing · Next: `Custom`
+Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`, `Dist` and the bindings on it, `Custom`) · Depends on: nothing · Next: serialization
 
 ## Goal
 
@@ -189,8 +189,27 @@ family. `SeverityDist` is a `Dist` known not to be `Sampled`, so it is a
 Python and R bindings read any distribution object into a `Dist`
 (`extract_dist`, `dist_from_robj`) and every severity argument into a
 `SeverityDist`, so a family added to `Dist` reaches every binding function
-at once; a `Sampled` passed as a severity is refused with the reason. Not
-yet: `Custom` (a Python or R callback) and serialization.
+at once; a `Sampled` passed as a severity is refused with the reason.
+
+Done: `act_prob::Custom`, the slow path. The user gives a cdf and,
+optionally, a quantile function (Python `distributions.Custom`, R
+`custom_distribution()`); without one, quantiles invert the cdf by
+bisection on a log scale (about a hundred calls). The mean, variance,
+limited expected values, stop-loss and layer moments come from 8-point
+Gauss–Legendre on eight pieces of each panel between the distribution's
+own quantiles (0.01 … 1 − 1e-12), ignoring the mass above the
+`1 − 1e-12` quantile. Construction evaluates the panels and both
+moments, so a cdf that fails, leaves `[0, 1]`, decreases or never reaches
+`1 − 1e-12` is reported there; a later failure makes that value NaN and
+is kept in `error()` (`last_error`). `Custom` is a `Dist` variant and a
+`Severity`, so it goes wherever a severity does. "Single-threaded" is
+enforced by `Distribution::is_parallel_safe()` (true for every native
+family; false for a `Custom` built with `parallel_safe = false`, which
+both bindings use, and for a mixture holding one): `simulate_events` and
+copula simulation (`PredictiveDistribution::simulate_with`) then run on
+the calling thread, which for R is its main thread, the only one R may be
+entered from. The draws are identical either way. Not yet:
+serialization.
 
 ## Sampling
 

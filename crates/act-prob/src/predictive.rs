@@ -175,6 +175,25 @@ impl PredictiveDistribution {
     where
         F: Fn(&mut StreamRng, &mut [f64]) + Sync,
     {
+        Self::simulate_with(true, dims, components, n_sims, seed, provenance, simulate)
+    }
+
+    /// [`PredictiveDistribution::simulate`], run in parallel only when
+    /// `parallel` is true; otherwise every simulation runs in order on the
+    /// calling thread (for a closure that calls a [`crate::Custom`] whose
+    /// callbacks must stay there). The draws are the same either way.
+    pub fn simulate_with<F>(
+        parallel: bool,
+        dims: Vec<String>,
+        components: Vec<ComponentKey>,
+        n_sims: usize,
+        seed: u64,
+        provenance: Provenance,
+        simulate: F,
+    ) -> Result<Self>
+    where
+        F: Fn(&mut StreamRng, &mut [f64]) + Sync,
+    {
         validate_keys(&dims, &components)?;
         if n_sims == 0 {
             return Err(Error::InvalidParameter {
@@ -184,10 +203,16 @@ impl PredictiveDistribution {
             });
         }
         let mut draws = vec![0.0; n_sims * components.len()];
-        draws
-            .par_chunks_mut(components.len())
-            .enumerate()
-            .for_each(|(i, row)| simulate(&mut StreamRng::new(seed, i as u64), row));
+        let run =
+            |(i, row): (usize, &mut [f64])| simulate(&mut StreamRng::new(seed, i as u64), row);
+        if parallel {
+            draws
+                .par_chunks_mut(components.len())
+                .enumerate()
+                .for_each(run);
+        } else {
+            draws.chunks_mut(components.len()).enumerate().for_each(run);
+        }
         Self::from_draws(
             dims,
             components,

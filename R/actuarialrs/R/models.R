@@ -637,7 +637,10 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' Gini index of the ordered Lorenz curve (rows sorted by prediction,
 #' exposure share against loss share); `lift_table()` cuts rows sorted by
 #' predicted rate into bands of about equal exposure; `crps_draws()` the
-#' continuous ranked probability score of draws for an outcome.
+#' continuous ranked probability score of draws for an outcome;
+#' `pinball_loss()` the weighted mean pinball (quantile) loss of predicted
+#' `alpha` quantiles, `sum(w * u * (alpha - (u < 0))) / sum(w)` with
+#' `u = y - pred`, lowest in expectation at the true quantile.
 #'
 #' `log_score()` is the mean of `-log f(y)` under each row's predictive
 #' distribution (the family with mean `mu`, `dispersion` and weight);
@@ -657,6 +660,7 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' @param dispersion The family's dispersion.
 #' @param seed Seed of the PIT's randomization.
 #' @param values Values to compare with the uniform.
+#' @param alpha Quantile level in `(0, 1)`.
 #' @returns A number; for `pit_values()` one value per outcome; for
 #'   `lift_table()` a data frame with columns `exposure`, `expected` and
 #'   `actual`.
@@ -666,6 +670,7 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' gini_index(c(0, 1), c(0.1, 0.9))
 #' lift_table(c(0, 1, 2, 3), c(0.1, 0.9, 2.1, 2.9), bands = 2)
 #' crps_draws(c(1, 2, 3), 2)
+#' pinball_loss(c(1, 0), c(0, 1), 0.9)
 #' log_score("poisson", 0, 1)
 #' set.seed(1)
 #' y <- rpois(500, 3)
@@ -698,6 +703,13 @@ lift_table <- function(y, pred, exposure = NULL, bands = 10) {
 #' @rdname model_metrics
 #' @export
 crps_draws <- function(draws, y) rust_result(crps_rust(as.double(draws), as.double(y)))
+
+#' @rdname model_metrics
+#' @export
+pinball_loss <- function(y, pred, alpha, weights = NULL) {
+  rust_result(pinball_rust(as.double(y), as.double(pred), as.double(alpha),
+                           if (is.null(weights)) double() else as.double(weights)))
+}
 
 #' @rdname model_metrics
 #' @export

@@ -469,7 +469,23 @@ their draws and stop being reproducible.
   without its intercept; `predict()` and `predict_distribution()` methods,
   and `simulate_from_means()`. Seeding leaves R's generator state as it
   was. Tests (`R/actuarialrs/tests/test-boosting.R`) mirror the Python
-  ones. Not yet: quantile and distributional objectives.
+  ones. Quantile objective (both languages): `family = "quantile"` with
+  `alpha` (LightGBM `quantile`, XGBoost `reg:quantileerror` with
+  `quantile_alpha`), started from the weighted `alpha` quantile of `y`,
+  no offset (refused with a message); one quantile per fit, so it works
+  in `compare` and cross-validation unchanged, scored by
+  `act_models::metrics::pinball` (Python `pinball_loss`/`pinball_score`,
+  R `pinball_loss()`). `predict_quantiles` combines fits into quantile
+  sets and sorts each row across levels (the rearrangement of
+  Chernozhukov, Fernández-Val and Galichon, 2010), so they never cross.
+  Distributional head (both languages): `dispersion_model = True` fits a
+  second booster (gamma objective, log link) to the Pearson residuals
+  `w (y − μ)² / V(μ)` of 5-fold cross-fitted means, so each row gets its
+  own dispersion (`predict_dispersion`), as a double GLM does (Smyth,
+  1989); `predict_distribution` passes it to
+  `act_models::simulate::from_means`, whose `dispersion` is now one value
+  or one per row. Gamma, Tweedie and Gaussian only: the Poisson's
+  dispersion is 1.
 - **Samplers are delegated.** No home-grown NUTS (`architecture.md`).
 
 ## Open questions

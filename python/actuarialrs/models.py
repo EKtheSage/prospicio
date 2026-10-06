@@ -36,6 +36,7 @@ from .actuarialrs_native import (
     log_score,
     lppd,
     mcmc_diagnostics,
+    pinball_loss,
     pit,
     pit_from_draws,
     pit_histogram,
@@ -60,6 +61,8 @@ __all__ = [
     "gini",
     "lift",
     "crps",
+    "pinball_loss",
+    "pinball_score",
     "log_score",
     "pit",
     "pit_from_draws",
@@ -91,6 +94,36 @@ __all__ = [
     "HierarchicalStacking",
     "StackingFit",
 ]
+
+
+def pinball_score(alpha):
+    """A score for ``cross_validate`` and ``compare``: the weighted mean
+    pinball loss of predicted ``alpha`` quantiles on the test rows, with the
+    test design's weights. For a quantile model, such as
+    ``Booster("quantile", alpha=...)``.
+
+    Parameters
+    ----------
+    alpha : float
+        In ``(0, 1)``.
+
+    Returns
+    -------
+    callable
+        ``score(y_test, predicted, test_design) -> float``.
+
+    Examples
+    --------
+    >>> from actuarialrs.models import Design, pinball_score
+    >>> d = Design([[1.0, 1.0]], ["(Intercept)"])
+    >>> pinball_score(0.9)([1.0, 0.0], [0.0, 1.0], d)
+    0.5
+    """
+
+    def score(y, pred, design):
+        return pinball_loss(list(y), list(pred), alpha, list(design.weights))
+
+    return score
 
 
 def deviance_score(family, theta=None, power=None):
