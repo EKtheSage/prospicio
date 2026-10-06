@@ -1,12 +1,9 @@
-"""Aggregate loss: compound distributions by Panjer and FFT, simulated
-events, and reinsurance layers and towers, simulated or on the grid."""
+"""Aggregate loss: compound distributions by Panjer and FFT, and simulated
+events. Layers and towers are in ``actuarialrs.reinsurance``."""
 
 from .actuarialrs_native import (
     CompoundReport,
     EventSet,
-    Layer,
-    Tower,
-    TowerGrids,
     fft,
     panjer,
     simulate_events,
@@ -18,7 +15,4 @@ __all__ = [
     "CompoundReport",
     "simulate_events",
     "EventSet",
-    "Layer",
-    "Tower",
-    "TowerGrids",
 ]

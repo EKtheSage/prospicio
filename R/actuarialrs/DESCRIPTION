@@ -19,5 +19,6 @@ Collate:
     'models.R'
     'pareto.R'
     'pricing.R'
+    'reinsurance.R'
     'reserving.R'
     'risk.R'
