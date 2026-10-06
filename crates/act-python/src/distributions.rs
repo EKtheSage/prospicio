@@ -2,8 +2,8 @@
 
 use act_core::StreamRng;
 use act_prob::{
-    ComponentKey, Counting, DiscretizationReport, Distribution, Empirical, Grid, KeyValue,
-    PredictiveDistribution, Provenance, Sampled, Severity,
+    ComponentKey, Counting, DiscretizationReport, Dist, Distribution, Empirical, Grid, KeyValue,
+    PredictiveDistribution, Provenance, Sampled, Severity, SeverityDist,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -221,118 +221,80 @@ impl PyLognormal {
     }
 }
 
-/// A severity accepted wherever a parametric or discretized loss
-/// distribution can be used.
-pub(crate) enum AnySeverity {
-    Lognormal(act_prob::Lognormal),
-    Grid(Grid),
-    Pareto(act_prob::Pareto),
-    PiecewisePareto(act_prob::PiecewisePareto),
-    LogAffinePareto(act_prob::LogAffinePareto),
-    GeneralizedPareto(act_prob::evt::Gpd),
-    Gamma(act_prob::Gamma),
-    Tweedie(act_prob::Tweedie),
-    Weibull(act_prob::Weibull),
-    Loglogistic(act_prob::Loglogistic),
-    Mixture(std::sync::Arc<act_prob::Mixture>),
-}
-
-/// Calls `$call` on the inner severity, whichever it is.
-macro_rules! each {
-    ($self:ident, $d:ident => $call:expr) => {
-        match $self {
-            Self::Lognormal($d) => $call,
-            Self::Grid($d) => $call,
-            Self::Pareto($d) => $call,
-            Self::PiecewisePareto($d) => $call,
-            Self::LogAffinePareto($d) => $call,
-            Self::GeneralizedPareto($d) => $call,
-            Self::Gamma($d) => $call,
-            Self::Tweedie($d) => $call,
-            Self::Weibull($d) => $call,
-            Self::Loglogistic($d) => $call,
-            Self::Mixture($d) => $call,
-        }
+/// Any native distribution: a parametric family, a ``Mixture``, a ``Grid``
+/// or a ``Sampled``.
+pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
+    use crate::pareto::{
+        PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
+        PyPiecewisePareto, PyTweedie, PyWeibull,
     };
+    if let Ok(d) = obj.extract::<PyRef<'_, PyLognormal>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(g) = obj.extract::<PyRef<'_, PyGrid>>() {
+        return Ok(g.inner.clone().into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyPareto>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyPiecewisePareto>>() {
+        return Ok(d.inner.clone().into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyLogAffinePareto>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyGeneralizedPareto>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyGamma>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyTweedie>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyWeibull>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyLoglogistic>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyMixture>>() {
+        return Ok(d.inner.clone().into());
+    }
+    if let Ok(s) = obj.extract::<PyRef<'_, PySampled>>() {
+        return Ok(s.inner.clone().into());
+    }
+    Err(PyTypeError::new_err(format!(
+        "expected a distribution ({SEVERITIES} or Sampled), got {}",
+        type_name(obj)
+    )))
 }
 
-impl AnySeverity {
-    pub(crate) fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        use crate::pareto::{
-            PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
-            PyPiecewisePareto, PyTweedie, PyWeibull,
-        };
-        if let Ok(d) = obj.extract::<PyRef<'_, PyLognormal>>() {
-            return Ok(Self::Lognormal(d.inner));
-        }
-        if let Ok(g) = obj.extract::<PyRef<'_, PyGrid>>() {
-            return Ok(Self::Grid(g.inner.clone()));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyPareto>>() {
-            return Ok(Self::Pareto(d.inner));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyPiecewisePareto>>() {
-            return Ok(Self::PiecewisePareto(d.inner.clone()));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyLogAffinePareto>>() {
-            return Ok(Self::LogAffinePareto(d.inner));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyGeneralizedPareto>>() {
-            return Ok(Self::GeneralizedPareto(d.inner));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyGamma>>() {
-            return Ok(Self::Gamma(d.inner));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyTweedie>>() {
-            return Ok(Self::Tweedie(d.inner));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyWeibull>>() {
-            return Ok(Self::Weibull(d.inner));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyLoglogistic>>() {
-            return Ok(Self::Loglogistic(d.inner));
-        }
-        if let Ok(d) = obj.extract::<PyRef<'_, PyMixture>>() {
-            return Ok(Self::Mixture(d.inner.clone()));
-        }
-        Err(PyTypeError::new_err(
-            "expected a severity: Lognormal, Gamma, Tweedie, Weibull, Loglogistic, Mixture, Grid, \
-             Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto",
+/// The classes accepted as a severity, for error messages.
+const SEVERITIES: &str = "Lognormal, Gamma, Tweedie, Weibull, Loglogistic, Mixture, Grid, \
+                          Pareto, PiecewisePareto, LogAffinePareto or GeneralizedPareto";
+
+fn type_name(obj: &Bound<'_, PyAny>) -> String {
+    obj.get_type()
+        .name()
+        .map_or_else(|_| "an unknown type".into(), |n| n.to_string())
+}
+
+/// A severity accepted wherever a parametric or discretized loss
+/// distribution can be used: any distribution but ``Sampled``, which has no
+/// exact layer moments.
+pub(crate) fn extract_severity(obj: &Bound<'_, PyAny>) -> PyResult<SeverityDist> {
+    let dist = extract_dist(obj).map_err(|_| {
+        PyTypeError::new_err(format!(
+            "expected a severity ({SEVERITIES}), got {}",
+            type_name(obj)
         ))
-    }
-}
-
-impl Distribution for AnySeverity {
-    fn mean(&self) -> f64 {
-        each!(self, d => d.mean())
-    }
-    fn variance(&self) -> f64 {
-        each!(self, d => d.variance())
-    }
-    fn cdf(&self, x: f64) -> f64 {
-        each!(self, d => d.cdf(x))
-    }
-    fn survival(&self, x: f64) -> f64 {
-        each!(self, d => d.survival(x))
-    }
-    fn quantile(&self, p: f64) -> act_core::Result<f64> {
-        each!(self, d => d.quantile(p))
-    }
-}
-
-impl Severity for AnySeverity {
-    fn lev(&self, limit: f64) -> f64 {
-        each!(self, d => d.lev(limit))
-    }
-    fn stop_loss(&self, retention: f64) -> f64 {
-        each!(self, d => d.stop_loss(retention))
-    }
-    fn layer(&self, limit: f64, attachment: f64) -> f64 {
-        each!(self, d => d.layer(limit, attachment))
-    }
-    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
-        each!(self, d => d.layer_second_moment(limit, attachment))
-    }
+    })?;
+    SeverityDist::try_from(dist).map_err(|_| {
+        PyTypeError::new_err(format!(
+            "expected a severity ({SEVERITIES}); a Sampled has no exact layer moments"
+        ))
+    })
 }
 
 /// Poisson claim counts with mean ``lam``.
@@ -818,7 +780,7 @@ impl PyGrid {
         step: f64,
         points: usize,
     ) -> PyResult<(PyGrid, PyDiscretizationReport)> {
-        let sev = AnySeverity::extract(severity)?;
+        let sev = extract_severity(severity)?;
         discretized(Grid::local_moment(&sev, step, points))
     }
 
@@ -844,7 +806,7 @@ impl PyGrid {
         step: f64,
         points: usize,
     ) -> PyResult<(PyGrid, PyDiscretizationReport)> {
-        let sev = AnySeverity::extract(severity)?;
+        let sev = extract_severity(severity)?;
         discretized(Grid::rounding(&sev, step, points))
     }
 
@@ -871,7 +833,7 @@ impl PyGrid {
         step: f64,
         points: usize,
     ) -> PyResult<(PyGrid, PyDiscretizationReport)> {
-        let sev = AnySeverity::extract(severity)?;
+        let sev = extract_severity(severity)?;
         discretized(Grid::lower(&sev, step, points))
     }
 
