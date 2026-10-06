@@ -986,7 +986,7 @@ Triangle$to_text <- function(max_rows, max_cols) .Call(wrap__Triangle__to_text, 
 
 Triangle$chain_ladder <- function(column, average, sigma_interpolation, tail) .Call(wrap__Triangle__chain_ladder, self, column, average, sigma_interpolation, tail)
 
-Triangle$mack <- function(column, average, sigma_interpolation) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation)
+Triangle$mack <- function(column, average, sigma_interpolation, tail, tail_sigma, tail_std_err) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation, tail, tail_sigma, tail_std_err)
 
 Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process)
 
@@ -995,6 +995,26 @@ Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Tr
 
 #' @export
 `[[.Triangle` <- `$.Triangle`
+
+ReservingTail <- new.env(parent = emptyenv())
+
+ReservingTail$constant <- function(factor, decay, attachment_age) .Call(wrap__ReservingTail__constant, factor, decay, attachment_age)
+
+ReservingTail$curve <- function(curve, fit_from, fit_to, extrap_periods, attachment_age) .Call(wrap__ReservingTail__curve, curve, fit_from, fit_to, extrap_periods, attachment_age)
+
+ReservingTail$bondy <- function(earliest_age, attachment_age) .Call(wrap__ReservingTail__bondy, earliest_age, attachment_age)
+
+ReservingTail$log_linear <- function() .Call(wrap__ReservingTail__log_linear)
+
+ReservingTail$kind <- function() .Call(wrap__ReservingTail__kind, self)
+
+ReservingTail$params <- function() .Call(wrap__ReservingTail__params, self)
+
+#' @export
+`$.ReservingTail` <- function (self, name) { func <- ReservingTail[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ReservingTail` <- `$.ReservingTail`
 
 ChainLadderFit <- new.env(parent = emptyenv())
 
@@ -1018,6 +1038,12 @@ ChainLadderFit$std_err <- function() .Call(wrap__ChainLadderFit__std_err, self)
 ChainLadderFit$alpha <- function() .Call(wrap__ChainLadderFit__alpha, self)
 
 ChainLadderFit$tail <- function() .Call(wrap__ChainLadderFit__tail, self)
+
+ChainLadderFit$tail_ldf <- function() .Call(wrap__ChainLadderFit__tail_ldf, self)
+
+ChainLadderFit$tail_sigma <- function() .Call(wrap__ChainLadderFit__tail_sigma, self)
+
+ChainLadderFit$tail_std_err <- function() .Call(wrap__ChainLadderFit__tail_std_err, self)
 
 ChainLadderFit$cdf <- function() .Call(wrap__ChainLadderFit__cdf, self)
 

@@ -121,6 +121,127 @@ stopifnot(identical(names(df), c("origin", "latest", "ultimate", "reserve", "pro
                                  "parameter_risk", "standard_error")), nrow(df) == 10)
 invisible(utils::capture.output(print(raa), print(cl), print(mack(raa))))
 
+# Tails against R ChainLadder's MackChainLadder(tail = ...) and
+# chainladder-python's TailConstant, TailCurve and TailBondy with
+# MackChainladder (validation/reference/reserving_tails_{r,python}.csv):
+# every row, as validation/tests/reserving_tails.rs. ldf and cdf run past
+# the oldest age into the tail's factors. mack_tail_given gives tail_sigma
+# and tail_std_err: twice the last sigma, half the last standard error.
+tail_methods <- list(
+  mack_tail_loglinear = list(tail = tail_log_linear()),
+  mack_tail_loglinear_sigma_mack = list(tail = tail_log_linear(), sigma_interpolation = "mack"),
+  mack_tail_loglinear_alpha2 = list(tail = tail_log_linear(), average = "regression"),
+  mack_tail_constant = list(tail = 1.05),
+  mack_tail_constant_sigma_mack = list(tail = 1.05, sigma_interpolation = "mack"),
+  mack_tail_given = list(tail = 1.05),
+  tail_constant = list(tail = tail_constant(1.05)),
+  tail_constant_decay = list(tail = tail_constant(1.1, decay = 0.75)),
+  tail_constant_attach = list(tail = tail_constant(1.05, attachment_age = 72)),
+  tail_curve_exponential = list(tail = tail_curve()),
+  tail_curve_inverse_power = list(tail = tail_curve("inverse_power")),
+  tail_curve_fit_period = list(tail = tail_curve(fit_period = c(36, 108), extrap_periods = 50)),
+  tail_curve_attach = list(tail = tail_curve(attachment_age = 60)),
+  tail_bondy = list(tail = tail_bondy()),
+  tail_bondy_generalized = list(tail = tail_bondy(earliest_age = 36)),
+  tail_bondy_attach = list(tail = tail_bondy(earliest_age = 36, attachment_age = 72))
+)
+given_tail <- function(tri) {
+  cl <- chain_ladder(tri)
+  c(sigma = 2 * cl@sigma[[length(cl@sigma)]], std_err = cl@std_err[[length(cl@std_err)]] / 2)
+}
+tail_fits <- list()
+tail_fit_for <- function(dataset, method) {
+  key <- paste(dataset, method)
+  if (is.null(tail_fits[[key]])) {
+    args <- tail_methods[[method]]
+    if (is.null(args)) stop("no settings for reference method ", method, call. = FALSE)
+    if (method == "mack_tail_given") {
+      given <- given_tail(tris[[dataset]])
+      args$tail_sigma <- given[["sigma"]]
+      args$tail_std_err <- given[["std_err"]]
+    }
+    tail_fits[[key]] <<- do.call(mack, c(list(tris[[dataset]]), args))
+  }
+  tail_fits[[key]]
+}
+tail_value_of <- function(dataset, method, quantity, arg) {
+  if (startsWith(quantity, "given_tail_")) {
+    return(given_tail(tris[[dataset]])[[sub("given_tail_", "", quantity)]])
+  }
+  fit <- tail_fit_for(dataset, method)
+  ldf <- c(fit@ldf, fit@tail_ldf)
+  k <- as.integer(arg) + 1L
+  switch(quantity,
+    ldf = ldf[[k]],
+    cdf = if (k <= length(fit@cdf)) fit@cdf[[k]] else prod(ldf[k:length(ldf)]),
+    tail_factor = fit@tail, tail_sigma = fit@tail_sigma, tail_std_err = fit@tail_std_err,
+    value_of(fit, quantity, arg)
+  )
+}
+for (reference in c("reserving_tails_r.csv", "reserving_tails_python.csv")) {
+  tail_lines <- grep("^#", readLines(validation("reference", reference)), value = TRUE, invert = TRUE)
+  tail_fields <- lapply(strsplit(tail_lines, ",", fixed = TRUE), `[`, 1:7)
+  tail_ref <- utils::read.csv(text = vapply(tail_fields, paste, "", collapse = ","),
+                              colClasses = c(arg = "character"))
+  stopifnot(nrow(tail_ref) > 1000)
+  for (r in seq_len(nrow(tail_ref))) {
+    row <- tail_ref[r, ]
+    got <- tail_value_of(row$dataset, row$method, row$quantity, row$arg)
+    err <- abs(got - row$expected)
+    if (!(got == row$expected || err <= row$abs_tol || err <= row$rel_tol * abs(row$expected))) {
+      stop(sprintf("%s %s %s %s[%s]: got %.17g, want %.17g", reference, row$dataset, row$method,
+                   row$quantity, row$arg, got, row$expected), call. = FALSE)
+    }
+  }
+}
+
+# Tail estimators: properties, printing and the selected factors.
+curve <- tail_curve("inverse_power", fit_period = c(36, NA), attachment_age = 60)
+stopifnot(identical(curve@curve, "inverse_power"), identical(curve@fit_period, c(36L, NA)),
+          identical(curve@extrap_periods, 100L), identical(curve@attachment_age, 60L),
+          identical(tail_curve()@fit_period, c(NA_integer_, NA_integer_)),
+          identical(tail_constant(1.05)@factor, 1.05), identical(tail_constant()@decay, 0.5),
+          is.null(tail_constant()@attachment_age), is.null(tail_bondy()@earliest_age),
+          identical(tail_bondy(36)@earliest_age, 36L),
+          identical(tail_constant(1.05, attachment_age = NA)@attachment_age, NULL))
+stopifnot(identical(utils::capture.output(print(curve)),
+                    'tail_curve(curve = "inverse_power", fit_period = c(36, NA), extrap_periods = 100, attachment_age = 60)'),
+          identical(utils::capture.output(print(tail_log_linear())), "tail_log_linear()"),
+          identical(utils::capture.output(print(tail_constant(1.05))),
+                    "tail_constant(factor = 1.05, decay = 0.5, attachment_age = NULL)"))
+fit <- chain_ladder(raa, tail = curve)
+base <- chain_ladder(raa)
+stopifnot(identical(fit@ldf[1:4], base@ldf[1:4]), fit@ldf[[5]] != base@ldf[[5]],
+          identical(names(fit@ldf), names(base@ldf)))
+near(prod(fit@tail_ldf), fit@tail, 1e-12)
+near(fit@cdf[["120-Ult"]], fit@tail, 1e-12)
+# A number is a constant tail; without a tail above 1 there is no tail risk.
+stopifnot(identical(chain_ladder(raa, tail = 1.05)@ultimate,
+                    chain_ladder(raa, tail = tail_constant(1.05))@ultimate))
+m <- mack(raa)
+stopifnot(m@tail == 1, m@tail_sigma == 0, m@tail_std_err == 0, m@standard_error[["1981"]] == 0,
+          identical(m@tail_ldf, chain_ladder(raa)@tail_ldf))
+given <- mack(raa, tail = 1.05, tail_sigma = 1.5, tail_std_err = 0.003)
+stopifnot(given@tail_sigma == 1.5, given@tail_std_err == 0.003, given@standard_error[["1981"]] > 0)
+invisible(utils::capture.output(print(given), print(tail_bondy(36))))
+expect_error_like(chain_ladder(raa, tail = "1.05"), "tail must be a single number, tail_constant()")
+expect_error_like(tail_curve("weibull"), "should be one of")
+expect_error_like(tail_curve(fit_period = 36), "fit_period must be two ages")
+expect_error_like(tail_constant(1.05, attachment_age = 6.5), "attachment_age must be a non-negative whole")
+expect_error_like(tail_constant(c(1, 2)), "factor must be a single number")
+expect_error_like(chain_ladder(raa, tail = tail_curve(fit_period = c(108, NA))), "tail")
+expect_error_like(mack(raa, tail = 1.05, tail_sigma = -1), "tail")
+expect_error_like(mack(raa, tail_sigma = "a"), "tail_sigma must be a single number")
+# With several segments each has its own tail.
+raa_long <- read_long("raa")
+lc_tail <- triangle(rbind(transform(raa_long, lob = "a"),
+                          transform(raa_long, lob = "b", value = value * (1 + development / 240))),
+                    "origin", "development", "value", keys = "lob")
+seg_fit <- chain_ladder(lc_tail, tail = tail_bondy())
+stopifnot(segment(seg_fit, lob = "a")@tail == chain_ladder(raa, tail = tail_bondy())@tail)
+expect_error_like(seg_fit@tail, "2 segments; use development_frame()")
+invisible(utils::capture.output(print(seg_fit)))
+
 # Long-table round trip.
 long <- as.data.frame(raa)
 stopifnot(identical(names(long), c("origin", "development", "value")),

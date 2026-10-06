@@ -563,7 +563,18 @@ chain_ladder_properties <- function(cl) {
     sigma = per_age(function(p) p$sigma(), links),
     std_err = per_age(function(p) p$std_err(), links),
     alpha = S7::new_property(S7::class_double, getter = function(self) cl(self)$alpha()),
-    tail = S7::new_property(S7::class_double, getter = function(self) cl(self)$tail()),
+    tail = S7::new_property(S7::class_double, getter = function(self) {
+      rust_result(cl(self)$tail(), call = NULL)
+    }),
+    tail_ldf = S7::new_property(S7::class_double, getter = function(self) {
+      rust_result(cl(self)$tail_ldf(), call = NULL)
+    }),
+    tail_sigma = S7::new_property(S7::class_double, getter = function(self) {
+      rust_result(cl(self)$tail_sigma(), call = NULL)
+    }),
+    tail_std_err = S7::new_property(S7::class_double, getter = function(self) {
+      rust_result(cl(self)$tail_std_err(), call = NULL)
+    }),
     latest = by_origin(function(p) p$latest()),
     ultimate = by_origin(function(p) p$ultimate()),
     reserve = by_origin(function(p) p$reserve()),
@@ -576,6 +587,237 @@ development_args <- function(average, sigma_interpolation) {
   list(average = match.arg(average, c("volume", "simple", "regression")),
        sigma = match.arg(sigma_interpolation, c("log-linear", "mack")))
 }
+
+single_number <- function(x, arg) {
+  if (!is.numeric(x) || length(x) != 1 || is.na(x)) {
+    stop(sprintf("%s must be a single number", arg), call. = FALSE)
+  }
+  as.double(x)
+}
+
+# NULL (not given) or a single number; a single NA is NULL.
+optional_number <- function(x, arg) {
+  if (is.null(x) || (length(x) == 1 && is.na(x))) return(NULL)
+  single_number(x, arg)
+}
+
+# A tail property that is an age in months, or NULL when not given.
+tail_age <- function(name) {
+  S7::new_property(NULL | S7::class_integer, getter = function(self) self@ptr$params()[[name]])
+}
+
+#' Constant tail factor
+#'
+#' A given factor from the attachment age to ultimate, as
+#' chainladder-python's `TailConstant`. Past the oldest age the factor is
+#' spread over the following periods as `1 + x * decay^k`, the last factor
+#' making up the difference; this shapes the factors past the attachment
+#' ([chain_ladder_fit]'s `tail_ldf`), not the factor to ultimate. An
+#' attachment before the oldest age replaces the estimated factors from
+#' there. A plain number given as `tail` to [chain_ladder()] or [mack()] is
+#' `tail_constant(tail)`.
+#'
+#' Properties: `factor`, `decay` and `attachment_age` (`NULL` for the
+#' oldest age).
+#'
+#' @param factor Factor from the attachment age to ultimate; finite and
+#'   positive (checked when the tail is fitted).
+#' @param decay Share of each period's development kept in the next, from 0
+#'   to 1.
+#' @param attachment_age Age in months the factor attaches at (the first age
+#'   at or after it), or `NULL` for the oldest age.
+#' @returns A `tail_constant` object.
+#' @seealso [tail_curve()], [tail_bondy()], [tail_log_linear()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' tri <- triangle(long, "year", "age", "paid")
+#' fit <- chain_ladder(tri, tail = tail_constant(1.05, attachment_age = 36))
+#' fit@ldf
+#' fit@tail
+#' fit@tail_ldf
+tail_constant <- S7::new_class(
+  "tail_constant",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("ReservingTail"),
+    factor = S7::new_property(S7::class_double, getter = function(self) self@ptr$params()$factor),
+    decay = S7::new_property(S7::class_double, getter = function(self) self@ptr$params()$decay),
+    attachment_age = tail_age("attachment_age")
+  ),
+  constructor = function(factor = 1, decay = 0.5, attachment_age = NULL) {
+    ptr <- rust_result(ReservingTail$constant(
+      single_number(factor, "factor"), single_number(decay, "decay"),
+      optional_number(attachment_age, "attachment_age")
+    ))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Curve-fitted tail
+#'
+#' A curve fitted to the estimated factors and extrapolated, as
+#' chainladder-python's `TailCurve`. Factors above 1.00001 in the fit
+#' period are regressed by least squares: `log(f - 1)` on the 1-based
+#' development index `k` (`"exponential"`) or on `log(k)`
+#' (`"inverse_power"`, a heavier tail). The fitted curve replaces the
+#' factors from the attachment age on and runs `extrap_periods` periods past
+#' the oldest age.
+#'
+#' Properties: `curve`, `fit_period` (two ages, `NA` for an open end),
+#' `extrap_periods` and `attachment_age` (`NULL` for the oldest age).
+#'
+#' @param curve `"exponential"` or `"inverse_power"`.
+#' @param fit_period The ages in months whose factors enter the fit, from
+#'   the first (inclusive) to the second (exclusive), `NA` for an open end;
+#'   `NULL` fits every factor.
+#' @param extrap_periods Number of periods past the oldest age the curve is
+#'   extrapolated; a whole number.
+#' @param attachment_age Age in months the curve attaches at (the first age
+#'   at or after it), or `NULL` for the oldest age.
+#' @returns A `tail_curve` object.
+#' @seealso [tail_constant()], [tail_bondy()], [tail_log_linear()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' tri <- triangle(long, "year", "age", "paid")
+#' chain_ladder(tri, tail = tail_curve())@tail
+#' chain_ladder(tri, tail = tail_curve("inverse_power", fit_period = c(12, NA)))@tail
+tail_curve <- S7::new_class(
+  "tail_curve",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("ReservingTail"),
+    curve = S7::new_property(S7::class_character, getter = function(self) self@ptr$params()$curve),
+    fit_period = S7::new_property(S7::class_integer, getter = function(self) {
+      p <- self@ptr$params()
+      c(if (is.null(p$fit_from)) NA_integer_ else p$fit_from,
+        if (is.null(p$fit_to)) NA_integer_ else p$fit_to)
+    }),
+    extrap_periods = S7::new_property(S7::class_integer, getter = function(self) {
+      as.integer(self@ptr$params()$extrap_periods)
+    }),
+    attachment_age = tail_age("attachment_age")
+  ),
+  constructor = function(curve = c("exponential", "inverse_power"), fit_period = NULL,
+                         extrap_periods = 100, attachment_age = NULL) {
+    curve <- match.arg(curve)
+    if (is.null(fit_period)) fit_period <- c(NA, NA)
+    if (length(fit_period) != 2 || !(is.numeric(fit_period) || all(is.na(fit_period)))) {
+      stop("fit_period must be two ages in months, NA for an open end", call. = FALSE)
+    }
+    ptr <- rust_result(ReservingTail$curve(
+      curve, optional_number(fit_period[1], "fit_period"), optional_number(fit_period[2], "fit_period"),
+      single_number(extrap_periods, "extrap_periods"), optional_number(attachment_age, "attachment_age")
+    ))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Bondy tail
+#'
+#' The (generalized) Bondy tail, as chainladder-python's `TailBondy`. Each
+#' log factor from `earliest_age` on is taken as `b` times the one before
+#' it, `b` fitted by least squares. The fitted factors are `f0^(b^j)` from
+#' the factor `f0` at `earliest_age`, and those past the next one multiply
+#' to the last fitted factor raised to `b / (1 - b)`. With the default
+#' `earliest_age` (the age of the last factor) `b` is 1/2 and the tail
+#' repeats the last factor: the classic Bondy method.
+#'
+#' The exponent is the exact least-squares optimum. chainladder-python's
+#' optimizer stops early, so its generalized Bondy factors differ in about
+#' the fifth significant digit.
+#'
+#' Properties: `earliest_age` and `attachment_age` (`NULL` for the age of
+#' the last factor).
+#'
+#' @param earliest_age First age in months whose factor enters the fit (the
+#'   first age at or after it), or `NULL` for the age of the last factor.
+#' @param attachment_age The factor from this age (the last age at or before
+#'   it) to the next is kept and the fitted ones replace those after it;
+#'   `NULL` is the age of the last factor. Not before `earliest_age`.
+#' @returns A `tail_bondy` object.
+#' @seealso [tail_constant()], [tail_curve()], [tail_log_linear()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' tri <- triangle(long, "year", "age", "paid")
+#' fit <- chain_ladder(tri, tail = tail_bondy())
+#' fit@tail
+#' chain_ladder(tri, tail = tail_bondy(earliest_age = 12))@tail
+tail_bondy <- S7::new_class(
+  "tail_bondy",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("ReservingTail"),
+    earliest_age = tail_age("earliest_age"),
+    attachment_age = tail_age("attachment_age")
+  ),
+  constructor = function(earliest_age = NULL, attachment_age = NULL) {
+    ptr <- rust_result(ReservingTail$bondy(
+      optional_number(earliest_age, "earliest_age"), optional_number(attachment_age, "attachment_age")
+    ))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' R ChainLadder's log-linear tail
+#'
+#' R ChainLadder's `MackChainLadder(tail = TRUE)` rule, its `tailfactor()`
+#' function, with its quirks: when the third- and second-last factors
+#' multiply to more than 1.0001, `log(f - 1)` is regressed on the
+#' development index over the factors above 1 and the next 100
+#' extrapolated factors are multiplied; otherwise the tail is 1. A tail
+#' above 2 is reset to 1. The tail is a single factor to ultimate.
+#'
+#' @returns A `tail_log_linear` object.
+#' @seealso [tail_constant()], [tail_curve()], [tail_bondy()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' m <- mack(triangle(long, "year", "age", "paid"), tail = tail_log_linear())
+#' m@tail
+#' m@tail_sigma
+#' m@standard_error
+tail_log_linear <- S7::new_class(
+  "tail_log_linear",
+  package = "actuarialrs",
+  properties = list(ptr = S7::new_S3_class("ReservingTail")),
+  constructor = function() S7::new_object(S7::S7_object(), ptr = ReservingTail$log_linear())
+)
+
+tail_classes <- function() list(tail_constant, tail_curve, tail_bondy, tail_log_linear)
+
+# The ReservingTail pointer of a `tail` argument: a number (a constant
+# factor) or a tail estimator.
+tail_ptr <- function(tail) {
+  for (cls in tail_classes()) if (S7::S7_inherits(tail, cls)) return(tail@ptr)
+  if (!is.numeric(tail) || length(tail) != 1 || is.na(tail)) {
+    stop("tail must be a single number, tail_constant(), tail_curve(), tail_bondy() or ",
+         "tail_log_linear()", call. = FALSE)
+  }
+  tail_constant(tail)@ptr
+}
+
+tail_print <- function(x, ...) {
+  props <- S7::props(x)
+  props$ptr <- NULL
+  args <- vapply(names(props), function(n) paste(n, "=", deparse(props[[n]], control = NULL)), "")
+  cat(sprintf("%s(%s)\n", S7::S7_class(x)@name, paste(args, collapse = ", ")))
+  invisible(x)
+}
+S7::method(print, tail_constant) <- tail_print
+S7::method(print, tail_curve) <- tail_print
+S7::method(print, tail_bondy) <- tail_print
+S7::method(print, tail_log_linear) <- tail_print
 
 #' Chain ladder
 #'
@@ -594,15 +836,29 @@ development_args <- function(average, sigma_interpolation) {
 #' origin"` (key values joined by `" / "`) when there are several segments;
 #' a single-segment fit has one value per origin.
 #'
+#' Development past the oldest age is a tail: a given factor, or one
+#' estimated by [tail_constant()], [tail_curve()], [tail_bondy()] or
+#' [tail_log_linear()] (`validation/reference/reserving_tails_python.csv`
+#' and `reserving_tails_r.csv`). A tail attached before the oldest age
+#' replaces the estimated factors from there.
+#'
 #' Properties of the fit, per origin: `latest`, `ultimate`, `reserve`; per
-#' link (named `"12-24"` and so on): `ldf`, `sigma` (with unestimable ones
-#' interpolated), `std_err`; per age: `cdf` (age to ultimate, including the
-#' tail); and `keys`, `index` (one row per segment, as a triangle's),
-#' `origins`, `development`, `alpha`, `tail`, `total_ultimate` and
-#' `total_reserve` (summed over segments). The per-link and per-age
-#' properties need a single-segment fit: with several segments use
-#' [development_frame()] or [segment()]. `as.data.frame()` gives one row
-#' per segment and origin, [totals_frame()] one per segment.
+#' link (named `"12-24"` and so on): `ldf` (the selected factors, which the
+#' projection uses: the estimated ones, replaced by the tail's from its
+#' attachment age), `sigma` (with unestimable ones interpolated),
+#' `std_err`; per age: `cdf` (age to ultimate, including the tail); the
+#' tail: `tail` (the factor from the oldest age to ultimate), `tail_ldf`
+#' (the factors past the oldest age, which multiply to `tail`: one per
+#' development period of the next year and one to ultimate, or a single
+#' one for [tail_log_linear()]), `tail_sigma` and `tail_std_err` (the
+#' tail's variance parameter and standard error, extrapolated
+#' log-linearly; 0 without a tail above 1); and `keys`, `index` (one row
+#' per segment, as a triangle's), `origins`, `development`, `alpha`,
+#' `total_ultimate` and `total_reserve` (summed over segments). The
+#' per-link, per-age and tail properties need a single-segment fit: with
+#' several segments use [development_frame()] (whose oldest age has the
+#' tail as its `cdf`) or [segment()]. `as.data.frame()` gives one row per
+#' segment and origin, [totals_frame()] one per segment.
 #'
 #' @param triangle A [triangle], with any number of segments.
 #' @param column Name of the column to fit; by default the only one.
@@ -611,7 +867,9 @@ development_args <- function(average, sigma_interpolation) {
 #'   estimated (an age with a single link ratio) is filled in:
 #'   `"log-linear"` (regress `log(sigma)` on age and extrapolate, the
 #'   default of R ChainLadder) or `"mack"` (Mack 1993).
-#' @param tail Factor from the oldest age to ultimate; 1 means no tail.
+#' @param tail Development past the oldest age: a number, the factor from
+#'   the oldest age to ultimate (1 means no tail), or a [tail_constant()],
+#'   [tail_curve()], [tail_bondy()] or [tail_log_linear()].
 #' @param ptr A `ChainLadderFit` pointer; used internally.
 #' @returns A `chain_ladder_fit` object.
 #' @seealso [mack()] for standard errors, [segment()] for one segment.
@@ -624,6 +882,7 @@ development_args <- function(average, sigma_interpolation) {
 #' fit@ldf
 #' fit@reserve
 #' fit@total_reserve
+#' chain_ladder(triangle(long, "year", "age", "paid"), tail = tail_bondy())@tail
 #'
 #' # Every line of business at once.
 #' by_lob <- rbind(transform(long, lob = "auto"), transform(long, lob = "home", paid = paid / 2))
@@ -647,31 +906,41 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
                          sigma_interpolation = "log-linear", tail = 1) {
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation)
-  if (!is.numeric(tail) || length(tail) != 1 || is.na(tail)) {
-    stop("tail must be a single number", call. = FALSE)
-  }
-  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, as.double(tail)))
+  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, tail_ptr(tail)))
   chain_ladder_fit(ptr = ptr)
 }
 
 #' Mack chain ladder
 #'
 #' Mack's distribution-free chain ladder (Mack 1993, 1999): the chain-ladder
-#' projection, without a tail, plus the process and parameter standard
-#' errors of each origin's reserve and of the total, as R ChainLadder's
+#' projection plus the process and parameter standard errors of each
+#' origin's reserve and of the total, as R ChainLadder's
 #' `MackChainLadder()`. Needs at least three development ages, and every
 #' sigma estimable or fillable by `sigma_interpolation`. Every segment of
 #' the triangle is fitted on its own.
+#'
+#' A tail above 1 is one more development step, from the oldest age to
+#' ultimate, with its own sigma and standard error, as
+#' `MackChainLadder(tail = ..., tail.sigma = ..., tail.se = ...)`; unless
+#' given, both are extrapolated log-linearly (R's `tail_SE`). Every origin,
+#' the oldest included, then carries the tail's risk. Without a tail (the
+#' default) the fit is R's `MackChainLadder(tail = FALSE)`.
 #'
 #' The fit has the properties of a [chain_ladder_fit] (and the fit itself
 #' as `m@chain_ladder`), plus per origin `process_risk`, `parameter_risk`
 #' and `standard_error`, and `total_process_risk`, `total_parameter_risk`,
 #' `total_standard_error` and `total_cv` (the total standard error over the
-#' total reserve). Risks are standard errors, not variances. The totals'
-#' risks need a single-segment fit: with several segments use
-#' [totals_frame()], which has them per segment, or [segment()].
+#' total reserve). Risks are standard errors, not variances. Its
+#' `tail_sigma` and `tail_std_err` are the values used, given or
+#' extrapolated. The totals' risks need a single-segment fit: with several
+#' segments use [totals_frame()], which has them per segment, or
+#' [segment()].
 #'
 #' @inheritParams chain_ladder_fit
+#' @param tail_sigma The tail's sigma (R's `tail.sigma`), or `NULL` to
+#'   extrapolate it. Used only when the tail factor is above 1.
+#' @param tail_std_err The tail factor's standard error (R's `tail.se`), or
+#'   `NULL` to extrapolate it. Used only when the tail factor is above 1.
 #' @returns A `mack_fit` object.
 #' @export
 #' @examples
@@ -682,6 +951,9 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
 #' m@standard_error
 #' m@total_cv
 #' as.data.frame(m)
+#'
+#' # With R ChainLadder's tail = TRUE rule.
+#' mack(triangle(long, "year", "age", "paid"), tail = tail_log_linear())@total_standard_error
 mack_fit <- S7::new_class(
   "mack_fit",
   package = "actuarialrs",
@@ -719,10 +991,15 @@ mack_fit <- S7::new_class(
 
 #' @rdname mack_fit
 #' @export
-mack <- function(triangle, column = NULL, average = "volume", sigma_interpolation = "log-linear") {
+mack <- function(triangle, column = NULL, average = "volume", sigma_interpolation = "log-linear",
+                 tail = 1, tail_sigma = NULL, tail_std_err = NULL) {
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation)
-  mack_fit(ptr = rust_result(triangle@ptr$mack(column, args$average, args$sigma)))
+  ptr <- rust_result(triangle@ptr$mack(
+    column, args$average, args$sigma, tail_ptr(tail),
+    optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err")
+  ))
+  mack_fit(ptr = ptr)
 }
 
 #' ODP bootstrap
@@ -916,8 +1193,10 @@ segments_note <- function(p) {
 }
 
 S7::method(print, chain_ladder_fit) <- function(x, ...) {
-  cat(sprintf("<chain_ladder_fit> total reserve %s, tail %s%s\n",
-              format(x@total_reserve, digits = 10), format(x@tail), segments_note(x@ptr)))
+  # Each segment has its own tail.
+  tail <- if (x@ptr$n_segments() > 1) "" else sprintf(", tail %s", format(x@tail))
+  cat(sprintf("<chain_ladder_fit> total reserve %s%s%s\n",
+              format(x@total_reserve, digits = 10), tail, segments_note(x@ptr)))
   print(as.data.frame(x), row.names = FALSE)
   invisible(x)
 }

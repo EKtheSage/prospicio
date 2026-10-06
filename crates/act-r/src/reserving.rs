@@ -1,16 +1,16 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
-//! ladder, Mack and the ODP bootstrap, `docs/design/triangle.md`) for the R
-//! `reserving.R` API.
+//! ladder, Mack, tails and the ODP bootstrap, `docs/design/triangle.md`,
+//! `docs/design/reserving-v02.md`) for the R `reserving.R` API.
 //!
 //! Arrays cross the boundary flattened row-major over the Rust axes
 //! (index, column, origin, development) with NaN where a cell is not
 //! observed; R reshapes them. Months come in as (year, month) integer pairs.
 
 use act_reserving::{
-    Average, ChainLadder, ChainLadderFit as ChainLadderInner, Development, DevelopmentColumn,
-    FitTable, Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
-    OdpBootstrapFits, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation,
-    Triangle as TriangleInner,
+    Average, ChainLadder, ChainLadderFit as ChainLadderInner, CurveShape, Development,
+    DevelopmentColumn, FitTable, Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month,
+    OdpBootstrap, OdpBootstrapFits, ProcessDistribution, ReserveFit, SegmentFits,
+    SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -82,6 +82,23 @@ fn months(years: &[i32], months: &[i32], arg: &str) -> Result<Vec<Month>> {
 fn age(x: f64) -> Result<Lag> {
     Lag::try_from(whole(x, "development")?)
         .map_err(|_| Error::Other(format!("development age {x} is too large")))
+}
+
+/// An optional age in months named `name`; `NULL` is not given.
+fn optional_age(x: Nullable<f64>, name: &str) -> Result<Option<Lag>> {
+    match x {
+        Nullable::NotNull(a) => Lag::try_from(whole(a, name)?)
+            .map(Some)
+            .map_err(|_| Error::Other(format!("{name} {a} is too large"))),
+        Nullable::Null => Ok(None),
+    }
+}
+
+fn optional(x: Nullable<f64>) -> Option<f64> {
+    match x {
+        Nullable::NotNull(v) => Some(v),
+        Nullable::Null => None,
+    }
 }
 
 /// Key columns as a named list of character vectors.
@@ -449,26 +466,39 @@ impl Triangle {
         Ok(self.inner.to_text(max_rows, max_cols))
     }
 
+    /// `tail` is a `ReservingTail`.
     fn chain_ladder(
         &self,
         column: &str,
         average: &str,
         sigma_interpolation: &str,
-        tail: f64,
+        tail: Robj,
     ) -> Result<ChainLadderFit> {
         let inner = ChainLadder {
             development: development(average, sigma_interpolation)?,
-            tail: tail.into(),
+            tail: tail_arg(&tail)?,
         }
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
     }
 
-    fn mack(&self, column: &str, average: &str, sigma_interpolation: &str) -> Result<MackFit> {
+    /// `tail` is a `ReservingTail`; `tail_sigma` and `tail_std_err` are
+    /// `NULL` to extrapolate them.
+    fn mack(
+        &self,
+        column: &str,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: Robj,
+        tail_sigma: Nullable<f64>,
+        tail_std_err: Nullable<f64>,
+    ) -> Result<MackFit> {
         let inner = Mack {
             development: development(average, sigma_interpolation)?,
-            ..Default::default()
+            tail: tail_arg(&tail)?,
+            tail_sigma: optional(tail_sigma),
+            tail_std_err: optional(tail_std_err),
         }
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
@@ -503,6 +533,128 @@ impl Triangle {
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(OdpBootstrapFit { inner })
+    }
+}
+
+/// How development past the oldest age is estimated: a constant factor, a
+/// curve fitted to the factors, Bondy's rule or R ChainLadder's log-linear
+/// rule. An age that is not given is `NULL`.
+#[extendr]
+pub(crate) struct ReservingTail {
+    inner: Tail,
+}
+
+fn tail_arg(tail: &Robj) -> Result<Tail> {
+    <&ReservingTail>::try_from(tail)
+        .map(|t| t.inner)
+        .map_err(|_| Error::Other("tail must be a tail estimator".into()))
+}
+
+fn curve_name(curve: CurveShape) -> &'static str {
+    match curve {
+        CurveShape::Exponential => "exponential",
+        CurveShape::InversePower => "inverse_power",
+    }
+}
+
+#[extendr]
+impl ReservingTail {
+    fn constant(factor: f64, decay: f64, attachment_age: Nullable<f64>) -> Result<Self> {
+        Ok(Self {
+            inner: Tail::Constant(TailConstant {
+                factor,
+                decay,
+                attachment_age: optional_age(attachment_age, "attachment_age")?,
+            }),
+        })
+    }
+
+    /// `curve` is "exponential" or "inverse_power"; the fit period runs
+    /// from `fit_from` (inclusive) to `fit_to` (exclusive).
+    fn curve(
+        curve: &str,
+        fit_from: Nullable<f64>,
+        fit_to: Nullable<f64>,
+        extrap_periods: f64,
+        attachment_age: Nullable<f64>,
+    ) -> Result<Self> {
+        let curve = match curve {
+            "exponential" => CurveShape::Exponential,
+            "inverse_power" => CurveShape::InversePower,
+            _ => {
+                return Err(Error::Other(format!(
+                    "curve must be \"exponential\" or \"inverse_power\", got \"{curve}\""
+                )));
+            }
+        };
+        let extrap_periods = usize::try_from(whole(extrap_periods, "extrap_periods")?)
+            .map_err(|_| Error::Other("extrap_periods is too large".into()))?;
+        Ok(Self {
+            inner: Tail::Curve(TailCurve {
+                curve,
+                fit_period: (
+                    optional_age(fit_from, "fit_period")?,
+                    optional_age(fit_to, "fit_period")?,
+                ),
+                extrap_periods,
+                attachment_age: optional_age(attachment_age, "attachment_age")?,
+            }),
+        })
+    }
+
+    fn bondy(earliest_age: Nullable<f64>, attachment_age: Nullable<f64>) -> Result<Self> {
+        Ok(Self {
+            inner: Tail::Bondy(TailBondy {
+                earliest_age: optional_age(earliest_age, "earliest_age")?,
+                attachment_age: optional_age(attachment_age, "attachment_age")?,
+            }),
+        })
+    }
+
+    fn log_linear() -> Self {
+        Self {
+            inner: Tail::LogLinear,
+        }
+    }
+
+    /// "constant", "curve", "bondy" or "log_linear".
+    fn kind(&self) -> &'static str {
+        match self.inner {
+            Tail::Constant(_) => "constant",
+            Tail::Curve(_) => "curve",
+            Tail::Bondy(_) => "bondy",
+            Tail::LogLinear => "log_linear",
+        }
+    }
+
+    /// The parameters of this kind as a named list, with `NULL` for an age
+    /// not given; the curve's fit period is `fit_from` and `fit_to`.
+    fn params(&self) -> List {
+        let age = |a: Option<Lag>| -> Robj {
+            match a {
+                Some(a) => (a as i32).into(),
+                None => ().into(),
+            }
+        };
+        match self.inner {
+            Tail::Constant(t) => list!(
+                factor = t.factor,
+                decay = t.decay,
+                attachment_age = age(t.attachment_age)
+            ),
+            Tail::Curve(t) => list!(
+                curve = curve_name(t.curve),
+                fit_from = age(t.fit_period.0),
+                fit_to = age(t.fit_period.1),
+                extrap_periods = t.extrap_periods as f64,
+                attachment_age = age(t.attachment_age)
+            ),
+            Tail::Bondy(t) => list!(
+                earliest_age = age(t.earliest_age),
+                attachment_age = age(t.attachment_age)
+            ),
+            Tail::LogLinear => List::new(0),
+        }
     }
 }
 
@@ -615,9 +767,11 @@ impl ChainLadderFit {
         ages(&self.inner)
     }
 
+    /// The selected factors within the triangle: the estimated ones,
+    /// replaced by the tail's from its attachment age.
     fn ldf(&self) -> Result<Vec<f64>> {
         let f = single(&self.inner, "ldf", "development_frame()")?;
-        Ok(f.development.ldf.clone())
+        Ok(f.ldf().to_vec())
     }
 
     fn sigma(&self) -> Result<Vec<f64>> {
@@ -634,8 +788,28 @@ impl ChainLadderFit {
         self.inner.fits[0].development.alpha
     }
 
-    fn tail(&self) -> f64 {
-        self.inner.fits[0].tail.factor
+    fn tail(&self) -> Result<f64> {
+        Ok(single(&self.inner, "tail", "development_frame()")?
+            .tail
+            .factor)
+    }
+
+    /// Factors past the oldest age, which multiply to the tail.
+    fn tail_ldf(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "tail_ldf", "development_frame()")?;
+        Ok(f.tail.ldf[f.development.ldf.len()..].to_vec())
+    }
+
+    fn tail_sigma(&self) -> Result<f64> {
+        Ok(single(&self.inner, "tail_sigma", "development_frame()")?
+            .tail
+            .sigma)
+    }
+
+    fn tail_std_err(&self) -> Result<f64> {
+        Ok(single(&self.inner, "tail_std_err", "development_frame()")?
+            .tail
+            .std_err)
     }
 
     fn cdf(&self) -> Result<Vec<f64>> {
@@ -805,6 +979,7 @@ impl OdpBootstrapFit {
 extendr_module! {
     mod reserving;
     impl Triangle;
+    impl ReservingTail;
     impl ChainLadderFit;
     impl MackFit;
     impl OdpBootstrapFit;
