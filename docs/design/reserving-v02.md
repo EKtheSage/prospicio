@@ -177,9 +177,23 @@ pub struct Mack {
   chainladder-python's `_get_tail_stats` matches: the tail's position on
   the line through `ln(f - 1)` (factors above 1) is where it reaches
   `ln(factor - 1)`, read off lines through `ln(sigma)` and `ln(std_err)`.
-  A factor not above 1 carries no tail risk (R adds no tail step; given
-  values are ignored, as R ignores them). Every origin, the oldest
-  included, carries the tail's risk.
+  A factor of exactly 1 is no tail and carries no risk. A factor below 1
+  follows chainladder-python, a deviation from R: it scales the
+  ultimates, as the chain ladder's cdf does, and its sigma and standard
+  error are read where a factor of 1.001 would be
+  (`_get_tail_weighted_time_period`); given values apply to any factor
+  other than 1. R's `MackChainLadder` ignores a tail below 1 altogether,
+  so following it would make Mack's ultimates differ from the chain
+  ladder's for the same tail. Every origin, the oldest included, carries
+  the tail's risk.
+* `TailCurve.fit_period` and `TailBondy.earliest_age` take the last age at
+  or before the given one, which is chainladder-python's positional
+  `int(age / grain - 1)` on ages that are multiples of the grain; the
+  attachment ages are read by value, as Python does. A `TailConstant`
+  attached at or before the youngest age replaces every estimated factor;
+  chainladder-python ignores that attachment (`if attach_idx:` with index
+  0), a deviation kept on purpose and noted in
+  `knowledge/references/chainladder-tails.md`.
 * A tail that cannot be fitted is `Error::Tail(reason)`; a non-positive
   constant stays `Error::InvalidTail`.
 
@@ -187,7 +201,10 @@ Bindings: Python `ChainLadder(tail=...)` and `Mack(tail=...)` accept a float
 or a `TailConstant`, `TailCurve`, `TailBondy` or `TailLogLinear`; R accepts a
 number or the matching constructor. In Python the default is `tail=None`
 (no tail); `Mack` also takes `tail_sigma` and `tail_std_err`, and the fits
-report `tail`, `tail_ldf`, `tail_sigma` and `tail_std_err`. Parity:
+report `tail`, `tail_ldf`, `tail_sigma`, `tail_std_err`,
+`tail_attachment_age` and `estimated_ldf` (the factors before the tail
+replaced any). With several segments, `totals_frame()` has each segment's
+`tail`, `tail_sigma` and `tail_std_err` (`SegmentFits::totals`). Parity:
 `validation/tests/reserving_tails.rs` against
 `reserving_tails_r.csv` and `reserving_tails_python.csv`.
 

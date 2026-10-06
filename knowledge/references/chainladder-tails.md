@@ -38,7 +38,10 @@ GenIns and ABC.[^r-script][^py-script] Read from the sources:
 * `MackChainLadder` adds the tail step, and `tail_SE`, only when the tail
   factor is above 1. A tail below 1 is stored in `$f` but neither scales
   the ultimates nor adds risk; given `tail.se` and `tail.sigma` are then
-  ignored.
+  ignored. On RAA, `tail = 0.98` gives a total ultimate of 213122.2 and
+  `Total.Mack.S.E` 26880.74, the same as no tail. `act_reserving` follows
+  chainladder-python here instead (below), so that Mack's ultimates are
+  the chain ladder's.
 * `tail_SE` finds the tail's position where the line through `ln(f - 1)`
   reaches `ln(tail - 1)` and reads lines through `ln(f.se)` and
   `ln(sigma)` there. The tail's process term is
@@ -51,14 +54,32 @@ GenIns and ABC.[^r-script][^py-script] Read from the sources:
   above 1. It drops a factor at or below 1 by setting its `ln(f - 1)` to
   NaN while keeping its `x` in the regression's mean, so with such a factor
   it departs from R; `act_reserving` drops the point cleanly, as R's `lm`
-  does. A tail below 1 is moved to 1.001 for the position, so it gets a
-  non-zero sigma; `act_reserving` gives it none, as R.[^tail]
+  does. A tail below 1 scales the ultimates and is moved to 1.001 for the
+  position (`_get_tail_weighted_time_period`), so it carries a non-zero
+  sigma and standard error; a tail of exactly 1 carries none.
+  `act_reserving` does the same: on RAA, `TailConstant(0.98)` with
+  `MackChainladder` gives a total ultimate of 208859.78, a total standard
+  error of 26343.49 and a tail sigma of 0.11275.[^tail]
 * `TailConstant` spreads the factor as `1 + x decay^k` with `x` the root
   of `a x^2 + b x - ln(tail)` (`a`, `b` sums over 1000 periods); the last
-  factor makes up the difference.
-* `TailCurve`'s `fit_period=(start, end)` becomes the slice
-  `[start/grain - 1, end/grain - 1)`: ages from `start` up to but not
-  including `end`. Factors at or below 1.00001 are left out.
+  factor makes up the difference. `_apply_decay` tests `if attach_idx:`,
+  so an `attachment_age` at or before the youngest age (index 0) is
+  ignored and the tail attaches at the oldest age; `TailCurve` has no such
+  test. `act_reserving` attaches at the youngest age for both, replacing
+  every estimated factor (on RAA with 1.05 at age 12 the ultimate of 1990
+  is 2166 against about 19322 in Python); a unit test records it.
+* Ages are read by position, `int(age / grain - 1)`: `TailCurve`'s
+  `fit_period=(start, end)` is the slice `[int(start/grain - 1),
+  int(end/grain - 1))` and `TailBondy`'s `earliest_age` is
+  `ddims[int(age/grain) - 1]`. An age off the grid therefore means the
+  age at or before it (`fit_period=(30, 102)` is `(24, 96)` on an annual
+  grain). `act_reserving` maps both to the last age at or before the given
+  one, which is the same on ages that are multiples of the grain from one
+  grain on; on a triangle whose ages start elsewhere (3, 15, 27 months)
+  Python's positions point at other ages, and `act_reserving` uses the
+  ages themselves. `attachment_age` is read by value in both (first age
+  at or after for `TailConstant` and `TailCurve`, last at or before for
+  `TailBondy`). `TailCurve` leaves out factors at or below 1.00001.
 * `TailBondy` keeps the factor from its attachment age to the next
   (`TailConstant` and `TailCurve` replace it), builds the fitted factors
   from the observed factor at `earliest_age` rather than the fitted one,
