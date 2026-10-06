@@ -82,3 +82,30 @@ sg <- severity_exposure_curve(pareto(1e5, 1.5), 1e7, c(0, 1))
 stopifnot(sg[1] == 0, abs(sg[2] - 1) < 1e-12)
 
 cat("actuarialrs R pricing tests passed\n")
+
+# Tabulated exposure curves and destruction-rate quantiles.
+tc <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
+stopifnot(abs(exposure_curve(tc, 0.3) - 0.6) < 1e-15, abs(tc@mean - 0.25) < 1e-15)
+stopifnot(identical(rate_quantile(tc, c(0.75, 0.76, 0.91)), c(0.1, 0.5, 1)))
+stopifnot(abs(exposure_layer_share(tc, 5e6, 5e6, 10e6) - 0.2) < 1e-12)
+stopifnot(inherits(try(tabulated_curve(c(0, 0.5, 1), c(0, 0.3, 1)), silent = TRUE), "try-error"))
+c3 <- swiss_re_curve(3)
+u <- (seq_len(100000) - 0.5) / 100000
+stopifnot(abs(mean(rate_quantile(c3, u)) / c3@mean - 1) < 1e-3)
+
+# Risk profile: simulation against exposure rating, surplus inuring to a per-risk XL.
+rp <- risk_profile(c(0.5e6, 3e6, 20e6), c(2000, 300, 20),
+                   list(swiss_re_curve(2), swiss_re_curve(3),
+                        tabulated_curve(c(0, 0.02, 0.2, 1), c(0, 0.3, 0.8, 1))),
+                   expected_loss = c(0.6e6, 0.5e6, 0.4e6))
+stopifnot(abs(rp@expected_loss - 1.5e6) < 1e-6)
+ev <- profile_simulate(rp, 50000, seed = 11)
+tw <- inuring_tower(list(list(surplus_treaty("surplus", 1e6, 5)), list(xol_layer("xl", 1e6, 0.5e6))))
+dm <- draw_matrix(apply_tower(tw, ev))
+for (k in 2:3) {
+  want <- if (k == 2) profile_surplus_loss(rp, 1e6, 5) else profile_layer_loss(rp, 1e6, 0.5e6, 1e6, 5)
+  stopifnot(abs(mean(dm[, k]) - want) < 4 * sd(dm[, k]) / sqrt(50000))
+}
+rq <- risk_profile(c(1e6, 10e6), c(800, 50), swiss_re_curve(3), premium = c(2e6, 1e6), loss_ratio = 0.6)
+stopifnot(abs(rq@expected_loss - 1.8e6) < 1e-6, abs(profile_layer_loss(rq, Inf, 0) - 1.8e6) < 1e-6)
+stopifnot(inherits(try(risk_profile(1e6, 1, swiss_re_curve(3), premium = 1), silent = TRUE), "try-error"))

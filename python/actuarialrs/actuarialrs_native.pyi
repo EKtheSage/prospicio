@@ -2003,6 +2003,38 @@ class EventSet:
         IndexError
             If ``sim`` is not a simulated year.
         """
+    @staticmethod
+    def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0) -> EventSet:
+        """
+        Years of losses from elsewhere (your own simulation, or a
+        catastrophe model's event loss table by year), optionally with the
+        sum insured of the risk each loss hit, which a surplus treaty needs.
+        
+        Parameters
+        ----------
+        years : list of list of float
+            Each year's losses, in order.
+        sums_insured : list of list of float, optional
+            The same shape: each loss's sum insured, at least the loss.
+        seed : int, default 0
+            Recorded in results' provenance.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0], [], [9.0]], [[10.0, 2.0], [], [50.0]])
+        >>> e.counts(), e.sums_insured(2)
+        ([2, 0, 1], [50.0])
+        """
+    @property
+    def has_sums_insured(self, /) -> bool:
+        """
+        Whether the losses carry sums insured.
+        """
     @property
     def n_sims(self, /) -> int:
         """
@@ -2012,6 +2044,18 @@ class EventSet:
     def seed(self, /) -> int:
         """
         The seed the years were drawn from.
+        """
+    def sums_insured(self, /, sim: int) -> list[float] |None:
+        """
+        Year ``sim``'s sums insured, one per loss, or ``None``.
+        
+        Parameters
+        ----------
+        sim : int
+        
+        Returns
+        -------
+        list of float or None
         """
     def totals(self, /) -> PredictiveDistribution:
         """
@@ -3614,6 +3658,20 @@ class Layer:
         >>> layer.ceded_by_event([8.0, 20.0, 12.0])
         [0.0, 9.0, 6.0]
         """
+    def ceded_with_sums_insured(self, /, losses: Sequence[float], sums_insured: Sequence[float]) -> float:
+        """
+        Ceded loss for one year's losses on risks with the given sums
+        insured, one per loss.
+        
+        Parameters
+        ----------
+        losses : list of float
+        sums_insured : list of float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def limit(self, /) -> float:
         """
@@ -3623,6 +3681,11 @@ class Layer:
     def name(self, /) -> str:
         """
         Layer name.
+        """
+    @property
+    def needs_sums_insured(self, /) -> bool:
+        """
+        Whether the layer is a surplus treaty, which needs sums insured.
         """
     @property
     def premium(self, /) -> float:
@@ -3702,6 +3765,37 @@ class Layer:
         >>> from actuarialrs.reinsurance import Layer
         >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
         30.0
+        """
+    @staticmethod
+    def surplus(name: str, retention: float, lines: float) -> Layer:
+        """
+        A surplus treaty: each risk cedes the part of its sum insured above
+        the retention line ``retention``, up to ``lines`` lines, and the
+        same share of every loss on it.
+        
+        With a retention of 1m and 9 lines (a capacity of 9m), a 5m risk
+        cedes 80% and a 20m risk 45%. The events must carry sums insured
+        (``EventSet.from_years(..., sums_insured=...)``); it can inure to a
+        per-risk excess of loss in a later stage of a ``Tower``.
+        
+        Parameters
+        ----------
+        name : str
+        retention : float
+            The retention line; positive.
+        lines : float
+            Number of lines of capacity; positive.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from actuarialrs.reinsurance import Layer
+        >>> s = Layer.surplus("surplus", 1e6, 9.0)
+        >>> round(s.ceded_with_sums_insured([2e6, 2e6], [5e6, 20e6]))
+        2500000
         """
 
 @final
@@ -4584,6 +4678,19 @@ class Mbbefd:
         Returns
         -------
         float
+        """
+    def rate_quantile(self, /, u: Sequence[float]) -> list[float]:
+        """
+        Destruction rate (loss over MPL) at each probability ``u`` in
+        ``(0, 1)``: draws with this curve as their exposure curve.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        list of float
         """
     @staticmethod
     def swiss_re(c: float) -> Mbbefd:
@@ -6110,6 +6217,110 @@ class Price:
         """
 
 @final
+class RiskProfile:
+    """
+    A risk profile for property per-risk business: bands of sum insured,
+    each with an expected loss (given, or premium times a loss ratio) and
+    its own exposure curve.
+    
+    Each band's representative risk has sum insured ``SI`` (its total sum
+    insured over its number of risks, say), taken as its MPL. The band
+    expects ``EL / (SI * curve.mean_rate)`` losses a year; each simulated
+    loss is the band's ``SI`` times a destruction rate from the band's
+    curve, and carries that ``SI``, so a surplus treaty (``Layer.surplus``)
+    and the per-risk excess of loss it inures to apply to the events. The
+    exposure-rated expectations (``expected_layer_loss``,
+    ``expected_surplus_loss``) check the simulation.
+    
+    Parameters
+    ----------
+    sums_insured : list of float
+        One per band.
+    risks : list of float
+        Number of risks per band (for reference).
+    curves : Mbbefd or TabulatedCurve, or a list of them
+        One curve for every band, or one per band.
+    expected_losses : list of float, optional
+        Expected annual loss per band. Give this, or ``premiums``.
+    premiums : list of float, optional
+        Premium per band, with ``loss_ratio``.
+    loss_ratio : float or list of float, optional
+        Expected loss ratio, one for all bands or one per band.
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import Mbbefd, RiskProfile
+    >>> p = RiskProfile([1e6, 10e6], [800, 50], Mbbefd.swiss_re(3.0),
+    ...                 premiums=[2e6, 1e6], loss_ratio=0.6)
+    >>> round(p.expected_loss())
+    1800000
+    >>> events = p.simulate(1000, 7)
+    >>> events.has_sums_insured
+    True
+    """
+    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None) -> RiskProfile: ...
+    def __repr__(self, /) -> str: ...
+    def expected_claims(self, /) -> list[float]:
+        """
+        Expected number of losses a year, per band.
+        
+        Returns
+        -------
+        list of float
+        """
+    def expected_layer_loss(self, /, limit: float, attachment: float, surplus_retention: float |None = None, surplus_lines: float |None = None) -> float:
+        """
+        Exposure-rated expected loss to a per-risk layer ``limit`` xs
+        ``attachment``, optionally on each risk net of a surplus treaty.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for unlimited.
+        attachment : float
+        surplus_retention, surplus_lines : float, optional
+            A surplus treaty the layer inures to.
+        
+        Returns
+        -------
+        float
+        """
+    def expected_loss(self, /) -> float:
+        """
+        Expected annual loss, all bands.
+        
+        Returns
+        -------
+        float
+        """
+    def expected_surplus_loss(self, /, retention: float, lines: float) -> float:
+        """
+        Expected annual loss ceded to a surplus treaty.
+        
+        Parameters
+        ----------
+        retention : float
+        lines : float
+        
+        Returns
+        -------
+        float
+        """
+    def simulate(self, /, n_sims: int, seed: int) -> EventSet:
+        """
+        ``n_sims`` years of losses, each with its risk's sum insured.
+        
+        Parameters
+        ----------
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        EventSet
+        """
+
+@final
 class Sampled:
     """
     A distribution known only through equally weighted draws.
@@ -6313,6 +6524,101 @@ class StudentTCopula:
         Returns
         -------
         list of list of float
+        """
+
+@final
+class TabulatedCurve:
+    """
+    A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
+    ``(1, 1)``, interpolated linearly, as published curves are given
+    (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
+    reinsurer's own).
+    
+    The table must be concave (its slopes never increase). Its destruction
+    rate is discrete: the points' ``x`` with probabilities from the drops in
+    slope, and a total loss with probability last slope over first. Its
+    mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
+    first points for the expected loss to be right.
+    
+    Parameters
+    ----------
+    x : list of float
+        Increasing from 0 to 1.
+    g : list of float
+        ``G(x)``, from 0 to 1.
+    
+    Raises
+    ------
+    ValueError
+        If the points do not run from ``(0, 0)`` to ``(1, 1)``, or are not
+        increasing and concave.
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import TabulatedCurve
+    >>> t = TabulatedCurve([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0])
+    >>> round(t.curve([0.3])[0], 12), t.mean_rate()
+    (0.6, 0.25)
+    """
+    def __getnewargs__(self, /) -> tuple[list[float], list[float]]: ...
+    def __new__(cls, /, x: Sequence[float], g: Sequence[float]) -> TabulatedCurve: ...
+    def __repr__(self, /) -> str: ...
+    def curve(self, /, x: Sequence[float]) -> list[float]:
+        """
+        The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def g(self, /) -> list[float]:
+        """
+        The table's ``G(x)``.
+        """
+    def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
+        """
+        Share of a risk's expected loss in the layer ``limit`` xs
+        ``attachment``, for a risk with maximum possible loss ``mpl``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        mpl : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean_rate(self, /) -> float:
+        """
+        Mean destruction rate, ``x1 / G(x1)``.
+        
+        Returns
+        -------
+        float
+        """
+    def rate_quantile(self, /, u: Sequence[float]) -> list[float]:
+        """
+        Destruction rate at each probability ``u`` in ``(0, 1)``.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def x(self, /) -> list[float]:
+        """
+        The table's ``x``.
         """
 
 @final

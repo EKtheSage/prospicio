@@ -56,6 +56,38 @@ simulate_events <- function(frequency, severity, n_sims, seed) {
   event_set(ptr = ptr)
 }
 
+#' Years of losses from elsewhere
+#'
+#' Builds an `event_set` from your own simulation, or a catastrophe model's
+#' event loss table by year, optionally with the sum insured of the risk
+#' each loss hit, which a [surplus_treaty()] needs.
+#'
+#' @param years A list with one numeric vector of losses per year, in order.
+#' @param sums_insured `NULL`, or a list of the same shape: each loss's sum
+#'   insured, at least the loss.
+#' @param seed Recorded in results' provenance.
+#' @returns An `event_set`; [event_sums_insured()] reads the sums insured
+#'   back.
+#' @export
+#' @examples
+#' ev <- events_from_years(list(c(5, 2), numeric(), 9), list(c(10, 2), numeric(), 50))
+#' event_counts(ev)
+#' event_sums_insured(ev, 3)
+events_from_years <- function(years, sums_insured = NULL, seed = 0) {
+  years <- lapply(years, as.double)
+  if (!is.null(sums_insured)) sums_insured <- lapply(sums_insured, as.double)
+  event_set(ptr = rust_result(EventSet$from_years(years, sums_insured, as.double(seed))))
+}
+
+#' Sums insured of one year's losses
+#'
+#' @param x An `event_set` whose losses carry sums insured.
+#' @param sim Year number, from 1 to `x@n_sims`.
+#' @returns Numeric vector, one sum insured per loss; empty when the events
+#'   carry none.
+#' @export
+event_sums_insured <- function(x, sim) rust_result(x@ptr$sums_insured(as.double(sim)))
+
 #' Simulated years of losses (class)
 #'
 #' Created by [simulate_events()].

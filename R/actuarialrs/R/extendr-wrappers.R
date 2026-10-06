@@ -110,6 +110,12 @@ EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
 
+EventSet$from_years <- function(years, sums_insured, seed) .Call(wrap__EventSet__from_years, years, sums_insured, seed)
+
+EventSet$has_sums_insured <- function() .Call(wrap__EventSet__has_sums_insured, self)
+
+EventSet$sums_insured <- function(sim) .Call(wrap__EventSet__sums_insured, self, sim)
+
 EventSet$n_sims <- function() .Call(wrap__EventSet__n_sims, self)
 
 EventSet$seed <- function() .Call(wrap__EventSet__seed, self)
@@ -133,6 +139,12 @@ XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, a
 XolLayer$quota_share <- function(name, cession) .Call(wrap__XolLayer__quota_share, name, cession)
 
 XolLayer$stop_loss <- function(name, limit, retention) .Call(wrap__XolLayer__stop_loss, name, limit, retention)
+
+XolLayer$surplus <- function(name, retention, lines) .Call(wrap__XolLayer__surplus, name, retention, lines)
+
+XolLayer$ceded_with_sums_insured <- function(losses, sums_insured) .Call(wrap__XolLayer__ceded_with_sums_insured, self, losses, sums_insured)
+
+XolLayer$needs_sums_insured <- function() .Call(wrap__XolLayer__needs_sums_insured, self)
 
 XolLayer$name <- function() .Call(wrap__XolLayer__name, self)
 
@@ -998,11 +1010,55 @@ Mbbefd$total_loss_probability <- function() .Call(wrap__Mbbefd__total_loss_proba
 
 Mbbefd$layer_share <- function(limit, attachment, mpl) .Call(wrap__Mbbefd__layer_share, self, limit, attachment, mpl)
 
+Mbbefd$rate_quantile <- function(u) .Call(wrap__Mbbefd__rate_quantile, self, u)
+
 #' @export
 `$.Mbbefd` <- function (self, name) { func <- Mbbefd[[name]]; environment(func) <- environment(); func }
 
 #' @export
 `[[.Mbbefd` <- `$.Mbbefd`
+
+Tabulated <- new.env(parent = emptyenv())
+
+Tabulated$new <- function(x, g) .Call(wrap__Tabulated__new, x, g)
+
+Tabulated$x <- function() .Call(wrap__Tabulated__x, self)
+
+Tabulated$g <- function() .Call(wrap__Tabulated__g, self)
+
+Tabulated$curve <- function(x) .Call(wrap__Tabulated__curve, self, x)
+
+Tabulated$mean <- function() .Call(wrap__Tabulated__mean, self)
+
+Tabulated$layer_share <- function(limit, attachment, mpl) .Call(wrap__Tabulated__layer_share, self, limit, attachment, mpl)
+
+Tabulated$rate_quantile <- function(u) .Call(wrap__Tabulated__rate_quantile, self, u)
+
+#' @export
+`$.Tabulated` <- function (self, name) { func <- Tabulated[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Tabulated` <- `$.Tabulated`
+
+RiskProfile <- new.env(parent = emptyenv())
+
+RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio)
+
+RiskProfile$expected_loss <- function() .Call(wrap__RiskProfile__expected_loss, self)
+
+RiskProfile$expected_claims <- function() .Call(wrap__RiskProfile__expected_claims, self)
+
+RiskProfile$expected_layer_loss <- function(limit, attachment, surplus_retention, surplus_lines) .Call(wrap__RiskProfile__expected_layer_loss, self, limit, attachment, surplus_retention, surplus_lines)
+
+RiskProfile$expected_surplus_loss <- function(retention, lines) .Call(wrap__RiskProfile__expected_surplus_loss, self, retention, lines)
+
+RiskProfile$simulate <- function(n_sims, seed) .Call(wrap__RiskProfile__simulate, self, n_sims, seed)
+
+#' @export
+`$.RiskProfile` <- function (self, name) { func <- RiskProfile[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.RiskProfile` <- `$.RiskProfile`
 
 Triangle <- new.env(parent = emptyenv())
 

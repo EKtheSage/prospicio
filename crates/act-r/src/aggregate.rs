@@ -119,6 +119,57 @@ impl EventSet {
         Ok(Self { inner })
     }
 
+    /// `years` is a list of numeric vectors; `sums_insured` NULL or a list
+    /// of the same shape.
+    fn from_years(years: List, sums_insured: Robj, seed: f64) -> Result<Self> {
+        let to_vecs = |l: &List, what: &str| -> Result<Vec<Vec<f64>>> {
+            l.values()
+                .map(|v| {
+                    v.as_real_vector()
+                        .or_else(|| (v.len() == 0).then(Vec::new))
+                        .ok_or_else(|| Error::Other(format!("{what} must be numeric vectors")))
+                })
+                .collect()
+        };
+        let years = to_vecs(&years, "years")?;
+        let shape: Vec<usize> = years.iter().map(Vec::len).collect();
+        let mut inner = EventSetInner::from_years(years, whole(seed, "seed")?).map_err(to_r)?;
+        if !sums_insured.is_null() {
+            let list = List::try_from(sums_insured)
+                .map_err(|_| Error::Other("sums_insured must be a list or NULL".into()))?;
+            let si = to_vecs(&list, "sums_insured")?;
+            if si.iter().map(Vec::len).ne(shape.iter().copied()) {
+                return Err(Error::Other(
+                    "sums_insured must have the shape of years".into(),
+                ));
+            }
+            inner = inner
+                .with_sums_insured(si.into_iter().flatten().collect())
+                .map_err(to_r)?;
+        }
+        Ok(Self { inner })
+    }
+
+    fn has_sums_insured(&self) -> bool {
+        self.inner.has_sums_insured()
+    }
+
+    /// Year `sim`'s sums insured (1-based); empty when not known.
+    fn sums_insured(&self, sim: f64) -> Result<Vec<f64>> {
+        let sim = whole(sim, "sim")? as usize;
+        if sim == 0 || sim > self.inner.n_sims() {
+            return Err(Error::Other(format!(
+                "year {sim} out of range for {} simulated years",
+                self.inner.n_sims()
+            )));
+        }
+        Ok(self
+            .inner
+            .sums_insured(sim - 1)
+            .map(<[f64]>::to_vec)
+            .unwrap_or_default())
+    }
+
     fn n_sims(&self) -> f64 {
         self.inner.n_sims() as f64
     }
