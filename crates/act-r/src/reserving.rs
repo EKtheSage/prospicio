@@ -458,7 +458,7 @@ impl Triangle {
     ) -> Result<ChainLadderFit> {
         let inner = ChainLadder {
             development: development(average, sigma_interpolation)?,
-            tail,
+            tail: tail.into(),
         }
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
@@ -468,6 +468,7 @@ impl Triangle {
     fn mack(&self, column: &str, average: &str, sigma_interpolation: &str) -> Result<MackFit> {
         let inner = Mack {
             development: development(average, sigma_interpolation)?,
+            ..Default::default()
         }
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
@@ -634,7 +635,7 @@ impl ChainLadderFit {
     }
 
     fn tail(&self) -> f64 {
-        self.inner.fits[0].tail
+        self.inner.fits[0].tail.factor
     }
 
     fn cdf(&self) -> Result<Vec<f64>> {

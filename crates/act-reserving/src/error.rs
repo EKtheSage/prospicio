@@ -58,6 +58,9 @@ pub enum Error {
     Factor { age: usize, reason: &'static str },
     /// The tail factor is not finite and positive.
     InvalidTail(f64),
+    /// A tail cannot be fitted with these settings, or its variance cannot
+    /// be extrapolated.
+    Tail(&'static str),
     /// The method needs more development ages than the triangle has.
     TooFewAges { needed: usize, found: usize },
     /// The bootstrap cannot run on this input or with these settings.
@@ -117,6 +120,7 @@ impl fmt::Display for Error {
                 write!(f, "factor from development index {age}: {reason}")
             }
             Self::InvalidTail(t) => write!(f, "tail factor {t} is not finite and positive"),
+            Self::Tail(why) => write!(f, "tail: {why}"),
             Self::TooFewAges { needed, found } => write!(
                 f,
                 "method needs at least {needed} development ages, triangle has {found}"

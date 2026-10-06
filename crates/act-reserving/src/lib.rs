@@ -4,6 +4,8 @@
 //! v0.1 so far: the [`Triangle`] (`docs/design/triangle.md`), development
 //! factors, [`ChainLadder`], [`Mack`] and the [`OdpBootstrap`]. Results are checked against R
 //! ChainLadder and chainladder-python in `validation/tests/reserving.rs`.
+//! v0.2 adds [`Tail`] factors (`docs/design/reserving-v02.md`), checked in
+//! `validation/tests/reserving_tails.rs`.
 //!
 //! ```
 //! use act_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
@@ -36,6 +38,7 @@ pub mod frame;
 pub mod mack;
 pub mod odp_glm;
 pub mod segments;
+pub mod tail;
 pub mod triangle;
 pub mod view;
 
@@ -53,5 +56,6 @@ pub use frame::TriangleFrame;
 pub use mack::{Mack, MackFit};
 pub use odp_glm::{OdpGlm, OdpGlmFit};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
+pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};
 pub use triangle::{CalendarView, DevelopmentColumn, Diagonal, Label, Long, LongTable, Triangle};
 pub use view::{SummaryRow, TriangleSummary, TriangleView};

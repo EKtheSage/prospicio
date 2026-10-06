@@ -302,10 +302,11 @@ impl<T: ReserveFit> SegmentFits<T> {
         }
     }
 
-    /// One row per segment × development age: `ldf` (from this age to the
-    /// next), `cdf` (to ultimate, with the tail), `sigma` and `std_err`.
-    /// The oldest age has no next age, so its `ldf`, `sigma` and `std_err`
-    /// are NaN.
+    /// One row per segment × development age: `ldf` (the selected factor
+    /// from this age to the next), `cdf` (to ultimate, with the tail),
+    /// `sigma` and `std_err` (as estimated). The oldest age has no next age,
+    /// so its `ldf`, `sigma` and `std_err` are NaN; its `cdf` is the tail
+    /// factor.
     pub fn development_table(&self) -> FitTable {
         let n_ages = |s: usize| self.fits[s].chain_ladder().cdf.len();
         let padded = |v: &[f64]| {
@@ -320,7 +321,7 @@ impl<T: ReserveFit> SegmentFits<T> {
                 let cl = f.chain_ladder();
                 let dev = &cl.development;
                 vec![
-                    ("ldf", padded(&dev.ldf)),
+                    ("ldf", padded(cl.ldf())),
                     ("cdf", cl.cdf.clone()),
                     ("sigma", padded(&dev.sigma)),
                     ("std_err", padded(&dev.std_err)),
