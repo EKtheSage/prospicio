@@ -2,6 +2,8 @@
 
 ## 2026-10-06
 
+* **Verification**: [MBBEFD exposure curves](/references/mbbefd.md) verified by CI's Rust job on #124 (the mpmath parity test).
+* **Update**: [Cloud network](/environment/cloud-network.md): CRAN is now allowed; Posit's binary redirect host is still refused, so R packages build from source.
 * **Verification**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md) verified by CI's Python job on #123.
 * **Creation**: [MBBEFD exposure curves](/references/mbbefd.md), from building `act_pricing::exposure`.
 * **Update**: [Cloud network](/environment/cloud-network.md): CRAN is refused in the container.
