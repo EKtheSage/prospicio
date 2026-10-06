@@ -1,5 +1,6 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
-//! ladder, Mack and the ODP bootstrap, `docs/design/triangle.md`) for the R
+//! ladder, Mack with its one-year view and the ODP bootstrap,
+//! `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the R
 //! `reserving.R` API.
 //!
 //! Arrays cross the boundary flattened row-major over the Rust axes
@@ -7,10 +8,10 @@
 //! observed; R reshapes them. Months come in as (year, month) integer pairs.
 
 use act_reserving::{
-    Average, ChainLadder, ChainLadderFit as ChainLadderInner, Development, DevelopmentColumn,
-    FitTable, Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
-    OdpBootstrapFits, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation,
-    Triangle as TriangleInner,
+    Average, ChainLadder, ChainLadderFit as ChainLadderInner,
+    ClaimsDevelopmentResult as ClaimsDevelopmentInner, Development, DevelopmentColumn, FitTable,
+    Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap, OdpBootstrapFits,
+    ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -743,6 +744,63 @@ impl MackFit {
             inner: pick(&self.inner, keys, values)?,
         })
     }
+
+    /// Merz and Wüthrich's one-year view of a single-segment fit.
+    fn claims_development_result(&self) -> Result<ClaimsDevelopmentResult> {
+        let fit = match self.inner.fits.as_slice() {
+            [one] => one,
+            _ => {
+                return Err(Error::Other(format!(
+                    "claims_development_result needs a single-segment fit, and this one has \
+                     {} segments; use segment()",
+                    self.inner.len()
+                )));
+            }
+        };
+        Ok(ClaimsDevelopmentResult {
+            inner: fit.claims_development_result().map_err(to_r)?,
+        })
+    }
+}
+
+/// Merz and Wüthrich's (2008) one-year view of a Mack fit: standard errors
+/// of the claims development result per origin and in total, in the next
+/// calendar year and in each later one. `by_calendar_year` is row-major
+/// over calendar year x origin.
+#[extendr]
+pub(crate) struct ClaimsDevelopmentResult {
+    inner: ClaimsDevelopmentInner,
+}
+
+#[extendr]
+impl ClaimsDevelopmentResult {
+    fn origins(&self) -> Vec<String> {
+        self.inner.origins.iter().map(ToString::to_string).collect()
+    }
+
+    fn one_year_standard_error(&self) -> Vec<f64> {
+        self.inner.one_year_standard_error.clone()
+    }
+
+    fn total_one_year_standard_error(&self) -> f64 {
+        self.inner.total_one_year_standard_error
+    }
+
+    fn by_calendar_year(&self) -> Vec<f64> {
+        self.inner.by_calendar_year.concat()
+    }
+
+    fn total_by_calendar_year(&self) -> Vec<f64> {
+        self.inner.total_by_calendar_year.clone()
+    }
+
+    fn run_off_standard_error(&self) -> Vec<f64> {
+        self.inner.run_off_standard_error()
+    }
+
+    fn total_run_off_standard_error(&self) -> f64 {
+        self.inner.total_run_off_standard_error()
+    }
 }
 
 /// An ODP bootstrap of every segment of a triangle column. `fitted` and
@@ -806,5 +864,6 @@ extendr_module! {
     impl Triangle;
     impl ChainLadderFit;
     impl MackFit;
+    impl ClaimsDevelopmentResult;
     impl OdpBootstrapFit;
 }

@@ -47,6 +47,8 @@ and \code{standard_error}, and \code{total_process_risk}, \code{total_parameter_
 total reserve). Risks are standard errors, not variances. The totals'
 risks need a single-segment fit: with several segments use
 \code{\link[=totals_frame]{totals_frame()}}, which has them per segment, or \code{\link[=segment]{segment()}}.
+\code{\link[=claims_development_result]{claims_development_result()}} gives Merz and Wuthrich's one-year view
+of a single-segment fit.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),

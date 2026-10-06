@@ -1071,11 +1071,35 @@ MackFit$development_table <- function() .Call(wrap__MackFit__development_table, 
 
 MackFit$segment <- function(keys, values) .Call(wrap__MackFit__segment, self, keys, values)
 
+MackFit$claims_development_result <- function() .Call(wrap__MackFit__claims_development_result, self)
+
 #' @export
 `$.MackFit` <- function (self, name) { func <- MackFit[[name]]; environment(func) <- environment(); func }
 
 #' @export
 `[[.MackFit` <- `$.MackFit`
+
+ClaimsDevelopmentResult <- new.env(parent = emptyenv())
+
+ClaimsDevelopmentResult$origins <- function() .Call(wrap__ClaimsDevelopmentResult__origins, self)
+
+ClaimsDevelopmentResult$one_year_standard_error <- function() .Call(wrap__ClaimsDevelopmentResult__one_year_standard_error, self)
+
+ClaimsDevelopmentResult$total_one_year_standard_error <- function() .Call(wrap__ClaimsDevelopmentResult__total_one_year_standard_error, self)
+
+ClaimsDevelopmentResult$by_calendar_year <- function() .Call(wrap__ClaimsDevelopmentResult__by_calendar_year, self)
+
+ClaimsDevelopmentResult$total_by_calendar_year <- function() .Call(wrap__ClaimsDevelopmentResult__total_by_calendar_year, self)
+
+ClaimsDevelopmentResult$run_off_standard_error <- function() .Call(wrap__ClaimsDevelopmentResult__run_off_standard_error, self)
+
+ClaimsDevelopmentResult$total_run_off_standard_error <- function() .Call(wrap__ClaimsDevelopmentResult__total_run_off_standard_error, self)
+
+#' @export
+`$.ClaimsDevelopmentResult` <- function (self, name) { func <- ClaimsDevelopmentResult[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ClaimsDevelopmentResult` <- `$.ClaimsDevelopmentResult`
 
 OdpBootstrapFit <- new.env(parent = emptyenv())
 

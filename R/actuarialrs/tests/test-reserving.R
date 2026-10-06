@@ -505,4 +505,96 @@ tiny <- triangle(data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), pai
                  "year", "age", "paid")
 expect_error_like(odp_bootstrap(tiny, n_sims = 10), "degrees of freedom")
 
+# Merz-Wuthrich one-year view against R ChainLadder's
+# CDR(MackChainLadder(tri), dev = "all"): every reference row
+# (validation/reference/reserving_cdr_r.csv), as in
+# validation/tests/reserving_cdr.rs. R reports one calendar year per age,
+# so years past the run-off are zero. The source column holds commas too.
+cdr_lines <- grep("^#", readLines(validation("reference", "reserving_cdr_r.csv")),
+                  value = TRUE, invert = TRUE)
+cdr_fields <- lapply(strsplit(cdr_lines, ",", fixed = TRUE), `[`, 1:7)
+cdr_ref <- utils::read.csv(text = vapply(cdr_fields, paste, "", collapse = ","),
+                           colClasses = c(arg = "character"))
+cdr_sigma <- c(cdr = "log-linear", cdr_sigma_mack = "mack")
+cdr_fits <- list()
+for (i in seq_len(nrow(cdr_ref))) {
+  row <- cdr_ref[i, ]
+  key <- paste(row$dataset, row$method)
+  if (is.null(cdr_fits[[key]])) {
+    fit <- mack(load_triangle(row$dataset), sigma_interpolation = cdr_sigma[[row$method]])
+    cdr_fits[[key]] <- list(mack = fit, cdr = claims_development_result(fit))
+  }
+  fit <- cdr_fits[[key]]$mack
+  cdr <- cdr_fits[[key]]$cdr
+  years <- cdr@by_calendar_year
+  got <- switch(row$quantity,
+    cdr_se = {
+      parts <- strsplit(row$arg, ":", fixed = TRUE)[[1]]
+      k <- as.integer(parts[2])
+      if (k <= ncol(years)) years[parts[1], k] else 0
+    },
+    total_cdr_se = {
+      k <- as.integer(row$arg)
+      if (k <= ncol(years)) cdr@total_by_calendar_year[[k]] else 0
+    },
+    reserve = fit@reserve[[row$arg]],
+    one_year_se = cdr@one_year_standard_error[[row$arg]],
+    mack_se = fit@standard_error[[row$arg]],
+    total_reserve = fit@total_reserve,
+    total_one_year_se = cdr@total_one_year_standard_error,
+    total_mack_se = fit@total_standard_error,
+    stop("unknown reference quantity ", row$quantity, call. = FALSE)
+  )
+  # R's Mack.S.E. is also the summed yearly run-off.
+  run_off <- switch(row$quantity,
+    mack_se = cdr@run_off_standard_error[[row$arg]],
+    total_mack_se = cdr@total_run_off_standard_error,
+    got
+  )
+  for (value in c(got, run_off)) {
+    err <- abs(value - row$expected)
+    if (!(value == row$expected || err <= row$abs_tol || err <= row$rel_tol * abs(row$expected))) {
+      stop(sprintf("%s %s %s[%s]: got %.17g, want %.17g", row$dataset, row$method, row$quantity,
+                   row$arg, value, row$expected), call. = FALSE)
+    }
+  }
+}
+stopifnot(nrow(cdr_ref) > 1800, length(cdr_fits) == 10)
+
+# Merz and Wuthrich (2008), Table 4, printed to the unit: the totals and
+# the youngest origin.
+mw <- mack(load_triangle("mw2008"), sigma_interpolation = "mack")
+cdr <- claims_development_result(mw)
+stopifnot(
+  S7::S7_inherits(cdr, claims_development_result),
+  abs(mw@total_reserve - 2237826) <= 1,
+  abs(cdr@total_one_year_standard_error - 81080) <= 1,
+  abs(cdr@total_run_off_standard_error - 108401) <= 1,
+  abs(cdr@one_year_standard_error[["2009"]] - 53320) <= 1,
+  abs(mw@standard_error[["2009"]] - 69552) <= 1,
+  identical(cdr@origins, as.character(2001:2009)),
+  identical(dim(cdr@by_calendar_year), c(9L, 8L)),
+  identical(names(dimnames(cdr@by_calendar_year)), c("origin", "calendar_year")),
+  identical(cdr@by_calendar_year[, "1"], cdr@one_year_standard_error),
+  cdr@one_year_standard_error[["2001"]] == 0,
+  # Fully developed, and one factor from it: the run-off is over.
+  all(cdr@by_calendar_year["2001", ] == 0),
+  cdr@by_calendar_year["2002", 1] > 0, all(cdr@by_calendar_year["2002", -1] == 0),
+  identical(names(cdr@total_by_calendar_year), as.character(1:8)),
+  identical(cdr@total_by_calendar_year[["1"]], cdr@total_one_year_standard_error)
+)
+near(unname(cdr@run_off_standard_error), unname(mw@standard_error), 1e-9)
+df <- as.data.frame(claims_development_result(mack(raa)))
+stopifnot(identical(names(df), c("origin", paste0("cdr_", 1:9), "run_off")),
+          identical(df$origin, raa@origins),
+          identical(df$cdr_1, unname(claims_development_result(mack(raa))@one_year_standard_error)))
+invisible(utils::capture.output(print(cdr)))
+expect_error_like(claims_development_result(mack(raa, average = "simple")),
+                  "claims development result: needs volume-weighted")
+expect_error_like(claims_development_result(mack(lc, "paid")), "4 segments; use segment()")
+expect_error_like(claims_development_result(chain_ladder(raa)), "fit must be a mack_fit")
+home_pd <- segment(mack(lc, "paid"), lob = "Home", coverage = "PD")
+near(claims_development_result(home_pd)@total_run_off_standard_error,
+     home_pd@total_standard_error, 1e-9)
+
 cat("actuarialrs R reserving tests passed\n")

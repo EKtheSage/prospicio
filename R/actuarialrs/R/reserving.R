@@ -1,7 +1,8 @@
-# Reserving lane: the loss triangle, the chain ladder, Mack and the ODP
-# bootstrap, over
-# crates/act-r/src/reserving.rs (docs/design/triangle.md). S7 classes and
-# functions over the Rust objects, as in distributions.R.
+# Reserving lane: the loss triangle, the chain ladder, Mack with its
+# one-year view and the ODP bootstrap, over
+# crates/act-r/src/reserving.rs (docs/design/triangle.md,
+# docs/design/reserving-v02.md). S7 classes and functions over the Rust
+# objects, as in distributions.R.
 
 #' @include distributions.R
 NULL
@@ -670,6 +671,8 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
 #' total reserve). Risks are standard errors, not variances. The totals'
 #' risks need a single-segment fit: with several segments use
 #' [totals_frame()], which has them per segment, or [segment()].
+#' [claims_development_result()] gives Merz and Wuthrich's one-year view
+#' of a single-segment fit.
 #'
 #' @inheritParams chain_ladder_fit
 #' @returns A `mack_fit` object.
@@ -723,6 +726,108 @@ mack <- function(triangle, column = NULL, average = "volume", sigma_interpolatio
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation)
   mack_fit(ptr = rust_result(triangle@ptr$mack(column, args$average, args$sigma)))
+}
+
+#' Claims development result: the one-year view of a Mack fit
+#'
+#' Merz and Wuthrich's (2008) one-year view of a [mack_fit]: the standard
+#' error of the claims development result (CDR), the change in the
+#' chain-ladder ultimate over a calendar year, for each origin and in
+#' total, in the next calendar year and in every later one. The total
+#' includes the covariance between origins. Results match R ChainLadder's
+#' `CDR(MackChainLadder(x), dev = "all")`
+#' (`validation/reference/reserving_cdr_r.csv`) and the totals of Table 4
+#' in the paper.
+#'
+#' The formulas assume volume-weighted factors (`mack(average =
+#' "volume")`, the default), no tail, and the latest values on one
+#' calendar diagonal with one new origin per period; anything else is an
+#' error (R ChainLadder only warns about other factors). The fit must have a
+#' single segment: use [segment()] to pick one.
+#'
+#' Properties, as standard errors (not mean squared errors):
+#' `one_year_standard_error` per origin (R's `CDR(1)S.E.`) and
+#' `total_one_year_standard_error`; `by_calendar_year`, an origin x
+#' calendar year matrix whose column `k` is R's `CDR(k)S.E.`, zero once an
+#' origin is fully developed, with one year per age-to-age factor (R adds a
+#' last year past the run-off, always zero); `total_by_calendar_year`;
+#' `run_off_standard_error` per origin and `total_run_off_standard_error`,
+#' the square root of the yearly mean squared errors summed, which equals
+#' Mack's standard error; and `origins`. `as.data.frame()` gives one row
+#' per origin: `origin`, `cdr_1`, `cdr_2`, ... (the columns of
+#' `by_calendar_year`) and `run_off`, as Python's
+#' `MackFit.claims_development_result().to_frame()`.
+#'
+#' @param fit A single-segment [mack_fit] with volume-weighted factors.
+#' @param ptr A `ClaimsDevelopmentResult` pointer; used internally.
+#' @returns A `claims_development_result` object.
+#' @seealso [mack()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' m <- mack(triangle(long, "year", "age", "paid"))
+#' cdr <- claims_development_result(m)
+#' cdr@one_year_standard_error
+#' cdr@total_one_year_standard_error
+#' cdr@by_calendar_year
+#' # The yearly run-off adds up to Mack's standard error.
+#' all.equal(cdr@total_run_off_standard_error, m@total_standard_error)
+#' as.data.frame(cdr)
+claims_development_result <- S7::new_class(
+  "claims_development_result",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("ClaimsDevelopmentResult"),
+    origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+    one_year_standard_error = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$one_year_standard_error(), self@origins)
+    }),
+    total_one_year_standard_error = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$total_one_year_standard_error()
+    }),
+    by_calendar_year = S7::new_property(S7::class_double, getter = function(self) {
+      years <- self@ptr$total_by_calendar_year()
+      # Rust gives calendar year x origin, row-major: an origin x year matrix
+      # filled by column.
+      matrix(self@ptr$by_calendar_year(), nrow = length(self@origins), ncol = length(years),
+             dimnames = list(origin = self@origins, calendar_year = as.character(seq_along(years))))
+    }),
+    total_by_calendar_year = S7::new_property(S7::class_double, getter = function(self) {
+      years <- self@ptr$total_by_calendar_year()
+      stats::setNames(years, seq_along(years))
+    }),
+    run_off_standard_error = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$run_off_standard_error(), self@origins)
+    }),
+    total_run_off_standard_error = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$total_run_off_standard_error()
+    })
+  ),
+  constructor = function(fit, ptr = NULL) {
+    if (is.null(ptr)) {
+      if (!S7::S7_inherits(fit, mack_fit)) stop("fit must be a mack_fit", call. = FALSE)
+      ptr <- rust_result(fit@ptr$claims_development_result())
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(as.data.frame, claims_development_result) <- function(x, ...) {
+  years <- x@by_calendar_year
+  out <- data.frame(origin = x@origins, stringsAsFactors = FALSE)
+  for (k in seq_len(ncol(years))) out[[paste0("cdr_", k)]] <- unname(years[, k])
+  out$run_off <- unname(x@run_off_standard_error)
+  out
+}
+
+S7::method(print, claims_development_result) <- function(x, ...) {
+  cat(sprintf("<claims_development_result> total standard error: one year %s, run-off %s\n",
+              format(x@total_one_year_standard_error, digits = 10),
+              format(x@total_run_off_standard_error, digits = 10)))
+  print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
 }
 
 #' ODP bootstrap

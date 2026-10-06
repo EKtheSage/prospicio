@@ -142,5 +142,6 @@ reference:
       - grain
       - chain_ladder_fit
       - mack_fit
+      - claims_development_result
       - odp_bootstrap_fit
       - fit_frames
