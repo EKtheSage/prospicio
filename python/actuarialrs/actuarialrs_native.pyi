@@ -265,6 +265,89 @@ class BayesStacking:
         """
 
 @final
+class Benktander:
+    """
+    The Benktander (iterated Bornhuetter–Ferguson) method: starting from
+    ``U(0) = apriori * exposure``, ``U(k) = latest + (1 - 1 / cdf) * U(k-1)``
+    for ``n_iters`` steps, as chainladder-python's ``Benktander``.
+    ``n_iters=0`` is the expected loss method, 1 is Bornhuetter–Ferguson,
+    and many iterations approach the chain ladder.
+    
+    Parameters
+    ----------
+    apriori : float, default 1.0
+        Expected loss ratio of the starting ultimate; positive.
+    n_iters : int, default 1
+        Number of Bornhuetter–Ferguson steps.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged, as in ``ChainLadder``.
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, default 1.0
+        Factor from the oldest age to ultimate.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import Benktander, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = Benktander(apriori=0.5, n_iters=2).fit(tri, "paid", "premium")
+    >>> [round(u, 2) for u in fit.ultimate]
+    [150.0, 288.89]
+    """
+    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> Benktander: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        Expected loss ratio of the starting ultimate.
+        """
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed value is its
+            exposure.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ExpectedLoss.fit``.
+        """
+    @property
+    def n_iters(self, /) -> int:
+        """
+        Number of Bornhuetter–Ferguson steps.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        Tail factor.
+        """
+
+@final
 class Binomial:
     """
     Binomial claim counts: ``n`` risks, each claiming with probability
@@ -362,6 +445,319 @@ class Binomial:
         Returns
         -------
         float
+        """
+
+@final
+class BornhuetterFerguson:
+    """
+    The Bornhuetter–Ferguson method: each origin's latest value plus the
+    expected loss ``apriori * exposure`` times the share still to develop,
+    ``1 - 1 / cdf``, as chainladder-python's ``BornhuetterFerguson``.
+    
+    The exposure is a measure column of the same triangle (premium, say):
+    each origin's latest observed cumulative value in the segment fitted.
+    
+    Parameters
+    ----------
+    apriori : float, default 1.0
+        Expected loss ratio: the expected ultimate per unit of exposure;
+        positive.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged, as in ``ChainLadder``.
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, default 1.0
+        Factor from the oldest age to ultimate.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import BornhuetterFerguson, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
+    >>> [round(u, 2) for u in fit.ultimate]
+    [150.0, 266.67]
+    """
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> BornhuetterFerguson: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        Expected loss ratio.
+        """
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed value is its
+            exposure.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ExpectedLoss.fit``.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        Tail factor.
+        """
+
+@final
+class CapeCod:
+    """
+    The Cape Cod (Stanard–Bühlmann) method: Bornhuetter–Ferguson with each
+    origin's apriori estimated from the triangle, as chainladder-python's
+    ``CapeCod``.
+    
+    Origin ``j``'s used-up exposure is ``exposure[j] / cdf[j]`` and its
+    latest value is trended to the triangle's valuation by
+    ``(1 + trend) ** (months / 12)``, the months running from the end of
+    the origin period. Origin ``i``'s trended apriori is the sum of the
+    trended latest values weighted by ``decay ** abs(i - j)`` over the same
+    weighted sum of used-up exposures; dividing by its own trend factor
+    gives the apriori of its Bornhuetter–Ferguson ultimate.
+    
+    Parameters
+    ----------
+    trend : float, default 0.0
+        Annual trend of the loss ratio; above -1.
+    decay : float, default 1.0
+        Weight of an origin ``n`` periods away, ``decay ** n``; from 0 to 1.
+        With 1 every origin shares one loss ratio.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged, as in ``ChainLadder``.
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, default 1.0
+        Factor from the oldest age to ultimate.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import CapeCod, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = CapeCod().fit(tri, "paid", "premium")
+    >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
+    ([0.6774, 0.6774], [150.0, 290.32])
+    """
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> CapeCod: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    @property
+    def decay(self, /) -> float:
+        """
+        Weight of an origin one period away.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> CapeCodFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure and apriori. Trend runs to the triangle's valuation.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed value is its
+            exposure.
+        
+        Returns
+        -------
+        CapeCodFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ChainLadder.fit``, if ``trend`` or ``decay`` is out of
+            range, or if an origin has no observed, finite, positive exposure.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        Tail factor.
+        """
+    @property
+    def trend(self, /) -> float:
+        """
+        Annual trend of the loss ratio.
+        """
+
+@final
+class CapeCodFit:
+    """
+    A fitted Cape Cod of every segment of a triangle column: the fields of
+    ``ExpectedLossFit``, with ``apriori`` the detrended loss ratio applied
+    to each origin (chainladder-python's ``detrended_apriori_``), plus
+    ``trended_apriori`` before detrending (its ``apriori_``).
+    
+    Per-origin lists run over the origins of each segment in turn, like the
+    rows of ``to_frame()``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import CapeCod, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = CapeCod(trend=0.1).fit(tri, "paid", "premium")
+    >>> round(fit.trended_apriori[0] / fit.apriori[0], 10)
+    1.1
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> list[float]:
+        """
+        Detrended expected loss ratio applied per origin.
+        """
+    @property
+    def cdf(self, /) -> list[float]:
+        """
+        Age-to-ultimate factors, one per age, including the tail.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The underlying chain-ladder projection, with the chain ladder's
+        ultimate.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        One row per segment and age, as ``ChainLadderFit.development_frame``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def expected_loss(self, /) -> ExpectedLossFit:
+        """
+        The expected-loss fit: ultimates, exposures and the detrended
+        apriori.
+        """
+    @property
+    def exposure(self, /) -> list[float]:
+        """
+        Exposure per origin: the exposure column's latest observed value.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed cumulative value per origin.
+        """
+    @property
+    def ldf(self, /) -> list[float]:
+        """
+        Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value.
+        """
+    @property
+    def reserve(self, /) -> list[float]:
+        """
+        Reserve (ultimate minus latest) per origin.
+        """
+    def segment(self, /, **keys) -> CapeCodFit:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``.
+        
+        Returns
+        -------
+        CapeCodFit
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``ultimate``, ``reserve``, ``exposure``, ``apriori`` and
+        ``trended_apriori``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Total reserve across segments and origins.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        Total ultimate across segments and origins.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns and the segment's total
+        ``latest``, ``ultimate``, ``reserve`` and ``exposure``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def trended_apriori(self, /) -> list[float]:
+        """
+        Expected loss ratio per origin at the valuation's cost level, before
+        detrending.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Cape Cod ultimate per origin.
         """
 
 @final
@@ -1408,6 +1804,223 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+
+@final
+class ExpectedLoss:
+    """
+    The expected loss ratio method: each origin's ultimate is ``apriori``
+    times its exposure, whatever has been observed. The chain ladder is
+    still fitted for the development pattern the fit reports.
+    
+    The exposure is a measure column of the same triangle (premium, say):
+    each origin's latest observed cumulative value in the segment fitted.
+    
+    Parameters
+    ----------
+    apriori : float, default 1.0
+        Expected loss ratio: the ultimate per unit of exposure; positive.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How link ratios are averaged, as in ``ChainLadder``.
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, default 1.0
+        Factor from the oldest age to ultimate.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ExpectedLoss, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    ... )
+    >>> fit = ExpectedLoss(apriori=0.5).fit(tri, "paid", "premium")
+    >>> fit.ultimate, fit.reserve
+    ([125.0, 200.0], [-25.0, 0.0])
+    """
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> ExpectedLoss: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        Expected loss ratio.
+        """
+    @property
+    def average(self, /) -> str:
+        """
+        How link ratios are averaged.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed value is its
+            exposure.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ChainLadder.fit``, if ``apriori`` is not positive, or if an
+            origin has no observed, finite, positive exposure (the message
+            names it and, with keys, its segment).
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        Tail factor.
+        """
+
+@final
+class ExpectedLossFit:
+    """
+    A fitted expected-loss method (``ExpectedLoss``,
+    ``BornhuetterFerguson`` or ``Benktander``) of every segment of a
+    triangle column.
+    
+    Per-origin lists (``origins``, ``latest``, ``exposure``, ``apriori``,
+    ``ultimate``, ``reserve``) run over the origins of each segment in turn,
+    like the rows of ``to_frame()``. ``ultimate`` and ``reserve`` are this
+    method's; ``chain_ladder`` holds the chain ladder's. Per-age lists need
+    a single-segment fit; for several segments use ``development_frame()``
+    or ``segment(...)``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import BornhuetterFerguson, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021] * 2,
+    ...     [12, 24, 12] * 2,
+    ...     {"paid": [100.0, 150.0, 200.0, 10.0, 20.0, 30.0],
+    ...      "premium": [250.0, 250.0, 400.0, 500.0, 500.0, 800.0]},
+    ...     keys={"lob": ["Auto"] * 3 + ["Home"] * 3},
+    ... )
+    >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
+    >>> fit.exposure, fit.segment(lob="Home").ultimate
+    ([250.0, 400.0, 500.0, 800.0], [20.0, 230.0])
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> list[float]:
+        """
+        Expected loss ratio applied per origin.
+        """
+    @property
+    def cdf(self, /) -> list[float]:
+        """
+        Age-to-ultimate factors, one per age, including the tail.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The underlying chain-ladder projection, with the chain ladder's
+        ultimate.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        One row per segment and age, as ``ChainLadderFit.development_frame``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def exposure(self, /) -> list[float]:
+        """
+        Exposure per origin: the exposure column's latest observed value.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed cumulative value per origin.
+        """
+    @property
+    def ldf(self, /) -> list[float]:
+        """
+        Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value.
+        """
+    @property
+    def reserve(self, /) -> list[float]:
+        """
+        Reserve (ultimate minus latest) per origin.
+        """
+    def segment(self, /, **keys) -> ExpectedLossFit:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``ultimate``, ``reserve``, ``exposure`` and ``apriori``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Total reserve across segments and origins.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        Total ultimate across segments and origins.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns and the segment's total
+        ``latest``, ``ultimate``, ``reserve`` and ``exposure``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        This method's ultimate per origin.
         """
 
 @final
