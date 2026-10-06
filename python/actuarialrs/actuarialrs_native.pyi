@@ -971,6 +971,362 @@ class ChainLadderFit:
         """
 
 @final
+class ClarkCapeCod:
+    """
+    Clark's Cape Cod method (Clark 2003), as R ChainLadder's
+    ``ClarkCapeCod``: one expected loss ratio times each origin's exposure
+    and a growth curve are fitted to the incremental losses by
+    over-dispersed Poisson maximum likelihood, with ages measured from the
+    average date of loss.
+    
+    The reserve is the fitted ``elr * exposure * (G(max_age) - G(age))``;
+    process and parameter risk are as in ``ClarkLdf``.
+    
+    Parameters
+    ----------
+    curve : {"loglogistic", "weibull"}, default "loglogistic"
+        The growth curve, as in ``ClarkLdf``.
+    max_age : float, optional
+        Age in months at which development stops; at least the triangle's
+        last age. ``None`` develops to infinity.
+    
+    Raises
+    ------
+    ValueError
+        If ``curve`` is unknown.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ClarkCapeCod, Triangle
+    >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
+    ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
+    >>> tri = Triangle.from_long(
+    ...     [2020 + i for i, row in enumerate(rows) for _ in row],
+    ...     [12 * (d + 1) for row in rows for d in range(len(row))],
+    ...     {"paid": [v for row in rows for v in row],
+    ...      "premium": [800.0 for row in rows for _ in row]},
+    ... )
+    >>> fit = ClarkCapeCod().fit(tri, "paid", "premium")
+    >>> 0 < fit.elr < 1 and fit.expected_ultimate == [fit.elr * 800.0] * 5
+    True
+    """
+    def __new__(cls, /, curve: str = "loglogistic", max_age: float |None = None) -> ClarkCapeCod: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def curve(self, /) -> str:
+        """
+        The growth curve.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ClarkFit:
+        """
+        Fits one loss column in every segment of a triangle, each with its
+        own exposure.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed value is its
+            exposure.
+        
+        Returns
+        -------
+        ClarkFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ClarkLdf.fit``, and if an origin has no observed, finite,
+            positive exposure.
+        """
+    @property
+    def max_age(self, /) -> float |None:
+        """
+        Age in months at which development stops; ``None`` for infinity.
+        """
+
+@final
+class ClarkFit:
+    """
+    A fitted Clark LDF or Cape Cod model of every segment of a triangle
+    column.
+    
+    Per-origin lists (``origins``, ``latest``, ``expected_ultimate``,
+    ``ultimate``, ``reserve`` and the standard errors) run over the origins
+    of each segment in turn, like the rows of ``to_frame()``. The fitted
+    parameters and the standard errors of the total need a single-segment
+    fit; for several segments use ``totals_frame()`` or ``segment(...)``.
+    ``total_ultimate`` and ``total_reserve`` sum over every segment.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ClarkLdf, Triangle
+    >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
+    ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
+    >>> tri = Triangle.from_long(
+    ...     [2020 + i for i, row in enumerate(rows) for _ in row],
+    ...     [12 * (d + 1) for row in rows for d in range(len(row))],
+    ...     [v for row in rows for v in row],
+    ... )
+    >>> fit = ClarkLdf().fit(tri, "values")
+    >>> len(fit.covariance), fit.elr, fit.growth(float("inf"))
+    (7, None, 1.0)
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of the same column, with the chain
+        ladder's ultimate.
+        """
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        Covariance of the parameters: the expected ultimates (LDF) or the
+        expected loss ratio (Cape Cod), then ``omega`` and ``theta``. NaN if
+        the Fisher information is singular.
+        """
+    @property
+    def curve(self, /) -> str:
+        """
+        The growth curve.
+        """
+    @property
+    def elr(self, /) -> float |None:
+        """
+        Expected loss ratio (Cape Cod), or ``None`` (LDF).
+        """
+    @property
+    def expected_ultimate(self, /) -> list[float]:
+        """
+        Expected ultimate per origin, developed to infinity: fitted (LDF)
+        or ``elr * exposure`` (Cape Cod).
+        """
+    @property
+    def exposure(self, /) -> list[float] |None:
+        """
+        Exposure per origin (Cape Cod), or ``None`` (LDF).
+        """
+    def growth(self, /, age: float) -> float:
+        """
+        Share of the expected ultimate developed by a development age.
+        
+        Parameters
+        ----------
+        age : float
+            Development age in months, before the shift to the average date
+            of loss; ``inf`` gives 1.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed cumulative value per origin.
+        """
+    @property
+    def max_age(self, /) -> float |None:
+        """
+        Age in months at which development stops; ``None`` for infinity.
+        """
+    @property
+    def omega(self, /) -> float:
+        """
+        Fitted shape of the growth curve.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value.
+        """
+    @property
+    def parameter_risk(self, /) -> list[float]:
+        """
+        Parameter standard error per origin.
+        """
+    @property
+    def process_risk(self, /) -> list[float]:
+        """
+        Process standard error per origin.
+        """
+    @property
+    def reserve(self, /) -> list[float]:
+        """
+        Reserve per origin.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        Over-dispersion ``sigma**2``: squared Pearson residuals over the
+        observed incremental values less the number of parameters.
+        """
+    def segment(self, /, **keys) -> ClarkFit:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``.
+        
+        Returns
+        -------
+        ClarkFit
+        """
+    @property
+    def standard_error(self, /) -> list[float]:
+        """
+        Standard error per origin: ``sqrt(process**2 + parameter**2)``.
+        """
+    @property
+    def theta(self, /) -> float:
+        """
+        Fitted scale of the growth curve, in months.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``ultimate``, ``reserve``, (Cape Cod) ``exposure``,
+        ``expected_ultimate``, ``process_risk``, ``parameter_risk`` and
+        ``standard_error``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_parameter_risk(self, /) -> float:
+        """
+        Parameter standard error of the total reserve, with the covariance
+        between origins.
+        """
+    @property
+    def total_process_risk(self, /) -> float:
+        """
+        Process standard error of the total reserve.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Total reserve across segments and origins.
+        """
+    @property
+    def total_standard_error(self, /) -> float:
+        """
+        Standard error of the total reserve.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        Total ultimate across segments and origins.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the segment's total
+        ``latest``, ``ultimate`` and ``reserve``, the ``process_risk``,
+        ``parameter_risk`` and ``standard_error`` of its total reserve, and
+        its ``omega``, ``theta``, ``scale`` and (Cape Cod) ``elr``. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Ultimate per origin: the latest value plus the reserve.
+        """
+
+@final
+class ClarkLdf:
+    """
+    Clark's LDF method (Clark 2003), as R ChainLadder's ``ClarkLDF``: each
+    origin's expected ultimate and a growth curve are fitted to the
+    incremental losses by over-dispersed Poisson maximum likelihood, with
+    ages measured from the average date of loss (the middle of the origin
+    period, R's ``adol = TRUE``).
+    
+    The ultimate is the latest value developed by the fitted curve to
+    ``max_age``. Process risk is the scale times the fitted reserve, and
+    parameter risk the delta method on the parameters' covariance, the
+    scale times the inverse Fisher information.
+    
+    Parameters
+    ----------
+    curve : {"loglogistic", "weibull"}, default "loglogistic"
+        The growth curve ``G``: ``x**omega / (x**omega + theta**omega)`` or
+        ``1 - exp(-(x / theta)**omega)``.
+    max_age : float, optional
+        Age in months at which development stops; at least the triangle's
+        last age. ``None`` develops to infinity.
+    
+    Raises
+    ------
+    ValueError
+        If ``curve`` is unknown.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ClarkLdf, Triangle
+    >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
+    ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
+    >>> tri = Triangle.from_long(
+    ...     [2020 + i for i, row in enumerate(rows) for _ in row],
+    ...     [12 * (d + 1) for row in rows for d in range(len(row))],
+    ...     [v for row in rows for v in row],
+    ... )
+    >>> fit = ClarkLdf(curve="weibull", max_age=120).fit(tri, "values")
+    >>> fit.omega > 0 and fit.total_standard_error > fit.total_process_risk
+    True
+    >>> round(fit.ultimate[2] * fit.growth(36) / fit.growth(120), 6)
+    410.0
+    """
+    def __new__(cls, /, curve: str = "loglogistic", max_age: float |None = None) -> ClarkLdf: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def curve(self, /) -> str:
+        """
+        The growth curve.
+        """
+    def fit(self, /, triangle: Triangle, column: str) -> ClarkFit:
+        """
+        Fits one loss column in every segment of a triangle, each on its
+        own.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        ClarkFit
+        
+        Raises
+        ------
+        ValueError
+            As ``ChainLadder.fit``, if the triangle has fewer than four ages,
+            ``max_age`` is before its last age, an origin's latest value is
+            not positive, or the likelihood search does not converge.
+        """
+    @property
+    def max_age(self, /) -> float |None:
+        """
+        Age in months at which development stops; ``None`` for infinity.
+        """
+
+@final
 class Coding:
     """
     Terms with factor levels learned from training data, from
