@@ -37,6 +37,7 @@ generated stub, `NAMESPACE` and `man/`. Whichever merges second merges
 | Tails | chainladder-python (`TailConstant`, `TailCurve`, `TailBondy`); R ChainLadder 0.2.21 `MackChainLadder(tail = TRUE / number)` for Mack's tail sigma and standard error | — |
 | Clark | R ChainLadder `ClarkLDF`, `ClarkCapeCod` | chainladder-python `ClarkLDF` |
 | One-year view | R ChainLadder `CDR(MackChainLadder(...))`, `dev = "all"` for the full run-off | Merz and Wüthrich (2008), published example |
+| Simulated one-year view | R ChainLadder `CDR(MackChainLadder(...))` times the measured ODP-to-Mack ratio; `BootChainLadder` for the origin with one cell left | England, Verrall and Wüthrich (2019), Table 2 |
 
 Each family has its own generator script under `validation/scripts/` and
 reference CSV under `validation/reference/` in the format of
@@ -447,7 +448,23 @@ pub struct OneYearFit {
     pub opening_reserve: Vec<f64>,
     pub cdr: PredictiveDistribution,    // claims development result, dimension origin
 }
+
+pub struct OneYearSegment {           // OneYearFit without the CDR, per segment
+    pub bootstrap: OdpBootstrapSegment,
+    pub opening_ultimate: Vec<f64>,
+    pub opening_reserve: Vec<f64>,
+}
+
+pub struct OneYearFits {
+    pub segments: SegmentFits<OneYearSegment>,
+    pub cdr: PredictiveDistribution,    // dimensions: the keys, then origin
+}
 ```
+
+`OneYearFits::to_long` and `totals` are `SegmentFits`' tables with
+`ultimate` and `reserve` renamed `opening_ultimate` and `opening_reserve`,
+plus `cdr_mean` and `cdr_std_dev` (and the bootstrap's `scale` in
+`totals`); `segment` picks one segment and its part of the joint CDR.
 
 Per simulation, on its own `StreamRng` stream:
 
@@ -459,7 +476,8 @@ Per simulation, on its own `StreamRng` stream:
    scale `phi`. An origin already at the triangle's last age gets no new
    cell.
 3. Append that diagonal to the observed triangle (exposure columns carry
-   each origin's latest value forward) and refit `method` on it.
+   each origin's latest value forward) and refit `method` on it. Cape Cod
+   trends to the valuation one development period later.
 4. `CDR_i = U0_i - U1_i`, the opening ultimate less the re-estimated one,
    which equals the opening reserve less the year's simulated payment and
    the closing reserve.
@@ -469,9 +487,33 @@ TVaR come from `PredictiveDistribution`. A new origin period written in the
 coming year is not simulated, as in Merz–Wüthrich, and the tail beyond the
 triangle's last age develops only through the refitted tail factor.
 
+A refit can fail inside a simulation (a zero value under a simple
+average, a tail curve that cannot be fitted). The simulation still runs to
+the end, and the call returns `Error::OneYear { failed, n_sims, source }`
+with the number that failed and, as `source`, the failure whose message
+sorts first, so the error does not depend on the threads.
+
 Check: for the volume-weighted chain ladder without a tail, the standard
-deviation of the simulated CDR matches the Merz–Wüthrich one-year standard
-error within Monte Carlo and method tolerance on RAA, GenIns and ABC, and
-matches the bootstrap results England, Verrall and Wüthrich (2019) publish
-for the Taylor–Ashe (GenIns) triangle. A triangle that lies exactly on its
-chain-ladder pattern has scale zero and a CDR of zero in every simulation.
+deviation of the simulated CDR is compared with the Merz–Wüthrich one-year
+standard error on RAA, GenIns and ABC. They differ by the process model,
+not by the re-reserving: the ODP's variance is `phi` times the mean, Mack's
+`sigma_k^2` times the cumulative value. The ratio is measured per origin
+(0.30 to 5.95) and in total (RAA 0.46, GenIns 1.02, ABC 0.97), recorded in
+`knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`, and the
+validation test holds each standard deviation to R's value times that
+ratio within five Monte Carlo standard errors. Re-reserving with Mack's
+own bootstrap reproduces Merz–Wüthrich within 0.2%, which is what England,
+Verrall and Wüthrich (2019) publish: their simulated one-year view (Table
+4) bootstraps Mack's model (their Appendix 1), not the ODP, so it is not a
+reference for this method. Their analytic Table 2 (Mack and Merz–Wüthrich
+on Taylor–Ashe, Mack's rule for the last sigma) is checked instead. The
+origin with one cell left has a one-year view equal to its run-off, so its
+standard deviation matches R `BootChainLadder`'s for that origin. A
+triangle that lies exactly on its chain-ladder pattern has scale zero and a
+CDR of zero in every simulation.
+
+Bindings: Python `OdpBootstrap.one_year(triangle, column, method,
+exposure=None)`, `method` a `ChainLadder`, `ExpectedLoss`,
+`BornhuetterFerguson`, `Benktander` or `CapeCod` (exposure required for the
+last four), returns a `OneYearFit` over every segment, with `cdr` the
+`PredictiveDistribution`. R follows in its own PR.
