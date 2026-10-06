@@ -23,5 +23,7 @@
 ## 2026-10-05
 
 * **Initialization**: Created the bundle with [datasets](/datasets/index.md), [references](/references/index.md), [findings](/findings/index.md) and [environment](/environment/index.md), from knowledge collected while building the Probability, Aggregate and Models lanes (PRs #104 to #116).
+* **Tails**: Added [Tails in R ChainLadder and chainladder-python](/references/chainladder-tails.md) and [Bondy least squares](/findings/bondy-least-squares-stop.md), from building act_reserving::Tail (reserving v0.2, decision 3).
+* **Tails review**: Updated [Tails in R ChainLadder and chainladder-python](/references/chainladder-tails.md): a tail below 1 now follows chainladder-python, and the note records Python's positional age indexing and its ignored attachment at the youngest age.
 * **Expected-loss reference**: Added [chainladder-python expected-loss estimators](/references/chainladder-python-expected-loss.md), from the Reserving lane's expected-loss methods (branch claude/v02-expected-loss).
 * **Expected-loss reference update**: [chainladder-python expected-loss estimators](/references/chainladder-python-expected-loss.md) now records the Benktander closed form, its divergence below cdf 1/2, and how incremental exposure and off-diagonal origins differ from act_reserving (branch claude/v02-expected-loss).

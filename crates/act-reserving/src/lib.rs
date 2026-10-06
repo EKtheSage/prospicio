@@ -3,9 +3,10 @@
 //!
 //! v0.1 so far: the [`Triangle`] (`docs/design/triangle.md`), development
 //! factors, [`ChainLadder`], [`Mack`] and the [`OdpBootstrap`]; v0.2 adds
-//! the expected-loss family ([`ExpectedLoss`], [`BornhuetterFerguson`],
-//! [`Benktander`], [`CapeCod`]) driven by an exposure column. Results are
-//! checked against R ChainLadder and chainladder-python in
+//! [`Tail`] factors and the expected-loss family ([`ExpectedLoss`],
+//! [`BornhuetterFerguson`], [`Benktander`], [`CapeCod`]) driven by an
+//! exposure column (`docs/design/reserving-v02.md`). Results are checked
+//! against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.
 //!
 //! ```
@@ -40,6 +41,7 @@ pub mod frame;
 pub mod mack;
 pub mod odp_glm;
 pub mod segments;
+pub mod tail;
 pub mod triangle;
 pub mod view;
 
@@ -60,5 +62,6 @@ pub use frame::TriangleFrame;
 pub use mack::{Mack, MackFit};
 pub use odp_glm::{OdpGlm, OdpGlmFit};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
+pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};
 pub use triangle::{CalendarView, DevelopmentColumn, Diagonal, Label, Long, LongTable, Triangle};
 pub use view::{SummaryRow, TriangleSummary, TriangleView};

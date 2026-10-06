@@ -52,6 +52,7 @@ impl Fits {
             .or_insert_with(|| {
                 Mack {
                     development: development(method),
+                    ..Default::default()
                 }
                 .fit(&triangle(dataset), "values")
                 .unwrap_or_else(|e| panic!("{dataset} {method}: {e}"))

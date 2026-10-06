@@ -134,11 +134,15 @@ reference:
       - pricing.RiskProfile
       - pricing.severity_exposure_curve
   - title: Reserving
-    desc: Loss triangles, the chain ladder, Mack's model, the expected-loss methods and the ODP bootstrap.
+    desc: Loss triangles, the chain ladder with tail factors, Mack's model, the expected-loss methods and the ODP bootstrap.
     contents:
       - reserving.Triangle
       - reserving.ChainLadder
       - reserving.ChainLadderFit
+      - reserving.TailConstant
+      - reserving.TailCurve
+      - reserving.TailBondy
+      - reserving.TailLogLinear
       - reserving.Mack
       - reserving.MackFit
       - reserving.ExpectedLoss

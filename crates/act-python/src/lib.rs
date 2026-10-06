@@ -63,7 +63,7 @@ mod actuarialrs_native {
     use super::reserving::{
         PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder,
         PyChainLadderFit, PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackFit, PyOdpBootstrap,
-        PyOdpBootstrapFit, PyTriangle,
+        PyOdpBootstrapFit, PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

@@ -154,6 +154,10 @@ reference:
       - grain
       - chain_ladder_fit
       - mack_fit
+      - tail_constant
+      - tail_curve
+      - tail_bondy
+      - tail_log_linear
       - expected_loss_fit
       - cape_cod_fit
       - odp_bootstrap_fit
