@@ -505,4 +505,129 @@ tiny <- triangle(data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), pai
                  "year", "age", "paid")
 expect_error_like(odp_bootstrap(tiny, n_sims = 10), "degrees of freedom")
 
+# Expected-loss methods against chainladder-python 0.10.1
+# (validation/reference/reserving_expected_loss_python.csv): every row.
+# Paid losses with the latest premium as exposure.
+premium_triangle <- function(name) triangle(read_long(name), "origin", "development", c("paid", "premium"))
+premium_sets <- c("clrd_wkcomp", "genins_premium")
+premium_tris <- stats::setNames(lapply(premium_sets, premium_triangle), premium_sets)
+el_lines <- grep("^#", readLines(validation("reference", "reserving_expected_loss_python.csv")),
+                 value = TRUE, invert = TRUE)
+el_ref <- utils::read.csv(text = el_lines, colClasses = c(arg = "character"))
+stopifnot(nrow(el_ref) == 816)
+# The fit a reference `method` (name;key=value;...) describes.
+el_fit_for <- function(dataset, method) {
+  parts <- strsplit(method, ";", fixed = TRUE)[[1]]
+  kv <- strsplit(parts[-1], "=", fixed = TRUE)
+  settings <- stats::setNames(lapply(kv, `[`, 2), vapply(kv, `[`, "", 1))
+  average <- settings$average
+  num <- lapply(settings[names(settings) != "average"], as.numeric)
+  fit <- switch(parts[1], expected_loss = expected_loss, bornhuetter_ferguson = bornhuetter_ferguson,
+                benktander = benktander, cape_cod = cape_cod,
+                stop("no method ", parts[1], call. = FALSE))
+  do.call(fit, c(list(premium_tris[[dataset]], "paid", "premium", average = average), num))
+}
+el_fits <- list()
+for (i in seq_len(nrow(el_ref))) {
+  case <- el_ref[i, ]
+  key <- paste(case$dataset, case$method)
+  if (is.null(el_fits[[key]])) el_fits[[key]] <- el_fit_for(case$dataset, case$method)
+  fit <- el_fits[[key]]
+  got <- switch(case$quantity,
+                total_ultimate = fit@total_ultimate, total_reserve = fit@total_reserve,
+                ultimate = fit@ultimate[[case$arg]], reserve = fit@reserve[[case$arg]],
+                apriori = fit@trended_apriori[[case$arg]],
+                detrended_apriori = fit@apriori[[case$arg]],
+                stop("no quantity ", case$quantity, call. = FALSE))
+  err <- abs(got - case$expected)
+  if (!(err <= case$abs_tol || err <= case$rel_tol * abs(case$expected))) {
+    stop(sprintf("%s %s %s %s: got %.17g, want %.17g", case$dataset, case$method, case$quantity,
+                 case$arg, got, case$expected), call. = FALSE)
+  }
+}
+stopifnot(length(el_fits) == 2 * 14)
+
+# The family's identities, as in the Rust and Python tests.
+wk <- premium_tris$clrd_wkcomp
+el <- expected_loss(wk, "paid", "premium", apriori = 0.7)
+bf <- bornhuetter_ferguson(wk, "paid", "premium", apriori = 0.7)
+wk_cl <- chain_ladder(wk, "paid")
+stopifnot(S7::S7_inherits(el, expected_loss_fit), S7::S7_inherits(bf, expected_loss_fit),
+          identical(benktander(wk, "paid", "premium", apriori = 0.7, n_iters = 0)@ultimate, el@ultimate),
+          identical(benktander(wk, "paid", "premium", apriori = 0.7)@ultimate, bf@ultimate),
+          identical(unname(el@apriori), rep(0.7, 10)),
+          identical(el@exposure[["1988"]], 1691130),
+          identical(names(bf@ultimate), as.character(1988:1997)),
+          identical(bf@chain_ladder@ultimate, wk_cl@ultimate),
+          identical(bf@ldf, wk_cl@ldf), identical(bf@cdf, wk_cl@cdf),
+          identical(bf@latest, wk_cl@latest), identical(bf@development, wk_cl@development),
+          identical(bf@keys, character()), identical(dim(bf@index), c(1L, 0L)),
+          identical(unname(bf@reserve), unname(bf@ultimate - bf@latest)))
+near(unname(el@ultimate), 0.7 * unname(el@exposure), 1e-15)
+near(benktander(wk, "paid", "premium", apriori = 0.7, n_iters = 10000)@ultimate, wk_cl@ultimate)
+near(bf@total_reserve, sum(bf@reserve))
+# Cape Cod without decay keeps each origin's own loss ratio: the chain ladder.
+cc <- cape_cod(wk, "paid", "premium", trend = 0.05, decay = 0)
+stopifnot(S7::S7_inherits(cc, cape_cod_fit), S7::S7_inherits(cc@expected_loss, expected_loss_fit),
+          identical(cc@expected_loss@apriori, cc@apriori),
+          identical(cc@trended_apriori[["1997"]], cc@apriori[["1997"]]),
+          identical(cc@chain_ladder@ultimate, wk_cl@ultimate))
+near(cc@ultimate, wk_cl@ultimate)
+near(cc@trended_apriori[["1988"]] / cc@apriori[["1988"]], 1.05^9)
+# Settings reach Rust: the development pattern and Cape Cod's decay.
+simple <- bornhuetter_ferguson(wk, "paid", "premium", apriori = 0.7, average = "simple", tail = 1.01)
+stopifnot(identical(simple@ldf, chain_ladder(wk, "paid", average = "simple")@ldf),
+          identical(simple@chain_ladder@tail, 1.01))
+stopifnot(!identical(cape_cod(wk, "paid", "premium", decay = 0.5)@ultimate,
+                     cape_cod(wk, "paid", "premium")@ultimate))
+el_df <- as.data.frame(bf)
+stopifnot(identical(names(el_df), c("origin", "latest", "ultimate", "reserve", "exposure", "apriori")),
+          identical(el_df$ultimate, unname(bf@ultimate)),
+          identical(names(as.data.frame(cc)), c("origin", "latest", "ultimate", "reserve", "exposure",
+                                               "apriori", "trended_apriori")),
+          identical(totals_frame(bf)$exposure, sum(bf@exposure)),
+          identical(development_frame(bf), development_frame(wk_cl)))
+invisible(utils::capture.output(print(bf), print(cc)))
+
+# Every segment at once, each with its own exposure.
+both_long <- do.call(rbind, lapply(premium_sets, function(name) transform(read_long(name), lob = name)))
+both <- triangle(both_long, "origin", "development", c("paid", "premium"), keys = "lob")
+for (method in list(function(t) bornhuetter_ferguson(t, "paid", "premium", apriori = 0.6),
+                    function(t) cape_cod(t, "paid", "premium", trend = 0.02, decay = 0.8))) {
+  fit <- method(both)
+  alone <- method(wk)
+  seg <- segment(fit, lob = "clrd_wkcomp")
+  stopifnot(identical(fit@keys, "lob"), length(fit@ultimate) == 20,
+            identical(names(fit@ultimate)[1], "clrd_wkcomp / 1988"),
+            identical(S7::S7_class(seg), S7::S7_class(fit)),
+            identical(seg@exposure, alone@exposure),
+            identical(unname(fit@ultimate[1:10]), unname(seg@ultimate)),
+            identical(totals_frame(fit)$exposure[1], sum(alone@exposure)),
+            nrow(as.data.frame(fit)) == 20, nrow(development_frame(fit)) == 20)
+  # Cape Cod trends to the triangle's valuation (2010 here, 1997 alone) and
+  # back, so the two agree to rounding.
+  near(seg@ultimate, alone@ultimate, 1e-14)
+  near(totals_frame(fit)$reserve[1], alone@total_reserve, 1e-12)
+  expect_error_like(fit@ldf, "2 segments; use development_frame()")
+  invisible(utils::capture.output(print(fit)))
+}
+
+# Errors.
+holey_premium <- triangle(data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12),
+                                     paid = c(100, 150, 200), premium = c(250, 250, NA)),
+                          "year", "age", c("paid", "premium"))
+expect_error_like(bornhuetter_ferguson(holey_premium, "paid", "premium"),
+                  "origin 2021 has no observed, finite, positive exposure in column premium")
+expect_error_like(expected_loss(wk, "paid", "exposure"), "no column named exposure")
+expect_error_like(expected_loss(wk, "paid"), "exposure")
+expect_error_like(expected_loss(wk, "paid", 2), "exposure must be the name of a column")
+expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = 0), "apriori = 0 is invalid")
+expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = NA), "apriori must be a single number")
+expect_error_like(cape_cod(wk, "paid", "premium", decay = 2), "decay = 2 is invalid")
+expect_error_like(cape_cod(wk, "paid", "premium", trend = -1), "trend = -1 is invalid")
+expect_error_like(benktander(wk, "paid", "premium", n_iters = -1), "n_iters must be a non-negative whole number")
+expect_error_like(benktander(wk, "paid", "premium", n_iters = 1.5), "n_iters must be a non-negative whole number")
+expect_error_like(expected_loss(wk, "paid", "premium", average = "median"), "should be one of")
+expect_error_like(totals_frame(1), "fit must be a chain_ladder_fit")
+
 cat("actuarialrs R reserving tests passed\n")
