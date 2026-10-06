@@ -47,7 +47,17 @@ the code change.
 # Also
 
 * `R/actuarialrs/R/extendr-wrappers.R` is edited by hand for a new or
-  changed extendr function; match the existing line format.
+  changed extendr function; match the existing line format. To check the
+  edit, install the package and compare the file with
+  `.Call("wrap__make_actuarialrs_wrappers", use_symbols = TRUE,
+  package_name = "actuarialrs", PACKAGE = "actuarialrs")` without its
+  `#'` doc lines (keep `#' @export`): the order is the
+  `extendr_module!` order, impl by impl. The one known difference is
+  the file's `ChainLadderFit$tail <-function()`, missing a space.
+* A topic that a new roxygen block adds and other blocks link to makes
+  `cargo xtask r` print "Could not resolve link to topic" for those
+  links on the run that creates it; the links in the written Rd files
+  are correct.
 * The freMTPL2 parity runs only in release builds
   (`cargo test --release -p act-validation --test fremtpl2`).
 

@@ -34,6 +34,9 @@ simulations from seed 20,261,006, against R ChainLadder's
 
 The totals of GenIns and ABC are close to Merz-Wuthrich only by
 coincidence: per origin they are not, and RAA's total is less than half.
+R's `odp_one_year()` and Python's `OdpBootstrap.one_year()` give the same
+draws for the same seed, and their tests hold RAA's (R) and GenIns's
+(Python) total to the same ratios.
 
 # Why
 
