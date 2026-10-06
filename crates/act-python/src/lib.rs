@@ -46,8 +46,9 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::pareto::{
-        PyBinomial, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture,
-        PyPareto, PyPiecewisePareto, PyTweedie, PyWeibull, claim_count, local_pareto_to_piecewise,
+        PyBinomial, PyCustom, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic,
+        PyMixture, PyPareto, PyPiecewisePareto, PyTweedie, PyWeibull, claim_count,
+        local_pareto_to_piecewise,
     };
     #[pymodule_export]
     use super::pricing::{

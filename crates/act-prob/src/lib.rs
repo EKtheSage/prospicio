@@ -13,6 +13,7 @@
 pub mod capital;
 pub mod copula;
 pub mod counting;
+pub mod custom;
 pub mod dist;
 pub mod distortion;
 pub mod distribution;
@@ -39,6 +40,7 @@ pub mod weibull;
 
 pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, StudentTCopula};
 pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
+pub use custom::Custom;
 pub use dist::{Dist, SeverityDist};
 pub use distortion::Distortion;
 pub use distribution::Distribution;

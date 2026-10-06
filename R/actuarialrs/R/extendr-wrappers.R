@@ -768,6 +768,44 @@ TweedieDist$sample <- function(n, seed, stream) .Call(wrap__TweedieDist__sample,
 #' @export
 `[[.TweedieDist` <- `$.TweedieDist`
 
+CustomDist <- new.env(parent = emptyenv())
+
+CustomDist$new <- function(cdf, quantile, name) .Call(wrap__CustomDist__new, cdf, quantile, name)
+
+CustomDist$name <- function() .Call(wrap__CustomDist__name, self)
+
+CustomDist$has_quantile <- function() .Call(wrap__CustomDist__has_quantile, self)
+
+CustomDist$upper <- function() .Call(wrap__CustomDist__upper, self)
+
+CustomDist$last_error <- function() .Call(wrap__CustomDist__last_error, self)
+
+CustomDist$mean <- function() .Call(wrap__CustomDist__mean, self)
+
+CustomDist$variance <- function() .Call(wrap__CustomDist__variance, self)
+
+CustomDist$cdf <- function(x) .Call(wrap__CustomDist__cdf, self, x)
+
+CustomDist$survival <- function(x) .Call(wrap__CustomDist__survival, self, x)
+
+CustomDist$quantile <- function(p) .Call(wrap__CustomDist__quantile, self, p)
+
+CustomDist$lev <- function(limit) .Call(wrap__CustomDist__lev, self, limit)
+
+CustomDist$stop_loss <- function(retention) .Call(wrap__CustomDist__stop_loss, self, retention)
+
+CustomDist$layer <- function(limit, attachment) .Call(wrap__CustomDist__layer, self, limit, attachment)
+
+CustomDist$layer_variance <- function(limit, attachment) .Call(wrap__CustomDist__layer_variance, self, limit, attachment)
+
+CustomDist$sample <- function(n, seed, stream) .Call(wrap__CustomDist__sample, self, n, seed, stream)
+
+#' @export
+`$.CustomDist` <- function (self, name) { func <- CustomDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CustomDist` <- `$.CustomDist`
+
 WeibullDist <- new.env(parent = emptyenv())
 
 WeibullDist$new <- function(shape, scale) .Call(wrap__WeibullDist__new, shape, scale)

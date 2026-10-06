@@ -81,8 +81,8 @@ impl Lognormal {
 /// sampled distribution.
 pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     use crate::pareto::{
-        GammaDist, GeneralizedPareto, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-        PiecewisePareto, TweedieDist, WeibullDist,
+        CustomDist, GammaDist, GeneralizedPareto, LogAffinePareto, LoglogisticDist, MixtureDist,
+        Pareto, PiecewisePareto, TweedieDist, WeibullDist,
     };
     if let Ok(d) = <&Lognormal>::try_from(obj) {
         return Ok(d.inner.into());
@@ -120,14 +120,17 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     if let Ok(s) = <&Sampled>::try_from(obj) {
         return Ok(s.inner.clone().into());
     }
+    if let Ok(d) = <&CustomDist>::try_from(obj) {
+        return Ok(d.inner.clone().into());
+    }
     Err(Error::Other(format!(
         "expected a distribution ({SEVERITIES}, or a sampled distribution)"
     )))
 }
 
 /// The distributions accepted as a severity, for error messages.
-const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, mixture, grid, or a \
-                          Pareto-family distribution";
+const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, mixture, grid, \
+                          custom, or a Pareto-family distribution";
 
 /// A severity accepted wherever a parametric or discretized loss
 /// distribution can be used: any distribution but a sampled one, which has

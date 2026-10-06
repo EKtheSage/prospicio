@@ -14,7 +14,7 @@ use crate::distribution::Distribution;
 use crate::evt::Gpd;
 use crate::severity::Severity;
 use crate::{
-    Gamma, Grid, LogAffinePareto, Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto,
+    Custom, Gamma, Grid, LogAffinePareto, Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto,
     Sampled, Tweedie, Weibull,
 };
 
@@ -53,6 +53,8 @@ pub enum Dist {
     Mixture(Arc<Mixture>),
     Grid(Grid),
     Sampled(Sampled),
+    /// A user-defined severity (a Python or R callback): the slow path.
+    Custom(Custom),
 }
 
 /// Calls `$call` on the inner distribution, whichever it is.
@@ -71,6 +73,7 @@ macro_rules! each {
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
             Dist::Sampled($d) => $call,
+            Dist::Custom($d) => $call,
         }
     };
 }
@@ -79,7 +82,7 @@ impl Dist {
     /// Short name of the family: `"lognormal"`, `"pareto"`,
     /// `"piecewise_pareto"`, `"log_affine_pareto"`, `"generalized_pareto"`,
     /// `"gamma"`, `"tweedie"`, `"weibull"`, `"loglogistic"`, `"mixture"`,
-    /// `"grid"` or `"sampled"`.
+    /// `"grid"`, `"sampled"` or `"custom"`.
     pub fn family(&self) -> &'static str {
         match self {
             Self::Lognormal(_) => "lognormal",
@@ -94,6 +97,7 @@ impl Dist {
             Self::Mixture(_) => "mixture",
             Self::Grid(_) => "grid",
             Self::Sampled(_) => "sampled",
+            Self::Custom(_) => "custom",
         }
     }
 
@@ -113,6 +117,7 @@ impl Dist {
             Self::Loglogistic(d) => d,
             Self::Mixture(d) => d.as_ref(),
             Self::Grid(d) => d,
+            Self::Custom(d) => d,
             Self::Sampled(_) => return None,
         })
     }
@@ -142,6 +147,10 @@ impl Distribution for Dist {
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
         each!(self, d => d.sample(rng, n))
     }
+
+    fn is_parallel_safe(&self) -> bool {
+        each!(self, d => d.is_parallel_safe())
+    }
 }
 
 macro_rules! from_family {
@@ -168,6 +177,7 @@ from_family!(
     Loglogistic(Loglogistic),
     Grid(Grid),
     Sampled(Sampled),
+    Custom(Custom),
 );
 
 /// A [`Dist`] known to be a [`Severity`]: every variant but
@@ -235,6 +245,7 @@ macro_rules! each_severity {
             Dist::Loglogistic($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
+            Dist::Custom($d) => $call,
             Dist::Sampled(_) => unreachable!("SeverityDist never holds Sampled"),
         }
     };
@@ -263,6 +274,10 @@ impl Distribution for SeverityDist {
 
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
         self.0.sample(rng, n)
+    }
+
+    fn is_parallel_safe(&self) -> bool {
+        self.0.is_parallel_safe()
     }
 }
 
@@ -321,6 +336,14 @@ mod tests {
             .unwrap()
             .into(),
             Sampled::new(vec![1.0, 2.0, 3.0, 10.0]).unwrap().into(),
+            Custom::new(
+                "exponential",
+                Arc::new(|x: f64| Ok((1.0 - (-x / 500.0).exp()).max(0.0))),
+                None,
+                false,
+            )
+            .unwrap()
+            .into(),
         ]
     }
 
@@ -344,6 +367,7 @@ mod tests {
     fn every_variant_is_a_distribution_and_severities_have_layers() {
         for d in all() {
             assert!(d.mean().is_finite(), "{}", d.family());
+            assert_eq!(d.is_parallel_safe(), d.family() != "custom");
             let q = d.quantile(0.5).unwrap();
             assert!(d.cdf(q) >= 0.5 - 1e-9, "{}", d.family());
             match d.as_severity() {

@@ -22,6 +22,7 @@ reference:
       - distributions.Weibull
       - distributions.Loglogistic
       - distributions.Mixture
+      - distributions.Custom
       - distributions.Grid
       - distributions.DiscretizationReport
       - distributions.Sampled
