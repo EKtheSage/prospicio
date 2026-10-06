@@ -257,6 +257,32 @@ inuring_tower <- function(stages) {
   reinsurance_tower(ptr = rust_result(ReinsuranceTower$inuring(ptrs)))
 }
 
+#' Save and load reinsurance towers as JSON
+#'
+#' `tower_to_json()` writes a programme as a versioned JSON document: every
+#' stage and layer with all its terms, numbers bit for bit.
+#' `tower_from_json()` reads it back to an equal tower, rebuilding each
+#' layer through the same checks as [xol_layer()], so a document with an
+#' impossible term is refused.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param text A document written by `tower_to_json()`.
+#' @returns `tower_to_json()`: a single string. `tower_from_json()`: a
+#'   [reinsurance_tower].
+#' @export
+#' @examples
+#' tw <- inuring_tower(list(list(surplus_treaty("S", 1e6, 4)),
+#'                          list(xol_layer("XL", 2e6, 1e6))))
+#' text <- tower_to_json(tw)
+#' identical(tower_to_json(tower_from_json(text)), text)
+tower_to_json <- function(tower) tower@ptr$to_json()
+
+#' @rdname tower_to_json
+#' @export
+tower_from_json <- function(text) {
+  reinsurance_tower(ptr = rust_result(ReinsuranceTower$from_json(as.character(text))))
+}
+
 #' Ceded loss of each layer in a tower for one year
 #'
 #' @param tower A [reinsurance_tower].

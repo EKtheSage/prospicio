@@ -175,6 +175,15 @@ impl ReinsuranceTower {
         Ok(Self { inner })
     }
 
+    fn from_json(text: &str) -> Result<Self> {
+        let inner = Tower::from_json(text).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
     fn layer_names(&self) -> Vec<String> {
         self.inner.layers.iter().map(|l| l.name.clone()).collect()
     }

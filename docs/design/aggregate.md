@@ -125,6 +125,20 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `EventSet.with_uniform_times()`, `EventSet.from_years(..., times=)`; R
   `xol_layer(pro_rata_time = TRUE)`, `with_uniform_times()`,
   `events_from_years(times =)`, `event_times()`.
+- **Towers are data.** `Tower::to_json` writes a programme as a versioned
+  document (`"format": "risk_rs.tower"`, version 1): its stages in inuring
+  order, each a list of layers with every term (basis, and for a surplus
+  its retention and lines; limit, attachment, share, annual deductible and
+  limit, premium, reinstatement rates, pro rata as to time). Non-finite
+  numbers are written `"inf"`, as in distribution documents.
+  `Tower::from_json` rebuilds each layer through the same builders
+  (`xol`, `surplus`, `share`, `aggregate_deductible`,
+  `paid_reinstatements`, `aggregate_limit`, `pro_rata_as_to_time`), so
+  an impossible term is refused rather than loaded. Tested: a three-stage
+  programme with every kind of term round-trips to an equal tower and the
+  same document, and cedes the same on simulated events with sums insured
+  and times. Python `Tower.to_json` / `Tower.from_json` (and pickle), R
+  `tower_to_json()` / `tower_from_json()`.
 - **Towers also run exactly on the grid.** `Tower::on_grid(frequency,
   severity, points)` returns `TowerGrids`: gross, each layer's ceded loss
   and, where defined, net, as grids by FFT with no sampling error. A
@@ -239,6 +253,8 @@ binomial counts. A unit test checks the layer mean and variance against
 ## Next
 
 1. Seasonality: event times from a density over the year rather than
-   uniform (a hurricane season), if a profile calls for it.
-2. A spread within a band that matches both its bounds and its total sum
+   uniform (a hurricane season).
+2. Loss corridors (a retained band of the layer's annual loss), and other
+   contract features in `architecture.md`'s reinsurance scope.
+3. A spread within a band that matches both its bounds and its total sum
    insured (a tilted, not uniform, density), if profiles call for it.

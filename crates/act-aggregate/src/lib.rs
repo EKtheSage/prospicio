@@ -16,6 +16,7 @@ pub mod grid_reinsurance;
 pub mod monte_carlo;
 pub mod panjer;
 pub mod reinsurance;
+pub mod serial;
 
 pub use collective::CollectiveModel;
 pub use compound::{CompoundMethod, CompoundReport};

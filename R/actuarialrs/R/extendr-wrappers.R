@@ -192,6 +192,10 @@ ReinsuranceTower$new <- function(layers) .Call(wrap__ReinsuranceTower__new, laye
 
 ReinsuranceTower$inuring <- function(stages) .Call(wrap__ReinsuranceTower__inuring, stages)
 
+ReinsuranceTower$from_json <- function(text) .Call(wrap__ReinsuranceTower__from_json, text)
+
+ReinsuranceTower$to_json <- function() .Call(wrap__ReinsuranceTower__to_json, self)
+
 ReinsuranceTower$layer_names <- function() .Call(wrap__ReinsuranceTower__layer_names, self)
 
 ReinsuranceTower$stages <- function() .Call(wrap__ReinsuranceTower__stages, self)

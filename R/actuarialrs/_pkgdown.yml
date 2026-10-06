@@ -78,6 +78,7 @@ reference:
       - reinstatement_premium
       - reinsurance_tower
       - inuring_tower
+      - tower_to_json
       - tower_ceded
       - apply_tower
       - tower_on_grid
