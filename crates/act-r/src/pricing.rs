@@ -3,6 +3,7 @@
 //! A truncation of `Inf` means none; `NA` frequencies are derived.
 
 use act_aggregate::CollectiveModel as CollectiveInner;
+use act_pricing::exposure::{ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve};
 use act_pricing::layer::XsLayer;
 use act_pricing::risk_load::{self, PremiumRule, Price};
 use act_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
@@ -268,6 +269,63 @@ fn pricing_alpha_between_frequencies(
     .map_err(to_r)
 }
 
+/// The MBBEFD exposure curve (Bernegger, 1997).
+#[extendr]
+pub(crate) struct Mbbefd {
+    inner: MbbefdInner,
+}
+
+#[extendr]
+impl Mbbefd {
+    fn new(b: f64, g: f64) -> Result<Self> {
+        Ok(Self {
+            inner: MbbefdInner::new(b, g).map_err(to_r)?,
+        })
+    }
+
+    fn swiss_re(c: f64) -> Result<Self> {
+        Ok(Self {
+            inner: MbbefdInner::swiss_re(c).map_err(to_r)?,
+        })
+    }
+
+    fn b(&self) -> f64 {
+        self.inner.b()
+    }
+
+    fn g(&self) -> f64 {
+        self.inner.g_parameter()
+    }
+
+    fn curve(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.g(v)).collect()
+    }
+
+    fn cdf(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.cdf(v)).collect()
+    }
+
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    fn total_loss_probability(&self) -> f64 {
+        self.inner.total_loss_probability()
+    }
+
+    fn layer_share(&self, limit: f64, attachment: f64, mpl: f64) -> Result<f64> {
+        self.inner.layer_share(limit, attachment, mpl).map_err(to_r)
+    }
+}
+
+/// The exposure curve of a severity capped at `mpl`, at each `x`.
+#[extendr]
+fn pricing_severity_exposure_curve(severity: Robj, mpl: f64, x: &[f64]) -> Result<Vec<f64>> {
+    let sev = AnySeverity::from_robj(&severity)?;
+    let curve = SeverityCurve::new(&sev, mpl).map_err(to_r)?;
+    Ok(x.iter().map(|&v| curve.g(v)).collect())
+}
+
 fn distortion_arg(d: &Robj, name: &str) -> Result<act_prob::Distortion> {
     <&RiskDistortion>::try_from(d)
         .map(|d| d.inner)
@@ -351,6 +409,8 @@ extendr_module! {
     mod pricing;
     impl CollectiveModel;
     impl TowerModel;
+    impl Mbbefd;
+    fn pricing_severity_exposure_curve;
     fn pricing_price;
     fn pricing_price_portfolio;
     fn pricing_ilf;

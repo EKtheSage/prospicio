@@ -396,8 +396,9 @@ reinsurance-specific.
 
 | Module | Item | Used by |
 |---|---|---|
-| `layer` | Increased limit factors (`LEV(limit)/LEV(basic)`), deductible credits (`1 − LEV(d)/E[X]`), Pareto extrapolation, implied alpha from two layers, a frequency and a layer, or two frequencies. Later: MBBEFD exposure curves. | Primary (ILF tables, deductibles, large-loss loads) and reinsurance (rating upper layers) |
+| `layer` | Increased limit factors (`LEV(limit)/LEV(basic)`), deductible credits (`1 − LEV(d)/E[X]`), Pareto extrapolation, implied alpha from two layers, a frequency and a layer, or two frequencies. | Primary (ILF tables, deductibles, large-loss loads) and reinsurance (rating upper layers) |
 | `tower` | Tower matching (Riegel 2018, above, both selection rules); reference fits; PML-curve fits. | Reinsurance |
+| `exposure` | Exposure curves for property per-risk rating: MBBEFD (Bernegger 1997) with the Swiss Re curves, the curve of any severity capped at an MPL, layer shares. | Primary and reinsurance (property per-risk) |
 | `risk_load` | Risk-loaded prices from simulated losses: a pricing distortion or a constant cost of capital on distortion-measured assets, for one cover or allocated across a portfolio's components. | Primary and reinsurance (technical price of a simulated cover or programme) |
 
 Done in `layer`: `ilf`, `loss_elimination_ratio`, `XsLayer`,
@@ -465,6 +466,20 @@ functions, `match_tower`, `fit_pml_curve`, `fit_references`,
 `excess_frequency()`, `ilf()`, `loss_elimination_ratio()`,
 `pareto_extrapolation()`, `alpha_between_*()`, `match_tower()`,
 `fit_pml_curve()`, `fit_references()`, `tower_model`).
+
+Done in `exposure`: `ExposureCurve` (`g(x)`, `layer_share(limit,
+attachment, mpl)` = `G(min((a+l)/M, 1)) − G(min(a/M, 1))`), `Mbbefd::new(b,
+g)` with its four closed-form cases (`g = 1` or `b = 0`, `b = 1`, `bg = 1`,
+general; the special forms are used within 1e-10 of `b = 1` and `bg = 1`,
+where the general one cancels), the destruction-rate `cdf`, `mean` and
+`total_loss_probability` (`1/g`), `Mbbefd::swiss_re(c)` (`b = exp(3.1 −
+0.15(1 + c)c)`, `g = exp((0.78 + 0.12c)c)`), and `SeverityCurve`
+(`LEV(xM)/LEV(M)` for any `Severity`). Parity
+(`validation/scripts/mpmath_mbbefd.py`): `G` and the mean by 30-digit
+quadrature of the survival function for c = 1.5–5 and one curve per case,
+56 values at 1e-12. Python `Mbbefd`, `severity_exposure_curve`; R
+`mbbefd()`, `swiss_re_curve()`, `exposure_curve()`,
+`exposure_layer_share()`, `severity_exposure_curve()`.
 
 Done in `risk_load`: `price(losses, rule, assets)` on any `Empirical`
 and `price_portfolio(pd, rule, assets)` on a `PredictiveDistribution`,

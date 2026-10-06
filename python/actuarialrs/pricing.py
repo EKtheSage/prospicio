@@ -4,6 +4,7 @@ risk-loaded prices from simulated losses."""
 
 from .actuarialrs_native import (
     CollectiveModel,
+    Mbbefd,
     PortfolioPrice,
     Price,
     TowerModel,
@@ -18,6 +19,7 @@ from .actuarialrs_native import (
     pareto_extrapolation,
     price,
     price_portfolio,
+    severity_exposure_curve,
 )
 
 __all__ = [
@@ -36,4 +38,6 @@ __all__ = [
     "price_portfolio",
     "Price",
     "PortfolioPrice",
+    "Mbbefd",
+    "severity_exposure_curve",
 ]

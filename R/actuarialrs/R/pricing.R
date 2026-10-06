@@ -358,3 +358,84 @@ price_portfolio <- function(x, assets, cost_of_capital = NULL, distortion = NULL
 
 rate_arg <- function(rate) if (is.null(rate)) NA_real_ else as.double(rate)
 pricing_arg <- function(d) if (is.null(d)) NULL else d@ptr
+
+#' MBBEFD exposure curves
+#'
+#' The MBBEFD class of Bernegger (1997) for property per-risk exposure
+#' rating: `G(x)` is the share of a risk's expected loss below the fraction
+#' `x` of its maximum possible loss (MPL), and `1/g` the probability of a
+#' total loss. `swiss_re_curve(c)` gives Bernegger's one-parameter family,
+#' `b = exp(3.1 - 0.15 (1 + c) c)`, `g = exp((0.78 + 0.12 c) c)`: `c = 1.5,
+#' 2, 3, 4` are the Swiss Re curves and `c = 5` the Lloyd's curve.
+#'
+#' `exposure_curve()` evaluates `G`; `exposure_layer_share()` is the share
+#' of a risk's expected loss in the layer `limit` xs `attachment`, `G(min((a
+#' + l)/M, 1)) - G(min(a/M, 1))`. `severity_exposure_curve()` is the curve
+#' of any severity capped at the MPL, `LEV(x M) / LEV(M)`.
+#'
+#' @param b,g MBBEFD parameters, `b >= 0`, `g >= 1`.
+#' @param c Swiss Re curve parameter, non-negative (0 is the straight line).
+#' @param curve An `mbbefd` object.
+#' @param x Fractions of the MPL.
+#' @param limit,attachment The layer.
+#' @param mpl Maximum possible loss of the risk.
+#' @param severity A severity: [lognormal], [grid_distribution] or a
+#'   Pareto-family distribution.
+#' @returns `mbbefd()` and `swiss_re_curve()`: an `mbbefd` object with
+#'   properties `b`, `g`, `mean` (the mean destruction rate) and
+#'   `total_loss_probability`. The others: numeric vectors.
+#' @name mbbefd
+#' @examples
+#' c3 <- swiss_re_curve(3)
+#' exposure_curve(c3, c(0.1, 0.5, 1))
+#' exposure_layer_share(c3, 5e6, 5e6, 10e6)
+#' severity_exposure_curve(pareto(1e5, 1.5), 1e7, c(0.5, 1))
+NULL
+
+#' @rdname mbbefd
+#' @export
+mbbefd <- S7::new_class(
+  "mbbefd",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("Mbbefd"),
+    b = S7::new_property(S7::class_double, getter = function(self) self@ptr$b()),
+    g = S7::new_property(S7::class_double, getter = function(self) self@ptr$g()),
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean()),
+    total_loss_probability = S7::new_property(
+      S7::class_double, getter = function(self) self@ptr$total_loss_probability()
+    )
+  ),
+  constructor = function(b, g, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(Mbbefd$new(as.double(b), as.double(g)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, mbbefd) <- function(x, ...) {
+  cat(sprintf("<mbbefd> b = %s, g = %s, total loss probability %s\n", format(x@b),
+              format(x@g), format(x@total_loss_probability)))
+  invisible(x)
+}
+
+#' @rdname mbbefd
+#' @export
+swiss_re_curve <- function(c) {
+  mbbefd(ptr = rust_result(Mbbefd$swiss_re(as.double(c))))
+}
+
+#' @rdname mbbefd
+#' @export
+exposure_curve <- function(curve, x) curve@ptr$curve(as.double(x))
+
+#' @rdname mbbefd
+#' @export
+exposure_layer_share <- function(curve, limit, attachment, mpl) {
+  rust_result(curve@ptr$layer_share(as.double(limit), as.double(attachment), as.double(mpl)))
+}
+
+#' @rdname mbbefd
+#' @export
+severity_exposure_curve <- function(severity, mpl, x) {
+  rust_result(pricing_severity_exposure_curve(severity@ptr, as.double(mpl), as.double(x)))
+}

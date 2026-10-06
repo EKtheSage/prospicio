@@ -6,6 +6,7 @@ resource: https://lightgbm.readthedocs.io/
 tags: [boosting, lightgbm, xgboost, python, offsets]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T03:30:00Z }
+verified: { by: process:ci, at: 2026-10-06T03:31:35Z }
 sources:
   - id: adapter
     resource: ../python/actuarialrs/boosting.py
