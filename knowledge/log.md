@@ -2,6 +2,7 @@
 
 ## 2026-10-06
 
+* **Verification**: [Reinstatements pro rata as to time](/findings/reinstatement-pro-rata-time.md) verified by CI's Rust, Python and R jobs on #146.
 * **Creation**: [Reinstatements pro rata as to time](/findings/reinstatement-pro-rata-time.md), from dating events and pro rata as to time reinstatement premiums.
 * **Update**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md): a band spread between bounds cedes on its SI-weighted average, not its mean risk (3/8 against 1/3 in the test), from band bounds in the risk profile.
 * **Update**: [Local checks](/environment/local-checks.md): the roxygen churn is a link-target rewrite, so a real change to those Rd files is kept and only the link restored.
