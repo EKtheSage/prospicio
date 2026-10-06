@@ -446,6 +446,24 @@ their draws and stop being reproducible.
   import.
 - **Gradient boosting stays an adapter.** LightGBM and XGBoost are mature
   and fast; a Rust reimplementation would not change what users can do.
+  Done in Python (`actuarialrs.boosting`): `Booster(family, engine,
+  power, n_rounds, learning_rate, params, n_boot, seed)` over LightGBM or
+  XGBoost for the Poisson, gamma, Tweedie (log link) and Gaussian. The
+  design's offset is the engine's starting score (`init_score`,
+  `base_margin`) plus a constant that starts the trees at the weighted
+  mean (the engines skip `boost_from_average` once an offset is given);
+  weights are sample weights. `BoosterFit.predict` gives means;
+  `predict_distribution` gives joint draws keyed `row`, process noise from
+  the family with Pearson's dispersion (divisor `n`), and with `n_boot`
+  bootstrap refits each simulation takes one refit's means. Draws go
+  through `act_models::simulate::from_means` (Python
+  `models.simulate_from_means`), which any mean-only engine can use. A
+  `Booster` works in `compare`, `cross_validate` and the searches.
+  Tests (`python/tests/test_boosting.py`): the offset is the exposure for
+  both engines, the LightGBM adapter equals a direct LightGBM call, the
+  gamma dispersion is recovered, bootstrap refits widen the draws. Not
+  yet: the R adapter (R's lightgbm and xgboost packages), quantile and
+  distributional objectives.
 - **Samplers are delegated.** No home-grown NUTS (`architecture.md`).
 
 ## Open questions
