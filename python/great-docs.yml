@@ -55,9 +55,9 @@ reference:
   - title: Reinsurance
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:
-      - aggregate.Layer
-      - aggregate.Tower
-      - aggregate.TowerGrids
+      - reinsurance.Layer
+      - reinsurance.Tower
+      - reinsurance.TowerGrids
   - title: Models
     desc: Terms and design matrices, GLMs and GAMs, metrics, resampling and MCMC diagnostics.
     contents:

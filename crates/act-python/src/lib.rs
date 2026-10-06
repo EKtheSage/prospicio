@@ -18,6 +18,7 @@ mod distributions;
 mod models;
 mod pareto;
 mod pricing;
+mod reinsurance;
 mod reserving;
 mod risk;
 
@@ -28,9 +29,7 @@ fn to_py(e: act_core::Error) -> PyErr {
 #[pymodule]
 mod actuarialrs_native {
     #[pymodule_export]
-    use super::aggregate::{
-        PyCompoundReport, PyEventSet, PyLayer, PyTower, PyTowerGrids, fft, panjer, simulate_events,
-    };
+    use super::aggregate::{PyCompoundReport, PyEventSet, fft, panjer, simulate_events};
     #[pymodule_export]
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
@@ -57,6 +56,8 @@ mod actuarialrs_native {
         fit_pml_curve, fit_references, ilf, loss_elimination_ratio, match_tower,
         pareto_extrapolation, price, price_portfolio, severity_exposure_curve,
     };
+    #[pymodule_export]
+    use super::reinsurance::{PyLayer, PyTower, PyTowerGrids};
     #[pymodule_export]
     use super::reserving::{
         PyChainLadder, PyChainLadderFit, PyMack, PyMackFit, PyOdpBootstrap, PyOdpBootstrapFit,

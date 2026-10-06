@@ -2723,7 +2723,7 @@ class Layer:
     
     Examples
     --------
-    >>> from actuarialrs.aggregate import Layer
+    >>> from actuarialrs.reinsurance import Layer
     >>> layer = Layer("5x5", 5e6, 5e6, reinstatements=1)
     >>> layer.ceded([7e6])
     2000000.0
@@ -2779,7 +2779,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=15.0)
         >>> layer.ceded_by_event([8.0, 20.0, 12.0])
         [0.0, 9.0, 6.0]
@@ -2818,7 +2818,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> Layer.quota_share("QS", 0.4).ceded([10.0, 5.0])
         6.0
         """
@@ -2869,7 +2869,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
         30.0
         """
@@ -5576,7 +5576,8 @@ class Tower:
     
     Examples
     --------
-    >>> from actuarialrs.aggregate import Layer, Tower, simulate_events
+    >>> from actuarialrs.aggregate import simulate_events
+    >>> from actuarialrs.reinsurance import Layer, Tower
     >>> from actuarialrs.distributions import Lognormal, Poisson
     >>> events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 1_000, 7)
     >>> tower = Tower([Layer("5x5", 5e6, 5e6), Layer("15x10", 15e6, 10e6)])
@@ -5651,7 +5652,7 @@ class Tower:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.reinsurance import Layer, Tower
         >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
         >>> tower.ceded([30.0])
         [15.0, 5.0]
@@ -5693,7 +5694,7 @@ class Tower:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.reinsurance import Layer, Tower
         >>> from actuarialrs.distributions import Grid, Poisson
         >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
         >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)

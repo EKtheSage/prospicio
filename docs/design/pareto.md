@@ -508,9 +508,13 @@ Decisions:
 Bindings: Python `price`, `price_portfolio`, `Price`, `PortfolioPrice`;
 R `risk_loaded_price()` and `price_portfolio()`.
 
-`Layer` and `Tower` (contract terms) still live in `act-aggregate`;
-`docs/architecture.md` gives them their own `reinsurance` namespace, and
-moving them is a separate, later PR.
+`Layer`, `Tower` and `TowerGrids` (contract terms and their grid
+results) are in the user-facing `reinsurance` namespace that
+`docs/architecture.md` gives them: Python `actuarialrs.reinsurance`, and
+R's `reinsurance.R` with its own reference section. In Rust they stay in
+`act_aggregate::reinsurance` and `act_aggregate::grid_reinsurance`, next
+to the compound and simulation code they are applied with; a separate
+crate would gain nothing while nothing else depends on them.
 
 Then Python and R bindings. Each row is one small PR, in roughly this
 order.
