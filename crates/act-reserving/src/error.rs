@@ -81,6 +81,14 @@ pub enum Error {
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this fit.
     ClaimsDevelopment(&'static str),
+    /// Re-reserving failed in `failed` of `n_sims` simulations of the
+    /// one-year bootstrap; `source` is one of the failures (the first in
+    /// the order of their messages, so the same whatever the threads).
+    OneYear {
+        failed: usize,
+        n_sims: usize,
+        source: Box<Error>,
+    },
     /// An error from a shared crate (simulation, distributions).
     Core(act_core::Error),
 }
@@ -152,6 +160,14 @@ impl fmt::Display for Error {
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
+            Self::OneYear {
+                failed,
+                n_sims,
+                source,
+            } => write!(
+                f,
+                "one-year bootstrap: re-reserving failed in {failed} of {n_sims} simulations,                  for example: {source}"
+            ),
             Self::Core(e) => e.fmt(f),
         }
     }

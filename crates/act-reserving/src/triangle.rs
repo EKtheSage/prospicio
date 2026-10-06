@@ -1024,6 +1024,16 @@ impl Segment {
             .ok_or_else(|| Error::EmptyOrigin(self.origins[origin].to_string()))
     }
 
+    /// A copy with each `(origin, dev, value)` of `cells` observed at that
+    /// position.
+    pub(crate) fn with_values(&self, cells: impl IntoIterator<Item = (usize, usize, f64)>) -> Self {
+        let mut out = self.clone();
+        for (origin, dev, value) in cells {
+            out.cells[origin * self.n_dev + dev] = Some(value);
+        }
+        out
+    }
+
     /// `(from, to)` values of every origin observed at both `dev` and
     /// `dev + 1`.
     pub(crate) fn link_pairs(&self, dev: usize) -> Vec<(f64, f64)> {

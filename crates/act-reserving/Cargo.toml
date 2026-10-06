@@ -12,3 +12,6 @@ act-glm.workspace = true
 act-math.workspace = true
 act-models.workspace = true
 act-prob.workspace = true
+
+[dev-dependencies]
+rayon.workspace = true

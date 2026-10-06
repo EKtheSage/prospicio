@@ -1,0 +1,956 @@
+//! The one-year view by re-reserving on the ODP bootstrap ("actuary in the
+//! box": Ohlsson and Lauzeningks 2009; England, Verrall and Wüthrich 2019),
+//! for any method, weighting or tail (`docs/design/reserving-v02.md`,
+//! decision 8).
+//!
+//! Merz and Wüthrich's claims development result
+//! ([`MackFit::claims_development_result`](crate::MackFit::claims_development_result))
+//! is exact only for volume-weighted factors without a tail. Here each
+//! simulation, on its own random stream:
+//!
+//! 1. resamples the adjusted residuals into a pseudo triangle and
+//!    re-estimates the volume-weighted factors `f*`, as the
+//!    [`OdpBootstrap`] does (parameter error);
+//! 2. simulates the next cell of every origin: an increment with mean
+//!    `C_latest * (f*_k - 1)` from the origin's observed latest value
+//!    `C_latest` at age `k`, with the bootstrap's process error and scale.
+//!    An origin already at the last age gets no new cell;
+//! 3. appends those cells to the observed triangle and refits the method
+//!    on it (an exposure column keeps each origin's latest value, and Cape
+//!    Cod trends to the valuation one development period later);
+//! 4. records the claims development result `CDR = U0 - U1`, the opening
+//!    ultimate less the re-estimated one. It equals the opening reserve less
+//!    the year's simulated payment and the closing reserve, so a negative
+//!    CDR is an adverse development.
+//!
+//! A new origin period written in the coming year is not simulated, as in
+//! Merz–Wüthrich, and the development beyond the last age moves only
+//! through the refitted tail.
+
+use std::sync::Mutex;
+
+use act_core::{Month, StreamRng};
+use act_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
+
+use crate::bootstrap::{
+    OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, component_sums,
+    hash_segment, origin_keys, pick_segment, prepare, push_moments, segment_sums,
+};
+use crate::chain_ladder::{ChainLadder, ChainLadderFit};
+use crate::error::{Error, Result};
+use crate::expected_loss::{Benktander, BornhuetterFerguson, CapeCod, ExpectedLoss};
+use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each, fit_each_with_exposure};
+use crate::triangle::{Segment, Triangle};
+
+/// The reserving method the one-year bootstrap refits at the end of the
+/// year. The expected-loss methods name their exposure column.
+///
+/// ```
+/// use act_reserving::{BornhuetterFerguson, ChainLadder, OneYearMethod};
+///
+/// let cl = OneYearMethod::ChainLadder(ChainLadder::default());
+/// assert_eq!(cl.exposure(), None);
+/// let bf = OneYearMethod::BornhuetterFerguson(
+///     BornhuetterFerguson { apriori: 0.7, ..Default::default() },
+///     "premium".into(),
+/// );
+/// assert_eq!(bf.exposure(), Some("premium"));
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum OneYearMethod {
+    /// The chain ladder, with any development estimator and tail.
+    ChainLadder(ChainLadder),
+    /// The expected loss ratio method and its exposure column.
+    ExpectedLoss(ExpectedLoss, String),
+    /// Bornhuetter–Ferguson and its exposure column.
+    BornhuetterFerguson(BornhuetterFerguson, String),
+    /// Benktander and its exposure column.
+    Benktander(Benktander, String),
+    /// Cape Cod and its exposure column.
+    CapeCod(CapeCod, String),
+}
+
+impl OneYearMethod {
+    /// The exposure column, for the expected-loss methods.
+    pub fn exposure(&self) -> Option<&str> {
+        match self {
+            Self::ChainLadder(_) => None,
+            Self::ExpectedLoss(_, e)
+            | Self::BornhuetterFerguson(_, e)
+            | Self::Benktander(_, e)
+            | Self::CapeCod(_, e) => Some(e),
+        }
+    }
+
+    /// The method's ultimate per origin of `segment`, with `exposure` the
+    /// exposure column's segment at the same index position (required by
+    /// the expected-loss methods) and Cape Cod's trend to `valuation`.
+    fn ultimate(
+        &self,
+        segment: &Segment,
+        exposure: Option<&Segment>,
+        valuation: Month,
+    ) -> Result<Vec<f64>> {
+        let exposure = || exposure.expect("an exposure method gets its exposure segment");
+        Ok(match self {
+            Self::ChainLadder(cl) => cl.fit_segment(segment, &segment.ages)?.ultimate,
+            Self::ExpectedLoss(m, c) => {
+                m.as_benktander()
+                    .fit_segment(segment, exposure(), c)?
+                    .ultimate
+            }
+            Self::BornhuetterFerguson(m, c) => {
+                m.as_benktander()
+                    .fit_segment(segment, exposure(), c)?
+                    .ultimate
+            }
+            Self::Benktander(m, c) => m.fit_segment(segment, exposure(), c)?.ultimate,
+            Self::CapeCod(m, c) => {
+                m.fit_segment(segment, exposure(), c, valuation)?
+                    .expected_loss
+                    .ultimate
+            }
+        })
+    }
+}
+
+/// The one-year bootstrap of a single-segment triangle.
+///
+/// ```
+/// use act_reserving::{
+///     ChainLadder, DevelopmentColumn, Grain, Long, Month, OdpBootstrap, OneYearMethod, Triangle,
+/// };
+/// use act_prob::Distribution;
+///
+/// let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
+/// let tri = Triangle::from_long(&Long {
+///     keys: &[],
+///     origin: &origin,
+///     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
+///     values: &[(
+///         "paid",
+///         &[100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+///     )],
+///     origin_grain: Grain::Year,
+///     development_grain: Grain::Year,
+///     cumulative: true,
+/// })?;
+/// let boot = OdpBootstrap { n_sims: 2_000, seed: 42, ..Default::default() };
+/// let fit = boot.one_year(&tri, "paid", &OneYearMethod::ChainLadder(ChainLadder::default()))?;
+/// assert_eq!(fit.cdr.dims(), ["origin"]);
+/// // 2020 is fully developed: no new cell, no change.
+/// assert_eq!(fit.opening_reserve[0], 0.0);
+/// assert!(fit.cdr.draw_matrix().chunks(4).all(|row| row[0] == 0.0));
+/// // The one-year view is narrower than the lifetime view.
+/// let lifetime = boot.fit(&tri, "paid")?.reserves.std_dev();
+/// assert!(fit.cdr.std_dev() < lifetime);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone)]
+pub struct OneYearFit {
+    /// The bootstrap's volume-weighted chain ladder, fitted values,
+    /// residuals and scale.
+    pub bootstrap: OdpBootstrapSegment,
+    /// The method's ultimate per origin on the observed triangle.
+    pub opening_ultimate: Vec<f64>,
+    /// The opening ultimate less the latest value, per origin.
+    pub opening_reserve: Vec<f64>,
+    /// Joint distribution of the claims development result by origin:
+    /// dimension `origin`, one component per origin period.
+    pub cdr: PredictiveDistribution,
+}
+
+/// What the one-year bootstrap estimates in one segment before simulating:
+/// the fields of [`OneYearFit`] but the claims development result.
+///
+/// ```
+/// use act_reserving::{ChainLadder, OdpBootstrap, OneYearMethod};
+/// # use act_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+/// # let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+/// # let tri = Triangle::from_long(&Long {
+/// #     keys: &[("lob", &["Auto"; 6])],
+/// #     origin: &origin,
+/// #     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+/// #     values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+/// #     origin_grain: Grain::Year,
+/// #     development_grain: Grain::Year,
+/// #     cumulative: true,
+/// # })?;
+/// let method = OneYearMethod::ChainLadder(ChainLadder::default());
+/// let fits = OdpBootstrap { n_sims: 100, ..Default::default() }
+///     .one_year_segments(&tri, "paid", &method)?;
+/// let auto = &fits.segments.fits[0];
+/// assert_eq!(auto.opening_ultimate, auto.bootstrap.chain_ladder.ultimate);
+/// # Ok::<(), act_reserving::Error>(())
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct OneYearSegment {
+    /// The segment's volume-weighted chain ladder, fitted values, residuals
+    /// and scale.
+    pub bootstrap: OdpBootstrapSegment,
+    /// The method's ultimate per origin on the observed triangle.
+    pub opening_ultimate: Vec<f64>,
+    /// The opening ultimate less the latest value, per origin.
+    pub opening_reserve: Vec<f64>,
+}
+
+impl ReserveFit for OneYearSegment {
+    fn chain_ladder(&self) -> &ChainLadderFit {
+        &self.bootstrap.chain_ladder
+    }
+
+    fn ultimate(&self) -> &[f64] {
+        &self.opening_ultimate
+    }
+
+    fn total_columns(&self) -> Vec<(&'static str, f64)> {
+        vec![("scale", self.bootstrap.scale)]
+    }
+}
+
+/// The one-year bootstrap of every segment of a triangle column.
+///
+/// Segments are bootstrapped independently, each with its own residuals
+/// and scale; simulation `i` uses stream `i` for every segment in turn, as
+/// in [`OdpBootstrapFits`](crate::OdpBootstrapFits).
+///
+/// ```
+/// use act_reserving::{
+///     BornhuetterFerguson, DevelopmentColumn, Grain, Long, Month, OdpBootstrap, OneYearMethod,
+///     Triangle,
+/// };
+///
+/// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+/// let ages = [12, 24, 36, 12, 24, 12];
+/// let paid = [100.0, 150.0, 165.0, 110.0, 170.0, 120.0];
+/// let premium = [200.0, 200.0, 200.0, 220.0, 220.0, 240.0];
+/// let tri = Triangle::from_long(&Long {
+///     keys: &[("lob", &[["Auto"; 6], ["Home"; 6]].concat())],
+///     origin: &[origin, origin].concat(),
+///     development: DevelopmentColumn::Age(&[ages, ages].concat()),
+///     values: &[
+///         ("paid", &[paid, paid.map(|v| v * 2.0)].concat()),
+///         ("premium", &[premium, premium.map(|v| v * 2.0)].concat()),
+///     ],
+///     origin_grain: Grain::Year,
+///     development_grain: Grain::Year,
+///     cumulative: true,
+/// })?;
+/// let bf = BornhuetterFerguson { apriori: 0.8, ..Default::default() };
+/// let method = OneYearMethod::BornhuetterFerguson(bf, "premium".into());
+/// let fits = OdpBootstrap { n_sims: 500, seed: 3, ..Default::default() }
+///     .one_year_segments(&tri, "paid", &method)?;
+/// assert_eq!(fits.cdr.dims(), ["lob", "origin"]);
+/// assert_eq!(fits.cdr.n_components(), 6);
+/// let totals = fits.totals();
+/// assert_eq!(totals.column("cdr_std_dev").unwrap().len(), 2);
+/// let home = fits.segment(&[("lob", "Home")])?;
+/// assert_eq!(home.cdr.n_components(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone)]
+pub struct OneYearFits {
+    /// Each segment's bootstrap and opening ultimate.
+    pub segments: SegmentFits<OneYearSegment>,
+    /// Joint distribution of the claims development result by segment and
+    /// origin: the key names and `origin` are its dimensions, and its
+    /// components run over the origins of each segment in turn, like the
+    /// rows of [`to_long`](Self::to_long).
+    pub cdr: PredictiveDistribution,
+}
+
+impl OneYearFits {
+    /// One row per segment × origin: the `latest` value, the method's
+    /// `opening_ultimate` and `opening_reserve`, and the `cdr_mean` and
+    /// `cdr_std_dev` of the simulated claims development result.
+    pub fn to_long(&self) -> FitTable {
+        let mut table = opening_names(self.segments.to_long());
+        push_moments(&mut table, "cdr_", &component_sums(&self.cdr));
+        table
+    }
+
+    /// One row per segment: the totals of `to_long`'s columns, the
+    /// bootstrap's `scale`, and the `cdr_mean` and `cdr_std_dev` of the
+    /// segment's total claims development result.
+    pub fn totals(&self) -> FitTable {
+        let mut table = opening_names(self.segments.totals());
+        let totals = segment_sums(&self.segments, &self.cdr);
+        push_moments(&mut table, "cdr_", &totals);
+        table
+    }
+
+    /// The one segment chosen as in [`SegmentFits::position`], with its
+    /// part of the joint claims development result (same dimensions).
+    pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
+        let (segments, cdr) = pick_segment(&self.segments, &self.cdr, keys)?;
+        Ok(Self { segments, cdr })
+    }
+}
+
+/// Renames a table's `ultimate` and `reserve` to `opening_ultimate` and
+/// `opening_reserve`.
+fn opening_names(mut table: FitTable) -> FitTable {
+    for (name, _) in &mut table.values {
+        if name == "ultimate" || name == "reserve" {
+            *name = format!("opening_{name}");
+        }
+    }
+    table
+}
+
+/// One segment, prepared: its bootstrap and opening ultimate, the residuals
+/// to resample, and its cells and exposure.
+struct Prepared {
+    fit: OneYearSegment,
+    pool: Vec<f64>,
+    segment: Segment,
+    exposure: Option<Segment>,
+}
+
+impl Prepared {
+    fn new(
+        segment: &Segment,
+        exposure: Option<&Segment>,
+        method: &OneYearMethod,
+        valuation: Month,
+    ) -> Result<Self> {
+        let (bootstrap, pool) = prepare(segment, &segment.ages)?;
+        let opening_ultimate = method.ultimate(segment, exposure, valuation)?;
+        let opening_reserve = opening_ultimate
+            .iter()
+            .zip(&bootstrap.chain_ladder.latest)
+            .map(|(u, l)| u - l)
+            .collect();
+        Ok(Self {
+            fit: OneYearSegment {
+                bootstrap,
+                opening_ultimate,
+                opening_reserve,
+            },
+            pool,
+            segment: segment.clone(),
+            exposure: exposure.cloned(),
+        })
+    }
+
+    fn hash(&self, hasher: &mut InputHasher) {
+        let cl = &self.fit.bootstrap.chain_ladder;
+        hash_segment(hasher, &self.segment, cl, &self.segment.ages);
+        if let Some(exposure) = &self.exposure {
+            for o in 0..exposure.n_origins {
+                if let Ok((d, v)) = exposure.latest(o) {
+                    hasher.i64(d as i64);
+                    hasher.f64s(&[v]);
+                }
+            }
+        }
+    }
+}
+
+/// Re-reserving one segment, once per simulation.
+struct Run<'a> {
+    prepared: &'a Prepared,
+    method: &'a OneYearMethod,
+    /// The valuation one development period after the triangle's.
+    closing: Month,
+    /// The segment's label, to name it in an error; `None` without keys.
+    label: Option<String>,
+}
+
+impl Run<'_> {
+    fn n_origins(&self) -> usize {
+        self.prepared.segment.n_origins
+    }
+
+    /// One simulation: fills `cdr` with each origin's claims development
+    /// result.
+    fn run(
+        &self,
+        rng: &mut StreamRng,
+        process: ProcessDistribution,
+        cdr: &mut [f64],
+    ) -> Result<()> {
+        let p = self.prepared;
+        let boot = &p.fit.bootstrap;
+        let cl = &boot.chain_ladder;
+        let sim = Simulation {
+            segment: &p.segment,
+            latest: &cl.latest_position,
+            fitted: &boot.fitted,
+            pool: &p.pool,
+            scale: boot.scale,
+            process,
+        };
+        let (_, factors) = sim.resample(rng);
+        let next: Vec<(usize, usize, f64)> = cl
+            .latest_position
+            .iter()
+            .zip(&cl.latest)
+            .enumerate()
+            .filter(|&(_, (&d, _))| d + 1 < p.segment.n_dev)
+            .map(|(o, (&d, &c))| (o, d + 1, c + sim.with_process(c * (factors[d] - 1.0), rng)))
+            .collect();
+        let closing = p.segment.with_values(next);
+        let ultimate = self
+            .method
+            .ultimate(&closing, p.exposure.as_ref(), self.closing)?;
+        for ((x, u0), u1) in cdr.iter_mut().zip(&p.fit.opening_ultimate).zip(&ultimate) {
+            *x = u0 - u1;
+            if !x.is_finite() {
+                return Err(Error::Bootstrap("re-reserving gave a non-finite ultimate"));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The failures of re-reserving: how many, and the one whose message sorts
+/// first, so the error reported does not depend on the threads.
+#[derive(Default)]
+struct Failures {
+    count: usize,
+    first: Option<(String, Error)>,
+}
+
+impl Failures {
+    fn record(&mut self, error: Error) {
+        self.count += 1;
+        let message = error.to_string();
+        if self.first.as_ref().is_none_or(|(m, _)| message < *m) {
+            self.first = Some((message, error));
+        }
+    }
+}
+
+impl OdpBootstrap {
+    /// The one-year view of `column` of a single-segment cumulative
+    /// triangle: the claims development result of `method` over the next
+    /// development period, by re-reserving on the ODP bootstrap; see the
+    /// [module documentation](crate::one_year_bootstrap). Every origin must
+    /// be observed from the first age to its latest, and an expected-loss
+    /// method's exposure column must have a positive value for every
+    /// origin.
+    pub fn one_year(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        method: &OneYearMethod,
+    ) -> Result<OneYearFit> {
+        self.check_sims()?;
+        let segment = triangle.segment(column)?;
+        let exposure = method.exposure().map(|e| triangle.segment(e)).transpose()?;
+        let (opening, closing) = valuations(triangle);
+        let prepared = Prepared::new(&segment, exposure.as_ref(), method, opening)?;
+
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        prepared.hash(&mut hasher);
+        let run = Run {
+            prepared: &prepared,
+            method,
+            closing,
+            label: None,
+        };
+        let cdr = self.simulate_cdr(
+            vec!["origin".into()],
+            segment.origins.iter().map(|&p| vec![p.into()]).collect(),
+            &[run],
+            self.one_year_provenance(column, method, hasher),
+        )?;
+        let OneYearSegment {
+            bootstrap,
+            opening_ultimate,
+            opening_reserve,
+        } = prepared.fit;
+        Ok(OneYearFit {
+            bootstrap,
+            opening_ultimate,
+            opening_reserve,
+            cdr,
+        })
+    }
+
+    /// The one-year view of `column` in every segment of a cumulative
+    /// triangle, each bootstrapped with its own residuals and scale and
+    /// refitted with its own exposure, into one joint distribution of the
+    /// claims development result; see [`OneYearFits`]. A failure names its
+    /// segment.
+    pub fn one_year_segments(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        method: &OneYearMethod,
+    ) -> Result<OneYearFits> {
+        self.check_sims()?;
+        let (opening, closing) = valuations(triangle);
+        let prepared = match method.exposure() {
+            None => fit_each(triangle, column, |s| {
+                Prepared::new(s, None, method, opening)
+            })?,
+            Some(exposure) => fit_each_with_exposure(triangle, column, exposure, |s, e| {
+                Prepared::new(s, Some(e), method, opening)
+            })?,
+        };
+
+        let keyed = !prepared.key_names.is_empty();
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        let mut dims = prepared.key_names.clone();
+        dims.push("origin".into());
+        let mut components: Vec<Vec<KeyValue>> = Vec::new();
+        let mut runs = Vec::with_capacity(prepared.len());
+        for (label, p) in prepared.iter() {
+            hasher.str(&label.to_string());
+            p.hash(&mut hasher);
+            components.extend(origin_keys(label, &p.segment.origins));
+            runs.push(Run {
+                prepared: p,
+                method,
+                closing,
+                label: keyed.then(|| label.to_string()),
+            });
+        }
+        let cdr = self.simulate_cdr(
+            dims,
+            components,
+            &runs,
+            self.one_year_provenance(column, method, hasher)
+                .param("segments", prepared.len()),
+        )?;
+        Ok(OneYearFits {
+            segments: prepared.map(|p| p.fit.clone()),
+            cdr,
+        })
+    }
+
+    fn check_sims(&self) -> Result<()> {
+        if self.n_sims == 0 {
+            return Err(Error::Bootstrap("n_sims must be positive"));
+        }
+        Ok(())
+    }
+
+    /// Simulates the claims development result of every segment in `runs`,
+    /// in turn, into one joint distribution. A failed simulation is
+    /// reported after all have run, with the number that failed.
+    fn simulate_cdr(
+        &self,
+        dims: Vec<String>,
+        components: Vec<Vec<KeyValue>>,
+        runs: &[Run<'_>],
+        provenance: Provenance,
+    ) -> Result<PredictiveDistribution> {
+        let failures = Mutex::new(Failures::default());
+        let cdr = PredictiveDistribution::simulate(
+            dims,
+            components,
+            self.n_sims,
+            self.seed,
+            provenance,
+            |rng, row| {
+                let mut start = 0;
+                for run in runs {
+                    let end = start + run.n_origins();
+                    if let Err(e) = run.run(rng, self.process, &mut row[start..end]) {
+                        // Keep the draws finite; the failure is reported.
+                        row.fill(0.0);
+                        let e = match &run.label {
+                            Some(label) => Error::InSegment {
+                                label: label.clone(),
+                                source: Box::new(e),
+                            },
+                            None => e,
+                        };
+                        failures
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .record(e);
+                        return;
+                    }
+                    start = end;
+                }
+            },
+        )?;
+        let failures = failures
+            .into_inner()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match failures.first {
+            Some((_, source)) => Err(Error::OneYear {
+                failed: failures.count,
+                n_sims: self.n_sims,
+                source: Box::new(source),
+            }),
+            None => Ok(cdr),
+        }
+    }
+
+    fn one_year_provenance(
+        &self,
+        column: &str,
+        method: &OneYearMethod,
+        hasher: InputHasher,
+    ) -> Provenance {
+        Provenance::new("odp_bootstrap_one_year")
+            .param("n_sims", self.n_sims)
+            .param("process", format!("{:?}", self.process))
+            .param("column", column)
+            .param("method", format!("{method:?}"))
+            .version("act-reserving", env!("CARGO_PKG_VERSION"))
+            .input_hash(hasher.finish())
+    }
+}
+
+/// The triangle's valuation and the one a development period later, which
+/// the refit at the end of the year trends to.
+fn valuations(triangle: &Triangle) -> (Month, Month) {
+    let opening = triangle.valuation();
+    let step = triangle.development_grain().months() as i64;
+    (opening, opening.add_months(step))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::development::{Average, Development};
+    use crate::triangle::tests::{RAA, raa};
+    use crate::triangle::{DevelopmentColumn, Long};
+    use crate::{Grain, ProcessDistribution};
+    use act_prob::Distribution;
+
+    /// A cumulative annual triangle from rows of `paid` values and one
+    /// `premium` per origin, repeated at every observed age. Origins start in
+    /// `first_year`.
+    fn with_premium(first_year: i32, rows: &[&[f64]], premium: &[f64]) -> Triangle {
+        let (mut origin, mut ages, mut paid, mut prem) = (vec![], vec![], vec![], vec![]);
+        for (k, row) in rows.iter().enumerate() {
+            for (d, &v) in row.iter().enumerate() {
+                origin.push(Month::january(first_year + k as i32));
+                ages.push(12 * (d as u32 + 1));
+                paid.push(v);
+                prem.push(premium[k]);
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("premium", &prem)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    /// Four origins exactly on the pattern 1 : 2 : 3 : 3.75 (factors 2, 1.5
+    /// and 1.25), every value exact in binary.
+    fn exact() -> Triangle {
+        with_premium(
+            2020,
+            &[
+                &[4.0, 8.0, 12.0, 15.0],
+                &[8.0, 16.0, 24.0],
+                &[12.0, 24.0],
+                &[16.0],
+            ],
+            &[20.0, 40.0, 50.0, 80.0],
+        )
+    }
+
+    /// RAA with a premium of 20,000 per origin.
+    fn raa_premium() -> Triangle {
+        with_premium(1981, &RAA, &[20_000.0; 10])
+    }
+
+    fn boot(n_sims: usize, seed: u64) -> OdpBootstrap {
+        OdpBootstrap {
+            n_sims,
+            seed,
+            process: ProcessDistribution::Gamma,
+        }
+    }
+
+    fn chain_ladder() -> OneYearMethod {
+        OneYearMethod::ChainLadder(ChainLadder::default())
+    }
+
+    /// Column `j` of a distribution's draws.
+    fn column(cdr: &PredictiveDistribution, j: usize) -> Vec<f64> {
+        let n = cdr.n_components();
+        cdr.draw_matrix().chunks(n).map(|row| row[j]).collect()
+    }
+
+    #[test]
+    fn exact_pattern_has_zero_scale_and_cdr() {
+        let tailed = OneYearMethod::ChainLadder(ChainLadder {
+            tail: 1.1.into(),
+            ..Default::default()
+        });
+        for method in [chain_ladder(), tailed] {
+            let fit = boot(200, 1).one_year(&exact(), "paid", &method).unwrap();
+            assert_eq!(fit.bootstrap.scale, 0.0);
+            assert!(
+                fit.cdr.draw_matrix().iter().all(|&x| x == 0.0),
+                "{method:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn exact_pattern_bornhuetter_ferguson_moves_by_hand() {
+        // With no noise the next diagonal is `latest * f`, so the closing
+        // BF ultimate is `latest * f + (1 - f / cdf) * a * E`, and
+        // CDR = (f - 1) * (a * E / cdf - latest), the same in every
+        // simulation. 2021 is at 36 months: f = 1.25, cdf = 1.25.
+        let bf = BornhuetterFerguson {
+            apriori: 0.5,
+            ..Default::default()
+        };
+        let method = OneYearMethod::BornhuetterFerguson(bf, "premium".into());
+        let fit = boot(50, 2).one_year(&exact(), "paid", &method).unwrap();
+        let (latest, cdf, f) = (
+            [15.0, 24.0, 24.0, 16.0],
+            [1.0, 1.25, 1.875, 3.75],
+            [1.0, 1.25, 1.5, 2.0],
+        );
+        let exposure = [20.0, 40.0, 50.0, 80.0];
+        for o in 0..4 {
+            let want = (f[o] - 1.0) * (0.5 * exposure[o] / cdf[o] - latest[o]);
+            for x in column(&fit.cdr, o) {
+                assert!((x - want).abs() < 1e-9, "origin {o}: {x} vs {want}");
+            }
+        }
+        let opening = bf.fit(&exact(), "paid", "premium").unwrap();
+        assert_eq!(fit.opening_ultimate, opening.ultimate);
+        assert_eq!(fit.opening_reserve, opening.reserves());
+    }
+
+    #[test]
+    fn reproducible_by_seed_and_thread_count() {
+        let tri = raa();
+        let a = boot(300, 7)
+            .one_year(&tri, "values", &chain_ladder())
+            .unwrap();
+        let b = boot(300, 7)
+            .one_year(&tri, "values", &chain_ladder())
+            .unwrap();
+        assert_eq!(a.cdr.draw_matrix(), b.cdr.draw_matrix());
+        let c = boot(300, 8)
+            .one_year(&tri, "values", &chain_ladder())
+            .unwrap();
+        assert_ne!(a.cdr.draw_matrix(), c.cdr.draw_matrix());
+        let one_thread = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| boot(300, 7).one_year(&tri, "values", &chain_ladder()))
+            .unwrap();
+        assert_eq!(a.cdr.draw_matrix(), one_thread.cdr.draw_matrix());
+        assert_eq!(a.cdr.provenance().model, "odp_bootstrap_one_year");
+    }
+
+    #[test]
+    fn chain_ladder_cdr_mean_is_near_zero() {
+        // The CDR is centred on zero up to the bootstrap's factor bias (on
+        // RAA about -8% of a standard deviation with 20,000 simulations).
+        let fit = boot(4_000, 11)
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+        let (mean, sd) = (fit.cdr.mean(), fit.cdr.std_dev());
+        assert!(mean.abs() < 0.15 * sd, "mean {mean}, sd {sd}");
+        let total_reserve: f64 = fit.opening_reserve.iter().sum();
+        assert!((total_reserve - 52_135.228).abs() < 0.01);
+    }
+
+    #[test]
+    fn an_origin_at_the_last_age_gets_no_new_cell() {
+        // 1981 is at the last age: it gets no new cell, so with no tail or
+        // a constant one its ultimate, and the CDR, do not move. 1982 gets
+        // its last cell and does move.
+        let constant_tail = OneYearMethod::ChainLadder(ChainLadder {
+            tail: 1.05.into(),
+            ..Default::default()
+        });
+        let bf = OneYearMethod::BornhuetterFerguson(
+            BornhuetterFerguson {
+                apriori: 0.8,
+                ..Default::default()
+            },
+            "premium".into(),
+        );
+        for method in [chain_ladder(), constant_tail, bf] {
+            let fit = boot(200, 3)
+                .one_year(&raa_premium(), "paid", &method)
+                .unwrap();
+            assert!(column(&fit.cdr, 0).iter().all(|&x| x == 0.0), "{method:?}");
+            assert!(column(&fit.cdr, 1).iter().any(|&x| x != 0.0), "{method:?}");
+        }
+    }
+
+    #[test]
+    fn expected_loss_methods_open_on_their_own_ultimate() {
+        let tri = raa_premium();
+        let el = ExpectedLoss {
+            apriori: 0.8,
+            ..Default::default()
+        };
+        let fit = boot(100, 4)
+            .one_year(
+                &tri,
+                "paid",
+                &OneYearMethod::ExpectedLoss(el, "premium".into()),
+            )
+            .unwrap();
+        // The expected loss ratio ultimate ignores the losses: no CDR.
+        assert_eq!(fit.opening_ultimate, vec![16_000.0; 10]);
+        assert!(fit.cdr.draw_matrix().iter().all(|&x| x == 0.0));
+
+        let bk = Benktander {
+            apriori: 0.8,
+            n_iters: 2,
+            ..Default::default()
+        };
+        let fit = boot(100, 4)
+            .one_year(
+                &tri,
+                "paid",
+                &OneYearMethod::Benktander(bk, "premium".into()),
+            )
+            .unwrap();
+        assert_eq!(
+            fit.opening_ultimate,
+            bk.fit(&tri, "paid", "premium").unwrap().ultimate
+        );
+        assert!(fit.cdr.std_dev() > 0.0);
+
+        let cc = CapeCod {
+            trend: 0.03,
+            decay: 0.8,
+            ..Default::default()
+        };
+        let fit = boot(100, 4)
+            .one_year(&tri, "paid", &OneYearMethod::CapeCod(cc, "premium".into()))
+            .unwrap();
+        assert_eq!(
+            fit.opening_ultimate,
+            cc.fit(&tri, "paid", "premium")
+                .unwrap()
+                .expected_loss
+                .ultimate
+        );
+        assert!(fit.cdr.std_dev() > 0.0);
+    }
+
+    #[test]
+    fn errors() {
+        let bf = |column: &str| {
+            OneYearMethod::BornhuetterFerguson(BornhuetterFerguson::default(), column.into())
+        };
+        let b = boot(10, 0);
+        assert_eq!(
+            b.one_year(&raa(), "values", &bf("premium")).unwrap_err(),
+            Error::UnknownColumn("premium".into())
+        );
+        // 1990 has no premium.
+        let mut premium = [20_000.0; 10];
+        premium[9] = f64::NAN;
+        let tri = with_premium(1981, &RAA, &premium);
+        assert_eq!(
+            b.one_year(&tri, "paid", &bf("premium")).unwrap_err(),
+            Error::InvalidExposure {
+                column: "premium".into(),
+                origin: "1990".into()
+            }
+        );
+        let none = boot(0, 0);
+        assert_eq!(
+            none.one_year(&raa(), "values", &chain_ladder())
+                .unwrap_err(),
+            Error::Bootstrap("n_sims must be positive")
+        );
+        assert!(matches!(
+            none.one_year_segments(&raa(), "values", &chain_ladder()),
+            Err(Error::Bootstrap(_))
+        ));
+    }
+
+    #[test]
+    fn a_failed_refit_is_counted_and_reported() {
+        // The newest origin is at zero, so its next cell is zero too, and a
+        // simple average gives that link an infinite weight in every
+        // simulation's refit (but not in the opening fit, where the origin
+        // has no link).
+        let tri = with_premium(2020, &[&[4.0, 8.0, 12.0], &[8.0, 15.0], &[0.0]], &[1.0; 3]);
+        let simple = OneYearMethod::ChainLadder(ChainLadder {
+            development: Development {
+                average: Average::Simple,
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let err = boot(20, 0).one_year(&tri, "paid", &simple).unwrap_err();
+        assert_eq!(
+            err,
+            Error::OneYear {
+                failed: 20,
+                n_sims: 20,
+                source: Box::new(Error::Factor {
+                    age: 0,
+                    reason: "a zero value gets an infinite weight"
+                }),
+            }
+        );
+        assert!(
+            err.to_string()
+                .starts_with("one-year bootstrap: re-reserving failed in 20 of 20 simulations")
+        );
+    }
+
+    #[test]
+    fn segments_share_one_joint_distribution() {
+        let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+        let ages = [12, 24, 36, 12, 24, 12];
+        let paid = [100.0, 150.0, 165.0, 110.0, 170.0, 120.0];
+        let tri = Triangle::from_long(&Long {
+            keys: &[("lob", &[["Auto"; 6], ["Home"; 6]].concat())],
+            origin: &[origin, origin].concat(),
+            development: DevelopmentColumn::Age(&[ages, ages].concat()),
+            values: &[("paid", &[paid, paid.map(|v| v * 3.0)].concat())],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let fits = boot(400, 5)
+            .one_year_segments(&tri, "paid", &chain_ladder())
+            .unwrap();
+        assert_eq!(fits.cdr.dims(), ["lob", "origin"]);
+        assert_eq!(fits.cdr.n_components(), 6);
+        let long = fits.to_long();
+        let names: Vec<&str> = long.values.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "latest",
+                "opening_ultimate",
+                "opening_reserve",
+                "cdr_mean",
+                "cdr_std_dev"
+            ]
+        );
+        assert_eq!(long.column("opening_reserve").unwrap()[0], 0.0);
+        assert_eq!(long.column("cdr_std_dev").unwrap()[0], 0.0);
+        let totals = fits.totals();
+        assert_eq!(totals.column("scale").unwrap().len(), 2);
+        // Home is Auto scaled by 3: its scale is three times Auto's.
+        let scale = totals.column("scale").unwrap();
+        assert!((scale[1] / scale[0] - 3.0).abs() < 1e-9);
+        let home = fits.segment(&[("lob", "Home")]).unwrap();
+        assert_eq!(home.cdr.n_components(), 3);
+        assert_eq!(home.cdr.dims(), ["lob", "origin"]);
+        assert_eq!(
+            home.totals().column("cdr_std_dev").unwrap()[0],
+            totals.column("cdr_std_dev").unwrap()[1]
+        );
+    }
+}
