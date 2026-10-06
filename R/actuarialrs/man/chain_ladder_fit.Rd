@@ -29,7 +29,9 @@ estimated (an age with a single link ratio) is filled in:
 \code{"log-linear"} (regress \code{log(sigma)} on age and extrapolate, the
 default of R ChainLadder) or \code{"mack"} (Mack 1993).}
 
-\item{tail}{Factor from the oldest age to ultimate; 1 means no tail.}
+\item{tail}{Development past the oldest age: a number, the factor from
+the oldest age to ultimate (1 means no tail), or a \code{\link[=tail_constant]{tail_constant()}},
+\code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or \code{\link[=tail_log_linear]{tail_log_linear()}}.}
 }
 \value{
 A \code{chain_ladder_fit} object.
@@ -50,15 +52,29 @@ properties run over the origins of each segment in turn, like the rows
 of \code{as.data.frame()}, and are named by origin, or by \code{"segment / origin"} (key values joined by \code{" / "}) when there are several segments;
 a single-segment fit has one value per origin.
 
+Development past the oldest age is a tail: a given factor, or one
+estimated by \code{\link[=tail_constant]{tail_constant()}}, \code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or
+\code{\link[=tail_log_linear]{tail_log_linear()}} (\code{validation/reference/reserving_tails_python.csv}
+and \code{reserving_tails_r.csv}). A tail attached before the oldest age
+replaces the estimated factors from there.
+
 Properties of the fit, per origin: \code{latest}, \code{ultimate}, \code{reserve}; per
-link (named \code{"12-24"} and so on): \code{ldf}, \code{sigma} (with unestimable ones
-interpolated), \code{std_err}; per age: \code{cdf} (age to ultimate, including the
-tail); and \code{keys}, \code{index} (one row per segment, as a triangle's),
-\code{origins}, \code{development}, \code{alpha}, \code{tail}, \code{total_ultimate} and
-\code{total_reserve} (summed over segments). The per-link and per-age
-properties need a single-segment fit: with several segments use
-\code{\link[=development_frame]{development_frame()}} or \code{\link[=segment]{segment()}}. \code{as.data.frame()} gives one row
-per segment and origin, \code{\link[=totals_frame]{totals_frame()}} one per segment.
+link (named \code{"12-24"} and so on): \code{ldf} (the selected factors, which the
+projection uses: the estimated ones, replaced by the tail's from its
+attachment age), \code{sigma} (with unestimable ones interpolated),
+\code{std_err}; per age: \code{cdf} (age to ultimate, including the tail); the
+tail: \code{tail} (the factor from the oldest age to ultimate), \code{tail_ldf}
+(the factors past the oldest age, which multiply to \code{tail}: one per
+development period of the next year and one to ultimate, or a single
+one for \code{\link[=tail_log_linear]{tail_log_linear()}}), \code{tail_sigma} and \code{tail_std_err} (the
+tail's variance parameter and standard error, extrapolated
+log-linearly; 0 without a tail above 1); and \code{keys}, \code{index} (one row
+per segment, as a triangle's), \code{origins}, \code{development}, \code{alpha},
+\code{total_ultimate} and \code{total_reserve} (summed over segments). The
+per-link, per-age and tail properties need a single-segment fit: with
+several segments use \code{\link[=development_frame]{development_frame()}} (whose oldest age has the
+tail as its \code{cdf}) or \code{\link[=segment]{segment()}}. \code{as.data.frame()} gives one row per
+segment and origin, \code{\link[=totals_frame]{totals_frame()}} one per segment.
 }
 \examples{
 long <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),
@@ -68,6 +84,7 @@ fit <- chain_ladder(triangle(long, "year", "age", "paid"), tail = 1.05)
 fit@ldf
 fit@reserve
 fit@total_reserve
+chain_ladder(triangle(long, "year", "age", "paid"), tail = tail_bondy())@tail
 
 # Every line of business at once.
 by_lob <- rbind(transform(long, lob = "auto"), transform(long, lob = "home", paid = paid / 2))
