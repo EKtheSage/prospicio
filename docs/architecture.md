@@ -339,6 +339,8 @@ Each front end's docs are generated from the code that defines its API, and buil
 
 The first release is v0.1 reserving core with a joint bootstrap distribution; aggregate, reinsurance and capital follow before GLM, GAM and pricing.
 
+Progress against these stages, and the plan for each crate, is in [`roadmap.md`](roadmap.md).
+
 Reserving and risk ship before pricing, with four gates on the way to v1.0.
 
 | Stage | Scope |
