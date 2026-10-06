@@ -66,6 +66,8 @@ local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at
 
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
 
+pricing_severity_exposure_curve <- function(severity, mpl, x) .Call(wrap__pricing_severity_exposure_curve, severity, mpl, x)
+
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
@@ -933,6 +935,32 @@ TowerModel$fit_references <- function(limits, attachments, losses, thresholds, f
 
 #' @export
 `[[.TowerModel` <- `$.TowerModel`
+
+Mbbefd <- new.env(parent = emptyenv())
+
+Mbbefd$new <- function(b, g) .Call(wrap__Mbbefd__new, b, g)
+
+Mbbefd$swiss_re <- function(c) .Call(wrap__Mbbefd__swiss_re, c)
+
+Mbbefd$b <- function() .Call(wrap__Mbbefd__b, self)
+
+Mbbefd$g <- function() .Call(wrap__Mbbefd__g, self)
+
+Mbbefd$curve <- function(x) .Call(wrap__Mbbefd__curve, self, x)
+
+Mbbefd$cdf <- function(x) .Call(wrap__Mbbefd__cdf, self, x)
+
+Mbbefd$mean <- function() .Call(wrap__Mbbefd__mean, self)
+
+Mbbefd$total_loss_probability <- function() .Call(wrap__Mbbefd__total_loss_probability, self)
+
+Mbbefd$layer_share <- function(limit, attachment, mpl) .Call(wrap__Mbbefd__layer_share, self, limit, attachment, mpl)
+
+#' @export
+`$.Mbbefd` <- function (self, name) { func <- Mbbefd[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Mbbefd` <- `$.Mbbefd`
 
 Triangle <- new.env(parent = emptyenv())
 

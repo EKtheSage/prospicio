@@ -3671,6 +3671,115 @@ class MackFit:
         """
 
 @final
+class Mbbefd:
+    """
+    The MBBEFD exposure curve and destruction-rate distribution (Bernegger,
+    1997), with ``b >= 0`` and ``g >= 1``; ``1/g`` is the probability of a
+    total loss.
+    
+    ``G(x)`` is the share of a risk's expected loss below the fraction
+    ``x`` of its maximum possible loss (MPL). ``Mbbefd.swiss_re(c)`` gives
+    Bernegger's one-parameter family: ``c = 1.5, 2, 3, 4`` are the Swiss Re
+    curves and ``c = 5`` the Lloyd's curve.
+    
+    Parameters
+    ----------
+    b : float
+    g : float
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import Mbbefd
+    >>> c3 = Mbbefd.swiss_re(3.0)
+    >>> top = c3.layer_share(5e6, 5e6, 10e6)
+    >>> bottom = c3.layer_share(5e6, 0.0, 10e6)
+    >>> round(top + bottom, 12), top < bottom
+    (1.0, True)
+    """
+    def __new__(cls, /, b: float, g: float) -> Mbbefd: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def b(self, /) -> float:
+        """
+        Parameter ``b``.
+        """
+    def cdf(self, /, x: Sequence[float]) -> list[float]:
+        """
+        Distribution function of the destruction rate at each ``x``.
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    def curve(self, /, x: Sequence[float]) -> list[float]:
+        """
+        The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def g(self, /) -> float:
+        """
+        Parameter ``g``.
+        """
+    def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
+        """
+        Share of a risk's expected loss in the layer ``limit`` xs
+        ``attachment``, for a risk with maximum possible loss ``mpl``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        mpl : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean destruction rate, ``1 / G'(0)``.
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def swiss_re(c: float) -> Mbbefd:
+        """
+        Bernegger's curve ``c``: ``b = exp(3.1 - 0.15 (1 + c) c)``,
+        ``g = exp((0.78 + 0.12 c) c)``.
+        
+        Parameters
+        ----------
+        c : float
+            Non-negative; 0 is the straight line.
+        
+        Returns
+        -------
+        Mbbefd
+        """
+    def total_loss_probability(self, /) -> float:
+        """
+        Probability of a total loss, ``1/g``.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class Mixture:
     """
     A finite mixture of severities: component ``i`` with probability
@@ -7627,6 +7736,30 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
     Returns
     -------
     list of float
+    """
+
+def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> list[float]:
+    """
+    The exposure curve of a severity capped at the maximum possible loss
+    ``mpl``: ``G(x) = LEV(x mpl) / LEV(mpl)`` at each ``x``.
+    
+    Parameters
+    ----------
+    severity : a severity
+    mpl : float
+    x : list of float
+    
+    Returns
+    -------
+    list of float
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Pareto
+    >>> from actuarialrs.pricing import severity_exposure_curve
+    >>> g = severity_exposure_curve(Pareto(1e5, 1.5), 1e7, [0.0, 0.5, 1.0])
+    >>> g[0], round(g[2], 12), g[1] > 0.5
+    (0.0, 1.0, True)
     """
 
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:

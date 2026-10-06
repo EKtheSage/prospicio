@@ -70,4 +70,15 @@ w <- risk_loaded_price(pd, assets, distortion = distortion("wang", 0.2))
 stopifnot(w$expected_loss < w$premium, w$premium < w$assets)
 stopifnot(inherits(try(risk_loaded_price(pd, assets), silent = TRUE), "try-error"))
 
+# MBBEFD exposure curves.
+c3 <- swiss_re_curve(3)
+g3 <- exposure_curve(c3, c(0, 0.5, 1))
+stopifnot(abs(g3[1]) < 1e-15, abs(g3[3] - 1) < 1e-12, g3[2] > 0.5)
+stopifnot(abs(exposure_layer_share(c3, 5e6, 5e6, 1e7) + exposure_layer_share(c3, 5e6, 0, 1e7) - 1) < 1e-12)
+m <- mbbefd(0.5, 4)
+stopifnot(m@total_loss_probability == 0.25, m@mean > 0, m@mean < 1)
+stopifnot(inherits(try(mbbefd(-1, 2), silent = TRUE), "try-error"))
+sg <- severity_exposure_curve(pareto(1e5, 1.5), 1e7, c(0, 1))
+stopifnot(sg[1] == 0, abs(sg[2] - 1) < 1e-12)
+
 cat("actuarialrs R pricing tests passed\n")

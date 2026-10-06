@@ -4,7 +4,7 @@ title: Cloud session network access
 description: Which hosts the cloud environment reaches, which need allowlisting, and the OpenML host quirk.
 tags: [environment, network, cloud, openml]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-05T22:05:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-06T04:00:00Z }
 stale_after: 2027-01-05T00:00:00Z
 sources:
   - id: proxy
@@ -28,6 +28,10 @@ sources:
 * Bare `openml.org` is refused (CONNECT 403), though OpenML's metadata
   links to it; the same paths work on `www.openml.org` (see
   [freMTPL2](/datasets/fremtpl2.md)).
+* CRAN is refused (CONNECT 403): `cloud.r-project.org` and
+  `packagemanager.posit.co`, checked 2026-10-06. R packages that are not
+  already installed (`lightgbm`, `xgboost`) cannot be installed in the
+  container; CI's runners can install them.
 * pkgdown's site build (`cargo xtask r`, last step) fails with CONNECT 403
   on a host it fetches; the R tests before it are unaffected.
 
