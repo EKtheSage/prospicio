@@ -1,5 +1,6 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
-//! ladder, Mack, tails, the expected-loss methods and the ODP bootstrap,
+//! ladder, Mack with its one-year view, tails, the expected-loss methods
+//! and the ODP bootstrap,
 //! `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the R
 //! `reserving.R` API.
 //!
@@ -9,11 +10,11 @@
 
 use act_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
-    ChainLadderFit as ChainLadderInner, CurveShape, Development, DevelopmentColumn, ExpectedLoss,
-    ExpectedLossFit as ExpectedLossInner, FitTable, Grain, Label, Lag, Long, Mack,
-    MackFit as MackInner, Month, OdpBootstrap, OdpBootstrapFits, ProcessDistribution, ReserveFit,
-    SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
-    Triangle as TriangleInner,
+    ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
+    CurveShape, Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit as ExpectedLossInner,
+    FitTable, Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
+    OdpBootstrapFits, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail,
+    TailBondy, TailConstant, TailCurve, Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -1031,6 +1032,54 @@ impl MackFit {
             inner: pick(&self.inner, keys, values)?,
         })
     }
+
+    /// Merz and Wüthrich's one-year view of a single-segment fit.
+    fn claims_development_result(&self) -> Result<ClaimsDevelopmentResult> {
+        let fit = single(&self.inner, "claims_development_result", "")?;
+        Ok(ClaimsDevelopmentResult {
+            inner: fit.claims_development_result().map_err(to_r)?,
+        })
+    }
+}
+
+/// Merz and Wüthrich's (2008) one-year view of a Mack fit: standard errors
+/// of the claims development result per origin and in total, in the next
+/// calendar year and in each later one. `by_calendar_year` is row-major
+/// over calendar year x origin.
+#[extendr]
+pub(crate) struct ClaimsDevelopmentResult {
+    inner: ClaimsDevelopmentInner,
+}
+
+#[extendr]
+impl ClaimsDevelopmentResult {
+    fn origins(&self) -> Vec<String> {
+        self.inner.origins.iter().map(ToString::to_string).collect()
+    }
+
+    fn one_year_standard_error(&self) -> Vec<f64> {
+        self.inner.one_year_standard_error.clone()
+    }
+
+    fn total_one_year_standard_error(&self) -> f64 {
+        self.inner.total_one_year_standard_error
+    }
+
+    fn by_calendar_year(&self) -> Vec<f64> {
+        self.inner.by_calendar_year.concat()
+    }
+
+    fn total_by_calendar_year(&self) -> Vec<f64> {
+        self.inner.total_by_calendar_year.clone()
+    }
+
+    fn run_off_standard_error(&self) -> Vec<f64> {
+        self.inner.run_off_standard_error()
+    }
+
+    fn total_run_off_standard_error(&self) -> f64 {
+        self.inner.total_run_off_standard_error()
+    }
 }
 
 /// An expected-loss method (expected loss, Bornhuetter-Ferguson or
@@ -1197,5 +1246,6 @@ extendr_module! {
     impl MackFit;
     impl ExpectedLossFit;
     impl CapeCodFit;
+    impl ClaimsDevelopmentResult;
     impl OdpBootstrapFit;
 }

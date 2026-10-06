@@ -58,7 +58,8 @@ pub struct Mack {
 
 /// A fitted Mack model. Risks are standard errors (square roots of the
 /// variance components) of each origin's ultimate, which equal those of its
-/// reserve since the latest value is known.
+/// reserve since the latest value is known. For the one-year view of the
+/// same risk, see [`MackFit::claims_development_result`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct MackFit {
     /// The underlying chain-ladder projection.

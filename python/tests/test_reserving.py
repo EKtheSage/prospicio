@@ -13,6 +13,7 @@ from actuarialrs.reserving import (
     CapeCodFit,
     ChainLadder,
     ChainLadderFit,
+    ClaimsDevelopmentResult,
     ExpectedLoss,
     ExpectedLossFit,
     Mack,
@@ -981,6 +982,103 @@ def test_bootstrap_errors(triangles):
         OdpBootstrap(n_sims=10).fit(two, "values")
 
 
+# Reference method -> sigma_interpolation, as in
+# validation/tests/reserving_cdr.rs.
+CDR_METHODS = {"cdr": "log-linear", "cdr_sigma_mack": "mack"}
+
+
+def cdr_value(mack, cdr, quantity, arg):
+    """The value of a reserving_cdr_r.csv case. R reports one calendar year
+    per age, so years past the run-off are zero."""
+    if quantity == "cdr_se":
+        year, k = arg.split(":")
+        years, k = cdr.by_calendar_year, int(k)
+        return years[k - 1][cdr.origins.index(year)] if k <= len(years) else 0.0
+    if quantity == "total_cdr_se":
+        years, k = cdr.total_by_calendar_year, int(arg)
+        return years[k - 1] if k <= len(years) else 0.0
+    per_origin = {
+        "reserve": mack.reserve,
+        "one_year_se": cdr.one_year_standard_error,
+        "mack_se": mack.standard_error,
+    }
+    if quantity in per_origin:
+        return per_origin[quantity][cdr.origins.index(arg)]
+    return {
+        "total_reserve": mack.total_reserve,
+        "total_one_year_se": cdr.total_one_year_standard_error,
+        "total_mack_se": mack.total_standard_error,
+    }[quantity]
+
+
+def test_claims_development_result_matches_r():
+    # Every row of R ChainLadder's CDR(MackChainLadder(tri), dev = "all").
+    fits = {}
+    cases = read_csv(VALIDATION / "reference" / "reserving_cdr_r.csv")
+    assert cases
+    for case in cases:
+        key = (case["dataset"], case["method"])
+        if key not in fits:
+            mack = Mack(sigma_interpolation=CDR_METHODS[case["method"]]).fit(
+                dataset(case["dataset"]), "values"
+            )
+            fits[key] = (mack, mack.claims_development_result())
+        got = cdr_value(*fits[key], case["quantity"], case["arg"])
+        want = float(case["expected"])
+        tol = max(float(case["abs_tol"] or 0), float(case["rel_tol"] or 0) * abs(want))
+        assert got == want or abs(got - want) <= tol, (case, got)
+
+
+def test_claims_development_result_mw2008():
+    # Merz and Wuthrich (2008), Table 4, printed to the unit.
+    mack = Mack(sigma_interpolation="mack").fit(dataset("mw2008"), "values")
+    cdr = mack.claims_development_result()
+    assert isinstance(cdr, ClaimsDevelopmentResult)
+    assert mack.total_reserve == pytest.approx(2_237_826, abs=1)
+    assert cdr.total_one_year_standard_error == pytest.approx(81_080, abs=1)
+    assert cdr.total_run_off_standard_error == pytest.approx(108_401, abs=1)
+    assert cdr.origins[0] == "2001" and cdr.one_year_standard_error[0] == 0.0
+    assert cdr.one_year_standard_error == cdr.by_calendar_year[0]
+    assert cdr.total_one_year_standard_error == cdr.total_by_calendar_year[0]
+    assert len(cdr.by_calendar_year) == len(cdr.total_by_calendar_year) == 8
+    assert cdr.run_off_standard_error == pytest.approx(mack.standard_error, rel=1e-9, abs=1e-9)
+    assert "ClaimsDevelopmentResult(origins=9" in repr(cdr)
+
+
+def test_claims_development_result_frame():
+    pytest.importorskip("pandas")
+    cdr = Mack().fit(dataset("raa"), "values").claims_development_result()
+    frame = cdr.to_frame()
+    assert list(frame.columns) == ["origin"] + [f"cdr_{k}" for k in range(1, 10)] + ["run_off"]
+    assert list(frame["origin"]) == cdr.origins
+    assert list(frame["cdr_1"]) == cdr.one_year_standard_error
+    assert list(frame["run_off"]) == cdr.run_off_standard_error
+
+
+def test_claims_development_result_errors(triangles):
+    simple = Mack(average="simple").fit(triangles["raa"], "values")
+    with pytest.raises(ValueError, match="claims development result: needs volume-weighted"):
+        simple.claims_development_result()
+    # Merz and Wuthrich assume no tail: a factor other than 1, or a factor
+    # of 1 that replaces estimated factors, is an error.
+    no_tail = "claims development result: needs no tail factor"
+    for tail in [1.05, TailConstant(1.05), TailLogLinear(), TailConstant(1.0, attachment_age=84)]:
+        fit = Mack(tail=tail).fit(triangles["raa"], "values")
+        with pytest.raises(ValueError, match=no_tail):
+            fit.claims_development_result()
+    explicit = Mack(tail=1.0).fit(triangles["raa"], "values").claims_development_result()
+    default = Mack().fit(triangles["raa"], "values").claims_development_result()
+    assert explicit.by_calendar_year == default.by_calendar_year
+    tri = Triangle.from_frame(
+        lob_coverage_long(), "year", "age", ["paid", "incurred"], keys=["lob", "coverage"]
+    )
+    mack = Mack().fit(tri, "paid")
+    with pytest.raises(ValueError, match="4 segments; use segment"):
+        mack.claims_development_result()
+    one = mack.segment(lob="Home", coverage="PD")
+    assert one.claims_development_result().total_run_off_standard_error == pytest.approx(
+        one.total_standard_error, rel=1e-9
+    )
 # Expected-loss methods: parity with chainladder-python 0.10.1
 # (validation/reference/reserving_expected_loss_python.csv).
 

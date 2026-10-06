@@ -76,6 +76,9 @@ pub enum Error {
     Bootstrap(&'static str),
     /// The ODP GLM cannot be fitted to this triangle.
     OdpGlm(String),
+    /// The claims development result (Merz–Wüthrich) does not apply to
+    /// this fit.
+    ClaimsDevelopment(&'static str),
     /// An error from a shared crate (simulation, distributions).
     Core(act_core::Error),
 }
@@ -145,6 +148,7 @@ impl fmt::Display for Error {
             } => write!(f, "{name} = {value} is invalid: expected {expected}"),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
+            Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::Core(e) => e.fmt(f),
         }
     }

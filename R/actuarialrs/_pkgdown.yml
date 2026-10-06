@@ -155,6 +155,7 @@ reference:
       - grain
       - chain_ladder_fit
       - mack_fit
+      - claims_development_result
       - tail_constant
       - tail_curve
       - tail_bondy

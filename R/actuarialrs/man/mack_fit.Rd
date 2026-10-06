@@ -71,7 +71,8 @@ total reserve). Risks are standard errors, not variances. Its
 \code{tail_sigma} and \code{tail_std_err} are the values used, given or
 extrapolated. The totals' risks need a single-segment fit: with several
 segments use \code{\link[=totals_frame]{totals_frame()}}, which has them per segment, or
-\code{\link[=segment]{segment()}}.
+\code{\link[=segment]{segment()}}. \code{\link[=claims_development_result]{claims_development_result()}} gives Merz and Wuthrich's
+one-year view of a single-segment fit without a tail.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),

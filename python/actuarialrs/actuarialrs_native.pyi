@@ -1013,6 +1013,84 @@ class ChainLadderFit:
         """
 
 @final
+class ClaimsDevelopmentResult:
+    """
+    Merz and Wüthrich's (2008) one-year view of a Mack fit: standard errors
+    of the claims development result (CDR), the change in the chain-ladder
+    ultimate over a calendar year, per origin and in total. The total
+    includes the covariance between origins. Year ``k`` of the run-off is
+    R ChainLadder's ``CDR(k)S.E.``; summed in square over the years, the
+    run-off gives back Mack's standard error.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import Mack, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> mack = Mack().fit(tri, "values")
+    >>> cdr = mack.claims_development_result()
+    >>> len(cdr.by_calendar_year), cdr.one_year_standard_error[0]
+    (3, 0.0)
+    >>> abs(cdr.total_run_off_standard_error - mack.total_standard_error) < 1e-9
+    True
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def by_calendar_year(self, /) -> list[list[float]]:
+        """
+        Standard error of each origin's CDR in each future calendar year:
+        ``by_calendar_year[k - 1][i]`` is year ``k`` (R's ``CDR(k)S.E.``) of
+        origin ``i``, zero once the origin is fully developed. One year per
+        age-to-age factor.
+        """
+    @property
+    def one_year_standard_error(self, /) -> list[float]:
+        """
+        Standard error of each origin's CDR in the next calendar year, R's
+        ``CDR(1)S.E.``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods, oldest first.
+        """
+    @property
+    def run_off_standard_error(self, /) -> list[float]:
+        """
+        Standard error of each origin's full run-off, the square root of
+        the sum of its yearly mean squared errors; equals Mack's.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, then ``cdr_1``, ``cdr_2``, ... the
+        standard error of the CDR in each future calendar year (R's
+        ``CDR(k)S.E.``), and ``run_off``, that of the full run-off. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_by_calendar_year(self, /) -> list[float]:
+        """
+        Standard error of the total CDR in each future calendar year.
+        """
+    @property
+    def total_one_year_standard_error(self, /) -> float:
+        """
+        Standard error of the total CDR in the next calendar year.
+        """
+    @property
+    def total_run_off_standard_error(self, /) -> float:
+        """
+        Standard error of the total full run-off; equals Mack's.
+        """
+
+@final
 class Coding:
     """
     Terms with factor levels learned from training data, from
@@ -4530,6 +4608,26 @@ class MackFit:
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The underlying chain-ladder projection.
+        """
+    def claims_development_result(self, /) -> ClaimsDevelopmentResult:
+        """
+        Merz and Wüthrich's (2008) one-year view: the standard error of the
+        claims development result of each origin and in total, in the next
+        calendar year and in every later one, as R ChainLadder's
+        ``CDR(MackChainLadder(x), dev = "all")``.
+        
+        Returns
+        -------
+        ClaimsDevelopmentResult
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments (use ``segment(...)``), the
+            factors are not volume-weighted, the fit has a tail (a factor
+            other than 1, or one that replaces estimated factors), or the
+            latest values do not lie on one calendar diagonal with one new
+            origin per period.
         """
     @property
     def development(self, /) -> list[int]:

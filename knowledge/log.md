@@ -3,6 +3,7 @@
 ## 2026-10-06
 
 * **Update**: [Local checks](/environment/local-checks.md): the roxygen churn is a link-target rewrite, so a real change to those Rd files is kept and only the link restored.
+* **Update**: [R ChainLadder CDR](/references/r-chainladder-cdr.md): what counts as no tail for the one-year view now that the chain ladder fits a `TailFit` (a factor of 1 that replaces no estimated factor), from merging `main` into claude/v02-one-year.
 * **Verification**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md) verified by CI's Rust job on #140 (tabulated-curve and risk-profile tests).
 * **Verification**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md) verified again by CI's R and Python jobs on #139 (quantile objectives and the dispersion model, both engines).
 * **Update**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md): the exposure-rated per-risk XL net of a surplus, from the risk-profile simulator.
@@ -24,6 +25,8 @@
 ## 2026-10-05
 
 * **Initialization**: Created the bundle with [datasets](/datasets/index.md), [references](/references/index.md), [findings](/findings/index.md) and [environment](/environment/index.md), from knowledge collected while building the Probability, Aggregate and Models lanes (PRs #104 to #116).
+* **Addition**: [R ChainLadder CDR](/references/r-chainladder-cdr.md), the reference for the one-year view (Reserving lane, v0.2 decision 4).
+* **Update**: [R ChainLadder CDR](/references/r-chainladder-cdr.md) records how R and act-reserving treat an interior hole, and that act-reserving deviates on purpose.
 * **Tails**: Added [Tails in R ChainLadder and chainladder-python](/references/chainladder-tails.md) and [Bondy least squares](/findings/bondy-least-squares-stop.md), from building act_reserving::Tail (reserving v0.2, decision 3).
 * **Tails review**: Updated [Tails in R ChainLadder and chainladder-python](/references/chainladder-tails.md): a tail below 1 now follows chainladder-python, and the note records Python's positional age indexing and its ignored attachment at the youngest age.
 * **Expected-loss reference**: Added [chainladder-python expected-loss estimators](/references/chainladder-python-expected-loss.md), from the Reserving lane's expected-loss methods (branch claude/v02-expected-loss).
