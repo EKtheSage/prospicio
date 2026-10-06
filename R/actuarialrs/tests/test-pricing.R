@@ -109,3 +109,16 @@ for (k in 2:3) {
 rq <- risk_profile(c(1e6, 10e6), c(800, 50), swiss_re_curve(3), premium = c(2e6, 1e6), loss_ratio = 0.6)
 stopifnot(abs(rq@expected_loss - 1.8e6) < 1e-6, abs(profile_layer_loss(rq, Inf, 0) - 1.8e6) < 1e-6)
 stopifnot(inherits(try(risk_profile(1e6, 1, swiss_re_curve(3), premium = 1), silent = TRUE), "try-error"))
+
+# Sums insured spread between bounds: a 2m retention cedes 3/8 of a band
+# running from 1m to 5m, against 1/3 for its 3m mean risk.
+rb <- risk_profile(c(0.5e6, 3e6), c(2000, 400), swiss_re_curve(3), expected_loss = c(0.6e6, 1.2e6),
+                   lower = c(NA, 1e6), upper = c(NA, 5e6))
+stopifnot(abs(profile_surplus_loss(rb, 2e6, 4) / 0.45e6 - 1) < 1e-9)
+sb <- draw_matrix(apply_tower(inuring_tower(list(list(surplus_treaty("S", 2e6, 4)))),
+                              profile_simulate(rb, 50000, seed = 3)))[, 2]
+stopifnot(abs(mean(sb) - 0.45e6) < 4 * sd(sb) / sqrt(50000))
+stopifnot(inherits(try(risk_profile(3e6, 1, swiss_re_curve(3), expected_loss = 1, lower = 1e6),
+                       silent = TRUE), "try-error"))
+stopifnot(inherits(try(risk_profile(3e6, 1, swiss_re_curve(3), expected_loss = 1, lower = 5e6,
+                                    upper = 1e6), silent = TRUE), "try-error"))

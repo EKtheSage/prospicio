@@ -94,6 +94,13 @@ impl Tower {
                 l.name
             )));
         }
+        if let Some(l) = self.layers.iter().find(|l| l.needs_times()) {
+            return Err(Error::Data(format!(
+                "layer {:?} has reinstatements pro rata as to time; a compound distribution \
+                 has no event times: use Tower::apply on events with times",
+                l.name
+            )));
+        }
         for &(start, end) in &stages[..stages.len() - 1] {
             if let Some(l) = self.layers[start..end].iter().find(|l| has_annual_terms(l)) {
                 return Err(Error::InvalidParameter {

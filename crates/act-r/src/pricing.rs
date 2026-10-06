@@ -374,7 +374,8 @@ fn band_curve(obj: &Robj) -> Result<act_pricing::profile::BandCurve> {
 }
 
 /// A risk profile; `expected_losses` or `premiums` (with `loss_ratio`, one
-/// value or one per band) is empty when not given.
+/// value or one per band) is empty when not given. `lower` and `upper` are
+/// empty, or one per band with NA for a band without bounds.
 #[extendr]
 pub(crate) struct RiskProfile {
     inner: act_pricing::profile::RiskProfile,
@@ -382,6 +383,7 @@ pub(crate) struct RiskProfile {
 
 #[extendr]
 impl RiskProfile {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         sums_insured: &[f64],
         risks: &[f64],
@@ -389,6 +391,8 @@ impl RiskProfile {
         expected_losses: &[f64],
         premiums: &[f64],
         loss_ratio: &[f64],
+        lower: &[f64],
+        upper: &[f64],
     ) -> Result<Self> {
         use act_pricing::profile::{Band, RiskProfile as Inner};
         let n = sums_insured.len();
@@ -435,6 +439,22 @@ impl RiskProfile {
                 .collect::<act_core::Result<Vec<_>>>()
         }
         .map_err(to_r)?;
+        let bands = if lower.is_empty() && upper.is_empty() {
+            bands
+        } else {
+            if lower.len() != n || upper.len() != n {
+                return Err(Error::Other("give one lower and one upper per band".into()));
+            }
+            bands
+                .into_iter()
+                .enumerate()
+                .map(|(i, b)| match (lower[i].is_nan(), upper[i].is_nan()) {
+                    (true, true) => Ok(b),
+                    (false, false) => b.with_bounds(lower[i], upper[i]).map_err(to_r),
+                    _ => Err(Error::Other("a band has both bounds or neither".into())),
+                })
+                .collect::<Result<_>>()?
+        };
         Ok(Self {
             inner: Inner::new(bands).map_err(to_r)?,
         })

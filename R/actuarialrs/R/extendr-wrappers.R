@@ -114,7 +114,13 @@ EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
 
-EventSet$from_years <- function(years, sums_insured, seed) .Call(wrap__EventSet__from_years, years, sums_insured, seed)
+EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
+
+EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
+
+EventSet$has_times <- function() .Call(wrap__EventSet__has_times, self)
+
+EventSet$times <- function(sim) .Call(wrap__EventSet__times, self, sim)
 
 EventSet$has_sums_insured <- function() .Call(wrap__EventSet__has_sums_insured, self)
 
@@ -138,7 +144,7 @@ EventSet$totals <- function() .Call(wrap__EventSet__totals, self)
 
 XolLayer <- new.env(parent = emptyenv())
 
-XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid) .Call(wrap__XolLayer__new, name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid)
+XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time) .Call(wrap__XolLayer__new, name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time)
 
 XolLayer$quota_share <- function(name, cession) .Call(wrap__XolLayer__quota_share, name, cession)
 
@@ -170,7 +176,9 @@ XolLayer$ceded <- function(losses) .Call(wrap__XolLayer__ceded, self, losses)
 
 XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event, self, losses)
 
-XolLayer$reinstatement_premium <- function(losses) .Call(wrap__XolLayer__reinstatement_premium, self, losses)
+XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
+
+XolLayer$reinstatement_premium <- function(losses, times) .Call(wrap__XolLayer__reinstatement_premium, self, losses, times)
 
 #' @export
 `$.XolLayer` <- function (self, name) { func <- XolLayer[[name]]; environment(func) <- environment(); func }
@@ -183,6 +191,10 @@ ReinsuranceTower <- new.env(parent = emptyenv())
 ReinsuranceTower$new <- function(layers) .Call(wrap__ReinsuranceTower__new, layers)
 
 ReinsuranceTower$inuring <- function(stages) .Call(wrap__ReinsuranceTower__inuring, stages)
+
+ReinsuranceTower$from_json <- function(text) .Call(wrap__ReinsuranceTower__from_json, text)
+
+ReinsuranceTower$to_json <- function() .Call(wrap__ReinsuranceTower__to_json, self)
 
 ReinsuranceTower$layer_names <- function() .Call(wrap__ReinsuranceTower__layer_names, self)
 
@@ -1046,7 +1058,7 @@ Tabulated$rate_quantile <- function(u) .Call(wrap__Tabulated__rate_quantile, sel
 
 RiskProfile <- new.env(parent = emptyenv())
 
-RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio)
+RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper)
 
 RiskProfile$expected_loss <- function() .Call(wrap__RiskProfile__expected_loss, self)
 

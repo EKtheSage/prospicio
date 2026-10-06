@@ -26,6 +26,10 @@ NULL
 #'   as a fraction of `premium` (1 is 100%), pro rata as to amount. Sets the
 #'   annual limit to `limit * (length(reinstatement_rates) + 1)`; cannot be
 #'   combined with `reinstatements` or a finite `aggregate_limit`.
+#' @param pro_rata_time Paid reinstatements also pro rata as to time: the
+#'   limit a loss at time `t` (the fraction of the year elapsed) uses up is
+#'   charged at `1 - t`. Needs `reinstatement_rates`, and events with times
+#'   ([with_uniform_times()], or `times` in [events_from_years()]).
 #' @param ptr Internal: an existing layer to wrap.
 #' @returns An `xol_layer` object with read-only properties for each term.
 #' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
@@ -37,6 +41,9 @@ NULL
 #' ceded(l, c(12e6, 20e6, 30e6))
 #' paid <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
 #' reinstatement_premium(paid, c(22, 12))
+#' timed <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5),
+#'                    pro_rata_time = TRUE)
+#' reinstatement_premium(timed, c(22, 12), times = c(0.25, 0.5))
 xol_layer <- S7::new_class(
   "xol_layer",
   package = "actuarialrs",
@@ -53,17 +60,19 @@ xol_layer <- S7::new_class(
     premium = S7::new_property(S7::class_double, getter = function(self) self@ptr$premium()),
     reinstatement_rates = S7::new_property(
       S7::class_double, getter = function(self) self@ptr$reinstatement_rates()
-    )
+    ),
+    pro_rata_time = S7::new_property(S7::class_logical, getter = function(self) self@ptr$pro_rata_time())
   ),
   constructor = function(name, limit, attachment, share = 1, aggregate_deductible = 0,
                          aggregate_limit = Inf, reinstatements = NULL, premium = 0,
-                         reinstatement_rates = NULL, ptr = NULL) {
+                         reinstatement_rates = NULL, pro_rata_time = FALSE, ptr = NULL) {
     if (is.null(ptr)) {
       reinst <- if (is.null(reinstatements)) -1 else as.double(reinstatements)
       ptr <- rust_result(XolLayer$new(
         as.character(name), as.double(limit), as.double(attachment), as.double(share),
         as.double(aggregate_deductible), as.double(aggregate_limit), reinst,
-        as.double(premium), as.double(reinstatement_rates), !is.null(reinstatement_rates)
+        as.double(premium), as.double(reinstatement_rates), !is.null(reinstatement_rates),
+        isTRUE(pro_rata_time)
       ))
     }
     S7::new_object(S7::S7_object(), ptr = ptr)
@@ -172,10 +181,14 @@ S7::method(ceded_by_event, xol_layer) <- function(layer, losses, ...) {
 #'
 #' With layer loss `L` at 100% after annual terms,
 #' `premium * sum(rate_k * min(max(L - k * limit, 0), limit) / limit)` over
-#' `k = 0, 1, ...`; zero when reinstatements are free.
+#' `k = 0, 1, ...`; zero when reinstatements are free. Pro rata as to time,
+#' the limit each loss uses up is charged at `1 - t`, its time's share of the
+#' year left.
 #'
 #' @param layer An [xol_layer].
-#' @param losses Numeric vector of one year's losses.
+#' @param losses Numeric vector of one year's losses, in time order.
+#' @param times For a layer pro rata as to time, each loss's time as the
+#'   fraction of the year elapsed; without them its premium is `NaN`.
 #' @param ... Unused; for methods.
 #' @returns A single number.
 #' @export
@@ -186,8 +199,8 @@ reinstatement_premium <- S7::new_generic(
   "reinstatement_premium", "layer", function(layer, losses, ...) S7::S7_dispatch()
 )
 
-S7::method(reinstatement_premium, xol_layer) <- function(layer, losses, ...) {
-  layer@ptr$reinstatement_premium(as.double(losses))
+S7::method(reinstatement_premium, xol_layer) <- function(layer, losses, times = NULL, ...) {
+  rust_result(layer@ptr$reinstatement_premium(as.double(losses), as.double(times)))
 }
 S7::method(print, xol_layer) <- function(x, ...) {
   cat(sprintf("<xol_layer> %s: %s xs %s, share %s\n", x@name,
@@ -242,6 +255,32 @@ reinsurance_tower <- S7::new_class(
 inuring_tower <- function(stages) {
   ptrs <- lapply(stages, function(stage) lapply(stage, function(l) l@ptr))
   reinsurance_tower(ptr = rust_result(ReinsuranceTower$inuring(ptrs)))
+}
+
+#' Save and load reinsurance towers as JSON
+#'
+#' `tower_to_json()` writes a programme as a versioned JSON document: every
+#' stage and layer with all its terms, numbers bit for bit.
+#' `tower_from_json()` reads it back to an equal tower, rebuilding each
+#' layer through the same checks as [xol_layer()], so a document with an
+#' impossible term is refused.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param text A document written by `tower_to_json()`.
+#' @returns `tower_to_json()`: a single string. `tower_from_json()`: a
+#'   [reinsurance_tower].
+#' @export
+#' @examples
+#' tw <- inuring_tower(list(list(surplus_treaty("S", 1e6, 4)),
+#'                          list(xol_layer("XL", 2e6, 1e6))))
+#' text <- tower_to_json(tw)
+#' identical(tower_to_json(tower_from_json(text)), text)
+tower_to_json <- function(tower) tower@ptr$to_json()
+
+#' @rdname tower_to_json
+#' @export
+tower_from_json <- function(text) {
+  reinsurance_tower(ptr = rust_result(ReinsuranceTower$from_json(as.character(text))))
 }
 
 #' Ceded loss of each layer in a tower for one year

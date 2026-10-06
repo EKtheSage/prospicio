@@ -244,6 +244,10 @@ impl PyEventSet {
     ///     The same shape: each loss's sum insured, at least the loss.
     /// seed : int, default 0
     ///     Recorded in results' provenance.
+    /// times : list of list of float, optional
+    ///     The same shape: each loss's time, as the fraction of the year
+    ///     elapsed (in ``[0, 1]``, non-decreasing within a year), which
+    ///     reinstatements pro rata as to time need.
     ///
     /// Returns
     /// -------
@@ -256,11 +260,12 @@ impl PyEventSet {
     /// >>> e.counts(), e.sums_insured(2)
     /// ([2, 0, 1], [50.0])
     #[staticmethod]
-    #[pyo3(signature = (years, sums_insured = None, seed = 0))]
+    #[pyo3(signature = (years, sums_insured = None, seed = 0, times = None))]
     fn from_years(
         years: Vec<Vec<f64>>,
         sums_insured: Option<Vec<Vec<f64>>>,
         seed: u64,
+        times: Option<Vec<Vec<f64>>>,
     ) -> PyResult<Self> {
         let shape: Vec<usize> = years.iter().map(Vec::len).collect();
         let mut inner = EventSet::from_years(years, seed).map_err(to_py)?;
@@ -274,7 +279,65 @@ impl PyEventSet {
                 .with_sums_insured(si.into_iter().flatten().collect())
                 .map_err(to_py)?;
         }
+        if let Some(t) = times {
+            if t.iter().map(Vec::len).ne(shape.iter().copied()) {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "times must have the shape of years",
+                ));
+            }
+            inner = inner
+                .with_times(t.into_iter().flatten().collect())
+                .map_err(to_py)?;
+        }
         Ok(Self { inner })
+    }
+
+    /// The same events at times spread uniformly over the year.
+    ///
+    /// Year ``i``'s losses take sorted uniform draws, in their order, from
+    /// a stream of the generator keyed by the set's seed apart from the
+    /// losses' own, so the losses are unchanged and any year replays alone.
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[5.0, 2.0, 7.0]], seed=3).with_uniform_times()
+    /// >>> t = e.times(0)
+    /// >>> t == sorted(t) and e.has_times
+    /// True
+    fn with_uniform_times(&self) -> Self {
+        Self {
+            inner: self.inner.clone().with_uniform_times(),
+        }
+    }
+
+    /// Whether the losses carry times.
+    #[getter]
+    fn has_times(&self) -> bool {
+        self.inner.has_times()
+    }
+
+    /// Year ``sim``'s times, one per loss, or ``None``.
+    ///
+    /// Parameters
+    /// ----------
+    /// sim : int
+    ///
+    /// Returns
+    /// -------
+    /// list of float or None
+    fn times(&self, sim: usize) -> PyResult<Option<Vec<f64>>> {
+        if sim >= self.inner.n_sims() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "year {sim} out of range for {} simulated years",
+                self.inner.n_sims()
+            )));
+        }
+        Ok(self.inner.times(sim).map(<[f64]>::to_vec))
     }
 
     /// Whether the losses carry sums insured.

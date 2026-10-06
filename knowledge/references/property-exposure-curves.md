@@ -60,6 +60,11 @@ sources:
   insured `(1 − c) SI`; its exposure-rated loss is
   `EL (1 − c) [G((a + l)/((1 − c) SI)) − G(a/((1 − c) SI))]`. Simulated
   events agree with this within four standard errors.[^profile]
+* A band whose sums insured spread between bounds is not its mean risk:
+  a risk's expected loss is proportional to its SI, so the band's
+  cession averages over SI weighted by SI. A 1m–5m band with a 2m
+  retention cedes 3/8 against 1/3 for its 3m mean risk; spreading moves
+  loss into layers the mean risk never reaches.[^profile]
 
 [^pep]: Exposure modelling in property reinsurance
 [^cas]: CAS Reinsurance Seminar 2014 handout
