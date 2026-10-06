@@ -1144,9 +1144,21 @@ class ClarkFit:
         Age in months at which development stops; ``None`` for infinity.
         """
     @property
+    def n_observations(self, /) -> int:
+        """
+        Number of observed incremental values fitted; ``scale`` divides by
+        this less the number of parameters.
+        """
+    @property
     def omega(self, /) -> float:
         """
         Fitted shape of the growth curve.
+        """
+    @property
+    def origin_width(self, /) -> float:
+        """
+        Length of the origin period in months; ages are shifted by half of
+        it to the average date of loss.
         """
     @property
     def origins(self, /) -> list[str]:

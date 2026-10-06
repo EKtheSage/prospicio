@@ -85,13 +85,17 @@ infinity), \code{ultimate}, \code{reserve}, \code{process_risk}, \code{parameter
 \code{standard_error} and, for Cape Cod, \code{exposure} (\code{NULL} for the LDF
 method); and \code{chain_ladder} (the volume-weighted \link{chain_ladder_fit} of
 the same column), \code{keys}, \code{index}, \code{origins}, \code{development}, \code{method}
-(\code{"ldf"} or \code{"cape_cod"}), \code{curve}, \code{max_age}, \code{total_ultimate} and
-\code{total_reserve} (summed over segments). The fitted \code{omega}, \code{theta},
-\code{scale} (the over-dispersion \code{sigma^2}), \code{elr} (Cape Cod; \code{NULL} for the
-LDF method), \code{covariance} (of the expected ultimates or the ELR, then
-\code{omega} and \code{theta}), \code{total_process_risk}, \code{total_parameter_risk} and
-\code{total_standard_error} need a single-segment fit: with several segments
-use \code{\link[=totals_frame]{totals_frame()}}, which has them per segment, or \code{\link[=segment]{segment()}}.
+(\code{"ldf"} or \code{"cape_cod"}), \code{curve}, \code{max_age}, \code{origin_width} (the
+origin period in months), \code{total_ultimate} and \code{total_reserve} (summed
+over segments). The fitted \code{omega}, \code{theta}, \code{scale} (the
+over-dispersion \code{sigma^2}), \code{elr} (Cape Cod; \code{NULL} for the LDF method,
+with any number of segments), \code{covariance} (of the expected ultimates or
+the ELR, then \code{omega} and \code{theta}), \code{n_observations} (the incremental
+values fitted; \code{scale} divides by this less the number of parameters),
+\code{total_process_risk}, \code{total_parameter_risk} and \code{total_standard_error}
+need a single-segment fit: with several segments use \code{\link[=totals_frame]{totals_frame()}},
+which has them per segment (except \code{covariance} and \code{n_observations}),
+or \code{\link[=segment]{segment()}}.
 \code{growth(fit, age)} gives the share of the expected ultimate developed by
 each development age in months (\code{Inf} gives 1). These are Python's
 \code{ClarkLdf}, \code{ClarkCapeCod} and \code{ClarkFit}.

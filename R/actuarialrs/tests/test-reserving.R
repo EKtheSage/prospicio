@@ -577,6 +577,8 @@ stopifnot(S7::S7_inherits(clark, clark_fit), S7::S7_inherits(clark@chain_ladder,
           identical(dim(clark@covariance), c(12L, 12L)),
           identical(rownames(clark@covariance), c(raa@origins, "omega", "theta")),
           clark@scale > 0, growth(clark, Inf) == 1)
+# RAA has 55 observed incremental values (act_reserving's unit test).
+stopifnot(identical(clark@n_observations, 55L), clark@origin_width == 12)
 # Every origin starts at age 0, so U = latest / G(latest age); the 1990
 # origin is at 12 months, 6 from the average date of loss.
 near(clark@expected_ultimate[["1990"]], clark@latest[["1990"]] / growth(clark, 12), 1e-12)
@@ -623,6 +625,9 @@ for (fit_one in list(function(t) clark_ldf(t, "paid", max_age = 240),
   expect_error_like(fit@omega, "2 segments; use totals_frame()")
   expect_error_like(fit@covariance, "use segment()")
   expect_error_like(growth(fit, 12), "use segment()")
+  expect_error_like(fit@n_observations, "use segment()")
+  stopifnot(fit@origin_width == 12)
+  if (fit@method == "ldf") stopifnot(is.null(fit@elr)) else expect_error_like(fit@elr, "2 segments")
   invisible(utils::capture.output(print(fit)))
 }
 expect_error_like(clark_ldf(raa, curve = "gompertz"), "should be one of")

@@ -904,7 +904,21 @@ impl ClarkFit {
 
     /// The expected loss ratio; NaN for the LDF method.
     fn elr(&self) -> Result<f64> {
+        if self.inner.fits[0].elr.is_none() {
+            return Ok(f64::NAN);
+        }
         Ok(self.one("elr")?.elr.unwrap_or(f64::NAN))
+    }
+
+    /// Length of the origin period in months.
+    fn origin_width(&self) -> f64 {
+        self.inner.fits[0].origin_width
+    }
+
+    /// Number of observed incremental values fitted.
+    fn n_observations(&self) -> Result<i32> {
+        let f = single(&self.inner, "n_observations", "segment()")?;
+        Ok(f.n_observations as i32)
     }
 
     fn scale(&self) -> Result<f64> {

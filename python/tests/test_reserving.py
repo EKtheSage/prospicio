@@ -1115,6 +1115,8 @@ def test_clark_fit_fields(triangles):
     se = [math.hypot(p, q) for p, q in zip(fit.process_risk, fit.parameter_risk)]
     assert fit.standard_error == pytest.approx(se, rel=1e-12)
     assert len(fit.covariance) == 12 and fit.scale > 0
+    # RAA has 55 observed incremental values (act_reserving's unit test).
+    assert fit.n_observations == 55 and fit.origin_width == 12.0
     assert repr(ClarkLdf(curve="weibull", max_age=240)) == 'ClarkLdf(curve="weibull", max_age=240.0)'
     assert repr(ClarkCapeCod()) == 'ClarkCapeCod(curve="loglogistic", max_age=None)'
     assert repr(fit).startswith('ClarkFit(method="ldf", curve="loglogistic", origins=10, ')
@@ -1162,6 +1164,14 @@ def test_clark_every_segment_at_once():
             fit.omega
         with pytest.raises(ValueError, match="2 segments; use segment"):
             fit.growth(12)
+        with pytest.raises(ValueError, match="2 segments; use segment"):
+            fit.n_observations
+        assert fit.origin_width == 12.0
+        if fit.exposure is None:
+            assert fit.elr is None
+        else:
+            with pytest.raises(ValueError, match="2 segments; use totals_frame"):
+                fit.elr
         assert "segments=2" in repr(fit)
     cc = ClarkCapeCod().fit(both, "paid", "premium")
     assert list(cc.to_frame().columns) == [

@@ -3070,7 +3070,24 @@ impl PyClarkFit {
     /// Expected loss ratio (Cape Cod), or ``None`` (LDF).
     #[getter]
     fn elr(&self) -> PyResult<Option<f64>> {
+        if self.inner.fits[0].elr.is_none() {
+            return Ok(None);
+        }
         Ok(self.one("elr")?.elr)
+    }
+
+    /// Length of the origin period in months; ages are shifted by half of
+    /// it to the average date of loss.
+    #[getter]
+    fn origin_width(&self) -> f64 {
+        self.inner.fits[0].origin_width
+    }
+
+    /// Number of observed incremental values fitted; ``scale`` divides by
+    /// this less the number of parameters.
+    #[getter]
+    fn n_observations(&self) -> PyResult<usize> {
+        Ok(single(&self.inner, "n_observations", "segment(...)")?.n_observations)
     }
 
     /// Over-dispersion ``sigma**2``: squared Pearson residuals over the

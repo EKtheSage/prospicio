@@ -861,13 +861,17 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' `standard_error` and, for Cape Cod, `exposure` (`NULL` for the LDF
 #' method); and `chain_ladder` (the volume-weighted [chain_ladder_fit] of
 #' the same column), `keys`, `index`, `origins`, `development`, `method`
-#' (`"ldf"` or `"cape_cod"`), `curve`, `max_age`, `total_ultimate` and
-#' `total_reserve` (summed over segments). The fitted `omega`, `theta`,
-#' `scale` (the over-dispersion `sigma^2`), `elr` (Cape Cod; `NULL` for the
-#' LDF method), `covariance` (of the expected ultimates or the ELR, then
-#' `omega` and `theta`), `total_process_risk`, `total_parameter_risk` and
-#' `total_standard_error` need a single-segment fit: with several segments
-#' use [totals_frame()], which has them per segment, or [segment()].
+#' (`"ldf"` or `"cape_cod"`), `curve`, `max_age`, `origin_width` (the
+#' origin period in months), `total_ultimate` and `total_reserve` (summed
+#' over segments). The fitted `omega`, `theta`, `scale` (the
+#' over-dispersion `sigma^2`), `elr` (Cape Cod; `NULL` for the LDF method,
+#' with any number of segments), `covariance` (of the expected ultimates or
+#' the ELR, then `omega` and `theta`), `n_observations` (the incremental
+#' values fitted; `scale` divides by this less the number of parameters),
+#' `total_process_risk`, `total_parameter_risk` and `total_standard_error`
+#' need a single-segment fit: with several segments use [totals_frame()],
+#' which has them per segment (except `covariance` and `n_observations`),
+#' or [segment()].
 #' `growth(fit, age)` gives the share of the expected ultimate developed by
 #' each development age in months (`Inf` gives 1). These are Python's
 #' `ClarkLdf`, `ClarkCapeCod` and `ClarkFit`.
@@ -936,10 +940,14 @@ clark_fit <- S7::new_class(
       omega = one(function(p) p$omega()),
       theta = one(function(p) p$theta()),
       elr = S7::new_property(getter = function(self) {
-        elr <- rust_result(self@ptr$elr(), call = NULL)
-        if (cape_cod(self)) elr else NULL
+        if (!cape_cod(self)) return(NULL)
+        rust_result(self@ptr$elr(), call = NULL)
       }),
       scale = one(function(p) p$scale()),
+      n_observations = S7::new_property(S7::class_integer, getter = function(self) {
+        rust_result(self@ptr$n_observations(), call = NULL)
+      }),
+      origin_width = S7::new_property(S7::class_double, getter = function(self) self@ptr$origin_width()),
       covariance = S7::new_property(S7::class_double, getter = function(self) {
         v <- rust_result(self@ptr$covariance(), call = NULL)
         n <- as.integer(round(sqrt(length(v))))

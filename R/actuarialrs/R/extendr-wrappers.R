@@ -1123,6 +1123,10 @@ ClarkFit$theta <- function() .Call(wrap__ClarkFit__theta, self)
 
 ClarkFit$elr <- function() .Call(wrap__ClarkFit__elr, self)
 
+ClarkFit$origin_width <- function() .Call(wrap__ClarkFit__origin_width, self)
+
+ClarkFit$n_observations <- function() .Call(wrap__ClarkFit__n_observations, self)
+
 ClarkFit$scale <- function() .Call(wrap__ClarkFit__scale, self)
 
 ClarkFit$covariance <- function() .Call(wrap__ClarkFit__covariance, self)
