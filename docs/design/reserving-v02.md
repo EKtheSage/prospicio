@@ -127,9 +127,69 @@ the tail's sigma and standard error. Mack accepts a tail and adds its
 process and parameter risk the way R `MackChainLadder` does, extrapolating
 `tail.sigma` and `tail.se` log-linearly when they are not given.
 
+As built (the references forced these details):
+
+```rust
+pub struct TailConstant { pub factor: f64, pub decay: f64, pub attachment_age: Option<Lag> }
+pub struct TailCurve {
+    pub curve: CurveShape,                         // Exponential | InversePower
+    pub fit_period: (Option<Lag>, Option<Lag>),    // ages [from, to), chainladder-python's convention
+    pub extrap_periods: usize,                     // 100
+    pub attachment_age: Option<Lag>,
+}
+pub struct TailBondy { pub earliest_age: Option<Lag>, pub attachment_age: Option<Lag> }
+
+pub struct TailFit {
+    pub attachment: usize, // first development position the tail replaced
+    pub ldf: Vec<f64>,     // selected factors: estimated, then the tail's, then past the oldest age
+    pub factor: f64,       // oldest age to ultimate
+    pub sigma: f64,
+    pub std_err: f64,
+}
+
+pub struct Mack {
+    pub development: Development,
+    pub tail: Tail,
+    pub tail_sigma: Option<f64>,   // R tail.sigma
+    pub tail_std_err: Option<f64>, // R tail.se
+}
+```
+
+* `ChainLadderFit.tail` is the `TailFit` (it was the factor), and
+  `ChainLadderFit::ldf()` the selected factors within the triangle, which
+  the projection and Mack's recursions use. A tail attached before the
+  oldest age replaces estimated factors, as chainladder-python does; Mack
+  keeps the estimated sigmas and standard errors there, as it does.
+* `TailFit.ldf` runs past the oldest age as chainladder-python's `ldf_`
+  (`projection_period` 12): one factor per development period of the next
+  year, then one to ultimate. `LogLinear` gives one factor, as R appends
+  one. Only their product, `factor`, enters ultimates and Mack.
+* `TailBondy` keeps the factor from its attachment age to the next and
+  replaces those after, while `TailConstant` and `TailCurve` replace the
+  factor from their attachment age; both follow chainladder-python. The
+  Bondy exponent is the exact least-squares optimum; chainladder-python's
+  `least_squares` stops early (relative cost change 1e-8), so generalized
+  Bondy rows are checked to 1e-4 (`knowledge/findings/bondy-least-squares-stop.md`).
+* `LogLinear` is R's `tailfactor` exactly, including its quirks: it tests
+  the third- and second-last factors (`f[n-2] * f[n-1] > 1.0001`, not the
+  last two) and resets a tail above 2 to 1.
+* The tail's sigma and standard error follow R's `tail_SE`, which
+  chainladder-python's `_get_tail_stats` matches: the tail's position on
+  the line through `ln(f - 1)` (factors above 1) is where it reaches
+  `ln(factor - 1)`, read off lines through `ln(sigma)` and `ln(std_err)`.
+  A factor not above 1 carries no tail risk (R adds no tail step; given
+  values are ignored, as R ignores them). Every origin, the oldest
+  included, carries the tail's risk.
+* A tail that cannot be fitted is `Error::Tail(reason)`; a non-positive
+  constant stays `Error::InvalidTail`.
+
 Bindings: Python `ChainLadder(tail=...)` and `Mack(tail=...)` accept a float
 or a `TailConstant`, `TailCurve`, `TailBondy` or `TailLogLinear`; R accepts a
-number or the matching constructor.
+number or the matching constructor. In Python the default is `tail=None`
+(no tail); `Mack` also takes `tail_sigma` and `tail_std_err`, and the fits
+report `tail`, `tail_ldf`, `tail_sigma` and `tail_std_err`. Parity:
+`validation/tests/reserving_tails.rs` against
+`reserving_tails_r.csv` and `reserving_tails_python.csv`.
 
 ### 4. The one-year view
 

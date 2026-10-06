@@ -4,3 +4,4 @@
 * [Negative increments in the ODP](odp-negative-increments.md) - A quasi-likelihood ODP needs only V(mu) = mu and mu > 0; negative responses are fitted with a quasi-deviance that is not a distance.
 * [ODP log density](odp-continuous-density.md) - The ODP's lattice probability is -inf off the lattice; its continuation through Gamma, normalized by C(lambda), is a proper density in y.
 * [Stacking pooling funnel](stacking-pooling-funnel.md) - With one slope per pooled group, the group scale and the slope trade off; NUTS diverges. Three or more covariates mix well.
+* [Bondy least squares](bondy-least-squares-stop.md) - TailBondy fits b with scipy least_squares at default tolerances, which stop on a 1e-8 relative cost change; b is off by up to 4e-6, the tail's results by up to 3e-5.
