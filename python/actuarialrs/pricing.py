@@ -7,6 +7,7 @@ from .actuarialrs_native import (
     Mbbefd,
     PortfolioPrice,
     Price,
+    RiskProfile,
     TabulatedCurve,
     TowerModel,
     alpha_between_frequencies,
@@ -41,5 +42,6 @@ __all__ = [
     "PortfolioPrice",
     "Mbbefd",
     "TabulatedCurve",
+    "RiskProfile",
     "severity_exposure_curve",
 ]

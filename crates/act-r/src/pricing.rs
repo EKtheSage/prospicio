@@ -272,7 +272,7 @@ fn pricing_alpha_between_frequencies(
 /// The MBBEFD exposure curve (Bernegger, 1997).
 #[extendr]
 pub(crate) struct Mbbefd {
-    inner: MbbefdInner,
+    pub(crate) inner: MbbefdInner,
 }
 
 #[extendr]
@@ -358,6 +358,124 @@ impl Tabulated {
 
     fn rate_quantile(&self, u: &[f64]) -> Vec<f64> {
         u.iter().map(|&v| self.inner.rate_quantile(v)).collect()
+    }
+}
+
+fn band_curve(obj: &Robj) -> Result<act_pricing::profile::BandCurve> {
+    if let Ok(c) = <&Mbbefd>::try_from(obj) {
+        return Ok(c.inner.into());
+    }
+    if let Ok(c) = <&Tabulated>::try_from(obj) {
+        return Ok(c.inner.clone().into());
+    }
+    Err(Error::Other(
+        "each band's curve must be an mbbefd or a tabulated_curve".into(),
+    ))
+}
+
+/// A risk profile; `expected_losses` or `premiums` (with `loss_ratio`, one
+/// value or one per band) is empty when not given.
+#[extendr]
+pub(crate) struct RiskProfile {
+    inner: act_pricing::profile::RiskProfile,
+}
+
+#[extendr]
+impl RiskProfile {
+    fn new(
+        sums_insured: &[f64],
+        risks: &[f64],
+        curves: List,
+        expected_losses: &[f64],
+        premiums: &[f64],
+        loss_ratio: &[f64],
+    ) -> Result<Self> {
+        use act_pricing::profile::{Band, RiskProfile as Inner};
+        let n = sums_insured.len();
+        if risks.len() != n || curves.len() != n {
+            return Err(Error::Other(
+                "give one number of risks and one curve per band".into(),
+            ));
+        }
+        let curves = curves
+            .values()
+            .map(|c| band_curve(&c))
+            .collect::<Result<Vec<_>>>()?;
+        let bands = if !expected_losses.is_empty() {
+            if expected_losses.len() != n {
+                return Err(Error::Other("give one expected loss per band".into()));
+            }
+            (0..n)
+                .map(|i| {
+                    Band::from_expected_loss(
+                        sums_insured[i],
+                        risks[i],
+                        expected_losses[i],
+                        curves[i].clone(),
+                    )
+                })
+                .collect::<act_core::Result<Vec<_>>>()
+        } else {
+            let lr = |i: usize| loss_ratio[if loss_ratio.len() == 1 { 0 } else { i }];
+            if premiums.len() != n || !(loss_ratio.len() == 1 || loss_ratio.len() == n) {
+                return Err(Error::Other(
+                    "give expected_loss, or one premium per band with a loss_ratio".into(),
+                ));
+            }
+            (0..n)
+                .map(|i| {
+                    Band::from_premium(
+                        sums_insured[i],
+                        risks[i],
+                        premiums[i],
+                        lr(i),
+                        curves[i].clone(),
+                    )
+                })
+                .collect::<act_core::Result<Vec<_>>>()
+        }
+        .map_err(to_r)?;
+        Ok(Self {
+            inner: Inner::new(bands).map_err(to_r)?,
+        })
+    }
+
+    fn expected_loss(&self) -> f64 {
+        self.inner.expected_loss()
+    }
+
+    fn expected_claims(&self) -> Vec<f64> {
+        self.inner
+            .bands()
+            .iter()
+            .map(|b| b.expected_claims())
+            .collect()
+    }
+
+    /// `surplus_retention` NaN for no surplus.
+    fn expected_layer_loss(
+        &self,
+        limit: f64,
+        attachment: f64,
+        surplus_retention: f64,
+        surplus_lines: f64,
+    ) -> Result<f64> {
+        let surplus = (!surplus_retention.is_nan()).then_some((surplus_retention, surplus_lines));
+        self.inner
+            .expected_layer_loss(limit, attachment, surplus)
+            .map_err(to_r)
+    }
+
+    fn expected_surplus_loss(&self, retention: f64, lines: f64) -> f64 {
+        self.inner.expected_surplus_loss(retention, lines)
+    }
+
+    fn simulate(&self, n_sims: f64, seed: f64) -> Result<crate::aggregate::EventSet> {
+        let inner = self
+            .inner
+            .simulate(whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(crate::aggregate::EventSet { inner })
     }
 }
 
@@ -454,6 +572,7 @@ extendr_module! {
     impl TowerModel;
     impl Mbbefd;
     impl Tabulated;
+    impl RiskProfile;
     fn pricing_severity_exposure_curve;
     fn pricing_price;
     fn pricing_price_portfolio;

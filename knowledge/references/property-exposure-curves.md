@@ -19,6 +19,9 @@ sources:
   - id: code
     resource: ../crates/act-pricing/src/exposure.rs
     title: act_pricing::exposure
+  - id: profile
+    resource: ../crates/act-pricing/src/profile.rs
+    title: act_pricing::profile (tests)
 ---
 
 # The curves in use
@@ -49,7 +52,16 @@ sources:
   Riebesell (a Pareto).[^code]
 * Not covered yet: log-log interpolation between table points.
 
+# Surplus and per-risk XL from a profile
+
+* A risk ceding `c` to a surplus keeps `(1 − c)` of every loss, so the
+  per-risk XL it inures to sees the same destruction-rate curve at sum
+  insured `(1 − c) SI`; its exposure-rated loss is
+  `EL (1 − c) [G((a + l)/((1 − c) SI)) − G(a/((1 − c) SI))]`. Simulated
+  events agree with this within four standard errors.[^profile]
+
 [^pep]: Exposure modelling in property reinsurance
 [^cas]: CAS Reinsurance Seminar 2014 handout
 [^verisk]: Verisk, original loss curves
 [^code]: act_pricing::exposure
+[^profile]: act_pricing::profile (tests)

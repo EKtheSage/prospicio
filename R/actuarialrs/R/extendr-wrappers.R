@@ -1040,6 +1040,26 @@ Tabulated$rate_quantile <- function(u) .Call(wrap__Tabulated__rate_quantile, sel
 #' @export
 `[[.Tabulated` <- `$.Tabulated`
 
+RiskProfile <- new.env(parent = emptyenv())
+
+RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio)
+
+RiskProfile$expected_loss <- function() .Call(wrap__RiskProfile__expected_loss, self)
+
+RiskProfile$expected_claims <- function() .Call(wrap__RiskProfile__expected_claims, self)
+
+RiskProfile$expected_layer_loss <- function(limit, attachment, surplus_retention, surplus_lines) .Call(wrap__RiskProfile__expected_layer_loss, self, limit, attachment, surplus_retention, surplus_lines)
+
+RiskProfile$expected_surplus_loss <- function(retention, lines) .Call(wrap__RiskProfile__expected_surplus_loss, self, retention, lines)
+
+RiskProfile$simulate <- function(n_sims, seed) .Call(wrap__RiskProfile__simulate, self, n_sims, seed)
+
+#' @export
+`$.RiskProfile` <- function (self, name) { func <- RiskProfile[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.RiskProfile` <- `$.RiskProfile`
+
 Triangle <- new.env(parent = emptyenv())
 
 Triangle$from_long <- function(key_names, keys, origin_year, origin_month, ages, valuation_year, valuation_month, development_is_valuation, names, values, origin_grain, development_grain, cumulative) .Call(wrap__Triangle__from_long, key_names, keys, origin_year, origin_month, ages, valuation_year, valuation_month, development_is_valuation, names, values, origin_grain, development_grain, cumulative)

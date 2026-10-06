@@ -486,3 +486,104 @@ S7::method(print, tabulated_curve) <- function(x, ...) {
   cat(sprintf("<tabulated_curve> %d points, mean rate %s\n", length(x@x), format(x@mean)))
   invisible(x)
 }
+
+#' Risk profile for property per-risk business
+#'
+#' Bands of sum insured, each with an expected loss (given, or premium times
+#' a loss ratio) and its own exposure curve. Each band's representative risk
+#' has sum insured `SI` (its total sum insured over its number of risks, say),
+#' taken as its MPL; the band expects `EL / (SI * curve@mean)` losses a year.
+#'
+#' `profile_simulate()` draws years of losses: a Poisson number with the
+#' profile's expected count, each in a band with probability proportional to
+#' the band's expected count, and the band's `SI` times a destruction rate
+#' from its curve. Every loss carries its `SI`, so a [surplus_treaty()] and
+#' the per-risk excess of loss it inures to apply with [apply_tower()].
+#' `profile_layer_loss()` and `profile_surplus_loss()` are the exposure-rated
+#' expectations, which check the simulation.
+#'
+#' @param sums_insured One per band.
+#' @param risks Number of risks per band (for reference).
+#' @param curves An [mbbefd] or [tabulated_curve] for every band, or a list
+#'   with one per band.
+#' @param expected_loss Expected annual loss per band. Give this, or
+#'   `premium` with `loss_ratio`.
+#' @param premium Premium per band.
+#' @param loss_ratio Expected loss ratio: one value, or one per band.
+#' @returns `risk_profile()`: a `risk_profile` object with properties
+#'   `expected_loss` (all bands) and `expected_claims` (per band).
+#' @export
+#' @examples
+#' p <- risk_profile(c(1e6, 10e6), c(800, 50), swiss_re_curve(3),
+#'                   premium = c(2e6, 1e6), loss_ratio = 0.6)
+#' p@expected_loss
+#' ev <- profile_simulate(p, 1000, seed = 7)
+#' tw <- inuring_tower(list(list(surplus_treaty("S", 1e6, 4)),
+#'                          list(xol_layer("XL", 1e6, 0.5e6))))
+#' mean(total(apply_tower(tw, ev)))
+#' profile_surplus_loss(p, 1e6, 4)
+#' profile_layer_loss(p, 1e6, 0.5e6, surplus_retention = 1e6, surplus_lines = 4)
+risk_profile <- S7::new_class(
+  "risk_profile",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("RiskProfile"),
+    expected_loss = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_loss()),
+    expected_claims = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_claims())
+  ),
+  constructor = function(sums_insured, risks, curves, expected_loss = NULL, premium = NULL,
+                         loss_ratio = NULL) {
+    n <- length(sums_insured)
+    if (!is.list(curves)) curves <- rep(list(curves), n)
+    if (is.null(expected_loss) == is.null(premium)) {
+      stop("give expected_loss, or premium with a loss_ratio")
+    }
+    if (!is.null(premium) && is.null(loss_ratio)) stop("premium needs a loss_ratio")
+    ptr <- rust_result(RiskProfile$new(
+      as.double(sums_insured), as.double(risks), lapply(curves, function(c) c@ptr),
+      if (is.null(expected_loss)) double() else as.double(expected_loss),
+      if (is.null(premium)) double() else as.double(premium),
+      if (is.null(loss_ratio)) double() else as.double(loss_ratio)
+    ))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, risk_profile) <- function(x, ...) {
+  cat(sprintf("<risk_profile> %d bands, expected loss %s\n", length(x@expected_claims),
+              format(x@expected_loss)))
+  invisible(x)
+}
+
+#' @rdname risk_profile
+#' @param profile A `risk_profile`.
+#' @param n_sims Number of simulated years.
+#' @param seed Generator seed.
+#' @export
+profile_simulate <- function(profile, n_sims, seed) {
+  event_set(ptr = rust_result(profile@ptr$simulate(as.double(n_sims), as.double(seed))))
+}
+
+#' @rdname risk_profile
+#' @param limit,attachment A per-risk layer; `limit = Inf` for unlimited.
+#' @param surplus_retention,surplus_lines A surplus treaty the layer inures
+#'   to, or `NULL`.
+#' @export
+profile_layer_loss <- function(profile, limit, attachment, surplus_retention = NULL,
+                               surplus_lines = NULL) {
+  if (is.null(surplus_retention) != is.null(surplus_lines)) {
+    stop("give both surplus_retention and surplus_lines, or neither")
+  }
+  rust_result(profile@ptr$expected_layer_loss(
+    as.double(limit), as.double(attachment),
+    if (is.null(surplus_retention)) NaN else as.double(surplus_retention),
+    if (is.null(surplus_lines)) NaN else as.double(surplus_lines)
+  ))
+}
+
+#' @rdname risk_profile
+#' @param retention,lines A surplus treaty's retention line and lines.
+#' @export
+profile_surplus_loss <- function(profile, retention, lines) {
+  profile@ptr$expected_surplus_loss(as.double(retention), as.double(lines))
+}

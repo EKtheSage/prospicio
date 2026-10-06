@@ -17,5 +17,6 @@
 
 pub mod exposure;
 pub mod layer;
+pub mod profile;
 pub mod risk_load;
 pub mod tower;

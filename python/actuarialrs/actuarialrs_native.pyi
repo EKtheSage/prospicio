@@ -6217,6 +6217,110 @@ class Price:
         """
 
 @final
+class RiskProfile:
+    """
+    A risk profile for property per-risk business: bands of sum insured,
+    each with an expected loss (given, or premium times a loss ratio) and
+    its own exposure curve.
+    
+    Each band's representative risk has sum insured ``SI`` (its total sum
+    insured over its number of risks, say), taken as its MPL. The band
+    expects ``EL / (SI * curve.mean_rate)`` losses a year; each simulated
+    loss is the band's ``SI`` times a destruction rate from the band's
+    curve, and carries that ``SI``, so a surplus treaty (``Layer.surplus``)
+    and the per-risk excess of loss it inures to apply to the events. The
+    exposure-rated expectations (``expected_layer_loss``,
+    ``expected_surplus_loss``) check the simulation.
+    
+    Parameters
+    ----------
+    sums_insured : list of float
+        One per band.
+    risks : list of float
+        Number of risks per band (for reference).
+    curves : Mbbefd or TabulatedCurve, or a list of them
+        One curve for every band, or one per band.
+    expected_losses : list of float, optional
+        Expected annual loss per band. Give this, or ``premiums``.
+    premiums : list of float, optional
+        Premium per band, with ``loss_ratio``.
+    loss_ratio : float or list of float, optional
+        Expected loss ratio, one for all bands or one per band.
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import Mbbefd, RiskProfile
+    >>> p = RiskProfile([1e6, 10e6], [800, 50], Mbbefd.swiss_re(3.0),
+    ...                 premiums=[2e6, 1e6], loss_ratio=0.6)
+    >>> round(p.expected_loss())
+    1800000
+    >>> events = p.simulate(1000, 7)
+    >>> events.has_sums_insured
+    True
+    """
+    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None) -> RiskProfile: ...
+    def __repr__(self, /) -> str: ...
+    def expected_claims(self, /) -> list[float]:
+        """
+        Expected number of losses a year, per band.
+        
+        Returns
+        -------
+        list of float
+        """
+    def expected_layer_loss(self, /, limit: float, attachment: float, surplus_retention: float |None = None, surplus_lines: float |None = None) -> float:
+        """
+        Exposure-rated expected loss to a per-risk layer ``limit`` xs
+        ``attachment``, optionally on each risk net of a surplus treaty.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for unlimited.
+        attachment : float
+        surplus_retention, surplus_lines : float, optional
+            A surplus treaty the layer inures to.
+        
+        Returns
+        -------
+        float
+        """
+    def expected_loss(self, /) -> float:
+        """
+        Expected annual loss, all bands.
+        
+        Returns
+        -------
+        float
+        """
+    def expected_surplus_loss(self, /, retention: float, lines: float) -> float:
+        """
+        Expected annual loss ceded to a surplus treaty.
+        
+        Parameters
+        ----------
+        retention : float
+        lines : float
+        
+        Returns
+        -------
+        float
+        """
+    def simulate(self, /, n_sims: int, seed: int) -> EventSet:
+        """
+        ``n_sims`` years of losses, each with its risk's sum insured.
+        
+        Parameters
+        ----------
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        EventSet
+        """
+
+@final
 class Sampled:
     """
     A distribution known only through equally weighted draws.

@@ -148,12 +148,24 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   stage sees each risk's original SI. `Tower::apply` refuses a tower with a
   surplus on events without SIs; `apply_aggregate` and `on_grid` refuse
   one outright (no risks). Python `Layer.surplus`, R `surplus_treaty()`.
-- **Risk profiles (next).** Bands of sum insured, each with a number of
-  risks and either a premium (with a loss ratio) or an expected loss, and
-  an exposure curve per band (MBBEFD, a tabulated curve, or a severity
-  curve; `pareto.md`). A loss lands in a band in proportion to the band's
-  expected claim count, and is the band's SI times a destruction rate from
-  the band's curve (`ExposureCurve::rate_quantile`).
+- **Risk profiles.** `act_pricing::profile::RiskProfile`: bands of sum
+  insured, each with a number of risks, an expected loss (given, or
+  premium × loss ratio, the user's choice per profile) and its own
+  exposure curve (MBBEFD or tabulated, `BandCurve`). A band expects
+  `EL / (SI × mean rate)` losses a year; a simulated year draws a Poisson
+  count with the total mean, each loss in a band with probability
+  proportional to its expected count, as the band's SI times a destruction
+  rate from its curve (`ExposureCurve::rate_quantile`), and carries that
+  SI. The exposure-rated expectations are option C, kept as the check:
+  `expected_surplus_loss(R, k) = Σ cession_b EL_b` and
+  `expected_layer_loss(l, a, surplus)`, where a per-risk XL net of a
+  surplus sees each risk at SI `(1 − c) SI` on the same curve. Tested:
+  50,000–100,000 simulated years of a three-band profile (two MBBEFD, one
+  tabulated) give the surplus and the per-risk XL it inures to within four
+  standard errors of these. It lives in act-pricing (exposure curves),
+  which now depends on act-aggregate (`EventSet`). Python `RiskProfile`,
+  R `risk_profile()`, `profile_simulate()`, `profile_layer_loss()`,
+  `profile_surplus_loss()`.
 
 ## Validation
 
@@ -193,5 +205,6 @@ binomial counts. A unit test checks the layer mean and variance against
 
 ## Next
 
-1. The risk-profile simulator that fills the sums insured (option A).
-2. Pro rata as to time reinstatement premiums, once events carry dates.
+1. Pro rata as to time reinstatement premiums, once events carry dates.
+2. Sums insured spread within a band (between its bounds) rather than one
+   representative risk, if profiles call for it.

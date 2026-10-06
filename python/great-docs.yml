@@ -131,6 +131,7 @@ reference:
       - pricing.PortfolioPrice
       - pricing.Mbbefd
       - pricing.TabulatedCurve
+      - pricing.RiskProfile
       - pricing.severity_exposure_curve
   - title: Reserving
     desc: Loss triangles, the chain ladder, Mack's model, the expected-loss methods and the ODP bootstrap.

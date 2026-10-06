@@ -87,6 +87,7 @@ reference:
       - risk_loaded_price
       - mbbefd
       - tabulated_curve
+      - risk_profile
       - match_tower
       - fit_pml_curve
       - fit_references
