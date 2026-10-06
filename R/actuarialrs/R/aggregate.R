@@ -66,18 +66,48 @@ simulate_events <- function(frequency, severity, n_sims, seed) {
 #' @param sums_insured `NULL`, or a list of the same shape: each loss's sum
 #'   insured, at least the loss.
 #' @param seed Recorded in results' provenance.
-#' @returns An `event_set`; [event_sums_insured()] reads the sums insured
-#'   back.
+#' @param times `NULL`, or a list of the same shape: each loss's time as the
+#'   fraction of the year elapsed (in `[0, 1]`, non-decreasing within a
+#'   year), which reinstatements pro rata as to time need.
+#' @returns An `event_set`; [event_sums_insured()] and [event_times()] read
+#'   the sums insured and times back.
 #' @export
 #' @examples
 #' ev <- events_from_years(list(c(5, 2), numeric(), 9), list(c(10, 2), numeric(), 50))
 #' event_counts(ev)
 #' event_sums_insured(ev, 3)
-events_from_years <- function(years, sums_insured = NULL, seed = 0) {
+events_from_years <- function(years, sums_insured = NULL, seed = 0, times = NULL) {
   years <- lapply(years, as.double)
   if (!is.null(sums_insured)) sums_insured <- lapply(sums_insured, as.double)
-  event_set(ptr = rust_result(EventSet$from_years(years, sums_insured, as.double(seed))))
+  if (!is.null(times)) times <- lapply(times, as.double)
+  event_set(ptr = rust_result(EventSet$from_years(years, sums_insured, as.double(seed), times)))
 }
+
+#' Date events uniformly over the year
+#'
+#' The same events at times spread uniformly over the year: each year's
+#' losses take sorted uniform draws, in their order, from a stream of the
+#' generator keyed by the set's seed apart from the losses' own, so the
+#' losses are unchanged and any year replays alone. Reinstatements pro rata
+#' as to time (`xol_layer(pro_rata_time = TRUE)`) need them.
+#'
+#' @param x An `event_set`.
+#' @returns An `event_set` whose losses carry times; [event_times()] reads
+#'   them.
+#' @export
+#' @examples
+#' ev <- with_uniform_times(simulate_events(poisson_count(3), lognormal(0, 1), 10, seed = 1))
+#' event_times(ev, 1)
+with_uniform_times <- function(x) event_set(ptr = x@ptr$with_uniform_times())
+
+#' Times of one year's losses
+#'
+#' @param x An `event_set` whose losses carry times.
+#' @param sim Year number, from 1 to `x@n_sims`.
+#' @returns Numeric vector, one time per loss as the fraction of the year
+#'   elapsed; empty when the events carry none.
+#' @export
+event_times <- function(x, sim) rust_result(x@ptr$times(as.double(sim)))
 
 #' Sums insured of one year's losses
 #'

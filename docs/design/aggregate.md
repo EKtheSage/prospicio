@@ -97,15 +97,34 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   the first recoveries and the AAL stops the last ones, and event `k`
   cedes the increase in annual ceded loss it causes. The split sums to the
   annual ceded loss, which does not depend on order; only later stages do.
-  Simulated events are in simulation order, which stands in for time
-  until events carry dates.
+  Simulated events are in simulation order, which is their time order;
+  events may carry times too (below).
 - **Reinstatement premiums are pro rata as to amount.** With layer loss
   `L` at 100% after annual terms, `paid_reinstatements(premium, rates)`
   charges `premium × Σ_k rates[k] × min(max(L - k·l, 0), l) / l`, where
   `premium` is the upfront premium for the placed share (so the share
-  does not scale it again). Pro rata as to time needs event dates. The
-  tower reports them as `(reinstatement_premium, <name>)` components, and
+  does not scale it again). The tower reports them as `(reinstatement_premium, <name>)` components, and
   `net` stays a loss: premiums are not netted against it.
+- **Pro rata as to time.** `Layer::pro_rata_as_to_time()` (after
+  `paid_reinstatements`) charges the limit each event uses up at `1 − t`,
+  where `t` is its time as the fraction of the year elapsed: with `A_e`
+  the layer loss after annual terms up to event `e`, the premium is
+  `premium / l × Σ_e (1 − t_e) Σ_k rates[k] |[A_{e−1}, A_e] ∩ [k l, (k+1) l]|`.
+  Events carry times through `EventSet::with_times` (one per loss, in
+  `[0, 1]`, non-decreasing within a year: a catastrophe model's dated
+  events) or `EventSet::with_uniform_times` (sorted uniform draws from
+  stream `2^63 + i` of the set's seed, in the losses' drawn order; exact
+  for a year's i.i.d. losses, and the losses are unchanged). Times are a
+  fraction of the year rather than dates, so leap years and the
+  contract's inception are the caller's. `Tower::apply` refuses such a
+  layer on events without times; `apply_aggregate` and `on_grid` refuse
+  it outright. Tested: the closed form on hand-worked years (across two
+  limits, with an annual deductible), and one exhausting loss a year at a
+  uniform time averages half the amount-only premium within four
+  standard errors. Python `Layer(..., pro_rata_time=True)`,
+  `EventSet.with_uniform_times()`, `EventSet.from_years(..., times=)`; R
+  `xol_layer(pro_rata_time = TRUE)`, `with_uniform_times()`,
+  `events_from_years(times =)`, `event_times()`.
 - **Towers also run exactly on the grid.** `Tower::on_grid(frequency,
   severity, points)` returns `TowerGrids`: gross, each layer's ceded loss
   and, where defined, net, as grids by FFT with no sampling error. A
@@ -219,6 +238,7 @@ binomial counts. A unit test checks the layer mean and variance against
 
 ## Next
 
-1. Pro rata as to time reinstatement premiums, once events carry dates.
+1. Seasonality: event times from a density over the year rather than
+   uniform (a hurricane season), if a profile calls for it.
 2. A spread within a band that matches both its bounds and its total sum
    insured (a tilted, not uniform, density), if profiles call for it.

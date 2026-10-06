@@ -14,6 +14,7 @@ xol_layer(
   reinstatements = NULL,
   premium = 0,
   reinstatement_rates = NULL,
+  pro_rata_time = FALSE,
   ptr = NULL
 )
 }
@@ -42,6 +43,11 @@ as a fraction of \code{premium} (1 is 100\%), pro rata as to amount. Sets the
 annual limit to \code{limit * (length(reinstatement_rates) + 1)}; cannot be
 combined with \code{reinstatements} or a finite \code{aggregate_limit}.}
 
+\item{pro_rata_time}{Paid reinstatements also pro rata as to time: the
+limit a loss at time \code{t} (the fraction of the year elapsed) uses up is
+charged at \code{1 - t}. Needs \code{reinstatement_rates}, and events with times
+(\code{\link[=with_uniform_times]{with_uniform_times()}}, or \code{times} in \code{\link[=events_from_years]{events_from_years()}}).}
+
 \item{ptr}{Internal: an existing layer to wrap.}
 }
 \value{
@@ -57,6 +63,9 @@ ceded(l, 7e6)
 ceded(l, c(12e6, 20e6, 30e6))
 paid <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
 reinstatement_premium(paid, c(22, 12))
+timed <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5),
+                   pro_rata_time = TRUE)
+reinstatement_premium(timed, c(22, 12), times = c(0.25, 0.5))
 }
 \seealso{
 \code{\link[=quota_share]{quota_share()}} and \code{\link[=aggregate_stop_loss]{aggregate_stop_loss()}} for the other contract

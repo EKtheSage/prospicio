@@ -62,6 +62,8 @@ reference:
       - simulate_events
       - events_from_years
       - event_sums_insured
+      - event_times
+      - with_uniform_times
       - event_set
       - events
       - event_counts

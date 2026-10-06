@@ -179,3 +179,44 @@ def test_surplus_treaty_on_events_with_sums_insured():
         EventSet.from_years([[5.0]], [[4.0]])
     with pytest.raises(ValueError):
         EventSet.from_years([[5.0]], [[6.0, 7.0]])
+
+
+def test_reinstatements_pro_rata_as_to_time():
+    from actuarialrs.aggregate import EventSet
+
+    amount = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
+    timed = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5],
+                  pro_rata_time=True)
+    assert timed.pro_rata_time and not amount.pro_rata_time
+    assert math.isnan(timed.reinstatement_premium([22.0]))
+    assert amount.reinstatement_premium([22.0, 12.0], [0.25, 0.5]) == pytest.approx(2.2)
+    # 10 at t = 0.25 (rate 1), then 2 of the second limit at t = 0.5 (rate 0.5).
+    want = 2.0 * (10.0 * 0.75 + 0.5 * 2.0 * 0.5) / 10.0
+    assert timed.reinstatement_premium([22.0, 12.0], [0.25, 0.5]) == pytest.approx(want)
+    with pytest.raises(ValueError):
+        timed.reinstatement_premium([22.0], [0.1, 0.2])
+    with pytest.raises(ValueError):
+        Layer("free", 10.0, 10.0, reinstatements=1, pro_rata_time=True)
+
+    # One loss a year exhausting the limit at a uniform time: 2 E[1 - t] = 1.
+    n = 20_000
+    events = EventSet.from_years([[20.0]] * n, seed=9)
+    one = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0], pro_rata_time=True)
+    with pytest.raises(ValueError):
+        Tower([one]).apply(events)
+    dated = events.with_uniform_times()
+    assert dated.has_times and not events.has_times and events.times(0) is None
+    rp = Tower([one]).apply(dated).marginal(("reinstatement_premium", "10x10"))
+    assert abs(rp.mean() - 1.0) < 4 * (rp.variance() / n) ** 0.5
+
+    e = EventSet.from_years([[5.0, 2.0], [9.0]], times=[[0.1, 0.6], [0.3]])
+    assert e.times(1) == [0.3]
+    with pytest.raises(ValueError):
+        EventSet.from_years([[5.0, 2.0]], times=[[0.6, 0.1]])
+    with pytest.raises(ValueError):
+        EventSet.from_years([[5.0, 2.0]], times=[[0.1]])
+    # Uniform times leave the losses alone and replay per year.
+    a = simulate_events(Poisson(3.0), SEV, 20, 4).with_uniform_times()
+    b = simulate_events(Poisson(3.0), SEV, 200, 4).with_uniform_times()
+    assert [a.times(i) for i in range(20)] == [b.times(i) for i in range(20)]
+    assert a.events(3) == simulate_events(Poisson(3.0), SEV, 20, 4).events(3)

@@ -124,3 +124,22 @@ dm <- draw_matrix(res)
 stopifnot(abs(mean(dm[, 2]) - 5.8e6 / 3) < 1e-6, abs(mean(dm[, 3]) - 1e6 / 3) < 1e-6)
 stopifnot(inherits(try(apply_tower(tw, events_from_years(list(1))), silent = TRUE), "try-error"))
 stopifnot(inherits(try(events_from_years(list(5), list(4)), silent = TRUE), "try-error"))
+
+# Reinstatements pro rata as to time.
+timed <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5), pro_rata_time = TRUE)
+stopifnot(timed@pro_rata_time, is.nan(reinstatement_premium(timed, 22)))
+close(reinstatement_premium(timed, c(22, 12), times = c(0.25, 0.5)),
+      2 * (10 * 0.75 + 0.5 * 2 * 0.5) / 10, 1e-12)
+stopifnot(inherits(try(xol_layer("f", 10, 10, reinstatements = 1, pro_rata_time = TRUE),
+                       silent = TRUE), "try-error"))
+n <- 20000
+ev <- events_from_years(rep(list(20), n), seed = 9)
+one <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = 1, pro_rata_time = TRUE)
+stopifnot(inherits(try(apply_tower(reinsurance_tower(list(one)), ev), silent = TRUE), "try-error"))
+dated <- with_uniform_times(ev)
+rp <- draw_matrix(apply_tower(reinsurance_tower(list(one)), dated))[, 4]
+stopifnot(abs(mean(rp) - 1) < 4 * sd(rp) / sqrt(n), length(event_times(ev, 1)) == 0)
+et <- events_from_years(list(c(5, 2), 9), times = list(c(0.1, 0.6), 0.3))
+stopifnot(event_times(et, 2) == 0.3)
+stopifnot(inherits(try(events_from_years(list(c(5, 2)), times = list(c(0.6, 0.1))), silent = TRUE),
+                   "try-error"))
