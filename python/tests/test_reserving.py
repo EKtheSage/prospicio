@@ -13,6 +13,10 @@ from actuarialrs.reserving import (
     MackFit,
     OdpBootstrap,
     OdpBootstrapFit,
+    TailBondy,
+    TailConstant,
+    TailCurve,
+    TailLogLinear,
     Triangle,
 )
 
@@ -111,6 +115,108 @@ def test_tail_scales_ultimates(triangles):
     tailed = ChainLadder(tail=1.05).fit(raa, "values")
     assert tailed.tail == 1.05
     assert tailed.ultimate == pytest.approx([u * 1.05 for u in base.ultimate], rel=1e-12)
+
+
+# Reference method -> Mack keyword arguments, as in
+# validation/tests/reserving_tails.rs. mack_tail_given adds tail_sigma and
+# tail_std_err from the fitted pattern.
+TAIL_METHODS = {
+    # R ChainLadder.
+    "mack_tail_loglinear": dict(tail=TailLogLinear()),
+    "mack_tail_loglinear_sigma_mack": dict(tail=TailLogLinear(), sigma_interpolation="mack"),
+    "mack_tail_loglinear_alpha2": dict(tail=TailLogLinear(), average="regression"),
+    "mack_tail_constant": dict(tail=1.05),
+    "mack_tail_constant_sigma_mack": dict(tail=1.05, sigma_interpolation="mack"),
+    "mack_tail_given": dict(tail=1.05),
+    # chainladder-python.
+    "tail_constant": dict(tail=TailConstant(1.05)),
+    "tail_constant_decay": dict(tail=TailConstant(1.1, decay=0.75)),
+    "tail_constant_attach": dict(tail=TailConstant(1.05, attachment_age=72)),
+    "tail_curve_exponential": dict(tail=TailCurve()),
+    "tail_curve_inverse_power": dict(tail=TailCurve("inverse_power")),
+    "tail_curve_fit_period": dict(tail=TailCurve(fit_period=(36, 108), extrap_periods=50)),
+    "tail_curve_attach": dict(tail=TailCurve(attachment_age=60)),
+    "tail_bondy": dict(tail=TailBondy()),
+    "tail_bondy_generalized": dict(tail=TailBondy(earliest_age=36)),
+    "tail_bondy_attach": dict(tail=TailBondy(earliest_age=36, attachment_age=72)),
+}
+
+
+def given_tail(tri):
+    """R's mack_tail_given inputs: twice the last sigma, half the last standard error."""
+    fit = ChainLadder().fit(tri, "values")
+    return fit.sigma[-1] * 2, fit.std_err[-1] / 2
+
+
+def evaluate_tail(fit, quantity, arg):
+    if quantity == "ldf":
+        return (fit.ldf + fit.tail_ldf)[int(arg)]
+    if quantity == "cdf":
+        k = int(arg)
+        if k < len(fit.cdf):
+            return fit.cdf[k]
+        return math.prod((fit.ldf + fit.tail_ldf)[k:])
+    if quantity == "tail_factor":
+        return fit.tail
+    return evaluate(fit, quantity, arg)
+
+
+@pytest.mark.parametrize("reference", ["reserving_tails_r.csv", "reserving_tails_python.csv"])
+def test_tails_match_reference(triangles, reference):
+    fits = {}
+    cases = read_csv(VALIDATION / "reference" / reference)
+    assert cases
+    for case in cases:
+        tri = triangles[case["dataset"]]
+        quantity = case["quantity"]
+        if quantity.startswith("given_tail_"):
+            sigma, std_err = given_tail(tri)
+            got = sigma if quantity == "given_tail_sigma" else std_err
+        else:
+            key = (case["dataset"], case["method"])
+            if key not in fits:
+                kw = dict(TAIL_METHODS[case["method"]])
+                if case["method"] == "mack_tail_given":
+                    kw["tail_sigma"], kw["tail_std_err"] = given_tail(tri)
+                fits[key] = Mack(**kw).fit(tri, "values")
+            got = evaluate_tail(fits[key], quantity, case["arg"])
+        want = float(case["expected"])
+        abs_tol = float(case["abs_tol"] or 0)
+        rel_tol = float(case["rel_tol"] or 0)
+        err = abs(got - want)
+        assert got == want or err <= abs_tol or err <= rel_tol * abs(want), (case, got)
+
+
+def test_tail_arguments(triangles):
+    raa = triangles["raa"]
+    assert ChainLadder().tail == 1.0
+    assert ChainLadder(tail=1.05).tail == 1.05
+    curve = TailCurve("inverse_power", fit_period=(36, None), attachment_age=60)
+    assert ChainLadder(tail=curve).tail.curve == "inverse_power"
+    assert curve.fit_period == (36, None) and curve.extrap_periods == 100
+    assert "TailBondy(earliest_age=36" in repr(Mack(tail=TailBondy(36)))
+    # A constant with the default decay and attachment is just its factor.
+    assert ChainLadder(tail=TailConstant(1.05)).tail == 1.05
+    assert isinstance(ChainLadder(tail=TailConstant(1.05, decay=0.75)).tail, TailConstant)
+    # The selected factors replace the estimated ones from the attachment age.
+    fit = ChainLadder(tail=curve).fit(raa, "values")
+    base = ChainLadder().fit(raa, "values")
+    assert fit.ldf[:4] == base.ldf[:4] and fit.ldf[4] != base.ldf[4]
+    assert math.prod(fit.tail_ldf) == pytest.approx(fit.tail, rel=1e-12)
+    assert fit.cdf[-1] == pytest.approx(fit.tail, rel=1e-12)
+    # Without a tail above 1 there is no tail risk.
+    mack = Mack().fit(raa, "values")
+    assert (mack.tail, mack.tail_sigma, mack.tail_std_err, mack.standard_error[0]) == (1.0, 0.0, 0.0, 0.0)
+    given = Mack(tail=1.05, tail_sigma=1.5, tail_std_err=0.003).fit(raa, "values")
+    assert (given.tail_sigma, given.tail_std_err) == (1.5, 0.003)
+    with pytest.raises(TypeError, match="tail must be"):
+        ChainLadder(tail="1.05")
+    with pytest.raises(ValueError, match="curve must be"):
+        TailCurve("weibull")
+    with pytest.raises(ValueError, match="tail"):
+        ChainLadder(tail=TailCurve(fit_period=(108, None))).fit(raa, "values")
+    with pytest.raises(ValueError, match="tail"):
+        Mack(tail=1.05, tail_sigma=-1.0).fit(raa, "values")
 
 
 def test_mack_fit(triangles):

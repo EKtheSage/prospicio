@@ -123,11 +123,15 @@ reference:
       - pricing.Price
       - pricing.PortfolioPrice
   - title: Reserving
-    desc: Loss triangles, the chain ladder, Mack's model and the ODP bootstrap.
+    desc: Loss triangles, the chain ladder with tail factors, Mack's model and the ODP bootstrap.
     contents:
       - reserving.Triangle
       - reserving.ChainLadder
       - reserving.ChainLadderFit
+      - reserving.TailConstant
+      - reserving.TailCurve
+      - reserving.TailBondy
+      - reserving.TailLogLinear
       - reserving.Mack
       - reserving.MackFit
       - reserving.OdpBootstrap

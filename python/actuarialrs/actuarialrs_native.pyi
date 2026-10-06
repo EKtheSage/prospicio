@@ -368,8 +368,7 @@ class Binomial:
 class ChainLadder:
     """
     The chain-ladder method: each origin's latest value projected to
-    ultimate with age-to-age factors estimated from the triangle and a tail
-    factor.
+    ultimate with age-to-age factors estimated from the triangle and a tail.
     
     Parameters
     ----------
@@ -379,8 +378,9 @@ class ChainLadder:
         ``alpha`` of 1, 0 and 2).
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a variance parameter with a single link ratio is filled in.
-    tail : float, default 1.0
-        Factor from the oldest age to ultimate.
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        Development past the oldest age: a number is a constant factor from
+        the oldest age to ultimate. No tail (a factor of 1) by default.
     
     Examples
     --------
@@ -390,7 +390,7 @@ class ChainLadder:
     >>> fit.ldf, fit.ultimate, fit.total_reserve
     ([1.5], [150.0, 300.0], 100.0)
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> ChainLadder: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> ChainLadder: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -416,7 +416,9 @@ class ChainLadder:
         ------
         ValueError
             If the column is unknown, a factor cannot be estimated or the tail
-            is not positive; with keys, the message names the segment.
+            cannot be fitted (a constant that is not positive, a curve with
+            fewer than two factors above 1 to fit); with keys, the message
+            names the segment.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -424,9 +426,9 @@ class ChainLadder:
         How unestimable variance parameters are filled in.
         """
     @property
-    def tail(self, /) -> float:
+    def tail(self, /) -> Any:
         """
-        Tail factor.
+        The tail: a constant factor as a number, otherwise its estimator.
         """
 
 @final
@@ -470,9 +472,10 @@ class ChainLadderFit:
     def development_frame(self, /) -> Any:
         """
         One row per segment and age: the key columns, ``development``,
-        ``ldf`` (to the next age), ``cdf`` (to ultimate, with the tail),
-        ``sigma`` and ``std_err``; the oldest age has ``nan`` for ``ldf``,
-        ``sigma`` and ``std_err``. Needs pandas.
+        ``ldf`` (the selected factor to the next age), ``cdf`` (to ultimate,
+        with the tail), ``sigma`` and ``std_err``; the oldest age has ``nan``
+        for ``ldf``, ``sigma`` and ``std_err``, and the tail factor as its
+        ``cdf``. Needs pandas.
         
         Returns
         -------
@@ -496,7 +499,9 @@ class ChainLadderFit:
     @property
     def ldf(self, /) -> list[float]:
         """
-        Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
+        Selected age-to-age factors, which the projection uses: the
+        estimated ones, replaced by the tail's from its attachment age.
+        Factor ``k`` links age ``k`` to ``k + 1``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -538,7 +543,26 @@ class ChainLadderFit:
     @property
     def tail(self, /) -> float:
         """
-        Tail factor.
+        Tail factor from the oldest age to ultimate.
+        """
+    @property
+    def tail_ldf(self, /) -> list[float]:
+        """
+        Factors past the oldest age, which multiply to ``tail``: one per
+        development period of the following year and one to ultimate, as
+        chainladder-python's ``ldf_`` (a single factor for
+        ``TailLogLinear``).
+        """
+    @property
+    def tail_sigma(self, /) -> float:
+        """
+        The tail's variance parameter, extrapolated log-linearly; 0 without
+        a tail above 1, ``nan`` if it cannot be extrapolated.
+        """
+    @property
+    def tail_std_err(self, /) -> float:
+        """
+        Standard error of the tail factor, extrapolated log-linearly.
         """
     def to_frame(self, /) -> Any:
         """
@@ -3458,12 +3482,25 @@ class Mack:
     """
     Mack's distribution-free chain ladder: the chain-ladder projection plus
     the standard error of each origin's reserve and of the total, split into
-    process and parameter risk (Mack 1993, 1999). No tail factor.
+    process and parameter risk (Mack 1993, 1999).
+    
+    A tail above 1 is one more development step, from the oldest age to
+    ultimate, with its own sigma and standard error, as R ChainLadder's
+    ``MackChainLadder(tail = ...)``; unless given, both are extrapolated
+    log-linearly. Every origin, the oldest included, carries the tail's risk.
     
     Parameters
     ----------
     average : {"volume", "simple", "regression"}, default "volume"
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
+    tail_sigma : float, optional
+        The tail's sigma (R's ``tail.sigma``); extrapolated if not given.
+        Used only when the tail factor is above 1.
+    tail_std_err : float, optional
+        The tail factor's standard error (R's ``tail.se``); extrapolated if
+        not given. Used only when the tail factor is above 1.
     
     Examples
     --------
@@ -3477,7 +3514,7 @@ class Mack:
     >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
     True
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear") -> Mack: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None) -> Mack: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -3502,13 +3539,30 @@ class Mack:
         ------
         ValueError
             As ``ChainLadder.fit``, and if the triangle has fewer than three
-            ages or a variance parameter can be neither estimated nor
-            interpolated.
+            ages, a variance parameter can be neither estimated nor
+            interpolated, or the tail's sigma or standard error can neither be
+            extrapolated nor is given.
         """
     @property
     def sigma_interpolation(self, /) -> str:
         """
         How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> Any:
+        """
+        The tail: a constant factor as a number, otherwise its estimator.
+        """
+    @property
+    def tail_sigma(self, /) -> float |None:
+        """
+        The given tail sigma, or ``None`` to extrapolate it.
+        """
+    @property
+    def tail_std_err(self, /) -> float |None:
+        """
+        The given standard error of the tail factor, or ``None`` to
+        extrapolate it.
         """
 
 @final
@@ -3527,7 +3581,7 @@ class MackFit:
     @property
     def cdf(self, /) -> list[float]:
         """
-        Age-to-ultimate factors.
+        Age-to-ultimate factors, including the tail.
         """
     @property
     def chain_ladder(self, /) -> ChainLadderFit:
@@ -3566,7 +3620,7 @@ class MackFit:
     @property
     def ldf(self, /) -> list[float]:
         """
-        Age-to-age factors.
+        Selected age-to-age factors, as ``ChainLadderFit.ldf``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -3611,6 +3665,28 @@ class MackFit:
     def std_err(self, /) -> list[float]:
         """
         Standard error of each factor.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        Tail factor from the oldest age to ultimate.
+        """
+    @property
+    def tail_ldf(self, /) -> list[float]:
+        """
+        Factors past the oldest age, as ``ChainLadderFit.tail_ldf``.
+        """
+    @property
+    def tail_sigma(self, /) -> float:
+        """
+        The tail's sigma used in the process risk: given, or extrapolated
+        log-linearly; 0 without a tail above 1.
+        """
+    @property
+    def tail_std_err(self, /) -> float:
+        """
+        The tail factor's standard error used in the parameter risk: given,
+        or extrapolated log-linearly; 0 without a tail above 1.
         """
     def to_frame(self, /) -> Any:
         """
@@ -5375,6 +5451,187 @@ class StudentTCopula:
         -------
         list of list of float
         """
+
+@final
+class TailBondy:
+    """
+    The Bondy tail, as chainladder-python's ``TailBondy``.
+    
+    Each log factor from ``earliest_age`` on is taken as ``b`` times the one
+    before it, ``b`` fitted by least squares. The fitted factors are
+    ``f0 ** (b ** j)`` from the factor ``f0`` at ``earliest_age``, and those
+    past the next one multiply to the last fitted factor raised to
+    ``b / (1 - b)``. With the default ``earliest_age`` (the age of the last
+    factor) ``b`` is 1/2 and the tail repeats the last factor.
+    
+    Parameters
+    ----------
+    earliest_age : int, optional
+        First age in months whose factor enters the fit (the first age at or
+        after it); the age of the last factor by default.
+    attachment_age : int, optional
+        The factor from this age (the last age at or before it) to the next
+        is kept and the fitted ones replace those after it; the age of the
+        last factor by default. Not before ``earliest_age``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ChainLadder, TailBondy, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2020, 2021, 2021, 2022],
+    ...     [12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 110.0, 170.0, 120.0],
+    ... )
+    >>> round(ChainLadder(tail=TailBondy()).fit(tri, "values").tail, 12)
+    1.1
+    """
+    def __new__(cls, /, earliest_age: int |None = None, attachment_age: int |None = None) -> TailBondy: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def attachment_age(self, /) -> int |None:
+        """
+        Age after which the fitted factors replace the estimated ones;
+        ``None`` is the age of the last factor.
+        """
+    @property
+    def earliest_age(self, /) -> int |None:
+        """
+        First age whose factor enters the fit; ``None`` is the age of the
+        last factor.
+        """
+
+@final
+class TailConstant:
+    """
+    A given tail factor, as chainladder-python's ``TailConstant``.
+    
+    The factor applies from the attachment age to ultimate. Past the
+    attachment it is spread over the following periods as
+    ``1 + x * decay**k``, the last factor making up the difference; this
+    shapes the factors past the attachment, not the factor to ultimate. An
+    attachment before the oldest age replaces the estimated factors from
+    there.
+    
+    Parameters
+    ----------
+    factor : float, default 1.0
+        Factor from the attachment age to ultimate; finite and positive.
+    decay : float, default 0.5
+        Share of each period's development kept in the next, from 0 to 1.
+    attachment_age : int, optional
+        Age in months the factor attaches at (the first age at or after
+        it); the oldest age by default.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ChainLadder, TailConstant, Triangle
+    >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+    >>> fit = ChainLadder(tail=TailConstant(1.05)).fit(tri, "paid")
+    >>> fit.tail, round(fit.ultimate[1], 6)
+    (1.05, 315.0)
+    """
+    def __new__(cls, /, factor: float = 1.0, decay: float = 0.5, attachment_age: int |None = None) -> TailConstant: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def attachment_age(self, /) -> int |None:
+        """
+        Age in months the factor attaches at; ``None`` is the oldest age.
+        """
+    @property
+    def decay(self, /) -> float:
+        """
+        Share of each period's development kept in the next.
+        """
+    @property
+    def factor(self, /) -> float:
+        """
+        Factor from the attachment age to ultimate.
+        """
+
+@final
+class TailCurve:
+    """
+    A curve fitted to the estimated factors and extrapolated, as
+    chainladder-python's ``TailCurve``.
+    
+    Factors above 1.00001 in the fit period are regressed by least squares:
+    ``ln(f - 1)`` on the 1-based development index ``k`` (exponential) or on
+    ``ln(k)`` (inverse power). The fitted curve replaces the factors from the
+    attachment age on and runs ``extrap_periods`` periods past the oldest
+    age.
+    
+    Parameters
+    ----------
+    curve : {"exponential", "inverse_power"}, default "exponential"
+    fit_period : tuple of (int or None, int or None), default (None, None)
+        Ages in months whose factors enter the fit: from the first
+        (inclusive) to the second (exclusive); ``None`` is open-ended.
+    extrap_periods : int, default 100
+        Number of periods past the oldest age the curve is extrapolated.
+    attachment_age : int, optional
+        Age in months the curve attaches at (the first age at or after it);
+        the oldest age by default.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ChainLadder, TailCurve, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = ChainLadder(tail=TailCurve()).fit(tri, "values")
+    >>> 1.0 < fit.tail < 1.05
+    True
+    """
+    def __new__(cls, /, curve: str = "exponential", fit_period: tuple[int |None, int |None] = ..., extrap_periods: int = 100, attachment_age: int |None = None) -> TailCurve: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def attachment_age(self, /) -> int |None:
+        """
+        Age in months the curve attaches at; ``None`` is the oldest age.
+        """
+    @property
+    def curve(self, /) -> str:
+        """
+        The curve fitted to ``f - 1``.
+        """
+    @property
+    def extrap_periods(self, /) -> int:
+        """
+        Number of periods past the oldest age the curve is extrapolated.
+        """
+    @property
+    def fit_period(self, /) -> tuple[int |None, int |None]:
+        """
+        Ages whose factors enter the fit, from (inclusive) and to
+        (exclusive).
+        """
+
+@final
+class TailLogLinear:
+    """
+    R ChainLadder's ``tail = TRUE`` rule (its ``tailfactor`` function).
+    
+    When the third- and second-last factors multiply to more than 1.0001,
+    ``ln(f - 1)`` is regressed on the development index over the factors
+    above 1 and the next 100 extrapolated factors are multiplied; otherwise
+    the tail is 1. A tail above 2 is reset to 1, as R does.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import Mack, TailLogLinear, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = Mack(tail=TailLogLinear()).fit(tri, "values")
+    >>> fit.tail > 1.0 and fit.standard_error[0] > 0.0
+    True
+    """
+    def __new__(cls, /) -> TailLogLinear: ...
+    def __repr__(self, /) -> str: ...
 
 @final
 class Terms:
