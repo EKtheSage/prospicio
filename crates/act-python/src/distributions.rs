@@ -33,7 +33,7 @@ use crate::to_py;
 /// 1000.0
 #[pyclass(name = "Lognormal", module = "actuarialrs.distributions", frozen)]
 pub(crate) struct PyLognormal {
-    inner: act_prob::Lognormal,
+    pub(crate) inner: act_prob::Lognormal,
 }
 
 #[pymethods]
@@ -271,6 +271,85 @@ pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
         "expected a distribution ({SEVERITIES} or Sampled), got {}",
         type_name(obj)
     )))
+}
+
+/// A distribution back as the Python class of its family.
+pub(crate) fn dist_to_py(py: Python<'_>, d: Dist) -> PyResult<Py<PyAny>> {
+    use crate::pareto::{
+        PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
+        PyPiecewisePareto, PyTweedie, PyWeibull,
+    };
+    Ok(match d {
+        Dist::Lognormal(inner) => Py::new(py, PyLognormal { inner })?.into_any(),
+        Dist::Pareto(inner) => Py::new(py, PyPareto { inner })?.into_any(),
+        Dist::PiecewisePareto(inner) => Py::new(py, PyPiecewisePareto { inner })?.into_any(),
+        Dist::LogAffinePareto(inner) => Py::new(py, PyLogAffinePareto { inner })?.into_any(),
+        Dist::GeneralizedPareto(inner) => Py::new(py, PyGeneralizedPareto { inner })?.into_any(),
+        Dist::Gamma(inner) => Py::new(py, PyGamma { inner })?.into_any(),
+        Dist::Tweedie(inner) => Py::new(py, PyTweedie { inner })?.into_any(),
+        Dist::Weibull(inner) => Py::new(py, PyWeibull { inner })?.into_any(),
+        Dist::Loglogistic(inner) => Py::new(py, PyLoglogistic { inner })?.into_any(),
+        Dist::Mixture(inner) => Py::new(py, PyMixture { inner })?.into_any(),
+        Dist::Grid(inner) => Py::new(py, PyGrid { inner })?.into_any(),
+        Dist::Sampled(inner) => Py::new(py, PySampled { inner })?.into_any(),
+        Dist::Custom(_) => {
+            return Err(PyTypeError::new_err(
+                "a custom distribution cannot be loaded",
+            ));
+        }
+    })
+}
+
+/// A distribution as a JSON document: the family and the parameters its
+/// constructor takes, versioned, numbers bit for bit. ``from_json`` reads
+/// it back to an equal distribution of the same class.
+///
+/// A ``Custom`` cannot be saved: it is a Python function.
+///
+/// Parameters
+/// ----------
+/// dist : a distribution
+///     Any distribution class, ``Sampled`` and ``Mixture`` included.
+///
+/// Returns
+/// -------
+/// str
+///
+/// Raises
+/// ------
+/// ValueError
+///     For a ``Custom``.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.distributions import Lognormal, from_json, to_json
+/// >>> text = to_json(Lognormal(7.0, 0.5))
+/// >>> from_json(text).mean() == Lognormal(7.0, 0.5).mean()
+/// True
+#[pyfunction]
+pub(crate) fn to_json(dist: &Bound<'_, PyAny>) -> PyResult<String> {
+    extract_dist(dist)?.to_json().map_err(to_py)
+}
+
+/// A distribution from a document written by ``to_json``, as the class of
+/// its family.
+///
+/// Parameters
+/// ----------
+/// text : str
+///
+/// Returns
+/// -------
+/// a distribution
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the document is malformed, of another format or a newer
+///     version, or its parameters are out of range.
+#[pyfunction]
+pub(crate) fn from_json(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
+    dist_to_py(py, Dist::from_json(text).map_err(to_py)?)
 }
 
 /// The classes accepted as a severity, for error messages.

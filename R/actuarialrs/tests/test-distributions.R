@@ -84,3 +84,17 @@ e <- tryCatch(aggregate(lob, keep = "state"), error = identity)
 stopifnot(grepl("dimension", conditionMessage(e)), identical(conditionCall(e), quote(aggregate(lob, keep = "state"))))
 
 cat("actuarialrs R tests passed\n")
+
+# Save and load as JSON.
+for (d in list(lognormal(7, 0.5), pareto(1e5, 1.5), pareto(1e5, 1.5, truncation = 1e7),
+               piecewise_pareto(c(1, 10, 100), c(1.2, 1.8, 2.5)), log_affine_pareto(100, 1.5, gamma = 0.3),
+               generalized_pareto(0.25, 3), gamma_distribution(2, 500), tweedie(1000, 2, 1.5),
+               weibull_distribution(1.5, 1000), loglogistic_distribution(4, 900),
+               mixture_distribution(c(0.7, 0.3), list(lognormal(7, 0.5), pareto(1e5, 2))),
+               grid_distribution(0.5, c(0.1, 0.4, 0.3, 0.2)), sampled(c(3, 1, 2)))) {
+  text <- dist_to_json(d)
+  back <- dist_from_json(text)
+  stopifnot(identical(class(back), class(d)), identical(dist_to_json(back), text),
+            identical(mean(back), mean(d)))
+}
+stopifnot(inherits(try(dist_to_json(custom_distribution(function(x) 1 - exp(-x))), silent = TRUE), "try-error"))

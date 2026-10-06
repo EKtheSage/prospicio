@@ -4,10 +4,12 @@
 \alias{loglogistic_distribution}
 \title{Loglogistic distribution}
 \usage{
-loglogistic_distribution(shape, scale)
+loglogistic_distribution(shape, scale, ptr = NULL)
 }
 \arguments{
 \item{shape, scale}{Finite and positive.}
+
+\item{ptr}{Internal: an existing object to wrap.}
 }
 \value{
 A \code{loglogistic_distribution} object, which inherits from

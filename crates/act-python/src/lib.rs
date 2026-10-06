@@ -33,7 +33,7 @@ mod actuarialrs_native {
     #[pymodule_export]
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
-        PyPredictiveDistribution, PySampled,
+        PyPredictiveDistribution, PySampled, from_json, to_json,
     };
     #[pymodule_export]
     use super::models::{

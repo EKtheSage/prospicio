@@ -16,6 +16,10 @@ hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, 
 
 blend_by_component_rust <- function(models, weights, seed) .Call(wrap__blend_by_component_rust, models, weights, seed)
 
+dist_to_json_rust <- function(dist) .Call(wrap__dist_to_json_rust, dist)
+
+dist_from_json_rust <- function(text) .Call(wrap__dist_from_json_rust, text)
+
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
 
 reorder_groups_rust <- function(pd, dim, correlation, seed) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed)

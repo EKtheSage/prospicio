@@ -23,6 +23,8 @@ reference:
       - distributions.Loglogistic
       - distributions.Mixture
       - distributions.Custom
+      - distributions.to_json
+      - distributions.from_json
       - distributions.Grid
       - distributions.DiscretizationReport
       - distributions.Sampled
