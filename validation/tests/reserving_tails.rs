@@ -63,6 +63,7 @@ fn model(dataset: &str, method: &str) -> Mack {
         "tail_constant" => (volume, constant(1.05, 0.5, None)),
         "tail_constant_decay" => (volume, constant(1.1, 0.75, None)),
         "tail_constant_attach" => (volume, constant(1.05, 0.5, Some(72))),
+        "tail_constant_below_one" => (volume, constant(0.98, 0.5, None)),
         "tail_curve_exponential" => (volume, Tail::Curve(TailCurve::default())),
         "tail_curve_inverse_power" => (
             volume,
@@ -79,6 +80,13 @@ fn model(dataset: &str, method: &str) -> Mack {
                 ..Default::default()
             }),
         ),
+        "tail_curve_off_grid" => (
+            volume,
+            Tail::Curve(TailCurve {
+                fit_period: (Some(30), Some(102)),
+                ..Default::default()
+            }),
+        ),
         "tail_curve_attach" => (
             volume,
             Tail::Curve(TailCurve {
@@ -91,6 +99,13 @@ fn model(dataset: &str, method: &str) -> Mack {
             volume,
             Tail::Bondy(TailBondy {
                 earliest_age: Some(36),
+                attachment_age: None,
+            }),
+        ),
+        "tail_bondy_off_grid" => (
+            volume,
+            Tail::Bondy(TailBondy {
+                earliest_age: Some(30),
                 attachment_age: None,
             }),
         ),

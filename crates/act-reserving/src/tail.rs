@@ -110,7 +110,9 @@ pub struct TailConstant {
     /// Share of each period's development kept in the next, from 0 to 1.
     pub decay: f64,
     /// Age the factor attaches at: the first age at or after it. `None` is
-    /// the oldest age.
+    /// the oldest age. An age at or before the youngest replaces every
+    /// estimated factor (chainladder-python ignores such an attachment and
+    /// attaches at the oldest age).
     pub attachment_age: Option<Lag>,
 }
 
@@ -165,9 +167,10 @@ pub enum CurveShape {
 pub struct TailCurve {
     /// Curve fitted to `f - 1`.
     pub curve: CurveShape,
-    /// Ages whose factors enter the fit: from the first (inclusive) to the
-    /// second (exclusive), as chainladder-python's `fit_period`; `None` is
-    /// open-ended.
+    /// Ages whose factors enter the fit, as chainladder-python's
+    /// `fit_period`: from the last age at or before the first (inclusive)
+    /// to the last age at or before the second (exclusive). `None` is
+    /// open-ended, and a start before the youngest age starts there.
     pub fit_period: (Option<Lag>, Option<Lag>),
     /// Number of periods past the oldest age the curve is extrapolated.
     pub extrap_periods: usize,
@@ -217,8 +220,9 @@ impl Default for TailCurve {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TailBondy {
-    /// First age whose factor enters the fit: the first age at or after it.
-    /// `None` is the age of the last factor.
+    /// First age whose factor enters the fit: the last age at or before
+    /// it, as chainladder-python reads it. `None` is the age of the last
+    /// factor.
     pub earliest_age: Option<Lag>,
     /// The factor from this age (the last age at or before it) to the next
     /// is kept; the fitted factors replace those after it. `None` is the age
@@ -242,8 +246,10 @@ pub struct TailFit {
     /// past the oldest age.
     pub factor: f64,
     /// Variance parameter of the tail factor for Mack, extrapolated
-    /// log-linearly as R's `tail_SE` and chainladder-python do; 0 when the
-    /// factor is not above 1, NaN when it cannot be extrapolated.
+    /// log-linearly as R's `tail_SE` and chainladder-python do; 0 for a
+    /// factor of exactly 1 (no tail), NaN when it cannot be extrapolated. A
+    /// factor below 1 is read where a factor of 1.001 would be, as
+    /// chainladder-python does (R ignores a tail below 1).
     pub sigma: f64,
     /// Standard error of the tail factor, extrapolated the same way.
     pub std_err: f64,
@@ -277,10 +283,13 @@ impl Tail {
                 "the fitted tail factor is not finite and positive",
             ));
         }
-        let (sigma, std_err) = if factor > 1.0 {
-            tail_statistics(development, factor)
-        } else {
+        // No tail carries no risk. A tail below 1 has no position on the
+        // line through ln(f - 1), so chainladder-python's
+        // `_get_tail_weighted_time_period` reads it where 1.001 would be.
+        let (sigma, std_err) = if factor == 1.0 {
             (0.0, 0.0)
+        } else {
+            tail_statistics(development, if factor > 1.0 { factor } else { 1.001 })
         };
         Ok(TailFit {
             attachment,
@@ -349,10 +358,13 @@ impl TailCurve {
         if self.extrap_periods == 0 {
             return Err(Error::Tail("extrap_periods must be at least 1"));
         }
-        let (start, end) = self.fit_period;
-        if (start.is_some() || end.is_some()) && ages.len() != n_links + 1 {
-            return Err(Error::Tail("the development fit has no ages"));
-        }
+        // Positions as chainladder-python's `int(age / grain - 1)`: the last
+        // age at or before the given one.
+        let position = |age: Option<Lag>, open: usize| match age {
+            Some(age) => Ok(last_age_at_or_before(ages, n_links, age)?.unwrap_or(0)),
+            None => Ok::<_, Error>(open),
+        };
+        let fitted_range = position(self.fit_period.0, 0)?..position(self.fit_period.1, n_links)?;
         let x_of = |k: f64| match self.curve {
             CurveShape::Exponential => k,
             CurveShape::InversePower => k.ln(),
@@ -360,11 +372,7 @@ impl TailCurve {
         let points: Vec<(f64, f64)> = estimated
             .iter()
             .enumerate()
-            .filter(|&(k, &f)| {
-                f > CURVE_THRESHOLD
-                    && start.is_none_or(|s| ages[k] >= s)
-                    && end.is_none_or(|e| ages[k] < e)
-            })
+            .filter(|&(k, &f)| f > CURVE_THRESHOLD && fitted_range.contains(&k))
             .map(|(k, &f)| (x_of((k + 1) as f64), (f - 1.0).ln()))
             .collect();
         let (a, b) = least_squares_line(&points).ok_or(Error::Tail(
@@ -399,21 +407,16 @@ impl TailBondy {
             return Err(Error::Tail("the Bondy tail needs a development factor"));
         }
         let initial = match self.earliest_age {
-            Some(age) => first_age_at_or_after(ages, n_links, age)?,
+            Some(age) => last_age_at_or_before(ages, n_links, age)?
+                .ok_or(Error::Tail("earliest_age is before the youngest age"))?,
             None => n_links - 1,
         };
         if initial >= n_links {
             return Err(Error::Tail("earliest_age must be before the oldest age"));
         }
         let kept = match self.attachment_age {
-            Some(age) => {
-                if ages.len() != n_links + 1 {
-                    return Err(Error::Tail("the development fit has no ages"));
-                }
-                ages.iter()
-                    .rposition(|&a| a <= age)
-                    .ok_or(Error::Tail("attachment_age is before the youngest age"))?
-            }
+            Some(age) => last_age_at_or_before(ages, n_links, age)?
+                .ok_or(Error::Tail("attachment_age is before the youngest age"))?,
             None => n_links - 1,
         };
         if kept < initial {
@@ -584,6 +587,16 @@ fn first_age_at_or_after(ages: &[Lag], n_links: usize, age: Lag) -> Result<usize
         .ok_or(Error::Tail("the age is past the oldest age"))
 }
 
+/// Index of the last age at or before `age`, `None` when `age` is before
+/// the youngest. On ages that are multiples of the grain from one grain
+/// on, this is chainladder-python's position `int(age / grain) - 1`.
+fn last_age_at_or_before(ages: &[Lag], n_links: usize, age: Lag) -> Result<Option<usize>> {
+    if ages.len() != n_links + 1 {
+        return Err(Error::Tail("the development fit has no ages"));
+    }
+    Ok(ages.iter().rposition(|&a| a <= age))
+}
+
 /// Development periods in a year, the number of factors past the oldest age
 /// chainladder-python keeps apart before the one to ultimate (its
 /// `projection_period` of 12 months).
@@ -653,6 +666,69 @@ mod tests {
         assert_eq!(fit.attachment, 5);
         close(fit.ldf[5..].iter().product(), 1.05, 1e-12);
         close(fit.factor, 1.004156, 5e-7);
+    }
+
+    #[test]
+    fn constant_attached_at_the_youngest_age_replaces_every_factor() {
+        // A deliberate departure: chainladder-python 0.10.1 tests
+        // `if attach_idx:` in `_apply_decay`, so attachment_age=12 on RAA
+        // (index 0) attaches at the oldest age instead. Here every estimated
+        // factor is replaced by the spread of 1.05, whose first factor is
+        // chainladder-python's first factor past the oldest age for
+        // TailConstant(1.05), 1.0240107.
+        let fit = Tail::Constant(TailConstant {
+            factor: 1.05,
+            attachment_age: Some(12),
+            ..Default::default()
+        })
+        .fit(&raa_development())
+        .unwrap();
+        assert_eq!(fit.attachment, 0);
+        close(fit.ldf[0], 1.024_010_7, 5e-8);
+        close(fit.ldf.iter().product(), 1.05, 1e-12);
+    }
+
+    #[test]
+    fn ages_off_the_grid_take_the_age_at_or_before() {
+        // chainladder-python 0.10.1 indexes by int(age / grain - 1), so on
+        // RAA TailCurve(fit_period=(30, 102)) is (24, 96): a tail of
+        // 1.011280345; TailBondy(earliest_age=30) fits from age 24.
+        let dev = raa_development();
+        let curve = |fit_period| {
+            Tail::Curve(TailCurve {
+                fit_period,
+                ..Default::default()
+            })
+            .fit(&dev)
+            .unwrap()
+        };
+        let off = curve((Some(30), Some(102)));
+        close(off.factor, 1.011_280_345, 5e-10);
+        assert_eq!(off, curve((Some(24), Some(96))));
+        let bondy = |earliest_age| {
+            Tail::Bondy(TailBondy {
+                earliest_age: Some(earliest_age),
+                attachment_age: None,
+            })
+            .fit(&dev)
+            .unwrap()
+        };
+        assert_eq!(bondy(30), bondy(24));
+        let before = Tail::Bondy(TailBondy {
+            earliest_age: Some(6),
+            attachment_age: None,
+        });
+        assert!(matches!(before.fit(&dev), Err(Error::Tail(_))));
+    }
+
+    #[test]
+    fn below_one_reads_risk_at_1_001() {
+        // chainladder-python 0.10.1 TailConstant(0.98) on RAA: tail sigma
+        // 0.112752185 and standard error 0.000601256 (validation/reference/
+        // reserving_tails_python.csv).
+        let fit = Tail::from(0.98).fit(&raa_development()).unwrap();
+        close(fit.sigma, 0.112_752_185_376_787, 1e-9);
+        close(fit.std_err, 0.000_601_256_276_110, 1e-12);
     }
 
     #[test]

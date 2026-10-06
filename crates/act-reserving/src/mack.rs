@@ -15,12 +15,14 @@ use act_core::Lag;
 /// The factors use the development estimator's `alpha`: the conditional
 /// variance of `C[k+1]` given `C[k]` is `sigma_k^2 C[k]^(2 - alpha)`.
 ///
-/// A tail above 1 is one more development step, from the oldest age to
-/// ultimate, with its own sigma and standard error, as R's
+/// A tail other than 1 is one more development step, from the oldest age
+/// to ultimate, with its own sigma and standard error, as R's
 /// `MackChainLadder(tail = ...)` and chainladder-python's `MackChainladder`
 /// on a tailed pattern do. Unless given, both are extrapolated log-linearly
 /// (see [`TailFit`](crate::TailFit)). Every origin, the oldest included,
-/// carries the tail's risk.
+/// carries the tail's risk. A tail below 1 follows chainladder-python: it
+/// scales the ultimates and carries the risk read where a tail of 1.001
+/// would be. R's `MackChainLadder` ignores a tail below 1 altogether.
 ///
 /// ```
 /// use act_reserving::{Mack, Tail};
@@ -46,11 +48,11 @@ pub struct Mack {
     pub development: Development,
     /// Development past the oldest age; the default is no tail.
     pub tail: Tail,
-    /// The tail's sigma, R's `tail.sigma`; `None` extrapolates it. Used
-    /// only when the tail factor is above 1.
+    /// The tail's sigma, R's `tail.sigma`; `None` extrapolates it. Unused
+    /// when the tail factor is 1.
     pub tail_sigma: Option<f64>,
     /// The tail factor's standard error, R's `tail.se`; `None` extrapolates
-    /// it. Used only when the tail factor is above 1.
+    /// it. Unused when the tail factor is 1.
     pub tail_std_err: Option<f64>,
 }
 
@@ -114,7 +116,7 @@ impl Mack {
             });
         }
         let tail = &mut chain_ladder.tail;
-        if tail.factor > 1.0 {
+        if tail.factor != 1.0 {
             for (given, fitted) in [
                 (self.tail_sigma, &mut tail.sigma),
                 (self.tail_std_err, &mut tail.std_err),
@@ -273,6 +275,23 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(bad.fit(&raa(), "values"), Err(Error::Tail(_))));
+    }
+
+    #[test]
+    fn tail_below_one_follows_chainladder_python() {
+        // chainladder-python 0.10.1: MackChainladder on TailConstant(0.98)
+        // of RAA gives a total ultimate of 208859.783696 and a total
+        // standard error of 26343.488605. R's MackChainLadder(RAA,
+        // tail = 0.98) ignores the tail (213122.2 and 26880.74).
+        let mack = Mack {
+            tail: 0.98.into(),
+            ..Default::default()
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        close(mack.chain_ladder.total_ultimate(), 208_859.783_696, 1e-5);
+        close(mack.total_standard_error, 26_343.488_605, 1e-5);
+        assert!(mack.standard_error[0] > 0.0);
     }
 
     #[test]

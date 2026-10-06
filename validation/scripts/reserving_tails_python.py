@@ -46,6 +46,9 @@ METHODS = {
         "TailConstant(tail=1.05, attachment_age=72)",
         lambda: cl.TailConstant(tail=1.05, attachment_age=72),
     ),
+    # A tail below 1 scales the ultimates and carries the risk read where a
+    # tail of 1.001 would be (R's MackChainLadder ignores such a tail).
+    "tail_constant_below_one": ("TailConstant(tail=0.98)", lambda: cl.TailConstant(tail=0.98)),
     "tail_curve_exponential": ("TailCurve()", lambda: cl.TailCurve()),
     "tail_curve_inverse_power": (
         "TailCurve(curve='inverse_power')",
@@ -55,6 +58,11 @@ METHODS = {
         "TailCurve(fit_period=(36, 108), extrap_periods=50)",
         lambda: cl.TailCurve(fit_period=(36, 108), extrap_periods=50),
     ),
+    # Ages off the 12-month grid: positions int(age / 12 - 1), so (24, 96).
+    "tail_curve_off_grid": (
+        "TailCurve(fit_period=(30, 102))",
+        lambda: cl.TailCurve(fit_period=(30, 102)),
+    ),
     "tail_curve_attach": (
         "TailCurve(attachment_age=60)",
         lambda: cl.TailCurve(attachment_age=60),
@@ -63,6 +71,11 @@ METHODS = {
     "tail_bondy_generalized": (
         "TailBondy(earliest_age=36)",
         lambda: cl.TailBondy(earliest_age=36),
+    ),
+    # Off the grid: ddims[int(30 / 12) - 1], age 24.
+    "tail_bondy_off_grid": (
+        "TailBondy(earliest_age=30)",
+        lambda: cl.TailBondy(earliest_age=30),
     ),
     "tail_bondy_attach": (
         "TailBondy(earliest_age=36, attachment_age=72)",
