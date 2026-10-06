@@ -137,6 +137,21 @@ pub fn check(cases: &[Case], mut eval: impl FnMut(&Case) -> Option<f64>) {
 /// (columns `origin,development,value`: origin year, age in months, value)
 /// with one column, `values`.
 pub fn triangle(name: &str) -> Triangle {
+    load_triangle(name, &[("value", "values")])
+}
+
+/// Loads a cumulative annual triangle from `validation/data/<name>.csv`
+/// (columns `origin,development` and the named value columns), with one
+/// measure column of the same name per entry of `columns`, in that order:
+/// `triangle_columns("clrd_wkcomp", &["paid", "premium"])`.
+pub fn triangle_columns(name: &str, columns: &[&str]) -> Triangle {
+    let pairs: Vec<(&str, &str)> = columns.iter().map(|&c| (c, c)).collect();
+    load_triangle(name, &pairs)
+}
+
+/// The triangle of `data/<name>.csv` with each `(file column, measure)`
+/// of `columns` as a measure column.
+fn load_triangle(name: &str, columns: &[(&str, &str)]) -> Triangle {
     let rows = read_rows(&format!("data/{name}.csv"));
     let parse = |row: &BTreeMap<String, String>, k: &str| -> f64 {
         row[k]
@@ -151,12 +166,16 @@ pub fn triangle(name: &str) -> Triangle {
         .iter()
         .map(|r| parse(r, "development") as Lag)
         .collect();
-    let values: Vec<f64> = rows.iter().map(|r| parse(r, "value")).collect();
+    let values: Vec<(&str, Vec<f64>)> = columns
+        .iter()
+        .map(|&(file, measure)| (measure, rows.iter().map(|r| parse(r, file)).collect()))
+        .collect();
+    let values: Vec<(&str, &[f64])> = values.iter().map(|(n, v)| (*n, v.as_slice())).collect();
     Triangle::from_long(&Long {
         keys: &[],
         origin: &origin,
         development: DevelopmentColumn::Age(&ages),
-        values: &[("values", &values)],
+        values: &values,
         origin_grain: Grain::Year,
         development_grain: Grain::Year,
         cumulative: true,

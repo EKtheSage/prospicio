@@ -1,5 +1,6 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
-//! ladder, Mack and the ODP bootstrap, `docs/design/triangle.md`) for the R
+//! ladder, Mack, the expected-loss methods and the ODP bootstrap,
+//! `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the R
 //! `reserving.R` API.
 //!
 //! Arrays cross the boundary flattened row-major over the Rust axes
@@ -7,10 +8,11 @@
 //! observed; R reshapes them. Months come in as (year, month) integer pairs.
 
 use act_reserving::{
-    Average, ChainLadder, ChainLadderFit as ChainLadderInner, Development, DevelopmentColumn,
-    FitTable, Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
-    OdpBootstrapFits, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation,
-    Triangle as TriangleInner,
+    Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
+    ChainLadderFit as ChainLadderInner, Development, DevelopmentColumn, ExpectedLoss,
+    ExpectedLossFit as ExpectedLossInner, FitTable, Grain, Label, Lag, Long, Mack,
+    MackFit as MackInner, Month, OdpBootstrap, OdpBootstrapFits, ProcessDistribution, ReserveFit,
+    SegmentFits, SigmaInterpolation, Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -57,6 +59,14 @@ fn development(average: &str, sigma_interpolation: &str) -> Result<Development> 
     Ok(Development {
         average,
         sigma_interpolation,
+    })
+}
+
+/// The chain ladder that gives a method its development pattern.
+fn pattern(average: &str, sigma_interpolation: &str, tail: f64) -> Result<ChainLadder> {
+    Ok(ChainLadder {
+        development: development(average, sigma_interpolation)?,
+        tail,
     })
 }
 
@@ -456,12 +466,9 @@ impl Triangle {
         sigma_interpolation: &str,
         tail: f64,
     ) -> Result<ChainLadderFit> {
-        let inner = ChainLadder {
-            development: development(average, sigma_interpolation)?,
-            tail,
-        }
-        .fit_segments(&self.inner, column)
-        .map_err(to_r)?;
+        let inner = pattern(average, sigma_interpolation, tail)?
+            .fit_segments(&self.inner, column)
+            .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
     }
 
@@ -472,6 +479,89 @@ impl Triangle {
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(MackFit { inner })
+    }
+
+    /// The expected loss ratio method on loss `column` with exposure from
+    /// the `exposure` column; the chain ladder gives the development
+    /// pattern reported.
+    fn expected_loss(
+        &self,
+        column: &str,
+        exposure: &str,
+        apriori: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: f64,
+    ) -> Result<ExpectedLossFit> {
+        let inner = ExpectedLoss {
+            apriori,
+            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(ExpectedLossFit { inner })
+    }
+
+    fn bornhuetter_ferguson(
+        &self,
+        column: &str,
+        exposure: &str,
+        apriori: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: f64,
+    ) -> Result<ExpectedLossFit> {
+        let inner = BornhuetterFerguson {
+            apriori,
+            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(ExpectedLossFit { inner })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn benktander(
+        &self,
+        column: &str,
+        exposure: &str,
+        apriori: f64,
+        n_iters: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: f64,
+    ) -> Result<ExpectedLossFit> {
+        let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
+            .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
+        let inner = Benktander {
+            apriori,
+            n_iters,
+            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(ExpectedLossFit { inner })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cape_cod(
+        &self,
+        column: &str,
+        exposure: &str,
+        trend: f64,
+        decay: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: f64,
+    ) -> Result<CapeCodFit> {
+        let inner = CapeCod {
+            trend,
+            decay,
+            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(CapeCodFit { inner })
     }
 
     fn odp_bootstrap(
@@ -745,6 +835,106 @@ impl MackFit {
     }
 }
 
+/// An expected-loss method (expected loss, Bornhuetter-Ferguson or
+/// Benktander) fitted to every segment of a triangle column, each with its
+/// exposure from another column of the same triangle.
+#[extendr]
+pub(crate) struct ExpectedLossFit {
+    inner: SegmentFits<ExpectedLossInner>,
+}
+
+#[extendr]
+impl ExpectedLossFit {
+    /// The chain ladder that gives the development pattern.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self.inner.map(|f| f.chain_ladder.clone()),
+        }
+    }
+
+    fn exposure(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.exposure.clone())
+    }
+
+    fn apriori(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.apriori.clone())
+    }
+
+    fn ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.ultimate.clone())
+    }
+
+    fn reserve(&self) -> Vec<f64> {
+        by_origin(&self.inner, ExpectedLossInner::reserves)
+    }
+
+    fn total_ultimate(&self) -> f64 {
+        self.inner.total_ultimate()
+    }
+
+    fn total_reserve(&self) -> f64 {
+        self.inner.total_reserve()
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys, values)?,
+        })
+    }
+}
+
+/// A Cape Cod fitted to every segment of a triangle column: the
+/// Bornhuetter-Ferguson fit on the detrended apriori, and the trended
+/// apriori it came from.
+#[extendr]
+pub(crate) struct CapeCodFit {
+    inner: SegmentFits<CapeCodInner>,
+}
+
+#[extendr]
+impl CapeCodFit {
+    /// The Bornhuetter-Ferguson fit on the detrended apriori.
+    fn expected_loss(&self) -> ExpectedLossFit {
+        ExpectedLossFit {
+            inner: self.inner.map(|f| f.expected_loss.clone()),
+        }
+    }
+
+    fn trended_apriori(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.trended_apriori.clone())
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys, values)?,
+        })
+    }
+}
+
 /// An ODP bootstrap of every segment of a triangle column. `fitted` and
 /// `residuals` are row-major over origin x development, NaN where not
 /// observed.
@@ -806,5 +996,7 @@ extendr_module! {
     impl Triangle;
     impl ChainLadderFit;
     impl MackFit;
+    impl ExpectedLossFit;
+    impl CapeCodFit;
     impl OdpBootstrapFit;
 }

@@ -2,8 +2,11 @@
 //! one-year view.
 //!
 //! v0.1 so far: the [`Triangle`] (`docs/design/triangle.md`), development
-//! factors, [`ChainLadder`], [`Mack`] and the [`OdpBootstrap`]. Results are checked against R
-//! ChainLadder and chainladder-python in `validation/tests/reserving.rs`.
+//! factors, [`ChainLadder`], [`Mack`] and the [`OdpBootstrap`]; v0.2 adds
+//! the expected-loss family ([`ExpectedLoss`], [`BornhuetterFerguson`],
+//! [`Benktander`], [`CapeCod`]) driven by an exposure column. Results are
+//! checked against R ChainLadder and chainladder-python in
+//! `validation/tests/reserving*.rs`.
 //!
 //! ```
 //! use act_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
@@ -32,6 +35,7 @@ pub mod bootstrap;
 pub mod chain_ladder;
 pub mod development;
 pub mod error;
+pub mod expected_loss;
 pub mod frame;
 pub mod mack;
 pub mod odp_glm;
@@ -49,6 +53,9 @@ pub use bootstrap::{
 pub use chain_ladder::{ChainLadder, ChainLadderFit};
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
 pub use error::{Error, Result};
+pub use expected_loss::{
+    Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
+};
 pub use frame::TriangleFrame;
 pub use mack::{Mack, MackFit};
 pub use odp_glm::{OdpGlm, OdpGlmFit};
