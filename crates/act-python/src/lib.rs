@@ -42,7 +42,8 @@ mod actuarialrs_native {
         PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyHierarchicalStacking,
         PyStackingFit, PyTerms, actual_vs_expected, crps, deviance, elpd_loo, elpd_waic, gini,
         group_k_fold, k_fold, ks_uniform, lift, log_score, lppd, mcmc_diagnostics, pit,
-        pit_from_draws, pit_histogram, pseudo_bma_weights, stacking_weights, time_ordered,
+        pit_from_draws, pit_histogram, pseudo_bma_weights, simulate_from_means, stacking_weights,
+        time_ordered,
     };
     #[pymodule_export]
     use super::pareto::{

@@ -7692,6 +7692,43 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     True
     """
 
+def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: int, seed: int, dispersion: float = 1.0, weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> PredictiveDistribution:
+    """
+    Joint predictive draws from fitted means, for engines that give only
+    a mean per row (the boosting adapters): the family adds process noise
+    and several mean vectors (bootstrap refits) add parameter uncertainty.
+    
+    Simulation ``i`` uses stream ``i`` of ``seed``: it picks one mean vector
+    uniformly, then draws each row's response from the family with that
+    mean, the dispersion and the row's weight. Components are keyed
+    ``row = 0, 1, ...``, as ``GlmFit.predict_distribution`` keys them.
+    
+    Parameters
+    ----------
+    family : str
+        As in ``Glm``.
+    means : list of list of float
+        One or more mean vectors, one value per row each.
+    n_sims : int
+    seed : int
+    dispersion : float, default 1.0
+    weights : list of float, optional
+        Prior weights; 1 by default.
+    theta, power : float, optional
+        Negative binomial ``theta``, Tweedie ``power``.
+    
+    Returns
+    -------
+    PredictiveDistribution
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import simulate_from_means
+    >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
+    >>> round(pd.mean(), 1)
+    0.5
+    """
+
 def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     """
     Stacking weights from pointwise held-out log predictive densities

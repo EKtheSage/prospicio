@@ -104,6 +104,12 @@ reference:
       - models.compare
       - models.Comparison
       - models.actual_vs_expected
+      - models.simulate_from_means
+  - title: Gradient boosting
+    desc: LightGBM and XGBoost behind the model protocol, with joint predictive draws.
+    contents:
+      - boosting.Booster
+      - boosting.BoosterFit
   - title: Pricing
     desc: The collective model, layer rating, reinsurance tower matching, and risk-loaded prices from simulated losses.
     contents:
