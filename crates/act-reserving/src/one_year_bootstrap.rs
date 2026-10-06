@@ -31,7 +31,7 @@
 //!
 //! The development grain must be a year, so that one development period is
 //! the coming year, and every origin short of the last age must have its
-//! latest value on the triangle's valuation diagonal, so that its next cell
+//! latest value on its segment's latest diagonal, so that its next cell
 //! falls in the coming year. A new origin period written in the coming year
 //! is not simulated, as in Merz–Wüthrich, and the development beyond the
 //! last age moves only through the refitted tail.
@@ -322,25 +322,29 @@ impl Prepared {
         segment: &Segment,
         exposure: Option<&Segment>,
         method: &OneYearMethod,
-        (opening, closing): (Month, Month),
+        opening: Month,
     ) -> Result<Self> {
         let (bootstrap, pool) = prepare(segment, &segment.ages)?;
-        // Each new cell must be at the closing valuation: its origin's
-        // latest value is on the opening diagonal.
-        let lagging = bootstrap
-            .chain_ladder
-            .latest_position
+        // Each new cell must be a year after the segment's latest diagonal,
+        // so its origin's latest value is on that diagonal.
+        let latest = &bootstrap.chain_ladder.latest_position;
+        let valuation = |o: usize, d: usize| {
+            triangle.valuation_of(o + segment.origin_offset, d + segment.dev_offset)
+        };
+        let diagonal = latest
+            .iter()
+            .enumerate()
+            .map(|(o, &d)| valuation(o, d))
+            .max()
+            .expect("a segment has an origin");
+        let lagging = latest
             .iter()
             .enumerate()
             .filter(|&(_, &d)| d + 1 < segment.n_dev)
-            .any(|(o, &d)| {
-                triangle.valuation_of(o + segment.origin_offset, d + 1 + segment.dev_offset)
-                    != closing
-            });
+            .any(|(o, &d)| valuation(o, d + 1) != diagonal.add_months(12));
         if lagging {
             return Err(Error::Bootstrap(
-                "the one-year view needs every origin short of the last age on the valuation \
-                 diagonal",
+                "the one-year view needs every origin short of the last age on the latest diagonal",
             ));
         }
         let opening_ultimate = method.ultimate(segment, exposure, opening)?;
@@ -490,13 +494,7 @@ impl OdpBootstrap {
         let (opening, closing) = valuations(triangle)?;
         let segment = triangle.segment(column)?;
         let exposure = method.exposure().map(|e| triangle.segment(e)).transpose()?;
-        let prepared = Prepared::new(
-            triangle,
-            &segment,
-            exposure.as_ref(),
-            method,
-            (opening, closing),
-        )?;
+        let prepared = Prepared::new(triangle, &segment, exposure.as_ref(), method, opening)?;
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
@@ -541,10 +539,10 @@ impl OdpBootstrap {
         let (opening, closing) = valuations(triangle)?;
         let prepared = match method.exposure() {
             None => fit_each(triangle, column, |s| {
-                Prepared::new(triangle, s, None, method, (opening, closing))
+                Prepared::new(triangle, s, None, method, opening)
             })?,
             Some(exposure) => fit_each_with_exposure(triangle, column, exposure, |s, e| {
-                Prepared::new(triangle, s, Some(e), method, (opening, closing))
+                Prepared::new(triangle, s, Some(e), method, opening)
             })?,
         };
 
@@ -969,7 +967,7 @@ mod tests {
     }
 
     #[test]
-    fn needs_annual_development_on_the_valuation_diagonal() {
+    fn needs_annual_development_on_the_latest_diagonal() {
         // Quarterly development: one development period is not a year.
         let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
         let quarterly = Triangle::from_long(&Long {
@@ -993,8 +991,8 @@ mod tests {
                 .unwrap_err(),
             annual
         );
-        // 2021 stops at 24 months, a year short of the valuation diagonal:
-        // its next cell would be in the past year, not the coming one.
+        // 2021 stops at 24 months, a year short of the latest diagonal: its
+        // next cell would be in the past year, not the coming one.
         let lagging = with_premium(
             2020,
             &[
@@ -1006,7 +1004,7 @@ mod tests {
             &[1.0; 4],
         );
         let diagonal = Error::Bootstrap(
-            "the one-year view needs every origin short of the last age on the valuation diagonal",
+            "the one-year view needs every origin short of the last age on the latest diagonal",
         );
         assert_eq!(
             b.one_year(&lagging, "paid", &chain_ladder()).unwrap_err(),
@@ -1017,6 +1015,28 @@ mod tests {
                 .unwrap_err(),
             diagonal
         );
+        // Segments may end on different diagonals: Home's is a year before
+        // Auto's, and each simulates the year after its own.
+        let origin = [
+            2020, 2020, 2020, 2021, 2021, 2022, 2019, 2019, 2019, 2020, 2020, 2021,
+        ]
+        .map(Month::january);
+        let ages = [12, 24, 36, 12, 24, 12];
+        let paid = [100.0, 150.0, 165.0, 110.0, 170.0, 120.0];
+        let staggered = Triangle::from_long(&Long {
+            keys: &[("lob", &[["Auto"; 6], ["Home"; 6]].concat())],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[ages, ages].concat()),
+            values: &[("paid", &[paid, paid].concat())],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let fits = b
+            .one_year_segments(&staggered, "paid", &chain_ladder())
+            .unwrap();
+        assert_eq!(fits.cdr.n_components(), 6);
     }
 
     #[test]
@@ -1066,12 +1086,12 @@ mod tests {
         let segment = tri.segment("values").unwrap();
         let (no, nd) = (segment.n_origins, segment.n_dev);
         let method = chain_ladder();
-        let valuations = valuations(&tri).unwrap();
-        let prepared = Prepared::new(&tri, &segment, None, &method, valuations).unwrap();
+        let (opening, closing) = valuations(&tri).unwrap();
+        let prepared = Prepared::new(&tri, &segment, None, &method, opening).unwrap();
         let run = Run {
             prepared: &prepared,
             method: &method,
-            closing: valuations.1,
+            closing,
             label: None,
         };
 

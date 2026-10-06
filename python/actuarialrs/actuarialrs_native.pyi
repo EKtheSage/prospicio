@@ -5689,8 +5689,8 @@ class OdpBootstrap:
         ----------
         triangle : Triangle
             Cumulative, with any number of segments, an annual development
-            grain, and every origin short of the last age on the valuation
-            diagonal.
+            grain, and every origin short of the last age on its segment's
+            latest diagonal.
         column : str
         method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
             The method refitted at the start and at the end of the year.
@@ -5709,8 +5709,8 @@ class OdpBootstrap:
             If ``method`` is not one of the classes above.
         ValueError
             As ``fit`` and the method's own ``fit``; if the development
-            grain is not a year or an origin short of the last age lags the
-            valuation diagonal; if ``exposure`` is missing for an
+            grain is not a year or an origin short of the last age lags its
+            segment's latest diagonal; if ``exposure`` is missing for an
             expected-loss method or given for ``ChainLadder``; or if the
             refit fails in any simulation (the message counts them and gives
             one).
