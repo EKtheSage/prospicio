@@ -417,3 +417,61 @@ Each Rust method gets a Python class and an R function in the style of
 names, `fit(triangle, column, exposure)` where exposure is needed, results
 by origin and in total, `fit_segments` long tables. Docs are regenerated
 with `cargo xtask docs`.
+
+### 8. The simulated one-year view
+
+Merz–Wüthrich (decision 4) is exact only for volume-weighted factors with
+no tail. Any other method, weighting or tail gets its one-year view by
+re-reserving on the ODP bootstrap ("actuary in the box": Ohlsson and
+Lauzeningks 2009; England, Verrall and Wüthrich 2019):
+
+```rust
+pub enum OneYearMethod {
+    ChainLadder(ChainLadder),
+    ExpectedLoss(ExpectedLoss, String),        // the String names the exposure column
+    BornhuetterFerguson(BornhuetterFerguson, String),
+    Benktander(Benktander, String),
+    CapeCod(CapeCod, String),
+}
+
+impl OdpBootstrap {
+    pub fn one_year(&self, triangle: &Triangle, column: &str, method: &OneYearMethod)
+        -> Result<OneYearFit>;
+    pub fn one_year_segments(&self, triangle: &Triangle, column: &str, method: &OneYearMethod)
+        -> Result<OneYearFits>;
+}
+
+pub struct OneYearFit {
+    pub bootstrap: OdpBootstrapSegment, // fitted values, residuals and scale
+    pub opening_ultimate: Vec<f64>,     // the method on the observed triangle
+    pub opening_reserve: Vec<f64>,
+    pub cdr: PredictiveDistribution,    // claims development result, dimension origin
+}
+```
+
+Per simulation, on its own `StreamRng` stream:
+
+1. Resample the adjusted residuals into a pseudo triangle and re-estimate
+   the volume-weighted factors, as the ODP bootstrap does (parameter
+   error).
+2. Simulate the next calendar diagonal: each origin's next incremental has
+   mean `C_latest * (f*_k - 1)` and the bootstrap's process error with
+   scale `phi`. An origin already at the triangle's last age gets no new
+   cell.
+3. Append that diagonal to the observed triangle (exposure columns carry
+   each origin's latest value forward) and refit `method` on it.
+4. `CDR_i = U0_i - U1_i`, the opening ultimate less the re-estimated one,
+   which equals the opening reserve less the year's simulated payment and
+   the closing reserve.
+
+The CDR is joint across origins (and segments), so its quantiles, VaR and
+TVaR come from `PredictiveDistribution`. A new origin period written in the
+coming year is not simulated, as in Merz–Wüthrich, and the tail beyond the
+triangle's last age develops only through the refitted tail factor.
+
+Check: for the volume-weighted chain ladder without a tail, the standard
+deviation of the simulated CDR matches the Merz–Wüthrich one-year standard
+error within Monte Carlo and method tolerance on RAA, GenIns and ABC, and
+matches the bootstrap results England, Verrall and Wüthrich (2019) publish
+for the Taylor–Ashe (GenIns) triangle. A triangle that lies exactly on its
+chain-ladder pattern has scale zero and a CDR of zero in every simulation.
