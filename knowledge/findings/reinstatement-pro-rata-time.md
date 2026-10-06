@@ -5,6 +5,7 @@ description: Pro rata as to time charges each event's used limit at the share of
 tags: [reinsurance, reinstatements, simulation, aggregate]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T22:30:00Z }
+verified: { by: process:ci, at: 2026-10-06T22:15:18Z }
 sources:
   - id: layer
     resource: ../crates/act-aggregate/src/reinsurance.rs
