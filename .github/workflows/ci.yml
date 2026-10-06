@@ -76,8 +76,12 @@ jobs:
           # Binary packages: lightgbm and xgboost take minutes to compile.
           use-public-rspm: true
       - run: cargo clippy -p act-r -- -D warnings
-      # lightgbm and xgboost are optional engines for booster_fit().
-      - run: Rscript -e "install.packages(c('S7', 'lightgbm', 'xgboost'))"
+      # lightgbm and xgboost are optional engines for booster_fit(). The
+      # boosting tests skip a missing engine and install.packages() only
+      # warns on failure, so check that each one loads.
+      - run: >-
+          Rscript -e "pkgs <- c('S7', 'lightgbm', 'xgboost'); install.packages(pkgs);
+          for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - run: R CMD INSTALL R/actuarialrs
       - name: Run the R tests
         shell: bash
