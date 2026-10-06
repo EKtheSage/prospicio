@@ -7,7 +7,8 @@ each lane's details are in its note under `docs/design/`. Update this file
 when a milestone closes or the plan changes.
 
 For an end-to-end use of the library, see
-[`examples/one_year_view.py`](../examples/one_year_view.py). It covers
+the notebook [`examples/one_year_view.ipynb`](../examples/one_year_view.ipynb),
+saved with its results and charts. It covers
 reserve risk, premium risk from GLMs and property per-risk reinsurance,
 then joins them and sets and allocates capital.
 
@@ -20,11 +21,11 @@ then joins them and sets and allocates capital.
 | v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136) |
 | v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time |
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
-| ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.py`, which CI runs (`python/tests/test_examples.py`) |
+| ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves. Still to do: REML, tensor smooths, rate indication, trend and on-level, credibility |
 | v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD. Still to do: Bayesian reserving and credibility |
-| v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | Not started |
+| v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
 | v1.0: Stable core APIs | Semver for distributions, reserving, aggregate, reinsurance, risk, capital | — |
@@ -118,7 +119,7 @@ what it is aiming for by v1.0.
   1. A simulated one-year view: re-reserving on the ODP bootstrap for any
      method.
   2. Bayesian reserving with `act-bayes` (v0.7).
-  3. Claim-level reserving (v0.8).
+  Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 
@@ -127,9 +128,10 @@ what it is aiming for by v1.0.
 - **Now:** families, links, `Terms` to `Design`, metrics, resampling,
   tuning, `compare`, stacking, monitoring, simulation from means.
 - **Next:**
-  1. Survival models (Kaplan–Meier, Cox, parametric). The claim-level
-     reserving in v0.8 needs them.
-  2. Decide the model artifact format (`docs/design/models.md`).
+  1. Decide the model artifact format (`docs/design/models.md`).
+  2. Survival models (Kaplan–Meier, Cox, parametric), for lapse and
+     claim-closure models. Not urgent while claim-level reserving is
+     parked.
 - **v1.0:** one model protocol for every engine, native or delegated.
 
 ### `act-glm` (Models lane)
@@ -174,6 +176,9 @@ what it is aiming for by v1.0.
 - **v1.0:** API review and deprecation pass, then semver.
 
 ## Waiting on the user
+
+- Claim-level reserving (v0.8): parked until the user has thought through
+  its design.
 
 These come from `architecture.md`'s open decisions:
 

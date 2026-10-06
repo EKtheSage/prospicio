@@ -356,7 +356,7 @@ Reserving and risk ship before pricing, with four gates on the way to v1.0.
 | **v0.5 — GLM** | IRLS, Tweedie, NB, regularization, GLM reserving; R feature parity |
 | **v0.6 — GAM and pricing** | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility |
 | **v0.7 — Bayesian** | Model specs and diagnostics; nutpie sampling; Bayesian reserving and credibility |
-| **v0.8 — Claim-level reserving** | Event histories, payment and closure hazards, severity, ultimate; aggregate to a joint distribution |
+| **v0.8 — Claim-level reserving** | Event histories, payment and closure hazards, severity, ultimate; aggregate to a joint distribution. *Parked 2026-10-06 until the design is thought through (`roadmap.md`)* |
 | **v0.9 — Integrations** | LightGBM / XGBoost and PyTorch adapters on the shared protocol; WASM build |
 | ◆ *Gate* | API review and deprecation pass |
 | **v1.0 — Stable core APIs** | Semver guarantees for distributions, reserving, aggregate, reinsurance, risk, capital |
