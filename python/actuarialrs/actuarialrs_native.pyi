@@ -7549,6 +7549,7 @@ class Tower:
     ['gross', 'ceded', 'net']
     """
     def __new__(cls, /, layers: Sequence[Layer]) -> Tower: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def apply(self, /, events: EventSet) -> PredictiveDistribution:
         """
@@ -7595,6 +7596,45 @@ class Tower:
         Returns
         -------
         list of float
+        """
+    @staticmethod
+    def from_json(text: str) -> Tower:
+        """
+        A tower whose stages inure in order.
+        
+        Each stage's layers see the losses net of all earlier stages, event
+        by event, with annual terms used up in event order.
+        
+        Parameters
+        ----------
+        stages : list of list of Layer
+            No stage may be empty; names must be unique across stages.
+        
+        Returns
+        -------
+        Tower
+        
+        Examples
+        --------
+        >>> from actuarialrs.reinsurance import Layer, Tower
+        >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
+        >>> tower.ceded([30.0])
+        [15.0, 5.0]
+        Reads a document written by ``Tower.to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Tower
+        
+        Raises
+        ------
+        ValueError
+            On malformed JSON, another format, a newer format version, or a
+            term a layer refuses.
         """
     @staticmethod
     def inuring(stages: Sequence[Sequence[Layer]]) -> Tower:
@@ -7668,6 +7708,25 @@ class Tower:
     def stages(self, /) -> list[int]:
         """
         Stage of each layer, in order, starting at 0.
+        """
+    def to_json(self, /) -> str:
+        """
+        The programme as a versioned JSON document: every stage and layer
+        with all its terms, numbers bit for bit. ``Tower.from_json`` reads it
+        back to an equal tower, rebuilding each layer through the same
+        checks; towers also pickle this way.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> from actuarialrs.reinsurance import Layer, Tower
+        >>> tower = Tower.inuring([[Layer.surplus("S", 1e6, 4.0)], [Layer("xl", 2e6, 1e6)]])
+        >>> back = Tower.from_json(tower.to_json())
+        >>> back.to_json() == tower.to_json()
+        True
         """
 
 @final

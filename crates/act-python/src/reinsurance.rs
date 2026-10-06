@@ -409,6 +409,72 @@ impl PyTower {
     /// >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
     /// >>> tower.ceded([30.0])
     /// [15.0, 5.0]
+    /// Reads a document written by ``Tower.to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// Tower
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     On malformed JSON, another format, a newer format version, or a
+    ///     term a layer refuses.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        let inner = Tower::from_json(text).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The programme as a versioned JSON document: every stage and layer
+    /// with all its terms, numbers bit for bit. ``Tower.from_json`` reads it
+    /// back to an equal tower, rebuilding each layer through the same
+    /// checks; towers also pickle this way.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reinsurance import Layer, Tower
+    /// >>> tower = Tower.inuring([[Layer.surplus("S", 1e6, 4.0)], [Layer("xl", 2e6, 1e6)]])
+    /// >>> back = Tower.from_json(tower.to_json())
+    /// >>> back.to_json() == tower.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.borrow().inner.to_json(),)))
+    }
+
+    /// A tower whose stages inure in order.
+    ///
+    /// Each stage's layers see the losses net of all earlier stages, event
+    /// by event, with annual terms used up in event order.
+    ///
+    /// Parameters
+    /// ----------
+    /// stages : list of list of Layer
+    ///     No stage may be empty; names must be unique across stages.
+    ///
+    /// Returns
+    /// -------
+    /// Tower
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reinsurance import Layer, Tower
+    /// >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
+    /// >>> tower.ceded([30.0])
+    /// [15.0, 5.0]
     #[staticmethod]
     fn inuring(stages: Vec<Vec<PyRef<'_, PyLayer>>>) -> PyResult<Self> {
         let stages = stages

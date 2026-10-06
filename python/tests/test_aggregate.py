@@ -220,3 +220,28 @@ def test_reinstatements_pro_rata_as_to_time():
     b = simulate_events(Poisson(3.0), SEV, 200, 4).with_uniform_times()
     assert [a.times(i) for i in range(20)] == [b.times(i) for i in range(20)]
     assert a.events(3) == simulate_events(Poisson(3.0), SEV, 20, 4).events(3)
+
+
+def test_towers_save_and_load_as_json():
+    import pickle
+
+    from actuarialrs.aggregate import EventSet
+
+    tower = Tower.inuring([
+        [Layer.quota_share("QS", 0.3), Layer.surplus("S", 1e6, 4.0)],
+        [Layer("xl", 2e6, 1e6, share=0.6, aggregate_deductible=5e5, premium=3e5,
+               reinstatement_rates=[1.0, 0.5], pro_rata_time=True),
+         Layer("top", math.inf, 3e6)],
+    ])
+    text = tower.to_json()
+    back = Tower.from_json(text)
+    assert back.to_json() == text
+    assert pickle.loads(pickle.dumps(tower)).to_json() == text
+    ev = EventSet.from_years([[3e6, 0.5e6], [8e6]], sums_insured=[[5e6, 1e6], [2e7]],
+                             times=[[0.2, 0.7], [0.5]])
+    a, b = tower.apply(ev), back.apply(ev)
+    assert a.draw_matrix() == b.draw_matrix()
+    with pytest.raises(ValueError):
+        Tower.from_json(text.replace('"share":0.6', '"share":1.6'))
+    with pytest.raises(ValueError):
+        Tower.from_json("{}")

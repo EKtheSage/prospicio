@@ -85,10 +85,10 @@ what it is aiming for by v1.0.
     grid.
 - **Next:**
   1. Seasonal event times, from a density over the year.
-  2. Contract terms as data: towers saved and loaded as JSON, as
-     distributions already are, so a programme can be replayed.
-  3. Loss corridors and other contract features listed in
+  2. Loss corridors and other contract features listed in
      `architecture.md`.
+  (Done: towers saved and loaded as JSON, so a programme can be stored
+  and replayed.)
 - **v1.0:** a reinsurance programme described once and applied to any
   loss source.
 

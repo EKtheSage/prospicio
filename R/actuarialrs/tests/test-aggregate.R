@@ -143,3 +143,12 @@ et <- events_from_years(list(c(5, 2), 9), times = list(c(0.1, 0.6), 0.3))
 stopifnot(event_times(et, 2) == 0.3)
 stopifnot(inherits(try(events_from_years(list(c(5, 2)), times = list(c(0.6, 0.1))), silent = TRUE),
                    "try-error"))
+
+# Towers save and load as JSON.
+tw <- inuring_tower(list(list(quota_share("QS", 0.3), surplus_treaty("S", 1e6, 4)),
+                         list(xol_layer("xl", 2e6, 1e6, premium = 3e5, reinstatement_rates = c(1, 0.5),
+                                        pro_rata_time = TRUE))))
+txt <- tower_to_json(tw)
+back <- tower_from_json(txt)
+stopifnot(identical(tower_to_json(back), txt), identical(back@layer_names, tw@layer_names))
+stopifnot(inherits(try(tower_from_json("{}"), silent = TRUE), "try-error"))
