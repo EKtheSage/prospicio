@@ -13,7 +13,9 @@ risk_profile(
   curves,
   expected_loss = NULL,
   premium = NULL,
-  loss_ratio = NULL
+  loss_ratio = NULL,
+  lower = NULL,
+  upper = NULL
 )
 
 profile_simulate(profile, n_sims, seed)
@@ -42,6 +44,13 @@ with one per band.}
 \item{premium}{Premium per band.}
 
 \item{loss_ratio}{Expected loss ratio: one value, or one per band.}
+
+\item{lower, upper}{Optional bounds of each band's sums insured, one per
+band (\code{NA} for a band without). A band with bounds spreads its risks'
+sums insured uniformly between them: its mean \code{SI} is
+\code{(lower + upper) / 2} (in place of \code{sums_insured}), each simulated loss
+draws its own \code{SI} between the bounds, and the exposure-rated
+expectations average over the band, weighted by sum insured.}
 
 \item{profile}{A \code{risk_profile}.}
 

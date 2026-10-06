@@ -1082,6 +1082,13 @@ fn band_curve(obj: &Bound<'_, PyAny>) -> PyResult<act_pricing::profile::BandCurv
 ///     Premium per band, with ``loss_ratio``.
 /// loss_ratio : float or list of float, optional
 ///     Expected loss ratio, one for all bands or one per band.
+/// lower, upper : list of float or None, optional
+///     Bounds of each band's sums insured (``None`` for a band without).
+///     A band with bounds spreads its risks' sums insured uniformly between
+///     them: its mean ``SI`` is ``(lower + upper) / 2`` (in place of
+///     ``sums_insured``), each simulated loss draws its own ``SI`` between
+///     the bounds, and the exposure-rated expectations average over the
+///     band, weighted by sum insured.
 ///
 /// Examples
 /// --------
@@ -1101,7 +1108,8 @@ pub(crate) struct PyRiskProfile {
 #[pymethods]
 impl PyRiskProfile {
     #[new]
-    #[pyo3(signature = (sums_insured, risks, curves, expected_losses = None, premiums = None, loss_ratio = None))]
+    #[pyo3(signature = (sums_insured, risks, curves, expected_losses = None, premiums = None, loss_ratio = None, lower = None, upper = None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         sums_insured: Vec<f64>,
         risks: Vec<f64>,
@@ -1109,6 +1117,8 @@ impl PyRiskProfile {
         expected_losses: Option<Vec<f64>>,
         premiums: Option<Vec<f64>>,
         loss_ratio: Option<&Bound<'_, PyAny>>,
+        lower: Option<Vec<Option<f64>>>,
+        upper: Option<Vec<Option<f64>>>,
     ) -> PyResult<Self> {
         use act_pricing::profile::{Band, RiskProfile};
         use pyo3::exceptions::PyValueError;
@@ -1174,6 +1184,26 @@ impl PyRiskProfile {
             }
         }
         .map_err(to_py)?;
+        let bands = match (lower, upper) {
+            (None, None) => bands,
+            (Some(lo), Some(up)) => {
+                if lo.len() != n || up.len() != n {
+                    return Err(PyValueError::new_err(
+                        "give one lower and one upper per band",
+                    ));
+                }
+                bands
+                    .into_iter()
+                    .zip(lo.into_iter().zip(up))
+                    .map(|(b, bounds)| match bounds {
+                        (None, None) => Ok(b),
+                        (Some(l), Some(u)) => b.with_bounds(l, u).map_err(to_py),
+                        _ => Err(PyValueError::new_err("a band has both bounds or neither")),
+                    })
+                    .collect::<PyResult<_>>()?
+            }
+            _ => return Err(PyValueError::new_err("give lower and upper together")),
+        };
         Ok(Self {
             inner: RiskProfile::new(bands).map_err(to_py)?,
         })
