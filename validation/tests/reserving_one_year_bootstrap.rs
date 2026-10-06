@@ -1,24 +1,25 @@
 //! The simulated one-year view (`OdpBootstrap::one_year`, decision 8 of
 //! `docs/design/reserving-v02.md`) on RAA, GenIns and ABC.
 //!
-//! * Against Merz and Wüthrich: the standard deviation of each origin's and
-//!   the total claims development result of the volume-weighted chain
-//!   ladder, against R ChainLadder's `CDR(MackChainLadder(tri))`
-//!   `CDR(1)S.E.` (`reference/reserving_cdr_r.csv`). The two differ by
-//!   their process model, not by Monte Carlo error: the ODP bootstrap's
-//!   variance is a constant `phi` times the mean, Mack's is `sigma_k^2`
-//!   times the cumulative value. Re-reserving with Mack's own process
-//!   (England, Verrall and Wüthrich 2019, Appendix 1) reproduces
-//!   Merz–Wüthrich within 0.2%. So each check is against R's value times
-//!   the measured ratio, `GAP`, with a tolerance of five Monte Carlo
-//!   standard errors of the simulated standard deviation, and
-//!   `knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md` records
-//!   and explains the ratios.
-//! * Against the lifetime ODP bootstrap: an origin with one cell left to
-//!   develop has a one-year CDR that is its whole run-off, so its standard
-//!   deviation is R `BootChainLadder`'s for that origin
-//!   (`reference/reserving_bootstrap_r.csv`); every other origin's is below
-//!   it.
+//! * Against the lifetime ODP bootstrap, the independent check: an origin
+//!   with one cell left to develop has a one-year CDR that is its whole
+//!   run-off, so its standard deviation is R `BootChainLadder`'s for that
+//!   origin (`reference/reserving_bootstrap_r.csv`) within that case's
+//!   Monte Carlo tolerance; every other origin's is below it. The
+//!   re-reserving itself is checked independently in `act-reserving`'s unit
+//!   test `mack_bootstrap_rereserving_reproduces_merz_wuthrich`: with Mack's
+//!   process (England, Verrall and Wüthrich 2019, Appendix 1) it reproduces
+//!   Merz–Wüthrich on GenIns within Monte Carlo error.
+//! * A seed-pinned regression of the ODP one-year standard deviation, not
+//!   a check against Merz and Wüthrich: each origin's and the total's
+//!   standard deviation, as a ratio `GAP` to R ChainLadder's
+//!   `CDR(MackChainLadder(tri))` `CDR(1)S.E.`
+//!   (`reference/reserving_cdr_r.csv`), measured by this implementation
+//!   with the same `SIMS` and `SEED`. The two differ by their process
+//!   model: the ODP bootstrap's variance is a constant `phi` times the mean,
+//!   Mack's is `sigma_k^2` times the cumulative value.
+//!   `knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md` records and
+//!   explains the ratios.
 //! * England, Verrall and Wüthrich (2019), Table 2: their Merz–Wüthrich and
 //!   Mack numbers on Taylor–Ashe (GenIns). Their simulated one-year view
 //!   (Table 4) bootstraps Mack's model, not the ODP, so it is not compared.
@@ -33,41 +34,42 @@ use act_validation::{Case, reference, triangle};
 const SIMS: usize = 20_000;
 const SEED: u64 = 20_261_006;
 
-/// Measured ratio of the simulated one-year standard deviation to R's
-/// Merz–Wüthrich `CDR(1)S.E.`, per dataset and origin (`""` for the total),
-/// with `SIMS` simulations from `SEED`.
+/// Ratio of the simulated one-year standard deviation to R's Merz–Wüthrich
+/// `CDR(1)S.E.`, per dataset and origin (`""` for the total), as this
+/// implementation measured it with `SIMS` simulations from `SEED`: a
+/// regression pin, not a reference value.
 const GAP: &[(&str, &str, f64)] = &[
-    ("raa", "1982", 4.8961),
-    ("raa", "1983", 1.7909),
-    ("raa", "1984", 3.7417),
-    ("raa", "1985", 1.1629),
-    ("raa", "1986", 1.0217),
-    ("raa", "1987", 1.6753),
-    ("raa", "1988", 0.6539),
-    ("raa", "1989", 0.7822),
-    ("raa", "1990", 0.3032),
-    ("raa", "", 0.4579),
-    ("genins", "2002", 1.5931),
-    ("genins", "2003", 1.8667),
-    ("genins", "2004", 2.2162),
-    ("genins", "2005", 0.8206),
-    ("genins", "2006", 0.7015),
-    ("genins", "2007", 0.8225),
-    ("genins", "2008", 0.8051),
-    ("genins", "2009", 1.0657),
-    ("genins", "2010", 1.0153),
-    ("genins", "", 1.0234),
-    ("abc", "1978", 5.2849),
-    ("abc", "1979", 5.9505),
-    ("abc", "1980", 2.5659),
-    ("abc", "1981", 1.5402),
-    ("abc", "1982", 1.6324),
-    ("abc", "1983", 0.8158),
-    ("abc", "1984", 0.9978),
-    ("abc", "1985", 0.9030),
-    ("abc", "1986", 0.8033),
-    ("abc", "1987", 0.7962),
-    ("abc", "", 0.9700),
+    ("raa", "1982", 4.9705),
+    ("raa", "1983", 1.8219),
+    ("raa", "1984", 3.8029),
+    ("raa", "1985", 1.1873),
+    ("raa", "1986", 1.0720),
+    ("raa", "1987", 1.8135),
+    ("raa", "1988", 0.7305),
+    ("raa", "1989", 0.9679),
+    ("raa", "1990", 0.5015),
+    ("raa", "", 0.6087),
+    ("genins", "2002", 1.6015),
+    ("genins", "2003", 1.9168),
+    ("genins", "2004", 2.2594),
+    ("genins", "2005", 0.8457),
+    ("genins", "2006", 0.7279),
+    ("genins", "2007", 0.8749),
+    ("genins", "2008", 0.9332),
+    ("genins", "2009", 1.3504),
+    ("genins", "2010", 1.7187),
+    ("genins", "", 1.3620),
+    ("abc", "1978", 5.3052),
+    ("abc", "1979", 5.9808),
+    ("abc", "1980", 2.5855),
+    ("abc", "1981", 1.5543),
+    ("abc", "1982", 1.6533),
+    ("abc", "1983", 0.8376),
+    ("abc", "1984", 1.0352),
+    ("abc", "1985", 0.9606),
+    ("abc", "1986", 0.9103),
+    ("abc", "1987", 1.0783),
+    ("abc", "", 1.1329),
 ];
 
 fn one_year(dataset: &str) -> OneYearFit {
@@ -131,7 +133,7 @@ fn columns(fit: &OneYearFit) -> Vec<(String, Vec<f64>)> {
 }
 
 #[test]
-fn one_year_sd_against_merz_wuthrich() {
+fn one_year_sd_regression_against_merz_wuthrich() {
     let cdr = reference("reserving_cdr_r.csv");
     let mut failures = Vec::new();
     for dataset in ["raa", "genins", "abc"] {
@@ -158,6 +160,7 @@ fn one_year_sd_against_merz_wuthrich() {
                 .find(|(d, o, _)| *d == dataset && *o == origin)
                 .unwrap_or_else(|| panic!("no measured gap for {dataset} {origin}"))
                 .2;
+            // Five Monte Carlo standard errors, and the rounding of `GAP`.
             if (sd - gap * mw).abs() > 5.0 * error + 5e-5 * mw {
                 failures.push(format!(
                     "{dataset} {origin}: sd / mw = {:.4}, measured {gap}",
@@ -171,9 +174,8 @@ fn one_year_sd_against_merz_wuthrich() {
 
 #[test]
 fn one_year_sd_against_lifetime_bootstrap() {
-    // R's BootChainLadder projects from the resampled latest value, the
-    // one-year view from the observed one, which takes out its variance:
-    // up to 2% of the standard deviation on these triangles.
+    // Both project from the resampled latest value, so an origin with one
+    // cell left has the same distribution in both views.
     let boot = reference("reserving_bootstrap_r.csv");
     for dataset in ["raa", "genins", "abc"] {
         let fit = one_year(dataset);
@@ -189,7 +191,7 @@ fn one_year_sd_against_lifetime_bootstrap() {
             if o == 1 {
                 // One cell left: the one-year view is the run-off.
                 assert!(
-                    (sd - want).abs() <= tol + 0.02 * want,
+                    (sd - want).abs() <= tol,
                     "{dataset} {origin}: {sd} vs {want}"
                 );
             }
