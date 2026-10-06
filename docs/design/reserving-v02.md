@@ -244,7 +244,11 @@ As implemented (`crates/act-reserving/src/clark.rs`, parity in
   reference rows come from R with that entry corrected.
 * The search is Nelder–Mead to `tolerance = 1e-10` from R's starting
   curve parameters; it is unbounded where R bounds the Weibull at
-  `omega <= 2`, `theta <= 2 * max(age)`. Losses are divided by the largest
+  `omega <= 2`, `theta <= 2 * max(age)`, both curves at `omega >= 0.01`,
+  the log-logistic at `theta >= min(0.5, ages)`, and the Cape Cod ELR at
+  10 (without a warning). Deviation from R: where R's ELR is pinned at 10,
+  as with exposure in smaller units than the losses, act_reserving returns
+  the unbounded maximum (RAA with premium 1000: ELR 27.61, R 10). Losses are divided by the largest
   chain-ladder ultimate while fitting (R's `magscale`). Errors: fewer than
   four ages is `TooFewAges`; a `max_age` before the last age is
   `InvalidSetting`; an origin (LDF) or all origins (Cape Cod) without a
@@ -256,7 +260,12 @@ As implemented (`crates/act-reserving/src/clark.rs`, parity in
   where comparable, to 1e-3).
 * Python: `ClarkLdf(curve, max_age).fit(triangle, column)` and
   `ClarkCapeCod(curve, max_age).fit(triangle, column, exposure)` return a
-  `ClarkFit`. R bindings follow in a later PR.
+  `ClarkFit`.
+* R: `clark_ldf(triangle, column = NULL, curve = c("loglogistic",
+  "weibull"), max_age = Inf)` and `clark_cape_cod(triangle, column,
+  exposure, curve, max_age = Inf)` return a `clark_fit`; `max_age = Inf`
+  or `NULL` means no truncation, where Python uses `None`.
+  `growth(fit, age)` is vectorised over `age`.
 
 ### 6. `nelder_mead`
 

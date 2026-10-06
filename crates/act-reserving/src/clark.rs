@@ -894,13 +894,19 @@ mod tests {
     /// GenIns with R's `?ClarkCapeCod` premium, `10e6 + 0.4e6 * (0:9)`, as
     /// a `premium` column next to `paid`.
     fn genins_premium() -> Triangle {
+        with_premium(2001, &GENINS, |k| 10_000_000.0 + 400_000.0 * k as f64)
+    }
+
+    /// Annual cumulative `rows` from origin `start` as `paid`, with
+    /// `premium(k)` for origin `k` as a `premium` column.
+    fn with_premium(start: i32, rows: &[&[f64]], premium_of: impl Fn(usize) -> f64) -> Triangle {
         let (mut origin, mut ages, mut paid, mut premium) = (vec![], vec![], vec![], vec![]);
-        for (k, row) in GENINS.iter().enumerate() {
+        for (k, row) in rows.iter().enumerate() {
             for (d, &v) in row.iter().enumerate() {
-                origin.push(Month::january(2001 + k as i32));
+                origin.push(Month::january(start + k as i32));
                 ages.push(12 * (d as u32 + 1));
                 paid.push(v);
-                premium.push(10_000_000.0 + 400_000.0 * k as f64);
+                premium.push(premium_of(k));
             }
         }
         Triangle::from_long(&Long {
@@ -987,6 +993,24 @@ mod tests {
         close(fit.total_standard_error, 3402727.64549859, 1e-5);
         assert_eq!(fit.covariance.len(), 3);
         assert_eq!(fit.exposure.as_ref().unwrap()[9], 13_600_000.0);
+    }
+
+    #[test]
+    fn cape_cod_elr_is_unbounded_unlike_r() {
+        // R ChainLadder 0.2.21's ClarkCapeCod bounds the ELR at 10 without
+        // a warning: on RAA with Premium = 1000 it stops at ELR = 10, omega
+        // = 1.76167, theta = 22.510, reserve 27,418.99 (factr = 1). The
+        // unbounded maximum is R's own fit with Premium = 4000 (ELR
+        // 6.90230116779241, below the cap; factr = 1) scaled by 4: the
+        // same curve and reserve. See
+        // knowledge/references/r-chainladder-clark.md.
+        let fit = ClarkCapeCod::default()
+            .fit(&with_premium(1981, &RAA, |_| 1000.0), "paid", "premium")
+            .unwrap();
+        close(fit.elr.unwrap(), 4.0 * 6.90230116779241, 1e-6);
+        close(fit.omega, 1.37550879649416, 1e-6);
+        close(fit.theta, 36.12485655106858, 1e-6);
+        close(fit.total_reserve(), 115105.046815558, 1e-6);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 ---
 type: Reference Implementation
 title: R ChainLadder ClarkLDF and ClarkCapeCod
-description: R ChainLadder 0.2.21's Clark growth-curve methods, the reference for act_reserving's ClarkLdf and ClarkCapeCod; their age, scale and reporting definitions, a loose optimizer stop, and a wrong Weibull second derivative.
+description: R ChainLadder 0.2.21's Clark growth-curve methods, the reference for act_reserving's ClarkLdf and ClarkCapeCod; their age, scale and reporting definitions, a loose optimizer stop, a silent cap of 10 on the Cape Cod ELR, and a wrong Weibull second derivative.
 resource: https://cran.r-project.org/package=ChainLadder
 tags: [reserving, clark, growth-curve, maximum-likelihood, parity, r]
 status: stable
@@ -72,9 +72,19 @@ Read from `print(ChainLadder:::ClarkLDF)`, `ClarkCapeCod`, `LL.ODP`,
   Weibull standard-error references come from R with that one entry
   replaced.[^generator]
 * **Bounds.** L-BFGS-B bounds the Weibull at `omega <= 2` and
-  `theta <= 2 * max(age)` and warns when a solution sits on a bound;
-  act_reserving's search on `(ln omega, ln theta)` is unbounded. No
-  reference triangle reaches a bound.
+  `theta <= 2 * max(age)`, both curves at `omega >= 0.01`, and the
+  log-logistic at `theta >= min(0.5, ages)`, and warns when a curve
+  parameter sits on a bound. `ClarkCapeCod` also bounds the ELR at
+  `ELR <= 10`, and its warning checks only the curve parameters, so an ELR
+  pinned at 10 passes silently. That happens whenever exposure is in
+  smaller units than the losses (counts, premium in thousands): on RAA
+  with `Premium = 1000` R stops at ELR 10, `omega = 1.7617`,
+  `theta = 22.510` and a reserve of 27,419, where the maximum (R's own fit
+  with `Premium = 4000`, scaled) is ELR 27.609, `omega = 1.3755`,
+  `theta = 36.125` and a reserve of 115,105. act_reserving's search on
+  `(ln omega, ln theta)` with the ELR profiled out is unbounded and returns
+  the maximum, a deliberate difference from R. No reference triangle
+  reaches a bound.[^clark]
 
 [^reserving-v02]: Design note, reserving v0.2 (decision 5)
 [^generator]: Clark R reference generator
