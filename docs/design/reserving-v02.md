@@ -67,6 +67,13 @@ fitted, matching chainladder-python's use of `sample_weight.latest_diagonal`.
 An origin with no observed, finite, positive exposure is an error that names
 the origin. `fit_segments` reads each segment's own exposure.
 
+As implemented: the value read is the latest *cumulative* value, since
+segments are read cumulatively (an incremental triangle's exposure is
+cumulated like its losses). Origins are matched by position in the
+triangle, so the exposure column may observe more origins or ages than the
+losses. The error is `Error::InvalidExposure { column, origin }`; an
+unknown exposure column is `Error::UnknownColumn`.
+
 ### 2. The expected-loss family
 
 ```rust
@@ -106,6 +113,36 @@ trended apriori before detrending (chainladder-python's `apriori_`).
 `ReserveFit` gains `fn ultimate(&self) -> &[f64]`, defaulting to the chain
 ladder's, and the long tables use it, so `SegmentFits` of any method report
 that method's ultimate and reserve.
+
+As implemented (`crates/act-reserving/src/expected_loss.rs`, parity in
+`validation/tests/reserving_expected_loss.rs`, every row of
+`reserving_expected_loss_python.csv` to 1e-9 relative):
+
+* Defaults follow chainladder-python: `apriori = 1`, `n_iters = 1`,
+  `trend = 0`, `decay = 1`. `apriori` must be finite and positive, `trend`
+  finite and above -1, `decay` in `[0, 1]`; otherwise
+  `Error::InvalidSetting { name, value, expected }`. chainladder-python
+  checks none of these.
+* Cape Cod's trend factor is `(1 + trend)^(m / 12)`, `m` the months from the
+  last month of the origin period to the triangle's valuation (at least 0),
+  as chainladder-python's `Triangle.trend(axis="origin")`; in `fit_segments`
+  every segment trends to the whole triangle's valuation. The ultimates do
+  not depend on that choice, since each origin is detrended by its own
+  factor. The decay weight uses the distance between origin positions.
+* `CapeCodFit` is `{ expected_loss: ExpectedLossFit, trended_apriori:
+  Vec<f64> }`; `ExpectedLossFit::apriori` holds the detrended apriori
+  (chainladder-python's `detrended_apriori_`). chainladder-python's
+  `CapeCod(n_iters)` is not offered; ours is its default, `n_iters = 1`.
+* Benktander iterates as written above rather than chainladder-python's
+  closed form `sum(p^k, k < n) latest + p^n U0` (equal up to rounding) and
+  stops once an ultimate no longer changes, so a huge `n_iters` is cheap.
+* Long tables add `exposure` and `apriori` per origin (Cape Cod also
+  `trended_apriori`) and the total `exposure` per segment.
+* Python: `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and `CapeCod`
+  take the settings above plus `average`, `sigma_interpolation` and `tail`
+  for the chain ladder, and `fit(triangle, column, exposure)` fits every
+  segment, returning `ExpectedLossFit` or `CapeCodFit`. R bindings follow
+  in a later PR.
 
 ### 3. Tails
 
