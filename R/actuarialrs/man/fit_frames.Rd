@@ -14,7 +14,8 @@ development_frame(fit)
 segment(fit, ...)
 }
 \arguments{
-\item{fit}{A \link{chain_ladder_fit}, \link{mack_fit} or \link{odp_bootstrap_fit}.}
+\item{fit}{A \link{chain_ladder_fit}, \link{mack_fit}, \link{odp_bootstrap_fit} or
+\link{clark_fit} (not for \code{development_frame()}).}
 
 \item{...}{Key conditions as \code{key = value}, one value each.}
 }
@@ -22,16 +23,21 @@ segment(fit, ...)
 A data.frame, or for \code{segment()} a fit of the same class.
 }
 \description{
-Tables of a \link{chain_ladder_fit}, \link{mack_fit} or \link{odp_bootstrap_fit} with
-the triangle's key columns by name. \code{as.data.frame(fit)} has one row per
-segment and origin: \code{origin}, \code{latest}, \code{ultimate} and \code{reserve}, plus
-for Mack \code{process_risk}, \code{parameter_risk} and \code{standard_error}, and for
-the bootstrap the \code{mean} and \code{std_dev} of the bootstrapped reserve.
+Tables of a \link{chain_ladder_fit}, \link{mack_fit}, \link{odp_bootstrap_fit} or
+\link{clark_fit} with the triangle's key columns by name.
+\code{as.data.frame(fit)} has one row per segment and origin: \code{origin},
+\code{latest}, \code{ultimate} and \code{reserve}, plus for Mack \code{process_risk},
+\code{parameter_risk} and \code{standard_error}, for the bootstrap the \code{mean} and
+\code{std_dev} of the bootstrapped reserve, and for Clark (Cape Cod)
+\code{exposure}, \code{expected_ultimate} and the three standard errors.
 \code{totals_frame()} has one row per segment with the same quantities for
-the segment's total (for the bootstrap also its \code{scale}).
+the segment's total (for the bootstrap also its \code{scale}; for Clark its
+\code{omega}, \code{theta}, \code{scale} and, for Cape Cod, \code{elr}).
 \code{development_frame()} has one row per segment and age: \code{development},
 \code{ldf} (to the next age), \code{cdf} (to ultimate, with the tail), \code{sigma} and
-\code{std_err}; the oldest age has \code{NA} for \code{ldf}, \code{sigma} and \code{std_err}.
+\code{std_err}; the oldest age has \code{NA} for \code{ldf}, \code{sigma} and \code{std_err}. A
+\link{clark_fit} has no development table of its own: use
+\code{development_frame(fit@chain_ladder)} for the chain ladder's.
 }
 \details{
 \code{segment()} returns the fit of one segment, chosen by key values as in

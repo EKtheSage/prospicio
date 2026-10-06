@@ -123,7 +123,7 @@ reference:
       - pricing.Price
       - pricing.PortfolioPrice
   - title: Reserving
-    desc: Loss triangles, the chain ladder, Mack's model and the ODP bootstrap.
+    desc: Loss triangles, the chain ladder, Mack's model, the ODP bootstrap and Clark's growth curves.
     contents:
       - reserving.Triangle
       - reserving.ChainLadder
@@ -132,6 +132,9 @@ reference:
       - reserving.MackFit
       - reserving.OdpBootstrap
       - reserving.OdpBootstrapFit
+      - reserving.ClarkLdf
+      - reserving.ClarkCapeCod
+      - reserving.ClarkFit
   - title: Risk measures
     desc: Distortion risk measures, and capital allocation to components.
     contents:
