@@ -19,6 +19,7 @@ reference:
       - weibull_distribution
       - loglogistic_distribution
       - mixture_distribution
+      - custom_distribution
       - log_density
   - title: Large-loss severities
     contents:

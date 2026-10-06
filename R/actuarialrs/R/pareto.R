@@ -17,8 +17,8 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' the layer `limit` xs `attachment` (`Inf` for an unlimited layer).
 #' Defined for the Pareto-family severities ([pareto], [piecewise_pareto],
 #' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution],
-#' [tweedie], [weibull_distribution], [loglogistic_distribution] and
-#' [mixture_distribution].
+#' [tweedie], [weibull_distribution], [loglogistic_distribution],
+#' [mixture_distribution] and [custom_distribution].
 #'
 #' @param dist A Pareto-family severity.
 #' @param q Numeric vector.
@@ -520,6 +520,57 @@ mixture_distribution <- S7::new_class(
   }
 )
 
+#' Custom severity from your own distribution function
+#'
+#' The slow path for a distribution the package does not have: give its
+#' `cdf`, and its `quantile` function if you have one (sampling inverts the
+#' cdf by bisection otherwise, about a hundred cdf calls per draw). The
+#' mean, variance, limited expected values and layer moments are computed
+#' by Gauss-Legendre quadrature of the survival function between the
+#' distribution's own quantiles, ignoring the probability above the
+#' `1 - 1e-12` quantile. It goes anywhere a severity does (layers,
+#' [compound_distribution()], [simulate_events()], copula marginals,
+#' [mixture_distribution()]); calculations that meet one run
+#' single-threaded on R's main thread, since every value calls back into R.
+#'
+#' Properties: `d@name`, `d@has_quantile`, `d@upper` (the `1 - 1e-12`
+#' quantile, where the integrals stop) and `d@last_error` (the first error a
+#' function raised after construction, or `""`; that value became `NaN`).
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param cdf `function(x)` returning `P(X <= x)` for one `x >= 0`: a number
+#'   in `[0, 1]`, non-decreasing in `x`. Losses are non-negative.
+#' @param quantile Optional `function(p)` returning the smallest `x` with
+#'   `cdf(x) >= p`.
+#' @param name Shown in errors and when printed.
+#' @returns A `custom_distribution` object, which inherits from
+#'   [distribution]. Construction fails if a function errors, returns a
+#'   value out of range, or the cdf never reaches `1 - 1e-12`.
+#' @export
+#' @examples
+#' d <- custom_distribution(function(x) 1 - exp(-x / 100), name = "exponential")
+#' mean(d)
+#' lev(d, 50)
+custom_distribution <- S7::new_class(
+  "custom_distribution",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("CustomDist"),
+    name = S7::new_property(S7::class_character, getter = function(self) self@ptr$name()),
+    has_quantile = S7::new_property(S7::class_logical, getter = function(self) self@ptr$has_quantile()),
+    upper = S7::new_property(S7::class_double, getter = function(self) self@ptr$upper()),
+    last_error = S7::new_property(S7::class_character, getter = function(self) self@ptr$last_error())
+  ),
+  constructor = function(cdf, quantile = NULL, name = "custom") {
+    if (!is.function(cdf)) stop("cdf must be a function")
+    if (!is.null(quantile) && !is.function(quantile)) stop("quantile must be a function or NULL")
+    ptr <- rust_result(CustomDist$new(cdf, quantile, as.character(name)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
 #' Log density
 #'
 #' The log of the density at `x`. For a [tweedie], `x = 0` gives the log of
@@ -539,7 +590,7 @@ S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.do
 
 for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
                  gamma_distribution, tweedie, weibull_distribution, loglogistic_distribution,
-                 mixture_distribution)) {
+                 mixture_distribution, custom_distribution)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
   S7::method(cdf, cls) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
@@ -606,6 +657,12 @@ S7::method(print, loglogistic_distribution) <- function(x, ...) {
               format(x@shape, digits = 15), format(x@scale, digits = 15)))
   invisible(x)
 }
+S7::method(print, custom_distribution) <- function(x, ...) {
+  cat(sprintf("<custom_distribution> %s, mean = %s%s\n", x@name, format(mean(x), digits = 8),
+              if (x@has_quantile) ", with quantile" else ""))
+  invisible(x)
+}
+
 S7::method(print, mixture_distribution) <- function(x, ...) {
   cat(sprintf("<mixture_distribution> weights %s\n", paste(format(x@weights), collapse = ", ")))
   invisible(x)

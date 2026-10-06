@@ -764,6 +764,219 @@ class CompoundReport:
         """
 
 @final
+class Custom:
+    """
+    A loss severity defined by your own distribution function: the slow
+    path for a distribution the library does not have.
+    
+    Give the cdf, and the quantile function if you have one (sampling
+    inverts the cdf by bisection otherwise, about a hundred cdf calls per
+    draw). The mean, variance, limited expected values and layer moments
+    are computed by Gauss–Legendre quadrature of the survival function
+    between the distribution's own quantiles, ignoring the probability
+    above the ``1 - 1e-12`` quantile. A ``Custom`` goes anywhere a severity
+    does (layers, compound distributions, simulated events, copula
+    marginals, mixtures); calculations that meet one run single-threaded,
+    since every value calls back into Python.
+    
+    Parameters
+    ----------
+    cdf : callable
+        ``cdf(x) -> float``: ``P(X <= x)`` for ``x >= 0``, in ``[0, 1]``
+        and non-decreasing. Losses are non-negative.
+    quantile : callable, optional
+        ``quantile(p) -> float``: the smallest ``x`` with ``cdf(x) >= p``.
+    name : str, default "custom"
+        Shown in errors and ``repr``.
+    
+    Raises
+    ------
+    ValueError
+        If a callable raises or returns a value out of range, or the cdf
+        never reaches ``1 - 1e-12`` at a finite loss. An error in a later
+        call makes that value ``nan``; ``last_error`` says why.
+    
+    Examples
+    --------
+    >>> import math
+    >>> from actuarialrs.distributions import Custom
+    >>> d = Custom(lambda x: 1 - math.exp(-x / 100), name="exponential")
+    >>> round(d.mean(), 6)
+    100.0
+    >>> round(d.lev(50), 6) == round(100 * (1 - math.exp(-0.5)), 6)
+    True
+    """
+    def __getnewargs__(self, /) -> tuple[Any, Any |None, str]: ...
+    def __new__(cls, /, cdf: Any, quantile: Any |None = None, name: str = "custom") -> Custom: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def has_quantile(self, /) -> bool:
+        """
+        Whether a quantile function was given.
+        """
+    @property
+    def last_error(self, /) -> str |None:
+        """
+        The first error raised by a callable since construction, or ``None``.
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The name given at construction.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def upper(self, /) -> float:
+        """
+        The ``1 - 1e-12`` quantile, where the moment integrals stop.
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class CvPath:
     """
     Cross-validated scores along an elastic-net path, from

@@ -46,6 +46,14 @@ pub trait Distribution {
             })
             .collect()
     }
+
+    /// Whether the distribution may be evaluated on several threads at
+    /// once. True for every native family; false for a [`crate::Custom`]
+    /// whose callbacks must stay on the calling thread (an R function), so
+    /// the parallel simulations run single-threaded when they meet one.
+    fn is_parallel_safe(&self) -> bool {
+        true
+    }
 }
 
 /// A boxed distribution (for example `Box<dyn Distribution>`) is one too,
@@ -77,6 +85,10 @@ impl<T: Distribution + ?Sized> Distribution for Box<T> {
 
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
         (**self).sample(rng, n)
+    }
+
+    fn is_parallel_safe(&self) -> bool {
+        (**self).is_parallel_safe()
     }
 }
 

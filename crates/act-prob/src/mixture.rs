@@ -106,6 +106,10 @@ impl Distribution for Mixture {
         self.sum(|c| c.survival(x))
     }
 
+    fn is_parallel_safe(&self) -> bool {
+        self.components.iter().all(|c| c.is_parallel_safe())
+    }
+
     /// The smallest `x` with `F(x) >= p`, bracketed by the components'
     /// quantiles and bisected (on the survival function above the median).
     fn quantile(&self, p: f64) -> Result<f64> {

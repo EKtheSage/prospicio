@@ -275,12 +275,21 @@ pub fn simulate(
             "must have one marginal per copula dimension",
         ));
     }
-    PredictiveDistribution::simulate(dims, components, n_sims, seed, provenance, |rng, row| {
-        copula.sample(rng, row);
-        for (x, m) in row.iter_mut().zip(marginals) {
-            *x = m.quantile(*x).expect("copula uniforms lie in (0, 1)");
-        }
-    })
+    let parallel = marginals.iter().all(|m| m.is_parallel_safe());
+    PredictiveDistribution::simulate_with(
+        parallel,
+        dims,
+        components,
+        n_sims,
+        seed,
+        provenance,
+        |rng, row| {
+            copula.sample(rng, row);
+            for (x, m) in row.iter_mut().zip(marginals) {
+                *x = m.quantile(*x).expect("copula uniforms lie in (0, 1)");
+            }
+        },
+    )
 }
 
 /// Iman–Conover target ranks: for each of `m` columns, the rank (0-based,

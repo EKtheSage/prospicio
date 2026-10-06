@@ -53,22 +53,26 @@ where
             reason: "must be positive",
         });
     }
-    let years: Vec<Vec<f64>> = (0..n_sims as u64)
-        .into_par_iter()
-        .map(|i| {
-            let mut rng = StreamRng::new(seed, i);
-            let count = frequency
-                .quantile(rng.next_open01())
-                .expect("next_open01 is always in (0, 1)");
-            (0..count)
-                .map(|_| {
-                    severity
-                        .quantile(rng.next_open01())
-                        .expect("next_open01 is always in (0, 1)")
-                })
-                .collect()
-        })
-        .collect();
+    let year = |i: u64| -> Vec<f64> {
+        let mut rng = StreamRng::new(seed, i);
+        let count = frequency
+            .quantile(rng.next_open01())
+            .expect("next_open01 is always in (0, 1)");
+        (0..count)
+            .map(|_| {
+                severity
+                    .quantile(rng.next_open01())
+                    .expect("next_open01 is always in (0, 1)")
+            })
+            .collect()
+    };
+    // A severity whose callbacks must stay on this thread (an R function)
+    // runs the years in order; the draws are the same either way.
+    let years: Vec<Vec<f64>> = if severity.is_parallel_safe() {
+        (0..n_sims as u64).into_par_iter().map(year).collect()
+    } else {
+        (0..n_sims as u64).map(year).collect()
+    };
     let mut offsets = Vec::with_capacity(n_sims + 1);
     offsets.push(0);
     let mut losses = Vec::with_capacity(years.iter().map(Vec::len).sum());
@@ -129,6 +133,27 @@ mod tests {
 
     fn severity() -> Grid {
         Grid::new(1.0, vec![0.1, 0.3, 0.25, 0.2, 0.1, 0.05]).unwrap()
+    }
+
+    #[test]
+    fn a_serial_severity_gives_the_same_draws() {
+        use act_prob::Custom;
+        use std::sync::Arc;
+        let grid = severity();
+        let g = grid.clone();
+        let serial = Custom::new(
+            "grid",
+            Arc::new(move |x| Ok(g.cdf(x))),
+            Some(Arc::new(move |p| {
+                grid.quantile(p).map_err(|e| e.to_string())
+            })),
+            false,
+        )
+        .unwrap();
+        let freq = Poisson::new(4.0).unwrap();
+        let a = simulate_events(&freq, &serial, 2_000, 3).unwrap();
+        let b = simulate_events(&freq, &severity(), 2_000, 3).unwrap();
+        assert_eq!(a, b);
     }
 
     #[test]
