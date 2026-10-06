@@ -9,14 +9,16 @@ Encoding: UTF-8
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.85
 Depends: R (>= 4.2.0)
 Imports: S7, stats
+Suggests: lightgbm, xgboost
 Config/rextendr/version: 0.9.0
 Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.1.0
 Collate: 
     'distributions.R'
     'aggregate.R'
-    'extendr-wrappers.R'
     'models.R'
+    'boosting.R'
+    'extendr-wrappers.R'
     'pareto.R'
     'pricing.R'
     'reinsurance.R'

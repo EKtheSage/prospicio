@@ -461,9 +461,15 @@ their draws and stop being reproducible.
   `Booster` works in `compare`, `cross_validate` and the searches.
   Tests (`python/tests/test_boosting.py`): the offset is the exposure for
   both engines, the LightGBM adapter equals a direct LightGBM call, the
-  gamma dispersion is recovered, bootstrap refits widen the draws. Not
-  yet: the R adapter (R's lightgbm and xgboost packages), quantile and
-  distributional objectives.
+  gamma dispersion is recovered, bootstrap refits widen the draws.
+  Done in R (`boosting.R`): `booster_fit(formula, data, family, engine,
+  power, n_rounds, learning_rate, params, n_boot, seed, offset, weights)`
+  over the lightgbm and xgboost packages (in `Suggests`), with the same
+  starting score, dispersion and bootstrap; the design is `model.matrix()`
+  without its intercept; `predict()` and `predict_distribution()` methods,
+  and `simulate_from_means()`. Seeding leaves R's generator state as it
+  was. Tests (`R/actuarialrs/tests/test-boosting.R`) mirror the Python
+  ones. Not yet: quantile and distributional objectives.
 - **Samplers are delegated.** No home-grown NUTS (`architecture.md`).
 
 ## Open questions
