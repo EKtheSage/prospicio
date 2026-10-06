@@ -6,6 +6,7 @@ resource: https://pep.vse.cz/doi/10.18267/j.pep.683.pdf
 tags: [pricing, exposure-rating, property, reinsurance, mbbefd]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T08:30:00Z }
+verified: { by: process:ci, at: 2026-10-06T17:45:37Z }
 sources:
   - id: pep
     resource: https://pep.vse.cz/doi/10.18267/j.pep.683.pdf
