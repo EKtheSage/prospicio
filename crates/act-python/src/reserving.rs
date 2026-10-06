@@ -1956,8 +1956,8 @@ impl PyExpectedLoss {
     /// column : str
     ///     The losses to project.
     /// exposure : str
-    ///     The exposure column; each origin's latest observed value is its
-    ///     exposure.
+    ///     The exposure column; each origin's latest observed cumulative
+    ///     value is its exposure (an incremental triangle's is cumulated).
     ///
     /// Returns
     /// -------
@@ -2071,8 +2071,8 @@ impl PyBornhuetterFerguson {
     /// column : str
     ///     The losses to project.
     /// exposure : str
-    ///     The exposure column; each origin's latest observed value is its
-    ///     exposure.
+    ///     The exposure column; each origin's latest observed cumulative
+    ///     value is its exposure (an incremental triangle's is cumulated).
     ///
     /// Returns
     /// -------
@@ -2109,7 +2109,9 @@ impl PyBornhuetterFerguson {
 /// ``U(0) = apriori * exposure``, ``U(k) = latest + (1 - 1 / cdf) * U(k-1)``
 /// for ``n_iters`` steps, as chainladder-python's ``Benktander``.
 /// ``n_iters=0`` is the expected loss method, 1 is Bornhuetter–Ferguson,
-/// and many iterations approach the chain ladder.
+/// and many iterations approach the chain ladder. The steps are summed in
+/// closed form, so a large ``n_iters`` is cheap; where an origin's ``cdf``
+/// is below 1/2 they diverge instead.
 ///
 /// Parameters
 /// ----------
@@ -2197,8 +2199,8 @@ impl PyBenktander {
     /// column : str
     ///     The losses to project.
     /// exposure : str
-    ///     The exposure column; each origin's latest observed value is its
-    ///     exposure.
+    ///     The exposure column; each origin's latest observed cumulative
+    ///     value is its exposure (an incremental triangle's is cumulated).
     ///
     /// Returns
     /// -------
@@ -2331,8 +2333,8 @@ impl PyCapeCod {
     /// column : str
     ///     The losses to project.
     /// exposure : str
-    ///     The exposure column; each origin's latest observed value is its
-    ///     exposure.
+    ///     The exposure column; each origin's latest observed cumulative
+    ///     value is its exposure (an incremental triangle's is cumulated).
     ///
     /// Returns
     /// -------
@@ -2457,7 +2459,8 @@ impl PyExpectedLossFit {
         by_origin(&self.inner, |f| f.chain_ladder.latest.clone())
     }
 
-    /// Exposure per origin: the exposure column's latest observed value.
+    /// Exposure per origin: the exposure column's latest observed cumulative
+    /// value.
     #[getter]
     fn exposure(&self) -> Vec<f64> {
         by_origin(&self.inner, |f| f.exposure.clone())
@@ -2640,7 +2643,8 @@ impl PyCapeCodFit {
         by_origin(&self.inner, |f| f.expected_loss.chain_ladder.latest.clone())
     }
 
-    /// Exposure per origin: the exposure column's latest observed value.
+    /// Exposure per origin: the exposure column's latest observed cumulative
+    /// value.
     #[getter]
     fn exposure(&self) -> Vec<f64> {
         by_origin(&self.inner, |f| f.expected_loss.exposure.clone())

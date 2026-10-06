@@ -77,8 +77,9 @@ been observed;
 \item \code{benktander()}: starting from \code{U(0) = apriori * exposure},
 \code{U(k) = latest + (1 - q) * U(k - 1)} for \code{n_iters} steps, so
 \code{n_iters = 0} is the expected loss method, 1 is Bornhuetter-Ferguson,
-and many iterations approach the chain ladder. The iterations stop
-early once the ultimates no longer change.
+and many iterations approach the chain ladder. The steps are summed in
+closed form, so a large \code{n_iters} is cheap; where an origin's \code{cdf} is
+below 1/2 they diverge instead.
 }
 
 The development pattern is a \code{\link[=chain_ladder]{chain_ladder()}} fit of the loss column,

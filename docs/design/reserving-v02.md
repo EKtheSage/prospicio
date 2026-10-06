@@ -69,7 +69,9 @@ the origin. `fit_segments` reads each segment's own exposure.
 
 As implemented: the value read is the latest *cumulative* value, since
 segments are read cumulatively (an incremental triangle's exposure is
-cumulated like its losses). Origins are matched by position in the
+cumulated like its losses, so a premium repeated on every age of an
+incremental triangle counts once per age; chainladder-python's
+`premium.latest_diagonal` reads the last increment). Origins are matched by position in the
 triangle, so the exposure column may observe more origins or ages than the
 losses. The error is `Error::InvalidExposure { column, origin }`; an
 unknown exposure column is `Error::UnknownColumn`.
@@ -133,9 +135,17 @@ As implemented (`crates/act-reserving/src/expected_loss.rs`, parity in
   Vec<f64> }`; `ExpectedLossFit::apriori` holds the detrended apriori
   (chainladder-python's `detrended_apriori_`). chainladder-python's
   `CapeCod(n_iters)` is not offered; ours is its default, `n_iters = 1`.
-* Benktander iterates as written above rather than chainladder-python's
-  closed form `sum(p^k, k < n) latest + p^n U0` (equal up to rounding) and
-  stops once an ultimate no longer changes, so a huge `n_iters` is cheap.
+* Benktander uses chainladder-python's closed form
+  `sum(p^k, k < n) latest + p^n U0`, `p = 1 - q`, with `p^n` and the sum
+  built by repeated squaring, so a huge `n_iters` is cheap. Stepping one at
+  a time is not: with negative development (`cdf < 1`, so `p < 0`) the
+  floating-point steps can end in a two-cycle and never stop. Where
+  `cdf < 1/2`, `|p| > 1` and the ultimate diverges as `n_iters` grows.
+* An origin without a value on the valuation diagonal uses its latest
+  observed value and the cdf at that age, as the chain ladder does, and
+  Cape Cod pools it with the other origins. chainladder-python gives such
+  an origin a NaN ultimate and leaves it out of the Cape Cod pool, so there
+  one hole changes the apriori and ultimates of every other origin.
 * Long tables add `exposure` and `apriori` per origin (Cape Cod also
   `trended_apriori`) and the total `exposure` per segment.
 * Python: `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and `CapeCod`

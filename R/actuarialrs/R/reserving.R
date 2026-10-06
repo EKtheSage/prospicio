@@ -787,8 +787,9 @@ expected_loss_properties <- function(el, cl) {
 #' * `benktander()`: starting from `U(0) = apriori * exposure`,
 #'   `U(k) = latest + (1 - q) * U(k - 1)` for `n_iters` steps, so
 #'   `n_iters = 0` is the expected loss method, 1 is Bornhuetter-Ferguson,
-#'   and many iterations approach the chain ladder. The iterations stop
-#'   early once the ultimates no longer change.
+#'   and many iterations approach the chain ladder. The steps are summed in
+#'   closed form, so a large `n_iters` is cheap; where an origin's `cdf` is
+#'   below 1/2 they diverge instead.
 #'
 #' The development pattern is a [chain_ladder()] fit of the loss column,
 #' with the same `average`, `sigma_interpolation` and `tail`. The exposure
