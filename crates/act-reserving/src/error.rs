@@ -60,6 +60,15 @@ pub enum Error {
     InvalidTail(f64),
     /// The method needs more development ages than the triangle has.
     TooFewAges { needed: usize, found: usize },
+    /// An origin has no observed, finite, positive value in the exposure
+    /// column.
+    InvalidExposure { column: String, origin: String },
+    /// A method setting is out of its range; `expected` describes the range.
+    InvalidSetting {
+        name: &'static str,
+        value: f64,
+        expected: &'static str,
+    },
     /// The bootstrap cannot run on this input or with these settings.
     Bootstrap(&'static str),
     /// The ODP GLM cannot be fitted to this triangle.
@@ -121,6 +130,15 @@ impl fmt::Display for Error {
                 f,
                 "method needs at least {needed} development ages, triangle has {found}"
             ),
+            Self::InvalidExposure { column, origin } => write!(
+                f,
+                "origin {origin} has no observed, finite, positive exposure in column {column}"
+            ),
+            Self::InvalidSetting {
+                name,
+                value,
+                expected,
+            } => write!(f, "{name} = {value} is invalid: expected {expected}"),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::Core(e) => e.fmt(f),
