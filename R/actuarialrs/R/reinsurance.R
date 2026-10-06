@@ -85,6 +85,30 @@ quota_share <- function(name, cession) {
   xol_layer(ptr = rust_result(XolLayer$quota_share(as.character(name), as.double(cession))))
 }
 
+#' Surplus treaty
+#'
+#' Each risk cedes the part of its sum insured above the retention line
+#' `retention`, up to `lines` lines, and the same share of every loss on it:
+#' `min(max(SI - retention, 0), lines * retention) / SI`. With a retention of
+#' 1m and 9 lines (a capacity of 9m), a 5m risk cedes 80% and a 20m risk
+#' 45%. The events must carry sums insured ([events_from_years()] with
+#' `sums_insured`); it can inure to a per-risk excess of loss in a later
+#' stage of an [inuring_tower()]. Applying it to an aggregate loss or on the
+#' grid is refused: it works risk by risk.
+#'
+#' @param name Layer name, unique within a tower.
+#' @param retention The retention line; positive.
+#' @param lines Number of lines of capacity; positive.
+#' @returns An [xol_layer].
+#' @export
+#' @examples
+#' s <- surplus_treaty("surplus", 1e6, 9)
+#' ceded(s, c(2e6, 2e6), sums_insured = c(5e6, 20e6))
+surplus_treaty <- function(name, retention, lines) {
+  xol_layer(ptr = rust_result(XolLayer$surplus(as.character(name), as.double(retention),
+                                                as.double(lines))))
+}
+
 #' Aggregate stop-loss
 #'
 #' `limit` xs `retention` on the year's total loss: an [xol_layer] with
@@ -109,14 +133,20 @@ aggregate_stop_loss <- function(name, limit, retention) {
 #'
 #' @param layer An [xol_layer].
 #' @param losses Numeric vector of one year's losses.
+#' @param sums_insured For a [surplus_treaty()], the sum insured of the
+#'   risk each loss hit, one per loss.
 #' @param ... Unused; for methods.
 #' @returns A single number.
 #' @export
 #' @examples
 #' ceded(xol_layer("L", 10, 5), c(8, 20, 12))
+#' ceded(surplus_treaty("S", 1e6, 9), c(2e6, 2e6), sums_insured = c(5e6, 20e6))
 ceded <- S7::new_generic("ceded", "layer", function(layer, losses, ...) S7::S7_dispatch())
 
-S7::method(ceded, xol_layer) <- function(layer, losses, ...) layer@ptr$ceded(as.double(losses))
+S7::method(ceded, xol_layer) <- function(layer, losses, sums_insured = NULL, ...) {
+  if (is.null(sums_insured)) return(layer@ptr$ceded(as.double(losses)))
+  rust_result(layer@ptr$ceded_with_sums_insured(as.double(losses), as.double(sums_insured)))
+}
 
 #' Ceded loss per event
 #'

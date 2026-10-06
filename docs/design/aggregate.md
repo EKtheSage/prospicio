@@ -129,8 +129,31 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   in an earlier stage takes a share of each event that depends on event
   order, which a compound distribution does not have. `on_grid` rejects
   such a tower and points to Monte Carlo.
-- **Not yet:** surplus treaties, which need sums insured per risk that
-  events do not carry.
+- **Sums insured ride on the events; a risk profile fills them (decided
+  2026-10-06).** A surplus treaty cedes a share of each loss set by the
+  sum insured (SI) of the risk it hit, `min(max(SI − R, 0), kR) / SI` for
+  retention line `R` and `k` lines, so each event carries its SI. Options
+  weighed: (A) simulate from a risk profile, (B) an optional SI per
+  event that users fill, (C) expected values per band only. The user
+  chose A built on B: B first (`EventSet::with_sums_insured`,
+  `EventSet::from_years` for one's own years, Python
+  `EventSet.from_years(years, sums_insured)`, R `events_from_years()`),
+  then a profile simulator that fills it. C cannot sit ahead of a
+  per-risk XL in a tower, which is the usual programme; it comes from the
+  same profile as a check.
+- **Surplus is a layer basis.** `Layer::surplus(name, R, k)` is a layer
+  whose per-event amount is the ceded share of the loss (`Basis::Surplus`);
+  an event limit, share and annual terms apply to it as to any layer, so it
+  inures to a per-risk XL in a later stage with no other change. Every
+  stage sees each risk's original SI. `Tower::apply` refuses a tower with a
+  surplus on events without SIs; `apply_aggregate` and `on_grid` refuse
+  one outright (no risks). Python `Layer.surplus`, R `surplus_treaty()`.
+- **Risk profiles (next).** Bands of sum insured, each with a number of
+  risks and either a premium (with a loss ratio) or an expected loss, and
+  an exposure curve per band (MBBEFD, a tabulated curve, or a severity
+  curve; `pareto.md`). A loss lands in a band in proportion to the band's
+  expected claim count, and is the band's SI times a destruction rate from
+  the band's curve (`ExposureCurve::rate_quantile`).
 
 ## Validation
 
@@ -170,5 +193,5 @@ binomial counts. A unit test checks the layer mean and variance against
 
 ## Next
 
-1. Surplus treaties, once events carry sums insured.
+1. The risk-profile simulator that fills the sums insured (option A).
 2. Pro rata as to time reinstatement premiums, once events carry dates.

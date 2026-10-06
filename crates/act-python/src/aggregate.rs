@@ -232,6 +232,76 @@ impl From<EventSet> for PyEventSet {
 
 #[pymethods]
 impl PyEventSet {
+    /// Years of losses from elsewhere (your own simulation, or a
+    /// catastrophe model's event loss table by year), optionally with the
+    /// sum insured of the risk each loss hit, which a surplus treaty needs.
+    ///
+    /// Parameters
+    /// ----------
+    /// years : list of list of float
+    ///     Each year's losses, in order.
+    /// sums_insured : list of list of float, optional
+    ///     The same shape: each loss's sum insured, at least the loss.
+    /// seed : int, default 0
+    ///     Recorded in results' provenance.
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[5.0, 2.0], [], [9.0]], [[10.0, 2.0], [], [50.0]])
+    /// >>> e.counts(), e.sums_insured(2)
+    /// ([2, 0, 1], [50.0])
+    #[staticmethod]
+    #[pyo3(signature = (years, sums_insured = None, seed = 0))]
+    fn from_years(
+        years: Vec<Vec<f64>>,
+        sums_insured: Option<Vec<Vec<f64>>>,
+        seed: u64,
+    ) -> PyResult<Self> {
+        let shape: Vec<usize> = years.iter().map(Vec::len).collect();
+        let mut inner = EventSet::from_years(years, seed).map_err(to_py)?;
+        if let Some(si) = sums_insured {
+            if si.iter().map(Vec::len).ne(shape.iter().copied()) {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "sums_insured must have the shape of years",
+                ));
+            }
+            inner = inner
+                .with_sums_insured(si.into_iter().flatten().collect())
+                .map_err(to_py)?;
+        }
+        Ok(Self { inner })
+    }
+
+    /// Whether the losses carry sums insured.
+    #[getter]
+    fn has_sums_insured(&self) -> bool {
+        self.inner.has_sums_insured()
+    }
+
+    /// Year ``sim``'s sums insured, one per loss, or ``None``.
+    ///
+    /// Parameters
+    /// ----------
+    /// sim : int
+    ///
+    /// Returns
+    /// -------
+    /// list of float or None
+    fn sums_insured(&self, sim: usize) -> PyResult<Option<Vec<f64>>> {
+        if sim >= self.inner.n_sims() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "year {sim} out of range for {} simulated years",
+                self.inner.n_sims()
+            )));
+        }
+        Ok(self.inner.sums_insured(sim).map(<[f64]>::to_vec))
+    }
+
     /// Number of simulated years.
     #[getter]
     fn n_sims(&self) -> usize {

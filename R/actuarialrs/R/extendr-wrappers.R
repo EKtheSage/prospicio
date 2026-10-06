@@ -110,6 +110,12 @@ EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
 
+EventSet$from_years <- function(years, sums_insured, seed) .Call(wrap__EventSet__from_years, years, sums_insured, seed)
+
+EventSet$has_sums_insured <- function() .Call(wrap__EventSet__has_sums_insured, self)
+
+EventSet$sums_insured <- function(sim) .Call(wrap__EventSet__sums_insured, self, sim)
+
 EventSet$n_sims <- function() .Call(wrap__EventSet__n_sims, self)
 
 EventSet$seed <- function() .Call(wrap__EventSet__seed, self)
@@ -133,6 +139,12 @@ XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, a
 XolLayer$quota_share <- function(name, cession) .Call(wrap__XolLayer__quota_share, name, cession)
 
 XolLayer$stop_loss <- function(name, limit, retention) .Call(wrap__XolLayer__stop_loss, name, limit, retention)
+
+XolLayer$surplus <- function(name, retention, lines) .Call(wrap__XolLayer__surplus, name, retention, lines)
+
+XolLayer$ceded_with_sums_insured <- function(losses, sums_insured) .Call(wrap__XolLayer__ceded_with_sums_insured, self, losses, sums_insured)
+
+XolLayer$needs_sums_insured <- function() .Call(wrap__XolLayer__needs_sums_insured, self)
 
 XolLayer$name <- function() .Call(wrap__XolLayer__name, self)
 

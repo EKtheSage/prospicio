@@ -111,3 +111,16 @@ stopifnot(cor(tot[, 1], tot[, 2], method = "spearman") > 0.5)
 stopifnot(inherits(try(join_predictive(list(res, prem), "risk"), silent = TRUE), "try-error"))
 
 cat("actuarialrs R aggregate tests passed\n")
+
+# Surplus treaty on events that carry sums insured.
+s <- surplus_treaty("surplus", 1e6, 4)
+stopifnot(abs(ceded(s, c(0.5e6, 2e6, 1e6, 10e6), sums_insured = c(0.5e6, 2e6, 5e6, 10e6)) - 5.8e6) < 1e-6)
+ev <- events_from_years(list(c(0.5e6, 2e6), c(1e6, 10e6), numeric()),
+                        list(c(0.5e6, 2e6), c(5e6, 10e6), numeric()))
+stopifnot(identical(event_sums_insured(ev, 2), c(5e6, 10e6)), identical(event_counts(ev), c(2, 2, 0)))
+tw <- inuring_tower(list(list(s), list(xol_layer("1x1", 1e6, 1e6))))
+res <- apply_tower(tw, ev)
+dm <- draw_matrix(res)
+stopifnot(abs(mean(dm[, 2]) - 5.8e6 / 3) < 1e-6, abs(mean(dm[, 3]) - 1e6 / 3) < 1e-6)
+stopifnot(inherits(try(apply_tower(tw, events_from_years(list(1))), silent = TRUE), "try-error"))
+stopifnot(inherits(try(events_from_years(list(5), list(4)), silent = TRUE), "try-error"))

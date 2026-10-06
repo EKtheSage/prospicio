@@ -2003,6 +2003,38 @@ class EventSet:
         IndexError
             If ``sim`` is not a simulated year.
         """
+    @staticmethod
+    def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0) -> EventSet:
+        """
+        Years of losses from elsewhere (your own simulation, or a
+        catastrophe model's event loss table by year), optionally with the
+        sum insured of the risk each loss hit, which a surplus treaty needs.
+        
+        Parameters
+        ----------
+        years : list of list of float
+            Each year's losses, in order.
+        sums_insured : list of list of float, optional
+            The same shape: each loss's sum insured, at least the loss.
+        seed : int, default 0
+            Recorded in results' provenance.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0], [], [9.0]], [[10.0, 2.0], [], [50.0]])
+        >>> e.counts(), e.sums_insured(2)
+        ([2, 0, 1], [50.0])
+        """
+    @property
+    def has_sums_insured(self, /) -> bool:
+        """
+        Whether the losses carry sums insured.
+        """
     @property
     def n_sims(self, /) -> int:
         """
@@ -2012,6 +2044,18 @@ class EventSet:
     def seed(self, /) -> int:
         """
         The seed the years were drawn from.
+        """
+    def sums_insured(self, /, sim: int) -> list[float] |None:
+        """
+        Year ``sim``'s sums insured, one per loss, or ``None``.
+        
+        Parameters
+        ----------
+        sim : int
+        
+        Returns
+        -------
+        list of float or None
         """
     def totals(self, /) -> PredictiveDistribution:
         """
@@ -3614,6 +3658,20 @@ class Layer:
         >>> layer.ceded_by_event([8.0, 20.0, 12.0])
         [0.0, 9.0, 6.0]
         """
+    def ceded_with_sums_insured(self, /, losses: Sequence[float], sums_insured: Sequence[float]) -> float:
+        """
+        Ceded loss for one year's losses on risks with the given sums
+        insured, one per loss.
+        
+        Parameters
+        ----------
+        losses : list of float
+        sums_insured : list of float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def limit(self, /) -> float:
         """
@@ -3623,6 +3681,11 @@ class Layer:
     def name(self, /) -> str:
         """
         Layer name.
+        """
+    @property
+    def needs_sums_insured(self, /) -> bool:
+        """
+        Whether the layer is a surplus treaty, which needs sums insured.
         """
     @property
     def premium(self, /) -> float:
@@ -3702,6 +3765,37 @@ class Layer:
         >>> from actuarialrs.reinsurance import Layer
         >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
         30.0
+        """
+    @staticmethod
+    def surplus(name: str, retention: float, lines: float) -> Layer:
+        """
+        A surplus treaty: each risk cedes the part of its sum insured above
+        the retention line ``retention``, up to ``lines`` lines, and the
+        same share of every loss on it.
+        
+        With a retention of 1m and 9 lines (a capacity of 9m), a 5m risk
+        cedes 80% and a 20m risk 45%. The events must carry sums insured
+        (``EventSet.from_years(..., sums_insured=...)``); it can inure to a
+        per-risk excess of loss in a later stage of a ``Tower``.
+        
+        Parameters
+        ----------
+        name : str
+        retention : float
+            The retention line; positive.
+        lines : float
+            Number of lines of capacity; positive.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from actuarialrs.reinsurance import Layer
+        >>> s = Layer.surplus("surplus", 1e6, 9.0)
+        >>> round(s.ceded_with_sums_insured([2e6, 2e6], [5e6, 20e6]))
+        2500000
         """
 
 @final

@@ -59,6 +59,8 @@ reference:
     contents:
       - compound_distribution
       - simulate_events
+      - events_from_years
+      - event_sums_insured
       - event_set
       - events
       - event_counts
@@ -67,6 +69,7 @@ reference:
       - xol_layer
       - quota_share
       - aggregate_stop_loss
+      - surplus_treaty
       - ceded
       - ceded_by_event
       - reinstatement_premium
