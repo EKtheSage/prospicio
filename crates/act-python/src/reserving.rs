@@ -4069,20 +4069,24 @@ impl PyOdpBootstrap {
     }
 
     /// The one-year view of any reserving method: the claims development
-    /// result over the next development period, by re-reserving on the
-    /// bootstrap ("actuary in the box"). Each simulation resamples the
-    /// residuals for the volume-weighted factors, simulates every origin's
-    /// next cell from its observed latest value with the bootstrap's
-    /// process error, appends it to the triangle, refits ``method`` and
-    /// records ``CDR = opening ultimate - closing ultimate``; a negative
-    /// CDR is an adverse development. An origin at the last age gets no new
-    /// cell. Unlike ``MackFit.claims_development_result()`` (Merz and
-    /// Wüthrich), any averaging and tail are allowed.
+    /// result over the coming year, by re-reserving on the bootstrap
+    /// ("actuary in the box"). Each simulation resamples the residuals for
+    /// the volume-weighted factors, projects every origin's next increment
+    /// from its resampled latest value with the bootstrap's process error,
+    /// as ``fit`` projects, adds it to the observed latest value, appends
+    /// it to the triangle, refits ``method`` and records ``CDR = opening
+    /// ultimate - closing ultimate``; a negative CDR is an adverse
+    /// development. An origin with one cell left thus has its lifetime
+    /// bootstrap reserve as its one-year view; an origin at the last age
+    /// gets no new cell. Unlike ``MackFit.claims_development_result()``
+    /// (Merz and Wüthrich), any averaging and tail are allowed.
     ///
     /// Parameters
     /// ----------
     /// triangle : Triangle
-    ///     Cumulative, with any number of segments.
+    ///     Cumulative, with any number of segments, an annual development
+    ///     grain, and every origin short of the last age on the valuation
+    ///     diagonal.
     /// column : str
     /// method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
     ///     The method refitted at the start and at the end of the year.
@@ -4100,10 +4104,12 @@ impl PyOdpBootstrap {
     /// TypeError
     ///     If ``method`` is not one of the classes above.
     /// ValueError
-    ///     As ``fit`` and the method's own ``fit``; if ``exposure`` is
-    ///     missing for an expected-loss method or given for
-    ///     ``ChainLadder``; or if the refit fails in any simulation (the
-    ///     message counts them and gives one).
+    ///     As ``fit`` and the method's own ``fit``; if the development
+    ///     grain is not a year or an origin short of the last age lags the
+    ///     valuation diagonal; if ``exposure`` is missing for an
+    ///     expected-loss method or given for ``ChainLadder``; or if the
+    ///     refit fails in any simulation (the message counts them and gives
+    ///     one).
     ///
     /// Examples
     /// --------
@@ -4367,12 +4373,25 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 /// ``cdr.aggregate(["lob"])`` keeps the dependence between segments, and
 /// ``cdr.quantile(0.005)`` is minus the one-year value at risk at 99.5%.
 /// Per-origin lists run over the origins of each segment in turn, like the
-/// rows of ``to_frame()`` and the components of ``cdr``. ``scale`` needs a
-/// single-segment fit; for several segments use ``segment(...)`` or
-/// ``totals_frame()``.
+/// rows of ``to_frame()`` and the components of ``cdr``. ``fitted``,
+/// ``residuals`` and ``scale`` need a single-segment fit; for several
+/// segments use ``segment(...)`` or ``totals_frame()``. ``fitted`` and
+/// ``residuals`` are the bootstrap's, as ``OdpBootstrapFit``'s.
 #[pyclass(name = "OneYearFit", module = "actuarialrs.reserving", frozen)]
 pub(crate) struct PyOneYearFit {
     inner: OneYearFits,
+}
+
+impl PyOneYearFit {
+    /// A row-major origin x development vector as nested lists.
+    fn grid(&self, flat: &[f64]) -> Vec<Vec<f64>> {
+        let n_dev = self.development().len();
+        flat.chunks(n_dev.max(1)).map(<[f64]>::to_vec).collect()
+    }
+
+    fn one(&self, field: &str, instead: &str) -> PyResult<&OdpBootstrapSegment> {
+        Ok(&single(&self.inner.segments, field, instead)?.bootstrap)
+    }
 }
 
 #[pymethods]
@@ -4427,12 +4446,34 @@ impl PyOneYearFit {
         by_origin(&self.inner.segments, |s| s.opening_reserve.clone())
     }
 
+    /// Development ages in months.
+    #[getter]
+    fn development(&self) -> Vec<Lag> {
+        self.inner.segments.fits[0]
+            .bootstrap
+            .chain_ladder
+            .development
+            .development
+            .clone()
+    }
+
+    /// The bootstrap's fitted incremental values, ``[origin][development]``.
+    #[getter]
+    fn fitted(&self) -> PyResult<Vec<Vec<f64>>> {
+        Ok(self.grid(&self.one("fitted", "")?.fitted))
+    }
+
+    /// The bootstrap's adjusted Pearson residuals, as
+    /// ``OdpBootstrapFit.residuals``, ``[origin][development]``.
+    #[getter]
+    fn residuals(&self) -> PyResult<Vec<Vec<f64>>> {
+        Ok(self.grid(&self.one("residuals", "")?.residuals))
+    }
+
     /// The bootstrap's scale parameter ``phi``.
     #[getter]
     fn scale(&self) -> PyResult<f64> {
-        Ok(single(&self.inner.segments, "scale", "totals_frame()")?
-            .bootstrap
-            .scale)
+        Ok(self.one("scale", "totals_frame()")?.scale)
     }
 
     /// Joint distribution of the claims development result (opening less
@@ -4470,6 +4511,17 @@ impl PyOneYearFit {
     /// pandas.DataFrame
     fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         table_frame(py, self.inner.totals())
+    }
+
+    /// The bootstrap's chain ladders' development factors, one row per
+    /// segment and age, as ``ChainLadderFit.development_frame``. Needs
+    /// pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.segments.development_table())
     }
 
     /// The one-year view of one segment, chosen by key values as

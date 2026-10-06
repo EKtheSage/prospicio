@@ -5673,20 +5673,24 @@ class OdpBootstrap:
     def one_year(self, /, triangle: Triangle, column: str, method: Any, exposure: str |None = None) -> OneYearFit:
         """
         The one-year view of any reserving method: the claims development
-        result over the next development period, by re-reserving on the
-        bootstrap ("actuary in the box"). Each simulation resamples the
-        residuals for the volume-weighted factors, simulates every origin's
-        next cell from its observed latest value with the bootstrap's
-        process error, appends it to the triangle, refits ``method`` and
-        records ``CDR = opening ultimate - closing ultimate``; a negative
-        CDR is an adverse development. An origin at the last age gets no new
-        cell. Unlike ``MackFit.claims_development_result()`` (Merz and
-        Wüthrich), any averaging and tail are allowed.
+        result over the coming year, by re-reserving on the bootstrap
+        ("actuary in the box"). Each simulation resamples the residuals for
+        the volume-weighted factors, projects every origin's next increment
+        from its resampled latest value with the bootstrap's process error,
+        as ``fit`` projects, adds it to the observed latest value, appends
+        it to the triangle, refits ``method`` and records ``CDR = opening
+        ultimate - closing ultimate``; a negative CDR is an adverse
+        development. An origin with one cell left thus has its lifetime
+        bootstrap reserve as its one-year view; an origin at the last age
+        gets no new cell. Unlike ``MackFit.claims_development_result()``
+        (Merz and Wüthrich), any averaging and tail are allowed.
         
         Parameters
         ----------
         triangle : Triangle
-            Cumulative, with any number of segments.
+            Cumulative, with any number of segments, an annual development
+            grain, and every origin short of the last age on the valuation
+            diagonal.
         column : str
         method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
             The method refitted at the start and at the end of the year.
@@ -5704,10 +5708,12 @@ class OdpBootstrap:
         TypeError
             If ``method`` is not one of the classes above.
         ValueError
-            As ``fit`` and the method's own ``fit``; if ``exposure`` is
-            missing for an expected-loss method or given for
-            ``ChainLadder``; or if the refit fails in any simulation (the
-            message counts them and gives one).
+            As ``fit`` and the method's own ``fit``; if the development
+            grain is not a year or an origin short of the last age lags the
+            valuation diagonal; if ``exposure`` is missing for an
+            expected-loss method or given for ``ChainLadder``; or if the
+            refit fails in any simulation (the message counts them and gives
+            one).
         
         Examples
         --------
@@ -5860,9 +5866,10 @@ class OneYearFit:
     ``cdr.aggregate(["lob"])`` keeps the dependence between segments, and
     ``cdr.quantile(0.005)`` is minus the one-year value at risk at 99.5%.
     Per-origin lists run over the origins of each segment in turn, like the
-    rows of ``to_frame()`` and the components of ``cdr``. ``scale`` needs a
-    single-segment fit; for several segments use ``segment(...)`` or
-    ``totals_frame()``.
+    rows of ``to_frame()`` and the components of ``cdr``. ``fitted``,
+    ``residuals`` and ``scale`` need a single-segment fit; for several
+    segments use ``segment(...)`` or ``totals_frame()``. ``fitted`` and
+    ``residuals`` are the bootstrap's, as ``OdpBootstrapFit``'s.
     """
     def __repr__(self, /) -> str: ...
     @property
@@ -5880,6 +5887,26 @@ class OneYearFit:
         """
         The bootstrap's volume-weighted chain ladder: the factors the
         simulated next cells develop with.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The bootstrap's chain ladders' development factors, one row per
+        segment and age, as ``ChainLadderFit.development_frame``. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def fitted(self, /) -> list[list[float]]:
+        """
+        The bootstrap's fitted incremental values, ``[origin][development]``.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -5910,6 +5937,12 @@ class OneYearFit:
     def origins(self, /) -> list[str]:
         """
         Origin period of each per-origin value and CDR component.
+        """
+    @property
+    def residuals(self, /) -> list[list[float]]:
+        """
+        The bootstrap's adjusted Pearson residuals, as
+        ``OdpBootstrapFit.residuals``, ``[origin][development]``.
         """
     @property
     def scale(self, /) -> float:
