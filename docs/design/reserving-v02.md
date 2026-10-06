@@ -209,6 +209,55 @@ derivatives of the curve, as in Clark (2003). The fit reports `omega`,
 `theta`, the scale, ultimates, reserves, process, parameter and total
 standard errors per origin and in total, and implements `ReserveFit`.
 
+As implemented (`crates/act-reserving/src/clark.rs`, parity in
+`validation/tests/reserving_clark.rs`; R's definitions and quirks are in
+`knowledge/references/r-chainladder-clark.md`):
+
+* Both methods return one `ClarkFit`: the volume-weighted `ChainLadderFit`
+  (origins, latest values; R also fits it, for its starting values),
+  `curve`, `omega`, `theta`, `elr` and `exposure` (Cape Cod only),
+  `scale`, `max_age`, `origin_width`, `expected_ultimate` (`U_i`, to
+  infinity), `ultimate`, `process_risk`, `parameter_risk`,
+  `standard_error` and their totals, the parameter `covariance` (`U_i` or
+  `ELR`, then `omega`, `theta`) and `n_observations`; `growth(age)` gives
+  the fitted share developed by a development age. Long tables add
+  `exposure` (Cape Cod), `expected_ultimate` and the standard errors per
+  origin, and `omega`, `theta`, `scale` (and `elr`) per segment.
+* Ages follow R's `adol = TRUE` with its default `adol.age`, half the
+  origin width. The width is the origin period's length (12 months for
+  annual origins), where R defaults to the mean step between ages; the two
+  agree whenever origin and development grains match, as in every parity
+  case. Incremental values are differences between an origin's observed
+  cumulative values, from the previous observed age (0 for the first), so a
+  missing cell does not drop its neighbour as R's `cum2incr` does.
+* Reported values are R's: ClarkLDF's reserve is `latest * (G(m) / G(age)
+  - 1)` and its process variance `scale * U * (G(max_age) - G(age))` with
+  `max_age` unshifted, as R computes it (`m` is the shifted `max_age`);
+  Cape Cod's reserve is the fitted `ELR * exposure * (G(m) - G(age))`.
+  The scale divides by observations less parameters; negative parameter
+  variances are set to 0; a Fisher information whose reciprocal condition
+  number is below machine epsilon gives NaN parameter risk, as R.
+* Deviation from R: the Weibull Fisher information uses the correct
+  `d2G/domega2 = v ln(x/theta)^2 (1 - u)`, where R has
+  `2 v ln(x/theta) (1 - u)`; Weibull parameter standard errors differ
+  from R as shipped by up to 7.3% on the reference triangles, and their
+  reference rows come from R with that entry corrected.
+* The search is Nelder–Mead to `tolerance = 1e-10` from R's starting
+  curve parameters; it is unbounded where R bounds the Weibull at
+  `omega <= 2`, `theta <= 2 * max(age)`. Losses are divided by the largest
+  chain-ladder ultimate while fitting (R's `magscale`). Errors: fewer than
+  four ages is `TooFewAges`; a `max_age` before the last age is
+  `InvalidSetting`; an origin (LDF) or all origins (Cape Cod) without a
+  positive latest value, too few observations, or no convergence is
+  `Error::Clark`.
+* Parity: every row of `reserving_clark_r.csv` (R as shipped to 1e-2,
+  since its L-BFGS-B stops up to 4e-3 short; R with `factr = 1` to 1e-5)
+  and of `reserving_clark_python.csv` (chainladder-python's `ClarkLDF`
+  where comparable, to 1e-3).
+* Python: `ClarkLdf(curve, max_age).fit(triangle, column)` and
+  `ClarkCapeCod(curve, max_age).fit(triangle, column, exposure)` return a
+  `ClarkFit`. R bindings follow in a later PR.
+
 ### 6. `nelder_mead`
 
 ```rust
