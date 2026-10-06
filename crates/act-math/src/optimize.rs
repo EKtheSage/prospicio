@@ -159,8 +159,11 @@ pub fn brent(a: f64, b: f64, tol: f64, mut f: impl FnMut(f64) -> f64) -> (f64, f
 ///
 /// `initial_step` sizes the starting simplex: each coordinate of the
 /// start point is moved by `initial_step` times its absolute value (a
-/// relative step), or by `initial_step` itself when the coordinate is zero
-/// (an absolute step). The search has converged when the spread of the
+/// relative step), or by `initial_step` itself when that absolute value is
+/// below 1, so a start at or near zero still gets a simplex of useful
+/// size. `initial_step` must be finite and larger than `tolerance`, or the
+/// starting simplex could already pass the convergence test; otherwise
+/// [`nelder_mead`] does not search. The search has converged when the spread of the
 /// simplex's values is within `tolerance` times `max(1, |best value|)` and
 /// every vertex is within `tolerance` times `max(1, |best x|)` of the best
 /// one in each coordinate. `max_iterations` counts simplex moves over both
@@ -174,7 +177,8 @@ pub fn brent(a: f64, b: f64, tol: f64, mut f: impl FnMut(f64) -> f64) -> (f64, f
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NelderMead {
-    /// Size of the starting simplex, relative to each nonzero coordinate.
+    /// Size of the starting simplex, relative to each coordinate of
+    /// absolute value 1 or more.
     pub initial_step: f64,
     /// Convergence tolerance on both the values and the simplex diameter.
     pub tolerance: f64,
@@ -225,7 +229,9 @@ pub struct Minimum {
 /// the best point with a fresh simplex, which recovers from a simplex that
 /// collapsed onto a subspace; the result reports that second pass. No
 /// derivatives are used, so `f` need not be smooth, but the method only
-/// finds a local minimum.
+/// finds a local minimum. If `initial_step` is not finite or not larger
+/// than `tolerance`, the start is returned unsearched with `converged`
+/// false.
 ///
 /// ```
 /// use act_math::optimize::{nelder_mead, NelderMead};
@@ -245,7 +251,8 @@ pub fn nelder_mead(mut f: impl FnMut(&[f64]) -> f64, x0: &[f64], options: &Nelde
     let mut value = eval(&x);
     let mut iterations = 0;
     let mut converged = x0.is_empty();
-    if !converged {
+    let valid = options.initial_step.is_finite() && options.initial_step > options.tolerance;
+    if !converged && valid {
         for _pass in 0..2 {
             (x, value, converged) = simplex_pass(&mut eval, x, value, options, &mut iterations);
             if !converged {
@@ -275,11 +282,9 @@ fn simplex_pass(
     let mut simplex = vec![(start.clone(), f_start)];
     for i in 0..n {
         let mut v = start.clone();
-        v[i] += if v[i] == 0.0 {
-            options.initial_step
-        } else {
-            options.initial_step * v[i].abs()
-        };
+        // At least `initial_step` times `max(1, |x|)`, the scale of the
+        // diameter test, so the starting simplex never passes it.
+        v[i] += options.initial_step * v[i].abs().max(1.0);
         let fv = f(&v);
         simplex.push((v, fv));
     }
@@ -392,23 +397,52 @@ mod tests {
 
     #[test]
     fn nelder_mead_steps_around_a_nan_region() {
-        // NaN for x <= 0; the minimum at (0.05, 1) sits next to that
-        // region, and a step of the starting simplex lands in it.
-        let mut infeasible_calls = 0;
+        // NaN for x >= 0.55; the minimum at (0.54, 1) sits next to that
+        // region. From (0.5, 0) the first vertex of the starting simplex,
+        // (0.6, 0), lies in it (call 0 is the start, call 1 that vertex).
+        let mut calls = 0;
+        let mut infeasible_calls = Vec::new();
         let f = |x: &[f64]| {
-            if x[0] <= 0.0 {
-                infeasible_calls += 1;
+            calls += 1;
+            if x[0] >= 0.55 {
+                infeasible_calls.push(calls - 1);
                 return f64::NAN;
             }
-            (x[0] - 0.05).powi(2) + (x[1] - 1.0).powi(2)
+            (x[0] - 0.54).powi(2) + (x[1] - 1.0).powi(2)
         };
         let m = nelder_mead(f, &[0.5, 0.0], &NelderMead::default());
         assert!(m.converged, "{m:?}");
         assert!(
-            (m.x[0] - 0.05).abs() < 1e-7 && (m.x[1] - 1.0).abs() < 1e-7,
+            (m.x[0] - 0.54).abs() < 1e-7 && (m.x[1] - 1.0).abs() < 1e-7,
             "{m:?}"
         );
-        assert!(infeasible_calls > 0, "the test never probed the NaN region");
+        assert_eq!(infeasible_calls.first(), Some(&1), "{infeasible_calls:?}");
+        assert!(
+            infeasible_calls.len() > 1,
+            "only the starting vertex was infeasible"
+        );
+    }
+
+    #[test]
+    fn nelder_mead_moves_off_a_start_near_zero() {
+        // A purely relative step would build a simplex 1e-11 wide around
+        // 1e-10, already within tolerance; the minimum is 0 at 3.
+        let m = nelder_mead(|x| (x[0] - 3.0).powi(2), &[1e-10], &NelderMead::default());
+        assert!(m.converged && m.iterations > 0, "{m:?}");
+        assert!((m.x[0] - 3.0).abs() < 1e-7 && m.value < 1e-14, "{m:?}");
+    }
+
+    #[test]
+    fn nelder_mead_rejects_a_step_within_tolerance() {
+        let f = |x: &[f64]| (x[0] - 3.0).powi(2);
+        for initial_step in [0.0, 1e-10, -0.1, f64::NAN, f64::INFINITY] {
+            let options = NelderMead {
+                initial_step,
+                ..NelderMead::default()
+            };
+            let m = nelder_mead(f, &[1.0], &options);
+            assert!(!m.converged && m.iterations == 0 && m.x == [1.0], "{m:?}");
+        }
     }
 
     #[test]
