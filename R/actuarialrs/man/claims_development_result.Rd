@@ -58,5 +58,6 @@ all.equal(cdr@total_run_off_standard_error, m@total_standard_error)
 as.data.frame(cdr)
 }
 \seealso{
-\code{\link[=mack]{mack()}}.
+\code{\link[=mack]{mack()}}; \code{\link[=odp_one_year]{odp_one_year()}} simulates the one-year view of any
+averaging, tail or expected-loss method.
 }

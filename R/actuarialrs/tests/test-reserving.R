@@ -1005,4 +1005,127 @@ expect_error_like(benktander(wk, "paid", "premium", n_iters = 1.5), "n_iters mus
 expect_error_like(expected_loss(wk, "paid", "premium", average = "median"), "should be one of")
 expect_error_like(totals_frame(1), "fit must be a chain_ladder_fit")
 
+# The simulated one-year view (odp_one_year), as in
+# validation/tests/reserving_one_year_bootstrap.rs: the same seed and number
+# of simulations give the same draws.
+sd_and_error <- function(x) {
+  # The standard deviation and its Monte Carlo standard error,
+  # sd * sqrt((kurtosis - 1) / (4 n)).
+  m2 <- mean((x - mean(x))^2)
+  m4 <- mean((x - mean(x))^4)
+  c(sd = sqrt(m2), error = sqrt(m2) * sqrt((m4 / m2^2 - 1) / (4 * length(x))))
+}
+one <- odp_one_year(raa, n_sims = 20000, seed = 20261006)
+stopifnot(S7::S7_inherits(one, one_year_fit), S7::S7_inherits(one@cdr, predictive_distribution),
+          S7::S7_inherits(one@chain_ladder, chain_ladder_fit),
+          identical(one@cdr@dims, "origin"), identical(one@cdr@keys$origin, raa@origins),
+          identical(one@origins, raa@origins), identical(one@development, raa@development),
+          identical(one@keys, character()), one@cdr@n_sims == 20000,
+          provenance(one@cdr)$model == "odp_bootstrap_one_year",
+          # 1981 is at the last age: no new cell, no change.
+          all(draw_matrix(one@cdr)[, 1] == 0),
+          identical(one@scale, boot@scale),
+          identical(one@opening_ultimate, chain_ladder(raa)@ultimate),
+          identical(one@latest, chain_ladder(raa)@latest))
+near(one@opening_reserve, chain_ladder(raa)@reserve, 1e-12)
+cdr_draws <- draw_matrix(one@cdr)
+total_cdr <- sd_and_error(rowSums(cdr_draws))
+stopifnot(abs(mean(one@cdr)) < 0.15 * total_cdr[["sd"]])
+# Against Merz and Wuthrich: R ChainLadder's total CDR(1)S.E.
+# (validation/reference/reserving_cdr_r.csv) times the ratio measured with
+# this seed, 0.4579, within five Monte Carlo standard errors. The ODP's
+# process variance (phi times the mean) is not Mack's, so the two differ
+# (knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md).
+mw_total <- cdr_ref$expected[cdr_ref$dataset == "raa" & cdr_ref$method == "cdr" &
+                               cdr_ref$quantity == "total_one_year_se"]
+stopifnot(length(mw_total) == 1,
+          abs(total_cdr[["sd"]] - 0.4579 * mw_total) <= 5 * total_cdr[["error"]] + 5e-5 * mw_total)
+# Against R's BootChainLadder (validation/reference/reserving_bootstrap_r.csv):
+# every origin's one-year standard deviation is at most its lifetime one,
+# and 1982, with one cell left, has its whole run-off in the year. The
+# one-year view starts from the observed latest value, BootChainLadder from
+# a resampled one, which is up to 2% of the standard deviation here.
+for (j in seq_along(raa@origins)) {
+  ref <- boot_ref[boot_ref$method == "odp_bootstrap_gamma" & boot_ref$quantity == "sd_reserve" &
+                    boot_ref$arg == raa@origins[j], ]
+  got <- sd_and_error(cdr_draws[, j])[["sd"]]
+  stopifnot(nrow(ref) == 1, got <= ref$expected + ref$abs_tol)
+  if (raa@origins[j] == "1982") stopifnot(abs(got - ref$expected) <= ref$abs_tol + 0.02 * ref$expected)
+}
+one_df <- as.data.frame(one)
+stopifnot(identical(names(one_df), c("origin", "latest", "opening_ultimate", "opening_reserve",
+                                     "cdr_mean", "cdr_std_dev")),
+          one_df$cdr_std_dev[1] == 0,
+          identical(names(totals_frame(one)), c("latest", "opening_ultimate", "opening_reserve",
+                                                "scale", "cdr_mean", "cdr_std_dev")),
+          identical(development_frame(one), development_frame(chain_ladder(raa))))
+near(one_df$cdr_mean, colMeans(cdr_draws), 1e-9)
+near(totals_frame(one)$cdr_std_dev, sqrt(variance(one@cdr)), 1e-6)
+invisible(utils::capture.output(print(one)))
+# Same seed, same draws; process error adds variance.
+small <- odp_one_year(raa, n_sims = 500, seed = 7)
+stopifnot(identical(draw_matrix(small@cdr), draw_matrix(odp_one_year(raa, n_sims = 500, seed = 7)@cdr)),
+          !identical(draw_matrix(small@cdr), draw_matrix(odp_one_year(raa, n_sims = 500, seed = 8)@cdr)),
+          variance(odp_one_year(raa, n_sims = 2000, seed = 1, process = "none")@cdr) <
+            variance(odp_one_year(raa, n_sims = 2000, seed = 1)@cdr))
+# Settings reach the refitted chain ladder; the bootstrap stays volume-weighted without a tail.
+tailed <- odp_one_year(raa, n_sims = 500, seed = 1, tail = 1.05)
+stopifnot(identical(tailed@opening_ultimate, chain_ladder(raa, tail = 1.05)@ultimate),
+          identical(tailed@chain_ladder@tail, 1), identical(tailed@scale, boot@scale),
+          all(draw_matrix(tailed@cdr)[, 1] == 0))
+stopifnot(identical(odp_one_year(raa, n_sims = 10, average = "simple", tail = tail_bondy())@opening_ultimate,
+                    chain_ladder(raa, average = "simple", tail = tail_bondy())@ultimate))
+# The expected-loss methods open on their own ultimate, as in
+# python/tests/test_reserving.py.
+gp <- premium_tris$genins_premium
+for (case in list(
+  list(method = "bornhuetter_ferguson", settings = list(apriori = 0.6),
+       fit = bornhuetter_ferguson(gp, "paid", "premium", apriori = 0.6)),
+  list(method = "benktander", settings = list(apriori = 0.6, n_iters = 2),
+       fit = benktander(gp, "paid", "premium", apriori = 0.6, n_iters = 2)),
+  list(method = "cape_cod", settings = list(trend = 0.02, decay = 0.9),
+       fit = cape_cod(gp, "paid", "premium", trend = 0.02, decay = 0.9))
+)) {
+  fit <- do.call(odp_one_year, c(list(gp, "paid", case$method, exposure = "premium", n_sims = 300,
+                                      seed = 4), case$settings))
+  stopifnot(identical(fit@opening_ultimate, case$fit@ultimate), variance(fit@cdr) > 0)
+}
+# The expected loss ratio ultimate ignores the losses: its CDR is zero.
+elr_one <- odp_one_year(gp, "paid", "expected_loss", exposure = "premium", apriori = 0.6, n_sims = 300)
+stopifnot(all(draw_matrix(elr_one@cdr) == 0))
+# Every segment at once: one joint distribution over lob x origin.
+lob_one <- odp_one_year(both, "paid", "bornhuetter_ferguson", exposure = "premium", apriori = 0.6,
+                        n_sims = 400, seed = 5)
+wk_one <- segment(lob_one, lob = "clrd_wkcomp")
+stopifnot(identical(lob_one@keys, "lob"), identical(lob_one@cdr@dims, c("lob", "origin")),
+          nrow(lob_one@cdr@keys) == 20, identical(names(lob_one@opening_ultimate)[1], "clrd_wkcomp / 1988"),
+          identical(aggregate(lob_one@cdr, keep = "lob")@keys$lob, premium_sets),
+          identical(S7::S7_class(wk_one), one_year_fit), identical(wk_one@cdr@dims, c("lob", "origin")),
+          identical(unname(wk_one@opening_ultimate), unname(lob_one@opening_ultimate[1:10])),
+          identical(totals_frame(lob_one)$scale[1], wk_one@scale),
+          nrow(as.data.frame(lob_one)) == 20)
+expect_error_like(lob_one@scale, "use totals_frame()")
+invisible(utils::capture.output(print(lob_one)))
+# Errors.
+expect_error_like(odp_one_year(raa, apriori = 0.7), "method \"chain_ladder\" does not use apriori")
+expect_error_like(odp_one_year(gp, "paid", "bornhuetter_ferguson", exposure = "premium", n_iters = 2),
+                  "method \"bornhuetter_ferguson\" does not use n_iters")
+expect_error_like(odp_one_year(gp, "paid", "bornhuetter_ferguson"),
+                  "method \"bornhuetter_ferguson\" needs an exposure column")
+expect_error_like(odp_one_year(gp, "paid", exposure = "premium"),
+                  "method \"chain_ladder\" takes no exposure column")
+expect_error_like(odp_one_year(gp, "paid", "cape_cod", exposure = "exposure", n_sims = 10),
+                  "no column named exposure")
+expect_error_like(odp_one_year(gp, "paid", "cape_cod", exposure = 2), "exposure must be the name of a column")
+expect_error_like(odp_one_year(raa, method = "mack"), "should be one of")
+expect_error_like(odp_one_year(raa, n_sims = 0), "n_sims must be positive")
+expect_error_like(odp_one_year(raa, seed = NA), "seed must be a single number")
+expect_error_like(odp_one_year(gp), "several columns")
+# The newest origin is at zero, so a simple average gives its next link an
+# infinite weight in every refit (as the Rust unit test).
+zero_new <- triangle(data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022), age = c(12, 24, 36, 12, 24, 12),
+                                paid = c(4, 8, 12, 8, 15, 0)), "year", "age", "paid")
+expect_error_like(odp_one_year(zero_new, n_sims = 20, average = "simple"),
+                  "re-reserving failed in 20 of 20 simulations")
+
 cat("actuarialrs R reserving tests passed\n")

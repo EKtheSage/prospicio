@@ -74,5 +74,6 @@ mean(boot@reserves)
 quantile(boot@reserves, 0.995)
 }
 \seealso{
-\code{\link[=chain_ladder]{chain_ladder()}}, \code{\link[=mack]{mack()}}.
+\code{\link[=chain_ladder]{chain_ladder()}}, \code{\link[=mack]{mack()}}; \code{\link[=odp_one_year]{odp_one_year()}} for the one-year
+view on the same bootstrap.
 }

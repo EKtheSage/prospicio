@@ -1128,6 +1128,8 @@ Triangle$cape_cod <- function(column, exposure, trend, decay, average, sigma_int
 
 Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process)
 
+Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process)
+
 Triangle$clark_ldf <- function(column, curve, max_age) .Call(wrap__Triangle__clark_ldf, self, column, curve, max_age)
 
 Triangle$clark_cape_cod <- function(column, exposure, curve, max_age) .Call(wrap__Triangle__clark_cape_cod, self, column, exposure, curve, max_age)
@@ -1348,6 +1350,32 @@ OdpBootstrapFit$segment <- function(keys, values) .Call(wrap__OdpBootstrapFit__s
 
 #' @export
 `[[.OdpBootstrapFit` <- `$.OdpBootstrapFit`
+
+OneYearFit <- new.env(parent = emptyenv())
+
+OneYearFit$chain_ladder <- function() .Call(wrap__OneYearFit__chain_ladder, self)
+
+OneYearFit$opening_ultimate <- function() .Call(wrap__OneYearFit__opening_ultimate, self)
+
+OneYearFit$opening_reserve <- function() .Call(wrap__OneYearFit__opening_reserve, self)
+
+OneYearFit$scale <- function() .Call(wrap__OneYearFit__scale, self)
+
+OneYearFit$cdr <- function() .Call(wrap__OneYearFit__cdr, self)
+
+OneYearFit$long_table <- function() .Call(wrap__OneYearFit__long_table, self)
+
+OneYearFit$totals_table <- function() .Call(wrap__OneYearFit__totals_table, self)
+
+OneYearFit$development_table <- function() .Call(wrap__OneYearFit__development_table, self)
+
+OneYearFit$segment <- function(keys, values) .Call(wrap__OneYearFit__segment, self, keys, values)
+
+#' @export
+`$.OneYearFit` <- function (self, name) { func <- OneYearFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.OneYearFit` <- `$.OneYearFit`
 
 ClarkFit <- new.env(parent = emptyenv())
 

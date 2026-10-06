@@ -1,8 +1,8 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
 //! ladder, Mack with its one-year view, tails, the expected-loss methods,
-//! Clark's growth curves and the ODP bootstrap,
-//! `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the R
-//! `reserving.R` API.
+//! Clark's growth curves, and the ODP bootstrap with its simulated one-year
+//! view, `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the
+//! R `reserving.R` API.
 //!
 //! Arrays cross the boundary flattened row-major over the Rust axes
 //! (index, column, origin, development) with NaN where a cell is not
@@ -13,9 +13,9 @@ use act_reserving::{
     ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
     ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
     ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
-    Long, Mack, MackFit as MackInner, Month, OdpBootstrap, OdpBootstrapFits, ProcessDistribution,
-    ReserveFit, SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
-    Triangle as TriangleInner,
+    Long, Mack, MackFit as MackInner, Month, OdpBootstrap, OdpBootstrapFits, OneYearFits,
+    OneYearMethod, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail,
+    TailBondy, TailConstant, TailCurve, Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -70,6 +70,28 @@ fn pattern(average: &str, sigma_interpolation: &str, tail: Robj) -> Result<Chain
     Ok(ChainLadder {
         development: development(average, sigma_interpolation)?,
         tail: tail_arg(&tail)?,
+    })
+}
+
+/// The ODP bootstrap of `odp_bootstrap()` and `odp_one_year()`.
+fn bootstrap(n_sims: f64, seed: f64, process: &str) -> Result<OdpBootstrap> {
+    let n_sims = whole(n_sims, "n_sims")? as usize;
+    if n_sims == 0 {
+        return Err(Error::Other("n_sims must be positive".into()));
+    }
+    let process = match process {
+        "gamma" => ProcessDistribution::Gamma,
+        "none" => ProcessDistribution::None,
+        _ => {
+            return Err(Error::Other(format!(
+                "process must be \"gamma\" or \"none\", got \"{process}\""
+            )));
+        }
+    };
+    Ok(OdpBootstrap {
+        n_sims,
+        seed: whole(seed, "seed")?,
+        process,
     })
 }
 
@@ -627,27 +649,100 @@ impl Triangle {
         seed: f64,
         process: &str,
     ) -> Result<OdpBootstrapFit> {
-        let n_sims = whole(n_sims, "n_sims")? as usize;
-        if n_sims == 0 {
-            return Err(Error::Other("n_sims must be positive".into()));
-        }
-        let process = match process {
-            "gamma" => ProcessDistribution::Gamma,
-            "none" => ProcessDistribution::None,
+        let inner = bootstrap(n_sims, seed, process)?
+            .fit_segments(&self.inner, column)
+            .map_err(to_r)?;
+        Ok(OdpBootstrapFit { inner })
+    }
+
+    /// The one-year view of `method` ("chain_ladder", "expected_loss",
+    /// "bornhuetter_ferguson", "benktander" or "cape_cod") by re-reserving
+    /// on the ODP bootstrap. `exposure` is `NULL` for the chain ladder and
+    /// names the exposure column of the other methods; each method reads
+    /// only its own settings (`apriori`, `n_iters`, `trend`, `decay`).
+    #[allow(clippy::too_many_arguments)]
+    fn odp_one_year(
+        &self,
+        column: &str,
+        method: &str,
+        exposure: Nullable<String>,
+        apriori: f64,
+        n_iters: f64,
+        trend: f64,
+        decay: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: Robj,
+        n_sims: f64,
+        seed: f64,
+        process: &str,
+    ) -> Result<OneYearFit> {
+        let chain_ladder = pattern(average, sigma_interpolation, tail)?;
+        let exposure = match exposure {
+            Nullable::NotNull(e) => Some(e),
+            Nullable::Null => None,
+        };
+        let needs = |e: Option<String>| {
+            e.ok_or_else(|| {
+                Error::Other(format!(
+                    "method \"{method}\" needs an exposure column: pass exposure = ..."
+                ))
+            })
+        };
+        let method = match method {
+            "chain_ladder" => {
+                if exposure.is_some() {
+                    return Err(Error::Other(
+                        "method \"chain_ladder\" takes no exposure column".into(),
+                    ));
+                }
+                OneYearMethod::ChainLadder(chain_ladder)
+            }
+            "expected_loss" => OneYearMethod::ExpectedLoss(
+                ExpectedLoss {
+                    apriori,
+                    chain_ladder,
+                },
+                needs(exposure)?,
+            ),
+            "bornhuetter_ferguson" => OneYearMethod::BornhuetterFerguson(
+                BornhuetterFerguson {
+                    apriori,
+                    chain_ladder,
+                },
+                needs(exposure)?,
+            ),
+            "benktander" => {
+                let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
+                    .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
+                OneYearMethod::Benktander(
+                    Benktander {
+                        apriori,
+                        n_iters,
+                        chain_ladder,
+                    },
+                    needs(exposure)?,
+                )
+            }
+            "cape_cod" => OneYearMethod::CapeCod(
+                CapeCod {
+                    trend,
+                    decay,
+                    chain_ladder,
+                },
+                needs(exposure)?,
+            ),
             _ => {
                 return Err(Error::Other(format!(
-                    "process must be \"gamma\" or \"none\", got \"{process}\""
+                    "method must be \"chain_ladder\", \"expected_loss\", \
+                     \"bornhuetter_ferguson\", \"benktander\" or \"cape_cod\", got \"{method}\""
                 )));
             }
         };
-        let inner = OdpBootstrap {
-            n_sims,
-            seed: whole(seed, "seed")?,
-            process,
-        }
-        .fit_segments(&self.inner, column)
-        .map_err(to_r)?;
-        Ok(OdpBootstrapFit { inner })
+        let inner = bootstrap(n_sims, seed, process)?
+            .one_year_segments(&self.inner, column, &method)
+            .map_err(to_r)?;
+        Ok(OneYearFit { inner })
     }
 
     /// Clark's LDF method; `max_age` is `Inf` to develop to infinity.
@@ -1290,6 +1385,65 @@ impl OdpBootstrapFit {
     }
 }
 
+/// The simulated one-year view of every segment of a triangle column:
+/// each segment's bootstrap and opening ultimate, and the joint claims
+/// development result.
+#[extendr]
+pub(crate) struct OneYearFit {
+    inner: OneYearFits,
+}
+
+#[extendr]
+impl OneYearFit {
+    /// The bootstrap's volume-weighted chain ladder.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self
+                .inner
+                .segments
+                .map(|s| s.bootstrap.chain_ladder.clone()),
+        }
+    }
+
+    fn opening_ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.opening_ultimate.clone())
+    }
+
+    fn opening_reserve(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.opening_reserve.clone())
+    }
+
+    fn scale(&self) -> Result<f64> {
+        Ok(single(&self.inner.segments, "scale", "totals_frame()")?
+            .bootstrap
+            .scale)
+    }
+
+    fn cdr(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.cdr.clone(),
+        }
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.segments.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
+        })
+    }
+}
+
 /// A Clark LDF or Cape Cod fit of every segment of a triangle column.
 /// Per-origin vectors run over the origins of each segment in turn.
 #[extendr]
@@ -1449,5 +1603,6 @@ extendr_module! {
     impl CapeCodFit;
     impl ClaimsDevelopmentResult;
     impl OdpBootstrapFit;
+    impl OneYearFit;
     impl ClarkFit;
 }
