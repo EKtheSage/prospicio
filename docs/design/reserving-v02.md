@@ -160,6 +160,14 @@ positionally; any other shape is an error. The formulas need the volume
 `S_k` behind each factor, so `DevelopmentFit` gains `volume: Vec<f64>`
 (`sum(C[k]^alpha)` over the link pairs).
 
+The check is on the latest values only, so an origin with an interior hole
+(a missing value before its latest) is accepted. Its `S_k` is the pair
+volume, which leaves the hole out now and next year, and the run-off adds
+up to Mack's. This is a deliberate deviation from R: R's `CDR` takes the
+volumes from the full triangle, imputed cell included, and on RAA without
+1982 at 48 its run-off (24,837) falls short of its own Mack (24,848);
+act-reserving's matches Mack.
+
 `by_calendar_year` has one year per age-to-age factor. R reports one per
 age, so its last year, `CDR(n)S.E.`, is past the run-off and always zero;
 the parity test reads it as zero. R's `Mack.S.E.` column is the square

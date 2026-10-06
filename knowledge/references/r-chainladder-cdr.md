@@ -39,8 +39,18 @@ between two origins carried by the older origin's parameter term.[^script]
   returns numbers; with a tail it stops. act-reserving errors in both
   cases.[^design]
 * It reads the latest diagonal positionally (row `i`'s latest at column
-  `I - i + 1`), so it assumes a full trapezoid; act-reserving checks that
-  shape and errors otherwise.
+  `I - i + 1`), so it assumes the latest values lie on one diagonal, one
+  new origin per period; act-reserving checks that and errors
+  otherwise.[^design]
+* An interior hole (a missing value before an origin's latest) passes that
+  check. R then mixes conventions: `CL_MSEPs` takes each factor's volume
+  from `FullTriangle`, imputed cell included, while its `alpha` divides by
+  the observed column sum. Its run-off then no longer equals its own Mack:
+  on RAA with `r[2, 4] <- NA`, `CDR` gives a one-year total of 23,551.76
+  and a run-off of 24,836.98, against `MackChainLadder`'s 24,847.83.
+  act-reserving uses the pair volumes behind each factor, gives 23,557.36
+  for the one-year total, and its run-off matches Mack, per origin and in
+  total. This is a deliberate deviation.[^design]
 
 # The 2008 paper's Table 4
 

@@ -104,6 +104,12 @@ impl MackFit {
     /// The formulas assume volume-weighted factors, no tail and a triangle
     /// whose latest values lie on one calendar diagonal, one new origin per
     /// period. Anything else is an error ([`Error::ClaimsDevelopment`]).
+    ///
+    /// An origin with an interior hole, a missing value before its latest,
+    /// is accepted: each factor's volume is that of the pairs behind it, so
+    /// the hole stays out now and next year and the run-off adds up to
+    /// Mack's. R's `CDR` takes the volumes from the full triangle, the
+    /// imputed cell included, and differs here.
     pub fn claims_development_result(&self) -> Result<ClaimsDevelopmentResult> {
         let cl = &self.chain_ladder;
         let dev = &cl.development;
@@ -389,8 +395,9 @@ mod tests {
 
     #[test]
     fn rejects_a_ragged_diagonal() {
-        // The youngest origin is a year behind: no value on the latest
-        // diagonal.
+        // No origin in the latest period: 2021 to 2023 end on the 2024
+        // diagonal and 2023 is at age 24, so the positional shares would
+        // be wrong.
         let t = annual(
             2020,
             &[
@@ -405,6 +412,63 @@ mod tests {
             mack.claims_development_result(),
             Err(Error::ClaimsDevelopment(_))
         ));
+    }
+
+    #[test]
+    fn interior_hole_uses_the_pair_volumes() {
+        // RAA without origin 1982 at age 48. Its latest is still on the
+        // diagonal, so the shape check passes; 1982 stays out of the 36-48
+        // and 48-60 factors now and next year, and the run-off adds up to
+        // Mack's. R ChainLadder 0.2.21 MackChainLadder(r) with r[2, 4] <- NA
+        // gives the Mack standard errors below. R's CDR on the same triangle
+        // gives a one-year total of 23551.7570829886 and a run-off of
+        // 24836.9792219666, short of its own Mack: it takes the factor
+        // volumes from the full triangle, imputed cell included
+        // (knowledge/references/r-chainladder-cdr.md).
+        use crate::triangle::tests::RAA;
+        use crate::triangle::{DevelopmentColumn, Long};
+        use act_core::{Grain, Lag, Month};
+
+        let (mut origin, mut ages, mut values) = (Vec::new(), Vec::new(), Vec::new());
+        for (o, row) in RAA.iter().enumerate() {
+            for (d, &v) in row.iter().enumerate() {
+                if (o, d) != (1, 3) {
+                    origin.push(Month::january(1981 + o as i32));
+                    ages.push(12 * (d as Lag + 1));
+                    values.push(v);
+                }
+            }
+        }
+        let t = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("values", &values)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let mack = Mack::default().fit(&t, "values").unwrap();
+        let cdr = mack.claims_development_result().unwrap();
+        let r_mack = [
+            0.0,
+            142.310257231384,
+            591.891125677980,
+            712.571908317654,
+            1451.950171594476,
+            1994.932606866756,
+            2053.730986311831,
+            3693.630055060053,
+            5324.327029558024,
+            23131.801249176013,
+        ];
+        for (got, want) in cdr.run_off_standard_error().iter().zip(r_mack) {
+            close(*got, want, 1e-8 * want.max(1.0));
+        }
+        close(cdr.total_run_off_standard_error(), 24847.8292870902, 1e-7);
+        // act-reserving's own result with the pair volumes; R's differs.
+        close(cdr.total_one_year_standard_error, 23557.357935729688, 1e-6);
     }
 
     #[test]
