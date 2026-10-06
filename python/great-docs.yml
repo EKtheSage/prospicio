@@ -123,13 +123,19 @@ reference:
       - pricing.Price
       - pricing.PortfolioPrice
   - title: Reserving
-    desc: Loss triangles, the chain ladder, Mack's model, the ODP bootstrap and Clark's growth curves.
+    desc: Loss triangles, the chain ladder, Mack's model, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
     contents:
       - reserving.Triangle
       - reserving.ChainLadder
       - reserving.ChainLadderFit
       - reserving.Mack
       - reserving.MackFit
+      - reserving.ExpectedLoss
+      - reserving.BornhuetterFerguson
+      - reserving.Benktander
+      - reserving.CapeCod
+      - reserving.ExpectedLossFit
+      - reserving.CapeCodFit
       - reserving.OdpBootstrap
       - reserving.OdpBootstrapFit
       - reserving.ClarkLdf

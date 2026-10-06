@@ -21,13 +21,32 @@ sources:
   `n_iters = 0` and `BornhuetterFerguson` with `n_iters = 1`. The ultimate
   is the closed form `sum(p**k, k < n) * latest + p**n * expectation`,
   `p = 1 - 1/cdf` at the origin's latest age and `expectation =
-  sample_weight * apriori`. It equals iterating
-  `U = latest + p * U` from the expectation `n` times; act_reserving
-  iterates and agrees to 1e-9 relative on every reference row, including
-  `n_iters = 100`.[^generator]
+  sample_weight * apriori`, summed over an explicit array of `n + 1`
+  powers. It equals iterating `U = latest + p * U` from the expectation `n`
+  times up to rounding; act_reserving uses the same closed form, with `p^n`
+  and the sum by repeated squaring, and agrees to 1e-9 relative on every
+  reference row, including `n_iters = 100`.[^generator]
+* Stepping `U = latest + p * U` one at a time is unsafe as a stopping
+  rule: with negative development (`cdf < 1`, `p < 0`) the floating-point
+  steps can end in a two-cycle, so "stop once nothing changes" never fires.
+  With `cdf < 1/2`, `|p| > 1` and the ultimate diverges: on paid
+  `[[100, 40], [100]]`, premium 100, `Benktander(apriori=0.5)` gives the
+  second origin -35.9375 at `n_iters = 5` and 153.90625 at 6.
 * The exposure (`sample_weight`) is a separate triangle; its examples pass
   `premium.latest_diagonal`. act_reserving reads the latest observed value
   of a measure column of the same triangle instead.[^reserving-v02]
+* On an incremental triangle, `premium.latest_diagonal` is the last
+  increment. act_reserving cumulates the exposure column with the losses,
+  so a premium repeated on each age of an incremental triangle is counted
+  once per age (premium `[250, 250]` at ages 12 and 24 gives exposure 500,
+  against chainladder-python's 250).[^reserving-v02]
+* An origin with no value on the valuation diagonal gets a NaN ultimate
+  (from the chain ladder up) and is left out of `CapeCod`'s pooled loss
+  ratio by a NaN-skipping sum. act_reserving uses that origin's latest
+  observed value and the cdf at its age, and pools it: on paid
+  `[[100, 150, 165], [120], [130]]` with premium 300, 320, 340,
+  chainladder-python's apriori is 0.582934 and the third ultimate 208.078,
+  act_reserving's 415 / 700 = 0.592857 and 209.407.[^reserving-v02]
 * `CapeCod` weights origin `j` in origin `i`'s apriori by
   `decay ** abs(i - j) * sample_weight[j] / cdf[j]` and averages
   `latest[j] * trend_factor[j] / (sample_weight[j] / cdf[j])`; the

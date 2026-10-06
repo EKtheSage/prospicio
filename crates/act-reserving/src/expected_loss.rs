@@ -6,7 +6,12 @@
 //! Each method takes an exposure column of the same triangle (premium,
 //! say). An origin's exposure is that column's latest observed cumulative
 //! value in the segment being fitted, as chainladder-python's examples pass
-//! `sample_weight=premium.latest_diagonal`. With `q = 1 / cdf` the share of
+//! `sample_weight=premium.latest_diagonal`. On an incremental triangle the
+//! exposure column is cumulated like the losses, so it must hold increments
+//! too: a premium repeated on every age of an origin counts once per age.
+//! An origin without a value on the valuation diagonal uses its latest
+//! observed value and the cdf at that age, as the chain ladder does, and
+//! Cape Cod pools it with the others. With `q = 1 / cdf` the share of
 //! the ultimate developed at the origin's latest age and an expected
 //! ultimate `U0 = apriori * exposure`, the methods credit the latest value
 //! `latest` and `U0` differently:
@@ -98,7 +103,11 @@ pub struct BornhuetterFerguson {
 /// for `n_iters` steps. `n_iters = 0` is the expected loss method, 1 is
 /// Bornhuetter–Ferguson, and many iterations approach the chain ladder.
 ///
-/// The iterations stop early once the ultimates no longer change.
+/// The steps are summed in closed form, as chainladder-python does, so a
+/// large `n_iters` costs no more than a small one. Where an origin's `cdf`
+/// is below 1/2 (its latest value more than double the chain ladder's
+/// ultimate), `1 - 1 / cdf` is below -1 and the steps diverge: the
+/// ultimate swings in sign and grows with `n_iters`.
 ///
 /// ```
 /// use act_reserving::{Benktander, DevelopmentColumn, Grain, Long, Month, Triangle};
@@ -251,15 +260,6 @@ impl ExpectedLossFit {
     pub fn total_reserve(&self) -> f64 {
         self.total_ultimate() - self.chain_ladder.latest.iter().sum::<f64>()
     }
-
-    /// Expected ultimate per origin, `apriori * exposure`.
-    pub fn expected_ultimate(&self) -> Vec<f64> {
-        self.exposure
-            .iter()
-            .zip(&self.apriori)
-            .map(|(e, a)| e * a)
-            .collect()
-    }
 }
 
 /// A fitted Cape Cod: the expected-loss fit with the detrended apriori, and
@@ -345,24 +345,32 @@ fn latest_cdf(fit: &ChainLadderFit) -> impl Iterator<Item = f64> + '_ {
     fit.latest_position.iter().map(|&d| fit.cdf[d])
 }
 
-/// `n_iters` Bornhuetter–Ferguson steps from `expected`:
-/// `U(k) = latest + (1 - 1 / cdf) * U(k - 1)`, stopping early once an
-/// origin's ultimate no longer changes.
+/// `n_iters` Bornhuetter–Ferguson steps from `expected`,
+/// `U(k) = latest + p * U(k - 1)` with `p = 1 - 1 / cdf`, in the closed form
+/// chainladder-python uses: `U(n) = latest * (1 + p + ... + p^(n-1)) + p^n
+/// * U(0)`. `p^n` and the geometric sum are built by repeated squaring, so
+/// the work grows with the number of bits of `n_iters`, whatever `p` is
+/// (an origin with `cdf` below 1/2 has `|p| > 1`, and its ultimate does
+/// not settle as `n_iters` grows).
 fn benktander(fit: &ChainLadderFit, expected: &[f64], n_iters: usize) -> Vec<f64> {
     latest_cdf(fit)
         .zip(&fit.latest)
         .zip(expected)
         .map(|((cdf, &latest), &u0)| {
-            let unreported = 1.0 - 1.0 / cdf;
-            let mut u = u0;
-            for _ in 0..n_iters {
-                let next = latest + unreported * u;
-                if next == u {
-                    break;
+            let p = 1.0 - 1.0 / cdf;
+            // `power = p^m` and `sum = 1 + p + ... + p^(m-1)` for the leading
+            // bits `m` of `n_iters`: doubling `m` maps `sum` to
+            // `sum * (1 + p^m)`, adding one to it adds `p^m`.
+            let (mut power, mut sum) = (1.0, 0.0);
+            for bit in (0..usize::BITS - n_iters.leading_zeros()).rev() {
+                sum *= 1.0 + power;
+                power *= power;
+                if n_iters >> bit & 1 == 1 {
+                    sum += power;
+                    power *= p;
                 }
-                u = next;
             }
-            u
+            latest * sum + power * u0
         })
         .collect()
 }
@@ -680,7 +688,6 @@ mod tests {
         .unwrap();
         assert_eq!(el.ultimate, [125.0, 200.0]);
         assert_eq!(el.exposure, [250.0, 400.0]);
-        assert_eq!(el.expected_ultimate(), [125.0, 200.0]);
         let bf = BornhuetterFerguson {
             apriori: 0.5,
             ..Default::default()
@@ -759,8 +766,68 @@ mod tests {
         for (b, c) in far.ultimate.iter().zip(&cl.ultimate) {
             close(*b, *c, 1e-9 * c);
         }
-        // A huge n_iters stops once nothing changes.
-        assert_eq!(fit(usize::MAX).ultimate.len(), 10);
+        // A huge n_iters costs no more than a small one.
+        let limit = fit(usize::MAX);
+        for (b, c) in limit.ultimate.iter().zip(&cl.ultimate) {
+            close(*b, *c, 1e-9 * c);
+        }
+    }
+
+    /// `n_iters` steps of `U = latest + p * U` from `u0`, one at a time.
+    fn iterate(latest: f64, p: f64, u0: f64, n_iters: usize) -> f64 {
+        (0..n_iters).fold(u0, |u, _| latest + p * u)
+    }
+
+    #[test]
+    fn benktander_with_negative_development() {
+        // ldf 0.7, so 1982's p = 1 - 1/0.7 is negative: the steps alternate
+        // around the chain ladder's 140 and settle on it. Stepping one at a
+        // time can end in a floating-point two-cycle that never stops; the
+        // closed form does not loop over the steps at all.
+        let tri = with_premium(&[&[100.0, 70.0], &[200.0]], &[100.0, 400.0]);
+        let p = 1.0 - 1.0 / 0.7;
+        let fit = |n_iters| {
+            Benktander {
+                apriori: 0.5,
+                n_iters,
+                ..Default::default()
+            }
+            .fit(&tri, "paid", "premium")
+            .unwrap()
+            .ultimate
+        };
+        for n in [0, 1, 2, 3, 10, 41] {
+            let got = fit(n);
+            assert_eq!(got[0], if n == 0 { 50.0 } else { 70.0 });
+            close(got[1], iterate(200.0, p, 200.0, n), 1e-12 * 200.0);
+        }
+        let limit = fit(usize::MAX);
+        assert_eq!(limit[0], 70.0);
+        close(limit[1], 140.0, 1e-12);
+    }
+
+    #[test]
+    fn benktander_diverges_where_cdf_is_below_half() {
+        // ldf 0.4: 1982's p = -1.5, so the steps swing in sign and grow.
+        // chainladder-python 0.10.1's Benktander(apriori=0.5) gives 1982
+        // -35.9375 at n_iters = 5 and 153.90625 at 6.
+        let tri = with_premium(&[&[100.0, 40.0], &[100.0]], &[100.0, 100.0]);
+        let fit = |n_iters| {
+            Benktander {
+                apriori: 0.5,
+                n_iters,
+                ..Default::default()
+            }
+            .fit(&tri, "paid", "premium")
+            .unwrap()
+            .ultimate
+        };
+        assert_eq!(fit(5), [40.0, -35.9375]);
+        assert_eq!(fit(6), [40.0, 153.90625]);
+        // A huge n_iters returns at once, with an ultimate that overflows.
+        let limit = fit(usize::MAX);
+        assert_eq!(limit[0], 40.0);
+        assert!(!limit[1].is_finite());
     }
 
     #[test]
@@ -812,6 +879,35 @@ mod tests {
     }
 
     #[test]
+    fn cape_cod_pools_an_origin_off_the_valuation_diagonal() {
+        // 1982 has no value at 24 months, on the 1983 diagonal. As in the
+        // chain ladder, its latest value (120 at 12 months) is projected
+        // with the cdf at that age, 1.5 * 1.1, and it joins the pool:
+        // (165 + 120 + 130) / (300 + 320 / 1.65 + 340 / 1.65) = 415 / 700.
+        // chainladder-python 0.10.1 gives 1982 a NaN ultimate and leaves it
+        // out of the pool instead: apriori 295 / (300 + 340 / 1.65) =
+        // 0.582934, and 1983's ultimate 208.078 rather than 209.407.
+        let tri = with_premium(
+            &[&[100.0, 150.0, 165.0], &[120.0], &[130.0]],
+            &[300.0, 320.0, 340.0],
+        );
+        let cc = CapeCod::default().fit(&tri, "paid", "premium").unwrap();
+        for a in &cc.trended_apriori {
+            close(*a, 415.0 / 700.0, 1e-12);
+        }
+        let unreported = 1.0 - 1.0 / 1.65;
+        let ultimate = [
+            165.0,
+            120.0 + unreported * 320.0 * 415.0 / 700.0,
+            130.0 + unreported * 340.0 * 415.0 / 700.0,
+        ];
+        for (got, want) in cc.expected_loss.ultimate.iter().zip(ultimate) {
+            close(*got, want, 1e-9);
+        }
+        close(cc.expected_loss.ultimate[2], 209.407, 1e-3);
+    }
+
+    #[test]
     fn simple_average_development() {
         let tri = with_premium(&RAA, &[20_000.0; 10]);
         let simple = ChainLadder {
@@ -831,6 +927,37 @@ mod tests {
         assert_eq!(bf.chain_ladder, cl);
         let q = 1.0 / cl.cdf[0];
         close(bf.ultimate[9], 2063.0 + (1.0 - q) * 14_000.0, 1e-9);
+    }
+
+    #[test]
+    fn incremental_exposure_is_cumulated() {
+        // An incremental triangle's premium is cumulated with its losses:
+        // 2020's premium given at both ages counts twice. chainladder-python
+        // 0.10.1's `premium.latest_diagonal` on the same incremental
+        // triangle reads the last increment, 250.
+        let origin = [2020, 2020, 2021].map(Month::january);
+        let fit = |premium: &[f64]| {
+            let tri = Triangle::from_long(&Long {
+                keys: &[],
+                origin: &origin,
+                development: DevelopmentColumn::Age(&[12, 24, 12]),
+                values: &[("paid", &[100.0, 50.0, 200.0]), ("premium", premium)],
+                origin_grain: Grain::Year,
+                development_grain: Grain::Year,
+                cumulative: false,
+            })
+            .unwrap();
+            ExpectedLoss {
+                apriori: 0.5,
+                ..Default::default()
+            }
+            .fit(&tri, "paid", "premium")
+            .unwrap()
+        };
+        assert_eq!(fit(&[250.0, 250.0, 400.0]).exposure, [500.0, 400.0]);
+        let once = fit(&[250.0, 0.0, 400.0]);
+        assert_eq!(once.exposure, [250.0, 400.0]);
+        assert_eq!(once.ultimate, [125.0, 200.0]);
     }
 
     #[test]

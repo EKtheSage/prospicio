@@ -14,8 +14,9 @@ development_frame(fit)
 segment(fit, ...)
 }
 \arguments{
-\item{fit}{A \link{chain_ladder_fit}, \link{mack_fit}, \link{odp_bootstrap_fit} or
-\link{clark_fit} (not for \code{development_frame()}).}
+\item{fit}{A \link{chain_ladder_fit}, \link{mack_fit}, \link{expected_loss_fit},
+\link{cape_cod_fit}, \link{odp_bootstrap_fit} or \link{clark_fit} (not for
+\code{development_frame()}).}
 
 \item{...}{Key conditions as \code{key = value}, one value each.}
 }
@@ -23,16 +24,18 @@ segment(fit, ...)
 A data.frame, or for \code{segment()} a fit of the same class.
 }
 \description{
-Tables of a \link{chain_ladder_fit}, \link{mack_fit}, \link{odp_bootstrap_fit} or
-\link{clark_fit} with the triangle's key columns by name.
-\code{as.data.frame(fit)} has one row per segment and origin: \code{origin},
-\code{latest}, \code{ultimate} and \code{reserve}, plus for Mack \code{process_risk},
-\code{parameter_risk} and \code{standard_error}, for the bootstrap the \code{mean} and
-\code{std_dev} of the bootstrapped reserve, and for Clark (Cape Cod)
-\code{exposure}, \code{expected_ultimate} and the three standard errors.
-\code{totals_frame()} has one row per segment with the same quantities for
-the segment's total (for the bootstrap also its \code{scale}; for Clark its
-\code{omega}, \code{theta}, \code{scale} and, for Cape Cod, \code{elr}).
+Tables of a \link{chain_ladder_fit}, \link{mack_fit}, \link{expected_loss_fit},
+\link{cape_cod_fit}, \link{odp_bootstrap_fit} or \link{clark_fit} with the triangle's key
+columns by name. \code{as.data.frame(fit)} has one row per segment and origin:
+\code{origin}, \code{latest}, \code{ultimate} and \code{reserve} (the method's own), plus for
+Mack \code{process_risk}, \code{parameter_risk} and \code{standard_error}, for the
+expected-loss methods \code{exposure} and \code{apriori} (and Cape Cod's
+\code{trended_apriori}), for the bootstrap the \code{mean} and \code{std_dev} of the
+bootstrapped reserve, and for Clark (Cape Cod) \code{exposure},
+\code{expected_ultimate} and the three standard errors. \code{totals_frame()} has
+one row per segment with the same quantities for the segment's total (for
+the expected-loss methods the total \code{exposure}, for the bootstrap also its
+\code{scale}; for Clark its \code{omega}, \code{theta}, \code{scale} and, for Cape Cod, \code{elr}).
 \code{development_frame()} has one row per segment and age: \code{development},
 \code{ldf} (to the next age), \code{cdf} (to ultimate, with the tail), \code{sigma} and
 \code{std_err}; the oldest age has \code{NA} for \code{ldf}, \code{sigma} and \code{std_err}. A

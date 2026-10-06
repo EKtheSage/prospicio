@@ -988,6 +988,14 @@ Triangle$chain_ladder <- function(column, average, sigma_interpolation, tail) .C
 
 Triangle$mack <- function(column, average, sigma_interpolation) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation)
 
+Triangle$expected_loss <- function(column, exposure, apriori, average, sigma_interpolation, tail) .Call(wrap__Triangle__expected_loss, self, column, exposure, apriori, average, sigma_interpolation, tail)
+
+Triangle$bornhuetter_ferguson <- function(column, exposure, apriori, average, sigma_interpolation, tail) .Call(wrap__Triangle__bornhuetter_ferguson, self, column, exposure, apriori, average, sigma_interpolation, tail)
+
+Triangle$benktander <- function(column, exposure, apriori, n_iters, average, sigma_interpolation, tail) .Call(wrap__Triangle__benktander, self, column, exposure, apriori, n_iters, average, sigma_interpolation, tail)
+
+Triangle$cape_cod <- function(column, exposure, trend, decay, average, sigma_interpolation, tail) .Call(wrap__Triangle__cape_cod, self, column, exposure, trend, decay, average, sigma_interpolation, tail)
+
 Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process)
 
 Triangle$clark_ldf <- function(column, curve, max_age) .Call(wrap__Triangle__clark_ldf, self, column, curve, max_age)
@@ -1080,6 +1088,56 @@ MackFit$segment <- function(keys, values) .Call(wrap__MackFit__segment, self, ke
 
 #' @export
 `[[.MackFit` <- `$.MackFit`
+
+ExpectedLossFit <- new.env(parent = emptyenv())
+
+ExpectedLossFit$chain_ladder <- function() .Call(wrap__ExpectedLossFit__chain_ladder, self)
+
+ExpectedLossFit$exposure <- function() .Call(wrap__ExpectedLossFit__exposure, self)
+
+ExpectedLossFit$apriori <- function() .Call(wrap__ExpectedLossFit__apriori, self)
+
+ExpectedLossFit$ultimate <- function() .Call(wrap__ExpectedLossFit__ultimate, self)
+
+ExpectedLossFit$reserve <- function() .Call(wrap__ExpectedLossFit__reserve, self)
+
+ExpectedLossFit$total_ultimate <- function() .Call(wrap__ExpectedLossFit__total_ultimate, self)
+
+ExpectedLossFit$total_reserve <- function() .Call(wrap__ExpectedLossFit__total_reserve, self)
+
+ExpectedLossFit$long_table <- function() .Call(wrap__ExpectedLossFit__long_table, self)
+
+ExpectedLossFit$totals_table <- function() .Call(wrap__ExpectedLossFit__totals_table, self)
+
+ExpectedLossFit$development_table <- function() .Call(wrap__ExpectedLossFit__development_table, self)
+
+ExpectedLossFit$segment <- function(keys, values) .Call(wrap__ExpectedLossFit__segment, self, keys, values)
+
+#' @export
+`$.ExpectedLossFit` <- function (self, name) { func <- ExpectedLossFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ExpectedLossFit` <- `$.ExpectedLossFit`
+
+CapeCodFit <- new.env(parent = emptyenv())
+
+CapeCodFit$expected_loss <- function() .Call(wrap__CapeCodFit__expected_loss, self)
+
+CapeCodFit$trended_apriori <- function() .Call(wrap__CapeCodFit__trended_apriori, self)
+
+CapeCodFit$long_table <- function() .Call(wrap__CapeCodFit__long_table, self)
+
+CapeCodFit$totals_table <- function() .Call(wrap__CapeCodFit__totals_table, self)
+
+CapeCodFit$development_table <- function() .Call(wrap__CapeCodFit__development_table, self)
+
+CapeCodFit$segment <- function(keys, values) .Call(wrap__CapeCodFit__segment, self, keys, values)
+
+#' @export
+`$.CapeCodFit` <- function (self, name) { func <- CapeCodFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CapeCodFit` <- `$.CapeCodFit`
 
 OdpBootstrapFit <- new.env(parent = emptyenv())
 

@@ -271,7 +271,9 @@ class Benktander:
     ``U(0) = apriori * exposure``, ``U(k) = latest + (1 - 1 / cdf) * U(k-1)``
     for ``n_iters`` steps, as chainladder-python's ``Benktander``.
     ``n_iters=0`` is the expected loss method, 1 is Bornhuetter–Ferguson,
-    and many iterations approach the chain ladder.
+    and many iterations approach the chain ladder. The steps are summed in
+    closed form, so a large ``n_iters`` is cheap; where an origin's ``cdf``
+    is below 1/2 they diverge instead.
     
     Parameters
     ----------
@@ -319,8 +321,8 @@ class Benktander:
         column : str
             The losses to project.
         exposure : str
-            The exposure column; each origin's latest observed value is its
-            exposure.
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure (an incremental triangle's is cumulated).
         
         Returns
         -------
@@ -502,8 +504,8 @@ class BornhuetterFerguson:
         column : str
             The losses to project.
         exposure : str
-            The exposure column; each origin's latest observed value is its
-            exposure.
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure (an incremental triangle's is cumulated).
         
         Returns
         -------
@@ -587,8 +589,8 @@ class CapeCod:
         column : str
             The losses to project.
         exposure : str
-            The exposure column; each origin's latest observed value is its
-            exposure.
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure (an incremental triangle's is cumulated).
         
         Returns
         -------
@@ -678,7 +680,8 @@ class CapeCodFit:
     @property
     def exposure(self, /) -> list[float]:
         """
-        Exposure per origin: the exposure column's latest observed value.
+        Exposure per origin: the exposure column's latest observed cumulative
+        value.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -2228,8 +2231,8 @@ class ExpectedLoss:
         column : str
             The losses to project.
         exposure : str
-            The exposure column; each origin's latest observed value is its
-            exposure.
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure (an incremental triangle's is cumulated).
         
         Returns
         -------
@@ -2315,7 +2318,8 @@ class ExpectedLossFit:
     @property
     def exposure(self, /) -> list[float]:
         """
-        Exposure per origin: the exposure column's latest observed value.
+        Exposure per origin: the exposure column's latest observed cumulative
+        value.
         """
     @property
     def index(self, /) -> list[Any]:

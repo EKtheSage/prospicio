@@ -142,6 +142,8 @@ reference:
       - grain
       - chain_ladder_fit
       - mack_fit
+      - expected_loss_fit
+      - cape_cod_fit
       - odp_bootstrap_fit
       - clark_fit
       - fit_frames
