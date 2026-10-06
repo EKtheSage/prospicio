@@ -4,7 +4,8 @@
 //! v0.1 so far: the [`Triangle`] (`docs/design/triangle.md`), development
 //! factors, [`ChainLadder`], [`Mack`] and the [`OdpBootstrap`]; v0.2 adds
 //! the expected-loss family ([`ExpectedLoss`], [`BornhuetterFerguson`],
-//! [`Benktander`], [`CapeCod`]) driven by an exposure column. Results are
+//! [`Benktander`], [`CapeCod`]) driven by an exposure column, and Clark's
+//! growth curves ([`ClarkLdf`], [`ClarkCapeCod`]). Results are
 //! checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.
 //!
@@ -33,6 +34,7 @@
 pub mod backtest;
 pub mod bootstrap;
 pub mod chain_ladder;
+pub mod clark;
 pub mod development;
 pub mod error;
 pub mod expected_loss;
@@ -51,6 +53,7 @@ pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
 };
 pub use chain_ladder::{ChainLadder, ChainLadderFit};
+pub use clark::{ClarkCapeCod, ClarkFit, ClarkLdf, GrowthCurve};
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
 pub use error::{Error, Result};
 pub use expected_loss::{
