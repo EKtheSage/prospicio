@@ -3,7 +3,8 @@ import math
 import pytest
 
 import actuarialrs as ar
-from actuarialrs.aggregate import Layer, Tower, fft, panjer, simulate_events
+from actuarialrs.aggregate import fft, panjer, simulate_events
+from actuarialrs.reinsurance import Layer, Tower
 from actuarialrs.distributions import Grid, Lognormal, NegativeBinomial, Poisson
 
 SEV = Grid(1.0, [0.1, 0.3, 0.25, 0.2, 0.1, 0.05])

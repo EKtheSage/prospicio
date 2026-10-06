@@ -81,6 +81,7 @@ reference:
       - excess_frequency
       - layer_rating
       - risk_loaded_price
+      - mbbefd
       - match_tower
       - fit_pml_curve
       - fit_references
@@ -108,6 +109,9 @@ reference:
       - elastic_net_cv
       - gam_fit
       - gam_model
+      - booster_fit
+      - booster_model
+      - simulate_from_means
       - predict_distribution
       - model_metrics
       - resampling

@@ -196,3 +196,22 @@ fn simulated_layers_are_priced_and_allocated() {
     assert!(p.diversification() > 0.0);
     assert!(p.total.expected_loss < p.total.premium && p.total.premium < p.total.assets);
 }
+
+#[test]
+fn mbbefd_exposure_curves_match_mpmath() {
+    use act_pricing::exposure::{ExposureCurve, Mbbefd};
+    let cases = reference("mbbefd_mpmath.csv");
+    check(&cases, |c| {
+        let curve = c.get("curve");
+        let m = if let Some(v) = curve.strip_prefix("c=") {
+            Mbbefd::swiss_re(v.parse().unwrap()).unwrap()
+        } else {
+            Mbbefd::new(c.param("curve", "b"), c.param("curve", "g")).unwrap()
+        };
+        match c.get("quantity") {
+            "mean" => Some(m.mean()),
+            "G" => Some(m.g(c.number("x")?)),
+            _ => None,
+        }
+    });
+}

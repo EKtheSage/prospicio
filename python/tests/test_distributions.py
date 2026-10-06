@@ -84,8 +84,12 @@ def test_grid_discretization():
     # A grid can be rediscretized, and is itself a severity.
     coarse, _ = ar.distributions.Grid.rounding(grid, 200.0, 100)
     assert coarse.layer(1000.0, 1000.0) >= 0.0
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="got float"):
         ar.distributions.Grid.rounding(3.0, 100.0, 10)
+    # Draws have no exact layer moments, so they are no severity.
+    draws = ar.distributions.Sampled([1.0, 2.0, 3.0])
+    with pytest.raises(TypeError, match="Sampled has no exact layer moments"):
+        ar.distributions.Grid.rounding(draws, 100.0, 10)
     with pytest.raises(ValueError):
         ar.distributions.Grid(1.0, [0.5, 0.4])
 

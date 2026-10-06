@@ -654,7 +654,7 @@ severity_class!(PyMixture {
         let parts = components
             .iter()
             .map(|(w, s)| {
-                let sev = crate::distributions::AnySeverity::extract(s)?;
+                let sev = crate::distributions::extract_severity(s)?;
                 Ok((*w, Box::new(sev) as Box<dyn Severity + Send + Sync>))
             })
             .collect::<PyResult<Vec<_>>>()?;

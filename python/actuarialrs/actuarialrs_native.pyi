@@ -3340,7 +3340,7 @@ class Layer:
     
     Examples
     --------
-    >>> from actuarialrs.aggregate import Layer
+    >>> from actuarialrs.reinsurance import Layer
     >>> layer = Layer("5x5", 5e6, 5e6, reinstatements=1)
     >>> layer.ceded([7e6])
     2000000.0
@@ -3396,7 +3396,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=15.0)
         >>> layer.ceded_by_event([8.0, 20.0, 12.0])
         [0.0, 9.0, 6.0]
@@ -3435,7 +3435,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> Layer.quota_share("QS", 0.4).ceded([10.0, 5.0])
         6.0
         """
@@ -3486,7 +3486,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
         30.0
         """
@@ -4285,6 +4285,115 @@ class MackFit:
     def ultimate(self, /) -> list[float]:
         """
         Projected ultimate per origin.
+        """
+
+@final
+class Mbbefd:
+    """
+    The MBBEFD exposure curve and destruction-rate distribution (Bernegger,
+    1997), with ``b >= 0`` and ``g >= 1``; ``1/g`` is the probability of a
+    total loss.
+    
+    ``G(x)`` is the share of a risk's expected loss below the fraction
+    ``x`` of its maximum possible loss (MPL). ``Mbbefd.swiss_re(c)`` gives
+    Bernegger's one-parameter family: ``c = 1.5, 2, 3, 4`` are the Swiss Re
+    curves and ``c = 5`` the Lloyd's curve.
+    
+    Parameters
+    ----------
+    b : float
+    g : float
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import Mbbefd
+    >>> c3 = Mbbefd.swiss_re(3.0)
+    >>> top = c3.layer_share(5e6, 5e6, 10e6)
+    >>> bottom = c3.layer_share(5e6, 0.0, 10e6)
+    >>> round(top + bottom, 12), top < bottom
+    (1.0, True)
+    """
+    def __new__(cls, /, b: float, g: float) -> Mbbefd: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def b(self, /) -> float:
+        """
+        Parameter ``b``.
+        """
+    def cdf(self, /, x: Sequence[float]) -> list[float]:
+        """
+        Distribution function of the destruction rate at each ``x``.
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    def curve(self, /, x: Sequence[float]) -> list[float]:
+        """
+        The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def g(self, /) -> float:
+        """
+        Parameter ``g``.
+        """
+    def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
+        """
+        Share of a risk's expected loss in the layer ``limit`` xs
+        ``attachment``, for a risk with maximum possible loss ``mpl``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        mpl : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean destruction rate, ``1 / G'(0)``.
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def swiss_re(c: float) -> Mbbefd:
+        """
+        Bernegger's curve ``c``: ``b = exp(3.1 - 0.15 (1 + c) c)``,
+        ``g = exp((0.78 + 0.12 c) c)``.
+        
+        Parameters
+        ----------
+        c : float
+            Non-negative; 0 is the straight line.
+        
+        Returns
+        -------
+        Mbbefd
+        """
+    def total_loss_probability(self, /) -> float:
+        """
+        Probability of a total loss, ``1/g``.
+        
+        Returns
+        -------
+        float
         """
 
 @final
@@ -6084,7 +6193,8 @@ class Tower:
     
     Examples
     --------
-    >>> from actuarialrs.aggregate import Layer, Tower, simulate_events
+    >>> from actuarialrs.aggregate import simulate_events
+    >>> from actuarialrs.reinsurance import Layer, Tower
     >>> from actuarialrs.distributions import Lognormal, Poisson
     >>> events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 1_000, 7)
     >>> tower = Tower([Layer("5x5", 5e6, 5e6), Layer("15x10", 15e6, 10e6)])
@@ -6159,7 +6269,7 @@ class Tower:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.reinsurance import Layer, Tower
         >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
         >>> tower.ceded([30.0])
         [15.0, 5.0]
@@ -6201,7 +6311,7 @@ class Tower:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.reinsurance import Layer, Tower
         >>> from actuarialrs.distributions import Grid, Poisson
         >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
         >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
@@ -8246,6 +8356,30 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
     list of float
     """
 
+def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> list[float]:
+    """
+    The exposure curve of a severity capped at the maximum possible loss
+    ``mpl``: ``G(x) = LEV(x mpl) / LEV(mpl)`` at each ``x``.
+    
+    Parameters
+    ----------
+    severity : a severity
+    mpl : float
+    x : list of float
+    
+    Returns
+    -------
+    list of float
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Pareto
+    >>> from actuarialrs.pricing import severity_exposure_curve
+    >>> g = severity_exposure_curve(Pareto(1e5, 1.5), 1e7, [0.0, 0.5, 1.0])
+    >>> g[0], round(g[2], 12), g[1] > 0.5
+    (0.0, 1.0, True)
+    """
+
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
     """
     Simulates marginals joined by a copula.
@@ -8307,6 +8441,43 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
     >>> abs(events.totals().mean() - 5000.0) < 75.0
     True
+    """
+
+def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: int, seed: int, dispersion: float = 1.0, weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> PredictiveDistribution:
+    """
+    Joint predictive draws from fitted means, for engines that give only
+    a mean per row (the boosting adapters): the family adds process noise
+    and several mean vectors (bootstrap refits) add parameter uncertainty.
+    
+    Simulation ``i`` uses stream ``i`` of ``seed``: it picks one mean vector
+    uniformly, then draws each row's response from the family with that
+    mean, the dispersion and the row's weight. Components are keyed
+    ``row = 0, 1, ...``, as ``GlmFit.predict_distribution`` keys them.
+    
+    Parameters
+    ----------
+    family : str
+        As in ``Glm``.
+    means : list of list of float
+        One or more mean vectors, one value per row each.
+    n_sims : int
+    seed : int
+    dispersion : float, default 1.0
+    weights : list of float, optional
+        Prior weights; 1 by default.
+    theta, power : float, optional
+        Negative binomial ``theta``, Tweedie ``power``.
+    
+    Returns
+    -------
+    PredictiveDistribution
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import simulate_from_means
+    >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
+    >>> round(pd.mean(), 1)
+    0.5
     """
 
 def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
