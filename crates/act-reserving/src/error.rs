@@ -166,7 +166,7 @@ impl fmt::Display for Error {
                 source,
             } => write!(
                 f,
-                "one-year bootstrap: re-reserving failed in {failed} of {n_sims} simulations,                  for example: {source}"
+                "one-year bootstrap: re-reserving failed in {failed} of {n_sims} simulations, for example: {source}"
             ),
             Self::Core(e) => e.fmt(f),
         }

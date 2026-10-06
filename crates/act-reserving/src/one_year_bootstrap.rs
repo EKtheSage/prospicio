@@ -12,10 +12,13 @@
 //!    re-estimates the volume-weighted factors `f*`, as the
 //!    [`OdpBootstrap`] does (parameter error);
 //! 2. simulates the next cell of every origin: an increment with mean
-//!    `C_latest * (f*_k - 1)` from the origin's observed latest value
-//!    `C_latest` at age `k`, with the bootstrap's process error and scale.
-//!    An origin already at the last age gets no new cell;
-//! 3. appends those cells to the observed triangle and refits the method
+//!    `C*_latest * (f*_k - 1)` from the origin's pseudo latest value
+//!    `C*_latest` at age `k`, with the bootstrap's process error and scale,
+//!    as the [`OdpBootstrap`] projects (England 2002): the pseudo value
+//!    carries the estimation error of the origin's level. An origin already
+//!    at the last age gets no new cell;
+//! 3. adds each increment to the origin's observed latest value, appends
+//!    those cells to the observed triangle and refits the method
 //!    on it (an exposure column keeps each origin's latest value, and Cape
 //!    Cod trends to the valuation one development period later);
 //! 4. records the claims development result `CDR = U0 - U1`, the opening
@@ -23,13 +26,19 @@
 //!    the year's simulated payment and the closing reserve, so a negative
 //!    CDR is an adverse development.
 //!
-//! A new origin period written in the coming year is not simulated, as in
-//! Merz–Wüthrich, and the development beyond the last age moves only
-//! through the refitted tail.
+//! An origin with one cell left therefore has a one-year view that is its
+//! whole run-off, distributed as its lifetime [`OdpBootstrap`] reserve.
+//!
+//! The development grain must be a year, so that one development period is
+//! the coming year, and every origin short of the last age must have its
+//! latest value on the triangle's valuation diagonal, so that its next cell
+//! falls in the coming year. A new origin period written in the coming year
+//! is not simulated, as in Merz–Wüthrich, and the development beyond the
+//! last age moves only through the refitted tail.
 
 use std::sync::Mutex;
 
-use act_core::{Month, StreamRng};
+use act_core::{Grain, Month, StreamRng};
 use act_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
@@ -309,13 +318,32 @@ struct Prepared {
 
 impl Prepared {
     fn new(
+        triangle: &Triangle,
         segment: &Segment,
         exposure: Option<&Segment>,
         method: &OneYearMethod,
-        valuation: Month,
+        (opening, closing): (Month, Month),
     ) -> Result<Self> {
         let (bootstrap, pool) = prepare(segment, &segment.ages)?;
-        let opening_ultimate = method.ultimate(segment, exposure, valuation)?;
+        // Each new cell must be at the closing valuation: its origin's
+        // latest value is on the opening diagonal.
+        let lagging = bootstrap
+            .chain_ladder
+            .latest_position
+            .iter()
+            .enumerate()
+            .filter(|&(_, &d)| d + 1 < segment.n_dev)
+            .any(|(o, &d)| {
+                triangle.valuation_of(o + segment.origin_offset, d + 1 + segment.dev_offset)
+                    != closing
+            });
+        if lagging {
+            return Err(Error::Bootstrap(
+                "the one-year view needs every origin short of the last age on the valuation \
+                 diagonal",
+            ));
+        }
+        let opening_ultimate = method.ultimate(segment, exposure, opening)?;
         let opening_reserve = opening_ultimate
             .iter()
             .zip(&bootstrap.chain_ladder.latest)
@@ -351,7 +379,7 @@ impl Prepared {
 struct Run<'a> {
     prepared: &'a Prepared,
     method: &'a OneYearMethod,
-    /// The valuation one development period after the triangle's.
+    /// The valuation a year after the triangle's.
     closing: Month,
     /// The segment's label, to name it in an error; `None` without keys.
     label: Option<String>,
@@ -370,9 +398,23 @@ impl Run<'_> {
         process: ProcessDistribution,
         cdr: &mut [f64],
     ) -> Result<()> {
+        let next = self.next_cells(rng, process);
+        self.rereserve(next, cdr)
+    }
+
+    /// The next cell of every origin short of the last age, as `(origin,
+    /// position, cumulative value)`: the observed latest value plus an
+    /// increment projected from the pseudo latest value with the resampled
+    /// factor, and the process error.
+    fn next_cells(
+        &self,
+        rng: &mut StreamRng,
+        process: ProcessDistribution,
+    ) -> Vec<(usize, usize, f64)> {
         let p = self.prepared;
         let boot = &p.fit.bootstrap;
         let cl = &boot.chain_ladder;
+        let nd = p.segment.n_dev;
         let sim = Simulation {
             segment: &p.segment,
             latest: &cl.latest_position,
@@ -381,15 +423,23 @@ impl Run<'_> {
             scale: boot.scale,
             process,
         };
-        let (_, factors) = sim.resample(rng);
-        let next: Vec<(usize, usize, f64)> = cl
-            .latest_position
+        let (pseudo, factors) = sim.resample(rng);
+        cl.latest_position
             .iter()
             .zip(&cl.latest)
             .enumerate()
-            .filter(|&(_, (&d, _))| d + 1 < p.segment.n_dev)
-            .map(|(o, (&d, &c))| (o, d + 1, c + sim.with_process(c * (factors[d] - 1.0), rng)))
-            .collect();
+            .filter(|&(_, (&d, _))| d + 1 < nd)
+            .map(|(o, (&d, &c))| {
+                let mean = pseudo[o * nd + d] * (factors[d] - 1.0);
+                (o, d + 1, c + sim.with_process(mean, rng))
+            })
+            .collect()
+    }
+
+    /// Appends `next` to the observed triangle, refits the method on it and
+    /// fills `cdr` with each origin's opening less closing ultimate.
+    fn rereserve(&self, next: Vec<(usize, usize, f64)>, cdr: &mut [f64]) -> Result<()> {
+        let p = self.prepared;
         let closing = p.segment.with_values(next);
         let ultimate = self
             .method
@@ -437,10 +487,16 @@ impl OdpBootstrap {
         method: &OneYearMethod,
     ) -> Result<OneYearFit> {
         self.check_sims()?;
+        let (opening, closing) = valuations(triangle)?;
         let segment = triangle.segment(column)?;
         let exposure = method.exposure().map(|e| triangle.segment(e)).transpose()?;
-        let (opening, closing) = valuations(triangle);
-        let prepared = Prepared::new(&segment, exposure.as_ref(), method, opening)?;
+        let prepared = Prepared::new(
+            triangle,
+            &segment,
+            exposure.as_ref(),
+            method,
+            (opening, closing),
+        )?;
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
@@ -482,13 +538,13 @@ impl OdpBootstrap {
         method: &OneYearMethod,
     ) -> Result<OneYearFits> {
         self.check_sims()?;
-        let (opening, closing) = valuations(triangle);
+        let (opening, closing) = valuations(triangle)?;
         let prepared = match method.exposure() {
             None => fit_each(triangle, column, |s| {
-                Prepared::new(s, None, method, opening)
+                Prepared::new(triangle, s, None, method, (opening, closing))
             })?,
             Some(exposure) => fit_each_with_exposure(triangle, column, exposure, |s, e| {
-                Prepared::new(s, Some(e), method, opening)
+                Prepared::new(triangle, s, Some(e), method, (opening, closing))
             })?,
         };
 
@@ -600,19 +656,24 @@ impl OdpBootstrap {
     }
 }
 
-/// The triangle's valuation and the one a development period later, which
-/// the refit at the end of the year trends to.
-fn valuations(triangle: &Triangle) -> (Month, Month) {
+/// The triangle's valuation and the one a year later, which the refit at
+/// the end of the year trends to. A development grain shorter than a year
+/// would make one development period less than a year: an error.
+fn valuations(triangle: &Triangle) -> Result<(Month, Month)> {
+    if triangle.development_grain() != Grain::Year {
+        return Err(Error::Bootstrap(
+            "the one-year view needs an annual development grain",
+        ));
+    }
     let opening = triangle.valuation();
-    let step = triangle.development_grain().months() as i64;
-    (opening, opening.add_months(step))
+    Ok((opening, opening.add_months(12)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::development::{Average, Development};
-    use crate::triangle::tests::{RAA, raa};
+    use crate::triangle::tests::{RAA, genins, raa};
     use crate::triangle::{DevelopmentColumn, Long};
     use crate::{Grain, ProcessDistribution};
     use act_prob::Distribution;
@@ -900,10 +961,212 @@ mod tests {
                 }),
             }
         );
-        assert!(
-            err.to_string()
-                .starts_with("one-year bootstrap: re-reserving failed in 20 of 20 simulations")
+        assert_eq!(
+            err.to_string(),
+            "one-year bootstrap: re-reserving failed in 20 of 20 simulations, for example: \
+             factor from development index 0: a zero value gets an infinite weight"
         );
+    }
+
+    #[test]
+    fn needs_annual_development_on_the_valuation_diagonal() {
+        // Quarterly development: one development period is not a year.
+        let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+        let quarterly = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[3, 6, 9, 3, 6, 3]),
+            values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Quarter,
+            cumulative: true,
+        })
+        .unwrap();
+        let annual = Error::Bootstrap("the one-year view needs an annual development grain");
+        let b = boot(10, 0);
+        assert_eq!(
+            b.one_year(&quarterly, "paid", &chain_ladder()).unwrap_err(),
+            annual
+        );
+        assert_eq!(
+            b.one_year_segments(&quarterly, "paid", &chain_ladder())
+                .unwrap_err(),
+            annual
+        );
+        // 2021 stops at 24 months, a year short of the valuation diagonal:
+        // its next cell would be in the past year, not the coming one.
+        let lagging = with_premium(
+            2020,
+            &[
+                &[4.0, 8.0, 12.0, 15.0],
+                &[8.0, 16.0],
+                &[12.0, 24.0],
+                &[16.0],
+            ],
+            &[1.0; 4],
+        );
+        let diagonal = Error::Bootstrap(
+            "the one-year view needs every origin short of the last age on the valuation diagonal",
+        );
+        assert_eq!(
+            b.one_year(&lagging, "paid", &chain_ladder()).unwrap_err(),
+            diagonal
+        );
+        assert_eq!(
+            b.one_year_segments(&lagging, "paid", &chain_ladder())
+                .unwrap_err(),
+            diagonal
+        );
+    }
+
+    #[test]
+    fn one_cell_left_is_the_lifetime_run_off() {
+        // 1982 has one cell left: its one-year CDR is the opening reserve
+        // less that cell's increment, which is drawn as the lifetime
+        // bootstrap draws 1982's reserve. The standard deviations agree
+        // within Monte Carlo error (sd * sqrt((kurtosis - 1) / (4 n))).
+        let n = 20_000;
+        let one = boot(n, 21)
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+        let lifetime = boot(n, 22).fit(&raa(), "values").unwrap();
+        let sd = |x: &[f64]| {
+            let m = x.iter().sum::<f64>() / x.len() as f64;
+            (x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / x.len() as f64).sqrt()
+        };
+        let (a, b) = (sd(&column(&one.cdr, 1)), sd(&column(&lifetime.reserves, 1)));
+        // Five standard errors of each, with a kurtosis of about 4.
+        let tol = 5.0 * (a + b) * (3.0 / (4.0 * n as f64)).sqrt();
+        assert!((a - b).abs() < tol, "one-year {a}, lifetime {b}");
+    }
+
+    /// England, Verrall and Wüthrich (2019), Appendix 1, steps 6 and 7(a) to
+    /// (d): Mack's model bootstrapped from the scaled bias-adjusted residuals
+    /// of the link ratios, with a Gamma next cumulative value of mean
+    /// `f* C` and variance `sigma^2 C` from the observed latest `C`, fed
+    /// through the same re-reserving as the ODP bootstrap. Their Section 4
+    /// shows that this reproduces Merz–Wüthrich's one-year standard error
+    /// on Taylor–Ashe (GenIns), which `MackFit::claims_development_result`
+    /// equals R ChainLadder's `CDR(1)S.E.` for
+    /// (`validation/tests/reserving_cdr.rs`). So this checks the
+    /// re-reserving, independently of the ODP's process model, within five
+    /// Monte Carlo standard errors. (On RAA the first pseudo factor's
+    /// standard deviation is a third of the factor, so a Gamma mean can be
+    /// negative.)
+    #[test]
+    fn mack_bootstrap_rereserving_reproduces_merz_wuthrich() {
+        let tri = genins();
+        let mack = crate::Mack::default().fit(&tri, "values").unwrap();
+        let mw = mack.claims_development_result().unwrap();
+        let (f, sigma) = (
+            &mack.chain_ladder.development.ldf,
+            &mack.chain_ladder.development.sigma,
+        );
+
+        let segment = tri.segment("values").unwrap();
+        let (no, nd) = (segment.n_origins, segment.n_dev);
+        let method = chain_ladder();
+        let valuations = valuations(&tri).unwrap();
+        let prepared = Prepared::new(&tri, &segment, None, &method, valuations).unwrap();
+        let run = Run {
+            prepared: &prepared,
+            method: &method,
+            closing: valuations.1,
+            label: None,
+        };
+
+        // The link pairs (C_k, C_k+1) behind each factor, and the scaled
+        // bias-adjusted residuals sqrt(n / (n - 1)) sqrt(C) (F - f) / sigma
+        // of the factors estimated from two or more.
+        let pairs: Vec<Vec<f64>> = (0..nd - 1)
+            .map(|k| {
+                (0..no)
+                    .filter_map(|o| segment.get(o, k + 1).and(segment.get(o, k)))
+                    .collect()
+            })
+            .collect();
+        let mut pool = Vec::new();
+        for k in 0..nd - 1 {
+            let n = pairs[k].len() as f64;
+            if n < 2.0 {
+                continue;
+            }
+            for o in (0..no).filter(|&o| segment.get(o, k + 1).is_some()) {
+                let (c, c1) = (segment.get(o, k).unwrap(), segment.get(o, k + 1).unwrap());
+                pool.push((n / (n - 1.0)).sqrt() * c.sqrt() * (c1 / c - f[k]) / sigma[k]);
+            }
+        }
+        let cl = &prepared.fit.bootstrap.chain_ladder;
+
+        let n_sims = 20_000;
+        let draws = PredictiveDistribution::simulate(
+            vec!["origin".into()],
+            segment.origins.iter().map(|&p| vec![p.into()]).collect(),
+            n_sims,
+            31,
+            Provenance::new("mack_bootstrap_one_year"),
+            |rng, row| {
+                // Pseudo-ratios f + r sigma / sqrt(C) and their volume-weighted
+                // averages.
+                let factors: Vec<f64> = (0..nd - 1)
+                    .map(|k| {
+                        let (num, den) = pairs[k].iter().fold((0.0, 0.0), |(num, den), &c| {
+                            let r = pool[((rng.next_open01() * pool.len() as f64) as usize)
+                                .min(pool.len() - 1)];
+                            (num + c * (f[k] + r * sigma[k] / c.sqrt()), den + c)
+                        });
+                        num / den
+                    })
+                    .collect();
+                let next = cl
+                    .latest_position
+                    .iter()
+                    .zip(&cl.latest)
+                    .enumerate()
+                    .filter(|&(_, (&d, _))| d + 1 < nd)
+                    .map(|(o, (&d, &c))| {
+                        let (mean, variance) = (factors[d] * c, sigma[d].powi(2) * c);
+                        let gamma =
+                            act_prob::Gamma::new(mean * mean / variance, variance / mean).unwrap();
+                        (o, d + 1, gamma.sample(rng, 1)[0])
+                    })
+                    .collect();
+                run.rereserve(next, row).unwrap();
+            },
+        )
+        .unwrap();
+
+        let sd_and_error = |x: &[f64]| {
+            let n = x.len() as f64;
+            let m = x.iter().sum::<f64>() / n;
+            let m2 = x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / n;
+            let m4 = x.iter().map(|v| (v - m).powi(4)).sum::<f64>() / n;
+            let sd = m2.sqrt();
+            (sd, sd * ((m4 / (m2 * m2) - 1.0) / (4.0 * n)).sqrt())
+        };
+        let mut checks: Vec<(String, Vec<f64>, f64)> = (1..no)
+            .map(|o| {
+                (
+                    segment.origins[o].to_string(),
+                    column(&draws, o),
+                    mw.one_year_standard_error[o],
+                )
+            })
+            .collect();
+        let total = draws
+            .draw_matrix()
+            .chunks(no)
+            .map(|r| r.iter().sum())
+            .collect();
+        checks.push(("total".into(), total, mw.total_one_year_standard_error));
+        for (origin, x, want) in checks {
+            let (sd, error) = sd_and_error(&x);
+            assert!(
+                (sd - want).abs() < 5.0 * error,
+                "{origin}: {sd} against Merz-Wuthrich {want} (5 SE {})",
+                5.0 * error
+            );
+        }
     }
 
     #[test]
