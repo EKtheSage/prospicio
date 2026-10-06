@@ -17,7 +17,8 @@ booster_fit(
   seed = 0,
   offset = NULL,
   weights = NULL,
-  alpha = NULL
+  alpha = NULL,
+  dispersion_model = FALSE
 )
 }
 \arguments{
@@ -51,6 +52,9 @@ generator state is left as it was.}
 \item{weights}{Optional prior weights.}
 
 \item{alpha}{Quantile level in \verb{(0, 1)}, for \code{family = "quantile"}.}
+
+\item{dispersion_model}{Fit a dispersion per row (gamma, Tweedie and
+Gaussian families).}
 }
 \value{
 A \code{booster_model} with properties \code{model} (the engine's
@@ -80,6 +84,13 @@ a double-precision calculation to about 1e-6 relative.
 \item \code{predict_distribution()} draws each row's response from the family
 around its mean (process noise); with \code{n_boot} bootstrap refits, each
 simulation also uses one refit's means (parameter uncertainty).
+\item \code{dispersion_model = TRUE} adds a distributional head: a second booster
+(gamma objective, log link) fitted to the Pearson residuals
+\code{w (y - mu)^2 / V(mu)}, whose expectation is each row's dispersion. The
+residuals come from 5-fold cross-fitted means, so a mean model that
+fits the training rows closely does not shrink them.
+\code{\link[=predict_distribution]{predict_distribution()}} then uses one dispersion per row
+(\code{\link[=predict_dispersion]{predict_dispersion()}}), as a double GLM does (Smyth, 1989).
 \item \code{family = "quantile"} fits the \code{alpha} quantile instead of the mean
 (lightgbm \code{quantile}, xgboost \code{reg:quantileerror}), starting from the
 weighted \code{alpha} quantile of the response; it takes no offset. Score it

@@ -693,8 +693,8 @@ fn ks_uniform_rust(values: &[f64]) -> Result<f64> {
 }
 
 /// Joint draws from fitted means: `means` is an `n_rows` by `k` matrix,
-/// column-major, one column per mean vector (bootstrap refit); `weights`
-/// empty for all ones.
+/// column-major, one column per mean vector (bootstrap refit);
+/// `dispersion` one value or one per row; `weights` empty for all ones.
 #[extendr]
 #[allow(clippy::too_many_arguments)]
 fn simulate_from_means_rust(
@@ -703,7 +703,7 @@ fn simulate_from_means_rust(
     power: f64,
     means: &[f64],
     n_rows: f64,
-    dispersion: f64,
+    dispersion: &[f64],
     weights: &[f64],
     n_sims: f64,
     seed: f64,

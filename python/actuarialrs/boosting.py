@@ -20,6 +20,13 @@ evaluation logic: ``compare``, ``cross_validate`` and the metrics in
   around the fitted mean (process noise); with ``n_boot`` bootstrap
   refits, each simulation also picks one refit's means (parameter
   uncertainty).
+- ``dispersion_model=True`` adds a distributional head: a second booster
+  (gamma objective, log link) fitted to the Pearson residuals
+  ``w (y - mu)^2 / V(mu)``, whose expectation is each row's dispersion.
+  The residuals come from 5-fold cross-fitted means, so a mean model that
+  fits the training rows closely does not shrink them.
+  ``predict_distribution`` then uses one dispersion per row
+  (``predict_dispersion``), as a double GLM does (Smyth, 1989).
 - ``family="quantile"`` fits the ``alpha`` quantile instead of the mean
   (LightGBM ``quantile``, XGBoost ``reg:quantileerror``), starting from
   the weighted ``alpha`` quantile of the responses. Score it with
@@ -71,6 +78,8 @@ class Booster:
         Tweedie variance power in (1, 2); required for ``"tweedie"``.
     alpha : float, optional
         Quantile level in (0, 1); required for ``"quantile"``.
+    dispersion_model : bool, default False
+        Fit a dispersion per row (gamma, Tweedie and Gaussian families).
     n_rounds : int, default 200
         Boosting rounds.
     learning_rate : float, default 0.05
@@ -96,7 +105,8 @@ class Booster:
     """
 
     def __init__(self, family="poisson", engine="lightgbm", power=None, n_rounds=200,
-                 learning_rate=0.05, params=None, n_boot=0, seed=0, alpha=None):
+                 learning_rate=0.05, params=None, n_boot=0, seed=0, alpha=None,
+                 dispersion_model=False):
         if family not in _OBJECTIVES:
             raise ValueError(f"family must be one of {sorted(_OBJECTIVES)}, got {family!r}")
         if engine not in _ENGINES:
@@ -105,6 +115,9 @@ class Booster:
             raise ValueError("tweedie needs power in (1, 2)")
         if family == "quantile" and not (alpha is not None and 0.0 < alpha < 1.0):
             raise ValueError("quantile needs alpha in (0, 1)")
+        if dispersion_model and family in ("poisson", "quantile"):
+            raise ValueError(f"a dispersion model needs a gamma, tweedie or gaussian family, "
+                             f"not {family}")
         if n_rounds < 1 or n_boot < 0:
             raise ValueError("n_rounds must be positive and n_boot non-negative")
         self.family = family
@@ -116,6 +129,7 @@ class Booster:
         self.n_boot = n_boot
         self.seed = seed
         self.alpha = alpha
+        self.dispersion_model = dispersion_model
 
     def _train(self, x, y, w, offset, seed):
         lgb_obj, xgb_obj, _ = _OBJECTIVES[self.family]
@@ -181,7 +195,36 @@ class Booster:
             mu = np.asarray(fit.predict(design))
             v = np.array([_variance(self.family, m, self.power) for m in mu])
             fit.dispersion = float(np.sum(w * (y - mu) ** 2 / v) / n)
+        if self.dispersion_model:
+            fit.dispersion_fit = self._fit_dispersion(x, y, w, offset, base)
         return fit
+
+    def _fit_dispersion(self, x, y, w, offset, base):
+        """A gamma booster for the Pearson residuals of 5-fold cross-fitted
+        means: ``E[w (y - mu)^2 / V(mu)] = phi`` row by row."""
+        import numpy as np
+
+        n = len(y)
+        rng = random.Random(self.seed + 7919)
+        folds = np.array([rng.randrange(5) for _ in range(n)])
+        mu = np.empty(n)
+        link = _OBJECTIVES[self.family][2]
+        for k in range(5):
+            test = folds == k
+            if not test.any():
+                continue
+            train = ~test
+            model = self._train(x[train], y[train], w[train], offset[train] + base, self.seed)
+            eta = _raw_margin(self.engine, model, x[test], offset[test] + base)
+            mu[test] = np.exp(eta) if link == "log" else eta
+        v = np.array([_variance(self.family, m, self.power) for m in mu])
+        z = w * (y - mu) ** 2 / v
+        z = np.maximum(z, 1e-12 * z.mean())
+        spec = Booster("gamma", engine=self.engine, n_rounds=self.n_rounds,
+                       learning_rate=self.learning_rate, params=self.params, seed=self.seed)
+        zbase = float(np.log(z.mean()))
+        model = spec._train(x, z, np.ones(n), np.full(n, zbase), self.seed)
+        return (model, zbase)
 
 
 class BoosterFit:
@@ -197,6 +240,9 @@ class BoosterFit:
         1 for the Poisson; otherwise Pearson's estimate on the training
         rows, ``sum w (y - mu)^2 / V(mu) / n`` (no degrees-of-freedom
         correction: trees have no fixed parameter count).
+    dispersion_fit
+        With ``dispersion_model=True``, the dispersion booster and its
+        starting log level; otherwise ``None``.
     """
 
     def __init__(self, spec, names, model, boots, dispersion, base):
@@ -206,6 +252,7 @@ class BoosterFit:
         self.boots = boots
         self.dispersion = dispersion
         self.base = base
+        self.dispersion_fit = None
 
     def _means(self, model, design):
         import numpy as np
@@ -214,12 +261,7 @@ class BoosterFit:
             raise ValueError(f"design columns {design.names} differ from the fit's {self.names}")
         x = _matrix(design)
         offset = np.asarray(design.offset, dtype=float) + self.base
-        if self.spec.engine == "lightgbm":
-            eta = model.predict(x, raw_score=True) + offset
-        else:
-            import xgboost as xgb
-
-            eta = model.predict(xgb.DMatrix(x, base_margin=offset), output_margin=True)
+        eta = _raw_margin(self.spec.engine, model, x, offset)
         link = _OBJECTIVES[self.spec.family][2]
         return (np.exp(eta) if link == "log" else eta).tolist()
 
@@ -237,6 +279,28 @@ class BoosterFit:
         list of float
         """
         return self._means(self.model, design)
+
+    def predict_dispersion(self, design):
+        """Each row's dispersion from the dispersion model, or the constant
+        ``dispersion`` when the booster was fitted without one.
+
+        Parameters
+        ----------
+        design : Design
+
+        Returns
+        -------
+        list of float
+        """
+        import numpy as np
+
+        if self.dispersion_fit is None:
+            return [self.dispersion] * design.n_rows
+        if list(design.names) != self.names:
+            raise ValueError(f"design columns {design.names} differ from the fit's {self.names}")
+        model, zbase = self.dispersion_fit
+        x = _matrix(design)
+        return np.exp(_raw_margin(self.spec.engine, model, x, np.full(len(x), zbase))).tolist()
 
     def predict_distribution(self, design, n_sims, seed):
         """Joint draws across the rows, keyed ``row = 0, 1, ...``: each row's
@@ -260,7 +324,8 @@ class BoosterFit:
         models = self.boots or [self.model]
         means = [self._means(m, design) for m in models]
         return simulate_from_means(self.spec.family, means, n_sims, seed,
-                                   dispersion=self.dispersion, weights=list(design.weights),
+                                   dispersion=self.predict_dispersion(design),
+                                   weights=list(design.weights),
                                    power=self.spec.power)
 
 
@@ -291,6 +356,15 @@ def predict_quantiles(fits, design):
     preds = [fits[i].predict(design) for i in order]
     rows = [sorted(r) for r in zip(*preds)]
     return {alphas[i]: [r[k] for r in rows] for k, i in enumerate(order)}
+
+
+def _raw_margin(engine, model, x, start):
+    """The model's link-scale prediction plus ``start`` (offset + base)."""
+    if engine == "lightgbm":
+        return model.predict(x, raw_score=True) + start
+    import xgboost as xgb
+
+    return model.predict(xgb.DMatrix(x, base_margin=start), output_margin=True)
 
 
 def _weighted_quantile(y, w, alpha):

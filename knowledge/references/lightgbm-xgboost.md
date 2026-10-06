@@ -3,7 +3,7 @@ type: Reference Implementation
 title: LightGBM and XGBoost (boosting engines)
 description: The engines behind actuarialrs.boosting and R's booster_fit(); how offsets, starting scores and precision behave, the R packages' prediction calls, and how to install them.
 resource: https://lightgbm.readthedocs.io/
-tags: [boosting, lightgbm, xgboost, python, r, offsets, quantile]
+tags: [boosting, lightgbm, xgboost, python, r, offsets, quantile, dispersion]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T04:10:00Z }
 verified: { by: process:ci, at: 2026-10-06T04:32:20Z }
@@ -62,6 +62,17 @@ Checked with R lightgbm 4.7.0 and xgboost 3.2.1.1 from CRAN.[^radapter]
   across levels fixes that and never raises pinball loss. On 3,000 rows
   with a spread that grows with x, the [10%, 90%] band from 200 rounds
   covers 80% ± 4% of the training rows with either engine.[^tests]
+
+# Dispersion model
+
+* Pearson residuals from in-sample means of a flexible booster are
+  biased low, because the trees partly fit the noise; 5-fold cross-fitted
+  means fix that. With them, a gamma booster on the residuals recovers a
+  dispersion of 0.25 against 1 (gamma shapes 4 and 1, 4,000 rows) to
+  within 0.06 and 0.2, with either engine and in both languages.[^tests]
+* The residuals can be 0 only when y equals the mean exactly; they are
+  floored at `1e-12 × mean` because both engines' gamma objectives need a
+  positive label.
 
 # Precision
 

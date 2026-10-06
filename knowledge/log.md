@@ -2,6 +2,7 @@
 
 ## 2026-10-06
 
+* **Update**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md): why the dispersion model cross-fits its residuals, and the positive-label floor.
 * **Update**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md): the quantile objectives' parameter names and the crossing fix, from the quantile boosters.
 * **Creation**: [R callbacks must stay on R's main thread](/findings/r-callbacks-main-thread.md), from building `Custom` and its R binding.
 * **Creation**: [Local Windows R](/environment/local-windows-r.md), from setting up local R binding checks for reserving v0.2.

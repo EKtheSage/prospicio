@@ -58,15 +58,40 @@ booster_train <- function(spec, x, y, w, start, seed) {
   })
 }
 
-# Means on the response scale; `start` is offset + base on the link scale.
-booster_means <- function(spec, model, x, start) {
-  eta <- if (spec$engine == "lightgbm") {
+# The link-scale prediction plus `start` (offset + base).
+booster_margin <- function(engine, model, x, start) {
+  eta <- if (engine == "lightgbm") {
     predict(model, x, type = "raw") + start
   } else {
     predict(model, xgboost::xgb.DMatrix(x, base_margin = start), outputmargin = TRUE)
   }
-  eta <- unname(as.double(eta))
+  unname(as.double(eta))
+}
+
+# Means on the response scale; `start` is offset + base on the link scale.
+booster_means <- function(spec, model, x, start) {
+  eta <- booster_margin(spec$engine, model, x, start)
   if (booster_objectives[[spec$family]][[3]] == "log") exp(eta) else eta
+}
+
+# A gamma booster for the Pearson residuals of 5-fold cross-fitted means:
+# E[w (y - mu)^2 / V(mu)] is each row's dispersion.
+booster_dispersion_fit <- function(spec, x, y, w, off, base, seed) {
+  n <- length(y)
+  folds <- with_seed(seed + 7919, sample.int(5, n, replace = TRUE))
+  mu <- numeric(n)
+  for (k in 1:5) {
+    test <- folds == k
+    if (!any(test)) next
+    m <- booster_train(spec, x[!test, , drop = FALSE], y[!test], w[!test], off[!test] + base, seed)
+    mu[test] <- booster_means(spec, m, x[test, , drop = FALSE], off[test] + base)
+  }
+  z <- w * (y - mu)^2 / booster_variance(spec$family, mu, spec$power)
+  z <- pmax(z, 1e-12 * mean(z))
+  dspec <- spec
+  dspec$family <- "gamma"
+  zbase <- log(mean(z))
+  list(model = booster_train(dspec, x, z, rep(1, n), rep(zbase, n), seed), base = zbase)
 }
 
 booster_variance <- function(family, mu, power) {
@@ -101,6 +126,13 @@ booster_matrix <- function(x) {
 #' - `predict_distribution()` draws each row's response from the family
 #'   around its mean (process noise); with `n_boot` bootstrap refits, each
 #'   simulation also uses one refit's means (parameter uncertainty).
+#' - `dispersion_model = TRUE` adds a distributional head: a second booster
+#'   (gamma objective, log link) fitted to the Pearson residuals
+#'   `w (y - mu)^2 / V(mu)`, whose expectation is each row's dispersion. The
+#'   residuals come from 5-fold cross-fitted means, so a mean model that
+#'   fits the training rows closely does not shrink them.
+#'   [predict_distribution()] then uses one dispersion per row
+#'   ([predict_dispersion()]), as a double GLM does (Smyth, 1989).
 #' - `family = "quantile"` fits the `alpha` quantile instead of the mean
 #'   (lightgbm `quantile`, xgboost `reg:quantileerror`), starting from the
 #'   weighted `alpha` quantile of the response; it takes no offset. Score it
@@ -116,6 +148,8 @@ booster_matrix <- function(x) {
 #' @param engine `"lightgbm"` or `"xgboost"`.
 #' @param power Tweedie variance power in `(1, 2)`.
 #' @param alpha Quantile level in `(0, 1)`, for `family = "quantile"`.
+#' @param dispersion_model Fit a dispersion per row (gamma, Tweedie and
+#'   Gaussian families).
 #' @param n_rounds Boosting rounds.
 #' @param learning_rate Shrinkage per round.
 #' @param params A named list of further engine parameters (`num_leaves`,
@@ -140,7 +174,8 @@ booster_matrix <- function(x) {
 #' }
 booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm", "xgboost"),
                         power = NULL, n_rounds = 200, learning_rate = 0.05, params = list(),
-                        n_boot = 0, seed = 0, offset = NULL, weights = NULL, alpha = NULL) {
+                        n_boot = 0, seed = 0, offset = NULL, weights = NULL, alpha = NULL,
+                        dispersion_model = FALSE) {
   engine <- match.arg(engine)
   if (!family %in% names(booster_objectives)) {
     stop("family must be one of ", toString(names(booster_objectives)), ", got ", family)
@@ -150,6 +185,9 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
   }
   if (family == "quantile" && !(is.numeric(alpha) && alpha > 0 && alpha < 1)) {
     stop("quantile needs alpha in (0, 1)")
+  }
+  if (isTRUE(dispersion_model) && family %in% c("poisson", "quantile")) {
+    stop("a dispersion model needs a gamma, tweedie or gaussian family, not ", family)
   }
   if (n_rounds < 1 || n_boot < 0) stop("n_rounds must be positive and n_boot non-negative")
   if (length(params) && (is.null(names(params)) || any(names(params) == ""))) {
@@ -189,15 +227,17 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
     mu <- booster_means(spec, model, x, off + base)
     dispersion <- sum(w * (y - mu)^2 / booster_variance(family, mu, power)) / n
   }
+  dfit <- if (isTRUE(dispersion_model)) booster_dispersion_fit(spec, x, y, w, off, base, seed) else list()
   booster_model(spec = spec, model = model, boots = boots, base = base, dispersion = dispersion,
-                columns = colnames(x), terms = des$terms, xlevels = des$xlevels)
+                dispersion_fit = dfit, columns = colnames(x), terms = des$terms,
+                xlevels = des$xlevels)
 }
 
 #' Fitted gradient-boosted trees (class)
 #'
 #' Returned by [booster_fit()].
 #'
-#' @param spec,model,boots,base,dispersion,columns,terms,xlevels Internal.
+#' @param spec,model,boots,base,dispersion,dispersion_fit,columns,terms,xlevels Internal.
 #' @returns A `booster_model` object.
 #' @export
 booster_model <- S7::new_class(
@@ -209,6 +249,7 @@ booster_model <- S7::new_class(
     boots = S7::class_list,
     base = S7::class_double,
     dispersion = S7::class_double,
+    dispersion_fit = S7::class_list,
     columns = S7::class_character,
     terms = S7::class_any,
     xlevels = S7::class_any,
@@ -241,7 +282,25 @@ S7::method(predict_distribution, booster_model) <- function(object, newdata, n_s
   models <- if (length(object@boots)) object@boots else list(object@model)
   means <- unlist(lapply(models, function(m) booster_means(object@spec, m, nd$x, nd$start)))
   simulate_from_means(object@spec$family, means, n_sims, seed, n_rows = nrow(nd$x),
-                      dispersion = object@dispersion, weights = weights, power = object@spec$power)
+                      dispersion = predict_dispersion(object, newdata), weights = weights,
+                      power = object@spec$power)
+}
+
+#' Dispersion per row of a boosted model
+#'
+#' Each row's dispersion from the dispersion model of a [booster_fit()] with
+#' `dispersion_model = TRUE`, or the constant `dispersion` for every row
+#' otherwise.
+#'
+#' @param object A `booster_model`.
+#' @param newdata A data frame with the model's terms.
+#' @returns One dispersion per row of `newdata`.
+#' @export
+predict_dispersion <- function(object, newdata) {
+  if (!length(object@dispersion_fit)) return(rep(object@dispersion, nrow(newdata)))
+  nd <- booster_new_design(object, newdata, NULL)
+  f <- object@dispersion_fit
+  exp(booster_margin(object@spec$engine, f$model, nd$x, rep(f$base, nrow(nd$x))))
 }
 
 S7::method(print, booster_model) <- function(x, ...) {
@@ -299,7 +358,7 @@ predict_quantiles <- function(models, newdata) {
 #' @param seed Generator seed.
 #' @param n_rows Rows per mean vector; defaults to `nrow(means)`, or the
 #'   length of a vector.
-#' @param dispersion The family's dispersion.
+#' @param dispersion The family's dispersion: one value, or one per row.
 #' @param weights Optional prior weights, one per row.
 #' @param theta Negative binomial `theta`.
 #' @param power Tweedie power in `(1, 2)`.

@@ -10,13 +10,14 @@ booster_model(
   boots = list(),
   base = numeric(0),
   dispersion = numeric(0),
+  dispersion_fit = list(),
   columns = character(0),
   terms = NULL,
   xlevels = NULL
 )
 }
 \arguments{
-\item{spec, model, boots, base, dispersion, columns, terms, xlevels}{Internal.}
+\item{spec, model, boots, base, dispersion, dispersion_fit, columns, terms, xlevels}{Internal.}
 }
 \value{
 A \code{booster_model} object.

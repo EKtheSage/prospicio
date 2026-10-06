@@ -106,3 +106,28 @@ for (engine in c("lightgbm", "xgboost")) {
                          engine = engine, n_rounds = 5), silent = TRUE)
   stopifnot(inherits(off, "try-error"))
 }
+
+# Dispersion model: gamma shape 4 (phi 0.25) below x = 0.5, shape 1 above.
+stopifnot(inherits(try(booster_fit(y ~ x, data.frame(x = 1, y = 1), dispersion_model = TRUE),
+                       silent = TRUE), "try-error"))
+pd1 <- simulate_from_means("gamma", c(100, 100), 40000, 9, dispersion = c(0.1, 0.4))
+dm <- draw_matrix(pd1)
+stopifnot(abs(var(dm[, 1]) / 1000 - 1) < 0.05, abs(var(dm[, 2]) / 4000 - 1) < 0.05)
+for (engine in c("lightgbm", "xgboost")) {
+  if (!requireNamespace(engine, quietly = TRUE)) next
+  set.seed(5)
+  gd <- data.frame(x = runif(4000))
+  k <- ifelse(gd$x < 0.5, 4, 1)
+  gd$y <- rgamma(4000, shape = k, scale = 1000 / k)
+  params <- if (engine == "lightgbm") list(num_leaves = 4) else list(max_depth = 2)
+  g <- booster_fit(y ~ x, gd, family = "gamma", engine = engine, n_rounds = 100,
+                   learning_rate = 0.1, params = params, dispersion_model = TRUE)
+  phi <- predict_dispersion(g, gd)
+  stopifnot(abs(mean(phi[gd$x < 0.45]) - 0.25) < 0.06, abs(mean(phi[gd$x > 0.55]) - 1) < 0.2)
+  two <- data.frame(x = c(0.2, 0.8))
+  draws <- draw_matrix(predict_distribution(g, two, 20000, 3))
+  want <- predict_dispersion(g, two) * predict(g, two)^2
+  stopifnot(all(abs(apply(draws, 2, var) / want - 1) < 0.05))
+  plain <- booster_fit(y ~ x, gd, family = "gamma", engine = engine, n_rounds = 20, params = params)
+  stopifnot(all(predict_dispersion(plain, two) == plain@dispersion))
+}

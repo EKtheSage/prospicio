@@ -478,7 +478,14 @@ their draws and stop being reproducible.
   R `pinball_loss()`). `predict_quantiles` combines fits into quantile
   sets and sorts each row across levels (the rearrangement of
   Chernozhukov, Fernández-Val and Galichon, 2010), so they never cross.
-  Not yet: a distributional head (a dispersion submodel).
+  Distributional head (both languages): `dispersion_model = True` fits a
+  second booster (gamma objective, log link) to the Pearson residuals
+  `w (y − μ)² / V(μ)` of 5-fold cross-fitted means, so each row gets its
+  own dispersion (`predict_dispersion`), as a double GLM does (Smyth,
+  1989); `predict_distribution` passes it to
+  `act_models::simulate::from_means`, whose `dispersion` is now one value
+  or one per row. Gamma, Tweedie and Gaussian only: the Poisson's
+  dispersion is 1.
 - **Samplers are delegated.** No home-grown NUTS (`architecture.md`).
 
 ## Open questions

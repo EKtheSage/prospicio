@@ -8683,7 +8683,7 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     True
     """
 
-def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: int, seed: int, dispersion: float = 1.0, weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> PredictiveDistribution:
+def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: int, seed: int, dispersion: float |Sequence[float] |None = None, weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> PredictiveDistribution:
     """
     Joint predictive draws from fitted means, for engines that give only
     a mean per row (the boosting adapters): the family adds process noise
@@ -8691,7 +8691,7 @@ def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: i
     
     Simulation ``i`` uses stream ``i`` of ``seed``: it picks one mean vector
     uniformly, then draws each row's response from the family with that
-    mean, the dispersion and the row's weight. Components are keyed
+    mean, the row's dispersion and the row's weight. Components are keyed
     ``row = 0, 1, ...``, as ``GlmFit.predict_distribution`` keys them.
     
     Parameters
@@ -8702,7 +8702,9 @@ def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: i
         One or more mean vectors, one value per row each.
     n_sims : int
     seed : int
-    dispersion : float, default 1.0
+    dispersion : float or list of float, optional
+        One value for every row, or one per row (from a dispersion model);
+        1 by default.
     weights : list of float, optional
         Prior weights; 1 by default.
     theta, power : float, optional

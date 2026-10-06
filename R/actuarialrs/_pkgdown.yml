@@ -114,6 +114,7 @@ reference:
       - booster_model
       - simulate_from_means
       - predict_quantiles
+      - predict_dispersion
       - predict_distribution
       - model_metrics
       - resampling

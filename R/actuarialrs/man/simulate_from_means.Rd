@@ -31,7 +31,7 @@ vector, or a vector of \code{n_rows * k} means stacked column by column.}
 \item{n_rows}{Rows per mean vector; defaults to \code{nrow(means)}, or the
 length of a vector.}
 
-\item{dispersion}{The family's dispersion.}
+\item{dispersion}{The family's dispersion: one value, or one per row.}
 
 \item{weights}{Optional prior weights, one per row.}
 
