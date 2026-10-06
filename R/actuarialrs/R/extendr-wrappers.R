@@ -44,6 +44,8 @@ lift_rust <- function(y, pred, exposure, bands) .Call(wrap__lift_rust, y, pred, 
 
 crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
 
+pinball_rust <- function(y, pred, alpha, weights) .Call(wrap__pinball_rust, y, pred, alpha, weights)
+
 log_score_rust <- function(family_name, theta, power, y, mu, dispersion, weights) .Call(wrap__log_score_rust, family_name, theta, power, y, mu, dispersion, weights)
 
 pit_rust <- function(family_name, theta, power, y, mu, dispersion, weights, seed) .Call(wrap__pit_rust, family_name, theta, power, y, mu, dispersion, weights, seed)

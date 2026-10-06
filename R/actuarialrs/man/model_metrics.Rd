@@ -6,6 +6,7 @@
 \alias{gini_index}
 \alias{lift_table}
 \alias{crps_draws}
+\alias{pinball_loss}
 \alias{log_score}
 \alias{pit_values}
 \alias{ks_uniform}
@@ -18,6 +19,8 @@ gini_index(y, pred, exposure = NULL)
 lift_table(y, pred, exposure = NULL, bands = 10)
 
 crps_draws(draws, y)
+
+pinball_loss(y, pred, alpha, weights = NULL)
 
 log_score(
   family,
@@ -57,6 +60,8 @@ ks_uniform(values)
 
 \item{draws}{Equally likely draws.}
 
+\item{alpha}{Quantile level in \verb{(0, 1)}.}
+
 \item{dispersion}{The family's dispersion.}
 
 \item{seed}{Seed of the PIT's randomization.}
@@ -73,7 +78,10 @@ A number; for \code{pit_values()} one value per outcome; for
 Gini index of the ordered Lorenz curve (rows sorted by prediction,
 exposure share against loss share); \code{lift_table()} cuts rows sorted by
 predicted rate into bands of about equal exposure; \code{crps_draws()} the
-continuous ranked probability score of draws for an outcome.
+continuous ranked probability score of draws for an outcome;
+\code{pinball_loss()} the weighted mean pinball (quantile) loss of predicted
+\code{alpha} quantiles, \code{sum(w * u * (alpha - (u < 0))) / sum(w)} with
+\code{u = y - pred}, lowest in expectation at the true quantile.
 }
 \details{
 \code{log_score()} is the mean of \verb{-log f(y)} under each row's predictive
@@ -89,6 +97,7 @@ family_deviance("poisson", c(1, 0, 3), c(1, 0.5, 2))
 gini_index(c(0, 1), c(0.1, 0.9))
 lift_table(c(0, 1, 2, 3), c(0.1, 0.9, 2.1, 2.9), bands = 2)
 crps_draws(c(1, 2, 3), 2)
+pinball_loss(c(1, 0), c(0, 1), 0.9)
 log_score("poisson", 0, 1)
 set.seed(1)
 y <- rpois(500, 3)

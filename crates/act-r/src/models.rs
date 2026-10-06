@@ -647,6 +647,13 @@ fn crps_rust(draws: &[f64], y: f64) -> Result<f64> {
     metrics::crps(draws, y).map_err(to_r)
 }
 
+/// Empty `weights` for none.
+#[extendr]
+fn pinball_rust(y: &[f64], pred: &[f64], alpha: f64, weights: &[f64]) -> Result<f64> {
+    let w = (!weights.is_empty()).then_some(weights);
+    metrics::pinball(y, pred, alpha, w).map_err(to_r)
+}
+
 #[extendr]
 #[allow(clippy::too_many_arguments)]
 fn log_score_rust(
@@ -686,8 +693,8 @@ fn ks_uniform_rust(values: &[f64]) -> Result<f64> {
 }
 
 /// Joint draws from fitted means: `means` is an `n_rows` by `k` matrix,
-/// column-major, one column per mean vector (bootstrap refit); `weights`
-/// empty for all ones.
+/// column-major, one column per mean vector (bootstrap refit);
+/// `dispersion` one value or one per row; `weights` empty for all ones.
 #[extendr]
 #[allow(clippy::too_many_arguments)]
 fn simulate_from_means_rust(
@@ -696,7 +703,7 @@ fn simulate_from_means_rust(
     power: f64,
     means: &[f64],
     n_rows: f64,
-    dispersion: f64,
+    dispersion: &[f64],
     weights: &[f64],
     n_sims: f64,
     seed: f64,
@@ -1167,6 +1174,7 @@ extendr_module! {
     fn gini_rust;
     fn lift_rust;
     fn crps_rust;
+    fn pinball_rust;
     fn log_score_rust;
     fn pit_rust;
     fn ks_uniform_rust;

@@ -14,8 +14,10 @@ use crate::family::Family;
 /// `means` holds one or more mean vectors of length `n` (one per bootstrap
 /// refit, say). Simulation `i` takes stream `i` of `seed`, picks one vector
 /// uniformly from it, then draws each row's response from `family` with
-/// that mean, `dispersion` and the row's weight. With one vector the draws
-/// carry process noise only. `weights` empty means every weight is 1.
+/// that mean, the row's dispersion and the row's weight. With one vector
+/// the draws carry process noise only. `dispersion` holds one value for
+/// every row, or one per row (from a dispersion model); `weights` empty
+/// means every weight is 1.
 ///
 /// ```
 /// use act_models::Family;
@@ -23,14 +25,14 @@ use crate::family::Family;
 /// use act_prob::{Distribution, Provenance};
 ///
 /// // Two policies with expected claim counts 0.1 and 0.4.
-/// let pd = from_means(Family::Poisson, &[vec![0.1, 0.4]], 1.0, &[], 20_000, 7,
+/// let pd = from_means(Family::Poisson, &[vec![0.1, 0.4]], &[1.0], &[], 20_000, 7,
 ///                     Provenance::new("example")).unwrap();
 /// assert!((pd.total().mean() - 0.5).abs() < 0.02);
 /// ```
 pub fn from_means(
     family: Family,
     means: &[Vec<f64>],
-    dispersion: f64,
+    dispersion: &[f64],
     weights: &[f64],
     n_sims: usize,
     seed: u64,
@@ -52,13 +54,20 @@ pub fn from_means(
             reason: "outside the family's range",
         });
     }
-    if !(dispersion.is_finite() && dispersion > 0.0) {
+    if dispersion.len() != 1 && dispersion.len() != n {
+        return Err(Error::Data(format!(
+            "dispersion needs 1 or {n} values, got {}",
+            dispersion.len()
+        )));
+    }
+    if let Some(&bad) = dispersion.iter().find(|&&d| !(d.is_finite() && d > 0.0)) {
         return Err(Error::InvalidParameter {
             name: "dispersion",
-            value: dispersion,
+            value: bad,
             reason: "must be positive and finite",
         });
     }
+    let phi = |i: usize| dispersion[if dispersion.len() == 1 { 0 } else { i }];
     let ones = vec![1.0; n];
     let weights = if weights.is_empty() {
         &ones[..]
@@ -74,7 +83,14 @@ pub fn from_means(
     let components: Vec<ComponentKey> = (0..n).map(|i| vec![KeyValue::from(i as i64)]).collect();
     let provenance = provenance
         .param("family", family.name())
-        .param("dispersion", dispersion)
+        .param(
+            "dispersion",
+            if dispersion.len() == 1 {
+                dispersion[0].to_string()
+            } else {
+                "per row".to_string()
+            },
+        )
         .param("mean_vectors", k);
     // Every mean is in the family's range, so a draw only fails for an
     // unusual (weight, dispersion) pair; it becomes NaN there, as act_glm's
@@ -87,9 +103,9 @@ pub fn from_means(
         provenance,
         |rng, row| {
             let mu = &means[((rng.next_open01() * k as f64) as usize).min(k - 1)];
-            for (out, (&m, &w)) in row.iter_mut().zip(mu.iter().zip(weights)) {
+            for (i, (out, (&m, &w))) in row.iter_mut().zip(mu.iter().zip(weights)).enumerate() {
                 *out = family
-                    .draw(m, dispersion, w, rng.next_open01())
+                    .draw(m, phi(i), w, rng.next_open01())
                     .unwrap_or(f64::NAN);
             }
         },
@@ -106,7 +122,7 @@ mod tests {
         let pd = from_means(
             Family::Gamma,
             &[vec![100.0, 300.0]],
-            0.5,
+            &[0.5],
             &[1.0, 2.0],
             40_000,
             3,
@@ -132,7 +148,7 @@ mod tests {
         let pd = from_means(
             Family::Gaussian,
             &means,
-            1.0,
+            &[1.0],
             &[],
             40_000,
             5,
@@ -146,12 +162,77 @@ mod tests {
     }
 
     #[test]
+    fn per_row_dispersion() {
+        // Gamma variance φ μ²: the second row's φ is four times the first.
+        let pd = from_means(
+            Family::Gamma,
+            &[vec![100.0, 100.0]],
+            &[0.1, 0.4],
+            &[],
+            40_000,
+            9,
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let v = |j: i64| pd.marginal(&vec![KeyValue::from(j)]).unwrap().variance();
+        assert!((v(0) / 1000.0 - 1.0).abs() < 0.05);
+        assert!((v(1) / 4000.0 - 1.0).abs() < 0.05);
+        let p = || Provenance::new("test");
+        assert!(
+            from_means(
+                Family::Gamma,
+                &[vec![1.0, 2.0]],
+                &[1.0, 1.0, 1.0],
+                &[],
+                10,
+                1,
+                p()
+            )
+            .is_err()
+        );
+        assert!(
+            from_means(
+                Family::Gamma,
+                &[vec![1.0, 2.0]],
+                &[1.0, -1.0],
+                &[],
+                10,
+                1,
+                p()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn rejects_bad_input() {
         let p = || Provenance::new("test");
-        assert!(from_means(Family::Poisson, &[], 1.0, &[], 10, 1, p()).is_err());
-        assert!(from_means(Family::Poisson, &[vec![1.0], vec![]], 1.0, &[], 10, 1, p()).is_err());
-        assert!(from_means(Family::Poisson, &[vec![-1.0]], 1.0, &[], 10, 1, p()).is_err());
-        assert!(from_means(Family::Poisson, &[vec![1.0]], 0.0, &[], 10, 1, p()).is_err());
-        assert!(from_means(Family::Poisson, &[vec![1.0]], 1.0, &[1.0, 2.0], 10, 1, p()).is_err());
+        assert!(from_means(Family::Poisson, &[], &[1.0], &[], 10, 1, p()).is_err());
+        assert!(
+            from_means(
+                Family::Poisson,
+                &[vec![1.0], vec![]],
+                &[1.0],
+                &[],
+                10,
+                1,
+                p()
+            )
+            .is_err()
+        );
+        assert!(from_means(Family::Poisson, &[vec![-1.0]], &[1.0], &[], 10, 1, p()).is_err());
+        assert!(from_means(Family::Poisson, &[vec![1.0]], &[0.0], &[], 10, 1, p()).is_err());
+        assert!(
+            from_means(
+                Family::Poisson,
+                &[vec![1.0]],
+                &[1.0],
+                &[1.0, 2.0],
+                10,
+                1,
+                p()
+            )
+            .is_err()
+        );
     }
 }
