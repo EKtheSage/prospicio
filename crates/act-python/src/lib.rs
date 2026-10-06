@@ -57,8 +57,8 @@ mod actuarialrs_native {
     };
     #[pymodule_export]
     use super::reserving::{
-        PyChainLadder, PyChainLadderFit, PyMack, PyMackFit, PyOdpBootstrap, PyOdpBootstrapFit,
-        PyTriangle,
+        PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyMack, PyMackFit,
+        PyOdpBootstrap, PyOdpBootstrapFit, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

@@ -8,9 +8,9 @@
 
 use act_core::{Grain, Lag, Month};
 use act_reserving::{
-    Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, FitTable, Label, Long,
-    Mack, MackFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
-    ReserveFit, SegmentFits, SigmaInterpolation, Triangle, view,
+    Average, ChainLadder, ChainLadderFit, ClaimsDevelopmentResult, Development, DevelopmentColumn,
+    FitTable, Label, Long, Mack, MackFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment,
+    ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -1830,6 +1830,36 @@ impl PyMackFit {
         table_frame(py, self.inner.development_table())
     }
 
+    /// Merz and Wüthrich's (2008) one-year view: the standard error of the
+    /// claims development result of each origin and in total, in the next
+    /// calendar year and in every later one, as R ChainLadder's
+    /// ``CDR(MackChainLadder(x), dev = "all")``.
+    ///
+    /// Returns
+    /// -------
+    /// ClaimsDevelopmentResult
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the fit has several segments (use ``segment(...)``), the
+    ///     factors are not volume-weighted, or the latest values do not lie
+    ///     on one calendar diagonal with one new origin per period.
+    fn claims_development_result(&self) -> PyResult<PyClaimsDevelopmentResult> {
+        let fit = match self.inner.fits.as_slice() {
+            [one] => one,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "claims_development_result needs a single-segment fit, and this one \
+                     has {} segments; use segment(...)",
+                    self.inner.len()
+                )));
+            }
+        };
+        let inner = fit.claims_development_result().map_err(err)?;
+        Ok(PyClaimsDevelopmentResult { inner })
+    }
+
     /// The fit of one segment, chosen by key values as
     /// ``ChainLadderFit.segment``.
     ///
@@ -1853,6 +1883,122 @@ impl PyMackFit {
             segments_prefix(&self.inner),
             self.origins().len(),
             self.inner.total_reserve(),
+        )
+    }
+}
+
+/// Merz and Wüthrich's (2008) one-year view of a Mack fit: standard errors
+/// of the claims development result (CDR), the change in the chain-ladder
+/// ultimate over a calendar year, per origin and in total. The total
+/// includes the covariance between origins. Year ``k`` of the run-off is
+/// R ChainLadder's ``CDR(k)S.E.``; summed in square over the years, the
+/// run-off gives back Mack's standard error.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import Mack, Triangle
+/// >>> tri = Triangle.from_long(
+/// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+/// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+/// ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+/// ... )
+/// >>> mack = Mack().fit(tri, "values")
+/// >>> cdr = mack.claims_development_result()
+/// >>> len(cdr.by_calendar_year), cdr.one_year_standard_error[0]
+/// (3, 0.0)
+/// >>> abs(cdr.total_run_off_standard_error - mack.total_standard_error) < 1e-9
+/// True
+#[pyclass(
+    name = "ClaimsDevelopmentResult",
+    module = "actuarialrs.reserving",
+    frozen
+)]
+pub(crate) struct PyClaimsDevelopmentResult {
+    inner: ClaimsDevelopmentResult,
+}
+
+#[pymethods]
+impl PyClaimsDevelopmentResult {
+    /// Origin periods, oldest first.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.inner.origins.iter().map(ToString::to_string).collect()
+    }
+
+    /// Standard error of each origin's CDR in the next calendar year, R's
+    /// ``CDR(1)S.E.``.
+    #[getter]
+    fn one_year_standard_error(&self) -> Vec<f64> {
+        self.inner.one_year_standard_error.clone()
+    }
+
+    /// Standard error of the total CDR in the next calendar year.
+    #[getter]
+    fn total_one_year_standard_error(&self) -> f64 {
+        self.inner.total_one_year_standard_error
+    }
+
+    /// Standard error of each origin's CDR in each future calendar year:
+    /// ``by_calendar_year[k - 1][i]`` is year ``k`` (R's ``CDR(k)S.E.``) of
+    /// origin ``i``, zero once the origin is fully developed. One year per
+    /// age-to-age factor.
+    #[getter]
+    fn by_calendar_year(&self) -> Vec<Vec<f64>> {
+        self.inner.by_calendar_year.clone()
+    }
+
+    /// Standard error of the total CDR in each future calendar year.
+    #[getter]
+    fn total_by_calendar_year(&self) -> Vec<f64> {
+        self.inner.total_by_calendar_year.clone()
+    }
+
+    /// Standard error of each origin's full run-off, the square root of
+    /// the sum of its yearly mean squared errors; equals Mack's.
+    #[getter]
+    fn run_off_standard_error(&self) -> Vec<f64> {
+        self.inner.run_off_standard_error()
+    }
+
+    /// Standard error of the total full run-off; equals Mack's.
+    #[getter]
+    fn total_run_off_standard_error(&self) -> f64 {
+        self.inner.total_run_off_standard_error()
+    }
+
+    /// One row per origin: ``origin``, then ``cdr_1``, ``cdr_2``, ... the
+    /// standard error of the CDR in each future calendar year (R's
+    /// ``CDR(k)S.E.``), and ``run_off``, that of the full run-off. Needs
+    /// pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let mut values: Vec<(String, Vec<f64>)> = self
+            .inner
+            .by_calendar_year
+            .iter()
+            .enumerate()
+            .map(|(t, year)| (format!("cdr_{}", t + 1), year.clone()))
+            .collect();
+        values.push(("run_off".into(), self.inner.run_off_standard_error()));
+        let table = FitTable {
+            keys: Vec::new(),
+            origin: Some(self.inner.origins.clone()),
+            age: None,
+            values,
+        };
+        table_frame(py, table)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ClaimsDevelopmentResult(origins={}, total_one_year_standard_error={:?}, \
+             total_run_off_standard_error={:?})",
+            self.inner.origins.len(),
+            self.inner.total_one_year_standard_error,
+            self.inner.total_run_off_standard_error()
         )
     }
 }
