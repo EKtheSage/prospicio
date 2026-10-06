@@ -76,6 +76,8 @@ pub enum Error {
     Bootstrap(&'static str),
     /// The ODP GLM cannot be fitted to this triangle.
     OdpGlm(String),
+    /// Clark's growth-curve model cannot be fitted to this triangle.
+    Clark(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this fit.
     ClaimsDevelopment(&'static str),
@@ -148,6 +150,7 @@ impl fmt::Display for Error {
             } => write!(f, "{name} = {value} is invalid: expected {expected}"),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
+            Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::Core(e) => e.fmt(f),
         }

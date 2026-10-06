@@ -1,5 +1,6 @@
 # Reserving lane: the loss triangle, the chain ladder, Mack with its
-# one-year view, the expected-loss methods and the ODP bootstrap, over
+# one-year view, the expected-loss methods, the ODP bootstrap and Clark's
+# growth curves, over
 # crates/act-r/src/reserving.rs (docs/design/triangle.md,
 # docs/design/reserving-v02.md). S7 classes and functions over the Rust
 # objects, as in distributions.R.
@@ -1485,8 +1486,196 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
   odp_bootstrap_fit(ptr = ptr)
 }
 
+#' Clark's growth-curve methods
+#'
+#' Clark's LDF and Cape Cod methods (Clark 2003), as R ChainLadder's
+#' `ClarkLDF()` and `ClarkCapeCod()` with `adol = TRUE`: a growth curve
+#' `G` and either each origin's expected ultimate (`clark_ldf()`) or one
+#' expected loss ratio times each origin's exposure (`clark_cape_cod()`)
+#' are fitted to the incremental losses by over-dispersed Poisson maximum
+#' likelihood. Ages are measured from the average date of loss, the middle
+#' of the origin period, and development stops at `max_age`. Results match
+#' R ChainLadder and chainladder-python
+#' (`validation/reference/reserving_clark_r.csv`), except that the Weibull
+#' parameter risk uses the correct second derivative of the curve, where
+#' R's has an error (`knowledge/references/r-chainladder-clark.md`).
+#'
+#' `clark_ldf()`'s reserve is the latest value developed by the fitted
+#' curve, `latest * (G(max_age) / G(age) - 1)`; `clark_cape_cod()`'s is the
+#' fitted `elr * exposure * (G(max_age) - G(age))`. Process risk is the
+#' square root of `scale` times the fitted reserve, parameter risk the
+#' delta method on the parameter covariance (the scale times the inverse
+#' Fisher information), and `standard_error` the root of their squares'
+#' sum. A singular Fisher information gives `NaN` parameter risk, as R
+#' gives `NA`.
+#'
+#' Every segment of the triangle is fitted on its own. Properties of the
+#' fit, per origin (named as a [chain_ladder_fit]'s): `latest`,
+#' `expected_ultimate` (the fitted `U`, or `elr * exposure`, developed to
+#' infinity), `ultimate`, `reserve`, `process_risk`, `parameter_risk`,
+#' `standard_error` and, for Cape Cod, `exposure` (`NULL` for the LDF
+#' method); and `chain_ladder` (the volume-weighted [chain_ladder_fit] of
+#' the same column), `keys`, `index`, `origins`, `development`, `method`
+#' (`"ldf"` or `"cape_cod"`), `curve`, `max_age`, `origin_width` (the
+#' origin period in months), `total_ultimate` and `total_reserve` (summed
+#' over segments). The fitted `omega`, `theta`, `scale` (the
+#' over-dispersion `sigma^2`), `elr` (Cape Cod; `NULL` for the LDF method,
+#' with any number of segments), `covariance` (of the expected ultimates or
+#' the ELR, then `omega` and `theta`), `n_observations` (the incremental
+#' values fitted; `scale` divides by this less the number of parameters),
+#' `total_process_risk`, `total_parameter_risk` and `total_standard_error`
+#' need a single-segment fit: with several segments use [totals_frame()],
+#' which has them per segment (except `covariance` and `n_observations`),
+#' or [segment()].
+#' `growth(fit, age)` gives the share of the expected ultimate developed by
+#' each development age in months (`Inf` gives 1). These are Python's
+#' `ClarkLdf`, `ClarkCapeCod` and `ClarkFit`.
+#'
+#' @param triangle A cumulative [triangle] with at least four development
+#'   ages, with any number of segments.
+#' @param column Name of the loss column to fit; for `clark_ldf()` by
+#'   default the only one.
+#' @param exposure Name of the exposure column, such as premium; each
+#'   origin's latest observed value is its exposure, which must be
+#'   positive.
+#' @param curve The growth curve: `"loglogistic"`,
+#'   `G(x) = x^omega / (x^omega + theta^omega)`, or `"weibull"`,
+#'   `G(x) = 1 - exp(-(x / theta)^omega)`.
+#' @param max_age Age in months at which development stops, at least the
+#'   triangle's last age; `Inf` (or `NULL`) develops to infinity.
+#' @param fit A `clark_fit` with one segment.
+#' @param age Development ages in months, before the shift to the average
+#'   date of loss.
+#' @param ptr A `ClarkFit` pointer; used internally.
+#' @returns `clark_ldf()` and `clark_cape_cod()`: a `clark_fit` object.
+#'   `growth()`: a numeric vector, one value per age.
+#' @seealso [chain_ladder()], [mack()], [segment()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2020:2024, 5:1),
+#'                    age = c(12, 24, 36, 48, 60, 12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(110, 290, 370, 420, 440, 95, 300, 390, 425, 130, 320, 410,
+#'                             105, 305, 120),
+#'                    premium = 800)
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' ldf <- clark_ldf(tri, "paid", curve = "weibull", max_age = 120)
+#' c(omega = ldf@omega, theta = ldf@theta)
+#' ldf@reserve
+#' ldf@total_standard_error
+#' growth(ldf, c(12, 24, 120))
+#'
+#' cc <- clark_cape_cod(tri, "paid", "premium")
+#' cc@elr
+#' as.data.frame(cc)
+clark_fit <- S7::new_class(
+  "clark_fit",
+  package = "actuarialrs",
+  properties = local({
+    by_origin <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        stats::setNames(f(self@ptr), origin_names(self@chain_ladder@ptr))
+      })
+    }
+    one <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) rust_result(f(self@ptr), call = NULL))
+    }
+    cape_cod <- function(self) self@ptr$method() == "cape_cod"
+    list(
+      ptr = S7::new_S3_class("ClarkFit"),
+      chain_ladder = chain_ladder_fit,
+      keys = S7::new_property(S7::class_character, getter = function(self) self@chain_ladder@keys),
+      index = S7::new_property(S7::class_data.frame, getter = function(self) self@chain_ladder@index),
+      origins = S7::new_property(S7::class_character, getter = function(self) self@chain_ladder@origins),
+      development = S7::new_property(S7::class_integer, getter = function(self) {
+        self@chain_ladder@development
+      }),
+      method = S7::new_property(S7::class_character, getter = function(self) self@ptr$method()),
+      curve = S7::new_property(S7::class_character, getter = function(self) self@ptr$curve()),
+      max_age = S7::new_property(S7::class_double, getter = function(self) self@ptr$max_age()),
+      omega = one(function(p) p$omega()),
+      theta = one(function(p) p$theta()),
+      elr = S7::new_property(getter = function(self) {
+        if (!cape_cod(self)) return(NULL)
+        rust_result(self@ptr$elr(), call = NULL)
+      }),
+      scale = one(function(p) p$scale()),
+      n_observations = S7::new_property(S7::class_integer, getter = function(self) {
+        rust_result(self@ptr$n_observations(), call = NULL)
+      }),
+      origin_width = S7::new_property(S7::class_double, getter = function(self) self@ptr$origin_width()),
+      covariance = S7::new_property(S7::class_double, getter = function(self) {
+        v <- rust_result(self@ptr$covariance(), call = NULL)
+        n <- as.integer(round(sqrt(length(v))))
+        names <- c(if (cape_cod(self)) "elr" else self@origins, "omega", "theta")
+        matrix(v, n, n, byrow = TRUE, dimnames = list(names, names))
+      }),
+      latest = by_origin(function(p) p$chain_ladder()$latest()),
+      exposure = S7::new_property(getter = function(self) {
+        if (!cape_cod(self)) return(NULL)
+        stats::setNames(self@ptr$exposure(), origin_names(self@chain_ladder@ptr))
+      }),
+      expected_ultimate = by_origin(function(p) p$expected_ultimate()),
+      ultimate = by_origin(function(p) p$ultimate()),
+      reserve = by_origin(function(p) p$reserve()),
+      process_risk = by_origin(function(p) p$process_risk()),
+      parameter_risk = by_origin(function(p) p$parameter_risk()),
+      standard_error = by_origin(function(p) p$standard_error()),
+      total_ultimate = S7::new_property(S7::class_double, getter = function(self) self@ptr$total_ultimate()),
+      total_reserve = S7::new_property(S7::class_double, getter = function(self) self@ptr$total_reserve()),
+      total_process_risk = one(function(p) p$total_process_risk()),
+      total_parameter_risk = one(function(p) p$total_parameter_risk()),
+      total_standard_error = one(function(p) p$total_standard_error())
+    )
+  }),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr, chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()))
+  }
+)
+
+# Clark's `max_age` for Rust: a single number, Inf for none.
+clark_max_age <- function(max_age) {
+  if (is.null(max_age)) return(Inf)
+  if (!is.numeric(max_age) || length(max_age) != 1 || is.na(max_age)) {
+    stop("max_age must be a single number", call. = FALSE)
+  }
+  as.double(max_age)
+}
+
+#' @rdname clark_fit
+#' @export
+clark_ldf <- function(triangle, column = NULL, curve = c("loglogistic", "weibull"), max_age = Inf) {
+  column <- fit_column(triangle, column)
+  curve <- match.arg(curve)
+  clark_fit(ptr = rust_result(triangle@ptr$clark_ldf(column, curve, clark_max_age(max_age))))
+}
+
+#' @rdname clark_fit
+#' @export
+clark_cape_cod <- function(triangle, column, exposure, curve = c("loglogistic", "weibull"),
+                           max_age = Inf) {
+  check_triangle(triangle)
+  for (arg in c("column", "exposure")) {
+    value <- get(arg)
+    if (!is.character(value) || length(value) != 1 || is.na(value)) {
+      stop(sprintf("%s must be the name of one column", arg), call. = FALSE)
+    }
+  }
+  curve <- match.arg(curve)
+  ptr <- rust_result(triangle@ptr$clark_cape_cod(column, exposure, curve, clark_max_age(max_age)))
+  clark_fit(ptr = ptr)
+}
+
+#' @rdname clark_fit
+#' @export
+growth <- function(fit, age) {
+  if (!S7::S7_inherits(fit, clark_fit)) stop("fit must be a clark_fit", call. = FALSE)
+  if (!is.numeric(age)) stop("age must be numeric", call. = FALSE)
+  rust_result(fit@ptr$growth(as.double(age)))
+}
+
 check_fit <- function(fit) {
-  classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit)
+  classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
+                  clark_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit or ",
          "odp_bootstrap_fit", call. = FALSE)
@@ -1496,18 +1685,22 @@ check_fit <- function(fit) {
 #' Long results of a fit over every segment
 #'
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
-#' [cape_cod_fit] or [odp_bootstrap_fit] with the triangle's key columns by
-#' name. `as.data.frame(fit)` has one row per segment and origin: `origin`,
-#' `latest`, `ultimate` and `reserve` (the method's own), plus for Mack
-#' `process_risk`, `parameter_risk` and `standard_error`, for the
+#' [cape_cod_fit], [odp_bootstrap_fit] or [clark_fit] with the triangle's key
+#' columns by name. `as.data.frame(fit)` has one row per segment and origin:
+#' `origin`, `latest`, `ultimate` and `reserve` (the method's own), plus for
+#' Mack `process_risk`, `parameter_risk` and `standard_error`, for the
 #' expected-loss methods `exposure` and `apriori` (and Cape Cod's
-#' `trended_apriori`), and for the bootstrap the `mean` and `std_dev` of the
-#' bootstrapped reserve. `totals_frame()` has one row per segment with the
-#' same quantities for the segment's total (for the expected-loss methods
-#' the total `exposure`, for the bootstrap also its `scale`).
+#' `trended_apriori`), for the bootstrap the `mean` and `std_dev` of the
+#' bootstrapped reserve, and for Clark (Cape Cod) `exposure`,
+#' `expected_ultimate` and the three standard errors. `totals_frame()` has
+#' one row per segment with the same quantities for the segment's total (for
+#' the expected-loss methods the total `exposure`, for the bootstrap also its
+#' `scale`; for Clark its `omega`, `theta`, `scale` and, for Cape Cod, `elr`).
 #' `development_frame()` has one row per segment and age: `development`,
 #' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
-#' `std_err`; the oldest age has `NA` for `ldf`, `sigma` and `std_err`.
+#' `std_err`; the oldest age has `NA` for `ldf`, `sigma` and `std_err`. A
+#' [clark_fit] has no development table of its own: use
+#' `development_frame(fit@chain_ladder)` for the chain ladder's.
 #'
 #' `segment()` returns the fit of one segment, chosen by key values as in
 #' `segment(fit, lob = "auto")` (compared as character). Keys not named may
@@ -1519,7 +1712,8 @@ check_fit <- function(fit) {
 #' `development_frame()` and `segment(**keys)`.
 #'
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
-#'   [cape_cod_fit] or [odp_bootstrap_fit].
+#'   [cape_cod_fit], [odp_bootstrap_fit] or [clark_fit] (not for
+#'   `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -1544,6 +1738,10 @@ totals_frame <- function(fit) {
 #' @export
 development_frame <- function(fit) {
   check_fit(fit)
+  if (S7::S7_inherits(fit, clark_fit)) {
+    stop("a clark_fit has no development table; use development_frame(fit@chain_ladder)",
+         call. = FALSE)
+  }
   fit_table_frame(fit@ptr$development_table())
 }
 
@@ -1570,6 +1768,7 @@ S7::method(as.data.frame, mack_fit) <- function(x, ...) fit_table_frame(x@ptr$lo
 S7::method(as.data.frame, expected_loss_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, cape_cod_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, odp_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, clark_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 
 # A segment count for print headers when there are several.
 segments_note <- function(p) {
@@ -1609,6 +1808,21 @@ S7::method(print, mack_fit) <- function(x, ...) {
     cat(sprintf("<mack_fit> total reserve %s, standard error %s (CV %s)\n",
                 format(x@total_reserve, digits = 10), format(x@total_standard_error, digits = 10),
                 format(x@total_cv, digits = 4)))
+    print(as.data.frame(x), row.names = FALSE)
+  }
+  invisible(x)
+}
+S7::method(print, clark_fit) <- function(x, ...) {
+  p <- x@chain_ladder@ptr
+  what <- sprintf("%s, %s curve", if (x@method == "ldf") "LDF" else "Cape Cod", x@curve)
+  if (is.finite(x@max_age)) what <- sprintf("%s to age %s", what, format(x@max_age))
+  if (p$n_segments() > 1) {
+    cat(sprintf("<clark_fit> %s, total reserve %s%s\n", what, format(x@total_reserve, digits = 10),
+                segments_note(p)))
+    print(totals_frame(x), row.names = FALSE)
+  } else {
+    cat(sprintf("<clark_fit> %s, total reserve %s, standard error %s\n", what,
+                format(x@total_reserve, digits = 10), format(x@total_standard_error, digits = 10)))
     print(as.data.frame(x), row.names = FALSE)
   }
   invisible(x)

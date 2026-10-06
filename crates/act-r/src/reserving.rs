@@ -1,6 +1,6 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
-//! ladder, Mack with its one-year view, tails, the expected-loss methods
-//! and the ODP bootstrap,
+//! ladder, Mack with its one-year view, tails, the expected-loss methods,
+//! Clark's growth curves and the ODP bootstrap,
 //! `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the R
 //! `reserving.R` API.
 //!
@@ -11,10 +11,11 @@
 use act_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
     ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
-    CurveShape, Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit as ExpectedLossInner,
-    FitTable, Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
-    OdpBootstrapFits, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail,
-    TailBondy, TailConstant, TailCurve, Triangle as TriangleInner,
+    ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
+    ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
+    Long, Mack, MackFit as MackInner, Month, OdpBootstrap, OdpBootstrapFits, ProcessDistribution,
+    ReserveFit, SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
+    Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -89,6 +90,28 @@ fn months(years: &[i32], months: &[i32], arg: &str) -> Result<Vec<Month>> {
             Month::new(y, m).map_err(crate::to_r)
         })
         .collect()
+}
+
+fn growth_curve(name: &str) -> Result<GrowthCurve> {
+    match name {
+        "loglogistic" => Ok(GrowthCurve::LogLogistic),
+        "weibull" => Ok(GrowthCurve::Weibull),
+        _ => Err(Error::Other(format!(
+            "curve must be \"loglogistic\" or \"weibull\", got \"{name}\""
+        ))),
+    }
+}
+
+fn growth_curve_name(curve: GrowthCurve) -> &'static str {
+    match curve {
+        GrowthCurve::LogLogistic => "loglogistic",
+        GrowthCurve::Weibull => "weibull",
+    }
+}
+
+/// Clark's `max_age`: R passes `Inf` to develop to infinity.
+fn clark_max_age(x: f64) -> Option<f64> {
+    (x != f64::INFINITY).then_some(x)
 }
 
 fn age(x: f64) -> Result<Lag> {
@@ -625,6 +648,35 @@ impl Triangle {
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(OdpBootstrapFit { inner })
+    }
+
+    /// Clark's LDF method; `max_age` is `Inf` to develop to infinity.
+    fn clark_ldf(&self, column: &str, curve: &str, max_age: f64) -> Result<ClarkFit> {
+        let inner = ClarkLdf {
+            curve: growth_curve(curve)?,
+            max_age: clark_max_age(max_age),
+        }
+        .fit_segments(&self.inner, column)
+        .map_err(to_r)?;
+        Ok(ClarkFit { inner })
+    }
+
+    /// Clark's Cape Cod method, with each origin's exposure the latest
+    /// value of column `exposure`.
+    fn clark_cape_cod(
+        &self,
+        column: &str,
+        exposure: &str,
+        curve: &str,
+        max_age: f64,
+    ) -> Result<ClarkFit> {
+        let inner = ClarkCapeCod {
+            curve: growth_curve(curve)?,
+            max_age: clark_max_age(max_age),
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(ClarkFit { inner })
     }
 }
 
@@ -1238,6 +1290,155 @@ impl OdpBootstrapFit {
     }
 }
 
+/// A Clark LDF or Cape Cod fit of every segment of a triangle column.
+/// Per-origin vectors run over the origins of each segment in turn.
+#[extendr]
+pub(crate) struct ClarkFit {
+    inner: SegmentFits<ClarkInner>,
+}
+
+impl ClarkFit {
+    /// The fit of a single-segment result, for `field`.
+    fn one(&self, field: &str) -> Result<&ClarkInner> {
+        single(&self.inner, field, "totals_frame()")
+    }
+}
+
+#[extendr]
+impl ClarkFit {
+    /// The volume-weighted chain ladder of the same column.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self.inner.map(|f| f.chain_ladder.clone()),
+        }
+    }
+
+    /// "ldf" or "cape_cod".
+    fn method(&self) -> &'static str {
+        if self.inner.fits[0].elr.is_some() {
+            "cape_cod"
+        } else {
+            "ldf"
+        }
+    }
+
+    fn curve(&self) -> &'static str {
+        growth_curve_name(self.inner.fits[0].curve)
+    }
+
+    /// `Inf` when development runs to infinity.
+    fn max_age(&self) -> f64 {
+        self.inner.fits[0].max_age.unwrap_or(f64::INFINITY)
+    }
+
+    fn omega(&self) -> Result<f64> {
+        Ok(self.one("omega")?.omega)
+    }
+
+    fn theta(&self) -> Result<f64> {
+        Ok(self.one("theta")?.theta)
+    }
+
+    /// The expected loss ratio; NaN for the LDF method.
+    fn elr(&self) -> Result<f64> {
+        if self.inner.fits[0].elr.is_none() {
+            return Ok(f64::NAN);
+        }
+        Ok(self.one("elr")?.elr.unwrap_or(f64::NAN))
+    }
+
+    /// Length of the origin period in months.
+    fn origin_width(&self) -> f64 {
+        self.inner.fits[0].origin_width
+    }
+
+    /// Number of observed incremental values fitted.
+    fn n_observations(&self) -> Result<i32> {
+        let f = single(&self.inner, "n_observations", "segment()")?;
+        Ok(f.n_observations as i32)
+    }
+
+    fn scale(&self) -> Result<f64> {
+        Ok(self.one("scale")?.scale)
+    }
+
+    /// The parameter covariance, row-major.
+    fn covariance(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "covariance", "segment()")?;
+        Ok(f.covariance.concat())
+    }
+
+    /// Exposure per origin; empty for the LDF method.
+    fn exposure(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.exposure.clone().unwrap_or_default())
+    }
+
+    fn expected_ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.expected_ultimate.clone())
+    }
+
+    fn ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.ultimate.clone())
+    }
+
+    fn reserve(&self) -> Vec<f64> {
+        by_origin(&self.inner, ClarkInner::reserves)
+    }
+
+    fn process_risk(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.process_risk.clone())
+    }
+
+    fn parameter_risk(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.parameter_risk.clone())
+    }
+
+    fn standard_error(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.standard_error.clone())
+    }
+
+    fn total_ultimate(&self) -> f64 {
+        self.inner.total_ultimate()
+    }
+
+    fn total_reserve(&self) -> f64 {
+        self.inner.total_reserve()
+    }
+
+    fn total_process_risk(&self) -> Result<f64> {
+        Ok(self.one("total_process_risk")?.total_process_risk)
+    }
+
+    fn total_parameter_risk(&self) -> Result<f64> {
+        Ok(self.one("total_parameter_risk")?.total_parameter_risk)
+    }
+
+    fn total_standard_error(&self) -> Result<f64> {
+        Ok(self.one("total_standard_error")?.total_standard_error)
+    }
+
+    /// Share of the expected ultimate developed by each development age
+    /// (months; `Inf` gives 1).
+    fn growth(&self, age: &[f64]) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "growth", "segment()")?;
+        Ok(age.iter().map(|&a| f.growth(a)).collect())
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys, values)?,
+        })
+    }
+}
+
 extendr_module! {
     mod reserving;
     impl Triangle;
@@ -1248,4 +1449,5 @@ extendr_module! {
     impl CapeCodFit;
     impl ClaimsDevelopmentResult;
     impl OdpBootstrapFit;
+    impl ClarkFit;
 }

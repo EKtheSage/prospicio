@@ -306,7 +306,11 @@ fn check_apriori(apriori: f64) -> Result<()> {
 /// Exposure of each origin of `segment`: the latest observed value of the
 /// same origin in `exposure` (the exposure column of the same index
 /// position, named `column`), which must be finite and positive.
-fn origin_exposure(segment: &Segment, exposure: &Segment, column: &str) -> Result<Vec<f64>> {
+pub(crate) fn origin_exposure(
+    segment: &Segment,
+    exposure: &Segment,
+    column: &str,
+) -> Result<Vec<f64>> {
     (0..segment.n_origins)
         .map(|o| {
             let position = (segment.origin_offset + o)

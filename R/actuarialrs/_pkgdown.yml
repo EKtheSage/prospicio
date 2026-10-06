@@ -163,4 +163,5 @@ reference:
       - expected_loss_fit
       - cape_cod_fit
       - odp_bootstrap_fit
+      - clark_fit
       - fit_frames

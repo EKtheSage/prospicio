@@ -14,6 +14,9 @@ from actuarialrs.reserving import (
     ChainLadder,
     ChainLadderFit,
     ClaimsDevelopmentResult,
+    ClarkCapeCod,
+    ClarkFit,
+    ClarkLdf,
     ExpectedLoss,
     ExpectedLossFit,
     Mack,
@@ -1255,3 +1258,168 @@ def test_expected_loss_errors():
         Benktander(n_iters=-1)
     with pytest.raises(ValueError):
         ExpectedLoss(average="median")
+
+
+# Clark's growth curves: parity with R ChainLadder 0.2.21 and
+# chainladder-python 0.10.1 (validation/reference/reserving_clark_*.csv; see
+# validation/tests/reserving_clark.rs for the tolerances).
+
+
+def clark_triangle(name):
+    return premium_dataset(name) if name == "genins_premium" else dataset(name)
+
+
+def clark_fit(tri, dataset_name, method):
+    """Fits a reference `method` (name;curve=...;max_age=...[;optim=...])."""
+    name, *settings = method.split(";")
+    kw = dict(s.split("=") for s in settings)
+    max_age = None if kw["max_age"] == "inf" else float(kw["max_age"])
+    if name == "clark_cape_cod":
+        return ClarkCapeCod(curve=kw["curve"], max_age=max_age).fit(tri, "paid", "premium")
+    column = "paid" if dataset_name == "genins_premium" else "values"
+    return ClarkLdf(curve=kw["curve"], max_age=max_age).fit(tri, column)
+
+
+def clark_value(fit, quantity, arg):
+    p = len(fit.covariance)
+    scalars = {
+        "omega": lambda: fit.omega,
+        "theta": lambda: fit.theta,
+        "elr": lambda: fit.elr,
+        "sigma2": lambda: fit.scale,
+        "omega_se": lambda: math.sqrt(fit.covariance[p - 2][p - 2]),
+        "theta_se": lambda: math.sqrt(fit.covariance[p - 1][p - 1]),
+        "elr_se": lambda: math.sqrt(fit.covariance[0][0]),
+        "total_ultimate": lambda: fit.total_ultimate,
+        "total_reserve": lambda: fit.total_reserve,
+        "total_process_se": lambda: fit.total_process_risk,
+        "total_parameter_se": lambda: fit.total_parameter_risk,
+        "total_standard_error": lambda: fit.total_standard_error,
+        "ldf": lambda: fit.growth(float(arg) + 12) / fit.growth(float(arg)),
+    }
+    if quantity in scalars:
+        return scalars[quantity]()
+    per_origin = {
+        "expected_ultimate": fit.expected_ultimate,
+        "ultimate": fit.ultimate,
+        "reserve": fit.reserve,
+        "process_se": fit.process_risk,
+        "parameter_se": fit.parameter_risk,
+        "standard_error": fit.standard_error,
+    }[quantity]
+    return per_origin[fit.origins.index(arg)]
+
+
+@pytest.mark.parametrize("reference", ["reserving_clark_r.csv", "reserving_clark_python.csv"])
+def test_clark_matches_reference(reference):
+    cases = read_csv(VALIDATION / "reference" / reference)
+    assert cases
+    tris, fits = {}, {}
+    for case in cases:
+        name = case["dataset"]
+        # The optimizer setting of the R reference does not change our fit.
+        method = ";".join(p for p in case["method"].split(";") if not p.startswith("optim="))
+        if name not in tris:
+            tris[name] = clark_triangle(name)
+        if (name, method) not in fits:
+            fits[(name, method)] = clark_fit(tris[name], name, method)
+        got = clark_value(fits[(name, method)], case["quantity"], case["arg"])
+        want = float(case["expected"])
+        err = abs(got - want)
+        abs_tol, rel_tol = float(case["abs_tol"] or 0), float(case["rel_tol"] or 0)
+        assert got == want or err <= abs_tol or err <= rel_tol * abs(want), (case, got)
+
+
+def test_clark_fit_fields(triangles):
+    raa = triangles["raa"]
+    fit = ClarkLdf().fit(raa, "values")
+    assert isinstance(fit, ClarkFit)
+    assert fit.curve == "loglogistic" and fit.max_age is None and fit.elr is None
+    assert fit.exposure is None
+    assert fit.latest == ChainLadder().fit(raa, "values").latest
+    # Every origin starts at age 0, so U_i = latest / G(latest age); the
+    # 1990 origin is at 12 months, 6 from the average date of loss.
+    assert fit.expected_ultimate[-1] == pytest.approx(fit.latest[-1] / fit.growth(12), rel=1e-12)
+    assert fit.growth(float("inf")) == 1.0
+    assert fit.reserve == pytest.approx([u - l for u, l in zip(fit.ultimate, fit.latest)])
+    assert fit.total_reserve == pytest.approx(sum(fit.reserve), rel=1e-12)
+    se = [math.hypot(p, q) for p, q in zip(fit.process_risk, fit.parameter_risk)]
+    assert fit.standard_error == pytest.approx(se, rel=1e-12)
+    assert len(fit.covariance) == 12 and fit.scale > 0
+    # RAA has 55 observed incremental values (act_reserving's unit test).
+    assert fit.n_observations == 55 and fit.origin_width == 12.0
+    assert repr(ClarkLdf(curve="weibull", max_age=240)) == 'ClarkLdf(curve="weibull", max_age=240.0)'
+    assert repr(ClarkCapeCod()) == 'ClarkCapeCod(curve="loglogistic", max_age=None)'
+    assert repr(fit).startswith('ClarkFit(method="ldf", curve="loglogistic", origins=10, ')
+    cc = ClarkCapeCod(curve="weibull").fit(premium_dataset("genins_premium"), "paid", "premium")
+    assert cc.exposure[0] == 10_000_000.0
+    assert cc.expected_ultimate == [cc.elr * e for e in cc.exposure]
+    assert len(cc.covariance) == 3 and cc.curve == "weibull"
+    assert repr(cc).startswith('ClarkFit(method="cape_cod", curve="weibull", ')
+
+
+def test_clark_every_segment_at_once():
+    pytest.importorskip("pandas")
+    origin, development, paid, premium, lob = [], [], [], [], []
+    for name, factor in [("a", 1.0), ("b", 10.0)]:
+        for r in premium_rows("genins_premium"):
+            origin.append(int(r["origin"]))
+            development.append(int(r["development"]))
+            paid.append(float(r["paid"]) * factor)
+            premium.append(float(r["premium"]))
+            lob.append(name)
+    both = Triangle.from_long(
+        origin, development, {"paid": paid, "premium": premium}, keys={"lob": lob}
+    )
+    alone = premium_dataset("genins_premium")
+    for model, fit_one in [
+        (ClarkLdf(max_age=240), lambda m, t: m.fit(t, "paid")),
+        (ClarkCapeCod(curve="weibull"), lambda m, t: m.fit(t, "paid", "premium")),
+    ]:
+        fit = fit_one(model, both)
+        single = fit_one(model, alone)
+        a, b = fit.segment(lob="a"), fit.segment(lob="b")
+        assert a.ultimate == pytest.approx(single.ultimate, rel=1e-9)
+        assert a.omega == pytest.approx(single.omega, rel=1e-9)
+        # Ten times the losses: the same curve, ten times the amounts and
+        # standard errors.
+        assert b.theta == pytest.approx(a.theta, rel=1e-7)
+        assert b.total_standard_error == pytest.approx(10 * a.total_standard_error, rel=1e-6)
+        assert len(fit.origins) == 20 and fit.keys == ["lob"]
+        frame = fit.to_frame()
+        assert list(frame["standard_error"]) == fit.standard_error
+        totals = fit.totals_frame()
+        assert list(totals["omega"]) == [a.omega, b.omega]
+        assert totals["reserve"].iloc[0] == pytest.approx(a.total_reserve, rel=1e-12)
+        with pytest.raises(ValueError, match="2 segments; use totals_frame"):
+            fit.omega
+        with pytest.raises(ValueError, match="2 segments; use segment"):
+            fit.growth(12)
+        with pytest.raises(ValueError, match="2 segments; use segment"):
+            fit.n_observations
+        assert fit.origin_width == 12.0
+        if fit.exposure is None:
+            assert fit.elr is None
+        else:
+            with pytest.raises(ValueError, match="2 segments; use totals_frame"):
+                fit.elr
+        assert "segments=2" in repr(fit)
+    cc = ClarkCapeCod().fit(both, "paid", "premium")
+    assert list(cc.to_frame().columns) == [
+        "lob", "origin", "latest", "ultimate", "reserve", "exposure", "expected_ultimate",
+        "process_risk", "parameter_risk", "standard_error",
+    ]
+    assert "elr" in cc.totals_frame().columns
+
+
+def test_clark_errors(triangles):
+    raa = triangles["raa"]
+    with pytest.raises(ValueError, match="unknown growth curve"):
+        ClarkLdf(curve="gompertz")
+    with pytest.raises(ValueError, match="max_age = 119 is invalid"):
+        ClarkLdf(max_age=119).fit(raa, "values")
+    with pytest.raises(ValueError, match="at least 4 development ages"):
+        three = Triangle.from_long([2020] * 3 + [2021] * 2 + [2022], [12, 24, 36, 12, 24, 12], [1.0, 2, 3, 1, 2, 1])
+        ClarkLdf().fit(three, "values")
+    with pytest.raises(ValueError, match="no column named premium"):
+        ClarkCapeCod().fit(raa, "values", "premium")

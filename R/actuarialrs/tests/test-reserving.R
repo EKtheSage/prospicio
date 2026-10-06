@@ -738,6 +738,142 @@ expect_error_like(claims_development_result(chain_ladder(raa)), "fit must be a m
 home_pd <- segment(mack(lc, "paid"), lob = "Home", coverage = "PD")
 near(claims_development_result(home_pd)@total_run_off_standard_error,
      home_pd@total_standard_error, 1e-9)
+# Clark's growth curves against R ChainLadder 0.2.21 and chainladder-python
+# 0.10.1 (validation/reference/reserving_clark_*.csv), with each row's own
+# tolerance, as validation/tests/reserving_clark.rs.
+premium_long <- read_long("genins_premium")
+clark_tris <- list(raa = raa, genins = tris$genins,
+                   genins_premium = triangle(premium_long, "origin", "development",
+                                             c("paid", "premium")))
+clark_fits <- list()
+clark_fit_for <- function(dataset, method) {
+  # The optimizer setting of the R reference does not change our fit.
+  parts <- strsplit(method, ";", fixed = TRUE)[[1]]
+  parts <- parts[!startsWith(parts, "optim=")]
+  key <- paste(dataset, paste(parts, collapse = ";"))
+  if (is.null(clark_fits[[key]])) {
+    kv <- strsplit(parts[-1], "=", fixed = TRUE)
+    s <- stats::setNames(vapply(kv, `[`, "", 2), vapply(kv, `[`, "", 1))
+    max_age <- if (s[["max_age"]] == "inf") Inf else as.numeric(s[["max_age"]])
+    tri <- clark_tris[[dataset]]
+    clark_fits[[key]] <<- if (parts[1] == "clark_cape_cod") {
+      clark_cape_cod(tri, "paid", "premium", curve = s[["curve"]], max_age = max_age)
+    } else {
+      clark_ldf(tri, if (dataset == "genins_premium") "paid" else "value", curve = s[["curve"]],
+                max_age = max_age)
+    }
+  }
+  clark_fits[[key]]
+}
+clark_value <- function(fit, quantity, arg) {
+  cov <- fit@covariance
+  p <- nrow(cov)
+  switch(quantity,
+    omega = fit@omega, theta = fit@theta, elr = fit@elr, sigma2 = fit@scale,
+    omega_se = sqrt(cov[p - 1, p - 1]), theta_se = sqrt(cov[p, p]), elr_se = sqrt(cov[1, 1]),
+    total_ultimate = fit@total_ultimate, total_reserve = fit@total_reserve,
+    total_process_se = fit@total_process_risk, total_parameter_se = fit@total_parameter_risk,
+    total_standard_error = fit@total_standard_error,
+    ldf = growth(fit, as.numeric(arg) + 12) / growth(fit, as.numeric(arg)),
+    expected_ultimate = fit@expected_ultimate[[arg]], ultimate = fit@ultimate[[arg]],
+    reserve = fit@reserve[[arg]], process_se = fit@process_risk[[arg]],
+    parameter_se = fit@parameter_risk[[arg]], standard_error = fit@standard_error[[arg]],
+    stop("unknown quantity ", quantity)
+  )
+}
+for (reference in c("reserving_clark_r.csv", "reserving_clark_python.csv")) {
+  clark_lines <- grep("^#", readLines(validation("reference", reference)), value = TRUE, invert = TRUE)
+  clark_fields <- lapply(strsplit(clark_lines, ",", fixed = TRUE), `[`, 1:7)
+  clark_ref <- utils::read.csv(text = vapply(clark_fields, paste, "", collapse = ","),
+                               colClasses = c(arg = "character"))
+  stopifnot(nrow(clark_ref) > 90)
+  for (r in seq_len(nrow(clark_ref))) {
+    row <- clark_ref[r, ]
+    got <- clark_value(clark_fit_for(row$dataset, row$method), row$quantity, row$arg)
+    err <- abs(got - row$expected)
+    abs_tol <- if (is.na(row$abs_tol)) 0 else row$abs_tol
+    if (!(got == row$expected || err <= abs_tol || err <= row$rel_tol * abs(row$expected))) {
+      stop(sprintf("%s %s %s[%s]: got %.17g, want %.17g", row$dataset, row$method, row$quantity,
+                   row$arg, got, row$expected), call. = FALSE)
+    }
+  }
+}
+
+# The fit's fields, as in python/tests/test_reserving.py.
+clark <- clark_ldf(raa)
+stopifnot(S7::S7_inherits(clark, clark_fit), S7::S7_inherits(clark@chain_ladder, chain_ladder_fit),
+          clark@method == "ldf", clark@curve == "loglogistic", clark@max_age == Inf,
+          is.null(clark@elr), is.null(clark@exposure),
+          identical(clark@latest, chain_ladder(raa)@latest),
+          identical(clark@origins, raa@origins), identical(clark@development, raa@development),
+          identical(names(clark@reserve), raa@origins),
+          identical(dim(clark@covariance), c(12L, 12L)),
+          identical(rownames(clark@covariance), c(raa@origins, "omega", "theta")),
+          clark@scale > 0, growth(clark, Inf) == 1)
+# RAA has 55 observed incremental values (act_reserving's unit test).
+stopifnot(identical(clark@n_observations, 55L), clark@origin_width == 12)
+# Every origin starts at age 0, so U = latest / G(latest age); the 1990
+# origin is at 12 months, 6 from the average date of loss.
+near(clark@expected_ultimate[["1990"]], clark@latest[["1990"]] / growth(clark, 12), 1e-12)
+near(growth(clark, c(12, 24)), c(growth(clark, 12), growth(clark, 24)))
+near(clark@reserve, clark@ultimate - clark@latest, 1e-9)
+near(clark@total_reserve, sum(clark@reserve), 1e-12)
+near(clark@standard_error, sqrt(clark@process_risk^2 + clark@parameter_risk^2), 1e-12)
+df <- as.data.frame(clark)
+stopifnot(identical(names(df), c("origin", "latest", "ultimate", "reserve", "expected_ultimate",
+                                 "process_risk", "parameter_risk", "standard_error")),
+          nrow(df) == 10, identical(df$standard_error, unname(clark@standard_error)))
+cc <- clark_cape_cod(clark_tris$genins_premium, "paid", "premium", curve = "weibull")
+stopifnot(cc@method == "cape_cod", cc@curve == "weibull", cc@exposure[[1]] == 1e7,
+          identical(names(cc@exposure), cc@origins),
+          identical(dimnames(cc@covariance)[[1]], c("elr", "omega", "theta")),
+          cc@elr > 0)
+near(cc@expected_ultimate, cc@elr * cc@exposure)
+stopifnot(identical(names(as.data.frame(cc))[5:6], c("exposure", "expected_ultimate")),
+          "elr" %in% names(totals_frame(cc)))
+weibull <- clark_ldf(raa, curve = "weibull", max_age = 240)
+stopifnot(weibull@max_age == 240, identical(clark_ldf(raa, max_age = NULL)@reserve, clark@reserve))
+invisible(utils::capture.output(print(clark), print(cc), print(weibull)))
+
+# Every segment at once: ten times the losses give the same curve and ten
+# times the amounts and standard errors.
+two_lob <- rbind(transform(premium_long, lob = "a"), transform(premium_long, lob = "b", paid = 10 * paid))
+both <- triangle(two_lob, "origin", "development", c("paid", "premium"), keys = "lob")
+for (fit_one in list(function(t) clark_ldf(t, "paid", max_age = 240),
+                     function(t) clark_cape_cod(t, "paid", "premium", curve = "weibull"))) {
+  fit <- fit_one(both)
+  alone <- fit_one(clark_tris$genins_premium)
+  a <- segment(fit, lob = "a")
+  b <- segment(fit, lob = "b")
+  stopifnot(S7::S7_inherits(a, clark_fit), identical(fit@keys, "lob"), length(fit@reserve) == 20,
+            identical(names(fit@reserve)[11], "b / 2001"))
+  near(a@ultimate, alone@ultimate, 1e-9)
+  near(a@omega, alone@omega, 1e-9)
+  near(b@theta, a@theta, 1e-7)
+  near(b@total_standard_error, 10 * a@total_standard_error, 1e-6)
+  totals <- totals_frame(fit)
+  stopifnot(identical(totals$lob, c("a", "b")), identical(totals$omega, c(a@omega, b@omega)),
+            identical(as.data.frame(fit)$standard_error, unname(fit@standard_error)))
+  near(totals$reserve[1], a@total_reserve, 1e-12)
+  expect_error_like(fit@omega, "2 segments; use totals_frame()")
+  expect_error_like(fit@covariance, "use segment()")
+  expect_error_like(growth(fit, 12), "use segment()")
+  expect_error_like(fit@n_observations, "use segment()")
+  stopifnot(fit@origin_width == 12)
+  if (fit@method == "ldf") stopifnot(is.null(fit@elr)) else expect_error_like(fit@elr, "2 segments")
+  invisible(utils::capture.output(print(fit)))
+}
+expect_error_like(clark_ldf(raa, curve = "gompertz"), "should be one of")
+expect_error_like(clark_ldf(raa, max_age = 119), "max_age = 119 is invalid")
+expect_error_like(clark_ldf(raa, max_age = NA), "max_age must be a single number")
+expect_error_like(clark_ldf(short), "at least 4 development ages")
+expect_error_like(clark_ldf(multi), "several columns")
+expect_error_like(clark_cape_cod(raa, "value", "premium"), "no column named premium")
+expect_error_like(clark_cape_cod(raa, "value"), "argument \"exposure\" is missing")
+expect_error_like(clark_cape_cod(raa, "value", c("a", "b")), "exposure must be the name of one column")
+expect_error_like(development_frame(clark), "development_frame(fit@chain_ladder)")
+expect_error_like(growth(chain_ladder(raa), 12), "fit must be a clark_fit")
+
 # Expected-loss methods against chainladder-python 0.10.1
 # (validation/reference/reserving_expected_loss_python.csv): every row.
 # Paid losses with the latest premium as exposure.

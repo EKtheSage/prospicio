@@ -1,6 +1,6 @@
 //! `actuarialrs.reserving` (Reserving lane): the loss triangle, the chain
-//! ladder, Mack's model, the expected-loss methods and the ODP bootstrap
-//! over `act_reserving` (`docs/design/triangle.md`,
+//! ladder, Mack's model, the expected-loss methods, Clark's growth curves
+//! and the ODP bootstrap over `act_reserving` (`docs/design/triangle.md`,
 //! `docs/design/reserving-v02.md`).
 //!
 //! Long tables come in as array-likes (lists, numpy arrays, pandas or
@@ -10,10 +10,10 @@
 use act_core::{Grain, Lag, Month};
 use act_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit,
-    ClaimsDevelopmentResult, CurveShape, Development, DevelopmentColumn, ExpectedLoss,
-    ExpectedLossFit, FitTable, Label, Long, Mack, MackFit, OdpBootstrap, OdpBootstrapFits,
-    OdpBootstrapSegment, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail,
-    TailBondy, TailConstant, TailCurve, Triangle, view,
+    ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
+    DevelopmentColumn, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, Long, Mack,
+    MackFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution, ReserveFit,
+    SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -3427,6 +3427,530 @@ impl PyCapeCodFit {
             self.origins().len(),
             self.inner.total_ultimate(),
             self.inner.total_reserve()
+        )
+    }
+}
+
+/// The growth curve named `name`.
+fn growth_curve(name: &str) -> PyResult<GrowthCurve> {
+    match name {
+        "loglogistic" => Ok(GrowthCurve::LogLogistic),
+        "weibull" => Ok(GrowthCurve::Weibull),
+        other => Err(PyValueError::new_err(format!(
+            "unknown growth curve {other:?}; expected \"loglogistic\" or \"weibull\""
+        ))),
+    }
+}
+
+fn growth_curve_name(curve: GrowthCurve) -> &'static str {
+    match curve {
+        GrowthCurve::LogLogistic => "loglogistic",
+        GrowthCurve::Weibull => "weibull",
+    }
+}
+
+/// Clark's LDF method (Clark 2003), as R ChainLadder's ``ClarkLDF``: each
+/// origin's expected ultimate and a growth curve are fitted to the
+/// incremental losses by over-dispersed Poisson maximum likelihood, with
+/// ages measured from the average date of loss (the middle of the origin
+/// period, R's ``adol = TRUE``).
+///
+/// The ultimate is the latest value developed by the fitted curve to
+/// ``max_age``. Process risk is the scale times the fitted reserve, and
+/// parameter risk the delta method on the parameters' covariance, the
+/// scale times the inverse Fisher information.
+///
+/// Parameters
+/// ----------
+/// curve : {"loglogistic", "weibull"}, default "loglogistic"
+///     The growth curve ``G``: ``x**omega / (x**omega + theta**omega)`` or
+///     ``1 - exp(-(x / theta)**omega)``.
+/// max_age : float, optional
+///     Age in months at which development stops; at least the triangle's
+///     last age. ``None`` develops to infinity.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``curve`` is unknown.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import ClarkLdf, Triangle
+/// >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
+/// ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
+/// >>> tri = Triangle.from_long(
+/// ...     [2020 + i for i, row in enumerate(rows) for _ in row],
+/// ...     [12 * (d + 1) for row in rows for d in range(len(row))],
+/// ...     [v for row in rows for v in row],
+/// ... )
+/// >>> fit = ClarkLdf(curve="weibull", max_age=120).fit(tri, "values")
+/// >>> fit.omega > 0 and fit.total_standard_error > fit.total_process_risk
+/// True
+/// >>> round(fit.ultimate[2] * fit.growth(36) / fit.growth(120), 6)
+/// 410.0
+#[pyclass(name = "ClarkLdf", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyClarkLdf {
+    inner: ClarkLdf,
+}
+
+#[pymethods]
+impl PyClarkLdf {
+    #[new]
+    #[pyo3(signature = (curve = "loglogistic", max_age = None))]
+    fn new(curve: &str, max_age: Option<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: ClarkLdf {
+                curve: growth_curve(curve)?,
+                max_age,
+            },
+        })
+    }
+
+    /// The growth curve.
+    #[getter]
+    fn curve(&self) -> &'static str {
+        growth_curve_name(self.inner.curve)
+    }
+
+    /// Age in months at which development stops; ``None`` for infinity.
+    #[getter]
+    fn max_age(&self) -> Option<f64> {
+        self.inner.max_age
+    }
+
+    /// Fits one loss column in every segment of a triangle, each on its
+    /// own.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    ///
+    /// Returns
+    /// -------
+    /// ClarkFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``ChainLadder.fit``, if the triangle has fewer than four ages,
+    ///     ``max_age`` is before its last age, an origin's latest value is
+    ///     not positive, or the likelihood search does not converge.
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+    ) -> PyResult<PyClarkFit> {
+        let (m, tri) = (self.inner, &triangle.inner);
+        let inner = py.detach(|| m.fit_segments(tri, column)).map_err(err)?;
+        Ok(PyClarkFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ClarkLdf(curve={:?}, max_age={})",
+            self.curve(),
+            max_age_repr(self.inner.max_age)
+        )
+    }
+}
+
+fn max_age_repr(max_age: Option<f64>) -> String {
+    max_age.map_or_else(|| "None".to_string(), |m| format!("{m:?}"))
+}
+
+/// Clark's Cape Cod method (Clark 2003), as R ChainLadder's
+/// ``ClarkCapeCod``: one expected loss ratio times each origin's exposure
+/// and a growth curve are fitted to the incremental losses by
+/// over-dispersed Poisson maximum likelihood, with ages measured from the
+/// average date of loss.
+///
+/// The reserve is the fitted ``elr * exposure * (G(max_age) - G(age))``;
+/// process and parameter risk are as in ``ClarkLdf``.
+///
+/// Parameters
+/// ----------
+/// curve : {"loglogistic", "weibull"}, default "loglogistic"
+///     The growth curve, as in ``ClarkLdf``.
+/// max_age : float, optional
+///     Age in months at which development stops; at least the triangle's
+///     last age. ``None`` develops to infinity.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``curve`` is unknown.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import ClarkCapeCod, Triangle
+/// >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
+/// ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
+/// >>> tri = Triangle.from_long(
+/// ...     [2020 + i for i, row in enumerate(rows) for _ in row],
+/// ...     [12 * (d + 1) for row in rows for d in range(len(row))],
+/// ...     {"paid": [v for row in rows for v in row],
+/// ...      "premium": [800.0 for row in rows for _ in row]},
+/// ... )
+/// >>> fit = ClarkCapeCod().fit(tri, "paid", "premium")
+/// >>> 0 < fit.elr < 1 and fit.expected_ultimate == [fit.elr * 800.0] * 5
+/// True
+#[pyclass(name = "ClarkCapeCod", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyClarkCapeCod {
+    inner: ClarkCapeCod,
+}
+
+#[pymethods]
+impl PyClarkCapeCod {
+    #[new]
+    #[pyo3(signature = (curve = "loglogistic", max_age = None))]
+    fn new(curve: &str, max_age: Option<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: ClarkCapeCod {
+                curve: growth_curve(curve)?,
+                max_age,
+            },
+        })
+    }
+
+    /// The growth curve.
+    #[getter]
+    fn curve(&self) -> &'static str {
+        growth_curve_name(self.inner.curve)
+    }
+
+    /// Age in months at which development stops; ``None`` for infinity.
+    #[getter]
+    fn max_age(&self) -> Option<f64> {
+        self.inner.max_age
+    }
+
+    /// Fits one loss column in every segment of a triangle, each with its
+    /// own exposure.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    ///     The losses to project.
+    /// exposure : str
+    ///     The exposure column; each origin's latest observed value is its
+    ///     exposure.
+    ///
+    /// Returns
+    /// -------
+    /// ClarkFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``ClarkLdf.fit``, and if an origin has no observed, finite,
+    ///     positive exposure.
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        exposure: &str,
+    ) -> PyResult<PyClarkFit> {
+        let (m, tri) = (self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| m.fit_segments(tri, column, exposure))
+            .map_err(err)?;
+        Ok(PyClarkFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ClarkCapeCod(curve={:?}, max_age={})",
+            self.curve(),
+            max_age_repr(self.inner.max_age)
+        )
+    }
+}
+
+/// A fitted Clark LDF or Cape Cod model of every segment of a triangle
+/// column.
+///
+/// Per-origin lists (``origins``, ``latest``, ``expected_ultimate``,
+/// ``ultimate``, ``reserve`` and the standard errors) run over the origins
+/// of each segment in turn, like the rows of ``to_frame()``. The fitted
+/// parameters and the standard errors of the total need a single-segment
+/// fit; for several segments use ``totals_frame()`` or ``segment(...)``.
+/// ``total_ultimate`` and ``total_reserve`` sum over every segment.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.reserving import ClarkLdf, Triangle
+/// >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
+/// ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
+/// >>> tri = Triangle.from_long(
+/// ...     [2020 + i for i, row in enumerate(rows) for _ in row],
+/// ...     [12 * (d + 1) for row in rows for d in range(len(row))],
+/// ...     [v for row in rows for v in row],
+/// ... )
+/// >>> fit = ClarkLdf().fit(tri, "values")
+/// >>> len(fit.covariance), fit.elr, fit.growth(float("inf"))
+/// (7, None, 1.0)
+#[pyclass(name = "ClarkFit", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyClarkFit {
+    inner: SegmentFits<ClarkFit>,
+}
+
+impl PyClarkFit {
+    /// The fit of a single-segment result, for `field`.
+    fn one(&self, field: &str) -> PyResult<&ClarkFit> {
+        single(&self.inner, field, "totals_frame()")
+    }
+}
+
+#[pymethods]
+impl PyClarkFit {
+    /// The volume-weighted chain ladder of the same column, with the chain
+    /// ladder's ultimate.
+    #[getter]
+    fn chain_ladder(&self) -> PyChainLadderFit {
+        PyChainLadderFit {
+            inner: self.inner.map(|f| f.chain_ladder.clone()),
+        }
+    }
+
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner)
+    }
+
+    /// Origin period of each per-origin value.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        origin_labels(&self.inner)
+    }
+
+    /// The growth curve.
+    #[getter]
+    fn curve(&self) -> &'static str {
+        growth_curve_name(self.inner.fits[0].curve)
+    }
+
+    /// Age in months at which development stops; ``None`` for infinity.
+    #[getter]
+    fn max_age(&self) -> Option<f64> {
+        self.inner.fits[0].max_age
+    }
+
+    /// Fitted shape of the growth curve.
+    #[getter]
+    fn omega(&self) -> PyResult<f64> {
+        Ok(self.one("omega")?.omega)
+    }
+
+    /// Fitted scale of the growth curve, in months.
+    #[getter]
+    fn theta(&self) -> PyResult<f64> {
+        Ok(self.one("theta")?.theta)
+    }
+
+    /// Expected loss ratio (Cape Cod), or ``None`` (LDF).
+    #[getter]
+    fn elr(&self) -> PyResult<Option<f64>> {
+        if self.inner.fits[0].elr.is_none() {
+            return Ok(None);
+        }
+        Ok(self.one("elr")?.elr)
+    }
+
+    /// Length of the origin period in months; ages are shifted by half of
+    /// it to the average date of loss.
+    #[getter]
+    fn origin_width(&self) -> f64 {
+        self.inner.fits[0].origin_width
+    }
+
+    /// Number of observed incremental values fitted; ``scale`` divides by
+    /// this less the number of parameters.
+    #[getter]
+    fn n_observations(&self) -> PyResult<usize> {
+        Ok(single(&self.inner, "n_observations", "segment(...)")?.n_observations)
+    }
+
+    /// Over-dispersion ``sigma**2``: squared Pearson residuals over the
+    /// observed incremental values less the number of parameters.
+    #[getter]
+    fn scale(&self) -> PyResult<f64> {
+        Ok(self.one("scale")?.scale)
+    }
+
+    /// Covariance of the parameters: the expected ultimates (LDF) or the
+    /// expected loss ratio (Cape Cod), then ``omega`` and ``theta``. NaN if
+    /// the Fisher information is singular.
+    #[getter]
+    fn covariance(&self) -> PyResult<Vec<Vec<f64>>> {
+        Ok(single(&self.inner, "covariance", "segment(...)")?
+            .covariance
+            .clone())
+    }
+
+    /// Latest observed cumulative value per origin.
+    #[getter]
+    fn latest(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.chain_ladder.latest.clone())
+    }
+
+    /// Exposure per origin (Cape Cod), or ``None`` (LDF).
+    #[getter]
+    fn exposure(&self) -> Option<Vec<f64>> {
+        self.inner.fits[0].exposure.as_ref()?;
+        Some(by_origin(&self.inner, |f| {
+            f.exposure.clone().unwrap_or_default()
+        }))
+    }
+
+    /// Expected ultimate per origin, developed to infinity: fitted (LDF)
+    /// or ``elr * exposure`` (Cape Cod).
+    #[getter]
+    fn expected_ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.expected_ultimate.clone())
+    }
+
+    /// Ultimate per origin: the latest value plus the reserve.
+    #[getter]
+    fn ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.ultimate.clone())
+    }
+
+    /// Reserve per origin.
+    #[getter]
+    fn reserve(&self) -> Vec<f64> {
+        by_origin(&self.inner, ClarkFit::reserves)
+    }
+
+    /// Process standard error per origin.
+    #[getter]
+    fn process_risk(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.process_risk.clone())
+    }
+
+    /// Parameter standard error per origin.
+    #[getter]
+    fn parameter_risk(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.parameter_risk.clone())
+    }
+
+    /// Standard error per origin: ``sqrt(process**2 + parameter**2)``.
+    #[getter]
+    fn standard_error(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.standard_error.clone())
+    }
+
+    /// Total ultimate across segments and origins.
+    #[getter]
+    fn total_ultimate(&self) -> f64 {
+        self.inner.total_ultimate()
+    }
+
+    /// Total reserve across segments and origins.
+    #[getter]
+    fn total_reserve(&self) -> f64 {
+        self.inner.total_reserve()
+    }
+
+    /// Process standard error of the total reserve.
+    #[getter]
+    fn total_process_risk(&self) -> PyResult<f64> {
+        Ok(self.one("total_process_risk")?.total_process_risk)
+    }
+
+    /// Parameter standard error of the total reserve, with the covariance
+    /// between origins.
+    #[getter]
+    fn total_parameter_risk(&self) -> PyResult<f64> {
+        Ok(self.one("total_parameter_risk")?.total_parameter_risk)
+    }
+
+    /// Standard error of the total reserve.
+    #[getter]
+    fn total_standard_error(&self) -> PyResult<f64> {
+        Ok(self.one("total_standard_error")?.total_standard_error)
+    }
+
+    /// Share of the expected ultimate developed by a development age.
+    ///
+    /// Parameters
+    /// ----------
+    /// age : float
+    ///     Development age in months, before the shift to the average date
+    ///     of loss; ``inf`` gives 1.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn growth(&self, age: f64) -> PyResult<f64> {
+        Ok(single(&self.inner, "growth", "segment(...)")?.growth(age))
+    }
+
+    /// One row per segment and origin: the key columns, ``origin``,
+    /// ``latest``, ``ultimate``, ``reserve``, (Cape Cod) ``exposure``,
+    /// ``expected_ultimate``, ``process_risk``, ``parameter_risk`` and
+    /// ``standard_error``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row per segment: the key columns, the segment's total
+    /// ``latest``, ``ultimate`` and ``reserve``, the ``process_risk``,
+    /// ``parameter_risk`` and ``standard_error`` of its total reserve, and
+    /// its ``omega``, ``theta``, ``scale`` and (Cape Cod) ``elr``. Needs
+    /// pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// The fit of one segment, chosen by key values as
+    /// ``ChainLadderFit.segment``.
+    ///
+    /// Returns
+    /// -------
+    /// ClarkFit
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys)?,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        let method = if self.inner.fits[0].elr.is_some() {
+            "cape_cod"
+        } else {
+            "ldf"
+        };
+        let se = match self.inner.fits.as_slice() {
+            [one] => format!(", total_standard_error={:?}", one.total_standard_error),
+            _ => String::new(),
+        };
+        format!(
+            "ClarkFit({}method={method:?}, curve={:?}, origins={}, total_reserve={:?}{se})",
+            segments_prefix(&self.inner),
+            self.curve(),
+            self.origins().len(),
+            self.inner.total_reserve(),
         )
     }
 }
