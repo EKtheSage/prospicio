@@ -60,17 +60,21 @@ A \code{one_year_fit} object.
 }
 \description{
 The claims development result (CDR) of the chain ladder or an
-expected-loss method over the next development period, by re-reserving
-on the ODP bootstrap ("actuary in the box": Ohlsson and Lauzeningks
-2009; England, Verrall and Wuthrich 2019). Each simulation resamples
-the residuals of the volume-weighted chain ladder as \code{\link[=odp_bootstrap]{odp_bootstrap()}}
-does, simulates every origin's next cell from its observed latest value
-with the bootstrap's process error, appends those cells to the triangle,
-refits \code{method} and records \verb{CDR = opening ultimate - closing ultimate},
-so a negative CDR is an adverse development. An origin at the last age
-gets no new cell, and a new origin written in the coming year is not
-simulated. Unlike \code{\link[=claims_development_result]{claims_development_result()}} (Merz and Wuthrich),
-any averaging and tail are allowed.
+expected-loss method over the coming year, by re-reserving on the ODP
+bootstrap ("actuary in the box": Ohlsson and Lauzeningks 2009; England,
+Verrall and Wuthrich 2019). Each simulation resamples the residuals of
+the volume-weighted chain ladder as \code{\link[=odp_bootstrap]{odp_bootstrap()}} does, projects
+every origin's next increment from its resampled latest value with the
+bootstrap's process error, as \code{\link[=odp_bootstrap]{odp_bootstrap()}} projects, adds it to the
+observed latest value, appends those cells to the triangle, refits
+\code{method} and records \verb{CDR = opening ultimate - closing ultimate}, so a
+negative CDR is an adverse development. An origin with one cell left
+thus has its lifetime bootstrap reserve as its one-year view. An origin
+at the last age gets no new cell, and a new origin written in the coming
+year is not simulated. The development grain must be a year, and every
+origin short of the last age must have its latest value on its
+segment's latest diagonal. Unlike \code{\link[=claims_development_result]{claims_development_result()}} (Merz and
+Wuthrich), any averaging and tail are allowed.
 }
 \details{
 \code{method} names one of \code{\link[=chain_ladder]{chain_ladder()}}, \code{\link[=expected_loss]{expected_loss()}},
@@ -82,15 +86,15 @@ Benktander methods, \code{n_iters} by Benktander, \code{trend} and \code{decay} 
 Cod; giving a setting the method does not read is an error. The
 expected-loss methods need \code{exposure}, the chain ladder takes none; each
 origin's latest exposure is kept for the end of the year, and Cape Cod
-trends to the valuation one development period later.
+trends to the valuation a year later.
 
 The bootstrap only drives the simulation: its factors are always
 volume-weighted without a tail, whatever \code{method} refits. On that same
 chain ladder the standard deviation of the CDR is not Merz and
 Wuthrich's: the ODP's process variance is the scale times the mean,
-Mack's \code{sigma^2} times the cumulative value. In total it is 0.46 times
-Merz-Wuthrich on RAA, 1.02 on GenIns and 0.97 on ABC, and per origin
-from 0.30 to 5.95 times
+Mack's \code{sigma^2} times the cumulative value. In total it is 0.61 times
+Merz-Wuthrich on RAA, 1.36 on GenIns and 1.13 on ABC, and per origin
+from 0.50 to 5.98 times
 (\code{knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md}).
 
 Every segment of the triangle is bootstrapped on its own, with its own

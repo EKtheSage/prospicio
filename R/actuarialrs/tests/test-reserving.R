@@ -1031,26 +1031,27 @@ near(one@opening_reserve, chain_ladder(raa)@reserve, 1e-12)
 cdr_draws <- draw_matrix(one@cdr)
 total_cdr <- sd_and_error(rowSums(cdr_draws))
 stopifnot(abs(mean(one@cdr)) < 0.15 * total_cdr[["sd"]])
-# Against Merz and Wuthrich: R ChainLadder's total CDR(1)S.E.
-# (validation/reference/reserving_cdr_r.csv) times the ratio measured with
-# this seed, 0.4579, within five Monte Carlo standard errors. The ODP's
-# process variance (phi times the mean) is not Mack's, so the two differ
+# A seed-pinned regression, not a check against Merz and Wuthrich: R
+# ChainLadder's total CDR(1)S.E. (validation/reference/reserving_cdr_r.csv)
+# times the ratio this implementation measured with this seed, 0.6087,
+# within five Monte Carlo standard errors. The ODP's process variance (phi
+# times the mean) is not Mack's, so the two differ
 # (knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md).
 mw_total <- cdr_ref$expected[cdr_ref$dataset == "raa" & cdr_ref$method == "cdr" &
                                cdr_ref$quantity == "total_one_year_se"]
 stopifnot(length(mw_total) == 1,
-          abs(total_cdr[["sd"]] - 0.4579 * mw_total) <= 5 * total_cdr[["error"]] + 5e-5 * mw_total)
+          abs(total_cdr[["sd"]] - 0.6087 * mw_total) <= 5 * total_cdr[["error"]] + 5e-5 * mw_total)
 # Against R's BootChainLadder (validation/reference/reserving_bootstrap_r.csv):
 # every origin's one-year standard deviation is at most its lifetime one,
-# and 1982, with one cell left, has its whole run-off in the year. The
-# one-year view starts from the observed latest value, BootChainLadder from
-# a resampled one, which is up to 2% of the standard deviation here.
+# and 1982, with one cell left, has its whole run-off in the year: both
+# project from the resampled latest value, so its standard deviation is
+# BootChainLadder's within the Monte Carlo tolerance.
 for (j in seq_along(raa@origins)) {
   ref <- boot_ref[boot_ref$method == "odp_bootstrap_gamma" & boot_ref$quantity == "sd_reserve" &
                     boot_ref$arg == raa@origins[j], ]
   got <- sd_and_error(cdr_draws[, j])[["sd"]]
   stopifnot(nrow(ref) == 1, got <= ref$expected + ref$abs_tol)
-  if (raa@origins[j] == "1982") stopifnot(abs(got - ref$expected) <= ref$abs_tol + 0.02 * ref$expected)
+  if (raa@origins[j] == "1982") stopifnot(abs(got - ref$expected) <= ref$abs_tol)
 }
 one_df <- as.data.frame(one)
 stopifnot(identical(names(one_df), c("origin", "latest", "opening_ultimate", "opening_reserve",
