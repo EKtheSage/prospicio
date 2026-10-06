@@ -5,8 +5,8 @@ description: The engines behind actuarialrs.boosting and R's booster_fit(); how 
 resource: https://lightgbm.readthedocs.io/
 tags: [boosting, lightgbm, xgboost, python, r, offsets, quantile, dispersion]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-06T04:10:00Z }
-verified: { by: process:ci, at: 2026-10-06T04:32:20Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-06T16:30:00Z }
+verified: { by: process:ci, at: 2026-10-06T17:20:37Z }
 sources:
   - id: adapter
     resource: ../python/actuarialrs/boosting.py

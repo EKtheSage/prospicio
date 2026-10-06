@@ -2,6 +2,7 @@
 
 ## 2026-10-06
 
+* **Verification**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md) verified again by CI's R and Python jobs on #139 (quantile objectives and the dispersion model, both engines).
 * **Update**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md): the exposure-rated per-risk XL net of a surplus, from the risk-profile simulator.
 * **Creation**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md), from surveying the curves for tabulated exposure curves.
 * **Update**: [LightGBM and XGBoost](/references/lightgbm-xgboost.md): why the dispersion model cross-fits its residuals, and the positive-label floor.
