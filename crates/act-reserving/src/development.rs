@@ -79,8 +79,12 @@ pub struct DevelopmentFit {
     pub ldf: Vec<f64>,
     /// Variance parameters `sigma_k`, with unestimable ones interpolated.
     pub sigma: Vec<f64>,
-    /// Standard error of each factor, `sigma_k / sqrt(sum(C[k]^alpha))`.
+    /// Standard error of each factor, `sigma_k / sqrt(volume_k)`.
     pub std_err: Vec<f64>,
+    /// Total regression weight behind each factor, `sum(C[k]^alpha)` over
+    /// the origins observed at both ages: with volume weighting, the sum of
+    /// the earlier values.
+    pub volume: Vec<f64>,
     /// Mack's `alpha` the factors were estimated with.
     pub alpha: f64,
 }
@@ -161,6 +165,7 @@ impl Development {
             ldf,
             sigma,
             std_err,
+            volume,
             alpha,
         })
     }

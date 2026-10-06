@@ -2,8 +2,10 @@
 //! one-year view.
 //!
 //! v0.1 so far: the [`Triangle`] (`docs/design/triangle.md`), development
-//! factors, [`ChainLadder`], [`Mack`] and the [`OdpBootstrap`]. Results are checked against R
-//! ChainLadder and chainladder-python in `validation/tests/reserving.rs`.
+//! factors, [`ChainLadder`], [`Mack`] and the [`OdpBootstrap`]. From v0.2
+//! (`docs/design/reserving-v02.md`): Merz and Wüthrich's one-year view,
+//! [`MackFit::claims_development_result`]. Results are checked against R
+//! ChainLadder and chainladder-python in `validation/tests/reserving*.rs`.
 //!
 //! ```
 //! use act_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
@@ -35,6 +37,7 @@ pub mod error;
 pub mod frame;
 pub mod mack;
 pub mod odp_glm;
+pub mod one_year;
 pub mod segments;
 pub mod triangle;
 pub mod view;
@@ -52,6 +55,7 @@ pub use error::{Error, Result};
 pub use frame::TriangleFrame;
 pub use mack::{Mack, MackFit};
 pub use odp_glm::{OdpGlm, OdpGlmFit};
+pub use one_year::ClaimsDevelopmentResult;
 pub use segments::{FitTable, ReserveFit, SegmentFits};
 pub use triangle::{CalendarView, DevelopmentColumn, Diagonal, Label, Long, LongTable, Triangle};
 pub use view::{SummaryRow, TriangleSummary, TriangleView};
