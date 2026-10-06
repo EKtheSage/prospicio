@@ -516,4 +516,16 @@ Bindings: Python `OdpBootstrap.one_year(triangle, column, method,
 exposure=None)`, `method` a `ChainLadder`, `ExpectedLoss`,
 `BornhuetterFerguson`, `Benktander` or `CapeCod` (exposure required for the
 last four), returns a `OneYearFit` over every segment, with `cdr` the
-`PredictiveDistribution`. R follows in its own PR.
+`PredictiveDistribution`. R has no method objects (its fitting functions
+fit at once), so the method is named by a string, next to
+`odp_bootstrap()`: `odp_one_year(triangle, column = NULL, method =
+c("chain_ladder", "expected_loss", "bornhuetter_ferguson", "benktander",
+"cape_cod"), exposure = NULL, apriori = 1, n_iters = 1, trend = 0,
+decay = 1, average = "volume", sigma_interpolation = "log-linear",
+tail = 1, n_sims = 10000, seed = 0, process = c("gamma", "none"))`, with
+the settings of `chain_ladder()`, `expected_loss()`,
+`bornhuetter_ferguson()`, `benktander()` and `cape_cod()`. Giving a
+setting the method does not read (`apriori` to the chain ladder, say) is
+an error rather than ignored. It returns a `one_year_fit` with `cdr` a
+`predictive_distribution`, and `as.data.frame()`, `totals_frame()`,
+`development_frame()` and `segment()` as the other fits.
