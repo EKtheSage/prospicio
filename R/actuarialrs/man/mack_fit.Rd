@@ -11,7 +11,10 @@ mack(
   triangle,
   column = NULL,
   average = "volume",
-  sigma_interpolation = "log-linear"
+  sigma_interpolation = "log-linear",
+  tail = 1,
+  tail_sigma = NULL,
+  tail_std_err = NULL
 )
 }
 \arguments{
@@ -27,26 +30,49 @@ mack(
 estimated (an age with a single link ratio) is filled in:
 \code{"log-linear"} (regress \code{log(sigma)} on age and extrapolate, the
 default of R ChainLadder) or \code{"mack"} (Mack 1993).}
+
+\item{tail}{Development past the oldest age: a number, the factor from
+the oldest age to ultimate (1 means no tail), or a \code{\link[=tail_constant]{tail_constant()}},
+\code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or \code{\link[=tail_log_linear]{tail_log_linear()}}.}
+
+\item{tail_sigma}{The tail's sigma (R's \code{tail.sigma}), or \code{NULL} to
+extrapolate it. Unused when the tail factor is 1.}
+
+\item{tail_std_err}{The tail factor's standard error (R's \code{tail.se}), or
+\code{NULL} to extrapolate it. Unused when the tail factor is 1.}
 }
 \value{
 A \code{mack_fit} object.
 }
 \description{
 Mack's distribution-free chain ladder (Mack 1993, 1999): the chain-ladder
-projection, without a tail, plus the process and parameter standard
-errors of each origin's reserve and of the total, as R ChainLadder's
+projection plus the process and parameter standard errors of each
+origin's reserve and of the total, as R ChainLadder's
 \code{MackChainLadder()}. Needs at least three development ages, and every
 sigma estimable or fillable by \code{sigma_interpolation}. Every segment of
 the triangle is fitted on its own.
 }
 \details{
+A tail other than 1 is one more development step, from the oldest age to
+ultimate, with its own sigma and standard error, as
+\code{MackChainLadder(tail = ..., tail.sigma = ..., tail.se = ...)}; unless
+given, both are extrapolated log-linearly (R's \code{tail_SE}). Every origin,
+the oldest included, then carries the tail's risk. Without a tail (the
+default) the fit is R's \code{MackChainLadder(tail = FALSE)}. A tail below 1
+follows chainladder-python: it scales the ultimates and carries the risk
+read where a tail of 1.001 would be. R's \code{MackChainLadder()} ignores a
+tail below 1 altogether.
+
 The fit has the properties of a \link{chain_ladder_fit} (and the fit itself
 as \code{m@chain_ladder}), plus per origin \code{process_risk}, \code{parameter_risk}
 and \code{standard_error}, and \code{total_process_risk}, \code{total_parameter_risk},
 \code{total_standard_error} and \code{total_cv} (the total standard error over the
-total reserve). Risks are standard errors, not variances. The totals'
-risks need a single-segment fit: with several segments use
-\code{\link[=totals_frame]{totals_frame()}}, which has them per segment, or \code{\link[=segment]{segment()}}.
+total reserve). Risks are standard errors, not variances. Its
+\code{tail_sigma} and \code{tail_std_err} are the values used, given or
+extrapolated. The totals' risks need a single-segment fit: with several
+segments use \code{\link[=totals_frame]{totals_frame()}}, which has them per segment, or
+\code{\link[=segment]{segment()}}. \code{\link[=claims_development_result]{claims_development_result()}} gives Merz and Wuthrich's
+one-year view of a single-segment fit without a tail.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),
@@ -56,4 +82,7 @@ m <- mack(triangle(long, "year", "age", "paid"))
 m@standard_error
 m@total_cv
 as.data.frame(m)
+
+# With R ChainLadder's tail = TRUE rule.
+mack(triangle(long, "year", "age", "paid"), tail = tail_log_linear())@total_standard_error
 }

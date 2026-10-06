@@ -17,8 +17,8 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' the layer `limit` xs `attachment` (`Inf` for an unlimited layer).
 #' Defined for the Pareto-family severities ([pareto], [piecewise_pareto],
 #' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution],
-#' [tweedie], [weibull_distribution], [loglogistic_distribution] and
-#' [mixture_distribution].
+#' [tweedie], [weibull_distribution], [loglogistic_distribution],
+#' [mixture_distribution] and [custom_distribution].
 #'
 #' @param dist A Pareto-family severity.
 #' @param q Numeric vector.
@@ -232,6 +232,7 @@ piecewise_pareto <- S7::new_class(
 #' @param alpha0 Local alpha at `t`; finite and positive.
 #' @param gamma Non-negative; 0 gives the Pareto.
 #' @param delta Alternative to `gamma`.
+#' @param ptr Internal: an existing object to wrap.
 #' @returns A `log_affine_pareto` object, which inherits from [distribution].
 #' @export
 #' @examples
@@ -249,7 +250,8 @@ log_affine_pareto <- S7::new_class(
     gamma = S7::new_property(S7::class_double, getter = function(self) self@ptr$gamma()),
     delta = S7::new_property(S7::class_double, getter = function(self) self@ptr$delta())
   ),
-  constructor = function(t, alpha0, gamma = NULL, delta = NULL) {
+  constructor = function(t, alpha0, gamma = NULL, delta = NULL, ptr = NULL) {
+    if (!is.null(ptr)) return(S7::new_object(S7::S7_object(), ptr = ptr))
     if (is.null(gamma) == is.null(delta)) {
       stop("give exactly one of gamma and delta")
     }
@@ -433,6 +435,7 @@ tweedie_from_poisson_gamma <- function(lambda, shape, scale) {
 #' Supports the same operations as [pareto].
 #'
 #' @param shape,scale Finite and positive.
+#' @param ptr Internal: an existing object to wrap.
 #' @returns A `weibull_distribution` object, which inherits from
 #'   [distribution].
 #' @export
@@ -448,8 +451,8 @@ weibull_distribution <- S7::new_class(
     shape = S7::new_property(S7::class_double, getter = function(self) self@ptr$shape()),
     scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
   ),
-  constructor = function(shape, scale) {
-    ptr <- rust_result(WeibullDist$new(as.double(shape), as.double(scale)))
+  constructor = function(shape, scale, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(WeibullDist$new(as.double(shape), as.double(scale)))
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
@@ -465,6 +468,7 @@ weibull_distribution <- S7::new_class(
 #' Supports the same operations as [pareto].
 #'
 #' @param shape,scale Finite and positive.
+#' @param ptr Internal: an existing object to wrap.
 #' @returns A `loglogistic_distribution` object, which inherits from
 #'   [distribution].
 #' @export
@@ -481,8 +485,8 @@ loglogistic_distribution <- S7::new_class(
     shape = S7::new_property(S7::class_double, getter = function(self) self@ptr$shape()),
     scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
   ),
-  constructor = function(shape, scale) {
-    ptr <- rust_result(LoglogisticDist$new(as.double(shape), as.double(scale)))
+  constructor = function(shape, scale, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(LoglogisticDist$new(as.double(shape), as.double(scale)))
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
@@ -500,6 +504,7 @@ loglogistic_distribution <- S7::new_class(
 #' @param weights Positive weights summing to 1.
 #' @param components A list of severities ([lognormal], [gamma_distribution],
 #'   [weibull_distribution], Pareto-family, ...).
+#' @param ptr Internal: an existing object to wrap.
 #' @returns A `mixture_distribution` object, which inherits from
 #'   [distribution].
 #' @export
@@ -514,8 +519,61 @@ mixture_distribution <- S7::new_class(
     ptr = S7::new_S3_class("MixtureDist"),
     weights = S7::new_property(S7::class_double, getter = function(self) self@ptr$weights())
   ),
-  constructor = function(weights, components) {
-    ptr <- rust_result(MixtureDist$new(as.double(weights), lapply(components, function(c) c@ptr)))
+  constructor = function(weights, components, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(MixtureDist$new(as.double(weights), lapply(components, function(c) c@ptr)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Custom severity from your own distribution function
+#'
+#' The slow path for a distribution the package does not have: give its
+#' `cdf`, and its `quantile` function if you have one (sampling inverts the
+#' cdf by bisection otherwise, about a hundred cdf calls per draw). The
+#' mean, variance, limited expected values and layer moments are computed
+#' by Gauss-Legendre quadrature of the survival function between the
+#' distribution's own quantiles, ignoring the probability above the
+#' `1 - 1e-12` quantile. It goes anywhere a severity does (layers,
+#' [compound_distribution()], [simulate_events()], copula marginals,
+#' [mixture_distribution()]); calculations that meet one run
+#' single-threaded on R's main thread, since every value calls back into R.
+#'
+#' Properties: `d@name`, `d@has_quantile`, `d@upper` (the `1 - 1e-12`
+#' quantile, where the integrals stop) and `d@last_error` (the first error a
+#' function raised after construction, or `""`; that value became `NaN`).
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param cdf `function(x)` returning `P(X <= x)` for one `x >= 0`: a number
+#'   in `[0, 1]`, non-decreasing in `x`. Losses are non-negative.
+#' @param quantile Optional `function(p)` returning the smallest `x` with
+#'   `cdf(x) >= p`.
+#' @param name Shown in errors and when printed.
+#' @returns A `custom_distribution` object, which inherits from
+#'   [distribution]. Construction fails if a function errors, returns a
+#'   value out of range, or the cdf never reaches `1 - 1e-12`.
+#' @export
+#' @examples
+#' d <- custom_distribution(function(x) 1 - exp(-x / 100), name = "exponential")
+#' mean(d)
+#' lev(d, 50)
+custom_distribution <- S7::new_class(
+  "custom_distribution",
+  parent = distribution,
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("CustomDist"),
+    name = S7::new_property(S7::class_character, getter = function(self) self@ptr$name()),
+    has_quantile = S7::new_property(S7::class_logical, getter = function(self) self@ptr$has_quantile()),
+    upper = S7::new_property(S7::class_double, getter = function(self) self@ptr$upper()),
+    last_error = S7::new_property(S7::class_character, getter = function(self) self@ptr$last_error())
+  ),
+  constructor = function(cdf, quantile = NULL, name = "custom") {
+    if (!is.function(cdf)) stop("cdf must be a function")
+    if (!is.null(quantile) && !is.function(quantile)) stop("quantile must be a function or NULL")
+    ptr <- rust_result(CustomDist$new(cdf, quantile, as.character(name)))
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
@@ -539,7 +597,7 @@ S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.do
 
 for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
                  gamma_distribution, tweedie, weibull_distribution, loglogistic_distribution,
-                 mixture_distribution)) {
+                 mixture_distribution, custom_distribution)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
   S7::method(cdf, cls) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
@@ -606,6 +664,12 @@ S7::method(print, loglogistic_distribution) <- function(x, ...) {
               format(x@shape, digits = 15), format(x@scale, digits = 15)))
   invisible(x)
 }
+S7::method(print, custom_distribution) <- function(x, ...) {
+  cat(sprintf("<custom_distribution> %s, mean = %s%s\n", x@name, format(mean(x), digits = 8),
+              if (x@has_quantile) ", with quantile" else ""))
+  invisible(x)
+}
+
 S7::method(print, mixture_distribution) <- function(x, ...) {
   cat(sprintf("<mixture_distribution> weights %s\n", paste(format(x@weights), collapse = ", ")))
   invisible(x)
@@ -685,4 +749,40 @@ claim_count <- function(mean, dispersion) {
     poisson = poisson_count(k$lambda),
     negative_binomial = negative_binomial_count(k$r, k$beta)
   )
+}
+
+#' Save and load distributions as JSON
+#'
+#' `dist_to_json()` writes a distribution as a versioned JSON document: its
+#' family and the parameters its constructor takes, numbers bit for bit.
+#' `dist_from_json()` reads it back as an equal distribution of the same
+#' class. Mixtures are saved with their components. A [custom_distribution]
+#' cannot be saved: it is an R function.
+#'
+#' @param dist Any distribution: a parametric severity, a
+#'   [grid_distribution], a [sampled] distribution or a
+#'   [mixture_distribution].
+#' @param text A document written by `dist_to_json()`.
+#' @returns `dist_to_json()`: a single string. `dist_from_json()`: the
+#'   distribution.
+#' @export
+#' @examples
+#' text <- dist_to_json(lognormal(7, 0.5))
+#' d <- dist_from_json(text)
+#' mean(d) == mean(lognormal(7, 0.5))
+dist_to_json <- function(dist) rust_result(dist_to_json_rust(dist@ptr))
+
+#' @rdname dist_to_json
+#' @export
+dist_from_json <- function(text) {
+  r <- rust_result(dist_from_json_rust(as.character(text)))
+  cls <- switch(r$family,
+    lognormal = lognormal, pareto = pareto, piecewise_pareto = piecewise_pareto,
+    log_affine_pareto = log_affine_pareto, generalized_pareto = generalized_pareto,
+    gamma = gamma_distribution, tweedie = tweedie, weibull = weibull_distribution,
+    loglogistic = loglogistic_distribution, mixture = mixture_distribution,
+    grid = grid_distribution, sampled = sampled,
+    stop("unknown family ", r$family)
+  )
+  cls(ptr = r$ptr)
 }

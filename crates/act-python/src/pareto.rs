@@ -1,7 +1,7 @@
 //! `actuarialrs.distributions`: the Pareto family for treaty pricing
 //! (Probability lane; `docs/design/pareto.md`), the gamma and Tweedie
-//! (compound Poisson-gamma) distributions, and claim counts chosen by
-//! dispersion.
+//! (compound Poisson-gamma) distributions, claim counts chosen by
+//! dispersion, and `Custom`, a severity from a Python cdf.
 
 use act_core::StreamRng;
 use act_prob::{Counting, Distribution, LargeLosses, Severity, Truncation};
@@ -653,12 +653,9 @@ severity_class!(PyMixture {
     fn new(components: Vec<(f64, Bound<'_, PyAny>)>) -> PyResult<Self> {
         let parts = components
             .iter()
-            .map(|(w, s)| {
-                let sev = crate::distributions::AnySeverity::extract(s)?;
-                Ok((*w, Box::new(sev) as Box<dyn Severity + Send + Sync>))
-            })
+            .map(|(w, s)| Ok((*w, crate::distributions::extract_severity(s)?)))
             .collect::<PyResult<Vec<_>>>()?;
-        let inner = act_prob::Mixture::new(parts).map_err(to_py)?;
+        let inner = act_prob::Mixture::from_dists(parts).map_err(to_py)?;
         Ok(Self {
             inner: std::sync::Arc::new(inner),
         })
@@ -1253,3 +1250,130 @@ pub(crate) fn local_pareto_to_piecewise(
         approx.approximated_to,
     ))
 }
+
+/// Turns a Python callable of one float into a [`act_prob::custom::Callback`].
+/// A Python exception becomes the callback's error message.
+fn py_callback(f: Py<PyAny>) -> act_prob::custom::Callback {
+    std::sync::Arc::new(move |x: f64| {
+        Python::attach(|py| {
+            f.call1(py, (x,))
+                .and_then(|v| v.extract::<f64>(py))
+                .map_err(|e| e.to_string())
+        })
+    })
+}
+
+/// A loss severity defined by your own distribution function: the slow
+/// path for a distribution the library does not have.
+///
+/// Give the cdf, and the quantile function if you have one (sampling
+/// inverts the cdf by bisection otherwise, about a hundred cdf calls per
+/// draw). The mean, variance, limited expected values and layer moments
+/// are computed by Gauss–Legendre quadrature of the survival function
+/// between the distribution's own quantiles, ignoring the probability
+/// above the ``1 - 1e-12`` quantile. A ``Custom`` goes anywhere a severity
+/// does (layers, compound distributions, simulated events, copula
+/// marginals, mixtures); calculations that meet one run single-threaded,
+/// since every value calls back into Python.
+///
+/// Parameters
+/// ----------
+/// cdf : callable
+///     ``cdf(x) -> float``: ``P(X <= x)`` for ``x >= 0``, in ``[0, 1]``
+///     and non-decreasing. Losses are non-negative.
+/// quantile : callable, optional
+///     ``quantile(p) -> float``: the smallest ``x`` with ``cdf(x) >= p``.
+/// name : str, default "custom"
+///     Shown in errors and ``repr``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a callable raises or returns a value out of range, or the cdf
+///     never reaches ``1 - 1e-12`` at a finite loss. An error in a later
+///     call makes that value ``nan``; ``last_error`` says why.
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from actuarialrs.distributions import Custom
+/// >>> d = Custom(lambda x: 1 - math.exp(-x / 100), name="exponential")
+/// >>> round(d.mean(), 6)
+/// 100.0
+/// >>> round(d.lev(50), 6) == round(100 * (1 - math.exp(-0.5)), 6)
+/// True
+#[pyclass(name = "Custom", module = "actuarialrs.distributions", frozen)]
+pub(crate) struct PyCustom {
+    pub(crate) inner: act_prob::Custom,
+    cdf: Py<PyAny>,
+    quantile_fn: Option<Py<PyAny>>,
+}
+
+severity_class!(PyCustom {
+    #[new]
+    #[pyo3(signature = (cdf, quantile = None, name = "custom"))]
+    fn new(py: Python<'_>, cdf: Py<PyAny>, quantile: Option<Py<PyAny>>, name: &str) -> PyResult<Self> {
+        for (what, f) in [("cdf", Some(&cdf)), ("quantile", quantile.as_ref())] {
+            if let Some(f) = f
+                && !f.bind(py).is_callable()
+            {
+                return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                    "{what} must be callable"
+                )));
+            }
+        }
+        let inner = act_prob::Custom::new(
+            name,
+            py_callback(cdf.clone_ref(py)),
+            quantile.as_ref().map(|q| py_callback(q.clone_ref(py))),
+            false,
+        )
+        .map_err(to_py)?;
+        Ok(Self {
+            inner,
+            cdf,
+            quantile_fn: quantile,
+        })
+    }
+
+    /// The name given at construction.
+    #[getter]
+    fn name(&self) -> String {
+        self.inner.name().to_string()
+    }
+
+    /// Whether a quantile function was given.
+    #[getter]
+    fn has_quantile(&self) -> bool {
+        self.inner.has_quantile()
+    }
+
+    /// The ``1 - 1e-12`` quantile, where the moment integrals stop.
+    #[getter]
+    fn upper(&self) -> f64 {
+        self.inner.upper()
+    }
+
+    /// The first error raised by a callable since construction, or ``None``.
+    #[getter]
+    fn last_error(&self) -> Option<String> {
+        self.inner.error()
+    }
+
+    fn __getnewargs__(&self, py: Python<'_>) -> (Py<PyAny>, Option<Py<PyAny>>, String) {
+        (
+            self.cdf.clone_ref(py),
+            self.quantile_fn.as_ref().map(|q| q.clone_ref(py)),
+            self.inner.name().to_string(),
+        )
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Custom(name={:?}, mean={:?}, has_quantile={})",
+            self.inner.name(),
+            self.inner.mean(),
+            if self.inner.has_quantile() { "True" } else { "False" }
+        )
+    }
+});

@@ -3,6 +3,7 @@
 use act_core::{Error, Result};
 use act_math::roots::bisect;
 
+use crate::dist::SeverityDist;
 use crate::distribution::{Distribution, check_probability};
 use crate::severity::Severity;
 
@@ -29,6 +30,9 @@ use crate::severity::Severity;
 pub struct Mixture {
     weights: Vec<f64>,
     components: Vec<Box<dyn Severity + Send + Sync>>,
+    /// The components as [`SeverityDist`]s, when built by
+    /// [`Mixture::from_dists`]: what saving the mixture needs.
+    dists: Option<Vec<SeverityDist>>,
 }
 
 impl std::fmt::Debug for Mixture {
@@ -70,7 +74,29 @@ impl Mixture {
         Ok(Self {
             weights,
             components,
+            dists: None,
         })
+    }
+
+    /// A mixture of `(weight, component)` pairs of native severities. It
+    /// behaves as [`Mixture::new`], and also keeps the components as
+    /// [`SeverityDist`]s, so it can be saved ([`crate::Dist::to_json`]).
+    pub fn from_dists(parts: Vec<(f64, SeverityDist)>) -> Result<Self> {
+        let dists: Vec<SeverityDist> = parts.iter().map(|(_, d)| d.clone()).collect();
+        let mut m = Self::new(
+            parts
+                .into_iter()
+                .map(|(w, d)| (w, Box::new(d) as Box<dyn Severity + Send + Sync>))
+                .collect(),
+        )?;
+        m.dists = Some(dists);
+        Ok(m)
+    }
+
+    /// The components as [`SeverityDist`]s, when built by
+    /// [`Mixture::from_dists`].
+    pub fn dists(&self) -> Option<&[SeverityDist]> {
+        self.dists.as_deref()
     }
 
     /// Component weights.
@@ -104,6 +130,10 @@ impl Distribution for Mixture {
 
     fn survival(&self, x: f64) -> f64 {
         self.sum(|c| c.survival(x))
+    }
+
+    fn is_parallel_safe(&self) -> bool {
+        self.components.iter().all(|c| c.is_parallel_safe())
     }
 
     /// The smallest `x` with `F(x) >= p`, bracketed by the components'

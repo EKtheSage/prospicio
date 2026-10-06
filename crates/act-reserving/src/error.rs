@@ -58,6 +58,9 @@ pub enum Error {
     Factor { age: usize, reason: &'static str },
     /// The tail factor is not finite and positive.
     InvalidTail(f64),
+    /// A tail cannot be fitted with these settings, or its variance cannot
+    /// be extrapolated.
+    Tail(&'static str),
     /// The method needs more development ages than the triangle has.
     TooFewAges { needed: usize, found: usize },
     /// An origin has no observed, finite, positive value in the exposure
@@ -75,6 +78,9 @@ pub enum Error {
     OdpGlm(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
+    /// The claims development result (Merz–Wüthrich) does not apply to
+    /// this fit.
+    ClaimsDevelopment(&'static str),
     /// An error from a shared crate (simulation, distributions).
     Core(act_core::Error),
 }
@@ -128,6 +134,7 @@ impl fmt::Display for Error {
                 write!(f, "factor from development index {age}: {reason}")
             }
             Self::InvalidTail(t) => write!(f, "tail factor {t} is not finite and positive"),
+            Self::Tail(why) => write!(f, "tail: {why}"),
             Self::TooFewAges { needed, found } => write!(
                 f,
                 "method needs at least {needed} development ages, triangle has {found}"
@@ -144,6 +151,7 @@ impl fmt::Display for Error {
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
+            Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::Core(e) => e.fmt(f),
         }
     }

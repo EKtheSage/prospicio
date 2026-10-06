@@ -5,23 +5,61 @@ use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::development::Development;
 use crate::error::{Error, Result};
 use crate::segments::{SegmentFits, fit_each};
+use crate::tail::Tail;
 use crate::triangle::{Segment, Triangle};
 use act_core::Lag;
 
 /// Mack's chain ladder (Mack 1993, 1999), with the process and parameter
-/// risk recursions of R ChainLadder's `MackChainLadder` and no tail.
+/// risk recursions of R ChainLadder's `MackChainLadder`.
 ///
 /// The factors use the development estimator's `alpha`: the conditional
 /// variance of `C[k+1]` given `C[k]` is `sigma_k^2 C[k]^(2 - alpha)`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// A tail other than 1 is one more development step, from the oldest age
+/// to ultimate, with its own sigma and standard error, as R's
+/// `MackChainLadder(tail = ...)` and chainladder-python's `MackChainladder`
+/// on a tailed pattern do. Unless given, both are extrapolated log-linearly
+/// (see [`TailFit`](crate::TailFit)). Every origin, the oldest included,
+/// carries the tail's risk. A tail below 1 follows chainladder-python: it
+/// scales the ultimates and carries the risk read where a tail of 1.001
+/// would be. R's `MackChainLadder` ignores a tail below 1 altogether.
+///
+/// ```
+/// use act_reserving::{Mack, Tail};
+/// # use act_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+/// # let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
+/// # let tri = Triangle::from_long(&Long {
+/// #     keys: &[],
+/// #     origin: &origin,
+/// #     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
+/// #     values: &[("paid", &[100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0])],
+/// #     origin_grain: Grain::Year,
+/// #     development_grain: Grain::Year,
+/// #     cumulative: true,
+/// # })
+/// # .unwrap();
+/// let mack = Mack { tail: Tail::LogLinear, ..Default::default() }.fit(&tri, "paid").unwrap();
+/// assert!(mack.chain_ladder.tail.factor > 1.0);
+/// assert!(mack.standard_error[0] > 0.0);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Mack {
     /// How factors are estimated and unestimable sigmas filled in.
     pub development: Development,
+    /// Development past the oldest age; the default is no tail.
+    pub tail: Tail,
+    /// The tail's sigma, R's `tail.sigma`; `None` extrapolates it. Unused
+    /// when the tail factor is 1.
+    pub tail_sigma: Option<f64>,
+    /// The tail factor's standard error, R's `tail.se`; `None` extrapolates
+    /// it. Unused when the tail factor is 1.
+    pub tail_std_err: Option<f64>,
 }
 
 /// A fitted Mack model. Risks are standard errors (square roots of the
 /// variance components) of each origin's ultimate, which equal those of its
-/// reserve since the latest value is known.
+/// reserve since the latest value is known. For the one-year view of the
+/// same risk, see [`MackFit::claims_development_result`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct MackFit {
     /// The underlying chain-ladder projection.
@@ -65,32 +103,64 @@ impl Mack {
                 found: segment.n_dev,
             });
         }
-        let chain_ladder = ChainLadder {
+        let mut chain_ladder = ChainLadder {
             development: self.development,
-            tail: 1.0,
+            tail: self.tail,
         }
         .fit_segment(segment, ages)?;
 
         let dev = &chain_ladder.development;
-        let (ldf, sigma, std_err, alpha) = (&dev.ldf, &dev.sigma, &dev.std_err, dev.alpha);
-        if let Some(age) = sigma.iter().position(|s| s.is_nan()) {
+        if let Some(age) = dev.sigma.iter().position(|s| s.is_nan()) {
             return Err(Error::Factor {
                 age,
                 reason: "sigma can neither be estimated nor interpolated",
             });
         }
-        let n_links = ldf.len();
+        let tail = &mut chain_ladder.tail;
+        if tail.factor != 1.0 {
+            for (given, fitted) in [
+                (self.tail_sigma, &mut tail.sigma),
+                (self.tail_std_err, &mut tail.std_err),
+            ] {
+                if let Some(v) = given {
+                    if !v.is_finite() || v < 0.0 {
+                        return Err(Error::Tail(
+                            "a given tail sigma or standard error must be finite and non-negative",
+                        ));
+                    }
+                    *fitted = v;
+                }
+            }
+            if !tail.sigma.is_finite() || !tail.std_err.is_finite() {
+                return Err(Error::Tail(
+                    "the tail's sigma or standard error cannot be extrapolated; give them",
+                ));
+            }
+        }
+        let tail = &chain_ladder.tail;
+        let dev = &chain_ladder.development;
+        let alpha = dev.alpha;
+        // The selected factors, then the tail as one more step to ultimate.
+        let ldf: Vec<f64> = chain_ladder
+            .ldf()
+            .iter()
+            .copied()
+            .chain([tail.factor])
+            .collect();
+        let sigma: Vec<f64> = dev.sigma.iter().copied().chain([tail.sigma]).collect();
+        let std_err: Vec<f64> = dev.std_err.iter().copied().chain([tail.std_err]).collect();
         let n_origins = chain_ladder.origins.len();
 
         // Per-origin recursions over the projected ages, and the total
         // parameter variance, which chains the sum of the projected values of
-        // every origin still developing at each age.
+        // every origin still developing at each age. With no tail (factor 1,
+        // sigma and standard error 0) the last step changes nothing.
         let mut process_var = vec![0.0; n_origins];
         let mut parameter_var = vec![0.0; n_origins];
         let mut total_parameter_var = 0.0;
         let projections: Vec<Vec<f64>> =
             (0..n_origins).map(|o| chain_ladder.projection(o)).collect();
-        for k in 0..n_links {
+        for k in 0..ldf.len() {
             let f2 = ldf[k] * ldf[k];
             let mut developing = 0.0;
             for o in 0..n_origins {
@@ -149,6 +219,7 @@ mod tests {
                 sigma_interpolation: SigmaInterpolation::Mack,
                 ..Default::default()
             },
+            ..Default::default()
         }
         .fit(&raa(), "values")
         .unwrap();
@@ -162,6 +233,66 @@ mod tests {
         // chainladder-python: MackChainladder().fit(raa).total_mack_std_err_.
         let mack = Mack::default().fit(&raa(), "values").unwrap();
         close(mack.total_standard_error, 26_880.740_33, 1e-4);
+    }
+
+    #[test]
+    fn raa_with_r_log_linear_tail() {
+        // R ChainLadder: MackChainLadder(RAA, tail = TRUE): Total.Mack.S.E
+        // and the oldest origin's Mack.S.E (validation/reference/
+        // reserving_tails_r.csv).
+        let mack = Mack {
+            tail: Tail::LogLinear,
+            ..Default::default()
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        close(mack.standard_error[0], 149.205_919_099_168, 1e-6);
+        close(mack.chain_ladder.ultimate[0], 19_011.712_945_280_9, 1e-6);
+    }
+
+    #[test]
+    fn given_tail_sigma_and_std_err() {
+        // R ChainLadder: MackChainLadder(RAA, tail = 1.05, tail.se = ...,
+        // tail.sigma = ...) reports the given values back.
+        let mack = Mack {
+            tail: 1.05.into(),
+            tail_sigma: Some(1.5),
+            tail_std_err: Some(0.003),
+            ..Default::default()
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        assert_eq!(
+            (mack.chain_ladder.tail.sigma, mack.chain_ladder.tail.std_err),
+            (1.5, 0.003)
+        );
+        // The oldest origin's process variance is the tail's alone.
+        let latest = mack.chain_ladder.latest[0];
+        close(mack.process_risk[0], 1.5 * latest.sqrt(), 1e-9);
+        close(mack.parameter_risk[0], 0.003 * latest, 1e-9);
+        let bad = Mack {
+            tail: 1.05.into(),
+            tail_sigma: Some(f64::NAN),
+            ..Default::default()
+        };
+        assert!(matches!(bad.fit(&raa(), "values"), Err(Error::Tail(_))));
+    }
+
+    #[test]
+    fn tail_below_one_follows_chainladder_python() {
+        // chainladder-python 0.10.1: MackChainladder on TailConstant(0.98)
+        // of RAA gives a total ultimate of 208859.783696 and a total
+        // standard error of 26343.488605. R's MackChainLadder(RAA,
+        // tail = 0.98) ignores the tail (213122.2 and 26880.74).
+        let mack = Mack {
+            tail: 0.98.into(),
+            ..Default::default()
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        close(mack.chain_ladder.total_ultimate(), 208_859.783_696, 1e-5);
+        close(mack.total_standard_error, 26_343.488_605, 1e-5);
+        assert!(mack.standard_error[0] > 0.0);
     }
 
     #[test]

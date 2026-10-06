@@ -13,6 +13,7 @@ from actuarialrs.reserving import (
     CapeCodFit,
     ChainLadder,
     ChainLadderFit,
+    ClaimsDevelopmentResult,
     ClarkCapeCod,
     ClarkFit,
     ClarkLdf,
@@ -22,6 +23,10 @@ from actuarialrs.reserving import (
     MackFit,
     OdpBootstrap,
     OdpBootstrapFit,
+    TailBondy,
+    TailConstant,
+    TailCurve,
+    TailLogLinear,
     Triangle,
 )
 
@@ -120,6 +125,115 @@ def test_tail_scales_ultimates(triangles):
     tailed = ChainLadder(tail=1.05).fit(raa, "values")
     assert tailed.tail == 1.05
     assert tailed.ultimate == pytest.approx([u * 1.05 for u in base.ultimate], rel=1e-12)
+
+
+# Reference method -> Mack keyword arguments, as in
+# validation/tests/reserving_tails.rs. mack_tail_given adds tail_sigma and
+# tail_std_err from the fitted pattern.
+TAIL_METHODS = {
+    # R ChainLadder.
+    "mack_tail_loglinear": dict(tail=TailLogLinear()),
+    "mack_tail_loglinear_sigma_mack": dict(tail=TailLogLinear(), sigma_interpolation="mack"),
+    "mack_tail_loglinear_alpha2": dict(tail=TailLogLinear(), average="regression"),
+    "mack_tail_constant": dict(tail=1.05),
+    "mack_tail_constant_sigma_mack": dict(tail=1.05, sigma_interpolation="mack"),
+    "mack_tail_given": dict(tail=1.05),
+    # chainladder-python.
+    "tail_constant": dict(tail=TailConstant(1.05)),
+    "tail_constant_decay": dict(tail=TailConstant(1.1, decay=0.75)),
+    "tail_constant_attach": dict(tail=TailConstant(1.05, attachment_age=72)),
+    "tail_constant_below_one": dict(tail=TailConstant(0.98)),
+    "tail_curve_exponential": dict(tail=TailCurve()),
+    "tail_curve_inverse_power": dict(tail=TailCurve("inverse_power")),
+    "tail_curve_fit_period": dict(tail=TailCurve(fit_period=(36, 108), extrap_periods=50)),
+    "tail_curve_off_grid": dict(tail=TailCurve(fit_period=(30, 102))),
+    "tail_curve_attach": dict(tail=TailCurve(attachment_age=60)),
+    "tail_bondy": dict(tail=TailBondy()),
+    "tail_bondy_generalized": dict(tail=TailBondy(earliest_age=36)),
+    "tail_bondy_off_grid": dict(tail=TailBondy(earliest_age=30)),
+    "tail_bondy_attach": dict(tail=TailBondy(earliest_age=36, attachment_age=72)),
+}
+
+
+def given_tail(tri):
+    """R's mack_tail_given inputs: twice the last sigma, half the last standard error."""
+    fit = ChainLadder().fit(tri, "values")
+    return fit.sigma[-1] * 2, fit.std_err[-1] / 2
+
+
+def evaluate_tail(fit, quantity, arg):
+    if quantity == "ldf":
+        return (fit.ldf + fit.tail_ldf)[int(arg)]
+    if quantity == "cdf":
+        k = int(arg)
+        if k < len(fit.cdf):
+            return fit.cdf[k]
+        return math.prod((fit.ldf + fit.tail_ldf)[k:])
+    if quantity == "tail_factor":
+        return fit.tail
+    return evaluate(fit, quantity, arg)
+
+
+@pytest.mark.parametrize("reference", ["reserving_tails_r.csv", "reserving_tails_python.csv"])
+def test_tails_match_reference(triangles, reference):
+    fits = {}
+    cases = read_csv(VALIDATION / "reference" / reference)
+    assert cases
+    for case in cases:
+        tri = triangles[case["dataset"]]
+        quantity = case["quantity"]
+        if quantity.startswith("given_tail_"):
+            sigma, std_err = given_tail(tri)
+            got = sigma if quantity == "given_tail_sigma" else std_err
+        else:
+            key = (case["dataset"], case["method"])
+            if key not in fits:
+                kw = dict(TAIL_METHODS[case["method"]])
+                if case["method"] == "mack_tail_given":
+                    kw["tail_sigma"], kw["tail_std_err"] = given_tail(tri)
+                fits[key] = Mack(**kw).fit(tri, "values")
+            got = evaluate_tail(fits[key], quantity, case["arg"])
+        want = float(case["expected"])
+        abs_tol = float(case["abs_tol"] or 0)
+        rel_tol = float(case["rel_tol"] or 0)
+        err = abs(got - want)
+        assert got == want or err <= abs_tol or err <= rel_tol * abs(want), (case, got)
+
+
+def test_tail_arguments(triangles):
+    raa = triangles["raa"]
+    assert ChainLadder().tail == 1.0
+    assert ChainLadder(tail=1.05).tail == 1.05
+    curve = TailCurve("inverse_power", fit_period=(36, None), attachment_age=60)
+    assert ChainLadder(tail=curve).tail.curve == "inverse_power"
+    assert curve.fit_period == (36, None) and curve.extrap_periods == 100
+    assert "TailBondy(earliest_age=36" in repr(Mack(tail=TailBondy(36)))
+    # A constant with the default decay and attachment is just its factor.
+    assert ChainLadder(tail=TailConstant(1.05)).tail == 1.05
+    assert isinstance(ChainLadder(tail=TailConstant(1.05, decay=0.75)).tail, TailConstant)
+    # The selected factors replace the estimated ones from the attachment age.
+    fit = ChainLadder(tail=curve).fit(raa, "values")
+    base = ChainLadder().fit(raa, "values")
+    assert fit.ldf[:4] == base.ldf[:4] and fit.ldf[4] != base.ldf[4]
+    assert fit.estimated_ldf == base.ldf and fit.tail_attachment_age == 60
+    assert base.tail_attachment_age == 120
+    tailed_mack = Mack(tail=curve).fit(raa, "values")
+    assert tailed_mack.estimated_ldf == base.ldf and tailed_mack.tail_attachment_age == 60
+    assert math.prod(fit.tail_ldf) == pytest.approx(fit.tail, rel=1e-12)
+    assert fit.cdf[-1] == pytest.approx(fit.tail, rel=1e-12)
+    # Without a tail above 1 there is no tail risk.
+    mack = Mack().fit(raa, "values")
+    assert (mack.tail, mack.tail_sigma, mack.tail_std_err, mack.standard_error[0]) == (1.0, 0.0, 0.0, 0.0)
+    given = Mack(tail=1.05, tail_sigma=1.5, tail_std_err=0.003).fit(raa, "values")
+    assert (given.tail_sigma, given.tail_std_err) == (1.5, 0.003)
+    with pytest.raises(TypeError, match="tail must be"):
+        ChainLadder(tail="1.05")
+    with pytest.raises(ValueError, match="curve must be"):
+        TailCurve("weibull")
+    with pytest.raises(ValueError, match="tail"):
+        ChainLadder(tail=TailCurve(fit_period=(108, None))).fit(raa, "values")
+    with pytest.raises(ValueError, match="tail"):
+        Mack(tail=1.05, tail_sigma=-1.0).fit(raa, "values")
 
 
 def test_mack_fit(triangles):
@@ -531,6 +645,18 @@ def test_every_segment_at_once():
         cl.ldf
     with pytest.raises(ValueError, match="use totals_frame"):
         mack.total_standard_error
+    # Each segment's tail is in totals_frame(); the tail's factors need one.
+    assert list(totals.columns)[-3:] == ["tail", "tail_sigma", "tail_std_err"]
+    assert list(totals["tail"]) == [1.0] * 4 and list(totals["tail_sigma"]) == [0.0] * 4
+    assert list(cl.totals_frame().columns)[-3:] == ["tail", "tail_sigma", "tail_std_err"]
+    with pytest.raises(ValueError, match="4 segments; use totals_frame"):
+        mack.tail_sigma
+    with pytest.raises(ValueError, match="4 segments; use totals_frame"):
+        cl.tail
+    with pytest.raises(ValueError, match=r"4 segments; use segment\(\.\.\.\)$"):
+        cl.tail_ldf
+    with pytest.raises(ValueError, match=r"4 segments; use segment\(\.\.\.\)$"):
+        mack.estimated_ldf
     with pytest.raises(ValueError, match="2 segments match"):
         cl.segment(lob="Auto")
     with pytest.raises(ValueError, match="no key named line"):
@@ -859,6 +985,103 @@ def test_bootstrap_errors(triangles):
         OdpBootstrap(n_sims=10).fit(two, "values")
 
 
+# Reference method -> sigma_interpolation, as in
+# validation/tests/reserving_cdr.rs.
+CDR_METHODS = {"cdr": "log-linear", "cdr_sigma_mack": "mack"}
+
+
+def cdr_value(mack, cdr, quantity, arg):
+    """The value of a reserving_cdr_r.csv case. R reports one calendar year
+    per age, so years past the run-off are zero."""
+    if quantity == "cdr_se":
+        year, k = arg.split(":")
+        years, k = cdr.by_calendar_year, int(k)
+        return years[k - 1][cdr.origins.index(year)] if k <= len(years) else 0.0
+    if quantity == "total_cdr_se":
+        years, k = cdr.total_by_calendar_year, int(arg)
+        return years[k - 1] if k <= len(years) else 0.0
+    per_origin = {
+        "reserve": mack.reserve,
+        "one_year_se": cdr.one_year_standard_error,
+        "mack_se": mack.standard_error,
+    }
+    if quantity in per_origin:
+        return per_origin[quantity][cdr.origins.index(arg)]
+    return {
+        "total_reserve": mack.total_reserve,
+        "total_one_year_se": cdr.total_one_year_standard_error,
+        "total_mack_se": mack.total_standard_error,
+    }[quantity]
+
+
+def test_claims_development_result_matches_r():
+    # Every row of R ChainLadder's CDR(MackChainLadder(tri), dev = "all").
+    fits = {}
+    cases = read_csv(VALIDATION / "reference" / "reserving_cdr_r.csv")
+    assert cases
+    for case in cases:
+        key = (case["dataset"], case["method"])
+        if key not in fits:
+            mack = Mack(sigma_interpolation=CDR_METHODS[case["method"]]).fit(
+                dataset(case["dataset"]), "values"
+            )
+            fits[key] = (mack, mack.claims_development_result())
+        got = cdr_value(*fits[key], case["quantity"], case["arg"])
+        want = float(case["expected"])
+        tol = max(float(case["abs_tol"] or 0), float(case["rel_tol"] or 0) * abs(want))
+        assert got == want or abs(got - want) <= tol, (case, got)
+
+
+def test_claims_development_result_mw2008():
+    # Merz and Wuthrich (2008), Table 4, printed to the unit.
+    mack = Mack(sigma_interpolation="mack").fit(dataset("mw2008"), "values")
+    cdr = mack.claims_development_result()
+    assert isinstance(cdr, ClaimsDevelopmentResult)
+    assert mack.total_reserve == pytest.approx(2_237_826, abs=1)
+    assert cdr.total_one_year_standard_error == pytest.approx(81_080, abs=1)
+    assert cdr.total_run_off_standard_error == pytest.approx(108_401, abs=1)
+    assert cdr.origins[0] == "2001" and cdr.one_year_standard_error[0] == 0.0
+    assert cdr.one_year_standard_error == cdr.by_calendar_year[0]
+    assert cdr.total_one_year_standard_error == cdr.total_by_calendar_year[0]
+    assert len(cdr.by_calendar_year) == len(cdr.total_by_calendar_year) == 8
+    assert cdr.run_off_standard_error == pytest.approx(mack.standard_error, rel=1e-9, abs=1e-9)
+    assert "ClaimsDevelopmentResult(origins=9" in repr(cdr)
+
+
+def test_claims_development_result_frame():
+    pytest.importorskip("pandas")
+    cdr = Mack().fit(dataset("raa"), "values").claims_development_result()
+    frame = cdr.to_frame()
+    assert list(frame.columns) == ["origin"] + [f"cdr_{k}" for k in range(1, 10)] + ["run_off"]
+    assert list(frame["origin"]) == cdr.origins
+    assert list(frame["cdr_1"]) == cdr.one_year_standard_error
+    assert list(frame["run_off"]) == cdr.run_off_standard_error
+
+
+def test_claims_development_result_errors(triangles):
+    simple = Mack(average="simple").fit(triangles["raa"], "values")
+    with pytest.raises(ValueError, match="claims development result: needs volume-weighted"):
+        simple.claims_development_result()
+    # Merz and Wuthrich assume no tail: a factor other than 1, or a factor
+    # of 1 that replaces estimated factors, is an error.
+    no_tail = "claims development result: needs no tail factor"
+    for tail in [1.05, TailConstant(1.05), TailLogLinear(), TailConstant(1.0, attachment_age=84)]:
+        fit = Mack(tail=tail).fit(triangles["raa"], "values")
+        with pytest.raises(ValueError, match=no_tail):
+            fit.claims_development_result()
+    explicit = Mack(tail=1.0).fit(triangles["raa"], "values").claims_development_result()
+    default = Mack().fit(triangles["raa"], "values").claims_development_result()
+    assert explicit.by_calendar_year == default.by_calendar_year
+    tri = Triangle.from_frame(
+        lob_coverage_long(), "year", "age", ["paid", "incurred"], keys=["lob", "coverage"]
+    )
+    mack = Mack().fit(tri, "paid")
+    with pytest.raises(ValueError, match="4 segments; use segment"):
+        mack.claims_development_result()
+    one = mack.segment(lob="Home", coverage="PD")
+    assert one.claims_development_result().total_run_off_standard_error == pytest.approx(
+        one.total_standard_error, rel=1e-9
+    )
 # Expected-loss methods: parity with chainladder-python 0.10.1
 # (validation/reference/reserving_expected_loss_python.csv).
 
@@ -955,6 +1178,14 @@ def test_expected_loss_family_identities():
     assert (model.trend, model.decay, model.average, model.tail) == (0.05, 0.75, "simple", 1.01)
     assert BornhuetterFerguson(apriori=0.6).apriori == 0.6
     assert Benktander(n_iters=4).n_iters == 4
+    # The tail is ChainLadder's: a number or a tail estimator.
+    bondy = BornhuetterFerguson(apriori=0.7, tail=TailBondy()).fit(tri, "paid", "premium")
+    assert bondy.cdf == ChainLadder(tail=TailBondy()).fit(tri, "paid").cdf
+    assert bondy.cdf != bf.cdf
+    assert isinstance(CapeCod(tail=TailBondy()).tail, TailBondy)
+    assert "tail=TailBondy(" in repr(Benktander(tail=TailBondy()))
+    with pytest.raises(TypeError, match="tail must be"):
+        ExpectedLoss(tail="1.05")
 
 
 def test_expected_loss_every_segment_at_once():

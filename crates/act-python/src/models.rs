@@ -1553,6 +1553,40 @@ pub(crate) fn lift(
         .collect())
 }
 
+/// Weighted mean pinball (quantile) loss of predictions of the ``alpha``
+/// quantile: ``sum(w * rho(y - q)) / sum(w)`` with
+/// ``rho(u) = u * (alpha - (u < 0))``. Lowest in expectation at the true
+/// ``alpha`` quantile; lower is better.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+///     Predicted ``alpha`` quantiles.
+/// alpha : float
+///     In ``(0, 1)``.
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import pinball_loss
+/// >>> pinball_loss([1.0, 0.0], [0.0, 1.0], 0.9)
+/// 0.5
+#[pyfunction]
+#[pyo3(signature = (y, pred, alpha, weights = None))]
+pub(crate) fn pinball_loss(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    alpha: f64,
+    weights: Option<Vec<f64>>,
+) -> PyResult<f64> {
+    metrics::pinball(&y, &pred, alpha, weights.as_deref()).map_err(to_py)
+}
+
 /// Continuous ranked probability score of equally likely draws for an
 /// outcome; lower is better.
 ///
@@ -2584,4 +2618,77 @@ impl PyStackingFit {
     fn rhat_ess(&self) -> PyResult<Vec<(f64, f64)>> {
         self.inner.rhat_ess().map_err(to_py)
     }
+}
+
+/// A float, or a list of floats.
+#[derive(FromPyObject)]
+pub(crate) enum OneOrMany {
+    One(f64),
+    Many(Vec<f64>),
+}
+
+/// Joint predictive draws from fitted means, for engines that give only
+/// a mean per row (the boosting adapters): the family adds process noise
+/// and several mean vectors (bootstrap refits) add parameter uncertainty.
+///
+/// Simulation ``i`` uses stream ``i`` of ``seed``: it picks one mean vector
+/// uniformly, then draws each row's response from the family with that
+/// mean, the row's dispersion and the row's weight. Components are keyed
+/// ``row = 0, 1, ...``, as ``GlmFit.predict_distribution`` keys them.
+///
+/// Parameters
+/// ----------
+/// family : str
+///     As in ``Glm``.
+/// means : list of list of float
+///     One or more mean vectors, one value per row each.
+/// n_sims : int
+/// seed : int
+/// dispersion : float or list of float, optional
+///     One value for every row, or one per row (from a dispersion model);
+///     1 by default.
+/// weights : list of float, optional
+///     Prior weights; 1 by default.
+/// theta, power : float, optional
+///     Negative binomial ``theta``, Tweedie ``power``.
+///
+/// Returns
+/// -------
+/// PredictiveDistribution
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import simulate_from_means
+/// >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
+/// >>> round(pd.mean(), 1)
+/// 0.5
+#[pyfunction]
+#[pyo3(signature = (family, means, n_sims, seed, dispersion = None, weights = None, theta = None, power = None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn simulate_from_means(
+    py: Python<'_>,
+    family: &str,
+    means: Vec<Vec<f64>>,
+    n_sims: usize,
+    seed: u64,
+    dispersion: Option<OneOrMany>,
+    weights: Option<Vec<f64>>,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<PyPredictiveDistribution> {
+    let f = self::family(family, theta, power)?;
+    let w = weights.unwrap_or_default();
+    let dispersion = match dispersion {
+        None => vec![1.0],
+        Some(OneOrMany::One(d)) => vec![d],
+        Some(OneOrMany::Many(d)) => d,
+    };
+    let provenance = act_prob::Provenance::new("simulate_from_means")
+        .version("actuarialrs", env!("CARGO_PKG_VERSION"));
+    let inner = py
+        .detach(|| {
+            act_models::simulate::from_means(f, &means, &dispersion, &w, n_sims, seed, provenance)
+        })
+        .map_err(to_py)?;
+    Ok(PyPredictiveDistribution { inner })
 }

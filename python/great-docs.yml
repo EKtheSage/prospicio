@@ -22,6 +22,9 @@ reference:
       - distributions.Weibull
       - distributions.Loglogistic
       - distributions.Mixture
+      - distributions.Custom
+      - distributions.to_json
+      - distributions.from_json
       - distributions.Grid
       - distributions.DiscretizationReport
       - distributions.Sampled
@@ -55,9 +58,9 @@ reference:
   - title: Reinsurance
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:
-      - aggregate.Layer
-      - aggregate.Tower
-      - aggregate.TowerGrids
+      - reinsurance.Layer
+      - reinsurance.Tower
+      - reinsurance.TowerGrids
   - title: Models
     desc: Terms and design matrices, GLMs and GAMs, metrics, resampling and MCMC diagnostics.
     contents:
@@ -104,6 +107,12 @@ reference:
       - models.compare
       - models.Comparison
       - models.actual_vs_expected
+      - models.simulate_from_means
+  - title: Gradient boosting
+    desc: LightGBM and XGBoost behind the model protocol, with joint predictive draws.
+    contents:
+      - boosting.Booster
+      - boosting.BoosterFit
   - title: Pricing
     desc: The collective model, layer rating, reinsurance tower matching, and risk-loaded prices from simulated losses.
     contents:
@@ -122,14 +131,23 @@ reference:
       - pricing.price_portfolio
       - pricing.Price
       - pricing.PortfolioPrice
+      - pricing.Mbbefd
+      - pricing.TabulatedCurve
+      - pricing.RiskProfile
+      - pricing.severity_exposure_curve
   - title: Reserving
-    desc: Loss triangles, the chain ladder, Mack's model, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
+    desc: Loss triangles, the chain ladder with tail factors, Mack's model with its one-year view, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
     contents:
       - reserving.Triangle
       - reserving.ChainLadder
       - reserving.ChainLadderFit
+      - reserving.TailConstant
+      - reserving.TailCurve
+      - reserving.TailBondy
+      - reserving.TailLogLinear
       - reserving.Mack
       - reserving.MackFit
+      - reserving.ClaimsDevelopmentResult
       - reserving.ExpectedLoss
       - reserving.BornhuetterFerguson
       - reserving.Benktander

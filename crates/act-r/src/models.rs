@@ -647,6 +647,13 @@ fn crps_rust(draws: &[f64], y: f64) -> Result<f64> {
     metrics::crps(draws, y).map_err(to_r)
 }
 
+/// Empty `weights` for none.
+#[extendr]
+fn pinball_rust(y: &[f64], pred: &[f64], alpha: f64, weights: &[f64]) -> Result<f64> {
+    let w = (!weights.is_empty()).then_some(weights);
+    metrics::pinball(y, pred, alpha, w).map_err(to_r)
+}
+
 #[extendr]
 #[allow(clippy::too_many_arguments)]
 fn log_score_rust(
@@ -683,6 +690,46 @@ fn pit_rust(
 #[extendr]
 fn ks_uniform_rust(values: &[f64]) -> Result<f64> {
     metrics::ks_uniform(values).map_err(to_r)
+}
+
+/// Joint draws from fitted means: `means` is an `n_rows` by `k` matrix,
+/// column-major, one column per mean vector (bootstrap refit);
+/// `dispersion` one value or one per row; `weights` empty for all ones.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn simulate_from_means_rust(
+    family_name: &str,
+    theta: f64,
+    power: f64,
+    means: &[f64],
+    n_rows: f64,
+    dispersion: &[f64],
+    weights: &[f64],
+    n_sims: f64,
+    seed: f64,
+) -> Result<PredictiveDistribution> {
+    let f = family(family_name, theta, power)?;
+    let n = whole(n_rows, "n_rows")? as usize;
+    if n == 0 || means.len() % n != 0 {
+        return Err(Error::Other(format!(
+            "means has {} values, not a whole number of columns of {n} rows",
+            means.len()
+        )));
+    }
+    let means: Vec<Vec<f64>> = means.chunks(n).map(<[f64]>::to_vec).collect();
+    let provenance = act_prob::Provenance::new("simulate_from_means")
+        .version("actuarialrs", env!("CARGO_PKG_VERSION"));
+    let inner = act_models::simulate::from_means(
+        f,
+        &means,
+        dispersion,
+        weights,
+        whole(n_sims, "n_sims")? as usize,
+        whole(seed, "seed")?,
+        provenance,
+    )
+    .map_err(to_r)?;
+    Ok(PredictiveDistribution { inner })
 }
 
 /// Splits as a list of `list(train, test)` with 1-based row numbers.
@@ -1127,9 +1174,11 @@ extendr_module! {
     fn gini_rust;
     fn lift_rust;
     fn crps_rust;
+    fn pinball_rust;
     fn log_score_rust;
     fn pit_rust;
     fn ks_uniform_rust;
+    fn simulate_from_means_rust;
     fn k_fold_rust;
     fn group_k_fold_rust;
     fn time_ordered_rust;

@@ -3,6 +3,7 @@ counts, and the joint predictive distribution every model returns."""
 
 from .actuarialrs_native import (
     Binomial,
+    Custom,
     DiscretizationReport,
     Gamma,
     GeneralizedPareto,
@@ -20,7 +21,9 @@ from .actuarialrs_native import (
     Tweedie,
     Weibull,
     claim_count,
+    from_json,
     local_pareto_to_piecewise,
+    to_json,
 )
 
 __all__ = [
@@ -30,6 +33,7 @@ __all__ = [
     "Weibull",
     "Loglogistic",
     "Mixture",
+    "Custom",
     "Pareto",
     "PiecewisePareto",
     "LogAffinePareto",
@@ -43,4 +47,6 @@ __all__ = [
     "DiscretizationReport",
     "Sampled",
     "PredictiveDistribution",
+    "to_json",
+    "from_json",
 ]

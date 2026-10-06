@@ -1,12 +1,14 @@
 //! Aggregate lane: wrappers over `act_aggregate` for the R `aggregate.R`
-//! API (compound distributions, simulated events, reinsurance).
+//! API (compound distributions and simulated events).
 
-use act_aggregate::{CompoundMethod, CompoundReport, EventSet as EventSetInner, Layer, Tower};
+use act_aggregate::{CompoundMethod, CompoundReport, EventSet as EventSetInner};
 use act_prob::Counting;
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
-use crate::distributions::{AnySeverity, Grid, NegativeBinomial, Poisson, PredictiveDistribution};
+use crate::distributions::{
+    Grid, NegativeBinomial, Poisson, PredictiveDistribution, severity_from_robj,
+};
 use crate::{to_r, whole};
 
 /// A claim count accepted by the aggregation functions.
@@ -32,7 +34,7 @@ impl AnyCount {
         ))
     }
 
-    fn as_counting(&self) -> &(dyn Counting + Sync) {
+    pub(crate) fn as_counting(&self) -> &(dyn Counting + Sync) {
         match self {
             Self::Poisson(n) => n,
             Self::NegativeBinomial(n) => n,
@@ -62,7 +64,7 @@ impl Counting for AnyCount {
     }
 }
 
-fn compound_list(r: &CompoundReport) -> List {
+pub(crate) fn compound_list(r: &CompoundReport) -> List {
     let method = match r.method {
         CompoundMethod::Panjer => "panjer",
         CompoundMethod::Fft => "fft",
@@ -109,12 +111,63 @@ pub(crate) struct EventSet {
 impl EventSet {
     fn simulate(frequency: Robj, severity: Robj, n_sims: f64, seed: f64) -> Result<Self> {
         let n = AnyCount::from_robj(&frequency)?;
-        let sev = AnySeverity::from_robj(&severity)?;
+        let sev = severity_from_robj(&severity)?;
         let n_sims = whole(n_sims, "n_sims")? as usize;
         let inner =
             act_aggregate::simulate_events(n.as_counting(), &sev, n_sims, whole(seed, "seed")?)
                 .map_err(to_r)?;
         Ok(Self { inner })
+    }
+
+    /// `years` is a list of numeric vectors; `sums_insured` NULL or a list
+    /// of the same shape.
+    fn from_years(years: List, sums_insured: Robj, seed: f64) -> Result<Self> {
+        let to_vecs = |l: &List, what: &str| -> Result<Vec<Vec<f64>>> {
+            l.values()
+                .map(|v| {
+                    v.as_real_vector()
+                        .or_else(|| (v.len() == 0).then(Vec::new))
+                        .ok_or_else(|| Error::Other(format!("{what} must be numeric vectors")))
+                })
+                .collect()
+        };
+        let years = to_vecs(&years, "years")?;
+        let shape: Vec<usize> = years.iter().map(Vec::len).collect();
+        let mut inner = EventSetInner::from_years(years, whole(seed, "seed")?).map_err(to_r)?;
+        if !sums_insured.is_null() {
+            let list = List::try_from(sums_insured)
+                .map_err(|_| Error::Other("sums_insured must be a list or NULL".into()))?;
+            let si = to_vecs(&list, "sums_insured")?;
+            if si.iter().map(Vec::len).ne(shape.iter().copied()) {
+                return Err(Error::Other(
+                    "sums_insured must have the shape of years".into(),
+                ));
+            }
+            inner = inner
+                .with_sums_insured(si.into_iter().flatten().collect())
+                .map_err(to_r)?;
+        }
+        Ok(Self { inner })
+    }
+
+    fn has_sums_insured(&self) -> bool {
+        self.inner.has_sums_insured()
+    }
+
+    /// Year `sim`'s sums insured (1-based); empty when not known.
+    fn sums_insured(&self, sim: f64) -> Result<Vec<f64>> {
+        let sim = whole(sim, "sim")? as usize;
+        if sim == 0 || sim > self.inner.n_sims() {
+            return Err(Error::Other(format!(
+                "year {sim} out of range for {} simulated years",
+                self.inner.n_sims()
+            )));
+        }
+        Ok(self
+            .inner
+            .sums_insured(sim - 1)
+            .map(<[f64]>::to_vec)
+            .unwrap_or_default())
     }
 
     fn n_sims(&self) -> f64 {
@@ -147,215 +200,8 @@ impl EventSet {
     }
 }
 
-/// A per-occurrence excess-of-loss layer.
-#[extendr]
-pub(crate) struct XolLayer {
-    inner: Layer,
-}
-
-#[extendr]
-impl XolLayer {
-    /// `aggregate_limit` may be `Inf`; `reinstatements` is a number or
-    /// negative for none; `paid` says whether `reinstatement_rates` were
-    /// given. At most one of a finite `aggregate_limit`, `reinstatements`
-    /// and paid reinstatements.
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        name: &str,
-        limit: f64,
-        attachment: f64,
-        share: f64,
-        aggregate_deductible: f64,
-        aggregate_limit: f64,
-        reinstatements: f64,
-        premium: f64,
-        reinstatement_rates: &[f64],
-        paid: bool,
-    ) -> Result<Self> {
-        let layer = Layer::xol(name, limit, attachment)
-            .and_then(|l| l.share(share))
-            .and_then(|l| l.aggregate_deductible(aggregate_deductible))
-            .map_err(to_r)?;
-        let layer = match (aggregate_limit.is_finite(), reinstatements >= 0.0, paid) {
-            (true, false, false) => layer.aggregate_limit(aggregate_limit).map_err(to_r)?,
-            (false, true, false) => {
-                let n = whole(reinstatements, "reinstatements")?;
-                let n = u32::try_from(n)
-                    .map_err(|_| Error::Other("reinstatements is too large".into()))?;
-                layer.reinstatements(n).map_err(to_r)?
-            }
-            (false, false, true) => layer
-                .paid_reinstatements(premium, reinstatement_rates.to_vec())
-                .map_err(to_r)?,
-            (false, false, false) => layer,
-            _ => {
-                return Err(Error::Other(
-                    "give at most one of aggregate_limit, reinstatements and reinstatement_rates"
-                        .into(),
-                ));
-            }
-        };
-        Ok(Self { inner: layer })
-    }
-
-    fn quota_share(name: &str, cession: f64) -> Result<Self> {
-        let inner = Layer::quota_share(name, cession).map_err(to_r)?;
-        Ok(Self { inner })
-    }
-
-    fn stop_loss(name: &str, limit: f64, retention: f64) -> Result<Self> {
-        let inner = Layer::stop_loss(name, limit, retention).map_err(to_r)?;
-        Ok(Self { inner })
-    }
-
-    fn name(&self) -> String {
-        self.inner.name.clone()
-    }
-
-    fn limit(&self) -> f64 {
-        self.inner.limit
-    }
-
-    fn attachment(&self) -> f64 {
-        self.inner.attachment
-    }
-
-    fn share(&self) -> f64 {
-        self.inner.share
-    }
-
-    fn aggregate_deductible(&self) -> f64 {
-        self.inner.aggregate_deductible
-    }
-
-    fn aggregate_limit(&self) -> f64 {
-        self.inner.aggregate_limit
-    }
-
-    fn premium(&self) -> f64 {
-        self.inner.premium
-    }
-
-    fn reinstatement_rates(&self) -> Vec<f64> {
-        self.inner.reinstatement_rates.clone()
-    }
-
-    fn ceded(&self, losses: &[f64]) -> f64 {
-        self.inner.ceded(losses)
-    }
-
-    fn ceded_by_event(&self, losses: &[f64]) -> Vec<f64> {
-        self.inner.ceded_by_event(losses)
-    }
-
-    fn reinstatement_premium(&self, losses: &[f64]) -> f64 {
-        self.inner.reinstatement_premium(losses)
-    }
-}
-
-/// Layers in inuring stages.
-#[extendr]
-pub(crate) struct ReinsuranceTower {
-    inner: Tower,
-}
-
-#[extendr]
-impl ReinsuranceTower {
-    fn new(layers: List) -> Result<Self> {
-        let inner = Tower::new(layer_list(layers)?).map_err(to_r)?;
-        Ok(Self { inner })
-    }
-
-    /// `stages` is a list of lists of layers.
-    fn inuring(stages: List) -> Result<Self> {
-        let stages = stages
-            .values()
-            .map(|stage| {
-                List::try_from(&stage)
-                    .map_err(|_| Error::Other("stages must be a list of lists of layers".into()))
-                    .and_then(layer_list)
-            })
-            .collect::<Result<_>>()?;
-        let inner = Tower::inuring(stages).map_err(to_r)?;
-        Ok(Self { inner })
-    }
-
-    fn layer_names(&self) -> Vec<String> {
-        self.inner.layers.iter().map(|l| l.name.clone()).collect()
-    }
-
-    /// 1-based stage of each layer.
-    fn stages(&self) -> Vec<f64> {
-        self.inner.stages.iter().map(|&s| s as f64 + 1.0).collect()
-    }
-
-    fn ceded(&self, losses: &[f64]) -> Vec<f64> {
-        self.inner.ceded(losses)
-    }
-
-    /// Gross, ceded and net annual distributions on the grid, by FFT:
-    /// `list(gross, ceded, net, expected_reinstatement_premium, on_points)`,
-    /// with `net` NULL when it is not one compound total.
-    fn on_grid(&self, frequency: Robj, severity: Robj, points: f64) -> Result<List> {
-        let n = AnyCount::from_robj(&frequency)?;
-        let sev = <&Grid>::try_from(&severity)
-            .map_err(|_| Error::Other("severity must be a grid_distribution".into()))?;
-        let points = whole(points, "points")? as usize;
-        let r = self
-            .inner
-            .on_grid(n.as_counting(), &sev.inner, points)
-            .map_err(to_r)?;
-        let ceded: Vec<Robj> = r
-            .ceded
-            .into_iter()
-            .zip(&r.ceded_reports)
-            .map(|(g, report)| Grid::with_report(g, compound_list(report)).into())
-            .collect();
-        let net: Robj = match r.net {
-            Some(g) => Grid::wrap(g).into(),
-            None => ().into(),
-        };
-        Ok(list!(
-            gross = Grid::with_report(r.gross, compound_list(&r.gross_report)),
-            ceded = List::from_values(ceded),
-            net = net,
-            expected_reinstatement_premium = r.expected_reinstatement_premium,
-            on_points = r.on_points
-        ))
-    }
-
-    /// Each simulation's total of a predictive distribution as one
-    /// aggregate loss.
-    fn apply_aggregate(&self, losses: Robj) -> Result<PredictiveDistribution> {
-        let pd = <&PredictiveDistribution>::try_from(&losses)
-            .map_err(|_| Error::Other("losses must be a predictive_distribution".into()))?;
-        let inner = self.inner.apply_aggregate(&pd.inner).map_err(to_r)?;
-        Ok(PredictiveDistribution { inner })
-    }
-
-    fn apply(&self, events: Robj) -> Result<PredictiveDistribution> {
-        let events = <&EventSet>::try_from(&events)
-            .map_err(|_| Error::Other("events must be an event_set".into()))?;
-        let inner = self.inner.apply(&events.inner).map_err(to_r)?;
-        Ok(PredictiveDistribution { inner })
-    }
-}
-
-fn layer_list(layers: List) -> Result<Vec<Layer>> {
-    layers
-        .values()
-        .map(|l| {
-            <&XolLayer>::try_from(&l)
-                .map(|l| l.inner.clone())
-                .map_err(|_| Error::Other("layers must all be xol_layer objects".into()))
-        })
-        .collect()
-}
-
 extendr_module! {
     mod aggregate;
     fn compound;
     impl EventSet;
-    impl XolLayer;
-    impl ReinsuranceTower;
 }

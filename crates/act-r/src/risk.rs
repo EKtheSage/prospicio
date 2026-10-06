@@ -12,7 +12,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
 use crate::distributions::{
-    AnySeverity, Grid, PredictiveDistribution, Sampled, components_from_keys, key_from_list,
+    Grid, PredictiveDistribution, Sampled, components_from_keys, key_from_list, severity_from_robj,
 };
 use crate::{to_r, whole};
 
@@ -253,9 +253,9 @@ impl RiskCopula {
         dims: Vec<String>,
         keys: List,
     ) -> Result<PredictiveDistribution> {
-        let marginals: Vec<AnySeverity> = marginals
+        let marginals: Vec<act_prob::SeverityDist> = marginals
             .values()
-            .map(|m| AnySeverity::from_robj(&m))
+            .map(|m| severity_from_robj(&m))
             .collect::<Result<_>>()?;
         let refs: Vec<&(dyn act_prob::Distribution + Sync)> = marginals
             .iter()

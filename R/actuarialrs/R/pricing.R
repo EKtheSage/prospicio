@@ -358,3 +358,232 @@ price_portfolio <- function(x, assets, cost_of_capital = NULL, distortion = NULL
 
 rate_arg <- function(rate) if (is.null(rate)) NA_real_ else as.double(rate)
 pricing_arg <- function(d) if (is.null(d)) NULL else d@ptr
+
+#' MBBEFD exposure curves
+#'
+#' The MBBEFD class of Bernegger (1997) for property per-risk exposure
+#' rating: `G(x)` is the share of a risk's expected loss below the fraction
+#' `x` of its maximum possible loss (MPL), and `1/g` the probability of a
+#' total loss. `swiss_re_curve(c)` gives Bernegger's one-parameter family,
+#' `b = exp(3.1 - 0.15 (1 + c) c)`, `g = exp((0.78 + 0.12 c) c)`: `c = 1.5,
+#' 2, 3, 4` are the Swiss Re curves and `c = 5` the Lloyd's curve.
+#'
+#' `exposure_curve()` evaluates `G`; `exposure_layer_share()` is the share
+#' of a risk's expected loss in the layer `limit` xs `attachment`, `G(min((a
+#' + l)/M, 1)) - G(min(a/M, 1))`. `severity_exposure_curve()` is the curve
+#' of any severity capped at the MPL, `LEV(x M) / LEV(M)`.
+#'
+#' @param b,g MBBEFD parameters, `b >= 0`, `g >= 1`.
+#' @param c Swiss Re curve parameter, non-negative (0 is the straight line).
+#' @param curve An `mbbefd` or [tabulated_curve] object.
+#' @param x Fractions of the MPL.
+#' @param limit,attachment The layer.
+#' @param mpl Maximum possible loss of the risk.
+#' @param severity A severity: [lognormal], [grid_distribution] or a
+#'   Pareto-family distribution.
+#' @returns `mbbefd()` and `swiss_re_curve()`: an `mbbefd` object with
+#'   properties `b`, `g`, `mean` (the mean destruction rate) and
+#'   `total_loss_probability`. The others: numeric vectors.
+#' @name mbbefd
+#' @examples
+#' c3 <- swiss_re_curve(3)
+#' exposure_curve(c3, c(0.1, 0.5, 1))
+#' exposure_layer_share(c3, 5e6, 5e6, 10e6)
+#' severity_exposure_curve(pareto(1e5, 1.5), 1e7, c(0.5, 1))
+NULL
+
+#' @rdname mbbefd
+#' @export
+mbbefd <- S7::new_class(
+  "mbbefd",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("Mbbefd"),
+    b = S7::new_property(S7::class_double, getter = function(self) self@ptr$b()),
+    g = S7::new_property(S7::class_double, getter = function(self) self@ptr$g()),
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean()),
+    total_loss_probability = S7::new_property(
+      S7::class_double, getter = function(self) self@ptr$total_loss_probability()
+    )
+  ),
+  constructor = function(b, g, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(Mbbefd$new(as.double(b), as.double(g)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, mbbefd) <- function(x, ...) {
+  cat(sprintf("<mbbefd> b = %s, g = %s, total loss probability %s\n", format(x@b),
+              format(x@g), format(x@total_loss_probability)))
+  invisible(x)
+}
+
+#' @rdname mbbefd
+#' @export
+swiss_re_curve <- function(c) {
+  mbbefd(ptr = rust_result(Mbbefd$swiss_re(as.double(c))))
+}
+
+#' @rdname mbbefd
+#' @export
+exposure_curve <- function(curve, x) curve@ptr$curve(as.double(x))
+
+#' @rdname mbbefd
+#' @export
+exposure_layer_share <- function(curve, limit, attachment, mpl) {
+  rust_result(curve@ptr$layer_share(as.double(limit), as.double(attachment), as.double(mpl)))
+}
+
+#' @rdname mbbefd
+#' @export
+severity_exposure_curve <- function(severity, mpl, x) {
+  rust_result(pricing_severity_exposure_curve(severity@ptr, as.double(mpl), as.double(x)))
+}
+
+#' @rdname mbbefd
+#' @param u Probabilities in `(0, 1)`.
+#' @export
+rate_quantile <- function(curve, u) curve@ptr$rate_quantile(as.double(u))
+
+#' Tabulated exposure curve
+#'
+#' An exposure curve from a published table of points `(x, G(x))` from
+#' `(0, 0)` to `(1, 1)`, interpolated linearly: Salzmann's homeowners scale,
+#' Ludwig's curves, ISO PSOLD tables or a reinsurer's own. The table must be
+#' concave (its slopes never increase). Its destruction rate is discrete:
+#' the points' `x` with probabilities from the drops in slope, and a total
+#' loss with probability last slope over first. Its mean rate (`curve@mean`)
+#' is the first chord's, `x1 / G(x1)`, so a table needs fine first points
+#' for the expected loss to be right.
+#'
+#' Works with [exposure_curve()], [exposure_layer_share()] and
+#' [rate_quantile()], like an [mbbefd] curve.
+#'
+#' @param x Increasing from 0 to 1.
+#' @param g `G(x)`, from 0 to 1.
+#' @returns A `tabulated_curve` object with properties `x`, `g` and `mean`.
+#' @export
+#' @examples
+#' t <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
+#' exposure_curve(t, 0.3)
+#' t@mean
+tabulated_curve <- S7::new_class(
+  "tabulated_curve",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("Tabulated"),
+    x = S7::new_property(S7::class_double, getter = function(self) self@ptr$x()),
+    g = S7::new_property(S7::class_double, getter = function(self) self@ptr$g()),
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean())
+  ),
+  constructor = function(x, g) {
+    ptr <- rust_result(Tabulated$new(as.double(x), as.double(g)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, tabulated_curve) <- function(x, ...) {
+  cat(sprintf("<tabulated_curve> %d points, mean rate %s\n", length(x@x), format(x@mean)))
+  invisible(x)
+}
+
+#' Risk profile for property per-risk business
+#'
+#' Bands of sum insured, each with an expected loss (given, or premium times
+#' a loss ratio) and its own exposure curve. Each band's representative risk
+#' has sum insured `SI` (its total sum insured over its number of risks, say),
+#' taken as its MPL; the band expects `EL / (SI * curve@mean)` losses a year.
+#'
+#' `profile_simulate()` draws years of losses: a Poisson number with the
+#' profile's expected count, each in a band with probability proportional to
+#' the band's expected count, and the band's `SI` times a destruction rate
+#' from its curve. Every loss carries its `SI`, so a [surplus_treaty()] and
+#' the per-risk excess of loss it inures to apply with [apply_tower()].
+#' `profile_layer_loss()` and `profile_surplus_loss()` are the exposure-rated
+#' expectations, which check the simulation.
+#'
+#' @param sums_insured One per band.
+#' @param risks Number of risks per band (for reference).
+#' @param curves An [mbbefd] or [tabulated_curve] for every band, or a list
+#'   with one per band.
+#' @param expected_loss Expected annual loss per band. Give this, or
+#'   `premium` with `loss_ratio`.
+#' @param premium Premium per band.
+#' @param loss_ratio Expected loss ratio: one value, or one per band.
+#' @returns `risk_profile()`: a `risk_profile` object with properties
+#'   `expected_loss` (all bands) and `expected_claims` (per band).
+#' @export
+#' @examples
+#' p <- risk_profile(c(1e6, 10e6), c(800, 50), swiss_re_curve(3),
+#'                   premium = c(2e6, 1e6), loss_ratio = 0.6)
+#' p@expected_loss
+#' ev <- profile_simulate(p, 1000, seed = 7)
+#' tw <- inuring_tower(list(list(surplus_treaty("S", 1e6, 4)),
+#'                          list(xol_layer("XL", 1e6, 0.5e6))))
+#' mean(total(apply_tower(tw, ev)))
+#' profile_surplus_loss(p, 1e6, 4)
+#' profile_layer_loss(p, 1e6, 0.5e6, surplus_retention = 1e6, surplus_lines = 4)
+risk_profile <- S7::new_class(
+  "risk_profile",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("RiskProfile"),
+    expected_loss = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_loss()),
+    expected_claims = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_claims())
+  ),
+  constructor = function(sums_insured, risks, curves, expected_loss = NULL, premium = NULL,
+                         loss_ratio = NULL) {
+    n <- length(sums_insured)
+    if (!is.list(curves)) curves <- rep(list(curves), n)
+    if (is.null(expected_loss) == is.null(premium)) {
+      stop("give expected_loss, or premium with a loss_ratio")
+    }
+    if (!is.null(premium) && is.null(loss_ratio)) stop("premium needs a loss_ratio")
+    ptr <- rust_result(RiskProfile$new(
+      as.double(sums_insured), as.double(risks), lapply(curves, function(c) c@ptr),
+      if (is.null(expected_loss)) double() else as.double(expected_loss),
+      if (is.null(premium)) double() else as.double(premium),
+      if (is.null(loss_ratio)) double() else as.double(loss_ratio)
+    ))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, risk_profile) <- function(x, ...) {
+  cat(sprintf("<risk_profile> %d bands, expected loss %s\n", length(x@expected_claims),
+              format(x@expected_loss)))
+  invisible(x)
+}
+
+#' @rdname risk_profile
+#' @param profile A `risk_profile`.
+#' @param n_sims Number of simulated years.
+#' @param seed Generator seed.
+#' @export
+profile_simulate <- function(profile, n_sims, seed) {
+  event_set(ptr = rust_result(profile@ptr$simulate(as.double(n_sims), as.double(seed))))
+}
+
+#' @rdname risk_profile
+#' @param limit,attachment A per-risk layer; `limit = Inf` for unlimited.
+#' @param surplus_retention,surplus_lines A surplus treaty the layer inures
+#'   to, or `NULL`.
+#' @export
+profile_layer_loss <- function(profile, limit, attachment, surplus_retention = NULL,
+                               surplus_lines = NULL) {
+  if (is.null(surplus_retention) != is.null(surplus_lines)) {
+    stop("give both surplus_retention and surplus_lines, or neither")
+  }
+  rust_result(profile@ptr$expected_layer_loss(
+    as.double(limit), as.double(attachment),
+    if (is.null(surplus_retention)) NaN else as.double(surplus_retention),
+    if (is.null(surplus_lines)) NaN else as.double(surplus_lines)
+  ))
+}
+
+#' @rdname risk_profile
+#' @param retention,lines A surplus treaty's retention line and lines.
+#' @export
+profile_surplus_loss <- function(profile, retention, lines) {
+  profile@ptr$expected_surplus_loss(as.double(retention), as.double(lines))
+}

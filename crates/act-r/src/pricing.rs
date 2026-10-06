@@ -3,6 +3,7 @@
 //! A truncation of `Inf` means none; `NA` frequencies are derived.
 
 use act_aggregate::CollectiveModel as CollectiveInner;
+use act_pricing::exposure::{ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve};
 use act_pricing::layer::XsLayer;
 use act_pricing::risk_load::{self, PremiumRule, Price};
 use act_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
@@ -10,7 +11,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
 use crate::aggregate::{AnyCount, EventSet};
-use crate::distributions::{AnySeverity, PredictiveDistribution, Sampled};
+use crate::distributions::{PredictiveDistribution, Sampled, severity_from_robj};
 use crate::pareto::PiecewisePareto;
 use crate::risk::RiskDistortion;
 use crate::{to_r, whole};
@@ -36,7 +37,7 @@ fn rule(name: &str) -> Result<SelectionRule> {
 /// The collective risk model: a claim count and a severity.
 #[extendr]
 pub(crate) struct CollectiveModel {
-    inner: CollectiveInner<AnyCount, AnySeverity>,
+    inner: CollectiveInner<AnyCount, act_prob::SeverityDist>,
 }
 
 #[extendr]
@@ -44,7 +45,7 @@ impl CollectiveModel {
     fn new(frequency: Robj, severity: Robj) -> Result<Self> {
         let inner = CollectiveInner::new(
             AnyCount::from_robj(&frequency)?,
-            AnySeverity::from_robj(&severity)?,
+            severity_from_robj(&severity)?,
         );
         Ok(Self { inner })
     }
@@ -180,7 +181,7 @@ impl TowerModel {
 /// Increased limit factors `LEV(limit) / LEV(basic_limit)`.
 #[extendr]
 fn pricing_ilf(severity: Robj, limit: &[f64], basic_limit: f64) -> Result<Vec<f64>> {
-    let sev = AnySeverity::from_robj(&severity)?;
+    let sev = severity_from_robj(&severity)?;
     limit
         .iter()
         .map(|&l| act_pricing::layer::ilf(&sev, l, basic_limit).map_err(to_r))
@@ -190,7 +191,7 @@ fn pricing_ilf(severity: Robj, limit: &[f64], basic_limit: f64) -> Result<Vec<f6
 /// Loss elimination ratios `LEV(d) / E[X]`.
 #[extendr]
 fn pricing_loss_elimination_ratio(severity: Robj, deductible: &[f64]) -> Result<Vec<f64>> {
-    let sev = AnySeverity::from_robj(&severity)?;
+    let sev = severity_from_robj(&severity)?;
     deductible
         .iter()
         .map(|&d| act_pricing::layer::loss_elimination_ratio(&sev, d).map_err(to_r))
@@ -266,6 +267,224 @@ fn pricing_alpha_between_frequencies(
         truncation(truncation_at),
     )
     .map_err(to_r)
+}
+
+/// The MBBEFD exposure curve (Bernegger, 1997).
+#[extendr]
+pub(crate) struct Mbbefd {
+    pub(crate) inner: MbbefdInner,
+}
+
+#[extendr]
+impl Mbbefd {
+    fn new(b: f64, g: f64) -> Result<Self> {
+        Ok(Self {
+            inner: MbbefdInner::new(b, g).map_err(to_r)?,
+        })
+    }
+
+    fn swiss_re(c: f64) -> Result<Self> {
+        Ok(Self {
+            inner: MbbefdInner::swiss_re(c).map_err(to_r)?,
+        })
+    }
+
+    fn b(&self) -> f64 {
+        self.inner.b()
+    }
+
+    fn g(&self) -> f64 {
+        self.inner.g_parameter()
+    }
+
+    fn curve(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.g(v)).collect()
+    }
+
+    fn cdf(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.cdf(v)).collect()
+    }
+
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    fn total_loss_probability(&self) -> f64 {
+        self.inner.total_loss_probability()
+    }
+
+    fn layer_share(&self, limit: f64, attachment: f64, mpl: f64) -> Result<f64> {
+        self.inner.layer_share(limit, attachment, mpl).map_err(to_r)
+    }
+
+    fn rate_quantile(&self, u: &[f64]) -> Vec<f64> {
+        u.iter().map(|&v| self.inner.rate_quantile(v)).collect()
+    }
+}
+
+/// A tabulated exposure curve, interpolated linearly.
+#[extendr]
+pub(crate) struct Tabulated {
+    pub(crate) inner: TabulatedCurve,
+}
+
+#[extendr]
+impl Tabulated {
+    fn new(x: &[f64], g: &[f64]) -> Result<Self> {
+        Ok(Self {
+            inner: TabulatedCurve::new(x, g).map_err(to_r)?,
+        })
+    }
+
+    fn x(&self) -> Vec<f64> {
+        self.inner.x().to_vec()
+    }
+
+    fn g(&self) -> Vec<f64> {
+        self.inner.g_values().to_vec()
+    }
+
+    fn curve(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.g(v)).collect()
+    }
+
+    fn mean(&self) -> f64 {
+        self.inner.mean_rate()
+    }
+
+    fn layer_share(&self, limit: f64, attachment: f64, mpl: f64) -> Result<f64> {
+        self.inner.layer_share(limit, attachment, mpl).map_err(to_r)
+    }
+
+    fn rate_quantile(&self, u: &[f64]) -> Vec<f64> {
+        u.iter().map(|&v| self.inner.rate_quantile(v)).collect()
+    }
+}
+
+fn band_curve(obj: &Robj) -> Result<act_pricing::profile::BandCurve> {
+    if let Ok(c) = <&Mbbefd>::try_from(obj) {
+        return Ok(c.inner.into());
+    }
+    if let Ok(c) = <&Tabulated>::try_from(obj) {
+        return Ok(c.inner.clone().into());
+    }
+    Err(Error::Other(
+        "each band's curve must be an mbbefd or a tabulated_curve".into(),
+    ))
+}
+
+/// A risk profile; `expected_losses` or `premiums` (with `loss_ratio`, one
+/// value or one per band) is empty when not given.
+#[extendr]
+pub(crate) struct RiskProfile {
+    inner: act_pricing::profile::RiskProfile,
+}
+
+#[extendr]
+impl RiskProfile {
+    fn new(
+        sums_insured: &[f64],
+        risks: &[f64],
+        curves: List,
+        expected_losses: &[f64],
+        premiums: &[f64],
+        loss_ratio: &[f64],
+    ) -> Result<Self> {
+        use act_pricing::profile::{Band, RiskProfile as Inner};
+        let n = sums_insured.len();
+        if risks.len() != n || curves.len() != n {
+            return Err(Error::Other(
+                "give one number of risks and one curve per band".into(),
+            ));
+        }
+        let curves = curves
+            .values()
+            .map(|c| band_curve(&c))
+            .collect::<Result<Vec<_>>>()?;
+        let bands = if !expected_losses.is_empty() {
+            if expected_losses.len() != n {
+                return Err(Error::Other("give one expected loss per band".into()));
+            }
+            (0..n)
+                .map(|i| {
+                    Band::from_expected_loss(
+                        sums_insured[i],
+                        risks[i],
+                        expected_losses[i],
+                        curves[i].clone(),
+                    )
+                })
+                .collect::<act_core::Result<Vec<_>>>()
+        } else {
+            let lr = |i: usize| loss_ratio[if loss_ratio.len() == 1 { 0 } else { i }];
+            if premiums.len() != n || !(loss_ratio.len() == 1 || loss_ratio.len() == n) {
+                return Err(Error::Other(
+                    "give expected_loss, or one premium per band with a loss_ratio".into(),
+                ));
+            }
+            (0..n)
+                .map(|i| {
+                    Band::from_premium(
+                        sums_insured[i],
+                        risks[i],
+                        premiums[i],
+                        lr(i),
+                        curves[i].clone(),
+                    )
+                })
+                .collect::<act_core::Result<Vec<_>>>()
+        }
+        .map_err(to_r)?;
+        Ok(Self {
+            inner: Inner::new(bands).map_err(to_r)?,
+        })
+    }
+
+    fn expected_loss(&self) -> f64 {
+        self.inner.expected_loss()
+    }
+
+    fn expected_claims(&self) -> Vec<f64> {
+        self.inner
+            .bands()
+            .iter()
+            .map(|b| b.expected_claims())
+            .collect()
+    }
+
+    /// `surplus_retention` NaN for no surplus.
+    fn expected_layer_loss(
+        &self,
+        limit: f64,
+        attachment: f64,
+        surplus_retention: f64,
+        surplus_lines: f64,
+    ) -> Result<f64> {
+        let surplus = (!surplus_retention.is_nan()).then_some((surplus_retention, surplus_lines));
+        self.inner
+            .expected_layer_loss(limit, attachment, surplus)
+            .map_err(to_r)
+    }
+
+    fn expected_surplus_loss(&self, retention: f64, lines: f64) -> f64 {
+        self.inner.expected_surplus_loss(retention, lines)
+    }
+
+    fn simulate(&self, n_sims: f64, seed: f64) -> Result<crate::aggregate::EventSet> {
+        let inner = self
+            .inner
+            .simulate(whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(crate::aggregate::EventSet { inner })
+    }
+}
+
+/// The exposure curve of a severity capped at `mpl`, at each `x`.
+#[extendr]
+fn pricing_severity_exposure_curve(severity: Robj, mpl: f64, x: &[f64]) -> Result<Vec<f64>> {
+    let sev = severity_from_robj(&severity)?;
+    let curve = SeverityCurve::new(&sev, mpl).map_err(to_r)?;
+    Ok(x.iter().map(|&v| curve.g(v)).collect())
 }
 
 fn distortion_arg(d: &Robj, name: &str) -> Result<act_prob::Distortion> {
@@ -351,6 +570,10 @@ extendr_module! {
     mod pricing;
     impl CollectiveModel;
     impl TowerModel;
+    impl Mbbefd;
+    impl Tabulated;
+    impl RiskProfile;
+    fn pricing_severity_exposure_curve;
     fn pricing_price;
     fn pricing_price_portfolio;
     fn pricing_ilf;

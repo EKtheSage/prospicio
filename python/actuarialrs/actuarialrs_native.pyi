@@ -284,8 +284,8 @@ class Benktander:
     average : {"volume", "simple", "regression"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
-    tail : float, default 1.0
-        Factor from the oldest age to ultimate.
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
     
     Examples
     --------
@@ -298,7 +298,7 @@ class Benktander:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 288.89]
     """
-    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> Benktander: ...
+    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> Benktander: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -344,9 +344,9 @@ class Benktander:
         How unestimable variance parameters are filled in.
         """
     @property
-    def tail(self, /) -> float:
+    def tail(self, /) -> Any:
         """
-        Tail factor.
+        The tail: a constant factor as a number, otherwise its estimator.
         """
 
 @final
@@ -467,8 +467,8 @@ class BornhuetterFerguson:
     average : {"volume", "simple", "regression"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
-    tail : float, default 1.0
-        Factor from the oldest age to ultimate.
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
     
     Examples
     --------
@@ -481,7 +481,7 @@ class BornhuetterFerguson:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 266.67]
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> BornhuetterFerguson: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> BornhuetterFerguson: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -522,9 +522,9 @@ class BornhuetterFerguson:
         How unestimable variance parameters are filled in.
         """
     @property
-    def tail(self, /) -> float:
+    def tail(self, /) -> Any:
         """
-        Tail factor.
+        The tail: a constant factor as a number, otherwise its estimator.
         """
 
 @final
@@ -552,8 +552,8 @@ class CapeCod:
     average : {"volume", "simple", "regression"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
-    tail : float, default 1.0
-        Factor from the oldest age to ultimate.
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
     
     Examples
     --------
@@ -566,7 +566,7 @@ class CapeCod:
     >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
     ([0.6774, 0.6774], [150.0, 290.32])
     """
-    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> CapeCod: ...
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> CapeCod: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -608,9 +608,9 @@ class CapeCod:
         How unestimable variance parameters are filled in.
         """
     @property
-    def tail(self, /) -> float:
+    def tail(self, /) -> Any:
         """
-        Tail factor.
+        The tail: a constant factor as a number, otherwise its estimator.
         """
     @property
     def trend(self, /) -> float:
@@ -767,8 +767,7 @@ class CapeCodFit:
 class ChainLadder:
     """
     The chain-ladder method: each origin's latest value projected to
-    ultimate with age-to-age factors estimated from the triangle and a tail
-    factor.
+    ultimate with age-to-age factors estimated from the triangle and a tail.
     
     Parameters
     ----------
@@ -778,8 +777,9 @@ class ChainLadder:
         ``alpha`` of 1, 0 and 2).
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a variance parameter with a single link ratio is filled in.
-    tail : float, default 1.0
-        Factor from the oldest age to ultimate.
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        Development past the oldest age: a number is a constant factor from
+        the oldest age to ultimate. No tail (a factor of 1) by default.
     
     Examples
     --------
@@ -789,7 +789,7 @@ class ChainLadder:
     >>> fit.ldf, fit.ultimate, fit.total_reserve
     ([1.5], [150.0, 300.0], 100.0)
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> ChainLadder: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> ChainLadder: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -815,7 +815,9 @@ class ChainLadder:
         ------
         ValueError
             If the column is unknown, a factor cannot be estimated or the tail
-            is not positive; with keys, the message names the segment.
+            cannot be fitted (a constant that is not positive, a curve with
+            fewer than two factors above 1 to fit); with keys, the message
+            names the segment.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -823,9 +825,9 @@ class ChainLadder:
         How unestimable variance parameters are filled in.
         """
     @property
-    def tail(self, /) -> float:
+    def tail(self, /) -> Any:
         """
-        Tail factor.
+        The tail: a constant factor as a number, otherwise its estimator.
         """
 
 @final
@@ -836,9 +838,10 @@ class ChainLadderFit:
     Per-origin lists (``origins``, ``latest``, ``ultimate``, ``reserve``)
     run over the origins of each segment in turn, like the rows of
     ``to_frame()``, so a single-segment fit has one value per origin.
-    Per-age lists (``ldf``, ``cdf``, ``sigma``, ``std_err``) need a
-    single-segment fit; for several segments use ``development_frame()`` or
-    ``segment(...)``.
+    Per-age lists (``ldf``, ``cdf``, ``sigma``, ``std_err``) and the tail
+    need a single-segment fit; for several segments use
+    ``development_frame()`` (per age), ``totals_frame()`` (``tail``,
+    ``tail_sigma``, ``tail_std_err``) or ``segment(...)``.
     
     Examples
     --------
@@ -869,13 +872,19 @@ class ChainLadderFit:
     def development_frame(self, /) -> Any:
         """
         One row per segment and age: the key columns, ``development``,
-        ``ldf`` (to the next age), ``cdf`` (to ultimate, with the tail),
-        ``sigma`` and ``std_err``; the oldest age has ``nan`` for ``ldf``,
-        ``sigma`` and ``std_err``. Needs pandas.
+        ``ldf`` (the selected factor to the next age), ``cdf`` (to ultimate,
+        with the tail), ``sigma`` and ``std_err``; the oldest age has ``nan``
+        for ``ldf``, ``sigma`` and ``std_err``, and the tail factor as its
+        ``cdf``. Needs pandas.
         
         Returns
         -------
         pandas.DataFrame
+        """
+    @property
+    def estimated_ldf(self, /) -> list[float]:
+        """
+        Age-to-age factors as estimated, before the tail replaced any.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -895,7 +904,9 @@ class ChainLadderFit:
     @property
     def ldf(self, /) -> list[float]:
         """
-        Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
+        Selected age-to-age factors, which the projection uses: the
+        estimated ones, replaced by the tail's from its attachment age.
+        Factor ``k`` links age ``k`` to ``k + 1``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -937,7 +948,34 @@ class ChainLadderFit:
     @property
     def tail(self, /) -> float:
         """
-        Tail factor.
+        Tail factor from the oldest age to ultimate.
+        """
+    @property
+    def tail_attachment_age(self, /) -> int:
+        """
+        Age from which ``ldf`` holds the tail's factors rather than the
+        estimated ones; the oldest age when the tail replaced none.
+        """
+    @property
+    def tail_ldf(self, /) -> list[float]:
+        """
+        Factors past the oldest age, which multiply to ``tail``: one per
+        development period of the following year and one to ultimate, as
+        chainladder-python's ``ldf_`` (a single factor for
+        ``TailLogLinear``).
+        """
+    @property
+    def tail_sigma(self, /) -> float:
+        """
+        The tail's variance parameter, extrapolated log-linearly; 0 without
+        a tail (a factor of 1), ``nan`` if it cannot be extrapolated. A tail
+        below 1 is read where a tail of 1.001 would be, as chainladder-python
+        does.
+        """
+    @property
+    def tail_std_err(self, /) -> float:
+        """
+        Standard error of the tail factor, extrapolated log-linearly.
         """
     def to_frame(self, /) -> Any:
         """
@@ -960,8 +998,9 @@ class ChainLadderFit:
         """
     def totals_frame(self, /) -> Any:
         """
-        One row per segment: the key columns and the segment's total
-        ``latest``, ``ultimate`` and ``reserve``. Needs pandas.
+        One row per segment: the key columns, the segment's total
+        ``latest``, ``ultimate`` and ``reserve``, and its ``tail``,
+        ``tail_sigma`` and ``tail_std_err``. Needs pandas.
         
         Returns
         -------
@@ -971,6 +1010,84 @@ class ChainLadderFit:
     def ultimate(self, /) -> list[float]:
         """
         Projected ultimate per origin.
+        """
+
+@final
+class ClaimsDevelopmentResult:
+    """
+    Merz and Wüthrich's (2008) one-year view of a Mack fit: standard errors
+    of the claims development result (CDR), the change in the chain-ladder
+    ultimate over a calendar year, per origin and in total. The total
+    includes the covariance between origins. Year ``k`` of the run-off is
+    R ChainLadder's ``CDR(k)S.E.``; summed in square over the years, the
+    run-off gives back Mack's standard error.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import Mack, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> mack = Mack().fit(tri, "values")
+    >>> cdr = mack.claims_development_result()
+    >>> len(cdr.by_calendar_year), cdr.one_year_standard_error[0]
+    (3, 0.0)
+    >>> abs(cdr.total_run_off_standard_error - mack.total_standard_error) < 1e-9
+    True
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def by_calendar_year(self, /) -> list[list[float]]:
+        """
+        Standard error of each origin's CDR in each future calendar year:
+        ``by_calendar_year[k - 1][i]`` is year ``k`` (R's ``CDR(k)S.E.``) of
+        origin ``i``, zero once the origin is fully developed. One year per
+        age-to-age factor.
+        """
+    @property
+    def one_year_standard_error(self, /) -> list[float]:
+        """
+        Standard error of each origin's CDR in the next calendar year, R's
+        ``CDR(1)S.E.``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods, oldest first.
+        """
+    @property
+    def run_off_standard_error(self, /) -> list[float]:
+        """
+        Standard error of each origin's full run-off, the square root of
+        the sum of its yearly mean squared errors; equals Mack's.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, then ``cdr_1``, ``cdr_2``, ... the
+        standard error of the CDR in each future calendar year (R's
+        ``CDR(k)S.E.``), and ``run_off``, that of the full run-off. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_by_calendar_year(self, /) -> list[float]:
+        """
+        Standard error of the total CDR in each future calendar year.
+        """
+    @property
+    def total_one_year_standard_error(self, /) -> float:
+        """
+        Standard error of the total CDR in the next calendar year.
+        """
+    @property
+    def total_run_off_standard_error(self, /) -> float:
+        """
+        Standard error of the total full run-off; equals Mack's.
         """
 
 @final
@@ -1528,6 +1645,219 @@ class CompoundReport:
     def tail_mass(self, /) -> float:
         """
         Aggregate probability above the last point, lumped onto it.
+        """
+
+@final
+class Custom:
+    """
+    A loss severity defined by your own distribution function: the slow
+    path for a distribution the library does not have.
+    
+    Give the cdf, and the quantile function if you have one (sampling
+    inverts the cdf by bisection otherwise, about a hundred cdf calls per
+    draw). The mean, variance, limited expected values and layer moments
+    are computed by Gauss–Legendre quadrature of the survival function
+    between the distribution's own quantiles, ignoring the probability
+    above the ``1 - 1e-12`` quantile. A ``Custom`` goes anywhere a severity
+    does (layers, compound distributions, simulated events, copula
+    marginals, mixtures); calculations that meet one run single-threaded,
+    since every value calls back into Python.
+    
+    Parameters
+    ----------
+    cdf : callable
+        ``cdf(x) -> float``: ``P(X <= x)`` for ``x >= 0``, in ``[0, 1]``
+        and non-decreasing. Losses are non-negative.
+    quantile : callable, optional
+        ``quantile(p) -> float``: the smallest ``x`` with ``cdf(x) >= p``.
+    name : str, default "custom"
+        Shown in errors and ``repr``.
+    
+    Raises
+    ------
+    ValueError
+        If a callable raises or returns a value out of range, or the cdf
+        never reaches ``1 - 1e-12`` at a finite loss. An error in a later
+        call makes that value ``nan``; ``last_error`` says why.
+    
+    Examples
+    --------
+    >>> import math
+    >>> from actuarialrs.distributions import Custom
+    >>> d = Custom(lambda x: 1 - math.exp(-x / 100), name="exponential")
+    >>> round(d.mean(), 6)
+    100.0
+    >>> round(d.lev(50), 6) == round(100 * (1 - math.exp(-0.5)), 6)
+    True
+    """
+    def __getnewargs__(self, /) -> tuple[Any, Any |None, str]: ...
+    def __new__(cls, /, cdf: Any, quantile: Any |None = None, name: str = "custom") -> Custom: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def has_quantile(self, /) -> bool:
+        """
+        Whether a quantile function was given.
+        """
+    @property
+    def last_error(self, /) -> str |None:
+        """
+        The first error raised by a callable since construction, or ``None``.
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The name given at construction.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def upper(self, /) -> float:
+        """
+        The ``1 - 1e-12`` quantile, where the moment integrals stop.
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
         """
 
 @final
@@ -2158,6 +2488,38 @@ class EventSet:
         IndexError
             If ``sim`` is not a simulated year.
         """
+    @staticmethod
+    def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0) -> EventSet:
+        """
+        Years of losses from elsewhere (your own simulation, or a
+        catastrophe model's event loss table by year), optionally with the
+        sum insured of the risk each loss hit, which a surplus treaty needs.
+        
+        Parameters
+        ----------
+        years : list of list of float
+            Each year's losses, in order.
+        sums_insured : list of list of float, optional
+            The same shape: each loss's sum insured, at least the loss.
+        seed : int, default 0
+            Recorded in results' provenance.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from actuarialrs.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0], [], [9.0]], [[10.0, 2.0], [], [50.0]])
+        >>> e.counts(), e.sums_insured(2)
+        ([2, 0, 1], [50.0])
+        """
+    @property
+    def has_sums_insured(self, /) -> bool:
+        """
+        Whether the losses carry sums insured.
+        """
     @property
     def n_sims(self, /) -> int:
         """
@@ -2167,6 +2529,18 @@ class EventSet:
     def seed(self, /) -> int:
         """
         The seed the years were drawn from.
+        """
+    def sums_insured(self, /, sim: int) -> list[float] |None:
+        """
+        Year ``sim``'s sums insured, one per loss, or ``None``.
+        
+        Parameters
+        ----------
+        sim : int
+        
+        Returns
+        -------
+        list of float or None
         """
     def totals(self, /) -> PredictiveDistribution:
         """
@@ -2194,8 +2568,8 @@ class ExpectedLoss:
     average : {"volume", "simple", "regression"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
-    tail : float, default 1.0
-        Factor from the oldest age to ultimate.
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
     
     Examples
     --------
@@ -2208,7 +2582,7 @@ class ExpectedLoss:
     >>> fit.ultimate, fit.reserve
     ([125.0, 200.0], [-25.0, 0.0])
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: float = 1.0) -> ExpectedLoss: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> ExpectedLoss: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -2251,9 +2625,9 @@ class ExpectedLoss:
         How unestimable variance parameters are filled in.
         """
     @property
-    def tail(self, /) -> float:
+    def tail(self, /) -> Any:
         """
-        Tail factor.
+        The tail: a constant factor as a number, otherwise its estimator.
         """
 
 @final
@@ -3708,7 +4082,7 @@ class Layer:
     
     Examples
     --------
-    >>> from actuarialrs.aggregate import Layer
+    >>> from actuarialrs.reinsurance import Layer
     >>> layer = Layer("5x5", 5e6, 5e6, reinstatements=1)
     >>> layer.ceded([7e6])
     2000000.0
@@ -3764,10 +4138,24 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=15.0)
         >>> layer.ceded_by_event([8.0, 20.0, 12.0])
         [0.0, 9.0, 6.0]
+        """
+    def ceded_with_sums_insured(self, /, losses: Sequence[float], sums_insured: Sequence[float]) -> float:
+        """
+        Ceded loss for one year's losses on risks with the given sums
+        insured, one per loss.
+        
+        Parameters
+        ----------
+        losses : list of float
+        sums_insured : list of float
+        
+        Returns
+        -------
+        float
         """
     @property
     def limit(self, /) -> float:
@@ -3778,6 +4166,11 @@ class Layer:
     def name(self, /) -> str:
         """
         Layer name.
+        """
+    @property
+    def needs_sums_insured(self, /) -> bool:
+        """
+        Whether the layer is a surplus treaty, which needs sums insured.
         """
     @property
     def premium(self, /) -> float:
@@ -3803,7 +4196,7 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> Layer.quota_share("QS", 0.4).ceded([10.0, 5.0])
         6.0
         """
@@ -3854,9 +4247,40 @@ class Layer:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer
+        >>> from actuarialrs.reinsurance import Layer
         >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
         30.0
+        """
+    @staticmethod
+    def surplus(name: str, retention: float, lines: float) -> Layer:
+        """
+        A surplus treaty: each risk cedes the part of its sum insured above
+        the retention line ``retention``, up to ``lines`` lines, and the
+        same share of every loss on it.
+        
+        With a retention of 1m and 9 lines (a capacity of 9m), a 5m risk
+        cedes 80% and a 20m risk 45%. The events must carry sums insured
+        (``EventSet.from_years(..., sums_insured=...)``); it can inure to a
+        per-risk excess of loss in a later stage of a ``Tower``.
+        
+        Parameters
+        ----------
+        name : str
+        retention : float
+            The retention line; positive.
+        lines : float
+            Number of lines of capacity; positive.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from actuarialrs.reinsurance import Layer
+        >>> s = Layer.surplus("surplus", 1e6, 9.0)
+        >>> round(s.ceded_with_sums_insured([2e6, 2e6], [5e6, 20e6]))
+        2500000
         """
 
 @final
@@ -4443,12 +4867,28 @@ class Mack:
     """
     Mack's distribution-free chain ladder: the chain-ladder projection plus
     the standard error of each origin's reserve and of the total, split into
-    process and parameter risk (Mack 1993, 1999). No tail factor.
+    process and parameter risk (Mack 1993, 1999).
+    
+    A tail other than 1 is one more development step, from the oldest age
+    to ultimate, with its own sigma and standard error, as R ChainLadder's
+    ``MackChainLadder(tail = ...)``; unless given, both are extrapolated
+    log-linearly. Every origin, the oldest included, carries the tail's risk.
+    A tail below 1 follows chainladder-python: it scales the ultimates and
+    carries the risk read where a tail of 1.001 would be. R's
+    ``MackChainLadder`` ignores a tail below 1 altogether.
     
     Parameters
     ----------
     average : {"volume", "simple", "regression"}, default "volume"
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        As ``ChainLadder``; no tail by default.
+    tail_sigma : float, optional
+        The tail's sigma (R's ``tail.sigma``); extrapolated if not given.
+        Unused when the tail factor is 1.
+    tail_std_err : float, optional
+        The tail factor's standard error (R's ``tail.se``); extrapolated if
+        not given. Unused when the tail factor is 1.
     
     Examples
     --------
@@ -4462,7 +4902,7 @@ class Mack:
     >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
     True
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear") -> Mack: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None) -> Mack: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -4487,13 +4927,30 @@ class Mack:
         ------
         ValueError
             As ``ChainLadder.fit``, and if the triangle has fewer than three
-            ages or a variance parameter can be neither estimated nor
-            interpolated.
+            ages, a variance parameter can be neither estimated nor
+            interpolated, or the tail's sigma or standard error can neither be
+            extrapolated nor is given.
         """
     @property
     def sigma_interpolation(self, /) -> str:
         """
         How unestimable variance parameters are filled in.
+        """
+    @property
+    def tail(self, /) -> Any:
+        """
+        The tail: a constant factor as a number, otherwise its estimator.
+        """
+    @property
+    def tail_sigma(self, /) -> float |None:
+        """
+        The given tail sigma, or ``None`` to extrapolate it.
+        """
+    @property
+    def tail_std_err(self, /) -> float |None:
+        """
+        The given standard error of the tail factor, or ``None`` to
+        extrapolate it.
         """
 
 @final
@@ -4503,21 +4960,42 @@ class MackFit:
     standard errors of each origin's reserve and of each segment's total.
     
     Per-origin lists run over the origins of each segment in turn, like the
-    rows of ``to_frame()``. Per-age lists and the totals' standard errors
-    need a single-segment fit; for several segments use
-    ``development_frame()``, ``totals_frame()`` or ``segment(...)``.
+    rows of ``to_frame()``. Per-age lists, the tail and the totals'
+    standard errors need a single-segment fit; for several segments use
+    ``development_frame()``, ``totals_frame()`` (the totals' standard errors
+    and the tail) or ``segment(...)``.
     ``total_ultimate`` and ``total_reserve`` sum over every segment.
     """
     def __repr__(self, /) -> str: ...
     @property
     def cdf(self, /) -> list[float]:
         """
-        Age-to-ultimate factors.
+        Age-to-ultimate factors, including the tail.
         """
     @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The underlying chain-ladder projection.
+        """
+    def claims_development_result(self, /) -> ClaimsDevelopmentResult:
+        """
+        Merz and Wüthrich's (2008) one-year view: the standard error of the
+        claims development result of each origin and in total, in the next
+        calendar year and in every later one, as R ChainLadder's
+        ``CDR(MackChainLadder(x), dev = "all")``.
+        
+        Returns
+        -------
+        ClaimsDevelopmentResult
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments (use ``segment(...)``), the
+            factors are not volume-weighted, the fit has a tail (a factor
+            other than 1, or one that replaces estimated factors), or the
+            latest values do not lie on one calendar diagonal with one new
+            origin per period.
         """
     @property
     def development(self, /) -> list[int]:
@@ -4532,6 +5010,11 @@ class MackFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    @property
+    def estimated_ldf(self, /) -> list[float]:
+        """
+        Factors as estimated, as ``ChainLadderFit.estimated_ldf``.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -4551,7 +5034,7 @@ class MackFit:
     @property
     def ldf(self, /) -> list[float]:
         """
-        Age-to-age factors.
+        Selected age-to-age factors, as ``ChainLadderFit.ldf``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -4596,6 +5079,34 @@ class MackFit:
     def std_err(self, /) -> list[float]:
         """
         Standard error of each factor.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        Tail factor from the oldest age to ultimate.
+        """
+    @property
+    def tail_attachment_age(self, /) -> int:
+        """
+        Age from which ``ldf`` holds the tail's factors, as
+        ``ChainLadderFit.tail_attachment_age``.
+        """
+    @property
+    def tail_ldf(self, /) -> list[float]:
+        """
+        Factors past the oldest age, as ``ChainLadderFit.tail_ldf``.
+        """
+    @property
+    def tail_sigma(self, /) -> float:
+        """
+        The tail's sigma used in the process risk: given, or extrapolated
+        log-linearly; 0 without a tail (a factor of 1).
+        """
+    @property
+    def tail_std_err(self, /) -> float:
+        """
+        The tail factor's standard error used in the parameter risk: given,
+        or extrapolated log-linearly; 0 without a tail (a factor of 1).
         """
     def to_frame(self, /) -> Any:
         """
@@ -4653,6 +5164,128 @@ class MackFit:
     def ultimate(self, /) -> list[float]:
         """
         Projected ultimate per origin.
+        """
+
+@final
+class Mbbefd:
+    """
+    The MBBEFD exposure curve and destruction-rate distribution (Bernegger,
+    1997), with ``b >= 0`` and ``g >= 1``; ``1/g`` is the probability of a
+    total loss.
+    
+    ``G(x)`` is the share of a risk's expected loss below the fraction
+    ``x`` of its maximum possible loss (MPL). ``Mbbefd.swiss_re(c)`` gives
+    Bernegger's one-parameter family: ``c = 1.5, 2, 3, 4`` are the Swiss Re
+    curves and ``c = 5`` the Lloyd's curve.
+    
+    Parameters
+    ----------
+    b : float
+    g : float
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import Mbbefd
+    >>> c3 = Mbbefd.swiss_re(3.0)
+    >>> top = c3.layer_share(5e6, 5e6, 10e6)
+    >>> bottom = c3.layer_share(5e6, 0.0, 10e6)
+    >>> round(top + bottom, 12), top < bottom
+    (1.0, True)
+    """
+    def __new__(cls, /, b: float, g: float) -> Mbbefd: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def b(self, /) -> float:
+        """
+        Parameter ``b``.
+        """
+    def cdf(self, /, x: Sequence[float]) -> list[float]:
+        """
+        Distribution function of the destruction rate at each ``x``.
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    def curve(self, /, x: Sequence[float]) -> list[float]:
+        """
+        The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def g(self, /) -> float:
+        """
+        Parameter ``g``.
+        """
+    def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
+        """
+        Share of a risk's expected loss in the layer ``limit`` xs
+        ``attachment``, for a risk with maximum possible loss ``mpl``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        mpl : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean destruction rate, ``1 / G'(0)``.
+        
+        Returns
+        -------
+        float
+        """
+    def rate_quantile(self, /, u: Sequence[float]) -> list[float]:
+        """
+        Destruction rate (loss over MPL) at each probability ``u`` in
+        ``(0, 1)``: draws with this curve as their exposure curve.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @staticmethod
+    def swiss_re(c: float) -> Mbbefd:
+        """
+        Bernegger's curve ``c``: ``b = exp(3.1 - 0.15 (1 + c) c)``,
+        ``g = exp((0.78 + 0.12 c) c)``.
+        
+        Parameters
+        ----------
+        c : float
+            Non-negative; 0 is the straight line.
+        
+        Returns
+        -------
+        Mbbefd
+        """
+    def total_loss_probability(self, /) -> float:
+        """
+        Probability of a total loss, ``1/g``.
+        
+        Returns
+        -------
+        float
         """
 
 @final
@@ -6156,6 +6789,110 @@ class Price:
         """
 
 @final
+class RiskProfile:
+    """
+    A risk profile for property per-risk business: bands of sum insured,
+    each with an expected loss (given, or premium times a loss ratio) and
+    its own exposure curve.
+    
+    Each band's representative risk has sum insured ``SI`` (its total sum
+    insured over its number of risks, say), taken as its MPL. The band
+    expects ``EL / (SI * curve.mean_rate)`` losses a year; each simulated
+    loss is the band's ``SI`` times a destruction rate from the band's
+    curve, and carries that ``SI``, so a surplus treaty (``Layer.surplus``)
+    and the per-risk excess of loss it inures to apply to the events. The
+    exposure-rated expectations (``expected_layer_loss``,
+    ``expected_surplus_loss``) check the simulation.
+    
+    Parameters
+    ----------
+    sums_insured : list of float
+        One per band.
+    risks : list of float
+        Number of risks per band (for reference).
+    curves : Mbbefd or TabulatedCurve, or a list of them
+        One curve for every band, or one per band.
+    expected_losses : list of float, optional
+        Expected annual loss per band. Give this, or ``premiums``.
+    premiums : list of float, optional
+        Premium per band, with ``loss_ratio``.
+    loss_ratio : float or list of float, optional
+        Expected loss ratio, one for all bands or one per band.
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import Mbbefd, RiskProfile
+    >>> p = RiskProfile([1e6, 10e6], [800, 50], Mbbefd.swiss_re(3.0),
+    ...                 premiums=[2e6, 1e6], loss_ratio=0.6)
+    >>> round(p.expected_loss())
+    1800000
+    >>> events = p.simulate(1000, 7)
+    >>> events.has_sums_insured
+    True
+    """
+    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None) -> RiskProfile: ...
+    def __repr__(self, /) -> str: ...
+    def expected_claims(self, /) -> list[float]:
+        """
+        Expected number of losses a year, per band.
+        
+        Returns
+        -------
+        list of float
+        """
+    def expected_layer_loss(self, /, limit: float, attachment: float, surplus_retention: float |None = None, surplus_lines: float |None = None) -> float:
+        """
+        Exposure-rated expected loss to a per-risk layer ``limit`` xs
+        ``attachment``, optionally on each risk net of a surplus treaty.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for unlimited.
+        attachment : float
+        surplus_retention, surplus_lines : float, optional
+            A surplus treaty the layer inures to.
+        
+        Returns
+        -------
+        float
+        """
+    def expected_loss(self, /) -> float:
+        """
+        Expected annual loss, all bands.
+        
+        Returns
+        -------
+        float
+        """
+    def expected_surplus_loss(self, /, retention: float, lines: float) -> float:
+        """
+        Expected annual loss ceded to a surplus treaty.
+        
+        Parameters
+        ----------
+        retention : float
+        lines : float
+        
+        Returns
+        -------
+        float
+        """
+    def simulate(self, /, n_sims: int, seed: int) -> EventSet:
+        """
+        ``n_sims`` years of losses, each with its risk's sum insured.
+        
+        Parameters
+        ----------
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        EventSet
+        """
+
+@final
 class Sampled:
     """
     A distribution known only through equally weighted draws.
@@ -6362,6 +7099,287 @@ class StudentTCopula:
         """
 
 @final
+class TabulatedCurve:
+    """
+    A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
+    ``(1, 1)``, interpolated linearly, as published curves are given
+    (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
+    reinsurer's own).
+    
+    The table must be concave (its slopes never increase). Its destruction
+    rate is discrete: the points' ``x`` with probabilities from the drops in
+    slope, and a total loss with probability last slope over first. Its
+    mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
+    first points for the expected loss to be right.
+    
+    Parameters
+    ----------
+    x : list of float
+        Increasing from 0 to 1.
+    g : list of float
+        ``G(x)``, from 0 to 1.
+    
+    Raises
+    ------
+    ValueError
+        If the points do not run from ``(0, 0)`` to ``(1, 1)``, or are not
+        increasing and concave.
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import TabulatedCurve
+    >>> t = TabulatedCurve([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0])
+    >>> round(t.curve([0.3])[0], 12), t.mean_rate()
+    (0.6, 0.25)
+    """
+    def __getnewargs__(self, /) -> tuple[list[float], list[float]]: ...
+    def __new__(cls, /, x: Sequence[float], g: Sequence[float]) -> TabulatedCurve: ...
+    def __repr__(self, /) -> str: ...
+    def curve(self, /, x: Sequence[float]) -> list[float]:
+        """
+        The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def g(self, /) -> list[float]:
+        """
+        The table's ``G(x)``.
+        """
+    def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
+        """
+        Share of a risk's expected loss in the layer ``limit`` xs
+        ``attachment``, for a risk with maximum possible loss ``mpl``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        mpl : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean_rate(self, /) -> float:
+        """
+        Mean destruction rate, ``x1 / G(x1)``.
+        
+        Returns
+        -------
+        float
+        """
+    def rate_quantile(self, /, u: Sequence[float]) -> list[float]:
+        """
+        Destruction rate at each probability ``u`` in ``(0, 1)``.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def x(self, /) -> list[float]:
+        """
+        The table's ``x``.
+        """
+
+@final
+class TailBondy:
+    """
+    The Bondy tail, as chainladder-python's ``TailBondy``.
+    
+    Each log factor from ``earliest_age`` on is taken as ``b`` times the one
+    before it, ``b`` fitted by least squares. The fitted factors are
+    ``f0 ** (b ** j)`` from the factor ``f0`` at ``earliest_age``, and those
+    past the next one multiply to the last fitted factor raised to
+    ``b / (1 - b)``. With the default ``earliest_age`` (the age of the last
+    factor) ``b`` is 1/2 and the tail repeats the last factor.
+    
+    Parameters
+    ----------
+    earliest_age : int, optional
+        First age in months whose factor enters the fit (the last age at or
+        before it, as chainladder-python reads it); the age of the last
+        factor by default.
+    attachment_age : int, optional
+        The factor from this age (the last age at or before it) to the next
+        is kept and the fitted ones replace those after it; the age of the
+        last factor by default. Not before ``earliest_age``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ChainLadder, TailBondy, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2020, 2021, 2021, 2022],
+    ...     [12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 110.0, 170.0, 120.0],
+    ... )
+    >>> round(ChainLadder(tail=TailBondy()).fit(tri, "values").tail, 12)
+    1.1
+    """
+    def __new__(cls, /, earliest_age: int |None = None, attachment_age: int |None = None) -> TailBondy: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def attachment_age(self, /) -> int |None:
+        """
+        Age after which the fitted factors replace the estimated ones;
+        ``None`` is the age of the last factor.
+        """
+    @property
+    def earliest_age(self, /) -> int |None:
+        """
+        First age whose factor enters the fit; ``None`` is the age of the
+        last factor.
+        """
+
+@final
+class TailConstant:
+    """
+    A given tail factor, as chainladder-python's ``TailConstant``.
+    
+    The factor applies from the attachment age to ultimate. Past the
+    attachment it is spread over the following periods as
+    ``1 + x * decay**k``, the last factor making up the difference; this
+    shapes the factors past the attachment, not the factor to ultimate. An
+    attachment before the oldest age replaces the estimated factors from
+    there.
+    
+    Parameters
+    ----------
+    factor : float, default 1.0
+        Factor from the attachment age to ultimate; finite and positive.
+    decay : float, default 0.5
+        Share of each period's development kept in the next, from 0 to 1.
+    attachment_age : int, optional
+        Age in months the factor attaches at (the first age at or after
+        it); the oldest age by default. An age at or before the youngest
+        replaces every estimated factor (chainladder-python ignores such an
+        attachment).
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ChainLadder, TailConstant, Triangle
+    >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+    >>> fit = ChainLadder(tail=TailConstant(1.05)).fit(tri, "paid")
+    >>> fit.tail, round(fit.ultimate[1], 6)
+    (1.05, 315.0)
+    """
+    def __new__(cls, /, factor: float = 1.0, decay: float = 0.5, attachment_age: int |None = None) -> TailConstant: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def attachment_age(self, /) -> int |None:
+        """
+        Age in months the factor attaches at; ``None`` is the oldest age.
+        """
+    @property
+    def decay(self, /) -> float:
+        """
+        Share of each period's development kept in the next.
+        """
+    @property
+    def factor(self, /) -> float:
+        """
+        Factor from the attachment age to ultimate.
+        """
+
+@final
+class TailCurve:
+    """
+    A curve fitted to the estimated factors and extrapolated, as
+    chainladder-python's ``TailCurve``.
+    
+    Factors above 1.00001 in the fit period are regressed by least squares:
+    ``ln(f - 1)`` on the 1-based development index ``k`` (exponential) or on
+    ``ln(k)`` (inverse power). The fitted curve replaces the factors from the
+    attachment age on and runs ``extrap_periods`` periods past the oldest
+    age.
+    
+    Parameters
+    ----------
+    curve : {"exponential", "inverse_power"}, default "exponential"
+    fit_period : tuple of (int or None, int or None), default (None, None)
+        Ages in months whose factors enter the fit: from the last age at or
+        before the first (inclusive) to the last age at or before the second
+        (exclusive), as chainladder-python reads them; ``None`` is
+        open-ended.
+    extrap_periods : int, default 100
+        Number of periods past the oldest age the curve is extrapolated.
+    attachment_age : int, optional
+        Age in months the curve attaches at (the first age at or after it);
+        the oldest age by default.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import ChainLadder, TailCurve, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = ChainLadder(tail=TailCurve()).fit(tri, "values")
+    >>> 1.0 < fit.tail < 1.05
+    True
+    """
+    def __new__(cls, /, curve: str = "exponential", fit_period: tuple[int |None, int |None] = ..., extrap_periods: int = 100, attachment_age: int |None = None) -> TailCurve: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def attachment_age(self, /) -> int |None:
+        """
+        Age in months the curve attaches at; ``None`` is the oldest age.
+        """
+    @property
+    def curve(self, /) -> str:
+        """
+        The curve fitted to ``f - 1``.
+        """
+    @property
+    def extrap_periods(self, /) -> int:
+        """
+        Number of periods past the oldest age the curve is extrapolated.
+        """
+    @property
+    def fit_period(self, /) -> tuple[int |None, int |None]:
+        """
+        Ages whose factors enter the fit, from (inclusive) and to
+        (exclusive).
+        """
+
+@final
+class TailLogLinear:
+    """
+    R ChainLadder's ``tail = TRUE`` rule (its ``tailfactor`` function).
+    
+    When the third- and second-last factors multiply to more than 1.0001,
+    ``ln(f - 1)`` is regressed on the development index over the factors
+    above 1 and the next 100 extrapolated factors are multiplied; otherwise
+    the tail is 1. A tail above 2 is reset to 1, as R does.
+    
+    Examples
+    --------
+    >>> from actuarialrs.reserving import Mack, TailLogLinear, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = Mack(tail=TailLogLinear()).fit(tri, "values")
+    >>> fit.tail > 1.0 and fit.standard_error[0] > 0.0
+    True
+    """
+    def __new__(cls, /) -> TailLogLinear: ...
+    def __repr__(self, /) -> str: ...
+
+@final
 class Terms:
     """
     The terms of a model: an intercept, numeric columns and factors.
@@ -6452,7 +7470,8 @@ class Tower:
     
     Examples
     --------
-    >>> from actuarialrs.aggregate import Layer, Tower, simulate_events
+    >>> from actuarialrs.aggregate import simulate_events
+    >>> from actuarialrs.reinsurance import Layer, Tower
     >>> from actuarialrs.distributions import Lognormal, Poisson
     >>> events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 1_000, 7)
     >>> tower = Tower([Layer("5x5", 5e6, 5e6), Layer("15x10", 15e6, 10e6)])
@@ -6527,7 +7546,7 @@ class Tower:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.reinsurance import Layer, Tower
         >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
         >>> tower.ceded([30.0])
         [15.0, 5.0]
@@ -6569,7 +7588,7 @@ class Tower:
         
         Examples
         --------
-        >>> from actuarialrs.aggregate import Layer, Tower
+        >>> from actuarialrs.reinsurance import Layer, Tower
         >>> from actuarialrs.distributions import Grid, Poisson
         >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
         >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
@@ -8050,6 +9069,26 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     160.0
     """
 
+def from_json(text: str) -> Any:
+    """
+    A distribution from a document written by ``to_json``, as the class of
+    its family.
+    
+    Parameters
+    ----------
+    text : str
+    
+    Returns
+    -------
+    a distribution
+    
+    Raises
+    ------
+    ValueError
+        If the document is malformed, of another format or a newer
+        version, or its parameters are out of range.
+    """
+
 def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     Gini index of the ordered Lorenz curve.
@@ -8460,6 +9499,33 @@ def pareto_extrapolation(from_: tuple[float, float], to: tuple[float, float], al
     0.5
     """
 
+def pinball_loss(y: Sequence[float], pred: Sequence[float], alpha: float, weights: Sequence[float] |None = None) -> float:
+    """
+    Weighted mean pinball (quantile) loss of predictions of the ``alpha``
+    quantile: ``sum(w * rho(y - q)) / sum(w)`` with
+    ``rho(u) = u * (alpha - (u < 0))``. Lowest in expectation at the true
+    ``alpha`` quantile; lower is better.
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+        Predicted ``alpha`` quantiles.
+    alpha : float
+        In ``(0, 1)``.
+    weights : list of float, optional
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import pinball_loss
+    >>> pinball_loss([1.0, 0.0], [0.0, 1.0], 0.9)
+    0.5
+    """
+
 def pit(family: str, y: Sequence[float], mu: Sequence[float], dispersion: float = 1.0, weights: Sequence[float] |None = None, seed: int = 0, theta: float |None = None, power: float |None = None) -> list[float]:
     """
     Probability integral transform of each outcome under the family's
@@ -8614,6 +9680,30 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
     list of float
     """
 
+def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> list[float]:
+    """
+    The exposure curve of a severity capped at the maximum possible loss
+    ``mpl``: ``G(x) = LEV(x mpl) / LEV(mpl)`` at each ``x``.
+    
+    Parameters
+    ----------
+    severity : a severity
+    mpl : float
+    x : list of float
+    
+    Returns
+    -------
+    list of float
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Pareto
+    >>> from actuarialrs.pricing import severity_exposure_curve
+    >>> g = severity_exposure_curve(Pareto(1e5, 1.5), 1e7, [0.0, 0.5, 1.0])
+    >>> g[0], round(g[2], 12), g[1] > 0.5
+    (0.0, 1.0, True)
+    """
+
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
     """
     Simulates marginals joined by a copula.
@@ -8677,6 +9767,45 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     True
     """
 
+def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: int, seed: int, dispersion: float |Sequence[float] |None = None, weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> PredictiveDistribution:
+    """
+    Joint predictive draws from fitted means, for engines that give only
+    a mean per row (the boosting adapters): the family adds process noise
+    and several mean vectors (bootstrap refits) add parameter uncertainty.
+    
+    Simulation ``i`` uses stream ``i`` of ``seed``: it picks one mean vector
+    uniformly, then draws each row's response from the family with that
+    mean, the row's dispersion and the row's weight. Components are keyed
+    ``row = 0, 1, ...``, as ``GlmFit.predict_distribution`` keys them.
+    
+    Parameters
+    ----------
+    family : str
+        As in ``Glm``.
+    means : list of list of float
+        One or more mean vectors, one value per row each.
+    n_sims : int
+    seed : int
+    dispersion : float or list of float, optional
+        One value for every row, or one per row (from a dispersion model);
+        1 by default.
+    weights : list of float, optional
+        Prior weights; 1 by default.
+    theta, power : float, optional
+        Negative binomial ``theta``, Tweedie ``power``.
+    
+    Returns
+    -------
+    PredictiveDistribution
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import simulate_from_means
+    >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
+    >>> round(pd.mean(), 1)
+    0.5
+    """
+
 def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     """
     Stacking weights from pointwise held-out log predictive densities
@@ -8719,4 +9848,34 @@ def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], l
     Returns
     -------
     list of (list of int, list of int)
+    """
+
+def to_json(dist: Any) -> str:
+    """
+    A distribution as a JSON document: the family and the parameters its
+    constructor takes, versioned, numbers bit for bit. ``from_json`` reads
+    it back to an equal distribution of the same class.
+    
+    A ``Custom`` cannot be saved: it is a Python function.
+    
+    Parameters
+    ----------
+    dist : a distribution
+        Any distribution class, ``Sampled`` and ``Mixture`` included.
+    
+    Returns
+    -------
+    str
+    
+    Raises
+    ------
+    ValueError
+        For a ``Custom``.
+    
+    Examples
+    --------
+    >>> from actuarialrs.distributions import Lognormal, from_json, to_json
+    >>> text = to_json(Lognormal(7.0, 0.5))
+    >>> from_json(text).mean() == Lognormal(7.0, 0.5).mean()
+    True
     """

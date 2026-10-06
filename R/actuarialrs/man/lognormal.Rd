@@ -4,12 +4,14 @@
 \alias{lognormal}
 \title{Lognormal distribution}
 \usage{
-lognormal(meanlog, sdlog)
+lognormal(meanlog, sdlog, ptr = NULL)
 }
 \arguments{
 \item{meanlog}{Mean of \code{log(X)}; finite.}
 
 \item{sdlog}{Standard deviation of \code{log(X)}; finite and positive.}
+
+\item{ptr}{Internal: an existing object to wrap.}
 }
 \value{
 A \code{lognormal} object, which inherits from \link{distribution}.
