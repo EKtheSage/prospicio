@@ -14,7 +14,8 @@ booster_objectives <- list(
   poisson = c("poisson", "count:poisson", "log"),
   gamma = c("gamma", "reg:gamma", "log"),
   tweedie = c("tweedie", "reg:tweedie", "log"),
-  gaussian = c("regression", "reg:squarederror", "identity")
+  gaussian = c("regression", "reg:squarederror", "identity"),
+  quantile = c("quantile", "reg:quantileerror", "identity")
 )
 
 # Runs `code` with R's generator seeded, then puts the caller's generator
@@ -42,12 +43,14 @@ booster_train <- function(spec, x, y, w, start, seed) {
       params <- list(objective = obj[[1]], learning_rate = spec$learning_rate, seed = seed,
                      deterministic = TRUE, verbosity = -1)
       if (spec$family == "tweedie") params$tweedie_variance_power <- spec$power
+      if (spec$family == "quantile") params$alpha <- spec$alpha
       params[names(spec$params)] <- spec$params
       data <- lightgbm::lgb.Dataset(x, label = y, weight = w, init_score = start)
       lightgbm::lgb.train(params, data, nrounds = spec$n_rounds, verbose = -1)
     } else {
       params <- list(objective = obj[[2]], eta = spec$learning_rate, seed = seed)
       if (spec$family == "tweedie") params$tweedie_variance_power <- spec$power
+      if (spec$family == "quantile") params$quantile_alpha <- spec$alpha
       params[names(spec$params)] <- spec$params
       data <- xgboost::xgb.DMatrix(x, label = y, weight = w, base_margin = start)
       xgboost::xgb.train(params, data, nrounds = spec$n_rounds, verbose = 0)
@@ -98,14 +101,21 @@ booster_matrix <- function(x) {
 #' - `predict_distribution()` draws each row's response from the family
 #'   around its mean (process noise); with `n_boot` bootstrap refits, each
 #'   simulation also uses one refit's means (parameter uncertainty).
+#' - `family = "quantile"` fits the `alpha` quantile instead of the mean
+#'   (lightgbm `quantile`, xgboost `reg:quantileerror`), starting from the
+#'   weighted `alpha` quantile of the response; it takes no offset. Score it
+#'   with [pinball_loss()]; [predict_quantiles()] puts several fits together
+#'   as non-crossing quantile sets.
 #'
 #' The lightgbm and xgboost packages are optional: install the one you use.
 #'
 #' @inheritParams glm_fit
-#' @param family `"poisson"`, `"gamma"`, `"tweedie"` (needs `power`) or
-#'   `"gaussian"`; a log link for the first three.
+#' @param family `"poisson"`, `"gamma"`, `"tweedie"` (needs `power`),
+#'   `"gaussian"` or `"quantile"` (needs `alpha`); a log link for the first
+#'   three.
 #' @param engine `"lightgbm"` or `"xgboost"`.
 #' @param power Tweedie variance power in `(1, 2)`.
+#' @param alpha Quantile level in `(0, 1)`, for `family = "quantile"`.
 #' @param n_rounds Boosting rounds.
 #' @param learning_rate Shrinkage per round.
 #' @param params A named list of further engine parameters (`num_leaves`,
@@ -130,13 +140,16 @@ booster_matrix <- function(x) {
 #' }
 booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm", "xgboost"),
                         power = NULL, n_rounds = 200, learning_rate = 0.05, params = list(),
-                        n_boot = 0, seed = 0, offset = NULL, weights = NULL) {
+                        n_boot = 0, seed = 0, offset = NULL, weights = NULL, alpha = NULL) {
   engine <- match.arg(engine)
   if (!family %in% names(booster_objectives)) {
     stop("family must be one of ", toString(names(booster_objectives)), ", got ", family)
   }
   if (family == "tweedie" && !(is.numeric(power) && power > 1 && power < 2)) {
     stop("tweedie needs power in (1, 2)")
+  }
+  if (family == "quantile" && !(is.numeric(alpha) && alpha > 0 && alpha < 1)) {
+    stop("quantile needs alpha in (0, 1)")
   }
   if (n_rounds < 1 || n_boot < 0) stop("n_rounds must be positive and n_boot non-negative")
   if (length(params) && (is.null(names(params)) || any(names(params) == ""))) {
@@ -149,14 +162,22 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
   n <- length(y)
   w <- if (length(des$weights)) des$weights else rep(1, n)
   off <- if (length(des$offset)) des$offset else rep(0, n)
-  base <- if (booster_objectives[[family]][[3]] == "log") {
+  base <- if (family == "quantile") {
+    if (any(off != 0)) {
+      stop("a quantile booster takes no offset: put exposure in as a feature, ",
+           "or model the response per unit of exposure")
+    }
+    o <- order(y)
+    cw <- cumsum(w[o])
+    y[o][min(which(cw >= alpha * cw[length(cw)]))]
+  } else if (booster_objectives[[family]][[3]] == "log") {
     if (sum(w * y) <= 0) stop("the weighted response total must be positive for a log link")
     log(sum(w * y) / sum(w * exp(off)))
   } else {
     sum(w * (y - off)) / sum(w)
   }
   spec <- list(family = family, engine = engine, power = power, n_rounds = n_rounds,
-               learning_rate = learning_rate, params = params)
+               learning_rate = learning_rate, params = params, alpha = alpha)
   model <- booster_train(spec, x, y, w, off + base, seed)
   rows <- with_seed(seed, lapply(seq_len(n_boot), function(b) sample.int(n, n, replace = TRUE)))
   boots <- lapply(seq_len(n_boot), function(b) {
@@ -164,7 +185,7 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
     booster_train(spec, x[r, , drop = FALSE], y[r], w[r], off[r] + base, seed + b)
   })
   dispersion <- 1
-  if (family != "poisson") {
+  if (!family %in% c("poisson", "quantile")) {
     mu <- booster_means(spec, model, x, off + base)
     dispersion <- sum(w * (y - mu)^2 / booster_variance(family, mu, power)) / n
   }
@@ -193,7 +214,8 @@ booster_model <- S7::new_class(
     xlevels = S7::class_any,
     family = S7::new_property(S7::class_character, getter = function(self) self@spec$family),
     engine = S7::new_property(S7::class_character, getter = function(self) self@spec$engine),
-    power = S7::new_property(S7::class_any, getter = function(self) self@spec$power)
+    power = S7::new_property(S7::class_any, getter = function(self) self@spec$power),
+    alpha = S7::new_property(S7::class_any, getter = function(self) self@spec$alpha)
   )
 )
 
@@ -211,6 +233,10 @@ S7::method(predict, booster_model) <- function(object, newdata, offset = NULL, .
 
 S7::method(predict_distribution, booster_model) <- function(object, newdata, n_sims, seed,
                                                            offset = NULL, weights = NULL, ...) {
+  if (object@spec$family == "quantile") {
+    stop("a quantile booster predicts quantiles, not a distribution; see predict_quantiles()",
+         call. = FALSE)
+  }
   nd <- booster_new_design(object, newdata, offset)
   models <- if (length(object@boots)) object@boots else list(object@model)
   means <- unlist(lapply(models, function(m) booster_means(object@spec, m, nd$x, nd$start)))
@@ -222,6 +248,36 @@ S7::method(print, booster_model) <- function(x, ...) {
   cat(sprintf("<booster_model> %s %s, %d rounds, %d bootstrap refits\n", x@spec$engine,
               x@spec$family, as.integer(x@spec$n_rounds), length(x@boots)))
   invisible(x)
+}
+
+#' Quantile sets from several quantile boosters
+#'
+#' Each [booster_fit()] with `family = "quantile"` predicts its own `alpha`
+#' quantile independently, so the predictions can cross (a 90% quantile
+#' below the 50% one on some row). Each row's predictions are sorted across
+#' the levels, which never makes any of them worse in pinball loss
+#' (Chernozhukov, Fernandez-Val and Galichon, 2010).
+#'
+#' @param models A list of quantile `booster_model`s with distinct `alpha`.
+#' @param newdata A data frame with the models' terms.
+#' @returns A matrix with one row per row of `newdata` and one column per
+#'   level, in increasing `alpha`, named by the level.
+#' @export
+predict_quantiles <- function(models, newdata) {
+  alphas <- vapply(models, function(m) {
+    if (!S7::S7_inherits(m, booster_model) || m@family != "quantile") {
+      stop("predict_quantiles needs quantile booster_models")
+    }
+    m@alpha
+  }, double(1))
+  if (anyDuplicated(alphas)) stop("the models' alpha must be distinct")
+  o <- order(alphas)
+  q <- vapply(models[o], function(m) predict(m, newdata), double(nrow(newdata)))
+  q <- matrix(q, nrow = nrow(newdata))
+  q <- t(apply(q, 1, sort))
+  if (length(o) == 1) q <- t(q)
+  colnames(q) <- format(alphas[o])
+  q
 }
 
 #' Predictive distribution from fitted means

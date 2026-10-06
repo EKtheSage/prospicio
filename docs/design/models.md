@@ -469,7 +469,16 @@ their draws and stop being reproducible.
   without its intercept; `predict()` and `predict_distribution()` methods,
   and `simulate_from_means()`. Seeding leaves R's generator state as it
   was. Tests (`R/actuarialrs/tests/test-boosting.R`) mirror the Python
-  ones. Not yet: quantile and distributional objectives.
+  ones. Quantile objective (both languages): `family = "quantile"` with
+  `alpha` (LightGBM `quantile`, XGBoost `reg:quantileerror` with
+  `quantile_alpha`), started from the weighted `alpha` quantile of `y`,
+  no offset (refused with a message); one quantile per fit, so it works
+  in `compare` and cross-validation unchanged, scored by
+  `act_models::metrics::pinball` (Python `pinball_loss`/`pinball_score`,
+  R `pinball_loss()`). `predict_quantiles` combines fits into quantile
+  sets and sorts each row across levels (the rearrangement of
+  Chernozhukov, Fernández-Val and Galichon, 2010), so they never cross.
+  Not yet: a distributional head (a dispersion submodel).
 - **Samplers are delegated.** No home-grown NUTS (`architecture.md`).
 
 ## Open questions

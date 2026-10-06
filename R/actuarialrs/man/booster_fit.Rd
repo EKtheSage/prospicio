@@ -16,7 +16,8 @@ booster_fit(
   n_boot = 0,
   seed = 0,
   offset = NULL,
-  weights = NULL
+  weights = NULL,
+  alpha = NULL
 )
 }
 \arguments{
@@ -24,8 +25,9 @@ booster_fit(
 
 \item{data}{A data frame.}
 
-\item{family}{\code{"poisson"}, \code{"gamma"}, \code{"tweedie"} (needs \code{power}) or
-\code{"gaussian"}; a log link for the first three.}
+\item{family}{\code{"poisson"}, \code{"gamma"}, \code{"tweedie"} (needs \code{power}),
+\code{"gaussian"} or \code{"quantile"} (needs \code{alpha}); a log link for the first
+three.}
 
 \item{engine}{\code{"lightgbm"} or \code{"xgboost"}.}
 
@@ -47,6 +49,8 @@ generator state is left as it was.}
 \item{offset}{Optional offset added to any \code{offset()} terms.}
 
 \item{weights}{Optional prior weights.}
+
+\item{alpha}{Quantile level in \verb{(0, 1)}, for \code{family = "quantile"}.}
 }
 \value{
 A \code{booster_model} with properties \code{model} (the engine's
@@ -76,6 +80,11 @@ a double-precision calculation to about 1e-6 relative.
 \item \code{predict_distribution()} draws each row's response from the family
 around its mean (process noise); with \code{n_boot} bootstrap refits, each
 simulation also uses one refit's means (parameter uncertainty).
+\item \code{family = "quantile"} fits the \code{alpha} quantile instead of the mean
+(lightgbm \code{quantile}, xgboost \code{reg:quantileerror}), starting from the
+weighted \code{alpha} quantile of the response; it takes no offset. Score it
+with \code{\link[=pinball_loss]{pinball_loss()}}; \code{\link[=predict_quantiles]{predict_quantiles()}} puts several fits together
+as non-crossing quantile sets.
 }
 
 The lightgbm and xgboost packages are optional: install the one you use.

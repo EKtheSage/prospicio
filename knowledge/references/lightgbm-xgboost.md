@@ -3,7 +3,7 @@ type: Reference Implementation
 title: LightGBM and XGBoost (boosting engines)
 description: The engines behind actuarialrs.boosting and R's booster_fit(); how offsets, starting scores and precision behave, the R packages' prediction calls, and how to install them.
 resource: https://lightgbm.readthedocs.io/
-tags: [boosting, lightgbm, xgboost, python, r, offsets]
+tags: [boosting, lightgbm, xgboost, python, r, offsets, quantile]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T04:10:00Z }
 verified: { by: process:ci, at: 2026-10-06T04:32:20Z }
@@ -52,6 +52,16 @@ Checked with R lightgbm 4.7.0 and xgboost 3.2.1.1 from CRAN.[^radapter]
 * Both packages take minutes to compile from source (about 15 in the
   cloud container); CI's R job uses Posit's public binaries
   (`use-public-rspm: true`).
+
+# Quantile objectives
+
+* LightGBM `objective = "quantile"` takes the level as `alpha`; XGBoost
+  `objective = "reg:quantileerror"` takes it as `quantile_alpha`, in both
+  Python and R.[^adapter]
+* Separate fits per level can cross; sorting each row's predictions
+  across levels fixes that and never raises pinball loss. On 3,000 rows
+  with a spread that grows with x, the [10%, 90%] band from 200 rounds
+  covers 80% ± 4% of the training rows with either engine.[^tests]
 
 # Precision
 

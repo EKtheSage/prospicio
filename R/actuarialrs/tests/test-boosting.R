@@ -80,3 +80,29 @@ if (requireNamespace("lightgbm", quietly = TRUE)) {
                         d[1:600, ], k_fold(600, 3, seed = 1), list(deviance = dev))
   stopifnot(setequal(cmp$model, c("glm", "gbm")))
 }
+
+# Quantile objective: a fan of quantiles whose spread grows with x.
+stopifnot(abs(pinball_loss(c(1, 0), c(0, 1), 0.9) - 0.5) < 1e-15)
+stopifnot(inherits(try(booster_fit(y ~ x, data.frame(x = 1, y = 1), family = "quantile"),
+                       silent = TRUE), "try-error"))
+for (engine in c("lightgbm", "xgboost")) {
+  if (!requireNamespace(engine, quietly = TRUE)) next
+  set.seed(7)
+  qd <- data.frame(x = runif(3000))
+  qd$y <- 100 + 200 * qd$x * rnorm(3000)
+  params <- if (engine == "lightgbm") list(num_leaves = 4) else list(max_depth = 2)
+  fits <- lapply(c(0.9, 0.1, 0.5), function(a) {
+    booster_fit(y ~ x, qd, family = "quantile", alpha = a, engine = engine, n_rounds = 200,
+                learning_rate = 0.1, params = params)
+  })
+  q <- predict_quantiles(fits, qd)
+  stopifnot(identical(colnames(q), c("0.1", "0.5", "0.9")), all(q[, 1] <= q[, 2]), all(q[, 2] <= q[, 3]))
+  inside <- mean(qd$y >= q[, 1] & qd$y <= q[, 3])
+  stopifnot(abs(inside - 0.8) < 0.04)
+  flat <- rep(fits[[1]]@base, nrow(qd))
+  stopifnot(pinball_loss(qd$y, predict(fits[[1]], qd), 0.9) < 0.9 * pinball_loss(qd$y, flat, 0.9))
+  stopifnot(inherits(try(predict_distribution(fits[[1]], qd, 10, 1), silent = TRUE), "try-error"))
+  off <- try(booster_fit(y ~ x, qd, family = "quantile", alpha = 0.5, offset = rep(1, 3000),
+                         engine = engine, n_rounds = 5), silent = TRUE)
+  stopifnot(inherits(off, "try-error"))
+}

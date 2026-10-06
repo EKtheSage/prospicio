@@ -20,6 +20,11 @@ evaluation logic: ``compare``, ``cross_validate`` and the metrics in
   around the fitted mean (process noise); with ``n_boot`` bootstrap
   refits, each simulation also picks one refit's means (parameter
   uncertainty).
+- ``family="quantile"`` fits the ``alpha`` quantile instead of the mean
+  (LightGBM ``quantile``, XGBoost ``reg:quantileerror``), starting from
+  the weighted ``alpha`` quantile of the responses. Score it with
+  ``models.pinball_score``; ``predict_quantiles`` puts several fits
+  together as non-crossing quantile sets.
 
 LightGBM and XGBoost are optional: install the one you use
 (``pip install lightgbm`` or ``pip install xgboost``).
@@ -29,7 +34,7 @@ import random
 
 from .actuarialrs_native import simulate_from_means
 
-__all__ = ["Booster", "BoosterFit"]
+__all__ = ["Booster", "BoosterFit", "predict_quantiles"]
 
 # family -> (LightGBM objective, XGBoost objective, link)
 _OBJECTIVES = {
@@ -37,6 +42,7 @@ _OBJECTIVES = {
     "gamma": ("gamma", "reg:gamma", "log"),
     "tweedie": ("tweedie", "reg:tweedie", "log"),
     "gaussian": ("regression", "reg:squarederror", "identity"),
+    "quantile": ("quantile", "reg:quantileerror", "identity"),
 }
 _ENGINES = ("lightgbm", "xgboost")
 
@@ -57,11 +63,14 @@ class Booster:
 
     Parameters
     ----------
-    family : {"poisson", "gamma", "tweedie", "gaussian"}, default "poisson"
-        The engine's objective; a log link for the first three.
+    family : {"poisson", "gamma", "tweedie", "gaussian", "quantile"}, default "poisson"
+        The engine's objective; a log link for the first three. ``"quantile"``
+        fits the ``alpha`` quantile of the response (no link, no offset).
     engine : {"lightgbm", "xgboost"}, default "lightgbm"
     power : float, optional
         Tweedie variance power in (1, 2); required for ``"tweedie"``.
+    alpha : float, optional
+        Quantile level in (0, 1); required for ``"quantile"``.
     n_rounds : int, default 200
         Boosting rounds.
     learning_rate : float, default 0.05
@@ -87,13 +96,15 @@ class Booster:
     """
 
     def __init__(self, family="poisson", engine="lightgbm", power=None, n_rounds=200,
-                 learning_rate=0.05, params=None, n_boot=0, seed=0):
+                 learning_rate=0.05, params=None, n_boot=0, seed=0, alpha=None):
         if family not in _OBJECTIVES:
             raise ValueError(f"family must be one of {sorted(_OBJECTIVES)}, got {family!r}")
         if engine not in _ENGINES:
             raise ValueError(f"engine must be one of {list(_ENGINES)}, got {engine!r}")
         if family == "tweedie" and not (power is not None and 1.0 < power < 2.0):
             raise ValueError("tweedie needs power in (1, 2)")
+        if family == "quantile" and not (alpha is not None and 0.0 < alpha < 1.0):
+            raise ValueError("quantile needs alpha in (0, 1)")
         if n_rounds < 1 or n_boot < 0:
             raise ValueError("n_rounds must be positive and n_boot non-negative")
         self.family = family
@@ -104,6 +115,7 @@ class Booster:
         self.params = dict(params or {})
         self.n_boot = n_boot
         self.seed = seed
+        self.alpha = alpha
 
     def _train(self, x, y, w, offset, seed):
         lgb_obj, xgb_obj, _ = _OBJECTIVES[self.family]
@@ -114,6 +126,8 @@ class Booster:
                       "seed": seed, "deterministic": True, "verbosity": -1}
             if self.family == "tweedie":
                 params["tweedie_variance_power"] = self.power
+            if self.family == "quantile":
+                params["alpha"] = self.alpha
             params.update(self.params)
             data = lgb.Dataset(x, label=y, weight=w, init_score=offset, free_raw_data=False)
             return lgb.train(params, data, num_boost_round=self.n_rounds)
@@ -122,6 +136,8 @@ class Booster:
         params = {"objective": xgb_obj, "eta": self.learning_rate, "seed": seed}
         if self.family == "tweedie":
             params["tweedie_variance_power"] = self.power
+        if self.family == "quantile":
+            params["quantile_alpha"] = self.alpha
         params.update(self.params)
         data = xgb.DMatrix(x, label=y, weight=w, base_margin=offset)
         return xgb.train(params, data, num_boost_round=self.n_rounds)
@@ -146,7 +162,13 @@ class Booster:
         y = np.asarray(y, dtype=float)
         w = np.asarray(design.weights, dtype=float)
         offset = np.asarray(design.offset, dtype=float)
-        base = _base_score(self.family, y, w, offset)
+        if self.family == "quantile":
+            if np.any(offset != 0.0):
+                raise ValueError("a quantile booster takes no offset: put exposure in as a "
+                                 "feature, or model the response per unit of exposure")
+            base = _weighted_quantile(y, w, self.alpha)
+        else:
+            base = _base_score(self.family, y, w, offset)
         model = self._train(x, y, w, offset + base, self.seed)
         boots = []
         rng = random.Random(self.seed)
@@ -155,7 +177,7 @@ class Booster:
             rows = np.array([rng.randrange(n) for _ in range(n)])
             boots.append(self._train(x[rows], y[rows], w[rows], offset[rows] + base, self.seed + 1 + b))
         fit = BoosterFit(self, design.names, model, boots, 1.0, base)
-        if self.family != "poisson":
+        if self.family not in ("poisson", "quantile"):
             mu = np.asarray(fit.predict(design))
             v = np.array([_variance(self.family, m, self.power) for m in mu])
             fit.dispersion = float(np.sum(w * (y - mu) ** 2 / v) / n)
@@ -202,7 +224,8 @@ class BoosterFit:
         return (np.exp(eta) if link == "log" else eta).tolist()
 
     def predict(self, design):
-        """Fitted means for the rows of ``design``.
+        """Fitted means for the rows of ``design`` (the ``alpha`` quantiles
+        for ``family="quantile"``).
 
         Parameters
         ----------
@@ -231,11 +254,52 @@ class BoosterFit:
         -------
         PredictiveDistribution
         """
+        if self.spec.family == "quantile":
+            raise ValueError("a quantile booster predicts quantiles, not a distribution; "
+                             "see predict_quantiles")
         models = self.boots or [self.model]
         means = [self._means(m, design) for m in models]
         return simulate_from_means(self.spec.family, means, n_sims, seed,
                                    dispersion=self.dispersion, weights=list(design.weights),
                                    power=self.spec.power)
+
+
+def predict_quantiles(fits, design):
+    """Quantile sets from several quantile boosters on the same rows.
+
+    Each fit predicts its own ``alpha`` quantile independently, so the
+    predictions can cross (a 90% quantile below the 50% one on some row).
+    Each row's predictions are sorted across the levels, which never makes
+    any of them worse in pinball loss (Chernozhukov, Fernández-Val and
+    Galichon, 2010).
+
+    Parameters
+    ----------
+    fits : list of BoosterFit
+        From ``Booster("quantile", alpha=...)``, with distinct ``alpha``.
+    design : Design
+
+    Returns
+    -------
+    dict
+        ``{alpha: list of float}`` in increasing ``alpha``.
+    """
+    alphas = [f.spec.alpha for f in fits]
+    if any(f.spec.family != "quantile" for f in fits) or len(set(alphas)) != len(alphas):
+        raise ValueError("predict_quantiles needs quantile fits with distinct alpha")
+    order = sorted(range(len(fits)), key=lambda i: alphas[i])
+    preds = [fits[i].predict(design) for i in order]
+    rows = [sorted(r) for r in zip(*preds)]
+    return {alphas[i]: [r[k] for r in rows] for k, i in enumerate(order)}
+
+
+def _weighted_quantile(y, w, alpha):
+    import numpy as np
+
+    order = np.argsort(y)
+    cw = np.cumsum(w[order])
+    k = int(np.searchsorted(cw, alpha * cw[-1]))
+    return float(y[order][min(k, len(y) - 1)])
 
 
 def _base_score(family, y, w, offset):

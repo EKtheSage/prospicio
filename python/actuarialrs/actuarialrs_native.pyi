@@ -8415,6 +8415,33 @@ def pareto_extrapolation(from_: tuple[float, float], to: tuple[float, float], al
     0.5
     """
 
+def pinball_loss(y: Sequence[float], pred: Sequence[float], alpha: float, weights: Sequence[float] |None = None) -> float:
+    """
+    Weighted mean pinball (quantile) loss of predictions of the ``alpha``
+    quantile: ``sum(w * rho(y - q)) / sum(w)`` with
+    ``rho(u) = u * (alpha - (u < 0))``. Lowest in expectation at the true
+    ``alpha`` quantile; lower is better.
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+        Predicted ``alpha`` quantiles.
+    alpha : float
+        In ``(0, 1)``.
+    weights : list of float, optional
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from actuarialrs.models import pinball_loss
+    >>> pinball_loss([1.0, 0.0], [0.0, 1.0], 0.9)
+    0.5
+    """
+
 def pit(family: str, y: Sequence[float], mu: Sequence[float], dispersion: float = 1.0, weights: Sequence[float] |None = None, seed: int = 0, theta: float |None = None, power: float |None = None) -> list[float]:
     """
     Probability integral transform of each outcome under the family's

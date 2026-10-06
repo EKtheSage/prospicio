@@ -1553,6 +1553,40 @@ pub(crate) fn lift(
         .collect())
 }
 
+/// Weighted mean pinball (quantile) loss of predictions of the ``alpha``
+/// quantile: ``sum(w * rho(y - q)) / sum(w)`` with
+/// ``rho(u) = u * (alpha - (u < 0))``. Lowest in expectation at the true
+/// ``alpha`` quantile; lower is better.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+///     Predicted ``alpha`` quantiles.
+/// alpha : float
+///     In ``(0, 1)``.
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.models import pinball_loss
+/// >>> pinball_loss([1.0, 0.0], [0.0, 1.0], 0.9)
+/// 0.5
+#[pyfunction]
+#[pyo3(signature = (y, pred, alpha, weights = None))]
+pub(crate) fn pinball_loss(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    alpha: f64,
+    weights: Option<Vec<f64>>,
+) -> PyResult<f64> {
+    metrics::pinball(&y, &pred, alpha, weights.as_deref()).map_err(to_py)
+}
+
 /// Continuous ranked probability score of equally likely draws for an
 /// outcome; lower is better.
 ///
