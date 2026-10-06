@@ -12,8 +12,9 @@ use act_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit,
     ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
     DevelopmentColumn, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, Long, Mack,
-    MackFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution, ReserveFit,
-    SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle, view,
+    MackFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod,
+    ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail, TailBondy,
+    TailConstant, TailCurve, Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -4067,6 +4068,79 @@ impl PyOdpBootstrap {
         Ok(PyOdpBootstrapFit { inner })
     }
 
+    /// The one-year view of any reserving method: the claims development
+    /// result over the next development period, by re-reserving on the
+    /// bootstrap ("actuary in the box"). Each simulation resamples the
+    /// residuals for the volume-weighted factors, simulates every origin's
+    /// next cell from its observed latest value with the bootstrap's
+    /// process error, appends it to the triangle, refits ``method`` and
+    /// records ``CDR = opening ultimate - closing ultimate``; a negative
+    /// CDR is an adverse development. An origin at the last age gets no new
+    /// cell. Unlike ``MackFit.claims_development_result()`` (Merz and
+    /// Wüthrich), any averaging and tail are allowed.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative, with any number of segments.
+    /// column : str
+    /// method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
+    ///     The method refitted at the start and at the end of the year.
+    /// exposure : str, optional
+    ///     The exposure column; required by the expected-loss methods, not
+    ///     taken by ``ChainLadder``. Its latest value per origin is kept for
+    ///     the end of the year.
+    ///
+    /// Returns
+    /// -------
+    /// OneYearFit
+    ///
+    /// Raises
+    /// ------
+    /// TypeError
+    ///     If ``method`` is not one of the classes above.
+    /// ValueError
+    ///     As ``fit`` and the method's own ``fit``; if ``exposure`` is
+    ///     missing for an expected-loss method or given for
+    ///     ``ChainLadder``; or if the refit fails in any simulation (the
+    ///     message counts them and gives one).
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reserving import BornhuetterFerguson, OdpBootstrap, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    /// ...     {
+    /// ...         "paid": [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    /// ...         "premium": [250.0] * 4 + [260.0] * 3 + [270.0] * 2 + [280.0],
+    /// ...     },
+    /// ... )
+    /// >>> boot = OdpBootstrap(n_sims=2000, seed=42)
+    /// >>> fit = boot.one_year(tri, "paid", BornhuetterFerguson(apriori=0.7), exposure="premium")
+    /// >>> fit.cdr.components()
+    /// [('2020',), ('2021',), ('2022',), ('2023',)]
+    /// >>> fit.opening_reserve[0]
+    /// 0.0
+    /// >>> fit.cdr.variance() < boot.fit(tri, "paid").reserves.variance()
+    /// True
+    #[pyo3(signature = (triangle, column, method, exposure = None))]
+    fn one_year(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        method: &Bound<'_, PyAny>,
+        exposure: Option<String>,
+    ) -> PyResult<PyOneYearFit> {
+        let method = one_year_method(method, exposure)?;
+        let (boot, tri) = (self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| boot.one_year_segments(tri, column, &method))
+            .map_err(err)?;
+        Ok(PyOneYearFit { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "OdpBootstrap(n_sims={}, seed={}, process={:?})",
@@ -4235,6 +4309,195 @@ impl PyOdpBootstrapFit {
             segments_prefix(&self.inner.segments),
             self.origins().len(),
             self.inner.reserves.n_sims(),
+        )
+    }
+}
+
+/// The method of ``OdpBootstrap.one_year``: a chain ladder without
+/// exposure, or an expected-loss method with its exposure column.
+fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyResult<OneYearMethod> {
+    if let Ok(m) = method.extract::<PyRef<'_, PyChainLadder>>() {
+        if exposure.is_some() {
+            return Err(PyValueError::new_err(
+                "ChainLadder takes no exposure column",
+            ));
+        }
+        return Ok(OneYearMethod::ChainLadder(m.inner));
+    }
+    let needs_exposure = |name: &str| {
+        exposure.clone().ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "{name} needs an exposure column: pass exposure=..."
+            ))
+        })
+    };
+    if let Ok(m) = method.extract::<PyRef<'_, PyExpectedLoss>>() {
+        return Ok(OneYearMethod::ExpectedLoss(
+            m.inner,
+            needs_exposure("ExpectedLoss")?,
+        ));
+    }
+    if let Ok(m) = method.extract::<PyRef<'_, PyBornhuetterFerguson>>() {
+        return Ok(OneYearMethod::BornhuetterFerguson(
+            m.inner,
+            needs_exposure("BornhuetterFerguson")?,
+        ));
+    }
+    if let Ok(m) = method.extract::<PyRef<'_, PyBenktander>>() {
+        return Ok(OneYearMethod::Benktander(
+            m.inner,
+            needs_exposure("Benktander")?,
+        ));
+    }
+    if let Ok(m) = method.extract::<PyRef<'_, PyCapeCod>>() {
+        return Ok(OneYearMethod::CapeCod(m.inner, needs_exposure("CapeCod")?));
+    }
+    Err(PyTypeError::new_err(format!(
+        "method must be ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or \
+         CapeCod, got {}",
+        method.repr()?
+    )))
+}
+
+/// The simulated one-year view of every segment, from
+/// ``OdpBootstrap.one_year``.
+///
+/// ``cdr`` is one joint distribution of the claims development result
+/// with the triangle's keys and ``"origin"`` as dimensions, so
+/// ``cdr.aggregate(["lob"])`` keeps the dependence between segments, and
+/// ``cdr.quantile(0.005)`` is minus the one-year value at risk at 99.5%.
+/// Per-origin lists run over the origins of each segment in turn, like the
+/// rows of ``to_frame()`` and the components of ``cdr``. ``scale`` needs a
+/// single-segment fit; for several segments use ``segment(...)`` or
+/// ``totals_frame()``.
+#[pyclass(name = "OneYearFit", module = "actuarialrs.reserving", frozen)]
+pub(crate) struct PyOneYearFit {
+    inner: OneYearFits,
+}
+
+#[pymethods]
+impl PyOneYearFit {
+    /// The bootstrap's volume-weighted chain ladder: the factors the
+    /// simulated next cells develop with.
+    #[getter]
+    fn chain_ladder(&self) -> PyChainLadderFit {
+        PyChainLadderFit {
+            inner: self
+                .inner
+                .segments
+                .map(|s| s.bootstrap.chain_ladder.clone()),
+        }
+    }
+
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.segments.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner.segments)
+    }
+
+    /// Origin period of each per-origin value and CDR component.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        origin_labels(&self.inner.segments)
+    }
+
+    /// Latest observed value per origin.
+    #[getter]
+    fn latest(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| {
+            s.bootstrap.chain_ladder.latest.clone()
+        })
+    }
+
+    /// The method's ultimate per origin on the observed triangle.
+    #[getter]
+    fn opening_ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.opening_ultimate.clone())
+    }
+
+    /// The opening ultimate less the latest value, per origin.
+    #[getter]
+    fn opening_reserve(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.opening_reserve.clone())
+    }
+
+    /// The bootstrap's scale parameter ``phi``.
+    #[getter]
+    fn scale(&self) -> PyResult<f64> {
+        Ok(single(&self.inner.segments, "scale", "totals_frame()")?
+            .bootstrap
+            .scale)
+    }
+
+    /// Joint distribution of the claims development result (opening less
+    /// closing ultimate) by segment and origin: the triangle's keys and
+    /// ``"origin"`` are its dimensions, one component per segment and
+    /// origin, one row per simulation. Its ``mean``, ``variance`` and
+    /// ``quantile`` describe the total. Columns of ``draw_matrix()`` follow
+    /// ``origins``.
+    #[getter]
+    fn cdr(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.cdr.clone(),
+        }
+    }
+
+    /// One row per segment and origin: the key columns, ``origin``,
+    /// ``latest``, the method's ``opening_ultimate`` and
+    /// ``opening_reserve``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
+    /// simulated claims development result. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row per segment: the key columns, the totals of ``to_frame()``'s
+    /// columns, the bootstrap's ``scale``, and the ``cdr_mean`` and
+    /// ``cdr_std_dev`` of the segment's total claims development result.
+    /// Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// The one-year view of one segment, chosen by key values as
+    /// ``ChainLadderFit.segment``, with its part of the joint claims
+    /// development result (same dimensions).
+    ///
+    /// Returns
+    /// -------
+    /// OneYearFit
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let keys = segment_keys(keys)?;
+        let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        Ok(Self {
+            inner: self.inner.segment(&keys).map_err(err)?,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        let scale = match self.inner.segments.fits.as_slice() {
+            [one] => format!(", scale={:?}", one.bootstrap.scale),
+            _ => String::new(),
+        };
+        format!(
+            "OneYearFit({}origins={}, n_sims={}{scale})",
+            segments_prefix(&self.inner.segments),
+            self.origins().len(),
+            self.inner.cdr.n_sims(),
         )
     }
 }

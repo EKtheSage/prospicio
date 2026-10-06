@@ -5670,6 +5670,65 @@ class OdpBootstrap:
         """
         Number of simulations.
         """
+    def one_year(self, /, triangle: Triangle, column: str, method: Any, exposure: str |None = None) -> OneYearFit:
+        """
+        The one-year view of any reserving method: the claims development
+        result over the next development period, by re-reserving on the
+        bootstrap ("actuary in the box"). Each simulation resamples the
+        residuals for the volume-weighted factors, simulates every origin's
+        next cell from its observed latest value with the bootstrap's
+        process error, appends it to the triangle, refits ``method`` and
+        records ``CDR = opening ultimate - closing ultimate``; a negative
+        CDR is an adverse development. An origin at the last age gets no new
+        cell. Unlike ``MackFit.claims_development_result()`` (Merz and
+        Wüthrich), any averaging and tail are allowed.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        column : str
+        method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
+            The method refitted at the start and at the end of the year.
+        exposure : str, optional
+            The exposure column; required by the expected-loss methods, not
+            taken by ``ChainLadder``. Its latest value per origin is kept for
+            the end of the year.
+        
+        Returns
+        -------
+        OneYearFit
+        
+        Raises
+        ------
+        TypeError
+            If ``method`` is not one of the classes above.
+        ValueError
+            As ``fit`` and the method's own ``fit``; if ``exposure`` is
+            missing for an expected-loss method or given for
+            ``ChainLadder``; or if the refit fails in any simulation (the
+            message counts them and gives one).
+        
+        Examples
+        --------
+        >>> from actuarialrs.reserving import BornhuetterFerguson, OdpBootstrap, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     {
+        ...         "paid": [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+        ...         "premium": [250.0] * 4 + [260.0] * 3 + [270.0] * 2 + [280.0],
+        ...     },
+        ... )
+        >>> boot = OdpBootstrap(n_sims=2000, seed=42)
+        >>> fit = boot.one_year(tri, "paid", BornhuetterFerguson(apriori=0.7), exposure="premium")
+        >>> fit.cdr.components()
+        [('2020',), ('2021',), ('2022',), ('2023',)]
+        >>> fit.opening_reserve[0]
+        0.0
+        >>> fit.cdr.variance() < boot.fit(tri, "paid").reserves.variance()
+        True
+        """
     @property
     def process(self, /) -> str:
         """
@@ -5784,6 +5843,106 @@ class OdpBootstrapFit:
         One row per segment: the key columns, the chain ladder's totals, the
         ``scale``, and the ``mean`` and ``std_dev`` of the segment's
         bootstrapped total reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+
+@final
+class OneYearFit:
+    """
+    The simulated one-year view of every segment, from
+    ``OdpBootstrap.one_year``.
+    
+    ``cdr`` is one joint distribution of the claims development result
+    with the triangle's keys and ``"origin"`` as dimensions, so
+    ``cdr.aggregate(["lob"])`` keeps the dependence between segments, and
+    ``cdr.quantile(0.005)`` is minus the one-year value at risk at 99.5%.
+    Per-origin lists run over the origins of each segment in turn, like the
+    rows of ``to_frame()`` and the components of ``cdr``. ``scale`` needs a
+    single-segment fit; for several segments use ``segment(...)`` or
+    ``totals_frame()``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def cdr(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the claims development result (opening less
+        closing ultimate) by segment and origin: the triangle's keys and
+        ``"origin"`` are its dimensions, one component per segment and
+        origin, one row per simulation. Its ``mean``, ``variance`` and
+        ``quantile`` describe the total. Columns of ``draw_matrix()`` follow
+        ``origins``.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The bootstrap's volume-weighted chain ladder: the factors the
+        simulated next cells develop with.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed value per origin.
+        """
+    @property
+    def opening_reserve(self, /) -> list[float]:
+        """
+        The opening ultimate less the latest value, per origin.
+        """
+    @property
+    def opening_ultimate(self, /) -> list[float]:
+        """
+        The method's ultimate per origin on the observed triangle.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and CDR component.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The bootstrap's scale parameter ``phi``.
+        """
+    def segment(self, /, **keys) -> OneYearFit:
+        """
+        The one-year view of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint claims
+        development result (same dimensions).
+        
+        Returns
+        -------
+        OneYearFit
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, the method's ``opening_ultimate`` and
+        ``opening_reserve``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
+        simulated claims development result. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the totals of ``to_frame()``'s
+        columns, the bootstrap's ``scale``, and the ``cdr_mean`` and
+        ``cdr_std_dev`` of the segment's total claims development result.
+        Needs pandas.
         
         Returns
         -------
