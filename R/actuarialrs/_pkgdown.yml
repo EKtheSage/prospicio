@@ -19,6 +19,7 @@ reference:
       - weibull_distribution
       - loglogistic_distribution
       - mixture_distribution
+      - custom_distribution
       - log_density
   - title: Large-loss severities
     contents:
@@ -58,6 +59,8 @@ reference:
     contents:
       - compound_distribution
       - simulate_events
+      - events_from_years
+      - event_sums_insured
       - event_set
       - events
       - event_counts
@@ -66,6 +69,7 @@ reference:
       - xol_layer
       - quota_share
       - aggregate_stop_loss
+      - surplus_treaty
       - ceded
       - ceded_by_event
       - reinstatement_premium
@@ -81,6 +85,9 @@ reference:
       - excess_frequency
       - layer_rating
       - risk_loaded_price
+      - mbbefd
+      - tabulated_curve
+      - risk_profile
       - match_tower
       - fit_pml_curve
       - fit_references
@@ -108,6 +115,11 @@ reference:
       - elastic_net_cv
       - gam_fit
       - gam_model
+      - booster_fit
+      - booster_model
+      - simulate_from_means
+      - predict_quantiles
+      - predict_dispersion
       - predict_distribution
       - model_metrics
       - resampling
@@ -143,5 +155,11 @@ reference:
       - chain_ladder_fit
       - mack_fit
       - claims_development_result
+      - tail_constant
+      - tail_curve
+      - tail_bondy
+      - tail_log_linear
+      - expected_loss_fit
+      - cape_cod_fit
       - odp_bootstrap_fit
       - fit_frames

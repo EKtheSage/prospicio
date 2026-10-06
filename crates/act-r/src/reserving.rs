@@ -1,5 +1,6 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
-//! ladder, Mack with its one-year view and the ODP bootstrap,
+//! ladder, Mack with its one-year view, tails, the expected-loss methods
+//! and the ODP bootstrap,
 //! `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the R
 //! `reserving.R` API.
 //!
@@ -8,10 +9,12 @@
 //! observed; R reshapes them. Months come in as (year, month) integer pairs.
 
 use act_reserving::{
-    Average, ChainLadder, ChainLadderFit as ChainLadderInner,
-    ClaimsDevelopmentResult as ClaimsDevelopmentInner, Development, DevelopmentColumn, FitTable,
-    Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap, OdpBootstrapFits,
-    ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Triangle as TriangleInner,
+    Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
+    ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
+    CurveShape, Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit as ExpectedLossInner,
+    FitTable, Grain, Label, Lag, Long, Mack, MackFit as MackInner, Month, OdpBootstrap,
+    OdpBootstrapFits, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail,
+    TailBondy, TailConstant, TailCurve, Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -61,6 +64,14 @@ fn development(average: &str, sigma_interpolation: &str) -> Result<Development> 
     })
 }
 
+/// The chain ladder that gives a method its development pattern.
+fn pattern(average: &str, sigma_interpolation: &str, tail: Robj) -> Result<ChainLadder> {
+    Ok(ChainLadder {
+        development: development(average, sigma_interpolation)?,
+        tail: tail_arg(&tail)?,
+    })
+}
+
 fn months(years: &[i32], months: &[i32], arg: &str) -> Result<Vec<Month>> {
     if years.len() != months.len() {
         return Err(Error::Other(format!(
@@ -83,6 +94,23 @@ fn months(years: &[i32], months: &[i32], arg: &str) -> Result<Vec<Month>> {
 fn age(x: f64) -> Result<Lag> {
     Lag::try_from(whole(x, "development")?)
         .map_err(|_| Error::Other(format!("development age {x} is too large")))
+}
+
+/// An optional age in months named `name`; `NULL` is not given.
+fn optional_age(x: Nullable<f64>, name: &str) -> Result<Option<Lag>> {
+    match x {
+        Nullable::NotNull(a) => Lag::try_from(whole(a, name)?)
+            .map(Some)
+            .map_err(|_| Error::Other(format!("{name} {a} is too large"))),
+        Nullable::Null => Ok(None),
+    }
+}
+
+fn optional(x: Nullable<f64>) -> Option<f64> {
+    match x {
+        Nullable::NotNull(v) => Some(v),
+        Nullable::Null => None,
+    }
 }
 
 /// Key columns as a named list of character vectors.
@@ -450,29 +478,123 @@ impl Triangle {
         Ok(self.inner.to_text(max_rows, max_cols))
     }
 
+    /// `tail` is a `ReservingTail`.
     fn chain_ladder(
         &self,
         column: &str,
         average: &str,
         sigma_interpolation: &str,
-        tail: f64,
+        tail: Robj,
     ) -> Result<ChainLadderFit> {
-        let inner = ChainLadder {
-            development: development(average, sigma_interpolation)?,
-            tail,
-        }
-        .fit_segments(&self.inner, column)
-        .map_err(to_r)?;
+        let inner = pattern(average, sigma_interpolation, tail)?
+            .fit_segments(&self.inner, column)
+            .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
     }
 
-    fn mack(&self, column: &str, average: &str, sigma_interpolation: &str) -> Result<MackFit> {
+    /// `tail` is a `ReservingTail`; `tail_sigma` and `tail_std_err` are
+    /// `NULL` to extrapolate them.
+    fn mack(
+        &self,
+        column: &str,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: Robj,
+        tail_sigma: Nullable<f64>,
+        tail_std_err: Nullable<f64>,
+    ) -> Result<MackFit> {
         let inner = Mack {
             development: development(average, sigma_interpolation)?,
+            tail: tail_arg(&tail)?,
+            tail_sigma: optional(tail_sigma),
+            tail_std_err: optional(tail_std_err),
         }
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(MackFit { inner })
+    }
+
+    /// The expected loss ratio method on loss `column` with exposure from
+    /// the `exposure` column; the chain ladder gives the development
+    /// pattern reported.
+    fn expected_loss(
+        &self,
+        column: &str,
+        exposure: &str,
+        apriori: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: Robj,
+    ) -> Result<ExpectedLossFit> {
+        let inner = ExpectedLoss {
+            apriori,
+            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(ExpectedLossFit { inner })
+    }
+
+    fn bornhuetter_ferguson(
+        &self,
+        column: &str,
+        exposure: &str,
+        apriori: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: Robj,
+    ) -> Result<ExpectedLossFit> {
+        let inner = BornhuetterFerguson {
+            apriori,
+            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(ExpectedLossFit { inner })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn benktander(
+        &self,
+        column: &str,
+        exposure: &str,
+        apriori: f64,
+        n_iters: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: Robj,
+    ) -> Result<ExpectedLossFit> {
+        let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
+            .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
+        let inner = Benktander {
+            apriori,
+            n_iters,
+            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(ExpectedLossFit { inner })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cape_cod(
+        &self,
+        column: &str,
+        exposure: &str,
+        trend: f64,
+        decay: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: Robj,
+    ) -> Result<CapeCodFit> {
+        let inner = CapeCod {
+            trend,
+            decay,
+            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+        }
+        .fit_segments(&self.inner, column, exposure)
+        .map_err(to_r)?;
+        Ok(CapeCodFit { inner })
     }
 
     fn odp_bootstrap(
@@ -506,17 +628,145 @@ impl Triangle {
     }
 }
 
+/// How development past the oldest age is estimated: a constant factor, a
+/// curve fitted to the factors, Bondy's rule or R ChainLadder's log-linear
+/// rule. An age that is not given is `NULL`.
+#[extendr]
+pub(crate) struct ReservingTail {
+    inner: Tail,
+}
+
+fn tail_arg(tail: &Robj) -> Result<Tail> {
+    <&ReservingTail>::try_from(tail)
+        .map(|t| t.inner)
+        .map_err(|_| Error::Other("tail must be a tail estimator".into()))
+}
+
+fn curve_name(curve: CurveShape) -> &'static str {
+    match curve {
+        CurveShape::Exponential => "exponential",
+        CurveShape::InversePower => "inverse_power",
+    }
+}
+
+#[extendr]
+impl ReservingTail {
+    fn constant(factor: f64, decay: f64, attachment_age: Nullable<f64>) -> Result<Self> {
+        Ok(Self {
+            inner: Tail::Constant(TailConstant {
+                factor,
+                decay,
+                attachment_age: optional_age(attachment_age, "attachment_age")?,
+            }),
+        })
+    }
+
+    /// `curve` is "exponential" or "inverse_power"; the fit period runs
+    /// from `fit_from` (inclusive) to `fit_to` (exclusive).
+    fn curve(
+        curve: &str,
+        fit_from: Nullable<f64>,
+        fit_to: Nullable<f64>,
+        extrap_periods: f64,
+        attachment_age: Nullable<f64>,
+    ) -> Result<Self> {
+        let curve = match curve {
+            "exponential" => CurveShape::Exponential,
+            "inverse_power" => CurveShape::InversePower,
+            _ => {
+                return Err(Error::Other(format!(
+                    "curve must be \"exponential\" or \"inverse_power\", got \"{curve}\""
+                )));
+            }
+        };
+        let extrap_periods = usize::try_from(whole(extrap_periods, "extrap_periods")?)
+            .map_err(|_| Error::Other("extrap_periods is too large".into()))?;
+        Ok(Self {
+            inner: Tail::Curve(TailCurve {
+                curve,
+                fit_period: (
+                    optional_age(fit_from, "fit_period")?,
+                    optional_age(fit_to, "fit_period")?,
+                ),
+                extrap_periods,
+                attachment_age: optional_age(attachment_age, "attachment_age")?,
+            }),
+        })
+    }
+
+    fn bondy(earliest_age: Nullable<f64>, attachment_age: Nullable<f64>) -> Result<Self> {
+        Ok(Self {
+            inner: Tail::Bondy(TailBondy {
+                earliest_age: optional_age(earliest_age, "earliest_age")?,
+                attachment_age: optional_age(attachment_age, "attachment_age")?,
+            }),
+        })
+    }
+
+    fn log_linear() -> Self {
+        Self {
+            inner: Tail::LogLinear,
+        }
+    }
+
+    /// "constant", "curve", "bondy" or "log_linear".
+    fn kind(&self) -> &'static str {
+        match self.inner {
+            Tail::Constant(_) => "constant",
+            Tail::Curve(_) => "curve",
+            Tail::Bondy(_) => "bondy",
+            Tail::LogLinear => "log_linear",
+        }
+    }
+
+    /// The parameters of this kind as a named list, with `NULL` for an age
+    /// not given; the curve's fit period is `fit_from` and `fit_to`.
+    fn params(&self) -> List {
+        let age = |a: Option<Lag>| -> Robj {
+            match a {
+                Some(a) => (a as i32).into(),
+                None => ().into(),
+            }
+        };
+        match self.inner {
+            Tail::Constant(t) => list!(
+                factor = t.factor,
+                decay = t.decay,
+                attachment_age = age(t.attachment_age)
+            ),
+            Tail::Curve(t) => list!(
+                curve = curve_name(t.curve),
+                fit_from = age(t.fit_period.0),
+                fit_to = age(t.fit_period.1),
+                extrap_periods = t.extrap_periods as f64,
+                attachment_age = age(t.attachment_age)
+            ),
+            Tail::Bondy(t) => list!(
+                earliest_age = age(t.earliest_age),
+                attachment_age = age(t.attachment_age)
+            ),
+            Tail::LogLinear => List::new(0),
+        }
+    }
+}
+
 /// The one fit of a single-segment result, or an error naming what to use
-/// instead: `instead`, if there is an alternative, or `segment()`.
-fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: Option<&str>) -> Result<&'a T> {
+/// instead: the long table `instead` (if any) or `segment()`.
+fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: &str) -> Result<&'a T> {
     match fits.fits.as_slice() {
         [one] => Ok(one),
-        _ => Err(Error::Other(format!(
-            "{field} needs a single-segment fit, and this one has {} segments; \
-             use {}segment()",
-            fits.len(),
-            instead.map_or(String::new(), |i| format!("{i} or ")),
-        ))),
+        _ => {
+            let table = if instead.is_empty() {
+                String::new()
+            } else {
+                format!("{instead} or ")
+            };
+            Err(Error::Other(format!(
+                "{field} needs a single-segment fit, and this one has {} segments; \
+                 use {table}segment()",
+                fits.len()
+            )))
+        }
     }
 }
 
@@ -616,18 +866,20 @@ impl ChainLadderFit {
         ages(&self.inner)
     }
 
+    /// The selected factors within the triangle: the estimated ones,
+    /// replaced by the tail's from its attachment age.
     fn ldf(&self) -> Result<Vec<f64>> {
-        let f = single(&self.inner, "ldf", Some("development_frame()"))?;
-        Ok(f.development.ldf.clone())
+        let f = single(&self.inner, "ldf", "development_frame()")?;
+        Ok(f.ldf().to_vec())
     }
 
     fn sigma(&self) -> Result<Vec<f64>> {
-        let f = single(&self.inner, "sigma", Some("development_frame()"))?;
+        let f = single(&self.inner, "sigma", "development_frame()")?;
         Ok(f.development.sigma.clone())
     }
 
     fn std_err(&self) -> Result<Vec<f64>> {
-        let f = single(&self.inner, "std_err", Some("development_frame()"))?;
+        let f = single(&self.inner, "std_err", "development_frame()")?;
         Ok(f.development.std_err.clone())
     }
 
@@ -635,12 +887,47 @@ impl ChainLadderFit {
         self.inner.fits[0].development.alpha
     }
 
-    fn tail(&self) -> f64 {
-        self.inner.fits[0].tail
+    /// The factors as estimated, before the tail replaced any.
+    fn estimated_ldf(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "estimated_ldf", "")?;
+        Ok(f.development.ldf.clone())
+    }
+
+    /// Age from which `ldf` holds the tail's factors; the oldest age when
+    /// the tail replaced none.
+    fn tail_attachment_age(&self) -> Result<i32> {
+        let f = single(&self.inner, "tail_attachment_age", "")?;
+        f.development
+            .development
+            .get(f.tail.attachment)
+            .map(|&a| a as i32)
+            .ok_or_else(|| Error::Other("the fit has no development ages".into()))
+    }
+
+    fn tail(&self) -> Result<f64> {
+        Ok(single(&self.inner, "tail", "totals_frame()")?.tail.factor)
+    }
+
+    /// Factors past the oldest age, which multiply to the tail.
+    fn tail_ldf(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "tail_ldf", "")?;
+        Ok(f.tail.ldf[f.development.ldf.len()..].to_vec())
+    }
+
+    fn tail_sigma(&self) -> Result<f64> {
+        Ok(single(&self.inner, "tail_sigma", "totals_frame()")?
+            .tail
+            .sigma)
+    }
+
+    fn tail_std_err(&self) -> Result<f64> {
+        Ok(single(&self.inner, "tail_std_err", "totals_frame()")?
+            .tail
+            .std_err)
     }
 
     fn cdf(&self) -> Result<Vec<f64>> {
-        Ok(single(&self.inner, "cdf", Some("development_frame()"))?
+        Ok(single(&self.inner, "cdf", "development_frame()")?
             .cdf
             .clone())
     }
@@ -713,25 +1000,19 @@ impl MackFit {
     }
 
     fn total_process_risk(&self) -> Result<f64> {
-        Ok(single(&self.inner, "total_process_risk", Some("totals_frame()"))?.total_process_risk)
+        Ok(single(&self.inner, "total_process_risk", "totals_frame()")?.total_process_risk)
     }
 
     fn total_parameter_risk(&self) -> Result<f64> {
-        Ok(
-            single(&self.inner, "total_parameter_risk", Some("totals_frame()"))?
-                .total_parameter_risk,
-        )
+        Ok(single(&self.inner, "total_parameter_risk", "totals_frame()")?.total_parameter_risk)
     }
 
     fn total_standard_error(&self) -> Result<f64> {
-        Ok(
-            single(&self.inner, "total_standard_error", Some("totals_frame()"))?
-                .total_standard_error,
-        )
+        Ok(single(&self.inner, "total_standard_error", "totals_frame()")?.total_standard_error)
     }
 
     fn total_cv(&self) -> Result<f64> {
-        Ok(single(&self.inner, "total_cv", Some("totals_frame()"))?.total_cv())
+        Ok(single(&self.inner, "total_cv", "totals_frame()")?.total_cv())
     }
 
     fn long_table(&self) -> List {
@@ -754,7 +1035,7 @@ impl MackFit {
 
     /// Merz and Wüthrich's one-year view of a single-segment fit.
     fn claims_development_result(&self) -> Result<ClaimsDevelopmentResult> {
-        let fit = single(&self.inner, "claims_development_result", None)?;
+        let fit = single(&self.inner, "claims_development_result", "")?;
         Ok(ClaimsDevelopmentResult {
             inner: fit.claims_development_result().map_err(to_r)?,
         })
@@ -801,6 +1082,106 @@ impl ClaimsDevelopmentResult {
     }
 }
 
+/// An expected-loss method (expected loss, Bornhuetter-Ferguson or
+/// Benktander) fitted to every segment of a triangle column, each with its
+/// exposure from another column of the same triangle.
+#[extendr]
+pub(crate) struct ExpectedLossFit {
+    inner: SegmentFits<ExpectedLossInner>,
+}
+
+#[extendr]
+impl ExpectedLossFit {
+    /// The chain ladder that gives the development pattern.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self.inner.map(|f| f.chain_ladder.clone()),
+        }
+    }
+
+    fn exposure(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.exposure.clone())
+    }
+
+    fn apriori(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.apriori.clone())
+    }
+
+    fn ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.ultimate.clone())
+    }
+
+    fn reserve(&self) -> Vec<f64> {
+        by_origin(&self.inner, ExpectedLossInner::reserves)
+    }
+
+    fn total_ultimate(&self) -> f64 {
+        self.inner.total_ultimate()
+    }
+
+    fn total_reserve(&self) -> f64 {
+        self.inner.total_reserve()
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys, values)?,
+        })
+    }
+}
+
+/// A Cape Cod fitted to every segment of a triangle column: the
+/// Bornhuetter-Ferguson fit on the detrended apriori, and the trended
+/// apriori it came from.
+#[extendr]
+pub(crate) struct CapeCodFit {
+    inner: SegmentFits<CapeCodInner>,
+}
+
+#[extendr]
+impl CapeCodFit {
+    /// The Bornhuetter-Ferguson fit on the detrended apriori.
+    fn expected_loss(&self) -> ExpectedLossFit {
+        ExpectedLossFit {
+            inner: self.inner.map(|f| f.expected_loss.clone()),
+        }
+    }
+
+    fn trended_apriori(&self) -> Vec<f64> {
+        by_origin(&self.inner, |f| f.trended_apriori.clone())
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys, values)?,
+        })
+    }
+}
+
 /// An ODP bootstrap of every segment of a triangle column. `fitted` and
 /// `residuals` are row-major over origin x development, NaN where not
 /// observed.
@@ -819,17 +1200,17 @@ impl OdpBootstrapFit {
     }
 
     fn fitted(&self) -> Result<Vec<f64>> {
-        let s = single(&self.inner.segments, "fitted", Some("segment()"))?;
+        let s = single(&self.inner.segments, "fitted", "")?;
         Ok(s.fitted.clone())
     }
 
     fn residuals(&self) -> Result<Vec<f64>> {
-        let s = single(&self.inner.segments, "residuals", Some("segment()"))?;
+        let s = single(&self.inner.segments, "residuals", "")?;
         Ok(s.residuals.clone())
     }
 
     fn scale(&self) -> Result<f64> {
-        Ok(single(&self.inner.segments, "scale", Some("totals_frame()"))?.scale)
+        Ok(single(&self.inner.segments, "scale", "totals_frame()")?.scale)
     }
 
     fn reserves(&self) -> PredictiveDistribution {
@@ -860,8 +1241,11 @@ impl OdpBootstrapFit {
 extendr_module! {
     mod reserving;
     impl Triangle;
+    impl ReservingTail;
     impl ChainLadderFit;
     impl MackFit;
+    impl ExpectedLossFit;
+    impl CapeCodFit;
     impl ClaimsDevelopmentResult;
     impl OdpBootstrapFit;
 }

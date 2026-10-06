@@ -4,7 +4,7 @@ title: Cloud session network access
 description: Which hosts the cloud environment reaches, which need allowlisting, and the OpenML host quirk.
 tags: [environment, network, cloud, openml]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-05T22:05:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-06T04:00:00Z }
 stale_after: 2027-01-05T00:00:00Z
 sources:
   - id: proxy
@@ -28,6 +28,12 @@ sources:
 * Bare `openml.org` is refused (CONNECT 403), though OpenML's metadata
   links to it; the same paths work on `www.openml.org` (see
   [freMTPL2](/datasets/fremtpl2.md)).
+* CRAN: the user allowlisted `cloud.r-project.org` and
+  `packagemanager.posit.co` on 2026-10-06, and the environment picked it up
+  without a new session. Posit's binary URLs redirect to
+  `rspm-sync.rstudio.com`, which stays refused, so install from source:
+  `install.packages(..., repos = "https://cloud.r-project.org")`.
+  `lightgbm` and `xgboost` build from source in about 15 minutes.
 * pkgdown's site build (`cargo xtask r`, last step) fails with CONNECT 403
   on a host it fetches; the R tests before it are unaffected.
 

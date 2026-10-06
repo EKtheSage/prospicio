@@ -1,5 +1,8 @@
 //! Pricing on top of `act-prob` severities and `act-aggregate` models.
 //!
+//! - [`exposure`]: exposure curves for property per-risk rating, the
+//!   MBBEFD class (Bernegger 1997) with the Swiss Re curves, and the curve
+//!   of any severity capped at a maximum possible loss.
 //! - [`layer`]: rating limits and layers, shared by primary pricing
 //!   (increased limit factors, deductibles) and reinsurance pricing:
 //!   Pareto extrapolation between layers and the alphas implied by two
@@ -12,6 +15,8 @@
 //!
 //! See `docs/design/pareto.md`.
 
+pub mod exposure;
 pub mod layer;
+pub mod profile;
 pub mod risk_load;
 pub mod tower;

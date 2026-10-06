@@ -31,8 +31,8 @@ A numeric vector (\code{survival}) or a single number
 the layer \code{limit} xs \code{attachment} (\code{Inf} for an unlimited layer).
 Defined for the Pareto-family severities (\link{pareto}, \link{piecewise_pareto},
 \link{log_affine_pareto}, \link{generalized_pareto}) and for \link{gamma_distribution},
-\link{tweedie}, \link{weibull_distribution}, \link{loglogistic_distribution} and
-\link{mixture_distribution}.
+\link{tweedie}, \link{weibull_distribution}, \link{loglogistic_distribution},
+\link{mixture_distribution} and \link{custom_distribution}.
 }
 \examples{
 p <- pareto(500, 2)

@@ -67,6 +67,15 @@ fitted, matching chainladder-python's use of `sample_weight.latest_diagonal`.
 An origin with no observed, finite, positive exposure is an error that names
 the origin. `fit_segments` reads each segment's own exposure.
 
+As implemented: the value read is the latest *cumulative* value, since
+segments are read cumulatively (an incremental triangle's exposure is
+cumulated like its losses, so a premium repeated on every age of an
+incremental triangle counts once per age; chainladder-python's
+`premium.latest_diagonal` reads the last increment). Origins are matched by position in the
+triangle, so the exposure column may observe more origins or ages than the
+losses. The error is `Error::InvalidExposure { column, origin }`; an
+unknown exposure column is `Error::UnknownColumn`.
+
 ### 2. The expected-loss family
 
 ```rust
@@ -107,6 +116,48 @@ trended apriori before detrending (chainladder-python's `apriori_`).
 ladder's, and the long tables use it, so `SegmentFits` of any method report
 that method's ultimate and reserve.
 
+As implemented (`crates/act-reserving/src/expected_loss.rs`, parity in
+`validation/tests/reserving_expected_loss.rs`, every row of
+`reserving_expected_loss_python.csv` to 1e-9 relative):
+
+* Defaults follow chainladder-python: `apriori = 1`, `n_iters = 1`,
+  `trend = 0`, `decay = 1`. `apriori` must be finite and positive, `trend`
+  finite and above -1, `decay` in `[0, 1]`; otherwise
+  `Error::InvalidSetting { name, value, expected }`. chainladder-python
+  checks none of these.
+* Cape Cod's trend factor is `(1 + trend)^(m / 12)`, `m` the months from the
+  last month of the origin period to the triangle's valuation (at least 0),
+  as chainladder-python's `Triangle.trend(axis="origin")`; in `fit_segments`
+  every segment trends to the whole triangle's valuation. The ultimates do
+  not depend on that choice, since each origin is detrended by its own
+  factor. The decay weight uses the distance between origin positions.
+* `CapeCodFit` is `{ expected_loss: ExpectedLossFit, trended_apriori:
+  Vec<f64> }`; `ExpectedLossFit::apriori` holds the detrended apriori
+  (chainladder-python's `detrended_apriori_`). chainladder-python's
+  `CapeCod(n_iters)` is not offered; ours is its default, `n_iters = 1`.
+* Benktander uses chainladder-python's closed form
+  `sum(p^k, k < n) latest + p^n U0`, `p = 1 - q`, with `p^n` and the sum
+  built by repeated squaring, so a huge `n_iters` is cheap. Stepping one at
+  a time is not: with negative development (`cdf < 1`, so `p < 0`) the
+  floating-point steps can end in a two-cycle and never stop. Where
+  `cdf < 1/2`, `|p| > 1` and the ultimate diverges as `n_iters` grows.
+* An origin without a value on the valuation diagonal uses its latest
+  observed value and the cdf at that age, as the chain ladder does, and
+  Cape Cod pools it with the other origins. chainladder-python gives such
+  an origin a NaN ultimate and leaves it out of the Cape Cod pool, so there
+  one hole changes the apriori and ultimates of every other origin.
+* Long tables add `exposure` and `apriori` per origin (Cape Cod also
+  `trended_apriori`) and the total `exposure` per segment.
+* Python: `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and `CapeCod`
+  take the settings above plus `average`, `sigma_interpolation` and `tail`
+  for the chain ladder, and `fit(triangle, column, exposure)` fits every
+  segment, returning `ExpectedLossFit` or `CapeCodFit`.
+* R: `expected_loss()`, `bornhuetter_ferguson()`, `benktander()` and
+  `cape_cod()` take `(triangle, column, exposure, ...)` with the same
+  settings and return an `expected_loss_fit` or `cape_cod_fit` with the
+  properties of the Python fits; `as.data.frame()`, `totals_frame()`,
+  `development_frame()` and `segment()` work on both.
+
 ### 3. Tails
 
 The chain ladder's `tail: f64` becomes `tail: Tail`:
@@ -127,9 +178,88 @@ the tail's sigma and standard error. Mack accepts a tail and adds its
 process and parameter risk the way R `MackChainLadder` does, extrapolating
 `tail.sigma` and `tail.se` log-linearly when they are not given.
 
+As built (the references forced these details):
+
+```rust
+pub struct TailConstant { pub factor: f64, pub decay: f64, pub attachment_age: Option<Lag> }
+pub struct TailCurve {
+    pub curve: CurveShape,                         // Exponential | InversePower
+    pub fit_period: (Option<Lag>, Option<Lag>),    // ages [from, to), chainladder-python's convention
+    pub extrap_periods: usize,                     // 100
+    pub attachment_age: Option<Lag>,
+}
+pub struct TailBondy { pub earliest_age: Option<Lag>, pub attachment_age: Option<Lag> }
+
+pub struct TailFit {
+    pub attachment: usize, // first development position the tail replaced
+    pub ldf: Vec<f64>,     // selected factors: estimated, then the tail's, then past the oldest age
+    pub factor: f64,       // oldest age to ultimate
+    pub sigma: f64,
+    pub std_err: f64,
+}
+
+pub struct Mack {
+    pub development: Development,
+    pub tail: Tail,
+    pub tail_sigma: Option<f64>,   // R tail.sigma
+    pub tail_std_err: Option<f64>, // R tail.se
+}
+```
+
+* `ChainLadderFit.tail` is the `TailFit` (it was the factor), and
+  `ChainLadderFit::ldf()` the selected factors within the triangle, which
+  the projection and Mack's recursions use. A tail attached before the
+  oldest age replaces estimated factors, as chainladder-python does; Mack
+  keeps the estimated sigmas and standard errors there, as it does.
+* `TailFit.ldf` runs past the oldest age as chainladder-python's `ldf_`
+  (`projection_period` 12): one factor per development period of the next
+  year, then one to ultimate. `LogLinear` gives one factor, as R appends
+  one. Only their product, `factor`, enters ultimates and Mack.
+* `TailBondy` keeps the factor from its attachment age to the next and
+  replaces those after, while `TailConstant` and `TailCurve` replace the
+  factor from their attachment age; both follow chainladder-python. The
+  Bondy exponent is the exact least-squares optimum; chainladder-python's
+  `least_squares` stops early (relative cost change 1e-8), so generalized
+  Bondy rows are checked to 1e-4 (`knowledge/findings/bondy-least-squares-stop.md`).
+* `LogLinear` is R's `tailfactor` exactly, including its quirks: it tests
+  the third- and second-last factors (`f[n-2] * f[n-1] > 1.0001`, not the
+  last two) and resets a tail above 2 to 1.
+* The tail's sigma and standard error follow R's `tail_SE`, which
+  chainladder-python's `_get_tail_stats` matches: the tail's position on
+  the line through `ln(f - 1)` (factors above 1) is where it reaches
+  `ln(factor - 1)`, read off lines through `ln(sigma)` and `ln(std_err)`.
+  A factor of exactly 1 is no tail and carries no risk. A factor below 1
+  follows chainladder-python, a deviation from R: it scales the
+  ultimates, as the chain ladder's cdf does, and its sigma and standard
+  error are read where a factor of 1.001 would be
+  (`_get_tail_weighted_time_period`); given values apply to any factor
+  other than 1. R's `MackChainLadder` ignores a tail below 1 altogether,
+  so following it would make Mack's ultimates differ from the chain
+  ladder's for the same tail. Every origin, the oldest included, carries
+  the tail's risk.
+* `TailCurve.fit_period` and `TailBondy.earliest_age` take the last age at
+  or before the given one, which is chainladder-python's positional
+  `int(age / grain - 1)` on ages that are multiples of the grain; the
+  attachment ages are read by value, as Python does. A `TailConstant`
+  attached at or before the youngest age replaces every estimated factor;
+  chainladder-python ignores that attachment (`if attach_idx:` with index
+  0), a deviation kept on purpose and noted in
+  `knowledge/references/chainladder-tails.md`.
+* A tail that cannot be fitted is `Error::Tail(reason)`; a non-positive
+  constant stays `Error::InvalidTail`.
+
 Bindings: Python `ChainLadder(tail=...)` and `Mack(tail=...)` accept a float
 or a `TailConstant`, `TailCurve`, `TailBondy` or `TailLogLinear`; R accepts a
-number or the matching constructor.
+number or the matching constructor. The expected-loss methods
+(`ExpectedLoss`, `BornhuetterFerguson`, `Benktander`, `CapeCod`; R
+`expected_loss()` and the rest) take the same `tail` for their chain
+ladder. In Python the default is `tail=None` (no tail); `Mack` also takes `tail_sigma` and `tail_std_err`, and the fits
+report `tail`, `tail_ldf`, `tail_sigma`, `tail_std_err`,
+`tail_attachment_age` and `estimated_ldf` (the factors before the tail
+replaced any). With several segments, `totals_frame()` has each segment's
+`tail`, `tail_sigma` and `tail_std_err` (`SegmentFits::totals`). Parity:
+`validation/tests/reserving_tails.rs` against
+`reserving_tails_r.csv` and `reserving_tails_python.csv`.
 
 ### 4. The one-year view
 
@@ -153,8 +283,10 @@ impl ClaimsDevelopmentResult {
 ```
 
 Merz and Wüthrich's formulas assume volume-weighted factors and no tail, so
-any other `alpha` or a tail other than 1 is an error (R only warns for
-`alpha != 1`). They also assume a full trapezoid, the latest values on one
+any other `alpha` or a tail is an error (R only warns for `alpha != 1`).
+With the `TailFit` of decision 3, no tail means a factor of exactly 1 that
+replaced no estimated factor (`attachment` at the number of factors); the
+CDR then uses `ChainLadderFit::ldf()`, the factors the projection uses. They also assume a full trapezoid, the latest values on one
 calendar diagonal with one new origin per period, as R reads it
 positionally; any other shape is an error. The formulas need the volume
 `S_k` behind each factor, so `DevelopmentFit` gains `volume: Vec<f64>`

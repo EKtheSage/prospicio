@@ -3,7 +3,8 @@ import math
 import pytest
 
 import actuarialrs as ar
-from actuarialrs.aggregate import Layer, Tower, fft, panjer, simulate_events
+from actuarialrs.aggregate import fft, panjer, simulate_events
+from actuarialrs.reinsurance import Layer, Tower
 from actuarialrs.distributions import Grid, Lognormal, NegativeBinomial, Poisson
 
 SEV = Grid(1.0, [0.1, 0.3, 0.25, 0.2, 0.1, 0.05])
@@ -153,3 +154,28 @@ def test_portfolio_join_reorder_and_aggregate_cover():
     assert sorted(r.marginal(("premium", "", "motor")).draws) == sorted(premium.marginal(("motor",)).draws)
     with pytest.raises(ValueError):
         PredictiveDistribution.join([("a", reserve), ("a", premium)], "risk")
+
+
+def test_surplus_treaty_on_events_with_sums_insured():
+    from actuarialrs.aggregate import EventSet
+    from actuarialrs.reinsurance import Layer, Tower
+
+    s = Layer.surplus("surplus", 1e6, 4.0)
+    assert s.needs_sums_insured
+    # Cessions 0, 1/2, 4/5 and 2/5.
+    assert s.ceded_with_sums_insured([0.5e6, 2e6, 1e6, 10e6], [0.5e6, 2e6, 5e6, 10e6]) == \
+        pytest.approx(0.0 + 1e6 + 0.8e6 + 4e6)
+    events = EventSet.from_years([[0.5e6, 2e6], [1e6, 10e6], []],
+                                 [[0.5e6, 2e6], [5e6, 10e6], []])
+    assert events.has_sums_insured and events.sums_insured(1) == [5e6, 10e6]
+    tower = Tower.inuring([[s], [Layer("1x1", 1e6, 1e6)]])
+    pd = tower.apply(events)
+    draws = {k: pd.marginal(k).mean() for k in [("ceded", "surplus"), ("ceded", "1x1")]}
+    assert draws[("ceded", "surplus")] == pytest.approx((1e6 + 4.8e6) / 3)
+    assert draws[("ceded", "1x1")] == pytest.approx(1e6 / 3)
+    with pytest.raises(ValueError, match="sum insured"):
+        tower.apply(EventSet.from_years([[1.0]]))
+    with pytest.raises(ValueError):
+        EventSet.from_years([[5.0]], [[4.0]])
+    with pytest.raises(ValueError):
+        EventSet.from_years([[5.0]], [[6.0, 7.0]])

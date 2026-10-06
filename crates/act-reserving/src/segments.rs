@@ -157,13 +157,38 @@ pub(crate) fn fit_each<T>(
     column: &str,
     mut fit: impl FnMut(&Segment) -> Result<T>,
 ) -> Result<SegmentFits<T>> {
+    let segments = triangle.segments(column)?;
+    collect_fits(triangle, segments.iter().map(&mut fit))
+}
+
+/// Fits `column` in every segment of `triangle` with `fit`, which also gets
+/// the same index position's `exposure` column. A failure is reported with
+/// the segment's label when the triangle has keys.
+pub(crate) fn fit_each_with_exposure<T>(
+    triangle: &Triangle,
+    column: &str,
+    exposure: &str,
+    mut fit: impl FnMut(&Segment, &Segment) -> Result<T>,
+) -> Result<SegmentFits<T>> {
+    let segments = triangle.segments(column)?;
+    let exposures = triangle.segments(exposure)?;
+    collect_fits(
+        triangle,
+        segments.iter().zip(&exposures).map(|(s, e)| fit(s, e)),
+    )
+}
+
+/// The fits of every index position of `triangle`, in index order, with a
+/// failure labelled by its segment when the triangle has keys.
+fn collect_fits<T>(
+    triangle: &Triangle,
+    fits: impl Iterator<Item = Result<T>>,
+) -> Result<SegmentFits<T>> {
     let keyed = !triangle.key_names().is_empty();
-    let fits = triangle
-        .segments(column)?
-        .iter()
+    let fits = fits
         .zip(triangle.index())
-        .map(|(segment, label)| {
-            fit(segment).map_err(|e| {
+        .map(|(fit, label)| {
+            fit.map_err(|e| {
                 if keyed {
                     Error::InSegment {
                         label: label.to_string(),
@@ -185,8 +210,15 @@ pub(crate) fn fit_each<T>(
 /// A per-segment fit built on a chain-ladder projection, whose results go
 /// into the long tables of [`SegmentFits`].
 pub trait ReserveFit {
-    /// The chain-ladder projection.
+    /// The chain-ladder projection: origins, development pattern and latest
+    /// values.
     fn chain_ladder(&self) -> &ChainLadderFit;
+
+    /// This method's ultimate per origin; the chain ladder's by default.
+    /// The long tables' `ultimate` and `reserve` come from it.
+    fn ultimate(&self) -> &[f64] {
+        &self.chain_ladder().ultimate
+    }
 
     /// Value columns per origin after `latest`, `ultimate` and `reserve`.
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
@@ -204,6 +236,20 @@ impl ReserveFit for ChainLadderFit {
     fn chain_ladder(&self) -> &ChainLadderFit {
         self
     }
+
+    fn total_columns(&self) -> Vec<(&'static str, f64)> {
+        tail_columns(self)
+    }
+}
+
+/// The segment's tail: its factor from the oldest age to ultimate, sigma
+/// and standard error.
+fn tail_columns(cl: &ChainLadderFit) -> Vec<(&'static str, f64)> {
+    vec![
+        ("tail", cl.tail.factor),
+        ("tail_sigma", cl.tail.sigma),
+        ("tail_std_err", cl.tail.std_err),
+    ]
 }
 
 impl ReserveFit for MackFit {
@@ -220,11 +266,13 @@ impl ReserveFit for MackFit {
     }
 
     fn total_columns(&self) -> Vec<(&'static str, f64)> {
-        vec![
+        let mut columns = vec![
             ("process_risk", self.total_process_risk),
             ("parameter_risk", self.total_parameter_risk),
             ("standard_error", self.total_standard_error),
-        ]
+        ];
+        columns.extend(tail_columns(&self.chain_ladder));
+        columns
     }
 }
 
@@ -254,11 +302,10 @@ impl<T: ReserveFit> SegmentFits<T> {
         push_columns(
             &mut values,
             self.fits.iter().map(|f| {
-                let cl = f.chain_ladder();
                 let mut columns = vec![
-                    ("latest", cl.latest.clone()),
-                    ("ultimate", cl.ultimate.clone()),
-                    ("reserve", cl.reserves()),
+                    ("latest", f.chain_ladder().latest.clone()),
+                    ("ultimate", f.ultimate().to_vec()),
+                    ("reserve", reserves(f)),
                 ];
                 columns.extend(f.origin_columns());
                 columns
@@ -278,17 +325,18 @@ impl<T: ReserveFit> SegmentFits<T> {
     }
 
     /// One row per segment: total `latest`, `ultimate`, `reserve` and the
-    /// method's own totals (for Mack the standard errors of the total).
+    /// method's own totals (for Mack the standard errors of the total; for
+    /// the chain ladder and Mack the segment's `tail`, `tail_sigma` and
+    /// `tail_std_err`).
     pub fn totals(&self) -> FitTable {
         let mut values = Vec::new();
         push_columns(
             &mut values,
             self.fits.iter().map(|f| {
-                let cl = f.chain_ladder();
                 let mut columns = vec![
-                    ("latest", vec![cl.latest.iter().sum()]),
-                    ("ultimate", vec![cl.total_ultimate()]),
-                    ("reserve", vec![cl.total_reserve()]),
+                    ("latest", vec![f.chain_ladder().latest.iter().sum()]),
+                    ("ultimate", vec![total_ultimate(f)]),
+                    ("reserve", vec![total_reserve(f)]),
                 ];
                 columns.extend(f.total_columns().into_iter().map(|(n, v)| (n, vec![v])));
                 columns
@@ -302,10 +350,11 @@ impl<T: ReserveFit> SegmentFits<T> {
         }
     }
 
-    /// One row per segment × development age: `ldf` (from this age to the
-    /// next), `cdf` (to ultimate, with the tail), `sigma` and `std_err`.
-    /// The oldest age has no next age, so its `ldf`, `sigma` and `std_err`
-    /// are NaN.
+    /// One row per segment × development age: `ldf` (the selected factor
+    /// from this age to the next), `cdf` (to ultimate, with the tail),
+    /// `sigma` and `std_err` (as estimated). The oldest age has no next age,
+    /// so its `ldf`, `sigma` and `std_err` are NaN; its `cdf` is the tail
+    /// factor.
     pub fn development_table(&self) -> FitTable {
         let n_ages = |s: usize| self.fits[s].chain_ladder().cdf.len();
         let padded = |v: &[f64]| {
@@ -320,7 +369,7 @@ impl<T: ReserveFit> SegmentFits<T> {
                 let cl = f.chain_ladder();
                 let dev = &cl.development;
                 vec![
-                    ("ldf", padded(&dev.ldf)),
+                    ("ldf", padded(cl.ldf())),
                     ("cdf", cl.cdf.clone()),
                     ("sigma", padded(&dev.sigma)),
                     ("std_err", padded(&dev.std_err)),
@@ -342,19 +391,33 @@ impl<T: ReserveFit> SegmentFits<T> {
 
     /// Total ultimate over every segment and origin.
     pub fn total_ultimate(&self) -> f64 {
-        self.fits
-            .iter()
-            .map(|f| f.chain_ladder().total_ultimate())
-            .sum()
+        self.fits.iter().map(total_ultimate).sum()
     }
 
     /// Total reserve over every segment and origin.
     pub fn total_reserve(&self) -> f64 {
-        self.fits
-            .iter()
-            .map(|f| f.chain_ladder().total_reserve())
-            .sum()
+        self.fits.iter().map(total_reserve).sum()
     }
+}
+
+/// A fit's reserve (its ultimate minus the latest value) per origin.
+fn reserves(fit: &impl ReserveFit) -> Vec<f64> {
+    let latest = &fit.chain_ladder().latest;
+    fit.ultimate()
+        .iter()
+        .zip(latest)
+        .map(|(u, l)| u - l)
+        .collect()
+}
+
+/// A fit's ultimate summed over origins.
+fn total_ultimate(fit: &impl ReserveFit) -> f64 {
+    fit.ultimate().iter().sum()
+}
+
+/// A fit's total ultimate minus its total latest value.
+fn total_reserve(fit: &impl ReserveFit) -> f64 {
+    total_ultimate(fit) - fit.chain_ladder().latest.iter().sum::<f64>()
 }
 
 /// Position of the one label whose keys have the given values, as
@@ -531,6 +594,8 @@ mod tests {
         let one = fits.segment(&[("lob", "Home")]).unwrap();
         assert_eq!(one.labels, [Label::new(["Home"])]);
         assert_eq!(one.totals().column("reserve").unwrap(), [30.0]);
+        assert_eq!(fits.totals().column("tail").unwrap(), [1.0, 1.0]);
+        assert_eq!(fits.totals().column("tail_sigma").unwrap(), [0.0, 0.0]);
         assert_eq!(fits.position(&[]), Err(Error::AmbiguousSegment(2)));
         assert_eq!(
             fits.position(&[("lob", "Auto"), ("lob", "Auto")]),

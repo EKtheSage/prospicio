@@ -396,8 +396,9 @@ reinsurance-specific.
 
 | Module | Item | Used by |
 |---|---|---|
-| `layer` | Increased limit factors (`LEV(limit)/LEV(basic)`), deductible credits (`1 − LEV(d)/E[X]`), Pareto extrapolation, implied alpha from two layers, a frequency and a layer, or two frequencies. Later: MBBEFD exposure curves. | Primary (ILF tables, deductibles, large-loss loads) and reinsurance (rating upper layers) |
+| `layer` | Increased limit factors (`LEV(limit)/LEV(basic)`), deductible credits (`1 − LEV(d)/E[X]`), Pareto extrapolation, implied alpha from two layers, a frequency and a layer, or two frequencies. | Primary (ILF tables, deductibles, large-loss loads) and reinsurance (rating upper layers) |
 | `tower` | Tower matching (Riegel 2018, above, both selection rules); reference fits; PML-curve fits. | Reinsurance |
+| `exposure` | Exposure curves for property per-risk rating: MBBEFD (Bernegger 1997) with the Swiss Re curves, tabulated curves, the curve of any severity capped at an MPL, layer shares, destruction-rate sampling. | Primary and reinsurance (property per-risk) |
 | `risk_load` | Risk-loaded prices from simulated losses: a pricing distortion or a constant cost of capital on distortion-measured assets, for one cover or allocated across a portfolio's components. | Primary and reinsurance (technical price of a simulated cover or programme) |
 
 Done in `layer`: `ilf`, `loss_elimination_ratio`, `XsLayer`,
@@ -466,6 +467,33 @@ functions, `match_tower`, `fit_pml_curve`, `fit_references`,
 `pareto_extrapolation()`, `alpha_between_*()`, `match_tower()`,
 `fit_pml_curve()`, `fit_references()`, `tower_model`).
 
+Done in `exposure`: `ExposureCurve` (`g(x)`, `layer_share(limit,
+attachment, mpl)` = `G(min((a+l)/M, 1)) − G(min(a/M, 1))`), `Mbbefd::new(b,
+g)` with its four closed-form cases (`g = 1` or `b = 0`, `b = 1`, `bg = 1`,
+general; the special forms are used within 1e-10 of `b = 1` and `bg = 1`,
+where the general one cancels), the destruction-rate `cdf`, `mean` and
+`total_loss_probability` (`1/g`), `Mbbefd::swiss_re(c)` (`b = exp(3.1 −
+0.15(1 + c)c)`, `g = exp((0.78 + 0.12c)c)`), and `SeverityCurve`
+(`LEV(xM)/LEV(M)` for any `Severity`). Parity
+(`validation/scripts/mpmath_mbbefd.py`): `G` and the mean by 30-digit
+quadrature of the survival function for c = 1.5–5 and one curve per case,
+56 values at 1e-12. Python `Mbbefd`, `severity_exposure_curve`; R
+`mbbefd()`, `swiss_re_curve()`, `exposure_curve()`,
+`exposure_layer_share()`, `severity_exposure_curve()`.
+
+Done next in `exposure`: every curve is a destruction-rate distribution
+(survival `G'(x)/G'(0)`): `ExposureCurve::rate_quantile(u)` (closed forms
+for the four MBBEFD cases; `min(q(u), M)/M` for a severity curve) and
+`mean_rate()` (`1/G'(0)`), checked by sampling: the draws' `E[min(D, x)]`
+over the mean rate is `G(x)`. `TabulatedCurve` takes a published table
+(Salzmann, Ludwig, ISO PSOLD, a reinsurer's curves) from `(0, 0)` to
+`(1, 1)`, interpolated linearly; it must be concave, which makes its
+destruction rate discrete, and its mean rate is the first chord's
+(`x₁/G(x₁)`), so tables need fine first points. Riebesell's scale is a
+Pareto's `SeverityCurve`. Python `TabulatedCurve`, `rate_quantile` on
+both; R `tabulated_curve()`, `rate_quantile()`. These feed the risk-profile
+simulator (`aggregate.md`), one curve per sum-insured band.
+
 Done in `risk_load`: `price(losses, rule, assets)` on any `Empirical`
 and `price_portfolio(pd, rule, assets)` on a `PredictiveDistribution`,
 with `PremiumRule::{Distortion, CostOfCapital}`. This is where simulated
@@ -493,9 +521,13 @@ Decisions:
 Bindings: Python `price`, `price_portfolio`, `Price`, `PortfolioPrice`;
 R `risk_loaded_price()` and `price_portfolio()`.
 
-`Layer` and `Tower` (contract terms) still live in `act-aggregate`;
-`docs/architecture.md` gives them their own `reinsurance` namespace, and
-moving them is a separate, later PR.
+`Layer`, `Tower` and `TowerGrids` (contract terms and their grid
+results) are in the user-facing `reinsurance` namespace that
+`docs/architecture.md` gives them: Python `actuarialrs.reinsurance`, and
+R's `reinsurance.R` with its own reference section. In Rust they stay in
+`act_aggregate::reinsurance` and `act_aggregate::grid_reinsurance`, next
+to the compound and simulation code they are applied with; a separate
+crate would gain nothing while nothing else depends on them.
 
 Then Python and R bindings. Each row is one small PR, in roughly this
 order.

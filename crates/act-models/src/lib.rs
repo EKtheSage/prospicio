@@ -11,7 +11,9 @@
 //!   distributions;
 //! - [`metrics`]: deviance, Gini, lift, CRPS, coverage;
 //! - [`resample`]: k-fold, grouped and time-ordered splits,
-//!   cross-validation and grid search.
+//!   cross-validation and grid search;
+//! - [`simulate`]: predictive distributions from fitted means, for engines
+//!   that give only a mean per row (the boosting adapters).
 //!
 //! This crate has no heavy dependencies; engines live in their own crates.
 
@@ -23,6 +25,7 @@ pub mod metrics;
 pub mod model;
 pub mod monitor;
 pub mod resample;
+pub mod simulate;
 pub mod stack;
 
 pub use design::{Coding, Column, Design, Frame, Term, Terms};

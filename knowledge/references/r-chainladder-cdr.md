@@ -37,7 +37,10 @@ between two origins carried by the older origin's parameter term.[^script]
   rounding, on RAA, GenIns, ABC, MW2008 and MW2014.[^script]
 * With `alpha != 1` it only warns ("formulae hold only for alpha=1") and
   returns numbers; with a tail it stops. act-reserving errors in both
-  cases.[^design]
+  cases.[^design] "No tail" there means the fitted `TailFit` has a factor of
+  exactly 1 and replaced no estimated factor: a `TailConstant(1)` attached
+  before the oldest age sets the factors after it to 1, which is a tail
+  even though its factor past the oldest age is 1.
 * It reads the latest diagonal positionally (row `i`'s latest at column
   `I - i + 1`), so it assumes the latest values lie on one diagonal, one
   new origin per period; act-reserving checks that and errors

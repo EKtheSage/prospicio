@@ -3,8 +3,9 @@
 
 use act_core::StreamRng;
 use act_prob::{
-    ComponentKey, Counting, DiscretizationReport, Distribution, Empirical, Grid as GridInner,
+    ComponentKey, Counting, DiscretizationReport, Dist, Distribution, Empirical, Grid as GridInner,
     KeyValue, PredictiveDistribution as PdInner, Provenance, Sampled as SampledInner, Severity,
+    SeverityDist,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -76,120 +77,72 @@ impl Lognormal {
     }
 }
 
-/// A severity accepted wherever a parametric or discretized loss
-/// distribution can be used: a `Lognormal`, a `Grid` or a Pareto-family
-/// pointer.
-pub(crate) enum AnySeverity {
-    Lognormal(act_prob::Lognormal),
-    Grid(GridInner),
-    Pareto(act_prob::Pareto),
-    PiecewisePareto(act_prob::PiecewisePareto),
-    LogAffinePareto(act_prob::LogAffinePareto),
-    GeneralizedPareto(act_prob::evt::Gpd),
-    Gamma(act_prob::Gamma),
-    Tweedie(act_prob::Tweedie),
-    Weibull(act_prob::Weibull),
-    Loglogistic(act_prob::Loglogistic),
-    Mixture(std::sync::Arc<act_prob::Mixture>),
-}
-
-/// Calls `$call` on the inner severity, whichever it is.
-macro_rules! each {
-    ($self:ident, $d:ident => $call:expr) => {
-        match $self {
-            Self::Lognormal($d) => $call,
-            Self::Grid($d) => $call,
-            Self::Pareto($d) => $call,
-            Self::PiecewisePareto($d) => $call,
-            Self::LogAffinePareto($d) => $call,
-            Self::GeneralizedPareto($d) => $call,
-            Self::Gamma($d) => $call,
-            Self::Tweedie($d) => $call,
-            Self::Weibull($d) => $call,
-            Self::Loglogistic($d) => $call,
-            Self::Mixture($d) => $call,
-        }
+/// Any native distribution: a parametric family, a mixture, a grid or a
+/// sampled distribution.
+pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
+    use crate::pareto::{
+        CustomDist, GammaDist, GeneralizedPareto, LogAffinePareto, LoglogisticDist, MixtureDist,
+        Pareto, PiecewisePareto, TweedieDist, WeibullDist,
     };
+    if let Ok(d) = <&Lognormal>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(g) = <&Grid>::try_from(obj) {
+        return Ok(g.inner.clone().into());
+    }
+    if let Ok(d) = <&Pareto>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&PiecewisePareto>::try_from(obj) {
+        return Ok(d.inner.clone().into());
+    }
+    if let Ok(d) = <&LogAffinePareto>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&GeneralizedPareto>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&GammaDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&TweedieDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&WeibullDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&LoglogisticDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&MixtureDist>::try_from(obj) {
+        return Ok(d.inner.clone().into());
+    }
+    if let Ok(s) = <&Sampled>::try_from(obj) {
+        return Ok(s.inner.clone().into());
+    }
+    if let Ok(d) = <&CustomDist>::try_from(obj) {
+        return Ok(d.inner.clone().into());
+    }
+    Err(Error::Other(format!(
+        "expected a distribution ({SEVERITIES}, or a sampled distribution)"
+    )))
 }
 
-impl AnySeverity {
-    pub(crate) fn from_robj(obj: &Robj) -> Result<Self> {
-        use crate::pareto::{
-            GammaDist, GeneralizedPareto, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-            PiecewisePareto, TweedieDist, WeibullDist,
-        };
-        if let Ok(d) = <&Lognormal>::try_from(obj) {
-            return Ok(Self::Lognormal(d.inner));
-        }
-        if let Ok(g) = <&Grid>::try_from(obj) {
-            return Ok(Self::Grid(g.inner.clone()));
-        }
-        if let Ok(d) = <&Pareto>::try_from(obj) {
-            return Ok(Self::Pareto(d.inner));
-        }
-        if let Ok(d) = <&PiecewisePareto>::try_from(obj) {
-            return Ok(Self::PiecewisePareto(d.inner.clone()));
-        }
-        if let Ok(d) = <&LogAffinePareto>::try_from(obj) {
-            return Ok(Self::LogAffinePareto(d.inner));
-        }
-        if let Ok(d) = <&GeneralizedPareto>::try_from(obj) {
-            return Ok(Self::GeneralizedPareto(d.inner));
-        }
-        if let Ok(d) = <&GammaDist>::try_from(obj) {
-            return Ok(Self::Gamma(d.inner));
-        }
-        if let Ok(d) = <&TweedieDist>::try_from(obj) {
-            return Ok(Self::Tweedie(d.inner));
-        }
-        if let Ok(d) = <&WeibullDist>::try_from(obj) {
-            return Ok(Self::Weibull(d.inner));
-        }
-        if let Ok(d) = <&LoglogisticDist>::try_from(obj) {
-            return Ok(Self::Loglogistic(d.inner));
-        }
-        if let Ok(d) = <&MixtureDist>::try_from(obj) {
-            return Ok(Self::Mixture(d.inner.clone()));
-        }
-        Err(Error::Other(
-            "expected a severity: lognormal, gamma, tweedie, weibull, loglogistic, mixture, grid, or a \
-             Pareto-family distribution"
-                .into(),
+/// The distributions accepted as a severity, for error messages.
+const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, mixture, grid, \
+                          custom, or a Pareto-family distribution";
+
+/// A severity accepted wherever a parametric or discretized loss
+/// distribution can be used: any distribution but a sampled one, which has
+/// no exact layer moments.
+pub(crate) fn severity_from_robj(obj: &Robj) -> Result<SeverityDist> {
+    let dist = dist_from_robj(obj)
+        .map_err(|_| Error::Other(format!("expected a severity: {SEVERITIES}")))?;
+    SeverityDist::try_from(dist).map_err(|_| {
+        Error::Other(format!(
+            "expected a severity ({SEVERITIES}); a sampled distribution has no exact layer moments"
         ))
-    }
-}
-
-impl Distribution for AnySeverity {
-    fn mean(&self) -> f64 {
-        each!(self, d => d.mean())
-    }
-    fn variance(&self) -> f64 {
-        each!(self, d => d.variance())
-    }
-    fn cdf(&self, x: f64) -> f64 {
-        each!(self, d => d.cdf(x))
-    }
-    fn survival(&self, x: f64) -> f64 {
-        each!(self, d => d.survival(x))
-    }
-    fn quantile(&self, p: f64) -> act_core::Result<f64> {
-        each!(self, d => d.quantile(p))
-    }
-}
-
-impl Severity for AnySeverity {
-    fn lev(&self, limit: f64) -> f64 {
-        each!(self, d => d.lev(limit))
-    }
-    fn stop_loss(&self, retention: f64) -> f64 {
-        each!(self, d => d.stop_loss(retention))
-    }
-    fn layer(&self, limit: f64, attachment: f64) -> f64 {
-        each!(self, d => d.layer(limit, attachment))
-    }
-    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
-        each!(self, d => d.layer_second_moment(limit, attachment))
-    }
+    })
 }
 
 /// Claim counts arrive from R as doubles holding whole numbers.
@@ -361,7 +314,7 @@ impl Grid {
 
     /// `method` is "local_moment", "rounding" or "lower".
     fn discretize(severity: Robj, step: f64, points: f64, method: &str) -> Result<Self> {
-        let sev = AnySeverity::from_robj(&severity)?;
+        let sev = severity_from_robj(&severity)?;
         let points = whole(points, "points")? as usize;
         let (inner, report) = match method {
             "local_moment" => GridInner::local_moment(&sev, step, points),

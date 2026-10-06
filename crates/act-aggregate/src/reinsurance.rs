@@ -1,5 +1,6 @@
-//! Reinsurance: excess-of-loss layers and towers applied to simulated
-//! events, giving gross, ceded and net distributions.
+//! Reinsurance: excess-of-loss layers, quota shares, stop-losses and
+//! surplus treaties, and towers of them applied to simulated events,
+//! giving gross, ceded and net distributions.
 
 use act_core::{Error, Result};
 use act_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
@@ -30,6 +31,9 @@ use crate::monte_carlo::EventSet;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layer {
     pub name: String,
+    /// What each event's recovery is figured on: the loss, or (a surplus
+    /// treaty) a share of it set by the risk's sum insured.
+    pub basis: Basis,
     pub attachment: f64,
     /// Per-occurrence limit; may be infinite.
     pub limit: f64,
@@ -48,6 +52,33 @@ pub struct Layer {
     pub reinstatement_rates: Vec<f64>,
 }
 
+/// What a layer's per-event recovery is figured on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Basis {
+    /// The loss: `min(max(x − attachment, 0), limit)`.
+    Loss,
+    /// A surplus treaty with retention line `retention` and `lines` lines:
+    /// a loss `x` on a risk with sum insured `SI` cedes the share
+    /// `min(max(SI − retention, 0), lines × retention) / SI` of `x` (the
+    /// layer's `attachment` and `limit`, an event limit, then apply to
+    /// that). Needs each event's sum insured.
+    Surplus { retention: f64, lines: f64 },
+}
+
+impl Basis {
+    /// The amount a layer's per-event terms apply to, for a loss on a risk
+    /// with sum insured `si` (NaN for a surplus without one).
+    fn amount(self, loss: f64, si: Option<f64>) -> f64 {
+        match self {
+            Basis::Loss => loss,
+            Basis::Surplus { retention, lines } => match si {
+                Some(si) if si > 0.0 => loss * (si - retention).clamp(0.0, lines * retention) / si,
+                _ => f64::NAN,
+            },
+        }
+    }
+}
+
 impl Layer {
     /// `limit` xs `attachment`, fully placed, with no annual terms.
     pub fn xol(name: impl Into<String>, limit: f64, attachment: f64) -> Result<Self> {
@@ -63,6 +94,7 @@ impl Layer {
         }
         Ok(Self {
             name: name.into(),
+            basis: Basis::Loss,
             attachment,
             limit,
             share: 1.0,
@@ -84,6 +116,43 @@ impl Layer {
     /// ```
     pub fn quota_share(name: impl Into<String>, cession: f64) -> Result<Self> {
         Self::xol(name, f64::INFINITY, 0.0)?.share(cession)
+    }
+
+    /// A surplus treaty: each risk cedes the part of its sum insured above
+    /// the retention line `retention`, up to `lines` lines, and the same
+    /// share of every loss on it. With a retention of 1m and 9 lines (a
+    /// capacity of 9m), a 5m risk cedes 80% and a 20m risk 45%.
+    ///
+    /// The events must carry sums insured
+    /// ([`EventSet::with_sums_insured`], or a risk profile); an event limit
+    /// or annual terms can be added as for any layer.
+    ///
+    /// ```
+    /// use act_aggregate::Layer;
+    ///
+    /// let s = Layer::surplus("surplus", 1e6, 9.0).unwrap();
+    /// let ceded = s.ceded_with_sums_insured(&[2e6, 2e6, 2e6], &[1e6, 5e6, 20e6]);
+    /// assert!((ceded - (0.0 + 0.8 * 2e6 + 0.45 * 2e6)).abs() < 1e-6);
+    /// ```
+    pub fn surplus(name: impl Into<String>, retention: f64, lines: f64) -> Result<Self> {
+        if !(retention.is_finite() && retention > 0.0) {
+            return Err(invalid(
+                "retention",
+                retention,
+                "must be positive and finite",
+            ));
+        }
+        if !(lines.is_finite() && lines > 0.0) {
+            return Err(invalid("lines", lines, "must be positive and finite"));
+        }
+        let mut layer = Self::xol(name, f64::INFINITY, 0.0)?;
+        layer.basis = Basis::Surplus { retention, lines };
+        Ok(layer)
+    }
+
+    /// Whether the layer needs each event's sum insured (a surplus).
+    pub fn needs_sums_insured(&self) -> bool {
+        matches!(self.basis, Basis::Surplus { .. })
     }
 
     /// An aggregate stop-loss: `limit` xs `retention` on the year's total
@@ -194,9 +263,16 @@ impl Layer {
         Ok(self)
     }
 
-    /// Ceded loss for one year's losses.
+    /// Ceded loss for one year's losses (NaN for a surplus, which needs
+    /// [`ceded_with_sums_insured`](Self::ceded_with_sums_insured)).
     pub fn ceded(&self, losses: &[f64]) -> f64 {
-        self.share * self.layer_loss(losses)
+        self.share * self.layer_loss(losses, None)
+    }
+
+    /// Ceded loss for one year's losses on risks with the given sums
+    /// insured, one per loss.
+    pub fn ceded_with_sums_insured(&self, losses: &[f64], sums_insured: &[f64]) -> f64 {
+        self.share * self.layer_loss(losses, Some(sums_insured))
     }
 
     /// Reinstatement premium for one year's losses: with layer loss `L`
@@ -209,10 +285,14 @@ impl Layer {
     /// summing over `k = 0, 1, …` (the `k`-th reinstatement restores the
     /// limit used up by the `k + 1`-th). Zero when reinstatements are free.
     pub fn reinstatement_premium(&self, losses: &[f64]) -> f64 {
+        self.reinstatement_premium_si(losses, None)
+    }
+
+    fn reinstatement_premium_si(&self, losses: &[f64], si: Option<&[f64]>) -> f64 {
         if self.reinstatement_rates.is_empty() {
             return 0.0;
         }
-        let loss = self.layer_loss(losses);
+        let loss = self.layer_loss(losses, si);
         let used: f64 = self
             .reinstatement_rates
             .iter()
@@ -223,8 +303,12 @@ impl Layer {
     }
 
     /// Annual layer loss at 100%, after annual terms.
-    fn layer_loss(&self, losses: &[f64]) -> f64 {
-        let recovery: f64 = losses.iter().map(|&x| self.recovery(x)).sum();
+    fn layer_loss(&self, losses: &[f64], si: Option<&[f64]>) -> f64 {
+        let recovery: f64 = losses
+            .iter()
+            .enumerate()
+            .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e])))
+            .sum();
         self.after_terms(recovery)
     }
 
@@ -246,12 +330,17 @@ impl Layer {
     /// assert_eq!(layer.ceded_by_event(&[8.0, 20.0, 12.0]), [0.0, 9.0, 6.0]);
     /// ```
     pub fn ceded_by_event(&self, losses: &[f64]) -> Vec<f64> {
+        self.ceded_by_event_si(losses, None)
+    }
+
+    fn ceded_by_event_si(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<f64> {
         let mut recovery = 0.0;
         let mut before = 0.0;
         losses
             .iter()
-            .map(|&x| {
-                recovery += self.recovery(x);
+            .enumerate()
+            .map(|(e, &x)| {
+                recovery += self.recovery_at(x, si.map(|s| s[e]));
                 let after = self.share * self.after_terms(recovery);
                 let ceded = after - before;
                 before = after;
@@ -260,13 +349,28 @@ impl Layer {
             .collect()
     }
 
-    /// Per-occurrence recovery at 100%, before annual terms.
+    /// Per-occurrence recovery at 100%, before annual terms, of a layer on
+    /// the loss basis.
     pub(crate) fn recovery(&self, loss: f64) -> f64 {
-        (loss - self.attachment).max(0.0).min(self.limit)
+        self.recovery_at(loss, None)
+    }
+
+    /// Per-occurrence recovery at 100%, before annual terms, for a loss on
+    /// a risk with sum insured `si`.
+    fn recovery_at(&self, loss: f64, si: Option<f64>) -> f64 {
+        let amount = self.basis.amount(loss, si);
+        if amount.is_nan() {
+            // A surplus without a sum insured: `max` would turn NaN into 0.
+            return f64::NAN;
+        }
+        (amount - self.attachment).max(0.0).min(self.limit)
     }
 
     /// Annual terms applied to an annual recovery total at 100%.
     pub(crate) fn after_terms(&self, recovery: f64) -> f64 {
+        if recovery.is_nan() {
+            return f64::NAN;
+        }
         (recovery - self.aggregate_deductible)
             .max(0.0)
             .min(self.aggregate_limit)
@@ -332,11 +436,29 @@ impl Tower {
 
     /// Ceded loss of each layer, in tower order, for one year's losses.
     pub fn ceded(&self, losses: &[f64]) -> Vec<f64> {
-        self.year(losses).into_iter().map(|(c, _)| c).collect()
+        self.year(losses, None)
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect()
+    }
+
+    /// Ceded loss of each layer for one year's losses on risks with the
+    /// given sums insured, one per loss. Every stage sees each risk's
+    /// original sum insured.
+    pub fn ceded_with_sums_insured(&self, losses: &[f64], sums_insured: &[f64]) -> Vec<f64> {
+        self.year(losses, Some(sums_insured))
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect()
+    }
+
+    /// Whether any layer needs each event's sum insured.
+    pub fn needs_sums_insured(&self) -> bool {
+        self.layers.iter().any(Layer::needs_sums_insured)
     }
 
     /// Ceded loss and reinstatement premium of each layer for one year.
-    fn year(&self, losses: &[f64]) -> Vec<(f64, f64)> {
+    fn year(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let mut seen = losses.to_vec();
         let last_stage = self.stages.last().copied().unwrap_or(0);
@@ -346,9 +468,15 @@ impl Tower {
             let end = i + self.stages[i..].iter().take_while(|&&s| s == stage).count();
             let mut stage_by_event = vec![0.0; seen.len()];
             for layer in &self.layers[i..end] {
-                ceded.push((layer.ceded(&seen), layer.reinstatement_premium(&seen)));
+                ceded.push((
+                    layer.share * layer.layer_loss(&seen, si),
+                    layer.reinstatement_premium_si(&seen, si),
+                ));
                 if stage < last_stage {
-                    for (total, c) in stage_by_event.iter_mut().zip(layer.ceded_by_event(&seen)) {
+                    for (total, c) in stage_by_event
+                        .iter_mut()
+                        .zip(layer.ceded_by_event_si(&seen, si))
+                    {
                         *total += c;
                     }
                 }
@@ -394,11 +522,18 @@ impl Tower {
     /// assert_eq!(by_kind.n_components(), 3); // gross, ceded, net
     /// ```
     pub fn apply(&self, events: &EventSet) -> Result<PredictiveDistribution> {
+        if self.needs_sums_insured() && !events.has_sums_insured() {
+            return Err(Error::Data(
+                "a surplus treaty needs each event's sum insured: use \
+                 EventSet::with_sums_insured or simulate from a risk profile"
+                    .into(),
+            ));
+        }
         let provenance = Provenance::new("reinsurance_tower")
             .version("act-aggregate", env!("CARGO_PKG_VERSION"))
             .seed(events.seed(), act_prob::provenance::SIM_INDEX_SCHEME);
         self.apply_years(
-            (0..events.n_sims()).map(|i| events.events(i)),
+            (0..events.n_sims()).map(|i| (events.events(i), events.sums_insured(i))),
             events.n_sims(),
             provenance,
         )
@@ -434,6 +569,11 @@ impl Tower {
     /// assert_eq!(act_prob::Empirical::draws(&ceded), [0.0, 30.0, 50.0]);
     /// ```
     pub fn apply_aggregate(&self, pd: &PredictiveDistribution) -> Result<PredictiveDistribution> {
+        if self.needs_sums_insured() {
+            return Err(Error::Data(
+                "a surplus treaty works risk by risk; an aggregate loss has no sum insured".into(),
+            ));
+        }
         let totals = act_prob::Empirical::draws(pd.total()).to_vec();
         let source = pd.provenance();
         let mut provenance = Provenance::new("reinsurance_tower")
@@ -442,12 +582,16 @@ impl Tower {
         if let (Some(seed), Some(scheme)) = (source.seed, source.stream_scheme.clone()) {
             provenance = provenance.seed(seed, scheme);
         }
-        self.apply_years(totals.chunks(1), totals.len(), provenance)
+        self.apply_years(
+            totals.chunks(1).map(|t| (t, None)),
+            totals.len(),
+            provenance,
+        )
     }
 
     fn apply_years<'a>(
         &self,
-        years: impl Iterator<Item = &'a [f64]>,
+        years: impl Iterator<Item = (&'a [f64], Option<&'a [f64]>)>,
         n_sims: usize,
         base: Provenance,
     ) -> Result<PredictiveDistribution> {
@@ -458,10 +602,10 @@ impl Tower {
             .collect();
         let n_components = self.layers.len() + 2 + paid.iter().filter(|&&p| p).count();
         let mut draws = Vec::with_capacity(n_sims * n_components);
-        for losses in years {
+        for (losses, si) in years {
             let gross: f64 = losses.iter().sum();
             draws.push(gross);
-            let year = self.year(losses);
+            let year = self.year(losses, si);
             let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
             draws.extend(year.iter().map(|(c, _)| c));
             draws.push(gross - ceded_total);
@@ -492,6 +636,9 @@ impl Tower {
                 "{} xs {}, share {}, aad {}, aal {}, stage {stage}",
                 l.limit, l.attachment, l.share, l.aggregate_deductible, l.aggregate_limit
             );
+            if let Basis::Surplus { retention, lines } = l.basis {
+                terms += &format!(", surplus retention {retention}, lines {lines}");
+            }
             if !l.reinstatement_rates.is_empty() {
                 terms += &format!(
                     ", premium {}, reinstatement rates {:?}",
@@ -815,5 +962,58 @@ mod tests {
             assert!((row[4] - expected).abs() <= 1e-9 * expected.max(1.0));
             assert!((row[0] - row[1] - row[2] - row[3]).abs() <= 1e-6 * row[0].max(1.0));
         }
+    }
+
+    #[test]
+    fn surplus_cedes_by_sum_insured_and_inures_to_a_per_risk_xl() {
+        // Retention 1m, 4 lines: capacity to 5m of sum insured.
+        let surplus = Layer::surplus("surplus", 1e6, 4.0).unwrap();
+        let si = [0.5e6, 2e6, 5e6, 10e6];
+        let losses = [0.5e6, 2e6, 1e6, 10e6];
+        // Cessions 0, 1/2, 4/5, 2/5.
+        let by_risk: Vec<f64> = (0..4)
+            .map(|i| surplus.ceded_with_sums_insured(&losses[i..=i], &si[i..=i]))
+            .collect();
+        for (got, want) in by_risk.iter().zip([0.0, 1e6, 0.8e6, 4e6]) {
+            assert!((got - want).abs() < 1e-6, "{got} vs {want}");
+        }
+        // A 1m xs 1m per-risk XL sees each loss net of the surplus.
+        let tower = Tower::inuring(vec![
+            vec![surplus.clone()],
+            vec![Layer::xol("1x1", 1e6, 1e6).unwrap()],
+        ])
+        .unwrap();
+        let ceded = tower.ceded_with_sums_insured(&losses, &si);
+        // Nets 0.5m, 1m, 0.2m, 6m: only the last reaches the XL, for 1m.
+        assert!((ceded[0] - 5.8e6).abs() < 1e-6);
+        assert!((ceded[1] - 1e6).abs() < 1e-6);
+        assert!(tower.needs_sums_insured());
+        assert!(tower.ceded(&losses)[0].is_nan());
+    }
+
+    #[test]
+    fn surplus_needs_sums_insured_on_events() {
+        let tower = Tower::new(vec![Layer::surplus("s", 1e6, 4.0).unwrap()]).unwrap();
+        let events = EventSet::from_years(vec![vec![2e6], vec![]], 0).unwrap();
+        assert!(tower.apply(&events).is_err());
+        let events = events.with_sums_insured(vec![2e6]).unwrap();
+        let result = tower.apply(&events).unwrap();
+        let ceded = result
+            .marginal(&vec![KeyValue::from("ceded"), KeyValue::from("s")])
+            .unwrap();
+        assert_eq!(act_prob::Empirical::draws(&ceded), [1e6, 0.0]);
+        let pd = PredictiveDistribution::from_draws(
+            vec![],
+            vec![vec![]],
+            vec![1.0, 2.0],
+            Provenance::new("test"),
+        )
+        .unwrap();
+        assert!(tower.apply_aggregate(&pd).is_err());
+        assert!(Layer::surplus("s", 0.0, 4.0).is_err());
+        assert!(Layer::surplus("s", 1.0, f64::INFINITY).is_err());
+        let e = EventSet::from_years(vec![vec![5.0]], 0).unwrap();
+        assert!(e.clone().with_sums_insured(vec![4.0]).is_err());
+        assert!(e.with_sums_insured(vec![5.0, 6.0]).is_err());
     }
 }

@@ -9,7 +9,17 @@ requires-python = ">=3.9"
 dynamic = ["version"]
 
 [dependency-groups]
-dev = ["maturin>=1.7,<2", "pandas", "pytest", "scipy"]
+dev = [
+    "maturin>=1.7,<2",
+    "pandas",
+    "pytest",
+    "scipy",
+    # Engines behind actuarialrs.boosting; the CPU-only XGBoost wheel is
+    # 6 MB where the full one bundles 200+ MB of GPU libraries.
+    "lightgbm",
+    "xgboost-cpu ; sys_platform == 'linux'",
+    "xgboost ; sys_platform != 'linux'",
+]
 docs = [
     "great-docs>=0.17 ; python_full_version >= '3.11'",
 ]

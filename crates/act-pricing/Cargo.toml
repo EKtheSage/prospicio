@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+act-aggregate.workspace = true
 act-core.workspace = true
 act-math.workspace = true
 act-prob.workspace = true

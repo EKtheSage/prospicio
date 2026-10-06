@@ -58,8 +58,20 @@ pub enum Error {
     Factor { age: usize, reason: &'static str },
     /// The tail factor is not finite and positive.
     InvalidTail(f64),
+    /// A tail cannot be fitted with these settings, or its variance cannot
+    /// be extrapolated.
+    Tail(&'static str),
     /// The method needs more development ages than the triangle has.
     TooFewAges { needed: usize, found: usize },
+    /// An origin has no observed, finite, positive value in the exposure
+    /// column.
+    InvalidExposure { column: String, origin: String },
+    /// A method setting is out of its range; `expected` describes the range.
+    InvalidSetting {
+        name: &'static str,
+        value: f64,
+        expected: &'static str,
+    },
     /// The bootstrap cannot run on this input or with these settings.
     Bootstrap(&'static str),
     /// The ODP GLM cannot be fitted to this triangle.
@@ -120,10 +132,20 @@ impl fmt::Display for Error {
                 write!(f, "factor from development index {age}: {reason}")
             }
             Self::InvalidTail(t) => write!(f, "tail factor {t} is not finite and positive"),
+            Self::Tail(why) => write!(f, "tail: {why}"),
             Self::TooFewAges { needed, found } => write!(
                 f,
                 "method needs at least {needed} development ages, triangle has {found}"
             ),
+            Self::InvalidExposure { column, origin } => write!(
+                f,
+                "origin {origin} has no observed, finite, positive exposure in column {column}"
+            ),
+            Self::InvalidSetting {
+                name,
+                value,
+                expected,
+            } => write!(f, "{name} = {value} is invalid: expected {expected}"),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),

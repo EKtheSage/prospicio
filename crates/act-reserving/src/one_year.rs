@@ -118,10 +118,15 @@ impl MackFit {
                 "needs volume-weighted factors (alpha = 1)",
             ));
         }
-        if cl.tail != 1.0 {
+        // No tail: a factor of exactly 1 past the oldest age and no
+        // estimated factor replaced within the triangle.
+        let n_links = dev.ldf.len();
+        if cl.tail.factor != 1.0 || cl.tail.attachment < n_links {
             return Err(Error::ClaimsDevelopment("needs no tail factor"));
         }
-        let n_links = dev.ldf.len();
+        // The factors the projection uses (the estimated ones, since no
+        // tail replaced any).
+        let ldf = cl.ldf();
         let n_origins = cl.origins.len();
         let regular = cl
             .latest_position
@@ -139,7 +144,7 @@ impl MackFit {
         // diagonal, C[I-k, k] / (S_k + C[I-k, k]) (Merz and Wüthrich's
         // alpha_k, R's `alpha`).
         let ratio: Vec<f64> = (0..n_links)
-            .map(|k| (dev.sigma[k] / dev.ldf[k]).powi(2))
+            .map(|k| (dev.sigma[k] / ldf[k]).powi(2))
             .collect();
         let volume = &dev.volume;
         let share: Vec<f64> = (0..n_links)
@@ -213,7 +218,7 @@ mod tests {
     use super::*;
     use crate::development::{Average, Development, SigmaInterpolation};
     use crate::triangle::tests::{annual, raa};
-    use crate::{ChainLadder, Mack, Triangle};
+    use crate::{Mack, TailConstant, Triangle};
 
     fn close(got: f64, want: f64, tol: f64) {
         assert!((got - want).abs() <= tol, "got {got}, want {want}");
@@ -283,6 +288,7 @@ mod tests {
                 sigma_interpolation: SigmaInterpolation::Mack,
                 ..Default::default()
             },
+            ..Default::default()
         }
     }
 
@@ -373,6 +379,7 @@ mod tests {
                 average: Average::Simple,
                 ..Default::default()
             },
+            ..Default::default()
         }
         .fit(&raa(), "values")
         .unwrap();
@@ -380,9 +387,8 @@ mod tests {
             simple.claims_development_result(),
             Err(Error::ClaimsDevelopment(_))
         ));
-        let mut tailed = Mack::default().fit(&raa(), "values").unwrap();
-        tailed.chain_ladder = ChainLadder {
-            tail: 1.05,
+        let tailed = Mack {
+            tail: 1.05.into(),
             ..Default::default()
         }
         .fit(&raa(), "values")
@@ -391,6 +397,34 @@ mod tests {
             tailed.claims_development_result(),
             Err(Error::ClaimsDevelopment("needs no tail factor"))
         );
+        // A factor of 1 that replaces estimated factors is a tail too.
+        let replaced = Mack {
+            tail: TailConstant {
+                factor: 1.0,
+                attachment_age: Some(84),
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        assert_eq!(replaced.chain_ladder.tail.factor, 1.0);
+        assert!(
+            replaced.chain_ladder.tail.attachment < replaced.chain_ladder.development.ldf.len()
+        );
+        assert_eq!(
+            replaced.claims_development_result(),
+            Err(Error::ClaimsDevelopment("needs no tail factor"))
+        );
+        // An explicit constant tail of 1 is no tail.
+        let none = Mack {
+            tail: 1.0.into(),
+            ..Default::default()
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        assert!(none.claims_development_result().is_ok());
     }
 
     #[test]

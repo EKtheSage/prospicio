@@ -1,5 +1,6 @@
 //! Probability lane: wrappers over the `act_prob` Pareto family, the gamma
-//! and Tweedie distributions, and claim counts by dispersion, for the R `pareto.R` API
+//! and Tweedie distributions, claim counts by dispersion and `Custom` (a
+//! severity from an R cdf), for the R `pareto.R` API
 //! (`docs/design/pareto.md`). Numeric arguments are vectors where R users
 //! expect them; a truncation of `Inf` means none.
 
@@ -536,7 +537,7 @@ severity_class!(MixtureDist {
             .iter()
             .zip(components.values())
             .map(|(&w, c)| {
-                let sev = crate::distributions::AnySeverity::from_robj(&c)?;
+                let sev = crate::distributions::severity_from_robj(&c)?;
                 Ok((w, Box::new(sev) as Box<dyn Severity + Send + Sync>))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -551,8 +552,72 @@ severity_class!(MixtureDist {
     }
 });
 
+/// An R function held by a [`act_prob::Custom`].
+struct RFunction(Function);
+
+// SAFETY: R must only be entered from its main thread. The `Custom` that
+// holds these is built with `parallel_safe = false`, and every parallel
+// path in act-prob and act-aggregate checks `is_parallel_safe()` and runs
+// on the calling thread instead, which for an R binding is R's main
+// thread.
+unsafe impl Send for RFunction {}
+unsafe impl Sync for RFunction {}
+
+impl RFunction {
+    fn call(&self, x: f64, what: &str) -> std::result::Result<f64, String> {
+        let v = self.0.call(pairlist!(x)).map_err(|e| e.to_string())?;
+        v.as_real()
+            .ok_or_else(|| format!("{what} must return one number"))
+    }
+}
+
+fn r_callback(f: Function, what: &'static str) -> act_prob::custom::Callback {
+    let f = RFunction(f);
+    std::sync::Arc::new(move |x: f64| f.call(x, what))
+}
+
+/// A severity from an R `cdf` and optional `quantile` function.
+#[extendr]
+pub(crate) struct CustomDist {
+    pub(crate) inner: act_prob::Custom,
+}
+
+severity_class!(CustomDist {
+    /// `quantile` is `NULL` or a function.
+    fn new(cdf: Function, quantile: Robj, name: &str) -> Result<Self> {
+        let quantile = if quantile.is_null() {
+            None
+        } else {
+            let q = Function::try_from(quantile)
+                .map_err(|_| Error::Other("quantile must be a function or NULL".into()))?;
+            Some(r_callback(q, "quantile"))
+        };
+        let inner = act_prob::Custom::new(name, r_callback(cdf, "cdf"), quantile, false)
+            .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn name(&self) -> String {
+        self.inner.name().to_string()
+    }
+
+    fn has_quantile(&self) -> bool {
+        self.inner.has_quantile()
+    }
+
+    fn upper(&self) -> f64 {
+        self.inner.upper()
+    }
+
+    /// The first callback error since construction, or "".
+    fn last_error(&self) -> String {
+        self.inner.error().unwrap_or_default()
+    }
+});
+
 extendr_module! {
     mod pareto;
+    impl CustomDist;
     fn local_pareto_convert;
     impl Pareto;
     impl PiecewisePareto;

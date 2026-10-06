@@ -1,13 +1,14 @@
 //! Deterministic chain ladder.
 
 use crate::development::{Development, DevelopmentFit, cumulative_factors};
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::segments::{SegmentFits, fit_each};
+use crate::tail::{Tail, TailFit};
 use crate::triangle::{Segment, Triangle};
 use act_core::{Lag, Period};
 
 /// Chain-ladder method: project each origin's latest value to ultimate with
-/// the estimated age-to-age factors and a tail factor.
+/// the estimated age-to-age factors and a [`Tail`].
 ///
 /// ```
 /// use act_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Month, Triangle};
@@ -28,21 +29,13 @@ use act_core::{Lag, Period};
 /// assert_eq!(cl.total_reserve(), 100.0);
 /// assert_eq!(cl.origins[1].to_string(), "2021");
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ChainLadder {
     /// How the age-to-age factors are estimated.
     pub development: Development,
-    /// Factor from the oldest age to ultimate; 1 means no tail.
-    pub tail: f64,
-}
-
-impl Default for ChainLadder {
-    fn default() -> Self {
-        Self {
-            development: Development::default(),
-            tail: 1.0,
-        }
-    }
+    /// Development past the oldest age. The default, a constant 1, is no
+    /// tail; a number converts to a constant tail.
+    pub tail: Tail,
 }
 
 /// A fitted chain-ladder projection, per origin.
@@ -52,9 +45,11 @@ pub struct ChainLadderFit {
     pub origins: Vec<Period>,
     /// The estimated development pattern.
     pub development: DevelopmentFit,
-    /// Tail factor from the oldest age to ultimate.
-    pub tail: f64,
-    /// Age-to-ultimate factors; element `k` develops age `k` to ultimate.
+    /// The fitted tail: the selected factors, which the projection uses,
+    /// and the factor from the oldest age to ultimate.
+    pub tail: TailFit,
+    /// Age-to-ultimate factors from the selected factors and the tail;
+    /// element `k` develops age `k` to ultimate.
     pub cdf: Vec<f64>,
     /// Development position of each origin's latest observation.
     pub latest_position: Vec<usize>,
@@ -82,12 +77,10 @@ impl ChainLadder {
     }
 
     pub(crate) fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<ChainLadderFit> {
-        if !self.tail.is_finite() || self.tail <= 0.0 {
-            return Err(Error::InvalidTail(self.tail));
-        }
         let mut development = self.development.fit_segment(segment)?;
         development.development = ages.to_vec();
-        let cdf = cumulative_factors(&development.ldf, self.tail);
+        let tail = self.tail.fit(&development)?;
+        let cdf = cumulative_factors(&tail.ldf[..development.ldf.len()], tail.factor);
         let (latest_position, latest): (Vec<usize>, Vec<f64>) = (0..segment.n_origins)
             .map(|o| segment.latest(o))
             .collect::<Result<Vec<_>>>()?
@@ -101,7 +94,7 @@ impl ChainLadder {
         Ok(ChainLadderFit {
             origins: segment.origins.clone(),
             development,
-            tail: self.tail,
+            tail,
             cdf,
             latest_position,
             latest,
@@ -111,6 +104,13 @@ impl ChainLadder {
 }
 
 impl ChainLadderFit {
+    /// Selected age-to-age factors within the triangle, which the projection
+    /// uses: the estimated ones, replaced by the tail's from its attachment.
+    /// Element `k` links age `k` to `k + 1`.
+    pub fn ldf(&self) -> &[f64] {
+        &self.tail.ldf[..self.development.ldf.len()]
+    }
+
     /// Reserve (ultimate minus latest) per origin, often labelled IBNR.
     pub fn reserves(&self) -> Vec<f64> {
         self.ultimate
@@ -131,10 +131,10 @@ impl ChainLadderFit {
     }
 
     /// Projected cumulative value of `origin` at every development position
-    /// from its latest observation on, before the tail: element `k` is
-    /// position `latest_position + k`.
+    /// from its latest observation on, with the selected factors and before
+    /// the tail: element `k` is position `latest_position + k`.
     pub(crate) fn projection(&self, origin: usize) -> Vec<f64> {
-        let ldf = &self.development.ldf;
+        let ldf = self.ldf();
         let mut values = vec![self.latest[origin]];
         for f in &ldf[self.latest_position[origin]..] {
             values.push(values[values.len() - 1] * f);
@@ -147,6 +147,7 @@ impl ChainLadderFit {
 mod tests {
     use super::*;
     use crate::development::Average;
+    use crate::error::Error;
     use crate::triangle::tests::{annual, raa};
 
     fn close(got: f64, want: f64, tol: f64) {
@@ -169,7 +170,7 @@ mod tests {
         let t = raa();
         let base = ChainLadder::default().fit(&t, "values").unwrap();
         let tailed = ChainLadder {
-            tail: 1.05,
+            tail: 1.05.into(),
             ..Default::default()
         }
         .fit(&t, "values")
@@ -182,7 +183,7 @@ mod tests {
     #[test]
     fn rejects_bad_tail() {
         let cl = ChainLadder {
-            tail: 0.0,
+            tail: 0.0.into(),
             ..Default::default()
         };
         assert_eq!(cl.fit(&raa(), "values"), Err(Error::InvalidTail(0.0)));

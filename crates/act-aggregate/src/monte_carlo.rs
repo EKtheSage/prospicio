@@ -12,11 +12,17 @@ use rayon::prelude::*;
 /// first the claim count, then each claim's severity, both by inverse
 /// transform. So results are identical for any number of threads, and any
 /// year can be replayed alone.
+///
+/// Each loss may carry the sum insured of the risk it hit
+/// ([`EventSet::with_sums_insured`], or a risk profile), which a surplus
+/// treaty needs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventSet {
     /// `offsets[i]..offsets[i + 1]` indexes year `i`'s losses.
     offsets: Vec<usize>,
     losses: Vec<f64>,
+    /// One per loss when known.
+    sums_insured: Option<Vec<f64>>,
     seed: u64,
 }
 
@@ -53,22 +59,26 @@ where
             reason: "must be positive",
         });
     }
-    let years: Vec<Vec<f64>> = (0..n_sims as u64)
-        .into_par_iter()
-        .map(|i| {
-            let mut rng = StreamRng::new(seed, i);
-            let count = frequency
-                .quantile(rng.next_open01())
-                .expect("next_open01 is always in (0, 1)");
-            (0..count)
-                .map(|_| {
-                    severity
-                        .quantile(rng.next_open01())
-                        .expect("next_open01 is always in (0, 1)")
-                })
-                .collect()
-        })
-        .collect();
+    let year = |i: u64| -> Vec<f64> {
+        let mut rng = StreamRng::new(seed, i);
+        let count = frequency
+            .quantile(rng.next_open01())
+            .expect("next_open01 is always in (0, 1)");
+        (0..count)
+            .map(|_| {
+                severity
+                    .quantile(rng.next_open01())
+                    .expect("next_open01 is always in (0, 1)")
+            })
+            .collect()
+    };
+    // A severity whose callbacks must stay on this thread (an R function)
+    // runs the years in order; the draws are the same either way.
+    let years: Vec<Vec<f64>> = if severity.is_parallel_safe() {
+        (0..n_sims as u64).into_par_iter().map(year).collect()
+    } else {
+        (0..n_sims as u64).map(year).collect()
+    };
     let mut offsets = Vec::with_capacity(n_sims + 1);
     offsets.push(0);
     let mut losses = Vec::with_capacity(years.iter().map(Vec::len).sum());
@@ -79,11 +89,103 @@ where
     Ok(EventSet {
         offsets,
         losses,
+        sums_insured: None,
         seed,
     })
 }
 
 impl EventSet {
+    /// Years of losses from elsewhere (your own simulation, or a
+    /// catastrophe model's event loss table by year), in order within each
+    /// year. `seed` is recorded in results' provenance; give the one your
+    /// simulation used, or 0.
+    ///
+    /// ```
+    /// use act_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_years(vec![vec![5.0, 2.0], vec![], vec![9.0]], 0).unwrap();
+    /// assert_eq!(events.counts(), [2, 0, 1]);
+    /// assert_eq!(events.events(2), [9.0]);
+    /// ```
+    pub fn from_years(years: Vec<Vec<f64>>, seed: u64) -> Result<Self> {
+        if years.is_empty() {
+            return Err(Error::Data("needs at least one year".into()));
+        }
+        let mut offsets = Vec::with_capacity(years.len() + 1);
+        offsets.push(0);
+        let mut losses = Vec::with_capacity(years.iter().map(Vec::len).sum());
+        for year in years {
+            losses.extend(year);
+            offsets.push(losses.len());
+        }
+        if let Some(&bad) = losses.iter().find(|x| !(x.is_finite() && **x >= 0.0)) {
+            return Err(Error::InvalidParameter {
+                name: "losses",
+                value: bad,
+                reason: "must be finite and non-negative",
+            });
+        }
+        Ok(Self {
+            offsets,
+            losses,
+            sums_insured: None,
+            seed,
+        })
+    }
+
+    /// The same events, each on a risk with the given sum insured: one
+    /// value per loss, years in order, as [`EventSet::events`] lists them.
+    /// A loss may not exceed its risk's sum insured.
+    ///
+    /// ```
+    /// use act_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_years(vec![vec![5.0, 2.0], vec![9.0]], 0)
+    ///     .unwrap()
+    ///     .with_sums_insured(vec![10.0, 2.0, 50.0])
+    ///     .unwrap();
+    /// assert_eq!(events.sums_insured(1), Some(&[50.0][..]));
+    /// ```
+    pub fn with_sums_insured(mut self, sums_insured: Vec<f64>) -> Result<Self> {
+        if sums_insured.len() != self.losses.len() {
+            return Err(Error::Data(format!(
+                "{} sums insured for {} losses",
+                sums_insured.len(),
+                self.losses.len()
+            )));
+        }
+        for (&si, &x) in sums_insured.iter().zip(&self.losses) {
+            if !(si.is_finite() && si > 0.0) {
+                return Err(Error::InvalidParameter {
+                    name: "sums_insured",
+                    value: si,
+                    reason: "must be positive and finite",
+                });
+            }
+            if x > si * (1.0 + 1e-12) {
+                return Err(Error::InvalidParameter {
+                    name: "sums_insured",
+                    value: si,
+                    reason: "is below its loss",
+                });
+            }
+        }
+        self.sums_insured = Some(sums_insured);
+        Ok(self)
+    }
+
+    /// Whether the losses carry sums insured.
+    pub fn has_sums_insured(&self) -> bool {
+        self.sums_insured.is_some()
+    }
+
+    /// Year `sim`'s sums insured, one per loss, when known.
+    pub fn sums_insured(&self, sim: usize) -> Option<&[f64]> {
+        self.sums_insured
+            .as_deref()
+            .map(|s| &s[self.offsets[sim]..self.offsets[sim + 1]])
+    }
+
     /// Number of simulated years.
     pub fn n_sims(&self) -> usize {
         self.offsets.len() - 1
@@ -129,6 +231,27 @@ mod tests {
 
     fn severity() -> Grid {
         Grid::new(1.0, vec![0.1, 0.3, 0.25, 0.2, 0.1, 0.05]).unwrap()
+    }
+
+    #[test]
+    fn a_serial_severity_gives_the_same_draws() {
+        use act_prob::Custom;
+        use std::sync::Arc;
+        let grid = severity();
+        let g = grid.clone();
+        let serial = Custom::new(
+            "grid",
+            Arc::new(move |x| Ok(g.cdf(x))),
+            Some(Arc::new(move |p| {
+                grid.quantile(p).map_err(|e| e.to_string())
+            })),
+            false,
+        )
+        .unwrap();
+        let freq = Poisson::new(4.0).unwrap();
+        let a = simulate_events(&freq, &serial, 2_000, 3).unwrap();
+        let b = simulate_events(&freq, &severity(), 2_000, 3).unwrap();
+        assert_eq!(a, b);
     }
 
     #[test]

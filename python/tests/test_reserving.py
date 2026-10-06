@@ -7,13 +7,23 @@ import pytest
 
 from actuarialrs.distributions import PredictiveDistribution
 from actuarialrs.reserving import (
+    Benktander,
+    BornhuetterFerguson,
+    CapeCod,
+    CapeCodFit,
     ChainLadder,
     ChainLadderFit,
     ClaimsDevelopmentResult,
+    ExpectedLoss,
+    ExpectedLossFit,
     Mack,
     MackFit,
     OdpBootstrap,
     OdpBootstrapFit,
+    TailBondy,
+    TailConstant,
+    TailCurve,
+    TailLogLinear,
     Triangle,
 )
 
@@ -112,6 +122,115 @@ def test_tail_scales_ultimates(triangles):
     tailed = ChainLadder(tail=1.05).fit(raa, "values")
     assert tailed.tail == 1.05
     assert tailed.ultimate == pytest.approx([u * 1.05 for u in base.ultimate], rel=1e-12)
+
+
+# Reference method -> Mack keyword arguments, as in
+# validation/tests/reserving_tails.rs. mack_tail_given adds tail_sigma and
+# tail_std_err from the fitted pattern.
+TAIL_METHODS = {
+    # R ChainLadder.
+    "mack_tail_loglinear": dict(tail=TailLogLinear()),
+    "mack_tail_loglinear_sigma_mack": dict(tail=TailLogLinear(), sigma_interpolation="mack"),
+    "mack_tail_loglinear_alpha2": dict(tail=TailLogLinear(), average="regression"),
+    "mack_tail_constant": dict(tail=1.05),
+    "mack_tail_constant_sigma_mack": dict(tail=1.05, sigma_interpolation="mack"),
+    "mack_tail_given": dict(tail=1.05),
+    # chainladder-python.
+    "tail_constant": dict(tail=TailConstant(1.05)),
+    "tail_constant_decay": dict(tail=TailConstant(1.1, decay=0.75)),
+    "tail_constant_attach": dict(tail=TailConstant(1.05, attachment_age=72)),
+    "tail_constant_below_one": dict(tail=TailConstant(0.98)),
+    "tail_curve_exponential": dict(tail=TailCurve()),
+    "tail_curve_inverse_power": dict(tail=TailCurve("inverse_power")),
+    "tail_curve_fit_period": dict(tail=TailCurve(fit_period=(36, 108), extrap_periods=50)),
+    "tail_curve_off_grid": dict(tail=TailCurve(fit_period=(30, 102))),
+    "tail_curve_attach": dict(tail=TailCurve(attachment_age=60)),
+    "tail_bondy": dict(tail=TailBondy()),
+    "tail_bondy_generalized": dict(tail=TailBondy(earliest_age=36)),
+    "tail_bondy_off_grid": dict(tail=TailBondy(earliest_age=30)),
+    "tail_bondy_attach": dict(tail=TailBondy(earliest_age=36, attachment_age=72)),
+}
+
+
+def given_tail(tri):
+    """R's mack_tail_given inputs: twice the last sigma, half the last standard error."""
+    fit = ChainLadder().fit(tri, "values")
+    return fit.sigma[-1] * 2, fit.std_err[-1] / 2
+
+
+def evaluate_tail(fit, quantity, arg):
+    if quantity == "ldf":
+        return (fit.ldf + fit.tail_ldf)[int(arg)]
+    if quantity == "cdf":
+        k = int(arg)
+        if k < len(fit.cdf):
+            return fit.cdf[k]
+        return math.prod((fit.ldf + fit.tail_ldf)[k:])
+    if quantity == "tail_factor":
+        return fit.tail
+    return evaluate(fit, quantity, arg)
+
+
+@pytest.mark.parametrize("reference", ["reserving_tails_r.csv", "reserving_tails_python.csv"])
+def test_tails_match_reference(triangles, reference):
+    fits = {}
+    cases = read_csv(VALIDATION / "reference" / reference)
+    assert cases
+    for case in cases:
+        tri = triangles[case["dataset"]]
+        quantity = case["quantity"]
+        if quantity.startswith("given_tail_"):
+            sigma, std_err = given_tail(tri)
+            got = sigma if quantity == "given_tail_sigma" else std_err
+        else:
+            key = (case["dataset"], case["method"])
+            if key not in fits:
+                kw = dict(TAIL_METHODS[case["method"]])
+                if case["method"] == "mack_tail_given":
+                    kw["tail_sigma"], kw["tail_std_err"] = given_tail(tri)
+                fits[key] = Mack(**kw).fit(tri, "values")
+            got = evaluate_tail(fits[key], quantity, case["arg"])
+        want = float(case["expected"])
+        abs_tol = float(case["abs_tol"] or 0)
+        rel_tol = float(case["rel_tol"] or 0)
+        err = abs(got - want)
+        assert got == want or err <= abs_tol or err <= rel_tol * abs(want), (case, got)
+
+
+def test_tail_arguments(triangles):
+    raa = triangles["raa"]
+    assert ChainLadder().tail == 1.0
+    assert ChainLadder(tail=1.05).tail == 1.05
+    curve = TailCurve("inverse_power", fit_period=(36, None), attachment_age=60)
+    assert ChainLadder(tail=curve).tail.curve == "inverse_power"
+    assert curve.fit_period == (36, None) and curve.extrap_periods == 100
+    assert "TailBondy(earliest_age=36" in repr(Mack(tail=TailBondy(36)))
+    # A constant with the default decay and attachment is just its factor.
+    assert ChainLadder(tail=TailConstant(1.05)).tail == 1.05
+    assert isinstance(ChainLadder(tail=TailConstant(1.05, decay=0.75)).tail, TailConstant)
+    # The selected factors replace the estimated ones from the attachment age.
+    fit = ChainLadder(tail=curve).fit(raa, "values")
+    base = ChainLadder().fit(raa, "values")
+    assert fit.ldf[:4] == base.ldf[:4] and fit.ldf[4] != base.ldf[4]
+    assert fit.estimated_ldf == base.ldf and fit.tail_attachment_age == 60
+    assert base.tail_attachment_age == 120
+    tailed_mack = Mack(tail=curve).fit(raa, "values")
+    assert tailed_mack.estimated_ldf == base.ldf and tailed_mack.tail_attachment_age == 60
+    assert math.prod(fit.tail_ldf) == pytest.approx(fit.tail, rel=1e-12)
+    assert fit.cdf[-1] == pytest.approx(fit.tail, rel=1e-12)
+    # Without a tail above 1 there is no tail risk.
+    mack = Mack().fit(raa, "values")
+    assert (mack.tail, mack.tail_sigma, mack.tail_std_err, mack.standard_error[0]) == (1.0, 0.0, 0.0, 0.0)
+    given = Mack(tail=1.05, tail_sigma=1.5, tail_std_err=0.003).fit(raa, "values")
+    assert (given.tail_sigma, given.tail_std_err) == (1.5, 0.003)
+    with pytest.raises(TypeError, match="tail must be"):
+        ChainLadder(tail="1.05")
+    with pytest.raises(ValueError, match="curve must be"):
+        TailCurve("weibull")
+    with pytest.raises(ValueError, match="tail"):
+        ChainLadder(tail=TailCurve(fit_period=(108, None))).fit(raa, "values")
+    with pytest.raises(ValueError, match="tail"):
+        Mack(tail=1.05, tail_sigma=-1.0).fit(raa, "values")
 
 
 def test_mack_fit(triangles):
@@ -523,6 +642,18 @@ def test_every_segment_at_once():
         cl.ldf
     with pytest.raises(ValueError, match="use totals_frame"):
         mack.total_standard_error
+    # Each segment's tail is in totals_frame(); the tail's factors need one.
+    assert list(totals.columns)[-3:] == ["tail", "tail_sigma", "tail_std_err"]
+    assert list(totals["tail"]) == [1.0] * 4 and list(totals["tail_sigma"]) == [0.0] * 4
+    assert list(cl.totals_frame().columns)[-3:] == ["tail", "tail_sigma", "tail_std_err"]
+    with pytest.raises(ValueError, match="4 segments; use totals_frame"):
+        mack.tail_sigma
+    with pytest.raises(ValueError, match="4 segments; use totals_frame"):
+        cl.tail
+    with pytest.raises(ValueError, match=r"4 segments; use segment\(\.\.\.\)$"):
+        cl.tail_ldf
+    with pytest.raises(ValueError, match=r"4 segments; use segment\(\.\.\.\)$"):
+        mack.estimated_ldf
     with pytest.raises(ValueError, match="2 segments match"):
         cl.segment(lob="Auto")
     with pytest.raises(ValueError, match="no key named line"):
@@ -928,6 +1059,16 @@ def test_claims_development_result_errors(triangles):
     simple = Mack(average="simple").fit(triangles["raa"], "values")
     with pytest.raises(ValueError, match="claims development result: needs volume-weighted"):
         simple.claims_development_result()
+    # Merz and Wuthrich assume no tail: a factor other than 1, or a factor
+    # of 1 that replaces estimated factors, is an error.
+    no_tail = "claims development result: needs no tail factor"
+    for tail in [1.05, TailConstant(1.05), TailLogLinear(), TailConstant(1.0, attachment_age=84)]:
+        fit = Mack(tail=tail).fit(triangles["raa"], "values")
+        with pytest.raises(ValueError, match=no_tail):
+            fit.claims_development_result()
+    explicit = Mack(tail=1.0).fit(triangles["raa"], "values").claims_development_result()
+    default = Mack().fit(triangles["raa"], "values").claims_development_result()
+    assert explicit.by_calendar_year == default.by_calendar_year
     tri = Triangle.from_frame(
         lob_coverage_long(), "year", "age", ["paid", "incurred"], keys=["lob", "coverage"]
     )
@@ -938,3 +1079,179 @@ def test_claims_development_result_errors(triangles):
     assert one.claims_development_result().total_run_off_standard_error == pytest.approx(
         one.total_standard_error, rel=1e-9
     )
+# Expected-loss methods: parity with chainladder-python 0.10.1
+# (validation/reference/reserving_expected_loss_python.csv).
+
+PREMIUM_DATASETS = ["clrd_wkcomp", "genins_premium"]
+
+
+def premium_rows(name):
+    return read_csv(VALIDATION / "data" / f"{name}.csv")
+
+
+def premium_dataset(name):
+    rows = premium_rows(name)
+    return Triangle.from_long(
+        origin=[int(r["origin"]) for r in rows],
+        development=[int(r["development"]) for r in rows],
+        values={c: [float(r[c]) for r in rows] for c in ["paid", "premium"]},
+    )
+
+
+def expected_loss_method(method):
+    """The estimator a reference `method` (name;key=value;...) describes."""
+    name, *settings = method.split(";")
+    kw = dict(s.split("=") for s in settings)
+    average = kw.pop("average")
+    cls = {
+        "expected_loss": ExpectedLoss,
+        "bornhuetter_ferguson": BornhuetterFerguson,
+        "benktander": Benktander,
+        "cape_cod": CapeCod,
+    }[name]
+    kw = {k: int(v) if k == "n_iters" else float(v) for k, v in kw.items()}
+    return cls(average=average, **kw)
+
+
+def test_expected_loss_matches_chainladder_python():
+    tris = {name: premium_dataset(name) for name in PREMIUM_DATASETS}
+    cases = read_csv(VALIDATION / "reference" / "reserving_expected_loss_python.csv")
+    assert cases
+    fits = {}
+    for case in cases:
+        key = (case["dataset"], case["method"])
+        if key not in fits:
+            model = expected_loss_method(case["method"])
+            fits[key] = model.fit(tris[case["dataset"]], "paid", "premium")
+        fit = fits[key]
+        quantity, arg = case["quantity"], case["arg"]
+        if quantity.startswith("total_"):
+            got = getattr(fit, quantity)
+        else:
+            per_origin = {
+                "ultimate": lambda: fit.ultimate,
+                "reserve": lambda: fit.reserve,
+                "apriori": lambda: fit.trended_apriori,
+                "detrended_apriori": lambda: fit.apriori,
+            }[quantity]()
+            got = per_origin[fit.origins.index(arg)]
+        want = float(case["expected"])
+        err = abs(got - want)
+        abs_tol, rel_tol = float(case["abs_tol"] or 0), float(case["rel_tol"] or 0)
+        assert got == want or err <= abs_tol or err <= rel_tol * abs(want), (case, got)
+
+
+def test_expected_loss_family_identities():
+    tri = premium_dataset("clrd_wkcomp")
+    el = ExpectedLoss(apriori=0.7).fit(tri, "paid", "premium")
+    bf = BornhuetterFerguson(apriori=0.7).fit(tri, "paid", "premium")
+    assert isinstance(el, ExpectedLossFit) and isinstance(bf, ExpectedLossFit)
+    assert Benktander(apriori=0.7, n_iters=0).fit(tri, "paid", "premium").ultimate == el.ultimate
+    assert Benktander(apriori=0.7, n_iters=1).fit(tri, "paid", "premium").ultimate == bf.ultimate
+    assert el.ultimate == pytest.approx([0.7 * e for e in el.exposure], rel=1e-15)
+    assert el.apriori == [0.7] * 10
+    assert el.exposure[0] == 1_691_130.0
+    cl = ChainLadder().fit(tri, "paid")
+    many = Benktander(apriori=0.7, n_iters=10_000).fit(tri, "paid", "premium")
+    assert many.ultimate == pytest.approx(cl.ultimate, rel=1e-12)
+    assert bf.chain_ladder.ultimate == cl.ultimate
+    assert bf.ldf == cl.ldf and bf.cdf == cl.cdf and bf.latest == cl.latest
+    assert bf.development == cl.development
+    assert bf.total_reserve == pytest.approx(sum(bf.reserve), rel=1e-12)
+    # Cape Cod without decay keeps each origin's own loss ratio: the chain ladder.
+    cc = CapeCod(trend=0.05, decay=0.0).fit(tri, "paid", "premium")
+    assert isinstance(cc, CapeCodFit)
+    assert cc.ultimate == pytest.approx(cl.ultimate, rel=1e-12)
+    assert cc.trended_apriori[-1] == cc.apriori[-1]
+    assert cc.trended_apriori[0] / cc.apriori[0] == pytest.approx(1.05**9, rel=1e-12)
+    assert cc.expected_loss.apriori == cc.apriori
+    assert repr(Benktander(apriori=0.7, n_iters=3)) == (
+        'Benktander(apriori=0.7, n_iters=3, average="volume", '
+        'sigma_interpolation="log-linear", tail=1.0)'
+    )
+    assert repr(CapeCod()).startswith("CapeCod(trend=0.0, decay=1.0, ")
+    assert repr(cc).startswith("CapeCodFit(origins=10, total_ultimate=")
+    model = CapeCod(trend=0.05, decay=0.75, average="simple", tail=1.01)
+    assert (model.trend, model.decay, model.average, model.tail) == (0.05, 0.75, "simple", 1.01)
+    assert BornhuetterFerguson(apriori=0.6).apriori == 0.6
+    assert Benktander(n_iters=4).n_iters == 4
+    # The tail is ChainLadder's: a number or a tail estimator.
+    bondy = BornhuetterFerguson(apriori=0.7, tail=TailBondy()).fit(tri, "paid", "premium")
+    assert bondy.cdf == ChainLadder(tail=TailBondy()).fit(tri, "paid").cdf
+    assert bondy.cdf != bf.cdf
+    assert isinstance(CapeCod(tail=TailBondy()).tail, TailBondy)
+    assert "tail=TailBondy(" in repr(Benktander(tail=TailBondy()))
+    with pytest.raises(TypeError, match="tail must be"):
+        ExpectedLoss(tail="1.05")
+
+
+def test_expected_loss_every_segment_at_once():
+    pytest.importorskip("pandas")
+    origin, development, paid, premium, lob = [], [], [], [], []
+    for name in PREMIUM_DATASETS:
+        for r in premium_rows(name):
+            origin.append(int(r["origin"]))
+            development.append(int(r["development"]))
+            paid.append(float(r["paid"]))
+            premium.append(float(r["premium"]))
+            lob.append(name)
+    both = Triangle.from_long(
+        origin, development, {"paid": paid, "premium": premium}, keys={"lob": lob}
+    )
+    assert both.index == PREMIUM_DATASETS
+    wkcomp = premium_dataset("clrd_wkcomp")
+    for model in [BornhuetterFerguson(apriori=0.6), CapeCod(trend=0.02, decay=0.8)]:
+        fit = model.fit(both, "paid", "premium")
+        assert fit.keys == ["lob"] and len(fit.origins) == 20
+        alone = model.fit(wkcomp, "paid", "premium")
+        seg = fit.segment(lob="clrd_wkcomp")
+        assert seg.exposure == alone.exposure
+        # Cape Cod trends to the triangle's valuation (2010 here, 1997
+        # alone) and back, so the two agree to rounding.
+        assert seg.ultimate == pytest.approx(alone.ultimate, rel=1e-14)
+        assert fit.ultimate[:10] == seg.ultimate
+        frame = fit.to_frame()
+        assert list(frame["ultimate"]) == fit.ultimate
+        assert list(frame["reserve"]) == fit.reserve
+        assert list(frame["apriori"]) == fit.apriori
+        totals = fit.totals_frame()
+        assert totals["reserve"].iloc[0] == pytest.approx(alone.total_reserve, rel=1e-12)
+        assert totals["exposure"].iloc[0] == sum(alone.exposure)
+        assert len(fit.development_frame()) == 20
+        with pytest.raises(ValueError, match="2 segments; use development_frame"):
+            fit.ldf
+        assert "segments=2" in repr(fit)
+    cc = CapeCod().fit(both, "paid", "premium")
+    assert list(cc.to_frame().columns) == [
+        "lob", "origin", "latest", "ultimate", "reserve", "exposure", "apriori", "trended_apriori",
+    ]
+    # The chain ladder's ultimate is not the method's.
+    assert cc.chain_ladder.ultimate != cc.ultimate
+
+
+def test_expected_loss_errors():
+    tri = Triangle.from_long(
+        [2020, 2020, 2021],
+        [12, 24, 12],
+        {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, float("nan")]},
+    )
+    msg = "origin 2021 has no observed, finite, positive exposure in column premium"
+    with pytest.raises(ValueError, match=msg):
+        BornhuetterFerguson().fit(tri, "paid", "premium")
+    with pytest.raises(ValueError, match="no column named exposure"):
+        ExpectedLoss().fit(tri, "paid", "exposure")
+    good = Triangle.from_long(
+        [2020, 2020, 2021],
+        [12, 24, 12],
+        {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    )
+    with pytest.raises(ValueError, match="apriori = 0 is invalid"):
+        BornhuetterFerguson(apriori=0.0).fit(good, "paid", "premium")
+    with pytest.raises(ValueError, match="decay = 2 is invalid"):
+        CapeCod(decay=2.0).fit(good, "paid", "premium")
+    with pytest.raises(ValueError, match="trend = -1 is invalid"):
+        CapeCod(trend=-1.0).fit(good, "paid", "premium")
+    with pytest.raises(OverflowError):
+        Benktander(n_iters=-1)
+    with pytest.raises(ValueError):
+        ExpectedLoss(average="median")

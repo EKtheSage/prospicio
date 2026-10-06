@@ -121,6 +121,140 @@ stopifnot(identical(names(df), c("origin", "latest", "ultimate", "reserve", "pro
                                  "parameter_risk", "standard_error")), nrow(df) == 10)
 invisible(utils::capture.output(print(raa), print(cl), print(mack(raa))))
 
+# Tails against R ChainLadder's MackChainLadder(tail = ...) and
+# chainladder-python's TailConstant, TailCurve and TailBondy with
+# MackChainladder (validation/reference/reserving_tails_{r,python}.csv):
+# every row, as validation/tests/reserving_tails.rs. ldf and cdf run past
+# the oldest age into the tail's factors. mack_tail_given gives tail_sigma
+# and tail_std_err: twice the last sigma, half the last standard error.
+tail_methods <- list(
+  mack_tail_loglinear = list(tail = tail_log_linear()),
+  mack_tail_loglinear_sigma_mack = list(tail = tail_log_linear(), sigma_interpolation = "mack"),
+  mack_tail_loglinear_alpha2 = list(tail = tail_log_linear(), average = "regression"),
+  mack_tail_constant = list(tail = 1.05),
+  mack_tail_constant_sigma_mack = list(tail = 1.05, sigma_interpolation = "mack"),
+  mack_tail_given = list(tail = 1.05),
+  tail_constant = list(tail = tail_constant(1.05)),
+  tail_constant_decay = list(tail = tail_constant(1.1, decay = 0.75)),
+  tail_constant_attach = list(tail = tail_constant(1.05, attachment_age = 72)),
+  tail_constant_below_one = list(tail = tail_constant(0.98)),
+  tail_curve_exponential = list(tail = tail_curve()),
+  tail_curve_inverse_power = list(tail = tail_curve("inverse_power")),
+  tail_curve_fit_period = list(tail = tail_curve(fit_period = c(36, 108), extrap_periods = 50)),
+  tail_curve_off_grid = list(tail = tail_curve(fit_period = c(30, 102))),
+  tail_curve_attach = list(tail = tail_curve(attachment_age = 60)),
+  tail_bondy = list(tail = tail_bondy()),
+  tail_bondy_generalized = list(tail = tail_bondy(earliest_age = 36)),
+  tail_bondy_off_grid = list(tail = tail_bondy(earliest_age = 30)),
+  tail_bondy_attach = list(tail = tail_bondy(earliest_age = 36, attachment_age = 72))
+)
+given_tail <- function(tri) {
+  cl <- chain_ladder(tri)
+  c(sigma = 2 * cl@sigma[[length(cl@sigma)]], std_err = cl@std_err[[length(cl@std_err)]] / 2)
+}
+tail_fits <- list()
+tail_fit_for <- function(dataset, method) {
+  key <- paste(dataset, method)
+  if (is.null(tail_fits[[key]])) {
+    args <- tail_methods[[method]]
+    if (is.null(args)) stop("no settings for reference method ", method, call. = FALSE)
+    if (method == "mack_tail_given") {
+      given <- given_tail(tris[[dataset]])
+      args$tail_sigma <- given[["sigma"]]
+      args$tail_std_err <- given[["std_err"]]
+    }
+    tail_fits[[key]] <<- do.call(mack, c(list(tris[[dataset]]), args))
+  }
+  tail_fits[[key]]
+}
+tail_value_of <- function(dataset, method, quantity, arg) {
+  if (startsWith(quantity, "given_tail_")) {
+    return(given_tail(tris[[dataset]])[[sub("given_tail_", "", quantity)]])
+  }
+  fit <- tail_fit_for(dataset, method)
+  ldf <- c(fit@ldf, fit@tail_ldf)
+  k <- as.integer(arg) + 1L
+  switch(quantity,
+    ldf = ldf[[k]],
+    cdf = if (k <= length(fit@cdf)) fit@cdf[[k]] else prod(ldf[k:length(ldf)]),
+    tail_factor = fit@tail, tail_sigma = fit@tail_sigma, tail_std_err = fit@tail_std_err,
+    value_of(fit, quantity, arg)
+  )
+}
+for (reference in c("reserving_tails_r.csv", "reserving_tails_python.csv")) {
+  tail_lines <- grep("^#", readLines(validation("reference", reference)), value = TRUE, invert = TRUE)
+  tail_fields <- lapply(strsplit(tail_lines, ",", fixed = TRUE), `[`, 1:7)
+  tail_ref <- utils::read.csv(text = vapply(tail_fields, paste, "", collapse = ","),
+                              colClasses = c(arg = "character"))
+  stopifnot(nrow(tail_ref) > 1000)
+  for (r in seq_len(nrow(tail_ref))) {
+    row <- tail_ref[r, ]
+    got <- tail_value_of(row$dataset, row$method, row$quantity, row$arg)
+    err <- abs(got - row$expected)
+    if (!(got == row$expected || err <= row$abs_tol || err <= row$rel_tol * abs(row$expected))) {
+      stop(sprintf("%s %s %s %s[%s]: got %.17g, want %.17g", reference, row$dataset, row$method,
+                   row$quantity, row$arg, got, row$expected), call. = FALSE)
+    }
+  }
+}
+
+# Tail estimators: properties, printing and the selected factors.
+curve <- tail_curve("inverse_power", fit_period = c(36, NA), attachment_age = 60)
+stopifnot(identical(curve@curve, "inverse_power"), identical(curve@fit_period, c(36L, NA)),
+          identical(curve@extrap_periods, 100L), identical(curve@attachment_age, 60L),
+          identical(tail_curve()@fit_period, c(NA_integer_, NA_integer_)),
+          identical(tail_constant(1.05)@factor, 1.05), identical(tail_constant()@decay, 0.5),
+          is.null(tail_constant()@attachment_age), is.null(tail_bondy()@earliest_age),
+          identical(tail_bondy(36)@earliest_age, 36L),
+          identical(tail_constant(1.05, attachment_age = NA)@attachment_age, NULL))
+stopifnot(identical(utils::capture.output(print(curve)),
+                    'tail_curve(curve = "inverse_power", fit_period = c(36, NA), extrap_periods = 100, attachment_age = 60)'),
+          identical(utils::capture.output(print(tail_log_linear())), "tail_log_linear()"),
+          identical(utils::capture.output(print(tail_constant(1.05))),
+                    "tail_constant(factor = 1.05, decay = 0.5, attachment_age = NULL)"))
+fit <- chain_ladder(raa, tail = curve)
+base <- chain_ladder(raa)
+stopifnot(identical(fit@ldf[1:4], base@ldf[1:4]), fit@ldf[[5]] != base@ldf[[5]],
+          identical(names(fit@ldf), names(base@ldf)),
+          identical(fit@estimated_ldf, base@ldf), identical(fit@tail_attachment_age, 60L),
+          identical(base@tail_attachment_age, 120L),
+          identical(mack(raa, tail = curve)@estimated_ldf, base@ldf))
+near(prod(fit@tail_ldf), fit@tail, 1e-12)
+near(fit@cdf[["120-Ult"]], fit@tail, 1e-12)
+# A number is a constant tail; without a tail above 1 there is no tail risk.
+stopifnot(identical(chain_ladder(raa, tail = 1.05)@ultimate,
+                    chain_ladder(raa, tail = tail_constant(1.05))@ultimate))
+m <- mack(raa)
+stopifnot(m@tail == 1, m@tail_sigma == 0, m@tail_std_err == 0, m@standard_error[["1981"]] == 0,
+          identical(m@tail_ldf, chain_ladder(raa)@tail_ldf))
+given <- mack(raa, tail = 1.05, tail_sigma = 1.5, tail_std_err = 0.003)
+stopifnot(given@tail_sigma == 1.5, given@tail_std_err == 0.003, given@standard_error[["1981"]] > 0)
+invisible(utils::capture.output(print(given), print(tail_bondy(36))))
+expect_error_like(chain_ladder(raa, tail = "1.05"), "tail must be a single number, tail_constant()")
+expect_error_like(tail_curve("weibull"), "should be one of")
+expect_error_like(tail_curve(fit_period = 36), "fit_period must be two ages")
+expect_error_like(tail_constant(1.05, attachment_age = 6.5), "attachment_age must be a non-negative whole")
+expect_error_like(tail_constant(c(1, 2)), "factor must be a single number")
+expect_error_like(chain_ladder(raa, tail = tail_curve(fit_period = c(108, NA))), "tail")
+expect_error_like(mack(raa, tail = 1.05, tail_sigma = -1), "tail")
+expect_error_like(mack(raa, tail_sigma = "a"), "tail_sigma must be a single number")
+# With several segments each has its own tail.
+raa_long <- read_long("raa")
+lc_tail <- triangle(rbind(transform(raa_long, lob = "a"),
+                          transform(raa_long, lob = "b", value = value * (1 + development / 240))),
+                    "origin", "development", "value", keys = "lob")
+seg_fit <- chain_ladder(lc_tail, tail = tail_bondy())
+stopifnot(segment(seg_fit, lob = "a")@tail == chain_ladder(raa, tail = tail_bondy())@tail)
+expect_error_like(seg_fit@tail, "2 segments; use totals_frame() or segment()")
+expect_error_like(seg_fit@tail_ldf, "2 segments; use segment()")
+expect_error_like(seg_fit@estimated_ldf, "2 segments; use segment()")
+seg_totals <- totals_frame(seg_fit)
+stopifnot(identical(names(seg_totals), c("lob", "latest", "ultimate", "reserve", "tail",
+                                         "tail_sigma", "tail_std_err")),
+          identical(seg_totals$tail[1], segment(seg_fit, lob = "a")@tail),
+          identical(seg_totals$tail_sigma[2], segment(seg_fit, lob = "b")@tail_sigma))
+invisible(utils::capture.output(print(seg_fit)))
+
 # Long-table round trip.
 long <- as.data.frame(raa)
 stopifnot(identical(names(long), c("origin", "development", "value")),
@@ -592,9 +726,147 @@ invisible(utils::capture.output(print(cdr)))
 expect_error_like(claims_development_result(mack(raa, average = "simple")),
                   "claims development result: needs volume-weighted")
 expect_error_like(claims_development_result(mack(lc, "paid")), "4 segments; use segment()")
+# Merz and Wuthrich assume no tail: a factor other than 1, or a factor of 1
+# that replaces estimated factors, is an error.
+for (tail in list(1.05, tail_constant(1.05), tail_log_linear(), tail_constant(1, attachment_age = 84))) {
+  expect_error_like(claims_development_result(mack(raa, tail = tail)),
+                    "claims development result: needs no tail factor")
+}
+stopifnot(identical(claims_development_result(mack(raa, tail = 1))@by_calendar_year,
+                    claims_development_result(mack(raa))@by_calendar_year))
 expect_error_like(claims_development_result(chain_ladder(raa)), "fit must be a mack_fit")
 home_pd <- segment(mack(lc, "paid"), lob = "Home", coverage = "PD")
 near(claims_development_result(home_pd)@total_run_off_standard_error,
      home_pd@total_standard_error, 1e-9)
+# Expected-loss methods against chainladder-python 0.10.1
+# (validation/reference/reserving_expected_loss_python.csv): every row.
+# Paid losses with the latest premium as exposure.
+premium_triangle <- function(name) triangle(read_long(name), "origin", "development", c("paid", "premium"))
+premium_sets <- c("clrd_wkcomp", "genins_premium")
+premium_tris <- stats::setNames(lapply(premium_sets, premium_triangle), premium_sets)
+el_lines <- grep("^#", readLines(validation("reference", "reserving_expected_loss_python.csv")),
+                 value = TRUE, invert = TRUE)
+el_ref <- utils::read.csv(text = el_lines, colClasses = c(arg = "character"))
+stopifnot(nrow(el_ref) == 816)
+# The fit a reference `method` (name;key=value;...) describes.
+el_fit_for <- function(dataset, method) {
+  parts <- strsplit(method, ";", fixed = TRUE)[[1]]
+  kv <- strsplit(parts[-1], "=", fixed = TRUE)
+  settings <- stats::setNames(lapply(kv, `[`, 2), vapply(kv, `[`, "", 1))
+  average <- settings$average
+  num <- lapply(settings[names(settings) != "average"], as.numeric)
+  fit <- switch(parts[1], expected_loss = expected_loss, bornhuetter_ferguson = bornhuetter_ferguson,
+                benktander = benktander, cape_cod = cape_cod,
+                stop("no method ", parts[1], call. = FALSE))
+  do.call(fit, c(list(premium_tris[[dataset]], "paid", "premium", average = average), num))
+}
+el_fits <- list()
+for (i in seq_len(nrow(el_ref))) {
+  case <- el_ref[i, ]
+  key <- paste(case$dataset, case$method)
+  if (is.null(el_fits[[key]])) el_fits[[key]] <- el_fit_for(case$dataset, case$method)
+  fit <- el_fits[[key]]
+  got <- switch(case$quantity,
+                total_ultimate = fit@total_ultimate, total_reserve = fit@total_reserve,
+                ultimate = fit@ultimate[[case$arg]], reserve = fit@reserve[[case$arg]],
+                apriori = fit@trended_apriori[[case$arg]],
+                detrended_apriori = fit@apriori[[case$arg]],
+                stop("no quantity ", case$quantity, call. = FALSE))
+  err <- abs(got - case$expected)
+  if (!(err <= case$abs_tol || err <= case$rel_tol * abs(case$expected))) {
+    stop(sprintf("%s %s %s %s: got %.17g, want %.17g", case$dataset, case$method, case$quantity,
+                 case$arg, got, case$expected), call. = FALSE)
+  }
+}
+stopifnot(length(el_fits) == 2 * 14)
+
+# The family's identities, as in the Rust and Python tests.
+wk <- premium_tris$clrd_wkcomp
+el <- expected_loss(wk, "paid", "premium", apriori = 0.7)
+bf <- bornhuetter_ferguson(wk, "paid", "premium", apriori = 0.7)
+wk_cl <- chain_ladder(wk, "paid")
+stopifnot(S7::S7_inherits(el, expected_loss_fit), S7::S7_inherits(bf, expected_loss_fit),
+          identical(benktander(wk, "paid", "premium", apriori = 0.7, n_iters = 0)@ultimate, el@ultimate),
+          identical(benktander(wk, "paid", "premium", apriori = 0.7)@ultimate, bf@ultimate),
+          identical(unname(el@apriori), rep(0.7, 10)),
+          identical(el@exposure[["1988"]], 1691130),
+          identical(names(bf@ultimate), as.character(1988:1997)),
+          identical(bf@chain_ladder@ultimate, wk_cl@ultimate),
+          identical(bf@ldf, wk_cl@ldf), identical(bf@cdf, wk_cl@cdf),
+          identical(bf@latest, wk_cl@latest), identical(bf@development, wk_cl@development),
+          identical(bf@keys, character()), identical(dim(bf@index), c(1L, 0L)),
+          identical(unname(bf@reserve), unname(bf@ultimate - bf@latest)))
+near(unname(el@ultimate), 0.7 * unname(el@exposure), 1e-15)
+near(benktander(wk, "paid", "premium", apriori = 0.7, n_iters = 10000)@ultimate, wk_cl@ultimate)
+near(bf@total_reserve, sum(bf@reserve))
+# Cape Cod without decay keeps each origin's own loss ratio: the chain ladder.
+cc <- cape_cod(wk, "paid", "premium", trend = 0.05, decay = 0)
+stopifnot(S7::S7_inherits(cc, cape_cod_fit), S7::S7_inherits(cc@expected_loss, expected_loss_fit),
+          identical(cc@expected_loss@apriori, cc@apriori),
+          identical(cc@trended_apriori[["1997"]], cc@apriori[["1997"]]),
+          identical(cc@chain_ladder@ultimate, wk_cl@ultimate))
+near(cc@ultimate, wk_cl@ultimate)
+near(cc@trended_apriori[["1988"]] / cc@apriori[["1988"]], 1.05^9)
+# Settings reach Rust: the development pattern and Cape Cod's decay.
+simple <- bornhuetter_ferguson(wk, "paid", "premium", apriori = 0.7, average = "simple", tail = 1.01)
+stopifnot(identical(simple@ldf, chain_ladder(wk, "paid", average = "simple")@ldf),
+          identical(simple@chain_ladder@tail, 1.01))
+# The tail is chain_ladder()'s: a number or a tail estimator.
+bondy <- bornhuetter_ferguson(wk, "paid", "premium", apriori = 0.7, tail = tail_bondy())
+stopifnot(identical(bondy@cdf, chain_ladder(wk, "paid", tail = tail_bondy())@cdf),
+          !identical(bondy@cdf, bf@cdf),
+          identical(cape_cod(wk, "paid", "premium", tail = tail_constant(1.01))@chain_ladder@tail, 1.01))
+expect_error_like(expected_loss(wk, "paid", "premium", tail = "a"), "tail must be a single number")
+stopifnot(!identical(cape_cod(wk, "paid", "premium", decay = 0.5)@ultimate,
+                     cape_cod(wk, "paid", "premium")@ultimate))
+el_df <- as.data.frame(bf)
+stopifnot(identical(names(el_df), c("origin", "latest", "ultimate", "reserve", "exposure", "apriori")),
+          identical(el_df$ultimate, unname(bf@ultimate)),
+          identical(names(as.data.frame(cc)), c("origin", "latest", "ultimate", "reserve", "exposure",
+                                               "apriori", "trended_apriori")),
+          identical(totals_frame(bf)$exposure, sum(bf@exposure)),
+          identical(development_frame(bf), development_frame(wk_cl)))
+invisible(utils::capture.output(print(bf), print(cc)))
+
+# Every segment at once, each with its own exposure.
+both_long <- do.call(rbind, lapply(premium_sets, function(name) transform(read_long(name), lob = name)))
+both <- triangle(both_long, "origin", "development", c("paid", "premium"), keys = "lob")
+for (method in list(function(t) bornhuetter_ferguson(t, "paid", "premium", apriori = 0.6),
+                    function(t) cape_cod(t, "paid", "premium", trend = 0.02, decay = 0.8))) {
+  fit <- method(both)
+  alone <- method(wk)
+  seg <- segment(fit, lob = "clrd_wkcomp")
+  stopifnot(identical(fit@keys, "lob"), length(fit@ultimate) == 20,
+            identical(names(fit@ultimate)[1], "clrd_wkcomp / 1988"),
+            identical(S7::S7_class(seg), S7::S7_class(fit)),
+            identical(seg@exposure, alone@exposure),
+            identical(unname(fit@ultimate[1:10]), unname(seg@ultimate)),
+            identical(totals_frame(fit)$exposure[1], sum(alone@exposure)),
+            nrow(as.data.frame(fit)) == 20, nrow(development_frame(fit)) == 20)
+  # Cape Cod trends to the triangle's valuation (2010 here, 1997 alone) and
+  # back, so the two agree to rounding.
+  near(seg@ultimate, alone@ultimate, 1e-14)
+  near(totals_frame(fit)$reserve[1], alone@total_reserve, 1e-12)
+  expect_error_like(fit@ldf, "2 segments; use development_frame()")
+  invisible(utils::capture.output(print(fit)))
+}
+
+# Errors.
+holey_premium <- triangle(data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12),
+                                     paid = c(100, 150, 200), premium = c(250, 250, NA)),
+                          "year", "age", c("paid", "premium"))
+expect_error_like(bornhuetter_ferguson(holey_premium, "paid", "premium"),
+                  "origin 2021 has no observed, finite, positive exposure in column premium")
+expect_error_like(expected_loss(wk, "paid", "exposure"), "no column named exposure")
+expect_error_like(expected_loss(wk, "paid"), "exposure")
+expect_error_like(expected_loss(wk, "paid", 2), "exposure must be the name of a column")
+expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = 0), "apriori = 0 is invalid")
+expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = NA), "apriori must be a single number")
+expect_error_like(cape_cod(wk, "paid", "premium", decay = 2), "decay = 2 is invalid")
+expect_error_like(cape_cod(wk, "paid", "premium", trend = -1), "trend = -1 is invalid")
+expect_error_like(benktander(wk, "paid", "premium", n_iters = -1), "n_iters must be a non-negative whole number")
+expect_error_like(benktander(wk, "paid", "premium", n_iters = 1.5), "n_iters must be a non-negative whole number")
+expect_error_like(expected_loss(wk, "paid", "premium", average = "median"), "should be one of")
+expect_error_like(totals_frame(1), "fit must be a chain_ladder_fit")
 
 cat("actuarialrs R reserving tests passed\n")

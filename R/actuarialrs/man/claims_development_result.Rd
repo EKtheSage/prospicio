@@ -25,9 +25,10 @@ includes the covariance between origins. Results match R ChainLadder's
 in the paper.
 }
 \details{
-The formulas assume volume-weighted factors (\code{mack(average = "volume")}, the default), no tail, and the latest values on one
-calendar diagonal with one new origin per period; anything else is an
-error (R ChainLadder only warns about other factors). The fit must have a
+The formulas assume volume-weighted factors (\code{mack(average = "volume")}, the default), no tail (\code{mack(tail = 1)}, the default: a
+factor of exactly 1 that replaces no estimated factor), and the latest
+values on one calendar diagonal with one new origin per period; anything
+else is an error (R ChainLadder only warns about other factors). The fit must have a
 single segment: use \code{\link[=segment]{segment()}} to pick one.
 
 Properties, as standard errors (not mean squared errors):
