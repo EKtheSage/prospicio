@@ -1,12 +1,11 @@
 ---
 type: Reference Implementation
 title: LightGBM and XGBoost (boosting engines)
-description: The engines behind actuarialrs.boosting; how offsets, starting scores and precision behave, and which wheels to install.
+description: The engines behind actuarialrs.boosting and R's booster_fit(); how offsets, starting scores and precision behave, the R packages' prediction calls, and how to install them.
 resource: https://lightgbm.readthedocs.io/
-tags: [boosting, lightgbm, xgboost, python, offsets]
+tags: [boosting, lightgbm, xgboost, python, r, offsets]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-06T03:30:00Z }
-verified: { by: process:ci, at: 2026-10-06T03:31:35Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-06T04:30:00Z }
 sources:
   - id: adapter
     resource: ../python/actuarialrs/boosting.py
@@ -14,6 +13,9 @@ sources:
   - id: tests
     resource: ../python/tests/test_boosting.py
     title: Boosting adapter tests
+  - id: radapter
+    resource: ../R/actuarialrs/R/boosting.R
+    title: R booster_fit() and its tests (R/actuarialrs/tests/test-boosting.R)
   - id: lgb
     resource: https://pypi.org/project/lightgbm/
     title: lightgbm 4.7.0 on PyPI
@@ -34,6 +36,22 @@ sources:
   `log(Σ w y / Σ w e^offset)` (the identity link: the weighted mean of
   `y − offset`) to the offset and keeps it in the fit.[^tests]
 
+# The R packages
+
+Checked with R lightgbm 4.7.0 and xgboost 3.2.1.1 from CRAN.[^radapter]
+
+* lightgbm: `lgb.Dataset(x, label, weight, init_score)`, then
+  `predict(model, x, type = "raw")` gives the trees' raw score *without*
+  the `init_score`, so the offset is added back by hand, as in Python.
+* xgboost 3.x: `xgb.DMatrix(x, label, weight, base_margin)`, then
+  `predict(model, xgb.DMatrix(x, base_margin = start), outputmargin =
+  TRUE)` gives the margin *with* the new `base_margin` included.
+* lightgbm's `predict` returns a named vector; the adapter strips the
+  names.
+* Both packages take minutes to compile from source (about 15 in the
+  cloud container); CI's R job uses Posit's public binaries
+  (`use-public-rspm: true`).
+
 # Precision
 
 XGBoost computes margins in single precision: doubling every exposure
@@ -49,5 +67,6 @@ the 1e-9 the test asks.[^tests]
 
 [^adapter]: actuarialrs.boosting
 [^tests]: Boosting adapter tests
+[^radapter]: R booster_fit() and its tests
 [^lgb]: lightgbm on PyPI
 [^xgb]: xgboost-cpu on PyPI
