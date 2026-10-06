@@ -101,6 +101,9 @@ mx <- mixture_distribution(c(0.9, 0.1), list(lognormal_from_mean_cv(1e4, 1), par
 near(mean(mx), 29000, 1e-12)
 near(mx@weights, c(0.9, 0.1), 1e-15)
 stopifnot(inherits(try(mixture_distribution(0.5, list(w)), silent = TRUE), "try-error"))
+# A sampled distribution has no exact layer moments, so it is no component.
+e <- try(mixture_distribution(1, list(sampled(c(1, 2, 3)))), silent = TRUE)
+stopifnot(inherits(e, "try-error"), grepl("no exact layer moments", e))
 gm <- discretize(mx, 1000, 2000)
 near(mean(gm), lev(mx, 1999 * 1000), 1e-9)
 

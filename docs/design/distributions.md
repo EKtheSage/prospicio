@@ -1,6 +1,6 @@
 # Design note: distribution representations
 
-Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`, `Dist`) · Depends on: nothing · Next: the bindings on `Dist`, then `Custom`
+Status: **Decided; partly implemented** (parametric, sampled, `Severity`, `Grid`, `Counting`, `Dist` and the bindings on it) · Depends on: nothing · Next: `Custom`
 
 ## Goal
 
@@ -184,8 +184,13 @@ Done: `act_prob::Dist` with the eleven severity families (`Lognormal`,
 vtable), names its `family()`, and `as_severity()` gives the `Severity`
 of every variant but `Sampled`, which has no exact layer moments (the
 compile-time absence above becomes a `None` at the boundary). `From` each
-family. Not yet: `Custom` (a Python or R callback), serialization, and
-moving the bindings' own `AnySeverity` enums onto `Dist`.
+family. `SeverityDist` is a `Dist` known not to be `Sampled`, so it is a
+`Severity` by `match` too (`TryFrom<Dist>` hands a `Sampled` back). The
+Python and R bindings read any distribution object into a `Dist`
+(`extract_dist`, `dist_from_robj`) and every severity argument into a
+`SeverityDist`, so a family added to `Dist` reaches every binding function
+at once; a `Sampled` passed as a severity is refused with the reason. Not
+yet: `Custom` (a Python or R callback) and serialization.
 
 ## Sampling
 

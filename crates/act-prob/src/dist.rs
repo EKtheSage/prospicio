@@ -170,6 +170,124 @@ from_family!(
     Sampled(Sampled),
 );
 
+/// A [`Dist`] known to be a [`Severity`]: every variant but
+/// [`Dist::Sampled`].
+///
+/// This is what the bindings accept wherever a loss severity is required
+/// (collective models, layers, copula marginals, mixture components). It
+/// dispatches by `match`, like [`Dist`], with no vtable.
+///
+/// ```
+/// use act_prob::{Dist, Lognormal, Sampled, Severity, SeverityDist};
+///
+/// let ln = Lognormal::from_mean_cv(1000.0, 0.5).unwrap();
+/// let s = SeverityDist::try_from(Dist::from(ln)).unwrap();
+/// assert_eq!(s.lev(800.0), ln.lev(800.0));
+///
+/// let draws = Dist::from(Sampled::new(vec![1.0, 2.0]).unwrap());
+/// assert!(SeverityDist::try_from(draws).is_err());
+/// ```
+#[derive(Debug, Clone)]
+pub struct SeverityDist(Dist);
+
+impl SeverityDist {
+    /// The distribution.
+    pub fn dist(&self) -> &Dist {
+        &self.0
+    }
+
+    /// The distribution, by value.
+    pub fn into_dist(self) -> Dist {
+        self.0
+    }
+}
+
+impl TryFrom<Dist> for SeverityDist {
+    /// The distribution back, when it is [`Dist::Sampled`].
+    type Error = Dist;
+
+    fn try_from(d: Dist) -> std::result::Result<Self, Dist> {
+        match d {
+            Dist::Sampled(_) => Err(d),
+            d => Ok(Self(d)),
+        }
+    }
+}
+
+impl From<SeverityDist> for Dist {
+    fn from(s: SeverityDist) -> Self {
+        s.0
+    }
+}
+
+/// Calls `$call` on the inner severity, whichever it is.
+macro_rules! each_severity {
+    ($self:ident, $d:ident => $call:expr) => {
+        match &$self.0 {
+            Dist::Lognormal($d) => $call,
+            Dist::Pareto($d) => $call,
+            Dist::PiecewisePareto($d) => $call,
+            Dist::LogAffinePareto($d) => $call,
+            Dist::GeneralizedPareto($d) => $call,
+            Dist::Gamma($d) => $call,
+            Dist::Tweedie($d) => $call,
+            Dist::Weibull($d) => $call,
+            Dist::Loglogistic($d) => $call,
+            Dist::Mixture($d) => $call,
+            Dist::Grid($d) => $call,
+            Dist::Sampled(_) => unreachable!("SeverityDist never holds Sampled"),
+        }
+    };
+}
+
+impl Distribution for SeverityDist {
+    fn mean(&self) -> f64 {
+        self.0.mean()
+    }
+
+    fn variance(&self) -> f64 {
+        self.0.variance()
+    }
+
+    fn cdf(&self, x: f64) -> f64 {
+        self.0.cdf(x)
+    }
+
+    fn survival(&self, x: f64) -> f64 {
+        self.0.survival(x)
+    }
+
+    fn quantile(&self, p: f64) -> Result<f64> {
+        self.0.quantile(p)
+    }
+
+    fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
+        self.0.sample(rng, n)
+    }
+}
+
+impl Severity for SeverityDist {
+    fn lev(&self, limit: f64) -> f64 {
+        each_severity!(self, d => d.lev(limit))
+    }
+
+    fn stop_loss(&self, retention: f64) -> f64 {
+        each_severity!(self, d => d.stop_loss(retention))
+    }
+
+    fn layer(&self, limit: f64, attachment: f64) -> f64 {
+        each_severity!(self, d => d.layer(limit, attachment))
+    }
+
+    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+        each_severity!(self, d => d.layer_second_moment(limit, attachment))
+    }
+
+    fn layer_variance(&self, limit: f64, attachment: f64) -> f64 {
+        each_severity!(self, d => d.layer_variance(limit, attachment))
+    }
+}
+
 impl From<Mixture> for Dist {
     fn from(d: Mixture) -> Self {
         Self::Mixture(Arc::new(d))
@@ -238,6 +356,32 @@ mod tests {
             // Clones share a mixture rather than copying it.
             let c = d.clone();
             assert_eq!(c.mean(), d.mean());
+        }
+    }
+
+    #[test]
+    fn severity_dist_matches_as_severity_and_rejects_sampled() {
+        for d in all() {
+            let family = d.family();
+            match SeverityDist::try_from(d.clone()) {
+                Ok(s) => {
+                    let r = d.as_severity().unwrap();
+                    assert_eq!(s.lev(700.0), r.lev(700.0), "{family}");
+                    assert_eq!(s.stop_loss(700.0), r.stop_loss(700.0), "{family}");
+                    assert_eq!(s.layer(500.0, 200.0), r.layer(500.0, 200.0), "{family}");
+                    assert_eq!(
+                        s.layer_second_moment(500.0, 200.0),
+                        r.layer_second_moment(500.0, 200.0),
+                        "{family}"
+                    );
+                    assert_eq!(s.mean(), d.mean(), "{family}");
+                    assert_eq!(s.dist().family(), family);
+                }
+                Err(back) => {
+                    assert_eq!(family, "sampled");
+                    assert_eq!(back.family(), "sampled");
+                }
+            }
         }
     }
 }

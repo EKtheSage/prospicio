@@ -11,7 +11,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::aggregate::{AnyCount, PyEventSet};
-use crate::distributions::{AnySeverity, PyPredictiveDistribution, PySampled, key_to_py};
+use crate::distributions::{PyPredictiveDistribution, PySampled, extract_severity, key_to_py};
 use crate::pareto::PyPiecewisePareto;
 use crate::risk::PyDistortion;
 use crate::to_py;
@@ -39,17 +39,15 @@ use crate::to_py;
 /// 0.5
 #[pyclass(name = "CollectiveModel", module = "actuarialrs.pricing", frozen)]
 pub(crate) struct PyCollectiveModel {
-    inner: CollectiveModel<AnyCount, AnySeverity>,
+    inner: CollectiveModel<AnyCount, act_prob::SeverityDist>,
 }
 
 #[pymethods]
 impl PyCollectiveModel {
     #[new]
     fn new(frequency: &Bound<'_, PyAny>, severity: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = CollectiveModel::new(
-            AnyCount::extract(frequency)?,
-            AnySeverity::extract(severity)?,
-        );
+        let inner =
+            CollectiveModel::new(AnyCount::extract(frequency)?, extract_severity(severity)?);
         Ok(Self { inner })
     }
 
@@ -239,7 +237,7 @@ fn rule(name: &str) -> PyResult<SelectionRule> {
 /// 1.266666666667
 #[pyfunction]
 pub(crate) fn ilf(severity: &Bound<'_, PyAny>, limit: f64, basic_limit: f64) -> PyResult<f64> {
-    let sev = AnySeverity::extract(severity)?;
+    let sev = extract_severity(severity)?;
     act_pricing::layer::ilf(&sev, limit, basic_limit).map_err(to_py)
 }
 
@@ -258,7 +256,7 @@ pub(crate) fn loss_elimination_ratio(
     severity: &Bound<'_, PyAny>,
     deductible: f64,
 ) -> PyResult<f64> {
-    let sev = AnySeverity::extract(severity)?;
+    let sev = extract_severity(severity)?;
     act_pricing::layer::loss_elimination_ratio(&sev, deductible).map_err(to_py)
 }
 
@@ -938,7 +936,7 @@ pub(crate) fn severity_exposure_curve(
     mpl: f64,
     x: Vec<f64>,
 ) -> PyResult<Vec<f64>> {
-    let sev = AnySeverity::extract(severity)?;
+    let sev = extract_severity(severity)?;
     let curve = SeverityCurve::new(&sev, mpl).map_err(to_py)?;
     Ok(x.iter().map(|&v| curve.g(v)).collect())
 }

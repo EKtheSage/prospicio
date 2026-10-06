@@ -7,7 +7,7 @@ use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use crate::distributions::{
-    AnySeverity, PyGrid, PyNegativeBinomial, PyPoisson, PyPredictiveDistribution,
+    PyGrid, PyNegativeBinomial, PyPoisson, PyPredictiveDistribution, extract_severity,
 };
 use crate::to_py;
 
@@ -331,7 +331,7 @@ pub(crate) fn simulate_events(
     seed: u64,
 ) -> PyResult<PyEventSet> {
     let n = AnyCount::extract(frequency)?;
-    let sev = AnySeverity::extract(severity)?;
+    let sev = extract_severity(severity)?;
     let inner = py
         .detach(|| act_aggregate::simulate_events(n.as_counting(), &sev, n_sims, seed))
         .map_err(to_py)?;

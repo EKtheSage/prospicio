@@ -11,7 +11,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
 use crate::aggregate::{AnyCount, EventSet};
-use crate::distributions::{AnySeverity, PredictiveDistribution, Sampled};
+use crate::distributions::{PredictiveDistribution, Sampled, severity_from_robj};
 use crate::pareto::PiecewisePareto;
 use crate::risk::RiskDistortion;
 use crate::{to_r, whole};
@@ -37,7 +37,7 @@ fn rule(name: &str) -> Result<SelectionRule> {
 /// The collective risk model: a claim count and a severity.
 #[extendr]
 pub(crate) struct CollectiveModel {
-    inner: CollectiveInner<AnyCount, AnySeverity>,
+    inner: CollectiveInner<AnyCount, act_prob::SeverityDist>,
 }
 
 #[extendr]
@@ -45,7 +45,7 @@ impl CollectiveModel {
     fn new(frequency: Robj, severity: Robj) -> Result<Self> {
         let inner = CollectiveInner::new(
             AnyCount::from_robj(&frequency)?,
-            AnySeverity::from_robj(&severity)?,
+            severity_from_robj(&severity)?,
         );
         Ok(Self { inner })
     }
@@ -181,7 +181,7 @@ impl TowerModel {
 /// Increased limit factors `LEV(limit) / LEV(basic_limit)`.
 #[extendr]
 fn pricing_ilf(severity: Robj, limit: &[f64], basic_limit: f64) -> Result<Vec<f64>> {
-    let sev = AnySeverity::from_robj(&severity)?;
+    let sev = severity_from_robj(&severity)?;
     limit
         .iter()
         .map(|&l| act_pricing::layer::ilf(&sev, l, basic_limit).map_err(to_r))
@@ -191,7 +191,7 @@ fn pricing_ilf(severity: Robj, limit: &[f64], basic_limit: f64) -> Result<Vec<f6
 /// Loss elimination ratios `LEV(d) / E[X]`.
 #[extendr]
 fn pricing_loss_elimination_ratio(severity: Robj, deductible: &[f64]) -> Result<Vec<f64>> {
-    let sev = AnySeverity::from_robj(&severity)?;
+    let sev = severity_from_robj(&severity)?;
     deductible
         .iter()
         .map(|&d| act_pricing::layer::loss_elimination_ratio(&sev, d).map_err(to_r))
@@ -321,7 +321,7 @@ impl Mbbefd {
 /// The exposure curve of a severity capped at `mpl`, at each `x`.
 #[extendr]
 fn pricing_severity_exposure_curve(severity: Robj, mpl: f64, x: &[f64]) -> Result<Vec<f64>> {
-    let sev = AnySeverity::from_robj(&severity)?;
+    let sev = severity_from_robj(&severity)?;
     let curve = SeverityCurve::new(&sev, mpl).map_err(to_r)?;
     Ok(x.iter().map(|&v| curve.g(v)).collect())
 }

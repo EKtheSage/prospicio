@@ -6,7 +6,9 @@ use act_prob::Counting;
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
-use crate::distributions::{AnySeverity, Grid, NegativeBinomial, Poisson, PredictiveDistribution};
+use crate::distributions::{
+    Grid, NegativeBinomial, Poisson, PredictiveDistribution, severity_from_robj,
+};
 use crate::{to_r, whole};
 
 /// A claim count accepted by the aggregation functions.
@@ -109,7 +111,7 @@ pub(crate) struct EventSet {
 impl EventSet {
     fn simulate(frequency: Robj, severity: Robj, n_sims: f64, seed: f64) -> Result<Self> {
         let n = AnyCount::from_robj(&frequency)?;
-        let sev = AnySeverity::from_robj(&severity)?;
+        let sev = severity_from_robj(&severity)?;
         let n_sims = whole(n_sims, "n_sims")? as usize;
         let inner =
             act_aggregate::simulate_events(n.as_counting(), &sev, n_sims, whole(seed, "seed")?)

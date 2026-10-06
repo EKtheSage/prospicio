@@ -13,7 +13,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::distributions::{
-    AnySeverity, KeyArg, PyGrid, PyPredictiveDistribution, PySampled, key_from_py,
+    KeyArg, PyGrid, PyPredictiveDistribution, PySampled, extract_severity, key_from_py,
 };
 use crate::to_py;
 
@@ -847,9 +847,9 @@ pub(crate) fn simulate(
     dims: Option<Vec<String>>,
 ) -> PyResult<PyPredictiveDistribution> {
     let copula = AnyCopula::extract(copula)?;
-    let marginals: Vec<AnySeverity> = marginals
+    let marginals: Vec<act_prob::SeverityDist> = marginals
         .iter()
-        .map(AnySeverity::extract)
+        .map(extract_severity)
         .collect::<PyResult<_>>()?;
     let components = match keys {
         Some(keys) => keys.into_iter().map(key_from_py).collect(),
