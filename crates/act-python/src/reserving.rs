@@ -1273,14 +1273,15 @@ impl PyChainLadder {
 }
 
 /// The one fit of a single-segment result, or an error naming what to use
-/// instead.
-fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: &str) -> PyResult<&'a T> {
+/// instead: `instead`, if there is an alternative, or `segment(...)`.
+fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: Option<&str>) -> PyResult<&'a T> {
     match fits.fits.as_slice() {
         [one] => Ok(one),
         _ => Err(PyValueError::new_err(format!(
             "{field} needs a single-segment fit, and this one has {} segments; \
-             use {instead} or segment(...)",
-            fits.len()
+             use {}segment(...)",
+            fits.len(),
+            instead.map_or(String::new(), |i| format!("{i} or ")),
         ))),
     }
 }
@@ -1429,14 +1430,14 @@ impl PyChainLadderFit {
     /// Age-to-age factors; factor ``k`` links age ``k`` to ``k + 1``.
     #[getter]
     fn ldf(&self) -> PyResult<Vec<f64>> {
-        let f = single(&self.inner, "ldf", "development_frame()")?;
+        let f = single(&self.inner, "ldf", Some("development_frame()"))?;
         Ok(f.development.ldf.clone())
     }
 
     /// Age-to-ultimate factors, one per age, including the tail.
     #[getter]
     fn cdf(&self) -> PyResult<Vec<f64>> {
-        Ok(single(&self.inner, "cdf", "development_frame()")?
+        Ok(single(&self.inner, "cdf", Some("development_frame()"))?
             .cdf
             .clone())
     }
@@ -1445,14 +1446,14 @@ impl PyChainLadderFit {
     /// interpolated (``nan`` where that is impossible).
     #[getter]
     fn sigma(&self) -> PyResult<Vec<f64>> {
-        let f = single(&self.inner, "sigma", "development_frame()")?;
+        let f = single(&self.inner, "sigma", Some("development_frame()"))?;
         Ok(f.development.sigma.clone())
     }
 
     /// Standard error of each factor.
     #[getter]
     fn std_err(&self) -> PyResult<Vec<f64>> {
-        let f = single(&self.inner, "std_err", "development_frame()")?;
+        let f = single(&self.inner, "std_err", Some("development_frame()"))?;
         Ok(f.development.std_err.clone())
     }
 
@@ -1658,7 +1659,7 @@ pub(crate) struct PyMackFit {
 impl PyMackFit {
     /// The chain ladder of a single-segment fit, for a per-age `field`.
     fn one(&self, field: &str) -> PyResult<&ChainLadderFit> {
-        Ok(&single(&self.inner, field, "development_frame()")?.chain_ladder)
+        Ok(&single(&self.inner, field, Some("development_frame()"))?.chain_ladder)
     }
 }
 
@@ -1775,26 +1776,32 @@ impl PyMackFit {
     /// Process standard error of the total reserve.
     #[getter]
     fn total_process_risk(&self) -> PyResult<f64> {
-        Ok(single(&self.inner, "total_process_risk", "totals_frame()")?.total_process_risk)
+        Ok(single(&self.inner, "total_process_risk", Some("totals_frame()"))?.total_process_risk)
     }
 
     /// Parameter standard error of the total reserve, including the
     /// correlation between origins that share estimated factors.
     #[getter]
     fn total_parameter_risk(&self) -> PyResult<f64> {
-        Ok(single(&self.inner, "total_parameter_risk", "totals_frame()")?.total_parameter_risk)
+        Ok(
+            single(&self.inner, "total_parameter_risk", Some("totals_frame()"))?
+                .total_parameter_risk,
+        )
     }
 
     /// Mack standard error of the total reserve.
     #[getter]
     fn total_standard_error(&self) -> PyResult<f64> {
-        Ok(single(&self.inner, "total_standard_error", "totals_frame()")?.total_standard_error)
+        Ok(
+            single(&self.inner, "total_standard_error", Some("totals_frame()"))?
+                .total_standard_error,
+        )
     }
 
     /// Coefficient of variation of the total reserve.
     #[getter]
     fn total_cv(&self) -> PyResult<f64> {
-        Ok(single(&self.inner, "total_cv", "totals_frame()")?.total_cv())
+        Ok(single(&self.inner, "total_cv", Some("totals_frame()"))?.total_cv())
     }
 
     /// One row per segment and origin: the key columns, ``origin``,
@@ -1846,16 +1853,7 @@ impl PyMackFit {
     ///     factors are not volume-weighted, or the latest values do not lie
     ///     on one calendar diagonal with one new origin per period.
     fn claims_development_result(&self) -> PyResult<PyClaimsDevelopmentResult> {
-        let fit = match self.inner.fits.as_slice() {
-            [one] => one,
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "claims_development_result needs a single-segment fit, and this one \
-                     has {} segments; use segment(...)",
-                    self.inner.len()
-                )));
-            }
-        };
+        let fit = single(&self.inner, "claims_development_result", None)?;
         let inner = fit.claims_development_result().map_err(err)?;
         Ok(PyClaimsDevelopmentResult { inner })
     }
@@ -2149,7 +2147,7 @@ impl PyOdpBootstrapFit {
     }
 
     fn one(&self, field: &str, instead: &str) -> PyResult<&OdpBootstrapSegment> {
-        single(&self.inner.segments, field, instead)
+        single(&self.inner.segments, field, Some(instead))
     }
 }
 

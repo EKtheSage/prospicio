@@ -507,14 +507,15 @@ impl Triangle {
 }
 
 /// The one fit of a single-segment result, or an error naming what to use
-/// instead.
-fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: &str) -> Result<&'a T> {
+/// instead: `instead`, if there is an alternative, or `segment()`.
+fn single<'a, T>(fits: &'a SegmentFits<T>, field: &str, instead: Option<&str>) -> Result<&'a T> {
     match fits.fits.as_slice() {
         [one] => Ok(one),
         _ => Err(Error::Other(format!(
             "{field} needs a single-segment fit, and this one has {} segments; \
-             use {instead} or segment()",
-            fits.len()
+             use {}segment()",
+            fits.len(),
+            instead.map_or(String::new(), |i| format!("{i} or ")),
         ))),
     }
 }
@@ -616,17 +617,17 @@ impl ChainLadderFit {
     }
 
     fn ldf(&self) -> Result<Vec<f64>> {
-        let f = single(&self.inner, "ldf", "development_frame()")?;
+        let f = single(&self.inner, "ldf", Some("development_frame()"))?;
         Ok(f.development.ldf.clone())
     }
 
     fn sigma(&self) -> Result<Vec<f64>> {
-        let f = single(&self.inner, "sigma", "development_frame()")?;
+        let f = single(&self.inner, "sigma", Some("development_frame()"))?;
         Ok(f.development.sigma.clone())
     }
 
     fn std_err(&self) -> Result<Vec<f64>> {
-        let f = single(&self.inner, "std_err", "development_frame()")?;
+        let f = single(&self.inner, "std_err", Some("development_frame()"))?;
         Ok(f.development.std_err.clone())
     }
 
@@ -639,7 +640,7 @@ impl ChainLadderFit {
     }
 
     fn cdf(&self) -> Result<Vec<f64>> {
-        Ok(single(&self.inner, "cdf", "development_frame()")?
+        Ok(single(&self.inner, "cdf", Some("development_frame()"))?
             .cdf
             .clone())
     }
@@ -712,19 +713,25 @@ impl MackFit {
     }
 
     fn total_process_risk(&self) -> Result<f64> {
-        Ok(single(&self.inner, "total_process_risk", "totals_frame()")?.total_process_risk)
+        Ok(single(&self.inner, "total_process_risk", Some("totals_frame()"))?.total_process_risk)
     }
 
     fn total_parameter_risk(&self) -> Result<f64> {
-        Ok(single(&self.inner, "total_parameter_risk", "totals_frame()")?.total_parameter_risk)
+        Ok(
+            single(&self.inner, "total_parameter_risk", Some("totals_frame()"))?
+                .total_parameter_risk,
+        )
     }
 
     fn total_standard_error(&self) -> Result<f64> {
-        Ok(single(&self.inner, "total_standard_error", "totals_frame()")?.total_standard_error)
+        Ok(
+            single(&self.inner, "total_standard_error", Some("totals_frame()"))?
+                .total_standard_error,
+        )
     }
 
     fn total_cv(&self) -> Result<f64> {
-        Ok(single(&self.inner, "total_cv", "totals_frame()")?.total_cv())
+        Ok(single(&self.inner, "total_cv", Some("totals_frame()"))?.total_cv())
     }
 
     fn long_table(&self) -> List {
@@ -747,16 +754,7 @@ impl MackFit {
 
     /// Merz and Wüthrich's one-year view of a single-segment fit.
     fn claims_development_result(&self) -> Result<ClaimsDevelopmentResult> {
-        let fit = match self.inner.fits.as_slice() {
-            [one] => one,
-            _ => {
-                return Err(Error::Other(format!(
-                    "claims_development_result needs a single-segment fit, and this one has \
-                     {} segments; use segment()",
-                    self.inner.len()
-                )));
-            }
-        };
+        let fit = single(&self.inner, "claims_development_result", None)?;
         Ok(ClaimsDevelopmentResult {
             inner: fit.claims_development_result().map_err(to_r)?,
         })
@@ -821,17 +819,17 @@ impl OdpBootstrapFit {
     }
 
     fn fitted(&self) -> Result<Vec<f64>> {
-        let s = single(&self.inner.segments, "fitted", "segment()")?;
+        let s = single(&self.inner.segments, "fitted", Some("segment()"))?;
         Ok(s.fitted.clone())
     }
 
     fn residuals(&self) -> Result<Vec<f64>> {
-        let s = single(&self.inner.segments, "residuals", "segment()")?;
+        let s = single(&self.inner.segments, "residuals", Some("segment()"))?;
         Ok(s.residuals.clone())
     }
 
     fn scale(&self) -> Result<f64> {
-        Ok(single(&self.inner.segments, "scale", "totals_frame()")?.scale)
+        Ok(single(&self.inner.segments, "scale", Some("totals_frame()"))?.scale)
     }
 
     fn reserves(&self) -> PredictiveDistribution {
