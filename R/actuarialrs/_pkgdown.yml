@@ -83,6 +83,7 @@ reference:
       - layer_rating
       - risk_loaded_price
       - mbbefd
+      - tabulated_curve
       - match_tower
       - fit_pml_curve
       - fit_references

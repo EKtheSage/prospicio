@@ -3,7 +3,7 @@
 //! A truncation of `Inf` means none; `NA` frequencies are derived.
 
 use act_aggregate::CollectiveModel as CollectiveInner;
-use act_pricing::exposure::{ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve};
+use act_pricing::exposure::{ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve};
 use act_pricing::layer::XsLayer;
 use act_pricing::risk_load::{self, PremiumRule, Price};
 use act_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
@@ -316,6 +316,49 @@ impl Mbbefd {
     fn layer_share(&self, limit: f64, attachment: f64, mpl: f64) -> Result<f64> {
         self.inner.layer_share(limit, attachment, mpl).map_err(to_r)
     }
+
+    fn rate_quantile(&self, u: &[f64]) -> Vec<f64> {
+        u.iter().map(|&v| self.inner.rate_quantile(v)).collect()
+    }
+}
+
+/// A tabulated exposure curve, interpolated linearly.
+#[extendr]
+pub(crate) struct Tabulated {
+    pub(crate) inner: TabulatedCurve,
+}
+
+#[extendr]
+impl Tabulated {
+    fn new(x: &[f64], g: &[f64]) -> Result<Self> {
+        Ok(Self {
+            inner: TabulatedCurve::new(x, g).map_err(to_r)?,
+        })
+    }
+
+    fn x(&self) -> Vec<f64> {
+        self.inner.x().to_vec()
+    }
+
+    fn g(&self) -> Vec<f64> {
+        self.inner.g_values().to_vec()
+    }
+
+    fn curve(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.g(v)).collect()
+    }
+
+    fn mean(&self) -> f64 {
+        self.inner.mean_rate()
+    }
+
+    fn layer_share(&self, limit: f64, attachment: f64, mpl: f64) -> Result<f64> {
+        self.inner.layer_share(limit, attachment, mpl).map_err(to_r)
+    }
+
+    fn rate_quantile(&self, u: &[f64]) -> Vec<f64> {
+        u.iter().map(|&v| self.inner.rate_quantile(v)).collect()
+    }
 }
 
 /// The exposure curve of a severity capped at `mpl`, at each `x`.
@@ -410,6 +453,7 @@ extendr_module! {
     impl CollectiveModel;
     impl TowerModel;
     impl Mbbefd;
+    impl Tabulated;
     fn pricing_severity_exposure_curve;
     fn pricing_price;
     fn pricing_price_portfolio;

@@ -375,7 +375,7 @@ pricing_arg <- function(d) if (is.null(d)) NULL else d@ptr
 #'
 #' @param b,g MBBEFD parameters, `b >= 0`, `g >= 1`.
 #' @param c Swiss Re curve parameter, non-negative (0 is the straight line).
-#' @param curve An `mbbefd` object.
+#' @param curve An `mbbefd` or [tabulated_curve] object.
 #' @param x Fractions of the MPL.
 #' @param limit,attachment The layer.
 #' @param mpl Maximum possible loss of the risk.
@@ -438,4 +438,51 @@ exposure_layer_share <- function(curve, limit, attachment, mpl) {
 #' @export
 severity_exposure_curve <- function(severity, mpl, x) {
   rust_result(pricing_severity_exposure_curve(severity@ptr, as.double(mpl), as.double(x)))
+}
+
+#' @rdname mbbefd
+#' @param u Probabilities in `(0, 1)`.
+#' @export
+rate_quantile <- function(curve, u) curve@ptr$rate_quantile(as.double(u))
+
+#' Tabulated exposure curve
+#'
+#' An exposure curve from a published table of points `(x, G(x))` from
+#' `(0, 0)` to `(1, 1)`, interpolated linearly: Salzmann's homeowners scale,
+#' Ludwig's curves, ISO PSOLD tables or a reinsurer's own. The table must be
+#' concave (its slopes never increase). Its destruction rate is discrete:
+#' the points' `x` with probabilities from the drops in slope, and a total
+#' loss with probability last slope over first. Its mean rate (`curve@mean`)
+#' is the first chord's, `x1 / G(x1)`, so a table needs fine first points
+#' for the expected loss to be right.
+#'
+#' Works with [exposure_curve()], [exposure_layer_share()] and
+#' [rate_quantile()], like an [mbbefd] curve.
+#'
+#' @param x Increasing from 0 to 1.
+#' @param g `G(x)`, from 0 to 1.
+#' @returns A `tabulated_curve` object with properties `x`, `g` and `mean`.
+#' @export
+#' @examples
+#' t <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
+#' exposure_curve(t, 0.3)
+#' t@mean
+tabulated_curve <- S7::new_class(
+  "tabulated_curve",
+  package = "actuarialrs",
+  properties = list(
+    ptr = S7::new_S3_class("Tabulated"),
+    x = S7::new_property(S7::class_double, getter = function(self) self@ptr$x()),
+    g = S7::new_property(S7::class_double, getter = function(self) self@ptr$g()),
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean())
+  ),
+  constructor = function(x, g) {
+    ptr <- rust_result(Tabulated$new(as.double(x), as.double(g)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, tabulated_curve) <- function(x, ...) {
+  cat(sprintf("<tabulated_curve> %d points, mean rate %s\n", length(x@x), format(x@mean)))
+  invisible(x)
 }

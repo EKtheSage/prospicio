@@ -82,3 +82,13 @@ sg <- severity_exposure_curve(pareto(1e5, 1.5), 1e7, c(0, 1))
 stopifnot(sg[1] == 0, abs(sg[2] - 1) < 1e-12)
 
 cat("actuarialrs R pricing tests passed\n")
+
+# Tabulated exposure curves and destruction-rate quantiles.
+tc <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
+stopifnot(abs(exposure_curve(tc, 0.3) - 0.6) < 1e-15, abs(tc@mean - 0.25) < 1e-15)
+stopifnot(identical(rate_quantile(tc, c(0.75, 0.76, 0.91)), c(0.1, 0.5, 1)))
+stopifnot(abs(exposure_layer_share(tc, 5e6, 5e6, 10e6) - 0.2) < 1e-12)
+stopifnot(inherits(try(tabulated_curve(c(0, 0.5, 1), c(0, 0.3, 1)), silent = TRUE), "try-error"))
+c3 <- swiss_re_curve(3)
+u <- (seq_len(100000) - 0.5) / 100000
+stopifnot(abs(mean(rate_quantile(c3, u)) / c3@mean - 1) < 1e-3)

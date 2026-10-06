@@ -3,7 +3,7 @@
 //! `act_pricing` (`docs/design/pareto.md`).
 
 use act_aggregate::CollectiveModel;
-use act_pricing::exposure::{ExposureCurve, Mbbefd, SeverityCurve};
+use act_pricing::exposure::{ExposureCurve, Mbbefd, SeverityCurve, TabulatedCurve};
 use act_pricing::layer::XsLayer;
 use act_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
 use act_pricing::tower::{Reference, SelectionRule, TowerModel};
@@ -883,6 +883,20 @@ impl PyMbbefd {
         self.inner.total_loss_probability()
     }
 
+    /// Destruction rate (loss over MPL) at each probability ``u`` in
+    /// ``(0, 1)``: draws with this curve as their exposure curve.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn rate_quantile(&self, u: Vec<f64>) -> Vec<f64> {
+        u.iter().map(|&v| self.inner.rate_quantile(v)).collect()
+    }
+
     /// Share of a risk's expected loss in the layer ``limit`` xs
     /// ``attachment``, for a risk with maximum possible loss ``mpl``.
     ///
@@ -907,6 +921,124 @@ impl PyMbbefd {
             self.inner.b(),
             self.inner.g_parameter()
         )
+    }
+}
+
+/// A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
+/// ``(1, 1)``, interpolated linearly, as published curves are given
+/// (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
+/// reinsurer's own).
+///
+/// The table must be concave (its slopes never increase). Its destruction
+/// rate is discrete: the points' ``x`` with probabilities from the drops in
+/// slope, and a total loss with probability last slope over first. Its
+/// mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
+/// first points for the expected loss to be right.
+///
+/// Parameters
+/// ----------
+/// x : list of float
+///     Increasing from 0 to 1.
+/// g : list of float
+///     ``G(x)``, from 0 to 1.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the points do not run from ``(0, 0)`` to ``(1, 1)``, or are not
+///     increasing and concave.
+///
+/// Examples
+/// --------
+/// >>> from actuarialrs.pricing import TabulatedCurve
+/// >>> t = TabulatedCurve([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0])
+/// >>> round(t.curve([0.3])[0], 12), t.mean_rate()
+/// (0.6, 0.25)
+#[pyclass(name = "TabulatedCurve", module = "actuarialrs.pricing", frozen)]
+pub(crate) struct PyTabulatedCurve {
+    pub(crate) inner: TabulatedCurve,
+}
+
+#[pymethods]
+impl PyTabulatedCurve {
+    #[new]
+    fn new(x: Vec<f64>, g: Vec<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: TabulatedCurve::new(&x, &g).map_err(to_py)?,
+        })
+    }
+
+    /// The table's ``x``.
+    #[getter]
+    fn x(&self) -> Vec<f64> {
+        self.inner.x().to_vec()
+    }
+
+    /// The table's ``G(x)``.
+    #[getter]
+    fn g(&self) -> Vec<f64> {
+        self.inner.g_values().to_vec()
+    }
+
+    /// The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+    ///
+    /// Parameters
+    /// ----------
+    /// x : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn curve(&self, x: Vec<f64>) -> Vec<f64> {
+        x.iter().map(|&v| self.inner.g(v)).collect()
+    }
+
+    /// Mean destruction rate, ``x1 / G(x1)``.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn mean_rate(&self) -> f64 {
+        self.inner.mean_rate()
+    }
+
+    /// Destruction rate at each probability ``u`` in ``(0, 1)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn rate_quantile(&self, u: Vec<f64>) -> Vec<f64> {
+        u.iter().map(|&v| self.inner.rate_quantile(v)).collect()
+    }
+
+    /// Share of a risk's expected loss in the layer ``limit`` xs
+    /// ``attachment``, for a risk with maximum possible loss ``mpl``.
+    ///
+    /// Parameters
+    /// ----------
+    /// limit : float
+    /// attachment : float
+    /// mpl : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn layer_share(&self, limit: f64, attachment: f64, mpl: f64) -> PyResult<f64> {
+        self.inner
+            .layer_share(limit, attachment, mpl)
+            .map_err(to_py)
+    }
+
+    fn __getnewargs__(&self) -> (Vec<f64>, Vec<f64>) {
+        (self.inner.x().to_vec(), self.inner.g_values().to_vec())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("TabulatedCurve({} points)", self.inner.x().len())
     }
 }
 

@@ -398,7 +398,7 @@ reinsurance-specific.
 |---|---|---|
 | `layer` | Increased limit factors (`LEV(limit)/LEV(basic)`), deductible credits (`1 − LEV(d)/E[X]`), Pareto extrapolation, implied alpha from two layers, a frequency and a layer, or two frequencies. | Primary (ILF tables, deductibles, large-loss loads) and reinsurance (rating upper layers) |
 | `tower` | Tower matching (Riegel 2018, above, both selection rules); reference fits; PML-curve fits. | Reinsurance |
-| `exposure` | Exposure curves for property per-risk rating: MBBEFD (Bernegger 1997) with the Swiss Re curves, the curve of any severity capped at an MPL, layer shares. | Primary and reinsurance (property per-risk) |
+| `exposure` | Exposure curves for property per-risk rating: MBBEFD (Bernegger 1997) with the Swiss Re curves, tabulated curves, the curve of any severity capped at an MPL, layer shares, destruction-rate sampling. | Primary and reinsurance (property per-risk) |
 | `risk_load` | Risk-loaded prices from simulated losses: a pricing distortion or a constant cost of capital on distortion-measured assets, for one cover or allocated across a portfolio's components. | Primary and reinsurance (technical price of a simulated cover or programme) |
 
 Done in `layer`: `ilf`, `loss_elimination_ratio`, `XsLayer`,
@@ -480,6 +480,19 @@ quadrature of the survival function for c = 1.5–5 and one curve per case,
 56 values at 1e-12. Python `Mbbefd`, `severity_exposure_curve`; R
 `mbbefd()`, `swiss_re_curve()`, `exposure_curve()`,
 `exposure_layer_share()`, `severity_exposure_curve()`.
+
+Done next in `exposure`: every curve is a destruction-rate distribution
+(survival `G'(x)/G'(0)`): `ExposureCurve::rate_quantile(u)` (closed forms
+for the four MBBEFD cases; `min(q(u), M)/M` for a severity curve) and
+`mean_rate()` (`1/G'(0)`), checked by sampling: the draws' `E[min(D, x)]`
+over the mean rate is `G(x)`. `TabulatedCurve` takes a published table
+(Salzmann, Ludwig, ISO PSOLD, a reinsurer's curves) from `(0, 0)` to
+`(1, 1)`, interpolated linearly; it must be concave, which makes its
+destruction rate discrete, and its mean rate is the first chord's
+(`x₁/G(x₁)`), so tables need fine first points. Riebesell's scale is a
+Pareto's `SeverityCurve`. Python `TabulatedCurve`, `rate_quantile` on
+both; R `tabulated_curve()`, `rate_quantile()`. These feed the risk-profile
+simulator (`aggregate.md`), one curve per sum-insured band.
 
 Done in `risk_load`: `price(losses, rule, assets)` on any `Empirical`
 and `price_portfolio(pd, rule, assets)` on a `PredictiveDistribution`,

@@ -998,11 +998,35 @@ Mbbefd$total_loss_probability <- function() .Call(wrap__Mbbefd__total_loss_proba
 
 Mbbefd$layer_share <- function(limit, attachment, mpl) .Call(wrap__Mbbefd__layer_share, self, limit, attachment, mpl)
 
+Mbbefd$rate_quantile <- function(u) .Call(wrap__Mbbefd__rate_quantile, self, u)
+
 #' @export
 `$.Mbbefd` <- function (self, name) { func <- Mbbefd[[name]]; environment(func) <- environment(); func }
 
 #' @export
 `[[.Mbbefd` <- `$.Mbbefd`
+
+Tabulated <- new.env(parent = emptyenv())
+
+Tabulated$new <- function(x, g) .Call(wrap__Tabulated__new, x, g)
+
+Tabulated$x <- function() .Call(wrap__Tabulated__x, self)
+
+Tabulated$g <- function() .Call(wrap__Tabulated__g, self)
+
+Tabulated$curve <- function(x) .Call(wrap__Tabulated__curve, self, x)
+
+Tabulated$mean <- function() .Call(wrap__Tabulated__mean, self)
+
+Tabulated$layer_share <- function(limit, attachment, mpl) .Call(wrap__Tabulated__layer_share, self, limit, attachment, mpl)
+
+Tabulated$rate_quantile <- function(u) .Call(wrap__Tabulated__rate_quantile, self, u)
+
+#' @export
+`$.Tabulated` <- function (self, name) { func <- Tabulated[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Tabulated` <- `$.Tabulated`
 
 Triangle <- new.env(parent = emptyenv())
 

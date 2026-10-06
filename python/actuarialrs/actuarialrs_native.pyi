@@ -4585,6 +4585,19 @@ class Mbbefd:
         -------
         float
         """
+    def rate_quantile(self, /, u: Sequence[float]) -> list[float]:
+        """
+        Destruction rate (loss over MPL) at each probability ``u`` in
+        ``(0, 1)``: draws with this curve as their exposure curve.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        list of float
+        """
     @staticmethod
     def swiss_re(c: float) -> Mbbefd:
         """
@@ -6313,6 +6326,101 @@ class StudentTCopula:
         Returns
         -------
         list of list of float
+        """
+
+@final
+class TabulatedCurve:
+    """
+    A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
+    ``(1, 1)``, interpolated linearly, as published curves are given
+    (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
+    reinsurer's own).
+    
+    The table must be concave (its slopes never increase). Its destruction
+    rate is discrete: the points' ``x`` with probabilities from the drops in
+    slope, and a total loss with probability last slope over first. Its
+    mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
+    first points for the expected loss to be right.
+    
+    Parameters
+    ----------
+    x : list of float
+        Increasing from 0 to 1.
+    g : list of float
+        ``G(x)``, from 0 to 1.
+    
+    Raises
+    ------
+    ValueError
+        If the points do not run from ``(0, 0)`` to ``(1, 1)``, or are not
+        increasing and concave.
+    
+    Examples
+    --------
+    >>> from actuarialrs.pricing import TabulatedCurve
+    >>> t = TabulatedCurve([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0])
+    >>> round(t.curve([0.3])[0], 12), t.mean_rate()
+    (0.6, 0.25)
+    """
+    def __getnewargs__(self, /) -> tuple[list[float], list[float]]: ...
+    def __new__(cls, /, x: Sequence[float], g: Sequence[float]) -> TabulatedCurve: ...
+    def __repr__(self, /) -> str: ...
+    def curve(self, /, x: Sequence[float]) -> list[float]:
+        """
+        The exposure curve ``G(x)`` at each ``x`` (clamped to [0, 1]).
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def g(self, /) -> list[float]:
+        """
+        The table's ``G(x)``.
+        """
+    def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
+        """
+        Share of a risk's expected loss in the layer ``limit`` xs
+        ``attachment``, for a risk with maximum possible loss ``mpl``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        mpl : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean_rate(self, /) -> float:
+        """
+        Mean destruction rate, ``x1 / G(x1)``.
+        
+        Returns
+        -------
+        float
+        """
+    def rate_quantile(self, /, u: Sequence[float]) -> list[float]:
+        """
+        Destruction rate at each probability ``u`` in ``(0, 1)``.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def x(self, /) -> list[float]:
+        """
+        The table's ``x``.
         """
 
 @final
