@@ -301,13 +301,8 @@ impl MackBootstrap {
 
     /// Mack's model of one segment, its residuals and links.
     fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
-        let mack = Mack {
-            development: self.development,
-            ..Default::default()
-        }
-        .fit_segment(segment, &segment.ages)?;
-        let cl = &mack.chain_ladder;
-        for (o, &last) in cl.latest_position.iter().enumerate() {
+        for o in 0..segment.n_origins {
+            let (last, _) = segment.latest(o)?;
             for d in 0..=last {
                 match segment.get(o, d) {
                     None => {
@@ -324,6 +319,12 @@ impl MackBootstrap {
                 }
             }
         }
+        let mack = Mack {
+            development: self.development,
+            ..Default::default()
+        }
+        .fit_segment(segment, &segment.ages)?;
+        let cl = &mack.chain_ladder;
 
         let (no, nd) = (segment.n_origins, segment.n_dev);
         let dev = &cl.development;
@@ -372,5 +373,369 @@ impl MackBootstrap {
             .param("method", format!("{method:?}"))
             .version("act-reserving", env!("CARGO_PKG_VERSION"))
             .input_hash(hasher.finish())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chain_ladder::ChainLadder;
+    use crate::development::Average;
+    use crate::expected_loss::BornhuetterFerguson;
+    use crate::tail::Tail;
+    use crate::triangle::tests::{RAA, annual, genins, raa};
+    use crate::triangle::{DevelopmentColumn, Long};
+    use crate::{Grain, Month, OdpBootstrap};
+    use act_prob::PredictiveDistribution;
+
+    fn boot(n_sims: usize, seed: u64, process: MackProcess) -> MackBootstrap {
+        MackBootstrap {
+            n_sims,
+            seed,
+            process,
+            development: Development::default(),
+        }
+    }
+
+    fn chain_ladder() -> OneYearMethod {
+        OneYearMethod::ChainLadder(ChainLadder::default())
+    }
+
+    /// Column `j` of a distribution's draws.
+    fn column(cdr: &PredictiveDistribution, j: usize) -> Vec<f64> {
+        let n = cdr.n_components();
+        cdr.draw_matrix().chunks(n).map(|row| row[j]).collect()
+    }
+
+    /// Standard deviation of `x` and its Monte Carlo standard error,
+    /// `sd * sqrt((kurtosis - 1) / (4 n))`.
+    fn sd_and_error(x: &[f64]) -> (f64, f64) {
+        let n = x.len() as f64;
+        let m = x.iter().sum::<f64>() / n;
+        let m2 = x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / n;
+        let m4 = x.iter().map(|v| (v - m).powi(4)).sum::<f64>() / n;
+        (
+            m2.sqrt(),
+            m2.sqrt() * ((m4 / (m2 * m2) - 1.0) / (4.0 * n)).sqrt(),
+        )
+    }
+
+    fn average(average: Average) -> Development {
+        Development {
+            average,
+            ..Default::default()
+        }
+    }
+
+    /// RAA as `paid`, with a `premium` of 20,000 per origin.
+    fn raa_premium() -> Triangle {
+        let (mut origin, mut ages, mut paid) = (vec![], vec![], vec![]);
+        for (k, row) in RAA.iter().enumerate() {
+            for (d, &v) in row.iter().enumerate() {
+                origin.push(Month::january(1981 + k as i32));
+                ages.push(12 * (d as u32 + 1));
+                paid.push(v);
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("premium", &[20_000.0; 55])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn residuals_are_standardized_per_factor() {
+        // sigma_k^2 = sum(C^alpha (F - f)^2) / (n_k - 1), so the
+        // n_k / (n_k - 1) adjustment makes each factor's squared residuals
+        // sum to n_k, for every weighting. The last factor rests on one link
+        // ratio: none.
+        for avg in [Average::Volume, Average::Simple, Average::Regression] {
+            let b = MackBootstrap {
+                development: average(avg),
+                ..boot(10, 0, MackProcess::Gamma)
+            };
+            let fit = b.one_year(&raa(), "values", &chain_ladder()).unwrap();
+            let r = &fit.bootstrap.residuals;
+            assert_eq!(
+                fit.bootstrap.mack.chain_ladder.development.alpha,
+                avg.alpha()
+            );
+            for k in 0..9 {
+                let links: Vec<f64> = (0..9 - k).map(|o| r[o * 10 + k]).collect();
+                if k == 8 {
+                    assert!(links.iter().all(|x| x.is_nan()), "{avg:?}");
+                    continue;
+                }
+                let n = links.len() as f64;
+                let ss: f64 = links.iter().map(|x| x * x).sum();
+                assert!((ss - n).abs() < 1e-9, "{avg:?} factor {k}: {ss} vs {n}");
+            }
+            // No link from an origin's latest value.
+            assert!((0..10).all(|o| r[o * 10 + 9 - o].is_nan()));
+        }
+    }
+
+    #[test]
+    fn one_cell_left_follows_mack_for_every_weighting() {
+        // RAA 1982 has one cell left, from the last factor, which rests on
+        // 1981's link alone: f* = f + r sigma / C81^(alpha / 2). So its CDR,
+        // U0 - C*, has variance sigma^2 (C82^2 v / C81^alpha + C82^(2 - alpha))
+        // with v the variance of the resampled residuals: Mack's own
+        // parameter and process variance for 1982 when v = 1.
+        let n_sims = 20_000;
+        for avg in [Average::Volume, Average::Simple, Average::Regression] {
+            let alpha = avg.alpha();
+            let fit = MackBootstrap {
+                development: average(avg),
+                ..boot(n_sims, 5, MackProcess::Gamma)
+            }
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+            let pool: Vec<f64> = fit
+                .bootstrap
+                .residuals
+                .iter()
+                .copied()
+                .filter(|r| !r.is_nan())
+                .collect();
+            let m = pool.iter().sum::<f64>() / pool.len() as f64;
+            let v = pool.iter().map(|r| (r - m).powi(2)).sum::<f64>() / pool.len() as f64;
+            let sigma = fit.bootstrap.mack.chain_ladder.development.sigma[8];
+            let (c81, c82) = (RAA[0][8], RAA[1][8]);
+            let want =
+                (sigma.powi(2) * (c82 * c82 * v / c81.powf(alpha) + c82.powf(2.0 - alpha))).sqrt();
+            let (sd, error) = sd_and_error(&column(&fit.cdr, 1));
+            assert!(
+                (sd - want).abs() < 5.0 * error,
+                "{avg:?}: {sd} vs {want} (5 SE {})",
+                5.0 * error
+            );
+            // And so Mack's analytic standard error, up to v.
+            let mack = Mack {
+                development: average(avg),
+                ..Default::default()
+            }
+            .fit(&raa(), "values")
+            .unwrap();
+            assert!((v - 1.0).abs() < 0.05, "{avg:?}: v = {v}");
+            assert!(
+                (sd / mack.standard_error[1] - 1.0).abs() < 0.05,
+                "{avg:?}: {sd} vs Mack {}",
+                mack.standard_error[1]
+            );
+        }
+    }
+
+    #[test]
+    fn every_process_has_mack_variance() {
+        // The process shapes differ, not their variance: on GenIns every
+        // one gives Merz-Wuthrich's total within Monte Carlo error, and
+        // parameter error alone is narrower.
+        let mw = Mack::default()
+            .fit(&genins(), "values")
+            .unwrap()
+            .claims_development_result()
+            .unwrap()
+            .total_one_year_standard_error;
+        let total = |process| {
+            let fit = boot(5_000, 9, process)
+                .one_year(&genins(), "values", &chain_ladder())
+                .unwrap();
+            let totals: Vec<f64> = fit
+                .cdr
+                .draw_matrix()
+                .chunks(10)
+                .map(|r| r.iter().sum())
+                .collect();
+            sd_and_error(&totals)
+        };
+        for process in [
+            MackProcess::Gamma,
+            MackProcess::Lognormal,
+            MackProcess::Residuals,
+            MackProcess::Normal,
+        ] {
+            let (sd, error) = total(process);
+            assert!((sd - mw).abs() < 5.0 * error, "{process:?}: {sd} vs {mw}");
+        }
+        assert!(total(MackProcess::None).0 < 0.8 * mw);
+    }
+
+    #[test]
+    fn positive_processes_stay_positive() {
+        // RAA's 1990 starts at 2,063 with sigma_0 = 167: its next value is
+        // often negative under the normal. Under the Gamma or lognormal it
+        // is negative only when its mean is, a pseudo first factor below
+        // zero (its standard deviation is a third of the factor). Both draw
+        // one uniform per value, so they share the pseudo factors and go
+        // negative in the same simulations. The closing ultimate is that
+        // value times the refitted factors to ultimate, all positive. (The
+        // Gamma's shape is below 1 here, so a draw can be exactly zero.)
+        let negative = |process| {
+            let fit = boot(2_000, 3, process)
+                .one_year(&raa(), "values", &chain_ladder())
+                .unwrap();
+            let u0 = fit.opening_ultimate[9];
+            column(&fit.cdr, 9)
+                .iter()
+                .filter(|&&x| u0 - x < 0.0)
+                .count()
+        };
+        let gamma = negative(MackProcess::Gamma);
+        assert_eq!(gamma, negative(MackProcess::Lognormal));
+        assert!(negative(MackProcess::Normal) > 10 * gamma.max(1));
+    }
+
+    #[test]
+    fn reproducible_by_seed_and_thread_count() {
+        let run = |seed| {
+            boot(300, seed, MackProcess::Gamma)
+                .one_year(&raa(), "values", &chain_ladder())
+                .unwrap()
+        };
+        let a = run(7);
+        assert_eq!(a.cdr.draw_matrix(), run(7).cdr.draw_matrix());
+        assert_ne!(a.cdr.draw_matrix(), run(8).cdr.draw_matrix());
+        let one_thread = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| run(7));
+        assert_eq!(a.cdr.draw_matrix(), one_thread.cdr.draw_matrix());
+        assert_eq!(a.cdr.provenance().model, "mack_bootstrap_one_year");
+        // The ODP on the same seed opens on the same ultimate but draws
+        // differently.
+        let odp = OdpBootstrap {
+            n_sims: 300,
+            seed: 7,
+            ..Default::default()
+        }
+        .one_year(&raa(), "values", &chain_ladder())
+        .unwrap();
+        assert_ne!(a.cdr.draw_matrix(), odp.cdr.draw_matrix());
+        assert_eq!(a.opening_ultimate, odp.opening_ultimate);
+    }
+
+    #[test]
+    fn every_method_rereserves() {
+        // The oldest origin gets no new cell: with no tail it does not
+        // move; a log-linear tail refitted on the new factors moves it.
+        let tri = raa_premium();
+        let b = boot(300, 2, MackProcess::Gamma);
+        let plain = b.one_year(&tri, "paid", &chain_ladder()).unwrap();
+        assert!(column(&plain.cdr, 0).iter().all(|&x| x == 0.0));
+        let tailed = OneYearMethod::ChainLadder(ChainLadder {
+            tail: Tail::LogLinear,
+            ..Default::default()
+        });
+        let fit = b.one_year(&tri, "paid", &tailed).unwrap();
+        assert!(column(&fit.cdr, 0).iter().any(|&x| x != 0.0));
+        let bf = BornhuetterFerguson {
+            apriori: 0.8,
+            ..Default::default()
+        };
+        let method = OneYearMethod::BornhuetterFerguson(bf, "premium".into());
+        let fit = b.one_year(&tri, "paid", &method).unwrap();
+        assert_eq!(
+            fit.opening_ultimate,
+            bf.fit(&tri, "paid", "premium").unwrap().ultimate
+        );
+        assert!(column(&fit.cdr, 9).iter().any(|&x| x != 0.0));
+    }
+
+    #[test]
+    fn segments_share_one_joint_distribution() {
+        let origin =
+            [2019, 2019, 2019, 2019, 2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+        let ages = [12, 24, 36, 48, 12, 24, 36, 12, 24, 12];
+        let paid = [
+            100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0,
+        ];
+        let tri = Triangle::from_long(&Long {
+            keys: &[("lob", &[["Auto"; 10], ["Home"; 10]].concat())],
+            origin: &[origin, origin].concat(),
+            development: DevelopmentColumn::Age(&[ages, ages].concat()),
+            values: &[("paid", &[paid, paid.map(|v| v * 3.0)].concat())],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let fits = boot(400, 5, MackProcess::Gamma)
+            .one_year_segments(&tri, "paid", &chain_ladder())
+            .unwrap();
+        assert_eq!(fits.cdr.dims(), ["lob", "origin"]);
+        assert_eq!(fits.cdr.n_components(), 8);
+        // Mack's bootstrap has no scale column.
+        let totals = fits.totals();
+        let names: Vec<&str> = totals.values.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "latest",
+                "opening_ultimate",
+                "opening_reserve",
+                "cdr_mean",
+                "cdr_std_dev"
+            ]
+        );
+        let home = fits.segment(&[("lob", "Home")]).unwrap();
+        assert_eq!(home.cdr.n_components(), 4);
+        assert_eq!(home.cdr.dims(), ["lob", "origin"]);
+    }
+
+    #[test]
+    fn errors() {
+        let b = boot(10, 0, MackProcess::Gamma);
+        let negative = annual(
+            2020,
+            &[
+                &[4.0, 8.0, 12.0, 15.0],
+                &[-8.0, 16.0, 24.0],
+                &[12.0, 25.0],
+                &[16.0],
+            ],
+        );
+        assert_eq!(
+            b.one_year(&negative, "values", &chain_ladder())
+                .unwrap_err(),
+            Error::Bootstrap("Mack's bootstrap needs non-negative cumulative values")
+        );
+        // 2021 has no value at 24 months.
+        let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2022, 2022, 2023].map(Month::january);
+        let holes = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 36, 12, 24, 12]),
+            values: &[(
+                "values",
+                &[4.0, 8.0, 12.0, 15.0, 7.0, 25.0, 12.0, 25.0, 16.0],
+            )],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        assert_eq!(
+            b.one_year(&holes, "values", &chain_ladder()).unwrap_err(),
+            Error::Bootstrap("every origin must be observed from the first age to its latest")
+        );
+        let tiny = annual(2020, &[&[1.0, 2.0], &[1.0]]);
+        assert!(matches!(
+            b.one_year(&tiny, "values", &chain_ladder()),
+            Err(Error::TooFewAges { .. })
+        ));
+        assert_eq!(
+            boot(0, 0, MackProcess::Gamma)
+                .one_year(&raa(), "values", &chain_ladder())
+                .unwrap_err(),
+            Error::Bootstrap("n_sims must be positive")
+        );
     }
 }
