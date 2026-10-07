@@ -9,7 +9,7 @@ import inspect
 
 import pytest
 
-import actuarialrs as ar
+import prospicio as ar
 
 NAMESPACES = [ar.distributions, ar.aggregate, ar.boosting, ar.pricing, ar.reinsurance, ar.reserving, ar.risk]
 

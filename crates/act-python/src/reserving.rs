@@ -1,4 +1,4 @@
-//! `actuarialrs.reserving` (Reserving lane): the loss triangle, the chain
+//! `prospicio.reserving` (Reserving lane): the loss triangle, the chain
 //! ladder, Mack's model, the expected-loss methods, Clark's growth curves
 //! and the ODP bootstrap over `act_reserving` (`docs/design/triangle.md`,
 //! `docs/design/reserving-v02.md`).
@@ -350,7 +350,7 @@ impl LongArgs {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import Triangle
+/// >>> from prospicio.reserving import Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     origin=[2020, 2020, 2021],
 /// ...     development=[12, 24, 12],
@@ -362,7 +362,7 @@ impl LongArgs {
 /// (['2020', '2021'], [12, 24], datetime.date(2021, 12, 31))
 /// >>> tri.values[0][0]
 /// [[100.0, 150.0], [110.0, nan]]
-#[pyclass(name = "Triangle", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "Triangle", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyTriangle {
     inner: Triangle,
 }
@@ -442,7 +442,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> tri = Triangle.from_long(
     /// ...     origin=[2020, 2020, 2021, 2020],
     /// ...     development=[12, 24, 12, 12],
@@ -455,7 +455,7 @@ impl PyTriangle {
     /// Valuation dates instead of ages:
     ///
     /// >>> import datetime
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> d = datetime.date
     /// >>> tri = Triangle.from_long(
     /// ...     origin=[d(2021, 2, 1), d(2021, 2, 1), d(2021, 5, 1)],
@@ -545,7 +545,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> df = {
     /// ...     "lob": ["Auto", "Auto", "Auto", "Home"],
     /// ...     "year": [2020, 2020, 2021, 2020],
@@ -710,7 +710,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> tri = Triangle.from_long(
     /// ...     [2020, 2020], [12, 12], {"paid": [1.0, 2.0]}, keys={"lob": ["Auto", "Home"]}
     /// ... )
@@ -839,7 +839,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> tri = Triangle.from_long(
     /// ...     [2020, 2020, 2020],
     /// ...     [12, 12, 12],
@@ -905,7 +905,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> tri = Triangle.from_long(
     /// ...     [2020, 2020, 2020],
     /// ...     [12, 12, 12],
@@ -943,7 +943,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> q = Triangle.from_long(
     /// ...     [2020, 2020], [3, 6], [1.0, 2.0], origin_grain="Q", development_grain="Q"
     /// ... )
@@ -995,7 +995,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> tri = Triangle.from_long(
     /// ...     [2020, 2020, 2021, 2020],
     /// ...     [12, 24, 12, 12],
@@ -1068,7 +1068,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> tri = Triangle.from_long(
     /// ...     [2020, 2020, 2021, 2020],
     /// ...     [12, 24, 12, 12],
@@ -1158,7 +1158,7 @@ impl PyTriangle {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import Triangle
+    /// >>> from prospicio.reserving import Triangle
     /// >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [1000.0, 1500.0, 1100.0]})
     /// >>> print(tri.to_string())
     /// Triangle: paid (cumulative, valuation 2021-12)
@@ -1202,12 +1202,12 @@ impl PyTriangle {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ChainLadder, TailConstant, Triangle
+/// >>> from prospicio.reserving import ChainLadder, TailConstant, Triangle
 /// >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
 /// >>> fit = ChainLadder(tail=TailConstant(1.05)).fit(tri, "paid")
 /// >>> fit.tail, round(fit.ultimate[1], 6)
 /// (1.05, 315.0)
-#[pyclass(name = "TailConstant", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "TailConstant", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyTailConstant {
     inner: TailConstant,
 }
@@ -1274,7 +1274,7 @@ impl PyTailConstant {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ChainLadder, TailCurve, Triangle
+/// >>> from prospicio.reserving import ChainLadder, TailCurve, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
 /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
@@ -1283,7 +1283,7 @@ impl PyTailConstant {
 /// >>> fit = ChainLadder(tail=TailCurve()).fit(tri, "values")
 /// >>> 1.0 < fit.tail < 1.05
 /// True
-#[pyclass(name = "TailCurve", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "TailCurve", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyTailCurve {
     inner: TailCurve,
 }
@@ -1369,7 +1369,7 @@ impl PyTailCurve {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ChainLadder, TailBondy, Triangle
+/// >>> from prospicio.reserving import ChainLadder, TailBondy, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020, 2020, 2020, 2021, 2021, 2022],
 /// ...     [12, 24, 36, 12, 24, 12],
@@ -1377,7 +1377,7 @@ impl PyTailCurve {
 /// ... )
 /// >>> round(ChainLadder(tail=TailBondy()).fit(tri, "values").tail, 12)
 /// 1.1
-#[pyclass(name = "TailBondy", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "TailBondy", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyTailBondy {
     inner: TailBondy,
 }
@@ -1423,7 +1423,7 @@ impl PyTailBondy {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import Mack, TailLogLinear, Triangle
+/// >>> from prospicio.reserving import Mack, TailLogLinear, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
 /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
@@ -1432,7 +1432,7 @@ impl PyTailBondy {
 /// >>> fit = Mack(tail=TailLogLinear()).fit(tri, "values")
 /// >>> fit.tail > 1.0 and fit.standard_error[0] > 0.0
 /// True
-#[pyclass(name = "TailLogLinear", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "TailLogLinear", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyTailLogLinear;
 
 #[pymethods]
@@ -1555,12 +1555,12 @@ fn tail_arg_repr(tail: &Tail) -> String {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ChainLadder, Triangle
+/// >>> from prospicio.reserving import ChainLadder, Triangle
 /// >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
 /// >>> fit = ChainLadder().fit(tri, "paid")
 /// >>> fit.ldf, fit.ultimate, fit.total_reserve
 /// ([1.5], [150.0, 300.0], 100.0)
-#[pyclass(name = "ChainLadder", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "ChainLadder", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyChainLadder {
     inner: ChainLadder,
 }
@@ -1769,7 +1769,7 @@ fn segments_prefix<T>(fits: &SegmentFits<T>) -> String {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ChainLadder, Triangle
+/// >>> from prospicio.reserving import ChainLadder, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020, 2020, 2021] * 2,
 /// ...     [12, 24, 12] * 2,
@@ -1781,7 +1781,7 @@ fn segments_prefix<T>(fits: &SegmentFits<T>) -> String {
 /// (['Auto', 'Home'], [0.0, 100.0, 0.0, 30.0])
 /// >>> fit.segment(lob="Home").ldf
 /// [2.0]
-#[pyclass(name = "ChainLadderFit", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "ChainLadderFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyChainLadderFit {
     inner: SegmentFits<ChainLadderFit>,
 }
@@ -2015,7 +2015,7 @@ impl PyChainLadderFit {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import Mack, Triangle
+/// >>> from prospicio.reserving import Mack, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
 /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
@@ -2024,7 +2024,7 @@ impl PyChainLadderFit {
 /// >>> fit = Mack().fit(tri, "values")
 /// >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
 /// True
-#[pyclass(name = "Mack", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "Mack", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyMack {
     inner: Mack,
 }
@@ -2140,7 +2140,7 @@ impl PyMack {
 /// ``development_frame()``, ``totals_frame()`` (the totals' standard errors
 /// and the tail) or ``segment(...)``.
 /// ``total_ultimate`` and ``total_reserve`` sum over every segment.
-#[pyclass(name = "MackFit", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "MackFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyMackFit {
     inner: SegmentFits<MackFit>,
 }
@@ -2428,7 +2428,7 @@ impl PyMackFit {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import Mack, Triangle
+/// >>> from prospicio.reserving import Mack, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
 /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
@@ -2442,7 +2442,7 @@ impl PyMackFit {
 /// True
 #[pyclass(
     name = "ClaimsDevelopmentResult",
-    module = "actuarialrs.reserving",
+    module = "prospicio.reserving",
     frozen
 )]
 pub(crate) struct PyClaimsDevelopmentResult {
@@ -2577,7 +2577,7 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ExpectedLoss, Triangle
+/// >>> from prospicio.reserving import ExpectedLoss, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020, 2020, 2021], [12, 24, 12],
 /// ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
@@ -2585,7 +2585,7 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 /// >>> fit = ExpectedLoss(apriori=0.5).fit(tri, "paid", "premium")
 /// >>> fit.ultimate, fit.reserve
 /// ([125.0, 200.0], [-25.0, 0.0])
-#[pyclass(name = "ExpectedLoss", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "ExpectedLoss", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyExpectedLoss {
     inner: ExpectedLoss,
 }
@@ -2697,7 +2697,7 @@ impl PyExpectedLoss {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import BornhuetterFerguson, Triangle
+/// >>> from prospicio.reserving import BornhuetterFerguson, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020, 2020, 2021], [12, 24, 12],
 /// ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
@@ -2705,7 +2705,7 @@ impl PyExpectedLoss {
 /// >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
 /// >>> [round(u, 2) for u in fit.ultimate]
 /// [150.0, 266.67]
-#[pyclass(name = "BornhuetterFerguson", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "BornhuetterFerguson", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBornhuetterFerguson {
     inner: BornhuetterFerguson,
 }
@@ -2817,7 +2817,7 @@ impl PyBornhuetterFerguson {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import Benktander, Triangle
+/// >>> from prospicio.reserving import Benktander, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020, 2020, 2021], [12, 24, 12],
 /// ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
@@ -2825,7 +2825,7 @@ impl PyBornhuetterFerguson {
 /// >>> fit = Benktander(apriori=0.5, n_iters=2).fit(tri, "paid", "premium")
 /// >>> [round(u, 2) for u in fit.ultimate]
 /// [150.0, 288.89]
-#[pyclass(name = "Benktander", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "Benktander", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBenktander {
     inner: Benktander,
 }
@@ -2951,7 +2951,7 @@ impl PyBenktander {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import CapeCod, Triangle
+/// >>> from prospicio.reserving import CapeCod, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020, 2020, 2021], [12, 24, 12],
 /// ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
@@ -2959,7 +2959,7 @@ impl PyBenktander {
 /// >>> fit = CapeCod().fit(tri, "paid", "premium")
 /// >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
 /// ([0.6774, 0.6774], [150.0, 290.32])
-#[pyclass(name = "CapeCod", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "CapeCod", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyCapeCod {
     inner: CapeCod,
 }
@@ -3072,7 +3072,7 @@ impl PyCapeCod {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import BornhuetterFerguson, Triangle
+/// >>> from prospicio.reserving import BornhuetterFerguson, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020, 2020, 2021] * 2,
 /// ...     [12, 24, 12] * 2,
@@ -3083,7 +3083,7 @@ impl PyCapeCod {
 /// >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
 /// >>> fit.exposure, fit.segment(lob="Home").ultimate
 /// ([250.0, 400.0, 500.0, 800.0], [20.0, 230.0])
-#[pyclass(name = "ExpectedLossFit", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "ExpectedLossFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyExpectedLossFit {
     inner: SegmentFits<ExpectedLossFit>,
 }
@@ -3251,7 +3251,7 @@ impl PyExpectedLossFit {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import CapeCod, Triangle
+/// >>> from prospicio.reserving import CapeCod, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020, 2020, 2021], [12, 24, 12],
 /// ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
@@ -3259,7 +3259,7 @@ impl PyExpectedLossFit {
 /// >>> fit = CapeCod(trend=0.1).fit(tri, "paid", "premium")
 /// >>> round(fit.trended_apriori[0] / fit.apriori[0], 10)
 /// 1.1
-#[pyclass(name = "CapeCodFit", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "CapeCodFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyCapeCodFit {
     inner: SegmentFits<CapeCodFit>,
 }
@@ -3477,7 +3477,7 @@ fn growth_curve_name(curve: GrowthCurve) -> &'static str {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ClarkLdf, Triangle
+/// >>> from prospicio.reserving import ClarkLdf, Triangle
 /// >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
 /// ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
 /// >>> tri = Triangle.from_long(
@@ -3490,7 +3490,7 @@ fn growth_curve_name(curve: GrowthCurve) -> &'static str {
 /// True
 /// >>> round(fit.ultimate[2] * fit.growth(36) / fit.growth(120), 6)
 /// 410.0
-#[pyclass(name = "ClarkLdf", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "ClarkLdf", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyClarkLdf {
     inner: ClarkLdf,
 }
@@ -3586,7 +3586,7 @@ fn max_age_repr(max_age: Option<f64>) -> String {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ClarkCapeCod, Triangle
+/// >>> from prospicio.reserving import ClarkCapeCod, Triangle
 /// >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
 /// ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
 /// >>> tri = Triangle.from_long(
@@ -3598,7 +3598,7 @@ fn max_age_repr(max_age: Option<f64>) -> String {
 /// >>> fit = ClarkCapeCod().fit(tri, "paid", "premium")
 /// >>> 0 < fit.elr < 1 and fit.expected_ultimate == [fit.elr * 800.0] * 5
 /// True
-#[pyclass(name = "ClarkCapeCod", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "ClarkCapeCod", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyClarkCapeCod {
     inner: ClarkCapeCod,
 }
@@ -3684,7 +3684,7 @@ impl PyClarkCapeCod {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import ClarkLdf, Triangle
+/// >>> from prospicio.reserving import ClarkLdf, Triangle
 /// >>> rows = [[110.0, 290.0, 370.0, 420.0, 440.0], [95.0, 300.0, 390.0, 425.0],
 /// ...         [130.0, 320.0, 410.0], [105.0, 305.0], [120.0]]
 /// >>> tri = Triangle.from_long(
@@ -3695,7 +3695,7 @@ impl PyClarkCapeCod {
 /// >>> fit = ClarkLdf().fit(tri, "values")
 /// >>> len(fit.covariance), fit.elr, fit.growth(float("inf"))
 /// (7, None, 1.0)
-#[pyclass(name = "ClarkFit", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "ClarkFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyClarkFit {
     inner: SegmentFits<ClarkFit>,
 }
@@ -3985,7 +3985,7 @@ impl PyClarkFit {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reserving import OdpBootstrap, Triangle
+/// >>> from prospicio.reserving import OdpBootstrap, Triangle
 /// >>> tri = Triangle.from_long(
 /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
 /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
@@ -3996,7 +3996,7 @@ impl PyClarkFit {
 /// [('2020',), ('2021',), ('2022',), ('2023',)]
 /// >>> fit.reserves.mean() > 0
 /// True
-#[pyclass(name = "OdpBootstrap", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "OdpBootstrap", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyOdpBootstrap {
     inner: OdpBootstrap,
 }
@@ -4113,7 +4113,7 @@ impl PyOdpBootstrap {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reserving import BornhuetterFerguson, OdpBootstrap, Triangle
+    /// >>> from prospicio.reserving import BornhuetterFerguson, OdpBootstrap, Triangle
     /// >>> tri = Triangle.from_long(
     /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
     /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
@@ -4168,7 +4168,7 @@ impl PyOdpBootstrap {
 /// ``totals_frame()``. ``fitted`` and ``residuals`` are nested lists
 /// indexed ``[origin][development]``, like one segment of
 /// ``Triangle.values``, with ``nan`` where the triangle is not observed.
-#[pyclass(name = "OdpBootstrapFit", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "OdpBootstrapFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyOdpBootstrapFit {
     inner: OdpBootstrapFits,
 }
@@ -4377,7 +4377,7 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 /// ``residuals`` and ``scale`` need a single-segment fit; for several
 /// segments use ``segment(...)`` or ``totals_frame()``. ``fitted`` and
 /// ``residuals`` are the bootstrap's, as ``OdpBootstrapFit``'s.
-#[pyclass(name = "OneYearFit", module = "actuarialrs.reserving", frozen)]
+#[pyclass(name = "OneYearFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyOneYearFit {
     inner: OneYearFits,
 }

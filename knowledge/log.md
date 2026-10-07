@@ -2,6 +2,7 @@
 
 ## 2026-10-07
 
+* **Update**: the Python and R packages are renamed `actuarialrs` to `prospicio`; concept files now use the new paths (`python/prospicio`, `R/prospicio`). Earlier entries keep the old name.
 * **Creation**: [WebAssembly builds](/environment/wasm-builds.md), from settling the WASM scope: the core crates build for wasm32, their tests run under WASI with Node, and Rayon falls back to the calling thread.
 
 ## 2026-10-06

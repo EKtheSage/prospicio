@@ -24,7 +24,7 @@ def run_notebook(path):
 
 
 def test_one_year_view(monkeypatch, capsys):
-    monkeypatch.setitem(os.environ, "ACTUARIALRS_EXAMPLE_SIMS", "4000")
+    monkeypatch.setitem(os.environ, "PROSPICIO_EXAMPLE_SIMS", "4000")
     monkeypatch.chdir(EXAMPLES)
     ns = run_notebook(EXAMPLES / "one_year_view.ipynb")
     assert "reinsurance cuts the company's TVaR" in capsys.readouterr().out

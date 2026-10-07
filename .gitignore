@@ -10,13 +10,13 @@ __pycache__/
 # R package build
 *.o
 *.dll
-R/actuarialrs/src/*.so
+R/prospicio/src/*.so
 .Rhistory
 *.pdb
 
 # Rendered docs sites (cargo xtask docs); publishing is not set up yet
 python/great-docs/
-R/actuarialrs/docs/
+R/prospicio/docs/
 .quarto/
 
 # Downloaded validation data (validation/scripts/fetch_fremtpl2.py)

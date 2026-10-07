@@ -9,7 +9,7 @@ license.workspace = true
 authors.workspace = true
 
 [lib]
-name = "actuarialrs_r"
+name = "prospicio_r"
 crate-type = ["staticlib"]
 
 [dependencies]
@@ -22,6 +22,6 @@ act-prob.workspace = true
 act-pricing.workspace = true
 act-reserving.workspace = true
 # result_condition: Rust errors come back as R condition objects (raised by
-# R/actuarialrs/R/distributions.R) instead of panics, so R prints no Rust
+# R/prospicio/R/distributions.R) instead of panics, so R prints no Rust
 # panic message for ordinary input errors.
 extendr-api = { version = "0.9.0", features = ["result_condition"] }

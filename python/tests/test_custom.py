@@ -3,8 +3,8 @@ import pickle
 
 import pytest
 
-from actuarialrs.aggregate import simulate_events
-from actuarialrs.distributions import Custom, Grid, Lognormal, Mixture, Poisson
+from prospicio.aggregate import simulate_events
+from prospicio.distributions import Custom, Grid, Lognormal, Mixture, Poisson
 
 LN = Lognormal.from_mean_cv(1000.0, 1.0)
 

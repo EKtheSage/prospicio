@@ -1,4 +1,4 @@
-//! `actuarialrs.distributions`: wrappers over `act_prob` distributions.
+//! `prospicio.distributions`: wrappers over `act_prob` distributions.
 
 use act_core::StreamRng;
 use act_prob::{
@@ -27,11 +27,11 @@ use crate::to_py;
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Lognormal
+/// >>> from prospicio.distributions import Lognormal
 /// >>> d = Lognormal.from_mean_cv(1000.0, 0.5)
 /// >>> round(d.mean(), 6)
 /// 1000.0
-#[pyclass(name = "Lognormal", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Lognormal", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyLognormal {
     pub(crate) inner: act_prob::Lognormal,
 }
@@ -200,7 +200,7 @@ impl PyLognormal {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.distributions import Lognormal
+    /// >>> from prospicio.distributions import Lognormal
     /// >>> d = Lognormal(7.0, 0.5)
     /// >>> abs(d.layer(1000.0, 0.0) - d.lev(1000.0)) < 1e-9
     /// True
@@ -322,7 +322,7 @@ pub(crate) fn dist_to_py(py: Python<'_>, d: Dist) -> PyResult<Py<PyAny>> {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Lognormal, from_json, to_json
+/// >>> from prospicio.distributions import Lognormal, from_json, to_json
 /// >>> text = to_json(Lognormal(7.0, 0.5))
 /// >>> from_json(text).mean() == Lognormal(7.0, 0.5).mean()
 /// True
@@ -393,11 +393,11 @@ pub(crate) fn extract_severity(obj: &Bound<'_, PyAny>) -> PyResult<SeverityDist>
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Poisson
+/// >>> from prospicio.distributions import Poisson
 /// >>> n = Poisson(3.0)
 /// >>> round(n.pmf(0), 6)
 /// 0.049787
-#[pyclass(name = "Poisson", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Poisson", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyPoisson {
     pub(crate) inner: act_prob::Poisson,
 }
@@ -525,15 +525,11 @@ impl PyPoisson {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import NegativeBinomial
+/// >>> from prospicio.distributions import NegativeBinomial
 /// >>> n = NegativeBinomial.from_mean_variance(10.0, 30.0)
 /// >>> round(n.variance(), 9)
 /// 30.0
-#[pyclass(
-    name = "NegativeBinomial",
-    module = "actuarialrs.distributions",
-    frozen
-)]
+#[pyclass(name = "NegativeBinomial", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyNegativeBinomial {
     pub(crate) inner: act_prob::NegativeBinomial,
 }
@@ -682,7 +678,7 @@ impl PyNegativeBinomial {
 /// ``Grid.lower``.
 #[pyclass(
     name = "DiscretizationReport",
-    module = "actuarialrs.distributions",
+    module = "prospicio.distributions",
     frozen
 )]
 pub(crate) struct PyDiscretizationReport {
@@ -768,11 +764,11 @@ impl PyDiscretizationReport {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Grid, Lognormal
+/// >>> from prospicio.distributions import Grid, Lognormal
 /// >>> grid, report = Grid.local_moment(Lognormal(7.0, 0.5), 100.0, 200)
 /// >>> report.tail_mass < 1e-8
 /// True
-#[pyclass(name = "Grid", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Grid", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyGrid {
     pub(crate) inner: Grid,
 }
@@ -817,7 +813,7 @@ impl PyGrid {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.distributions import Grid
+    /// >>> from prospicio.distributions import Grid
     /// >>> x = Grid(1.0, [0.2, 0.3, 0.3, 0.2])
     /// >>> layer, exact = x.map(lambda v: min(max(v - 1.0, 0.0), 1.0))
     /// >>> layer.probs, exact
@@ -1051,11 +1047,11 @@ impl PyGrid {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Sampled
+/// >>> from prospicio.distributions import Sampled
 /// >>> s = Sampled([1.0, 2.0, 3.0, 4.0])
 /// >>> s.tvar(0.5)
 /// 3.5
-#[pyclass(name = "Sampled", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Sampled", module = "prospicio.distributions", frozen)]
 pub(crate) struct PySampled {
     pub(crate) inner: Sampled,
 }
@@ -1234,7 +1230,7 @@ pub(crate) fn key_to_py<'py>(py: Python<'py>, key: &ComponentKey) -> PyResult<Bo
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PredictiveDistribution
+/// >>> from prospicio.distributions import PredictiveDistribution
 /// >>> pd = PredictiveDistribution(["line"], [("A",), ("B",)],
 /// ...                             [[0.0, 0.0], [0.0, 0.0], [0.0, 100.0], [100.0, 0.0]])
 /// >>> pd.var(0.75)
@@ -1243,7 +1239,7 @@ pub(crate) fn key_to_py<'py>(py: Python<'py>, key: &ComponentKey) -> PyResult<Bo
 /// 0.0
 #[pyclass(
     name = "PredictiveDistribution",
-    module = "actuarialrs.distributions",
+    module = "prospicio.distributions",
     frozen
 )]
 pub(crate) struct PyPredictiveDistribution {
@@ -1340,7 +1336,7 @@ impl PyPredictiveDistribution {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.distributions import PredictiveDistribution
+    /// >>> from prospicio.distributions import PredictiveDistribution
     /// >>> a = PredictiveDistribution(["origin"], [(2023,), (2024,)], [[10.0, 20.0], [12.0, 25.0]])
     /// >>> b = PredictiveDistribution(["lob"], [("motor",)], [[50.0], [40.0]])
     /// >>> p = PredictiveDistribution.join([("reserve", a), ("premium", b)], "risk")
@@ -1416,7 +1412,7 @@ impl PyPredictiveDistribution {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.distributions import PredictiveDistribution
+    /// >>> from prospicio.distributions import PredictiveDistribution
     /// >>> a = PredictiveDistribution(["lob"], [("x",)], [[0.0]] * 1000)
     /// >>> b = PredictiveDistribution(["lob"], [("x",)], [[1.0]] * 1000)
     /// >>> mix = PredictiveDistribution.blend([a, b], [0.25, 0.75], seed=7)

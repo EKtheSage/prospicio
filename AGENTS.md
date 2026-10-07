@@ -35,7 +35,7 @@ The ODP bootstrap needs both a `Triangle` and a `PredictiveDistribution`. It sta
 ### Shared files
 
 - **`crates/act-core/`** is used by every lane. Change it only in a small PR of its own that holds nothing else, so it can merge first. Other lanes merge `main` before they build on the change.
-- **Bindings**: each lane puts its wrappers in its own module file (for example `crates/act-python/src/reserving.rs`, `crates/act-r/src/distributions.rs`, `R/actuarialrs/R/reserving.R`, `python/actuarialrs/reserving.py`). The crate's `lib.rs` only registers modules, one line per lane.
+- **Bindings**: each lane puts its wrappers in its own module file (for example `crates/act-python/src/reserving.rs`, `crates/act-r/src/distributions.rs`, `R/prospicio/R/reserving.R`, `python/prospicio/reserving.py`). The crate's `lib.rs` only registers modules, one line per lane.
 - **Root `Cargo.toml` and `Cargo.lock`**: add dependencies only when a lane needs them. When `Cargo.lock` conflicts, take either side and let `cargo` regenerate it. Do not merge it by hand.
 - **`AGENTS.md` and `docs/architecture.md`**: change them in small PRs. Each lane edits only its own design notes under `docs/design/`.
 - **Keep PRs small** (one type or method each) and merge `main` often. The longer a branch lives, the harder its conflicts get.
@@ -51,7 +51,7 @@ Run the matching `ci.yml` checks locally before you push, so CI does not go red 
 - Always: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
 - Crates in the WASM scope touched (`act-core`, `act-math`, `act-prob`, `act-aggregate`, `act-pricing`, `act-reserving`): `rustup target add wasm32-unknown-unknown` once, then `cargo check --target wasm32-unknown-unknown -p <crate>`. No threads, files or C dependencies on their default path
 - Python bindings touched: `cargo clippy -p act-python -- -D warnings`, then `cd python && maturin develop && pytest tests`
-- R bindings touched: `cargo clippy -p act-r -- -D warnings`, `install.packages("S7")` if missing, `R CMD INSTALL R/actuarialrs`, every `R/actuarialrs/tests/*.R` with `Rscript`
+- R bindings touched: `cargo clippy -p act-r -- -D warnings`, `install.packages("S7")` if missing, `R CMD INSTALL R/prospicio`, every `R/prospicio/tests/*.R` with `Rscript`
 - Bindings, their doc comments or docs config touched: `cargo xtask docs --check` (needs Quarto, Python 3.11+ for great-docs, and the R packages `roxygen2`, `pkgload`, `pkgdown`), and commit the regenerated stub, `man/` and `NAMESPACE`
 
 If a check cannot run in your environment (for example, R is not installed), rely on CI for it and say so in the PR.

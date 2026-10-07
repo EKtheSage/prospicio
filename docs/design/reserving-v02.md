@@ -25,7 +25,7 @@ Each PR holds one family, in this order, so that each can merge on its own:
 | 5 | `claude/v02-clark` | `ClarkLdf`, `ClarkCapeCod` | PRs 1 and 2 |
 
 PRs 2–4 touch the same binding files (`crates/act-python/src/reserving.rs`,
-`crates/act-r/src/reserving.rs`, `R/actuarialrs/R/reserving.R`) and the
+`crates/act-r/src/reserving.rs`, `R/prospicio/R/reserving.R`) and the
 generated stub, `NAMESPACE` and `man/`. Whichever merges second merges
 `main` and regenerates the generated files; it does not merge them by hand.
 

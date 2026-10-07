@@ -1,4 +1,4 @@
-//! `actuarialrs.reinsurance`: wrappers over `act_aggregate::reinsurance`
+//! `prospicio.reinsurance`: wrappers over `act_aggregate::reinsurance`
 //! (layers and towers, applied to simulated losses or on the grid).
 
 use act_aggregate::{Layer, Tower, TowerGrids};
@@ -51,7 +51,7 @@ use crate::to_py;
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.reinsurance import Layer
+/// >>> from prospicio.reinsurance import Layer
 /// >>> layer = Layer("5x5", 5e6, 5e6, reinstatements=1)
 /// >>> layer.ceded([7e6])
 /// 2000000.0
@@ -64,7 +64,7 @@ use crate::to_py;
 /// ...               pro_rata_time=True)
 /// >>> round(timed.reinstatement_premium([22.0, 12.0], times=[0.25, 0.5]), 12)
 /// 1.6
-#[pyclass(name = "Layer", module = "actuarialrs.reinsurance", frozen)]
+#[pyclass(name = "Layer", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyLayer {
     inner: Layer,
 }
@@ -125,7 +125,7 @@ impl PyLayer {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reinsurance import Layer
+    /// >>> from prospicio.reinsurance import Layer
     /// >>> Layer.quota_share("QS", 0.4).ceded([10.0, 5.0])
     /// 6.0
     #[staticmethod]
@@ -157,7 +157,7 @@ impl PyLayer {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reinsurance import Layer
+    /// >>> from prospicio.reinsurance import Layer
     /// >>> s = Layer.surplus("surplus", 1e6, 9.0)
     /// >>> round(s.ceded_with_sums_insured([2e6, 2e6], [5e6, 20e6]))
     /// 2500000
@@ -211,7 +211,7 @@ impl PyLayer {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reinsurance import Layer
+    /// >>> from prospicio.reinsurance import Layer
     /// >>> Layer.stop_loss("SL", 50.0, 100.0).ceded([60.0, 70.0])
     /// 30.0
     #[staticmethod]
@@ -302,7 +302,7 @@ impl PyLayer {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reinsurance import Layer
+    /// >>> from prospicio.reinsurance import Layer
     /// >>> layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=15.0)
     /// >>> layer.ceded_by_event([8.0, 20.0, 12.0])
     /// [0.0, 9.0, 6.0]
@@ -368,15 +368,15 @@ impl PyLayer {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.aggregate import simulate_events
-/// >>> from actuarialrs.reinsurance import Layer, Tower
-/// >>> from actuarialrs.distributions import Lognormal, Poisson
+/// >>> from prospicio.aggregate import simulate_events
+/// >>> from prospicio.reinsurance import Layer, Tower
+/// >>> from prospicio.distributions import Lognormal, Poisson
 /// >>> events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 1_000, 7)
 /// >>> tower = Tower([Layer("5x5", 5e6, 5e6), Layer("15x10", 15e6, 10e6)])
 /// >>> result = tower.apply(events)
 /// >>> [k[0] for k in result.aggregate(["kind"]).components()]
 /// ['gross', 'ceded', 'net']
-#[pyclass(name = "Tower", module = "actuarialrs.reinsurance", frozen)]
+#[pyclass(name = "Tower", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyTower {
     inner: Tower,
 }
@@ -405,7 +405,7 @@ impl PyTower {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reinsurance import Layer, Tower
+    /// >>> from prospicio.reinsurance import Layer, Tower
     /// >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
     /// >>> tower.ceded([30.0])
     /// [15.0, 5.0]
@@ -441,7 +441,7 @@ impl PyTower {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reinsurance import Layer, Tower
+    /// >>> from prospicio.reinsurance import Layer, Tower
     /// >>> tower = Tower.inuring([[Layer.surplus("S", 1e6, 4.0)], [Layer("xl", 2e6, 1e6)]])
     /// >>> back = Tower.from_json(tower.to_json())
     /// >>> back.to_json() == tower.to_json()
@@ -471,7 +471,7 @@ impl PyTower {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reinsurance import Layer, Tower
+    /// >>> from prospicio.reinsurance import Layer, Tower
     /// >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
     /// >>> tower.ceded([30.0])
     /// [15.0, 5.0]
@@ -588,8 +588,8 @@ impl PyTower {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.reinsurance import Layer, Tower
-    /// >>> from actuarialrs.distributions import Grid, Poisson
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> from prospicio.distributions import Grid, Poisson
     /// >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
     /// >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
     /// >>> round(r.ceded[0].mean(), 12), r.on_points
@@ -619,7 +619,7 @@ impl PyTower {
 /// Every grid is a marginal distribution. Ceded grids are at the placed
 /// share and after annual terms; a layer with share ``c`` has step
 /// ``c * h``.
-#[pyclass(name = "TowerGrids", module = "actuarialrs.reinsurance", frozen)]
+#[pyclass(name = "TowerGrids", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyTowerGrids {
     inner: TowerGrids,
 }

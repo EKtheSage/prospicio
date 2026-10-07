@@ -19,7 +19,7 @@ sources:
 * `cargo xtask python`: builds the extension and runs pytest; its final
   docs render fails because Quarto is not installed (CI's `docs` job
   covers it).
-* `cargo xtask r`: roxygen, install, every `R/actuarialrs/tests/*.R`; the
+* `cargo xtask r`: roxygen, install, every `R/prospicio/tests/*.R`; the
   pkgdown step fails on the network (see
   [cloud network](/environment/cloud-network.md)). The "boom" errors in
   its output are expected test errors.
@@ -29,7 +29,7 @@ sources:
 The container's roxygen2 and R differ from the committed output. Undo
 only these:
 
-* the `RoxygenNote: 7.3.1` line it adds to `R/actuarialrs/DESCRIPTION`
+* the `RoxygenNote: 7.3.1` line it adds to `R/prospicio/DESCRIPTION`
   (keep a real `Collate` or `Suggests` change);
 * the link targets it rewrites in `man/gamma_distribution.Rd`,
   `man/lognormal.Rd` and `man/weibull_distribution.Rd`: this R resolves
@@ -46,11 +46,11 @@ the code change.
 
 # Also
 
-* `R/actuarialrs/R/extendr-wrappers.R` is edited by hand for a new or
+* `R/prospicio/R/extendr-wrappers.R` is edited by hand for a new or
   changed extendr function; match the existing line format. To check the
   edit, install the package and compare the file with
-  `.Call("wrap__make_actuarialrs_wrappers", use_symbols = TRUE,
-  package_name = "actuarialrs", PACKAGE = "actuarialrs")` without its
+  `.Call("wrap__make_prospicio_wrappers", use_symbols = TRUE,
+  package_name = "prospicio", PACKAGE = "prospicio")` without its
   `#'` doc lines (keep `#' @export`): the order is the
   `extendr_module!` order, impl by impl. The one known difference is
   the file's `ChainLadderFit$tail <-function()`, missing a space.

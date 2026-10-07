@@ -3,7 +3,7 @@ requires = ["maturin>=1.7,<2"]
 build-backend = "maturin"
 
 [project]
-name = "actuarialrs"
+name = "prospicio"
 description = "Actuarial modeling on a Rust core."
 requires-python = ">=3.9"
 license = { text = "MIT OR Apache-2.0" }
@@ -16,7 +16,7 @@ dev = [
     "pandas",
     "pytest",
     "scipy",
-    # Engines behind actuarialrs.boosting; the CPU-only XGBoost wheel is
+    # Engines behind prospicio.boosting; the CPU-only XGBoost wheel is
     # 6 MB where the full one bundles 200+ MB of GPU libraries.
     "lightgbm",
     "xgboost-cpu ; sys_platform == 'linux'",
@@ -28,9 +28,9 @@ docs = [
 
 [tool.maturin]
 manifest-path = "../crates/act-python/Cargo.toml"
-module-name = "actuarialrs.actuarialrs_native"
+module-name = "prospicio.prospicio_native"
 python-source = "."
-include = [{ path = "actuarialrs/**/*", format = "sdist" }]
+include = [{ path = "prospicio/**/*", format = "sdist" }]
 
 [tool.uv]
 # Rebuild the Rust extension on `uv sync` / `uv run` when Rust sources change.

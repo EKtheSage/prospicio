@@ -31,7 +31,7 @@ sources:
   with `NotPresent`: extendr-ffi caches its failed probe for R and does not
   rerun when `R_HOME` changes.
 * `R_LIBS` per worktree keeps parallel sessions from overwriting each
-  other's installed `actuarialrs` in the shared user library.
+  other's installed `prospicio` in the shared user library.
 * `PYTHONUTF8=1` is needed: without it great-docs fails at "Prepare freeze
   cache" with `'utf-8' codec can't decode byte 0x96`.
 * `cargo xtask r` and `cargo xtask python` (without `--check`) regenerate

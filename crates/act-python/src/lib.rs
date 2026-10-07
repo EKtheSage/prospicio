@@ -7,7 +7,7 @@
 //!
 //! The `///` comments on `#[pyclass]` and `#[pymethods]` items are the Python
 //! docstrings, written in numpydoc style. `cargo xtask python` copies them
-//! into `python/actuarialrs/actuarialrs_native.pyi` and the Python docs site
+//! into `python/prospicio/prospicio_native.pyi` and the Python docs site
 //! (docs/architecture.md, "Documentation").
 
 use pyo3::exceptions::PyValueError;
@@ -27,7 +27,7 @@ fn to_py(e: act_core::Error) -> PyErr {
 }
 
 #[pymodule]
-mod actuarialrs_native {
+mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{PyCompoundReport, PyEventSet, fft, panjer, simulate_events};
     #[pymodule_export]

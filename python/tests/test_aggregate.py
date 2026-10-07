@@ -2,10 +2,10 @@ import math
 
 import pytest
 
-import actuarialrs as ar
-from actuarialrs.aggregate import fft, panjer, simulate_events
-from actuarialrs.reinsurance import Layer, Tower
-from actuarialrs.distributions import Grid, Lognormal, NegativeBinomial, Poisson
+import prospicio as ar
+from prospicio.aggregate import fft, panjer, simulate_events
+from prospicio.reinsurance import Layer, Tower
+from prospicio.distributions import Grid, Lognormal, NegativeBinomial, Poisson
 
 SEV = Grid(1.0, [0.1, 0.3, 0.25, 0.2, 0.1, 0.05])
 
@@ -136,7 +136,7 @@ def test_tower_on_grid():
 
 
 def test_portfolio_join_reorder_and_aggregate_cover():
-    from actuarialrs.distributions import PredictiveDistribution
+    from prospicio.distributions import PredictiveDistribution
 
     n = 3000
     reserve = PredictiveDistribution(
@@ -157,8 +157,8 @@ def test_portfolio_join_reorder_and_aggregate_cover():
 
 
 def test_surplus_treaty_on_events_with_sums_insured():
-    from actuarialrs.aggregate import EventSet
-    from actuarialrs.reinsurance import Layer, Tower
+    from prospicio.aggregate import EventSet
+    from prospicio.reinsurance import Layer, Tower
 
     s = Layer.surplus("surplus", 1e6, 4.0)
     assert s.needs_sums_insured
@@ -182,7 +182,7 @@ def test_surplus_treaty_on_events_with_sums_insured():
 
 
 def test_reinstatements_pro_rata_as_to_time():
-    from actuarialrs.aggregate import EventSet
+    from prospicio.aggregate import EventSet
 
     amount = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
     timed = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5],
@@ -225,7 +225,7 @@ def test_reinstatements_pro_rata_as_to_time():
 def test_towers_save_and_load_as_json():
     import pickle
 
-    from actuarialrs.aggregate import EventSet
+    from prospicio.aggregate import EventSet
 
     tower = Tower.inuring([
         [Layer.quota_share("QS", 0.3), Layer.surplus("S", 1e6, 4.0)],

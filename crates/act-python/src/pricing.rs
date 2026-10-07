@@ -1,4 +1,4 @@
-//! `actuarialrs.pricing` (Aggregate lane): the collective model, layer
+//! `prospicio.pricing` (Aggregate lane): the collective model, layer
 //! rating and reinsurance tower matching over `act_aggregate` and
 //! `act_pricing` (`docs/design/pareto.md`).
 
@@ -30,14 +30,14 @@ use crate::to_py;
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Pareto, claim_count
-/// >>> from actuarialrs.pricing import CollectiveModel
+/// >>> from prospicio.distributions import Pareto, claim_count
+/// >>> from prospicio.pricing import CollectiveModel
 /// >>> m = CollectiveModel(claim_count(2.0, 1.5), Pareto(1e6, 2.0))
 /// >>> round(m.layer_mean(4e6, 1e6))
 /// 1600000
 /// >>> m.excess_frequency(2e6)
 /// 0.5
-#[pyclass(name = "CollectiveModel", module = "actuarialrs.pricing", frozen)]
+#[pyclass(name = "CollectiveModel", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyCollectiveModel {
     inner: CollectiveModel<AnyCount, act_prob::SeverityDist>,
 }
@@ -145,7 +145,7 @@ impl PyCollectiveModel {
 
 /// A frequency and a piecewise Pareto severity that reproduce a tower,
 /// a PML curve or a set of references.
-#[pyclass(name = "TowerModel", module = "actuarialrs.pricing", frozen)]
+#[pyclass(name = "TowerModel", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyTowerModel {
     inner: TowerModel,
 }
@@ -231,8 +231,8 @@ fn rule(name: &str) -> PyResult<SelectionRule> {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Pareto
-/// >>> from actuarialrs.pricing import ilf
+/// >>> from prospicio.distributions import Pareto
+/// >>> from prospicio.pricing import ilf
 /// >>> round(ilf(Pareto(100.0, 2.0), 1000.0, 200.0), 12)
 /// 1.266666666667
 #[pyfunction]
@@ -278,7 +278,7 @@ pub(crate) fn loss_elimination_ratio(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.pricing import pareto_extrapolation
+/// >>> from prospicio.pricing import pareto_extrapolation
 /// >>> round(pareto_extrapolation((1e6, 1e6), (2e6, 2e6), 2.0), 12)
 /// 0.5
 #[pyfunction]
@@ -374,7 +374,7 @@ pub(crate) fn alpha_between_frequency_and_layer(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.pricing import alpha_between_frequencies
+/// >>> from prospicio.pricing import alpha_between_frequencies
 /// >>> round(alpha_between_frequencies(1e6, 4.0, 2e6, 1.0), 12)
 /// 2.0
 #[pyfunction]
@@ -418,7 +418,7 @@ pub(crate) fn alpha_between_frequencies(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.pricing import match_tower
+/// >>> from prospicio.pricing import match_tower
 /// >>> m = match_tower([1000.0, 1500.0, 2000.0], [100.0, 90.0, 120.0], [0.25, None, None])
 /// >>> round(m.layer_loss(500.0, 1500.0), 9)
 /// 90.0
@@ -487,7 +487,7 @@ pub(crate) fn fit_pml_curve(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.pricing import fit_references
+/// >>> from prospicio.pricing import fit_references
 /// >>> m = fit_references([(1000.0, 1000.0, 150.0), (3000.0, 1500.0, 160.0)], [(1000.0, 0.3)])
 /// >>> round(m.layer_loss(3000.0, 1500.0), 6)
 /// 160.0
@@ -539,7 +539,7 @@ fn premium_rule(
 /// portfolio: expected loss, premium and the assets backing the loss.
 ///
 /// Returned by ``price`` and ``price_portfolio``.
-#[pyclass(name = "Price", module = "actuarialrs.pricing", frozen)]
+#[pyclass(name = "Price", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyPrice {
     inner: Price,
 }
@@ -603,7 +603,7 @@ fn prices(v: &[Price]) -> Vec<PyPrice> {
 /// Prices of a portfolio's components and of the portfolio as a whole.
 ///
 /// Returned by ``price_portfolio``.
-#[pyclass(name = "PortfolioPrice", module = "actuarialrs.pricing", frozen)]
+#[pyclass(name = "PortfolioPrice", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyPortfolioPrice {
     inner: PortfolioPrice,
 }
@@ -693,9 +693,9 @@ impl PyPortfolioPrice {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Sampled
-/// >>> from actuarialrs.pricing import price
-/// >>> from actuarialrs.risk import Distortion
+/// >>> from prospicio.distributions import Sampled
+/// >>> from prospicio.pricing import price
+/// >>> from prospicio.risk import Distortion
 /// >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
 /// >>> p.premium, p.capital
 /// (2.4, 1.6)
@@ -746,9 +746,9 @@ pub(crate) fn price(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PredictiveDistribution
-/// >>> from actuarialrs.pricing import price_portfolio
-/// >>> from actuarialrs.risk import Distortion
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.pricing import price_portfolio
+/// >>> from prospicio.risk import Distortion
 /// >>> pd = PredictiveDistribution(["cover"], [("a",), ("b",)],
 /// ...                             [[0.0, 2.0], [1.0, 1.0], [4.0, 0.0], [8.0, 0.0]])
 /// >>> p = price_portfolio(pd, Distortion.tvar(0.5), cost_of_capital=0.1)
@@ -789,13 +789,13 @@ pub(crate) fn price_portfolio(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.pricing import Mbbefd
+/// >>> from prospicio.pricing import Mbbefd
 /// >>> c3 = Mbbefd.swiss_re(3.0)
 /// >>> top = c3.layer_share(5e6, 5e6, 10e6)
 /// >>> bottom = c3.layer_share(5e6, 0.0, 10e6)
 /// >>> round(top + bottom, 12), top < bottom
 /// (1.0, True)
-#[pyclass(name = "Mbbefd", module = "actuarialrs.pricing", frozen)]
+#[pyclass(name = "Mbbefd", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyMbbefd {
     pub(crate) inner: Mbbefd,
 }
@@ -950,11 +950,11 @@ impl PyMbbefd {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.pricing import TabulatedCurve
+/// >>> from prospicio.pricing import TabulatedCurve
 /// >>> t = TabulatedCurve([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0])
 /// >>> round(t.curve([0.3])[0], 12), t.mean_rate()
 /// (0.6, 0.25)
-#[pyclass(name = "TabulatedCurve", module = "actuarialrs.pricing", frozen)]
+#[pyclass(name = "TabulatedCurve", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyTabulatedCurve {
     pub(crate) inner: TabulatedCurve,
 }
@@ -1092,7 +1092,7 @@ fn band_curve(obj: &Bound<'_, PyAny>) -> PyResult<act_pricing::profile::BandCurv
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.pricing import Mbbefd, RiskProfile
+/// >>> from prospicio.pricing import Mbbefd, RiskProfile
 /// >>> p = RiskProfile([1e6, 10e6], [800, 50], Mbbefd.swiss_re(3.0),
 /// ...                 premiums=[2e6, 1e6], loss_ratio=0.6)
 /// >>> round(p.expected_loss())
@@ -1100,7 +1100,7 @@ fn band_curve(obj: &Bound<'_, PyAny>) -> PyResult<act_pricing::profile::BandCurv
 /// >>> events = p.simulate(1000, 7)
 /// >>> events.has_sums_insured
 /// True
-#[pyclass(name = "RiskProfile", module = "actuarialrs.pricing", frozen)]
+#[pyclass(name = "RiskProfile", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyRiskProfile {
     inner: act_pricing::profile::RiskProfile,
 }
@@ -1327,8 +1327,8 @@ impl PyRiskProfile {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Pareto
-/// >>> from actuarialrs.pricing import severity_exposure_curve
+/// >>> from prospicio.distributions import Pareto
+/// >>> from prospicio.pricing import severity_exposure_curve
 /// >>> g = severity_exposure_curve(Pareto(1e5, 1.5), 1e7, [0.0, 0.5, 1.0])
 /// >>> g[0], round(g[2], 12), g[1] > 0.5
 /// (0.0, 1.0, True)

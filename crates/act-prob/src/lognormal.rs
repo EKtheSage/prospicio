@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(d.cdf(-1.0), 0.0);
     }
 
-    /// Same draws are asserted in `python/tests` and `R/actuarialrs/tests`,
+    /// Same draws are asserted in `python/tests` and `R/prospicio/tests`,
     /// proving all front ends share this kernel.
     const PINNED_SAMPLE: [f64; 3] = [1.0007760893701914, 1.6293872534754683, 1.0763869265482304];
 

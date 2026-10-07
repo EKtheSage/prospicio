@@ -548,7 +548,7 @@ impl Grid {
     }
 
     fn html(&self, title: &str, note: Option<&str>) -> String {
-        let mut out = String::from("<table class=\"actuarialrs-triangle\">\n<caption>");
+        let mut out = String::from("<table class=\"prospicio-triangle\">\n<caption>");
         out.push_str(&escape(title));
         if let Some(note) = note {
             out.push(' ');

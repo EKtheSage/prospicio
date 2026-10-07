@@ -345,7 +345,7 @@ approximated range ends. Tested against the closed-form log-affine
 survival and a wavy alpha with an exact integral; the R package's
 `LocalPareto_2_PiecewisePareto` places its breakpoints differently, so the
 two are not compared piece by piece.
-Bindings: Python `actuarialrs.distributions` (`Pareto`,
+Bindings: Python `prospicio.distributions` (`Pareto`,
 `PiecewisePareto`, `LogAffinePareto`, `GeneralizedPareto` with `riegel`,
 `Binomial`, `claim_count`, and `fit` static methods) and R (`pareto()`,
 `piecewise_pareto()`, `log_affine_pareto()`, `generalized_pareto()`,
@@ -459,7 +459,7 @@ Where the references leave freedom, this completion differs from the R
 package's (which fills gaps with a default alpha), so the two are not
 compared.
 
-Bindings: Python `actuarialrs.pricing` (`CollectiveModel`, `ilf`,
+Bindings: Python `prospicio.pricing` (`CollectiveModel`, `ilf`,
 `loss_elimination_ratio`, `pareto_extrapolation`, the three implied-alpha
 functions, `match_tower`, `fit_pml_curve`, `fit_references`,
 `TowerModel`) and R (`collective_model()`, `collective_simulate()`,
@@ -523,7 +523,7 @@ R `risk_loaded_price()` and `price_portfolio()`.
 
 `Layer`, `Tower` and `TowerGrids` (contract terms and their grid
 results) are in the user-facing `reinsurance` namespace that
-`docs/architecture.md` gives them: Python `actuarialrs.reinsurance`, and
+`docs/architecture.md` gives them: Python `prospicio.reinsurance`, and
 R's `reinsurance.R` with its own reference section. In Rust they stay in
 `act_aggregate::reinsurance` and `act_aggregate::grid_reinsurance`, next
 to the compound and simulation code they are applied with; a separate
