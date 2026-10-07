@@ -7,7 +7,8 @@
 //! [`BornhuetterFerguson`], [`Benktander`], [`CapeCod`]) driven by an
 //! exposure column, Merz and Wüthrich's one-year view,
 //! [`MackFit::claims_development_result`], its simulated counterpart for
-//! any method, [`OdpBootstrap::one_year`], and Clark's growth curves
+//! any method, [`OdpBootstrap::one_year`] (or [`MackBootstrap::one_year`]
+//! with Mack's process), and Clark's growth curves
 //! ([`ClarkLdf`], [`ClarkCapeCod`]) (`docs/design/reserving-v02.md`).
 //! Results are checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.
@@ -43,6 +44,7 @@ pub mod error;
 pub mod expected_loss;
 pub mod frame;
 pub mod mack;
+pub mod mack_bootstrap;
 pub mod odp_glm;
 pub mod one_year;
 pub mod one_year_bootstrap;
@@ -66,6 +68,7 @@ pub use expected_loss::{
 };
 pub use frame::TriangleFrame;
 pub use mack::{Mack, MackFit};
+pub use mack_bootstrap::{MackBootstrap, MackBootstrapSegment, MackProcess};
 pub use odp_glm::{OdpGlm, OdpGlmFit};
 pub use one_year::ClaimsDevelopmentResult;
 pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};

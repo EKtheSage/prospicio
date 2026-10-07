@@ -23,10 +23,16 @@
 //! * England, Verrall and Wüthrich (2019), Table 2: their Merz–Wüthrich and
 //!   Mack numbers on Taylor–Ashe (GenIns). Their simulated one-year view
 //!   (Table 4) bootstraps Mack's model, not the ODP, so it is not compared.
+//! * A quarterly development grain: each dataset split into quarters, each
+//!   year's increment in four equal parts, has the annual opening reserve
+//!   and, under both process models, about half the annual one-year
+//!   standard deviation: the ODP's through its scale, which falls with the
+//!   degrees of freedom, Mack's through its quarterly sigmas.
 
+use prospicio_prob::PredictiveDistribution;
 use prospicio_reserving::{
-    ChainLadder, Development, Mack, OdpBootstrap, OneYearFit, OneYearMethod, Period,
-    ProcessDistribution, SigmaInterpolation,
+    ChainLadder, Development, DevelopmentColumn, Grain, Long, Mack, MackBootstrap, OdpBootstrap,
+    OneYearFit, OneYearMethod, Period, ProcessDistribution, SigmaInterpolation, Triangle,
 };
 use prospicio_validation::{Case, reference, triangle};
 
@@ -240,4 +246,110 @@ fn evw_2019_table_2() {
     assert!(close(mack.chain_ladder.total_reserve(), 18_680_856.0));
     assert!(close(mack.total_standard_error, 2_447_095.0));
     assert!(close(cdr.total_one_year_standard_error, 1_778_968.0));
+}
+
+/// `annual` with a quarterly development grain: each year's increment
+/// split into four equal quarters, so the value at every 12 months is
+/// unchanged and the latest diagonal is the same.
+fn quarterly(annual: &Triangle) -> Triangle {
+    let (mut origin, mut ages, mut values) = (vec![], vec![], vec![]);
+    for (o, period) in annual.origins().iter().enumerate() {
+        let mut previous = 0.0;
+        for (d, &age) in annual.development().iter().enumerate() {
+            let Some(v) = annual.get(0, 0, o, d) else {
+                break;
+            };
+            for q in 1..=4 {
+                origin.push(period.start());
+                ages.push(age - 12 + 3 * q);
+                values.push(previous + (v - previous) * f64::from(q) / 4.0);
+            }
+            previous = v;
+        }
+    }
+    Triangle::from_long(&Long {
+        keys: &[],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&ages),
+        values: &[("values", &values)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Quarter,
+        cumulative: true,
+    })
+    .unwrap()
+}
+
+/// Each component's draws, then the total's.
+fn draws_by_origin(cdr: &PredictiveDistribution) -> Vec<Vec<f64>> {
+    let n = cdr.n_components();
+    let rows = || cdr.draw_matrix().chunks(n);
+    let mut out: Vec<Vec<f64>> = (0..n).map(|j| rows().map(|r| r[j]).collect()).collect();
+    out.push(rows().map(|r| r.iter().sum()).collect());
+    out
+}
+
+#[test]
+fn quarterly_split_halves_the_one_year_sd() {
+    // Splitting a year's increment into four equal quarters leaves the
+    // year's standard deviation about half the annual one under both
+    // models (measured at 5,000 simulations: ODP 0.43 to 0.47 per origin,
+    // total 0.44 to 0.47; Mack 0.48 to 0.72, total 0.53 to 0.55, the
+    // highest for the origins with one year left, whose last sigma is
+    // extrapolated). The ODP's variance is linear in the mean, so it is the
+    // scale that falls: the Pearson chi-square is unchanged and the
+    // degrees of freedom grow (36 to 171 on RAA), so the process SD falls
+    // by sqrt(36 / 171) = 0.46. Mack's model takes the quarterly link
+    // ratios as independent, each deviating about a quarter as much as the
+    // annual one, so a sixteenth of the variance each, a quarter in all. The
+    // opening reserve is the annual one: a year's quarterly volume-weighted
+    // factors telescope to its annual factor. The oldest origin, at the
+    // last age, has no cell in the coming year.
+    let n_sims = 2_000;
+    let cl = OneYearMethod::ChainLadder(ChainLadder::default());
+    for dataset in ["raa", "genins", "abc"] {
+        let annual = triangle(dataset);
+        let split = quarterly(&annual);
+        let odp = |tri: &Triangle| {
+            OdpBootstrap {
+                n_sims,
+                seed: SEED,
+                process: ProcessDistribution::Gamma,
+            }
+            .one_year(tri, "values", &cl)
+            .unwrap_or_else(|e| panic!("{dataset}: {e}"))
+        };
+        let mack = |tri: &Triangle| {
+            MackBootstrap {
+                n_sims,
+                seed: SEED,
+                ..Default::default()
+            }
+            .one_year(tri, "values", &cl)
+            .unwrap_or_else(|e| panic!("{dataset}: {e}"))
+        };
+        let (odp_a, odp_q) = (odp(&annual), odp(&split));
+        for (q, a) in odp_q.opening_reserve.iter().zip(&odp_a.opening_reserve) {
+            assert!(
+                (q - a).abs() <= 1e-9 * a.abs().max(1.0),
+                "{dataset}: {q} vs {a}"
+            );
+        }
+        let (mack_a, mack_q) = (mack(&annual), mack(&split));
+        for (model, a, q) in [
+            ("odp", &odp_a.cdr, &odp_q.cdr),
+            ("mack", &mack_a.cdr, &mack_q.cdr),
+        ] {
+            let (a, q) = (draws_by_origin(a), draws_by_origin(q));
+            let total = a.len() - 1;
+            assert!(q[0].iter().all(|&x| x == 0.0), "{dataset} {model}");
+            for j in 1..=total {
+                let ratio = sd_and_error(&q[j]).0 / sd_and_error(&a[j]).0;
+                let (low, high) = if j == total { (0.4, 0.6) } else { (0.35, 0.75) };
+                assert!(
+                    (low..=high).contains(&ratio),
+                    "{dataset} {model} component {j}: quarterly / annual sd {ratio}"
+                );
+            }
+        }
+    }
 }

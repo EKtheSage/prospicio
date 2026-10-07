@@ -5016,6 +5016,138 @@ class Mack:
         """
 
 @final
+class MackBootstrap:
+    """
+    Mack's bootstrap for the one-year view (England, Verrall and Wüthrich
+    2019, Appendix 1): the scaled bias-adjusted residuals of the link
+    ratios are resampled into pseudo factors, and each cumulative value of
+    the coming year is drawn from the one before ``C`` (the observed latest
+    value for the first) with mean ``f* C`` and Mack's variance
+    ``sigma**2 * abs(C)**(2 - alpha)``. Beside
+    ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
+    the one-year view under Mack's process: with the volume-weighted chain
+    ladder and no tail, its standard deviation is
+    ``MackFit.claims_development_result()``'s (Merz and Wüthrich) within
+    Monte Carlo error. Its mean is Merz and Wüthrich's zero only with
+    ``centre_residuals``: EVW resample the residuals uncentred, and their
+    pool's non-zero mean biases the pseudo factors, so the mean CDR is about
+    -0.2 (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard
+    deviation. Simulation ``i`` uses random stream ``i`` of ``seed`` for
+    every segment in turn.
+    
+    Parameters
+    ----------
+    n_sims : int, default 10000
+        Number of simulations; positive.
+    seed : int, default 0
+        Seed of the simulation streams, from 0 to ``2**64 - 1``.
+    process : {"gamma", "lognormal", "residuals", "normal", "none"}, default "gamma"
+        Process error on each next cumulative value: Gamma or lognormal
+        (negated for a negative mean) or normal, with Mack's mean and
+        variance; the mean plus a resampled residual times the standard
+        deviation, which carries the residuals' mean and variance; or none
+        for parameter error only.
+    average : {"volume", "simple", "regression"}, default "volume"
+        How Mack's model averages the link ratios (its ``alpha``).
+    sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+        How a sigma behind a single link ratio is filled in.
+    centre_residuals : bool, default False
+        Subtract the residuals' mean before resampling them, so that the
+        pseudo factors are unbiased and the mean CDR is about zero. EVW's
+        Appendix 1 does not.
+    
+    Raises
+    ------
+    ValueError
+        If ``n_sims`` is zero or a setting is unknown.
+    OverflowError
+        If ``n_sims`` or ``seed`` is negative or too large.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import ChainLadder, Mack, MackBootstrap, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = MackBootstrap(n_sims=2000, seed=42).one_year(tri, "values", ChainLadder())
+    >>> fit.model
+    'mack'
+    >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
+    True
+    """
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = False) -> MackBootstrap: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def average(self, /) -> str:
+        """
+        How Mack's model averages the link ratios.
+        """
+    @property
+    def centre_residuals(self, /) -> bool:
+        """
+        Whether the residuals are centred before they are resampled.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of simulations.
+        """
+    def one_year(self, /, triangle: Triangle, column: str, method: Any, exposure: str |None = None) -> OneYearFit:
+        """
+        The one-year view of any reserving method under Mack's process, as
+        ``OdpBootstrap.one_year``: each simulation draws the cells of the
+        coming twelve months from Mack's bootstrap, each from the one before
+        with the same pseudo factors, appends them to the triangle, refits
+        ``method`` and records ``CDR = opening ultimate - closing
+        ultimate``. Mack's model has no tail here: development past the
+        oldest age moves only through ``method``'s refitted tail.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments and any development
+            grain, every origin observed from the first age to its latest
+            with no negative value.
+        column : str
+        method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
+            The method refitted at the start and at the end of the year.
+        exposure : str, optional
+            The exposure column; required by the expected-loss methods, not
+            taken by ``ChainLadder``.
+        
+        Returns
+        -------
+        OneYearFit
+            With ``model == "mack"``.
+        
+        Raises
+        ------
+        TypeError
+            If ``method`` is not one of the classes above.
+        ValueError
+            As ``OdpBootstrap.one_year`` and ``Mack.fit``, and if a
+            cumulative value is negative.
+        """
+    @property
+    def process(self, /) -> str:
+        """
+        Process error: ``"gamma"``, ``"lognormal"``, ``"residuals"``,
+        ``"normal"`` or ``"none"``.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        Seed of the simulation streams.
+        """
+    @property
+    def sigma_interpolation(self, /) -> str:
+        """
+        How a sigma behind a single link ratio is filled in.
+        """
+
+@final
 class MackFit:
     """
     A fitted Mack model of every segment: the chain-ladder fields, plus
@@ -5736,23 +5868,28 @@ class OdpBootstrap:
         """
         The one-year view of any reserving method: the claims development
         result over the coming year, by re-reserving on the bootstrap
-        ("actuary in the box"). Each simulation resamples the residuals for
-        the volume-weighted factors, projects every origin's next increment
-        from its resampled latest value with the bootstrap's process error,
-        as ``fit`` projects, adds it to the observed latest value, appends
-        it to the triangle, refits ``method`` and records ``CDR = opening
-        ultimate - closing ultimate``; a negative CDR is an adverse
-        development. An origin with one cell left thus has its lifetime
-        bootstrap reserve as its one-year view; an origin at the last age
-        gets no new cell. Unlike ``MackFit.claims_development_result()``
-        (Merz and Wüthrich), any averaging and tail are allowed.
+        ("actuary in the box"). The coming year is every cell valued in the
+        twelve months after the segment's valuation: one per origin for an
+        annual development grain, four for a quarterly one (fewer for an
+        origin that reaches the last age). Each simulation resamples the
+        residuals for the volume-weighted factors, projects the increments
+        of those cells in turn from the origin's resampled latest value with
+        the bootstrap's process error, as ``fit`` projects, adds them to the
+        observed latest value, appends the cells to the triangle, refits
+        ``method`` and records ``CDR = opening ultimate - closing
+        ultimate``; a negative CDR is an adverse development. An origin whose
+        remaining cells all fall in the year thus has its lifetime bootstrap
+        reserve as its one-year view; an origin at the last age gets no new
+        cell; an origin short of the latest diagonal develops from its own
+        latest cell, and only the year's cells are appended. Unlike
+        ``MackFit.claims_development_result()`` (Merz and Wüthrich), any
+        averaging, tail and development grain are allowed.
         
         Parameters
         ----------
         triangle : Triangle
-            Cumulative, with any number of segments, an annual development
-            grain, and every origin short of the last age on its segment's
-            latest diagonal.
+            Cumulative, with any number of segments and any development
+            grain.
         column : str
         method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
             The method refitted at the start and at the end of the year.
@@ -5770,12 +5907,10 @@ class OdpBootstrap:
         TypeError
             If ``method`` is not one of the classes above.
         ValueError
-            As ``fit`` and the method's own ``fit``; if the development
-            grain is not a year or an origin short of the last age lags its
-            segment's latest diagonal; if ``exposure`` is missing for an
-            expected-loss method or given for ``ChainLadder``; or if the
-            refit fails in any simulation (the message counts them and gives
-            one).
+            As ``fit`` and the method's own ``fit``; if ``exposure`` is
+            missing for an expected-loss method or given for
+            ``ChainLadder``; or if the refit fails in any simulation (the
+            message counts them and gives one).
         
         Examples
         --------
@@ -5921,7 +6056,8 @@ class OdpBootstrapFit:
 class OneYearFit:
     """
     The simulated one-year view of every segment, from
-    ``OdpBootstrap.one_year``.
+    ``OdpBootstrap.one_year`` or ``MackBootstrap.one_year`` (``model``
+    says which).
     
     ``cdr`` is one joint distribution of the claims development result
     with the triangle's keys and ``"origin"`` as dimensions, so
@@ -5931,7 +6067,9 @@ class OneYearFit:
     rows of ``to_frame()`` and the components of ``cdr``. ``fitted``,
     ``residuals`` and ``scale`` need a single-segment fit; for several
     segments use ``segment(...)`` or ``totals_frame()``. ``fitted`` and
-    ``residuals`` are the bootstrap's, as ``OdpBootstrapFit``'s.
+    ``scale`` are the ODP bootstrap's (``OdpBootstrapFit``'s), ``mack`` is
+    Mack's bootstrap's model (a ``MackFit`` of every segment, as
+    ``chain_ladder``), and ``residuals`` are either's.
     """
     def __repr__(self, /) -> str: ...
     @property
@@ -5947,8 +6085,9 @@ class OneYearFit:
     @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
-        The bootstrap's volume-weighted chain ladder: the factors the
-        simulated next cells develop with.
+        The bootstrap's chain ladder: the factors the simulated next cells
+        develop with (volume-weighted for the ODP, Mack's averaging for
+        Mack's).
         """
     @property
     def development(self, /) -> list[int]:
@@ -5968,7 +6107,8 @@ class OneYearFit:
     @property
     def fitted(self, /) -> list[list[float]]:
         """
-        The bootstrap's fitted incremental values, ``[origin][development]``.
+        The ODP bootstrap's fitted incremental values,
+        ``[origin][development]``.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -5984,6 +6124,17 @@ class OneYearFit:
     def latest(self, /) -> list[float]:
         """
         Latest observed value per origin.
+        """
+    @property
+    def mack(self, /) -> MackFit:
+        """
+        Mack's model behind ``MackBootstrap.one_year``, with its lifetime
+        standard errors and ``claims_development_result()``.
+        """
+    @property
+    def model(self, /) -> str:
+        """
+        The bootstrap's model: ``"odp"`` or ``"mack"``.
         """
     @property
     def opening_reserve(self, /) -> list[float]:
@@ -6003,13 +6154,17 @@ class OneYearFit:
     @property
     def residuals(self, /) -> list[list[float]]:
         """
-        The bootstrap's adjusted Pearson residuals, as
-        ``OdpBootstrapFit.residuals``, ``[origin][development]``.
+        The residuals the bootstrap resamples, ``[origin][development]``:
+        the ODP's adjusted Pearson residuals, as
+        ``OdpBootstrapFit.residuals``, or Mack's scaled bias-adjusted
+        residuals of the link ratios, ``[o][k]`` the link from age ``k`` to
+        ``k + 1`` (``nan`` where there is none, from a zero, or behind a
+        factor with a single link ratio).
         """
     @property
     def scale(self, /) -> float:
         """
-        The bootstrap's scale parameter ``phi``.
+        The ODP bootstrap's scale parameter ``phi``.
         """
     def segment(self, /, **keys) -> OneYearFit:
         """
@@ -6035,9 +6190,9 @@ class OneYearFit:
     def totals_frame(self, /) -> Any:
         """
         One row per segment: the key columns, the totals of ``to_frame()``'s
-        columns, the bootstrap's ``scale``, and the ``cdr_mean`` and
-        ``cdr_std_dev`` of the segment's total claims development result.
-        Needs pandas.
+        columns, the ODP bootstrap's ``scale`` (not for Mack's), and the
+        ``cdr_mean`` and ``cdr_std_dev`` of the segment's total claims
+        development result. Needs pandas.
         
         Returns
         -------
