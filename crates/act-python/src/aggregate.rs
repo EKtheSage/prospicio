@@ -1,4 +1,4 @@
-//! `actuarialrs.aggregate`: wrappers over `act_aggregate` (compound
+//! `prospicio.aggregate`: wrappers over `act_aggregate` (compound
 //! distributions and simulated events).
 
 use act_aggregate::{CompoundMethod, CompoundReport, EventSet};
@@ -69,7 +69,7 @@ impl Counting for AnyCount {
 /// Returned with the aggregate grid by ``panjer`` and ``fft``. Read
 /// ``aliasing_error`` first for FFT results: when it is not negligible the
 /// grid is unreliable, including ``tail_mass``.
-#[pyclass(name = "CompoundReport", module = "actuarialrs.aggregate", frozen)]
+#[pyclass(name = "CompoundReport", module = "prospicio.aggregate", frozen)]
 pub(crate) struct PyCompoundReport {
     pub(crate) inner: CompoundReport,
 }
@@ -164,8 +164,8 @@ fn compound(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.aggregate import panjer
-/// >>> from actuarialrs.distributions import Grid, Poisson
+/// >>> from prospicio.aggregate import panjer
+/// >>> from prospicio.distributions import Grid, Poisson
 /// >>> sev = Grid(1.0, [0.1, 0.3, 0.25, 0.2, 0.1, 0.05])
 /// >>> agg, report = panjer(Poisson(3.0), sev, 100)
 /// >>> round(agg.mean(), 6)
@@ -219,7 +219,7 @@ pub(crate) fn fft(
 /// Created by ``simulate_events``. Year ``i`` was drawn from stream ``i`` of
 /// the generator keyed by ``seed``, so results do not depend on the number of
 /// threads.
-#[pyclass(name = "EventSet", module = "actuarialrs.aggregate", frozen)]
+#[pyclass(name = "EventSet", module = "prospicio.aggregate", frozen)]
 pub(crate) struct PyEventSet {
     pub(crate) inner: EventSet,
 }
@@ -255,7 +255,7 @@ impl PyEventSet {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.aggregate import EventSet
+    /// >>> from prospicio.aggregate import EventSet
     /// >>> e = EventSet.from_years([[5.0, 2.0], [], [9.0]], [[10.0, 2.0], [], [50.0]])
     /// >>> e.counts(), e.sums_insured(2)
     /// ([2, 0, 1], [50.0])
@@ -304,7 +304,7 @@ impl PyEventSet {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.aggregate import EventSet
+    /// >>> from prospicio.aggregate import EventSet
     /// >>> e = EventSet.from_years([[5.0, 2.0, 7.0]], seed=3).with_uniform_times()
     /// >>> t = e.times(0)
     /// >>> t == sorted(t) and e.has_times
@@ -450,8 +450,8 @@ impl PyEventSet {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.aggregate import simulate_events
-/// >>> from actuarialrs.distributions import Lognormal, Poisson
+/// >>> from prospicio.aggregate import simulate_events
+/// >>> from prospicio.distributions import Lognormal, Poisson
 /// >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
 /// >>> abs(events.totals().mean() - 5000.0) < 75.0
 /// True

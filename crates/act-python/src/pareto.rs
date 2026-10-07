@@ -1,4 +1,4 @@
-//! `actuarialrs.distributions`: the Pareto family for treaty pricing
+//! `prospicio.distributions`: the Pareto family for treaty pricing
 //! (Probability lane; `docs/design/pareto.md`), the gamma and Tweedie
 //! (compound Poisson-gamma) distributions, claim counts chosen by
 //! dispersion, and `Custom`, a severity from a Python cdf.
@@ -238,11 +238,11 @@ fn truncation_name(kind: Truncation) -> &'static str {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Pareto
+/// >>> from prospicio.distributions import Pareto
 /// >>> p = Pareto(500.0, 2.0)
 /// >>> round(p.layer(4000.0, 1000.0), 9)
 /// 200.0
-#[pyclass(name = "Pareto", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Pareto", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyPareto {
     pub(crate) inner: act_prob::Pareto,
 }
@@ -281,7 +281,7 @@ severity_class!(PyPareto {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.distributions import Pareto
+    /// >>> from prospicio.distributions import Pareto
     /// >>> round(Pareto.fit([1500.0, 2500.0, 4000.0], 1000.0).alpha, 6)
     /// 1.10524
     #[staticmethod]
@@ -342,11 +342,11 @@ severity_class!(PyPareto {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Gamma
+/// >>> from prospicio.distributions import Gamma
 /// >>> g = Gamma.from_mean_cv(1000.0, 0.5)
 /// >>> g.shape, round(g.std(), 9)
 /// (4.0, 500.0)
-#[pyclass(name = "Gamma", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Gamma", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyGamma {
     pub(crate) inner: act_prob::Gamma,
 }
@@ -447,11 +447,11 @@ severity_class!(PyGamma {
 /// Examples
 /// --------
 /// >>> import math
-/// >>> from actuarialrs.distributions import Tweedie
+/// >>> from prospicio.distributions import Tweedie
 /// >>> y = Tweedie(500.0, 40.0, 1.6)
 /// >>> abs(y.cdf(0.0) - math.exp(-y.lambda_)) < 1e-15
 /// True
-#[pyclass(name = "Tweedie", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Tweedie", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyTweedie {
     pub(crate) inner: act_prob::Tweedie,
 }
@@ -544,10 +544,10 @@ severity_class!(PyTweedie {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Weibull
+/// >>> from prospicio.distributions import Weibull
 /// >>> Weibull(1.0, 2.0).mean()
 /// 2.0
-#[pyclass(name = "Weibull", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Weibull", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyWeibull {
     pub(crate) inner: act_prob::Weibull,
 }
@@ -593,10 +593,10 @@ severity_class!(PyWeibull {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Loglogistic
+/// >>> from prospicio.distributions import Loglogistic
 /// >>> Loglogistic(1.0, 2.0).cdf(3.0)
 /// 0.6
-#[pyclass(name = "Loglogistic", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Loglogistic", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyLoglogistic {
     pub(crate) inner: act_prob::Loglogistic,
 }
@@ -639,11 +639,11 @@ severity_class!(PyLoglogistic {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Lognormal, Mixture, Pareto
+/// >>> from prospicio.distributions import Lognormal, Mixture, Pareto
 /// >>> m = Mixture([(0.9, Lognormal.from_mean_cv(1e4, 1.0)), (0.1, Pareto(1e5, 2.0))])
 /// >>> round(m.mean(), 6)
 /// 29000.0
-#[pyclass(name = "Mixture", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Mixture", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyMixture {
     pub(crate) inner: std::sync::Arc<act_prob::Mixture>,
 }
@@ -694,11 +694,11 @@ severity_class!(PyMixture {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PiecewisePareto
+/// >>> from prospicio.distributions import PiecewisePareto
 /// >>> pp = PiecewisePareto([1000.0, 2000.0], [1.0, 2.0])
 /// >>> round(pp.survival(4000.0), 12)
 /// 0.125
-#[pyclass(name = "PiecewisePareto", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "PiecewisePareto", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyPiecewisePareto {
     pub(crate) inner: act_prob::PiecewisePareto,
 }
@@ -816,11 +816,11 @@ severity_class!(PyPiecewisePareto {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import LogAffinePareto
+/// >>> from prospicio.distributions import LogAffinePareto
 /// >>> d = LogAffinePareto.from_delta(1e6, 1.5, 0.5)
 /// >>> round(d.local_alpha(2e6), 12)
 /// 2.0
-#[pyclass(name = "LogAffinePareto", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "LogAffinePareto", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyLogAffinePareto {
     pub(crate) inner: act_prob::LogAffinePareto,
 }
@@ -905,7 +905,7 @@ severity_class!(PyLogAffinePareto {
 /// via :meth:`GeneralizedPareto.riegel`): ``P(X > x) =
 /// (1 + xi (x - location) / beta) ** (-1 / xi)`` above the location.
 ///
-/// For tail estimation from draws, see :class:`actuarialrs.risk.Gpd`;
+/// For tail estimation from draws, see :class:`prospicio.risk.Gpd`;
 /// this class is the same distribution as a pricing severity.
 ///
 /// Parameters
@@ -918,15 +918,11 @@ severity_class!(PyLogAffinePareto {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import GeneralizedPareto
+/// >>> from prospicio.distributions import GeneralizedPareto
 /// >>> g = GeneralizedPareto.riegel(1000.0, 2.0, 1.5)
 /// >>> round(g.survival(2000.0), 12) == round((7 / 3) ** -1.5, 12)
 /// True
-#[pyclass(
-    name = "GeneralizedPareto",
-    module = "actuarialrs.distributions",
-    frozen
-)]
+#[pyclass(name = "GeneralizedPareto", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyGeneralizedPareto {
     pub(crate) inner: act_prob::evt::Gpd,
 }
@@ -1035,10 +1031,10 @@ severity_class!(PyGeneralizedPareto {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Binomial
+/// >>> from prospicio.distributions import Binomial
 /// >>> Binomial(10, 0.3).mean()
 /// 3.0
-#[pyclass(name = "Binomial", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Binomial", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyBinomial {
     pub(crate) inner: act_prob::Binomial,
 }
@@ -1166,7 +1162,7 @@ impl PyBinomial {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import claim_count
+/// >>> from prospicio.distributions import claim_count
 /// >>> claim_count(4.0, 2.5)
 /// NegativeBinomial(r=2.6666666666666665, beta=1.5)
 #[pyfunction]
@@ -1207,7 +1203,7 @@ pub(crate) fn claim_count(py: Python<'_>, mean: f64, dispersion: f64) -> PyResul
 /// Examples
 /// --------
 /// >>> import math
-/// >>> from actuarialrs.distributions import local_pareto_to_piecewise
+/// >>> from prospicio.distributions import local_pareto_to_piecewise
 /// >>> pp, err, end = local_pareto_to_piecewise(1000.0, lambda x: 1.5 + 0.3 * math.log(x / 1000.0))
 /// >>> err <= 1e-4
 /// True
@@ -1296,13 +1292,13 @@ fn py_callback(f: Py<PyAny>) -> act_prob::custom::Callback {
 /// Examples
 /// --------
 /// >>> import math
-/// >>> from actuarialrs.distributions import Custom
+/// >>> from prospicio.distributions import Custom
 /// >>> d = Custom(lambda x: 1 - math.exp(-x / 100), name="exponential")
 /// >>> round(d.mean(), 6)
 /// 100.0
 /// >>> round(d.lev(50), 6) == round(100 * (1 - math.exp(-0.5)), 6)
 /// True
-#[pyclass(name = "Custom", module = "actuarialrs.distributions", frozen)]
+#[pyclass(name = "Custom", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyCustom {
     pub(crate) inner: act_prob::Custom,
     cdf: Py<PyAny>,

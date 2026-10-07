@@ -718,7 +718,7 @@ fn simulate_from_means_rust(
     }
     let means: Vec<Vec<f64>> = means.chunks(n).map(<[f64]>::to_vec).collect();
     let provenance = act_prob::Provenance::new("simulate_from_means")
-        .version("actuarialrs", env!("CARGO_PKG_VERSION"));
+        .version("prospicio", env!("CARGO_PKG_VERSION"));
     let inner = act_models::simulate::from_means(
         f,
         &means,

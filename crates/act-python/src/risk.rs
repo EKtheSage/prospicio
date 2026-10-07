@@ -1,4 +1,4 @@
-//! `actuarialrs.risk`: distortion risk measures, allocation, copulas and
+//! `prospicio.risk`: distortion risk measures, allocation, copulas and
 //! Iman-Conover, over `act_prob`.
 
 use act_core::StreamRng;
@@ -27,14 +27,14 @@ use crate::to_py;
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Sampled
-/// >>> from actuarialrs.risk import Distortion
+/// >>> from prospicio.distributions import Sampled
+/// >>> from prospicio.risk import Distortion
 /// >>> x = Sampled([1.0, 2.0, 3.0, 4.0])
 /// >>> Distortion.tvar(0.5).measure(x)
 /// 3.5
 /// >>> Distortion.tvar(0.5).weights(4)
 /// [0.0, 0.0, 0.5, 0.5]
-#[pyclass(name = "Distortion", module = "actuarialrs.risk", frozen)]
+#[pyclass(name = "Distortion", module = "prospicio.risk", frozen)]
 pub(crate) struct PyDistortion {
     pub(crate) inner: Distortion,
 }
@@ -210,8 +210,8 @@ impl PyDistortion {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PredictiveDistribution
-/// >>> from actuarialrs.risk import Distortion, allocate
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import Distortion, allocate
 /// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
 /// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
 /// >>> allocate(pd, Distortion.tvar(0.5))
@@ -260,7 +260,7 @@ fn draws_of(dist: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
 /// Examples
 /// --------
 /// >>> import math
-/// >>> from actuarialrs.risk import entropic
+/// >>> from prospicio.risk import entropic
 /// >>> round(entropic([0.0, 1.0], math.log(2.0)), 12) == round(math.log2(1.5), 12)
 /// True
 #[pyfunction]
@@ -286,7 +286,7 @@ pub(crate) fn entropic(dist: &Bound<'_, PyAny>, theta: f64) -> PyResult<f64> {
 /// Examples
 /// --------
 /// >>> import math
-/// >>> from actuarialrs.risk import esscher
+/// >>> from prospicio.risk import esscher
 /// >>> round(esscher([0.0, 1.0], math.log(3.0)), 12)
 /// 0.75
 #[pyfunction]
@@ -312,8 +312,8 @@ pub(crate) fn esscher(dist: &Bound<'_, PyAny>, h: f64) -> PyResult<f64> {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PredictiveDistribution
-/// >>> from actuarialrs.risk import marginal_expected_shortfall
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import marginal_expected_shortfall
 /// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
 /// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
 /// >>> marginal_expected_shortfall(pd, 0.5)
@@ -356,8 +356,8 @@ pub(crate) fn marginal_expected_shortfall(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PredictiveDistribution
-/// >>> from actuarialrs.risk import covar
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import covar
 /// >>> pd = PredictiveDistribution(["lob"], [("a",), ("b",)],
 /// ...                             [[1.0, 0.0], [2.0, 1.0], [3.0, 5.0], [4.0, 1.0]])
 /// >>> covar(pd, ("a",), 0.75, 0.5)
@@ -392,8 +392,8 @@ pub(crate) fn covar(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PredictiveDistribution
-/// >>> from actuarialrs.risk import esscher_allocation
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import esscher_allocation
 /// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
 /// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
 /// >>> esscher_allocation(pd, 0.0)
@@ -409,7 +409,7 @@ pub(crate) fn esscher_allocation(
 }
 
 /// Capital allocation of a distortion risk measure, from ``capital``.
-#[pyclass(name = "Allocation", module = "actuarialrs.risk", frozen)]
+#[pyclass(name = "Allocation", module = "prospicio.risk", frozen)]
 pub(crate) struct PyAllocation {
     inner: Allocation,
 }
@@ -520,8 +520,8 @@ fn method_name(method: AllocationMethod) -> &'static str {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PredictiveDistribution
-/// >>> from actuarialrs.risk import Distortion, capital
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import Distortion, capital
 /// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
 /// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
 /// >>> a = capital(pd, Distortion.tvar(0.5))
@@ -617,12 +617,12 @@ fn flatten_square(m: Vec<Vec<f64>>) -> PyResult<(Vec<f64>, usize)> {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.risk import GaussianCopula
+/// >>> from prospicio.risk import GaussianCopula
 /// >>> c = GaussianCopula([[1.0, 0.5], [0.5, 1.0]])
 /// >>> u = c.sample(3, seed=1)
 /// >>> len(u), all(0.0 < x < 1.0 for row in u for x in row)
 /// (3, True)
-#[pyclass(name = "GaussianCopula", module = "actuarialrs.risk", frozen)]
+#[pyclass(name = "GaussianCopula", module = "prospicio.risk", frozen)]
 pub(crate) struct PyGaussianCopula {
     inner: GaussianCopula,
 }
@@ -676,10 +676,10 @@ impl PyGaussianCopula {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.risk import StudentTCopula
+/// >>> from prospicio.risk import StudentTCopula
 /// >>> StudentTCopula([[1.0, 0.5], [0.5, 1.0]], 4.0).dim
 /// 2
-#[pyclass(name = "StudentTCopula", module = "actuarialrs.risk", frozen)]
+#[pyclass(name = "StudentTCopula", module = "prospicio.risk", frozen)]
 pub(crate) struct PyStudentTCopula {
     inner: StudentTCopula,
 }
@@ -738,11 +738,11 @@ impl PyStudentTCopula {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.risk import ArchimedeanCopula
+/// >>> from prospicio.risk import ArchimedeanCopula
 /// >>> c = ArchimedeanCopula("clayton", 2.0, 3)  # Kendall's tau 0.5
 /// >>> c.dim, c.family
 /// (3, 'clayton')
-#[pyclass(name = "ArchimedeanCopula", module = "actuarialrs.risk", frozen)]
+#[pyclass(name = "ArchimedeanCopula", module = "prospicio.risk", frozen)]
 pub(crate) struct PyArchimedeanCopula {
     inner: ArchimedeanCopula,
 }
@@ -828,8 +828,8 @@ impl PyArchimedeanCopula {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Lognormal
-/// >>> from actuarialrs.risk import GaussianCopula, simulate
+/// >>> from prospicio.distributions import Lognormal
+/// >>> from prospicio.risk import GaussianCopula, simulate
 /// >>> c = GaussianCopula([[1.0, 0.4], [0.4, 1.0]])
 /// >>> pd = simulate(c, [Lognormal.from_mean_cv(100.0, 0.2), Lognormal.from_mean_cv(50.0, 1.0)],
 /// ...               10_000, 42, keys=[("motor",), ("property",)], dims=["lob"])
@@ -898,8 +898,8 @@ pub(crate) fn simulate(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import PredictiveDistribution
-/// >>> from actuarialrs.risk import iman_conover
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import iman_conover
 /// >>> rows = [[float(i), float((i * 7919) % 1000)] for i in range(1000)]
 /// >>> pd = PredictiveDistribution(["lob"], [(0,), (1,)], rows)
 /// >>> joined = iman_conover(pd, [[1.0, 0.7], [0.7, 1.0]], seed=3)
@@ -934,14 +934,14 @@ pub(crate) fn iman_conover(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.risk import Gpd
+/// >>> from prospicio.risk import Gpd
 /// >>> g = Gpd(0.5, 2.0)
 /// >>> g.mean()
 /// 4.0
 /// >>> fit = Gpd.fit([g.quantile((i - 0.5) / 1000) for i in range(1, 1001)])
 /// >>> round(fit.xi, 2), round(fit.beta, 2)
 /// (0.5, 2.0)
-#[pyclass(name = "Gpd", module = "actuarialrs.risk", frozen)]
+#[pyclass(name = "Gpd", module = "prospicio.risk", frozen)]
 pub(crate) struct PyGpd {
     inner: Gpd,
 }
@@ -1029,14 +1029,14 @@ impl PyGpd {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.distributions import Lognormal, Sampled
-/// >>> from actuarialrs.risk import PotTail
+/// >>> from prospicio.distributions import Lognormal, Sampled
+/// >>> from prospicio.risk import PotTail
 /// >>> d = Lognormal(0.0, 1.0)
 /// >>> s = Sampled([d.quantile((i - 0.5) / 100_000) for i in range(1, 100_001)])
 /// >>> tail = PotTail.fit(s, 0.95)
 /// >>> abs(tail.var(0.999) / d.quantile(0.999) - 1) < 0.02
 /// True
-#[pyclass(name = "PotTail", module = "actuarialrs.risk", frozen)]
+#[pyclass(name = "PotTail", module = "prospicio.risk", frozen)]
 pub(crate) struct PyPotTail {
     inner: PotTail,
 }
@@ -1132,7 +1132,7 @@ impl PyPotTail {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.risk import mean_excess
+/// >>> from prospicio.risk import mean_excess
 /// >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
 /// [(2.0, 1.5, 2)]
 #[pyfunction]

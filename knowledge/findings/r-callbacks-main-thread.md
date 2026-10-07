@@ -13,7 +13,7 @@ sources:
     resource: ../crates/act-r/src/pareto.rs
     title: R CustomDist and RFunction
   - id: tests
-    resource: ../R/actuarialrs/tests/test-custom.R
+    resource: ../R/prospicio/tests/test-custom.R
     title: R custom_distribution tests
 ---
 

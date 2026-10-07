@@ -212,7 +212,7 @@ life cycle; each heavy engine sits in its own crate behind a feature flag.
 ## Life cycle
 
 The stages are modules of `act-models`, with matching submodules in Python
-(`actuarialrs.models.*`) and R. This takes tidymodels' life cycle, not its
+(`prospicio.models.*`) and R. This takes tidymodels' life cycle, not its
 package split: a stage becomes a crate only if it acquires a heavy
 dependency.
 
@@ -446,7 +446,7 @@ their draws and stop being reproducible.
   import.
 - **Gradient boosting stays an adapter.** LightGBM and XGBoost are mature
   and fast; a Rust reimplementation would not change what users can do.
-  Done in Python (`actuarialrs.boosting`): `Booster(family, engine,
+  Done in Python (`prospicio.boosting`): `Booster(family, engine,
   power, n_rounds, learning_rate, params, n_boot, seed)` over LightGBM or
   XGBoost for the Poisson, gamma, Tweedie (log link) and Gaussian. The
   design's offset is the engine's starting score (`init_score`,
@@ -468,7 +468,7 @@ their draws and stop being reproducible.
   starting score, dispersion and bootstrap; the design is `model.matrix()`
   without its intercept; `predict()` and `predict_distribution()` methods,
   and `simulate_from_means()`. Seeding leaves R's generator state as it
-  was. Tests (`R/actuarialrs/tests/test-boosting.R`) mirror the Python
+  was. Tests (`R/prospicio/tests/test-boosting.R`) mirror the Python
   ones. Quantile objective (both languages): `family = "quantile"` with
   `alpha` (LightGBM `quantile`, XGBoost `reg:quantileerror` with
   `quantile_alpha`), started from the weighted `alpha` quantile of `y`,

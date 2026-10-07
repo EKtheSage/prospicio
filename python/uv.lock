@@ -16,7 +16,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "actuarialrs"
+name = "prospicio"
 source = { editable = "." }
 
 [package.dev-dependencies]

@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from actuarialrs.models import (
+from prospicio.models import (
     compare,
     cross_validate,
     deviance_score,
@@ -150,7 +150,7 @@ def test_cross_validation_and_search():
 
 
 def test_pit_and_log_score():
-    from actuarialrs.models import ks_uniform, log_score, pit, pit_from_draws, pit_histogram
+    from prospicio.models import ks_uniform, log_score, pit, pit_from_draws, pit_histogram
 
     import random
 
@@ -177,7 +177,7 @@ def test_pit_and_log_score():
 def test_elpd_loo_and_waic():
     import random
 
-    from actuarialrs.models import elpd_loo, elpd_waic, lppd
+    from prospicio.models import elpd_loo, elpd_waic, lppd
 
     rng = random.Random(1)
     y = [rng.gauss(0, 1) for _ in range(20)] + [5.0]
@@ -251,8 +251,8 @@ def test_glm_fit_save_and_load():
 
 
 def test_stacking_and_blending():
-    from actuarialrs.distributions import PredictiveDistribution
-    from actuarialrs.models import pseudo_bma_weights, stacking_weights
+    from prospicio.distributions import PredictiveDistribution
+    from prospicio.models import pseudo_bma_weights, stacking_weights
 
     a = [-0.1, -0.1, -3.0, -3.0]
     b = [-3.0, -3.0, -0.1, -0.1]
@@ -292,7 +292,7 @@ def test_gam_and_elastic_net_save_and_load():
 
 
 def test_actual_vs_expected():
-    from actuarialrs.models import actual_vs_expected
+    from prospicio.models import actual_vs_expected
 
     periods = ["2021", "2021", "2022", "2022", "2023", "2023", "2024", "2024"]
     y = [4.0, 6.0, 5.0, 6.0, 6.0, 6.0, 6.0, 7.0]
@@ -309,7 +309,7 @@ def test_actual_vs_expected():
 
 
 def test_bayes_glm():
-    from actuarialrs.models import BayesGlm, elpd_loo, stacking_weights
+    from prospicio.models import BayesGlm, elpd_loo, stacking_weights
 
     x = [(i % 4) - 1.5 for i in range(80)]
     y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(80)]
@@ -342,8 +342,8 @@ def test_bayes_glm():
 
 
 def test_bayesian_and_hierarchical_stacking():
-    from actuarialrs.distributions import PredictiveDistribution
-    from actuarialrs.models import BayesStacking, HierarchicalStacking
+    from prospicio.distributions import PredictiveDistribution
+    from prospicio.models import BayesStacking, HierarchicalStacking
 
     x = [i / 99 - 0.5 for i in range(100)]
     a = [-0.5 if v < 0 else -2.0 for v in x]
@@ -366,7 +366,7 @@ def test_bayesian_and_hierarchical_stacking():
 
 
 def test_hierarchical_stacking_with_partial_pooling():
-    from actuarialrs.models import HierarchicalStacking
+    from prospicio.models import HierarchicalStacking
 
     n = 120
     region = [i % 4 for i in range(n)]

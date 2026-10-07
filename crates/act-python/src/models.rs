@@ -1,4 +1,4 @@
-//! `actuarialrs.models`: model terms and designs, GLMs, elastic nets, GAMs, metrics,
+//! `prospicio.models`: model terms and designs, GLMs, elastic nets, GAMs, metrics,
 //! resampling and MCMC diagnostics (Models lane; `docs/design/models.md`).
 
 use std::collections::HashMap;
@@ -121,12 +121,12 @@ fn with_offset_weights(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import Terms
+/// >>> from prospicio.models import Terms
 /// >>> data = {"age": [30.0, 45.0, 60.0], "region": ["N", "S", "W"]}
 /// >>> coding = Terms().intercept().numeric("age").factor("region").fit(data)
 /// >>> coding.names
 /// ['(Intercept)', 'age', 'region[S]', 'region[W]']
-#[pyclass(name = "Terms", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "Terms", module = "prospicio.models", frozen)]
 pub(crate) struct PyTerms {
     inner: Terms,
 }
@@ -209,7 +209,7 @@ impl PyTerms {
 
 /// Terms with factor levels learned from training data, from
 /// ``Terms.fit``.
-#[pyclass(name = "Coding", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "Coding", module = "prospicio.models", frozen)]
 pub(crate) struct PyCoding {
     inner: Coding,
 }
@@ -264,11 +264,11 @@ impl PyCoding {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import Design
+/// >>> from prospicio.models import Design
 /// >>> d = Design([[1.0, 1.0], [0.0, 2.0]], ["(Intercept)", "x"])
 /// >>> d.n_rows, d.names
 /// (2, ['(Intercept)', 'x'])
-#[pyclass(name = "Design", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "Design", module = "prospicio.models", frozen)]
 pub(crate) struct PyDesign {
     inner: Design,
 }
@@ -372,13 +372,13 @@ impl PyDesign {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import Design, Glm
+/// >>> from prospicio.models import Design, Glm
 /// >>> d = Design([[1.0] * 4, [0.0, 0.0, 1.0, 1.0]], ["(Intercept)", "young"],
 /// ...            offset=[0.0, 0.0, 0.0, 0.0])
 /// >>> fit = Glm("poisson", "log").fit(d, [1.0, 3.0, 4.0, 6.0])
 /// >>> round(fit.coefficients[1], 10) == round(__import__("math").log(5 / 2), 10)
 /// True
-#[pyclass(name = "Glm", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "Glm", module = "prospicio.models", frozen)]
 pub(crate) struct PyGlm {
     inner: Glm,
 }
@@ -493,7 +493,7 @@ impl PyGlmFit {
 }
 
 /// A fitted GLM, from ``Glm.fit``.
-#[pyclass(name = "GlmFit", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "GlmFit", module = "prospicio.models", frozen)]
 pub(crate) struct PyGlmFit {
     inner: GlmFit,
 }
@@ -553,7 +553,7 @@ impl PyGlmFit {
     ///
     /// Examples
     /// --------
-    /// >>> from actuarialrs.models import Design, Glm
+    /// >>> from prospicio.models import Design, Glm
     /// >>> d = Design([[1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], ["(Intercept)", "x"])
     /// >>> y = [1.0, 2.0, 6.0, 1.0, 4.0, 2.0]
     /// >>> fit = Glm("poisson").fit(d, y)
@@ -613,7 +613,7 @@ impl PyGlmFit {
     /// Examples
     /// --------
     /// >>> import pickle
-    /// >>> from actuarialrs.models import Design, Glm, GlmFit
+    /// >>> from prospicio.models import Design, Glm, GlmFit
     /// >>> d = Design([[1.0] * 4, [0.0, 1.0, 2.0, 3.0]], ["(Intercept)", "x"])
     /// >>> fit = Glm("poisson").fit(d, [1.0, 2.0, 2.0, 5.0])
     /// >>> GlmFit.from_json(fit.to_json()).coefficients == fit.coefficients
@@ -814,7 +814,7 @@ impl PyGlmFit {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import Design, ElasticNet
+/// >>> from prospicio.models import Design, ElasticNet
 /// >>> x = [float(i) for i in range(6)]
 /// >>> d = Design([[1.0] * 6, x, [1.0, 0.0] * 3], ["(Intercept)", "x1", "x2"])
 /// >>> y = [1.0, 3.1, 4.9, 7.2, 9.0, 10.8]
@@ -822,7 +822,7 @@ impl PyGlmFit {
 /// >>> top = net.lambda_max(d, y)
 /// >>> net.with_lam(1.01 * top).fit(d, y).coefficients[1:]
 /// [0.0, 0.0]
-#[pyclass(name = "ElasticNet", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "ElasticNet", module = "prospicio.models", frozen)]
 pub(crate) struct PyElasticNet {
     inner: ElasticNet,
 }
@@ -1025,7 +1025,7 @@ impl PyElasticNet {
 
 /// Cross-validated scores along an elastic-net path, from
 /// ``ElasticNet.cross_validate``.
-#[pyclass(name = "CvPath", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "CvPath", module = "prospicio.models", frozen)]
 pub(crate) struct PyCvPath {
     inner: CvPath,
 }
@@ -1079,7 +1079,7 @@ impl PyCvPath {
 }
 
 /// A fitted elastic net, from ``ElasticNet.fit`` or ``ElasticNet.path``.
-#[pyclass(name = "ElasticNetFit", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "ElasticNetFit", module = "prospicio.models", frozen)]
 pub(crate) struct PyElasticNetFit {
     inner: ElasticNetFit,
 }
@@ -1255,14 +1255,14 @@ impl PyElasticNetFit {
 /// Examples
 /// --------
 /// >>> import math
-/// >>> from actuarialrs.models import Design, Gam, Glm
+/// >>> from prospicio.models import Design, Gam, Glm
 /// >>> x = [i / 99 for i in range(100)]
 /// >>> y = [math.sin(6 * v) for v in x]
 /// >>> d = Design([[1.0] * 100, x], ["(Intercept)", "x"])
 /// >>> fit = Gam(Glm("gaussian"), ["x"]).fit(d, y)
 /// >>> abs(fit.predict(d)[50] - y[50]) < 0.01
 /// True
-#[pyclass(name = "Gam", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "Gam", module = "prospicio.models", frozen)]
 pub(crate) struct PyGam {
     inner: Gam,
 }
@@ -1334,7 +1334,7 @@ impl PyGam {
 }
 
 /// A fitted GAM, from ``Gam.fit``.
-#[pyclass(name = "GamFit", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "GamFit", module = "prospicio.models", frozen)]
 pub(crate) struct PyGamFit {
     inner: GamFit,
 }
@@ -1573,7 +1573,7 @@ pub(crate) fn lift(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import pinball_loss
+/// >>> from prospicio.models import pinball_loss
 /// >>> pinball_loss([1.0, 0.0], [0.0, 1.0], 0.9)
 /// 0.5
 #[pyfunction]
@@ -1622,7 +1622,7 @@ pub(crate) fn crps(draws: Vec<f64>, y: f64) -> PyResult<f64> {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import log_score
+/// >>> from prospicio.models import log_score
 /// >>> round(log_score("poisson", [0.0], [1.0]), 12)
 /// 1.0
 #[pyfunction]
@@ -1791,7 +1791,7 @@ pub(crate) fn time_ordered(
 }
 
 /// An ELPD estimate from ``elpd_loo`` or ``elpd_waic``.
-#[pyclass(name = "Elpd", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "Elpd", module = "prospicio.models", frozen)]
 pub(crate) struct PyElpd {
     inner: act_bayes::elpd::Elpd,
     pareto_k: Option<Vec<f64>>,
@@ -1927,7 +1927,7 @@ pub(crate) fn elpd_waic(log_lik: Vec<Vec<f64>>) -> PyResult<PyElpd> {
 /// Examples
 /// --------
 /// >>> import math
-/// >>> from actuarialrs.models import lppd
+/// >>> from prospicio.models import lppd
 /// >>> round(lppd([[math.log(0.5)], [math.log(0.25)]]), 12) == round(math.log(0.375), 12)
 /// True
 #[pyfunction]
@@ -1953,7 +1953,7 @@ pub(crate) fn lppd(log_lik: Vec<Vec<f64>>) -> PyResult<f64> {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import mcmc_diagnostics
+/// >>> from prospicio.models import mcmc_diagnostics
 /// >>> a = [float((i * 37) % 101) for i in range(400)]
 /// >>> b = [float((i * 53 + 7) % 101) for i in range(400)]
 /// >>> mcmc_diagnostics([a, b])["rhat"] < 1.01
@@ -2002,7 +2002,7 @@ pub(crate) fn mcmc_diagnostics(chains: Vec<Vec<f64>>) -> PyResult<HashMap<String
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import stacking_weights
+/// >>> from prospicio.models import stacking_weights
 /// >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
 /// >>> [round(x, 9) for x in w]
 /// [0.5, 0.5]
@@ -2080,7 +2080,7 @@ pub(crate) fn pseudo_bma_weights(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import actual_vs_expected
+/// >>> from prospicio.models import actual_vs_expected
 /// >>> m = actual_vs_expected([2023, 2023, 2024, 2024], "poisson",
 /// ...                        [1.0, 3.0, 2.0, 6.0], [2.0, 2.0, 2.0, 2.0])
 /// >>> m["periods"][1]["ratio"], m["periods"][1]["z"]
@@ -2160,14 +2160,14 @@ pub(crate) fn actual_vs_expected<'py>(
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import BayesGlm, Design
+/// >>> from prospicio.models import BayesGlm, Design
 /// >>> x = [(i % 4) - 1.5 for i in range(40)]
 /// >>> y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(40)]
 /// >>> d = Design([[1.0] * 40, x], ["(Intercept)", "x"])
 /// >>> fit = BayesGlm("poisson", chains=2, tune=300, draws=300).fit(d, y)
 /// >>> all(s["rhat"] < 1.05 for s in fit.summary())
 /// True
-#[pyclass(name = "BayesGlm", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "BayesGlm", module = "prospicio.models", frozen)]
 pub(crate) struct PyBayesGlm {
     inner: act_bayes::glm::BayesGlm,
 }
@@ -2238,7 +2238,7 @@ impl PyBayesGlm {
 }
 
 /// A sampled Bayesian GLM, from ``BayesGlm.fit``.
-#[pyclass(name = "BayesGlmFit", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "BayesGlmFit", module = "prospicio.models", frozen)]
 pub(crate) struct PyBayesGlmFit {
     inner: act_bayes::glm::BayesGlmFit,
 }
@@ -2402,7 +2402,7 @@ fn stacking_sampler(
 ///     Dirichlet concentration, one per model (default 1, uniform).
 /// chains, tune, draws : int, default 4, 1000, 1000
 /// seed : int, default 0
-#[pyclass(name = "BayesStacking", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "BayesStacking", module = "prospicio.models", frozen)]
 pub(crate) struct PyBayesStacking {
     inner: act_bayes::stacking::BayesStacking,
 }
@@ -2481,7 +2481,7 @@ impl PyBayesStacking {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import HierarchicalStacking
+/// >>> from prospicio.models import HierarchicalStacking
 /// >>> x = [i / 99 - 0.5 for i in range(100)]
 /// >>> a = [-0.5 if v < 0 else -2.0 for v in x]
 /// >>> b = [-2.0 if v < 0 else -0.5 for v in x]
@@ -2489,7 +2489,7 @@ impl PyBayesStacking {
 /// >>> w = fit.weights([[-0.4, 0.4]])
 /// >>> w[0][0] > 0.7 and w[1][0] < 0.3
 /// True
-#[pyclass(name = "HierarchicalStacking", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "HierarchicalStacking", module = "prospicio.models", frozen)]
 pub(crate) struct PyHierarchicalStacking {
     inner: act_bayes::stacking::HierarchicalStacking,
 }
@@ -2564,7 +2564,7 @@ impl PyHierarchicalStacking {
 
 /// Posterior stacking weights, from ``BayesStacking.fit`` or
 /// ``HierarchicalStacking.fit``.
-#[pyclass(name = "StackingFit", module = "actuarialrs.models", frozen)]
+#[pyclass(name = "StackingFit", module = "prospicio.models", frozen)]
 pub(crate) struct PyStackingFit {
     inner: act_bayes::stacking::StackingFit,
 }
@@ -2658,7 +2658,7 @@ pub(crate) enum OneOrMany {
 ///
 /// Examples
 /// --------
-/// >>> from actuarialrs.models import simulate_from_means
+/// >>> from prospicio.models import simulate_from_means
 /// >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
 /// >>> round(pd.mean(), 1)
 /// 0.5
@@ -2684,7 +2684,7 @@ pub(crate) fn simulate_from_means(
         Some(OneOrMany::Many(d)) => d,
     };
     let provenance = act_prob::Provenance::new("simulate_from_means")
-        .version("actuarialrs", env!("CARGO_PKG_VERSION"));
+        .version("prospicio", env!("CARGO_PKG_VERSION"));
     let inner = py
         .detach(|| {
             act_models::simulate::from_means(f, &means, &dispersion, &w, n_sims, seed, provenance)

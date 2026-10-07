@@ -1,9 +1,9 @@
-//! R bindings, built by `R CMD INSTALL R/actuarialrs`.
+//! R bindings, built by `R CMD INSTALL R/prospicio`.
 //!
 //! Wrappers convert arguments and return [`act_core::Error`]s as R condition
 //! objects (extendr `result_condition`), which the R layer raises. They
 //! hold no numerical code; the idiomatic R API (functions and S3 methods)
-//! lives in `R/actuarialrs/R`.
+//! lives in `R/prospicio/R`.
 //!
 //! Each lane keeps its wrappers in its own module, registered below.
 
@@ -35,7 +35,7 @@ pub(crate) fn whole(x: f64, name: &str) -> Result<u64> {
 }
 
 extendr_module! {
-    mod actuarialrs;
+    mod prospicio;
     use aggregate;
     use distributions;
     use models;

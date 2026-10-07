@@ -35,8 +35,8 @@ tasks:
 
 /// Generated files that are committed, per binding: the build must leave
 /// them unchanged under `--check`.
-const PYTHON_GENERATED: &[&str] = &["python/actuarialrs/actuarialrs_native.pyi"];
-const R_GENERATED: &[&str] = &["R/actuarialrs/man", "R/actuarialrs/NAMESPACE"];
+const PYTHON_GENERATED: &[&str] = &["python/prospicio/prospicio_native.pyi"];
+const R_GENERATED: &[&str] = &["R/prospicio/man", "R/prospicio/NAMESPACE"];
 
 type Result<T = ()> = std::result::Result<T, String>;
 
@@ -109,18 +109,18 @@ fn python(check: bool) -> Result {
 
 fn r(check: bool) -> Result {
     let root = root();
-    let pkg = "R/actuarialrs";
+    let pkg = "R/prospicio";
     // roxygen2 loads the source with pkgload, which tolerates a stale
     // NAMESPACE (say, a renamed export) that `R CMD INSTALL` would reject, so
     // it runs before the install.
     step("r: regenerate man/ and NAMESPACE (roxygen2)");
-    rscript(&root, r#"roxygen2::roxygenise("R/actuarialrs")"#)?;
+    rscript(&root, r#"roxygen2::roxygenise("R/prospicio")"#)?;
     step("r: install");
     run(Command::new("R")
         .args(["CMD", "INSTALL", pkg])
         .current_dir(&root))?;
     step("r: test");
-    let tests = root.join("R/actuarialrs/tests");
+    let tests = root.join("R/prospicio/tests");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&tests)
         .map_err(|e| format!("cannot read {}: {e}", tests.display()))?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
@@ -134,8 +134,8 @@ fn r(check: bool) -> Result {
     rscript(
         &root,
         concat!(
-            r#"u <- tools::undoc(package = "actuarialrs"); "#,
-            r#"c <- tools::codoc(package = "actuarialrs"); "#,
+            r#"u <- tools::undoc(package = "prospicio"); "#,
+            r#"c <- tools::codoc(package = "prospicio"); "#,
             r#"if (length(unlist(u)) || length(c)) { print(u); print(c); quit(status = 1) }"#,
         ),
     )?;
@@ -143,7 +143,7 @@ fn r(check: bool) -> Result {
     let mut cmd = Command::new("Rscript");
     cmd.args([
         "-e",
-        r#"pkgdown::build_site("R/actuarialrs", install = FALSE, new_process = FALSE, preview = FALSE)"#,
+        r#"pkgdown::build_site("R/prospicio", install = FALSE, new_process = FALSE, preview = FALSE)"#,
     ])
     .current_dir(&root);
     // pkgdown needs pandoc; Quarto, which the Python docs need anyway,
@@ -181,7 +181,7 @@ fn docs(check: bool) -> Result {
     for (from, to) in [
         ("target/doc", "rust"),
         ("python/great-docs/_site", "python"),
-        ("R/actuarialrs/docs", "r"),
+        ("R/prospicio/docs", "r"),
     ] {
         copy_dir(&root.join(from), &site.join(to))
             .map_err(|e| format!("copying {from} into the site: {e}"))?;
@@ -196,11 +196,11 @@ const INDEX: &str = r#"<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>actuarialrs docs</title>
+<title>prospicio docs</title>
 <style>
   body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
 </style>
-<h1>actuarialrs</h1>
+<h1>prospicio</h1>
 <p>Actuarial modeling on a Rust core. One kernel, documented for each front end.</p>
 <ul>
   <li><a href="python/index.html">Python</a> (great-docs)</li>

@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-import actuarialrs as ar
+import prospicio as ar
 
 D = ar.distributions
 P = ar.pricing
@@ -83,7 +83,7 @@ def test_risk_loaded_prices():
 
 
 def test_tabulated_curve_and_destruction_rates():
-    from actuarialrs.pricing import Mbbefd, TabulatedCurve
+    from prospicio.pricing import Mbbefd, TabulatedCurve
 
     t = TabulatedCurve([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0])
     assert t.curve([0.3])[0] == pytest.approx(0.6, abs=1e-15)
@@ -103,8 +103,8 @@ def test_tabulated_curve_and_destruction_rates():
 
 
 def test_risk_profile_simulation_matches_exposure_rating():
-    from actuarialrs.pricing import Mbbefd, RiskProfile, TabulatedCurve
-    from actuarialrs.reinsurance import Layer, Tower
+    from prospicio.pricing import Mbbefd, RiskProfile, TabulatedCurve
+    from prospicio.reinsurance import Layer, Tower
 
     curves = [Mbbefd.swiss_re(2.0), Mbbefd.swiss_re(3.0),
               TabulatedCurve([0.0, 0.02, 0.2, 1.0], [0.0, 0.3, 0.8, 1.0])]
@@ -133,8 +133,8 @@ def test_risk_profile_simulation_matches_exposure_rating():
 
 
 def test_risk_profile_spreads_sums_insured_between_bounds():
-    from actuarialrs.pricing import Mbbefd, RiskProfile
-    from actuarialrs.reinsurance import Layer, Tower
+    from prospicio.pricing import Mbbefd, RiskProfile
+    from prospicio.reinsurance import Layer, Tower
 
     c = Mbbefd.swiss_re(3.0)
     # The second band's risks run from 1m to 5m; the first has no bounds.

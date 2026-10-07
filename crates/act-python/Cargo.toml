@@ -9,7 +9,7 @@ license.workspace = true
 authors.workspace = true
 
 [lib]
-name = "actuarialrs_native"
+name = "prospicio_native"
 crate-type = ["cdylib"]
 
 [dependencies]

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from actuarialrs.distributions import PredictiveDistribution
-from actuarialrs.reserving import (
+from prospicio.distributions import PredictiveDistribution
+from prospicio.reserving import (
     Benktander,
     BornhuetterFerguson,
     CapeCod,

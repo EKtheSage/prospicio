@@ -38,8 +38,8 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   with closed-form layer mean, layer variance
   (`E[N] Var[Y] + Var[N] E[Y]^2`) and excess frequency, the treaty
   pricing model of `pareto.md`; `simulate` reuses `simulate_events`.
-  Python `actuarialrs.pricing.CollectiveModel`, R `collective_model()`.
-- Python (`actuarialrs.aggregate`) and R (`compound_distribution`,
+  Python `prospicio.pricing.CollectiveModel`, R `collective_model()`.
+- Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
 

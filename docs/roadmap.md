@@ -183,14 +183,13 @@ what it is aiming for by v1.0.
   its design.
 
 Decided 2026-10-07 (`architecture.md`, "Open decisions"): the name
-risk-rs, the licence (MIT OR Apache-2.0), IP ownership (Ethan Kang) and
+(risk-rs for the project and the Rust core, prospicio for the Python and R
+packages), the licence (MIT OR Apache-2.0), IP ownership (Ethan Kang) and
 the WASM scope. Still open:
 
 - where the docs are hosted (GitHub Pages once the repository is public, or
   a separate host);
-- the Python and R package name (now `actuarialrs`; `actuate` is free on
-  CRAN only);
 - reserving the names on crates.io, PyPI and CRAN, which needs the user's
   accounts.
 
-None of them blocks current work, but the first four block a public release.
+Neither blocks current work; both come before a public release.

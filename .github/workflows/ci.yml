@@ -86,10 +86,10 @@ jobs:
       - run: >-
           Rscript -e "pkgs <- c('S7', 'lightgbm', 'xgboost'); install.packages(pkgs);
           for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
-      - run: R CMD INSTALL R/actuarialrs
+      - run: R CMD INSTALL R/prospicio
       - name: Run the R tests
         shell: bash
-        run: for f in R/actuarialrs/tests/*.R; do Rscript "$f" || exit 1; done
+        run: for f in R/prospicio/tests/*.R; do Rscript "$f" || exit 1; done
 
   # Builds both bindings through `cargo xtask docs`, which regenerates their
   # docs, and fails if a committed generated file (the Python stub, R's man/
@@ -133,7 +133,7 @@ jobs:
       - if: steps.changes.outputs.docs == 'true'
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: R/actuarialrs
+          working-directory: R/prospicio
           extra-packages: any::roxygen2, any::pkgload, any::pkgdown
       - if: steps.changes.outputs.docs == 'true'
         run: cargo xtask docs --check
