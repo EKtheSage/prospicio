@@ -54,7 +54,7 @@ use crate::segments::ReserveFit;
 use crate::triangle::{Segment, Triangle};
 
 /// Process error on the next cumulative value of Mack's bootstrap, with
-/// mean `f*_k C` and variance `sigma_k^2 C^(2 - alpha)`.
+/// mean `f*_k C` and variance `sigma_k^2 |C|^(2 - alpha)`.
 ///
 /// England, Verrall and Wüthrich (2019), Appendix 1, step 7(d), draw it
 /// either from a parametric distribution, Gamma or lognormal so that the
@@ -100,17 +100,36 @@ impl MackProcess {
             Self::Gamma | Self::Lognormal if mean == 0.0 => mean,
             Self::Gamma => {
                 let m = mean.abs();
-                let gamma = Gamma::new(m * m / variance, variance / m)
-                    .expect("shape and scale are finite and positive");
-                mean.signum() * gamma.sample(rng, 1)[0]
+                // `m / variance` first: `m * m` underflows for a value near
+                // zero, which a later cell of the year can be drawn from.
+                match Gamma::new(m / variance * m, variance / m) {
+                    Ok(gamma) => mean.signum() * gamma.sample(rng, 1)[0],
+                    Err(_) => vanishing(mean, variance),
+                }
             }
             Self::Lognormal => {
                 let m = mean.abs();
-                let lognormal = Lognormal::from_mean_cv(m, variance.sqrt() / m)
-                    .expect("mean and coefficient of variation are finite and positive");
-                mean.signum() * lognormal.sample(rng, 1)[0]
+                match Lognormal::from_mean_cv(m, variance.sqrt() / m) {
+                    Ok(lognormal) => mean.signum() * lognormal.sample(rng, 1)[0],
+                    Err(_) => vanishing(mean, variance),
+                }
             }
         }
+    }
+}
+
+/// The draw of a Gamma or lognormal whose parameters are out of floating
+/// point range. With a finite mean and variance that happens only when the
+/// mean is negligible next to the standard deviation (a cumulative value
+/// drawn near zero, from which the next is drawn): the shape goes to zero,
+/// or the coefficient of variation to infinity, and the distribution's
+/// mass to zero, which is the draw. Anything else is NaN, so that the
+/// simulation fails and is counted.
+fn vanishing(mean: f64, variance: f64) -> f64 {
+    if mean.is_finite() && variance.is_finite() {
+        0.0
+    } else {
+        f64::NAN
     }
 }
 

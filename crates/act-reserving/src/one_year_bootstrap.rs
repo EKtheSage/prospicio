@@ -1385,6 +1385,26 @@ mod tests {
     }
 
     #[test]
+    fn quarterly_mack_gamma_survives_a_draw_near_zero() {
+        // RAA split into quarters chains four Gamma draws a year, each from
+        // the one before. With seed 3 one of them comes out near 1e-200, and
+        // the next draw's shape `m^2 / variance` underflowed to zero and
+        // panicked (3 of seeds 0-9 did, the annual RAA none).
+        let split = quarterly(1981, &RAA, &[1.0; 10]);
+        for process in [crate::MackProcess::Gamma, crate::MackProcess::Lognormal] {
+            let fit = crate::MackBootstrap {
+                n_sims: 2_000,
+                seed: 3,
+                process,
+                ..Default::default()
+            }
+            .one_year(&split, "paid", &chain_ladder())
+            .unwrap();
+            assert!(fit.cdr.draw_matrix().iter().all(|x| x.is_finite()));
+        }
+    }
+
+    #[test]
     fn quarterly_exact_pattern_has_zero_mack_cdr() {
         // Mack's model on an exact pattern has every sigma zero, so no
         // parameter or process error, at either grain. (A fifth origin
