@@ -37,7 +37,7 @@ generated stub, `NAMESPACE` and `man/`. Whichever merges second merges
 | Tails | chainladder-python (`TailConstant`, `TailCurve`, `TailBondy`); R ChainLadder 0.2.21 `MackChainLadder(tail = TRUE / number)` for Mack's tail sigma and standard error | — |
 | Clark | R ChainLadder `ClarkLDF`, `ClarkCapeCod` | chainladder-python `ClarkLDF` |
 | One-year view | R ChainLadder `CDR(MackChainLadder(...))`, `dev = "all"` for the full run-off | Merz and Wüthrich (2008), published example |
-| Simulated one-year view | R ChainLadder `CDR(MackChainLadder(...))` times the measured ODP-to-Mack ratio; `BootChainLadder` for the origin with one cell left | England, Verrall and Wüthrich (2019), Table 2 |
+| Simulated one-year view | ODP: R ChainLadder `CDR(MackChainLadder(...))` times the measured ODP-to-Mack ratio, `BootChainLadder` for the origin with one cell left. Mack's process: R ChainLadder `CDR(MackChainLadder(...))` itself | England, Verrall and Wüthrich (2019), Tables 2 and 4 |
 
 Each family has its own generator script under `validation/scripts/` and
 reference CSV under `validation/reference/` in the format of
@@ -520,10 +520,12 @@ was found, so the independent checks are these:
   (2019) bootstrap of Mack's model (their Appendix 1), fed through the
   same re-reserving in a unit test, reproduces Merz–Wüthrich on GenIns per
   origin and in total within five Monte Carlo standard errors (measured
-  within 0.6%). Their simulated one-year view (Table 4) bootstraps Mack's
-  model, not the ODP, so it is not a reference for this method; their
-  analytic Table 2 (Mack and Merz–Wüthrich on Taylor–Ashe, Mack's rule for
-  the last sigma) is checked.
+  within 0.6%). That harness is now `MackBootstrap` (below), which the
+  test shows draws the same values bit for bit. Their simulated one-year
+  view (Table 4) bootstraps Mack's model, not the ODP, so it is a
+  reference for `MackBootstrap`, not for this method; their analytic
+  Table 2 (Mack and Merz–Wüthrich on Taylor–Ashe, Mack's rule for the last
+  sigma) is checked.
 * A triangle that lies exactly on its chain-ladder pattern has scale zero
   and a CDR of zero in every simulation.
 
@@ -555,3 +557,117 @@ setting the method does not read (`apriori` to the chain ladder, say) is
 an error rather than ignored. It returns a `one_year_fit` with `cdr` a
 `predictive_distribution`, and `as.data.frame()`, `totals_frame()`,
 `development_frame()` and `segment()` as the other fits.
+
+#### Mack's process
+
+So that the simulated view can be reconciled with Merz–Wüthrich, Mack's
+process is a second bootstrap model beside the ODP, England, Verrall and
+Wüthrich's (2019) bootstrap of Mack's model (their Appendix 1), fed through
+the same re-reserving:
+
+```rust
+pub struct MackBootstrap {
+    pub n_sims: usize,
+    pub seed: u64,
+    pub process: MackProcess,       // Gamma (default), Lognormal, Residuals, Normal, None
+    pub development: Development,   // Mack's alpha and how a lone sigma is filled
+}
+
+impl MackBootstrap {
+    pub fn one_year(&self, triangle: &Triangle, column: &str, method: &OneYearMethod)
+        -> Result<OneYearFit<MackBootstrapSegment>>;
+    pub fn one_year_segments(&self, triangle: &Triangle, column: &str, method: &OneYearMethod)
+        -> Result<OneYearFits<MackBootstrapSegment>>;
+}
+
+pub struct MackBootstrapSegment {
+    pub mack: MackFit,         // the model on the observed triangle, no tail
+    pub residuals: Vec<f64>,   // link-ratio residuals, origin x development
+}
+
+pub struct OneYearFit<B = OdpBootstrapSegment> { pub bootstrap: B, /* as above */ }
+// likewise OneYearSegment<B> and OneYearFits<B>
+```
+
+A sibling type, not an option on `OdpBootstrap`: the two models share
+nothing but the re-reserving. The ODP resamples Pearson residuals of the
+incremental values into a pseudo triangle, has one scale `phi` and projects
+from the pseudo latest value; Mack's resamples residuals of the link ratios,
+has one `sigma_k` per factor, its own averaging (`alpha`), and is
+conditional on the observed latest value. Their settings differ (Mack's
+process has five shapes, the ODP's two) and so do their fits (`scale` and
+`fitted` against `MackFit`). A field on `OdpBootstrap` would also break
+every struct literal of it, and a model named for the ODP that runs Mack's
+would mislead. The re-reserving is generic over the model's fit (a private
+`NextDiagonal` trait that draws the next diagonal), and `OneYearFit`,
+`OneYearSegment` and `OneYearFits` take the fit as a type parameter that
+defaults to `OdpBootstrapSegment`, so existing code compiles unchanged. The
+ODP path's draws, input hashes and tables are bit-identical to before the
+change (checked by hashing every draw on RAA, GenIns and ABC, both
+processes, two methods, both entry points).
+
+Per simulation, after EVW's Appendix 1, generalized to Mack's `alpha` (the
+conditional variance of `C_k+1` is `sigma_k^2 C_k^(2 - alpha)`):
+
+1. Resample the scaled bias-adjusted residuals of the link ratios,
+   `r = sqrt(n_k / (n_k - 1)) C_k^(alpha / 2) (F - f_k) / sigma_k`, pooled
+   over the factors with two or more link ratios, into a pseudo ratio
+   `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every observed link, and
+   take the pseudo factor `f*_k = sum(C_k^alpha F*) / sum(C_k^alpha)` with
+   the observed weights. A link from a zero has no variance in Mack's model:
+   it keeps its observed later value and gives no residual.
+2. Draw every origin's next cumulative value from its observed latest `C`,
+   mean `f*_k C`, variance `sigma_k^2 C^(2 - alpha)`, with the observed
+   triangle's sigmas (those of a single link ratio interpolated as `Mack`
+   does). `MackProcess` gives the shape: Gamma or lognormal (EVW's
+   parametric choices; a negative mean, a pseudo factor below zero, gets
+   the distribution of its absolute value negated, as the ODP's Gamma
+   does), `Residuals` (the mean plus a resampled residual times the
+   standard deviation, EVW's non-parametric choice), `Normal` (Mack's model
+   is distribution-free; not in EVW) or `None`.
+3. Append, refit and record the CDR as in steps 3 and 4 above.
+
+The model has no tail. Mack's tail is one more step from the oldest age to
+ultimate with its own sigma and standard error; it has no calendar year,
+so no coming year holds it (R's `CDR` rejects a tail for the same reason).
+As with the ODP, development past the oldest age moves only through the
+refitted method's tail, and an origin at the last age gets no new cell.
+Mack's model needs no negative cumulative value and, like the ODP, every
+origin observed from the first age to its latest.
+
+Checks, all independent of the simulation:
+
+* With the volume-weighted chain ladder and no tail, each origin's and the
+  total standard deviation of the CDR on RAA, GenIns and ABC, with either
+  rule for the last sigma, is R ChainLadder's `CDR(1)S.E.` within five
+  Monte Carlo standard errors of the simulated standard deviation,
+  `sd sqrt((kurtosis - 1) / (4 n))`, at 20,000 simulations
+  (`validation/tests/reserving_one_year_mack.rs`). This is the
+  reconciliation.
+* England, Verrall and Wüthrich's Table 4 (500,000 simulations of the
+  same bootstrap on Taylor–Ashe, Mack's rule for the last sigma): every
+  origin and the total within five standard errors of the two simulations
+  combined.
+* Unit tests: each factor's squared residuals sum to `n_k` for every
+  `alpha`; RAA's 1982, one cell left behind a factor resting on one link
+  ratio, has the variance worked out by hand for every `alpha`, which is
+  Mack's own when the residuals' variance is 1; every process shape gives
+  Merz–Wüthrich's GenIns total.
+
+Measured with 200,000 simulations, GenIns and ABC are within 0.4% of R per
+origin, but RAA's three youngest origins and its total come out 0.4% to
+1.2% above it, beyond Monte Carlo error. That is consistent with the
+closed form being a linear approximation, which RAA's volatile young
+factors stress most; the 20,000-simulation test, whose five standard
+errors are 2.5% to 5%, does not resolve it.
+
+Bindings: Python `MackBootstrap(n_sims=10000, seed=0, process="gamma",
+average="volume", sigma_interpolation="log-linear").one_year(triangle,
+column, method, exposure=None)` returns the same `OneYearFit` with
+`model == "mack"`, `mack` (the `MackFit`), Mack's `residuals`, and no
+`fitted` or `scale` (an error). R `mack_one_year(...)`, beside
+`odp_one_year()` with the same arguments, `process = c("gamma",
+"lognormal", "residuals", "normal", "none")`, and `mack_average` and
+`mack_sigma_interpolation` for Mack's model (the method's `average` and
+`sigma_interpolation` are taken), returns a `one_year_fit` with
+`model == "mack"` and `mack` a `mack_fit`.
