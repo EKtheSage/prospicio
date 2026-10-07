@@ -9,6 +9,7 @@ core abstractions: [docs/design/](docs/design/).
 
 | Path | What |
 |---|---|
+| `crates/prospicio` | Umbrella crate: re-exports the others (`prospicio::reserving`, ...) |
 | `crates/prospicio-core` | Error type, reproducible RNG streams |
 | `crates/prospicio-math` | Numerical engine (Phase 0: normal special functions) |
 | `crates/prospicio-prob` | Distributions (Phase 0: `Distribution` trait, `Lognormal`) |

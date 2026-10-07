@@ -3,6 +3,7 @@ members = ["crates/*", "validation", "xtask"]
 # Binding crates need a Python or R toolchain at build time, so plain
 # `cargo build` / `cargo test` skip them; see python/ and R/ for their builds.
 default-members = [
+    "crates/prospicio",
     "crates/prospicio-core",
     "crates/prospicio-math",
     "crates/prospicio-prob",
@@ -22,22 +23,28 @@ resolver = "3"
 version = "0.0.1"
 edition = "2024"
 rust-version = "1.85"
-publish = false
 license = "MIT OR Apache-2.0"
 authors = ["Ethan Kang <ethan.yskang@gmail.com>"]
 repository = "https://github.com/EKtheSage/prospicio"
+homepage = "https://ekthesage.github.io/prospicio/"
+readme = "README.md"
+keywords = ["actuarial", "insurance", "reserving", "reinsurance", "risk"]
+categories = ["science", "mathematics", "finance"]
 
 [workspace.dependencies]
-prospicio-core = { path = "crates/prospicio-core" }
-prospicio-math = { path = "crates/prospicio-math" }
-prospicio-aggregate = { path = "crates/prospicio-aggregate" }
-prospicio-prob = { path = "crates/prospicio-prob" }
-prospicio-pricing = { path = "crates/prospicio-pricing" }
-prospicio-models = { path = "crates/prospicio-models" }
-prospicio-glm = { path = "crates/prospicio-glm" }
-prospicio-bayes = { path = "crates/prospicio-bayes" }
-prospicio-nn = { path = "crates/prospicio-nn" }
-prospicio-reserving = { path = "crates/prospicio-reserving" }
+# The version must match workspace.package.version: `cargo publish` uploads
+# it in place of the path (docs/release.md).
+prospicio = { version = "0.0.1", path = "crates/prospicio" }
+prospicio-core = { version = "0.0.1", path = "crates/prospicio-core" }
+prospicio-math = { version = "0.0.1", path = "crates/prospicio-math" }
+prospicio-aggregate = { version = "0.0.1", path = "crates/prospicio-aggregate" }
+prospicio-prob = { version = "0.0.1", path = "crates/prospicio-prob" }
+prospicio-pricing = { version = "0.0.1", path = "crates/prospicio-pricing" }
+prospicio-models = { version = "0.0.1", path = "crates/prospicio-models" }
+prospicio-glm = { version = "0.0.1", path = "crates/prospicio-glm" }
+prospicio-bayes = { version = "0.0.1", path = "crates/prospicio-bayes" }
+prospicio-nn = { version = "0.0.1", path = "crates/prospicio-nn" }
+prospicio-reserving = { version = "0.0.1", path = "crates/prospicio-reserving" }
 # PredictiveDistribution to and from Arrow IPC (prospicio-prob's `arrow`
 # feature). 59.x is the last line that builds on rust-version 1.85.
 arrow-array = { version = "59.3.0", default-features = false }

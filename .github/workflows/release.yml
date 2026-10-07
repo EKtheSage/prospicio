@@ -1,0 +1,140 @@
+name: Release
+
+# Publishes a release to PyPI and crates.io when a version tag is pushed
+# (`git tag v0.0.1 && git push origin v0.0.1`). Run by hand
+# (workflow_dispatch), it builds and tests the wheels and the crates but
+# publishes nothing: a dry run before tagging. The steps, and the one-time
+# registry setup, are in docs/release.md.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The tag must name the version in Cargo.toml (workspace.package), which
+  # every crate and the Python package take theirs from.
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag against the workspace version
+        shell: bash
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          echo "Workspace version: $version"
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "v$version" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match the workspace version v$version"
+            exit 1
+          fi
+
+  # One abi3 wheel per platform serves every Python from 3.9. Each wheel is
+  # installed and the Python test suite run against it on its own platform.
+  wheels:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64 }
+          - { os: macos-latest, target: universal2-apple-darwin }
+          - { os: windows-latest, target: x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: python
+          target: ${{ matrix.target }}
+          manylinux: auto
+          args: --release --out dist
+      - uses: astral-sh/setup-uv@v6
+      # LightGBM's macOS wheel links OpenMP from Homebrew.
+      - if: runner.os == 'macOS'
+        run: brew install libomp
+      - name: Test the wheel
+        shell: bash
+        working-directory: python
+        run: |
+          uv venv .venv-wheel
+          source .venv-wheel/bin/activate 2>/dev/null || source .venv-wheel/Scripts/activate
+          uv pip install --group dev
+          uv pip install prospicio --no-index --find-links dist
+          pytest tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.target }}
+          path: python/dist
+
+  sdist:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: python
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: python/dist
+
+  # Packages every publishable crate and builds each from its package, the
+  # way crates.io will see it.
+  crates:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish --workspace --dry-run
+
+  pypi:
+    if: github.ref_type == 'tag'
+    needs: [wheels, sdist, crates]
+    runs-on: ubuntu-latest
+    # Trusted publishing: PyPI accepts this repository, workflow and
+    # environment (docs/release.md); no token is stored.
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  crates-io:
+    if: github.ref_type == 'tag'
+    needs: [wheels, sdist, crates]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      id-token: write
+    env:
+      # crates.io trusted publishing works only for crates that already
+      # exist, so the first release uses a token stored as this secret
+      # (docs/release.md). Delete the secret once trusted publishing is set
+      # up for every crate.
+      HAS_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+        if: env.HAS_TOKEN != 'true'
+      # Publishes the crates in dependency order, waiting for each to be
+      # indexed before the crates that need it.
+      - run: cargo publish --workspace
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}

@@ -4,11 +4,30 @@ build-backend = "maturin"
 
 [project]
 name = "prospicio"
-description = "Actuarial modeling on a Rust core."
+description = "Actuarial and risk modeling on a Rust core: reserving, distributions, aggregate loss, reinsurance and pricing."
+readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT OR Apache-2.0" }
 authors = [{ name = "Ethan Kang", email = "ethan.yskang@gmail.com" }]
+keywords = ["actuarial", "insurance", "reserving", "reinsurance", "risk"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+# The version is the Rust workspace's (Cargo.toml, workspace.package).
 dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://ekthesage.github.io/prospicio/"
+Documentation = "https://ekthesage.github.io/prospicio/"
+Repository = "https://github.com/EKtheSage/prospicio"
 
 [dependency-groups]
 dev = [

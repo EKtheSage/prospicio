@@ -187,7 +187,7 @@ Decided 2026-10-07 (`architecture.md`, "Open decisions"): the name
 packages), the licence (MIT OR Apache-2.0), IP ownership (Ethan Kang) and
 the WASM scope; the docs are published to GitHub Pages. Still open:
 
-- reserving the names on crates.io, PyPI and CRAN, which needs the user's
-  accounts.
-
-It does not block current work; it comes before the first release.
+- the first release to PyPI and crates.io, which reserves the names. The
+  release workflow and the umbrella crate `prospicio` are in place; the
+  one-time registry setup in `docs/release.md` needs the user's accounts,
+  then a pushed tag `v0.0.1` publishes. CRAN comes later.

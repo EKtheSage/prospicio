@@ -1,0 +1,38 @@
+[package]
+name = "prospicio"
+description = "Actuarial and risk modeling: reserving, distributions, aggregate loss, reinsurance and pricing. Re-exports the prospicio-* crates."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+prospicio-core.workspace = true
+prospicio-math.workspace = true
+prospicio-prob.workspace = true
+prospicio-aggregate.workspace = true
+prospicio-pricing.workspace = true
+prospicio-reserving.workspace = true
+prospicio-models.workspace = true
+prospicio-glm.workspace = true
+prospicio-bayes = { workspace = true, optional = true }
+prospicio-nn = { workspace = true, optional = true }
+
+[features]
+# The default set is the WASM scope (docs/architecture.md) plus the GLM that
+# reserving fits on. Sampling and neural networks are opt-in: they pull in
+# nuts-rs and Burn, which Chain Ladder users should not compile.
+bayes = ["dep:prospicio-bayes"]
+nn = ["dep:prospicio-nn"]
+# PredictiveDistribution to and from Arrow IPC files.
+arrow = ["prospicio-prob/arrow"]
+full = ["bayes", "nn", "arrow"]
+
+[package.metadata.docs.rs]
+all-features = true

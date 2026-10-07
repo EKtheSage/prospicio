@@ -21,3 +21,6 @@ R/prospicio/docs/
 
 # Downloaded validation data (validation/scripts/fetch_fremtpl2.py)
 validation/data/external/
+
+# Release builds (maturin build --out dist)
+python/dist/
