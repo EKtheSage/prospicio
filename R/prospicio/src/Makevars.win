@@ -8,7 +8,7 @@ TARGET = x86_64-pc-windows-gnu
 LIBDIR = ../../../target/$(TARGET)/release
 STATLIB = $(LIBDIR)/libprospicio_r.a
 # System libraries the Rust standard library needs, from
-# `cargo rustc -p act-r --target x86_64-pc-windows-gnu -- --print native-static-libs`.
+# `cargo rustc -p prospicio-r --target x86_64-pc-windows-gnu -- --print native-static-libs`.
 # R itself (-lR) is added by R's own link command.
 PKG_LIBS = -L$(LIBDIR) -lprospicio_r -lkernel32 -lntdll -luserenv -lws2_32 -ldbghelp
 
@@ -20,4 +20,4 @@ $(SHLIB): $(STATLIB)
 $(STATLIB):
 	@rustup target list --installed | grep -q "^$(TARGET)" || \
 		{ echo "Rust target $(TARGET) missing: run 'rustup target add $(TARGET)'"; exit 1; }
-	cargo build --lib --release --target $(TARGET) --manifest-path=../../../crates/act-r/Cargo.toml
+	cargo build --lib --release --target $(TARGET) --manifest-path=../../../crates/prospicio-r/Cargo.toml

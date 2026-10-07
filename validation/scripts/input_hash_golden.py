@@ -1,4 +1,4 @@
-"""Reproduce the golden values in act-prob's provenance tests with an
+"""Reproduce the golden values in prospicio-prob's provenance tests with an
 independent BLAKE3 (the `blake3` Python package, not the Rust crate).
 
     pip install blake3

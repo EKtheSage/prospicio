@@ -9,10 +9,10 @@
 
 use std::collections::HashMap;
 
-use act_reserving::{
+use prospicio_reserving::{
     ClaimsDevelopmentResult, Development, Mack, MackFit, Period, SigmaInterpolation,
 };
-use act_validation::{Case, check, reference, triangle};
+use prospicio_validation::{Case, check, reference, triangle};
 
 /// Development estimator for a reference `method`: volume-weighted factors,
 /// with R's default or Mack's rule for the last sigma.

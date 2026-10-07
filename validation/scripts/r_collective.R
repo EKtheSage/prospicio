@@ -6,7 +6,7 @@
 #
 # The package (GPL) is used only to produce reference values; no code from
 # it is used in this repository (docs/design/pareto.md). Rows: the
-# collective model (act_aggregate::CollectiveModel) as the package's
+# collective model (prospicio_aggregate::CollectiveModel) as the package's
 # PPP_Model (piecewise Pareto severity) and PGP_Model (generalized Pareto),
 # with Panjer-class claim counts by dispersion: layer mean, layer variance
 # and excess frequency. Binomial cases use a whole number of trials

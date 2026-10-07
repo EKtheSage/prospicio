@@ -23,7 +23,7 @@ sources:
   ```bash
   export R_HOME="C:/Program Files/R/R-4.5.3" PATH="/c/Program Files/R/R-4.5.3/bin:$PATH" R_LIBS="<worktree>/target/rlib" PYTHONUTF8=1
   mkdir -p target/rlib
-  cargo clean -p extendr-ffi   # once, if act-r was ever built without R visible
+  cargo clean -p extendr-ffi   # once, if prospicio-r was ever built without R visible
   cargo xtask docs --check     # over 10 minutes; run it in the background
   ```
 

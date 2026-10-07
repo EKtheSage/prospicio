@@ -5,7 +5,7 @@
 
 MBBEFD exposure curves (Bernegger 1997) by integrating the survival
 function of the destruction rate at 30 digits, independently of the
-closed-form G in act_pricing::exposure:
+closed-form G in prospicio_pricing::exposure:
 
     G(x) = integral of (1 - F) over (0, x) / integral over (0, 1)
     mean = integral of (1 - F) over (0, 1)

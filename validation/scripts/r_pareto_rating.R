@@ -7,7 +7,7 @@
 # The package (GPL) is used only to produce reference values; no code from
 # it is used in this repository (docs/design/pareto.md). Rows: Pareto
 # extrapolation between layers and the alpha implied by two layers, a
-# frequency and a layer, or two frequencies (act_pricing::layer), with and
+# frequency and a layer, or two frequencies (prospicio_pricing::layer), with and
 # without truncation. The package's solvers run at tolerance 1e-14; its
 # alphas are compared at 1e-9, and at 1e-8 for alpha = 1, where the layer
 # integral is logarithmic and the package's solver returns about 1 ± 5e-9

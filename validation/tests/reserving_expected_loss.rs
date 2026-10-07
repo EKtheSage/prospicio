@@ -8,11 +8,11 @@
 
 use std::collections::HashMap;
 
-use act_reserving::{
+use prospicio_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, Development, ExpectedLoss,
     ExpectedLossFit, Period,
 };
-use act_validation::{Case, check, reference, triangle_columns};
+use prospicio_validation::{Case, check, reference, triangle_columns};
 
 /// A fitted reference case: the expected-loss fit and, for Cape Cod, the
 /// trended apriori.
@@ -37,7 +37,7 @@ fn fit(dataset: &str, case: &Case) -> Fitted {
     };
     let tri = triangle_columns(dataset, &["paid", "premium"]);
     let param = |name| case.param("method", name);
-    let fail = |e: act_reserving::Error| -> ! { panic!("{dataset} {method}: {e}") };
+    let fail = |e: prospicio_reserving::Error| -> ! { panic!("{dataset} {method}: {e}") };
     let (fit, trended_apriori) = match method.split(';').next().unwrap() {
         "expected_loss" => {
             let m = ExpectedLoss {

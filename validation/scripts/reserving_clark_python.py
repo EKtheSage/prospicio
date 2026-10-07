@@ -6,7 +6,7 @@ Uses chainladder-python's ClarkLDF. Run from the repository root:
 
 Triangles are read from validation/data/{genins,raa,genins_premium}.csv,
 ages in months. Only what chainladder-python defines as R ChainLadder and
-act_reserving do is recorded (knowledge/references/chainladder-python-clark.md):
+prospicio_reserving do is recorded (knowledge/references/chainladder-python-clark.md):
 
 * LDF method (`ClarkLDF().fit(paid)`, genins and raa): `omega_`, `theta_`,
   `scale_`, the link ratios `ldf_` (`arg` is the age in months they develop

@@ -9,7 +9,7 @@
 # thresholds, alphas and frequency of the piecewise Pareto model that
 # PiecewisePareto_Match_Layer_Losses fits to a tower, under the rule that
 # minimizes the ratio of the two alphas in each layer
-# (act_pricing::tower::SelectionRule::MinimizeAlphaRatio). The package
+# (prospicio_pricing::tower::SelectionRule::MinimizeAlphaRatio). The package
 # minimizes with a tolerance of about 1e-8 in the free thresholds, so rows
 # are compared at 1e-6. (Its rule without minimization is not the
 # paper's midpoint, so it is not a reference for SelectionRule::Midpoint.)
@@ -19,10 +19,10 @@
 # 1.2m and a frequency of 1 above 5m, the package's middle layer has
 # |ln(alpha_lower / alpha_upper)| = 0.0703 where 0.0645 is attainable (and
 # at that scale its model misses the middle layer's loss by 1.5e-5); that
-# tower is checked in act-pricing's unit tests instead. With every
+# tower is checked in prospicio-pricing's unit tests instead. With every
 # frequency derived, the lowest layer is matched by one Pareto piece; the
 # package merges it there (its alphas agree to its merge tolerance), as
-# act_pricing does exactly.
+# prospicio_pricing does exactly.
 
 library(Pareto)
 

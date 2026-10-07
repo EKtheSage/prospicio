@@ -7,8 +7,8 @@ status: stable
 generated: { by: claude-code/local-session, at: 2026-10-05T12:00:00Z }
 sources:
   - id: tail
-    resource: ../crates/act-reserving/src/tail.rs
-    title: act_reserving::tail, bondy_exponent
+    resource: ../crates/prospicio-reserving/src/tail.rs
+    title: prospicio_reserving::tail, bondy_exponent
   - id: py-script
     resource: ../validation/scripts/reserving_tails_python.py
     title: chainladder-python reference generator for tails
@@ -30,11 +30,11 @@ sources:
 
 # Resolution
 
-* `act_reserving` profiles out `c` (for a given `b` the best `c` is
+* `prospicio_reserving` profiles out `c` (for a given `b` the best `c` is
   `A / B`) and finds `b` exactly by a grid and bisection on the sign of
   the derivative.[^tail]
 * The generalized Bondy parity rows are checked to a relative 1e-4; the
   classic Bondy (b stays at 1/2) and every other tail to 1e-9.[^py-script]
 
-[^tail]: act_reserving::tail, bondy_exponent
+[^tail]: prospicio_reserving::tail, bondy_exponent
 [^py-script]: chainladder-python reference generator for tails

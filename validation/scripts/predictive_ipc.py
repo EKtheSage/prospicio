@@ -1,4 +1,4 @@
-"""Check act-prob's PredictiveDistribution Arrow IPC format (version 1)
+"""Check prospicio-prob's PredictiveDistribution Arrow IPC format (version 1)
 with an independent implementation (pyarrow, not the Rust arrow crates).
 
     pip install pyarrow
@@ -6,7 +6,7 @@ with an independent implementation (pyarrow, not the Rust arrow crates).
     python validation/scripts/predictive_ipc.py FILE.arrow  # check FILE
 
 Without arguments, writes validation/reference/predictive_distribution_v1.arrow
-from the format documented in crates/act-prob/src/ipc.rs. The Rust test
+from the format documented in crates/prospicio-prob/src/ipc.rs. The Rust test
 validation/tests/predictive.rs reads it back, so a v1 file written by
 another tool keeps loading. With a path, reads a file written by Rust and
 checks that it follows the same format.

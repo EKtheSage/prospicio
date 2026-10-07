@@ -19,14 +19,14 @@ GPL: reference values only, never translated. Scripts:
 
 # Where it departs from the paper
 
-* With the minimize rule it agrees with act-pricing to about 1e-8 on
+* With the minimize rule it agrees with prospicio-pricing to about 1e-8 on
   Riegel's Example 4.[^pareto-design]
 * Its rule without minimization is not the paper's midpoint, so it is no
   reference for `SelectionRule::Midpoint`.[^pareto-design]
 * On the tower 5m xs 5m, 15m xs 10m, ∞ xs 25m (losses 2.4m, 1.5m, 1.2m,
   f₁ = 1) its middle layer is not the minimum of the stated objective
   (spread 0.0703 where 0.0645 is attainable) and misses the layer's loss
-  by 1.5e-5. act-pricing tests that tower for reproduction, scale
+  by 1.5e-5. prospicio-pricing tests that tower for reproduction, scale
   invariance and local optimality instead.[^pareto-design]
 * `fit_references` fills gaps differently from the package (a default
   alpha there, an analytic-centre completion here), so the two are not

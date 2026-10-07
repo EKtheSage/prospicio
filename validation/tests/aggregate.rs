@@ -1,9 +1,9 @@
 //! Aggregate parity: compound distributions against brute-force
 //! convolution (numpy), which is independent of Panjer's recursion and FFT.
 
-use act_aggregate::{fft, panjer};
-use act_prob::{Counting, Grid, NegativeBinomial, Poisson};
-use act_validation::{check, reference};
+use prospicio_aggregate::{fft, panjer};
+use prospicio_prob::{Counting, Grid, NegativeBinomial, Poisson};
+use prospicio_validation::{check, reference};
 
 fn check_method(method: &str) {
     let cases = reference("compound_convolution.csv");
@@ -44,7 +44,7 @@ fn fft_matches_convolution() {
 }
 
 /// The fields of `params`, such as `model=ppp;FQ=2;t=1000|2000;...`.
-fn fields(c: &act_validation::Case) -> std::collections::HashMap<&str, &str> {
+fn fields(c: &prospicio_validation::Case) -> std::collections::HashMap<&str, &str> {
     c.get("params")
         .split(';')
         .filter_map(|kv| kv.split_once('='))
@@ -53,8 +53,8 @@ fn fields(c: &act_validation::Case) -> std::collections::HashMap<&str, &str> {
 
 #[test]
 fn collective_model_matches_r() {
-    use act_aggregate::CollectiveModel;
-    use act_prob::{PanjerClass, PiecewisePareto, Severity, evt::Gpd};
+    use prospicio_aggregate::CollectiveModel;
+    use prospicio_prob::{PanjerClass, PiecewisePareto, Severity, evt::Gpd};
     let cases = reference("collective_r.csv");
     check(&cases, |c| {
         let f = fields(c);
@@ -91,13 +91,13 @@ fn collective_model_matches_r() {
 /// correlation between the two risks, then measured and allocated.
 #[test]
 fn reserve_and_tower_feed_capital_end_to_end() {
-    use act_aggregate::{Layer, Tower, simulate_events};
-    use act_prob::capital::AllocationMethod;
-    use act_prob::portfolio::Pairing;
-    use act_prob::{
+    use prospicio_aggregate::{Layer, Tower, simulate_events};
+    use prospicio_prob::capital::AllocationMethod;
+    use prospicio_prob::portfolio::Pairing;
+    use prospicio_prob::{
         Distortion, Distribution, Empirical, KeyValue, Lognormal, PredictiveDistribution,
     };
-    use act_reserving::{DevelopmentColumn, Grain, Long, Month, OdpBootstrap, Triangle};
+    use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, OdpBootstrap, Triangle};
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/raa.csv");
     let text = std::fs::read_to_string(path).unwrap();
@@ -145,7 +145,7 @@ fn reserve_and_tower_feed_capital_end_to_end() {
 
     // Premium risk for next year, net of a 2,000 xs 1,000 per-risk layer.
     let events = simulate_events(
-        &act_prob::Poisson::new(8.0).unwrap(),
+        &prospicio_prob::Poisson::new(8.0).unwrap(),
         &Lognormal::from_mean_cv(800.0, 1.5).unwrap(),
         n,
         12,

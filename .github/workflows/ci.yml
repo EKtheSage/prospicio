@@ -35,7 +35,7 @@ jobs:
       - run: cargo test
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
-      - run: cargo check --target wasm32-unknown-unknown -p act-core -p act-math -p act-prob -p act-aggregate -p act-pricing -p act-reserving
+      - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving
 
   python:
     if: github.event_name != 'push'
@@ -51,7 +51,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - uses: astral-sh/setup-uv@v6
-      - run: cargo clippy -p act-python -- -D warnings
+      - run: cargo clippy -p prospicio-python -- -D warnings
       - run: uv sync
         working-directory: python
       - run: uv run pytest tests
@@ -79,7 +79,7 @@ jobs:
         with:
           # Binary packages: lightgbm and xgboost take minutes to compile.
           use-public-rspm: true
-      - run: cargo clippy -p act-r -- -D warnings
+      - run: cargo clippy -p prospicio-r -- -D warnings
       # lightgbm and xgboost are optional engines for booster_fit(). The
       # boosting tests skip a missing engine and install.packages() only
       # warns on failure, so check that each one loads.
@@ -112,7 +112,7 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/act-python/|crates/act-r/|python/|R/|xtask/|\.github/workflows/ci\.yml)'; then
+              | grep -qE '^(crates/prospicio-python/|crates/prospicio-r/|python/|R/|xtask/|\.github/workflows/ci\.yml)'; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
@@ -162,7 +162,7 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/act-glm/|crates/act-models/|crates/act-math/|validation/(tests|scripts|reference)/.*fremtpl2|\.github/workflows/ci\.yml)'; then
+              | grep -qE '^(crates/prospicio-glm/|crates/prospicio-models/|crates/prospicio-math/|validation/(tests|scripts|reference)/.*fremtpl2|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -183,6 +183,6 @@ jobs:
         name: Fetch freMTPL2freq
         run: test -f validation/data/external/freMTPL2freq_glm.csv || python3 validation/scripts/fetch_fremtpl2.py
       - if: steps.changes.outputs.run == 'true'
-        run: cargo test --release -p act-validation --test fremtpl2
+        run: cargo test --release -p prospicio-validation --test fremtpl2
         env:
           RISK_RS_REQUIRE_FREMTPL2: "1"

@@ -6,7 +6,7 @@ parser: numpy
 # Static analysis reads prospicio_native.pyi, which maturin generates from
 # the Rust doc comments (`--generate-stubs`); nothing is imported.
 dynamic: false
-repo: https://github.com/EKtheSage/risk-rs
+repo: https://github.com/EKtheSage/prospicio
 pypi: false
 changelog:
   enabled: false

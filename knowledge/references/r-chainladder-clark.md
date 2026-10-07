@@ -1,7 +1,7 @@
 ---
 type: Reference Implementation
 title: R ChainLadder ClarkLDF and ClarkCapeCod
-description: R ChainLadder 0.2.21's Clark growth-curve methods, the reference for act_reserving's ClarkLdf and ClarkCapeCod; their age, scale and reporting definitions, a loose optimizer stop, a silent cap of 10 on the Cape Cod ELR, and a wrong Weibull second derivative.
+description: R ChainLadder 0.2.21's Clark growth-curve methods, the reference for prospicio_reserving's ClarkLdf and ClarkCapeCod; their age, scale and reporting definitions, a loose optimizer stop, a silent cap of 10 on the Cape Cod ELR, and a wrong Weibull second derivative.
 resource: https://cran.r-project.org/package=ChainLadder
 tags: [reserving, clark, growth-curve, maximum-likelihood, parity, r]
 status: stable
@@ -14,8 +14,8 @@ sources:
     resource: ../validation/scripts/reserving_clark_r.R
     title: Clark R reference generator
   - id: clark
-    resource: ../crates/act-reserving/src/clark.rs
-    title: act_reserving::clark
+    resource: ../crates/prospicio-reserving/src/clark.rs
+    title: prospicio_reserving::clark
 ---
 
 # Facts
@@ -53,13 +53,13 @@ Read from `print(ChainLadder:::ClarkLDF)`, `ClarkCapeCod`, `LL.ODP`,
   `SIGMA2 * U * (G(maxage) - G(age))` with the *unshifted* `maxage`
   (`R.LDF(theta, G, CurrentAge.to, maxage, ...)`), while its reserve and
   parameter risk use `maxage.used`. With `maxage = Inf` the two agree.
-  ClarkCapeCod uses `maxage.used` throughout. act_reserving reproduces
+  ClarkCapeCod uses `maxage.used` throughout. prospicio_reserving reproduces
   both for parity.[^clark][^reserving-v02]
 * **Optimizer stop.** `optim(..., method = "L-BFGS-B", control =
   list(factr = .Machine$double.eps^-0.5))` stops at a relative
   log-likelihood change of 1.5e-8. On GenIns and RAA that leaves the
   parameters, reserves and standard errors up to 4e-3 (relative) short of
-  the maximum; the same code with `factr = 1` agrees with act_reserving's
+  the maximum; the same code with `factr = 1` agrees with prospicio_reserving's
   Nelder–Mead maximum to 2e-6.[^generator]
 * **Weibull second derivative.** The Weibull `d2Gdt2` gives
   `d2G/domega2 = 2 v log(x/theta) (1 - u)`; the derivative of its own
@@ -68,7 +68,7 @@ Read from `print(ChainLadder:::ClarkLDF)`, `ClarkCapeCod`, `LL.ODP`,
   differences). The other entries and the whole log-logistic Hessian are
   right. The error enters only the Fisher information, so Weibull
   parameter and total standard errors are off: by up to 7.3% on the
-  reference triangles. act_reserving uses the correct derivative, and the
+  reference triangles. prospicio_reserving uses the correct derivative, and the
   Weibull standard-error references come from R with that one entry
   replaced.[^generator]
 * **Bounds.** L-BFGS-B bounds the Weibull at `omega <= 2` and
@@ -81,11 +81,11 @@ Read from `print(ChainLadder:::ClarkLDF)`, `ClarkCapeCod`, `LL.ODP`,
   with `Premium = 1000` R stops at ELR 10, `omega = 1.7617`,
   `theta = 22.510` and a reserve of 27,419, where the maximum (R's own fit
   with `Premium = 4000`, scaled) is ELR 27.609, `omega = 1.3755`,
-  `theta = 36.125` and a reserve of 115,105. act_reserving's search on
+  `theta = 36.125` and a reserve of 115,105. prospicio_reserving's search on
   `(ln omega, ln theta)` with the ELR profiled out is unbounded and returns
   the maximum, a deliberate difference from R. No reference triangle
   reaches a bound.[^clark]
 
 [^reserving-v02]: Design note, reserving v0.2 (decision 5)
 [^generator]: Clark R reference generator
-[^clark]: act_reserving::clark
+[^clark]: prospicio_reserving::clark

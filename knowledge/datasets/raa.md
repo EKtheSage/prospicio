@@ -15,7 +15,7 @@ sources:
     resource: ../validation/tests/models.rs
     title: over_dispersed_poisson_fits_raa_with_its_negative_increment, mean_preserving_draws_centre_the_odp_reserve_on_the_chain_ladder
   - id: issue
-    resource: https://github.com/EKtheSage/risk-rs/issues/111
+    resource: https://github.com/EKtheSage/prospicio/issues/111
     title: Issue 111, four gaps found while building reserving
 ---
 
@@ -28,7 +28,7 @@ sources:
 
 # Consequences
 
-* R's `quasipoisson` and, before #114, `act_glm` refused the ODP GLM on
+* R's `quasipoisson` and, before #114, `prospicio_glm` refused the ODP GLM on
   RAA. A quasi-likelihood ODP needs only `V(μ) = μ` and `μ > 0`, so
   `Glm::over_dispersed_poisson()` now accepts negative responses and
   reproduces the Chain Ladder reserve to 1e-6.[^tests] See

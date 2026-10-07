@@ -1,11 +1,11 @@
 //! Pricing parity: Pareto layer rating and implied alphas against the R
 //! package Pareto (reference values only; see `docs/design/pareto.md`).
 
-use act_pricing::layer::{
+use prospicio_pricing::layer::{
     XsLayer, alpha_between_frequencies, alpha_between_frequency_and_layer, alpha_between_layers,
     pareto_extrapolation,
 };
-use act_validation::{check, reference};
+use prospicio_validation::{check, reference};
 
 #[test]
 fn pareto_rating_matches_r() {
@@ -61,7 +61,7 @@ fn pareto_rating_matches_r() {
 
 #[test]
 fn tower_matching_matches_r() {
-    use act_pricing::tower::{SelectionRule, match_tower};
+    use prospicio_pricing::tower::{SelectionRule, match_tower};
     let cases = reference("tower_matching_r.csv");
     check(&cases, |c| {
         let fields: std::collections::HashMap<&str, &str> = c
@@ -100,7 +100,7 @@ fn tower_matching_matches_r() {
 
 #[test]
 fn pml_curve_fit_matches_r() {
-    use act_pricing::tower::fit_pml_curve;
+    use prospicio_pricing::tower::fit_pml_curve;
     let cases = reference("pml_curve_r.csv");
     check(&cases, |c| {
         let fields: std::collections::HashMap<&str, &str> = c
@@ -131,9 +131,9 @@ fn pml_curve_fit_matches_r() {
 
 #[test]
 fn simulated_layers_are_priced_and_allocated() {
-    use act_aggregate::{CollectiveModel, Layer, Tower, simulate_events};
-    use act_pricing::risk_load::{PremiumRule, price_portfolio};
-    use act_prob::{Distortion, KeyValue, Lognormal, Poisson, PredictiveDistribution};
+    use prospicio_aggregate::{CollectiveModel, Layer, Tower, simulate_events};
+    use prospicio_pricing::risk_load::{PremiumRule, price_portfolio};
+    use prospicio_prob::{Distortion, KeyValue, Lognormal, Poisson, PredictiveDistribution};
 
     // A per-risk programme of two XOL layers on 10,000 simulated years.
     let n = 10_000;
@@ -199,7 +199,7 @@ fn simulated_layers_are_priced_and_allocated() {
 
 #[test]
 fn mbbefd_exposure_curves_match_mpmath() {
-    use act_pricing::exposure::{ExposureCurve, Mbbefd};
+    use prospicio_pricing::exposure::{ExposureCurve, Mbbefd};
     let cases = reference("mbbefd_mpmath.csv");
     check(&cases, |c| {
         let curve = c.get("curve");

@@ -7,7 +7,7 @@
 # The package (GPL) is used only to produce reference values; no code from
 # it is used in this repository (docs/design/pareto.md). Rows: the
 # frequency, thresholds and alphas of the model through a PML curve
-# (act_pricing::tower::fit_pml_curve), all closed forms.
+# (prospicio_pricing::tower::fit_pml_curve), all closed forms.
 
 library(Pareto)
 

@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Property exposure curves beyond MBBEFD
-description: The exposure curves used in property per-risk rating (first-loss scales, PSOLD, Lloyd's and reinsurer curves), which of them act_pricing::exposure covers and how.
+description: The exposure curves used in property per-risk rating (first-loss scales, PSOLD, Lloyd's and reinsurer curves), which of them prospicio_pricing::exposure covers and how.
 resource: https://pep.vse.cz/doi/10.18267/j.pep.683.pdf
 tags: [pricing, exposure-rating, property, reinsurance, mbbefd]
 status: stable
@@ -18,11 +18,11 @@ sources:
     resource: https://www.verisk.com/siteassets/media/downloads/demystifying-the-origins-and-applications-of-original-loss-curves-.pdf
     title: Verisk, Demystifying the origins and applications of original loss curves
   - id: code
-    resource: ../crates/act-pricing/src/exposure.rs
-    title: act_pricing::exposure
+    resource: ../crates/prospicio-pricing/src/exposure.rs
+    title: prospicio_pricing::exposure
   - id: profile
-    resource: ../crates/act-pricing/src/profile.rs
-    title: act_pricing::profile (tests)
+    resource: ../crates/prospicio-pricing/src/profile.rs
+    title: prospicio_pricing::profile (tests)
 ---
 
 # The curves in use
@@ -39,7 +39,7 @@ sources:
 * **Riebesell** is a liability increased-limits scale; it is the
   collective model with Pareto claim sizes.[^verisk]
 
-# How act_pricing::exposure covers them
+# How prospicio_pricing::exposure covers them
 
 * MBBEFD with Bernegger's `c` family covers the Swiss Re Y1–Y4 and
   Lloyd's curves.
@@ -69,5 +69,5 @@ sources:
 [^pep]: Exposure modelling in property reinsurance
 [^cas]: CAS Reinsurance Seminar 2014 handout
 [^verisk]: Verisk, original loss curves
-[^code]: act_pricing::exposure
-[^profile]: act_pricing::profile (tests)
+[^code]: prospicio_pricing::exposure
+[^profile]: prospicio_pricing::profile (tests)

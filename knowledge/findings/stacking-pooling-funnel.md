@@ -8,8 +8,8 @@ generated: { by: claude-code/cloud-session, at: 2026-10-05T22:05:00Z }
 verified: { by: process:ci, at: 2026-10-05T09:42:58Z }
 sources:
   - id: stacking
-    resource: ../crates/act-bayes/src/stacking.rs
-    title: act_bayes::stacking tests
+    resource: ../crates/prospicio-bayes/src/stacking.rs
+    title: prospicio_bayes::stacking tests
   - id: bayesblend
     resource: /references/bayesblend.md
     title: BayesBlend
@@ -32,5 +32,5 @@ sources:
 Pool only over three or more covariates, raise `target_accept`, and read
 the divergences that `StackingFit` reports.
 
-[^stacking]: act_bayes::stacking tests
+[^stacking]: prospicio_bayes::stacking tests
 [^bayesblend]: BayesBlend

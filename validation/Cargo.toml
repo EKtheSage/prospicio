@@ -1,5 +1,5 @@
 [package]
-name = "act-validation"
+name = "prospicio-validation"
 description = "Parity harness: reference datasets and results from reference implementations."
 version.workspace = true
 edition.workspace = true
@@ -9,14 +9,14 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-act-reserving.workspace = true
+prospicio-reserving.workspace = true
 
 [dev-dependencies]
-act-aggregate.workspace = true
-act-bayes.workspace = true
-act-core.workspace = true
-act-glm.workspace = true
-act-math.workspace = true
-act-models.workspace = true
-act-pricing.workspace = true
-act-prob = { workspace = true, features = ["arrow"] }
+prospicio-aggregate.workspace = true
+prospicio-bayes.workspace = true
+prospicio-core.workspace = true
+prospicio-glm.workspace = true
+prospicio-math.workspace = true
+prospicio-models.workspace = true
+prospicio-pricing.workspace = true
+prospicio-prob = { workspace = true, features = ["arrow"] }
