@@ -16,11 +16,14 @@
 //!    `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every observed link,
 //!    and re-estimates each factor as their weighted average
 //!    `f*_k = sum(C_k^alpha F*) / sum(C_k^alpha)` (parameter error);
-//! 2. draws the next cumulative value of every origin short of the last age
-//!    from its observed latest value `C`, with mean `f*_k C` and variance
-//!    `sigma_k^2 C^(2 - alpha)` ([`MackProcess`]). Mack's model is
-//!    conditional on the latest diagonal, so unlike the ODP it projects from
-//!    the observed value, not a pseudo one.
+//! 2. draws every cumulative value of the coming year in development order
+//!    (the cells of [`crate::one_year_bootstrap`]), each from the one
+//!    before it `C`, the observed latest value for the first, with mean
+//!    `f*_k C` and variance `sigma_k^2 |C|^(2 - alpha)` ([`MackProcess`]),
+//!    and the same pseudo factors all year. Mack's model is conditional on
+//!    the latest diagonal, so unlike the ODP it projects from the observed
+//!    value, not a pseudo one, and is Markov: a later cell of the year
+//!    develops from the drawn value of the cell before.
 //!
 //! The re-reserving that follows is the ODP's
 //! ([`crate::one_year_bootstrap`]). The sigmas are the observed triangle's,
@@ -44,7 +47,9 @@ use crate::chain_ladder::ChainLadderFit;
 use crate::development::Development;
 use crate::error::{Error, Result};
 use crate::mack::{Mack, MackFit};
-use crate::one_year_bootstrap::{NextDiagonal, OneYearFit, OneYearFits, OneYearMethod, Sims};
+use crate::one_year_bootstrap::{
+    NextYear, OneYearFit, OneYearFits, OneYearMethod, Sims, YearCells,
+};
 use crate::segments::ReserveFit;
 use crate::triangle::{Segment, Triangle};
 
@@ -237,13 +242,14 @@ fn power(x: f64, e: f64) -> f64 {
     }
 }
 
-impl NextDiagonal for MackBootstrapSegment {
+impl NextYear for MackBootstrapSegment {
     type Draw = MackDraw;
 
-    fn next_cells(
+    fn year_cells(
         &self,
         draw: &MackDraw,
-        segment: &Segment,
+        _segment: &Segment,
+        year: &[YearCells],
         rng: &mut StreamRng,
     ) -> Vec<(usize, usize, f64)> {
         let cl = &self.mack.chain_ladder;
@@ -266,27 +272,32 @@ impl NextDiagonal for MackBootstrapSegment {
             factors.push(if den == 0.0 { f[k] } else { num / den });
         }
 
-        let nd = segment.n_dev;
-        cl.latest_position
-            .iter()
-            .zip(&cl.latest)
-            .enumerate()
-            .filter(|&(_, (&d, _))| d + 1 < nd)
-            .map(|(o, (&d, &c))| {
-                let (mean, variance) = (factors[d] * c, sigma[d].powi(2) * power(c, 2.0 - alpha));
-                (o, d + 1, draw.process.draw(mean, variance, &draw.pool, rng))
-            })
-            .collect()
+        // Each cell from the one before, drawn or observed, with the same
+        // pseudo factors all year.
+        let mut cells = Vec::new();
+        for y in year {
+            let mut c = cl.latest[y.origin];
+            for d in y.latest..y.last {
+                let variance = sigma[d].powi(2) * power(c.abs(), 2.0 - alpha);
+                c = draw.process.draw(factors[d] * c, variance, &draw.pool, rng);
+                if d + 1 >= y.first {
+                    cells.push((y.origin, d + 1, c));
+                }
+            }
+        }
+        cells
     }
 }
 
 impl MackBootstrap {
     /// The one-year view of `column` of a single-segment cumulative
-    /// triangle: the claims development result of `method` over the next
-    /// development period, by re-reserving on Mack's bootstrap; see the
-    /// [module documentation](crate::mack_bootstrap). Every origin must be
-    /// observed from the first age to its latest, with no negative value,
-    /// and Mack's model must fit ([`Mack::fit`]).
+    /// triangle: the claims development result of `method` over the twelve
+    /// months after the valuation, at any development grain, by
+    /// re-reserving on Mack's bootstrap; see the [module
+    /// documentation](crate::mack_bootstrap). Every origin must be observed
+    /// from the first age to its latest (it may stop short of the latest
+    /// diagonal), with no negative value, and Mack's model must fit
+    /// ([`Mack::fit`]).
     pub fn one_year(
         &self,
         triangle: &Triangle,
