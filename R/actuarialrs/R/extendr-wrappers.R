@@ -1142,6 +1142,8 @@ Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Tr
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process)
 
+Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation) .Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation)
+
 Triangle$clark_ldf <- function(column, curve, max_age) .Call(wrap__Triangle__clark_ldf, self, column, curve, max_age)
 
 Triangle$clark_cape_cod <- function(column, exposure, curve, max_age) .Call(wrap__Triangle__clark_cape_cod, self, column, exposure, curve, max_age)
@@ -1365,7 +1367,11 @@ OdpBootstrapFit$segment <- function(keys, values) .Call(wrap__OdpBootstrapFit__s
 
 OneYearFit <- new.env(parent = emptyenv())
 
+OneYearFit$model <- function() .Call(wrap__OneYearFit__model, self)
+
 OneYearFit$chain_ladder <- function() .Call(wrap__OneYearFit__chain_ladder, self)
+
+OneYearFit$mack <- function() .Call(wrap__OneYearFit__mack, self)
 
 OneYearFit$opening_ultimate <- function() .Call(wrap__OneYearFit__opening_ultimate, self)
 

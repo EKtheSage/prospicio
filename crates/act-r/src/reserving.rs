@@ -1,6 +1,6 @@
 //! Reserving lane: wrappers over `act_reserving` (the Triangle, chain
 //! ladder, Mack with its one-year view, tails, the expected-loss methods,
-//! Clark's growth curves, and the ODP bootstrap with its simulated one-year
+//! Clark's growth curves, and the ODP and Mack bootstraps with their simulated one-year
 //! view, `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the
 //! R `reserving.R` API.
 //!
@@ -13,9 +13,10 @@ use act_reserving::{
     ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
     ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
     ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
-    Long, Mack, MackFit as MackInner, Month, OdpBootstrap, OdpBootstrapFits, OneYearFits,
-    OneYearMethod, ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail,
-    TailBondy, TailConstant, TailCurve, Triangle as TriangleInner,
+    Long, Mack, MackBootstrap, MackBootstrapSegment, MackFit as MackInner, MackProcess, Month,
+    OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, ProcessDistribution, ReserveFit,
+    SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
+    Triangle as TriangleInner,
 };
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
@@ -70,6 +71,80 @@ fn pattern(average: &str, sigma_interpolation: &str, tail: Robj) -> Result<Chain
     Ok(ChainLadder {
         development: development(average, sigma_interpolation)?,
         tail: tail_arg(&tail)?,
+    })
+}
+
+/// The method of `odp_one_year()` and `mack_one_year()`, by name, with
+/// the settings it reads and `chain_ladder` its development pattern.
+fn one_year_method(
+    method: &str,
+    exposure: Nullable<String>,
+    apriori: f64,
+    n_iters: f64,
+    trend: f64,
+    decay: f64,
+    chain_ladder: ChainLadder,
+) -> Result<OneYearMethod> {
+    let exposure = match exposure {
+        Nullable::NotNull(e) => Some(e),
+        Nullable::Null => None,
+    };
+    let needs = |e: Option<String>| {
+        e.ok_or_else(|| {
+            Error::Other(format!(
+                "method \"{method}\" needs an exposure column: pass exposure = ..."
+            ))
+        })
+    };
+    Ok(match method {
+        "chain_ladder" => {
+            if exposure.is_some() {
+                return Err(Error::Other(
+                    "method \"chain_ladder\" takes no exposure column".into(),
+                ));
+            }
+            OneYearMethod::ChainLadder(chain_ladder)
+        }
+        "expected_loss" => OneYearMethod::ExpectedLoss(
+            ExpectedLoss {
+                apriori,
+                chain_ladder,
+            },
+            needs(exposure)?,
+        ),
+        "bornhuetter_ferguson" => OneYearMethod::BornhuetterFerguson(
+            BornhuetterFerguson {
+                apriori,
+                chain_ladder,
+            },
+            needs(exposure)?,
+        ),
+        "benktander" => {
+            let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
+                .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
+            OneYearMethod::Benktander(
+                Benktander {
+                    apriori,
+                    n_iters,
+                    chain_ladder,
+                },
+                needs(exposure)?,
+            )
+        }
+        "cape_cod" => OneYearMethod::CapeCod(
+            CapeCod {
+                trend,
+                decay,
+                chain_ladder,
+            },
+            needs(exposure)?,
+        ),
+        _ => {
+            return Err(Error::Other(format!(
+                "method must be \"chain_ladder\", \"expected_loss\", \
+                 \"bornhuetter_ferguson\", \"benktander\" or \"cape_cod\", got \"{method}\""
+            )));
+        }
     })
 }
 
@@ -677,72 +752,83 @@ impl Triangle {
         seed: f64,
         process: &str,
     ) -> Result<OneYearFit> {
-        let chain_ladder = pattern(average, sigma_interpolation, tail)?;
-        let exposure = match exposure {
-            Nullable::NotNull(e) => Some(e),
-            Nullable::Null => None,
-        };
-        let needs = |e: Option<String>| {
-            e.ok_or_else(|| {
-                Error::Other(format!(
-                    "method \"{method}\" needs an exposure column: pass exposure = ..."
-                ))
-            })
-        };
-        let method = match method {
-            "chain_ladder" => {
-                if exposure.is_some() {
-                    return Err(Error::Other(
-                        "method \"chain_ladder\" takes no exposure column".into(),
-                    ));
-                }
-                OneYearMethod::ChainLadder(chain_ladder)
-            }
-            "expected_loss" => OneYearMethod::ExpectedLoss(
-                ExpectedLoss {
-                    apriori,
-                    chain_ladder,
-                },
-                needs(exposure)?,
-            ),
-            "bornhuetter_ferguson" => OneYearMethod::BornhuetterFerguson(
-                BornhuetterFerguson {
-                    apriori,
-                    chain_ladder,
-                },
-                needs(exposure)?,
-            ),
-            "benktander" => {
-                let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
-                    .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
-                OneYearMethod::Benktander(
-                    Benktander {
-                        apriori,
-                        n_iters,
-                        chain_ladder,
-                    },
-                    needs(exposure)?,
-                )
-            }
-            "cape_cod" => OneYearMethod::CapeCod(
-                CapeCod {
-                    trend,
-                    decay,
-                    chain_ladder,
-                },
-                needs(exposure)?,
-            ),
-            _ => {
-                return Err(Error::Other(format!(
-                    "method must be \"chain_ladder\", \"expected_loss\", \
-                     \"bornhuetter_ferguson\", \"benktander\" or \"cape_cod\", got \"{method}\""
-                )));
-            }
-        };
+        let method = one_year_method(
+            method,
+            exposure,
+            apriori,
+            n_iters,
+            trend,
+            decay,
+            pattern(average, sigma_interpolation, tail)?,
+        )?;
         let inner = bootstrap(n_sims, seed, process)?
             .one_year_segments(&self.inner, column, &method)
             .map_err(to_r)?;
-        Ok(OneYearFit { inner })
+        Ok(OneYearFit {
+            inner: OneYear::Odp(inner),
+        })
+    }
+
+    /// The one-year view of `method`, as `odp_one_year`, under Mack's
+    /// process: Mack's bootstrap with `process` ("gamma", "lognormal",
+    /// "residuals", "normal" or "none") and Mack's model averaged as
+    /// `mack_average` with `mack_sigma_interpolation`.
+    #[allow(clippy::too_many_arguments)]
+    fn mack_one_year(
+        &self,
+        column: &str,
+        method: &str,
+        exposure: Nullable<String>,
+        apriori: f64,
+        n_iters: f64,
+        trend: f64,
+        decay: f64,
+        average: &str,
+        sigma_interpolation: &str,
+        tail: Robj,
+        n_sims: f64,
+        seed: f64,
+        process: &str,
+        mack_average: &str,
+        mack_sigma_interpolation: &str,
+    ) -> Result<OneYearFit> {
+        let method = one_year_method(
+            method,
+            exposure,
+            apriori,
+            n_iters,
+            trend,
+            decay,
+            pattern(average, sigma_interpolation, tail)?,
+        )?;
+        let n_sims = whole(n_sims, "n_sims")? as usize;
+        if n_sims == 0 {
+            return Err(Error::Other("n_sims must be positive".into()));
+        }
+        let process = match process {
+            "gamma" => MackProcess::Gamma,
+            "lognormal" => MackProcess::Lognormal,
+            "residuals" => MackProcess::Residuals,
+            "normal" => MackProcess::Normal,
+            "none" => MackProcess::None,
+            _ => {
+                return Err(Error::Other(format!(
+                    "process must be \"gamma\", \"lognormal\", \"residuals\", \"normal\" or \
+                     \"none\", got \"{process}\""
+                )));
+            }
+        };
+        let inner = MackBootstrap {
+            n_sims,
+            seed: whole(seed, "seed")?,
+            process,
+            development: development(mack_average, mack_sigma_interpolation)?,
+        }
+        .one_year_segments(&self.inner, column, &method)
+        .map_err(to_r)?;
+        Ok(OneYearFit {
+            inner: OneYear::Mack(inner),
+        })
     }
 
     /// Clark's LDF method; `max_age` is `Inf` to develop to infinity.
@@ -1387,60 +1473,104 @@ impl OdpBootstrapFit {
 
 /// The simulated one-year view of every segment of a triangle column:
 /// each segment's bootstrap and opening ultimate, and the joint claims
-/// development result.
+/// development result, from the ODP bootstrap or Mack's.
 #[extendr]
 pub(crate) struct OneYearFit {
-    inner: OneYearFits,
+    inner: OneYear,
+}
+
+/// A one-year view from either bootstrap.
+enum OneYear {
+    Odp(OneYearFits),
+    Mack(OneYearFits<MackBootstrapSegment>),
+}
+
+/// `$body` on whichever one-year view `$fit` holds, bound to `$f`.
+macro_rules! each_one_year {
+    ($fit:expr, $f:ident => $body:expr) => {
+        match $fit {
+            OneYear::Odp($f) => $body,
+            OneYear::Mack($f) => $body,
+        }
+    };
 }
 
 #[extendr]
 impl OneYearFit {
-    /// The bootstrap's volume-weighted chain ladder.
+    /// "odp" or "mack".
+    fn model(&self) -> &'static str {
+        match self.inner {
+            OneYear::Odp(_) => "odp",
+            OneYear::Mack(_) => "mack",
+        }
+    }
+
+    /// The bootstrap's chain ladder: volume-weighted for the ODP, Mack's
+    /// averaging for Mack's.
     fn chain_ladder(&self) -> ChainLadderFit {
         ChainLadderFit {
-            inner: self
-                .inner
+            inner: each_one_year!(&self.inner, f => f
                 .segments
-                .map(|s| s.bootstrap.chain_ladder.clone()),
+                .map(|s| s.bootstrap.chain_ladder().clone())),
+        }
+    }
+
+    /// Mack's model behind `mack_one_year()`.
+    fn mack(&self) -> Result<MackFit> {
+        match &self.inner {
+            OneYear::Mack(f) => Ok(MackFit {
+                inner: f.segments.map(|s| s.bootstrap.mack.clone()),
+            }),
+            OneYear::Odp(_) => Err(Error::Other(
+                "mack is Mack's bootstrap's model; this one-year view is the ODP's".into(),
+            )),
         }
     }
 
     fn opening_ultimate(&self) -> Vec<f64> {
-        by_origin(&self.inner.segments, |s| s.opening_ultimate.clone())
+        each_one_year!(&self.inner, f => by_origin(&f.segments, |s| s.opening_ultimate.clone()))
     }
 
     fn opening_reserve(&self) -> Vec<f64> {
-        by_origin(&self.inner.segments, |s| s.opening_reserve.clone())
+        each_one_year!(&self.inner, f => by_origin(&f.segments, |s| s.opening_reserve.clone()))
     }
 
     fn scale(&self) -> Result<f64> {
-        Ok(single(&self.inner.segments, "scale", "totals_frame()")?
-            .bootstrap
-            .scale)
+        match &self.inner {
+            OneYear::Odp(f) => Ok(single(&f.segments, "scale", "totals_frame()")?
+                .bootstrap
+                .scale),
+            OneYear::Mack(_) => Err(Error::Other(
+                "scale is the ODP bootstrap's; this one-year view is Mack's".into(),
+            )),
+        }
     }
 
     fn cdr(&self) -> PredictiveDistribution {
         PredictiveDistribution {
-            inner: self.inner.cdr.clone(),
+            inner: each_one_year!(&self.inner, f => f.cdr.clone()),
         }
     }
 
     fn long_table(&self) -> List {
-        fit_table(self.inner.to_long())
+        fit_table(each_one_year!(&self.inner, f => f.to_long()))
     }
 
     fn totals_table(&self) -> List {
-        fit_table(self.inner.totals())
+        fit_table(each_one_year!(&self.inner, f => f.totals()))
     }
 
     fn development_table(&self) -> List {
-        fit_table(self.inner.segments.development_table())
+        fit_table(each_one_year!(&self.inner, f => f.segments.development_table()))
     }
 
     fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
-        Ok(Self {
-            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
-        })
+        let keys = choice(&keys, &values)?;
+        let inner = match &self.inner {
+            OneYear::Odp(f) => OneYear::Odp(f.segment(&keys).map_err(to_r)?),
+            OneYear::Mack(f) => OneYear::Mack(f.segment(&keys).map_err(to_r)?),
+        };
+        Ok(Self { inner })
     }
 }
 
