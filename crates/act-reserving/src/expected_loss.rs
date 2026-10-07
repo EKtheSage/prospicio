@@ -400,7 +400,7 @@ impl ExpectedLoss {
             .fit_segments(triangle, column, exposure)
     }
 
-    fn as_benktander(&self) -> Benktander {
+    pub(crate) fn as_benktander(&self) -> Benktander {
         Benktander {
             apriori: self.apriori,
             n_iters: 0,
@@ -434,7 +434,7 @@ impl BornhuetterFerguson {
             .fit_segments(triangle, column, exposure)
     }
 
-    fn as_benktander(&self) -> Benktander {
+    pub(crate) fn as_benktander(&self) -> Benktander {
         Benktander {
             apriori: self.apriori,
             n_iters: 1,
@@ -470,7 +470,7 @@ impl Benktander {
         })
     }
 
-    fn fit_segment(
+    pub(crate) fn fit_segment(
         &self,
         segment: &Segment,
         exposure: &Segment,
@@ -515,7 +515,7 @@ impl CapeCod {
         })
     }
 
-    fn fit_segment(
+    pub(crate) fn fit_segment(
         &self,
         segment: &Segment,
         exposure: &Segment,

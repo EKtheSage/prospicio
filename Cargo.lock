@@ -138,6 +138,7 @@ dependencies = [
  "act-math",
  "act-models",
  "act-prob",
+ "rayon",
 ]
 
 [[package]]

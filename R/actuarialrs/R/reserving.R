@@ -1312,7 +1312,8 @@ cape_cod <- function(triangle, column, exposure, trend = 0, decay = 1, average =
 #' @param fit A single-segment [mack_fit] with volume-weighted factors.
 #' @param ptr A `ClaimsDevelopmentResult` pointer; used internally.
 #' @returns A `claims_development_result` object.
-#' @seealso [mack()].
+#' @seealso [mack()]; [odp_one_year()] simulates the one-year view of any
+#'   averaging, tail or expected-loss method.
 #' @export
 #' @examples
 #' long <- data.frame(year = rep(2018:2021, 4:1),
@@ -1420,7 +1421,8 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #'   `process.distr = "gamma"`) or `"none"` for parameter error only.
 #' @param ptr An `OdpBootstrapFit` pointer; used internally.
 #' @returns An `odp_bootstrap_fit` object.
-#' @seealso [chain_ladder()], [mack()].
+#' @seealso [chain_ladder()], [mack()]; [odp_one_year()] for the one-year
+#'   view on the same bootstrap.
 #' @export
 #' @examples
 #' long <- data.frame(year = rep(2018:2021, 4:1),
@@ -1476,14 +1478,177 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                           process = c("gamma", "none")) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
-  for (arg in c("n_sims", "seed")) {
-    value <- get(arg)
-    if (!is.numeric(value) || length(value) != 1 || is.na(value)) {
-      stop(sprintf("%s must be a single number", arg), call. = FALSE)
+  ptr <- rust_result(triangle@ptr$odp_bootstrap(column, single_number(n_sims, "n_sims"),
+                                                single_number(seed, "seed"), process))
+  odp_bootstrap_fit(ptr = ptr)
+}
+
+#' Simulated one-year view
+#'
+#' The claims development result (CDR) of the chain ladder or an
+#' expected-loss method over the coming year, by re-reserving on the ODP
+#' bootstrap ("actuary in the box": Ohlsson and Lauzeningks 2009; England,
+#' Verrall and Wuthrich 2019). Each simulation resamples the residuals of
+#' the volume-weighted chain ladder as [odp_bootstrap()] does, projects
+#' every origin's next increment from its resampled latest value with the
+#' bootstrap's process error, as [odp_bootstrap()] projects, adds it to the
+#' observed latest value, appends those cells to the triangle, refits
+#' `method` and records `CDR = opening ultimate - closing ultimate`, so a
+#' negative CDR is an adverse development. An origin with one cell left
+#' thus has its lifetime bootstrap reserve as its one-year view. An origin
+#' at the last age gets no new cell, and a new origin written in the coming
+#' year is not simulated. The development grain must be a year, and every
+#' origin short of the last age must have its latest value on its
+#' segment's latest diagonal. Unlike [claims_development_result()] (Merz and
+#' Wuthrich), any averaging and tail are allowed.
+#'
+#' `method` names one of [chain_ladder()], [expected_loss()],
+#' [bornhuetter_ferguson()], [benktander()] and [cape_cod()], with the same
+#' settings: `average`, `sigma_interpolation` and `tail` give the chain
+#' ladder refitted (or the development pattern of the other methods),
+#' `apriori` is read by the expected loss, Bornhuetter-Ferguson and
+#' Benktander methods, `n_iters` by Benktander, `trend` and `decay` by Cape
+#' Cod; giving a setting the method does not read is an error. The
+#' expected-loss methods need `exposure`, the chain ladder takes none; each
+#' origin's latest exposure is kept for the end of the year, and Cape Cod
+#' trends to the valuation a year later.
+#'
+#' The bootstrap only drives the simulation: its factors are always
+#' volume-weighted without a tail, whatever `method` refits. On that same
+#' chain ladder the standard deviation of the CDR is not Merz and
+#' Wuthrich's: the ODP's process variance is the scale times the mean,
+#' Mack's `sigma^2` times the cumulative value. In total it is 0.61 times
+#' Merz-Wuthrich on RAA, 1.36 on GenIns and 1.13 on ABC, and per origin
+#' from 0.50 to 5.98 times
+#' (`knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`).
+#'
+#' Every segment of the triangle is bootstrapped on its own, with its own
+#' residuals and scale, into one joint distribution of the CDR; simulation
+#' `i` uses random stream `i` of `seed` for every segment in turn, so
+#' results do not depend on the number of threads.
+#'
+#' Properties of the fit: `chain_ladder` (the bootstrap's volume-weighted
+#' [chain_ladder_fit]), `keys`, `index`, `origins`, `development`; per
+#' origin (named as a [chain_ladder_fit]'s) `latest`, `opening_ultimate`
+#' (the method's ultimate on the observed triangle) and `opening_reserve`
+#' (`opening_ultimate - latest`); `scale` (the bootstrap's `phi`, which
+#' needs a single-segment fit: use [totals_frame()] or [segment()]); and
+#' `cdr`, a [predictive_distribution] of the CDR with the triangle's keys
+#' and `origin` as dimensions and one component per segment and origin, so
+#' `aggregate(fit@cdr, keep = "lob")` keeps the dependence between
+#' segments. `mean()`, `quantile()`, [VaR()] and [TVaR()] of `cdr` describe
+#' the total, and `-quantile(fit@cdr, 0.005)` is the one-year loss at
+#' 99.5%. Columns of [draw_matrix()] follow `origins`.
+#' `as.data.frame()` has one row per segment and origin: `origin`,
+#' `latest`, `opening_ultimate`, `opening_reserve`, and the `cdr_mean` and
+#' `cdr_std_dev` of the simulated CDR; [totals_frame()] one per segment,
+#' with the bootstrap's `scale` too.
+#'
+#' Errors: as [odp_bootstrap()] and the method's own fit; a missing
+#' `exposure` for an expected-loss method or one given for the chain
+#' ladder; or a refit that fails in any simulation (a zero value under a
+#' simple average, say), counted in the message with one of the failures.
+#'
+#' This is Python's `OdpBootstrap.one_year()`, which returns a
+#' `OneYearFit`.
+#'
+#' @inheritParams odp_bootstrap_fit
+#' @param column Name of the loss column; by default the only one.
+#' @param method The reserving method refitted at the start and at the end
+#'   of the year: `"chain_ladder"`, `"expected_loss"`,
+#'   `"bornhuetter_ferguson"`, `"benktander"` or `"cape_cod"`.
+#' @param exposure Name of the exposure column for the expected-loss
+#'   methods; `NULL` for the chain ladder.
+#' @param apriori,n_iters As in [expected_loss_fit()].
+#' @param trend,decay As in [cape_cod()].
+#' @param average,sigma_interpolation,tail The chain ladder or development
+#'   pattern of `method`, as in [chain_ladder()].
+#' @param ptr A `OneYearFit` pointer; used internally.
+#' @returns A `one_year_fit` object.
+#' @seealso [claims_development_result()] for Merz and Wuthrich's formulas,
+#'   [odp_bootstrap()] for the lifetime view.
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130),
+#'                    premium = rep(c(250, 260, 270, 280), 4:1))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' cl <- odp_one_year(tri, "paid", n_sims = 2000, seed = 42)
+#' cl@opening_reserve
+#' mean(cl@cdr)
+#' # The one-year view is narrower than the lifetime view.
+#' c(one_year = sqrt(variance(cl@cdr)),
+#'   lifetime = sqrt(variance(odp_bootstrap(tri, "paid", n_sims = 2000, seed = 42)@reserves)))
+#'
+#' bf <- odp_one_year(tri, "paid", "bornhuetter_ferguson", exposure = "premium", apriori = 0.7,
+#'                    n_sims = 2000, seed = 42)
+#' as.data.frame(bf)
+#' -quantile(bf@cdr, 0.005)
+one_year_fit <- S7::new_class(
+  "one_year_fit",
+  package = "actuarialrs",
+  properties = local({
+    by_origin <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        stats::setNames(f(self@ptr), origin_names(self@chain_ladder@ptr))
+      })
+    }
+    list(
+      ptr = S7::new_S3_class("OneYearFit"),
+      chain_ladder = chain_ladder_fit,
+      keys = S7::new_property(S7::class_character, getter = function(self) self@chain_ladder@keys),
+      index = S7::new_property(S7::class_data.frame, getter = function(self) self@chain_ladder@index),
+      origins = S7::new_property(S7::class_character, getter = function(self) self@chain_ladder@origins),
+      development = S7::new_property(S7::class_integer, getter = function(self) {
+        self@chain_ladder@development
+      }),
+      latest = by_origin(function(p) p$chain_ladder()$latest()),
+      opening_ultimate = by_origin(function(p) p$opening_ultimate()),
+      opening_reserve = by_origin(function(p) p$opening_reserve()),
+      scale = S7::new_property(S7::class_double, getter = function(self) {
+        rust_result(self@ptr$scale(), call = NULL)
+      }),
+      cdr = predictive_distribution
+    )
+  }),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
+                   cdr = predictive_distribution(ptr = ptr$cdr()))
+  }
+)
+
+#' @rdname one_year_fit
+#' @export
+odp_one_year <- function(triangle, column = NULL,
+                         method = c("chain_ladder", "expected_loss", "bornhuetter_ferguson",
+                                    "benktander", "cape_cod"),
+                         exposure = NULL, apriori = 1, n_iters = 1, trend = 0, decay = 1,
+                         average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                         n_sims = 10000, seed = 0, process = c("gamma", "none")) {
+  column <- fit_column(triangle, column)
+  method <- match.arg(method)
+  process <- match.arg(process)
+  given <- c(apriori = !missing(apriori), n_iters = !missing(n_iters), trend = !missing(trend),
+             decay = !missing(decay))
+  reads <- list(apriori = c("expected_loss", "bornhuetter_ferguson", "benktander"),
+                n_iters = "benktander", trend = "cape_cod", decay = "cape_cod")
+  for (arg in names(given)[given]) {
+    if (!method %in% reads[[arg]]) {
+      stop(sprintf('method "%s" does not use %s', method, arg), call. = FALSE)
     }
   }
-  ptr <- rust_result(triangle@ptr$odp_bootstrap(column, as.double(n_sims), as.double(seed), process))
-  odp_bootstrap_fit(ptr = ptr)
+  if (!is.null(exposure) && (!is.character(exposure) || length(exposure) != 1 || is.na(exposure))) {
+    stop("exposure must be the name of a column", call. = FALSE)
+  }
+  args <- development_args(average, sigma_interpolation)
+  ptr <- rust_result(triangle@ptr$odp_one_year(
+    column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
+    tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process
+  ))
+  one_year_fit(ptr = ptr)
 }
 
 #' Clark's growth-curve methods
@@ -1675,27 +1840,30 @@ growth <- function(fit, age) {
 
 check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
-                  clark_fit)
+                  one_year_fit, clark_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
-    stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit or ",
-         "odp_bootstrap_fit", call. = FALSE)
+    stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
+         "odp_bootstrap_fit, one_year_fit or clark_fit", call. = FALSE)
   }
 }
 
 #' Long results of a fit over every segment
 #'
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
-#' [cape_cod_fit], [odp_bootstrap_fit] or [clark_fit] with the triangle's key
-#' columns by name. `as.data.frame(fit)` has one row per segment and origin:
-#' `origin`, `latest`, `ultimate` and `reserve` (the method's own), plus for
-#' Mack `process_risk`, `parameter_risk` and `standard_error`, for the
-#' expected-loss methods `exposure` and `apriori` (and Cape Cod's
-#' `trended_apriori`), for the bootstrap the `mean` and `std_dev` of the
-#' bootstrapped reserve, and for Clark (Cape Cod) `exposure`,
-#' `expected_ultimate` and the three standard errors. `totals_frame()` has
-#' one row per segment with the same quantities for the segment's total (for
-#' the expected-loss methods the total `exposure`, for the bootstrap also its
-#' `scale`; for Clark its `omega`, `theta`, `scale` and, for Cape Cod, `elr`).
+#' [cape_cod_fit], [odp_bootstrap_fit], [one_year_fit] or [clark_fit] with
+#' the triangle's key columns by name. `as.data.frame(fit)` has one row per
+#' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
+#' method's own), plus for Mack `process_risk`, `parameter_risk` and
+#' `standard_error`, for the expected-loss methods `exposure` and `apriori`
+#' (and Cape Cod's `trended_apriori`), for the bootstrap the `mean` and
+#' `std_dev` of the bootstrapped reserve, and for Clark (Cape Cod)
+#' `exposure`, `expected_ultimate` and the three standard errors. The
+#' one-year view names them `opening_ultimate` and `opening_reserve` and
+#' adds the `cdr_mean` and `cdr_std_dev` of the claims development result.
+#' `totals_frame()` has one row per segment with the same quantities for
+#' the segment's total (for the expected-loss methods the total `exposure`,
+#' for the bootstrap and the one-year view also the bootstrap's `scale`;
+#' for Clark its `omega`, `theta`, `scale` and, for Cape Cod, `elr`).
 #' `development_frame()` has one row per segment and age: `development`,
 #' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
 #' `std_err`; the oldest age has `NA` for `ldf`, `sigma` and `std_err`. A
@@ -1706,14 +1874,15 @@ check_fit <- function(fit) {
 #' `segment(fit, lob = "auto")` (compared as character). Keys not named may
 #' take any value, so a fit with one segment needs none; a choice that
 #' matches several segments is an error. For the bootstrap, the segment
-#' keeps its part of the joint `reserves`, with the same dimensions.
+#' keeps its part of the joint `reserves`, and for the one-year view its
+#' part of the joint `cdr`, with the same dimensions.
 #'
 #' These are Python's `to_frame()`, `totals_frame()`,
 #' `development_frame()` and `segment(**keys)`.
 #'
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
-#'   [cape_cod_fit], [odp_bootstrap_fit] or [clark_fit] (not for
-#'   `development_frame()`).
+#'   [cape_cod_fit], [odp_bootstrap_fit], [one_year_fit] or [clark_fit]
+#'   (not for `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -1768,6 +1937,7 @@ S7::method(as.data.frame, mack_fit) <- function(x, ...) fit_table_frame(x@ptr$lo
 S7::method(as.data.frame, expected_loss_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, cape_cod_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, odp_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, one_year_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, clark_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 
 # A segment count for print headers when there are several.
@@ -1796,6 +1966,21 @@ S7::method(print, odp_bootstrap_fit) <- function(x, ...) {
   cat(sprintf("total reserve: chain ladder %s, bootstrap mean %s, sd %s\n",
               format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
               format(sqrt(variance(r)), digits = 10)))
+  invisible(x)
+}
+S7::method(print, one_year_fit) <- function(x, ...) {
+  cdr <- x@cdr
+  p <- x@chain_ladder@ptr
+  if (p$n_segments() > 1) {
+    cat(sprintf("<one_year_fit> %d simulations%s\n", as.integer(cdr@n_sims), segments_note(p)))
+  } else {
+    cat(sprintf("<one_year_fit> %d simulations, scale %s\n", as.integer(cdr@n_sims),
+                format(x@scale, digits = 6)))
+  }
+  cat(sprintf("total opening reserve %s; claims development result mean %s, sd %s\n",
+              format(sum(x@opening_reserve), digits = 10), format(mean(cdr), digits = 10),
+              format(sqrt(variance(cdr)), digits = 10)))
+  print(if (p$n_segments() > 1) totals_frame(x) else as.data.frame(x), row.names = FALSE)
   invisible(x)
 }
 S7::method(print, mack_fit) <- function(x, ...) {

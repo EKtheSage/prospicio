@@ -15,7 +15,7 @@
 //! (`PredictiveDistribution::simulate`), so results do not depend on the
 //! number of threads.
 
-use act_core::{Lag, StreamRng};
+use act_core::{Lag, Period, StreamRng};
 use act_prob::{
     Distribution, Gamma, InputHasher, KeyValue, PredictiveDistribution, Provenance, Sampled,
 };
@@ -23,7 +23,7 @@ use act_prob::{
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::error::{Error, Result};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
-use crate::triangle::{Segment, Triangle};
+use crate::triangle::{Label, Segment, Triangle};
 
 /// Process error added to each simulated future incremental value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -173,10 +173,7 @@ impl OdpBootstrapFits {
     /// bootstrapped reserve.
     pub fn to_long(&self) -> FitTable {
         let mut table = self.segments.to_long();
-        let marginals: Vec<Sampled> = (0..self.reserves.n_components())
-            .map(|j| self.sums(j..j + 1))
-            .collect();
-        push_moments(&mut table, &marginals);
+        push_moments(&mut table, "", &component_sums(&self.reserves));
         table
     }
 
@@ -184,10 +181,8 @@ impl OdpBootstrapFits {
     /// `mean` and `std_dev` of the segment's bootstrapped total reserve.
     pub fn totals(&self) -> FitTable {
         let mut table = self.segments.totals();
-        let totals: Vec<Sampled> = (0..self.segments.len())
-            .map(|s| self.sums(self.components_of(s)))
-            .collect();
-        push_moments(&mut table, &totals);
+        let totals = segment_sums(&self.segments, &self.reserves);
+        push_moments(&mut table, "", &totals);
         table
     }
 
@@ -199,60 +194,101 @@ impl OdpBootstrapFits {
     /// The one segment chosen as in [`SegmentFits::position`], with its
     /// part of the joint reserves (same dimensions).
     pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
-        let s = self.segments.position(keys)?;
-        let range = self.components_of(s);
-        let n = self.reserves.n_components();
-        let draws = self
-            .reserves
-            .draw_matrix()
-            .chunks_exact(n)
-            .flat_map(|row| row[range.clone()].iter().copied())
-            .collect();
-        let reserves = PredictiveDistribution::from_draws(
-            self.reserves.dims().to_vec(),
-            self.reserves.components()[range].to_vec(),
-            draws,
-            self.reserves.provenance().clone(),
-        )?;
-        Ok(Self {
-            segments: SegmentFits {
-                key_names: self.segments.key_names.clone(),
-                labels: vec![self.segments.labels[s].clone()],
-                fits: vec![self.segments.fits[s].clone()],
-            },
-            reserves,
-        })
-    }
-
-    /// Positions of segment `s`'s components in `reserves`.
-    fn components_of(&self, s: usize) -> std::ops::Range<usize> {
-        let n_origins = |f: &OdpBootstrapSegment| f.chain_ladder.origins.len();
-        let start: usize = self.segments.fits[..s].iter().map(n_origins).sum();
-        start..start + n_origins(&self.segments.fits[s])
-    }
-
-    /// Per simulation, the sum of the components in `range`.
-    fn sums(&self, range: std::ops::Range<usize>) -> Sampled {
-        let n = self.reserves.n_components();
-        let sums = self
-            .reserves
-            .draw_matrix()
-            .chunks_exact(n)
-            .map(|row| row[range.clone()].iter().sum())
-            .collect();
-        Sampled::new(sums).expect("draws are finite and non-empty")
+        let (segments, reserves) = pick_segment(&self.segments, &self.reserves, keys)?;
+        Ok(Self { segments, reserves })
     }
 }
 
-/// Appends the `mean` and `std_dev` of each row's draws to `table`.
-fn push_moments(table: &mut FitTable, draws: &[Sampled]) {
-    table
-        .values
-        .push(("mean".into(), draws.iter().map(|d| d.mean()).collect()));
+/// Positions of segment `s`'s components in a joint distribution whose
+/// components run over the origins of each segment of `fits` in turn.
+fn components_of<T: ReserveFit>(fits: &SegmentFits<T>, s: usize) -> std::ops::Range<usize> {
+    let n_origins = |f: &T| f.chain_ladder().origins.len();
+    let start: usize = fits.fits[..s].iter().map(n_origins).sum();
+    start..start + n_origins(&fits.fits[s])
+}
+
+/// Per simulation, the sum of the components of `draws` in `range`.
+fn sums(draws: &PredictiveDistribution, range: std::ops::Range<usize>) -> Sampled {
+    let n = draws.n_components();
+    let sums = draws
+        .draw_matrix()
+        .chunks_exact(n)
+        .map(|row| row[range.clone()].iter().sum())
+        .collect();
+    Sampled::new(sums).expect("draws are finite and non-empty")
+}
+
+/// Each component of `draws` on its own, in component order.
+pub(crate) fn component_sums(draws: &PredictiveDistribution) -> Vec<Sampled> {
+    (0..draws.n_components())
+        .map(|j| sums(draws, j..j + 1))
+        .collect()
+}
+
+/// Each segment's total of `draws`, whose components run over the origins
+/// of each segment of `fits` in turn.
+pub(crate) fn segment_sums<T: ReserveFit>(
+    fits: &SegmentFits<T>,
+    draws: &PredictiveDistribution,
+) -> Vec<Sampled> {
+    (0..fits.len())
+        .map(|s| sums(draws, components_of(fits, s)))
+        .collect()
+}
+
+/// The one segment of `fits` chosen as in [`SegmentFits::position`], with
+/// its part of the joint `draws` (same dimensions).
+pub(crate) fn pick_segment<T: ReserveFit + Clone>(
+    fits: &SegmentFits<T>,
+    draws: &PredictiveDistribution,
+    keys: &[(&str, &str)],
+) -> Result<(SegmentFits<T>, PredictiveDistribution)> {
+    let s = fits.position(keys)?;
+    let range = components_of(fits, s);
+    let n = draws.n_components();
+    let part = draws
+        .draw_matrix()
+        .chunks_exact(n)
+        .flat_map(|row| row[range.clone()].iter().copied())
+        .collect();
+    let part = PredictiveDistribution::from_draws(
+        draws.dims().to_vec(),
+        draws.components()[range].to_vec(),
+        part,
+        draws.provenance().clone(),
+    )?;
+    let one = SegmentFits {
+        key_names: fits.key_names.clone(),
+        labels: vec![fits.labels[s].clone()],
+        fits: vec![fits.fits[s].clone()],
+    };
+    Ok((one, part))
+}
+
+/// Appends the `mean` and `std_dev` of each row's draws to `table`, their
+/// names led by `prefix`.
+pub(crate) fn push_moments(table: &mut FitTable, prefix: &str, draws: &[Sampled]) {
     table.values.push((
-        "std_dev".into(),
+        format!("{prefix}mean"),
+        draws.iter().map(|d| d.mean()).collect(),
+    ));
+    table.values.push((
+        format!("{prefix}std_dev"),
         draws.iter().map(|d| d.std_dev()).collect(),
     ));
+}
+
+/// The key of each origin of a segment labelled `label`: the label's parts,
+/// then the origin, as the components of a joint distribution over segments.
+pub(crate) fn origin_keys(label: &Label, origins: &[Period]) -> Vec<Vec<KeyValue>> {
+    origins
+        .iter()
+        .map(|&origin| {
+            let mut key: Vec<KeyValue> = label.parts().iter().map(|p| p.as_str().into()).collect();
+            key.push(origin.into());
+            key
+        })
+        .collect()
 }
 
 impl OdpBootstrap {
@@ -321,12 +357,7 @@ impl OdpBootstrap {
         for (label, (fit, pool, segment)) in prepared.iter() {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, segment, &fit.chain_ladder, &segment.ages);
-            for &origin in &segment.origins {
-                let mut key: Vec<KeyValue> =
-                    label.parts().iter().map(|p| p.as_str().into()).collect();
-                key.push(origin.into());
-                components.push(key);
-            }
+            components.extend(origin_keys(label, &segment.origins));
             sims.push(Simulation {
                 segment,
                 latest: &fit.chain_ladder.latest_position,
@@ -369,7 +400,12 @@ impl OdpBootstrap {
 }
 
 /// Hashes the observed cells of `segment` that the bootstrap uses.
-fn hash_segment(hasher: &mut InputHasher, segment: &Segment, cl: &ChainLadderFit, ages: &[Lag]) {
+pub(crate) fn hash_segment(
+    hasher: &mut InputHasher,
+    segment: &Segment,
+    cl: &ChainLadderFit,
+    ages: &[Lag],
+) {
     for (o, &last) in cl.latest_position.iter().enumerate() {
         hasher.str(&segment.origins[o].to_string());
         for (d, &age) in ages[..=last].iter().enumerate() {
@@ -381,7 +417,7 @@ fn hash_segment(hasher: &mut InputHasher, segment: &Segment, cl: &ChainLadderFit
 
 /// The chain ladder, fitted values, residuals and scale of one segment,
 /// and the pool of residuals to resample.
-fn prepare(segment: &Segment, ages: &[Lag]) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
+pub(crate) fn prepare(segment: &Segment, ages: &[Lag]) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
     let (no, nd) = (segment.n_origins, segment.n_dev);
     let chain_ladder = ChainLadder::default().fit_segment(segment, ages)?;
     let ldf = &chain_ladder.development.ldf;
@@ -458,19 +494,37 @@ fn prepare(segment: &Segment, ages: &[Lag]) -> Result<(OdpBootstrapSegment, Vec<
 }
 
 /// Inputs shared by every simulation.
-struct Simulation<'a> {
-    segment: &'a Segment,
-    latest: &'a [usize],
-    fitted: &'a [f64],
-    pool: &'a [f64],
-    scale: f64,
-    process: ProcessDistribution,
+pub(crate) struct Simulation<'a> {
+    pub(crate) segment: &'a Segment,
+    pub(crate) latest: &'a [usize],
+    pub(crate) fitted: &'a [f64],
+    pub(crate) pool: &'a [f64],
+    pub(crate) scale: f64,
+    pub(crate) process: ProcessDistribution,
 }
 
 impl Simulation<'_> {
     /// One bootstrap replicate: fills `reserves` with each origin's
     /// simulated reserve.
     fn run(&self, rng: &mut StreamRng, reserves: &mut [f64]) {
+        let nd = self.segment.n_dev;
+        let (pseudo, factors) = self.resample(rng);
+        for (o, reserve) in reserves.iter_mut().enumerate() {
+            let mut cum = pseudo[o * nd + self.latest[o]];
+            let mut total = 0.0;
+            for f in &factors[self.latest[o]..] {
+                let next = cum * f;
+                total += self.with_process(next - cum, rng);
+                cum = next;
+            }
+            *reserve = total;
+        }
+    }
+
+    /// A pseudo cumulative triangle from resampled residuals, row-major
+    /// over origin × development (zero where not observed), and its
+    /// volume-weighted factors: the parameter error of one replicate.
+    pub(crate) fn resample(&self, rng: &mut StreamRng) -> (Vec<f64>, Vec<f64>) {
         let (no, nd) = (self.segment.n_origins, self.segment.n_dev);
 
         // Pseudo cumulative triangle from resampled residuals.
@@ -498,20 +552,12 @@ impl Simulation<'_> {
                 if den == 0.0 { 1.0 } else { num / den }
             })
             .collect();
-
-        for (o, reserve) in reserves.iter_mut().enumerate() {
-            let mut cum = pseudo[o * nd + self.latest[o]];
-            let mut total = 0.0;
-            for f in &factors[self.latest[o]..] {
-                let next = cum * f;
-                total += self.with_process(next - cum, rng);
-                cum = next;
-            }
-            *reserve = total;
-        }
+        (pseudo, factors)
     }
 
-    fn with_process(&self, mean: f64, rng: &mut StreamRng) -> f64 {
+    /// An incremental value with expected value `mean` and the process
+    /// error of [`ProcessDistribution`].
+    pub(crate) fn with_process(&self, mean: f64, rng: &mut StreamRng) -> f64 {
         match self.process {
             ProcessDistribution::None => mean,
             ProcessDistribution::Gamma => {
