@@ -1575,15 +1575,25 @@ def test_one_year_quarterly_and_lagging_origins():
         assert fit.opening_reserve == pytest.approx(opening, rel=1e-12)
     # An origin short of the latest diagonal develops from its own latest
     # cell: 2021 stops at 24 months, a year short, and moves to 48 within the
-    # year.
+    # year. On an exact pattern neither process moves anything (every sigma
+    # and the scale are zero), so its Bornhuetter-Ferguson CDR is by hand, as
+    # in the Rust test a_lagging_origin_moves_by_hand: the opening ultimate
+    # 24 + 0.5 * 40 * (1 - 1 / 1.875) less the closing one, the pattern's 45
+    # at the last age. Moving only to 36, or not at all, gives another CDR.
+    lag_rows = [[4.0, 8.0, 12.0, 15.0], [8.0, 16.0, 24.0, 30.0], [12.0, 24.0], [16.0, 32.0], [20.0]]
     lagging = Triangle.from_long(
-        [2019] * 4 + [2020] * 4 + [2021] * 2 + [2022] * 2 + [2023],
-        [12, 24, 36, 48] * 2 + [12, 24, 12, 24, 12],
-        [90.0, 140.0, 160.0, 168.0, 100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 120.0, 175.0, 130.0],
+        origin=[2019 + k for k, row in enumerate(lag_rows) for _ in row],
+        development=[12 * (d + 1) for row in lag_rows for d in range(len(row))],
+        values={
+            "paid": [v for row in lag_rows for v in row],
+            "premium": [40.0 for row in lag_rows for _ in row],
+        },
     )
-    for boot in [OdpBootstrap(n_sims=200, seed=2), MackBootstrap(n_sims=200, seed=2)]:
-        fit = boot.one_year(lagging, "values", ChainLadder())
-        assert any(row[2] != 0.0 for row in fit.cdr.draw_matrix())
+    want = 24.0 + 0.5 * 40.0 * (1.0 - 1.0 / 1.875) - 45.0
+    bf = BornhuetterFerguson(apriori=0.5)
+    for boot in [OdpBootstrap(n_sims=20, seed=2), MackBootstrap(n_sims=20, seed=2)]:
+        fit = boot.one_year(lagging, "paid", bf, exposure="premium")
+        assert all(row[2] == pytest.approx(want, abs=1e-9) for row in fit.cdr.draw_matrix())
 
 
 def test_one_year_errors(triangles):
