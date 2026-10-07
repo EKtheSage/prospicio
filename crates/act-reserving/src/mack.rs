@@ -96,7 +96,7 @@ impl Mack {
         fit_each(triangle, column, |s| self.fit_segment(s, &s.ages))
     }
 
-    fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<MackFit> {
+    pub(crate) fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<MackFit> {
         if segment.n_dev < 3 {
             return Err(Error::TooFewAges {
                 needed: 3,
