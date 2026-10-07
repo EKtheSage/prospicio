@@ -3,8 +3,8 @@ import random
 
 import pytest
 
-from actuarialrs.boosting import Booster
-from actuarialrs.models import Design, Glm, compare, deviance_score, k_fold, simulate_from_means
+from prospicio.boosting import Booster
+from prospicio.models import Design, Glm, compare, deviance_score, k_fold, simulate_from_means
 
 np = pytest.importorskip("numpy")
 
@@ -117,8 +117,8 @@ def test_rejects_bad_specs():
 @pytest.mark.parametrize("engine", ["lightgbm", "xgboost"])
 def test_quantile_objective(engine):
     pytest.importorskip(engine)
-    from actuarialrs.boosting import predict_quantiles
-    from actuarialrs.models import pinball_loss, pinball_score
+    from prospicio.boosting import predict_quantiles
+    from prospicio.models import pinball_loss, pinball_score
 
     rng = random.Random(7)
     x = [rng.random() for _ in range(3000)]

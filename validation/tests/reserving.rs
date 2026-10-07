@@ -12,17 +12,17 @@
 
 use std::collections::HashMap;
 
-use act_glm::Glm;
-use act_models::Terms;
-use act_models::stack::stacking_weights;
-use act_prob::Distribution;
-use act_reserving::{
+use prospicio_glm::Glm;
+use prospicio_models::Terms;
+use prospicio_models::stack::stacking_weights;
+use prospicio_prob::Distribution;
+use prospicio_reserving::{
     Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, GlmCandidate, Grain,
     Label, Long, Mack, MackFit, Month, OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpGlm,
     OdpGlmFit, Period, ProcessDistribution, SigmaInterpolation, Triangle, TriangleFrame,
     TriangleModel, diagonal_backtest,
 };
-use act_validation::{Case, check, reference, triangle};
+use prospicio_validation::{Case, check, reference, triangle};
 
 /// Development estimator for a reference `method`.
 fn development(method: &str) -> Development {
@@ -663,7 +663,7 @@ fn every_segment_at_once_on_lob_and_coverage() {
     assert_eq!(home_pd.fits[0], cl.fits[3]);
     assert_eq!(
         cl.position(&[("lob", "Auto")]),
-        Err(act_reserving::Error::AmbiguousSegment(2))
+        Err(prospicio_reserving::Error::AmbiguousSegment(2))
     );
     assert!(cl.position(&[("line", "Auto")]).is_err());
     assert!(cl.position(&[("lob", "Farm")]).is_err());

@@ -3,7 +3,7 @@ import pickle
 
 import pytest
 
-import actuarialrs as ar
+import prospicio as ar
 
 D = ar.distributions
 

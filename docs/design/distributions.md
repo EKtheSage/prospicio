@@ -12,16 +12,16 @@ conversion reports the error it introduces.
 
 ## What exists
 
-- `act_prob::Distribution`: `mean`, `variance`, `std_dev`, `cdf`,
+- `prospicio_prob::Distribution`: `mean`, `variance`, `std_dev`, `cdf`,
   `quantile -> Result<f64>`, and `sample(&mut StreamRng, n)` defaulting to
   inverse transform.
-- `act_prob::Lognormal`, parameterized as SciPy / R (`meanlog`, `sdlog`),
+- `prospicio_prob::Lognormal`, parameterized as SciPy / R (`meanlog`, `sdlog`),
   plus `from_mean_cv`. Parity with SciPy is checked by
   `validation/tests/distributions.rs` against
   `validation/reference/distributions_scipy.csv`.
-- `act_prob::Gamma` (`shape`, `scale`; `from_mean_cv`,
+- `prospicio_prob::Gamma` (`shape`, `scale`; `from_mean_cv`,
   `from_mean_dispersion` for the GLM family) on
-  `act_math::special::gamma_inc`, and `act_prob::Tweedie` (mean,
+  `prospicio_math::special::gamma_inc`, and `prospicio_prob::Tweedie` (mean,
   dispersion, power in `(1, 2)`; `from_poisson_gamma`), the compound
   Poisson–gamma: a point mass `e^(-λ)` at 0, every quantity a
   Poisson-weighted sum over the number of claims of the gamma's, each tail
@@ -30,14 +30,14 @@ conversion reports the error it introduces.
   `validation/reference/tweedie_mpmath.csv` (40-digit series,
   `validation/scripts/mpmath_tweedie.py`) for the Tweedie, from about 2 to
   about 500 expected claims. An FFT of Poisson × gamma on a fine grid
-  agrees with the series (`act-aggregate`).
-- `act_prob::Weibull` (shape, scale; SciPy's `weibull_min`), with layer
-  moments through the incomplete gamma, and `act_prob::Mixture`, a finite
+  agrees with the series (`prospicio-aggregate`).
+- `prospicio_prob::Weibull` (shape, scale; SciPy's `weibull_min`), with layer
+  moments through the incomplete gamma, and `prospicio_prob::Mixture`, a finite
   mixture of any severities (attritional plus large losses): linear
   quantities as weighted sums, variance by the law of total variance,
   quantiles by bisection. Parity for the Weibull: SciPy and the mpmath
   integrals.
-- `act_prob::Loglogistic` (shape `α`, scale `θ` = the median; SciPy's
+- `prospicio_prob::Loglogistic` (shape `α`, scale `θ` = the median; SciPy's
   `fisk`), Pareto-tailed: the mean is infinite for `α <= 1`, the variance
   for `α <= 2`, while limited and layer moments always exist. Limited
   moments use the unnormalized incomplete beta, reaching a non-positive
@@ -50,26 +50,26 @@ conversion reports the error it introduces.
   ultimate reported by age `t` as a growth curve `G(t)`, usually the
   loglogistic `t^ω / (t^ω + θ^ω)` or the Weibull `1 - exp(-(t/θ)^ω)`.
   These are exactly `Loglogistic::cdf` and `Weibull::cdf` with shape `ω`
-  and scale `θ`, so `act-prob` supplies the curves: any `Distribution` on
+  and scale `θ`, so `prospicio-prob` supplies the curves: any `Distribution` on
   the positive axis is a valid growth curve through its `cdf`. Fitting
   them to a triangle belongs to the Reserving lane.
-- `act_prob::Sampled` and the `Empirical` trait (`draws`, `sorted`,
-  `mean_of`, `var`, `tvar`), and `act_prob::risk::{var_sorted, tvar_sorted}`,
+- `prospicio_prob::Sampled` and the `Empirical` trait (`draws`, `sorted`,
+  `mean_of`, `var`, `tvar`), and `prospicio_prob::risk::{var_sorted, tvar_sorted}`,
   the shared risk measures every domain calls.
-- `act_prob::Severity` (`lev`, `stop_loss`, `layer`), implemented for
+- `prospicio_prob::Severity` (`lev`, `stop_loss`, `layer`), implemented for
   `Lognormal`. Parity: `validation/reference/severity_mpmath.csv`, from
   30-digit integration of the survival function
   (`validation/scripts/mpmath_severity.py`), at limits out to the
   `1 - 1e-9` quantile.
 
-- `act_prob::Grid`, the discretized representation, with
+- `prospicio_prob::Grid`, the discretized representation, with
   `Grid::local_moment` (needs `Severity`), `Grid::rounding` and
   `Grid::lower`, each returning a `DiscretizationReport`. A `Grid` is a
   `Distribution` and a `Severity` (exact LEV, stop-loss and layers on the
   grid). Parity: `validation/reference/grid_mpmath.csv`, masses from the
   textbook definitions at 30 digits (`validation/scripts/mpmath_grid.py`).
 
-- `act_prob::Counting` (`pmf`, `cdf`, `mean`, `variance`, `panjer_ab`, `pgf`,
+- `prospicio_prob::Counting` (`pmf`, `cdf`, `mean`, `variance`, `panjer_ab`, `pgf`,
   `quantile`, `sample`), with `Poisson` and `NegativeBinomial` (Klugman's
   `r`, `beta`; SciPy `nbinom(n=r, p=1/(1+beta))`). Parity: claim-count rows
   in `validation/reference/distributions_scipy.csv`.
@@ -177,7 +177,7 @@ pub enum Dist {
 - `Custom` is the single "slow path" door the plan describes; code that
   sees it runs single-threaded and records that in diagnostics.
 
-Done: `act_prob::Dist` with the eleven severity families (`Lognormal`,
+Done: `prospicio_prob::Dist` with the eleven severity families (`Lognormal`,
 `Pareto`, `PiecewisePareto`, `LogAffinePareto`, `GeneralizedPareto`,
 `Gamma`, `Tweedie`, `Weibull`, `Loglogistic`, `Mixture` in an `Arc`,
 `Grid`) and `Sampled`. It implements `Distribution` by `match` (no
@@ -191,7 +191,7 @@ Python and R bindings read any distribution object into a `Dist`
 `SeverityDist`, so a family added to `Dist` reaches every binding function
 at once; a `Sampled` passed as a severity is refused with the reason.
 
-Done: `act_prob::Custom`, the slow path. The user gives a cdf and,
+Done: `prospicio_prob::Custom`, the slow path. The user gives a cdf and,
 optionally, a quantile function (Python `distributions.Custom`, R
 `custom_distribution()`); without one, quantiles invert the cdf by
 bisection on a log scale (about a hundred calls). The mean, variance,
@@ -210,7 +210,7 @@ copula simulation (`PredictiveDistribution::simulate_with`) then run on
 the calling thread, which for R is its main thread, the only one R may be
 entered from. The draws are identical either way.
 
-Done: saving and loading (`act_prob::serial`). `Dist::to_json` writes a
+Done: saving and loading (`prospicio_prob::serial`). `Dist::to_json` writes a
 versioned document (`format: "risk_rs.distribution"`, `format_version:
 1`) with the family and the parameters its constructor takes, numbers
 bit for bit (non-finite ones as `"NaN"`, `"inf"`, `"-inf"`, as the GLM

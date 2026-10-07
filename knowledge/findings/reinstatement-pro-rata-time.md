@@ -8,11 +8,11 @@ generated: { by: claude-code/cloud-session, at: 2026-10-06T22:30:00Z }
 verified: { by: process:ci, at: 2026-10-06T22:15:18Z }
 sources:
   - id: layer
-    resource: ../crates/act-aggregate/src/reinsurance.rs
-    title: act_aggregate::reinsurance (Layer::pro_rata_as_to_time, tests)
+    resource: ../crates/prospicio-aggregate/src/reinsurance.rs
+    title: prospicio_aggregate::reinsurance (Layer::pro_rata_as_to_time, tests)
   - id: events
-    resource: ../crates/act-aggregate/src/monte_carlo.rs
-    title: act_aggregate::EventSet (with_times, with_uniform_times)
+    resource: ../crates/prospicio-aggregate/src/monte_carlo.rs
+    title: prospicio_aggregate::EventSet (with_times, with_uniform_times)
 ---
 
 # Finding
@@ -36,5 +36,5 @@ sources:
 * A compound distribution on a grid has no event times, so `on_grid` and
   `apply_aggregate` refuse a layer pro rata as to time.[^layer]
 
-[^layer]: act_aggregate::reinsurance (Layer::pro_rata_as_to_time, tests)
-[^events]: act_aggregate::EventSet (with_times, with_uniform_times)
+[^layer]: prospicio_aggregate::reinsurance (Layer::pro_rata_as_to_time, tests)
+[^events]: prospicio_aggregate::EventSet (with_times, with_uniform_times)

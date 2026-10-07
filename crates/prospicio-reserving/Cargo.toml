@@ -1,0 +1,19 @@
+[package]
+name = "prospicio-reserving"
+description = "Reserving: Triangle, deterministic and stochastic methods (v0.1)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+prospicio-core.workspace = true
+prospicio-glm.workspace = true
+prospicio-math.workspace = true
+prospicio-models.workspace = true
+prospicio-prob.workspace = true
+
+[dev-dependencies]
+rayon.workspace = true

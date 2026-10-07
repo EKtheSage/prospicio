@@ -2,9 +2,9 @@
 okf_version: "0.2"
 ---
 
-# risk-rs knowledge bundle
+# prospicio knowledge bundle
 
-Knowledge collected while building risk-rs, in the
+Knowledge collected while building prospicio, in the
 [Open Knowledge Format v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md):
 facts about data, reference implementations and the build environment,
 and findings that explain why the code is the way it is. Design decisions

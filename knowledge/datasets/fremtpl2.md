@@ -52,7 +52,7 @@ BonusMalus capped at 150; log Density; VehBrand, VehGas, Region factors
 
 * Poisson GLM, offset log(Exposure): deviance 216,564.175, null deviance
   223,932.323, AIC 285,978.609; quasi-Poisson dispersion 2.585.
-* `act_glm` matches statsmodels 0.15.0 on all 202 values (coefficients at
+* `prospicio_glm` matches statsmodels 0.15.0 on all 202 values (coefficients at
   1e-8, standard errors at 1e-7, deviances at 1e-10).[^parity]
 * Release-build fit time about 30 s, against 1 m 45 s for statsmodels on
   the same machine; unoptimized about 6 minutes, so the test runs in

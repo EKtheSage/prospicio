@@ -4,7 +4,7 @@ import pickle
 import pytest
 from scipy import stats
 
-import actuarialrs as ar
+import prospicio as ar
 
 
 def test_matches_scipy():
@@ -124,7 +124,7 @@ def test_predictive_distribution_is_joint():
 def test_gamma_and_tweedie():
     import math
 
-    from actuarialrs.distributions import Gamma, Grid, Poisson, Tweedie
+    from prospicio.distributions import Gamma, Grid, Poisson, Tweedie
 
     g = Gamma.from_mean_cv(1000.0, 0.5)
     assert g.shape == 4.0
@@ -150,8 +150,8 @@ def test_gamma_and_tweedie():
 def test_weibull_mixture_and_tail_diagnostics():
     import math
 
-    from actuarialrs.distributions import Grid, Lognormal, Mixture, Pareto, Weibull
-    from actuarialrs.risk import hill, mean_excess
+    from prospicio.distributions import Grid, Lognormal, Mixture, Pareto, Weibull
+    from prospicio.risk import hill, mean_excess
 
     w = Weibull(1.0, 2.0)
     assert abs(w.stop_loss(3.0) - 2.0 * math.exp(-1.5)) < 1e-14
@@ -172,7 +172,7 @@ def test_weibull_mixture_and_tail_diagnostics():
 def test_loglogistic_growth_curve_and_heavy_tail():
     import math
 
-    from actuarialrs.distributions import Grid, Loglogistic
+    from prospicio.distributions import Grid, Loglogistic
 
     d = Loglogistic(1.0, 2.0)
     # Shape 1: F(x) = x / (x + theta), LEV = theta ln(1 + u / theta).
@@ -190,7 +190,7 @@ def test_loglogistic_growth_curve_and_heavy_tail():
 
 
 def test_marginal_selects_an_origin_period_by_its_label():
-    from actuarialrs.reserving import OdpBootstrap, Triangle
+    from prospicio.reserving import OdpBootstrap, Triangle
 
     tri = Triangle.from_long(
         [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
@@ -209,7 +209,7 @@ def test_distributions_save_and_load_as_json():
     import json
     import math
 
-    from actuarialrs.distributions import (
+    from prospicio.distributions import (
         Custom, Gamma, GeneralizedPareto, Grid, LogAffinePareto, Loglogistic, Lognormal,
         Mixture, Pareto, PiecewisePareto, Sampled, Tweedie, Weibull, from_json, to_json,
     )

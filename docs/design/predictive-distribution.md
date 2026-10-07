@@ -4,7 +4,7 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
 
 ## What exists
 
-`act_prob::PredictiveDistribution`, with:
+`prospicio_prob::PredictiveDistribution`, with:
 
 - `from_draws(dims, components, draws, provenance)` for draws already laid
   out simulation-major;
@@ -17,8 +17,8 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   `Distribution` and `Empirical` impls (`mean`, `quantile`, `var`, `tvar`, …)
   describe the total and go through `risk::*`;
 - `Provenance` with `model`, `parameters`, `seed`, `stream_scheme`,
-  `versions` (starting with `act-prob`) and `input_hash`;
-- `act_prob::portfolio`: `join(parts, dim, Pairing)` puts distributions of
+  `versions` (starting with `prospicio-prob`) and `input_hash`;
+- `prospicio_prob::portfolio`: `join(parts, dim, Pairing)` puts distributions of
   different models side by side under a new leading dimension (the union
   of their dimensions after it, `""` where a part lacks one), pairing
   simulation `i` of every part; `Pairing::Independent` refuses two parts
@@ -31,7 +31,7 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   and a tower feed capital allocation end to end
   (`validation/tests/aggregate.rs`);
 - with the `arrow` feature, `write_ipc` / `read_ipc` (Arrow IPC files) and
-  `to_record_batch` / `from_record_batch`, in `act_prob::ipc`.
+  `to_record_batch` / `from_record_batch`, in `prospicio_prob::ipc`.
 
 ### Decisions
 
@@ -39,7 +39,7 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   and `f32` draws wait until a consumer or memory needs them. There is no
   `Joint` enum yet; it is introduced with the second variant.
 - **Key values are `Int`, `Text` or `Period`.** `Period` is
-  `act_core::Period`, the same type as the Triangle's origins, so a reserve
+  `prospicio_core::Period`, the same type as the Triangle's origins, so a reserve
   component keyed by origin joins back to its triangle row without
   conversion. A `Period` key never equals an `Int` key: the 2019 accident
   year is `Period::year(2019)`, not `2019`.
@@ -49,9 +49,9 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   distribution.
 - **`draw_matrix()`** is the full simulation-major matrix. `Empirical::draws()`
   is the per-simulation total, like every other `Distribution` method.
-- **Errors** use `act_core::Error::InvalidParameter`, with the offending
+- **Errors** use `prospicio_core::Error::InvalidParameter`, with the offending
   index or length as the value. Dedicated `Shape` / `UnknownKey` variants
-  would read better, but changing `act-core` needs its own PR (AGENTS.md).
+  would read better, but changing `prospicio-core` needs its own PR (AGENTS.md).
 - **`input_hash`** comes from `provenance::InputHasher` (BLAKE3 in
   key-derivation mode, context `INPUT_HASH_CONTEXT` =
   `"risk-rs 2026-09-30 input-hash v1"`). Each field is a one-byte type tag,
@@ -62,7 +62,7 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   `validation/scripts/input_hash_golden.py`. Changing the encoding means a
   new context (`v2`). Models choose what to feed it; once Arrow lands, a
   triangle's canonical Arrow IPC bytes go in through `bytes()`.
-- **Arrow IPC files** (open question 4), behind act-prob's `arrow`
+- **Arrow IPC files** (open question 4), behind prospicio-prob's `arrow`
   feature (off by default; the `validation` crate turns it on, so
   `cargo test` covers it). The layout is **wide**: one non-null `Float64`
   column per component, so each column is a marginal and each row a
@@ -78,7 +78,7 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   docs. `validation/scripts/predictive_ipc.py` writes a fixture from that
   spec with pyarrow, which `validation/tests/predictive.rs` must read
   back, and it can check a file Rust wrote. Errors use `ipc::IpcError`
-  rather than `act_core::Error`, which has no I/O variant. arrow 59.x is
+  rather than `prospicio_core::Error`, which has no I/O variant. arrow 59.x is
   the newest line that builds on rust-version 1.85.
 
 ## Goal
@@ -126,7 +126,7 @@ provenance()             -> &Provenance
 ```
 
 Risk measures are **not** implemented here. `var` / `tvar` delegate to the
-shared risk-measure functions in `act-prob` (the plan's rule: reserving
+shared risk-measure functions in `prospicio-prob` (the plan's rule: reserving
 never implements its own quantiles).
 
 ## Component keys
@@ -144,7 +144,7 @@ origin in a reserve distribution and an origin in a triangle compare equal.
 | `model` | `"odp_bootstrap"` |
 | `parameters` | ordered key/value list (serializable) |
 | `seed`, `stream_scheme` | `42`, `"chacha20/sim-index/v1"` |
-| `package_version` | crate version of `act-prob` and the model's crate |
+| `package_version` | crate version of `prospicio-prob` and the model's crate |
 | `input_hash` | hash of the canonical input bytes (Arrow IPC of the triangle) |
 
 `stream_scheme` names the rule in `rng.md` that maps simulations to
@@ -176,5 +176,5 @@ All four were decided on 2026-09-30, following the recommendations:
 
 Also decided:
 
-5. ~~`Period` in `act-core`~~: done in #13 (2026-09-30), and `KeyValue`
+5. ~~`Period` in `prospicio-core`~~: done in #13 (2026-09-30), and `KeyValue`
    has a `Period` variant.

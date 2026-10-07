@@ -7,13 +7,13 @@ status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T07:40:00Z }
 sources:
   - id: custom
-    resource: ../crates/act-prob/src/custom.rs
-    title: act_prob::Custom
+    resource: ../crates/prospicio-prob/src/custom.rs
+    title: prospicio_prob::Custom
   - id: binding
-    resource: ../crates/act-r/src/pareto.rs
+    resource: ../crates/prospicio-r/src/pareto.rs
     title: R CustomDist and RFunction
   - id: tests
-    resource: ../R/actuarialrs/tests/test-custom.R
+    resource: ../R/prospicio/tests/test-custom.R
     title: R custom_distribution tests
 ---
 
@@ -44,6 +44,6 @@ sources:
   through extendr's `Function::call`; R still prints its own
   "Error in ..." line to stderr.[^tests]
 
-[^custom]: act_prob::Custom
+[^custom]: prospicio_prob::Custom
 [^binding]: R CustomDist and RFunction
 [^tests]: R custom_distribution tests

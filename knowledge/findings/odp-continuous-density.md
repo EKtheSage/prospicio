@@ -8,8 +8,8 @@ generated: { by: claude-code/cloud-session, at: 2026-10-05T22:05:00Z }
 verified: { by: process:ci, at: 2026-10-05T15:54:30Z }
 sources:
   - id: family
-    resource: ../crates/act-models/src/family.rs
-    title: act_models::Family::log_density, continuous_poisson_mass
+    resource: ../crates/prospicio-models/src/family.rs
+    title: prospicio_models::Family::log_density, continuous_poisson_mass
   - id: scipy
     resource: ../validation/scripts/scipy_family_scores.py
     title: scipy_family_scores.py
@@ -43,5 +43,5 @@ By Euler–Maclaurin the gap to 1 comes only from boundary terms in e^(−λ)
 
 A negative y still has no density (−∞).
 
-[^family]: act_models::Family
+[^family]: prospicio_models::Family
 [^scipy]: scipy_family_scores.py

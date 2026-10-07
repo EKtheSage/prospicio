@@ -6,7 +6,7 @@
 #
 # The package (GPL) is used only to produce reference values; no code from
 # it is used in this repository (docs/design/pareto.md). Rows: Riegel's
-# generalized Pareto (act_prob::evt::Gpd::riegel) distribution function,
+# generalized Pareto (prospicio_prob::evt::Gpd::riegel) distribution function,
 # quantile, layer mean, layer second moment and layer variance. Second
 # moments and variances are compared at 1e-8 for the reason given in
 # r_pareto.R.

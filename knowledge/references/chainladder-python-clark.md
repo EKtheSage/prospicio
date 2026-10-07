@@ -1,7 +1,7 @@
 ---
 type: Reference Implementation
 title: chainladder-python ClarkLDF
-description: chainladder-python 0.10.1's ClarkLDF, the secondary reference for act_reserving's Clark methods; what it shares with R ChainLadder and where its outputs are not comparable.
+description: chainladder-python 0.10.1's ClarkLDF, the secondary reference for prospicio_reserving's Clark methods; what it shares with R ChainLadder and where its outputs are not comparable.
 resource: https://github.com/casact/chainladder-python
 tags: [reserving, clark, growth-curve, parity, python]
 status: stable
@@ -34,7 +34,7 @@ sources:
   GenIns and RAA; the parity rows carry rel_tol 1e-3.
 * `ldf_` holds `G(a_{k+1}) / G(a_k)` for the triangle's ages only, so
   `Chainladder().fit(ClarkLDF().fit_transform(tri))` develops to the last
-  age: R's and act_reserving's `maxage` equal to the last age (120 months
+  age: R's and prospicio_reserving's `maxage` equal to the last age (120 months
   here).
 * For Cape Cod, `omega_`, `theta_` and `elr_` estimate R's. `scale_` does
   not: it uses `incremental_fits_`, which are built from the latest

@@ -6,7 +6,7 @@
 //!   run-off, so its standard deviation is R `BootChainLadder`'s for that
 //!   origin (`reference/reserving_bootstrap_r.csv`) within that case's
 //!   Monte Carlo tolerance; every other origin's is below it. The
-//!   re-reserving itself is checked independently in `act-reserving`'s unit
+//!   re-reserving itself is checked independently in `prospicio-reserving`'s unit
 //!   test `mack_bootstrap_rereserving_reproduces_merz_wuthrich`: with Mack's
 //!   process (England, Verrall and Wüthrich 2019, Appendix 1) it reproduces
 //!   Merz–Wüthrich on GenIns within Monte Carlo error.
@@ -24,11 +24,11 @@
 //!   Mack numbers on Taylor–Ashe (GenIns). Their simulated one-year view
 //!   (Table 4) bootstraps Mack's model, not the ODP, so it is not compared.
 
-use act_reserving::{
+use prospicio_reserving::{
     ChainLadder, Development, Mack, OdpBootstrap, OneYearFit, OneYearMethod, Period,
     ProcessDistribution, SigmaInterpolation,
 };
-use act_validation::{Case, reference, triangle};
+use prospicio_validation::{Case, reference, triangle};
 
 /// Simulations per dataset; the tolerances scale with `1 / sqrt` of it.
 const SIMS: usize = 20_000;

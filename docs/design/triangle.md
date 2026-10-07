@@ -1,6 +1,6 @@
 # Design note: Triangle
 
-Status: **Implemented** in `crates/act-reserving` (v0.1), except the Arrow feature · Depends on: `distributions.md`, `predictive-distribution.md` (period keys) · Replaced: the provisional root `src/` sandbox
+Status: **Implemented** in `crates/prospicio-reserving` (v0.1), except the Arrow feature · Depends on: `distributions.md`, `predictive-distribution.md` (period keys) · Replaced: the provisional root `src/` sandbox
 
 ## Goal
 
@@ -268,7 +268,7 @@ projects the resampled triangles):
 `OdpGlm` is the same over-dispersed Poisson model fitted as a GLM
 (`docs/design/models.md`, "Fitting a triangle with several models"):
 `ln E[X_od] = c + a_o + b_d`, `Var X_od = φ E[X_od]`, by
-`act_glm::Glm::over_dispersed_poisson()` (Pearson's `φ`) on the observed
+`prospicio_glm::Glm::over_dispersed_poisson()` (Pearson's `φ`) on the observed
 rows of a `TriangleFrame`.
 
 - Coding: `Terms` with an intercept and `origin` and `development`
@@ -284,7 +284,7 @@ rows of a `TriangleFrame`.
   `aggregate(["origin"])` gives reserves by origin. Each draw takes the
   coefficients from their normal approximation (parameter uncertainty) and
   each cell as `φ · Poisson(μ / φ)` (process uncertainty). The parameter
-  draws are mean-preserving by default (`act_glm::ParameterDraws`, #114):
+  draws are mean-preserving by default (`prospicio_glm::ParameterDraws`, #114):
   each cell's linear predictor is shifted by `-v / 2`, `v = xᵀ Σ x`, so the
   draws average the Chain Ladder reserve. `predict_distribution_with` takes
   `Normal` (unshifted: each cell's mean is `predictive_means()`, +7.2% on
@@ -306,7 +306,7 @@ rows of a `TriangleFrame`.
 
 ## Calendar-diagonal backtest
 
-`diagonal_backtest` (`act-reserving/src/backtest.rs`) scores any model of
+`diagonal_backtest` (`prospicio-reserving/src/backtest.rs`) scores any model of
 the cells of a `TriangleFrame` the way reserving uses it: for each of the
 latest `k` calendar diagonals, refit on the earlier diagonals and forecast
 the held-out one (`docs/design/models.md`, "Fitting a triangle with several
@@ -316,7 +316,7 @@ models").
   train, test, n_sims, seed)` returns a `CellForecast` (means, a joint
   `PredictiveDistribution` over the test rows, and optional pointwise log
   predictive densities). `GlmCandidate { name, terms, glm }` wraps any
-  `act-glm` GLM; the ODP model is the quasi-Poisson GLM with intercept,
+  `prospicio-glm` GLM; the ODP model is the quasi-Poisson GLM with intercept,
   origin and development factors.
 - A held-out cell whose origin or development level has no training row
   (the newest origin, and the oldest origin at an age not seen before)
@@ -352,7 +352,7 @@ models").
 `Backtest::log_densities()` returns, per model, the held-out log density
 of every scored cell, diagonals in order, aligned across models (`None`
 for a model that gives none). The models that give one are the input of
-`act_models::stack::stacking_weights` (and `pseudo_bma_weights`), the
+`prospicio_models::stack::stacking_weights` (and `pseudo_bma_weights`), the
 cross-validated counterpart of PSIS-LOO pointwise values (#95, #102); the
 weights then blend the models' predictive distributions of the future
 cells with `PredictiveDistribution::blend`. A held-out cell that a model
@@ -370,7 +370,7 @@ young origins' factors rest on one or two noisy cells.
 
 `development.rs` and `chain_ladder.rs` (volume and simple averages,
 cumulative factors, chain ladder, Mack) are ported onto this Triangle in
-`act-reserving`. `validation/tests/reserving.rs` checks every R ChainLadder
+`prospicio-reserving`. `validation/tests/reserving.rs` checks every R ChainLadder
 and chainladder-python reference value on RAA, GenIns and ABC (chain ladder,
 simple average, and Mack with `alpha` 0, 1, 2 and both sigma rules), and the
 root sandbox crate is deleted.

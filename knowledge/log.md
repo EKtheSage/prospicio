@@ -1,5 +1,11 @@
 # Bundle history
 
+## 2026-10-07
+
+* **Update**: the crates are renamed `act-*` to `prospicio-*` and the project `risk-rs` to `prospicio`; concept files use the new crate paths and repository URL. Earlier entries keep the old names; saved-file format tags keep `risk_rs.*`.
+* **Update**: the Python and R packages are renamed `actuarialrs` to `prospicio`; concept files now use the new paths (`python/prospicio`, `R/prospicio`). Earlier entries keep the old name.
+* **Creation**: [WebAssembly builds](/environment/wasm-builds.md), from settling the WASM scope: the core crates build for wasm32, their tests run under WASI with Node, and Rayon falls back to the calling thread.
+
 ## 2026-10-06
 
 * **Correction**: [The simulated one-year view against Merz-Wuthrich, ODP and Mack's process](/findings/one-year-bootstrap-vs-merz-wuthrich.md): the reconciliation under Mack's process is of the standard deviation; EVW's uncentred residual pool (mean 0.14 on RAA) biases the mean CDR by -0.214, -0.038 and +0.176 SD on RAA, GenIns and ABC (now pinned in the validation test), and the new `MackBootstrap::centre_residuals` brings it to within Monte Carlo error of zero while the SD still reconciles; the `Residuals` process carries the pool's mean and variance. From the review of branch claude/one-year-mack.
@@ -10,6 +16,7 @@
 * **Correction**: [The ODP one-year bootstrap against Merz-Wuthrich](/findings/one-year-bootstrap-vs-merz-wuthrich.md): the next cell is now projected from the pseudo latest value, as the lifetime ODP bootstrap does, so the ratios changed (RAA total 0.46 to 0.61); the one-cell origin now matches BootChainLadder without an allowance; the Mack-bootstrap re-reserving check is a CI unit test (within 0.6% on GenIns), and the ratio test is labelled a seed-pinned regression. From the review of branch claude/one-year-bootstrap.
 * **Update**: [Local checks](/environment/local-checks.md): how to check a hand-edited `extendr-wrappers.R` against `wrap__make_actuarialrs_wrappers`, and roxygen's link warnings for a new topic; and [The ODP one-year bootstrap against Merz-Wuthrich](/findings/one-year-bootstrap-vs-merz-wuthrich.md): the R and Python tests hold the same ratios. From R's `odp_one_year()` (branch claude/one-year-bootstrap).
 * **Creation**: [The ODP one-year bootstrap against Merz-Wuthrich](/findings/one-year-bootstrap-vs-merz-wuthrich.md), from building `OdpBootstrap::one_year` (reserving v0.2, decision 8, branch claude/one-year-bootstrap): the measured ratios, why the ODP and Mack differ, and what England, Verrall and Wuthrich (2019) and Boumezoued et al. (2011) publish.
+* **Creation**: [Error and uncertainty terminology](/references/error-terminology.md), a glossary of the error terms used in reserving, statistics and machine learning, and how model bias and systemic risk differ from parameter error.
 * **Update**: [Local checks](/environment/local-checks.md): the roxygen churn is a link-target rewrite, so a real change to those Rd files is kept and only the link restored.
 * **Update**: [R ChainLadder CDR](/references/r-chainladder-cdr.md): what counts as no tail for the one-year view now that the chain ladder fits a `TailFit` (a factor of 1 that replaces no estimated factor), from merging `main` into claude/v02-one-year.
 * **Verification**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md) verified by CI's Rust job on #140 (tabulated-curve and risk-profile tests).

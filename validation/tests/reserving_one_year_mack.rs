@@ -24,11 +24,11 @@
 //!   rule for the last sigma, one-year CDR standard deviation per origin and
 //!   in total, within five standard errors of the two simulations combined.
 
-use act_reserving::{
+use prospicio_reserving::{
     ChainLadder, Development, MackBootstrap, MackBootstrapSegment, MackProcess, OneYearFit,
     OneYearMethod, Period, SigmaInterpolation,
 };
-use act_validation::{Case, reference, triangle};
+use prospicio_validation::{Case, reference, triangle};
 use std::sync::OnceLock;
 
 /// Simulations per dataset; the tolerances scale with `1 / sqrt` of it.

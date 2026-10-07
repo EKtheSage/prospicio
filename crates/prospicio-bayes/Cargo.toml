@@ -1,0 +1,19 @@
+[package]
+name = "prospicio-bayes"
+description = "Bayesian models sampled with NUTS (nuts-rs), MCMC diagnostics and ELPD (docs/design/models.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+prospicio-core.workspace = true
+prospicio-glm.workspace = true
+prospicio-math.workspace = true
+prospicio-models.workspace = true
+prospicio-prob.workspace = true
+nuts-rs.workspace = true
+rayon.workspace = true
+rustfft.workspace = true

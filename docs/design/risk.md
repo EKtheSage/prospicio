@@ -6,7 +6,7 @@ Status: **In progress** · v0.4 · Depends on: `distributions.md`, `predictive-d
 
 Measure the risk of any result (reserve, aggregate loss, tower net),
 combine results under a dependence structure, and split a portfolio's risk
-back to its parts. All of it works on the representations `act-prob`
+back to its parts. All of it works on the representations `prospicio-prob`
 already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 
 | Piece | Module | Works on |
@@ -20,30 +20,30 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 
 ## What exists
 
-- `act_prob::risk::{var_sorted, tvar_sorted}`.
-- `act_prob::Distortion`: `Tvar(p)`, `Wang(λ)`, `ProportionalHazard(ρ)`,
+- `prospicio_prob::risk::{var_sorted, tvar_sorted}`.
+- `prospicio_prob::Distortion`: `Tvar(p)`, `Wang(λ)`, `ProportionalHazard(ρ)`,
   `DualPower(β)`, with `g`, `weights(n)`, `apply_sorted`,
   `apply_discrete`; `Empirical::distortion` and `Grid::distortion`.
 - `PredictiveDistribution::allocate(&Distortion)`: co-measure allocation
   of the total's risk measure to the components (CoTVaR for `Tvar`).
 - `PredictiveDistribution::capital(&Distortion, AllocationMethod)` in
-  `act_prob::capital`: the total's measure, each component's stand-alone
+  `prospicio_prob::capital`: the total's measure, each component's stand-alone
   measure and an allocation by `Euler`, `Covariance`, `Proportional`,
   `Marginal` (Merton–Perold) or `Shapley`, with the diversification
   benefit overall and per component.
-- `act_prob::copula`: the `Copula` trait, `GaussianCopula`,
+- `prospicio_prob::copula`: the `Copula` trait, `GaussianCopula`,
   `StudentTCopula`, and `copula::simulate` to join marginals into a
-  `PredictiveDistribution`. `act_math` gained `linalg::cholesky`,
+  `PredictiveDistribution`. `prospicio_math` gained `linalg::cholesky`,
   `special::beta_inc` and `special::student_t_cdf` for them.
 - `copula::iman_conover(&pd, correlation, seed)`: reorders each
   component's draws to a target correlation.
 - `ArchimedeanCopula` (Clayton, Gumbel, Frank, Joe), exchangeable in any
   dimension.
-- `act_prob::evt`: `Gpd` (generalized Pareto, with a maximum likelihood
+- `prospicio_prob::evt`: `Gpd` (generalized Pareto, with a maximum likelihood
   `Gpd::fit`, an optional location, and closed-form layer moments as a
   `Severity`; see `pareto.md`) and `PotTail`, a peaks-over-threshold tail fitted to the
   draws above an empirical quantile, with VaR and TVaR beyond the draws.
-- Python `actuarialrs.risk` (`Distortion`, `allocate`, the three copula
+- Python `prospicio.risk` (`Distortion`, `allocate`, the three copula
   classes, `simulate`, `iman_conover`) and R (`distortion`,
   `risk_measure`, `allocate`, `gaussian_copula`, `t_copula`,
   `archimedean_copula`, `copula_sample`, `copula_simulate`,

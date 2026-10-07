@@ -39,7 +39,7 @@ the plan keeps the order above.
 Each row lists what the crate holds now, what comes next in order, and
 what it is aiming for by v1.0.
 
-### `act-core` (shared)
+### `prospicio-core` (shared)
 
 - **Now:** errors, periods and grains, `StreamRng` (ChaCha20 streams).
 - **Next:** nothing planned. Changes come only as small PRs on their own
@@ -48,16 +48,16 @@ what it is aiming for by v1.0.
 - **v1.0:** frozen; the stream scheme is part of reproducibility, so it
   changes only with a version bump.
 
-### `act-math` (Probability lane)
+### `prospicio-math` (Probability lane)
 
 - **Now:** quadrature, linear algebra, one-dimensional minimizers (Brent,
   golden section), Nelder–Mead, root finding, special functions, splines.
 - **Next, on demand:** log-determinants and Hessians for REML smoothing
-  (`act-glm`), and Sobol sequences for quasi-Monte Carlo (v1.x).
+  (`prospicio-glm`), and Sobol sequences for quasi-Monte Carlo (v1.x).
 - **v1.0:** only the numerics other crates use. No general-purpose
   library.
 
-### `act-prob` (Probability lane)
+### `prospicio-prob` (Probability lane)
 
 - **Now:**
   - Distributions in three representations (parametric, `Grid`,
@@ -74,7 +74,7 @@ what it is aiming for by v1.0.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
-### `act-aggregate` (Aggregate lane)
+### `prospicio-aggregate` (Aggregate lane)
 
 - **Now:**
   - Panjer, FFT, Monte Carlo event sets (with sums insured and times),
@@ -92,7 +92,7 @@ what it is aiming for by v1.0.
 - **v1.0:** a reinsurance programme described once and applied to any
   loss source.
 
-### `act-pricing` (Aggregate lane)
+### `prospicio-pricing` (Aggregate lane)
 
 - **Now:**
   - Layer rating, ILFs and Pareto extrapolation, tower matching.
@@ -103,12 +103,12 @@ what it is aiming for by v1.0.
   1. Rate indication: trend, on-level premium and loss development into
      an indicated rate change. This is the v0.6 pricing scope.
   2. Credibility (limited fluctuation, Bühlmann, Bühlmann–Straub). It may
-     become `act-credibility` once it has a Bayesian side.
+     become `prospicio-credibility` once it has a Bayesian side.
   3. Log-log interpolation for tabulated curves, and a tilted spread
      within bands.
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
-### `act-reserving` (Reserving lane, local session)
+### `prospicio-reserving` (Reserving lane, local session)
 
 - **Now:**
   - `Triangle`, Chain Ladder, Mack, ODP bootstrap and ODP GLM, segment
@@ -118,12 +118,12 @@ what it is aiming for by v1.0.
 - **Next (from that lane):**
   1. A simulated one-year view: re-reserving on the ODP bootstrap for any
      method.
-  2. Bayesian reserving with `act-bayes` (v0.7).
+  2. Bayesian reserving with `prospicio-bayes` (v0.7).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 
-### `act-models` (Models lane)
+### `prospicio-models` (Models lane)
 
 - **Now:** families, links, `Terms` to `Design`, metrics, resampling,
   tuning, `compare`, stacking, monitoring, simulation from means.
@@ -134,7 +134,7 @@ what it is aiming for by v1.0.
      parked.
 - **v1.0:** one model protocol for every engine, native or delegated.
 
-### `act-glm` (Models lane)
+### `prospicio-glm` (Models lane)
 
 - **Now:** GLM by IRLS, Tweedie with power profiling, elastic net with a
   cross-validated path, robust covariance, GAM with P-splines (GCV/UBRE).
@@ -144,7 +144,7 @@ what it is aiming for by v1.0.
   3. Cyclic and monotone smooths. This completes the GAM scope of v0.6.
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.
 
-### `act-nn` (Models lane, opt-in)
+### `prospicio-nn` (Models lane, opt-in)
 
 - **Now:** CANN and the attention CANN on Burn, with random search and
   early stopping.
@@ -154,7 +154,7 @@ what it is aiming for by v1.0.
 - **v1.0:** networks behind the shared model protocol, in every front
   end.
 
-### `act-bayes` (Models lane, opt-in)
+### `prospicio-bayes` (Models lane, opt-in)
 
 - **Now:** NUTS on nuts-rs, Bayesian GLM, Bayesian and hierarchical
   stacking, ELPD (PSIS-LOO, WAIC), MCMC diagnostics.
@@ -165,14 +165,16 @@ what it is aiming for by v1.0.
   3. Posterior predictive checks.
 - **v1.0:** our own model specs and diagnostics, with sampling delegated.
 
-### `act-python`, `act-r`, `python/`, `R/` (each lane its own module)
+### `prospicio-python`, `prospicio-r`, `python/`, `R/` (each lane its own module)
 
 - **Now:** every crate's API in both languages; docs generated from the
   doc comments (great-docs, pkgdown).
 - **Next:**
-  1. The WASM build (v0.9). This needs a decision on which crates
-     guarantee `wasm32`, and on a single-threaded fallback.
-  2. Where the docs sites are published.
+  1. The WASM build (v0.9). The scope is decided (core, math, prob,
+     aggregate with reinsurance, pricing, reserving) and CI checks that
+     they build for `wasm32-unknown-unknown`. Next is a JavaScript API
+     over them (`wasm-bindgen`) for a browser page or an Excel add-in.
+  2. (Done: the docs sites are published to GitHub Pages from `main`.)
 - **v1.0:** API review and deprecation pass, then semver.
 
 ## Waiting on the user
@@ -180,12 +182,12 @@ what it is aiming for by v1.0.
 - Claim-level reserving (v0.8): parked until the user has thought through
   its design.
 
-These come from `architecture.md`'s open decisions:
+Decided 2026-10-07 (`architecture.md`, "Open decisions"): the name
+(prospicio for the repository, the Rust crates and the Python and R
+packages), the licence (MIT OR Apache-2.0), IP ownership (Ethan Kang) and
+the WASM scope; the docs are published to GitHub Pages. Still open:
 
-- the public name;
-- the licence;
-- IP ownership;
-- where the docs are hosted;
-- the WASM scope.
+- reserving the names on crates.io, PyPI and CRAN, which needs the user's
+  accounts.
 
-None of them blocks current work, but the first four block a public release.
+It does not block current work; it comes before the first release.

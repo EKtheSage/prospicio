@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: MBBEFD exposure curves (Bernegger 1997)
-description: The MBBEFD class behind act_pricing::exposure; its four closed-form cases, the Swiss Re c curves, and numerical points found while building it.
+description: The MBBEFD class behind prospicio_pricing::exposure; its four closed-form cases, the Swiss Re c curves, and numerical points found while building it.
 resource: https://doi.org/10.2143/AST.27.1.563208
 tags: [pricing, exposure-rating, mbbefd, property, reinsurance]
 status: stable
@@ -12,8 +12,8 @@ sources:
     resource: https://doi.org/10.2143/AST.27.1.563208
     title: Bernegger (1997), The Swiss Re exposure curves and the MBBEFD distribution class, ASTIN Bulletin 27(1)
   - id: code
-    resource: ../crates/act-pricing/src/exposure.rs
-    title: act_pricing::exposure
+    resource: ../crates/prospicio-pricing/src/exposure.rs
+    title: prospicio_pricing::exposure
   - id: parity
     resource: ../validation/scripts/mpmath_mbbefd.py
     title: mpmath_mbbefd.py
@@ -34,7 +34,7 @@ sources:
 
 # Numerical points
 
-* The general form cancels near `b = 1` and `bg = 1`; act-pricing switches
+* The general form cancels near `b = 1` and `bg = 1`; prospicio-pricing switches
   to the special forms within 1e-10 of them. At a relative distance 1e-6 the
   general form still agrees with the limit to 1e-5.[^code]
 * `G(0)` in the general case is `ln` of a ratio equal to 1, so it comes out
@@ -43,5 +43,5 @@ sources:
   to 1e-12 for c = 1.5–5 and one curve per case (56 values).[^parity]
 
 [^bernegger]: Bernegger (1997)
-[^code]: act_pricing::exposure
+[^code]: prospicio_pricing::exposure
 [^parity]: mpmath_mbbefd.py

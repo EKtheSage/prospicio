@@ -2,8 +2,8 @@ import math
 
 import pytest
 
-from actuarialrs.distributions import Grid, Lognormal, PredictiveDistribution, Sampled
-from actuarialrs.risk import (
+from prospicio.distributions import Grid, Lognormal, PredictiveDistribution, Sampled
+from prospicio.risk import (
     ArchimedeanCopula,
     Distortion,
     GaussianCopula,
@@ -83,7 +83,7 @@ def test_iman_conover_keeps_marginals():
 
 
 def test_evt():
-    from actuarialrs.risk import Gpd, PotTail
+    from prospicio.risk import Gpd, PotTail
 
     g = Gpd(0.25, 2.0)
     assert g.cdf(g.quantile(0.9)) == pytest.approx(0.9)

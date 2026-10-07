@@ -5,15 +5,15 @@
 //! The data is downloaded, not committed: `python
 //! validation/scripts/fetch_fremtpl2.py` writes
 //! `validation/data/external/freMTPL2freq_glm.csv`. Run it with
-//! `cargo test --release -p act-validation --test fremtpl2` (about 30 s;
+//! `cargo test --release -p prospicio-validation --test fremtpl2` (about 30 s;
 //! some six minutes unoptimized). Without the file, or in an unoptimized
 //! build, the test says so and passes, unless `RISK_RS_REQUIRE_FREMTPL2`
 //! is set, as CI's `fremtpl2` job sets it after fetching (and caching)
 //! the file.
 
-use act_glm::{Glm, GlmFit, Robust};
-use act_models::{Column, Design, Frame, Model, Terms};
-use act_validation::{check, reference};
+use prospicio_glm::{Glm, GlmFit, Robust};
+use prospicio_models::{Column, Design, Frame, Model, Terms};
+use prospicio_validation::{check, reference};
 
 const DATA: &str = "data/external/freMTPL2freq_glm.csv";
 
@@ -106,9 +106,12 @@ fn fremtpl2_frequency_glm_matches_statsmodels() {
     let d = design(&data);
     let y = numeric(&data, "ClaimNb");
     assert_eq!(y.len(), 678_013);
-    let poisson: GlmFit = Glm::new(act_models::Family::Poisson, act_models::Link::Log)
-        .fit(&d, &y)
-        .unwrap();
+    let poisson: GlmFit = Glm::new(
+        prospicio_models::Family::Poisson,
+        prospicio_models::Link::Log,
+    )
+    .fit(&d, &y)
+    .unwrap();
     let quasi = Glm::over_dispersed_poisson().fit(&d, &y).unwrap();
     let hc0 = poisson.robust_std_errors(&d, &y, Robust::Hc0).unwrap();
     let cases = reference("fremtpl2_statsmodels.csv");

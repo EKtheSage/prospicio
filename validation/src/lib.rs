@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use act_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
+use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
 
 /// One row of a reference file: column name to raw value.
 #[derive(Debug, Clone)]

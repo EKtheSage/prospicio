@@ -81,7 +81,7 @@ Build natively where the math is actuarial, the implementation is tractable, and
 | GAM | Build, scoped | P-splines, tensor smooths, GCV/REML for Tweedie/Poisson/Gamma; not mgcv parity |
 | MCMC samplers (NUTS/HMC) | Integrate | nutpie (its Rust core, `nuts-rs`, for native models); own model specs and diagnostics |
 | Gradient boosting | Integrate | LightGBM/XGBoost via their Python/R bindings; adapters emit shared objects |
-| Neural networks | Build, scoped | Burn in `act-nn`, CPU (`ndarray`) by default and GPU opt-in: one network for Python, R and WASM, reproducible under our RNG streams. Actuarial networks (tabular MLPs, CANN) are small |
+| Neural networks | Build, scoped | Burn in `prospicio-nn`, CPU (`ndarray`) by default and GPU opt-in: one network for Python, R and WASM, reproducible under our RNG streams. Actuarial networks (tabular MLPs, CANN) are small |
 | Dataframes | Integrate | Arrow as interchange; Polars optional at the edges, never the numerical core |
 
 **Test for any new build decision:** does a mature, well-maintained engine already exist, and would owning it change what users can do? If yes and no, integrate.
@@ -159,36 +159,36 @@ The fast path is a closed set of Rust-native objects; user-defined Python/R call
 Start with five crates plus bindings; split a crate only when compile time, dependency weight, or independent release cadence forces it.
 
 ```text
-actuarial-rs/
+prospicio/
 ├── Cargo.toml
 ├── crates/
-│   ├── act-core/          errors, traits, arrays, masks, periods, RNG streams
-│   ├── act-math/          linear algebra, optimization, integration, FFT,
+│   ├── prospicio-core/          errors, traits, arrays, masks, periods, RNG streams
+│   ├── prospicio-math/          linear algebra, optimization, integration, FFT,
 │   │                      special functions, root finding
-│   ├── act-prob/          distributions (3 representations), PredictiveDistribution,
+│   ├── prospicio-prob/          distributions (3 representations), PredictiveDistribution,
 │   │                      dependence, risk measures, distortions, transforms
-│   ├── act-reserving/     Triangle, deterministic + stochastic methods, CDR
-│   ├── act-aggregate/     freq-sev, FFT/Panjer/MC, reinsurance contracts, towers
-│   ├── act-pricing/       layer and limit rating (ILF, deductibles, extrapolation),
+│   ├── prospicio-reserving/     Triangle, deterministic + stochastic methods, CDR
+│   ├── prospicio-aggregate/     freq-sev, FFT/Panjer/MC, reinsurance contracts, towers
+│   ├── prospicio-pricing/       layer and limit rating (ILF, deductibles, extrapolation),
 │   │                      reinsurance tower matching (see docs/design/pareto.md)
-│   ├── act-models/        model interface and life cycle: specs, designs, families,
+│   ├── prospicio-models/        model interface and life cycle: specs, designs, families,
 │   │                      resampling, metrics, tuning, comparison, artifacts
 │   │                      (see docs/design/models.md)
-│   ├── act-glm/           GLM, and GAM as a penalized GLM
-│   ├── act-nn/            neural networks on Burn (opt-in)
-│   ├── act-bayes/         Bayesian specs and diagnostics; samplers delegated (opt-in)
-│   ├── act-python/        PyO3 bindings
-│   └── act-r/             extendr bindings
+│   ├── prospicio-glm/           GLM, and GAM as a penalized GLM
+│   ├── prospicio-nn/            neural networks on Burn (opt-in)
+│   ├── prospicio-bayes/         Bayesian specs and diagnostics; samplers delegated (opt-in)
+│   ├── prospicio-python/        PyO3 bindings
+│   └── prospicio-r/             extendr bindings
 ├── python/
 ├── R/
 └── validation/            reference datasets + parity suites
 ```
 
-**Model crates** (`docs/design/models.md`) split by dependency weight: the light `act-models` holds the interface and life cycle, and each heavy engine (`act-nn` on Burn, `act-bayes` with its samplers) is an opt-in feature. **Expected later splits** (not created until needed): `act-capital`, `act-claims`, `act-survival`, `act-credibility`, `act-evt`, `act-stochastic`. Delegated and heavy engines (samplers, GBDT, Burn) never become required Rust dependencies.
+**Model crates** (`docs/design/models.md`) split by dependency weight: the light `prospicio-models` holds the interface and life cycle, and each heavy engine (`prospicio-nn` on Burn, `prospicio-bayes` with its samplers) is an opt-in feature. **Expected later splits** (not created until needed): `prospicio-capital`, `prospicio-claims`, `prospicio-survival`, `prospicio-credibility`, `prospicio-evt`, `prospicio-stochastic`. Delegated and heavy engines (samplers, GBDT, Burn) never become required Rust dependencies.
 
 **Feature flags** keep heavy paths optional: `default = ["reserving", "aggregate"]`, with `glm`, `nn`, `capital`, `claims`, `bayes-bridge`, `polars`, `wasm` opt-in.
 
-**Prefix:** internal crates use `act-*` until the public name is chosen; see Open decisions.
+**Prefix:** internal crates use `prospicio-*` until the public name is chosen; see Open decisions.
 
 ## Domain scope
 
@@ -230,7 +230,7 @@ model.diagnostics()
 | Survival | Rust | Kaplan-Meier, Cox, parametric, competing risks, multi-state |
 | Bayesian | Specs + diagnostics in Rust; sampling via nutpie | Hierarchical severity, Bayesian CL, compartmental reserving, credibility; R-hat, ESS, divergences, PPC, ELPD (LOO, WAIC) |
 | Gradient boosting | Python/R adapters over LightGBM, XGBoost | Poisson/Gamma/Tweedie/quantile objectives, monotone constraints, exposure via offsets |
-| Neural | Rust (`act-nn`, Burn) behind the protocol; PyTorch models via ONNX import | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
+| Neural | Rust (`prospicio-nn`, Burn) behind the protocol; PyTorch models via ONNX import | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
 
 Delegated engines are thin: they convert inputs, call the engine, and wrap outputs in shared objects. They add no evaluation logic of their own.
 
@@ -290,7 +290,7 @@ Users see seven namespaces regardless of how many internal crates exist; each ob
 Pricing and credibility join as `pricing` and `credibility` when those phases land. Copulas live in `risk` only (v1 listed a separate `dependence` namespace); Wang lives in `risk` only.
 
 ```python
-import actuarialrs as ar
+import prospicio as ar
 
 tri = ar.reserving.Triangle.from_arrow(df)
 boot = ar.reserving.ODPBootstrap(n_sims=10_000, seed=42).fit(tri)
@@ -312,7 +312,7 @@ ar.risk.TVaR(0.99)(result.net)
 ```
 
 ```r
-library(actuarialrs)
+library(prospicio)
 
 tri  <- triangle(df)
 boot <- odp_bootstrap(tri, n_sims = 10000, seed = 42)
@@ -326,14 +326,14 @@ Each front end's docs are generated from the code that defines its API, and buil
 | Front end | Written in | Generated by `cargo xtask <task>` | Committed | Rendered site |
 | --- | --- | --- | --- | --- |
 | Rust crates | `///` doc comments, examples run as doctests | `rust`: rustdoc, warnings denied | — | `target/doc` |
-| Python | `///` numpydoc comments on the PyO3 wrappers in `crates/act-python`; they are the docstrings | `python`: maturin `--generate-stubs` writes typed stubs carrying the docstrings; great-docs renders them | `actuarialrs_native.pyi` | great-docs (Quarto) |
-| R | roxygen2 `#'` comments on the wrappers in `R/actuarialrs/R` | `r`: roxygen2 writes `man/` and `NAMESPACE`; pkgdown renders them | `man/`, `NAMESPACE` | pkgdown |
+| Python | `///` numpydoc comments on the PyO3 wrappers in `crates/prospicio-python`; they are the docstrings | `python`: maturin `--generate-stubs` writes typed stubs carrying the docstrings; great-docs renders them | `prospicio_native.pyi` | great-docs (Quarto) |
+| R | roxygen2 `#'` comments on the wrappers in `R/prospicio/R` | `r`: roxygen2 writes `man/` and `NAMESPACE`; pkgdown renders them | `man/`, `NAMESPACE` | pkgdown |
 
 - **One command per binding.** `cargo xtask python` and `cargo xtask r` build, test and regenerate docs in one step; `cargo xtask docs` runs all three and collects the sites into `target/docs-site`.
 - **Generated files that ship in a package are committed** (the stub, `man/`, `NAMESPACE`) so reviewers see API changes in the diff. `--check` fails when a build changes one; CI runs `cargo xtask docs --check`.
 - **Documentation is tested:** Python requires a docstring on every public object and runs docstring examples; R runs `tools::undoc` and `tools::codoc`, and pkgdown runs every `@examples` block.
 - **Semantics are documented once, in Rust.** Binding docs describe the language API; definitions, formulas and references live in the Rust crate docs, and binding docs link to them instead of restating them.
-- **Rendered sites are not committed.** CI uploads them as a build artifact; where they are published is an open decision.
+- **Rendered sites are not committed.** CI uploads them as a build artifact on PRs; `.github/workflows/pages.yml` publishes them to GitHub Pages from `main`.
 
 ## Roadmap and releases
 
@@ -383,13 +383,13 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 
 | Decision | Options | Needed by |
 | --- | --- | --- |
-| Public name | Defer branding; reserve the chosen name on crates.io, PyPI and CRAN as soon as it is picked | Before v0.1 publish |
-| Working prefix | `actuarial-rs` repo, `act-*` crates, `actuarialrs` Python/R package | Now |
-| License | MIT/Apache-2.0 dual (Rust convention); confirm compatibility with CRAN distribution | Before first public commit |
-| IP ownership | Confirm with employer that open-source work in this domain is personal IP | Before first public commit |
+| ~~Public name~~ | Decided 2026-10-07: **prospicio** (Latin, "I look ahead": the library quantifies future uncertainty and risk) for everything: the repository (renamed from `risk-rs`), the Python and R packages (renamed from `actuarialrs`), and the Rust crates `prospicio-core`, `prospicio-prob`, ... (renamed from `act-*`). Free on PyPI, CRAN and crates.io on that date; reserve `prospicio` on PyPI and crates.io before the first publish. A published Rust release would add an umbrella crate `prospicio` re-exporting the others, as polars does. (`actuate` was considered: free on CRAN only.) | Before v0.1 publish |
+| ~~Format tags~~ | Kept on the rename: saved files and IPC metadata keep their `risk_rs.*` tags (`risk_rs.distribution`, `risk_rs.tower`, `risk_rs.glm_fit`, the Arrow keys `risk_rs.format`, ...) and the input-hash context `"risk-rs 2026-09-30 input-hash v1"`. They are wire identifiers, pinned by golden files; renaming them would break saved files for no gain | — |
+| ~~License~~ | Decided 2026-10-07: MIT OR Apache-2.0 at the user's option (`LICENSE-MIT`, `LICENSE-APACHE`; R `MIT + file LICENSE \| Apache License (== 2.0)`, which CRAN accepts). No contributor licence agreement for now: contributions come in under the same licence (inbound = outbound); a CLA can be added before outside contributions start if relicensing rights are needed | — |
+| ~~IP ownership~~ | Decided 2026-10-07: Ethan Kang owns the project's IP; it is built on his own time and resources | — |
 | ~~Bayesian backend~~ | Decided 2026-10-04: nutpie. Native models sample with its Rust core `nuts-rs` (from R too); Python users can hand nutpie traces of PyMC or Stan models to the shared diagnostics (`docs/design/models.md`) | — |
 | ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`) | — |
-| WASM scope | Which crates guarantee `wasm32` builds; single-threaded fallback policy | Before v0.3 |
-| Docs hosting | GitHub Pages (public, needs the repo public or a paid plan) vs private hosting; waits on IP ownership and license | Before v0.1 publish |
+| ~~WASM scope~~ | Decided 2026-10-07: `prospicio-core`, `prospicio-math`, `prospicio-prob`, `prospicio-aggregate` (with reinsurance), `prospicio-pricing` and `prospicio-reserving` must build for `wasm32-unknown-unknown`; CI checks it. Without threads Rayon's global pool runs on the calling thread, so results are the same, only slower; an explicit multi-thread pool fails there | — |
+| ~~Docs hosting~~ | Decided 2026-10-07: GitHub Pages, now that the repository is public. `.github/workflows/pages.yml` builds the site (`cargo xtask docs`: Python, R and Rust API docs) and deploys it on each merge to `main` that touches code or docs, and on demand | — |
 
 **Next step:** write the distribution-representation and PredictiveDistribution design note; the Triangle and RNG notes depend on it.

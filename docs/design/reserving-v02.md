@@ -4,7 +4,7 @@ Status: **Proposed** · Lane: Reserving · Depends on: `triangle.md`, `docs/arch
 
 ## Goal
 
-Broaden `act-reserving` past the chain ladder: the expected-loss family
+Broaden `prospicio-reserving` past the chain ladder: the expected-loss family
 (expected loss ratio, Bornhuetter–Ferguson, Benktander, Cape Cod) driven by
 an exposure column, tail factors, Clark's growth-curve methods, and the
 one-year view of Merz and Wüthrich. Every method lands in Rust, Python and R
@@ -18,14 +18,14 @@ Each PR holds one family, in this order, so that each can merge on its own:
 | PR | Branch | Holds | Base |
 |---|---|---|---|
 | 0 | `claude/v02-design` | this note | `main` |
-| 1 | `claude/act-math-nelder-mead` | `act_math::optimize::nelder_mead` (Probability lane's crate, with the user's go-ahead) | `main` |
+| 1 | `claude/prospicio-math-nelder-mead` | `prospicio_math::optimize::nelder_mead` (Probability lane's crate, with the user's go-ahead) | `main` |
 | 2 | `claude/v02-expected-loss` | `ExpectedLoss`, `BornhuetterFerguson`, `Benktander`, `CapeCod` | PR 0 |
 | 3 | `claude/v02-tails` | `Tail` and its estimators, Mack with a tail | PR 0 |
 | 4 | `claude/v02-one-year` | Merz–Wüthrich claims development result | PR 0 |
 | 5 | `claude/v02-clark` | `ClarkLdf`, `ClarkCapeCod` | PRs 1 and 2 |
 
-PRs 2–4 touch the same binding files (`crates/act-python/src/reserving.rs`,
-`crates/act-r/src/reserving.rs`, `R/actuarialrs/R/reserving.R`) and the
+PRs 2–4 touch the same binding files (`crates/prospicio-python/src/reserving.rs`,
+`crates/prospicio-r/src/reserving.rs`, `R/prospicio/R/reserving.R`) and the
 generated stub, `NAMESPACE` and `man/`. Whichever merges second merges
 `main` and regenerates the generated files; it does not merge them by hand.
 
@@ -117,7 +117,7 @@ trended apriori before detrending (chainladder-python's `apriori_`).
 ladder's, and the long tables use it, so `SegmentFits` of any method report
 that method's ultimate and reserve.
 
-As implemented (`crates/act-reserving/src/expected_loss.rs`, parity in
+As implemented (`crates/prospicio-reserving/src/expected_loss.rs`, parity in
 `validation/tests/reserving_expected_loss.rs`, every row of
 `reserving_expected_loss_python.csv` to 1e-9 relative):
 
@@ -299,7 +299,7 @@ volume, which leaves the hole out now and next year, and the run-off adds
 up to Mack's. This is a deliberate deviation from R: R's `CDR` takes the
 volumes from the full triangle, imputed cell included, and on RAA without
 1982 at 48 its run-off (24,837) falls short of its own Mack (24,848);
-act-reserving's matches Mack.
+prospicio-reserving's matches Mack.
 
 `by_calendar_year` has one year per age-to-age factor. R reports one per
 age, so its last year, `CDR(n)S.E.`, is past the run-off and always zero;
@@ -333,13 +333,13 @@ over-dispersed Poisson scale, at the average date of loss as R's
 `adol = TRUE` does. `max_age` truncates the curve as R's `maxage`. Given
 `(omega, theta)`, the ultimates (LDF) or the ELR (Cape Cod) have closed
 forms, so the likelihood is profiled onto two parameters and minimized with
-`act_math::optimize::nelder_mead` on `(ln omega, ln theta)`. The parameter
+`prospicio_math::optimize::nelder_mead` on `(ln omega, ln theta)`. The parameter
 covariance is the inverse Fisher information times the scale, from analytic
 derivatives of the curve, as in Clark (2003). The fit reports `omega`,
 `theta`, the scale, ultimates, reserves, process, parameter and total
 standard errors per origin and in total, and implements `ReserveFit`.
 
-As implemented (`crates/act-reserving/src/clark.rs`, parity in
+As implemented (`crates/prospicio-reserving/src/clark.rs`, parity in
 `validation/tests/reserving_clark.rs`; R's definitions and quirks are in
 `knowledge/references/r-chainladder-clark.md`):
 
@@ -377,7 +377,7 @@ As implemented (`crates/act-reserving/src/clark.rs`, parity in
   `omega <= 2`, `theta <= 2 * max(age)`, both curves at `omega >= 0.01`,
   the log-logistic at `theta >= min(0.5, ages)`, and the Cape Cod ELR at
   10 (without a warning). Deviation from R: where R's ELR is pinned at 10,
-  as with exposure in smaller units than the losses, act_reserving returns
+  as with exposure in smaller units than the losses, prospicio_reserving returns
   the unbounded maximum (RAA with premium 1000: ELR 27.61, R 10). Losses are divided by the largest
   chain-ladder ultimate while fitting (R's `magscale`). Errors: fewer than
   four ages is `TooFewAges`; a `max_age` before the last age is
