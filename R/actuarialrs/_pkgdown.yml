@@ -62,6 +62,8 @@ reference:
       - simulate_events
       - events_from_years
       - event_sums_insured
+      - event_times
+      - with_uniform_times
       - event_set
       - events
       - event_counts
@@ -76,6 +78,7 @@ reference:
       - reinstatement_premium
       - reinsurance_tower
       - inuring_tower
+      - tower_to_json
       - tower_ceded
       - apply_tower
       - tower_on_grid
@@ -163,5 +166,6 @@ reference:
       - expected_loss_fit
       - cape_cod_fit
       - odp_bootstrap_fit
+      - one_year_fit
       - clark_fit
       - fit_frames

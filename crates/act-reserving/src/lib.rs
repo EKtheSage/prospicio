@@ -6,7 +6,8 @@
 //! [`Tail`] factors, the expected-loss family ([`ExpectedLoss`],
 //! [`BornhuetterFerguson`], [`Benktander`], [`CapeCod`]) driven by an
 //! exposure column, Merz and Wüthrich's one-year view,
-//! [`MackFit::claims_development_result`], and Clark's growth curves
+//! [`MackFit::claims_development_result`], its simulated counterpart for
+//! any method, [`OdpBootstrap::one_year`], and Clark's growth curves
 //! ([`ClarkLdf`], [`ClarkCapeCod`]) (`docs/design/reserving-v02.md`).
 //! Results are checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.
@@ -44,6 +45,7 @@ pub mod frame;
 pub mod mack;
 pub mod odp_glm;
 pub mod one_year;
+pub mod one_year_bootstrap;
 pub mod segments;
 pub mod tail;
 pub mod triangle;
@@ -67,6 +69,7 @@ pub use frame::TriangleFrame;
 pub use mack::{Mack, MackFit};
 pub use odp_glm::{OdpGlm, OdpGlmFit};
 pub use one_year::ClaimsDevelopmentResult;
+pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
 pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};
 pub use triangle::{CalendarView, DevelopmentColumn, Diagonal, Label, Long, LongTable, Triangle};

@@ -36,6 +36,12 @@ use crate::to_py;
 ///     ``premium`` (1.0 is 100%), pro rata as to amount. Sets
 ///     ``aggregate_limit`` to ``limit * (len(reinstatement_rates) + 1)``;
 ///     cannot be combined with ``aggregate_limit`` or ``reinstatements``.
+/// pro_rata_time : bool, default False
+///     Paid reinstatements also pro rata as to time: the limit a loss at
+///     time ``t`` (the fraction of the year elapsed) uses up is charged at
+///     ``1 - t``. Needs ``reinstatement_rates``, and events with times
+///     (``EventSet.with_uniform_times``, or ``times=`` in
+///     ``EventSet.from_years``).
 ///
 /// Raises
 /// ------
@@ -54,6 +60,10 @@ use crate::to_py;
 /// >>> paid = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
 /// >>> paid.reinstatement_premium([22.0, 12.0])
 /// 2.2
+/// >>> timed = Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5],
+/// ...               pro_rata_time=True)
+/// >>> round(timed.reinstatement_premium([22.0, 12.0], times=[0.25, 0.5]), 12)
+/// 1.6
 #[pyclass(name = "Layer", module = "actuarialrs.reinsurance", frozen)]
 pub(crate) struct PyLayer {
     inner: Layer,
@@ -62,7 +72,7 @@ pub(crate) struct PyLayer {
 #[pymethods]
 impl PyLayer {
     #[new]
-    #[pyo3(signature = (name, limit, attachment, share = 1.0, aggregate_deductible = 0.0, aggregate_limit = None, reinstatements = None, premium = 0.0, reinstatement_rates = None))]
+    #[pyo3(signature = (name, limit, attachment, share = 1.0, aggregate_deductible = 0.0, aggregate_limit = None, reinstatements = None, premium = 0.0, reinstatement_rates = None, pro_rata_time = false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         name: String,
@@ -74,6 +84,7 @@ impl PyLayer {
         reinstatements: Option<u32>,
         premium: f64,
         reinstatement_rates: Option<Vec<f64>>,
+        pro_rata_time: bool,
     ) -> PyResult<Self> {
         let mut layer = Layer::xol(name, limit, attachment)
             .and_then(|l| l.share(share))
@@ -92,6 +103,9 @@ impl PyLayer {
                 ));
             }
         };
+        if pro_rata_time {
+            layer = layer.pro_rata_as_to_time().map_err(to_py)?;
+        }
         Ok(Self { inner: layer })
     }
 
@@ -254,6 +268,12 @@ impl PyLayer {
         self.inner.reinstatement_rates.clone()
     }
 
+    /// Whether paid reinstatements are pro rata as to time.
+    #[getter]
+    fn pro_rata_time(&self) -> bool {
+        self.inner.pro_rata_time
+    }
+
     /// Ceded loss for one year's losses.
     ///
     /// Parameters
@@ -294,17 +314,32 @@ impl PyLayer {
     ///
     /// With layer loss ``L`` at 100% after annual terms, ``premium *
     /// sum(rate_k * min(max(L - k * limit, 0), limit) / limit)``; zero when
-    /// reinstatements are free.
+    /// reinstatements are free. Pro rata as to time, the limit each loss
+    /// uses up is charged at ``1 - t``, its time's share of the year left.
     ///
     /// Parameters
     /// ----------
     /// losses : list of float
+    ///     In time order.
+    /// times : list of float, optional
+    ///     Each loss's time, as the fraction of the year elapsed; needed
+    ///     (and only used) when the layer is pro rata as to time.
     ///
     /// Returns
     /// -------
     /// float
-    fn reinstatement_premium(&self, losses: Vec<f64>) -> f64 {
-        self.inner.reinstatement_premium(&losses)
+    ///     NaN for a layer pro rata as to time without ``times``.
+    #[pyo3(signature = (losses, times = None))]
+    fn reinstatement_premium(&self, losses: Vec<f64>, times: Option<Vec<f64>>) -> PyResult<f64> {
+        match times {
+            None => Ok(self.inner.reinstatement_premium(&losses)),
+            Some(t) if t.len() == losses.len() => {
+                Ok(self.inner.reinstatement_premium_dated(&losses, &t))
+            }
+            Some(_) => Err(pyo3::exceptions::PyValueError::new_err(
+                "give one time per loss",
+            )),
+        }
     }
 
     fn __repr__(&self) -> String {
@@ -352,6 +387,72 @@ impl PyTower {
     fn new(layers: Vec<PyRef<'_, PyLayer>>) -> PyResult<Self> {
         let inner = Tower::new(layers.iter().map(|l| l.inner.clone()).collect()).map_err(to_py)?;
         Ok(Self { inner })
+    }
+
+    /// A tower whose stages inure in order.
+    ///
+    /// Each stage's layers see the losses net of all earlier stages, event
+    /// by event, with annual terms used up in event order.
+    ///
+    /// Parameters
+    /// ----------
+    /// stages : list of list of Layer
+    ///     No stage may be empty; names must be unique across stages.
+    ///
+    /// Returns
+    /// -------
+    /// Tower
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reinsurance import Layer, Tower
+    /// >>> tower = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("5x5", 5.0, 5.0)]])
+    /// >>> tower.ceded([30.0])
+    /// [15.0, 5.0]
+    /// Reads a document written by ``Tower.to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// Tower
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     On malformed JSON, another format, a newer format version, or a
+    ///     term a layer refuses.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        let inner = Tower::from_json(text).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The programme as a versioned JSON document: every stage and layer
+    /// with all its terms, numbers bit for bit. ``Tower.from_json`` reads it
+    /// back to an equal tower, rebuilding each layer through the same
+    /// checks; towers also pickle this way.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> from actuarialrs.reinsurance import Layer, Tower
+    /// >>> tower = Tower.inuring([[Layer.surplus("S", 1e6, 4.0)], [Layer("xl", 2e6, 1e6)]])
+    /// >>> back = Tower.from_json(tower.to_json())
+    /// >>> back.to_json() == tower.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.borrow().inner.to_json(),)))
     }
 
     /// A tower whose stages inure in order.

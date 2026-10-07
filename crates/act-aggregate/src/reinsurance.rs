@@ -50,6 +50,9 @@ pub struct Layer {
     /// `premium` (1.0 is 100%), pro rata as to amount. Empty when
     /// reinstatements are free.
     pub reinstatement_rates: Vec<f64>,
+    /// Whether reinstatement premiums are also pro rata as to time: each
+    /// event's share is scaled by the part of the year left after it.
+    pub pro_rata_time: bool,
 }
 
 /// What a layer's per-event recovery is figured on.
@@ -102,6 +105,7 @@ impl Layer {
             aggregate_limit: f64::INFINITY,
             premium: 0.0,
             reinstatement_rates: Vec::new(),
+            pro_rata_time: false,
         })
     }
 
@@ -263,6 +267,41 @@ impl Layer {
         Ok(self)
     }
 
+    /// Makes the paid reinstatements pro rata as to time as well as to
+    /// amount: limit used by a loss at time `t` (the fraction of the year
+    /// elapsed) is reinstated for the remaining `1 − t` of the year, so its
+    /// premium is scaled by `1 − t`. The events must carry times
+    /// ([`EventSet::with_times`], [`EventSet::with_uniform_times`]).
+    ///
+    /// ```
+    /// use act_aggregate::Layer;
+    ///
+    /// let layer = Layer::xol("10x10", 10.0, 10.0).unwrap()
+    ///     .paid_reinstatements(2.0, vec![1.0, 0.5]).unwrap()
+    ///     .pro_rata_as_to_time().unwrap();
+    /// // The first limit is used up a quarter of the way through the year,
+    /// // 2 of the second at half way.
+    /// let rp = layer.reinstatement_premium_dated(&[22.0, 12.0], &[0.25, 0.5]);
+    /// assert!((rp - 2.0 * (1.0 * 0.75 + 0.5 * 0.2 * 0.5)).abs() < 1e-12);
+    /// ```
+    pub fn pro_rata_as_to_time(mut self) -> Result<Self> {
+        if self.reinstatement_rates.is_empty() {
+            return Err(invalid(
+                "reinstatement_rates",
+                0.0,
+                "must be given (paid_reinstatements) before pro rata as to time",
+            ));
+        }
+        self.pro_rata_time = true;
+        Ok(self)
+    }
+
+    /// Whether the layer needs each event's time (paid reinstatements pro
+    /// rata as to time).
+    pub fn needs_times(&self) -> bool {
+        self.pro_rata_time
+    }
+
     /// Ceded loss for one year's losses (NaN for a surplus, which needs
     /// [`ceded_with_sums_insured`](Self::ceded_with_sums_insured)).
     pub fn ceded(&self, losses: &[f64]) -> f64 {
@@ -283,23 +322,73 @@ impl Layer {
     /// ```
     ///
     /// summing over `k = 0, 1, …` (the `k`-th reinstatement restores the
-    /// limit used up by the `k + 1`-th). Zero when reinstatements are free.
+    /// limit used up by the `k + 1`-th). Zero when reinstatements are free;
+    /// NaN when they are pro rata as to time, which needs
+    /// [`reinstatement_premium_dated`](Self::reinstatement_premium_dated).
     pub fn reinstatement_premium(&self, losses: &[f64]) -> f64 {
-        self.reinstatement_premium_si(losses, None)
+        self.reinstatement_premium_at(losses, None, None)
     }
 
-    fn reinstatement_premium_si(&self, losses: &[f64], si: Option<&[f64]>) -> f64 {
+    /// Reinstatement premium for one year's losses at the given times (the
+    /// fraction of the year elapsed, one per loss, in order). Pro rata as
+    /// to time, the limit an event uses up is charged at `1 − t`; otherwise
+    /// the times are ignored.
+    pub fn reinstatement_premium_dated(&self, losses: &[f64], times: &[f64]) -> f64 {
+        self.reinstatement_premium_at(losses, None, Some(times))
+    }
+
+    fn reinstatement_premium_at(
+        &self,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        times: Option<&[f64]>,
+    ) -> f64 {
         if self.reinstatement_rates.is_empty() {
             return 0.0;
         }
-        let loss = self.layer_loss(losses, si);
-        let used: f64 = self
-            .reinstatement_rates
+        // Rate-weighted limits used between layer losses `a` and `b`.
+        let used = |a: f64, b: f64| -> f64 {
+            self.reinstatement_rates
+                .iter()
+                .enumerate()
+                .map(|(k, rate)| {
+                    let floor = k as f64 * self.limit;
+                    rate * ((b - floor).clamp(0.0, self.limit) - (a - floor).clamp(0.0, self.limit))
+                })
+                .sum()
+        };
+        if !self.pro_rata_time {
+            return self.premium * used(0.0, self.layer_loss(losses, si)) / self.limit;
+        }
+        let Some(times) = times else {
+            return f64::NAN;
+        };
+        let mut before = 0.0;
+        let total: f64 = self
+            .cumulative_layer_loss(losses, si)
+            .into_iter()
+            .zip(times)
+            .map(|(after, t)| {
+                let u = used(before, after) * (1.0 - t);
+                before = after;
+                u
+            })
+            .sum();
+        self.premium * total / self.limit
+    }
+
+    /// Layer loss at 100%, after annual terms, up to and including each
+    /// event in turn.
+    fn cumulative_layer_loss(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<f64> {
+        let mut recovery = 0.0;
+        losses
             .iter()
             .enumerate()
-            .map(|(k, rate)| rate * (loss - k as f64 * self.limit).clamp(0.0, self.limit))
-            .sum();
-        self.premium * used / self.limit
+            .map(|(e, &x)| {
+                recovery += self.recovery_at(x, si.map(|s| s[e]));
+                self.after_terms(recovery)
+            })
+            .collect()
     }
 
     /// Annual layer loss at 100%, after annual terms.
@@ -334,14 +423,11 @@ impl Layer {
     }
 
     fn ceded_by_event_si(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<f64> {
-        let mut recovery = 0.0;
         let mut before = 0.0;
-        losses
-            .iter()
-            .enumerate()
-            .map(|(e, &x)| {
-                recovery += self.recovery_at(x, si.map(|s| s[e]));
-                let after = self.share * self.after_terms(recovery);
+        self.cumulative_layer_loss(losses, si)
+            .into_iter()
+            .map(|cum| {
+                let after = self.share * cum;
                 let ceded = after - before;
                 before = after;
                 ceded
@@ -436,7 +522,7 @@ impl Tower {
 
     /// Ceded loss of each layer, in tower order, for one year's losses.
     pub fn ceded(&self, losses: &[f64]) -> Vec<f64> {
-        self.year(losses, None)
+        self.year(losses, None, None)
             .into_iter()
             .map(|(c, _)| c)
             .collect()
@@ -446,7 +532,7 @@ impl Tower {
     /// given sums insured, one per loss. Every stage sees each risk's
     /// original sum insured.
     pub fn ceded_with_sums_insured(&self, losses: &[f64], sums_insured: &[f64]) -> Vec<f64> {
-        self.year(losses, Some(sums_insured))
+        self.year(losses, Some(sums_insured), None)
             .into_iter()
             .map(|(c, _)| c)
             .collect()
@@ -457,8 +543,13 @@ impl Tower {
         self.layers.iter().any(Layer::needs_sums_insured)
     }
 
+    /// Whether any layer needs each event's time.
+    pub fn needs_times(&self) -> bool {
+        self.layers.iter().any(Layer::needs_times)
+    }
+
     /// Ceded loss and reinstatement premium of each layer for one year.
-    fn year(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<(f64, f64)> {
+    fn year(&self, losses: &[f64], si: Option<&[f64]>, times: Option<&[f64]>) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let mut seen = losses.to_vec();
         let last_stage = self.stages.last().copied().unwrap_or(0);
@@ -470,7 +561,7 @@ impl Tower {
             for layer in &self.layers[i..end] {
                 ceded.push((
                     layer.share * layer.layer_loss(&seen, si),
-                    layer.reinstatement_premium_si(&seen, si),
+                    layer.reinstatement_premium_at(&seen, si, times),
                 ));
                 if stage < last_stage {
                     for (total, c) in stage_by_event
@@ -529,11 +620,19 @@ impl Tower {
                     .into(),
             ));
         }
+        if self.needs_times() && !events.has_times() {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need each event's time: use \
+                 EventSet::with_times or EventSet::with_uniform_times"
+                    .into(),
+            ));
+        }
         let provenance = Provenance::new("reinsurance_tower")
             .version("act-aggregate", env!("CARGO_PKG_VERSION"))
             .seed(events.seed(), act_prob::provenance::SIM_INDEX_SCHEME);
         self.apply_years(
-            (0..events.n_sims()).map(|i| (events.events(i), events.sums_insured(i))),
+            (0..events.n_sims())
+                .map(|i| (events.events(i), events.sums_insured(i), events.times(i))),
             events.n_sims(),
             provenance,
         )
@@ -574,6 +673,12 @@ impl Tower {
                 "a surplus treaty works risk by risk; an aggregate loss has no sum insured".into(),
             ));
         }
+        if self.needs_times() {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need event times; an aggregate loss has none"
+                    .into(),
+            ));
+        }
         let totals = act_prob::Empirical::draws(pd.total()).to_vec();
         let source = pd.provenance();
         let mut provenance = Provenance::new("reinsurance_tower")
@@ -583,7 +688,7 @@ impl Tower {
             provenance = provenance.seed(seed, scheme);
         }
         self.apply_years(
-            totals.chunks(1).map(|t| (t, None)),
+            totals.chunks(1).map(|t| (t, None, None)),
             totals.len(),
             provenance,
         )
@@ -591,7 +696,7 @@ impl Tower {
 
     fn apply_years<'a>(
         &self,
-        years: impl Iterator<Item = (&'a [f64], Option<&'a [f64]>)>,
+        years: impl Iterator<Item = (&'a [f64], Option<&'a [f64]>, Option<&'a [f64]>)>,
         n_sims: usize,
         base: Provenance,
     ) -> Result<PredictiveDistribution> {
@@ -602,10 +707,10 @@ impl Tower {
             .collect();
         let n_components = self.layers.len() + 2 + paid.iter().filter(|&&p| p).count();
         let mut draws = Vec::with_capacity(n_sims * n_components);
-        for (losses, si) in years {
+        for (losses, si, times) in years {
             let gross: f64 = losses.iter().sum();
             draws.push(gross);
-            let year = self.year(losses, si);
+            let year = self.year(losses, si, times);
             let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
             draws.extend(year.iter().map(|(c, _)| c));
             draws.push(gross - ceded_total);
@@ -644,6 +749,9 @@ impl Tower {
                     ", premium {}, reinstatement rates {:?}",
                     l.premium, l.reinstatement_rates
                 );
+                if l.pro_rata_time {
+                    terms += ", pro rata as to time";
+                }
             }
             provenance = provenance.param(format!("layer:{}", l.name), terms);
         }
@@ -885,6 +993,73 @@ mod tests {
             let row = result.row(sim).unwrap();
             assert!((row[0] - row[1] - row[2] - row[3]).abs() <= 1e-6 * row[0].max(1.0));
         }
+    }
+
+    #[test]
+    fn reinstatement_premiums_pro_rata_as_to_time() {
+        let amount = Layer::xol("10x10", 10.0, 10.0)
+            .unwrap()
+            .paid_reinstatements(2.0, vec![1.0, 0.5])
+            .unwrap();
+        let timed = amount.clone().pro_rata_as_to_time().unwrap();
+        assert!(timed.needs_times() && !amount.needs_times());
+        // Without times: NaN; times are ignored when only pro rata as to
+        // amount.
+        assert!(timed.reinstatement_premium(&[22.0]).is_nan());
+        assert_eq!(
+            amount.reinstatement_premium_dated(&[22.0, 12.0], &[0.25, 0.5]),
+            amount.reinstatement_premium(&[22.0, 12.0])
+        );
+        // Recoveries 5 at t = 0.4, then 10 at t = 0.7, which uses the rest
+        // of the first limit and 5 of the second.
+        let rp = timed.reinstatement_premium_dated(&[15.0, 20.0], &[0.4, 0.7]);
+        let want = 2.0 * (1.0 * 5.0 * 0.6 + (1.0 * 5.0 + 0.5 * 5.0) * 0.3) / 10.0;
+        assert!((rp - want).abs() < 1e-12, "{rp} vs {want}");
+        // At t = 0 it is the amount-only premium.
+        assert_eq!(
+            timed.reinstatement_premium_dated(&[15.0, 25.0], &[0.0, 0.0]),
+            amount.reinstatement_premium(&[15.0, 25.0])
+        );
+        // The annual deductible absorbs the first event, which uses no limit.
+        let aad = timed.clone().aggregate_deductible(5.0).unwrap();
+        let rp = aad.reinstatement_premium_dated(&[15.0, 25.0], &[0.1, 0.5]);
+        assert!((rp - 2.0 * 0.5 * 1.0).abs() < 1e-12);
+        assert!(
+            Layer::xol("free", 10.0, 10.0)
+                .unwrap()
+                .reinstatements(1)
+                .unwrap()
+                .pro_rata_as_to_time()
+                .is_err()
+        );
+
+        // One loss a year exhausting the first limit, at a uniform time: the
+        // premium averages 2 × E[1 − t] = 1.
+        let n = 20_000;
+        let events = EventSet::from_years(vec![vec![20.0]; n], 9).unwrap();
+        let one = Layer::xol("10x10", 10.0, 10.0)
+            .unwrap()
+            .paid_reinstatements(2.0, vec![1.0])
+            .unwrap()
+            .pro_rata_as_to_time()
+            .unwrap();
+        let tower = Tower::inuring(vec![
+            vec![Layer::quota_share("QS", 0.0001).unwrap()],
+            vec![one],
+        ])
+        .unwrap();
+        assert!(tower.apply(&events).is_err());
+        assert!(tower.apply_aggregate(&events.totals().unwrap()).is_err());
+        let pd = tower.apply(&events.with_uniform_times()).unwrap();
+        let rp = pd
+            .marginal(&vec![
+                KeyValue::from("reinstatement_premium"),
+                KeyValue::from("10x10"),
+            ])
+            .unwrap();
+        let se = (rp.variance() / n as f64).sqrt();
+        assert!((rp.mean() - 1.0).abs() < 4.0 * se, "{} ± {se}", rp.mean());
+        assert!((rp.variance() / (4.0 / 12.0) - 1.0).abs() < 0.05);
     }
 
     #[test]

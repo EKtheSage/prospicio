@@ -10,6 +10,7 @@ dependencies = [
  "act-prob",
  "rayon",
  "rustfft",
+ "serde_json",
 ]
 
 [[package]]
@@ -137,6 +138,7 @@ dependencies = [
  "act-math",
  "act-models",
  "act-prob",
+ "rayon",
 ]
 
 [[package]]

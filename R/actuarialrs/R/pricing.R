@@ -510,6 +510,12 @@ S7::method(print, tabulated_curve) <- function(x, ...) {
 #'   `premium` with `loss_ratio`.
 #' @param premium Premium per band.
 #' @param loss_ratio Expected loss ratio: one value, or one per band.
+#' @param lower,upper Optional bounds of each band's sums insured, one per
+#'   band (`NA` for a band without). A band with bounds spreads its risks'
+#'   sums insured uniformly between them: its mean `SI` is
+#'   `(lower + upper) / 2` (in place of `sums_insured`), each simulated loss
+#'   draws its own `SI` between the bounds, and the exposure-rated
+#'   expectations average over the band, weighted by sum insured.
 #' @returns `risk_profile()`: a `risk_profile` object with properties
 #'   `expected_loss` (all bands) and `expected_claims` (per band).
 #' @export
@@ -532,8 +538,9 @@ risk_profile <- S7::new_class(
     expected_claims = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_claims())
   ),
   constructor = function(sums_insured, risks, curves, expected_loss = NULL, premium = NULL,
-                         loss_ratio = NULL) {
+                         loss_ratio = NULL, lower = NULL, upper = NULL) {
     n <- length(sums_insured)
+    if (is.null(lower) != is.null(upper)) stop("give lower and upper together")
     if (!is.list(curves)) curves <- rep(list(curves), n)
     if (is.null(expected_loss) == is.null(premium)) {
       stop("give expected_loss, or premium with a loss_ratio")
@@ -543,7 +550,9 @@ risk_profile <- S7::new_class(
       as.double(sums_insured), as.double(risks), lapply(curves, function(c) c@ptr),
       if (is.null(expected_loss)) double() else as.double(expected_loss),
       if (is.null(premium)) double() else as.double(premium),
-      if (is.null(loss_ratio)) double() else as.double(loss_ratio)
+      if (is.null(loss_ratio)) double() else as.double(loss_ratio),
+      if (is.null(lower)) double() else as.double(lower),
+      if (is.null(upper)) double() else as.double(upper)
     ))
     S7::new_object(S7::S7_object(), ptr = ptr)
   }

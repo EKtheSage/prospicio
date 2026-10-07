@@ -1,6 +1,7 @@
 """Reserving: the loss triangle, the chain ladder with tail factors, Mack's
 model with its one-year view, the expected-loss methods, Clark's growth
-curves and the ODP bootstrap (docs/design/triangle.md,
+curves, and the ODP bootstrap with its simulated one-year view of the chain
+ladder and the expected-loss methods (docs/design/triangle.md,
 docs/design/reserving-v02.md)."""
 
 from .actuarialrs_native import (
@@ -20,6 +21,7 @@ from .actuarialrs_native import (
     MackFit,
     OdpBootstrap,
     OdpBootstrapFit,
+    OneYearFit,
     TailBondy,
     TailConstant,
     TailCurve,
@@ -45,6 +47,7 @@ __all__ = [
     "ClarkFit",
     "OdpBootstrap",
     "OdpBootstrapFit",
+    "OneYearFit",
     "TailConstant",
     "TailCurve",
     "TailBondy",

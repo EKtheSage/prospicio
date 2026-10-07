@@ -97,15 +97,48 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   the first recoveries and the AAL stops the last ones, and event `k`
   cedes the increase in annual ceded loss it causes. The split sums to the
   annual ceded loss, which does not depend on order; only later stages do.
-  Simulated events are in simulation order, which stands in for time
-  until events carry dates.
+  Simulated events are in simulation order, which is their time order;
+  events may carry times too (below).
 - **Reinstatement premiums are pro rata as to amount.** With layer loss
   `L` at 100% after annual terms, `paid_reinstatements(premium, rates)`
   charges `premium × Σ_k rates[k] × min(max(L - k·l, 0), l) / l`, where
   `premium` is the upfront premium for the placed share (so the share
-  does not scale it again). Pro rata as to time needs event dates. The
-  tower reports them as `(reinstatement_premium, <name>)` components, and
+  does not scale it again). The tower reports them as `(reinstatement_premium, <name>)` components, and
   `net` stays a loss: premiums are not netted against it.
+- **Pro rata as to time.** `Layer::pro_rata_as_to_time()` (after
+  `paid_reinstatements`) charges the limit each event uses up at `1 − t`,
+  where `t` is its time as the fraction of the year elapsed: with `A_e`
+  the layer loss after annual terms up to event `e`, the premium is
+  `premium / l × Σ_e (1 − t_e) Σ_k rates[k] |[A_{e−1}, A_e] ∩ [k l, (k+1) l]|`.
+  Events carry times through `EventSet::with_times` (one per loss, in
+  `[0, 1]`, non-decreasing within a year: a catastrophe model's dated
+  events) or `EventSet::with_uniform_times` (sorted uniform draws from
+  stream `2^63 + i` of the set's seed, in the losses' drawn order; exact
+  for a year's i.i.d. losses, and the losses are unchanged). Times are a
+  fraction of the year rather than dates, so leap years and the
+  contract's inception are the caller's. `Tower::apply` refuses such a
+  layer on events without times; `apply_aggregate` and `on_grid` refuse
+  it outright. Tested: the closed form on hand-worked years (across two
+  limits, with an annual deductible), and one exhausting loss a year at a
+  uniform time averages half the amount-only premium within four
+  standard errors. Python `Layer(..., pro_rata_time=True)`,
+  `EventSet.with_uniform_times()`, `EventSet.from_years(..., times=)`; R
+  `xol_layer(pro_rata_time = TRUE)`, `with_uniform_times()`,
+  `events_from_years(times =)`, `event_times()`.
+- **Towers are data.** `Tower::to_json` writes a programme as a versioned
+  document (`"format": "risk_rs.tower"`, version 1): its stages in inuring
+  order, each a list of layers with every term (basis, and for a surplus
+  its retention and lines; limit, attachment, share, annual deductible and
+  limit, premium, reinstatement rates, pro rata as to time). Non-finite
+  numbers are written `"inf"`, as in distribution documents.
+  `Tower::from_json` rebuilds each layer through the same builders
+  (`xol`, `surplus`, `share`, `aggregate_deductible`,
+  `paid_reinstatements`, `aggregate_limit`, `pro_rata_as_to_time`), so
+  an impossible term is refused rather than loaded. Tested: a three-stage
+  programme with every kind of term round-trips to an equal tower and the
+  same document, and cedes the same on simulated events with sums insured
+  and times. Python `Tower.to_json` / `Tower.from_json` (and pickle), R
+  `tower_to_json()` / `tower_from_json()`.
 - **Towers also run exactly on the grid.** `Tower::on_grid(frequency,
   severity, points)` returns `TowerGrids`: gross, each layer's ceded loss
   and, where defined, net, as grids by FFT with no sampling error. A
@@ -166,6 +199,20 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   which now depends on act-aggregate (`EventSet`). Python `RiskProfile`,
   R `risk_profile()`, `profile_simulate()`, `profile_layer_loss()`,
   `profile_surplus_loss()`.
+- **Sums insured spread within a band.** Bounds are optional per band
+  (`Band::with_bounds(lower, upper)`; Python `lower=`/`upper=` with `None`,
+  R `lower`/`upper` with `NA`). A band with bounds has its risks' sums
+  insured uniform by count between them, with the same loss frequency per
+  risk, so each simulated loss draws its SI uniformly and the band's mean
+  SI is `(L + U) / 2`; that replaces the band's SI in the expected count.
+  The exposure-rated expectations average over the band weighted by sum
+  insured, `∫ s f(s) ds / ∫ s ds` (a risk's expected loss is proportional
+  to its SI), by Gauss–Legendre on 256 pieces. With bounds, the band's
+  given SI is not used: a profile whose total SI over its risks differs
+  from `(L + U) / 2` would need a tilted spread to match both, which is a
+  later option. Tested: a band from 1m to 5m against a 2m surplus cedes
+  3/8 (closed form), where its 3m mean risk cedes 1/3, and simulation
+  agrees within four standard errors.
 
 ## Validation
 
@@ -205,6 +252,9 @@ binomial counts. A unit test checks the layer mean and variance against
 
 ## Next
 
-1. Pro rata as to time reinstatement premiums, once events carry dates.
-2. Sums insured spread within a band (between its bounds) rather than one
-   representative risk, if profiles call for it.
+1. Seasonality: event times from a density over the year rather than
+   uniform (a hurricane season).
+2. Loss corridors (a retained band of the layer's annual loss), and other
+   contract features in `architecture.md`'s reinsurance scope.
+3. A spread within a band that matches both its bounds and its total sum
+   insured (a tilted, not uniform, density), if profiles call for it.

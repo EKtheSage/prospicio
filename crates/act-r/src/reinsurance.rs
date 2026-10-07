@@ -20,7 +20,7 @@ impl XolLayer {
     /// `aggregate_limit` may be `Inf`; `reinstatements` is a number or
     /// negative for none; `paid` says whether `reinstatement_rates` were
     /// given. At most one of a finite `aggregate_limit`, `reinstatements`
-    /// and paid reinstatements.
+    /// and paid reinstatements; `pro_rata_time` needs paid ones.
     #[allow(clippy::too_many_arguments)]
     fn new(
         name: &str,
@@ -33,6 +33,7 @@ impl XolLayer {
         premium: f64,
         reinstatement_rates: &[f64],
         paid: bool,
+        pro_rata_time: bool,
     ) -> Result<Self> {
         let layer = Layer::xol(name, limit, attachment)
             .and_then(|l| l.share(share))
@@ -56,6 +57,11 @@ impl XolLayer {
                         .into(),
                 ));
             }
+        };
+        let layer = if pro_rata_time {
+            layer.pro_rata_as_to_time().map_err(to_r)?
+        } else {
+            layer
         };
         Ok(Self { inner: layer })
     }
@@ -126,8 +132,19 @@ impl XolLayer {
         self.inner.ceded_by_event(losses)
     }
 
-    fn reinstatement_premium(&self, losses: &[f64]) -> f64 {
-        self.inner.reinstatement_premium(losses)
+    fn pro_rata_time(&self) -> bool {
+        self.inner.pro_rata_time
+    }
+
+    /// `times` empty when not given.
+    fn reinstatement_premium(&self, losses: &[f64], times: &[f64]) -> Result<f64> {
+        if times.is_empty() {
+            return Ok(self.inner.reinstatement_premium(losses));
+        }
+        if times.len() != losses.len() {
+            return Err(Error::Other("give one time per loss".into()));
+        }
+        Ok(self.inner.reinstatement_premium_dated(losses, times))
     }
 }
 
@@ -156,6 +173,15 @@ impl ReinsuranceTower {
             .collect::<Result<_>>()?;
         let inner = Tower::inuring(stages).map_err(to_r)?;
         Ok(Self { inner })
+    }
+
+    fn from_json(text: &str) -> Result<Self> {
+        let inner = Tower::from_json(text).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn to_json(&self) -> String {
+        self.inner.to_json()
     }
 
     fn layer_names(&self) -> Vec<String> {

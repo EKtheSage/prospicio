@@ -1,6 +1,7 @@
 import csv
 import datetime
 import math
+import re
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ from actuarialrs.reserving import (
     MackFit,
     OdpBootstrap,
     OdpBootstrapFit,
+    OneYearFit,
     TailBondy,
     TailConstant,
     TailCurve,
@@ -1423,3 +1425,144 @@ def test_clark_errors(triangles):
         ClarkLdf().fit(three, "values")
     with pytest.raises(ValueError, match="no column named premium"):
         ClarkCapeCod().fit(raa, "values", "premium")
+
+
+# The simulated one-year view (OdpBootstrap.one_year), as in
+# validation/tests/reserving_one_year_bootstrap.rs: same seed and number of
+# simulations, so the ratio to R's Merz-Wuthrich CDR(1)S.E. that it pins is
+# the same; the tolerance is five Monte Carlo standard errors of the SD. It
+# is a seed-pinned regression, not a check against Merz-Wuthrich.
+ONE_YEAR_SIMS = 20_000
+ONE_YEAR_SEED = 20_261_006
+
+
+def test_one_year_chain_ladder_against_merz_wuthrich(triangles):
+    genins = triangles["genins"]
+    fit = OdpBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED).one_year(genins, "values", ChainLadder())
+    assert isinstance(fit, OneYearFit)
+    rows = read_csv(VALIDATION / "reference" / "reserving_cdr_r.csv")
+    (mw,) = [
+        float(r["expected"])
+        for r in rows
+        if r["dataset"] == "genins" and r["method"] == "cdr" and r["quantity"] == "total_one_year_se"
+    ]
+    sd = math.sqrt(fit.cdr.variance())
+    assert abs(sd / mw - 1.3620) < 0.0382
+    # The opening ultimate is the chain ladder's; the CDR is centred near 0.
+    cl = ChainLadder().fit(genins, "values")
+    assert fit.opening_ultimate == cl.ultimate
+    assert fit.opening_reserve == pytest.approx(cl.reserve, abs=1e-6)
+    assert abs(fit.cdr.mean()) < 0.1 * sd
+
+
+def test_one_year_fields_and_frames(triangles):
+    raa = triangles["raa"]
+    fit = OdpBootstrap(n_sims=500, seed=1).one_year(raa, "values", ChainLadder(tail=1.05))
+    assert fit.origins == [str(y) for y in range(1981, 1991)]
+    assert fit.keys == [] and fit.index == ["Total"]
+    assert fit.cdr.dims == ["origin"]
+    assert fit.cdr.components() == [(str(y),) for y in range(1981, 1991)]
+    assert fit.cdr.n_sims == 500
+    assert fit.scale == pytest.approx(983.635027030873, rel=1e-9)
+    assert fit.latest == ChainLadder().fit(raa, "values").latest
+    # The bootstrap's chain ladder has no tail; the method's does.
+    assert fit.chain_ladder.tail == 1.0
+    assert fit.development == list(range(12, 121, 12))
+    lifetime = OdpBootstrap(n_sims=10, seed=1).fit(raa, "values")
+    # nan where not observed, so compared as text.
+    assert str(fit.fitted) == str(lifetime.fitted)
+    assert str(fit.residuals) == str(lifetime.residuals)
+    assert fit.opening_ultimate == ChainLadder(tail=1.05).fit(raa, "values").ultimate
+    # 1981 is at the last age: no new cell, and a constant tail does not move.
+    assert all(row[0] == 0.0 for row in fit.cdr.draw_matrix())
+    assert fit.cdr.provenance()["model"] == "odp_bootstrap_one_year"
+    assert repr(fit).startswith("OneYearFit(origins=10, n_sims=500, scale=983.63")
+    again = OdpBootstrap(n_sims=500, seed=1).one_year(raa, "values", ChainLadder(tail=1.05))
+    other = OdpBootstrap(n_sims=500, seed=2).one_year(raa, "values", ChainLadder(tail=1.05))
+    assert fit.cdr.draw_matrix() == again.cdr.draw_matrix()
+    assert fit.cdr.draw_matrix() != other.cdr.draw_matrix()
+    pytest.importorskip("pandas")
+    frame = fit.to_frame()
+    assert list(frame.columns) == [
+        "origin",
+        "latest",
+        "opening_ultimate",
+        "opening_reserve",
+        "cdr_mean",
+        "cdr_std_dev",
+    ]
+    assert frame["cdr_std_dev"].iloc[0] == 0.0
+    totals = fit.totals_frame()
+    assert list(totals.columns) == [
+        "latest",
+        "opening_ultimate",
+        "opening_reserve",
+        "scale",
+        "cdr_mean",
+        "cdr_std_dev",
+    ]
+    assert totals["cdr_std_dev"].iloc[0] == pytest.approx(math.sqrt(fit.cdr.variance()), rel=1e-6)
+    # The bootstrap's development factors: the volume-weighted chain ladder's.
+    assert fit.development_frame().equals(ChainLadder().fit(raa, "values").development_frame())
+
+
+def test_one_year_expected_loss_methods():
+    tri = premium_dataset("genins_premium")
+    boot = OdpBootstrap(n_sims=300, seed=4)
+    methods = [
+        BornhuetterFerguson(apriori=0.6),
+        Benktander(apriori=0.6, n_iters=2),
+        CapeCod(trend=0.02, decay=0.9),
+    ]
+    for method in methods:
+        fit = boot.one_year(tri, "paid", method, exposure="premium")
+        assert fit.opening_ultimate == method.fit(tri, "paid", "premium").ultimate, method
+        assert fit.cdr.variance() > 0.0, method
+    # The expected loss ratio ultimate ignores the losses: its CDR is zero.
+    elr = boot.one_year(tri, "paid", ExpectedLoss(apriori=0.6), exposure="premium")
+    assert all(x == 0.0 for row in elr.cdr.draw_matrix() for x in row)
+
+
+def test_one_year_every_segment_at_once():
+    data = {
+        "lob": ["Auto"] * 6 + ["Home"] * 6,
+        "year": [2020, 2020, 2020, 2021, 2021, 2022] * 2,
+        "age": [12, 24, 36, 12, 24, 12] * 2,
+        "paid": [100.0, 150.0, 165.0, 110.0, 170.0, 120.0, 50.0, 80.0, 85.0, 60.0, 90.0, 70.0],
+    }
+    tri = Triangle.from_frame(data, "year", "age", "paid", keys="lob")
+    fit = OdpBootstrap(n_sims=400, seed=5).one_year(tri, "paid", ChainLadder())
+    assert fit.keys == ["lob"] and fit.index == ["Auto", "Home"]
+    assert fit.cdr.dims == ["lob", "origin"]
+    assert len(fit.cdr.components()) == 6
+    assert fit.cdr.aggregate(["lob"]).components() == [("Auto",), ("Home",)]
+    with pytest.raises(ValueError, match="scale needs a single-segment fit"):
+        fit.scale
+    home = fit.segment(lob="Home")
+    assert home.cdr.components() == [("Home", "2020"), ("Home", "2021"), ("Home", "2022")]
+    assert home.opening_ultimate == fit.opening_ultimate[3:]
+    assert repr(fit).startswith("OneYearFit(segments=2, origins=6, n_sims=400")
+
+
+def test_one_year_errors(triangles):
+    tri = premium_dataset("genins_premium")
+    boot = OdpBootstrap(n_sims=10)
+    with pytest.raises(TypeError, match="method must be ChainLadder, ExpectedLoss"):
+        boot.one_year(tri, "paid", Mack())
+    with pytest.raises(ValueError, match="BornhuetterFerguson needs an exposure column"):
+        boot.one_year(tri, "paid", BornhuetterFerguson())
+    with pytest.raises(ValueError, match="ChainLadder takes no exposure column"):
+        boot.one_year(tri, "paid", ChainLadder(), exposure="premium")
+    with pytest.raises(ValueError, match="no column named exposure"):
+        boot.one_year(tri, "paid", CapeCod(), exposure="exposure")
+    with pytest.raises(ValueError, match="no column named"):
+        boot.one_year(triangles["raa"], "paid", ChainLadder())
+    # The newest origin is at zero, so every refit's simple average gives its
+    # new link an infinite weight: every simulation fails, and the error says so.
+    zero = Triangle.from_long([2020, 2020, 2020, 2021, 2021, 2022], [12, 24, 36, 12, 24, 12], [4, 8, 12, 8, 15, 0])
+    message = (
+        "one-year bootstrap: re-reserving failed in 20 of 20 simulations, for example: "
+        "factor from development index 0: a zero value gets an infinite weight"
+    )
+    with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+        OdpBootstrap(n_sims=20, seed=0).one_year(zero, "values", ChainLadder(average="simple"))

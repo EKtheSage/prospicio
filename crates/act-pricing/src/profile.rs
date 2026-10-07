@@ -13,9 +13,19 @@
 //! losses a year. Each simulated year draws a Poisson number of losses
 //! with mean `Σ λ_b`; each loss falls in band `b` with probability
 //! `λ_b / Σ λ`, and is `SI_b` times a destruction rate drawn from `G_b`.
+//!
+//! A band may instead spread its sums insured between bounds `[L, U]`
+//! ([`Band::with_bounds`]): its risks' sums insured are uniform on the
+//! bounds. Every risk then has the same claim frequency (a loss is its SI
+//! times a destruction rate from the band's curve, so a bigger risk has
+//! bigger losses, not more of them), so each loss draws its SI uniformly
+//! from `[L, U]` and the band expects `EL / (((L + U)/2) m_b)` losses. The
+//! exposure-rated expectations average over the band, each SI weighted by
+//! its share of the band's loss (`∝ SI`).
 
 use act_aggregate::EventSet;
 use act_core::{Error, Result, StreamRng};
+use act_math::integrate::gauss_legendre;
 use act_prob::{Counting, Poisson};
 
 use crate::exposure::{ExposureCurve, Mbbefd, TabulatedCurve};
@@ -74,6 +84,10 @@ pub struct Band {
     pub expected_loss: f64,
     /// The band's exposure curve.
     pub curve: BandCurve,
+    /// Bounds `[lower, upper]` between which the band's sums insured are
+    /// spread uniformly; `None` for one representative risk at
+    /// `sum_insured`.
+    pub bounds: Option<(f64, f64)>,
 }
 
 impl Band {
@@ -106,7 +120,50 @@ impl Band {
             risks,
             expected_loss,
             curve: curve.into(),
+            bounds: None,
         })
+    }
+
+    /// The same band with its sums insured spread uniformly between
+    /// `lower` and `upper` (`0 < lower ≤ upper`, finite) instead of one
+    /// representative risk. The band's mean sum insured becomes
+    /// `(lower + upper)/2`; its expected loss is unchanged.
+    pub fn with_bounds(mut self, lower: f64, upper: f64) -> Result<Self> {
+        if !(lower.is_finite() && lower > 0.0) {
+            return Err(invalid("lower", lower, "must be positive and finite"));
+        }
+        if !(upper.is_finite() && upper >= lower) {
+            return Err(invalid("upper", upper, "must be finite and at least lower"));
+        }
+        self.bounds = Some((lower, upper));
+        Ok(self)
+    }
+
+    /// The band's mean sum insured: `(lower + upper)/2` with bounds,
+    /// otherwise `sum_insured`.
+    pub fn mean_sum_insured(&self) -> f64 {
+        self.bounds.map_or(self.sum_insured, |(l, u)| 0.5 * (l + u))
+    }
+
+    /// The loss-weighted average of `f(SI)` over the band: `f(sum_insured)`
+    /// for one risk, `∫ s f(s) ds / ∫ s ds` over the bounds otherwise (a
+    /// risk's expected loss is proportional to its SI).
+    fn loss_weighted(&self, f: impl Fn(f64) -> Result<f64>) -> Result<f64> {
+        let Some((l, u)) = self.bounds else {
+            return f(self.sum_insured);
+        };
+        if u - l <= 1e-12 * u {
+            return f(l);
+        }
+        let pieces = 256;
+        let step = (u - l) / pieces as f64;
+        let mut num = 0.0;
+        for k in 0..pieces {
+            let a = l + step * k as f64;
+            let b = if k + 1 == pieces { u } else { a + step };
+            num += gauss_legendre(|s| f(s).map(|v| s * v), a, b)?;
+        }
+        Ok(num / (0.5 * (u * u - l * l)))
     }
 
     /// A band with its premium and an expected loss ratio: expected loss
@@ -135,9 +192,9 @@ impl Band {
         Self::from_expected_loss(sum_insured, risks, premium * loss_ratio, curve)
     }
 
-    /// Expected number of losses a year, `EL / (SI × mean rate)`.
+    /// Expected number of losses a year, `EL / (mean SI × mean rate)`.
     pub fn expected_claims(&self) -> f64 {
-        self.expected_loss / (self.sum_insured * self.curve.mean_rate())
+        self.expected_loss / (self.mean_sum_insured() * self.curve.mean_rate())
     }
 }
 
@@ -203,24 +260,30 @@ impl RiskProfile {
     ) -> Result<f64> {
         let mut total = 0.0;
         for b in &self.bands {
-            let keep = 1.0 - surplus.map_or(0.0, |(r, k)| cession(b.sum_insured, r, k));
-            if keep <= 0.0 {
-                continue;
-            }
-            let share = b
-                .curve
-                .layer_share(limit, attachment, keep * b.sum_insured)?;
-            total += b.expected_loss * keep * share;
+            let per_si = |si: f64| -> Result<f64> {
+                let keep = 1.0 - surplus.map_or(0.0, |(r, k)| cession(si, r, k));
+                if keep <= 0.0 {
+                    return Ok(0.0);
+                }
+                Ok(keep * b.curve.layer_share(limit, attachment, keep * si)?)
+            };
+            total += b.expected_loss * b.loss_weighted(per_si)?;
         }
         Ok(total)
     }
 
     /// Expected annual loss ceded to a surplus treaty with retention line
-    /// `retention` and `lines` lines, `Σ cession(SI_b) × EL_b`.
+    /// `retention` and `lines` lines, `Σ cession(SI_b) × EL_b` (averaged
+    /// over a band's bounds when it has them).
     pub fn expected_surplus_loss(&self, retention: f64, lines: f64) -> f64 {
         self.bands
             .iter()
-            .map(|b| cession(b.sum_insured, retention, lines) * b.expected_loss)
+            .map(|b| {
+                let c = b
+                    .loss_weighted(|si| Ok(cession(si, retention, lines)))
+                    .expect("the cession never fails");
+                c * b.expected_loss
+            })
             .sum()
     }
 
@@ -228,7 +291,8 @@ impl RiskProfile {
     ///
     /// Year `i` uses stream `i` of `seed`: first the loss count (Poisson
     /// with mean [`expected_claims`](Self::expected_claims)), then for each
-    /// loss a band and a destruction rate, all by inverse transform.
+    /// loss a band, its sum insured (only for a band with bounds) and a
+    /// destruction rate, all by inverse transform.
     pub fn simulate(&self, n_sims: usize, seed: u64) -> Result<EventSet> {
         if n_sims == 0 {
             return Err(invalid("n_sims", 0.0, "must be positive"));
@@ -261,9 +325,13 @@ impl RiskProfile {
                     .partition_point(|&c| c < u)
                     .min(self.bands.len() - 1);
                 let band = &self.bands[b];
+                let si = match band.bounds {
+                    Some((l, u)) => l + (u - l) * rng.next_open01(),
+                    None => band.sum_insured,
+                };
                 let rate = band.curve.rate_quantile(rng.next_open01());
-                year.push(band.sum_insured * rate);
-                sums_insured.push(band.sum_insured);
+                year.push(si * rate);
+                sums_insured.push(si);
             }
             years.push(year);
         }
@@ -334,6 +402,64 @@ mod tests {
         let (x, x_se) = ceded_mean(&pd, "xl");
         let want = p.expected_layer_loss(1e6, 0.5e6, Some((1e6, 5.0))).unwrap();
         assert!((x - want).abs() < 4.0 * x_se, "xl {x} vs {want}");
+    }
+
+    #[test]
+    fn spread_sums_insured_match_exposure_rating() {
+        let c = Mbbefd::swiss_re(3.0).unwrap();
+        let spread = RiskProfile::new(vec![
+            Band::from_expected_loss(3e6, 400.0, 1.2e6, c)
+                .unwrap()
+                .with_bounds(1e6, 5e6)
+                .unwrap(),
+        ])
+        .unwrap();
+        let point = RiskProfile::new(vec![
+            Band::from_expected_loss(3e6, 400.0, 1.2e6, c).unwrap(),
+        ])
+        .unwrap();
+        // Same mean SI, so the same claim count.
+        assert!((spread.expected_claims() - point.expected_claims()).abs() < 1e-9);
+        // Surplus cession by quadrature against the closed form:
+        // ∫ s c(s) ds = ∫ clamp(s − R, 0, kR) ds over [1m, 5m], R = 2m, k = 4.
+        let (r, k, l, u) = (2e6, 4.0, 1e6, 5e6);
+        let closed = 0.5 * (u - r) * (u - r) / (0.5 * (u * u - l * l));
+        let want = closed * 1.2e6;
+        assert!((spread.expected_surplus_loss(r, k) / want - 1.0).abs() < 1e-9);
+        // The representative risk cedes 1/3; the spread band cedes 3/8,
+        // because its large risks carry more of the loss.
+        assert!((closed - 0.375).abs() < 1e-12);
+        assert!((point.expected_surplus_loss(r, k) / 1.2e6 - 1.0 / 3.0).abs() < 1e-12);
+
+        let events = spread.simulate(80_000, 5).unwrap();
+        let tower = Tower::inuring(vec![
+            vec![Layer::surplus("surplus", r, k).unwrap()],
+            vec![Layer::xol("xl", 0.5e6, 0.5e6).unwrap()],
+        ])
+        .unwrap();
+        let pd = tower.apply(&events).unwrap();
+        let (s, s_se) = ceded_mean(&pd, "surplus");
+        let want = spread.expected_surplus_loss(r, k);
+        assert!((s - want).abs() < 4.0 * s_se, "surplus {s} vs {want}");
+        let (x, x_se) = ceded_mean(&pd, "xl");
+        let want = spread
+            .expected_layer_loss(0.5e6, 0.5e6, Some((r, k)))
+            .unwrap();
+        assert!((x - want).abs() < 4.0 * x_se, "xl {x} vs {want}");
+        let si = events.sums_insured(0).unwrap_or(&[]);
+        assert!(si.iter().all(|&v| (l..=u).contains(&v)));
+        assert!(
+            Band::from_expected_loss(1.0, 1.0, 1.0, c)
+                .unwrap()
+                .with_bounds(2.0, 1.0)
+                .is_err()
+        );
+        assert!(
+            Band::from_expected_loss(1.0, 1.0, 1.0, c)
+                .unwrap()
+                .with_bounds(0.0, 1.0)
+                .is_err()
+        );
     }
 
     #[test]

@@ -130,3 +130,29 @@ def test_risk_profile_simulation_matches_exposure_rating():
         RiskProfile([1e6], [1], Mbbefd.swiss_re(3.0), expected_losses=[1.0], premiums=[1.0])
     with pytest.raises(TypeError):
         RiskProfile([1e6], [1], "curve", expected_losses=[1.0])
+
+
+def test_risk_profile_spreads_sums_insured_between_bounds():
+    from actuarialrs.pricing import Mbbefd, RiskProfile
+    from actuarialrs.reinsurance import Layer, Tower
+
+    c = Mbbefd.swiss_re(3.0)
+    # The second band's risks run from 1m to 5m; the first has no bounds.
+    p = RiskProfile([0.5e6, 3e6], [2000, 400], c, expected_losses=[0.6e6, 1.2e6],
+                    lower=[None, 1e6], upper=[None, 5e6])
+    point = RiskProfile([0.5e6, 3e6], [2000, 400], c, expected_losses=[0.6e6, 1.2e6])
+    assert p.expected_claims() == pytest.approx(point.expected_claims(), rel=1e-12)
+    # A 2m retention: the 3m risk cedes 1/3; the spread band, weighted by
+    # sum insured, cedes 3/8.
+    assert point.expected_surplus_loss(2e6, 4.0) == pytest.approx(1.2e6 / 3, rel=1e-12)
+    assert p.expected_surplus_loss(2e6, 4.0) == pytest.approx(0.375 * 1.2e6, rel=1e-9)
+    n = 50_000
+    pd = Tower.inuring([[Layer.surplus("surplus", 2e6, 4.0)]]).apply(p.simulate(n, 3))
+    m = pd.marginal(("ceded", "surplus"))
+    assert abs(m.mean() - 0.45e6) < 4 * m.variance() ** 0.5 / n ** 0.5
+    with pytest.raises(ValueError):
+        RiskProfile([3e6], [1], c, expected_losses=[1.0], lower=[1e6])
+    with pytest.raises(ValueError):
+        RiskProfile([3e6], [1], c, expected_losses=[1.0], lower=[1e6], upper=[None])
+    with pytest.raises(ValueError):
+        RiskProfile([3e6], [1], c, expected_losses=[1.0], lower=[5e6], upper=[1e6])

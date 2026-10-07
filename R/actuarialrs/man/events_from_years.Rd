@@ -4,7 +4,7 @@
 \alias{events_from_years}
 \title{Years of losses from elsewhere}
 \usage{
-events_from_years(years, sums_insured = NULL, seed = 0)
+events_from_years(years, sums_insured = NULL, seed = 0, times = NULL)
 }
 \arguments{
 \item{years}{A list with one numeric vector of losses per year, in order.}
@@ -13,10 +13,14 @@ events_from_years(years, sums_insured = NULL, seed = 0)
 insured, at least the loss.}
 
 \item{seed}{Recorded in results' provenance.}
+
+\item{times}{\code{NULL}, or a list of the same shape: each loss's time as the
+fraction of the year elapsed (in \verb{[0, 1]}, non-decreasing within a
+year), which reinstatements pro rata as to time need.}
 }
 \value{
-An \code{event_set}; \code{\link[=event_sums_insured]{event_sums_insured()}} reads the sums insured
-back.
+An \code{event_set}; \code{\link[=event_sums_insured]{event_sums_insured()}} and \code{\link[=event_times]{event_times()}} read
+the sums insured and times back.
 }
 \description{
 Builds an \code{event_set} from your own simulation, or a catastrophe model's

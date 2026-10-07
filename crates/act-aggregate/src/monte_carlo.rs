@@ -15,7 +15,9 @@ use rayon::prelude::*;
 ///
 /// Each loss may carry the sum insured of the risk it hit
 /// ([`EventSet::with_sums_insured`], or a risk profile), which a surplus
-/// treaty needs.
+/// treaty needs, and the time in the year it happened
+/// ([`EventSet::with_times`], [`EventSet::with_uniform_times`]), which
+/// reinstatement premiums pro rata as to time need.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventSet {
     /// `offsets[i]..offsets[i + 1]` indexes year `i`'s losses.
@@ -23,8 +25,15 @@ pub struct EventSet {
     losses: Vec<f64>,
     /// One per loss when known.
     sums_insured: Option<Vec<f64>>,
+    /// One per loss when known: the fraction of the year elapsed, in
+    /// `[0, 1]`, non-decreasing within each year.
+    times: Option<Vec<f64>>,
     seed: u64,
 }
+
+/// Year `i`'s event times come from stream `TIME_STREAM + i`, apart from
+/// the streams the years' losses were drawn from.
+const TIME_STREAM: u64 = 1 << 63;
 
 /// Simulates `n_sims` years of claims: a count from `frequency`, then that
 /// many independent losses from `severity`.
@@ -90,6 +99,7 @@ where
         offsets,
         losses,
         sums_insured: None,
+        times: None,
         seed,
     })
 }
@@ -129,6 +139,7 @@ impl EventSet {
             offsets,
             losses,
             sums_insured: None,
+            times: None,
             seed,
         })
     }
@@ -172,6 +183,88 @@ impl EventSet {
         }
         self.sums_insured = Some(sums_insured);
         Ok(self)
+    }
+
+    /// The same events at the given times: one value per loss, years in
+    /// order, each the fraction of the year elapsed when the loss happened
+    /// (in `[0, 1]`, non-decreasing within a year, since the losses are
+    /// taken as chronological).
+    ///
+    /// ```
+    /// use act_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_years(vec![vec![5.0, 2.0], vec![9.0]], 0)
+    ///     .unwrap()
+    ///     .with_times(vec![0.1, 0.6, 0.25])
+    ///     .unwrap();
+    /// assert_eq!(events.times(0), Some(&[0.1, 0.6][..]));
+    /// ```
+    pub fn with_times(mut self, times: Vec<f64>) -> Result<Self> {
+        if times.len() != self.losses.len() {
+            return Err(Error::Data(format!(
+                "{} times for {} losses",
+                times.len(),
+                self.losses.len()
+            )));
+        }
+        if let Some(&t) = times.iter().find(|t| !(0.0..=1.0).contains(*t)) {
+            return Err(Error::InvalidParameter {
+                name: "times",
+                value: t,
+                reason: "must be in [0, 1]",
+            });
+        }
+        for w in self.offsets.windows(2) {
+            if let Some(pair) = times[w[0]..w[1]].windows(2).find(|p| p[1] < p[0]) {
+                return Err(Error::InvalidParameter {
+                    name: "times",
+                    value: pair[1],
+                    reason: "must not decrease within a year",
+                });
+            }
+        }
+        self.times = Some(times);
+        Ok(self)
+    }
+
+    /// The same events at times spread uniformly over the year: year `i`'s
+    /// `n` losses take `n` sorted uniform draws from stream `2^63 + i` of
+    /// the generator keyed by the set's seed, in the losses' order. The
+    /// losses of a year are independent and identically distributed, so
+    /// giving them sorted times in their drawn order is the same as dating
+    /// each at random and sorting.
+    ///
+    /// ```
+    /// use act_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_years(vec![vec![5.0, 2.0, 7.0]], 3)
+    ///     .unwrap()
+    ///     .with_uniform_times();
+    /// let t = events.times(0).unwrap();
+    /// assert!(t[0] <= t[1] && t[1] <= t[2]);
+    /// ```
+    pub fn with_uniform_times(mut self) -> Self {
+        let mut times = Vec::with_capacity(self.losses.len());
+        for (i, w) in self.offsets.windows(2).enumerate() {
+            let mut rng = StreamRng::new(self.seed, TIME_STREAM + i as u64);
+            let start = times.len();
+            times.extend((w[0]..w[1]).map(|_| rng.next_open01()));
+            times[start..].sort_by(f64::total_cmp);
+        }
+        self.times = Some(times);
+        self
+    }
+
+    /// Whether the losses carry times.
+    pub fn has_times(&self) -> bool {
+        self.times.is_some()
+    }
+
+    /// Year `sim`'s times, one per loss, when known.
+    pub fn times(&self, sim: usize) -> Option<&[f64]> {
+        self.times
+            .as_deref()
+            .map(|t| &t[self.offsets[sim]..self.offsets[sim + 1]])
     }
 
     /// Whether the losses carry sums insured.
@@ -314,6 +407,37 @@ mod tests {
             events.counts().iter().sum::<usize>(),
             (0..10).map(|i| events.events(i).len()).sum::<usize>()
         );
+    }
+
+    #[test]
+    fn times_are_checked_and_replay() {
+        let events = EventSet::from_years(vec![vec![1.0, 2.0], vec![3.0]], 0).unwrap();
+        assert!(events.clone().with_times(vec![0.5, 0.4, 0.1]).is_err());
+        assert!(events.clone().with_times(vec![0.1, 1.5, 0.1]).is_err());
+        assert!(events.clone().with_times(vec![0.1, 0.2]).is_err());
+        // A later year may start before an earlier one ended.
+        assert!(events.clone().with_times(vec![0.4, 0.9, 0.1]).is_ok());
+        assert!(!events.has_times() && events.times(0).is_none());
+
+        let freq = Poisson::new(4.0).unwrap();
+        let few = simulate_events(&freq, &severity(), 50, 8)
+            .unwrap()
+            .with_uniform_times();
+        let many = simulate_events(&freq, &severity(), 500, 8)
+            .unwrap()
+            .with_uniform_times();
+        let mut all = Vec::new();
+        for i in 0..50 {
+            let t = few.times(i).unwrap();
+            assert_eq!(t, many.times(i).unwrap());
+            assert_eq!(t.len(), few.events(i).len());
+            assert!(t.windows(2).all(|w| w[0] <= w[1]));
+            assert!(t.iter().all(|&x| x > 0.0 && x < 1.0));
+            all.extend_from_slice(t);
+        }
+        // Spread over the year.
+        let mean = all.iter().sum::<f64>() / all.len() as f64;
+        assert!((mean - 0.5).abs() < 0.06, "{mean}");
     }
 
     #[test]
