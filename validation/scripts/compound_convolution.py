@@ -6,7 +6,7 @@
 Compound distributions S = X_1 + ... + X_N computed by brute force,
 P(S = k) = sum_n P(N = n) f^{*n}(k), with repeated numpy convolutions and
 SciPy claim-count pmfs. This is independent of Panjer's recursion (and of
-FFT), which act-aggregate checks against it.
+FFT), which prospicio-aggregate checks against it.
 """
 
 import csv

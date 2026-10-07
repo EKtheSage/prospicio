@@ -16,15 +16,15 @@ sources:
 
 # Facts
 
-* `act-core`, `act-math`, `act-prob`, `act-aggregate`, `act-pricing` and
-  `act-reserving` build for `wasm32-unknown-unknown` with their default
+* `prospicio-core`, `prospicio-math`, `prospicio-prob`, `prospicio-aggregate`, `prospicio-pricing` and
+  `prospicio-reserving` build for `wasm32-unknown-unknown` with their default
   features, unchanged (checked 2026-10-07; CI's rust job checks it on every
-  PR).[^ci] Arrow stays behind act-prob's `arrow` feature, so it is not on
+  PR).[^ci] Arrow stays behind prospicio-prob's `arrow` feature, so it is not on
   that path.
 * Their tests run under WASI: `rustup target add wasm32-wasip1`, `cargo test
-  --target wasm32-wasip1 -p act-aggregate --lib --no-run`, then run the test
+  --target wasm32-wasip1 -p prospicio-aggregate --lib --no-run`, then run the test
   `.wasm` with Node 22's `node:wasi` module (`new WASI({version:
-  "preview1", args, preopens: {"/": "/"}})`). All of act-aggregate's tests
+  "preview1", args, preopens: {"/": "/"}})`). All of prospicio-aggregate's tests
   pass that way (about 160 s in a debug build, single-threaded), except the
   one that builds explicit 1-, 2- and 8-thread pools.[^ci]
 * Without threads, Rayon's global pool runs parallel iterators on the

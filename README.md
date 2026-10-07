@@ -1,4 +1,4 @@
-# risk-rs
+# prospicio
 
 Actuarial and risk modeling on a Rust core, exposed to Python and R.
 
@@ -9,13 +9,13 @@ core abstractions: [docs/design/](docs/design/).
 
 | Path | What |
 |---|---|
-| `crates/act-core` | Error type, reproducible RNG streams |
-| `crates/act-math` | Numerical engine (Phase 0: normal special functions) |
-| `crates/act-prob` | Distributions (Phase 0: `Distribution` trait, `Lognormal`) |
-| `crates/act-reserving` | Reserving (v0.1 so far: Triangle, Chain Ladder, Mack, ODP bootstrap) |
-| `crates/act-aggregate` | Aggregate loss and reinsurance (empty until v0.3) |
-| `crates/act-python`, `python/` | Python package `prospicio` (PyO3 + maturin) |
-| `crates/act-r`, `R/prospicio` | R package `prospicio` (extendr) |
+| `crates/prospicio-core` | Error type, reproducible RNG streams |
+| `crates/prospicio-math` | Numerical engine (Phase 0: normal special functions) |
+| `crates/prospicio-prob` | Distributions (Phase 0: `Distribution` trait, `Lognormal`) |
+| `crates/prospicio-reserving` | Reserving (v0.1 so far: Triangle, Chain Ladder, Mack, ODP bootstrap) |
+| `crates/prospicio-aggregate` | Aggregate loss and reinsurance (empty until v0.3) |
+| `crates/prospicio-python`, `python/` | Python package `prospicio` (PyO3 + maturin) |
+| `crates/prospicio-r`, `R/prospicio` | R package `prospicio` (extendr) |
 | `validation/` | Parity harness: reference datasets and results from SciPy, R ChainLadder and chainladder-python |
 
 ## Build and test
@@ -113,13 +113,13 @@ Errors raised in Rust surface as Python `ValueError`s and ordinary R errors.
 
 ## Reserving
 
-`act-reserving` holds the four-axis, masked `Triangle`
+`prospicio-reserving` holds the four-axis, masked `Triangle`
 ([docs/design/triangle.md](docs/design/triangle.md)), development factors,
 `ChainLadder`, `Mack` and the ODP bootstrap (`OdpBootstrap`), whose reserve
 distribution by origin is a `PredictiveDistribution`.
 
 ```rust
-use act_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
+use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
 
 let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
 let tri = Triangle::from_long(&Long {

@@ -1,7 +1,7 @@
 # Reserving lane: the loss triangle, the chain ladder, Mack with its
 # one-year view, the expected-loss methods, the ODP bootstrap and Clark's
 # growth curves, over
-# crates/act-r/src/reserving.rs (docs/design/triangle.md,
+# crates/prospicio-r/src/reserving.rs (docs/design/triangle.md,
 # docs/design/reserving-v02.md). S7 classes and functions over the Rust
 # objects, as in distributions.R.
 

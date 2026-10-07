@@ -15,7 +15,7 @@ sources:
 # What runs
 
 * `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`,
-  `cargo test`, and clippy on `act-python` and `act-r`.[^agents]
+  `cargo test`, and clippy on `prospicio-python` and `prospicio-r`.[^agents]
 * `cargo xtask python`: builds the extension and runs pytest; its final
   docs render fails because Quarto is not installed (CI's `docs` job
   covers it).
@@ -59,6 +59,6 @@ the code change.
   links on the run that creates it; the links in the written Rd files
   are correct.
 * The freMTPL2 parity runs only in release builds
-  (`cargo test --release -p act-validation --test fremtpl2`).
+  (`cargo test --release -p prospicio-validation --test fremtpl2`).
 
 [^agents]: AGENTS.md, Checks

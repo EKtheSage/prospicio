@@ -1,6 +1,6 @@
 # Design note: Pareto-family severities for reinsurance pricing
 
-Status: **Accepted** · v0.4 · Depends on: `distributions.md` (`Severity`, `Counting`, `Grid`), `aggregate.md` (towers), `risk.md` (`evt::Gpd`) · Lanes: Probability (`act-prob`), Aggregate (`act-aggregate`, `act-pricing`)
+Status: **Accepted** · v0.4 · Depends on: `distributions.md` (`Severity`, `Counting`, `Grid`), `aggregate.md` (towers), `risk.md` (`evt::Gpd`) · Lanes: Probability (`prospicio-prob`), Aggregate (`prospicio-aggregate`, `prospicio-pricing`)
 
 ## Goal
 
@@ -286,14 +286,14 @@ a Gaussian in `L`. A layer's expected loss is
 `∫ S(x) dx = t ∫ exp((1 − α₀)L − ½ α₀ γ L²) dL`, and its second moment
 uses `exp((2 − α₀)L − …)`. Both complete the square and reduce to normal
 distribution functions, so every layer quantity is in closed form via
-`norm_cdf`, which `act-math` already has. They are checked against
+`norm_cdf`, which `prospicio-math` already has. They are checked against
 mpmath integration and against the LocalPareto package. The general
 local Pareto (any `α(x)`) is converted to a piecewise Pareto by our own
 adaptive scheme with a stated bound on the relative error of `S`.
 
 ## Plan
 
-### `act-prob` (Probability lane)
+### `prospicio-prob` (Probability lane)
 
 Done: `Severity::layer_second_moment` (with a default `layer_variance`),
 `Pareto`, and `PiecewisePareto` with `Truncation::{LastPiece,
@@ -374,13 +374,13 @@ the dispersion moves up to the nearest attainable value, which
 | `LocalPareto` | Log-affine in closed form; general `α(x)` via conversion to piecewise Pareto with a reported error bound. |
 | `local_pareto_alpha` | For any distribution with a density; needs a density method on `Distribution` (only the Pareto family and the lognormal at first). |
 
-### `act-aggregate` (Aggregate lane)
+### `prospicio-aggregate` (Aggregate lane)
 
-`act-aggregate` stays about aggregate distributions. The collective
+`prospicio-aggregate` stays about aggregate distributions. The collective
 model is the frequency–severity input to an aggregate, so it lives here.
 
 Done: `CollectiveModel<N, X>` (with `Box<dyn Severity>` and
-`Box<dyn Counting>` usable through blanket impls in `act-prob`), and
+`Box<dyn Counting>` usable through blanket impls in `prospicio-prob`), and
 `Distribution::survival` so excess frequencies keep their precision far
 in the tail.
 
@@ -388,7 +388,7 @@ in the tail.
 |---|---|
 | `CollectiveModel<N, X>` | Expected layer loss, layer variance (`E[N] Var[Y] + Var[N] E[Y]²`), excess frequency; simulation and Panjer/FFT through existing code. |
 
-### `act-pricing` (Aggregate lane, new crate)
+### `prospicio-pricing` (Aggregate lane, new crate)
 
 The `pricing` namespace planned in `docs/architecture.md`. Most of it
 serves primary and reinsurance pricing alike; only `tower` is
@@ -430,7 +430,7 @@ against R 2.4.5:
 
 Overlapping reference layers need a small linear program. It uses the
 pure-Rust simplex crate `microlp` (Apache-2.0), as a dependency of
-`act-pricing` only; no C or C++ build, so WASM, CRAN and Windows builds
+`prospicio-pricing` only; no C or C++ build, so WASM, CRAN and Windows builds
 are unaffected.
 
 Done in `tower`: `fit_pml_curve` (closed form: the alpha between
@@ -525,7 +525,7 @@ R `risk_loaded_price()` and `price_portfolio()`.
 results) are in the user-facing `reinsurance` namespace that
 `docs/architecture.md` gives them: Python `prospicio.reinsurance`, and
 R's `reinsurance.R` with its own reference section. In Rust they stay in
-`act_aggregate::reinsurance` and `act_aggregate::grid_reinsurance`, next
+`prospicio_aggregate::reinsurance` and `prospicio_aggregate::grid_reinsurance`, next
 to the compound and simulation code they are applied with; a separate
 crate would gain nothing while nothing else depends on them.
 
@@ -554,8 +554,8 @@ order.
 1. ~~Riegel (2018)~~: received; the algorithm above is taken from it.
    The 2025 local Pareto preprint is not available, so the log-affine
    formulas are derived from the definition (above).
-2. ~~Namespace~~: decided, a new `act-pricing` crate (above);
-   `act-aggregate` keeps aggregates and the collective model.
+2. ~~Namespace~~: decided, a new `prospicio-pricing` crate (above);
+   `prospicio-aggregate` keeps aggregates and the collective model.
 3. ~~Linear programming~~: decided, `microlp` rather than our own solver.
 
 ## References

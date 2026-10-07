@@ -1,5 +1,5 @@
 # Aggregate lane: reinsurance layers and towers, over
-# crates/act-r/src/reinsurance.rs. The #' comments are the package
+# crates/prospicio-r/src/reinsurance.rs. The #' comments are the package
 # documentation (see distributions.R).
 
 #' @include aggregate.R

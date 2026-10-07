@@ -1,4 +1,4 @@
-# Builds crates/act-r from the surrounding workspace. Installing from a
+# Builds crates/prospicio-r from the surrounding workspace. Installing from a
 # repository checkout only; a CRAN tarball will vendor the crates instead
 # (docs/architecture.md, Language boundary).
 WORKSPACE = $(CURDIR)/../../..
@@ -12,4 +12,4 @@ $(SHLIB): $(STATLIB)
 
 .PHONY: $(STATLIB)
 $(STATLIB):
-	cargo build --lib --release --manifest-path=$(WORKSPACE)/crates/act-r/Cargo.toml
+	cargo build --lib --release --manifest-path=$(WORKSPACE)/crates/prospicio-r/Cargo.toml

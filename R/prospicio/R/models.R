@@ -1,5 +1,5 @@
 # Models lane: GLMs, elastic nets, GAMs, metrics, resampling, tuning and
-# MCMC diagnostics, over crates/act-r/src/models.rs. R builds the design
+# MCMC diagnostics, over crates/prospicio-r/src/models.rs. R builds the design
 # matrix with model.matrix(), so formulas, factors and contrasts behave as in
 # stats::glm.
 

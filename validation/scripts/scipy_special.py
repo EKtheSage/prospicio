@@ -4,7 +4,7 @@ Run from the repository root:
 
     python validation/scripts/scipy_special.py
 
-Special functions in act-math: the regularized incomplete beta
+Special functions in prospicio-math: the regularized incomplete beta
 (scipy.special.betainc), Student's t distribution function
 (scipy.stats.t.cdf), and the regularized incomplete gamma P and Q
 (scipy.special.gammainc and gammaincc, as `gamma_p` and `gamma_q`). Lower-tail arguments down to t = -40 check that small

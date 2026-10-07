@@ -8,11 +8,11 @@
 
 use std::collections::HashMap;
 
-use act_reserving::{
+use prospicio_reserving::{
     Average, CurveShape, Development, Mack, MackFit, Period, SigmaInterpolation, Tail, TailBondy,
     TailConstant, TailCurve,
 };
-use act_validation::{Case, check, reference, triangle};
+use prospicio_validation::{Case, check, reference, triangle};
 
 /// The Mack model of a reference `method`, on `dataset` for the methods
 /// whose inputs depend on it.

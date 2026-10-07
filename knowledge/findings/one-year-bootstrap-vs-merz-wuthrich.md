@@ -13,7 +13,7 @@ sources:
     resource: ../validation/tests/reserving_one_year_bootstrap.rs
     title: Validation test of the simulated one-year view
   - id: unit
-    resource: ../crates/act-reserving/src/one_year_bootstrap.rs
+    resource: ../crates/prospicio-reserving/src/one_year_bootstrap.rs
     title: Unit tests mack_bootstrap_rereserving_reproduces_merz_wuthrich and one_cell_left_is_the_lifetime_run_off
   - id: evw
     resource: https://openaccess.city.ac.uk/id/eprint/21270/
@@ -90,7 +90,7 @@ absorbed.
 * England, Verrall and Wuthrich (2019) bootstrap Mack's model, not the
   ODP. Their Table 2 (analytic: reserves, Mack RMSEP and Merz-Wuthrich
   RMSEP on Taylor-Ashe, Mack's rule for the last sigma, total 1,778,968)
-  equals act-reserving and R to the unit; the validation test checks it.
+  equals prospicio-reserving and R to the unit; the validation test checks it.
   Their Table 4 (500,000 simulations of the Mack bootstrap) gives a
   one-year total of 1,778,428. They say simulation studies of the ODP
   partition the lifetime risk into uncorrelated one-year views too, but
@@ -111,6 +111,6 @@ absorbed.
 See [R ChainLadder CDR](/references/r-chainladder-cdr.md).
 
 [^test]: validation/tests/reserving_one_year_bootstrap.rs
-[^unit]: crates/act-reserving/src/one_year_bootstrap.rs, unit tests
+[^unit]: crates/prospicio-reserving/src/one_year_bootstrap.rs, unit tests
 [^evw]: England, Verrall and Wuthrich (2019), Tables 2 and 4, Section 2.2, Section 7 and Appendix 1
 [^boumezoued]: Boumezoued et al. (2011), Table 2

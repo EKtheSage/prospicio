@@ -14,7 +14,7 @@ sources:
 
 # Facts
 
-* `act_bayes::elpd` matches loo 2.6.0 (`validation/scripts/r_loo.R`):
+* `prospicio_bayes::elpd` matches loo 2.6.0 (`validation/scripts/r_loo.R`):
   every estimate, pointwise ELPD to 1e-9, k̂ to 1e-6.[^models-design]
 * `loo::stacking_weights` stops its optimizer early and agrees with the
   exact stacking optimum only to about 1e-3. The stacking reference is

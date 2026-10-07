@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Error and uncertainty terminology
-description: What standard error, standard deviation, process, parameter, model, systemic and systematic error, epistemic and aleatoric uncertainty, bias, variance and irreducible error mean in actuarial, statistical and machine-learning writing, where they overlap, and which act-reserving outputs measure which.
+description: What standard error, standard deviation, process, parameter, model, systemic and systematic error, epistemic and aleatoric uncertainty, bias, variance and irreducible error mean in actuarial, statistical and machine-learning writing, where they overlap, and which prospicio-reserving outputs measure which.
 resource: https://doi.org/10.2143/AST.23.2.2005092
 tags: [reserving, terminology, uncertainty, msep, risk-margin]
 status: stable
@@ -23,8 +23,8 @@ sources:
     resource: citation:Hastie, Tibshirani and Friedman (2009), The Elements of Statistical Learning, 2nd ed., section 7.3
     title: Hastie, Tibshirani and Friedman, The Elements of Statistical Learning, the bias-variance decomposition
   - id: code
-    resource: ../crates/act-reserving/src/mack.rs
-    title: act_reserving::Mack, MackFit
+    resource: ../crates/prospicio-reserving/src/mack.rs
+    title: prospicio_reserving::Mack, MackFit
 ---
 
 # The identity behind most of the terms
@@ -101,7 +101,7 @@ Two links between them:
   stacking several models. What stays outside any model stays model or
   systemic risk.
 
-# What act-reserving measures
+# What prospicio-reserving measures
 
 | Output | Contains |
 |---|---|
@@ -117,4 +117,4 @@ Two links between them:
 [^kd]: Der Kiureghian and Ditlevsen (2009)
 [^risk-margin]: Marshall et al. (2008)
 [^esl]: Hastie, Tibshirani and Friedman, section 7.3
-[^code]: act_reserving::Mack, MackFit
+[^code]: prospicio_reserving::Mack, MackFit

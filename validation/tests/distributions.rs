@@ -1,8 +1,8 @@
 //! Distribution parity: moments and quantiles against SciPy; limited
 //! expected values and grid masses against 30-digit mpmath references.
 
-use act_prob::{Distribution, Lognormal, Severity};
-use act_validation::{check, reference};
+use prospicio_prob::{Distribution, Lognormal, Severity};
+use prospicio_validation::{check, reference};
 
 #[test]
 fn lognormal_matches_scipy() {
@@ -25,7 +25,7 @@ fn lognormal_matches_scipy() {
 
 #[test]
 fn gamma_matches_scipy() {
-    use act_prob::Gamma;
+    use prospicio_prob::Gamma;
     let cases: Vec<_> = reference("distributions_scipy.csv")
         .into_iter()
         .filter(|c| c.get("distribution") == "gamma")
@@ -46,7 +46,7 @@ fn gamma_matches_scipy() {
 
 #[test]
 fn weibull_matches_scipy() {
-    use act_prob::Weibull;
+    use prospicio_prob::Weibull;
     let cases: Vec<_> = reference("distributions_scipy.csv")
         .into_iter()
         .filter(|c| c.get("distribution") == "weibull")
@@ -67,7 +67,7 @@ fn weibull_matches_scipy() {
 
 #[test]
 fn loglogistic_matches_scipy() {
-    use act_prob::Loglogistic;
+    use prospicio_prob::Loglogistic;
     let cases: Vec<_> = reference("distributions_scipy.csv")
         .into_iter()
         .filter(|c| c.get("distribution") == "loglogistic")
@@ -88,7 +88,7 @@ fn loglogistic_matches_scipy() {
 
 #[test]
 fn severities_match_integration() {
-    use act_prob::{Gamma, Loglogistic, Weibull};
+    use prospicio_prob::{Gamma, Loglogistic, Weibull};
     let cases = reference("severity_mpmath.csv");
     check(&cases, |c| {
         let d: Box<dyn Severity> = match c.get("distribution") {
@@ -118,7 +118,7 @@ fn severities_match_integration() {
 
 #[test]
 fn lognormal_grids_match_textbook_masses() {
-    use act_prob::Grid;
+    use prospicio_prob::Grid;
     let cases = reference("grid_mpmath.csv");
     check(&cases, |c| {
         let d = Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?;
@@ -137,7 +137,7 @@ fn lognormal_grids_match_textbook_masses() {
 
 #[test]
 fn claim_counts_match_scipy() {
-    use act_prob::{Binomial, Counting, NegativeBinomial, Poisson};
+    use prospicio_prob::{Binomial, Counting, NegativeBinomial, Poisson};
     let cases: Vec<_> = reference("distributions_scipy.csv")
         .into_iter()
         .filter(|c| {
@@ -171,7 +171,7 @@ fn claim_counts_match_scipy() {
 
 #[test]
 fn distortions_match_integration() {
-    use act_prob::{Distortion, Grid};
+    use prospicio_prob::{Distortion, Grid};
     // The discrete distribution in validation/scripts/mpmath_distortion.py.
     let values = [0.0, 1.0, 2.0, 5.0, 10.0, 100.0];
     let probs = [0.5, 0.2, 0.15, 0.1, 0.0499999999, 1e-10];
@@ -203,7 +203,7 @@ fn distortions_match_integration() {
 
 #[test]
 fn special_functions_match_scipy() {
-    use act_math::special::{beta_inc, gamma_inc, student_t_cdf};
+    use prospicio_math::special::{beta_inc, gamma_inc, student_t_cdf};
     let cases = reference("special_scipy.csv");
     check(&cases, |c| {
         let x = c.number("arg")?;
@@ -219,7 +219,7 @@ fn special_functions_match_scipy() {
 
 #[test]
 fn gpd_fits_match_exact_likelihood() {
-    use act_prob::evt::Gpd;
+    use prospicio_prob::evt::Gpd;
     let cases = reference("gpd_mpmath.csv");
     check(&cases, |c| {
         let (xi0, beta0) = (c.param("params", "xi0"), c.param("params", "beta0"));
@@ -240,8 +240,8 @@ fn gpd_fits_match_exact_likelihood() {
 }
 
 /// A Pareto (optionally truncated) from `t=..;alpha=..[;truncation=..]`.
-fn pareto_from(c: &act_validation::Case) -> Option<act_prob::Pareto> {
-    let p = act_prob::Pareto::new(c.param("params", "t"), c.param("params", "alpha")).ok()?;
+fn pareto_from(c: &prospicio_validation::Case) -> Option<prospicio_prob::Pareto> {
+    let p = prospicio_prob::Pareto::new(c.param("params", "t"), c.param("params", "alpha")).ok()?;
     if c.get("params").contains("truncation") {
         p.truncated(c.param("params", "truncation")).ok()
     } else {
@@ -251,7 +251,9 @@ fn pareto_from(c: &act_validation::Case) -> Option<act_prob::Pareto> {
 
 /// A piecewise Pareto from `params` such as
 /// `t=1000|2000;alpha=1.0|2.0;truncation=5000;type=lp`.
-fn piecewise_pareto_from(c: &act_validation::Case) -> Option<act_prob::PiecewisePareto> {
+fn piecewise_pareto_from(
+    c: &prospicio_validation::Case,
+) -> Option<prospicio_prob::PiecewisePareto> {
     let mut fields = std::collections::HashMap::new();
     for kv in c.get("params").split(';') {
         let (k, v) = kv.split_once('=')?;
@@ -260,13 +262,13 @@ fn piecewise_pareto_from(c: &act_validation::Case) -> Option<act_prob::Piecewise
     let list = |k: &str| -> Option<Vec<f64>> {
         fields.get(k)?.split('|').map(|v| v.parse().ok()).collect()
     };
-    let pp = act_prob::PiecewisePareto::new(list("t")?, list("alpha")?).ok()?;
+    let pp = prospicio_prob::PiecewisePareto::new(list("t")?, list("alpha")?).ok()?;
     match fields.get("truncation") {
         None => Some(pp),
         Some(tr) => {
             let kind = match *fields.get("type")? {
-                "lp" => act_prob::Truncation::LastPiece,
-                "wd" => act_prob::Truncation::WholeDistribution,
+                "lp" => prospicio_prob::Truncation::LastPiece,
+                "wd" => prospicio_prob::Truncation::WholeDistribution,
                 _ => return None,
             };
             pp.truncated(tr.parse().ok()?, kind).ok()
@@ -275,7 +277,7 @@ fn piecewise_pareto_from(c: &act_validation::Case) -> Option<act_prob::Piecewise
 }
 
 /// Cover and attachment from `arg` ("inf" for unlimited) and `arg2`.
-fn layer_args(c: &act_validation::Case) -> Option<(f64, f64)> {
+fn layer_args(c: &prospicio_validation::Case) -> Option<(f64, f64)> {
     let cover = match c.get("arg") {
         "inf" => f64::INFINITY,
         s => s.parse().ok()?,
@@ -292,7 +294,7 @@ fn layer_moments_match_integration() {
             "pareto" => Box::new(pareto_from(c)?),
             "piecewise_pareto" => Box::new(piecewise_pareto_from(c)?),
             "log_affine_pareto" => Box::new(
-                act_prob::LogAffinePareto::new(
+                prospicio_prob::LogAffinePareto::new(
                     c.param("params", "t"),
                     c.param("params", "alpha_0"),
                     c.param("params", "gamma"),
@@ -300,7 +302,7 @@ fn layer_moments_match_integration() {
                 .ok()?,
             ),
             "gpd" => Box::new(
-                act_prob::evt::Gpd::new(c.param("params", "xi"), c.param("params", "beta"))
+                prospicio_prob::evt::Gpd::new(c.param("params", "xi"), c.param("params", "beta"))
                     .ok()?
                     .shifted(c.param("params", "location"))
                     .ok()?,
@@ -364,7 +366,7 @@ fn piecewise_pareto_matches_r() {
 fn gen_pareto_matches_r() {
     let cases = reference("gen_pareto_r.csv");
     check(&cases, |c| {
-        let g = act_prob::evt::Gpd::riegel(
+        let g = prospicio_prob::evt::Gpd::riegel(
             c.param("params", "t"),
             c.param("params", "alpha_ini"),
             c.param("params", "alpha_tail"),
@@ -388,7 +390,7 @@ fn gen_pareto_matches_r() {
 
 #[test]
 fn pareto_fits_match_r() {
-    use act_prob::{LargeLosses, Pareto, PiecewisePareto, Truncation};
+    use prospicio_prob::{LargeLosses, Pareto, PiecewisePareto, Truncation};
     // The data in validation/scripts/r_pareto_fit.R.
     let losses = vec![
         1100.0, 1300.0, 1750.0, 2000.0, 2600.0, 3500.0, 4100.0, 5200.0, 7000.0, 9000.0, 12000.0,
@@ -426,7 +428,7 @@ fn pareto_fits_match_r() {
         match c.get("model") {
             "pareto" => Some(Pareto::fit(t[0], &data, truncation).ok()?.alpha()),
             "gen_pareto" => {
-                let g = act_prob::evt::Gpd::fit_riegel(t[0], &data).ok()?;
+                let g = prospicio_prob::evt::Gpd::fit_riegel(t[0], &data).ok()?;
                 // ξ = 1/α_tail, β = t/α_ini.
                 let alphas = [t[0] / g.beta(), 1.0 / g.xi()];
                 alphas.get(index).copied()
@@ -453,7 +455,7 @@ fn pareto_fits_match_r() {
 
 #[test]
 fn log_affine_pareto_matches_r() {
-    use act_prob::LogAffinePareto;
+    use prospicio_prob::LogAffinePareto;
     let cases = reference("local_pareto_r.csv");
     check(&cases, |c| {
         let params = c.get("params");
@@ -489,8 +491,8 @@ fn log_affine_pareto_matches_r() {
 
 #[test]
 fn allocations_match_numpy() {
-    use act_prob::capital::AllocationMethod;
-    use act_prob::{Distortion, KeyValue, PredictiveDistribution, Provenance};
+    use prospicio_prob::capital::AllocationMethod;
+    use prospicio_prob::{Distortion, KeyValue, PredictiveDistribution, Provenance};
     // The draws in validation/scripts/numpy_allocation.py.
     let (n, m) = (400usize, 4usize);
     let mut draws = Vec::with_capacity(n * m);
@@ -541,7 +543,7 @@ fn allocations_match_numpy() {
 
 #[test]
 fn tweedie_matches_mpmath() {
-    use act_prob::Tweedie;
+    use prospicio_prob::Tweedie;
     let cases = reference("tweedie_mpmath.csv");
     check(&cases, |c| {
         let y = Tweedie::new(

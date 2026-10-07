@@ -9,7 +9,7 @@ simulation can be replayed from `(seed, stream id)`.
 
 ## What exists (Phase 0)
 
-`act_core::StreamRng::new(seed, stream)`:
+`prospicio_core::StreamRng::new(seed, stream)`:
 
 - **Generator:** ChaCha20 (original 64-bit block counter, 64-bit nonce
   layout) from `rand_chacha`, pinned to an exact version in the workspace.
@@ -57,7 +57,7 @@ scheme version.
 ## Stability policy
 
 - Output for a given `(seed, stream)` is a public contract. Golden tests in
-  `act-core` and `act-prob` guard it.
+  `prospicio-core` and `prospicio-prob` guard it.
 - Changing it (generator, key expansion, uniform conversion, sampling
   method or draw order) requires bumping the scheme name, e.g.
   `…/v2`, recording it in `Provenance`, and a changelog entry.
@@ -68,7 +68,7 @@ scheme version.
 
 - Python passes `seed` and `stream` as Python ints, converted to `u64`.
 - R has no 64-bit integers, so seeds arrive as doubles and must be whole
-  numbers below 2^53 (enforced in `act-r`).
+  numbers below 2^53 (enforced in `prospicio-r`).
 - WASM: ChaCha20 has no OS dependencies. Parallel paths fall back to a
   sequential loop over the same streams and give identical results.
 

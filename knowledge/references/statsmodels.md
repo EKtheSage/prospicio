@@ -1,7 +1,7 @@
 ---
 type: Reference Implementation
 title: statsmodels (GLM parity reference)
-description: Python statsmodels, the reference for act-glm's GLMs, robust standard errors and Tweedie profiles; its conventions and quirks.
+description: Python statsmodels, the reference for prospicio-glm's GLMs, robust standard errors and Tweedie profiles; its conventions and quirks.
 resource: https://www.statsmodels.org/
 tags: [glm, parity, python, sandwich]
 status: stable
@@ -13,8 +13,8 @@ sources:
     resource: ../docs/design/models.md
     title: Design note, models
   - id: robust
-    resource: ../crates/act-glm/src/robust.rs
-    title: act_glm::robust
+    resource: ../crates/prospicio-glm/src/robust.rs
+    title: prospicio_glm::robust
   - id: scripts
     resource: ../validation/scripts/
     title: statsmodels_glm.py, statsmodels_glm_robust.py, statsmodels_tweedie_profile.py, statsmodels_fremtpl2.py
@@ -27,7 +27,7 @@ Install with `pip install numpy statsmodels`; PyPI is reachable from the
 cloud environment without allowlisting (see
 [cloud network](/environment/cloud-network.md)).
 
-# Conventions act-glm follows
+# Conventions prospicio-glm follows
 
 * Log-likelihood and AIC as statsmodels reports them, with
   `var_weights` as prior weights; the Gaussian's log-likelihood uses the
@@ -42,11 +42,11 @@ cloud environment without allowlisting (see
 * statsmodels' GLM reports HC0 when asked for `cov_type="HC1"`, so HC1 is
   tested as HC0 rescaled by `n / (n - p)`.[^robust]
 * Every reference is fitted with `tol=1e-14`, tighter than the
-  default, so the parity tolerances (down to 1e-10) test act-glm rather
+  default, so the parity tolerances (down to 1e-10) test prospicio-glm rather
   than statsmodels' stopping rule.[^scripts]
 * On [freMTPL2](/datasets/fremtpl2.md) (678k rows, 49 columns) a Poisson
   fit with the null model takes about 1 m 45 s.
 
 [^models-design]: Design note, models
-[^robust]: act_glm::robust
+[^robust]: prospicio_glm::robust
 [^scripts]: statsmodels reference scripts

@@ -1,5 +1,5 @@
 # Aggregate lane: compound distributions and simulated events, over
-# crates/act-r/src/aggregate.rs. The #' comments are the package
+# crates/prospicio-r/src/aggregate.rs. The #' comments are the package
 # documentation (see distributions.R).
 
 #' @include distributions.R

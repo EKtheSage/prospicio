@@ -11,9 +11,9 @@
 #
 # Triangles are read from validation/data/*.csv. RAA is left out: it has a
 # negative increment (1982 at 84 months), which R's quasipoisson family
-# rejects ("negative values not allowed"), as does act-glm's Poisson family.
+# rejects ("negative values not allowed"), as does prospicio-glm's Poisson family.
 #
-# Quantities: `coefficient` and `std_error` (arg is the act-models column
+# Quantities: `coefficient` and `std_error` (arg is the prospicio-models column
 # name, e.g. "origin[2002]" for R's "factor(origin)2002"), `dispersion`
 # (Pearson, as summary.glm reports it), `reserve` (arg is the origin year;
 # the sum of predicted future cells) and `total_reserve`.

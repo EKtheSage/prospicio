@@ -205,7 +205,7 @@ const INDEX: &str = r#"<!doctype html>
 <ul>
   <li><a href="python/index.html">Python</a> (great-docs)</li>
   <li><a href="r/index.html">R</a> (pkgdown)</li>
-  <li><a href="rust/act_prob/index.html">Rust crates</a> (rustdoc)</li>
+  <li><a href="rust/prospicio_prob/index.html">Rust crates</a> (rustdoc)</li>
 </ul>
 "#;
 

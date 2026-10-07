@@ -1,0 +1,16 @@
+[package]
+name = "prospicio-pricing"
+description = "Pricing: layer and limit rating shared by primary and reinsurance pricing, and reinsurance tower matching."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+prospicio-aggregate.workspace = true
+prospicio-core.workspace = true
+prospicio-math.workspace = true
+prospicio-prob.workspace = true
+microlp.workspace = true
