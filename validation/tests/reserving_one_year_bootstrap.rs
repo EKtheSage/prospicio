@@ -26,8 +26,8 @@
 //! * A quarterly development grain: each dataset split into quarters, each
 //!   year's increment in four equal parts, has the annual opening reserve
 //!   and, under both process models, about half the annual one-year
-//!   standard deviation, as the models' independent quarters imply for
-//!   quarters that the split makes move together.
+//!   standard deviation: the ODP's through its scale, which falls with the
+//!   degrees of freedom, Mack's through its quarterly sigmas.
 
 use act_prob::PredictiveDistribution;
 use act_reserving::{
@@ -290,14 +290,17 @@ fn draws_by_origin(cdr: &PredictiveDistribution) -> Vec<Vec<f64>> {
 
 #[test]
 fn quarterly_split_halves_the_one_year_sd() {
-    // Splitting a year's increment into four equal quarters makes the
-    // quarters of a year move together, while both the ODP and Mack's model
-    // take them as independent: each carries a quarter of the year's
-    // increment and so a sixteenth of its variance, the four a quarter, and
-    // the year's standard deviation is about half the annual one (measured
-    // at 5,000 simulations: ODP 0.42 to 0.47 per origin, total 0.45 to
-    // 0.47; Mack 0.49 to 0.70, total 0.53 to 0.55, the highest for the
-    // origins with one year left, whose last sigma is extrapolated). The
+    // Splitting a year's increment into four equal quarters leaves the
+    // year's standard deviation about half the annual one under both
+    // models (measured at 5,000 simulations: ODP 0.43 to 0.47 per origin,
+    // total 0.44 to 0.47; Mack 0.48 to 0.72, total 0.53 to 0.55, the
+    // highest for the origins with one year left, whose last sigma is
+    // extrapolated). The ODP's variance is linear in the mean, so it is the
+    // scale that falls: the Pearson chi-square is unchanged and the
+    // degrees of freedom grow (36 to 171 on RAA), so the process SD falls
+    // by sqrt(36 / 171) = 0.46. Mack's model takes the quarterly link
+    // ratios as independent, each deviating about a quarter as much as the
+    // annual one, so a sixteenth of the variance each, a quarter in all. The
     // opening reserve is the annual one: a year's quarterly volume-weighted
     // factors telescope to its annual factor. The oldest origin, at the
     // last age, has no cell in the coming year.

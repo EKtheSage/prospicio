@@ -558,14 +558,30 @@ Checks of the grain and the lag (unit tests in `one_year_bootstrap.rs`,
   equal parts: the opening reserve is the annual one (a year's quarterly
   volume-weighted factors telescope to its annual factor) and the one-year
   standard deviation is about half the annual one under both models
-  (measured ODP 0.42 to 0.47 per origin, 0.45 to 0.47 in total; Mack 0.49
-  to 0.70 and 0.53 to 0.55). That is what the models imply here: the split
-  makes a year's four quarters move together, but both models take
-  successive increments (ODP) or link ratios (Mack) as independent, so each
-  quarter carries a quarter of the year's movement and a sixteenth of its
-  variance, the four together a quarter. A split triangle is smoother than
-  real quarterly data, so this checks the mechanics, not a quarterly
-  calibration.
+  (measured at 5,000 simulations: ODP 0.43 to 0.47 per origin, 0.44 to
+  0.47 in total; Mack 0.48 to 0.72 and 0.53 to 0.55). The two models get
+  there differently. The ODP's variance is linear in the mean, so the
+  halving is its scale's: the split leaves the Pearson chi-square
+  unchanged (each quarter's residual is half the annual cell's), so the
+  quarterly scale is the annual one times the ratio of degrees of freedom,
+  exactly (36/171 on RAA and GenIns, 45/210 on ABC), and the process
+  standard deviation falls by its square root, about 0.46. Mack's model
+  takes successive link ratios as independent, and the split's quarterly
+  ones deviate by about a quarter of the annual ones, so each quarter
+  carries about a sixteenth of the year's variance, the four together a
+  quarter. A split triangle is smoother than real quarterly data, so this
+  checks the mechanics, not a quarterly calibration.
+* Its first year's quarterly link ratios are equal across origins, so
+  those sigmas are zero; such a factor gives Mack's bootstrap no residuals
+  (they would be `0 / 0`; as zeros they cut RAA's pool mean square to
+  0.854) and its pseudo factor is its factor. A test pins the quarterly
+  RAA pool's mean square at 1. Quarterly RAA under Mack's Gamma process
+  with seed 3 once drew a cell near zero and the next draw's shape
+  underflowed: a Gamma or lognormal out of floating point range now draws
+  its limit, zero (a regression test).
+* A lagging origin appends only the year's cells: on RAA with 1985 cut
+  back a year, both models' cells of the year hold its 84-month cell and
+  not the 72-month step valued at the valuation.
 
 The CDR is joint across origins (and segments), so its quantiles, VaR and
 TVaR come from `PredictiveDistribution`. A new origin period written in the
@@ -686,7 +702,11 @@ conditional variance of `C_k+1` is `sigma_k^2 C_k^(2 - alpha)`):
    `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every observed link, and
    take the pseudo factor `f*_k = sum(C_k^alpha F*) / sum(C_k^alpha)` with
    the observed weights. A link from a zero has no variance in Mack's model:
-   it keeps its observed later value and gives no residual.
+   it keeps its observed later value and gives no residual. Nor does a
+   factor whose sigma is zero (its link ratios all equal, as in a split
+   triangle's first year): its residuals would be `0 / 0`, zeros in their
+   place would shrink the pool, and its pseudo factor is its factor. With
+   every sigma zero nothing is resampled.
 2. Draw every cumulative value of the coming year (above), each from the
    one before `C`, the observed latest value for the first, mean
    `f*_k C`, variance `sigma_k^2 |C|^(2 - alpha)`, with the same pseudo
