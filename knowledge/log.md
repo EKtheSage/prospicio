@@ -2,6 +2,7 @@
 
 ## 2026-10-06
 
+* **Correction**: [The simulated one-year view against Merz-Wuthrich, ODP and Mack's process](/findings/one-year-bootstrap-vs-merz-wuthrich.md): the reconciliation under Mack's process is of the standard deviation; EVW's uncentred residual pool (mean 0.14 on RAA) biases the mean CDR by -0.214, -0.038 and +0.176 SD on RAA, GenIns and ABC (now pinned in the validation test), and the new `MackBootstrap::centre_residuals` brings it to within Monte Carlo error of zero while the SD still reconciles; the `Residuals` process carries the pool's mean and variance. From the review of branch claude/one-year-mack.
 * **Update**: [The simulated one-year view against Merz-Wuthrich, ODP and Mack's process](/findings/one-year-bootstrap-vs-merz-wuthrich.md), retitled: `MackBootstrap::one_year` (Mack's process, EVW 2019 Appendix 1) reconciles with R's `CDR(1)S.E.` on RAA, GenIns and ABC within five Monte Carlo standard errors and with EVW's Table 4; a reconciliation table of ODP, Mack's process and Merz-Wuthrich; RAA's young origins 0.4% to 1.2% above R at 200,000 simulations. From branch claude/one-year-mack.
 * **Verification**: [Reinstatements pro rata as to time](/findings/reinstatement-pro-rata-time.md) verified by CI's Rust, Python and R jobs on #146.
 * **Creation**: [Reinstatements pro rata as to time](/findings/reinstatement-pro-rata-time.md), from dating events and pro rata as to time reinstatement premiums.

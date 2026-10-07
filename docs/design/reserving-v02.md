@@ -571,6 +571,7 @@ pub struct MackBootstrap {
     pub seed: u64,
     pub process: MackProcess,       // Gamma (default), Lognormal, Residuals, Normal, None
     pub development: Development,   // Mack's alpha and how a lone sigma is filled
+    pub centre_residuals: bool,     // subtract the pool's mean first; false (EVW)
 }
 
 impl MackBootstrap {
@@ -624,8 +625,29 @@ conditional variance of `C_k+1` is `sigma_k^2 C_k^(2 - alpha)`):
    the distribution of its absolute value negated, as the ODP's Gamma
    does), `Residuals` (the mean plus a resampled residual times the
    standard deviation, EVW's non-parametric choice), `Normal` (Mack's model
-   is distribution-free; not in EVW) or `None`.
+   is distribution-free; not in EVW) or `None`. Gamma, lognormal and normal
+   have exactly that mean and variance; `Residuals` has the pool's moments,
+   mean `f*_k C + m sd` and variance `(1 - m^2) sd^2` with `m` the pool's
+   mean (below).
 3. Append, refit and record the CDR as in steps 3 and 4 above.
+
+The residuals of each factor have a zero `C_k^(alpha / 2)`-weighted sum,
+not a zero mean, so the pool's mean `m` is not zero: 0.14 on RAA, 0.01 on
+GenIns, -0.06 on ABC (its mean square is 1). Resampled as they are, they
+bias every pseudo factor, `E[f*_k] = f_k + m sigma_k sum(C_k^(alpha / 2))
+/ sum(C_k^alpha)`, and so the CDR, whose expectation under Mack's model is
+zero: at 20,000 simulations its mean is -0.214 (RAA), -0.038 (GenIns) and
++0.176 (ABC) times its standard deviation, which shifts every quantile,
+the 99.5% value at risk included. EVW's Appendix 1 does not centre, and
+their Table 4 shows only a small effect on Taylor–Ashe (GenIns), whose
+pool mean is 0.01. `centre_residuals: true` subtracts `m` from the pool
+before resampling, for the pseudo factors and the `Residuals` process.
+Centred, the mean CDR is -0.011, -0.003 and +0.007 times its standard
+deviation, within Monte Carlo error of zero, and the standard deviation
+still reconciles (total 1.003, 1.000 and 0.994 times R's, every origin
+within five standard errors; measured once, not in CI). The default stays
+EVW's, so `MackBootstrap` reproduces their algorithm and Table 4; the
+reconciliation below is of the standard deviation only.
 
 The model has no tail. Mack's tail is one more step from the oldest age to
 ultimate with its own sigma and standard error; it has no calendar year,
@@ -643,7 +665,8 @@ Checks, all independent of the simulation:
   Monte Carlo standard errors of the simulated standard deviation,
   `sd sqrt((kurtosis - 1) / (4 n))`, at 20,000 simulations
   (`validation/tests/reserving_one_year_mack.rs`). This is the
-  reconciliation.
+  reconciliation, of the standard deviation; the same test pins the
+  uncentred mean bias above as a seed-pinned regression.
 * England, Verrall and Wüthrich's Table 4 (500,000 simulations of the
   same bootstrap on Taylor–Ashe, Mack's rule for the last sigma): every
   origin and the total within five standard errors of the two simulations
@@ -652,7 +675,9 @@ Checks, all independent of the simulation:
   `alpha`; RAA's 1982, one cell left behind a factor resting on one link
   ratio, has the variance worked out by hand for every `alpha`, which is
   Mack's own when the residuals' variance is 1; every process shape gives
-  Merz–Wüthrich's GenIns total.
+  Merz–Wüthrich's GenIns total; on RAA the uncentred mean CDR is far below
+  zero, and centred, the Gamma's and the `Residuals` process's means are
+  within four Monte Carlo standard errors of zero.
 
 Measured with 200,000 simulations, GenIns and ABC are within 0.4% of R per
 origin, but RAA's three youngest origins and its total come out 0.4% to
@@ -662,12 +687,13 @@ factors stress most; the 20,000-simulation test, whose five standard
 errors are 2.5% to 5%, does not resolve it.
 
 Bindings: Python `MackBootstrap(n_sims=10000, seed=0, process="gamma",
-average="volume", sigma_interpolation="log-linear").one_year(triangle,
-column, method, exposure=None)` returns the same `OneYearFit` with
-`model == "mack"`, `mack` (the `MackFit`), Mack's `residuals`, and no
-`fitted` or `scale` (an error). R `mack_one_year(...)`, beside
-`odp_one_year()` with the same arguments, `process = c("gamma",
-"lognormal", "residuals", "normal", "none")`, and `mack_average` and
-`mack_sigma_interpolation` for Mack's model (the method's `average` and
-`sigma_interpolation` are taken), returns a `one_year_fit` with
+average="volume", sigma_interpolation="log-linear",
+centre_residuals=False).one_year(triangle, column, method, exposure=None)`
+returns the same `OneYearFit` with `model == "mack"`, `mack` (the
+`MackFit` of every segment), Mack's `residuals`, and no `fitted` or
+`scale` (an error). R `mack_one_year(...)`, beside `odp_one_year()` with
+the same arguments, `process = c("gamma", "lognormal", "residuals",
+"normal", "none")`, `mack_average` and `mack_sigma_interpolation` for
+Mack's model (the method's `average` and `sigma_interpolation` are
+taken), and `centre_residuals = FALSE`, returns a `one_year_fit` with
 `model == "mack"` and `mack` a `mack_fit`.
