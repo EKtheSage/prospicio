@@ -183,14 +183,14 @@ what it is aiming for by v1.0.
   its design.
 
 Decided 2026-10-07 (`architecture.md`, "Open decisions"): the name
-risk-rs, the licence (MIT OR Apache-2.0 with a CLA), IP ownership (Ethan
-Kang) and the WASM scope. Still open:
+risk-rs, the licence (MIT OR Apache-2.0), IP ownership (Ethan Kang) and
+the WASM scope. Still open:
 
 - where the docs are hosted (GitHub Pages once the repository is public, or
   a separate host);
-- whether the packages rename from `actuarialrs` (and the crates from
-  `act-*`) to the project name;
-- reserving the name on crates.io, PyPI and CRAN, and installing the CLA
-  Assistant app, which need the user's accounts.
+- the Python and R package name (now `actuarialrs`; `actuate` is free on
+  CRAN only);
+- reserving the names on crates.io, PyPI and CRAN, which needs the user's
+  accounts.
 
 None of them blocks current work, but the first four block a public release.

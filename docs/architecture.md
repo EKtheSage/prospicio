@@ -383,9 +383,9 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 
 | Decision | Options | Needed by |
 | --- | --- | --- |
-| ~~Public name~~ | Decided 2026-10-07: **risk-rs** (the repository's name). Free on crates.io, PyPI and CRAN as `risk-rs` / `riskrs` on that date; reserve it before the first publish. Whether the packages rename from `actuarialrs` and the crates from `act-*` is still open | Before v0.1 publish |
+| ~~Public name~~ | Decided 2026-10-07: **risk-rs** (the repository's name and the Rust core; the crates stay `act-*`). Free on crates.io, PyPI and CRAN as `risk-rs` / `riskrs` on that date; reserve it before the first publish. The Python and R package name is still open: `actuate` is free on CRAN but taken on PyPI (an LLM framework, one release in 2024) and on crates.io (an active UI framework), and sits one letter from CRAN's `actuar` | Before v0.1 publish |
 | Working prefix | `act-*` crates, `actuarialrs` Python/R package, until the package names are settled | Now |
-| ~~License~~ | Decided 2026-10-07: MIT OR Apache-2.0 at the user's option (`LICENSE-MIT`, `LICENSE-APACHE`; R `MIT + file LICENSE \| Apache License (== 2.0)`, which CRAN accepts). Contributors sign a CLA (`CLA.md`) that licenses their work to the owner with the right to relicense; they keep their copyright | — |
+| ~~License~~ | Decided 2026-10-07: MIT OR Apache-2.0 at the user's option (`LICENSE-MIT`, `LICENSE-APACHE`; R `MIT + file LICENSE \| Apache License (== 2.0)`, which CRAN accepts). No contributor licence agreement for now: contributions come in under the same licence (inbound = outbound); a CLA can be added before outside contributions start if relicensing rights are needed | — |
 | ~~IP ownership~~ | Decided 2026-10-07: Ethan Kang owns the project's IP; it is built on his own time and resources | — |
 | ~~Bayesian backend~~ | Decided 2026-10-04: nutpie. Native models sample with its Rust core `nuts-rs` (from R too); Python users can hand nutpie traces of PyMC or Stan models to the shared diagnostics (`docs/design/models.md`) | — |
 | ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`) | — |
