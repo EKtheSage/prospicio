@@ -25,11 +25,19 @@ version in place of the path), so a version bump changes both.
 Do these once, before the first release.
 
 1. **PyPI.** Sign in at pypi.org (create the account and turn on 2FA if
-   needed). Under *Your account → Publishing*, add a **pending publisher**:
-   PyPI project name `prospicio`, owner `EKtheSage`, repository
-   `prospicio`, workflow `release.yml`, environment `pypi`. No token is
-   stored anywhere. A pending publisher does not reserve the name; the
-   first upload does.
+   needed). Under *Your account → Publishing*, add a **pending publisher**
+   on the *GitHub* tab, one value per field:
+
+   | Field | Value |
+   |---|---|
+   | PyPI Project Name | `prospicio` |
+   | Owner | `EKtheSage` |
+   | Repository name | `prospicio` (the name only: no owner, no slash) |
+   | Workflow name | `release.yml` |
+   | Environment name | `pypi` |
+
+   No token is stored anywhere. A pending publisher does not reserve the
+   name; the first upload does.
 2. **crates.io, first release.** Sign in at crates.io with GitHub and
    verify an email address. Trusted publishing works only for crates that
    already exist, so the first release uses a token: under *Account
@@ -69,8 +77,9 @@ dependency order.
 ## After the first release
 
 1. On crates.io, open each of the 11 crates' *Settings → Trusted
-   Publishing* and add GitHub: owner `EKtheSage`, repository `prospicio`,
-   workflow `release.yml`, environment `crates-io`.
+   Publishing* and add GitHub with the same fields as PyPI's: owner
+   `EKtheSage`, repository `prospicio` (no owner or slash), workflow
+   `release.yml`, environment `crates-io`.
 2. Delete the `CARGO_REGISTRY_TOKEN` secret and revoke the token. The
    workflow then asks crates.io for a short-lived token itself
    (`rust-lang/crates-io-auth-action`).
