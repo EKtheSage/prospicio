@@ -49,6 +49,7 @@ To keep billed minutes down (the repo is private; Windows minutes count double),
 Run the matching `ci.yml` checks locally before you push, so CI does not go red on something a local run would have caught:
 
 - Always: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
+- Crates in the WASM scope touched (`act-core`, `act-math`, `act-prob`, `act-aggregate`, `act-pricing`, `act-reserving`): `rustup target add wasm32-unknown-unknown` once, then `cargo check --target wasm32-unknown-unknown -p <crate>`. No threads, files or C dependencies on their default path
 - Python bindings touched: `cargo clippy -p act-python -- -D warnings`, then `cd python && maturin develop && pytest tests`
 - R bindings touched: `cargo clippy -p act-r -- -D warnings`, `install.packages("S7")` if missing, `R CMD INSTALL R/actuarialrs`, every `R/actuarialrs/tests/*.R` with `Rscript`
 - Bindings, their doc comments or docs config touched: `cargo xtask docs --check` (needs Quarto, Python 3.11+ for great-docs, and the R packages `roxygen2`, `pkgload`, `pkgdown`), and commit the regenerated stub, `man/` and `NAMESPACE`

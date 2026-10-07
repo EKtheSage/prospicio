@@ -6,6 +6,8 @@ build-backend = "maturin"
 name = "actuarialrs"
 description = "Actuarial modeling on a Rust core."
 requires-python = ">=3.9"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "Ethan Kang", email = "ethan.yskang@gmail.com" }]
 dynamic = ["version"]
 
 [dependency-groups]

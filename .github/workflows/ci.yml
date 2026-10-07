@@ -25,6 +25,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       # The knowledge bundle conforms to OKF v0.2 (knowledge/index.md).
@@ -32,6 +33,9 @@ jobs:
       # Default members: pure-Rust crates and the parity suite.
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      # The crates in the WASM scope (docs/architecture.md, "Open
+      # decisions") build for the browser.
+      - run: cargo check --target wasm32-unknown-unknown -p act-core -p act-math -p act-prob -p act-aggregate -p act-pricing -p act-reserving
 
   python:
     if: github.event_name != 'push'
