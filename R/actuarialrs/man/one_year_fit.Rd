@@ -144,7 +144,7 @@ Merz and Wuthrich's (\code{\link[=claims_development_result]{claims_development_
 error, which reconciles the two. The reconciliation is of the standard
 deviation: EVW resample the residuals uncentred, and their pool's
 non-zero mean biases the pseudo factors, so the mean CDR is about -0.2
-(RAA), -0.04 (GenIns) and +0.17 (ABC) times its standard deviation
+(RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation
 rather than Merz and Wuthrich's zero. \code{centre_residuals = TRUE} centres
 the pool first, which brings the mean to about zero and keeps the
 standard deviation. Mack's model has no tail here: the

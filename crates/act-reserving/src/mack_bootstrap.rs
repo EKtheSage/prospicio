@@ -123,8 +123,8 @@ impl MackProcess {
 ///
 /// Its mean is not Merz and Wüthrich's zero unless
 /// [`centre_residuals`](Self::centre_residuals) is set: with EVW's
-/// uncentred residuals the mean CDR is about -0.20 (RAA), -0.04 (GenIns)
-/// and +0.17 (ABC) times its standard deviation, which shifts every
+/// uncentred residuals the mean CDR is about -0.21 (RAA), -0.04 (GenIns)
+/// and +0.18 (ABC) times its standard deviation, which shifts every
 /// quantile; centred, it is within Monte Carlo error of zero and the
 /// standard deviation still reconciles
 /// (`knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`).

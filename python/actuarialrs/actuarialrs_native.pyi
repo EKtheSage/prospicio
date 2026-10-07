@@ -5030,7 +5030,7 @@ class MackBootstrap:
     Monte Carlo error. Its mean is Merz and Wüthrich's zero only with
     ``centre_residuals``: EVW resample the residuals uncentred, and their
     pool's non-zero mean biases the pseudo factors, so the mean CDR is about
-    -0.2 (RAA), -0.04 (GenIns) and +0.17 (ABC) times its standard
+    -0.2 (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard
     deviation. Simulation ``i`` uses random stream ``i`` of ``seed`` for
     every segment in turn.
     
