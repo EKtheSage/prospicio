@@ -333,7 +333,7 @@ Each front end's docs are generated from the code that defines its API, and buil
 - **Generated files that ship in a package are committed** (the stub, `man/`, `NAMESPACE`) so reviewers see API changes in the diff. `--check` fails when a build changes one; CI runs `cargo xtask docs --check`.
 - **Documentation is tested:** Python requires a docstring on every public object and runs docstring examples; R runs `tools::undoc` and `tools::codoc`, and pkgdown runs every `@examples` block.
 - **Semantics are documented once, in Rust.** Binding docs describe the language API; definitions, formulas and references live in the Rust crate docs, and binding docs link to them instead of restating them.
-- **Rendered sites are not committed.** CI uploads them as a build artifact; where they are published is an open decision.
+- **Rendered sites are not committed.** CI uploads them as a build artifact on PRs; `.github/workflows/pages.yml` publishes them to GitHub Pages from `main`.
 
 ## Roadmap and releases
 
@@ -390,6 +390,6 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 | ~~Bayesian backend~~ | Decided 2026-10-04: nutpie. Native models sample with its Rust core `nuts-rs` (from R too); Python users can hand nutpie traces of PyMC or Stan models to the shared diagnostics (`docs/design/models.md`) | — |
 | ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`) | — |
 | ~~WASM scope~~ | Decided 2026-10-07: `prospicio-core`, `prospicio-math`, `prospicio-prob`, `prospicio-aggregate` (with reinsurance), `prospicio-pricing` and `prospicio-reserving` must build for `wasm32-unknown-unknown`; CI checks it. Without threads Rayon's global pool runs on the calling thread, so results are the same, only slower; an explicit multi-thread pool fails there | — |
-| Docs hosting | GitHub Pages (public, needs the repo public or a paid plan) vs private hosting; waits on IP ownership and license | Before v0.1 publish |
+| ~~Docs hosting~~ | Decided 2026-10-07: GitHub Pages, now that the repository is public. `.github/workflows/pages.yml` builds the site (`cargo xtask docs`: Python, R and Rust API docs) and deploys it on each merge to `main` that touches code or docs, and on demand | — |
 
 **Next step:** write the distribution-representation and PredictiveDistribution design note; the Triangle and RNG notes depend on it.

@@ -174,7 +174,7 @@ what it is aiming for by v1.0.
      aggregate with reinsurance, pricing, reserving) and CI checks that
      they build for `wasm32-unknown-unknown`. Next is a JavaScript API
      over them (`wasm-bindgen`) for a browser page or an Excel add-in.
-  2. Where the docs sites are published.
+  2. (Done: the docs sites are published to GitHub Pages from `main`.)
 - **v1.0:** API review and deprecation pass, then semver.
 
 ## Waiting on the user
@@ -185,11 +185,9 @@ what it is aiming for by v1.0.
 Decided 2026-10-07 (`architecture.md`, "Open decisions"): the name
 (prospicio for the repository, the Rust crates and the Python and R
 packages), the licence (MIT OR Apache-2.0), IP ownership (Ethan Kang) and
-the WASM scope. Still open:
+the WASM scope; the docs are published to GitHub Pages. Still open:
 
-- where the docs are hosted (GitHub Pages once the repository is public, or
-  a separate host);
 - reserving the names on crates.io, PyPI and CRAN, which needs the user's
   accounts.
 
-Neither blocks current work; both come before a public release.
+It does not block current work; it comes before the first release.
