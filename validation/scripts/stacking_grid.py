@@ -4,7 +4,7 @@
     python validation/scripts/stacking_grid.py
 
 Exact posterior moments of Bayesian stacking and hierarchical stacking by
-grid integration (no sampler), for the NUTS fits of act_bayes::stacking.
+grid integration (no sampler), for the NUTS fits of prospicio_bayes::stacking.
 Two models from validation/data/stacking_lpd.csv: poisson_intercept and
 poisson_age_region (the second is the reference, logit 0); the covariate
 is age from validation/data/glm_policies.csv, centred and divided by twice

@@ -3,16 +3,16 @@ members = ["crates/*", "validation", "xtask"]
 # Binding crates need a Python or R toolchain at build time, so plain
 # `cargo build` / `cargo test` skip them; see python/ and R/ for their builds.
 default-members = [
-    "crates/act-core",
-    "crates/act-math",
-    "crates/act-prob",
-    "crates/act-reserving",
-    "crates/act-aggregate",
-    "crates/act-pricing",
-    "crates/act-models",
-    "crates/act-glm",
-    "crates/act-bayes",
-    "crates/act-nn",
+    "crates/prospicio-core",
+    "crates/prospicio-math",
+    "crates/prospicio-prob",
+    "crates/prospicio-reserving",
+    "crates/prospicio-aggregate",
+    "crates/prospicio-pricing",
+    "crates/prospicio-models",
+    "crates/prospicio-glm",
+    "crates/prospicio-bayes",
+    "crates/prospicio-nn",
     "validation",
     "xtask",
 ]
@@ -23,25 +23,28 @@ version = "0.0.1"
 edition = "2024"
 rust-version = "1.85"
 publish = false
+license = "MIT OR Apache-2.0"
+authors = ["Ethan Kang <ethan.yskang@gmail.com>"]
+repository = "https://github.com/EKtheSage/prospicio"
 
 [workspace.dependencies]
-act-core = { path = "crates/act-core" }
-act-math = { path = "crates/act-math" }
-act-aggregate = { path = "crates/act-aggregate" }
-act-prob = { path = "crates/act-prob" }
-act-pricing = { path = "crates/act-pricing" }
-act-models = { path = "crates/act-models" }
-act-glm = { path = "crates/act-glm" }
-act-bayes = { path = "crates/act-bayes" }
-act-nn = { path = "crates/act-nn" }
-act-reserving = { path = "crates/act-reserving" }
-# PredictiveDistribution to and from Arrow IPC (act-prob's `arrow`
+prospicio-core = { path = "crates/prospicio-core" }
+prospicio-math = { path = "crates/prospicio-math" }
+prospicio-aggregate = { path = "crates/prospicio-aggregate" }
+prospicio-prob = { path = "crates/prospicio-prob" }
+prospicio-pricing = { path = "crates/prospicio-pricing" }
+prospicio-models = { path = "crates/prospicio-models" }
+prospicio-glm = { path = "crates/prospicio-glm" }
+prospicio-bayes = { path = "crates/prospicio-bayes" }
+prospicio-nn = { path = "crates/prospicio-nn" }
+prospicio-reserving = { path = "crates/prospicio-reserving" }
+# PredictiveDistribution to and from Arrow IPC (prospicio-prob's `arrow`
 # feature). 59.x is the last line that builds on rust-version 1.85.
 arrow-array = { version = "59.3.0", default-features = false }
 arrow-ipc = { version = "59.3.0", default-features = false }
 arrow-schema = { version = "59.3.0", default-features = false }
 libm = "0.2.16"
-# Linear programs in act-pricing (reference fits). Pure Rust simplex, no
+# Linear programs in prospicio-pricing (reference fits). Pure Rust simplex, no
 # C or C++ build, so CRAN, Windows and WASM builds are unaffected.
 microlp = { version = "0.6.0", default-features = false }
 # Provenance input hashes. `pure` skips the C/assembly SIMD build so the
@@ -54,7 +57,7 @@ rand_core = "=0.10.1"
 # NUTS sampler: the Rust core of nutpie (MIT).
 nuts-rs = "0.19.0"
 rayon = "1.12.0"
-# FFT aggregation in act-aggregate. Pure Rust (SIMD via intrinsics, no C), so
+# FFT aggregation in prospicio-aggregate. Pure Rust (SIMD via intrinsics, no C), so
 # it builds for the Windows R target and WASM.
 rustfft = "6.4.1"
 # float_roundtrip: model artifacts store estimates as JSON numbers and must

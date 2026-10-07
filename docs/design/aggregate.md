@@ -7,7 +7,7 @@ Status: **In progress** · v0.3 · Depends on: `distributions.md` (`Grid`, `Coun
 The distribution of a period's total loss `S = X_1 + … + X_N` from a claim
 count `N` and a severity `X`, three ways, and the split of losses between
 an insurer and its reinsurers. All numerics that are not aggregation itself
-(distributions, grids, risk measures) come from `act-prob`.
+(distributions, grids, risk measures) come from `prospicio-prob`.
 
 | Method | Input | Output | Exact for | Use when |
 |---|---|---|---|---|
@@ -17,13 +17,13 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
 
 ## What exists
 
-- `act_aggregate::panjer(&frequency, &severity_grid, points)` and
-  `act_aggregate::fft(&frequency, &severity_grid, points)` return the
+- `prospicio_aggregate::panjer(&frequency, &severity_grid, points)` and
+  `prospicio_aggregate::fft(&frequency, &severity_grid, points)` return the
   aggregate `Grid` and a `CompoundReport`.
-- `act_aggregate::simulate_events(&frequency, &severity, n_sims, seed)`
+- `prospicio_aggregate::simulate_events(&frequency, &severity, n_sims, seed)`
   returns an `EventSet`: each simulated year's individual losses, with
   `totals()` as a `PredictiveDistribution`.
-- `act_aggregate::{Layer, Tower}`: per-occurrence excess-of-loss layers
+- `prospicio_aggregate::{Layer, Tower}`: per-occurrence excess-of-loss layers
   with share, annual aggregate deductible and limit, and reinstatements;
   quota shares (`Layer::quota_share`) and aggregate stop-losses
   (`Layer::stop_loss`); `Tower::inuring` stages layers so later ones see
@@ -34,12 +34,12 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   (an adverse development cover or loss portfolio transfer on a reserve
   bootstrap, a stop-loss or quota share on modelled premium risk). Same
   components as `apply`.
-- `act_aggregate::CollectiveModel<N, X>`: a claim count and a severity
+- `prospicio_aggregate::CollectiveModel<N, X>`: a claim count and a severity
   with closed-form layer mean, layer variance
   (`E[N] Var[Y] + Var[N] E[Y]^2`) and excess frequency, the treaty
   pricing model of `pareto.md`; `simulate` reuses `simulate_events`.
-  Python `actuarialrs.pricing.CollectiveModel`, R `collective_model()`.
-- Python (`actuarialrs.aggregate`) and R (`compound_distribution`,
+  Python `prospicio.pricing.CollectiveModel`, R `collective_model()`.
+- Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
 
@@ -63,7 +63,7 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   grid and `tail_mass` understates the truth (a test pins this), so callers
   must check `aliasing_error`, not `tail_mass`, first.
 - **FFT applies the claim-count pgf at complex points** via
-  `Counting::pgf_complex`, written with `(re, im)` pairs so `act-prob` needs
+  `Counting::pgf_complex`, written with `(re, im)` pairs so `prospicio-prob` needs
   no complex-number dependency; `rustfft` (pure Rust) does the transforms.
 
 - **Monte Carlo keeps events.** Reinsurance terms apply per loss, so the
@@ -181,7 +181,7 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   stage sees each risk's original SI. `Tower::apply` refuses a tower with a
   surplus on events without SIs; `apply_aggregate` and `on_grid` refuse
   one outright (no risks). Python `Layer.surplus`, R `surplus_treaty()`.
-- **Risk profiles.** `act_pricing::profile::RiskProfile`: bands of sum
+- **Risk profiles.** `prospicio_pricing::profile::RiskProfile`: bands of sum
   insured, each with a number of risks, an expected loss (given, or
   premium × loss ratio, the user's choice per profile) and its own
   exposure curve (MBBEFD or tabulated, `BandCurve`). A band expects
@@ -195,8 +195,8 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   surplus sees each risk at SI `(1 − c) SI` on the same curve. Tested:
   50,000–100,000 simulated years of a three-band profile (two MBBEFD, one
   tabulated) give the surplus and the per-risk XL it inures to within four
-  standard errors of these. It lives in act-pricing (exposure curves),
-  which now depends on act-aggregate (`EventSet`). Python `RiskProfile`,
+  standard errors of these. It lives in prospicio-pricing (exposure curves),
+  which now depends on prospicio-aggregate (`EventSet`). Python `RiskProfile`,
   R `risk_profile()`, `profile_simulate()`, `profile_layer_loss()`,
   `profile_surplus_loss()`.
 - **Sums insured spread within a band.** Bounds are optional per band

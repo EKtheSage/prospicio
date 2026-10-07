@@ -23,7 +23,7 @@ sources:
   ```bash
   export R_HOME="C:/Program Files/R/R-4.5.3" PATH="/c/Program Files/R/R-4.5.3/bin:$PATH" R_LIBS="<worktree>/target/rlib" PYTHONUTF8=1
   mkdir -p target/rlib
-  cargo clean -p extendr-ffi   # once, if act-r was ever built without R visible
+  cargo clean -p extendr-ffi   # once, if prospicio-r was ever built without R visible
   cargo xtask docs --check     # over 10 minutes; run it in the background
   ```
 
@@ -31,7 +31,7 @@ sources:
   with `NotPresent`: extendr-ffi caches its failed probe for R and does not
   rerun when `R_HOME` changes.
 * `R_LIBS` per worktree keeps parallel sessions from overwriting each
-  other's installed `actuarialrs` in the shared user library.
+  other's installed `prospicio` in the shared user library.
 * `PYTHONUTF8=1` is needed: without it great-docs fails at "Prepare freeze
   cache" with `'utf-8' codec can't decode byte 0x96`.
 * `cargo xtask r` and `cargo xtask python` (without `--check`) regenerate

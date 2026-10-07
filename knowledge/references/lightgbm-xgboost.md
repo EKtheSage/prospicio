@@ -1,7 +1,7 @@
 ---
 type: Reference Implementation
 title: LightGBM and XGBoost (boosting engines)
-description: The engines behind actuarialrs.boosting and R's booster_fit(); how offsets, starting scores and precision behave, the R packages' prediction calls, and how to install them.
+description: The engines behind prospicio.boosting and R's booster_fit(); how offsets, starting scores and precision behave, the R packages' prediction calls, and how to install them.
 resource: https://lightgbm.readthedocs.io/
 tags: [boosting, lightgbm, xgboost, python, r, offsets, quantile, dispersion]
 status: stable
@@ -9,14 +9,14 @@ generated: { by: claude-code/cloud-session, at: 2026-10-06T16:30:00Z }
 verified: { by: process:ci, at: 2026-10-06T17:20:37Z }
 sources:
   - id: adapter
-    resource: ../python/actuarialrs/boosting.py
-    title: actuarialrs.boosting
+    resource: ../python/prospicio/boosting.py
+    title: prospicio.boosting
   - id: tests
     resource: ../python/tests/test_boosting.py
     title: Boosting adapter tests
   - id: radapter
-    resource: ../R/actuarialrs/R/boosting.R
-    title: R booster_fit() and its tests (R/actuarialrs/tests/test-boosting.R)
+    resource: ../R/prospicio/R/boosting.R
+    title: R booster_fit() and its tests (R/prospicio/tests/test-boosting.R)
   - id: lgb
     resource: https://pypi.org/project/lightgbm/
     title: lightgbm 4.7.0 on PyPI
@@ -87,7 +87,7 @@ the 1e-9 the test asks.[^tests]
   GPU libraries; `python/pyproject.toml` uses the CPU wheel on Linux.[^xgb]
 * `lightgbm` 4.7.0 is a 3.5 MB wheel.[^lgb]
 
-[^adapter]: actuarialrs.boosting
+[^adapter]: prospicio.boosting
 [^tests]: Boosting adapter tests
 [^radapter]: R booster_fit() and its tests
 [^lgb]: lightgbm on PyPI

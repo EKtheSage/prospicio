@@ -1,0 +1,59 @@
+name: Docs site
+
+# Publishes the docs site (Python, R and Rust API docs, built by
+# `cargo xtask docs` into target/docs-site) to GitHub Pages on each merge to
+# main that can change it, and on demand. Pages' source must be set to
+# "GitHub Actions" in the repository's settings.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "python/**"
+      - "R/**"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer merge replaces a queued one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: R/prospicio
+          extra-packages: any::roxygen2, any::pkgload, any::pkgdown
+      - run: cargo xtask docs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/docs-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

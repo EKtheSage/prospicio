@@ -1,7 +1,7 @@
 ---
 type: Reference Implementation
 title: BayesBlend (Bayesian stacking reference)
-description: Ledger Investing's BayesBlend 0.0.8 (MIT), whose Stan models act_bayes::stacking follows, including partial pooling and adaptive priors.
+description: Ledger Investing's BayesBlend 0.0.8 (MIT), whose Stan models prospicio_bayes::stacking follows, including partial pooling and adaptive priors.
 resource: https://pypi.org/project/bayesblend/
 tags: [bayes, stacking, pooling, stan]
 status: stable
@@ -28,7 +28,7 @@ for reference values).[^wheel]
 
 * No pooling: `α ~ N(alpha_loc, (alpha_scale δ)²)`,
   `β ~ N(beta_loc, (beta_scale δ)²)`, separately for discrete and
-  continuous covariates (act-bayes uses one slope prior for both).
+  continuous covariates (prospicio-bayes uses one slope prior for both).
 * Pooling (`partial_pooling=True`): `β_mj ~ N(μ_m, (σ_m δ)²)` per
   covariate group, `μ_m ~ N(μ, (tau_mu δ)²)`, `μ ~ N(0, (tau_mu_global δ)²)`,
   `σ_m ~ N⁺(0, tau_sigma²)`. A scale of 0 removes a level.[^wheel]
@@ -40,11 +40,11 @@ for reference values).[^wheel]
 # Quirks
 
 * BayesBlend warns that partial pooling with fewer than 3 distinct
-  covariates may not perform well; in act-bayes that case shows up as a
+  covariates may not perform well; in prospicio-bayes that case shows up as a
   funnel and divergences (see
   [stacking funnel](/findings/stacking-pooling-funnel.md)).
 * Covariates: continuous ones divided by twice their standard deviation
-  (Gelman 2008), discrete ones dummy-coded; act-bayes leaves that to the
+  (Gelman 2008), discrete ones dummy-coded; prospicio-bayes leaves that to the
   caller and takes the number of leading dummy columns.[^models-design]
 
 [^wheel]: bayesblend 0.0.8 wheel

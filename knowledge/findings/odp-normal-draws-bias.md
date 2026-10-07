@@ -8,14 +8,14 @@ generated: { by: claude-code/cloud-session, at: 2026-10-05T22:05:00Z }
 verified: { by: process:ci, at: 2026-10-05T15:54:30Z }
 sources:
   - id: issue
-    resource: https://github.com/EKtheSage/risk-rs/issues/111
+    resource: https://github.com/EKtheSage/prospicio/issues/111
     title: Issue 111, item 2
   - id: pr
-    resource: https://github.com/EKtheSage/risk-rs/pull/114
+    resource: https://github.com/EKtheSage/prospicio/pull/114
     title: PR 114, ODP GLM fixes
   - id: code
-    resource: ../crates/act-glm/src/lib.rs
-    title: act_glm::ParameterDraws
+    resource: ../crates/prospicio-glm/src/lib.rs
+    title: prospicio_glm::ParameterDraws
 ---
 
 # Finding
@@ -36,4 +36,4 @@ on the Chain Ladder within 4 Monte Carlo SE.[^pr][^code]
 
 [^issue]: Issue 111, item 2
 [^pr]: PR 114
-[^code]: act_glm::ParameterDraws
+[^code]: prospicio_glm::ParameterDraws

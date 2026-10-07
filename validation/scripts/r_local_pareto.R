@@ -6,7 +6,7 @@
 #
 # The package (GPL) is used only to produce reference values; no code from
 # it is used in this repository (docs/design/pareto.md). Rows: the
-# log-affine local Pareto (act_prob::LogAffinePareto) distribution
+# log-affine local Pareto (prospicio_prob::LogAffinePareto) distribution
 # function, quantile, layer mean, layer second moment and layer variance.
 # The package computes layer moments with stats::integrate (relative
 # tolerance about 1e-4), so those rows are a coarse check at 1e-6 and rows

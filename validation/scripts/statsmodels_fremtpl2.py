@@ -8,7 +8,7 @@ The claim frequency GLM of Noll, Salzmann and Wüthrich (2018) on all
 678,013 policies of freMTPL2freq (prepared by fetch_fremtpl2.py): ClaimNb
 on Area, VehPower, VehAge, DrivAge, BonusMalus, VehBrand, VehGas, Density
 and Region, log link, offset log(Exposure). The design is built as
-act_models::Terms builds it: an intercept, then each term in order,
+prospicio_models::Terms builds it: an intercept, then each term in order,
 numeric terms as they are and factors in treatment coding with one column
 per level other than the reference, levels in sorted order, named
 `name[level]`.

@@ -1,4 +1,4 @@
-# risk-rs
+# prospicio
 
 Actuarial and risk modeling on a Rust core, exposed to Python and R.
 
@@ -9,13 +9,13 @@ core abstractions: [docs/design/](docs/design/).
 
 | Path | What |
 |---|---|
-| `crates/act-core` | Error type, reproducible RNG streams |
-| `crates/act-math` | Numerical engine (Phase 0: normal special functions) |
-| `crates/act-prob` | Distributions (Phase 0: `Distribution` trait, `Lognormal`) |
-| `crates/act-reserving` | Reserving (v0.1 so far: Triangle, Chain Ladder, Mack, ODP bootstrap) |
-| `crates/act-aggregate` | Aggregate loss and reinsurance (empty until v0.3) |
-| `crates/act-python`, `python/` | Python package `actuarialrs` (PyO3 + maturin) |
-| `crates/act-r`, `R/actuarialrs` | R package `actuarialrs` (extendr) |
+| `crates/prospicio-core` | Error type, reproducible RNG streams |
+| `crates/prospicio-math` | Numerical engine (Phase 0: normal special functions) |
+| `crates/prospicio-prob` | Distributions (Phase 0: `Distribution` trait, `Lognormal`) |
+| `crates/prospicio-reserving` | Reserving (v0.1 so far: Triangle, Chain Ladder, Mack, ODP bootstrap) |
+| `crates/prospicio-aggregate` | Aggregate loss and reinsurance (empty until v0.3) |
+| `crates/prospicio-python`, `python/` | Python package `prospicio` (PyO3 + maturin) |
+| `crates/prospicio-r`, `R/prospicio` | R package `prospicio` (extendr) |
 | `validation/` | Parity harness: reference datasets and results from SciPy, R ChainLadder and chainladder-python |
 
 ## Build and test
@@ -45,7 +45,7 @@ cargo test
 cd python
 uv sync              # creates .venv, installs dev deps, builds the Rust extension
 uv run pytest tests
-uv run python        # a Python shell with actuarialrs installed
+uv run python        # a Python shell with prospicio installed
 ```
 
 `uv run` rebuilds the extension automatically when Rust sources change.
@@ -58,12 +58,12 @@ install that first:
 
 ```bash
 Rscript -e 'install.packages("S7")'
-R CMD INSTALL R/actuarialrs
-for f in R/actuarialrs/tests/*.R; do Rscript "$f"; done
+R CMD INSTALL R/prospicio
+for f in R/prospicio/tests/*.R; do Rscript "$f"; done
 ```
 
 **Windows PowerShell:** `R` is PowerShell's alias for `Invoke-History`, so
-call `R.exe CMD INSTALL R\actuarialrs` instead. To put R on `PATH` for your
+call `R.exe CMD INSTALL R\prospicio` instead. To put R on `PATH` for your
 user (newest installed R; rerun after upgrading R), then open a new window:
 
 ```powershell
@@ -73,7 +73,7 @@ $rbin = (Get-ChildItem "C:\Program Files\R" -Directory | Sort-Object Name | Sele
 
 On Windows, R builds packages with Rtools' MinGW compiler, so the Rust code
 is compiled for the `x86_64-pc-windows-gnu` target (see
-`R/actuarialrs/src/Makevars.win`); the build stops with a message if that
+`R/prospicio/src/Makevars.win`); the build stops with a message if that
 target is not installed.
 
 ### Docs
@@ -85,25 +85,25 @@ plain builds above whenever you change a doc comment or a public API:
 ```bash
 Rscript -e 'install.packages(c("S7", "roxygen2", "pkgload", "pkgdown"))'  # once
 cargo xtask python   # build + stubs, test, great-docs site in python/great-docs/_site
-cargo xtask r        # roxygen2 man/ + NAMESPACE, install, test, pkgdown site in R/actuarialrs/docs
+cargo xtask r        # roxygen2 man/ + NAMESPACE, install, test, pkgdown site in R/prospicio/docs
 cargo xtask docs     # both plus rustdoc, collected into target/docs-site
 ```
 
 The Python docs need Python 3.11+ (great-docs); `cargo xtask python` asks uv
-for one. Commit the regenerated `python/actuarialrs/actuarialrs_native.pyi`,
-`R/actuarialrs/man/` and `R/actuarialrs/NAMESPACE`; never edit them by hand.
+for one. Commit the regenerated `python/prospicio/prospicio_native.pyi`,
+`R/prospicio/man/` and `R/prospicio/NAMESPACE`; never edit them by hand.
 `cargo xtask docs --check` fails if they are stale.
 
 The same distribution, driven by the same Rust code, from all three:
 
 ```python
-import actuarialrs as ar
+import prospicio as ar
 d = ar.distributions.Lognormal.from_mean_cv(1000, 0.5)
 d.quantile(0.995), d.sample(3, seed=42, stream=0)
 ```
 
 ```r
-library(actuarialrs)
+library(prospicio)
 d <- lognormal_from_mean_cv(1000, 0.5)
 quantile(d, 0.995); draws(d, 3, seed = 42, stream = 0)
 d@meanlog; d@sdlog   # read-only S7 properties
@@ -113,13 +113,13 @@ Errors raised in Rust surface as Python `ValueError`s and ordinary R errors.
 
 ## Reserving
 
-`act-reserving` holds the four-axis, masked `Triangle`
+`prospicio-reserving` holds the four-axis, masked `Triangle`
 ([docs/design/triangle.md](docs/design/triangle.md)), development factors,
 `ChainLadder`, `Mack` and the ODP bootstrap (`OdpBootstrap`), whose reserve
 distribution by origin is a `PredictiveDistribution`.
 
 ```rust
-use act_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
+use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
 
 let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
 let tri = Triangle::from_long(&Long {
@@ -143,7 +143,7 @@ println!("reserve {} ± {}", cl.total_reserve(), mack.total_standard_error);
 Python and R expose the same objects:
 
 ```python
-from actuarialrs.reserving import Mack, OdpBootstrap, Triangle
+from prospicio.reserving import Mack, OdpBootstrap, Triangle
 tri = Triangle.from_long(origin, development, {"paid": paid})
 Mack().fit(tri, "paid").total_standard_error
 boot = OdpBootstrap(n_sims=10_000, seed=1).fit(tri, "paid")
@@ -263,3 +263,8 @@ R uses `as.matrix()` rather than a `view()` verb, which would mask
 Every Chain Ladder and Mack value is checked against R `ChainLadder` and
 chainladder-python on RAA, GenIns and ABC in `validation/`; the ODP
 bootstrap is checked against R `BootChainLadder`.
+
+## Licence
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT licence](LICENSE-MIT), at your option. Copyright (c) 2026 Ethan Kang.

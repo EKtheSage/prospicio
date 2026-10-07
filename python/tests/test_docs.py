@@ -1,6 +1,6 @@
 """The public API is documented, and its docstring examples run.
 
-Docstrings come from the Rust `///` comments in crates/act-python, so these
+Docstrings come from the Rust `///` comments in crates/prospicio-python, so these
 tests guard what the stubs and the docs site are generated from.
 """
 
@@ -9,7 +9,7 @@ import inspect
 
 import pytest
 
-import actuarialrs as ar
+import prospicio as ar
 
 NAMESPACES = [ar.distributions, ar.aggregate, ar.boosting, ar.pricing, ar.reinsurance, ar.reserving, ar.risk]
 

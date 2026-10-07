@@ -5,7 +5,7 @@
 
 Exact posterior means and standard deviations of two Bayesian GLMs, by
 brute-force integration on a grid (no sampler involved), for the NUTS
-fits of act_bayes::glm to be checked against. Data: the first 200 rows
+fits of prospicio_bayes::glm to be checked against. Data: the first 200 rows
 of validation/data/glm_policies.csv, with x = (age - 50) / 10.
 
 - poisson: claims ~ Poisson(exposure * exp(b0 + b1 x)), priors

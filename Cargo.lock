@@ -3,160 +3,6 @@
 version = 4
 
 [[package]]
-name = "act-aggregate"
-version = "0.0.1"
-dependencies = [
- "act-core",
- "act-prob",
- "rayon",
- "rustfft",
- "serde_json",
-]
-
-[[package]]
-name = "act-bayes"
-version = "0.0.1"
-dependencies = [
- "act-core",
- "act-glm",
- "act-math",
- "act-models",
- "act-prob",
- "nuts-rs",
- "rayon",
- "rustfft",
-]
-
-[[package]]
-name = "act-core"
-version = "0.0.1"
-dependencies = [
- "rand_chacha 0.10.0",
- "rand_core 0.10.1",
- "rayon",
-]
-
-[[package]]
-name = "act-glm"
-version = "0.0.1"
-dependencies = [
- "act-core",
- "act-math",
- "act-models",
- "act-prob",
- "serde_json",
-]
-
-[[package]]
-name = "act-math"
-version = "0.0.1"
-dependencies = [
- "libm",
-]
-
-[[package]]
-name = "act-models"
-version = "0.0.1"
-dependencies = [
- "act-core",
- "act-math",
- "act-prob",
- "rayon",
-]
-
-[[package]]
-name = "act-nn"
-version = "0.0.1"
-dependencies = [
- "act-core",
- "act-models",
- "act-prob",
- "burn",
-]
-
-[[package]]
-name = "act-pricing"
-version = "0.0.1"
-dependencies = [
- "act-aggregate",
- "act-core",
- "act-math",
- "act-prob",
- "microlp",
-]
-
-[[package]]
-name = "act-prob"
-version = "0.0.1"
-dependencies = [
- "act-core",
- "act-math",
- "arrow-array",
- "arrow-ipc",
- "arrow-schema",
- "blake3",
- "rayon",
- "serde_json",
-]
-
-[[package]]
-name = "act-python"
-version = "0.0.1"
-dependencies = [
- "act-aggregate",
- "act-bayes",
- "act-core",
- "act-glm",
- "act-models",
- "act-pricing",
- "act-prob",
- "act-reserving",
- "pyo3",
-]
-
-[[package]]
-name = "act-r"
-version = "0.0.1"
-dependencies = [
- "act-aggregate",
- "act-bayes",
- "act-core",
- "act-glm",
- "act-models",
- "act-pricing",
- "act-prob",
- "act-reserving",
- "extendr-api",
-]
-
-[[package]]
-name = "act-reserving"
-version = "0.0.1"
-dependencies = [
- "act-core",
- "act-glm",
- "act-math",
- "act-models",
- "act-prob",
- "rayon",
-]
-
-[[package]]
-name = "act-validation"
-version = "0.0.1"
-dependencies = [
- "act-aggregate",
- "act-bayes",
- "act-core",
- "act-glm",
- "act-math",
- "act-models",
- "act-pricing",
- "act-prob",
- "act-reserving",
-]
-
-[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3997,6 +3843,160 @@ name = "profiling"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
+
+[[package]]
+name = "prospicio-aggregate"
+version = "0.0.1"
+dependencies = [
+ "prospicio-core",
+ "prospicio-prob",
+ "rayon",
+ "rustfft",
+ "serde_json",
+]
+
+[[package]]
+name = "prospicio-bayes"
+version = "0.0.1"
+dependencies = [
+ "nuts-rs",
+ "prospicio-core",
+ "prospicio-glm",
+ "prospicio-math",
+ "prospicio-models",
+ "prospicio-prob",
+ "rayon",
+ "rustfft",
+]
+
+[[package]]
+name = "prospicio-core"
+version = "0.0.1"
+dependencies = [
+ "rand_chacha 0.10.0",
+ "rand_core 0.10.1",
+ "rayon",
+]
+
+[[package]]
+name = "prospicio-glm"
+version = "0.0.1"
+dependencies = [
+ "prospicio-core",
+ "prospicio-math",
+ "prospicio-models",
+ "prospicio-prob",
+ "serde_json",
+]
+
+[[package]]
+name = "prospicio-math"
+version = "0.0.1"
+dependencies = [
+ "libm",
+]
+
+[[package]]
+name = "prospicio-models"
+version = "0.0.1"
+dependencies = [
+ "prospicio-core",
+ "prospicio-math",
+ "prospicio-prob",
+ "rayon",
+]
+
+[[package]]
+name = "prospicio-nn"
+version = "0.0.1"
+dependencies = [
+ "burn",
+ "prospicio-core",
+ "prospicio-models",
+ "prospicio-prob",
+]
+
+[[package]]
+name = "prospicio-pricing"
+version = "0.0.1"
+dependencies = [
+ "microlp",
+ "prospicio-aggregate",
+ "prospicio-core",
+ "prospicio-math",
+ "prospicio-prob",
+]
+
+[[package]]
+name = "prospicio-prob"
+version = "0.0.1"
+dependencies = [
+ "arrow-array",
+ "arrow-ipc",
+ "arrow-schema",
+ "blake3",
+ "prospicio-core",
+ "prospicio-math",
+ "rayon",
+ "serde_json",
+]
+
+[[package]]
+name = "prospicio-python"
+version = "0.0.1"
+dependencies = [
+ "prospicio-aggregate",
+ "prospicio-bayes",
+ "prospicio-core",
+ "prospicio-glm",
+ "prospicio-models",
+ "prospicio-pricing",
+ "prospicio-prob",
+ "prospicio-reserving",
+ "pyo3",
+]
+
+[[package]]
+name = "prospicio-r"
+version = "0.0.1"
+dependencies = [
+ "extendr-api",
+ "prospicio-aggregate",
+ "prospicio-bayes",
+ "prospicio-core",
+ "prospicio-glm",
+ "prospicio-models",
+ "prospicio-pricing",
+ "prospicio-prob",
+ "prospicio-reserving",
+]
+
+[[package]]
+name = "prospicio-reserving"
+version = "0.0.1"
+dependencies = [
+ "prospicio-core",
+ "prospicio-glm",
+ "prospicio-math",
+ "prospicio-models",
+ "prospicio-prob",
+ "rayon",
+]
+
+[[package]]
+name = "prospicio-validation"
+version = "0.0.1"
+dependencies = [
+ "prospicio-aggregate",
+ "prospicio-bayes",
+ "prospicio-core",
+ "prospicio-glm",
+ "prospicio-math",
+ "prospicio-models",
+ "prospicio-pricing",
+ "prospicio-prob",
+ "prospicio-reserving",
+]
 
 [[package]]
 name = "pulp"

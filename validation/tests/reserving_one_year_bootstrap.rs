@@ -6,7 +6,7 @@
 //!   run-off, so its standard deviation is R `BootChainLadder`'s for that
 //!   origin (`reference/reserving_bootstrap_r.csv`) within that case's
 //!   Monte Carlo tolerance; every other origin's is below it. The
-//!   re-reserving itself is checked independently in `act-reserving`'s unit
+//!   re-reserving itself is checked independently in `prospicio-reserving`'s unit
 //!   test `mack_bootstrap_rereserving_reproduces_merz_wuthrich`: with Mack's
 //!   process (England, Verrall and Wüthrich 2019, Appendix 1) it reproduces
 //!   Merz–Wüthrich on GenIns within Monte Carlo error.
@@ -29,12 +29,12 @@
 //!   standard deviation: the ODP's through its scale, which falls with the
 //!   degrees of freedom, Mack's through its quarterly sigmas.
 
-use act_prob::PredictiveDistribution;
-use act_reserving::{
+use prospicio_prob::PredictiveDistribution;
+use prospicio_reserving::{
     ChainLadder, Development, DevelopmentColumn, Grain, Long, Mack, MackBootstrap, OdpBootstrap,
     OneYearFit, OneYearMethod, Period, ProcessDistribution, SigmaInterpolation, Triangle,
 };
-use act_validation::{Case, reference, triangle};
+use prospicio_validation::{Case, reference, triangle};
 
 /// Simulations per dataset; the tolerances scale with `1 / sqrt` of it.
 const SIMS: usize = 20_000;

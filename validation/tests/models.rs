@@ -2,9 +2,9 @@
 //! (`validation/scripts/statsmodels_glm.py`), with sandwich standard errors
 //! (`statsmodels_glm_robust.py`).
 
-use act_glm::{Dispersion, Glm, GlmFit, Robust};
-use act_models::{Column, Design, Family, Frame, Link, Model, Terms};
-use act_validation::{check, reference};
+use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
+use prospicio_models::{Column, Design, Family, Frame, Link, Model, Terms};
+use prospicio_validation::{check, reference};
 
 /// `validation/data/glm_policies.csv` as named columns.
 fn policies() -> Vec<(String, Vec<String>)> {
@@ -177,8 +177,8 @@ fn robust_std_errors_match_statsmodels() {
 
 #[test]
 fn gams_match_mgcv() {
-    use act_glm::gam::{Gam, GamFit, PSpline};
-    use act_models::Fitted;
+    use prospicio_glm::gam::{Gam, GamFit, PSpline};
+    use prospicio_models::Fitted;
     let data = policies();
     let cases = reference("gam_mgcv.csv");
     let fit_case = |case: &str| -> GamFit {
@@ -269,11 +269,11 @@ fn mcmc_diagnostics_match_posterior() {
         let chains = chains_of(c.get("variable"));
         let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
         match c.get("quantity") {
-            "rhat" => act_bayes::rhat(&refs).ok(),
-            "ess_bulk" => act_bayes::ess_bulk(&refs).ok(),
-            "ess_tail" => act_bayes::ess_tail(&refs).ok(),
-            "ess_mean" => act_bayes::ess_mean(&refs).ok(),
-            "mcse_mean" => act_bayes::mcse_mean(&refs).ok(),
+            "rhat" => prospicio_bayes::rhat(&refs).ok(),
+            "ess_bulk" => prospicio_bayes::ess_bulk(&refs).ok(),
+            "ess_tail" => prospicio_bayes::ess_tail(&refs).ok(),
+            "ess_mean" => prospicio_bayes::ess_mean(&refs).ok(),
+            "mcse_mean" => prospicio_bayes::mcse_mean(&refs).ok(),
             _ => None,
         }
     });
@@ -313,8 +313,8 @@ fn net_design(data: &[(String, Vec<String>)]) -> Design {
 fn net_case(
     case: &str,
     data: &[(String, Vec<String>)],
-) -> (act_glm::net::ElasticNet, Design, Vec<f64>) {
-    use act_glm::net::ElasticNet;
+) -> (prospicio_glm::net::ElasticNet, Design, Vec<f64>) {
+    use prospicio_glm::net::ElasticNet;
     let d = net_design(data);
     let log_exposure: Vec<f64> = numeric(data, "exposure").iter().map(|e| e.ln()).collect();
     let net = |family, link, alpha| ElasticNet::new(family, link, alpha, 0.0);
@@ -373,11 +373,11 @@ fn net_case(
 /// solution in our parameterization has `λ α` unchanged and
 /// `λ (1 - α)` divided by `s_y`.
 fn from_glmnet(
-    spec: &act_glm::net::ElasticNet,
+    spec: &prospicio_glm::net::ElasticNet,
     d: &Design,
     y: &[f64],
     lambda: f64,
-) -> act_glm::net::ElasticNet {
+) -> prospicio_glm::net::ElasticNet {
     if spec.family != Family::Gaussian || spec.alpha == 1.0 {
         return spec.with_lambda(lambda);
     }
@@ -423,7 +423,7 @@ fn elastic_nets_match_glmnet() {
 
 #[test]
 fn elastic_net_cross_validation_matches_cv_glmnet() {
-    use act_models::resample::Split;
+    use prospicio_models::resample::Split;
     let data = policies();
     let cases = reference("elastic_net_cv_glmnet.csv");
     let n = numeric(&data, "age").len();
@@ -434,7 +434,7 @@ fn elastic_net_cross_validation_matches_cv_glmnet() {
             test: (0..n).filter(|i| i % 5 == f).collect(),
         })
         .collect();
-    let mut runs: Vec<(String, act_glm::net::CvPath)> = Vec::new();
+    let mut runs: Vec<(String, prospicio_glm::net::CvPath)> = Vec::new();
     check(&cases, |c| {
         let name = c.get("case");
         if !runs.iter().any(|(k, _)| k == name) {
@@ -461,7 +461,7 @@ fn elastic_net_cross_validation_matches_cv_glmnet() {
 
 #[test]
 fn tweedie_power_estimate_matches_statsmodels() {
-    use act_glm::tweedie::{TweedieGlm, tweedie_profile};
+    use prospicio_glm::tweedie::{TweedieGlm, tweedie_profile};
     let data = policies();
     let d = net_design(&data);
     // Intercept, age and region: drop the age² column `net_design` adds.
@@ -529,7 +529,7 @@ fn family_scores_match_scipy() {
 
 #[test]
 fn elpd_matches_loo() {
-    use act_bayes::elpd::{loo, lppd, waic};
+    use prospicio_bayes::elpd::{loo, lppd, waic};
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/loo_loglik.csv");
     let text = std::fs::read_to_string(path).expect("loo_loglik.csv");
     let mut lines = text.lines();
@@ -578,8 +578,8 @@ fn stacking_and_pseudo_bma_weights_match_the_reference() {
             col.push(v.parse::<f64>().unwrap());
         }
     }
-    let stacking = act_models::stack::stacking_weights(&lpd).unwrap();
-    let pseudo = act_models::stack::pseudo_bma_weights(&lpd, None).unwrap();
+    let stacking = prospicio_models::stack::stacking_weights(&lpd).unwrap();
+    let pseudo = prospicio_models::stack::pseudo_bma_weights(&lpd, None).unwrap();
     check(&reference("stacking_weights.csv"), |c| {
         let k = models.iter().position(|m| m == c.get("model"))?;
         match c.get("method") {
@@ -594,7 +594,7 @@ fn stacking_and_pseudo_bma_weights_match_the_reference() {
 fn bayes_glm_posteriors_match_grid_integration() {
     // validation/scripts/bayes_glm_grid.py: exact posterior moments by grid
     // integration; the first 200 policies, x = (age - 50) / 10.
-    use act_bayes::glm::{BayesGlm, Sampler};
+    use prospicio_bayes::glm::{BayesGlm, Sampler};
     let data = policies();
     let n = 200;
     let x: Vec<f64> = numeric(&data, "age")[..n]
@@ -683,8 +683,8 @@ fn data_columns(name: &str) -> Vec<(String, Vec<f64>)> {
 fn bayesian_and_hierarchical_stacking_match_grid_integration() {
     // validation/scripts/stacking_grid.py: exact posterior moments by grid
     // integration.
-    use act_bayes::glm::Sampler;
-    use act_bayes::stacking::{BayesStacking, HierarchicalStacking};
+    use prospicio_bayes::glm::Sampler;
+    use prospicio_bayes::stacking::{BayesStacking, HierarchicalStacking};
     let col =
         |cols: &[(String, Vec<f64>)], n: &str| cols.iter().find(|c| c.0 == n).unwrap().1.clone();
     let lpd = data_columns("stacking_lpd.csv");
@@ -777,8 +777,8 @@ fn bayesian_and_hierarchical_stacking_match_grid_integration() {
 
 #[test]
 fn nuts_posterior_predictive_matches_the_conjugate_negative_binomial() {
-    use act_bayes::nuts::{LogDensity, Sampler, sample};
-    use act_prob::{Counting, Distribution, KeyValue, NegativeBinomial, Provenance};
+    use prospicio_bayes::nuts::{LogDensity, Sampler, sample};
+    use prospicio_prob::{Counting, Distribution, KeyValue, NegativeBinomial, Provenance};
 
     // Poisson counts with a Gamma(2, rate 0.5) prior on the rate λ. The
     // posterior is Gamma(2 + Σy, 0.5 + n), and next year's count is
@@ -865,8 +865,13 @@ fn nuts_posterior_predictive_matches_the_conjugate_negative_binomial() {
 /// origin and development dummies, first level dropped): the observed
 /// cells' design and responses, the future cells' design, and the Chain
 /// Ladder reserve.
-fn raa_odp() -> (act_models::Design, Vec<f64>, act_models::Design, f64) {
-    use act_models::Design;
+fn raa_odp() -> (
+    prospicio_models::Design,
+    Vec<f64>,
+    prospicio_models::Design,
+    f64,
+) {
+    use prospicio_models::Design;
 
     let text = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/raa.csv"),
@@ -939,8 +944,8 @@ fn over_dispersed_poisson_fits_raa_with_its_negative_increment() {
     // RAA's 1982 origin loses 103 between 72 and 84 months. The
     // over-dispersed Poisson GLM with origin and development factors
     // still reproduces the Chain Ladder reserve.
-    use act_glm::Glm;
-    use act_models::{Fitted, Model};
+    use prospicio_glm::Glm;
+    use prospicio_models::{Fitted, Model};
 
     let (design, y, future, cl_reserve) = raa_odp();
     assert!(y.iter().any(|v| *v < 0.0));
@@ -953,17 +958,20 @@ fn over_dispersed_poisson_fits_raa_with_its_negative_increment() {
     assert!(fit.dispersion() > 0.0 && fit.log_likelihood().is_nan());
     // A Poisson with the dispersion fixed at 1 still refuses it.
     assert!(
-        Glm::new(act_models::Family::Poisson, act_models::Link::Log)
-            .fit(&design, &y)
-            .is_err()
+        Glm::new(
+            prospicio_models::Family::Poisson,
+            prospicio_models::Link::Log
+        )
+        .fit(&design, &y)
+        .is_err()
     );
 }
 
 #[test]
 fn mean_preserving_draws_centre_the_odp_reserve_on_the_chain_ladder() {
-    use act_glm::{Glm, ParameterDraws};
-    use act_models::Model;
-    use act_prob::Distribution;
+    use prospicio_glm::{Glm, ParameterDraws};
+    use prospicio_models::Model;
+    use prospicio_prob::Distribution;
 
     let (design, y, future, cl_reserve) = raa_odp();
     let fit = Glm::over_dispersed_poisson().fit(&design, &y).unwrap();

@@ -26,8 +26,8 @@
 
 use std::collections::HashMap;
 
-use act_reserving::{ClarkCapeCod, ClarkFit, ClarkLdf, GrowthCurve, Period};
-use act_validation::{Case, check, reference, triangle, triangle_columns};
+use prospicio_reserving::{ClarkCapeCod, ClarkFit, ClarkLdf, GrowthCurve, Period};
+use prospicio_validation::{Case, check, reference, triangle, triangle_columns};
 
 fn fit(dataset: &str, method: &str) -> ClarkFit {
     let mut parts = method.split(';');
@@ -47,7 +47,7 @@ fn fit(dataset: &str, method: &str) -> ClarkFit {
         "inf" => None,
         m => Some(m.parse().unwrap()),
     };
-    let fail = |e: act_reserving::Error| -> ! { panic!("{dataset} {method}: {e}") };
+    let fail = |e: prospicio_reserving::Error| -> ! { panic!("{dataset} {method}: {e}") };
     match name {
         "clark_ldf" => {
             let (tri, column) = if dataset == "genins_premium" {

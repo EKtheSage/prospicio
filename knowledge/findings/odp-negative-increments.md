@@ -8,11 +8,11 @@ generated: { by: claude-code/cloud-session, at: 2026-10-05T22:05:00Z }
 verified: { by: process:ci, at: 2026-10-05T15:54:30Z }
 sources:
   - id: pr
-    resource: https://github.com/EKtheSage/risk-rs/pull/114
+    resource: https://github.com/EKtheSage/prospicio/pull/114
     title: PR 114, ODP GLM fixes
   - id: family
-    resource: ../crates/act-models/src/family.rs
-    title: act_models::Family::unit_deviance
+    resource: ../crates/prospicio-models/src/family.rs
+    title: prospicio_models::Family::unit_deviance
 ---
 
 # Finding
@@ -34,5 +34,5 @@ sources:
 
 See [RAA](/datasets/raa.md).
 
-[^family]: act_models::Family::unit_deviance
+[^family]: prospicio_models::Family::unit_deviance
 [^pr]: PR 114
