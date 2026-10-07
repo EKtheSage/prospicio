@@ -4374,9 +4374,14 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 /// ``f* C`` and Mack's variance ``sigma**2 * C**(2 - alpha)``. Beside
 /// ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
 /// the one-year view under Mack's process: with the volume-weighted chain
-/// ladder and no tail, ``MackFit.claims_development_result()`` (Merz and
-/// Wüthrich) within Monte Carlo error. Simulation ``i`` uses random stream
-/// ``i`` of ``seed`` for every segment in turn.
+/// ladder and no tail, its standard deviation is
+/// ``MackFit.claims_development_result()``'s (Merz and Wüthrich) within
+/// Monte Carlo error. Its mean is Merz and Wüthrich's zero only with
+/// ``centre_residuals``: EVW resample the residuals uncentred, and their
+/// pool's non-zero mean biases the pseudo factors, so the mean CDR is about
+/// -0.2 (RAA), -0.04 (GenIns) and +0.17 (ABC) times its standard
+/// deviation. Simulation ``i`` uses random stream ``i`` of ``seed`` for
+/// every segment in turn.
 ///
 /// Parameters
 /// ----------
@@ -4385,14 +4390,19 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 /// seed : int, default 0
 ///     Seed of the simulation streams, from 0 to ``2**64 - 1``.
 /// process : {"gamma", "lognormal", "residuals", "normal", "none"}, default "gamma"
-///     Process error on each next cumulative value, all with Mack's mean
-///     and variance: Gamma or lognormal (negated for a negative mean), the
-///     mean plus a resampled residual times the standard deviation, normal,
-///     or none for parameter error only.
+///     Process error on each next cumulative value: Gamma or lognormal
+///     (negated for a negative mean) or normal, with Mack's mean and
+///     variance; the mean plus a resampled residual times the standard
+///     deviation, which carries the residuals' mean and variance; or none
+///     for parameter error only.
 /// average : {"volume", "simple", "regression"}, default "volume"
 ///     How Mack's model averages the link ratios (its ``alpha``).
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 ///     How a sigma behind a single link ratio is filled in.
+/// centre_residuals : bool, default False
+///     Subtract the residuals' mean before resampling them, so that the
+///     pseudo factors are unbiased and the mean CDR is about zero. EVW's
+///     Appendix 1 does not.
 ///
 /// Raises
 /// ------
@@ -4452,6 +4462,7 @@ impl PyMackBootstrap {
         process = "gamma",
         average = "volume",
         sigma_interpolation = "log-linear",
+        centre_residuals = false,
     ))]
     fn new(
         n_sims: usize,
@@ -4459,6 +4470,7 @@ impl PyMackBootstrap {
         process: &str,
         average: &str,
         sigma_interpolation: &str,
+        centre_residuals: bool,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -4469,7 +4481,7 @@ impl PyMackBootstrap {
                 seed,
                 process: mack_process(process)?,
                 development: development(average, sigma_interpolation)?,
-                centre_residuals: false,
+                centre_residuals,
             },
         })
     }
@@ -4503,6 +4515,12 @@ impl PyMackBootstrap {
     #[getter]
     fn sigma_interpolation(&self) -> &'static str {
         sigma_interpolation_name(self.inner.development.sigma_interpolation)
+    }
+
+    /// Whether the residuals are centred before they are resampled.
+    #[getter]
+    fn centre_residuals(&self) -> bool {
+        self.inner.centre_residuals
     }
 
     /// The one-year view of any reserving method under Mack's process, as
@@ -4560,12 +4578,17 @@ impl PyMackBootstrap {
     fn __repr__(&self) -> String {
         format!(
             "MackBootstrap(n_sims={}, seed={}, process={:?}, average={:?}, \
-             sigma_interpolation={:?})",
+             sigma_interpolation={:?}, centre_residuals={})",
             self.inner.n_sims,
             self.inner.seed,
             self.process(),
             self.average(),
             self.sigma_interpolation(),
+            if self.inner.centre_residuals {
+                "True"
+            } else {
+                "False"
+            },
         )
     }
 }
@@ -4596,10 +4619,11 @@ macro_rules! each_one_year {
 /// ``cdr.quantile(0.005)`` is minus the one-year value at risk at 99.5%.
 /// Per-origin lists run over the origins of each segment in turn, like the
 /// rows of ``to_frame()`` and the components of ``cdr``. ``fitted``,
-/// ``residuals``, ``scale`` and ``mack`` need a single-segment fit; for
-/// several segments use ``segment(...)`` or ``totals_frame()``. ``fitted``
-/// and ``scale`` are the ODP bootstrap's (``OdpBootstrapFit``'s), ``mack``
-/// is Mack's bootstrap's model, and ``residuals`` are either's.
+/// ``residuals`` and ``scale`` need a single-segment fit; for several
+/// segments use ``segment(...)`` or ``totals_frame()``. ``fitted`` and
+/// ``scale`` are the ODP bootstrap's (``OdpBootstrapFit``'s), ``mack`` is
+/// Mack's bootstrap's model (a ``MackFit`` of every segment, as
+/// ``chain_ladder``), and ``residuals`` are either's.
 #[pyclass(name = "OneYearFit", module = "actuarialrs.reserving", frozen)]
 pub(crate) struct PyOneYearFit {
     inner: OneYear,
