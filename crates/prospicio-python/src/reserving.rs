@@ -4070,23 +4070,28 @@ impl PyOdpBootstrap {
 
     /// The one-year view of any reserving method: the claims development
     /// result over the coming year, by re-reserving on the bootstrap
-    /// ("actuary in the box"). Each simulation resamples the residuals for
-    /// the volume-weighted factors, projects every origin's next increment
-    /// from its resampled latest value with the bootstrap's process error,
-    /// as ``fit`` projects, adds it to the observed latest value, appends
-    /// it to the triangle, refits ``method`` and records ``CDR = opening
-    /// ultimate - closing ultimate``; a negative CDR is an adverse
-    /// development. An origin with one cell left thus has its lifetime
-    /// bootstrap reserve as its one-year view; an origin at the last age
-    /// gets no new cell. Unlike ``MackFit.claims_development_result()``
-    /// (Merz and Wüthrich), any averaging and tail are allowed.
+    /// ("actuary in the box"). The coming year is every cell valued in the
+    /// twelve months after the segment's valuation: one per origin for an
+    /// annual development grain, four for a quarterly one (fewer for an
+    /// origin that reaches the last age). Each simulation resamples the
+    /// residuals for the volume-weighted factors, projects the increments
+    /// of those cells in turn from the origin's resampled latest value with
+    /// the bootstrap's process error, as ``fit`` projects, adds them to the
+    /// observed latest value, appends the cells to the triangle, refits
+    /// ``method`` and records ``CDR = opening ultimate - closing
+    /// ultimate``; a negative CDR is an adverse development. An origin whose
+    /// remaining cells all fall in the year thus has its lifetime bootstrap
+    /// reserve as its one-year view; an origin at the last age gets no new
+    /// cell; an origin short of the latest diagonal develops from its own
+    /// latest cell, and only the year's cells are appended. Unlike
+    /// ``MackFit.claims_development_result()`` (Merz and Wüthrich), any
+    /// averaging, tail and development grain are allowed.
     ///
     /// Parameters
     /// ----------
     /// triangle : Triangle
-    ///     Cumulative, with any number of segments, an annual development
-    ///     grain, and every origin short of the last age on its segment's
-    ///     latest diagonal.
+    ///     Cumulative, with any number of segments and any development
+    ///     grain.
     /// column : str
     /// method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
     ///     The method refitted at the start and at the end of the year.
@@ -4104,12 +4109,10 @@ impl PyOdpBootstrap {
     /// TypeError
     ///     If ``method`` is not one of the classes above.
     /// ValueError
-    ///     As ``fit`` and the method's own ``fit``; if the development
-    ///     grain is not a year or an origin short of the last age lags its
-    ///     segment's latest diagonal; if ``exposure`` is missing for an
-    ///     expected-loss method or given for ``ChainLadder``; or if the
-    ///     refit fails in any simulation (the message counts them and gives
-    ///     one).
+    ///     As ``fit`` and the method's own ``fit``; if ``exposure`` is
+    ///     missing for an expected-loss method or given for
+    ///     ``ChainLadder``; or if the refit fails in any simulation (the
+    ///     message counts them and gives one).
     ///
     /// Examples
     /// --------
@@ -4369,9 +4372,10 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 
 /// Mack's bootstrap for the one-year view (England, Verrall and Wüthrich
 /// 2019, Appendix 1): the scaled bias-adjusted residuals of the link
-/// ratios are resampled into pseudo factors, and every origin's next
-/// cumulative value is drawn from its observed latest value ``C`` with mean
-/// ``f* C`` and Mack's variance ``sigma**2 * C**(2 - alpha)``. Beside
+/// ratios are resampled into pseudo factors, and each cumulative value of
+/// the coming year is drawn from the one before ``C`` (the observed latest
+/// value for the first) with mean ``f* C`` and Mack's variance
+/// ``sigma**2 * abs(C)**(2 - alpha)``. Beside
 /// ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
 /// the one-year view under Mack's process: with the volume-weighted chain
 /// ladder and no tail, its standard deviation is
@@ -4524,19 +4528,19 @@ impl PyMackBootstrap {
     }
 
     /// The one-year view of any reserving method under Mack's process, as
-    /// ``OdpBootstrap.one_year``: each simulation draws the next diagonal
-    /// from Mack's bootstrap, appends it to the triangle, refits ``method``
-    /// and records ``CDR = opening ultimate - closing ultimate``. Mack's
-    /// model has no tail here: development past the oldest age moves only
-    /// through ``method``'s refitted tail.
+    /// ``OdpBootstrap.one_year``: each simulation draws the cells of the
+    /// coming twelve months from Mack's bootstrap, each from the one before
+    /// with the same pseudo factors, appends them to the triangle, refits
+    /// ``method`` and records ``CDR = opening ultimate - closing
+    /// ultimate``. Mack's model has no tail here: development past the
+    /// oldest age moves only through ``method``'s refitted tail.
     ///
     /// Parameters
     /// ----------
     /// triangle : Triangle
-    ///     Cumulative, with any number of segments, an annual development
+    ///     Cumulative, with any number of segments and any development
     ///     grain, every origin observed from the first age to its latest
-    ///     with no negative value, and every origin short of the last age on
-    ///     its segment's latest diagonal.
+    ///     with no negative value.
     /// column : str
     /// method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
     ///     The method refitted at the start and at the end of the year.

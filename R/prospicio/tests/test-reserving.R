@@ -1185,4 +1185,48 @@ expect_error_like(mack_one_year(raa, mack_average = "median"), "should be one of
 expect_error_like(mack_one_year(raa, apriori = 0.7), "method \"chain_ladder\" does not use apriori")
 expect_error_like(mack_one_year(raa, n_sims = 0), "n_sims must be positive")
 
+# Any development grain: the coming year is every cell valued in the twelve
+# months after the valuation, four for a quarterly grain. An exact annual
+# pattern (every origin a multiple of the first) split into equal quarters is
+# still exact, so neither process moves it, and the quarterly chain ladder's
+# opening reserve is the annual one.
+exact_rows <- list(c(4, 8, 12, 15), c(8, 16, 24, 30), c(12, 24, 36), c(16, 32), 20)
+split_rows <- do.call(rbind, lapply(seq_along(exact_rows), function(k) {
+  row <- exact_rows[[k]]
+  previous <- c(0, row[-length(row)])
+  do.call(rbind, lapply(seq_along(row), function(d) {
+    data.frame(origin = 2018L + k, age = 12 * (d - 1) + 3 * (1:4),
+               paid = previous[d] + (row[d] - previous[d]) * (1:4) / 4)
+  }))
+}))
+exact_q <- triangle(split_rows, "origin", "age", "paid", development_grain = "Q")
+exact_a <- triangle(data.frame(origin = rep(2018L + seq_along(exact_rows), lengths(exact_rows)),
+                               age = unlist(lapply(lengths(exact_rows), function(n) 12 * seq_len(n))),
+                               paid = unlist(exact_rows)),
+                    "origin", "age", "paid")
+for (simulate in list(odp_one_year, mack_one_year)) {
+  q_fit <- simulate(exact_q, n_sims = 50, seed = 1)
+  # Zero to rounding: the ODP's scale comes out near 1e-31 here.
+  stopifnot(all(abs(draw_matrix(q_fit@cdr)) < 1e-9))
+  near(unname(q_fit@opening_reserve), unname(simulate(exact_a, n_sims = 5)@opening_reserve), 1e-12)
+}
+# An origin short of the latest diagonal develops from its own latest cell:
+# 2021 stops at 24 months, a year short, and moves to 48 within the year. On
+# an exact pattern neither process moves anything (every sigma and the scale
+# are zero), so its Bornhuetter-Ferguson CDR is by hand, as in the Rust test
+# a_lagging_origin_moves_by_hand: the opening ultimate
+# 24 + 0.5 * 40 * (1 - 1 / 1.875) less the closing one, the pattern's 45 at
+# the last age. Moving only to 36, or not at all, gives another CDR.
+lagging <- triangle(data.frame(origin = rep(2019:2023, c(4, 4, 2, 2, 1)),
+                               age = c(12, 24, 36, 48, 12, 24, 36, 48, 12, 24, 12, 24, 12),
+                               paid = c(4, 8, 12, 15, 8, 16, 24, 30, 12, 24, 16, 32, 20),
+                               premium = 40),
+                    "origin", "age", c("paid", "premium"))
+want <- 24 + 0.5 * 40 * (1 - 1 / 1.875) - 45
+for (simulate in list(odp_one_year, mack_one_year)) {
+  fit <- simulate(lagging, "paid", "bornhuetter_ferguson", exposure = "premium", apriori = 0.5,
+                  n_sims = 20, seed = 2)
+  stopifnot(all(abs(draw_matrix(fit@cdr)[, 3] - want) < 1e-9))
+}
+
 cat("prospicio R reserving tests passed\n")

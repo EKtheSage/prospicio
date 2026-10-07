@@ -98,19 +98,22 @@ A \code{one_year_fit} object.
 The claims development result (CDR) of the chain ladder or an
 expected-loss method over the coming year, by re-reserving on the ODP
 bootstrap ("actuary in the box": Ohlsson and Lauzeningks 2009; England,
-Verrall and Wuthrich 2019). Each simulation resamples the residuals of
-the volume-weighted chain ladder as \code{\link[=odp_bootstrap]{odp_bootstrap()}} does, projects
-every origin's next increment from its resampled latest value with the
-bootstrap's process error, as \code{\link[=odp_bootstrap]{odp_bootstrap()}} projects, adds it to the
-observed latest value, appends those cells to the triangle, refits
-\code{method} and records \verb{CDR = opening ultimate - closing ultimate}, so a
-negative CDR is an adverse development. An origin with one cell left
-thus has its lifetime bootstrap reserve as its one-year view. An origin
-at the last age gets no new cell, and a new origin written in the coming
-year is not simulated. The development grain must be a year, and every
-origin short of the last age must have its latest value on its
-segment's latest diagonal. Unlike \code{\link[=claims_development_result]{claims_development_result()}} (Merz and
-Wuthrich), any averaging and tail are allowed.
+Verrall and Wuthrich 2019). The coming year is every cell valued in the
+twelve months after the segment's valuation: one per origin for an
+annual development grain, four for a quarterly one (fewer for an origin
+that reaches the last age). Each simulation resamples the residuals of
+the volume-weighted chain ladder as \code{\link[=odp_bootstrap]{odp_bootstrap()}} does, projects the
+increments of those cells in turn from the origin's resampled latest
+value with the bootstrap's process error, as \code{\link[=odp_bootstrap]{odp_bootstrap()}} projects,
+adds them to the observed latest value, appends the cells to the
+triangle, refits \code{method} and records \verb{CDR = opening ultimate - closing ultimate}, so a negative CDR is an adverse development. An origin whose
+remaining cells all fall in the year thus has its lifetime bootstrap
+reserve as its one-year view. An origin at the last age gets no new
+cell, an origin short of the latest diagonal develops from its own
+latest cell (only the year's cells are appended), and a new origin
+written in the coming year is not simulated. Unlike
+\code{\link[=claims_development_result]{claims_development_result()}} (Merz and Wuthrich), any averaging, tail
+and development grain are allowed.
 }
 \details{
 \code{method} names one of \code{\link[=chain_ladder]{chain_ladder()}}, \code{\link[=expected_loss]{expected_loss()}},
@@ -137,8 +140,9 @@ from 0.50 to 5.98 times
 England, Verrall and Wuthrich's (2019, Appendix 1) bootstrap of Mack's
 model: each simulation resamples the scaled bias-adjusted residuals of
 the link ratios into pseudo factors, averaged as \code{mack_average}, and
-draws every origin's next cumulative value from its observed latest
-value \code{C} with mean \code{f* C} and variance \verb{sigma^2 C^(2 - alpha)}. With the
+draws each cumulative value of the coming year from the one before \code{C}
+(the observed latest value for the first) with mean \code{f* C} and variance
+\verb{sigma^2 |C|^(2 - alpha)}, with the same pseudo factors all year. With the
 volume-weighted chain ladder and no tail, its standard deviations are
 Merz and Wuthrich's (\code{\link[=claims_development_result]{claims_development_result()}}) within Monte Carlo
 error, which reconciles the two. The reconciliation is of the standard

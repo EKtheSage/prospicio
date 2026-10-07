@@ -16,17 +16,23 @@
 //!    `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every observed link,
 //!    and re-estimates each factor as their weighted average
 //!    `f*_k = sum(C_k^alpha F*) / sum(C_k^alpha)` (parameter error);
-//! 2. draws the next cumulative value of every origin short of the last age
-//!    from its observed latest value `C`, with mean `f*_k C` and variance
-//!    `sigma_k^2 C^(2 - alpha)` ([`MackProcess`]). Mack's model is
-//!    conditional on the latest diagonal, so unlike the ODP it projects from
-//!    the observed value, not a pseudo one.
+//! 2. draws every cumulative value of the coming year in development order
+//!    (the cells of [`crate::one_year_bootstrap`]), each from the one
+//!    before it `C`, the observed latest value for the first, with mean
+//!    `f*_k C` and variance `sigma_k^2 |C|^(2 - alpha)` ([`MackProcess`]),
+//!    and the same pseudo factors all year. Mack's model is conditional on
+//!    the latest diagonal, so unlike the ODP it projects from the observed
+//!    value, not a pseudo one, and is Markov: a later cell of the year
+//!    develops from the drawn value of the cell before.
 //!
 //! The re-reserving that follows is the ODP's
 //! ([`crate::one_year_bootstrap`]). The sigmas are the observed triangle's,
 //! those behind a single link ratio interpolated as [`Mack`] does. A link
 //! from a zero value has no variance in Mack's model: it keeps its observed
-//! later value and gives no residual.
+//! later value and gives no residual. Nor does a factor whose sigma is zero
+//! (its link ratios all equal): its residuals would be `0 / 0`, and zeros
+//! in their place would shrink the pool's variance and every factor's
+//! parameter error, so it gives none and its pseudo factor is its factor.
 //!
 //! The residuals of each factor have a zero `C_k^(alpha / 2)`-weighted
 //! sum, not a zero mean, so the pool's mean `m` is not zero (RAA 0.14,
@@ -44,12 +50,14 @@ use crate::chain_ladder::ChainLadderFit;
 use crate::development::Development;
 use crate::error::{Error, Result};
 use crate::mack::{Mack, MackFit};
-use crate::one_year_bootstrap::{NextDiagonal, OneYearFit, OneYearFits, OneYearMethod, Sims};
+use crate::one_year_bootstrap::{
+    NextYear, OneYearFit, OneYearFits, OneYearMethod, Sims, YearCells,
+};
 use crate::segments::ReserveFit;
 use crate::triangle::{Segment, Triangle};
 
 /// Process error on the next cumulative value of Mack's bootstrap, with
-/// mean `f*_k C` and variance `sigma_k^2 C^(2 - alpha)`.
+/// mean `f*_k C` and variance `sigma_k^2 |C|^(2 - alpha)`.
 ///
 /// England, Verrall and Wüthrich (2019), Appendix 1, step 7(d), draw it
 /// either from a parametric distribution, Gamma or lognormal so that the
@@ -95,17 +103,36 @@ impl MackProcess {
             Self::Gamma | Self::Lognormal if mean == 0.0 => mean,
             Self::Gamma => {
                 let m = mean.abs();
-                let gamma = Gamma::new(m * m / variance, variance / m)
-                    .expect("shape and scale are finite and positive");
-                mean.signum() * gamma.sample(rng, 1)[0]
+                // `m * m` underflows for a value near zero, which a later
+                // cell of the year can be drawn from: see `vanishing`.
+                match Gamma::new(m * m / variance, variance / m) {
+                    Ok(gamma) => mean.signum() * gamma.sample(rng, 1)[0],
+                    Err(_) => vanishing(mean, variance),
+                }
             }
             Self::Lognormal => {
                 let m = mean.abs();
-                let lognormal = Lognormal::from_mean_cv(m, variance.sqrt() / m)
-                    .expect("mean and coefficient of variation are finite and positive");
-                mean.signum() * lognormal.sample(rng, 1)[0]
+                match Lognormal::from_mean_cv(m, variance.sqrt() / m) {
+                    Ok(lognormal) => mean.signum() * lognormal.sample(rng, 1)[0],
+                    Err(_) => vanishing(mean, variance),
+                }
             }
         }
+    }
+}
+
+/// The draw of a Gamma or lognormal whose parameters are out of floating
+/// point range. With a finite mean and variance that happens only when the
+/// mean is negligible next to the standard deviation (a cumulative value
+/// drawn near zero, from which the next is drawn): the shape goes to zero,
+/// or the coefficient of variation to infinity, and the distribution's
+/// mass to zero, which is the draw. Anything else is NaN, so that the
+/// simulation fails and is counted.
+fn vanishing(mean: f64, variance: f64) -> f64 {
+    if mean.is_finite() && variance.is_finite() {
+        0.0
+    } else {
+        f64::NAN
     }
 }
 
@@ -200,7 +227,8 @@ pub struct MackBootstrapSegment {
     /// The scaled bias-adjusted residuals of the link ratios, row-major
     /// over origin × development: element `(o, k)` is the link from age `k`
     /// to `k + 1`. NaN where there is no link, its earlier value is zero,
-    /// or its factor rests on a single link ratio. Never centred, whatever
+    /// or its factor rests on a single link ratio or has a zero sigma.
+    /// Never centred, whatever
     /// [`MackBootstrap::centre_residuals`] says.
     pub residuals: Vec<f64>,
 }
@@ -237,13 +265,14 @@ fn power(x: f64, e: f64) -> f64 {
     }
 }
 
-impl NextDiagonal for MackBootstrapSegment {
+impl NextYear for MackBootstrapSegment {
     type Draw = MackDraw;
 
-    fn next_cells(
+    fn year_cells(
         &self,
         draw: &MackDraw,
-        segment: &Segment,
+        _segment: &Segment,
+        year: &[YearCells],
         rng: &mut StreamRng,
     ) -> Vec<(usize, usize, f64)> {
         let cl = &self.mack.chain_ladder;
@@ -259,34 +288,43 @@ impl NextDiagonal for MackBootstrapSegment {
                     num += power(c, alpha - 1.0) * c1;
                     continue;
                 }
-                let r = resample(&draw.pool, rng);
+                let r = if sigma[k] == 0.0 {
+                    0.0
+                } else {
+                    resample(&draw.pool, rng)
+                };
                 num += power(c, alpha - 1.0) * (c * (f[k] + r * sigma[k] / power(c, alpha / 2.0)));
                 den += power(c, alpha);
             }
             factors.push(if den == 0.0 { f[k] } else { num / den });
         }
 
-        let nd = segment.n_dev;
-        cl.latest_position
-            .iter()
-            .zip(&cl.latest)
-            .enumerate()
-            .filter(|&(_, (&d, _))| d + 1 < nd)
-            .map(|(o, (&d, &c))| {
-                let (mean, variance) = (factors[d] * c, sigma[d].powi(2) * power(c, 2.0 - alpha));
-                (o, d + 1, draw.process.draw(mean, variance, &draw.pool, rng))
-            })
-            .collect()
+        // Each cell from the one before, drawn or observed, with the same
+        // pseudo factors all year.
+        let mut cells = Vec::new();
+        for y in year {
+            let mut c = cl.latest[y.origin];
+            for d in y.latest..y.last {
+                let variance = sigma[d].powi(2) * power(c.abs(), 2.0 - alpha);
+                c = draw.process.draw(factors[d] * c, variance, &draw.pool, rng);
+                if d + 1 >= y.first {
+                    cells.push((y.origin, d + 1, c));
+                }
+            }
+        }
+        cells
     }
 }
 
 impl MackBootstrap {
     /// The one-year view of `column` of a single-segment cumulative
-    /// triangle: the claims development result of `method` over the next
-    /// development period, by re-reserving on Mack's bootstrap; see the
-    /// [module documentation](crate::mack_bootstrap). Every origin must be
-    /// observed from the first age to its latest, with no negative value,
-    /// and Mack's model must fit ([`Mack::fit`]).
+    /// triangle: the claims development result of `method` over the twelve
+    /// months after the valuation, at any development grain, by
+    /// re-reserving on Mack's bootstrap; see the [module
+    /// documentation](crate::mack_bootstrap). Every origin must be observed
+    /// from the first age to its latest (it may stop short of the latest
+    /// diagonal), with no negative value, and Mack's model must fit
+    /// ([`Mack::fit`]).
     pub fn one_year(
         &self,
         triangle: &Triangle,
@@ -329,7 +367,7 @@ impl MackBootstrap {
     }
 
     /// Mack's model of one segment, its residuals and links.
-    fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
+    pub(crate) fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
         for o in 0..segment.n_origins {
             let (last, _) = segment.latest(o)?;
             for d in 0..=last {
@@ -366,21 +404,20 @@ impl MackBootstrap {
                 .filter_map(|o| Some((o, segment.get(o, k)?, segment.get(o, k + 1)?)))
                 .collect();
             let informative = pairs.iter().filter(|p| p.1 != 0.0).count();
-            if informative > 1 {
+            if informative > 1 && sigma[k] != 0.0 {
                 let n = informative as f64;
                 for &(o, c, c1) in pairs.iter().filter(|p| p.1 != 0.0) {
-                    let r = if sigma[k] == 0.0 {
-                        0.0
-                    } else {
-                        (n / (n - 1.0)).sqrt() * power(c, alpha / 2.0) * (c1 / c - f[k]) / sigma[k]
-                    };
+                    let r =
+                        (n / (n - 1.0)).sqrt() * power(c, alpha / 2.0) * (c1 / c - f[k]) / sigma[k];
                     residuals[o * nd + k] = r;
                     pool.push(r);
                 }
             }
             links.push(pairs.iter().map(|&(_, c, c1)| (c, c1)).collect());
         }
-        if pool.is_empty() {
+        // With every sigma zero nothing is resampled: no parameter or
+        // process error.
+        if pool.is_empty() && sigma.iter().any(|&s| s != 0.0) {
             return Err(Error::Bootstrap("no residuals to resample"));
         }
         if self.centre_residuals {

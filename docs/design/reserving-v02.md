@@ -471,31 +471,117 @@ Per simulation, on its own `StreamRng` stream:
 1. Resample the adjusted residuals into a pseudo triangle and re-estimate
    the volume-weighted factors, as the ODP bootstrap does (parameter
    error).
-2. Simulate the next calendar diagonal: each origin's next incremental has
-   mean `C*_latest * (f*_k - 1)`, from the pseudo triangle's latest value
-   `C*_latest`, and the bootstrap's process error with scale `phi`. That
-   is how the lifetime ODP bootstrap projects (England 2002), and the
+2. Simulate every cell of the coming year (below), each origin's in
+   development order from its latest cell: the increment into age `j + 1`
+   has mean `C*_j (f*_j - 1)`, with `C*_j` the pseudo triangle's latest
+   value `C*_latest` carried forward on the pseudo factors
+   (`C*_j+1 = C*_j f*_j`), and its own process error with scale `phi`.
+   That is how the lifetime ODP bootstrap projects (England 2002), and the
    pseudo latest value carries the estimation error of the origin's level,
    part of the ODP's parameter error: projecting from the observed latest
    value would leave it out (RAA's total standard deviation 30% lower). So
-   an origin with one cell left has a one-year view distributed as its
-   lifetime bootstrap reserve. An origin already at the triangle's last
-   age gets no new cell.
-3. Add each increment to the origin's observed latest value, append that
-   diagonal to the observed triangle (exposure columns carry each origin's
-   latest value forward) and refit `method` on it. Cape Cod trends to the
-   valuation a year later.
+   an origin whose remaining cells all fall in the year has a one-year view
+   distributed as its lifetime bootstrap reserve. An origin already at the
+   triangle's last age gets no new cell.
+3. Add the increments to the origin's observed latest value, append the
+   year's cells to the observed triangle (exposure columns carry each
+   origin's latest value forward) and refit `method` on it. Cape Cod trends
+   to the valuation twelve months later.
 4. `CDR_i = U0_i - U1_i`, the opening ultimate less the re-estimated one,
    which equals the opening reserve less the year's simulated payment and
    the closing reserve.
 
-The development grain must be a year, so that one development period is
-the coming year (a quarterly triangle would otherwise give a one-quarter
-CDR), and every origin short of the last age must have its latest value on
-its segment's latest diagonal (segments may end on different diagonals),
-so that its next cell is in the coming year; anything else is
-`Error::Bootstrap`. Simulating several cells per origin within the year,
-or catching up a lagging origin, is left for later.
+#### The coming year
+
+The coming year is the twelve months after the segment's valuation `V`,
+the valuation month of its latest cell, which is the triangle's valuation
+(`Triangle::valuation`) unless the segment stops earlier: a cell is in the
+year when its valuation month `v` (`Triangle::valuation_of`, the last
+month the cell covers) has `V < v <= V + 12` months. So the horizon is
+twelve months whatever the grain: an annual development grain gives one
+cell per origin, the next diagonal; a quarterly grain four, a monthly one
+twelve, fewer for an origin that reaches the triangle's last age within
+the year (with quarterly origins, the youngest quarters reach a 12-month
+last age after one, two or three cells). Segments may end on different
+diagonals, and each simulates the twelve months after its own, as before;
+Cape Cod's refit trends to the triangle's valuation plus twelve months.
+
+An origin whose latest cell lags `V` (it stops short of its segment's
+latest diagonal; the bootstrap still needs it observed from the first age
+to its latest) develops from its own latest cell. The cells between that
+cell and the year, valued at or before `V`, are drawn as steps of the chain
+but not appended: they are in the past and were not observed at `V`, and
+the closing triangle gets only the cells the year reveals, the origin's
+value at its first cell after `V` and on. So a lagging origin's CDR covers
+its development from its latest cell, not only the year's. An origin with
+no cell left in the year gets none.
+
+Across the several cells of a year, the parameter error is drawn once per
+simulation, for the whole year, and the process error once per cell:
+
+* ODP: one pseudo triangle and one set of pseudo factors per simulation;
+  every cell's increment is projected from the pseudo latest value on
+  those factors, as the lifetime bootstrap projects, with an independent
+  Gamma process error. The increments' means do not depend on the drawn
+  values of the cells before, as in the ODP model, whose increments are
+  independent given the parameters.
+* Mack: one set of pseudo factors per simulation; each cell is drawn from
+  the one before (the observed latest value for the first), mean `f*_k C`
+  and variance `sigma_k^2 |C|^(2 - alpha)`, because Mack's model is a
+  Markov chain conditional on the latest value. The absolute value only
+  matters for a drawn value below zero (a normal process, or a negative
+  pseudo factor), which the observed values never are.
+
+On an annual triangle every origin has one cell, the next, so the draws
+are bit for bit those of the annual-only implementation: checked by
+hashing every draw of both models, every Mack process, centred and not,
+four methods (two chain ladders, Bornhuetter–Ferguson and Cape Cod), both
+entry points, on RAA, GenIns and ABC, with and without a segment on an
+earlier diagonal (297 hashes, before and after; not a CI test, since the
+Gamma's draws need not agree across platforms).
+
+Checks of the grain and the lag (unit tests in `one_year_bootstrap.rs`,
+`validation/tests/reserving_one_year_bootstrap.rs`):
+
+* The cells of the year: one per origin on RAA; four per origin for
+  quarterly development of annual origins; one, two and three for
+  quarterly origins a quarter, half and three quarters short of a
+  12-month last age; for a lagging origin, the steps and the appended
+  cells, annual and quarterly.
+* An exact pattern split into quarters has scale zero and a zero CDR in
+  every simulation, under the ODP and Mack's model (all sigmas zero), and
+  the annual opening reserve.
+* A lagging origin on an exact pattern moves by hand under
+  Bornhuetter–Ferguson, with the growth over both its steps; on RAA, 1985
+  cut back a year has a wider CDR than on the diagonal, under both models.
+* RAA, GenIns and ABC split into quarters, each year's increment in four
+  equal parts: the opening reserve is the annual one (a year's quarterly
+  volume-weighted factors telescope to its annual factor) and the one-year
+  standard deviation is about half the annual one under both models
+  (measured at 5,000 simulations: ODP 0.43 to 0.47 per origin, 0.44 to
+  0.47 in total; Mack 0.48 to 0.72 and 0.53 to 0.55). The two models get
+  there differently. The ODP's variance is linear in the mean, so the
+  halving is its scale's: the split leaves the Pearson chi-square
+  unchanged (each quarter's residual is half the annual cell's), so the
+  quarterly scale is the annual one times the ratio of degrees of freedom,
+  exactly (36/171 on RAA and GenIns, 45/210 on ABC), and the process
+  standard deviation falls by its square root, about 0.46. Mack's model
+  takes successive link ratios as independent, and the split's quarterly
+  ones deviate by about a quarter of the annual ones, so each quarter
+  carries about a sixteenth of the year's variance, the four together a
+  quarter. A split triangle is smoother than real quarterly data, so this
+  checks the mechanics, not a quarterly calibration.
+* Its first year's quarterly link ratios are equal across origins, so
+  those sigmas are zero; such a factor gives Mack's bootstrap no residuals
+  (they would be `0 / 0`; as zeros they cut RAA's pool mean square to
+  0.854) and its pseudo factor is its factor. A test pins the quarterly
+  RAA pool's mean square at 1. Quarterly RAA under Mack's Gamma process
+  with seed 3 once drew a cell near zero and the next draw's shape
+  underflowed: a Gamma or lognormal out of floating point range now draws
+  its limit, zero (a regression test).
+* A lagging origin appends only the year's cells: on RAA with 1985 cut
+  back a year, both models' cells of the year hold its 84-month cell and
+  not the 72-month step valued at the valuation.
 
 The CDR is joint across origins (and segments), so its quantiles, VaR and
 TVaR come from `PredictiveDistribution`. A new origin period written in the
@@ -600,7 +686,7 @@ process has five shapes, the ODP's two) and so do their fits (`scale` and
 `fitted` against `MackFit`). A field on `OdpBootstrap` would also break
 every struct literal of it, and a model named for the ODP that runs Mack's
 would mislead. The re-reserving is generic over the model's fit (a private
-`NextDiagonal` trait that draws the next diagonal), and `OneYearFit`,
+`NextYear` trait that draws the cells of the coming year), and `OneYearFit`,
 `OneYearSegment` and `OneYearFits` take the fit as a type parameter that
 defaults to `OdpBootstrapSegment`, so existing code compiles unchanged. The
 ODP path's draws, input hashes and tables are bit-identical to before the
@@ -616,11 +702,18 @@ conditional variance of `C_k+1` is `sigma_k^2 C_k^(2 - alpha)`):
    `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every observed link, and
    take the pseudo factor `f*_k = sum(C_k^alpha F*) / sum(C_k^alpha)` with
    the observed weights. A link from a zero has no variance in Mack's model:
-   it keeps its observed later value and gives no residual.
-2. Draw every origin's next cumulative value from its observed latest `C`,
-   mean `f*_k C`, variance `sigma_k^2 C^(2 - alpha)`, with the observed
-   triangle's sigmas (those of a single link ratio interpolated as `Mack`
-   does). `MackProcess` gives the shape: Gamma or lognormal (EVW's
+   it keeps its observed later value and gives no residual. Nor does a
+   factor whose sigma is zero (its link ratios all equal, as in a split
+   triangle's first year): its residuals would be `0 / 0`, zeros in their
+   place would shrink the pool, and its pseudo factor is its factor. With
+   every sigma zero nothing is resampled.
+2. Draw every cumulative value of the coming year (above), each from the
+   one before `C`, the observed latest value for the first, mean
+   `f*_k C`, variance `sigma_k^2 |C|^(2 - alpha)`, with the same pseudo
+   factors all year and the observed triangle's sigmas (those of a single
+   link ratio interpolated as `Mack` does). On an annual triangle that is
+   one draw per origin, from its observed latest value, EVW's step 7.
+   `MackProcess` gives the shape: Gamma or lognormal (EVW's
    parametric choices; a negative mean, a pseudo factor below zero, gets
    the distribution of its absolute value negated, as the ODP's Gamma
    does), `Residuals` (the mean plus a resampled residual times the

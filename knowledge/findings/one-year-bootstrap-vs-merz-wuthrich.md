@@ -1,10 +1,10 @@
 ---
 type: Finding
 title: The simulated one-year view against Merz-Wuthrich, ODP and Mack's process
-description: Re-reserving on the ODP bootstrap gives a one-year CDR standard deviation 0.50 to 5.98 times Merz-Wuthrich's per origin; the same re-reserving under Mack's process (MackBootstrap) reconciles its standard deviation with Merz-Wuthrich within Monte Carlo error on RAA, GenIns and ABC, so the gap is the ODP's process model, not the re-reserving. EVW's uncentred residuals bias its mean CDR (-0.21 to +0.18 SD); centring the pool removes the bias.
+description: Re-reserving on the ODP bootstrap gives a one-year CDR standard deviation 0.50 to 5.98 times Merz-Wuthrich's per origin; the same re-reserving under Mack's process (MackBootstrap) reconciles its standard deviation with Merz-Wuthrich within Monte Carlo error on RAA, GenIns and ABC, so the gap is the ODP's process model, not the re-reserving. EVW's uncentred residuals bias its mean CDR (-0.21 to +0.18 SD); centring the pool removes the bias. At a quarterly grain split from an annual triangle both models give about half the annual SD, the ODP through its scale, which falls with the degrees of freedom (36/171 on RAA), Mack through sigmas a quarter the size.
 tags: [reserving, one-year, cdr, bootstrap, odp, mack, merz-wuthrich, solvency-ii]
 status: stable
-generated: { by: claude-code/local-session, at: 2026-10-06T23:30:00-07:00 }
+generated: { by: claude-code/local-session, at: 2026-10-07T12:00:00-07:00 }
 sources:
   - id: design
     resource: ../docs/design/reserving-v02.md
@@ -141,6 +141,60 @@ absorbed.
   Gamma and `Residuals` means are within four standard errors of it.[^unit]
   A review's independent R harness of EVW's Appendix 1 found the same
   pool means and, centred, RAA -0.013 and ABC +0.001 times the SD.
+
+# Development grain and lagging origins
+
+Both models simulate every cell valued in the twelve months after the
+segment's valuation, so any development grain works; an origin short of
+the diagonal develops from its own latest cell, and only the year's cells
+are appended. Measured on RAA, GenIns and ABC split into quarters (each
+year's increment in four equal parts), 5,000 simulations, against the
+annual triangle:[^test][^unit]
+
+* The opening chain-ladder reserve is the annual one to rounding: with
+  cells in whole years, a year's four quarterly volume-weighted factors
+  average over the same origins and telescope to the annual factor.
+* The one-year SD is about half the annual one: ODP 0.43 to 0.47 per
+  origin and 0.44 to 0.47 in total, Mack's process 0.48 to 0.72 and 0.53
+  to 0.55 (highest for the origin with one year left, whose last sigma is
+  extrapolated). The two get there differently.
+  * ODP: its process variance is the scale times the mean, linear in it,
+    so four independent quarters at the annual scale would add up to the
+    annual variance. The halving is the scale's. The split leaves the
+    Pearson chi-square unchanged: a quarter's fitted increment is a
+    quarter of the annual cell's, so its residual is half the annual one
+    and four of them sum to its square (the only zero residuals are the
+    corner cells, 8 against 2 annually). The quarterly scale is therefore
+    the annual one times the ratio of degrees of freedom, exactly: 36/171
+    = 0.211 on RAA (207.08 against 983.64) and GenIns, 45/210 = 0.214 on
+    ABC. The process SD ratio is its square root, about 0.46, which the
+    measured totals match.
+  * Mack: the split's quarterly link ratios deviate from their factors by
+    about a quarter of the annual ones, so the sigmas squared are about a
+    sixteenth of the annual, and each quarter's variance with them; four
+    independent quarters add to a quarter, half the SD. The first year's
+    three quarterly links (2, 3/2 and 4/3 for every origin) have sigma
+    zero and give no residuals: put in the pool as zeros, as they were at
+    first, they cut its mean square to 0.854 (RAA 30 of 206) and the
+    parameter error with it, though the measured ratios moved little
+    (before: 0.49 to 0.70, 0.53 to 0.55).
+  A split is smoother than real quarterly data; this checks the
+  mechanics.
+* At a quarterly grain Mack's process draws each cell of the year from
+  the drawn one before, so a Gamma draw can come out near zero (around
+  1e-200) and the next one's shape `m^2 / variance` underflow to zero.
+  That panicked on quarterly RAA at 2,000 simulations (seed 3, a unit
+  test now; a review saw 3 of seeds 0 to 9); the draw from a Gamma or
+  lognormal out of range is now its limit, zero. An annual triangle draws each origin once, from its
+  observed value, and cannot reach it.
+* An exact pattern stays exact when split, so both models give a zero
+  CDR; Mack's needs every sigma estimable (a lone link ratio's sigma
+  cannot be interpolated from sigmas that are all zero: an error).
+* On RAA, 1985 cut back a year to 60 months has a one-year SD 1.98 times
+  (ODP) and 1.38 times (Mack) its SD on the full triangle, at 2,000
+  simulations: its year reveals two years of development.
+* Annual triangles draw bit for bit as before the change (297 hashed
+  configurations).
 
 # Published numbers
 

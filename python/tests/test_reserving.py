@@ -1545,6 +1545,57 @@ def test_one_year_every_segment_at_once():
     assert repr(fit).startswith("OneYearFit(segments=2, origins=6, n_sims=400")
 
 
+def test_one_year_quarterly_and_lagging_origins():
+    # Any development grain: the coming year is every cell valued in the
+    # twelve months after the valuation, four for a quarterly grain. An exact
+    # annual pattern (every origin a multiple of the first) split into equal
+    # quarters is still exact, so neither process moves it, and the quarterly
+    # chain ladder's opening reserve is the annual one.
+    rows = [[4.0, 8.0, 12.0, 15.0], [8.0, 16.0, 24.0, 30.0], [12.0, 24.0, 36.0], [16.0, 32.0], [20.0]]
+    origin, age, paid = [], [], []
+    for k, row in enumerate(rows):
+        previous = 0.0
+        for d, value in enumerate(row):
+            for q in range(1, 5):
+                origin.append(2019 + k)
+                age.append(12 * d + 3 * q)
+                paid.append(previous + (value - previous) * q / 4)
+            previous = value
+    quarterly = Triangle.from_long(origin, age, paid, development_grain="Q")
+    annual = Triangle.from_long(
+        [2019 + k for k, row in enumerate(rows) for _ in row],
+        [12 * (d + 1) for row in rows for d in range(len(row))],
+        [v for row in rows for v in row],
+    )
+    for boot in [OdpBootstrap(n_sims=50, seed=1), MackBootstrap(n_sims=50, seed=1)]:
+        fit = boot.one_year(quarterly, "values", ChainLadder())
+        # Zero to rounding: the ODP's scale comes out near 1e-31 here.
+        assert all(abs(x) < 1e-9 for row in fit.cdr.draw_matrix() for x in row)
+        opening = boot.one_year(annual, "values", ChainLadder()).opening_reserve
+        assert fit.opening_reserve == pytest.approx(opening, rel=1e-12)
+    # An origin short of the latest diagonal develops from its own latest
+    # cell: 2021 stops at 24 months, a year short, and moves to 48 within the
+    # year. On an exact pattern neither process moves anything (every sigma
+    # and the scale are zero), so its Bornhuetter-Ferguson CDR is by hand, as
+    # in the Rust test a_lagging_origin_moves_by_hand: the opening ultimate
+    # 24 + 0.5 * 40 * (1 - 1 / 1.875) less the closing one, the pattern's 45
+    # at the last age. Moving only to 36, or not at all, gives another CDR.
+    lag_rows = [[4.0, 8.0, 12.0, 15.0], [8.0, 16.0, 24.0, 30.0], [12.0, 24.0], [16.0, 32.0], [20.0]]
+    lagging = Triangle.from_long(
+        origin=[2019 + k for k, row in enumerate(lag_rows) for _ in row],
+        development=[12 * (d + 1) for row in lag_rows for d in range(len(row))],
+        values={
+            "paid": [v for row in lag_rows for v in row],
+            "premium": [40.0 for row in lag_rows for _ in row],
+        },
+    )
+    want = 24.0 + 0.5 * 40.0 * (1.0 - 1.0 / 1.875) - 45.0
+    bf = BornhuetterFerguson(apriori=0.5)
+    for boot in [OdpBootstrap(n_sims=20, seed=2), MackBootstrap(n_sims=20, seed=2)]:
+        fit = boot.one_year(lagging, "paid", bf, exposure="premium")
+        assert all(row[2] == pytest.approx(want, abs=1e-9) for row in fit.cdr.draw_matrix())
+
+
 def test_one_year_errors(triangles):
     tri = premium_dataset("genins_premium")
     boot = OdpBootstrap(n_sims=10)
