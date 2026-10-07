@@ -21,6 +21,7 @@ from prospicio.reserving import (
     ExpectedLoss,
     ExpectedLossFit,
     Mack,
+    MackBootstrap,
     MackFit,
     OdpBootstrap,
     OdpBootstrapFit,
@@ -1566,3 +1567,102 @@ def test_one_year_errors(triangles):
     )
     with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
         OdpBootstrap(n_sims=20, seed=0).one_year(zero, "values", ChainLadder(average="simple"))
+
+
+# The one-year view under Mack's process (MackBootstrap.one_year), as in
+# validation/tests/reserving_one_year_mack.rs: the reconciliation of the
+# standard deviation with Merz-Wuthrich, R's CDR(1)S.E. on GenIns, within
+# five Monte Carlo standard errors of the simulated SD (0.5% each at 20,000
+# simulations).
+
+
+def test_mack_one_year_reconciles_with_merz_wuthrich(triangles):
+    genins = triangles["genins"]
+    fit = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED).one_year(genins, "values", ChainLadder())
+    assert isinstance(fit, OneYearFit) and fit.model == "mack"
+    rows = read_csv(VALIDATION / "reference" / "reserving_cdr_r.csv")
+    (mw,) = [
+        float(r["expected"])
+        for r in rows
+        if r["dataset"] == "genins" and r["method"] == "cdr" and r["quantity"] == "total_one_year_se"
+    ]
+    assert abs(math.sqrt(fit.cdr.variance()) / mw - 1.0) < 0.025
+    # The same Merz-Wuthrich from the model the fit carries.
+    cdr = fit.mack.claims_development_result()
+    assert cdr.total_one_year_standard_error == pytest.approx(mw, rel=1e-9)
+    # England, Verrall and Wuthrich (2019), Table 4: one-year total 1,778,428
+    # from 500,000 simulations, with Mack's rule for the last sigma.
+    evw = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, sigma_interpolation="mack")
+    sd = math.sqrt(evw.one_year(genins, "values", ChainLadder()).cdr.variance())
+    assert abs(sd / 1_778_428 - 1.0) < 0.025
+
+
+def test_mack_one_year_fields_and_errors(triangles):
+    raa = triangles["raa"]
+    boot = MackBootstrap(n_sims=500, seed=1, process="normal", average="simple")
+    settings = (boot.n_sims, boot.seed, boot.process, boot.average, boot.sigma_interpolation, boot.centre_residuals)
+    assert settings == (500, 1, "normal", "simple", "log-linear", False)
+    assert repr(boot) == (
+        'MackBootstrap(n_sims=500, seed=1, process="normal", average="simple", sigma_interpolation="log-linear", '
+        "centre_residuals=False)"
+    )
+    # Mack's rule for the last sigma reaches the model (it differs from the
+    # log-linear one only there).
+    by_rule = MackBootstrap(n_sims=10, sigma_interpolation="mack")
+    assert by_rule.sigma_interpolation == "mack"
+    sigma = by_rule.one_year(raa, "values", ChainLadder()).mack.sigma
+    assert sigma == Mack(sigma_interpolation="mack").fit(raa, "values").sigma
+    assert sigma != Mack().fit(raa, "values").sigma
+    # Centring changes the draws, not the residuals reported.
+    centred = MackBootstrap(n_sims=50, seed=1, centre_residuals=True)
+    assert centred.centre_residuals and repr(centred).endswith("centre_residuals=True)")
+    plain = MackBootstrap(n_sims=50, seed=1).one_year(raa, "values", ChainLadder())
+    centred_fit = centred.one_year(raa, "values", ChainLadder())
+    assert centred_fit.cdr.draw_matrix() != plain.cdr.draw_matrix()
+    assert str(centred_fit.residuals) == str(plain.residuals)
+    fit = boot.one_year(raa, "values", ChainLadder(tail=1.05))
+    assert fit.cdr.provenance()["model"] == "mack_bootstrap_one_year"
+    assert repr(fit) == 'OneYearFit(origins=10, n_sims=500, model="mack")'
+    # Mack's model averages as asked; the method keeps its own tail.
+    mack = Mack(average="simple").fit(raa, "values")
+    assert fit.chain_ladder.ldf == mack.ldf
+    assert fit.mack.standard_error == mack.standard_error
+    assert fit.opening_ultimate == ChainLadder(tail=1.05).fit(raa, "values").ultimate
+    # Link-ratio residuals, [origin][age]: nan from each origin's latest age.
+    assert len(fit.residuals) == 10 and all(len(row) == 10 for row in fit.residuals)
+    assert not math.isnan(fit.residuals[0][0]) and math.isnan(fit.residuals[1][8])
+    for field in ["fitted", "scale"]:
+        with pytest.raises(ValueError, match=f"{field} is the ODP bootstrap's"):
+            getattr(fit, field)
+    with pytest.raises(ValueError, match="mack is Mack's bootstrap's model"):
+        OdpBootstrap(n_sims=10).one_year(raa, "values", ChainLadder()).mack
+    for process in ["gamma", "lognormal", "residuals", "none"]:
+        assert MackBootstrap(n_sims=10, process=process).one_year(raa, "values", ChainLadder()).cdr.n_sims == 10
+    with pytest.raises(ValueError, match='process must be "gamma", "lognormal"'):
+        MackBootstrap(process="poisson")
+    with pytest.raises(ValueError, match="n_sims must be positive"):
+        MackBootstrap(n_sims=0)
+    with pytest.raises(TypeError, match="method must be ChainLadder"):
+        boot.one_year(raa, "values", Mack())
+    pytest.importorskip("pandas")
+    assert "scale" not in fit.totals_frame().columns
+
+
+def test_mack_one_year_every_segment_at_once():
+    paid = [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]
+    data = {
+        "lob": ["Auto"] * 10 + ["Home"] * 10,
+        "year": ([2019] * 4 + [2020] * 3 + [2021] * 2 + [2022]) * 2,
+        "age": [12, 24, 36, 48, 12, 24, 36, 12, 24, 12] * 2,
+        "paid": paid + [3 * v for v in paid],
+    }
+    tri = Triangle.from_frame(data, "year", "age", "paid", keys="lob")
+    fit = MackBootstrap(n_sims=400, seed=5).one_year(tri, "paid", ChainLadder())
+    assert fit.cdr.dims == ["lob", "origin"] and len(fit.cdr.components()) == 8
+    with pytest.raises(ValueError, match="residuals needs a single-segment fit"):
+        fit.residuals
+    # Mack's model is every segment's, as the chain ladder.
+    assert fit.mack.keys == ["lob"] and fit.mack.origins == fit.origins
+    home = fit.segment(lob="Home")
+    assert home.model == "mack" and len(home.cdr.components()) == 4
+    assert repr(fit).startswith("OneYearFit(segments=2, origins=8, n_sims=400")

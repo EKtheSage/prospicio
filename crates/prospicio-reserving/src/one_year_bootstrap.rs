@@ -29,6 +29,13 @@
 //! An origin with one cell left therefore has a one-year view that is its
 //! whole run-off, distributed as its lifetime [`OdpBootstrap`] reserve.
 //!
+//! [`MackBootstrap::one_year`](crate::MackBootstrap::one_year) replaces
+//! steps 1 and 2 with Mack's model (England, Verrall and Wüthrich 2019,
+//! Appendix 1; see [`crate::mack_bootstrap`]) and keeps steps 3 and 4, so
+//! the two process models can be compared on the same re-reserving: with
+//! the volume-weighted chain ladder and no tail, Mack's reproduces Merz and
+//! Wüthrich's standard error.
+//!
 //! The development grain must be a year, so that one development period is
 //! the coming year, and every origin short of the last age must have its
 //! latest value on its segment's latest diagonal, so that its next cell
@@ -155,11 +162,16 @@ impl OneYearMethod {
 /// assert!(fit.cdr.std_dev() < lifetime);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
+///
+/// `B` is what the bootstrap estimated before simulating: the ODP's
+/// [`OdpBootstrapSegment`] by default, Mack's
+/// [`MackBootstrapSegment`](crate::MackBootstrapSegment) from
+/// [`MackBootstrap::one_year`](crate::MackBootstrap::one_year).
 #[derive(Debug, Clone)]
-pub struct OneYearFit {
-    /// The bootstrap's volume-weighted chain ladder, fitted values,
-    /// residuals and scale.
-    pub bootstrap: OdpBootstrapSegment,
+pub struct OneYearFit<B = OdpBootstrapSegment> {
+    /// The bootstrap model fitted to the observed triangle: for the ODP its
+    /// volume-weighted chain ladder, fitted values, residuals and scale.
+    pub bootstrap: B,
     /// The method's ultimate per origin on the observed triangle.
     pub opening_ultimate: Vec<f64>,
     /// The opening ultimate less the latest value, per origin.
@@ -193,19 +205,22 @@ pub struct OneYearFit {
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct OneYearSegment {
-    /// The segment's volume-weighted chain ladder, fitted values, residuals
-    /// and scale.
-    pub bootstrap: OdpBootstrapSegment,
+pub struct OneYearSegment<B = OdpBootstrapSegment> {
+    /// The segment's bootstrap model: for the ODP its volume-weighted chain
+    /// ladder, fitted values, residuals and scale.
+    pub bootstrap: B,
     /// The method's ultimate per origin on the observed triangle.
     pub opening_ultimate: Vec<f64>,
     /// The opening ultimate less the latest value, per origin.
     pub opening_reserve: Vec<f64>,
 }
 
-impl ReserveFit for OneYearSegment {
+/// The long tables of the bootstrap model's chain ladder, with the
+/// method's opening ultimate and the model's own segment totals (the
+/// ODP's `scale`).
+impl<B: ReserveFit> ReserveFit for OneYearSegment<B> {
     fn chain_ladder(&self) -> &ChainLadderFit {
-        &self.bootstrap.chain_ladder
+        self.bootstrap.chain_ladder()
     }
 
     fn ultimate(&self) -> &[f64] {
@@ -213,7 +228,7 @@ impl ReserveFit for OneYearSegment {
     }
 
     fn total_columns(&self) -> Vec<(&'static str, f64)> {
-        vec![("scale", self.bootstrap.scale)]
+        self.bootstrap.total_columns()
     }
 }
 
@@ -258,9 +273,9 @@ impl ReserveFit for OneYearSegment {
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone)]
-pub struct OneYearFits {
+pub struct OneYearFits<B = OdpBootstrapSegment> {
     /// Each segment's bootstrap and opening ultimate.
-    pub segments: SegmentFits<OneYearSegment>,
+    pub segments: SegmentFits<OneYearSegment<B>>,
     /// Joint distribution of the claims development result by segment and
     /// origin: the key names and `origin` are its dimensions, and its
     /// components run over the origins of each segment in turn, like the
@@ -268,7 +283,7 @@ pub struct OneYearFits {
     pub cdr: PredictiveDistribution,
 }
 
-impl OneYearFits {
+impl<B: ReserveFit + Clone> OneYearFits<B> {
     /// One row per segment × origin: the `latest` value, the method's
     /// `opening_ultimate` and `opening_reserve`, and the `cdr_mean` and
     /// `cdr_std_dev` of the simulated claims development result.
@@ -278,9 +293,9 @@ impl OneYearFits {
         table
     }
 
-    /// One row per segment: the totals of `to_long`'s columns, the
-    /// bootstrap's `scale`, and the `cdr_mean` and `cdr_std_dev` of the
-    /// segment's total claims development result.
+    /// One row per segment: the totals of `to_long`'s columns, the ODP
+    /// bootstrap's `scale` (none for Mack's), and the `cdr_mean` and
+    /// `cdr_std_dev` of the segment's total claims development result.
     pub fn totals(&self) -> FitTable {
         let mut table = opening_names(self.segments.totals());
         let totals = segment_sums(&self.segments, &self.cdr);
@@ -307,27 +322,89 @@ fn opening_names(mut table: FitTable) -> FitTable {
     table
 }
 
-/// One segment, prepared: its bootstrap and opening ultimate, the residuals
-/// to resample, and its cells and exposure.
-struct Prepared {
-    fit: OneYearSegment,
+/// A bootstrap model that simulates the next diagonal of a segment: what
+/// it estimated on the observed triangle (`self`) and what each simulation
+/// resamples ([`Draw`](Self::Draw)).
+pub(crate) trait NextDiagonal: ReserveFit + Clone + Send + Sync {
+    /// What each simulation draws from beyond the fit: the residuals to
+    /// resample and the process error.
+    type Draw: Send + Sync;
+
+    /// The next cell of every origin of `segment` short of the last age, as
+    /// `(origin, position, cumulative value)`.
+    fn next_cells(
+        &self,
+        draw: &Self::Draw,
+        segment: &Segment,
+        rng: &mut StreamRng,
+    ) -> Vec<(usize, usize, f64)>;
+}
+
+/// What the ODP bootstrap resamples in each simulation.
+pub(crate) struct OdpDraw {
     pool: Vec<f64>,
+    process: ProcessDistribution,
+}
+
+impl NextDiagonal for OdpBootstrapSegment {
+    type Draw = OdpDraw;
+
+    /// The observed latest value plus an increment projected from the
+    /// pseudo latest value with the resampled factor, and the process
+    /// error.
+    fn next_cells(
+        &self,
+        draw: &OdpDraw,
+        segment: &Segment,
+        rng: &mut StreamRng,
+    ) -> Vec<(usize, usize, f64)> {
+        let cl = &self.chain_ladder;
+        let nd = segment.n_dev;
+        let sim = Simulation {
+            segment,
+            latest: &cl.latest_position,
+            fitted: &self.fitted,
+            pool: &draw.pool,
+            scale: self.scale,
+            process: draw.process,
+        };
+        let (pseudo, factors) = sim.resample(rng);
+        cl.latest_position
+            .iter()
+            .zip(&cl.latest)
+            .enumerate()
+            .filter(|&(_, (&d, _))| d + 1 < nd)
+            .map(|(o, (&d, &c))| {
+                let mean = pseudo[o * nd + d] * (factors[d] - 1.0);
+                (o, d + 1, c + sim.with_process(mean, rng))
+            })
+            .collect()
+    }
+}
+
+/// One segment, prepared: its bootstrap and opening ultimate, what each
+/// simulation draws from, and its cells and exposure.
+struct Prepared<B: NextDiagonal> {
+    fit: OneYearSegment<B>,
+    draw: B::Draw,
     segment: Segment,
     exposure: Option<Segment>,
 }
 
-impl Prepared {
+impl<B: NextDiagonal> Prepared<B> {
+    /// `model` fits the bootstrap model to the segment.
     fn new(
         triangle: &Triangle,
         segment: &Segment,
         exposure: Option<&Segment>,
         method: &OneYearMethod,
         opening: Month,
+        model: &impl Fn(&Segment) -> Result<(B, B::Draw)>,
     ) -> Result<Self> {
-        let (bootstrap, pool) = prepare(segment, &segment.ages)?;
+        let (bootstrap, draw) = model(segment)?;
         // Each new cell must be a year after the segment's latest diagonal,
         // so its origin's latest value is on that diagonal.
-        let latest = &bootstrap.chain_ladder.latest_position;
+        let latest = &bootstrap.chain_ladder().latest_position;
         let valuation = |o: usize, d: usize| {
             triangle.valuation_of(o + segment.origin_offset, d + segment.dev_offset)
         };
@@ -350,7 +427,7 @@ impl Prepared {
         let opening_ultimate = method.ultimate(segment, exposure, opening)?;
         let opening_reserve = opening_ultimate
             .iter()
-            .zip(&bootstrap.chain_ladder.latest)
+            .zip(&bootstrap.chain_ladder().latest)
             .map(|(u, l)| u - l)
             .collect();
         Ok(Self {
@@ -359,14 +436,14 @@ impl Prepared {
                 opening_ultimate,
                 opening_reserve,
             },
-            pool,
+            draw,
             segment: segment.clone(),
             exposure: exposure.cloned(),
         })
     }
 
     fn hash(&self, hasher: &mut InputHasher) {
-        let cl = &self.fit.bootstrap.chain_ladder;
+        let cl = self.fit.bootstrap.chain_ladder();
         hash_segment(hasher, &self.segment, cl, &self.segment.ages);
         if let Some(exposure) = &self.exposure {
             for o in 0..exposure.n_origins {
@@ -380,8 +457,8 @@ impl Prepared {
 }
 
 /// Re-reserving one segment, once per simulation.
-struct Run<'a> {
-    prepared: &'a Prepared,
+struct Run<'a, B: NextDiagonal> {
+    prepared: &'a Prepared<B>,
     method: &'a OneYearMethod,
     /// The valuation a year after the triangle's.
     closing: Month,
@@ -389,55 +466,17 @@ struct Run<'a> {
     label: Option<String>,
 }
 
-impl Run<'_> {
+impl<B: NextDiagonal> Run<'_, B> {
     fn n_origins(&self) -> usize {
         self.prepared.segment.n_origins
     }
 
     /// One simulation: fills `cdr` with each origin's claims development
     /// result.
-    fn run(
-        &self,
-        rng: &mut StreamRng,
-        process: ProcessDistribution,
-        cdr: &mut [f64],
-    ) -> Result<()> {
-        let next = self.next_cells(rng, process);
-        self.rereserve(next, cdr)
-    }
-
-    /// The next cell of every origin short of the last age, as `(origin,
-    /// position, cumulative value)`: the observed latest value plus an
-    /// increment projected from the pseudo latest value with the resampled
-    /// factor, and the process error.
-    fn next_cells(
-        &self,
-        rng: &mut StreamRng,
-        process: ProcessDistribution,
-    ) -> Vec<(usize, usize, f64)> {
+    fn run(&self, rng: &mut StreamRng, cdr: &mut [f64]) -> Result<()> {
         let p = self.prepared;
-        let boot = &p.fit.bootstrap;
-        let cl = &boot.chain_ladder;
-        let nd = p.segment.n_dev;
-        let sim = Simulation {
-            segment: &p.segment,
-            latest: &cl.latest_position,
-            fitted: &boot.fitted,
-            pool: &p.pool,
-            scale: boot.scale,
-            process,
-        };
-        let (pseudo, factors) = sim.resample(rng);
-        cl.latest_position
-            .iter()
-            .zip(&cl.latest)
-            .enumerate()
-            .filter(|&(_, (&d, _))| d + 1 < nd)
-            .map(|(o, (&d, &c))| {
-                let mean = pseudo[o * nd + d] * (factors[d] - 1.0);
-                (o, d + 1, c + sim.with_process(mean, rng))
-            })
-            .collect()
+        let next = p.fit.bootstrap.next_cells(&p.draw, &p.segment, rng);
+        self.rereserve(next, cdr)
     }
 
     /// Appends `next` to the observed triangle, refits the method on it and
@@ -476,25 +515,44 @@ impl Failures {
     }
 }
 
-impl OdpBootstrap {
-    /// The one-year view of `column` of a single-segment cumulative
-    /// triangle: the claims development result of `method` over the next
-    /// development period, by re-reserving on the ODP bootstrap; see the
-    /// [module documentation](crate::one_year_bootstrap). Every origin must
-    /// be observed from the first age to its latest, and an expected-loss
-    /// method's exposure column must have a positive value for every
-    /// origin.
-    pub fn one_year(
-        &self,
+/// The simulations of a one-year bootstrap: how many, from which seed.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Sims {
+    pub(crate) n_sims: usize,
+    pub(crate) seed: u64,
+}
+
+impl Sims {
+    fn check(self) -> Result<()> {
+        if self.n_sims == 0 {
+            return Err(Error::Bootstrap("n_sims must be positive"));
+        }
+        Ok(())
+    }
+
+    /// The one-year view of `column` of a single-segment triangle, the
+    /// bootstrap model fitted by `model`; `provenance` names it, given the
+    /// hash of the inputs.
+    pub(crate) fn one_year<B: NextDiagonal>(
+        self,
         triangle: &Triangle,
         column: &str,
         method: &OneYearMethod,
-    ) -> Result<OneYearFit> {
-        self.check_sims()?;
+        model: impl Fn(&Segment) -> Result<(B, B::Draw)>,
+        provenance: impl FnOnce(InputHasher) -> Provenance,
+    ) -> Result<OneYearFit<B>> {
+        self.check()?;
         let (opening, closing) = valuations(triangle)?;
         let segment = triangle.segment(column)?;
         let exposure = method.exposure().map(|e| triangle.segment(e)).transpose()?;
-        let prepared = Prepared::new(triangle, &segment, exposure.as_ref(), method, opening)?;
+        let prepared = Prepared::new(
+            triangle,
+            &segment,
+            exposure.as_ref(),
+            method,
+            opening,
+            &model,
+        )?;
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
@@ -509,7 +567,7 @@ impl OdpBootstrap {
             vec!["origin".into()],
             segment.origins.iter().map(|&p| vec![p.into()]).collect(),
             &[run],
-            self.one_year_provenance(column, method, hasher),
+            provenance(hasher),
         )?;
         let OneYearSegment {
             bootstrap,
@@ -524,25 +582,25 @@ impl OdpBootstrap {
         })
     }
 
-    /// The one-year view of `column` in every segment of a cumulative
-    /// triangle, each bootstrapped with its own residuals and scale and
-    /// refitted with its own exposure, into one joint distribution of the
-    /// claims development result; see [`OneYearFits`]. A failure names its
-    /// segment.
-    pub fn one_year_segments(
-        &self,
+    /// The one-year view of `column` in every segment of a triangle, each
+    /// with its own bootstrap model fitted by `model`, into one joint
+    /// distribution; `provenance` names it, given the hash of the inputs.
+    pub(crate) fn one_year_segments<B: NextDiagonal>(
+        self,
         triangle: &Triangle,
         column: &str,
         method: &OneYearMethod,
-    ) -> Result<OneYearFits> {
-        self.check_sims()?;
+        model: impl Fn(&Segment) -> Result<(B, B::Draw)>,
+        provenance: impl FnOnce(InputHasher) -> Provenance,
+    ) -> Result<OneYearFits<B>> {
+        self.check()?;
         let (opening, closing) = valuations(triangle)?;
         let prepared = match method.exposure() {
             None => fit_each(triangle, column, |s| {
-                Prepared::new(triangle, s, None, method, opening)
+                Prepared::new(triangle, s, None, method, opening, &model)
             })?,
             Some(exposure) => fit_each_with_exposure(triangle, column, exposure, |s, e| {
-                Prepared::new(triangle, s, Some(e), method, opening)
+                Prepared::new(triangle, s, Some(e), method, opening, &model)
             })?,
         };
 
@@ -568,8 +626,7 @@ impl OdpBootstrap {
             dims,
             components,
             &runs,
-            self.one_year_provenance(column, method, hasher)
-                .param("segments", prepared.len()),
+            provenance(hasher).param("segments", prepared.len()),
         )?;
         Ok(OneYearFits {
             segments: prepared.map(|p| p.fit.clone()),
@@ -577,21 +634,14 @@ impl OdpBootstrap {
         })
     }
 
-    fn check_sims(&self) -> Result<()> {
-        if self.n_sims == 0 {
-            return Err(Error::Bootstrap("n_sims must be positive"));
-        }
-        Ok(())
-    }
-
     /// Simulates the claims development result of every segment in `runs`,
     /// in turn, into one joint distribution. A failed simulation is
     /// reported after all have run, with the number that failed.
-    fn simulate_cdr(
-        &self,
+    fn simulate_cdr<B: NextDiagonal>(
+        self,
         dims: Vec<String>,
         components: Vec<Vec<KeyValue>>,
-        runs: &[Run<'_>],
+        runs: &[Run<'_, B>],
         provenance: Provenance,
     ) -> Result<PredictiveDistribution> {
         let failures = Mutex::new(Failures::default());
@@ -605,7 +655,7 @@ impl OdpBootstrap {
                 let mut start = 0;
                 for run in runs {
                     let end = start + run.n_origins();
-                    if let Err(e) = run.run(rng, self.process, &mut row[start..end]) {
+                    if let Err(e) = run.run(rng, &mut row[start..end]) {
                         // Keep the draws finite; the failure is reported.
                         row.fill(0.0);
                         let e = match &run.label {
@@ -636,6 +686,69 @@ impl OdpBootstrap {
             }),
             None => Ok(cdr),
         }
+    }
+}
+
+impl OdpBootstrap {
+    /// The one-year view of `column` of a single-segment cumulative
+    /// triangle: the claims development result of `method` over the next
+    /// development period, by re-reserving on the ODP bootstrap; see the
+    /// [module documentation](crate::one_year_bootstrap). Every origin must
+    /// be observed from the first age to its latest, and an expected-loss
+    /// method's exposure column must have a positive value for every
+    /// origin.
+    pub fn one_year(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        method: &OneYearMethod,
+    ) -> Result<OneYearFit> {
+        self.sims().one_year(
+            triangle,
+            column,
+            method,
+            |s| self.model(s),
+            |hasher| self.one_year_provenance(column, method, hasher),
+        )
+    }
+
+    /// The one-year view of `column` in every segment of a cumulative
+    /// triangle, each bootstrapped with its own residuals and scale and
+    /// refitted with its own exposure, into one joint distribution of the
+    /// claims development result; see [`OneYearFits`]. A failure names its
+    /// segment.
+    pub fn one_year_segments(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        method: &OneYearMethod,
+    ) -> Result<OneYearFits> {
+        self.sims().one_year_segments(
+            triangle,
+            column,
+            method,
+            |s| self.model(s),
+            |hasher| self.one_year_provenance(column, method, hasher),
+        )
+    }
+
+    fn sims(&self) -> Sims {
+        Sims {
+            n_sims: self.n_sims,
+            seed: self.seed,
+        }
+    }
+
+    /// The bootstrap of one segment and the residuals it resamples.
+    fn model(&self, segment: &Segment) -> Result<(OdpBootstrapSegment, OdpDraw)> {
+        let (fit, pool) = prepare(segment, &segment.ages)?;
+        Ok((
+            fit,
+            OdpDraw {
+                pool,
+                process: self.process,
+            },
+        ))
     }
 
     fn one_year_provenance(
@@ -1087,7 +1200,9 @@ mod tests {
         let (no, nd) = (segment.n_origins, segment.n_dev);
         let method = chain_ladder();
         let (opening, closing) = valuations(&tri).unwrap();
-        let prepared = Prepared::new(&tri, &segment, None, &method, opening).unwrap();
+        let odp = boot(1, 0);
+        let prepared =
+            Prepared::new(&tri, &segment, None, &method, opening, &|s| odp.model(s)).unwrap();
         let run = Run {
             prepared: &prepared,
             method: &method,
@@ -1188,6 +1303,20 @@ mod tests {
                 5.0 * error
             );
         }
+
+        // `MackBootstrap` is this harness: the same draws, bit for bit.
+        // Simulation `i` uses stream `i`, so its first few hundred are the
+        // harness's first few hundred.
+        let few = 300;
+        let built = crate::MackBootstrap {
+            n_sims: few,
+            seed: 31,
+            ..Default::default()
+        }
+        .one_year(&tri, "values", &method)
+        .unwrap();
+        assert_eq!(built.cdr.draw_matrix(), &draws.draw_matrix()[..few * no]);
+        assert_eq!(built.cdr.provenance().model, "mack_bootstrap_one_year");
     }
 
     #[test]

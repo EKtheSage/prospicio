@@ -3,6 +3,7 @@
 \name{one_year_fit}
 \alias{one_year_fit}
 \alias{odp_one_year}
+\alias{mack_one_year}
 \title{Simulated one-year view}
 \usage{
 one_year_fit(ptr)
@@ -23,6 +24,27 @@ odp_one_year(
   n_sims = 10000,
   seed = 0,
   process = c("gamma", "none")
+)
+
+mack_one_year(
+  triangle,
+  column = NULL,
+  method = c("chain_ladder", "expected_loss", "bornhuetter_ferguson", "benktander",
+    "cape_cod"),
+  exposure = NULL,
+  apriori = 1,
+  n_iters = 1,
+  trend = 0,
+  decay = 1,
+  average = "volume",
+  sigma_interpolation = "log-linear",
+  tail = 1,
+  n_sims = 10000,
+  seed = 0,
+  process = c("gamma", "lognormal", "residuals", "normal", "none"),
+  mack_average = "volume",
+  mack_sigma_interpolation = "log-linear",
+  centre_residuals = FALSE
 )
 }
 \arguments{
@@ -51,9 +73,23 @@ pattern of \code{method}, as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 
 \item{seed}{Seed of the simulation streams, a non-negative whole number.}
 
-\item{process}{Process error on each simulated future incremental value:
-\code{"gamma"} (mean the expected value, variance \verb{scale * |mean|}, R's
-\code{process.distr = "gamma"}) or \code{"none"} for parameter error only.}
+\item{process}{Process error. For \code{odp_one_year()}, on each simulated
+incremental value: \code{"gamma"} (mean the expected value, variance
+\verb{scale * |mean|}) or \code{"none"} for parameter error only. For
+\code{mack_one_year()}, on each next cumulative value: \code{"gamma"} or
+\code{"lognormal"} (negated for a negative mean) or \code{"normal"}, with Mack's
+mean and variance; \code{"residuals"} (the mean plus a resampled residual
+times the standard deviation, which carries the residuals' mean and
+variance); or \code{"none"}.}
+
+\item{mack_average, mack_sigma_interpolation}{How Mack's model in
+\code{mack_one_year()} averages the link ratios and fills in a sigma behind
+a single link ratio, as in \code{\link[=mack]{mack()}}.}
+
+\item{centre_residuals}{For \code{mack_one_year()}, subtract the residuals'
+mean before resampling them, so that the pseudo factors are unbiased
+and the mean CDR is about zero. England, Verrall and Wuthrich's
+Appendix 1 does not, hence the default \code{FALSE}.}
 }
 \value{
 A \code{one_year_fit} object.
@@ -97,6 +133,25 @@ Merz-Wuthrich on RAA, 1.36 on GenIns and 1.13 on ABC, and per origin
 from 0.50 to 5.98 times
 (\code{knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md}).
 
+\code{mack_one_year()} re-reserves the same way under Mack's process instead,
+England, Verrall and Wuthrich's (2019, Appendix 1) bootstrap of Mack's
+model: each simulation resamples the scaled bias-adjusted residuals of
+the link ratios into pseudo factors, averaged as \code{mack_average}, and
+draws every origin's next cumulative value from its observed latest
+value \code{C} with mean \code{f* C} and variance \verb{sigma^2 C^(2 - alpha)}. With the
+volume-weighted chain ladder and no tail, its standard deviations are
+Merz and Wuthrich's (\code{\link[=claims_development_result]{claims_development_result()}}) within Monte Carlo
+error, which reconciles the two. The reconciliation is of the standard
+deviation: EVW resample the residuals uncentred, and their pool's
+non-zero mean biases the pseudo factors, so the mean CDR is about -0.2
+(RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation
+rather than Merz and Wuthrich's zero. \code{centre_residuals = TRUE} centres
+the pool first, which brings the mean to about zero and keeps the
+standard deviation. Mack's model has no tail here: the
+development past the oldest age moves only through \code{method}'s refitted
+tail. Its fit has \code{model = "mack"}, no \code{scale}, and \code{mack}, the
+\link{mack_fit} it simulates from; it needs no negative cumulative value.
+
 Every segment of the triangle is bootstrapped on its own, with its own
 residuals and scale, into one joint distribution of the CDR; simulation
 \code{i} uses random stream \code{i} of \code{seed} for every segment in turn, so
@@ -117,15 +172,16 @@ the total, and \code{-quantile(fit@cdr, 0.005)} is the one-year loss at
 \code{as.data.frame()} has one row per segment and origin: \code{origin},
 \code{latest}, \code{opening_ultimate}, \code{opening_reserve}, and the \code{cdr_mean} and
 \code{cdr_std_dev} of the simulated CDR; \code{\link[=totals_frame]{totals_frame()}} one per segment,
-with the bootstrap's \code{scale} too.
+with the ODP bootstrap's \code{scale} too. \code{model} is \code{"odp"} or \code{"mack"}.
 
-Errors: as \code{\link[=odp_bootstrap]{odp_bootstrap()}} and the method's own fit; a missing
-\code{exposure} for an expected-loss method or one given for the chain
-ladder; or a refit that fails in any simulation (a zero value under a
-simple average, say), counted in the message with one of the failures.
+Errors: as \code{\link[=odp_bootstrap]{odp_bootstrap()}} (or \code{\link[=mack]{mack()}} for \code{mack_one_year()}) and the
+method's own fit; a missing \code{exposure} for an expected-loss method or one
+given for the chain ladder; or a refit that fails in any simulation (a
+zero value under a simple average, say), counted in the message with one
+of the failures.
 
-This is Python's \code{OdpBootstrap.one_year()}, which returns a
-\code{OneYearFit}.
+These are Python's \code{OdpBootstrap.one_year()} and
+\code{MackBootstrap.one_year()}, which return a \code{OneYearFit}.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),
@@ -144,6 +200,13 @@ bf <- odp_one_year(tri, "paid", "bornhuetter_ferguson", exposure = "premium", ap
                    n_sims = 2000, seed = 42)
 as.data.frame(bf)
 -quantile(bf@cdr, 0.005)
+
+# Under Mack's process the chain ladder's one-year view is Merz and
+# Wuthrich's, up to Monte Carlo error.
+mk <- mack_one_year(tri, "paid", n_sims = 2000, seed = 42)
+mk@model
+c(simulated = sqrt(variance(mk@cdr)),
+  merz_wuthrich = claims_development_result(mk@mack)@total_one_year_standard_error)
 }
 \seealso{
 \code{\link[=claims_development_result]{claims_development_result()}} for Merz and Wuthrich's formulas,

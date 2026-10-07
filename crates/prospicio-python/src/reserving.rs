@@ -12,9 +12,9 @@ use prospicio_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit,
     ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
     DevelopmentColumn, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, Long, Mack,
-    MackFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod,
-    ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail, TailBondy,
-    TailConstant, TailCurve, Triangle, view,
+    MackBootstrap, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap, OdpBootstrapFits,
+    OdpBootstrapSegment, OneYearFits, OneYearMethod, ProcessDistribution, ReserveFit, SegmentFits,
+    SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -4144,7 +4144,9 @@ impl PyOdpBootstrap {
         let inner = py
             .detach(|| boot.one_year_segments(tri, column, &method))
             .map_err(err)?;
-        Ok(PyOneYearFit { inner })
+        Ok(PyOneYearFit {
+            inner: OneYear::Odp(inner),
+        })
     }
 
     fn __repr__(&self) -> String {
@@ -4365,8 +4367,251 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
     )))
 }
 
+/// Mack's bootstrap for the one-year view (England, Verrall and Wüthrich
+/// 2019, Appendix 1): the scaled bias-adjusted residuals of the link
+/// ratios are resampled into pseudo factors, and every origin's next
+/// cumulative value is drawn from its observed latest value ``C`` with mean
+/// ``f* C`` and Mack's variance ``sigma**2 * C**(2 - alpha)``. Beside
+/// ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
+/// the one-year view under Mack's process: with the volume-weighted chain
+/// ladder and no tail, its standard deviation is
+/// ``MackFit.claims_development_result()``'s (Merz and Wüthrich) within
+/// Monte Carlo error. Its mean is Merz and Wüthrich's zero only with
+/// ``centre_residuals``: EVW resample the residuals uncentred, and their
+/// pool's non-zero mean biases the pseudo factors, so the mean CDR is about
+/// -0.2 (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard
+/// deviation. Simulation ``i`` uses random stream ``i`` of ``seed`` for
+/// every segment in turn.
+///
+/// Parameters
+/// ----------
+/// n_sims : int, default 10000
+///     Number of simulations; positive.
+/// seed : int, default 0
+///     Seed of the simulation streams, from 0 to ``2**64 - 1``.
+/// process : {"gamma", "lognormal", "residuals", "normal", "none"}, default "gamma"
+///     Process error on each next cumulative value: Gamma or lognormal
+///     (negated for a negative mean) or normal, with Mack's mean and
+///     variance; the mean plus a resampled residual times the standard
+///     deviation, which carries the residuals' mean and variance; or none
+///     for parameter error only.
+/// average : {"volume", "simple", "regression"}, default "volume"
+///     How Mack's model averages the link ratios (its ``alpha``).
+/// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+///     How a sigma behind a single link ratio is filled in.
+/// centre_residuals : bool, default False
+///     Subtract the residuals' mean before resampling them, so that the
+///     pseudo factors are unbiased and the mean CDR is about zero. EVW's
+///     Appendix 1 does not.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``n_sims`` is zero or a setting is unknown.
+/// OverflowError
+///     If ``n_sims`` or ``seed`` is negative or too large.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import ChainLadder, Mack, MackBootstrap, Triangle
+/// >>> tri = Triangle.from_long(
+/// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+/// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+/// ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+/// ... )
+/// >>> fit = MackBootstrap(n_sims=2000, seed=42).one_year(tri, "values", ChainLadder())
+/// >>> fit.model
+/// 'mack'
+/// >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
+/// True
+#[pyclass(name = "MackBootstrap", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyMackBootstrap {
+    inner: MackBootstrap,
+}
+
+fn mack_process(name: &str) -> PyResult<MackProcess> {
+    match name {
+        "gamma" => Ok(MackProcess::Gamma),
+        "lognormal" => Ok(MackProcess::Lognormal),
+        "residuals" => Ok(MackProcess::Residuals),
+        "normal" => Ok(MackProcess::Normal),
+        "none" => Ok(MackProcess::None),
+        _ => Err(PyValueError::new_err(format!(
+            "process must be \"gamma\", \"lognormal\", \"residuals\", \"normal\" or \"none\", \
+             got {name:?}"
+        ))),
+    }
+}
+
+fn mack_process_name(p: MackProcess) -> &'static str {
+    match p {
+        MackProcess::Gamma => "gamma",
+        MackProcess::Lognormal => "lognormal",
+        MackProcess::Residuals => "residuals",
+        MackProcess::Normal => "normal",
+        MackProcess::None => "none",
+    }
+}
+
+#[pymethods]
+impl PyMackBootstrap {
+    #[new]
+    #[pyo3(signature = (
+        n_sims = 10_000,
+        seed = 0,
+        process = "gamma",
+        average = "volume",
+        sigma_interpolation = "log-linear",
+        centre_residuals = false,
+    ))]
+    fn new(
+        n_sims: usize,
+        seed: u64,
+        process: &str,
+        average: &str,
+        sigma_interpolation: &str,
+        centre_residuals: bool,
+    ) -> PyResult<Self> {
+        if n_sims == 0 {
+            return Err(PyValueError::new_err("n_sims must be positive"));
+        }
+        Ok(Self {
+            inner: MackBootstrap {
+                n_sims,
+                seed,
+                process: mack_process(process)?,
+                development: development(average, sigma_interpolation)?,
+                centre_residuals,
+            },
+        })
+    }
+
+    /// Number of simulations.
+    #[getter]
+    fn n_sims(&self) -> usize {
+        self.inner.n_sims
+    }
+
+    /// Seed of the simulation streams.
+    #[getter]
+    fn seed(&self) -> u64 {
+        self.inner.seed
+    }
+
+    /// Process error: ``"gamma"``, ``"lognormal"``, ``"residuals"``,
+    /// ``"normal"`` or ``"none"``.
+    #[getter]
+    fn process(&self) -> &'static str {
+        mack_process_name(self.inner.process)
+    }
+
+    /// How Mack's model averages the link ratios.
+    #[getter]
+    fn average(&self) -> &'static str {
+        average_name(self.inner.development.average)
+    }
+
+    /// How a sigma behind a single link ratio is filled in.
+    #[getter]
+    fn sigma_interpolation(&self) -> &'static str {
+        sigma_interpolation_name(self.inner.development.sigma_interpolation)
+    }
+
+    /// Whether the residuals are centred before they are resampled.
+    #[getter]
+    fn centre_residuals(&self) -> bool {
+        self.inner.centre_residuals
+    }
+
+    /// The one-year view of any reserving method under Mack's process, as
+    /// ``OdpBootstrap.one_year``: each simulation draws the next diagonal
+    /// from Mack's bootstrap, appends it to the triangle, refits ``method``
+    /// and records ``CDR = opening ultimate - closing ultimate``. Mack's
+    /// model has no tail here: development past the oldest age moves only
+    /// through ``method``'s refitted tail.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative, with any number of segments, an annual development
+    ///     grain, every origin observed from the first age to its latest
+    ///     with no negative value, and every origin short of the last age on
+    ///     its segment's latest diagonal.
+    /// column : str
+    /// method : ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or CapeCod
+    ///     The method refitted at the start and at the end of the year.
+    /// exposure : str, optional
+    ///     The exposure column; required by the expected-loss methods, not
+    ///     taken by ``ChainLadder``.
+    ///
+    /// Returns
+    /// -------
+    /// OneYearFit
+    ///     With ``model == "mack"``.
+    ///
+    /// Raises
+    /// ------
+    /// TypeError
+    ///     If ``method`` is not one of the classes above.
+    /// ValueError
+    ///     As ``OdpBootstrap.one_year`` and ``Mack.fit``, and if a
+    ///     cumulative value is negative.
+    #[pyo3(signature = (triangle, column, method, exposure = None))]
+    fn one_year(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        method: &Bound<'_, PyAny>,
+        exposure: Option<String>,
+    ) -> PyResult<PyOneYearFit> {
+        let method = one_year_method(method, exposure)?;
+        let (boot, tri) = (self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| boot.one_year_segments(tri, column, &method))
+            .map_err(err)?;
+        Ok(PyOneYearFit {
+            inner: OneYear::Mack(inner),
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MackBootstrap(n_sims={}, seed={}, process={:?}, average={:?}, \
+             sigma_interpolation={:?}, centre_residuals={})",
+            self.inner.n_sims,
+            self.inner.seed,
+            self.process(),
+            self.average(),
+            self.sigma_interpolation(),
+            if self.inner.centre_residuals {
+                "True"
+            } else {
+                "False"
+            },
+        )
+    }
+}
+
+/// A one-year view from either bootstrap.
+enum OneYear {
+    Odp(OneYearFits),
+    Mack(OneYearFits<MackBootstrapSegment>),
+}
+
+/// `$body` on whichever one-year view `$fit` holds, bound to `$f`.
+macro_rules! each_one_year {
+    ($fit:expr, $f:ident => $body:expr) => {
+        match $fit {
+            OneYear::Odp($f) => $body,
+            OneYear::Mack($f) => $body,
+        }
+    };
+}
+
 /// The simulated one-year view of every segment, from
-/// ``OdpBootstrap.one_year``.
+/// ``OdpBootstrap.one_year`` or ``MackBootstrap.one_year`` (``model``
+/// says which).
 ///
 /// ``cdr`` is one joint distribution of the claims development result
 /// with the triangle's keys and ``"origin"`` as dimensions, so
@@ -4376,10 +4621,12 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 /// rows of ``to_frame()`` and the components of ``cdr``. ``fitted``,
 /// ``residuals`` and ``scale`` need a single-segment fit; for several
 /// segments use ``segment(...)`` or ``totals_frame()``. ``fitted`` and
-/// ``residuals`` are the bootstrap's, as ``OdpBootstrapFit``'s.
+/// ``scale`` are the ODP bootstrap's (``OdpBootstrapFit``'s), ``mack`` is
+/// Mack's bootstrap's model (a ``MackFit`` of every segment, as
+/// ``chain_ladder``), and ``residuals`` are either's.
 #[pyclass(name = "OneYearFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyOneYearFit {
-    inner: OneYearFits,
+    inner: OneYear,
 }
 
 impl PyOneYearFit {
@@ -4389,91 +4636,129 @@ impl PyOneYearFit {
         flat.chunks(n_dev.max(1)).map(<[f64]>::to_vec).collect()
     }
 
-    fn one(&self, field: &str, instead: &str) -> PyResult<&OdpBootstrapSegment> {
-        Ok(&single(&self.inner.segments, field, instead)?.bootstrap)
+    /// The ODP bootstrap of a single-segment ODP fit, for `field`.
+    fn odp(&self, field: &str, instead: &str) -> PyResult<&OdpBootstrapSegment> {
+        match &self.inner {
+            OneYear::Odp(f) => Ok(&single(&f.segments, field, instead)?.bootstrap),
+            OneYear::Mack(_) => Err(PyValueError::new_err(format!(
+                "{field} is the ODP bootstrap's; this one-year view is Mack's"
+            ))),
+        }
     }
 }
 
 #[pymethods]
 impl PyOneYearFit {
-    /// The bootstrap's volume-weighted chain ladder: the factors the
-    /// simulated next cells develop with.
+    /// The bootstrap's model: ``"odp"`` or ``"mack"``.
+    #[getter]
+    fn model(&self) -> &'static str {
+        match self.inner {
+            OneYear::Odp(_) => "odp",
+            OneYear::Mack(_) => "mack",
+        }
+    }
+
+    /// The bootstrap's chain ladder: the factors the simulated next cells
+    /// develop with (volume-weighted for the ODP, Mack's averaging for
+    /// Mack's).
     #[getter]
     fn chain_ladder(&self) -> PyChainLadderFit {
         PyChainLadderFit {
-            inner: self
-                .inner
+            inner: each_one_year!(&self.inner, f => f
                 .segments
-                .map(|s| s.bootstrap.chain_ladder.clone()),
+                .map(|s| s.bootstrap.chain_ladder().clone())),
+        }
+    }
+
+    /// Mack's model behind ``MackBootstrap.one_year``, with its lifetime
+    /// standard errors and ``claims_development_result()``.
+    #[getter]
+    fn mack(&self) -> PyResult<PyMackFit> {
+        match &self.inner {
+            OneYear::Mack(f) => Ok(PyMackFit {
+                inner: f.segments.map(|s| s.bootstrap.mack.clone()),
+            }),
+            OneYear::Odp(_) => Err(PyValueError::new_err(
+                "mack is Mack's bootstrap's model; this one-year view is the ODP's",
+            )),
         }
     }
 
     /// Names of the triangle's key columns; empty without keys.
     #[getter]
     fn keys(&self) -> Vec<String> {
-        self.inner.segments.key_names.clone()
+        each_one_year!(&self.inner, f => f.segments.key_names.clone())
     }
 
     /// Label of each segment, as ``Triangle.index``.
     #[getter]
     fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
-        segment_labels(py, &self.inner.segments)
+        each_one_year!(&self.inner, f => segment_labels(py, &f.segments))
     }
 
     /// Origin period of each per-origin value and CDR component.
     #[getter]
     fn origins(&self) -> Vec<String> {
-        origin_labels(&self.inner.segments)
+        each_one_year!(&self.inner, f => origin_labels(&f.segments))
     }
 
     /// Latest observed value per origin.
     #[getter]
     fn latest(&self) -> Vec<f64> {
-        by_origin(&self.inner.segments, |s| {
-            s.bootstrap.chain_ladder.latest.clone()
-        })
+        each_one_year!(&self.inner, f => by_origin(&f.segments, |s| {
+            s.bootstrap.chain_ladder().latest.clone()
+        }))
     }
 
     /// The method's ultimate per origin on the observed triangle.
     #[getter]
     fn opening_ultimate(&self) -> Vec<f64> {
-        by_origin(&self.inner.segments, |s| s.opening_ultimate.clone())
+        each_one_year!(&self.inner, f => by_origin(&f.segments, |s| s.opening_ultimate.clone()))
     }
 
     /// The opening ultimate less the latest value, per origin.
     #[getter]
     fn opening_reserve(&self) -> Vec<f64> {
-        by_origin(&self.inner.segments, |s| s.opening_reserve.clone())
+        each_one_year!(&self.inner, f => by_origin(&f.segments, |s| s.opening_reserve.clone()))
     }
 
     /// Development ages in months.
     #[getter]
     fn development(&self) -> Vec<Lag> {
-        self.inner.segments.fits[0]
+        each_one_year!(&self.inner, f => f.segments.fits[0]
             .bootstrap
-            .chain_ladder
+            .chain_ladder()
             .development
             .development
-            .clone()
+            .clone())
     }
 
-    /// The bootstrap's fitted incremental values, ``[origin][development]``.
+    /// The ODP bootstrap's fitted incremental values,
+    /// ``[origin][development]``.
     #[getter]
     fn fitted(&self) -> PyResult<Vec<Vec<f64>>> {
-        Ok(self.grid(&self.one("fitted", "")?.fitted))
+        Ok(self.grid(&self.odp("fitted", "")?.fitted))
     }
 
-    /// The bootstrap's adjusted Pearson residuals, as
-    /// ``OdpBootstrapFit.residuals``, ``[origin][development]``.
+    /// The residuals the bootstrap resamples, ``[origin][development]``:
+    /// the ODP's adjusted Pearson residuals, as
+    /// ``OdpBootstrapFit.residuals``, or Mack's scaled bias-adjusted
+    /// residuals of the link ratios, ``[o][k]`` the link from age ``k`` to
+    /// ``k + 1`` (``nan`` where there is none, from a zero, or behind a
+    /// factor with a single link ratio).
     #[getter]
     fn residuals(&self) -> PyResult<Vec<Vec<f64>>> {
-        Ok(self.grid(&self.one("residuals", "")?.residuals))
+        let flat = match &self.inner {
+            OneYear::Odp(f) => &single(&f.segments, "residuals", "")?.bootstrap.residuals,
+            OneYear::Mack(f) => &single(&f.segments, "residuals", "")?.bootstrap.residuals,
+        };
+        Ok(self.grid(flat))
     }
 
-    /// The bootstrap's scale parameter ``phi``.
+    /// The ODP bootstrap's scale parameter ``phi``.
     #[getter]
     fn scale(&self) -> PyResult<f64> {
-        Ok(self.one("scale", "totals_frame()")?.scale)
+        Ok(self.odp("scale", "totals_frame()")?.scale)
     }
 
     /// Joint distribution of the claims development result (opening less
@@ -4485,7 +4770,7 @@ impl PyOneYearFit {
     #[getter]
     fn cdr(&self) -> PyPredictiveDistribution {
         PyPredictiveDistribution {
-            inner: self.inner.cdr.clone(),
+            inner: each_one_year!(&self.inner, f => f.cdr.clone()),
         }
     }
 
@@ -4498,19 +4783,19 @@ impl PyOneYearFit {
     /// -------
     /// pandas.DataFrame
     fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        table_frame(py, self.inner.to_long())
+        table_frame(py, each_one_year!(&self.inner, f => f.to_long()))
     }
 
     /// One row per segment: the key columns, the totals of ``to_frame()``'s
-    /// columns, the bootstrap's ``scale``, and the ``cdr_mean`` and
-    /// ``cdr_std_dev`` of the segment's total claims development result.
-    /// Needs pandas.
+    /// columns, the ODP bootstrap's ``scale`` (not for Mack's), and the
+    /// ``cdr_mean`` and ``cdr_std_dev`` of the segment's total claims
+    /// development result. Needs pandas.
     ///
     /// Returns
     /// -------
     /// pandas.DataFrame
     fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        table_frame(py, self.inner.totals())
+        table_frame(py, each_one_year!(&self.inner, f => f.totals()))
     }
 
     /// The bootstrap's chain ladders' development factors, one row per
@@ -4521,7 +4806,10 @@ impl PyOneYearFit {
     /// -------
     /// pandas.DataFrame
     fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        table_frame(py, self.inner.segments.development_table())
+        table_frame(
+            py,
+            each_one_year!(&self.inner, f => f.segments.development_table()),
+        )
     }
 
     /// The one-year view of one segment, chosen by key values as
@@ -4535,21 +4823,28 @@ impl PyOneYearFit {
     fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let keys = segment_keys(keys)?;
         let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-        Ok(Self {
-            inner: self.inner.segment(&keys).map_err(err)?,
-        })
+        let inner = match &self.inner {
+            OneYear::Odp(f) => OneYear::Odp(f.segment(&keys).map_err(err)?),
+            OneYear::Mack(f) => OneYear::Mack(f.segment(&keys).map_err(err)?),
+        };
+        Ok(Self { inner })
     }
 
     fn __repr__(&self) -> String {
-        let scale = match self.inner.segments.fits.as_slice() {
-            [one] => format!(", scale={:?}", one.bootstrap.scale),
-            _ => String::new(),
+        let (prefix, n_sims) = each_one_year!(&self.inner, f => (
+            segments_prefix(&f.segments),
+            f.cdr.n_sims(),
+        ));
+        let detail = match &self.inner {
+            OneYear::Odp(f) => match f.segments.fits.as_slice() {
+                [one] => format!(", scale={:?}", one.bootstrap.scale),
+                _ => String::new(),
+            },
+            OneYear::Mack(_) => ", model=\"mack\"".to_string(),
         };
         format!(
-            "OneYearFit({}origins={}, n_sims={}{scale})",
-            segments_prefix(&self.inner.segments),
+            "OneYearFit({prefix}origins={}, n_sims={n_sims}{detail})",
             self.origins().len(),
-            self.inner.cdr.n_sims(),
         )
     }
 }

@@ -1522,6 +1522,25 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' from 0.50 to 5.98 times
 #' (`knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`).
 #'
+#' `mack_one_year()` re-reserves the same way under Mack's process instead,
+#' England, Verrall and Wuthrich's (2019, Appendix 1) bootstrap of Mack's
+#' model: each simulation resamples the scaled bias-adjusted residuals of
+#' the link ratios into pseudo factors, averaged as `mack_average`, and
+#' draws every origin's next cumulative value from its observed latest
+#' value `C` with mean `f* C` and variance `sigma^2 C^(2 - alpha)`. With the
+#' volume-weighted chain ladder and no tail, its standard deviations are
+#' Merz and Wuthrich's ([claims_development_result()]) within Monte Carlo
+#' error, which reconciles the two. The reconciliation is of the standard
+#' deviation: EVW resample the residuals uncentred, and their pool's
+#' non-zero mean biases the pseudo factors, so the mean CDR is about -0.2
+#' (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation
+#' rather than Merz and Wuthrich's zero. `centre_residuals = TRUE` centres
+#' the pool first, which brings the mean to about zero and keeps the
+#' standard deviation. Mack's model has no tail here: the
+#' development past the oldest age moves only through `method`'s refitted
+#' tail. Its fit has `model = "mack"`, no `scale`, and `mack`, the
+#' [mack_fit] it simulates from; it needs no negative cumulative value.
+#'
 #' Every segment of the triangle is bootstrapped on its own, with its own
 #' residuals and scale, into one joint distribution of the CDR; simulation
 #' `i` uses random stream `i` of `seed` for every segment in turn, so
@@ -1542,17 +1561,33 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' `as.data.frame()` has one row per segment and origin: `origin`,
 #' `latest`, `opening_ultimate`, `opening_reserve`, and the `cdr_mean` and
 #' `cdr_std_dev` of the simulated CDR; [totals_frame()] one per segment,
-#' with the bootstrap's `scale` too.
+#' with the ODP bootstrap's `scale` too. `model` is `"odp"` or `"mack"`.
 #'
-#' Errors: as [odp_bootstrap()] and the method's own fit; a missing
-#' `exposure` for an expected-loss method or one given for the chain
-#' ladder; or a refit that fails in any simulation (a zero value under a
-#' simple average, say), counted in the message with one of the failures.
+#' Errors: as [odp_bootstrap()] (or [mack()] for `mack_one_year()`) and the
+#' method's own fit; a missing `exposure` for an expected-loss method or one
+#' given for the chain ladder; or a refit that fails in any simulation (a
+#' zero value under a simple average, say), counted in the message with one
+#' of the failures.
 #'
-#' This is Python's `OdpBootstrap.one_year()`, which returns a
-#' `OneYearFit`.
+#' These are Python's `OdpBootstrap.one_year()` and
+#' `MackBootstrap.one_year()`, which return a `OneYearFit`.
 #'
 #' @inheritParams odp_bootstrap_fit
+#' @param process Process error. For `odp_one_year()`, on each simulated
+#'   incremental value: `"gamma"` (mean the expected value, variance
+#'   `scale * |mean|`) or `"none"` for parameter error only. For
+#'   `mack_one_year()`, on each next cumulative value: `"gamma"` or
+#'   `"lognormal"` (negated for a negative mean) or `"normal"`, with Mack's
+#'   mean and variance; `"residuals"` (the mean plus a resampled residual
+#'   times the standard deviation, which carries the residuals' mean and
+#'   variance); or `"none"`.
+#' @param mack_average,mack_sigma_interpolation How Mack's model in
+#'   `mack_one_year()` averages the link ratios and fills in a sigma behind
+#'   a single link ratio, as in [mack()].
+#' @param centre_residuals For `mack_one_year()`, subtract the residuals'
+#'   mean before resampling them, so that the pseudo factors are unbiased
+#'   and the mean CDR is about zero. England, Verrall and Wuthrich's
+#'   Appendix 1 does not, hence the default `FALSE`.
 #' @param column Name of the loss column; by default the only one.
 #' @param method The reserving method refitted at the start and at the end
 #'   of the year: `"chain_ladder"`, `"expected_loss"`,
@@ -1585,6 +1620,13 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'                    n_sims = 2000, seed = 42)
 #' as.data.frame(bf)
 #' -quantile(bf@cdr, 0.005)
+#'
+#' # Under Mack's process the chain ladder's one-year view is Merz and
+#' # Wuthrich's, up to Monte Carlo error.
+#' mk <- mack_one_year(tri, "paid", n_sims = 2000, seed = 42)
+#' mk@model
+#' c(simulated = sqrt(variance(mk@cdr)),
+#'   merz_wuthrich = claims_development_result(mk@mack)@total_one_year_standard_error)
 one_year_fit <- S7::new_class(
   "one_year_fit",
   package = "prospicio",
@@ -1596,7 +1638,11 @@ one_year_fit <- S7::new_class(
     }
     list(
       ptr = S7::new_S3_class("OneYearFit"),
+      model = S7::new_property(S7::class_character, getter = function(self) self@ptr$model()),
       chain_ladder = chain_ladder_fit,
+      mack = S7::new_property(S7::class_any, getter = function(self) {
+        mack_fit(ptr = rust_result(self@ptr$mack(), call = NULL))
+      }),
       keys = S7::new_property(S7::class_character, getter = function(self) self@chain_ladder@keys),
       index = S7::new_property(S7::class_data.frame, getter = function(self) self@chain_ladder@index),
       origins = S7::new_property(S7::class_character, getter = function(self) self@chain_ladder@origins),
@@ -1630,8 +1676,49 @@ odp_one_year <- function(triangle, column = NULL,
   column <- fit_column(triangle, column)
   method <- match.arg(method)
   process <- match.arg(process)
-  given <- c(apriori = !missing(apriori), n_iters = !missing(n_iters), trend = !missing(trend),
-             decay = !missing(decay))
+  check_one_year_settings(method, exposure, c(apriori = !missing(apriori),
+                                              n_iters = !missing(n_iters),
+                                              trend = !missing(trend), decay = !missing(decay)))
+  args <- development_args(average, sigma_interpolation)
+  ptr <- rust_result(triangle@ptr$odp_one_year(
+    column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
+    tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process
+  ))
+  one_year_fit(ptr = ptr)
+}
+
+#' @rdname one_year_fit
+#' @export
+mack_one_year <- function(triangle, column = NULL,
+                          method = c("chain_ladder", "expected_loss", "bornhuetter_ferguson",
+                                     "benktander", "cape_cod"),
+                          exposure = NULL, apriori = 1, n_iters = 1, trend = 0, decay = 1,
+                          average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                          n_sims = 10000, seed = 0,
+                          process = c("gamma", "lognormal", "residuals", "normal", "none"),
+                          mack_average = "volume", mack_sigma_interpolation = "log-linear",
+                          centre_residuals = FALSE) {
+  column <- fit_column(triangle, column)
+  method <- match.arg(method)
+  process <- match.arg(process)
+  check_one_year_settings(method, exposure, c(apriori = !missing(apriori),
+                                              n_iters = !missing(n_iters),
+                                              trend = !missing(trend), decay = !missing(decay)))
+  args <- development_args(average, sigma_interpolation)
+  model <- development_args(mack_average, mack_sigma_interpolation)
+  ptr <- rust_result(triangle@ptr$mack_one_year(
+    column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
+    tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
+    model$average, model$sigma, isTRUE(centre_residuals)
+  ))
+  one_year_fit(ptr = ptr)
+}
+
+# A one-year view's method reads only its own settings (`given` says which
+# were passed), and `exposure` is NULL or one column name.
+check_one_year_settings <- function(method, exposure, given) {
   reads <- list(apriori = c("expected_loss", "bornhuetter_ferguson", "benktander"),
                 n_iters = "benktander", trend = "cape_cod", decay = "cape_cod")
   for (arg in names(given)[given]) {
@@ -1642,13 +1729,6 @@ odp_one_year <- function(triangle, column = NULL,
   if (!is.null(exposure) && (!is.character(exposure) || length(exposure) != 1 || is.na(exposure))) {
     stop("exposure must be the name of a column", call. = FALSE)
   }
-  args <- development_args(average, sigma_interpolation)
-  ptr <- rust_result(triangle@ptr$odp_one_year(
-    column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
-    single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
-    tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process
-  ))
-  one_year_fit(ptr = ptr)
 }
 
 #' Clark's growth-curve methods
@@ -1973,6 +2053,8 @@ S7::method(print, one_year_fit) <- function(x, ...) {
   p <- x@chain_ladder@ptr
   if (p$n_segments() > 1) {
     cat(sprintf("<one_year_fit> %d simulations%s\n", as.integer(cdr@n_sims), segments_note(p)))
+  } else if (x@model == "mack") {
+    cat(sprintf("<one_year_fit> %d simulations of Mack's bootstrap\n", as.integer(cdr@n_sims)))
   } else {
     cat(sprintf("<one_year_fit> %d simulations, scale %s\n", as.integer(cdr@n_sims),
                 format(x@scale, digits = 6)))

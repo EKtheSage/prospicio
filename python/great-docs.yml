@@ -156,6 +156,7 @@ reference:
       - reserving.CapeCodFit
       - reserving.OdpBootstrap
       - reserving.OdpBootstrapFit
+      - reserving.MackBootstrap
       - reserving.OneYearFit
       - reserving.ClarkLdf
       - reserving.ClarkCapeCod

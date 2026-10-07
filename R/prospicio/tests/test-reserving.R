@@ -1129,4 +1129,60 @@ zero_new <- triangle(data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022), ag
 expect_error_like(odp_one_year(zero_new, n_sims = 20, average = "simple"),
                   "re-reserving failed in 20 of 20 simulations")
 
+# The one-year view under Mack's process (mack_one_year), as in
+# validation/tests/reserving_one_year_mack.rs: the reconciliation with Merz
+# and Wuthrich. Every origin's and the total standard deviation is R
+# ChainLadder's CDR(1)S.E. (validation/reference/reserving_cdr_r.csv) within
+# five Monte Carlo standard errors.
+mk <- mack_one_year(raa, n_sims = 20000, seed = 20261006)
+stopifnot(S7::S7_inherits(mk, one_year_fit), identical(mk@model, "mack"), identical(one@model, "odp"),
+          provenance(mk@cdr)$model == "mack_bootstrap_one_year",
+          S7::S7_inherits(mk@mack, mack_fit),
+          identical(mk@mack@standard_error, mack(raa)@standard_error),
+          identical(mk@opening_ultimate, chain_ladder(raa)@ultimate),
+          all(draw_matrix(mk@cdr)[, 1] == 0))
+mk_draws <- draw_matrix(mk@cdr)
+for (j in seq_along(raa@origins)[-1]) {
+  want <- cdr_ref$expected[cdr_ref$dataset == "raa" & cdr_ref$method == "cdr" &
+                             cdr_ref$quantity == "one_year_se" & cdr_ref$arg == raa@origins[j]]
+  got <- sd_and_error(mk_draws[, j])
+  stopifnot(length(want) == 1, abs(got[["sd"]] - want) <= 5 * got[["error"]])
+}
+mk_total <- sd_and_error(rowSums(mk_draws))
+stopifnot(abs(mk_total[["sd"]] - mw_total) <= 5 * mk_total[["error"]],
+          isTRUE(all.equal(claims_development_result(mk@mack)@total_one_year_standard_error, mw_total,
+                           tolerance = 1e-9)))
+stopifnot(identical(names(totals_frame(mk)), c("latest", "opening_ultimate", "opening_reserve",
+                                               "cdr_mean", "cdr_std_dev")))
+expect_error_like(mk@scale, "scale is the ODP bootstrap's")
+expect_error_like(one@mack, "mack is Mack's bootstrap's model")
+invisible(utils::capture.output(print(mk)))
+# Settings: Mack's averaging and every process; the method keeps its own.
+simple_mk <- mack_one_year(raa, n_sims = 200, seed = 1, process = "normal", mack_average = "simple",
+                           tail = 1.05)
+stopifnot(identical(simple_mk@chain_ladder@ldf, mack(raa, average = "simple")@ldf),
+          identical(simple_mk@opening_ultimate, chain_ladder(raa, tail = 1.05)@ultimate))
+for (process in c("gamma", "lognormal", "residuals", "normal", "none")) {
+  stopifnot(mack_one_year(raa, n_sims = 10, process = process)@cdr@n_sims == 10)
+}
+# Mack's rule for the last sigma reaches the model (it differs from the
+# log-linear one only there).
+by_rule <- mack_one_year(raa, n_sims = 10, mack_sigma_interpolation = "mack")
+stopifnot(identical(by_rule@mack@sigma, mack(raa, sigma_interpolation = "mack")@sigma),
+          !identical(by_rule@mack@sigma, mack(raa)@sigma))
+# Centring the residuals changes the draws, not the model.
+centred <- mack_one_year(raa, n_sims = 50, seed = 1, centre_residuals = TRUE)
+plain <- mack_one_year(raa, n_sims = 50, seed = 1)
+stopifnot(!identical(draw_matrix(centred@cdr), draw_matrix(plain@cdr)),
+          identical(centred@mack@sigma, plain@mack@sigma))
+bf_mk <- mack_one_year(gp, "paid", "bornhuetter_ferguson", exposure = "premium", apriori = 0.6,
+                       n_sims = 300, seed = 4)
+stopifnot(identical(bf_mk@opening_ultimate, bornhuetter_ferguson(gp, "paid", "premium", apriori = 0.6)@ultimate))
+lob_mk <- mack_one_year(both, "paid", n_sims = 100, seed = 5)
+stopifnot(identical(lob_mk@cdr@dims, c("lob", "origin")), identical(segment(lob_mk, lob = "clrd_wkcomp")@model, "mack"))
+expect_error_like(mack_one_year(raa, process = "poisson"), "should be one of")
+expect_error_like(mack_one_year(raa, mack_average = "median"), "should be one of")
+expect_error_like(mack_one_year(raa, apriori = 0.7), "method \"chain_ladder\" does not use apriori")
+expect_error_like(mack_one_year(raa, n_sims = 0), "n_sims must be positive")
+
 cat("prospicio R reserving tests passed\n")

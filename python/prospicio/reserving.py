@@ -1,7 +1,8 @@
 """Reserving: the loss triangle, the chain ladder with tail factors, Mack's
 model with its one-year view, the expected-loss methods, Clark's growth
 curves, and the ODP bootstrap with its simulated one-year view of the chain
-ladder and the expected-loss methods (docs/design/triangle.md,
+ladder and the expected-loss methods, and Mack's bootstrap for the one-year
+view under Mack's process (docs/design/triangle.md,
 docs/design/reserving-v02.md)."""
 
 from .prospicio_native import (
@@ -18,6 +19,7 @@ from .prospicio_native import (
     ExpectedLoss,
     ExpectedLossFit,
     Mack,
+    MackBootstrap,
     MackFit,
     OdpBootstrap,
     OdpBootstrapFit,
@@ -47,6 +49,7 @@ __all__ = [
     "ClarkFit",
     "OdpBootstrap",
     "OdpBootstrapFit",
+    "MackBootstrap",
     "OneYearFit",
     "TailConstant",
     "TailCurve",
