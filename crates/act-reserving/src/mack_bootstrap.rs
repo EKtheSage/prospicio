@@ -29,7 +29,10 @@
 //! ([`crate::one_year_bootstrap`]). The sigmas are the observed triangle's,
 //! those behind a single link ratio interpolated as [`Mack`] does. A link
 //! from a zero value has no variance in Mack's model: it keeps its observed
-//! later value and gives no residual.
+//! later value and gives no residual. Nor does a factor whose sigma is zero
+//! (its link ratios all equal): its residuals would be `0 / 0`, and zeros
+//! in their place would shrink the pool's variance and every factor's
+//! parameter error, so it gives none and its pseudo factor is its factor.
 //!
 //! The residuals of each factor have a zero `C_k^(alpha / 2)`-weighted
 //! sum, not a zero mean, so the pool's mean `m` is not zero (RAA 0.14,
@@ -100,9 +103,9 @@ impl MackProcess {
             Self::Gamma | Self::Lognormal if mean == 0.0 => mean,
             Self::Gamma => {
                 let m = mean.abs();
-                // `m / variance` first: `m * m` underflows for a value near
-                // zero, which a later cell of the year can be drawn from.
-                match Gamma::new(m / variance * m, variance / m) {
+                // `m * m` underflows for a value near zero, which a later
+                // cell of the year can be drawn from: see `vanishing`.
+                match Gamma::new(m * m / variance, variance / m) {
                     Ok(gamma) => mean.signum() * gamma.sample(rng, 1)[0],
                     Err(_) => vanishing(mean, variance),
                 }
@@ -224,7 +227,8 @@ pub struct MackBootstrapSegment {
     /// The scaled bias-adjusted residuals of the link ratios, row-major
     /// over origin × development: element `(o, k)` is the link from age `k`
     /// to `k + 1`. NaN where there is no link, its earlier value is zero,
-    /// or its factor rests on a single link ratio. Never centred, whatever
+    /// or its factor rests on a single link ratio or has a zero sigma.
+    /// Never centred, whatever
     /// [`MackBootstrap::centre_residuals`] says.
     pub residuals: Vec<f64>,
 }
@@ -284,7 +288,11 @@ impl NextYear for MackBootstrapSegment {
                     num += power(c, alpha - 1.0) * c1;
                     continue;
                 }
-                let r = resample(&draw.pool, rng);
+                let r = if sigma[k] == 0.0 {
+                    0.0
+                } else {
+                    resample(&draw.pool, rng)
+                };
                 num += power(c, alpha - 1.0) * (c * (f[k] + r * sigma[k] / power(c, alpha / 2.0)));
                 den += power(c, alpha);
             }
@@ -396,21 +404,20 @@ impl MackBootstrap {
                 .filter_map(|o| Some((o, segment.get(o, k)?, segment.get(o, k + 1)?)))
                 .collect();
             let informative = pairs.iter().filter(|p| p.1 != 0.0).count();
-            if informative > 1 {
+            if informative > 1 && sigma[k] != 0.0 {
                 let n = informative as f64;
                 for &(o, c, c1) in pairs.iter().filter(|p| p.1 != 0.0) {
-                    let r = if sigma[k] == 0.0 {
-                        0.0
-                    } else {
-                        (n / (n - 1.0)).sqrt() * power(c, alpha / 2.0) * (c1 / c - f[k]) / sigma[k]
-                    };
+                    let r =
+                        (n / (n - 1.0)).sqrt() * power(c, alpha / 2.0) * (c1 / c - f[k]) / sigma[k];
                     residuals[o * nd + k] = r;
                     pool.push(r);
                 }
             }
             links.push(pairs.iter().map(|&(_, c, c1)| (c, c1)).collect());
         }
-        if pool.is_empty() {
+        // With every sigma zero nothing is resampled: no parameter or
+        // process error.
+        if pool.is_empty() && sigma.iter().any(|&s| s != 0.0) {
             return Err(Error::Bootstrap("no residuals to resample"));
         }
         if self.centre_residuals {

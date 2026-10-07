@@ -1405,6 +1405,32 @@ mod tests {
     }
 
     #[test]
+    fn zero_sigma_links_give_mack_no_residuals() {
+        // A split's first-year quarterly link ratios are 2, 3/2 and 4/3 for
+        // every origin, so those three sigmas are zero and their residuals
+        // 0 / 0. Left out, the pool keeps the annual one's mean square of 1
+        // (each volume-weighted factor's squared residuals sum to its
+        // number of link ratios); as zeros it was 0.854 (176 of 206).
+        let split = quarterly(1981, &RAA, &[1.0; 10]);
+        let fit = crate::MackBootstrap {
+            n_sims: 1,
+            ..Default::default()
+        }
+        .one_year(&split, "paid", &chain_ladder())
+        .unwrap();
+        let sigma = &fit.bootstrap.mack.chain_ladder.development.sigma;
+        assert!(sigma[..3].iter().all(|&s| s == 0.0), "{sigma:?}");
+        assert!(sigma[3..].iter().all(|&s| s > 0.0), "{sigma:?}");
+        let nd = 40;
+        let r = &fit.bootstrap.residuals;
+        assert!((0..10).all(|o| (0..3).all(|k| r[o * nd + k].is_nan())));
+        let pool: Vec<f64> = r.iter().copied().filter(|x| !x.is_nan()).collect();
+        assert_eq!(pool.len(), 176);
+        let mean_square = pool.iter().map(|x| x * x).sum::<f64>() / pool.len() as f64;
+        assert!((mean_square - 1.0).abs() < 1e-12, "{mean_square}");
+    }
+
+    #[test]
     fn quarterly_exact_pattern_has_zero_mack_cdr() {
         // Mack's model on an exact pattern has every sigma zero, so no
         // parameter or process error, at either grain. (A fifth origin
