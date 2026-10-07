@@ -1165,6 +1165,16 @@ stopifnot(identical(simple_mk@chain_ladder@ldf, mack(raa, average = "simple")@ld
 for (process in c("gamma", "lognormal", "residuals", "normal", "none")) {
   stopifnot(mack_one_year(raa, n_sims = 10, process = process)@cdr@n_sims == 10)
 }
+# Mack's rule for the last sigma reaches the model (it differs from the
+# log-linear one only there).
+by_rule <- mack_one_year(raa, n_sims = 10, mack_sigma_interpolation = "mack")
+stopifnot(identical(by_rule@mack@sigma, mack(raa, sigma_interpolation = "mack")@sigma),
+          !identical(by_rule@mack@sigma, mack(raa)@sigma))
+# Centring the residuals changes the draws, not the model.
+centred <- mack_one_year(raa, n_sims = 50, seed = 1, centre_residuals = TRUE)
+plain <- mack_one_year(raa, n_sims = 50, seed = 1)
+stopifnot(!identical(draw_matrix(centred@cdr), draw_matrix(plain@cdr)),
+          identical(centred@mack@sigma, plain@mack@sigma))
 bf_mk <- mack_one_year(gp, "paid", "bornhuetter_ferguson", exposure = "premium", apriori = 0.6,
                        n_sims = 300, seed = 4)
 stopifnot(identical(bf_mk@opening_ultimate, bornhuetter_ferguson(gp, "paid", "premium", apriori = 0.6)@ultimate))

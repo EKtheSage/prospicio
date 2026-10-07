@@ -771,8 +771,9 @@ impl Triangle {
 
     /// The one-year view of `method`, as `odp_one_year`, under Mack's
     /// process: Mack's bootstrap with `process` ("gamma", "lognormal",
-    /// "residuals", "normal" or "none") and Mack's model averaged as
-    /// `mack_average` with `mack_sigma_interpolation`.
+    /// "residuals", "normal" or "none"), Mack's model averaged as
+    /// `mack_average` with `mack_sigma_interpolation`, and the residuals
+    /// centred before resampling if `centre_residuals`.
     #[allow(clippy::too_many_arguments)]
     fn mack_one_year(
         &self,
@@ -791,6 +792,7 @@ impl Triangle {
         process: &str,
         mack_average: &str,
         mack_sigma_interpolation: &str,
+        centre_residuals: bool,
     ) -> Result<OneYearFit> {
         let method = one_year_method(
             method,
@@ -823,7 +825,7 @@ impl Triangle {
             seed: whole(seed, "seed")?,
             process,
             development: development(mack_average, mack_sigma_interpolation)?,
-            centre_residuals: false,
+            centre_residuals,
         }
         .one_year_segments(&self.inner, column, &method)
         .map_err(to_r)?;

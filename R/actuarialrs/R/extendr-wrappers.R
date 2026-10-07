@@ -1142,7 +1142,7 @@ Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Tr
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process)
 
-Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation) .Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation)
+Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals) .Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals)
 
 Triangle$clark_ldf <- function(column, curve, max_age) .Call(wrap__Triangle__clark_ldf, self, column, curve, max_age)
 

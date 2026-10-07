@@ -43,7 +43,8 @@ mack_one_year(
   seed = 0,
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   mack_average = "volume",
-  mack_sigma_interpolation = "log-linear"
+  mack_sigma_interpolation = "log-linear",
+  centre_residuals = FALSE
 )
 }
 \arguments{
@@ -75,14 +76,20 @@ pattern of \code{method}, as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 \item{process}{Process error. For \code{odp_one_year()}, on each simulated
 incremental value: \code{"gamma"} (mean the expected value, variance
 \verb{scale * |mean|}) or \code{"none"} for parameter error only. For
-\code{mack_one_year()}, on each next cumulative value, all with Mack's mean
-and variance: \code{"gamma"} or \code{"lognormal"} (negated for a negative mean),
-\code{"residuals"} (the mean plus a resampled residual times the standard
-deviation), \code{"normal"}, or \code{"none"}.}
+\code{mack_one_year()}, on each next cumulative value: \code{"gamma"} or
+\code{"lognormal"} (negated for a negative mean) or \code{"normal"}, with Mack's
+mean and variance; \code{"residuals"} (the mean plus a resampled residual
+times the standard deviation, which carries the residuals' mean and
+variance); or \code{"none"}.}
 
 \item{mack_average, mack_sigma_interpolation}{How Mack's model in
 \code{mack_one_year()} averages the link ratios and fills in a sigma behind
 a single link ratio, as in \code{\link[=mack]{mack()}}.}
+
+\item{centre_residuals}{For \code{mack_one_year()}, subtract the residuals'
+mean before resampling them, so that the pseudo factors are unbiased
+and the mean CDR is about zero. England, Verrall and Wuthrich's
+Appendix 1 does not, hence the default \code{FALSE}.}
 }
 \value{
 A \code{one_year_fit} object.
@@ -134,7 +141,13 @@ draws every origin's next cumulative value from its observed latest
 value \code{C} with mean \code{f* C} and variance \verb{sigma^2 C^(2 - alpha)}. With the
 volume-weighted chain ladder and no tail, its standard deviations are
 Merz and Wuthrich's (\code{\link[=claims_development_result]{claims_development_result()}}) within Monte Carlo
-error, which reconciles the two. Mack's model has no tail here: the
+error, which reconciles the two. The reconciliation is of the standard
+deviation: EVW resample the residuals uncentred, and their pool's
+non-zero mean biases the pseudo factors, so the mean CDR is about -0.2
+(RAA), -0.04 (GenIns) and +0.17 (ABC) times its standard deviation
+rather than Merz and Wuthrich's zero. \code{centre_residuals = TRUE} centres
+the pool first, which brings the mean to about zero and keeps the
+standard deviation. Mack's model has no tail here: the
 development past the oldest age moves only through \code{method}'s refitted
 tail. Its fit has \code{model = "mack"}, no \code{scale}, and \code{mack}, the
 \link{mack_fit} it simulates from; it needs no negative cumulative value.

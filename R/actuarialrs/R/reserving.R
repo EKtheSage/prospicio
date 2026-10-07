@@ -1530,7 +1530,13 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' value `C` with mean `f* C` and variance `sigma^2 C^(2 - alpha)`. With the
 #' volume-weighted chain ladder and no tail, its standard deviations are
 #' Merz and Wuthrich's ([claims_development_result()]) within Monte Carlo
-#' error, which reconciles the two. Mack's model has no tail here: the
+#' error, which reconciles the two. The reconciliation is of the standard
+#' deviation: EVW resample the residuals uncentred, and their pool's
+#' non-zero mean biases the pseudo factors, so the mean CDR is about -0.2
+#' (RAA), -0.04 (GenIns) and +0.17 (ABC) times its standard deviation
+#' rather than Merz and Wuthrich's zero. `centre_residuals = TRUE` centres
+#' the pool first, which brings the mean to about zero and keeps the
+#' standard deviation. Mack's model has no tail here: the
 #' development past the oldest age moves only through `method`'s refitted
 #' tail. Its fit has `model = "mack"`, no `scale`, and `mack`, the
 #' [mack_fit] it simulates from; it needs no negative cumulative value.
@@ -1570,13 +1576,18 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param process Process error. For `odp_one_year()`, on each simulated
 #'   incremental value: `"gamma"` (mean the expected value, variance
 #'   `scale * |mean|`) or `"none"` for parameter error only. For
-#'   `mack_one_year()`, on each next cumulative value, all with Mack's mean
-#'   and variance: `"gamma"` or `"lognormal"` (negated for a negative mean),
-#'   `"residuals"` (the mean plus a resampled residual times the standard
-#'   deviation), `"normal"`, or `"none"`.
+#'   `mack_one_year()`, on each next cumulative value: `"gamma"` or
+#'   `"lognormal"` (negated for a negative mean) or `"normal"`, with Mack's
+#'   mean and variance; `"residuals"` (the mean plus a resampled residual
+#'   times the standard deviation, which carries the residuals' mean and
+#'   variance); or `"none"`.
 #' @param mack_average,mack_sigma_interpolation How Mack's model in
 #'   `mack_one_year()` averages the link ratios and fills in a sigma behind
 #'   a single link ratio, as in [mack()].
+#' @param centre_residuals For `mack_one_year()`, subtract the residuals'
+#'   mean before resampling them, so that the pseudo factors are unbiased
+#'   and the mean CDR is about zero. England, Verrall and Wuthrich's
+#'   Appendix 1 does not, hence the default `FALSE`.
 #' @param column Name of the loss column; by default the only one.
 #' @param method The reserving method refitted at the start and at the end
 #'   of the year: `"chain_ladder"`, `"expected_loss"`,
@@ -1686,7 +1697,8 @@ mack_one_year <- function(triangle, column = NULL,
                           average = "volume", sigma_interpolation = "log-linear", tail = 1,
                           n_sims = 10000, seed = 0,
                           process = c("gamma", "lognormal", "residuals", "normal", "none"),
-                          mack_average = "volume", mack_sigma_interpolation = "log-linear") {
+                          mack_average = "volume", mack_sigma_interpolation = "log-linear",
+                          centre_residuals = FALSE) {
   column <- fit_column(triangle, column)
   method <- match.arg(method)
   process <- match.arg(process)
@@ -1699,7 +1711,7 @@ mack_one_year <- function(triangle, column = NULL,
     column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
     tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
-    model$average, model$sigma
+    model$average, model$sigma, isTRUE(centre_residuals)
   ))
   one_year_fit(ptr = ptr)
 }
