@@ -4469,6 +4469,7 @@ impl PyMackBootstrap {
                 seed,
                 process: mack_process(process)?,
                 development: development(average, sigma_interpolation)?,
+                centre_residuals: false,
             },
         })
     }

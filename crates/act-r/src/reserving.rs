@@ -823,6 +823,7 @@ impl Triangle {
             seed: whole(seed, "seed")?,
             process,
             development: development(mack_average, mack_sigma_interpolation)?,
+            centre_residuals: false,
         }
         .one_year_segments(&self.inner, column, &method)
         .map_err(to_r)?;

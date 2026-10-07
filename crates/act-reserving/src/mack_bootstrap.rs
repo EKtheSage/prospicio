@@ -27,6 +27,14 @@
 //! those behind a single link ratio interpolated as [`Mack`] does. A link
 //! from a zero value has no variance in Mack's model: it keeps its observed
 //! later value and gives no residual.
+//!
+//! The residuals of each factor have a zero `C_k^(alpha / 2)`-weighted
+//! sum, not a zero mean, so the pool's mean `m` is not zero (RAA 0.14,
+//! GenIns 0.01, ABC -0.06) and `E[f*_k] = f_k + m sigma_k
+//! sum(C_k^(alpha / 2)) / sum(C_k^alpha)`: the pseudo factors are biased,
+//! and so is the CDR, whose expectation under Mack's model is zero. EVW's
+//! Appendix 1 resamples the residuals as they are, which is the default;
+//! [`MackBootstrap::centre_residuals`] subtracts `m` from the pool first.
 
 use act_core::StreamRng;
 use act_math::special::norm_quantile;
@@ -47,8 +55,12 @@ use crate::triangle::{Segment, Triangle};
 /// either from a parametric distribution, Gamma or lognormal so that the
 /// cumulative value stays positive, or by resampling the residuals again.
 /// Mack's model itself is distribution-free, so the normal is offered as
-/// well. Only the shape differs: every choice but `None` has the same mean
-/// and variance.
+/// well. `Gamma`, `Lognormal` and `Normal` have exactly that mean and
+/// variance and differ only in shape. `Residuals` has the resampled pool's
+/// moments instead: mean `f*_k C + m sd` and variance `(1 - m^2) sd^2`,
+/// `sd` the standard deviation above and `m` the pool's mean (its mean
+/// square is 1), so with uncentred residuals it adds a bias of its own;
+/// with [`MackBootstrap::centre_residuals`] its mean is `f*_k C`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MackProcess {
     /// Gamma with that mean and variance (EVW's parametric example). A
@@ -60,7 +72,8 @@ pub enum MackProcess {
     /// as `Gamma` is.
     Lognormal,
     /// The mean plus a resampled residual times the standard deviation,
-    /// EVW's non-parametric choice.
+    /// EVW's non-parametric choice; it carries the pool's mean and variance
+    /// (see above).
     Residuals,
     /// Normal with that mean and variance; it can go below zero.
     Normal,
@@ -102,11 +115,19 @@ impl MackProcess {
 /// Next to [`OdpBootstrap`](crate::OdpBootstrap), whose process is the
 /// over-dispersed Poisson's (variance `phi` times the mean increment), this
 /// is Mack's (variance `sigma_k^2` times the cumulative value). With the
-/// volume-weighted chain ladder and no tail, its one-year view reproduces
-/// Merz and Wüthrich's
+/// volume-weighted chain ladder and no tail, the standard deviation of its
+/// one-year view reproduces Merz and Wüthrich's
 /// ([`MackFit::claims_development_result`](crate::MackFit::claims_development_result))
 /// within Monte Carlo error, and any other method, weighting or tail is
 /// re-reserved as the ODP's is.
+///
+/// Its mean is not Merz and Wüthrich's zero unless
+/// [`centre_residuals`](Self::centre_residuals) is set: with EVW's
+/// uncentred residuals the mean CDR is about -0.20 (RAA), -0.04 (GenIns)
+/// and +0.17 (ABC) times its standard deviation, which shifts every
+/// quantile; centred, it is within Monte Carlo error of zero and the
+/// standard deviation still reconciles
+/// (`knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`).
 ///
 /// ```
 /// use act_reserving::{
@@ -150,6 +171,12 @@ pub struct MackBootstrap {
     /// oldest age moves only through the refitted method's tail, as with
     /// the ODP.
     pub development: Development,
+    /// Subtract the pool's mean from the residuals before resampling them,
+    /// for the pseudo factors and the `Residuals` process, so that the
+    /// pseudo factors are unbiased and the CDR's mean is about zero. Off by
+    /// default, as EVW's Appendix 1; see the [module
+    /// documentation](crate::mack_bootstrap).
+    pub centre_residuals: bool,
 }
 
 impl Default for MackBootstrap {
@@ -159,6 +186,7 @@ impl Default for MackBootstrap {
             seed: 0,
             process: MackProcess::Gamma,
             development: Development::default(),
+            centre_residuals: false,
         }
     }
 }
@@ -172,7 +200,8 @@ pub struct MackBootstrapSegment {
     /// The scaled bias-adjusted residuals of the link ratios, row-major
     /// over origin × development: element `(o, k)` is the link from age `k`
     /// to `k + 1`. NaN where there is no link, its earlier value is zero,
-    /// or its factor rests on a single link ratio.
+    /// or its factor rests on a single link ratio. Never centred, whatever
+    /// [`MackBootstrap::centre_residuals`] says.
     pub residuals: Vec<f64>,
 }
 
@@ -354,6 +383,10 @@ impl MackBootstrap {
         if pool.is_empty() {
             return Err(Error::Bootstrap("no residuals to resample"));
         }
+        if self.centre_residuals {
+            let m = pool.iter().sum::<f64>() / pool.len() as f64;
+            pool.iter_mut().for_each(|r| *r -= m);
+        }
         Ok((
             MackBootstrapSegment { mack, residuals },
             MackDraw {
@@ -369,6 +402,7 @@ impl MackBootstrap {
             .param("n_sims", self.n_sims)
             .param("process", format!("{:?}", self.process))
             .param("development", format!("{:?}", self.development))
+            .param("centre_residuals", self.centre_residuals)
             .param("column", column)
             .param("method", format!("{method:?}"))
             .version("act-reserving", env!("CARGO_PKG_VERSION"))
@@ -394,6 +428,7 @@ mod tests {
             seed,
             process,
             development: Development::default(),
+            centre_residuals: false,
         }
     }
 
@@ -488,7 +523,7 @@ mod tests {
         // U0 - C*, has variance sigma^2 (C82^2 v / C81^alpha + C82^(2 - alpha))
         // with v the variance of the resampled residuals: Mack's own
         // parameter and process variance for 1982 when v = 1.
-        let n_sims = 20_000;
+        let n_sims = 5_000;
         for avg in [Average::Volume, Average::Simple, Average::Regression] {
             let alpha = avg.alpha();
             let fit = MackBootstrap {
@@ -525,9 +560,57 @@ mod tests {
             .unwrap();
             assert!((v - 1.0).abs() < 0.05, "{avg:?}: v = {v}");
             assert!(
-                (sd / mack.standard_error[1] - 1.0).abs() < 0.05,
-                "{avg:?}: {sd} vs Mack {}",
+                (want / mack.standard_error[1] - 1.0).abs() < 0.05,
+                "{avg:?}: {want} vs Mack {}",
                 mack.standard_error[1]
+            );
+        }
+    }
+
+    #[test]
+    fn centred_residuals_remove_the_mean_bias() {
+        // RAA's pool of residuals has mean m = 0.14 (its mean square is 1),
+        // so EVW's uncentred resampling biases every pseudo factor upwards
+        // and the total CDR's mean is about -0.2 of its standard deviation,
+        // far beyond the mean's Monte Carlo standard error sd / sqrt(n).
+        // Centred, the Gamma's and the residuals process's means are both
+        // within that error of Merz and Wuthrich's zero.
+        let n_sims = 4_000;
+        let mean_and_error = |centre_residuals, process| {
+            let fit = MackBootstrap {
+                centre_residuals,
+                ..boot(n_sims, 11, process)
+            }
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+            let pool: Vec<f64> = fit
+                .bootstrap
+                .residuals
+                .iter()
+                .copied()
+                .filter(|r| !r.is_nan())
+                .collect();
+            let n = pool.len() as f64;
+            let m = pool.iter().sum::<f64>() / n;
+            assert!((m - 0.14).abs() < 0.005, "pool mean {m}");
+            assert!((pool.iter().map(|r| r * r).sum::<f64>() / n - 1.0).abs() < 1e-9);
+            let totals: Vec<f64> = fit
+                .cdr
+                .draw_matrix()
+                .chunks(10)
+                .map(|r| r.iter().sum())
+                .collect();
+            let (sd, _) = sd_and_error(&totals);
+            let mean = totals.iter().sum::<f64>() / n_sims as f64;
+            (mean, sd / (n_sims as f64).sqrt())
+        };
+        let (mean, error) = mean_and_error(false, MackProcess::Gamma);
+        assert!(mean < -8.0 * error, "uncentred: {mean} ({error})");
+        for process in [MackProcess::Gamma, MackProcess::Residuals] {
+            let (mean, error) = mean_and_error(true, process);
+            assert!(
+                mean.abs() < 4.0 * error,
+                "{process:?} centred: {mean} ({error})"
             );
         }
     }

@@ -1304,15 +1304,17 @@ mod tests {
         }
 
         // `MackBootstrap` is this harness: the same draws, bit for bit.
+        // Simulation `i` uses stream `i`, so its first few hundred are the
+        // harness's first few hundred.
+        let few = 300;
         let built = crate::MackBootstrap {
-            n_sims,
+            n_sims: few,
             seed: 31,
-            process: crate::MackProcess::Gamma,
-            development: Development::default(),
+            ..Default::default()
         }
         .one_year(&tri, "values", &method)
         .unwrap();
-        assert_eq!(built.cdr.draw_matrix(), draws.draw_matrix());
+        assert_eq!(built.cdr.draw_matrix(), &draws.draw_matrix()[..few * no]);
         assert_eq!(built.cdr.provenance().model, "mack_bootstrap_one_year");
     }
 
