@@ -1488,19 +1488,23 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' The claims development result (CDR) of the chain ladder or an
 #' expected-loss method over the coming year, by re-reserving on the ODP
 #' bootstrap ("actuary in the box": Ohlsson and Lauzeningks 2009; England,
-#' Verrall and Wuthrich 2019). Each simulation resamples the residuals of
-#' the volume-weighted chain ladder as [odp_bootstrap()] does, projects
-#' every origin's next increment from its resampled latest value with the
-#' bootstrap's process error, as [odp_bootstrap()] projects, adds it to the
-#' observed latest value, appends those cells to the triangle, refits
-#' `method` and records `CDR = opening ultimate - closing ultimate`, so a
-#' negative CDR is an adverse development. An origin with one cell left
-#' thus has its lifetime bootstrap reserve as its one-year view. An origin
-#' at the last age gets no new cell, and a new origin written in the coming
-#' year is not simulated. The development grain must be a year, and every
-#' origin short of the last age must have its latest value on its
-#' segment's latest diagonal. Unlike [claims_development_result()] (Merz and
-#' Wuthrich), any averaging and tail are allowed.
+#' Verrall and Wuthrich 2019). The coming year is every cell valued in the
+#' twelve months after the segment's valuation: one per origin for an
+#' annual development grain, four for a quarterly one (fewer for an origin
+#' that reaches the last age). Each simulation resamples the residuals of
+#' the volume-weighted chain ladder as [odp_bootstrap()] does, projects the
+#' increments of those cells in turn from the origin's resampled latest
+#' value with the bootstrap's process error, as [odp_bootstrap()] projects,
+#' adds them to the observed latest value, appends the cells to the
+#' triangle, refits `method` and records `CDR = opening ultimate - closing
+#' ultimate`, so a negative CDR is an adverse development. An origin whose
+#' remaining cells all fall in the year thus has its lifetime bootstrap
+#' reserve as its one-year view. An origin at the last age gets no new
+#' cell, an origin short of the latest diagonal develops from its own
+#' latest cell (only the year's cells are appended), and a new origin
+#' written in the coming year is not simulated. Unlike
+#' [claims_development_result()] (Merz and Wuthrich), any averaging, tail
+#' and development grain are allowed.
 #'
 #' `method` names one of [chain_ladder()], [expected_loss()],
 #' [bornhuetter_ferguson()], [benktander()] and [cape_cod()], with the same
@@ -1526,8 +1530,9 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' England, Verrall and Wuthrich's (2019, Appendix 1) bootstrap of Mack's
 #' model: each simulation resamples the scaled bias-adjusted residuals of
 #' the link ratios into pseudo factors, averaged as `mack_average`, and
-#' draws every origin's next cumulative value from its observed latest
-#' value `C` with mean `f* C` and variance `sigma^2 C^(2 - alpha)`. With the
+#' draws each cumulative value of the coming year from the one before `C`
+#' (the observed latest value for the first) with mean `f* C` and variance
+#' `sigma^2 C^(2 - alpha)`, with the same pseudo factors all year. With the
 #' volume-weighted chain ladder and no tail, its standard deviations are
 #' Merz and Wuthrich's ([claims_development_result()]) within Monte Carlo
 #' error, which reconciles the two. The reconciliation is of the standard
