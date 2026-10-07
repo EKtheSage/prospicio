@@ -367,7 +367,7 @@ impl MackBootstrap {
     }
 
     /// Mack's model of one segment, its residuals and links.
-    fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
+    pub(crate) fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
         for o in 0..segment.n_origins {
             let (last, _) = segment.latest(o)?;
             for d in 0..=last {

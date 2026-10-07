@@ -1350,6 +1350,43 @@ mod tests {
     }
 
     #[test]
+    fn a_lagging_origin_appends_only_the_year() {
+        // RAA with 1985 cut back to 60 months (December 1989, a year short
+        // of the valuation): its step to 72 months, valued December 1990,
+        // is drawn but not appended, so its only cell is 84 months
+        // (position 6). Every other origin appends its next diagonal cell.
+        let cut: Vec<&[f64]> = RAA
+            .iter()
+            .enumerate()
+            .map(|(k, row)| if k == 4 { &row[..5] } else { *row })
+            .collect();
+        let tri = with_premium(1981, &cut, &[1.0; 10]);
+        let segment = tri.segment("paid").unwrap();
+        let year: Vec<YearCells> = year_of(&tri, "paid")
+            .into_iter()
+            .map(|(origin, latest, first, last)| YearCells {
+                origin,
+                latest,
+                first,
+                last,
+            })
+            .collect();
+        let want: Vec<(usize, usize)> = (1..10)
+            .map(|o| (o, if o == 4 { 6 } else { 10 - o }))
+            .collect();
+        let positions = |cells: Vec<(usize, usize, f64)>| -> Vec<(usize, usize)> {
+            cells.iter().map(|&(o, d, _)| (o, d)).collect()
+        };
+        let (odp, draw) = boot(1, 0).model(&segment).unwrap();
+        let mut rng = StreamRng::new(0, 0);
+        let cells = odp.year_cells(&draw, &segment, &year, &mut rng);
+        assert_eq!(positions(cells), want, "ODP");
+        let (mack, draw) = crate::MackBootstrap::default().model(&segment).unwrap();
+        let cells = mack.year_cells(&draw, &segment, &year, &mut rng);
+        assert_eq!(positions(cells), want, "Mack");
+    }
+
+    #[test]
     fn quarterly_exact_pattern_has_zero_cdr() {
         // `exact()` split into quarters is still exactly on a pattern (every
         // origin a multiple of the first), so four quarterly cells a year
