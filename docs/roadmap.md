@@ -170,8 +170,10 @@ what it is aiming for by v1.0.
 - **Now:** every crate's API in both languages; docs generated from the
   doc comments (great-docs, pkgdown).
 - **Next:**
-  1. The WASM build (v0.9). This needs a decision on which crates
-     guarantee `wasm32`, and on a single-threaded fallback.
+  1. The WASM build (v0.9). The scope is decided (core, math, prob,
+     aggregate with reinsurance, pricing, reserving) and CI checks that
+     they build for `wasm32-unknown-unknown`. Next is a JavaScript API
+     over them (`wasm-bindgen`) for a browser page or an Excel add-in.
   2. Where the docs sites are published.
 - **v1.0:** API review and deprecation pass, then semver.
 
@@ -180,12 +182,15 @@ what it is aiming for by v1.0.
 - Claim-level reserving (v0.8): parked until the user has thought through
   its design.
 
-These come from `architecture.md`'s open decisions:
+Decided 2026-10-07 (`architecture.md`, "Open decisions"): the name
+risk-rs, the licence (MIT OR Apache-2.0 with a CLA), IP ownership (Ethan
+Kang) and the WASM scope. Still open:
 
-- the public name;
-- the licence;
-- IP ownership;
-- where the docs are hosted;
-- the WASM scope.
+- where the docs are hosted (GitHub Pages once the repository is public, or
+  a separate host);
+- whether the packages rename from `actuarialrs` (and the crates from
+  `act-*`) to the project name;
+- reserving the name on crates.io, PyPI and CRAN, and installing the CLA
+  Assistant app, which need the user's accounts.
 
 None of them blocks current work, but the first four block a public release.

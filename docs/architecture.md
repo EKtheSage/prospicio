@@ -383,13 +383,13 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 
 | Decision | Options | Needed by |
 | --- | --- | --- |
-| Public name | Defer branding; reserve the chosen name on crates.io, PyPI and CRAN as soon as it is picked | Before v0.1 publish |
-| Working prefix | `actuarial-rs` repo, `act-*` crates, `actuarialrs` Python/R package | Now |
-| License | MIT/Apache-2.0 dual (Rust convention); confirm compatibility with CRAN distribution | Before first public commit |
-| IP ownership | Confirm with employer that open-source work in this domain is personal IP | Before first public commit |
+| ~~Public name~~ | Decided 2026-10-07: **risk-rs** (the repository's name). Free on crates.io, PyPI and CRAN as `risk-rs` / `riskrs` on that date; reserve it before the first publish. Whether the packages rename from `actuarialrs` and the crates from `act-*` is still open | Before v0.1 publish |
+| Working prefix | `act-*` crates, `actuarialrs` Python/R package, until the package names are settled | Now |
+| ~~License~~ | Decided 2026-10-07: MIT OR Apache-2.0 at the user's option (`LICENSE-MIT`, `LICENSE-APACHE`; R `MIT + file LICENSE \| Apache License (== 2.0)`, which CRAN accepts). Contributors sign a CLA (`CLA.md`) that licenses their work to the owner with the right to relicense; they keep their copyright | — |
+| ~~IP ownership~~ | Decided 2026-10-07: Ethan Kang owns the project's IP; it is built on his own time and resources | — |
 | ~~Bayesian backend~~ | Decided 2026-10-04: nutpie. Native models sample with its Rust core `nuts-rs` (from R too); Python users can hand nutpie traces of PyMC or Stan models to the shared diagnostics (`docs/design/models.md`) | — |
 | ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`) | — |
-| WASM scope | Which crates guarantee `wasm32` builds; single-threaded fallback policy | Before v0.3 |
+| ~~WASM scope~~ | Decided 2026-10-07: `act-core`, `act-math`, `act-prob`, `act-aggregate` (with reinsurance), `act-pricing` and `act-reserving` must build for `wasm32-unknown-unknown`; CI checks it. Without threads Rayon's global pool runs on the calling thread, so results are the same, only slower; an explicit multi-thread pool fails there | — |
 | Docs hosting | GitHub Pages (public, needs the repo public or a paid plan) vs private hosting; waits on IP ownership and license | Before v0.1 publish |
 
 **Next step:** write the distribution-representation and PredictiveDistribution design note; the Triangle and RNG notes depend on it.

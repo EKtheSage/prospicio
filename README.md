@@ -263,3 +263,10 @@ R uses `as.matrix()` rather than a `view()` verb, which would mask
 Every Chain Ladder and Mack value is checked against R `ChainLadder` and
 chainladder-python on RAA, GenIns and ABC in `validation/`; the ODP
 bootstrap is checked against R `BootChainLadder`.
+
+## Licence
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT licence](LICENSE-MIT), at your option. Copyright (c) 2026 Ethan Kang.
+Contributions are welcome under the [contributor licence agreement](CLA.md);
+see [CONTRIBUTING.md](CONTRIBUTING.md).

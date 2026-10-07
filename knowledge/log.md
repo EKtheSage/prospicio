@@ -1,5 +1,9 @@
 # Bundle history
 
+## 2026-10-07
+
+* **Creation**: [WebAssembly builds](/environment/wasm-builds.md), from settling the WASM scope: the core crates build for wasm32, their tests run under WASI with Node, and Rayon falls back to the calling thread.
+
 ## 2026-10-06
 
 * **Verification**: [Reinstatements pro rata as to time](/findings/reinstatement-pro-rata-time.md) verified by CI's Rust, Python and R jobs on #146.
