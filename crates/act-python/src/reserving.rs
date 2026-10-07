@@ -4372,9 +4372,10 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 
 /// Mack's bootstrap for the one-year view (England, Verrall and Wüthrich
 /// 2019, Appendix 1): the scaled bias-adjusted residuals of the link
-/// ratios are resampled into pseudo factors, and every origin's next
-/// cumulative value is drawn from its observed latest value ``C`` with mean
-/// ``f* C`` and Mack's variance ``sigma**2 * C**(2 - alpha)``. Beside
+/// ratios are resampled into pseudo factors, and each cumulative value of
+/// the coming year is drawn from the one before ``C`` (the observed latest
+/// value for the first) with mean ``f* C`` and Mack's variance
+/// ``sigma**2 * abs(C)**(2 - alpha)``. Beside
 /// ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
 /// the one-year view under Mack's process: with the volume-weighted chain
 /// ladder and no tail, its standard deviation is

@@ -1532,7 +1532,7 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' the link ratios into pseudo factors, averaged as `mack_average`, and
 #' draws each cumulative value of the coming year from the one before `C`
 #' (the observed latest value for the first) with mean `f* C` and variance
-#' `sigma^2 C^(2 - alpha)`, with the same pseudo factors all year. With the
+#' `sigma^2 |C|^(2 - alpha)`, with the same pseudo factors all year. With the
 #' volume-weighted chain ladder and no tail, its standard deviations are
 #' Merz and Wuthrich's ([claims_development_result()]) within Monte Carlo
 #' error, which reconciles the two. The reconciliation is of the standard

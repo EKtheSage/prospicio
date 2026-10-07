@@ -142,7 +142,7 @@ model: each simulation resamples the scaled bias-adjusted residuals of
 the link ratios into pseudo factors, averaged as \code{mack_average}, and
 draws each cumulative value of the coming year from the one before \code{C}
 (the observed latest value for the first) with mean \code{f* C} and variance
-\verb{sigma^2 C^(2 - alpha)}, with the same pseudo factors all year. With the
+\verb{sigma^2 |C|^(2 - alpha)}, with the same pseudo factors all year. With the
 volume-weighted chain ladder and no tail, its standard deviations are
 Merz and Wuthrich's (\code{\link[=claims_development_result]{claims_development_result()}}) within Monte Carlo
 error, which reconciles the two. The reconciliation is of the standard
