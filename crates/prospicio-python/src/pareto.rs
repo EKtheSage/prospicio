@@ -629,6 +629,347 @@ severity_class!(PyLoglogistic {
     }
 });
 
+/// Inverse gamma distribution with shape ``alpha`` and scale ``theta``:
+/// ``X = theta / G`` for ``G`` a unit-scale gamma, as SciPy's ``invgamma``.
+/// The tail is Pareto-like: the mean is infinite for ``alpha <= 1`` and the
+/// variance for ``alpha <= 2``; limited and layer moments always exist.
+///
+/// Parameters
+/// ----------
+/// shape : float
+/// scale : float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is not finite and positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import InverseGamma
+/// >>> round(InverseGamma(3.0, 2000.0).mean(), 9)
+/// 1000.0
+#[pyclass(name = "InverseGamma", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyInverseGamma {
+    pub(crate) inner: prospicio_prob::InverseGamma,
+}
+
+severity_class!(PyInverseGamma {
+    #[new]
+    fn new(shape: f64, scale: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::InverseGamma::new(shape, scale).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Inverse gamma with the given mean and coefficient of variation:
+    /// ``alpha = 2 + 1 / cv**2``.
+    ///
+    /// Parameters
+    /// ----------
+    /// mean : float
+    /// cv : float
+    ///
+    /// Returns
+    /// -------
+    /// InverseGamma
+    #[staticmethod]
+    fn from_mean_cv(mean: f64, cv: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::InverseGamma::from_mean_cv(mean, cv).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Shape ``alpha``.
+    #[getter]
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    /// Scale ``theta``.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64) {
+        (self.inner.shape(), self.inner.scale())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("InverseGamma(shape={:?}, scale={:?})", self.inner.shape(), self.inner.scale())
+    }
+});
+
+/// Inverse Gaussian distribution with mean ``mu`` and shape ``lam``:
+/// variance ``mu**3 / lam``. SciPy's ``invgauss(mu / lam, scale=lam)``.
+///
+/// Parameters
+/// ----------
+/// mean : float
+/// shape : float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is not finite and positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import InverseGaussian
+/// >>> d = InverseGaussian.from_mean_cv(1000.0, 0.5)
+/// >>> d.shape, round(d.std(), 9)
+/// (4000.0, 500.0)
+#[pyclass(name = "InverseGaussian", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyInverseGaussian {
+    pub(crate) inner: prospicio_prob::InverseGaussian,
+}
+
+severity_class!(PyInverseGaussian {
+    #[new]
+    fn new(mean: f64, shape: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::InverseGaussian::new(mean, shape).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Inverse Gaussian with the given mean and coefficient of variation:
+    /// ``lam = mean / cv**2``.
+    ///
+    /// Parameters
+    /// ----------
+    /// mean : float
+    /// cv : float
+    ///
+    /// Returns
+    /// -------
+    /// InverseGaussian
+    #[staticmethod]
+    fn from_mean_cv(mean: f64, cv: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::InverseGaussian::from_mean_cv(mean, cv).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Shape ``lam``.
+    #[getter]
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64) {
+        (self.inner.mean_param(), self.inner.shape())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "InverseGaussian(mean={:?}, shape={:?})",
+            self.inner.mean_param(),
+            self.inner.shape()
+        )
+    }
+});
+
+/// Burr (type XII) distribution with tail shape ``alpha``, power ``gamma``
+/// and scale ``theta``: ``P(X > x) = (1 + (x / theta)**gamma)**(-alpha)``,
+/// as SciPy's ``burr12(c=gamma, d=alpha, scale=theta)``. With ``alpha = 1``
+/// it is the ``Loglogistic``; with ``gamma = 1``, the Lomax. Moments exist
+/// below ``alpha * gamma``; limited and layer moments always do.
+///
+/// Parameters
+/// ----------
+/// alpha : float
+/// gamma : float
+/// scale : float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is not finite and positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Burr
+/// >>> round(Burr(3.0, 1.0, 2000.0).survival(2000.0), 12)
+/// 0.125
+#[pyclass(name = "Burr", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyBurr {
+    pub(crate) inner: prospicio_prob::Burr,
+}
+
+severity_class!(PyBurr {
+    #[new]
+    fn new(alpha: f64, gamma: f64, scale: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::Burr::new(alpha, gamma, scale).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Tail shape ``alpha``.
+    #[getter]
+    fn alpha(&self) -> f64 {
+        self.inner.alpha()
+    }
+
+    /// Power ``gamma``.
+    #[getter]
+    fn gamma(&self) -> f64 {
+        self.inner.gamma()
+    }
+
+    /// Scale ``theta``.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        (self.inner.alpha(), self.inner.gamma(), self.inner.scale())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Burr(alpha={:?}, gamma={:?}, scale={:?})",
+            self.inner.alpha(),
+            self.inner.gamma(),
+            self.inner.scale()
+        )
+    }
+});
+
+/// Beta distribution with shapes ``a`` and ``b`` on ``[0, scale]``, as
+/// SciPy's ``beta(a, b, scale=scale)``: a bounded severity, such as a
+/// damage ratio times a sum insured.
+///
+/// Parameters
+/// ----------
+/// a : float
+/// b : float
+/// scale : float, default 1.0
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is not finite and positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Beta
+/// >>> Beta(1.0, 1.0, 10.0).mean()
+/// 5.0
+#[pyclass(name = "Beta", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyBeta {
+    pub(crate) inner: prospicio_prob::Beta,
+}
+
+severity_class!(PyBeta {
+    #[new]
+    #[pyo3(signature = (a, b, scale = 1.0))]
+    fn new(a: f64, b: f64, scale: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::Beta::new(a, b, scale).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// First shape ``a``.
+    #[getter]
+    fn a(&self) -> f64 {
+        self.inner.a()
+    }
+
+    /// Second shape ``b``.
+    #[getter]
+    fn b(&self) -> f64 {
+        self.inner.b()
+    }
+
+    /// Scale, the top of the support.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        (self.inner.a(), self.inner.b(), self.inner.scale())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Beta(a={:?}, b={:?}, scale={:?})",
+            self.inner.a(),
+            self.inner.b(),
+            self.inner.scale()
+        )
+    }
+});
+
+/// A severity conditioned on ``lower < X <= upper``, as ``aggregate``'s
+/// ``sev_lb`` and ``sev_ub``: its distribution function is
+/// ``(F(x) - F(lower)) / (F(upper) - F(lower))`` on the window. Layer
+/// moments are exact, from the inner severity's.
+///
+/// Parameters
+/// ----------
+/// severity : a severity
+///     Any distribution but ``Sampled``.
+/// lower : float, default 0.0
+/// upper : float, default inf
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``0 <= lower < upper`` fails or the window has no probability.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Lognormal, Truncated
+/// >>> t = Truncated(Lognormal.from_mean_cv(1000.0, 1.0), upper=5000.0)
+/// >>> t.cdf(5000.0), t.mean() < 1000.0
+/// (1.0, True)
+#[pyclass(name = "Truncated", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyTruncated {
+    pub(crate) inner: std::sync::Arc<prospicio_prob::Truncated>,
+}
+
+severity_class!(PyTruncated {
+    #[new]
+    #[pyo3(signature = (severity, lower = 0.0, upper = f64::INFINITY))]
+    fn new(severity: &Bound<'_, PyAny>, lower: f64, upper: f64) -> PyResult<Self> {
+        let inner = crate::distributions::extract_severity(severity)?;
+        let t = prospicio_prob::Truncated::new(inner, lower, upper).map_err(to_py)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(t),
+        })
+    }
+
+    /// Lower end of the window (excluded).
+    #[getter]
+    fn lower(&self) -> f64 {
+        self.inner.lower()
+    }
+
+    /// Upper end of the window (included).
+    #[getter]
+    fn upper(&self) -> f64 {
+        self.inner.upper()
+    }
+
+    /// ``P(lower < X <= upper)`` under the inner severity.
+    #[getter]
+    fn probability(&self) -> f64 {
+        self.inner.probability()
+    }
+
+    /// The severity before conditioning.
+    #[getter]
+    fn severity(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        crate::distributions::dist_to_py(py, self.inner.inner().dist().clone())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Truncated({}, lower={:?}, upper={:?})",
+            self.inner.inner().dist().family(),
+            self.inner.lower(),
+            self.inner.upper()
+        )
+    }
+});
+
 /// A finite mixture of severities: component ``i`` with probability
 /// ``w_i``, such as attritional plus large losses.
 ///
@@ -656,6 +997,47 @@ severity_class!(PyMixture {
             .map(|(w, s)| Ok((*w, crate::distributions::extract_severity(s)?)))
             .collect::<PyResult<Vec<_>>>()?;
         let inner = prospicio_prob::Mixture::from_dists(parts).map_err(to_py)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(inner),
+        })
+    }
+
+    /// A splice: component ``i`` conditioned on
+    /// ``(breaks[i], breaks[i + 1]]`` with weight ``w_i``, such as a body
+    /// below a threshold and a Pareto tail above it.
+    ///
+    /// Parameters
+    /// ----------
+    /// components : list of (float, severity)
+    ///     Weights (positive, summing to 1) and severities.
+    /// breaks : list of float
+    ///     One more than the components: 0, the joins, and the top (which
+    ///     may be ``inf``).
+    ///
+    /// Returns
+    /// -------
+    /// Mixture
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the breaks do not fit the components or a piece's window has
+    ///     no probability.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Lognormal, Mixture, Pareto
+    /// >>> body, tail = Lognormal.from_mean_cv(50.0, 1.0), Pareto(100.0, 1.8)
+    /// >>> s = Mixture.splice([(0.9, body), (0.1, tail)], [0.0, 100.0, float("inf")])
+    /// >>> round(s.cdf(100.0), 12)
+    /// 0.9
+    #[staticmethod]
+    fn splice(components: Vec<(f64, Bound<'_, PyAny>)>, breaks: Vec<f64>) -> PyResult<Self> {
+        let parts = components
+            .iter()
+            .map(|(w, s)| Ok((*w, crate::distributions::extract_severity(s)?)))
+            .collect::<PyResult<Vec<_>>>()?;
+        let inner = prospicio_prob::Truncated::splice(parts, &breaks).map_err(to_py)?;
         Ok(Self {
             inner: std::sync::Arc::new(inner),
         })

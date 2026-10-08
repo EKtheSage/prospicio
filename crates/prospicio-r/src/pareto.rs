@@ -520,6 +520,130 @@ severity_class!(WeibullDist {
     }
 });
 
+/// Inverse gamma distribution.
+#[extendr]
+pub(crate) struct InverseGammaDist {
+    pub(crate) inner: prospicio_prob::InverseGamma,
+}
+
+severity_class!(InverseGammaDist {
+    fn new(shape: f64, scale: f64) -> Result<Self> {
+        let inner = prospicio_prob::InverseGamma::new(shape, scale).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+});
+
+/// Inverse Gaussian distribution.
+#[extendr]
+pub(crate) struct InverseGaussianDist {
+    pub(crate) inner: prospicio_prob::InverseGaussian,
+}
+
+severity_class!(InverseGaussianDist {
+    fn new(mean: f64, shape: f64) -> Result<Self> {
+        let inner = prospicio_prob::InverseGaussian::new(mean, shape).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn mean_param(&self) -> f64 {
+        self.inner.mean_param()
+    }
+
+    fn shape(&self) -> f64 {
+        self.inner.shape()
+    }
+});
+
+/// Burr (type XII) distribution.
+#[extendr]
+pub(crate) struct BurrDist {
+    pub(crate) inner: prospicio_prob::Burr,
+}
+
+severity_class!(BurrDist {
+    fn new(alpha: f64, gamma: f64, scale: f64) -> Result<Self> {
+        let inner = prospicio_prob::Burr::new(alpha, gamma, scale).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn alpha(&self) -> f64 {
+        self.inner.alpha()
+    }
+
+    fn gamma(&self) -> f64 {
+        self.inner.gamma()
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+});
+
+/// Beta distribution on `[0, scale]`.
+#[extendr]
+pub(crate) struct BetaDist {
+    pub(crate) inner: prospicio_prob::Beta,
+}
+
+severity_class!(BetaDist {
+    fn new(a: f64, b: f64, scale: f64) -> Result<Self> {
+        let inner = prospicio_prob::Beta::new(a, b, scale).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn a(&self) -> f64 {
+        self.inner.a()
+    }
+
+    fn b(&self) -> f64 {
+        self.inner.b()
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+});
+
+/// A severity conditioned on a window `(lower, upper]`.
+#[extendr]
+pub(crate) struct TruncatedDist {
+    pub(crate) inner: std::sync::Arc<prospicio_prob::Truncated>,
+}
+
+severity_class!(TruncatedDist {
+    fn new(severity: Robj, lower: f64, upper: f64) -> Result<Self> {
+        let inner = crate::distributions::severity_from_robj(&severity)?;
+        let t = prospicio_prob::Truncated::new(inner, lower, upper).map_err(to_r)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(t),
+        })
+    }
+
+    fn lower(&self) -> f64 {
+        self.inner.lower()
+    }
+
+    fn upper(&self) -> f64 {
+        self.inner.upper()
+    }
+
+    fn probability(&self) -> f64 {
+        self.inner.probability()
+    }
+
+    fn family(&self) -> String {
+        self.inner.inner().dist().family().to_string()
+    }
+});
+
 /// A finite mixture of severities.
 #[extendr]
 pub(crate) struct MixtureDist {
@@ -539,6 +663,22 @@ severity_class!(MixtureDist {
             .map(|(&w, c)| Ok((w, crate::distributions::severity_from_robj(&c)?)))
             .collect::<Result<Vec<_>>>()?;
         let inner = prospicio_prob::Mixture::from_dists(parts).map_err(to_r)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(inner),
+        })
+    }
+
+    /// Component `i` conditioned on `(breaks[i], breaks[i + 1]]`.
+    fn splice(weights: &[f64], components: List, breaks: &[f64]) -> Result<Self> {
+        if weights.len() != components.len() {
+            return Err(Error::Other("give one weight per component".into()));
+        }
+        let parts = weights
+            .iter()
+            .zip(components.values())
+            .map(|(&w, c)| Ok((w, crate::distributions::severity_from_robj(&c)?)))
+            .collect::<Result<Vec<_>>>()?;
+        let inner = prospicio_prob::Truncated::splice(parts, breaks).map_err(to_r)?;
         Ok(Self {
             inner: std::sync::Arc::new(inner),
         })
@@ -624,6 +764,11 @@ extendr_module! {
     impl TweedieDist;
     impl WeibullDist;
     impl LoglogisticDist;
+    impl InverseGammaDist;
+    impl InverseGaussianDist;
+    impl BurrDist;
+    impl BetaDist;
+    impl TruncatedDist;
     impl MixtureDist;
     impl Binomial;
     fn claim_count_parameters;

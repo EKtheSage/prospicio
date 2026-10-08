@@ -46,6 +46,25 @@ conversion reports the error it introduces.
   integrals, SciPy for the mean and variance, and 40-digit closed forms
   for the quantile, cdf and survival (SciPy's `fisk` loses about five
   digits at `p = 0.999999`).
+- `prospicio_prob::InverseGamma` (shape, scale; SciPy's `invgamma`),
+  `InverseGaussian` (mean, shape `λ`; SciPy's `invgauss(μ/λ, scale=λ)`),
+  `Burr` (the Burr XII: tail shape `α`, power `γ`, scale; SciPy's
+  `burr12(c=γ, d=α)`) and `Beta` (shapes `a`, `b` on `[0, θ]`), for
+  `aggregate` parity. Each gives its limited moments `E[min(X, u)^j]` and
+  tail moments `E[X^j; X > u] - u^j S(u)` (the crate's `Moments` trait),
+  and layers difference the first below the mean and the second above
+  it. Limited moments exist past the moments that do, through
+  `prospicio_math::special::{beta_lower, gamma_upper}` (the incomplete beta
+  and gamma at a non-positive argument). The inverse Gaussian is written
+  with the Mills ratio, so `e^(2λ/μ)` never forms
+  (`knowledge/findings/inverse-gaussian-mills-ratio.md`).
+- `prospicio_prob::Truncated` conditions any severity on
+  `lower < X <= upper` (`aggregate`'s `sev_lb`, `sev_ub`), with layer
+  moments from the inner severity's; `Truncated::splice` is a `Mixture` of
+  such pieces with consecutive windows. Parity for all five: SciPy for
+  the cdf, survival, quantile and moments, and 30-digit integration of the
+  survival for layer means and second moments
+  (`validation/scripts/mpmath_layer_moments.py`).
 - **Growth curves.** Clark's LDF and Cape Cod methods model the share of
   ultimate reported by age `t` as a growth curve `G(t)`, usually the
   loglogistic `t^ω / (t^ω + θ^ω)` or the Weibull `1 - exp(-(t/θ)^ω)`.
@@ -205,10 +224,11 @@ pub enum Dist {
 - `Custom` is the single "slow path" door the plan describes; code that
   sees it runs single-threaded and records that in diagnostics.
 
-Done: `prospicio_prob::Dist` with the eleven severity families (`Lognormal`,
+Done: `prospicio_prob::Dist` with the sixteen severity families (`Lognormal`,
 `Pareto`, `PiecewisePareto`, `LogAffinePareto`, `GeneralizedPareto`,
-`Gamma`, `Tweedie`, `Weibull`, `Loglogistic`, `Mixture` in an `Arc`,
-`Grid`) and `Sampled`. It implements `Distribution` by `match` (no
+`Gamma`, `Tweedie`, `Weibull`, `Loglogistic`, `InverseGamma`,
+`InverseGaussian`, `Burr`, `Beta`, `Truncated` and `Mixture` each in an
+`Arc`, `Grid`) and `Sampled`. It implements `Distribution` by `match` (no
 vtable), names its `family()`, and `as_severity()` gives the `Severity`
 of every variant but `Sampled`, which has no exact layer moments (the
 compile-time absence above becomes a `None` at the boundary). `From` each

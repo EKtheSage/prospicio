@@ -24,8 +24,8 @@ use crate::dist::{Dist, SeverityDist};
 use crate::evt::Gpd;
 use crate::sampled::Empirical;
 use crate::{
-    Gamma, Grid, LogAffinePareto, Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto,
-    Sampled, Truncation, Tweedie, Weibull,
+    Beta, Burr, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
+    Lognormal, Mixture, Pareto, PiecewisePareto, Sampled, Truncated, Truncation, Tweedie, Weibull,
 };
 
 /// Value of the `format` field.
@@ -142,6 +142,29 @@ fn body(d: &Dist) -> Result<Map<String, Value>> {
             put("shape", num(x.shape()));
             put("scale", num(x.scale()));
         }
+        Dist::InverseGamma(x) => {
+            put("shape", num(x.shape()));
+            put("scale", num(x.scale()));
+        }
+        Dist::InverseGaussian(x) => {
+            put("mean", num(x.mean_param()));
+            put("shape", num(x.shape()));
+        }
+        Dist::Burr(x) => {
+            put("alpha", num(x.alpha()));
+            put("gamma", num(x.gamma()));
+            put("scale", num(x.scale()));
+        }
+        Dist::Beta(x) => {
+            put("a", num(x.a()));
+            put("b", num(x.b()));
+            put("scale", num(x.scale()));
+        }
+        Dist::Truncated(x) => {
+            put("lower", num(x.lower()));
+            put("upper", num(x.upper()));
+            put("inner", Value::Object(body(x.inner().dist())?));
+        }
         Dist::Mixture(x) => {
             let dists = x.dists().ok_or_else(|| {
                 Error::Data(
@@ -218,6 +241,19 @@ fn from_body(m: &Map<String, Value>) -> Result<Dist> {
         "tweedie" => Tweedie::new(f("mean")?, f("dispersion")?, f("power")?)?.into(),
         "weibull" => Weibull::new(f("shape")?, f("scale")?)?.into(),
         "loglogistic" => Loglogistic::new(f("shape")?, f("scale")?)?.into(),
+        "inverse_gamma" => InverseGamma::new(f("shape")?, f("scale")?)?.into(),
+        "inverse_gaussian" => InverseGaussian::new(f("mean")?, f("shape")?)?.into(),
+        "burr" => Burr::new(f("alpha")?, f("gamma")?, f("scale")?)?.into(),
+        "beta" => Beta::new(f("a")?, f("b")?, f("scale")?)?.into(),
+        "truncated" => {
+            let inner = m
+                .get("inner")
+                .ok_or_else(|| Error::Data("inner is missing".into()))?;
+            let d = from_body(object(inner, "inner distribution")?)?;
+            let s = SeverityDist::try_from(d)
+                .map_err(|_| Error::Data("a truncated severity cannot be sampled draws".into()))?;
+            Truncated::new(s, f("lower")?, f("upper")?)?.into()
+        }
         "mixture" => {
             let weights = floats(m, "weights")?;
             let comps = m
@@ -340,6 +376,31 @@ mod tests {
             Tweedie::new(1000.0, 2.0, 1.5).unwrap().into(),
             Weibull::new(1.5, 1000.0).unwrap().into(),
             Loglogistic::new(4.0, 900.0).unwrap().into(),
+            InverseGamma::new(3.5, 2500.0).unwrap().into(),
+            InverseGaussian::new(1000.0, 2000.0).unwrap().into(),
+            Burr::new(2.0, 1.5, 900.0).unwrap().into(),
+            Beta::new(2.0, 3.0, 5000.0).unwrap().into(),
+            Truncated::new(
+                SeverityDist::try_from(Dist::from(Gamma::new(2.0, 500.0).unwrap())).unwrap(),
+                100.0,
+                f64::INFINITY,
+            )
+            .unwrap()
+            .into(),
+            Dist::Mixture(Arc::new(
+                Truncated::splice(
+                    vec![
+                        (0.8, SeverityDist::try_from(Dist::from(ln)).unwrap()),
+                        (
+                            0.2,
+                            SeverityDist::try_from(Dist::from(Pareto::new(3000.0, 2.0).unwrap()))
+                                .unwrap(),
+                        ),
+                    ],
+                    &[0.0, 3000.0, f64::INFINITY],
+                )
+                .unwrap(),
+            )),
             Dist::Mixture(Arc::new(
                 Mixture::from_dists(vec![
                     (0.7, SeverityDist::try_from(Dist::from(ln)).unwrap()),

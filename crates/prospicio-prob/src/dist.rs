@@ -14,8 +14,8 @@ use crate::distribution::Distribution;
 use crate::evt::Gpd;
 use crate::severity::Severity;
 use crate::{
-    Custom, Gamma, Grid, LogAffinePareto, Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto,
-    Sampled, Tweedie, Weibull,
+    Beta, Burr, Custom, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
+    Lognormal, Mixture, Pareto, PiecewisePareto, Sampled, Truncated, Tweedie, Weibull,
 };
 
 /// Any native univariate distribution.
@@ -50,6 +50,13 @@ pub enum Dist {
     Tweedie(Tweedie),
     Weibull(Weibull),
     Loglogistic(Loglogistic),
+    InverseGamma(InverseGamma),
+    InverseGaussian(InverseGaussian),
+    Burr(Burr),
+    Beta(Beta),
+    /// A severity conditioned on a window; held in an [`Arc`], like a
+    /// mixture, since it holds a distribution itself.
+    Truncated(Arc<Truncated>),
     Mixture(Arc<Mixture>),
     Grid(Grid),
     Sampled(Sampled),
@@ -70,6 +77,11 @@ macro_rules! each {
             Dist::Tweedie($d) => $call,
             Dist::Weibull($d) => $call,
             Dist::Loglogistic($d) => $call,
+            Dist::InverseGamma($d) => $call,
+            Dist::InverseGaussian($d) => $call,
+            Dist::Burr($d) => $call,
+            Dist::Beta($d) => $call,
+            Dist::Truncated($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
             Dist::Sampled($d) => $call,
@@ -81,8 +93,9 @@ macro_rules! each {
 impl Dist {
     /// Short name of the family: `"lognormal"`, `"pareto"`,
     /// `"piecewise_pareto"`, `"log_affine_pareto"`, `"generalized_pareto"`,
-    /// `"gamma"`, `"tweedie"`, `"weibull"`, `"loglogistic"`, `"mixture"`,
-    /// `"grid"`, `"sampled"` or `"custom"`.
+    /// `"gamma"`, `"tweedie"`, `"weibull"`, `"loglogistic"`,
+    /// `"inverse_gamma"`, `"inverse_gaussian"`, `"burr"`, `"beta"`,
+    /// `"truncated"`, `"mixture"`, `"grid"`, `"sampled"` or `"custom"`.
     pub fn family(&self) -> &'static str {
         match self {
             Self::Lognormal(_) => "lognormal",
@@ -94,6 +107,11 @@ impl Dist {
             Self::Tweedie(_) => "tweedie",
             Self::Weibull(_) => "weibull",
             Self::Loglogistic(_) => "loglogistic",
+            Self::InverseGamma(_) => "inverse_gamma",
+            Self::InverseGaussian(_) => "inverse_gaussian",
+            Self::Burr(_) => "burr",
+            Self::Beta(_) => "beta",
+            Self::Truncated(_) => "truncated",
             Self::Mixture(_) => "mixture",
             Self::Grid(_) => "grid",
             Self::Sampled(_) => "sampled",
@@ -115,6 +133,11 @@ impl Dist {
             Self::Tweedie(d) => d,
             Self::Weibull(d) => d,
             Self::Loglogistic(d) => d,
+            Self::InverseGamma(d) => d,
+            Self::InverseGaussian(d) => d,
+            Self::Burr(d) => d,
+            Self::Beta(d) => d,
+            Self::Truncated(d) => d.as_ref(),
             Self::Mixture(d) => d.as_ref(),
             Self::Grid(d) => d,
             Self::Custom(d) => d,
@@ -175,6 +198,10 @@ from_family!(
     Tweedie(Tweedie),
     Weibull(Weibull),
     Loglogistic(Loglogistic),
+    InverseGamma(InverseGamma),
+    InverseGaussian(InverseGaussian),
+    Burr(Burr),
+    Beta(Beta),
     Grid(Grid),
     Sampled(Sampled),
     Custom(Custom),
@@ -243,6 +270,11 @@ macro_rules! each_severity {
             Dist::Tweedie($d) => $call,
             Dist::Weibull($d) => $call,
             Dist::Loglogistic($d) => $call,
+            Dist::InverseGamma($d) => $call,
+            Dist::InverseGaussian($d) => $call,
+            Dist::Burr($d) => $call,
+            Dist::Beta($d) => $call,
+            Dist::Truncated($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
             Dist::Custom($d) => $call,
@@ -327,6 +359,17 @@ mod tests {
             Gamma::new(2.0, 500.0).unwrap().into(),
             Weibull::new(1.5, 1000.0).unwrap().into(),
             Loglogistic::new(4.0, 900.0).unwrap().into(),
+            InverseGamma::new(3.5, 2500.0).unwrap().into(),
+            InverseGaussian::from_mean_cv(1000.0, 0.7).unwrap().into(),
+            Burr::new(2.0, 1.5, 900.0).unwrap().into(),
+            Beta::new(2.0, 3.0, 5000.0).unwrap().into(),
+            Truncated::new(
+                SeverityDist::try_from(Dist::from(ln)).unwrap(),
+                100.0,
+                4000.0,
+            )
+            .unwrap()
+            .into(),
             Tweedie::new(1000.0, 2.0, 1.5).unwrap().into(),
             Gpd::new(0.2, 300.0).unwrap().into(),
             Mixture::new(vec![

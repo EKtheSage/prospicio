@@ -350,6 +350,195 @@ class Benktander:
         """
 
 @final
+class Beta:
+    """
+    Beta distribution with shapes ``a`` and ``b`` on ``[0, scale]``, as
+    SciPy's ``beta(a, b, scale=scale)``: a bounded severity, such as a
+    damage ratio times a sum insured.
+    
+    Parameters
+    ----------
+    a : float
+    b : float
+    scale : float, default 1.0
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is not finite and positive.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Beta
+    >>> Beta(1.0, 1.0, 10.0).mean()
+    5.0
+    """
+    def __getnewargs__(self, /) -> tuple[float, float, float]: ...
+    def __new__(cls, /, a: float, b: float, scale: float = 1.0) -> Beta: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def a(self, /) -> float:
+        """
+        First shape ``a``.
+        """
+    @property
+    def b(self, /) -> float:
+        """
+        Second shape ``b``.
+        """
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        Scale, the top of the support.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class Binomial:
     """
     Binomial claim counts: ``n`` risks, each claiming with probability
@@ -525,6 +714,197 @@ class BornhuetterFerguson:
     def tail(self, /) -> Any:
         """
         The tail: a constant factor as a number, otherwise its estimator.
+        """
+
+@final
+class Burr:
+    """
+    Burr (type XII) distribution with tail shape ``alpha``, power ``gamma``
+    and scale ``theta``: ``P(X > x) = (1 + (x / theta)**gamma)**(-alpha)``,
+    as SciPy's ``burr12(c=gamma, d=alpha, scale=theta)``. With ``alpha = 1``
+    it is the ``Loglogistic``; with ``gamma = 1``, the Lomax. Moments exist
+    below ``alpha * gamma``; limited and layer moments always do.
+    
+    Parameters
+    ----------
+    alpha : float
+    gamma : float
+    scale : float
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is not finite and positive.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Burr
+    >>> round(Burr(3.0, 1.0, 2000.0).survival(2000.0), 12)
+    0.125
+    """
+    def __getnewargs__(self, /) -> tuple[float, float, float]: ...
+    def __new__(cls, /, alpha: float, gamma: float, scale: float) -> Burr: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        Tail shape ``alpha``.
+        """
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def gamma(self, /) -> float:
+        """
+        Power ``gamma``.
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        Scale ``theta``.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
         """
 
 @final
@@ -4519,6 +4899,398 @@ class HierarchicalStacking:
         """
 
 @final
+class InverseGamma:
+    """
+    Inverse gamma distribution with shape ``alpha`` and scale ``theta``:
+    ``X = theta / G`` for ``G`` a unit-scale gamma, as SciPy's ``invgamma``.
+    The tail is Pareto-like: the mean is infinite for ``alpha <= 1`` and the
+    variance for ``alpha <= 2``; limited and layer moments always exist.
+    
+    Parameters
+    ----------
+    shape : float
+    scale : float
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is not finite and positive.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import InverseGamma
+    >>> round(InverseGamma(3.0, 2000.0).mean(), 9)
+    1000.0
+    """
+    def __getnewargs__(self, /) -> tuple[float, float]: ...
+    def __new__(cls, /, shape: float, scale: float) -> InverseGamma: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def from_mean_cv(mean: float, cv: float) -> InverseGamma:
+        """
+        Inverse gamma with the given mean and coefficient of variation:
+        ``alpha = 2 + 1 / cv**2``.
+        
+        Parameters
+        ----------
+        mean : float
+        cv : float
+        
+        Returns
+        -------
+        InverseGamma
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        Scale ``theta``.
+        """
+    @property
+    def shape(self, /) -> float:
+        """
+        Shape ``alpha``.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class InverseGaussian:
+    """
+    Inverse Gaussian distribution with mean ``mu`` and shape ``lam``:
+    variance ``mu**3 / lam``. SciPy's ``invgauss(mu / lam, scale=lam)``.
+    
+    Parameters
+    ----------
+    mean : float
+    shape : float
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is not finite and positive.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import InverseGaussian
+    >>> d = InverseGaussian.from_mean_cv(1000.0, 0.5)
+    >>> d.shape, round(d.std(), 9)
+    (4000.0, 500.0)
+    """
+    def __getnewargs__(self, /) -> tuple[float, float]: ...
+    def __new__(cls, /, mean: float, shape: float) -> InverseGaussian: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def from_mean_cv(mean: float, cv: float) -> InverseGaussian:
+        """
+        Inverse Gaussian with the given mean and coefficient of variation:
+        ``lam = mean / cv**2``.
+        
+        Parameters
+        ----------
+        mean : float
+        cv : float
+        
+        Returns
+        -------
+        InverseGaussian
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def shape(self, /) -> float:
+        """
+        Shape ``lam``.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class Layer:
     """
     A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
@@ -6240,6 +7012,39 @@ class Mixture:
         Returns
         -------
         list of float
+        """
+    @staticmethod
+    def splice(components: Sequence[tuple[float, Any]], breaks: Sequence[float]) -> Mixture:
+        """
+        A splice: component ``i`` conditioned on
+        ``(breaks[i], breaks[i + 1]]`` with weight ``w_i``, such as a body
+        below a threshold and a Pareto tail above it.
+        
+        Parameters
+        ----------
+        components : list of (float, severity)
+            Weights (positive, summing to 1) and severities.
+        breaks : list of float
+            One more than the components: 0, the joins, and the top (which
+            may be ``inf``).
+        
+        Returns
+        -------
+        Mixture
+        
+        Raises
+        ------
+        ValueError
+            If the breaks do not fit the components or a piece's window has
+            no probability.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Lognormal, Mixture, Pareto
+        >>> body, tail = Lognormal.from_mean_cv(50.0, 1.0), Pareto(100.0, 1.8)
+        >>> s = Mixture.splice([(0.9, body), (0.1, tail)], [0.0, 100.0, float("inf")])
+        >>> round(s.cdf(100.0), 12)
+        0.9
         """
     def std(self, /) -> float:
         """
@@ -9634,6 +10439,202 @@ class Triangle:
         >>> v = tri.view(lob="Auto")
         >>> list(v.index), list(v.columns), float(v.loc["2021", 12])
         (['2020', '2021'], [12, 24], 110.0)
+        """
+
+@final
+class Truncated:
+    """
+    A severity conditioned on ``lower < X <= upper``, as ``aggregate``'s
+    ``sev_lb`` and ``sev_ub``: its distribution function is
+    ``(F(x) - F(lower)) / (F(upper) - F(lower))`` on the window. Layer
+    moments are exact, from the inner severity's.
+    
+    Parameters
+    ----------
+    severity : a severity
+        Any distribution but ``Sampled``.
+    lower : float, default 0.0
+    upper : float, default inf
+    
+    Raises
+    ------
+    ValueError
+        If ``0 <= lower < upper`` fails or the window has no probability.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Lognormal, Truncated
+    >>> t = Truncated(Lognormal.from_mean_cv(1000.0, 1.0), upper=5000.0)
+    >>> t.cdf(5000.0), t.mean() < 1000.0
+    (1.0, True)
+    """
+    def __new__(cls, /, severity: Any, lower: float = 0.0, upper: float = ...) -> Truncated: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def lower(self, /) -> float:
+        """
+        Lower end of the window (excluded).
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def probability(self, /) -> float:
+        """
+        ``P(lower < X <= upper)`` under the inner severity.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def severity(self, /) -> Any:
+        """
+        The severity before conditioning.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def upper(self, /) -> float:
+        """
+        Upper end of the window (included).
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
         """
 
 @final

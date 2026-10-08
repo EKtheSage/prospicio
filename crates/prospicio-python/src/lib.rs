@@ -54,8 +54,9 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::pareto::{
-        PyBinomial, PyCustom, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic,
-        PyMixture, PyPareto, PyPiecewisePareto, PyTweedie, PyWeibull, claim_count,
+        PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma,
+        PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
+        PyPiecewisePareto, PyTruncated, PyTweedie, PyWeibull, claim_count,
         local_pareto_to_piecewise,
     };
     #[pymodule_export]

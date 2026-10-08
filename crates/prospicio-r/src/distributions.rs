@@ -81,8 +81,9 @@ impl Lognormal {
 /// sampled distribution.
 pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     use crate::pareto::{
-        CustomDist, GammaDist, GeneralizedPareto, LogAffinePareto, LoglogisticDist, MixtureDist,
-        Pareto, PiecewisePareto, TweedieDist, WeibullDist,
+        BetaDist, BurrDist, CustomDist, GammaDist, GeneralizedPareto, InverseGammaDist,
+        InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
+        PiecewisePareto, TruncatedDist, TweedieDist, WeibullDist,
     };
     if let Ok(d) = <&Lognormal>::try_from(obj) {
         return Ok(d.inner.into());
@@ -114,6 +115,21 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     if let Ok(d) = <&LoglogisticDist>::try_from(obj) {
         return Ok(d.inner.into());
     }
+    if let Ok(d) = <&InverseGammaDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&InverseGaussianDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&BurrDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&BetaDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&TruncatedDist>::try_from(obj) {
+        return Ok(Dist::Truncated(d.inner.clone()));
+    }
     if let Ok(d) = <&MixtureDist>::try_from(obj) {
         return Ok(d.inner.clone().into());
     }
@@ -139,8 +155,9 @@ fn dist_to_json_rust(dist: Robj) -> Result<String> {
 #[extendr]
 fn dist_from_json_rust(text: &str) -> Result<List> {
     use crate::pareto::{
-        GammaDist, GeneralizedPareto, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-        PiecewisePareto, TweedieDist, WeibullDist,
+        BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist, InverseGaussianDist,
+        LogAffinePareto, LoglogisticDist, MixtureDist, Pareto, PiecewisePareto, TruncatedDist,
+        TweedieDist, WeibullDist,
     };
     let d = Dist::from_json(text).map_err(to_r)?;
     let family = d.family();
@@ -154,6 +171,11 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
         Dist::Tweedie(inner) => TweedieDist { inner }.into(),
         Dist::Weibull(inner) => WeibullDist { inner }.into(),
         Dist::Loglogistic(inner) => LoglogisticDist { inner }.into(),
+        Dist::InverseGamma(inner) => InverseGammaDist { inner }.into(),
+        Dist::InverseGaussian(inner) => InverseGaussianDist { inner }.into(),
+        Dist::Burr(inner) => BurrDist { inner }.into(),
+        Dist::Beta(inner) => BetaDist { inner }.into(),
+        Dist::Truncated(inner) => TruncatedDist { inner }.into(),
         Dist::Mixture(inner) => MixtureDist { inner }.into(),
         Dist::Grid(inner) => Grid::wrap(inner).into(),
         Dist::Sampled(inner) => Sampled { inner }.into(),
@@ -167,8 +189,9 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
 }
 
 /// The distributions accepted as a severity, for error messages.
-const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, mixture, grid, \
-                          custom, or a Pareto-family distribution";
+const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, inverse gamma, \
+                          inverse Gaussian, Burr, beta, truncated, mixture, grid, custom, or \
+                          a Pareto-family distribution";
 
 /// A severity accepted wherever a parametric or discretized loss
 /// distribution can be used: any distribution but a sampled one, which has
