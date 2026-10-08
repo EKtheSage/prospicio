@@ -314,6 +314,13 @@ totals (reserves 2,237,826, one-year 81,080, Mack 108,401) are unit tests;
 its two oldest open origins differ from R in the fourth digit
 (`knowledge/references/r-chainladder-cdr.md`).
 
+The closed form is first order: Merz and Wüthrich (2008), Appendix A,
+(A.1), replace each product `prod(1 + a_j) - 1` of the conditional MSEP
+by `sum(a_j)`, a lower bound. The exact one-year SD under their
+conditional resampling is at most 0.09% above it on RAA, GenIns and ABC
+(RAA total 25,185.83 against 25,166.30), which
+`validation/tests/reserving_one_year_mack.rs` pins; the closed form stays.
+
 Bindings: Python `MackFit.claims_development_result()` returns a
 `ClaimsDevelopmentResult`; R `claims_development_result(fit)` takes a
 `mack_fit` and returns the S7 class of that name, with `by_calendar_year`
@@ -774,10 +781,33 @@ Checks, all independent of the simulation:
 
 Measured with 200,000 simulations, GenIns and ABC are within 0.4% of R per
 origin, but RAA's three youngest origins and its total come out 0.4% to
-1.2% above it, beyond Monte Carlo error. That is consistent with the
-closed form being a linear approximation, which RAA's volatile young
-factors stress most; the 20,000-simulation test, whose five standard
-errors are 2.5% to 5%, does not resolve it.
+1.3% above it, beyond Monte Carlo error; the 20,000-simulation test, whose
+five standard errors are 2.5% to 5%, does not resolve it. The cause is
+the uncentred residuals, not the closed form. On an annual triangle with
+the volume-weighted chain ladder and no tail, each origin's closing
+ultimate is a product of independent factors, each linear in one origin's
+next value, so the CDR's covariance under the bootstrap's own model has a
+closed form (`exact_covariance` in the validation test): it needs only
+each pseudo factor's mean and variance and the process variance, not the
+process shape. Linearised, with Merz and Wüthrich's factor moments
+(`f_k`, `sigma_k^2 / S_k`), it is R's `CDR(1)S.E.` to rounding; exact, it
+is at most 0.09% above (their Appendix A replaces products by sums), so
+the approximation is not the gap. With the bootstrap's moments, mean
+`f_k + m sigma_k sum(sqrt(C)) / S_k` and variance
+`(1 - m^2) sigma_k^2 / S_k`, RAA's 1988 to 1990 and total are 0.48%,
+0.93%, 1.20% and 1.29% above R (the first pseudo factor is 14% high) and
+the 200,000 simulations are within 1.4 Monte Carlo standard errors of
+that (Gamma on two seeds, normal on one); centred, every origin and total
+of the three triangles is between 0.46% below and 0.04% above R (the
+centred pseudo factors keep the variance `(1 - m^2) sigma_k^2 / S_k`:
+centring shifts the pool without rescaling it). Over
+every run and triangle the simulations are within 2.7 standard errors of
+the exact values; only two runs per triangle (Gamma, two seeds) are
+independent, the others share their random numbers. A fast test pins the
+exact standard deviations, centred and uncentred, and the exact mean CDR
+(-0.204, -0.034 and +0.168 times the SD uncentred, zero centred); an
+ignored one checks the 200,000 simulations against them within four
+standard errors.
 
 Bindings: Python `MackBootstrap(n_sims=10000, seed=0, process="gamma",
 average="volume", sigma_interpolation="log-linear",
