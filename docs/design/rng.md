@@ -52,7 +52,10 @@ implementation can regenerate a stream for audit.
 Inverse transform by default (see `distributions.md`): monotone in the
 uniform, so common random numbers work across scenarios. Faster methods
 (ziggurat for normals) may be added per family as an opt-in with its own
-scheme version.
+scheme version. The Gamma's Marsaglia–Tsang sampler replaced its inverse
+transform outright (2026-10-08, see the stability log): the quantile was
+a bisection costing up to hundreds of microseconds a draw at large
+shapes, which made the reserving bootstraps' Gamma process slow.
 
 ## Stability policy
 
@@ -63,6 +66,26 @@ scheme version.
   `…/v2`, recording it in `Provenance`, and a changelog entry.
 - `rand_chacha` / `rand_core` are pinned with `=`; bumping them requires
   the golden tests to pass unchanged.
+
+## Stability log
+
+- **2026-10-08, `Gamma::sample`**: inverse transform replaced by
+  Marsaglia and Tsang (2000), with the `U^(1/shape)` boost below shape 1,
+  on the same streams (`prospicio_prob::gamma::standard_gamma`, the
+  sampler the Student t and Clayton copulas already used). Every Gamma
+  draw changes: `Gamma::sample`, `Dist::Gamma`, and the Gamma process of
+  `OdpBootstrap` and `MackBootstrap`. A draw now takes a variable number
+  of uniforms (at least two; one more below shape 1), so later draws on
+  the same stream move too, and draws are no longer monotone in one
+  uniform. Nothing else changes: streams, uniforms, every other family,
+  and code that calls `Gamma::quantile` itself. Golden test:
+  `gamma::tests::sample_is_pinned`, reproduced independently by
+  `validation/scripts/gamma_sampler.py`. The scheme name stays
+  `chacha20/sim-index/v1`, against the policy above: the mapping of
+  simulations to streams is unchanged, and `Portfolio` reads the scheme
+  to detect two parts sharing random numbers, which a bump would hide
+  between a part from before and one from after. Whether to bump it
+  anyway is open (question 4).
 
 ## Front ends
 
@@ -89,3 +112,10 @@ scheme version.
 3. **Sub-stream width** (`2^32 × 2^32` blocks) is an assumption about
    model sizes; confirm against the claim-level model (v0.8), the most
    draw-hungry use.
+4. **A sampler change and the scheme name** (raised 2026-10-08 by the
+   Gamma sampler): the policy bumps the scheme for a new sampling method,
+   but `stream_scheme` names the mapping of simulations to streams, which
+   `Portfolio` compares to refuse two independent parts on the same
+   seed. Options: keep `v1` and version samplers in the stability log
+   (done for the Gamma), or bump to `v2` and teach `Portfolio` that `v1`
+   and `v2` share streams.
