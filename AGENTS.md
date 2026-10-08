@@ -38,6 +38,7 @@ The ODP bootstrap needs both a `Triangle` and a `PredictiveDistribution`. It sta
 - **Bindings**: each lane puts its wrappers in its own module file (for example `crates/prospicio-python/src/reserving.rs`, `crates/prospicio-r/src/distributions.rs`, `R/prospicio/R/reserving.R`, `python/prospicio/reserving.py`). The crate's `lib.rs` only registers modules, one line per lane.
 - **Root `Cargo.toml` and `Cargo.lock`**: add dependencies only when a lane needs them. When `Cargo.lock` conflicts, take either side and let `cargo` regenerate it. Do not merge it by hand.
 - **`AGENTS.md` and `docs/architecture.md`**: change them in small PRs. Each lane edits only its own design notes under `docs/design/`.
+- **Releases**: `crates/prospicio` (the umbrella crate), `.github/workflows/release.yml` and `docs/release.md`. A new `prospicio-*` crate gets a `version` next to its path in `[workspace.dependencies]` and a re-export in `crates/prospicio/src/lib.rs`; check it with `cargo publish --workspace --dry-run`.
 - **Keep PRs small** (one type or method each) and merge `main` often. The longer a branch lives, the harder its conflicts get.
 
 ## Checks
@@ -49,7 +50,7 @@ To keep billed minutes down (the repo is private; Windows minutes count double),
 Run the matching `ci.yml` checks locally before you push, so CI does not go red on something a local run would have caught:
 
 - Always: `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
-- Crates in the WASM scope touched (`prospicio-core`, `prospicio-math`, `prospicio-prob`, `prospicio-aggregate`, `prospicio-pricing`, `prospicio-reserving`): `rustup target add wasm32-unknown-unknown` once, then `cargo check --target wasm32-unknown-unknown -p <crate>`. No threads, files or C dependencies on their default path
+- Crates in the WASM scope touched (`prospicio-core`, `prospicio-math`, `prospicio-prob`, `prospicio-aggregate`, `prospicio-pricing`, `prospicio-reserving`, and the umbrella `prospicio`): `rustup target add wasm32-unknown-unknown` once, then `cargo check --target wasm32-unknown-unknown -p <crate>`. No threads, files or C dependencies on their default path
 - Python bindings touched: `cargo clippy -p prospicio-python -- -D warnings`, then `cd python && maturin develop && pytest tests`
 - R bindings touched: `cargo clippy -p prospicio-r -- -D warnings`, `install.packages("S7")` if missing, `R CMD INSTALL R/prospicio`, every `R/prospicio/tests/*.R` with `Rscript`
 - Bindings, their doc comments or docs config touched: `cargo xtask docs --check` (needs Quarto, Python 3.11+ for great-docs, and the R packages `roxygen2`, `pkgload`, `pkgdown`), and commit the regenerated stub, `man/` and `NAMESPACE`

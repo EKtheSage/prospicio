@@ -35,7 +35,7 @@ jobs:
       - run: cargo test
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
-      - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving
+      - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
 
   python:
     if: github.event_name != 'push'

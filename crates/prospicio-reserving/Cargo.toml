@@ -1,12 +1,16 @@
 [package]
 name = "prospicio-reserving"
-description = "Reserving: Triangle, deterministic and stochastic methods (v0.1)."
+description = "Reserving: triangles, Chain Ladder, Mack, Bornhuetter-Ferguson, Cape Cod, Clark, the ODP bootstrap and the one-year view."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 prospicio-core.workspace = true

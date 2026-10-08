@@ -3845,6 +3845,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
+name = "prospicio"
+version = "0.0.1"
+dependencies = [
+ "prospicio-aggregate",
+ "prospicio-bayes",
+ "prospicio-core",
+ "prospicio-glm",
+ "prospicio-math",
+ "prospicio-models",
+ "prospicio-nn",
+ "prospicio-pricing",
+ "prospicio-prob",
+ "prospicio-reserving",
+]
+
+[[package]]
 name = "prospicio-aggregate"
 version = "0.0.1"
 dependencies = [

@@ -4,9 +4,10 @@ description = "Python bindings (PyO3). Thin wrappers only: no algorithms live he
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish.workspace = true
+publish = false
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
 
 [lib]
 name = "prospicio_native"

@@ -4,9 +4,10 @@ description = "R bindings (extendr). Thin wrappers only: no algorithms live here
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish.workspace = true
+publish = false
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
 
 [lib]
 name = "prospicio_r"
