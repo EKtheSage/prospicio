@@ -203,9 +203,7 @@ where
     };
     let (step, mut need) = size(base, cap, sizing.log2)?;
     let mut extent = base;
-    if let Some(jump) = jump_extent
-        && jump > base
-    {
+    if let Some(jump) = jump_extent.filter(|&j| j > base) {
         let k = need_log2(jump, step);
         if k <= sizing.log2 {
             need = need.max(k);
