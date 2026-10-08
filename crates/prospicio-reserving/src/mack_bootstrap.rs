@@ -983,9 +983,12 @@ mod tests {
         // zero (its standard deviation is a third of the factor). Both draw
         // one uniform per value, so they share the pseudo factors: where
         // the lognormal goes negative, so does the Gamma's mean, and the
-        // Gamma of its absolute value, whose shape is below 1 there,
-        // underflows to zero (negated, -0). The closing ultimate is that
-        // value times the refitted factors to ultimate, all positive.
+        // Gamma of its absolute value is negated: the value is negative
+        // there too. Its shape is below 1 there, so the draw is often tiny
+        // and can round to zero when the test rebuilds the closing value as
+        // `u0 - cdr` (as all 3 do at this seed), but it need not be. The
+        // closing ultimate is that value times the refitted factors to
+        // ultimate, all positive, so it has the value's sign.
         // Centred (the default), the pseudo factors lose RAA's upward bias
         // and a few more go below zero (3 at this seed, none uncentred).
         let closing = |process| {
@@ -1002,8 +1005,11 @@ mod tests {
         let (gamma, lognormal) = (closing(MackProcess::Gamma), closing(MackProcess::Lognormal));
         let below = negative(&lognormal);
         assert_eq!(below.len(), 3);
-        assert!(below.iter().all(|&i| gamma[i] <= 0.0), "{below:?}");
-        assert!(gamma.iter().all(|&x| x >= 0.0));
+        // The signs agree: non-positive exactly where the lognormal is
+        // negative, non-negative everywhere else.
+        for (i, (&g, &l)) in gamma.iter().zip(&lognormal).enumerate() {
+            assert!(if l < 0.0 { g <= 0.0 } else { g >= 0.0 }, "{i}: {g} vs {l}");
+        }
         assert!(negative(&closing(MackProcess::Normal)).len() > 10 * below.len());
     }
 
