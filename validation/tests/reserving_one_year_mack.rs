@@ -11,8 +11,10 @@
 //!   standard deviation, `sd * sqrt((kurtosis - 1) / (4 n))`. The reference
 //!   is independent of the simulation: Merz and Wüthrich's closed form.
 //!   Five standard errors is about 2.5% (GenIns) to 5% (RAA's young
-//!   origins) at `SIMS`; with 200,000 simulations RAA's young origins and
-//!   total come out 0.4% to 1.3% above R, beyond Monte Carlo error.
+//!   origins) at `SIMS`. The bootstrap is the default, with centred
+//!   residuals; uncentred (EVW's Appendix 1 as written), with 200,000
+//!   simulations RAA's young origins and total come out 0.4% to 1.3% above
+//!   R, beyond Monte Carlo error.
 //! * Why: `exact_covariance` gives the CDR's covariance exactly under the
 //!   model the bootstrap samples. Linearised it is R's closed form to
 //!   rounding, and exact it is at most 0.09% above, so Merz and Wüthrich's
@@ -22,11 +24,12 @@
 //!   pseudo factors are 0.48% to 1.29% above R where the 200,000
 //!   simulations are, within Monte Carlo error of them
 //!   (`simulation_matches_the_exact_moments`, ignored: run it with
-//!   `--release --ignored`).
-//!   The reconciliation is of the standard deviation only: the mean CDR is
-//!   biased by the uncentred residuals, which `MEAN_BIAS` pins. The unit
-//!   test `centred_residuals_remove_the_mean_bias` checks that centring
-//!   removes it.
+//!   `--release --ignored`). Centred, they are 0.46% below to 0.04% above.
+//! * The mean CDR: Merz and Wüthrich's is zero. Centred, the exact mean is
+//!   zero and the simulated one within Monte Carlo error of it, which
+//!   `MEAN_CDR` pins; uncentred, it is biased by the pool's mean
+//!   (`exact_mean_cdr_is_the_pool_bias`, and the unit test
+//!   `centred_residuals_remove_the_mean_bias`).
 //! * England, Verrall and Wüthrich (2019), Table 4: their bootstrap of
 //!   Mack's model, 500,000 simulations on Taylor–Ashe (GenIns) with Mack's
 //!   rule for the last sigma, one-year CDR standard deviation per origin and
@@ -44,11 +47,13 @@ const SIMS: usize = 20_000;
 const SEED: u64 = 20_261_006;
 
 /// The total CDR's mean over its standard deviation with the log-linear
-/// last sigma, a seed-pinned regression, not a reference: EVW's uncentred
-/// residuals bias the pseudo factors (`MackBootstrap::centre_residuals`),
-/// so the mean is not Merz and Wuthrich's zero.
-const MEAN_BIAS: [(&str, f64); 3] = [("raa", -0.2142), ("genins", -0.0380), ("abc", 0.1755)];
+/// last sigma, a seed-pinned regression, not a reference. Its exact value
+/// under the centred bootstrap is Merz and Wüthrich's zero
+/// (`exact_mean_cdr_is_the_pool_bias`); uncentred it was -0.2142, -0.0380
+/// and +0.1755 on this seed.
+const MEAN_CDR: [(&str, f64); 3] = [("raa", -0.0108), ("genins", -0.0035), ("abc", 0.0067)];
 
+/// The default bootstrap (centred residuals, Gamma process).
 fn one_year(
     dataset: &str,
     sigma_interpolation: SigmaInterpolation,
@@ -56,12 +61,11 @@ fn one_year(
     MackBootstrap {
         n_sims: SIMS,
         seed: SEED,
-        process: MackProcess::Gamma,
         development: Development {
             sigma_interpolation,
             ..Default::default()
         },
-        centre_residuals: false,
+        ..Default::default()
     }
     .one_year(
         &triangle(dataset),
@@ -151,7 +155,7 @@ fn mack_process_reconciles_with_merz_wuthrich() {
                 let (sd, error) = sd_and_error(&draws);
                 if let (true, Some(&(_, bias))) = (
                     origin.is_empty() && method == "cdr",
-                    MEAN_BIAS.iter().find(|(d, _)| *d == dataset),
+                    MEAN_CDR.iter().find(|(d, _)| *d == dataset),
                 ) {
                     let ratio = draws.iter().sum::<f64>() / SIMS as f64 / sd;
                     if (ratio - bias).abs() > 0.001 {
@@ -425,11 +429,13 @@ fn uncentred_residuals_raise_raa_young_origins() {
 
 #[test]
 fn exact_mean_cdr_is_the_pool_bias() {
-    // The exact total mean CDR over its exact SD, uncentred, is the
-    // bootstrap's bias that `MEAN_BIAS` pins from 20,000 simulations, within
-    // three Monte Carlo standard errors (about `1 / sqrt(SIMS)`); centred it
-    // is zero. Under Merz and Wüthrich's factors the mean closing ultimates
-    // are the opening chain-ladder ones, which checks the means.
+    // The exact total mean CDR over its exact SD is zero centred (the
+    // default), and `MEAN_CDR`, pinned from 20,000 simulations, is within
+    // three Monte Carlo standard errors of it (about `1 / sqrt(SIMS)`).
+    // Uncentred it is the pool's bias, pinned here, which the same seed's
+    // uncentred simulations gave as -0.2142, -0.0380 and +0.1755. Under
+    // Merz and Wüthrich's factors the mean closing ultimates are the
+    // opening chain-ladder ones, which checks the means.
     for (dataset, want) in [("raa", -0.2041), ("genins", -0.0344), ("abc", 0.1677)] {
         let ultimate = Mack::default()
             .fit(&triangle(dataset), "values")
@@ -447,13 +453,13 @@ fn exact_mean_cdr_is_the_pool_bias() {
             let ratio = mean / sd;
             if centred {
                 assert!(ratio.abs() < 1e-9, "{dataset} centred: {ratio}");
-            } else {
-                assert!((ratio - want).abs() < 5e-5, "{dataset}: {ratio}");
-                let (_, simulated) = MEAN_BIAS.iter().find(|(d, _)| *d == dataset).unwrap();
+                let (_, simulated) = MEAN_CDR.iter().find(|(d, _)| *d == dataset).unwrap();
                 assert!(
                     (ratio - simulated).abs() < 3.0 / (SIMS as f64).sqrt(),
                     "{dataset}: exact {ratio} vs simulated {simulated}"
                 );
+            } else {
+                assert!((ratio - want).abs() < 5e-5, "{dataset}: {ratio}");
             }
         }
     }
