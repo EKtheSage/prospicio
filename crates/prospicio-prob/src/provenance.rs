@@ -43,7 +43,9 @@ pub const GAMMA_SAMPLER: &str = "marsaglia-tsang/2026-10";
 /// A change to a sampler's draws on a given stream gives it a new id,
 /// `<method>/<year>-<month>` of the change (a second change in one month
 /// adds the day), with an entry in the stability log of
-/// `docs/design/rng.md`. Ids are compared as text and never reused.
+/// `docs/design/rng.md`. Ids are compared as text and never reused. A
+/// change to a model's documented draw order is listed the same way under
+/// the model's name (none so far).
 pub const SAMPLERS: &[(&str, &str)] = &[("gamma", GAMMA_SAMPLER)];
 
 /// Audit record carried by every [`crate::PredictiveDistribution`], so a

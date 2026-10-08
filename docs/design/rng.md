@@ -37,7 +37,9 @@ implementation can regenerate a stream for audit.
 2. **Within a simulation, draws are consumed in a documented order**, e.g.
    for the ODP bootstrap: residual resampling for every cell in
    origin-major order, then process variance per future cell. The order is
-   part of the model's spec and changes only with a scheme version bump.
+   part of the model's spec and changes only with a stability-log entry
+   and a new id in the samplers record (see the stability policy), not
+   with a scheme bump.
 3. **Sub-streams** for models that need independent pieces within one
    simulation (for example, per-event severities when the event count is
    random). Proposed: `StreamRng::substream(k)` sets the block counter to
@@ -51,24 +53,47 @@ implementation can regenerate a stream for audit.
 
 Inverse transform by default (see `distributions.md`): monotone in the
 uniform, so common random numbers work across scenarios. Faster methods
-(ziggurat for normals) may be added per family as an opt-in with its own
-scheme version. The Gamma's Marsaglia–Tsang sampler replaced its inverse
-transform outright (2026-10-08, see the stability log): the quantile was
-a bisection costing up to hundreds of microseconds a draw at large
-shapes, which made the reserving bootstraps' Gamma process slow.
+(ziggurat for normals) may be added per family, each with its own sampler
+id (stability policy). The Gamma's Marsaglia–Tsang sampler replaced its
+inverse transform outright (2026-10-08, see the stability log): the
+quantile was a bisection costing up to hundreds of microseconds a draw at
+large shapes, which made the reserving bootstraps' Gamma process slow.
 
 ## Stability policy
 
 - Output for a given `(seed, stream)` is a public contract. Golden tests in
   `prospicio-core` and `prospicio-prob` guard it.
-- Changing it (generator, key expansion, uniform conversion, sampling
-  method or draw order) requires bumping the scheme name, e.g.
-  `…/v2`, recording it in `Provenance`, and a changelog entry.
-  **Exception pending a decision (open question 4):** the Gamma sampler
-  changed on 2026-10-08 under `v1` (stability log). Until that is
-  decided, a result with Gamma draws saved before that date and one saved
-  after carry the same provenance, `chacha20/sim-index/v1`, but do not
-  replay the same; only the date tells them apart.
+- Two records in `Provenance` version it, and each change bumps exactly
+  one of them (decided 2026-10-08, open question 4):
+  - **The stream scheme** (`stream_scheme`, now `chacha20/sim-index/v1`)
+    names how simulations map to streams and which uniforms a stream
+    yields: generator, key expansion, uniform conversion, and the
+    allocation of streams and sub-streams. A change to any of these bumps
+    it, e.g. `…/v2`. `PredictiveDistribution::join` compares seed and
+    scheme, and nothing else, to refuse two independent parts that share
+    random numbers (`Provenance::shares_streams`).
+  - **The samplers** (`samplers`) name how those uniforms become draws:
+    `(family, sampler id)` pairs sorted by family, now
+    `gamma = marsaglia-tsang/2026-10`, from the build's table
+    `prospicio_prob::provenance::SAMPLERS`, recorded by every seeded
+    result (`Provenance::seed`). A family missing from the table uses its
+    first sampler: inverse transform for every distribution and counting
+    family, the documented method for a copula's frailty. A change to a
+    family's sampling method or to the uniforms it consumes gives the
+    family a new id (`<method>/<year>-<month>`, adding the day for a
+    second change in a month; ids are never reused), never a scheme bump.
+    A change to a model's documented draw order does the same under the
+    model's name (no model has changed its order yet).
+  - Replaying a result (`Provenance::replays_same_draws`) needs the same
+    seed, scheme and samplers. A sampler change therefore stops replay
+    matching without weakening `join`'s seed check.
+- Every change gets a stability-log entry below and a changelog entry.
+- Results saved before 2026-10-08 carry no samplers (`None`, "not
+  recorded"): they all say `chacha20/sim-index/v1`, whether their Gamma
+  draws came by inverse transform (before the Gamma change) or by
+  Marsaglia–Tsang (on 2026-10-08, before the split), so
+  `replays_same_draws` never matches them, while `join` still refuses
+  them next to a part on the same seed.
 - `rand_chacha` / `rand_core` are pinned with `=`; bumping them requires
   the golden tests to pass unchanged.
 
@@ -86,11 +111,26 @@ shapes, which made the reserving bootstraps' Gamma process slow.
   and code that calls `Gamma::quantile` itself. Golden test:
   `gamma::tests::sample_is_pinned`, reproduced independently by
   `validation/scripts/gamma_sampler.py`. The scheme name stays
-  `chacha20/sim-index/v1`, against the policy above: the mapping of
-  simulations to streams is unchanged, and `Portfolio` reads the scheme
-  to detect two parts sharing random numbers, which a bump would hide
-  between a part from before and one from after. Whether to bump it
-  anyway is open (question 4).
+  `chacha20/sim-index/v1`: the mapping of simulations to streams is
+  unchanged, and `join` reads the scheme to detect two parts sharing
+  random numbers, which a bump would hide between a part from before and
+  one from after. The sampler is versioned instead as
+  `gamma = marsaglia-tsang/2026-10` (next entry).
+- **2026-10-08, `Provenance::samplers`**: the sampler versions split from
+  the stream scheme (open question 4). No draw changes. Every seeded
+  result records the build's sampler table, today
+  `[("gamma", "marsaglia-tsang/2026-10")]`; `Provenance::shares_streams`
+  (used by `join`) compares seed and scheme, and
+  `Provenance::replays_same_draws` also the samplers. Arrow IPC files
+  carry them as an optional `samplers` key in the provenance JSON; the
+  format version stays `1`, because readers ignore keys they do not know
+  and read a missing key as not recorded, so files written before the
+  split (the golden `validation/reference/predictive_distribution_v1.arrow`
+  among them) still read, with `samplers` `None`. Python and R show the
+  field in `provenance()`. Tests: `provenance::tests`,
+  `portfolio::tests::join_refuses_a_shared_seed_across_a_sampler_change`,
+  `ipc::tests::provenance_without_samplers_reads_as_not_recorded` and
+  `validation/tests/predictive.rs`.
 
 ## Front ends
 
@@ -117,10 +157,15 @@ shapes, which made the reserving bootstraps' Gamma process slow.
 3. **Sub-stream width** (`2^32 × 2^32` blocks) is an assumption about
    model sizes; confirm against the claim-level model (v0.8), the most
    draw-hungry use.
-4. **A sampler change and the scheme name** (raised 2026-10-08 by the
-   Gamma sampler): the policy bumps the scheme for a new sampling method,
-   but `stream_scheme` names the mapping of simulations to streams, which
-   `Portfolio` compares to refuse two independent parts on the same
-   seed. Options: keep `v1` and version samplers in the stability log
-   (done for the Gamma), or bump to `v2` and teach `Portfolio` that `v1`
-   and `v2` share streams.
+4. ~~**A sampler change and the scheme name**~~ (raised 2026-10-08 by the
+   Gamma sampler): decided 2026-10-08, split the label in two.
+   `stream_scheme` keeps meaning only how simulations map to streams,
+   which `join` compares to refuse two independent parts on the same
+   seed; a second record, `Provenance::samplers`, names the sampler
+   versions (`gamma = marsaglia-tsang/2026-10`), which replay compares.
+   A sampler change bumps only its sampler id, so the seed-reuse check
+   never weakens. The alternatives were to keep `v1` and version samplers
+   only in this note's log (no record in a result, so a saved result
+   could not tell which sampler drew it), or to bump to `v2` and teach
+   `join` which schemes share streams (a table that every sampler change
+   would grow).

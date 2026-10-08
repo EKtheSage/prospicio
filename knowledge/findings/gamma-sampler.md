@@ -92,11 +92,13 @@ SciPy's `ndtri`) to within 2e-15.[^script]
   Carlo error of the references. Every test against an external
   reference (R `BootChainLadder`, `MackChainLadder`, `CDR`, EVW Table 4,
   the exact moments at 200,000 simulations) passed unchanged.
-* **The scheme name** stays `chacha20/sim-index/v1`, though `rng.md`'s
-  policy asks for a bump on a new sampling method: the stream mapping is
-  unchanged, and `Portfolio` reads the scheme to refuse parts that share
-  random numbers. The change is in the stability log, and the choice is
-  open question 4.[^rng]
+* **The scheme name** stays `chacha20/sim-index/v1`: the stream mapping
+  is unchanged, and `join` reads the scheme to refuse parts that share
+  random numbers. Open question 4 was decided the same day: the sampler
+  is versioned apart from the scheme, as
+  `gamma = marsaglia-tsang/2026-10` in `Provenance::samplers` (see
+  [Stream scheme and samplers](provenance-samplers.md)). Results saved
+  before that carry no samplers.[^rng]
 * This edits the Probability lane's crate (`prospicio-prob`), with the
   user's approval, from the Reserving lane's branch
   claude/fast-gamma-sampler.
