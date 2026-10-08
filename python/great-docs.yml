@@ -166,6 +166,7 @@ reference:
     desc: Distortion risk measures, and capital allocation to components.
     contents:
       - risk.Distortion
+      - risk.calibrate
       - risk.allocate
       - risk.capital
       - risk.entropic
