@@ -86,6 +86,55 @@ fn loglogistic_matches_scipy() {
     });
 }
 
+/// The families added for `aggregate` parity, from a row's `params`:
+/// inverse gamma, inverse Gaussian, Burr, scaled beta, and a lognormal or
+/// Burr conditioned on `(lower, upper]`.
+fn added_severity(c: &prospicio_validation::Case) -> Option<prospicio_prob::Dist> {
+    use prospicio_prob::{
+        Beta, Burr, Dist, InverseGamma, InverseGaussian, SeverityDist, Truncated,
+    };
+    let p = |k: &str| c.param("params", k);
+    let burr = || Burr::new(p("alpha"), p("gamma"), p("scale")).ok();
+    Some(match c.get("distribution") {
+        "inverse_gamma" => InverseGamma::new(p("shape"), p("scale")).ok()?.into(),
+        "inverse_gaussian" => InverseGaussian::new(p("mean"), p("shape")).ok()?.into(),
+        "burr" => burr()?.into(),
+        "beta" => Beta::new(p("a"), p("b"), p("scale")).ok()?.into(),
+        "truncated" => {
+            let inner: Dist = if c.get("params").contains("inner=burr") {
+                burr()?.into()
+            } else {
+                Lognormal::new(p("meanlog"), p("sdlog")).ok()?.into()
+            };
+            let inner = SeverityDist::try_from(inner).ok()?;
+            Truncated::new(inner, p("lower"), p("upper")).ok()?.into()
+        }
+        _ => return None,
+    })
+}
+
+#[test]
+fn added_severities_match_scipy() {
+    let names = ["inverse_gamma", "inverse_gaussian", "burr", "beta"];
+    let cases: Vec<_> = reference("distributions_scipy.csv")
+        .into_iter()
+        .filter(|c| names.contains(&c.get("distribution")))
+        .collect();
+    assert!(cases.len() > 100);
+    check(&cases, |c| {
+        let d = added_severity(c)?;
+        let arg = c.number("arg");
+        match c.get("quantity") {
+            "mean" => Some(d.mean()),
+            "variance" => Some(d.variance()),
+            "cdf" => Some(d.cdf(arg?)),
+            "survival" => Some(d.survival(arg?)),
+            "quantile" => d.quantile(arg?).ok(),
+            _ => None,
+        }
+    });
+}
+
 #[test]
 fn severities_match_integration() {
     use prospicio_prob::{Gamma, Loglogistic, Weibull};
@@ -310,7 +359,7 @@ fn layer_moments_match_integration() {
             "lognormal" => Box::new(
                 Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?,
             ),
-            _ => return None,
+            _ => Box::new(prospicio_prob::SeverityDist::try_from(added_severity(c)?).ok()?),
         };
         match c.get("quantity") {
             "layer" => Some(sev.layer(cover, att)),

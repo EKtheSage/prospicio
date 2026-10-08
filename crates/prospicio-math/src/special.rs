@@ -269,6 +269,215 @@ pub fn gamma_inc(a: f64, x: f64) -> (f64, f64) {
     }
 }
 
+/// Euler's constant `γ`.
+const EULER_GAMMA: f64 = 0.577_215_664_901_532_9;
+
+/// The unnormalized lower incomplete beta
+/// `B(a, b; x) = ∫_0^x t^(a-1) (1-t)^(b-1) dt` for `a > 0`, any `b`, and
+/// `0 <= x < 1` (finite for every `b`, since `x < 1`).
+///
+/// For `b > 0` it is `I_x(a, b) B(a, b)`. Otherwise it steps `b` up to a
+/// positive value (or zero) and back down by
+/// `B(a, b; x) = ((a + b) B(a, b + 1; x) - x^a (1 - x)^b) / b`. These are
+/// the limited moments of Pareto-tailed severities beyond the moments that
+/// exist (loglogistic, Burr).
+///
+/// ```
+/// use prospicio_math::special::beta_lower;
+///
+/// // B(1, 0; x) = -ln(1 - x) and B(1, -1; x) = x / (1 - x).
+/// assert!((beta_lower(1.0, 0.0, 0.5) - 2f64.ln()).abs() < 1e-15);
+/// assert!((beta_lower(1.0, -1.0, 0.75) - 3.0).abs() < 1e-14);
+/// ```
+pub fn beta_lower(a: f64, b: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if b > 0.0 {
+        let ln_b = ln_gamma(a) + ln_gamma(b) - ln_gamma(a + b);
+        return beta_inc(a, b, x) * ln_b.exp();
+    }
+    // The smallest c = b + n that is positive, or zero.
+    let steps = (-b).floor();
+    let c = b + steps;
+    let (mut value, mut c) = if c == 0.0 {
+        (beta_zero(a, x), 0.0)
+    } else {
+        let c = c + 1.0;
+        let ln_b = ln_gamma(a) + ln_gamma(c) - ln_gamma(a + c);
+        (beta_inc(a, c, x) * ln_b.exp(), c)
+    };
+    while c > b {
+        c -= 1.0;
+        value = ((a + c) * value - x.powf(a) * (c * (-x).ln_1p()).exp()) / c;
+    }
+    value
+}
+
+/// `B(a, 0; x) = ∫_0^x t^(a-1) / (1 - t) dt`: the series
+/// `Σ x^(a+n) / (a+n)` below `x = 1/2`; above it, with `y = 1 - x`,
+/// `-ln y - ψ(a) - γ - Σ_{k≥1} (-1)^k C(a-1, k) y^k / k`, from
+/// `∫_0^1 (1 - t^(a-1)) / (1 - t) dt = ψ(a) + γ`. For integer `a` the sum
+/// stops and this is `-ln(1 - x) - Σ_{k<a} x^k / k`.
+fn beta_zero(a: f64, x: f64) -> f64 {
+    if x < 0.5 {
+        let mut sum = 0.0;
+        let mut power = x.powf(a);
+        for n in 0..4000 {
+            let add = power / (a + f64::from(n));
+            sum += add;
+            if add < 1e-17 * sum {
+                break;
+            }
+            power *= x;
+        }
+        sum
+    } else {
+        let y = 1.0 - x;
+        let mut sum = 0.0;
+        // c_k = (-1)^k C(a - 1, k) y^k.
+        let mut c = 1.0;
+        for k in 1..4000 {
+            let kf = f64::from(k);
+            c *= -(a - kf) / kf * y;
+            let add = c / kf;
+            sum += add;
+            if c == 0.0 || add.abs() < 1e-17 * sum.abs() {
+                break;
+            }
+        }
+        -y.ln() - digamma(a) - EULER_GAMMA - sum
+    }
+}
+
+/// The unnormalized upper incomplete gamma `Γ(s, z) = ∫_z^∞ t^(s-1) e^(-t) dt`
+/// for any real `s` and `z > 0` (for `s <= 0` it is finite only because
+/// `z > 0`). NaN for `z <= 0` with `s <= 0`.
+///
+/// For `s > 0` it is `Γ(s) Q(s, z)`. Otherwise it starts from `s + n` in
+/// `(0, 1)`, or from the exponential integral `E_1(z) = Γ(0, z)` when `s`
+/// is an integer, and steps down by `Γ(c, z) = (Γ(c + 1, z) - z^c e^(-z)) / c`.
+/// These are the limited moments of the inverse gamma beyond the moments
+/// that exist.
+///
+/// ```
+/// use prospicio_math::special::gamma_upper;
+///
+/// // Γ(1, z) = e^(-z); Γ(-1, z) = e^(-z)/z - E_1(z).
+/// assert!((gamma_upper(1.0, 2.0) - (-2f64).exp()).abs() < 1e-16);
+/// let e1 = gamma_upper(0.0, 2.0);
+/// assert!((gamma_upper(-1.0, 2.0) - ((-2f64).exp() / 2.0 - e1)).abs() < 1e-15);
+/// ```
+pub fn gamma_upper(s: f64, z: f64) -> f64 {
+    if s.is_nan() || z.is_nan() || z < 0.0 {
+        return f64::NAN;
+    }
+    if s > 0.0 {
+        return ln_gamma(s).exp() * gamma_inc(s, z).1;
+    }
+    if z == 0.0 {
+        return f64::NAN;
+    }
+    let steps = (-s).floor();
+    let c = s + steps;
+    let (mut value, mut c) = if c == 0.0 {
+        (expint_e1(z), 0.0)
+    } else {
+        let c = c + 1.0;
+        (ln_gamma(c).exp() * gamma_inc(c, z).1, c)
+    };
+    while c > s {
+        c -= 1.0;
+        value = (value - (c * z.ln() - z).exp()) / c;
+    }
+    value
+}
+
+/// The exponential integral `E_1(z) = ∫_z^∞ e^(-t) / t dt` for `z > 0`:
+/// the power series up to `z = 1`, Lentz's continued fraction above.
+///
+/// ```
+/// use prospicio_math::special::expint_e1;
+///
+/// // SciPy: scipy.special.exp1(1.0).
+/// assert!((expint_e1(1.0) - 0.21938393439552029).abs() < 1e-16);
+/// ```
+pub fn expint_e1(z: f64) -> f64 {
+    if z.is_nan() || z < 0.0 {
+        return f64::NAN;
+    }
+    if z == 0.0 {
+        return f64::INFINITY;
+    }
+    if z == f64::INFINITY {
+        return 0.0;
+    }
+    if z <= 1.0 {
+        // -γ - ln z - Σ_{k≥1} (-z)^k / (k k!).
+        let mut sum = 0.0;
+        let mut term = 1.0;
+        for k in 1..200 {
+            let kf = f64::from(k);
+            term *= -z / kf;
+            let add = term / kf;
+            sum += add;
+            if add.abs() < 1e-17 * sum.abs() {
+                break;
+            }
+        }
+        -EULER_GAMMA - z.ln() - sum
+    } else {
+        const TINY: f64 = 1e-300;
+        let mut b = z + 1.0;
+        let mut c = 1.0 / TINY;
+        let mut d = 1.0 / b;
+        let mut h = d;
+        for i in 1..10_000 {
+            let an = -f64::from(i) * f64::from(i);
+            b += 2.0;
+            d = 1.0 / (an * d + b);
+            c = b + an / c;
+            let delta = c * d;
+            h *= delta;
+            if (delta - 1.0).abs() < 1e-16 {
+                break;
+            }
+        }
+        h * (-z).exp()
+    }
+}
+
+/// Mills ratio `R(t) = Φ(-t) / φ(t)` for `t >= 0`, the normal tail
+/// relative to the density, finite where both underflow: directly below
+/// `t = 10`, by the continued fraction `1 / (t + 1 / (t + 2 / (t + ⋯)))`
+/// above.
+///
+/// ```
+/// use prospicio_math::special::{mills_ratio, norm_cdf, norm_pdf};
+///
+/// assert!((mills_ratio(1.0) - norm_cdf(-1.0) / norm_pdf(1.0)).abs() < 1e-15);
+/// // R(t) ~ 1/t far in the tail.
+/// assert!((mills_ratio(1e6) * 1e6 - 1.0).abs() < 1e-11);
+/// ```
+pub fn mills_ratio(t: f64) -> f64 {
+    if t.is_nan() {
+        return f64::NAN;
+    }
+    if t < 10.0 {
+        return norm_cdf(-t) / norm_pdf(t);
+    }
+    if t == f64::INFINITY {
+        return 0.0;
+    }
+    // Backward evaluation of the continued fraction; 200 levels are far
+    // more than t >= 10 needs.
+    let mut v = 0.0;
+    for k in (1..=200).rev() {
+        v = f64::from(k) / (t + v);
+    }
+    1.0 / (t + v)
+}
+
 /// `ln(x^a e^(-x) / Γ(a))`. For `a >= 10`, as
 /// `a (ln(1 + u) - u) + ln(a / 2π) / 2 - c(a)` with `u = (x - a) / a` and
 /// `c` the Stirling series remainder of `ln Γ(a)`, so the large, nearly
@@ -417,5 +626,48 @@ mod tests {
         assert_eq!(student_t_cdf(f64::INFINITY, 3.0), 1.0);
         assert_eq!(student_t_cdf(f64::NEG_INFINITY, 3.0), 0.0);
         assert!(student_t_cdf(1.0, 0.0).is_nan());
+    }
+
+    /// mpmath 1.4.1 at 30 digits: `quad` of the integrand for `B(a, b; x)`,
+    /// `gammainc(s, z)` for `Γ(s, z)`, `e1(z)` for `E_1(z)`.
+    #[test]
+    fn beta_lower_matches_mpmath() {
+        for (a, b, x, want) in [
+            (0.7, -2.0, 0.6, 3.598744771047808),
+            (1.5, 0.5, 0.7, 0.5328990169356083),
+            (2.0, -1.0, 0.9, 6.697414907005956),
+            (2.25, -0.25, 0.4, 0.08655486451119004),
+            (3.0, -1.0, 0.2, 0.003712897371580489),
+            (2.5, 0.0, 0.3, 0.02525438280078752),
+            (2.5, 0.0, 0.8, 0.6213887331578339),
+            (3.0, 0.0, 0.9, 0.9975850929940459),
+        ] {
+            let got = beta_lower(a, b, x);
+            assert!((got / want - 1.0).abs() < 1e-13, "{a} {b} {x}: {got}");
+        }
+    }
+
+    #[test]
+    fn gamma_upper_matches_mpmath() {
+        assert!((expint_e1(0.1) / 1.8229239584193908 - 1.0).abs() < 1e-14);
+        assert!((expint_e1(5.0) / 0.0011482955912753257 - 1.0).abs() < 1e-14);
+        assert!((expint_e1(50.0) / 3.783264029550459e-24 - 1.0).abs() < 1e-13);
+        for (s, z, want) in [
+            (-0.5, 0.3, 1.1503670473551644),
+            (-1.5, 2.0, 0.011832994103345996),
+            (-2.0, 0.7, 0.3389003309406555),
+            (0.4, 1.5, 0.13628632343383457),
+            (-0.25, 4.0, 0.0025577114691076545),
+        ] {
+            let got = gamma_upper(s, z);
+            assert!((got / want - 1.0).abs() < 1e-13, "{s} {z}: {got}");
+        }
+    }
+
+    #[test]
+    fn mills_ratio_is_continuous_at_the_switch() {
+        let below = norm_cdf(-10.0) / norm_pdf(10.0);
+        assert!((mills_ratio(10.0) / below - 1.0).abs() < 1e-13);
+        assert!((mills_ratio(0.0) - (PI / 2.0).sqrt()).abs() < 1e-15);
     }
 }

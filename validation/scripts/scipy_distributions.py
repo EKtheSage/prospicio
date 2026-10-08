@@ -126,11 +126,44 @@ def counts():
         yield from count_rows("binomial", f"n={n};p={p}", stats.binom(n, p))
 
 
+# Inverse gamma (shape, scale), inverse Gaussian (mean, shape lambda) as
+# SciPy's invgauss(mu=mean/lambda, scale=lambda), Burr XII (alpha, gamma,
+# scale) as burr12(c=gamma, d=alpha, scale) and the scaled beta (a, b,
+# scale). Mean and variance only where they are finite.
+INVERSE_GAMMAS = [(0.7, 100.0), (2.5, 3000.0), (6.0, 50.0)]
+INVERSE_GAUSSIANS = [(1000.0, 250.0), (1.0, 4.0), (50.0, 20000.0)]
+BURRS = [(0.8, 1.5, 100.0), (2.0, 1.2, 1000.0), (3.0, 4.0, 5.0)]
+BETAS = [(0.5, 0.5, 1.0), (2.0, 5.0, 1000.0), (8.0, 1.5, 20.0)]
+
+
+def new_severity_rows():
+    cases = []
+    for a, t in INVERSE_GAMMAS:
+        cases.append(("inverse_gamma", f"shape={a};scale={t}", stats.invgamma(a, scale=t), a > 1, a > 2))
+    for m, lam in INVERSE_GAUSSIANS:
+        cases.append(("inverse_gaussian", f"mean={m};shape={lam}", stats.invgauss(m / lam, scale=lam), True, True))
+    for alpha, gamma, t in BURRS:
+        d = stats.burr12(gamma, alpha, scale=t)
+        cases.append(("burr", f"alpha={alpha};gamma={gamma};scale={t}", d, alpha * gamma > 1, alpha * gamma > 2))
+    for a, b, t in BETAS:
+        cases.append(("beta", f"a={a};b={b};scale={t}", stats.beta(a, b, scale=t), True, True))
+    for name, params, d, has_mean, has_var in cases:
+        if has_mean:
+            yield (name, params, "mean", "", d.mean(), 0.0, 1e-12)
+        if has_var:
+            yield (name, params, "variance", "", d.var(), 0.0, 1e-11)
+        for p in PROBS:
+            x = d.ppf(p) if p <= 0.5 else d.isf(1 - p)
+            yield (name, params, "quantile", p, x, 0.0, 1e-10)
+            yield (name, params, "cdf", x, d.cdf(x), 1e-15, 1e-11)
+            yield (name, params, "survival", x, d.sf(x), 1e-300, 1e-10)
+
+
 def main():
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
-        for r in list(rows()) + list(gamma_rows()) + list(counts()) + list(weibull_rows()) + list(loglogistic_rows()):
+        for r in list(rows()) + list(gamma_rows()) + list(counts()) + list(weibull_rows()) + list(loglogistic_rows()) + list(new_severity_rows()):
             dist, params, qty, arg, expected, abs_tol, rel_tol, *src = r
             w.writerow([dist, params, qty, repr(float(arg)) if arg != "" else "", repr(float(expected)), abs_tol, rel_tol, src[0] if src else SOURCE])
     print(f"wrote {OUT}", file=sys.stderr)

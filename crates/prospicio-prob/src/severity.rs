@@ -63,3 +63,93 @@ impl<T: Severity + ?Sized> Severity for Box<T> {
         (**self).layer_variance(limit, attachment)
     }
 }
+
+/// Limited moments of a family with closed forms, from which
+/// [`severity_from_moments!`] builds the [`Severity`] methods.
+///
+/// Layer integrals `∫_a^b x^(j-1) S(x) dx` are differences of limited
+/// moments `E[min(X, u)^j]` below the pivot (where those are small) and of
+/// tail moments `E[X^j; X > u] - u^j S(u)` above it (where limited moments
+/// are close to the full moment and would cancel). Without a finite `j`-th
+/// moment there is no tail form and limited moments are used throughout.
+pub(crate) trait Moments: Distribution {
+    /// `E[min(X, u)^j]` for `u >= 0`, `j` in 1 and 2; the full moment
+    /// (possibly infinite) at `u = ∞`.
+    fn limited(&self, j: i32, u: f64) -> f64;
+
+    /// `E[X^j; X > u] - u^j S(u)` for `u >= 0`, called only when the `j`-th
+    /// moment is finite; zero at `u = ∞`.
+    fn tail(&self, j: i32, u: f64) -> f64;
+
+    /// Where the layer integral switches from limited to tail moments, or
+    /// `None` when the `j`-th moment is infinite.
+    fn pivot(&self, j: i32) -> Option<f64>;
+
+    /// `∫_a^b x^(j-1) S(x) dx` for `0 <= a <= b <= ∞`.
+    fn partial(&self, j: i32, a: f64, b: f64) -> f64 {
+        if b <= a {
+            return 0.0;
+        }
+        let jf = f64::from(j);
+        let lim = |u: f64| self.limited(j, u);
+        let tail = |u: f64| self.tail(j, u);
+        match self.pivot(j) {
+            None => (lim(b) - lim(a)) / jf,
+            Some(m) if b <= m => (lim(b) - lim(a)) / jf,
+            Some(m) if a >= m => (tail(a) - tail(b)) / jf,
+            Some(m) => (lim(m) - lim(a) + tail(m) - tail(b)) / jf,
+        }
+    }
+}
+
+/// Implements [`Severity`] for a type that implements [`Moments`].
+macro_rules! severity_from_moments {
+    ($ty:ty) => {
+        impl $crate::severity::Severity for $ty {
+            fn lev(&self, limit: f64) -> f64 {
+                use $crate::severity::Moments;
+                if limit <= 0.0 {
+                    return limit;
+                }
+                self.limited(1, limit)
+            }
+
+            /// From the tail, so it does not cancel against the mean;
+            /// infinite with the mean.
+            fn stop_loss(&self, retention: f64) -> f64 {
+                use $crate::severity::Moments;
+                if retention <= 0.0 {
+                    return $crate::Distribution::mean(self) - retention;
+                }
+                if self.pivot(1).is_none() {
+                    return f64::INFINITY;
+                }
+                self.tail(1, retention)
+            }
+
+            /// `∫_a^(a+l) S(x) dx`.
+            fn layer(&self, limit: f64, attachment: f64) -> f64 {
+                use $crate::severity::Moments;
+                let a = attachment.max(0.0);
+                self.partial(1, a, a + limit)
+            }
+
+            /// `2 ∫_a^b (x - a) S(x) dx` with `b = a + limit`.
+            fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+                use $crate::severity::Moments;
+                let a = attachment.max(0.0);
+                let b = a + limit;
+                let p1 = self.partial(1, a, b);
+                if p1 == 0.0 {
+                    return 0.0;
+                }
+                let p2 = self.partial(2, a, b);
+                if p2 == f64::INFINITY {
+                    return f64::INFINITY;
+                }
+                (2.0 * (p2 - a * p1)).max(0.0)
+            }
+        }
+    };
+}
+pub(crate) use severity_from_moments;

@@ -3,7 +3,7 @@
 use std::f64::consts::PI;
 
 use prospicio_core::{Error, Result};
-use prospicio_math::special::{beta_inc, ln_gamma};
+use prospicio_math::special::beta_lower;
 
 use crate::distribution::{Distribution, check_probability};
 use crate::severity::Severity;
@@ -160,61 +160,6 @@ impl Loglogistic {
     }
 }
 
-/// The unnormalized lower incomplete beta `B(a, b; x) = ∫_0^x t^(a-1) (1-t)^(b-1) dt`
-/// for `a > 0`, any `b`, and `0 <= x < 1`.
-///
-/// For `b > 0` it is `I_x(a, b) B(a, b)`. Otherwise it steps `b` up to a
-/// positive value and back down by
-/// `B(a, b; x) = ((a + b) B(a, b + 1; x) - x^a (1 - x)^b) / b`. A zero `b`
-/// on the way only arises here with integer `a` (`a + b = 2`), where
-/// `B(a, 0; x) = -ln(1 - x) - Σ_{k<a} x^k / k`.
-fn beta_lower(a: f64, b: f64, x: f64) -> f64 {
-    if x <= 0.0 {
-        return 0.0;
-    }
-    if b > 0.0 {
-        let ln_b = ln_gamma(a) + ln_gamma(b) - ln_gamma(a + b);
-        return beta_inc(a, b, x) * ln_b.exp();
-    }
-    // The smallest c = b + n that is positive, or zero.
-    let steps = (-b).floor();
-    let c = b + steps;
-    let (mut value, mut c) = if c == 0.0 {
-        (beta_zero(a, x), 0.0)
-    } else {
-        let c = c + 1.0;
-        let ln_b = ln_gamma(a) + ln_gamma(c) - ln_gamma(a + c);
-        (beta_inc(a, c, x) * ln_b.exp(), c)
-    };
-    while c > b {
-        c -= 1.0;
-        value = ((a + c) * value - x.powf(a) * (c * (-x).ln_1p()).exp()) / c;
-    }
-    value
-}
-
-/// `B(a, 0; x)` for integer `a >= 1`: a power series for small `x`, where
-/// the closed form would cancel.
-fn beta_zero(a: f64, x: f64) -> f64 {
-    let m = a.round() as i32;
-    if x < 0.5 {
-        let mut sum = 0.0;
-        let mut term = x.powi(m);
-        for n in 0..2000 {
-            let add = term / f64::from(m + n);
-            sum += add;
-            if add < 1e-17 * sum {
-                break;
-            }
-            term *= x;
-        }
-        sum
-    } else {
-        let partial: f64 = (1..m).map(|k| x.powi(k) / f64::from(k)).sum();
-        -(-x).ln_1p() - partial
-    }
-}
-
 impl Distribution for Loglogistic {
     fn mean(&self) -> f64 {
         self.raw_moment(1.0)
@@ -327,30 +272,5 @@ mod tests {
         let direct = m(2, b) - m(2, a) - 2.0 * a * (m(1, b) - m(1, a));
         let tails = d.layer_second_moment(b - a, a);
         assert!((tails / direct - 1.0).abs() < 1e-11);
-    }
-
-    #[test]
-    fn beta_lower_matches_integration() {
-        // B(a, b; x) by the midpoint rule on a fine grid, for b of both signs.
-        for (a, b, x) in [
-            (1.5, 0.5, 0.7),
-            (2.0, -1.0, 0.9),
-            (2.25, -0.25, 0.4),
-            (3.0, -1.0, 0.2),
-        ] {
-            let n = 200_000;
-            let h = x / f64::from(n);
-            let num: f64 = (0..n)
-                .map(|i| {
-                    let t = (f64::from(i) + 0.5) * h;
-                    t.powf(a - 1.0) * (1.0 - t).powf(b - 1.0) * h
-                })
-                .sum();
-            let got = beta_lower(a, b, x);
-            assert!(
-                (got / num - 1.0).abs() < 1e-8,
-                "{a} {b} {x}: {got} vs {num}"
-            );
-        }
     }
 }
