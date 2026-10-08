@@ -8,7 +8,8 @@
 //! exposure column, Merz and Wüthrich's one-year view,
 //! [`MackFit::claims_development_result`], its simulated counterpart for
 //! any method, [`OdpBootstrap::one_year`] (or [`MackBootstrap::one_year`]
-//! with Mack's process), and Clark's growth curves
+//! with Mack's process), Mack's bootstrap of the lifetime view
+//! ([`MackBootstrap::fit`]), and Clark's growth curves
 //! ([`ClarkLdf`], [`ClarkCapeCod`]) (`docs/design/reserving-v02.md`).
 //! Results are checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.

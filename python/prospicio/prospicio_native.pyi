@@ -5212,8 +5212,8 @@ class MackBootstrapFit:
     @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
-        The chain ladder of Mack's model (its averaging), whose reserves the
-        bootstrap is centred on.
+        The chain ladder of Mack's model (its averaging): the reserves the
+        bootstrap's mean equals with ``centre_residuals=True``.
         """
     @property
     def development(self, /) -> list[int]:

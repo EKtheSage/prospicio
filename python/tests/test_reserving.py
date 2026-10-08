@@ -1724,7 +1724,7 @@ def test_mack_one_year_every_segment_at_once():
 # validation/tests/reserving_mack_bootstrap.rs: with centred residuals the
 # total reserve's standard deviation is Mack's analytic standard error and
 # its mean the chain ladder's reserve, within five Monte Carlo standard
-# errors (0.5% of the SD and 0.47% of the mean at 20,000 simulations on
+# errors (2.5% of the SD and 0.47% of the mean at 20,000 simulations on
 # GenIns). England, Verrall and Wuthrich (2019), Table 4: total expected
 # reserve 18,684,738 and standard deviation 2,448,700 from 500,000
 # simulations, Mack's rule for the last sigma.

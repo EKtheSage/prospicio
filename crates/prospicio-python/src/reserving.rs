@@ -4670,8 +4670,8 @@ pub(crate) struct PyMackBootstrapFit {
 
 #[pymethods]
 impl PyMackBootstrapFit {
-    /// The chain ladder of Mack's model (its averaging), whose reserves the
-    /// bootstrap is centred on.
+    /// The chain ladder of Mack's model (its averaging): the reserves the
+    /// bootstrap's mean equals with ``centre_residuals=True``.
     #[getter]
     fn chain_ladder(&self) -> PyChainLadderFit {
         PyChainLadderFit {

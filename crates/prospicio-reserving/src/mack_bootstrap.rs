@@ -1145,10 +1145,12 @@ mod tests {
     fn lifetime_mean_is_the_chain_ladder_only_when_centred() {
         // RAA's pool has mean 0.14, which biases every pseudo factor
         // upwards, and compounded over an origin's remaining factors the
-        // mean total reserve far above the chain ladder's (about 17%).
-        // Centred, the pseudo factors are unbiased and independent of each
-        // other and of the cell they multiply, so the mean reserve is the
-        // chain ladder's: within four Monte Carlo standard errors.
+        // mean total reserve far above the chain ladder's (about 17%: 1.154
+        // to 1.180 times it over seeds 1 to 20 at 4,000 simulations, or 17.8
+        // to 20.3 Monte Carlo standard errors, so the bound of 12 does not
+        // hang on the seed). Centred, the pseudo factors are unbiased and independent
+        // of each other and of the cell they multiply, so the mean reserve
+        // is the chain ladder's: within four Monte Carlo standard errors.
         let n_sims = 4_000;
         let z = |centre_residuals| {
             let fit = MackBootstrap {
@@ -1169,7 +1171,7 @@ mod tests {
             (mean - cl) / (sd / (n_sims as f64).sqrt())
         };
         let uncentred = z(false);
-        assert!(uncentred > 20.0, "uncentred: {uncentred}");
+        assert!(uncentred > 12.0, "uncentred: {uncentred}");
         let centred = z(true);
         assert!(centred.abs() < 4.0, "centred: {centred}");
     }
