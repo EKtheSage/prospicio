@@ -1,5 +1,9 @@
 # Bundle history
 
+## 2026-10-08
+
+* **Correction**: [Mack's bootstrap, lifetime view, against Mack's standard errors and EVW Table 4](/findings/mack-bootstrap-lifetime-vs-mack.md): the parameter error beyond Mack's linear formula has a closed form, `C^2 (prod(f_k^2 + v sigma_k^2 / S_k) - prod f_k^2)`, which gives RAA 1990 1.0066 times `sqrt(v)` times Mack's (1989 1.0022, earlier at most 1.0009), not the 1.0% to 1.5% measured at 50,000 simulations; and the uncentred RAA bias is 17.8 to 20.3 Monte Carlo standard errors at 4,000 simulations over seeds 1 to 20, so its unit test now asserts above 12, not above 20. From the review of branch claude/mack-bootstrap-runoff.
+
 ## 2026-10-07
 
 * **Creation**: [Mack's bootstrap, lifetime view, against Mack's standard errors and EVW Table 4](/findings/mack-bootstrap-lifetime-vs-mack.md), from building `MackBootstrap::fit` (branch claude/mack-bootstrap-runoff): centred, it reconciles with R `MackChainLadder` on RAA, GenIns and ABC once the parameter error is scaled by the residuals' variance `1 - m^2`; uncentred, the mean reserve is biased (RAA +17%, GenIns +0.7%, ABC -0.8%); EVW's Table 4 expected reserves agree with the centred bootstrap, not the uncentred one; the Gamma sampler is slow at ABC's large shapes.

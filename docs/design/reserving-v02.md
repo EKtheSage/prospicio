@@ -732,9 +732,10 @@ bias every pseudo factor, `E[f*_k] = f_k + m sigma_k sum(C_k^(alpha / 2))
 / sum(C_k^alpha)`, and so the CDR, whose expectation under Mack's model is
 zero: at 20,000 simulations its mean is -0.214 (RAA), -0.038 (GenIns) and
 +0.176 (ABC) times its standard deviation, which shifts every quantile,
-the 99.5% value at risk included. EVW's Appendix 1 does not centre, and
-their Table 4 shows only a small effect on Taylor–Ashe (GenIns), whose
-pool mean is 0.01. `centre_residuals: true` subtracts `m` from the pool
+the 99.5% value at risk included. EVW's Appendix 1 does not centre, but
+their Table 4 lifetime expected reserves on Taylor–Ashe (GenIns, pool
+mean 0.01) agree with centred residuals (Mack's lifetime view, below).
+`centre_residuals: true` subtracts `m` from the pool
 before resampling, for the pseudo factors and the `Residuals` process.
 Centred, the mean CDR is -0.011, -0.003 and +0.007 times its standard
 deviation, within Monte Carlo error of zero, and the standard deviation
@@ -879,8 +880,15 @@ factor's variance, and with it every parameter error, is `v` times Mack's
   parameter risk, every origin and the total, both rules, all three
   datasets. Before the `v` adjustment RAA's came out 0.8% to 1.2% below
   R's at every origin but 1990 (2.7 to 3.8 standard errors at 50,000);
-  after it, RAA 1990 is 1.0% to 1.5% above, the linear approximation's
-  neglected terms on its volatile young factors.
+  after it, RAA 1990 is above, the linear approximation's neglected terms
+  on its volatile young factors. Centred, the pseudo factors are
+  independent with mean `f_k` and variance `v sigma_k^2 / S_k`, so the
+  exact parameter variance is `C^2 (prod(f_k^2 + v sigma_k^2 / S_k) -
+  prod f_k^2)` against Mack's linear `C^2 prod f_k^2 sum(v sigma_k^2 /
+  (f_k^2 S_k))`: 1.0066 times `sqrt(v)` times Mack's for RAA 1990, 1.0022
+  for 1989 and at most 1.0009 earlier (log-linear sigma; the linear form
+  reproduces R's 7,275 for 1990). The 1.0% to 1.5% measured at 50,000
+  simulations is within two Monte Carlo standard errors of that.
 * EVW's Table 4 (Mack's rule, GenIns): every origin's and the total
   expected reserve and standard deviation within five standard errors of
   the two simulations combined, centred; uncentred, the total expected

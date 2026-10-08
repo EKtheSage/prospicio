@@ -43,10 +43,18 @@ process draw of mean `f* C` and variance `sigma^2 C^(2 - alpha)` (EVW
   50,000), which `sqrt(0.981) = 0.990` explains; the CI test compares with
   `sqrt(process^2 + v parameter^2)`.
 * **Mack's formula is linear.** After the `v` adjustment, RAA 1990's
-  parameter error is 1.0% to 1.5% above Mack's: its first pseudo factor's
-  standard deviation is a third of the factor, and the variance of a
-  product of random factors exceeds the sum of their relative variances
-  that Mack's formula keeps. An inference, consistent with the sign.
+  parameter error is above Mack's: its first pseudo factor's standard
+  deviation is a third of the factor, and the variance of a product of
+  random factors exceeds the sum of their relative variances that Mack's
+  formula keeps. Centred, the pseudo factors are independent with mean
+  `f_k` and variance `v sigma_k^2 / S_k`, so the exact parameter variance
+  is `C^2 (prod(f_k^2 + v sigma_k^2 / S_k) - prod f_k^2)` against Mack's
+  `C^2 prod f_k^2 sum(v sigma_k^2 / (f_k^2 S_k))`. On RAA (log-linear
+  sigma, whose linear form reproduces R's 7,275 for 1990) the exact value
+  is 1.0066 times `sqrt(v)` times Mack's for 1990, 1.0022 for 1989 and at
+  most 1.0009 earlier. The 1.0% to 1.5% first measured at 50,000
+  simulations overstated it; the gap is within two Monte Carlo standard
+  errors.
 * **Uncentred residuals do not reconcile.** With EVW's pool as it is, the
   pool's mean (RAA 0.14) biases every pseudo factor and the bias compounds
   over an origin's remaining factors: total mean reserve 1.17 (RAA), 1.007
