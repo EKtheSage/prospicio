@@ -4832,6 +4832,49 @@ class Grid:
         """
 
 @final
+class GridSize:
+    """
+    A recommended FFT grid, from ``recommend_grid`` or ``fft_auto``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def extent(self, /) -> float:
+        """
+        The extent the grid was sized to cover.
+        """
+    @property
+    def jump_extent(self, /) -> float |None:
+        """
+        The single-big-jump extent at ``p_star``, or ``None``.
+        """
+    @property
+    def method(self, /) -> str:
+        """
+        What sized it: ``"moments"`` or ``"single_big_jump"``.
+        """
+    @property
+    def moment_extent(self, /) -> float |None:
+        """
+        The moment extent, or ``None`` with an infinite variance.
+        """
+    @property
+    def points(self, /) -> int:
+        """
+        Number of points, a power of two.
+        """
+    @property
+    def step(self, /) -> float:
+        """
+        Bucket size, a ``round_bucket`` rung.
+        """
+    @property
+    def tail_estimate(self, /) -> float:
+        """
+        ``min(1, E[N] S_X(top))``: roughly the probability beyond the grid
+        from one claim alone. Raise ``log2`` when it is not small.
+        """
+
+@final
 class HierarchicalStacking:
     """
     Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
@@ -11542,6 +11585,37 @@ def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundRepo
         If ``points`` is 0.
     """
 
+def fft_auto(frequency: Any, severity: Any, log2: int = 16, p: float = ..., p_star: float = ...) -> tuple[Grid, CompoundReport, GridSize]:
+    """
+    The compound distribution by FFT on the grid ``recommend_grid``
+    chooses, the severity discretized by rounding.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    log2 : int, default 16
+    p : float, default 1 - 1e-5
+    p_star : float, default 1 - 1e-12
+    
+    Returns
+    -------
+    tuple of (Grid, CompoundReport, GridSize)
+    
+    Raises
+    ------
+    ValueError
+        As ``recommend_grid``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import fft_auto
+    >>> from prospicio.distributions import Lognormal, Poisson
+    >>> agg, report, size = fft_auto(Poisson(5.0), Lognormal.from_mean_cv(100.0, 1.0))
+    >>> round(agg.mean()), report.aliasing_error < 1e-12
+    (500, True)
+    """
+
 def fit_pml_curve(return_periods: Sequence[float], amounts: Sequence[float], tail_alpha: float = 2.0, truncation: float |None = None) -> TowerModel:
     """
     The model through the points of a PML curve: ``amounts[j]`` is
@@ -12197,6 +12271,70 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
     Returns
     -------
     list of float
+    """
+
+def recommend_grid(frequency: Any, severity: Any, log2: int = 16, p: float = ..., p_star: float = ...) -> GridSize:
+    """
+    A grid for the compound distribution of ``frequency`` claims of
+    ``severity``, as ``aggregate`` sizes one when no bucket is given: the
+    larger of a lognormal or gamma fitted to the aggregate's mean and
+    variance at ``p``, and one big claim on a typical bulk at ``p``; then
+    one big claim at ``p_star`` when it fits at the same bucket.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+        Any distribution but ``Sampled``.
+    log2 : int, default 16
+        At most ``2**log2`` points.
+    p : float, default 1 - 1e-5
+    p_star : float, default 1 - 1e-12
+    
+    Returns
+    -------
+    GridSize
+    
+    Raises
+    ------
+    ValueError
+        If the aggregate mean is not finite and positive, or ``log2`` is not
+        in ``1..=30``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import recommend_grid
+    >>> from prospicio.distributions import Gamma, Poisson
+    >>> g = recommend_grid(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    >>> g.step, g.points, g.method
+    (0.0625, 65536, 'moments')
+    """
+
+def round_bucket(bs: float) -> float:
+    """
+    Rounds a bucket size up to a "nice" value, as ``aggregate``'s
+    ``round_bucket``: ``{1, 2, 4, 5, 8} * 10**k`` at 1 and above, a power of
+    two below.
+    
+    Parameters
+    ----------
+    bs : float
+        Positive and finite.
+    
+    Returns
+    -------
+    float
+    
+    Raises
+    ------
+    ValueError
+        If ``bs`` is not positive and finite.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import round_bucket
+    >>> round_bucket(3.4), round_bucket(0.3)
+    (4.0, 0.5)
     """
 
 def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> list[float]:

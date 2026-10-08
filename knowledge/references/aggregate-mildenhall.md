@@ -98,3 +98,20 @@ sources:
   `Truncated::splice` follow that. SciPy 1.18 matches prospicio's new
   families to `1e-10` or better on quantiles (taken by `isf` above the
   median) and `1e-11` on the cdf.
+* **Grid sizing.** With no `bs`, `Aggregate.update` sizes the grid at
+  `log2 = 16` from three-moment shifted lognormal and gamma fits at
+  `bucket_sizing_p = 0.99999`, floors it by a single big jump
+  `ES - mu_X + q_X(1 - (1 - p*)/E[N])` with `p* = 1 - 1e-12` and the
+  severity tail floored at `1e-14`, and rounds the bucket up on
+  `round_bucket`'s ladder `{1, 2, 4, 5, 8} × 10^k` (powers of two below
+  1). Its `q_X` there is a method-of-moments quantile, not the
+  severity's (a Lomax with alpha 2.5 gets 0.58m where the true quantile is
+  20.9m), and it refuses an infinite-variance book without an explicit
+  `bs` (`InfiniteVarianceError`). `est_m` is the grid's mean, not the
+  exact one (49,970.5 for a book whose mean is 50,000).
+* **`normalize=True` thins the tail.** By default `aggregate` rescales the
+  severity cut at the grid top instead of keeping that mass: on a Poisson
+  20 Lomax (alpha 2.5, scale 100) book at bucket 1 the 0.9999 quantile is
+  14,401 where finer and longer grids converge on 14,494.5;
+  `normalize=False` gives 14,495, which is what prospicio's rounding
+  (lumping the mass on the last point) gives.

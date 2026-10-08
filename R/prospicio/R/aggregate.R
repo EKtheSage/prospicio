@@ -30,6 +30,56 @@ compound_distribution <- function(frequency, severity, points, method = c("panje
   grid_distribution(ptr = ptr)
 }
 
+#' FFT grid sizing
+#'
+#' `recommend_grid()` chooses a grid (bucket size and number of points) for
+#' the compound distribution of `frequency` claims of `severity`, as
+#' Mildenhall's `aggregate` sizes one when no bucket is given: the larger of
+#' a lognormal or gamma fitted to the aggregate's mean and variance at `p`,
+#' and one big claim on a typical bulk at `p`; then one big claim at
+#' `p_star` when it fits at the same bucket. With an infinite variance the
+#' single big jump alone sizes the grid. `compound_auto()` discretizes the
+#' severity by rounding on that grid and runs the FFT. `round_bucket()`
+#' rounds a bucket size up to `aggregate`'s ladder:
+#' `{1, 2, 4, 5, 8} * 10^k` at 1 and above, a power of two below.
+#'
+#' @param frequency A claim count.
+#' @param severity Any severity but a [sampled] distribution.
+#' @param log2 At most `2^log2` points.
+#' @param p Probability of the moment extent.
+#' @param p_star Aggregate probability the single big jump covers.
+#' @param bs Positive bucket sizes.
+#' @returns `recommend_grid()`: a list with `step`, `points`, `extent`,
+#'   `method` (`"moments"` or `"single_big_jump"`), `moment_extent` (`NaN`
+#'   with an infinite variance), `jump_extent` and `tail_estimate` (roughly
+#'   the probability beyond the grid from one claim; raise `log2` when it is
+#'   not small). `compound_auto()`: a [grid_distribution] whose `report`
+#'   also holds that list as `sizing`. `round_bucket()`: a numeric vector.
+#' @export
+#' @examples
+#' g <- recommend_grid(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49))
+#' g$step
+#' agg <- compound_auto(poisson_count(5), lognormal_from_mean_cv(100, 1))
+#' mean(agg)
+#' agg@report$sizing$points
+#' round_bucket(c(3.4, 0.3))
+recommend_grid <- function(frequency, severity, log2 = 16, p = 1 - 1e-5, p_star = 1 - 1e-12) {
+  rust_result(recommend_grid_rust(frequency@ptr, severity@ptr, as.double(log2),
+                                  as.double(p), as.double(p_star)))
+}
+
+#' @rdname recommend_grid
+#' @export
+compound_auto <- function(frequency, severity, log2 = 16, p = 1 - 1e-5, p_star = 1 - 1e-12) {
+  ptr <- rust_result(compound_auto_rust(frequency@ptr, severity@ptr, as.double(log2),
+                                        as.double(p), as.double(p_star)))
+  grid_distribution(ptr = ptr)
+}
+
+#' @rdname recommend_grid
+#' @export
+round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
+
 #' Simulated years of losses
 #'
 #' Simulates `n_sims` years: a claim count from `frequency`, then that many
