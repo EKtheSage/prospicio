@@ -12,7 +12,8 @@ events_from_years(years, sums_insured = NULL, seed = 0, times = NULL)
 \item{sums_insured}{\code{NULL}, or a list of the same shape: each loss's sum
 insured, at least the loss.}
 
-\item{seed}{Recorded in results' provenance.}
+\item{seed}{Recorded in results' provenance; the samplers are not, since
+the losses were not drawn here.}
 
 \item{times}{\code{NULL}, or a list of the same shape: each loss's time as the
 fraction of the year elapsed (in \verb{[0, 1]}, non-decreasing within a
