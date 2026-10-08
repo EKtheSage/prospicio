@@ -80,6 +80,8 @@ pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_pri
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
+pricing_pentagon <- function(names, values) .Call(wrap__pricing_pentagon, names, values)
+
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
 
 pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)
@@ -967,6 +969,44 @@ Binomial$sample <- function(n, seed, stream) .Call(wrap__Binomial__sample, self,
 
 #' @export
 `[[.Binomial` <- `$.Binomial`
+
+NaturalPortfolio <- new.env(parent = emptyenv())
+
+NaturalPortfolio$from_rows <- function(units, x, probs) .Call(wrap__NaturalPortfolio__from_rows, units, x, probs)
+
+NaturalPortfolio$from_predictive <- function(pd) .Call(wrap__NaturalPortfolio__from_predictive, pd)
+
+NaturalPortfolio$from_independent <- function(units, grids) .Call(wrap__NaturalPortfolio__from_independent, units, grids)
+
+NaturalPortfolio$units <- function() .Call(wrap__NaturalPortfolio__units, self)
+
+NaturalPortfolio$totals <- function() .Call(wrap__NaturalPortfolio__totals, self)
+
+NaturalPortfolio$probs <- function() .Call(wrap__NaturalPortfolio__probs, self)
+
+NaturalPortfolio$kappa <- function(i) .Call(wrap__NaturalPortfolio__kappa, self, i)
+
+NaturalPortfolio$expected <- function() .Call(wrap__NaturalPortfolio__expected, self)
+
+NaturalPortfolio$assets <- function(p) .Call(wrap__NaturalPortfolio__assets, self, p)
+
+NaturalPortfolio$max <- function() .Call(wrap__NaturalPortfolio__max, self)
+
+NaturalPortfolio$price <- function(distortion, assets, allocation) .Call(wrap__NaturalPortfolio__price, self, distortion, assets, allocation)
+
+NaturalPortfolio$calibrate <- function(family, assets, target, value, r0) .Call(wrap__NaturalPortfolio__calibrate, self, family, assets, target, value, r0)
+
+NaturalPortfolio$bodoff <- function(assets) .Call(wrap__NaturalPortfolio__bodoff, self, assets)
+
+NaturalPortfolio$epd <- function(assets) .Call(wrap__NaturalPortfolio__epd, self, assets)
+
+NaturalPortfolio$assets_for_epd <- function(epd) .Call(wrap__NaturalPortfolio__assets_for_epd, self, epd)
+
+#' @export
+`$.NaturalPortfolio` <- function (self, name) { func <- NaturalPortfolio[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.NaturalPortfolio` <- `$.NaturalPortfolio`
 
 CollectiveModel <- new.env(parent = emptyenv())
 

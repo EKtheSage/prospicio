@@ -3941,6 +3941,7 @@ dependencies = [
  "prospicio-core",
  "prospicio-math",
  "prospicio-prob",
+ "rustfft",
 ]
 
 [[package]]

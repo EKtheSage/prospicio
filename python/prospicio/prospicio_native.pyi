@@ -6092,6 +6092,40 @@ class Mixture:
         """
 
 @final
+class NaturalPrice:
+    """
+    A portfolio's price and its natural allocation, from ``Portfolio.price``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def allocated(self, /) -> list[Pentagon]:
+        """
+        Each unit's share, a list of Pentagon; the amounts add up to ``total``.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The table as a dict of columns: ``unit`` (the units, then
+        ``"total"``), ``loss``, ``margin``, ``premium``, ``capital``,
+        ``assets``, ``loss_ratio``, ``premium_to_capital`` and
+        ``return_on_capital``. ``pandas.DataFrame(price.to_dict())`` makes
+        a frame of it.
+        
+        Returns
+        -------
+        dict of str to list
+        """
+    @property
+    def total(self, /) -> Pentagon:
+        """
+        The portfolio, a Pentagon.
+        """
+    @property
+    def units(self, /) -> list[str]:
+        """
+        Unit names.
+        """
+
+@final
 class NegativeBinomial:
     """
     Negative binomial claim counts: mean ``r * beta``, variance
@@ -6858,6 +6892,87 @@ class Pareto:
         """
 
 @final
+class Pentagon:
+    """
+    Loss, margin, premium, capital and assets, with ``P = L + M`` and
+    ``a = P + Q``.
+    
+    Build one from any three known quantities with ``Pentagon.solve``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import Pentagon
+    >>> p = Pentagon.solve(loss=46.6, assets=100.0, return_on_capital=0.15)
+    >>> round(p.premium, 6)
+    53.565217
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def assets(self, /) -> float:
+        """
+        Assets ``a``.
+        """
+    @property
+    def capital(self, /) -> float:
+        """
+        Capital ``Q = a - P``.
+        """
+    @property
+    def discount(self, /) -> float:
+        """
+        Discount ``M / (a - L)``; ``P = (1 - discount) L + discount a``.
+        """
+    @property
+    def loss(self, /) -> float:
+        """
+        Expected loss paid, ``L``.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        Loss ratio ``L / P``.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        Margin ``M = P - L``.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        Premium ``P``.
+        """
+    @property
+    def premium_to_capital(self, /) -> float:
+        """
+        Premium leverage ``P / Q``.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        Return on capital ``M / Q``.
+        """
+    @staticmethod
+    def solve(*, loss: float |None = None, margin: float |None = None, premium: float |None = None, capital: float |None = None, assets: float |None = None, loss_ratio: float |None = None, premium_to_capital: float |None = None, return_on_capital: float |None = None) -> Pentagon:
+        """
+        The pentagon fixed by exactly three of its quantities.
+        
+        Parameters
+        ----------
+        loss, margin, premium, capital, assets : float, optional
+        loss_ratio, premium_to_capital, return_on_capital : float, optional
+        
+        Returns
+        -------
+        Pentagon
+        
+        Raises
+        ------
+        ValueError
+            Unless exactly three are given and they determine the rest.
+        """
+
+@final
 class PiecewisePareto:
     """
     Piecewise Pareto: alpha ``alpha[k]`` above threshold ``t[k]``, the
@@ -7183,6 +7298,194 @@ class Poisson:
         Returns
         -------
         float
+        """
+
+@final
+class Portfolio:
+    """
+    A portfolio as the distribution of its total and each unit's
+    conditional expectation given the total, ``kappa_i(x) = E[X_i | X = x]``:
+    the representation of Mildenhall and Major (*Pricing Insurance Risk*,
+    2022) and CAS Monograph 15, for pricing with limited liability and the
+    natural allocation.
+    
+    Parameters
+    ----------
+    units : list of str
+    rows : list of list of float
+        Each scenario's loss by unit; non-negative.
+    probs : list of float, optional
+        The scenarios' probabilities; equal when omitted.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import Portfolio
+    >>> from prospicio.risk import Distortion
+    >>> rows = [[15, 7, 0], [15, 13, 0], [5, 20, 11], [7, 33, 0], [13, 20, 7],
+    ...         [5, 27, 8], [15, 16, 9], [26, 19, 10], [17, 8, 40], [16, 20, 64]]
+    >>> insco = Portfolio(["A", "B", "C"], rows)
+    >>> price = insco.price(Distortion.ccoc(0.15), assets=100)
+    >>> round(price.total.premium, 6)
+    53.565217
+    >>> [round(u.assets, 6) for u in price.allocated]
+    [16.0, 20.0, 64.0]
+    """
+    def __new__(cls, /, units: Sequence[str], rows: Sequence[Sequence[float]], probs: Sequence[float] |None = None) -> Portfolio: ...
+    def __repr__(self, /) -> str: ...
+    def assets(self, /, p: float) -> float:
+        """
+        Assets at the capital standard ``p``: the lower ``p`` quantile of
+        the total.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def assets_for_epd(self, /, epd: float) -> float:
+        """
+        The smallest assets whose total EPD ratio is at most ``epd``.
+        
+        Parameters
+        ----------
+        epd : float
+        
+        Returns
+        -------
+        float
+        """
+    def bodoff(self, /, assets: float |None = None, p: float |None = None) -> list[float]:
+        """
+        Bodoff's percentile layer of capital: each unit's share of the
+        assets.
+        
+        Parameters
+        ----------
+        assets : float, optional
+        p : float, optional
+        
+        Returns
+        -------
+        list of float
+        """
+    def calibrate(self, /, family: str, assets: float |None = None, p: float |None = None, *, premium: float |None = None, return_on_capital: float |None = None, loss_ratio: float |None = None, r0: float = 0.0) -> Distortion:
+        """
+        The member of a distortion family that prices the loss capped at
+        the assets at a target: give exactly one of ``premium``,
+        ``return_on_capital`` and ``loss_ratio``.
+        
+        Parameters
+        ----------
+        family : str
+            As for ``prospicio.risk.calibrate``.
+        assets : float, optional
+        p : float, optional
+        premium, return_on_capital, loss_ratio : float, optional
+        r0 : float, default 0.0
+        
+        Returns
+        -------
+        Distortion
+        """
+    def epd(self, /, assets: float) -> tuple[float, list[float]]:
+        """
+        The expected policyholder deficit ratio with these assets: in
+        total, and by unit under equal priority.
+        
+        Parameters
+        ----------
+        assets : float
+        
+        Returns
+        -------
+        tuple of (float, list of float)
+        """
+    def expected(self, /) -> list[float]:
+        """
+        Each unit's expected loss.
+        
+        Returns
+        -------
+        list of float
+        """
+    @staticmethod
+    def from_independent(units: Sequence[str], grids: Sequence[Grid]) -> Portfolio:
+        """
+        From independent units, each a Grid with the same step; the total
+        and the conditional expectations are computed by FFT.
+        
+        Parameters
+        ----------
+        units : list of str
+        grids : list of Grid
+        
+        Returns
+        -------
+        Portfolio
+        """
+    @staticmethod
+    def from_predictive(pd: PredictiveDistribution) -> Portfolio:
+        """
+        From a joint simulation: each component is a unit, each simulation
+        an equally likely scenario.
+        
+        Parameters
+        ----------
+        pd : PredictiveDistribution
+        
+        Returns
+        -------
+        Portfolio
+        """
+    def kappa(self, /, unit: str) -> list[float]:
+        """
+        A unit's conditional expectation at each total.
+        
+        Parameters
+        ----------
+        unit : str
+        
+        Returns
+        -------
+        list of float
+        """
+    def price(self, /, distortion: Distortion, assets: float |None = None, p: float |None = None, allocation: str = "linear") -> NaturalPrice:
+        """
+        The premium of the loss capped at the assets, and its natural
+        allocation to the units.
+        
+        Parameters
+        ----------
+        distortion : Distortion
+        assets : float, optional
+            The asset level; or give ``p``. The largest total by default.
+        p : float, optional
+            The capital standard: assets at the total's lower ``p`` quantile.
+        allocation : {"linear", "lifted"}, default "linear"
+            The unit share of the assets above the asset level: expected
+            (linear) or distorted (lifted).
+        
+        Returns
+        -------
+        NaturalPrice
+        """
+    @property
+    def probs(self, /) -> list[float]:
+        """
+        The probability of each total.
+        """
+    @property
+    def totals(self, /) -> list[float]:
+        """
+        The distinct totals, ascending.
+        """
+    @property
+    def units(self, /) -> list[str]:
+        """
+        Unit names.
         """
 
 @final

@@ -57,3 +57,20 @@ sources:
 * InsCo's calibrated parameters at 15% and `p = 1`: CCoC `r = 0.15`, PH
   `0.720479`, Wang `0.342731`, dual `1.595151`, TVaR `0.271287`; the
   monograph's totals are 22, 28, 36, 40 (four times), 55, 65 and 100.
+* Natural allocation (`Portfolio.price(p, d, allocation=)`) reproduces in
+  closed form; prospicio matches it at `1e-10` on InsCo and the PIR
+  Discrete case. Details that matter for a port:
+  * `price(p)` reads `p > 1` as an asset level, otherwise the lower `p`
+    quantile.
+  * Capital is allocated layer by layer with ratio `(1 - g) / (g - S)`;
+    where `g(S) = 1` it uses `g'(1) / (1 - g'(1))`, and 0 when `g'(1)` is
+    NaN (Wang).
+  * Under the linear allocation the unit margin jumps at each total; on
+    aggregate's unit grid the jump lands in the layer below the total.
+  * A sample-built portfolio's tied totals take the unweighted mean of
+    the tied rows (`np.mean`), not the probability-weighted one.
+  * `S` at the largest total must be exactly 0: aggregate gets 0 from
+    `max(1 - cumsum(p), 0)`; a residue of `1e-16` there would add the
+    CCoC mass times the maximum to the price.
+  * 1.0.1 has no `epd` kind in `var_dict`; `priority_epd_df` gives EPD
+    by unit, and refuses a portfolio built from a sample.

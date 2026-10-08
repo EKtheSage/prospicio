@@ -16,6 +16,7 @@ use pyo3::prelude::*;
 mod aggregate;
 mod distributions;
 mod models;
+mod natural;
 mod pareto;
 mod pricing;
 mod reinsurance;
@@ -44,6 +45,8 @@ mod prospicio_native {
         pit, pit_from_draws, pit_histogram, pseudo_bma_weights, simulate_from_means,
         stacking_weights, time_ordered,
     };
+    #[pymodule_export]
+    use super::natural::{PyNaturalPrice, PyPentagon, PyPortfolio};
     #[pymodule_export]
     use super::pareto::{
         PyBinomial, PyCustom, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic,

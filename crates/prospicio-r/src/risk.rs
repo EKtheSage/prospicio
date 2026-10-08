@@ -98,19 +98,7 @@ impl RiskDistortion {
     /// The member of `family` whose price of `x`, capped at `assets` when
     /// it is finite, is `premium`.
     fn calibrate(family: &str, x: Robj, premium: f64, assets: f64, r0: f64) -> Result<Self> {
-        let family = match family {
-            "ccoc" => Family::Ccoc,
-            "proportional_hazard" | "ph" => Family::ProportionalHazard,
-            "wang" => Family::Wang,
-            "dual_power" | "dual" => Family::DualPower,
-            "tvar" => Family::Tvar,
-            "exponential" | "exp" => Family::Exponential,
-            "capped_linear" | "clin" => Family::CappedLinear { r0 },
-            "capped_log_linear" | "cll" => Family::CappedLogLinear { r0 },
-            "lep" => Family::Lep { r0 },
-            "linear_yield" | "ly" => Family::LinearYield { r0 },
-            other => return Err(Error::Other(format!("unknown distortion family {other:?}"))),
-        };
+        let family = family_from(family, r0)?;
         let (mut v, p) = discrete_of(&x)?;
         if assets.is_finite() {
             v.iter_mut().for_each(|x| *x = x.min(assets));
@@ -232,6 +220,23 @@ impl RiskDistortion {
             .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
         Ok(pd.inner.allocate(&self.inner))
     }
+}
+
+/// A distortion family by name, with the fixed `r0` of those that have one.
+pub(crate) fn family_from(name: &str, r0: f64) -> Result<Family> {
+    Ok(match name {
+        "ccoc" => Family::Ccoc,
+        "proportional_hazard" | "ph" => Family::ProportionalHazard,
+        "wang" => Family::Wang,
+        "dual_power" | "dual" => Family::DualPower,
+        "tvar" => Family::Tvar,
+        "exponential" | "exp" => Family::Exponential,
+        "capped_linear" | "clin" => Family::CappedLinear { r0 },
+        "capped_log_linear" | "cll" => Family::CappedLogLinear { r0 },
+        "lep" => Family::Lep { r0 },
+        "linear_yield" | "ly" => Family::LinearYield { r0 },
+        other => return Err(Error::Other(format!("unknown distortion family {other:?}"))),
+    })
 }
 
 fn distortions_of(parts: &List) -> Result<Vec<Distortion>> {

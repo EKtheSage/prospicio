@@ -1,10 +1,14 @@
 """Pricing: the collective model, layer rating shared by primary and
-reinsurance pricing, reinsurance tower matching (Riegel 2018), and
-risk-loaded prices from simulated losses."""
+reinsurance pricing, reinsurance tower matching (Riegel 2018),
+risk-loaded prices from simulated losses, and the natural allocation of
+Mildenhall and Major (Portfolio, Pentagon)."""
 
 from .prospicio_native import (
     CollectiveModel,
     Mbbefd,
+    NaturalPrice,
+    Pentagon,
+    Portfolio,
     PortfolioPrice,
     Price,
     RiskProfile,
@@ -44,4 +48,7 @@ __all__ = [
     "TabulatedCurve",
     "RiskProfile",
     "severity_exposure_curve",
+    "Portfolio",
+    "NaturalPrice",
+    "Pentagon",
 ]

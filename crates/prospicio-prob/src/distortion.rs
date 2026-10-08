@@ -390,6 +390,75 @@ impl Distortion {
         }
     }
 
+    /// The slope of `g` at `s = 1` from the left, `g'(1-)`: the weight per
+    /// unit of probability on the smallest outcomes. 1 only for the mean;
+    /// 0 for a distortion that is flat near 1 (TVaR at `p > 0`, Wang, dual
+    /// at `β > 1`, or any capped one). Natural allocation uses it for the
+    /// capital in layers that the loss always reaches, where `S = g = 1`.
+    pub fn slope_at_one(&self) -> f64 {
+        let tvar_slope = |p: f64| if p == 0.0 { 1.0 } else { 0.0 };
+        match self {
+            Self::Tvar(p) => tvar_slope(*p),
+            Self::Wang(l) => {
+                if *l == 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            Self::ProportionalHazard(rho) => *rho,
+            Self::DualPower(b) => {
+                if *b == 1.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            Self::Exponential(k) => -k * (-k).exp() / (-k).exp_m1(),
+            Self::Ccoc(r) => 1.0 / (1.0 + r),
+            Self::BiTvar { p0, p1, w } => (1.0 - w) * tvar_slope(*p0) + w * tvar_slope(*p1),
+            Self::WeightedTvar { ps, wts } => {
+                ps.iter().zip(wts).map(|(&p, w)| w * tvar_slope(p)).sum()
+            }
+            Self::CappedLinear { r0, slope } => {
+                if r0 + slope > 1.0 {
+                    0.0
+                } else {
+                    *slope
+                }
+            }
+            Self::CappedLogLinear { r0, b } => {
+                if *r0 > 0.0 {
+                    0.0
+                } else {
+                    *b
+                }
+            }
+            Self::Lep { r0, r } => {
+                if r > r0 {
+                    0.0
+                } else {
+                    1.0 / (1.0 + r0)
+                }
+            }
+            Self::LinearYield { r0, r } => 1.0 / (1.0 + r0 + r),
+            Self::Beta { a, b } => {
+                if *b > 1.0 {
+                    0.0
+                } else {
+                    *a
+                }
+            }
+            Self::Mixture(parts) => parts.iter().map(|(w, d)| w * d.slope_at_one()).sum(),
+            // Near 1 the minimum is the part that falls fastest.
+            Self::Minimum(parts) => parts.iter().map(Self::slope_at_one).fold(0.0, f64::max),
+            Self::Convex(knots) => {
+                let (a, b) = (knots[knots.len() - 2], knots[knots.len() - 1]);
+                (b.1 - a.1) / (b.0 - a.0)
+            }
+        }
+    }
+
     /// The generalized inverse, the infimum of the `s` with `g(s) >= y`,
     /// for `y` in `[0, 1]`: 0 when `y` is at most the [`mass`](Self::mass),
     /// otherwise found by bisection to full precision.
@@ -830,6 +899,22 @@ mod tests {
         assert!((ph.g_dual(0.75) - 0.5).abs() < 1e-15);
         // A capped distortion reaches 1 before s = 1.
         assert!((Distortion::tvar(0.6).unwrap().g_inv(1.0) - 0.4).abs() < 1e-15);
+    }
+
+    #[test]
+    fn slope_at_one_matches_a_difference_quotient() {
+        // The quotient converges to the slope; slowly for Wang and Beta,
+        // whose slope is approached like a power of the gap.
+        let q = |d: &Distortion, h: f64| (1.0 - d.g(1.0 - h)) / h;
+        for d in all() {
+            let (far, near) = (q(&d, 1e-4), q(&d, 1e-8));
+            let slope = d.slope_at_one();
+            assert!(
+                (near - slope).abs() < 1e-5 || (near - slope).abs() < (far - slope).abs(),
+                "{d:?}: {far}, {near} vs {slope}"
+            );
+        }
+        assert_eq!(Distortion::tvar(0.0).unwrap().slope_at_one(), 1.0);
     }
 
     #[test]

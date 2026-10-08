@@ -91,6 +91,11 @@ reference:
       - excess_frequency
       - layer_rating
       - risk_loaded_price
+      - capital_portfolio
+      - natural_price
+      - calibrate_portfolio
+      - bodoff_allocation
+      - pentagon
       - mbbefd
       - tabulated_curve
       - risk_profile

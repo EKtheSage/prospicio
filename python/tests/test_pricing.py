@@ -183,3 +183,54 @@ def test_risk_profile_tilts_a_spread_to_its_mean_sum_insured():
         RiskProfile([5e6], [400], c, spread="tilted", **kw)
     with pytest.raises(ValueError):
         RiskProfile([3e6], [400], c, spread="steep", **kw)
+
+
+INSCO_ROWS = [[15, 7, 0], [15, 13, 0], [5, 20, 11], [7, 33, 0], [13, 20, 7],
+              [5, 27, 8], [15, 16, 9], [26, 19, 10], [17, 8, 40], [16, 20, 64]]
+
+
+def test_natural_allocation_on_insco():
+    from prospicio.pricing import Pentagon, Portfolio
+    from prospicio.risk import Distortion
+
+    port = Portfolio(["A", "B", "C"], INSCO_ROWS)
+    assert port.totals == [22, 28, 36, 40, 55, 65, 100]
+    assert port.assets(0.85) == 65
+    assert port.kappa("C")[-1] == 64
+    # aggregate 1.0.1: CCoC at 15% and assets 100.
+    p = port.price(Distortion.ccoc(0.15), assets=100)
+    assert p.total.premium == pytest.approx(53.565217391304344, abs=1e-12)
+    assert [u.assets for u in p.allocated] == pytest.approx([16, 20, 64], abs=1e-12)
+    # PH at aggregate's calibrated parameter, lifted, at assets 65.
+    ph = port.calibrate("ph", assets=100, return_on_capital=0.15)
+    lifted = port.price(ph, p=0.85, allocation="lifted")
+    assert [u.capital for u in lifted.allocated] == pytest.approx(
+        [1.947189207380, -0.070344428313, 16.219694433834], abs=1e-6)
+    d = lifted.to_dict()
+    assert d["unit"] == ["A", "B", "C", "total"]
+    assert sum(d["premium"][:3]) == pytest.approx(d["premium"][3])
+    total, units = port.epd(65)
+    assert total == pytest.approx(3.5 / 46.6)
+    assert port.assets_for_epd(3.5 / 46.6) == pytest.approx(65)
+    assert sum(port.bodoff(assets=100)) == pytest.approx(100)
+    pent = Pentagon.solve(loss=46.6, assets=100.0, return_on_capital=0.15)
+    assert pent.premium == pytest.approx(53.565217391304344)
+    with pytest.raises(ValueError):
+        Pentagon.solve(loss=1.0, premium=2.0)
+    with pytest.raises(ValueError):
+        port.price(ph, allocation="other")
+
+
+def test_natural_from_independent_and_predictive():
+    from prospicio.distributions import Grid, PredictiveDistribution
+    from prospicio.pricing import Portfolio
+
+    a = Grid(1.0, [0.5, 0.5])
+    b = Grid(1.0, [0.5, 0.0, 0.5])
+    port = Portfolio.from_independent(["a", "b"], [a, b])
+    assert port.totals == [0.0, 1.0, 2.0, 3.0]
+    assert port.kappa("a")[1] == pytest.approx(1.0)
+    pd = PredictiveDistribution(["unit"], [("A",), ("B",), ("C",)], [[float(x) for x in row] for row in INSCO_ROWS])
+    from_pd = Portfolio.from_predictive(pd)
+    assert from_pd.units == ["A", "B", "C"]
+    assert from_pd.totals == [22, 28, 36, 40, 55, 65, 100]

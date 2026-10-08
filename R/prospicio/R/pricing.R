@@ -604,3 +604,195 @@ profile_layer_loss <- function(profile, limit, attachment, surplus_retention = N
 profile_surplus_loss <- function(profile, retention, lines) {
   profile@ptr$expected_surplus_loss(as.double(retention), as.double(lines))
 }
+
+#' Portfolio for natural allocation
+#'
+#' A portfolio held as the distribution of its total `X` and each unit's
+#' conditional expectation given the total, `kappa_i(x) = E[X_i | X = x]`:
+#' the representation of Mildenhall and Major (*Pricing Insurance Risk*,
+#' 2022) and CAS Monograph 15 for pricing with limited liability and the
+#' natural allocation. See [natural_price()].
+#'
+#' @param x A matrix of scenario losses, one column per unit (named), a
+#'   [predictive_distribution] (each simulation an equally likely
+#'   scenario), or a named list of [grid_distribution] objects with one step
+#'   for independent units, convolved by FFT.
+#' @param probs For a matrix, the scenarios' probabilities; equal when
+#'   `NULL`.
+#' @param ptr Internal.
+#' @returns A `capital_portfolio` with properties `units`, `totals` (the
+#'   distinct totals, ascending), `probs` and `expected` (each unit's mean).
+#' @export
+#' @examples
+#' insco <- capital_portfolio(cbind(
+#'   A = c(15, 15, 5, 7, 13, 5, 15, 26, 17, 16),
+#'   B = c(7, 13, 20, 33, 20, 27, 16, 19, 8, 20),
+#'   C = c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64)
+#' ))
+#' insco@totals
+#' natural_price(insco, distortion("ccoc", 0.15))
+capital_portfolio <- S7::new_class(
+  "capital_portfolio",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("NaturalPortfolio"),
+    units = S7::new_property(S7::class_character, getter = function(self) self@ptr$units()),
+    totals = S7::new_property(S7::class_double, getter = function(self) self@ptr$totals()),
+    probs = S7::new_property(S7::class_double, getter = function(self) self@ptr$probs()),
+    expected = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected())
+  ),
+  constructor = function(x, probs = NULL, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- if (is.matrix(x)) {
+        units <- colnames(x)
+        if (is.null(units)) units <- paste0("X", seq_len(ncol(x)))
+        rust_result(NaturalPortfolio$from_rows(
+          units, as.double(t(x)), if (is.null(probs)) double() else as.double(probs)
+        ))
+      } else if (is.list(x) && !S7::S7_inherits(x)) {
+        units <- names(x)
+        if (is.null(units)) units <- paste0("X", seq_along(x))
+        rust_result(NaturalPortfolio$from_independent(units, lapply(x, function(g) g@ptr)))
+      } else {
+        rust_result(NaturalPortfolio$from_predictive(x@ptr))
+      }
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, capital_portfolio) <- function(x, ...) {
+  cat(sprintf("<capital_portfolio> %d units, %d distinct totals\n", length(x@units), length(x@totals)))
+  invisible(x)
+}
+
+portfolio_level <- function(port, assets, p) {
+  if (!is.null(assets) && !is.null(p)) stop("give assets or p, not both")
+  if (!is.null(assets)) return(as.double(assets))
+  if (!is.null(p)) return(rust_result(port@ptr$assets(as.double(p))))
+  port@ptr$max()
+}
+
+#' Natural allocation of a portfolio's price
+#'
+#' The premium of the portfolio's loss capped at the assets, `X ∧ a`, under
+#' a distortion `g`, and its allocation to the units: each unit's loss
+#' (equal priority in default), margin, premium, capital and assets.
+#' `"linear"` gives each unit its expected share of the assets above `a`;
+#' `"lifted"` the distorted share. Capital is allocated layer by layer, in
+#' proportion to each unit's margin in the layer.
+#'
+#' @param port A [capital_portfolio].
+#' @param distortion A [distortion].
+#' @param assets The asset level; or give `p`. The largest total by default.
+#' @param p The capital standard: assets at the total's lower `p` quantile.
+#' @param allocation `"linear"` or `"lifted"`.
+#' @returns A data frame, one row per unit and a `"total"` row, with
+#'   `loss`, `margin`, `premium`, `capital`, `assets`, `loss_ratio`,
+#'   `premium_to_capital` and `return_on_capital`.
+#' @export
+#' @examples
+#' insco <- capital_portfolio(cbind(
+#'   A = c(15, 15, 5, 7, 13, 5, 15, 26, 17, 16),
+#'   B = c(7, 13, 20, 33, 20, 27, 16, 19, 8, 20),
+#'   C = c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64)
+#' ))
+#' ph <- calibrate_portfolio(insco, "proportional_hazard", return_on_capital = 0.15)
+#' natural_price(insco, ph, p = 0.85, allocation = "lifted")
+natural_price <- function(port, distortion, assets = NULL, p = NULL,
+                          allocation = c("linear", "lifted")) {
+  allocation <- match.arg(allocation)
+  a <- portfolio_level(port, assets, p)
+  as.data.frame(rust_result(port@ptr$price(distortion@ptr, a, allocation)))
+}
+
+#' Calibrate a distortion to a portfolio
+#'
+#' The member of a distortion family that prices the portfolio's loss
+#' capped at the assets at a target premium, return on capital
+#' (`P = (L + r a) / (1 + r)`) or loss ratio.
+#'
+#' @inheritParams natural_price
+#' @param family As for [calibrate_distortion()].
+#' @param premium,return_on_capital,loss_ratio Give exactly one.
+#' @param r0 The fixed `r0` of the families that have one.
+#' @returns A [distortion].
+#' @export
+#' @examples
+#' insco <- capital_portfolio(cbind(
+#'   A = c(15, 15, 5, 7, 13, 5, 15, 26, 17, 16),
+#'   B = c(7, 13, 20, 33, 20, 27, 16, 19, 8, 20),
+#'   C = c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64)
+#' ))
+#' calibrate_portfolio(insco, "wang", return_on_capital = 0.15)
+calibrate_portfolio <- function(port, family, assets = NULL, p = NULL, premium = NULL,
+                                return_on_capital = NULL, loss_ratio = NULL, r0 = 0) {
+  given <- list(premium = premium, return_on_capital = return_on_capital, loss_ratio = loss_ratio)
+  given <- given[!vapply(given, is.null, logical(1))]
+  if (length(given) != 1) stop("give exactly one of premium, return_on_capital and loss_ratio")
+  a <- portfolio_level(port, assets, p)
+  distortion(ptr = rust_result(port@ptr$calibrate(
+    family, a, names(given), as.double(given[[1]]), as.double(r0)
+  )))
+}
+
+#' Bodoff allocation, EPD and assets
+#'
+#' `bodoff_allocation()` is Bodoff's percentile layer of capital: each
+#' unit's share of the assets, `integral of E[X_i / X | X > x] dx` up to the
+#' assets. `epd_ratio()` is the expected policyholder deficit ratio,
+#' `(E[X] - E[X ∧ a]) / E[X]`, in total and by unit under equal priority.
+#' `assets_for_epd()` is the smallest assets with a total EPD ratio at most
+#' `epd`.
+#'
+#' @inheritParams natural_price
+#' @param epd A target EPD ratio in `(0, 1)`.
+#' @returns `bodoff_allocation()`: a named numeric vector. `epd_ratio()`: a
+#'   list with `total` and `units` (named). `assets_for_epd()`: a number.
+#' @export
+#' @examples
+#' insco <- capital_portfolio(cbind(
+#'   A = c(15, 15, 5, 7, 13, 5, 15, 26, 17, 16),
+#'   B = c(7, 13, 20, 33, 20, 27, 16, 19, 8, 20),
+#'   C = c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64)
+#' ))
+#' bodoff_allocation(insco, assets = 100)
+#' epd_ratio(insco, 65)
+#' assets_for_epd(insco, 0.05)
+bodoff_allocation <- function(port, assets = NULL, p = NULL) {
+  stats::setNames(port@ptr$bodoff(portfolio_level(port, assets, p)), port@units)
+}
+
+#' @rdname bodoff_allocation
+#' @export
+epd_ratio <- function(port, assets) {
+  r <- port@ptr$epd(as.double(assets))
+  list(total = r$total, units = stats::setNames(r$units, port@units))
+}
+
+#' @rdname bodoff_allocation
+#' @export
+assets_for_epd <- function(port, epd) rust_result(port@ptr$assets_for_epd(as.double(epd)))
+
+#' Premium, margin and capital pentagon
+#'
+#' Loss `L`, margin `M`, premium `P`, capital `Q` and assets `a`, with
+#' `P = L + M` and `a = P + Q`, from exactly three known amounts or ratios
+#' (`loss_ratio = L / P`, `premium_to_capital = P / Q`,
+#' `return_on_capital = M / Q`).
+#'
+#' @param loss,margin,premium,capital,assets,loss_ratio,premium_to_capital,return_on_capital
+#'   Give exactly three.
+#' @returns A named numeric vector of all eight.
+#' @export
+#' @examples
+#' pentagon(loss = 46.6, assets = 100, return_on_capital = 0.15)
+pentagon <- function(loss = NULL, margin = NULL, premium = NULL, capital = NULL, assets = NULL,
+                     loss_ratio = NULL, premium_to_capital = NULL, return_on_capital = NULL) {
+  given <- list(loss = loss, margin = margin, premium = premium, capital = capital,
+                assets = assets, loss_ratio = loss_ratio, premium_to_capital = premium_to_capital,
+                return_on_capital = return_on_capital)
+  given <- given[!vapply(given, is.null, logical(1))]
+  r <- rust_result(pricing_pentagon(names(given), as.double(unlist(given))))
+  unlist(r[-1])
+}

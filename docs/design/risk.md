@@ -80,6 +80,22 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   fits) and `evt::hill` (Hill estimates of the tail index for a range of
   `k`), the usual aids to choosing a threshold before `PotTail::fit`.
 
+- `prospicio_pricing::natural`: the pricing and natural allocation of
+  Mildenhall and Major (*Pricing Insurance Risk*, 2022) and CAS Monograph
+  15. A `Portfolio` holds the total's distinct values with their
+  probabilities and each unit's `κᵢ(x) = E[Xᵢ | X = x]`, from scenarios
+  (`from_rows`, `from_predictive`) or from independent units' grids by FFT
+  (`from_independent`). `price(g, a, Allocation)` prices `X ∧ a` and
+  allocates loss (equal priority in default), margin, premium, capital
+  and assets to units, linear or lifted; `bodoff(a)` is Bodoff's
+  percentile layer of capital; `epd(a)` and `assets_for_epd`; `assets(p)`
+  the capital standard; `calibrate(Family, a, Target)` to a premium,
+  return or loss ratio. `Pentagon` holds `L, M, P, Q, a` and
+  `Pentagon::solve` fills it from any three determining amounts or ratios.
+  Python `prospicio.pricing.Portfolio`, `NaturalPrice`, `Pentagon`; R
+  `capital_portfolio()`, `natural_price()`, `calibrate_portfolio()`,
+  `bodoff_allocation()`, `epd_ratio()`, `assets_for_epd()`, `pentagon()`.
+
 ## Decisions
 
 - **A distortion is a closed enum** of concave distortions of the
@@ -170,6 +186,26 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   close to `(6 / π) asin(ρ / 2)`, as for a Gaussian copula with
   correlation `ρ`. Score columns are shuffled by `StreamRng::new(seed, j)`.
 
+- **Natural allocation follows `aggregate` 1.0.1.** The premium of unit
+  `i` is `Σ_{x_k ≤ a} κᵢ(x_k) Δg_k` plus `a g(S(a))` times its share of
+  the totals above `a`: the expected share `αᵢ(a) = E[Xᵢ / X | X > a]`
+  (linear) or the distorted share `βᵢ(a)` (lifted). Capital goes layer by
+  layer: unit `i`'s margin over a layer, `mᵢ(top) - mᵢ(bottom)` with
+  `mᵢ` its premium less its expected loss at that asset level, times the
+  layer's capital per unit of margin, `(1 - g) / (g - S)`. In layers the
+  loss always reaches (`S = g = 1`) that ratio is the limit
+  `g'(1) / (1 - g'(1))` (`Distortion::slope_at_one`). Under the linear
+  allocation `mᵢ` jumps at each total, and the jump belongs to the layer
+  below it, as on `aggregate`'s unit grid.
+- **The portfolio works on the distinct totals, not a grid.** Layers run
+  between consecutive totals, so any asset level works and no bucket is
+  chosen. `S` is summed from the top and is exactly 0 at the largest
+  total, which a distortion with a mass needs: a rounding residue there
+  would add `mass × max` to the price.
+- **Tied totals take the probability-weighted mean of the units.**
+  `aggregate` takes the unweighted mean of tied scenarios, which differs
+  when scenarios have unequal probabilities.
+
 ## Validation
 
 `validation/tests/distributions.rs` checks distortions against
@@ -193,6 +229,17 @@ aggregate's calibrated CCoC, PH, Wang, dual and TVaR parameters matches at
 tolerance: aggregate stops at a premium error (up to `7.6e-6` for TVaR),
 so the script turns that error into a parameter tolerance through the
 price's slope.
+
+`validation/reference/natural_aggregate.csv`
+(`validation/scripts/aggregate_natural.py`) checks the natural allocation
+against `aggregate` 1.0.1 at `1e-10`, 1,060 values: InsCo and the
+*Pricing Insurance Risk* Discrete case (two independent units, built by
+FFT), each priced under the CCoC, PH, Wang, dual and TVaR distortions
+calibrated to it, linear and lifted, at three asset levels including two
+with default; the loss, margin, premium, capital and assets of each unit
+and the total, and Bodoff's allocation. Unit tests check that every
+allocation adds up, `from_independent` against brute-force enumeration,
+EPD, and that 46 of the 56 triples of pentagon quantities solve.
 
 Unit tests check that `Tvar(p)` matches `tvar_sorted` for 101 levels, that
 weights are a non-decreasing probability vector, and coherence: translation
