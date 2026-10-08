@@ -165,8 +165,12 @@ fn vanishing(mean: f64, variance: f64) -> f64 {
 /// volume-weighted chain ladder and no tail, the standard deviation of its
 /// one-year view reproduces Merz and Wüthrich's
 /// ([`MackFit::claims_development_result`](crate::MackFit::claims_development_result))
-/// within Monte Carlo error, and any other method, weighting or tail is
-/// re-reserved as the ODP's is.
+/// within the Monte Carlo error of 20,000 simulations, and any other
+/// method, weighting or tail is re-reserved as the ODP's is. More
+/// simulations resolve the uncentred residuals' bias in the standard
+/// deviation too: RAA's youngest origin and total come out 1.2% and 1.3%
+/// above Merz and Wüthrich (its first pseudo factor is 14% high), against
+/// 0.0% centred.
 ///
 /// Its mean is not Merz and Wüthrich's zero unless
 /// [`centre_residuals`](Self::centre_residuals) is set: with EVW's
