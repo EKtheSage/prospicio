@@ -125,8 +125,10 @@ absorbed.
   mean, so the pool's mean is 0.1395 (RAA), 0.0135 (GenIns) and -0.0595
   (ABC) with mean square exactly 1, and `E[f*_k] = f_k + m sigma_k
   sum(C^(alpha / 2)) / sum(C^alpha)`. EVW's Appendix 1 does not centre
-  either; their Table 4 expected reserve on Taylor-Ashe (GenIns, pool mean
-  0.0135) is only slightly above the chain ladder's. The `Residuals`
+  either, but their Table 4 lifetime expected reserve on Taylor-Ashe
+  (GenIns) is the chain ladder's within Monte Carlo error (+0.02%), where
+  the uncentred bootstrap gives +0.7%: their numbers agree with centred
+  residuals ([the lifetime finding](/findings/mack-bootstrap-lifetime-vs-mack.md)). The `Residuals`
   process draws from the same pool, so uncentred it adds a bias of its
   own (mean `f* C + m sd`, variance `(1 - m^2) sd^2`).[^mack][^evw]
 * `MackBootstrap::centre_residuals` subtracts the pool's mean before
