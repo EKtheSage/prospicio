@@ -144,10 +144,12 @@ absorbed.
   the lifetime mean reserve the chain ladder's, the SD Merz-Wuthrich's
   without RAA's 1.3% excess, and EVW's Table 4 lifetime expected reserves
   agree; `false` keeps EVW's Appendix 1 as written. Centred, at the same
-  seed and 20,000 simulations, the total mean CDR is -0.0108 (RAA),
-  -0.0035 (GenIns) and +0.0067 (ABC) times its SD, within 1.6 Monte Carlo
+  seed and 20,000 simulations, the total mean CDR is -0.0022 (RAA),
+  +0.0031 (GenIns) and -0.0095 (ABC) times its SD, within 1.4 Monte Carlo
   standard errors of zero (pinned in the validation test, which checks
-  them against the exact zero), and the SD reconciles: total 1.003, 1.000
+  them against the exact zero; -0.0108, -0.0035 and +0.0067 with the
+  inverse-transform Gamma sampler before 2026-10-08), and the SD
+  reconciles (measured with that sampler): total 1.003, 1.000
   and 0.994 times R's `CDR(1)S.E.`, per origin 0.989 to 1.005, 0.994 to
   1.006 and 0.987 to 1.007 (measured once), every origin within five Monte
   Carlo standard errors (the CI test). A unit test checks on RAA (4,000
@@ -201,7 +203,8 @@ uncentred residuals' bias of the pseudo factors.[^mack]
   mean CDR is -0.204, -0.034 and +0.168 times its SD, and zero centred
   (the 20,000-simulation runs gave -0.214, -0.038, +0.176 uncentred, within
   1.5 of their Monte Carlo standard errors, about `1 / sqrt(20,000)`, and
-  give -0.0108, -0.0035, +0.0067 centred, which the regression pins). A
+  give -0.0022, +0.0031, -0.0095 centred with the Marsaglia-Tsang Gamma
+  sampler, which the regression pins). A
   fast test pins these numbers and checks that, under Merz-Wuthrich's
   factors, the exact mean closing ultimates are the opening chain-ladder
   ones.
@@ -211,7 +214,9 @@ uncentred residuals' bias of the pseudo factors.[^mack]
   Monte Carlo standard errors of its exact SD (RAA uncentred within 1.35),
   while RAA's uncentred runs are up to 7.0 standard errors from R. An
   ignored test (`simulation_matches_the_exact_moments`, about four minutes
-  with `--release`) checks it at four standard errors. Against Merz-
+  with `--release` by inverse transform; 1.4 s with `--release` and 19 s
+  in a debug build with the Marsaglia-Tsang sampler, and it still passes)
+  checks it at four standard errors. Against Merz-
   Wuthrich's exact values instead, the centred run's RAA 1982 would be
   -3.41 standard errors: the centred pool keeps the variance `1 - m^2`.
 * (c) The process shape cannot move the SD: the covariances need only the
