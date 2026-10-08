@@ -24,4 +24,4 @@ pub use fft::fft;
 pub use grid_reinsurance::TowerGrids;
 pub use monte_carlo::{EventSet, simulate_events};
 pub use panjer::panjer;
-pub use reinsurance::{Basis, Layer, Tower};
+pub use reinsurance::{Basis, Corridor, Layer, Tower};

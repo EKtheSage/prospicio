@@ -118,6 +118,8 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
 
+EventSet$with_seasonal_times <- function(weights) .Call(wrap__EventSet__with_seasonal_times, self, weights)
+
 EventSet$has_times <- function() .Call(wrap__EventSet__has_times, self)
 
 EventSet$times <- function(sim) .Call(wrap__EventSet__times, self, sim)
@@ -177,6 +179,10 @@ XolLayer$ceded <- function(losses) .Call(wrap__XolLayer__ceded, self, losses)
 XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event, self, losses)
 
 XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
+
+XolLayer$with_loss_corridor <- function(lower, upper, retained) .Call(wrap__XolLayer__with_loss_corridor, self, lower, upper, retained)
+
+XolLayer$loss_corridor <- function() .Call(wrap__XolLayer__loss_corridor, self)
 
 XolLayer$reinstatement_premium <- function(losses, times) .Call(wrap__XolLayer__reinstatement_premium, self, losses, times)
 
@@ -1058,7 +1064,7 @@ Tabulated$rate_quantile <- function(u) .Call(wrap__Tabulated__rate_quantile, sel
 
 RiskProfile <- new.env(parent = emptyenv())
 
-RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper)
+RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, tilted) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, tilted)
 
 RiskProfile$expected_loss <- function() .Call(wrap__RiskProfile__expected_loss, self)
 

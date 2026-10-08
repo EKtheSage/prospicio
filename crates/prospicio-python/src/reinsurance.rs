@@ -12,7 +12,8 @@ use crate::to_py;
 /// loss, then annual terms.
 ///
 /// For one year, ``ceded = share * min(max(sum of per-loss recoveries -
-/// aggregate_deductible, 0), aggregate_limit)``.
+/// aggregate_deductible, 0), aggregate_limit)``, less any loss corridor
+/// (``with_loss_corridor``) before the annual limit.
 ///
 /// Parameters
 /// ----------
@@ -272,6 +273,52 @@ impl PyLayer {
     #[getter]
     fn pro_rata_time(&self) -> bool {
         self.inner.pro_rata_time
+    }
+
+    /// The same layer with a loss corridor.
+    ///
+    /// Of the annual layer loss at 100% after the annual deductible, the
+    /// cedant keeps ``retained`` of the part between ``lower`` and
+    /// ``upper``; the annual limit then caps what is left, so the reinsurer
+    /// still pays up to the full annual limit. Reinstatement premiums
+    /// follow the loss after the corridor. A corridor quoted as loss
+    /// ratios ``lr`` on the reinsurer's premium ``P`` for a placed share
+    /// ``s`` is ``lr * P / s`` (for a quota share, ``P / s`` is the
+    /// subject premium).
+    ///
+    /// Parameters
+    /// ----------
+    /// lower : float
+    ///     Non-negative.
+    /// upper : float
+    ///     Finite, above ``lower``.
+    /// retained : float, default 1.0
+    ///     Share of the band the cedant keeps, in ``(0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> qs = Layer.quota_share("QS", 0.3).with_loss_corridor(70.0, 90.0)
+    /// >>> round(qs.ceded([50.0, 30.0]), 12), round(qs.ceded([120.0]), 12)
+    /// (21.0, 30.0)
+    #[pyo3(signature = (lower, upper, retained = 1.0))]
+    fn with_loss_corridor(&self, lower: f64, upper: f64, retained: f64) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .clone()
+            .loss_corridor(lower, upper, retained)
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The loss corridor as ``(lower, upper, retained)``, or ``None``.
+    #[getter]
+    fn loss_corridor(&self) -> Option<(f64, f64, f64)> {
+        self.inner.corridor.map(|c| (c.lower, c.upper, c.retained))
     }
 
     /// Ceded loss for one year's losses.

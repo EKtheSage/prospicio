@@ -1,7 +1,7 @@
 ---
 type: Environment Fact
 title: Local checks in the cloud container and their noise
-description: What runs locally before a push, what cannot, and the generated-file churn cargo xtask r leaves to revert.
+description: What runs locally before a push, what cannot, how to install R and uv when the container lacks them, and the generated-file churn cargo xtask r leaves to revert.
 tags: [environment, ci, bindings, r, python]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T18:30:00Z }
@@ -23,6 +23,25 @@ sources:
   pkgdown step fails on the network (see
   [cloud network](/environment/cloud-network.md)). The "boom" errors in
   its output are expected test errors.
+
+# When the container has no R or uv
+
+A fresh container may lack R, uv and the wasm target (2026-10-08). These
+installed and ran the R and Python checks:
+
+* `apt-get install -y r-base-core libuv1-dev libxml2-dev
+  libcurl4-openssl-dev libssl-dev` (R 4.3; `fs`, a roxygen2 dependency,
+  fails to configure without `libuv1-dev`), then
+  `install.packages(c("S7", "roxygen2", "pkgload"))` from CRAN.
+  `cargo xtask r` then passes up to its pkgdown step, which fails for
+  want of pkgdown; CI's docs job covers it.
+* `pip install uv`, then `cargo xtask python`'s steps by hand in
+  `python/`: `uv sync --group docs`, `uv run maturin develop --uv
+  --release --generate-stubs`, `uv run pytest tests`.
+* `rustup target add wasm32-unknown-unknown`.
+
+That install (R 4.3.3, roxygen2 8.1.0) left none of the noise below:
+`cargo xtask r` changed only the files the code change called for.
 
 # Noise to revert after `cargo xtask r`
 

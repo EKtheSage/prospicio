@@ -171,6 +171,16 @@ impl EventSet {
         }
     }
 
+    fn with_seasonal_times(&self, weights: Vec<f64>) -> Result<Self> {
+        Ok(Self {
+            inner: self
+                .inner
+                .clone()
+                .with_seasonal_times(&weights)
+                .map_err(to_r)?,
+        })
+    }
+
     fn has_times(&self) -> bool {
         self.inner.has_times()
     }

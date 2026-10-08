@@ -65,6 +65,16 @@ sources:
   cession averages over SI weighted by SI. A 1m–5m band with a 2m
   retention cedes 3/8 against 1/3 for its 3m mean risk; spreading moves
   loss into layers the mean risk never reaches.[^profile]
+* A uniform spread fixes the band's mean SI at the midpoint, which a
+  band's total SI over its risks need not match. The truncated
+  exponential `∝ exp(θ s)` on the bounds (the most even spread with a
+  given mean) matches both, with `θ` from `1/(1 − e^{−t}) − 1/t = p`,
+  `t = θ (U − L)`, `p` the mean's place in the band. A 1m–5m band with
+  mean 2m leans to small risks and cedes less than the uniform band's
+  3/8 to a 2m surplus. Averaging over probability (`∫₀¹ g(Q(p)) dp`)
+  rather than SI keeps a steep tilt accurate; the surplus cession's kink
+  at the retention inside a quadrature piece then costs about 3e-8,
+  relative.[^profile]
 
 [^pep]: Exposure modelling in property reinsurance
 [^cas]: CAS Reinsurance Seminar 2014 handout

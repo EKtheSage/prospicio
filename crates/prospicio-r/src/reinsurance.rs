@@ -136,6 +136,23 @@ impl XolLayer {
         self.inner.pro_rata_time
     }
 
+    fn with_loss_corridor(&self, lower: f64, upper: f64, retained: f64) -> Result<Self> {
+        let inner = self
+            .inner
+            .clone()
+            .loss_corridor(lower, upper, retained)
+            .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    /// `c(lower, upper, retained)`, empty when there is none.
+    fn loss_corridor(&self) -> Vec<f64> {
+        self.inner
+            .corridor
+            .map(|c| vec![c.lower, c.upper, c.retained])
+            .unwrap_or_default()
+    }
+
     /// `times` empty when not given.
     fn reinstatement_premium(&self, losses: &[f64], times: &[f64]) -> Result<f64> {
         if times.is_empty() {

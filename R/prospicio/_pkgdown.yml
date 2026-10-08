@@ -64,12 +64,14 @@ reference:
       - event_sums_insured
       - event_times
       - with_uniform_times
+      - with_seasonal_times
       - event_set
       - events
       - event_counts
   - title: Reinsurance
     contents:
       - xol_layer
+      - with_loss_corridor
       - quota_share
       - aggregate_stop_loss
       - surplus_treaty

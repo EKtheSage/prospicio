@@ -16,8 +16,9 @@ use rayon::prelude::*;
 /// Each loss may carry the sum insured of the risk it hit
 /// ([`EventSet::with_sums_insured`], or a risk profile), which a surplus
 /// treaty needs, and the time in the year it happened
-/// ([`EventSet::with_times`], [`EventSet::with_uniform_times`]), which
-/// reinstatement premiums pro rata as to time need.
+/// ([`EventSet::with_times`], [`EventSet::with_uniform_times`],
+/// [`EventSet::with_seasonal_times`]), which reinstatement premiums pro
+/// rata as to time need.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventSet {
     /// `offsets[i]..offsets[i + 1]` indexes year `i`'s losses.
@@ -243,13 +244,82 @@ impl EventSet {
     /// let t = events.times(0).unwrap();
     /// assert!(t[0] <= t[1] && t[1] <= t[2]);
     /// ```
-    pub fn with_uniform_times(mut self) -> Self {
+    pub fn with_uniform_times(self) -> Self {
+        self.with_drawn_times(|u| u)
+    }
+
+    /// The same events at times drawn from a seasonal density: the year is
+    /// cut into `weights.len()` equal periods (12 for months, 52 for weeks),
+    /// starting at the contract's inception, and a loss falls in period `k`
+    /// with probability `weights[k] / Σ weights`, uniformly within it. A
+    /// zero weight means no losses in that period (a hurricane season).
+    ///
+    /// Year `i` takes the same sorted uniform draws as
+    /// [`EventSet::with_uniform_times`] and maps each through the season's
+    /// quantile, which is increasing, so the times stay sorted and equal
+    /// weights give the uniform times (to rounding).
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// // Losses only in the second half of the year.
+    /// let events = EventSet::from_years(vec![vec![5.0, 2.0, 7.0]], 3)
+    ///     .unwrap()
+    ///     .with_seasonal_times(&[0.0, 1.0])
+    ///     .unwrap();
+    /// let t = events.times(0).unwrap();
+    /// assert!(t.iter().all(|&x| x >= 0.5) && t.windows(2).all(|w| w[0] <= w[1]));
+    /// ```
+    pub fn with_seasonal_times(self, weights: &[f64]) -> Result<Self> {
+        if weights.is_empty() {
+            return Err(Error::Data("needs at least one period's weight".into()));
+        }
+        if let Some(&w) = weights.iter().find(|w| !(w.is_finite() && **w >= 0.0)) {
+            return Err(Error::InvalidParameter {
+                name: "weights",
+                value: w,
+                reason: "must be finite and non-negative",
+            });
+        }
+        let total: f64 = weights.iter().sum();
+        if total <= 0.0 {
+            return Err(Error::InvalidParameter {
+                name: "weights",
+                value: total,
+                reason: "must not all be zero",
+            });
+        }
+        // cum[k] is the probability of the first k periods.
+        let m = weights.len();
+        let mut cum = Vec::with_capacity(m + 1);
+        cum.push(0.0);
+        let mut acc = 0.0;
+        for w in weights {
+            acc += w / total;
+            cum.push(acc);
+        }
+        cum[m] = 1.0;
+        Ok(self.with_drawn_times(|u| {
+            // The period whose probability interval holds u; it has a
+            // positive weight, since cum[k] <= u < cum[k + 1].
+            let k = (cum[1..].partition_point(|&c| c <= u)).min(m - 1);
+            let within = (u - cum[k]) / (cum[k + 1] - cum[k]);
+            ((k as f64 + within.clamp(0.0, 1.0)) / m as f64).clamp(0.0, 1.0)
+        }))
+    }
+
+    /// Year `i`'s `n` sorted uniform draws from stream `2^63 + i`, each
+    /// mapped through `quantile` (increasing on `(0, 1)`).
+    fn with_drawn_times(mut self, quantile: impl Fn(f64) -> f64) -> Self {
         let mut times = Vec::with_capacity(self.losses.len());
         for (i, w) in self.offsets.windows(2).enumerate() {
             let mut rng = StreamRng::new(self.seed, TIME_STREAM + i as u64);
             let start = times.len();
             times.extend((w[0]..w[1]).map(|_| rng.next_open01()));
             times[start..].sort_by(f64::total_cmp);
+            for t in &mut times[start..] {
+                *t = quantile(*t);
+            }
         }
         self.times = Some(times);
         self
@@ -438,6 +508,67 @@ mod tests {
         // Spread over the year.
         let mean = all.iter().sum::<f64>() / all.len() as f64;
         assert!((mean - 0.5).abs() < 0.06, "{mean}");
+    }
+
+    #[test]
+    fn seasonal_times_follow_the_weights() {
+        let events = EventSet::from_years(vec![vec![1.0, 2.0], vec![3.0]], 0).unwrap();
+        assert!(events.clone().with_seasonal_times(&[]).is_err());
+        assert!(events.clone().with_seasonal_times(&[0.0, 0.0]).is_err());
+        assert!(events.clone().with_seasonal_times(&[1.0, -1.0]).is_err());
+        assert!(
+            events
+                .clone()
+                .with_seasonal_times(&[1.0, f64::NAN])
+                .is_err()
+        );
+
+        let freq = Poisson::new(4.0).unwrap();
+        let sim = simulate_events(&freq, &severity(), 50_000, 8).unwrap();
+
+        // Equal weights are the uniform times, to rounding.
+        let uniform = sim.clone().with_uniform_times();
+        let flat = sim.clone().with_seasonal_times(&[3.0; 12]).unwrap();
+        for i in 0..1_000 {
+            for (a, b) in uniform.times(i).unwrap().iter().zip(flat.times(i).unwrap()) {
+                assert!((a - b).abs() < 1e-15, "{a} {b}");
+            }
+        }
+
+        // A season: nothing in the first quarter, most in the third.
+        let weights = [0.0, 1.0, 6.0, 1.0];
+        let seasonal = sim.with_seasonal_times(&weights).unwrap();
+        let mut all = Vec::new();
+        for i in 0..seasonal.n_sims() {
+            let t = seasonal.times(i).unwrap();
+            assert_eq!(t.len(), seasonal.events(i).len());
+            assert!(t.windows(2).all(|w| w[0] <= w[1]));
+            assert!(t.iter().all(|&x| (0.25..=1.0).contains(&x)));
+            all.extend_from_slice(t);
+        }
+        // The piecewise-linear cdf of the season.
+        let cdf = |x: f64| {
+            let mut c = 0.0;
+            for (k, w) in weights.iter().enumerate() {
+                let (lo, hi) = (k as f64 / 4.0, (k + 1) as f64 / 4.0);
+                c += w / 8.0 * ((x - lo) / (hi - lo)).clamp(0.0, 1.0);
+            }
+            c
+        };
+        all.sort_by(f64::total_cmp);
+        let n = all.len() as f64;
+        let ks = all
+            .iter()
+            .enumerate()
+            .map(|(j, &x)| {
+                let f = cdf(x);
+                (f - j as f64 / n).abs().max(((j + 1) as f64 / n - f).abs())
+            })
+            .fold(0.0, f64::max);
+        // Times within a year are not independent of its count, but pooled
+        // over i.i.d. losses they are a sample of the season: the 0.1%
+        // critical value 1.95 / sqrt(n).
+        assert!(ks < 1.95 / n.sqrt(), "KS {ks}");
     }
 
     #[test]

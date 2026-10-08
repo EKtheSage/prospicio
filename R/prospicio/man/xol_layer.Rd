@@ -51,11 +51,14 @@ charged at \code{1 - t}. Needs \code{reinstatement_rates}, and events with times
 \item{ptr}{Internal: an existing layer to wrap.}
 }
 \value{
-An \code{xol_layer} object with read-only properties for each term.
+An \code{xol_layer} object with read-only properties for each term
+(\code{loss_corridor} is \code{c(lower, upper, retained)}, empty when there is
+none).
 }
 \description{
 \code{limit} xs \code{attachment} on each loss, then annual terms. For one year,
-\verb{ceded = share * min(max(sum of per-loss recoveries - aggregate_deductible, 0), aggregate_limit)}.
+\verb{ceded = share * min(max(sum of per-loss recoveries - aggregate_deductible, 0), aggregate_limit)}, less any loss corridor (\code{\link[=with_loss_corridor]{with_loss_corridor()}})
+before the annual limit.
 }
 \examples{
 l <- xol_layer("5x5", 5e6, 5e6, reinstatements = 1)
@@ -69,5 +72,5 @@ reinstatement_premium(timed, c(22, 12), times = c(0.25, 0.5))
 }
 \seealso{
 \code{\link[=quota_share]{quota_share()}} and \code{\link[=aggregate_stop_loss]{aggregate_stop_loss()}} for the other contract
-types, which are layers too.
+types, which are layers too; \code{\link[=with_loss_corridor]{with_loss_corridor()}} for a corridor.
 }

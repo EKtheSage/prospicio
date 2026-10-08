@@ -125,6 +125,80 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `EventSet.with_uniform_times()`, `EventSet.from_years(..., times=)`; R
   `xol_layer(pro_rata_time = TRUE)`, `with_uniform_times()`,
   `events_from_years(times =)`, `event_times()`.
+- **Tilted spreads within a band (decided 2026-10-08).**
+  `Band::with_tilted_bounds(lower, upper)` spreads a band's sums insured
+  on the bounds with density `∝ exp(θ s)` and keeps the band's given SI
+  as the mean, so the spread matches both the bounds and the band's total
+  sum insured (`risks × SI`). Among densities on `[L, U]` with a given
+  mean, this one has the most entropy, so it is the most even spread that
+  matches, and `θ = 0` (an SI at the midpoint) is the uniform spread.
+  `θ` solves `1/(1 − e^{−t}) − 1/t = (SI − L)/(U − L)` with
+  `t = θ (U − L)` by bisection; the SI must lie strictly between the
+  bounds. Simulated losses draw their SI by inverse transform, written
+  with `expm1`/`ln_1p` from the heavier end so no exponential overflows.
+  The exposure-rated expectations average `E[S f(S)] / E[S]` over the
+  spread as integrals over probability, `∫₀¹ g(Q(p)) dp`, by
+  Gauss–Legendre on 256 pieces, which stays accurate for a steep tilt
+  (and is the same integral as before for a uniform spread). The claim
+  count uses the spread's mean SI, the given one. Tested: the solved mean
+  to `1e-12`; the midpoint tilt equals the uniform spread; a 1m–5m band
+  with mean 2m against Simpson's rule in SI (to `1e-7`: the cession's
+  kink at the retention falls inside a piece over probability); simulated
+  SIs by mean and Kolmogorov–Smirnov at the 0.1% level; a surplus and
+  the per-risk XL it inures to within four standard errors of exposure
+  rating; a nearly degenerate tilt against the band's single risk.
+  Python `RiskProfile(..., spread="tilted")`, R
+  `risk_profile(spread = "tilted")`.
+- **Seasonal event times (decided 2026-10-08).** `EventSet::with_seasonal_times(weights)`
+  dates losses by a piecewise-constant density over the year: `m =
+  weights.len()` equal periods (12 for months, 52 for weeks) starting at
+  the contract's inception, period `k` with probability `w_k / Σ w`, and
+  uniform within it; a zero weight is a period with no losses (outside a
+  hurricane season). Year `i` takes the same sorted uniform draws as
+  `with_uniform_times` and maps each `u` through the season's quantile,
+  `t = (k + (u − C_k) / (C_{k+1} − C_k)) / m` with `C` the cumulative
+  weights. The quantile is increasing, so the times stay sorted, the
+  i.i.d. argument for uniform times carries over, and equal weights give
+  the uniform times to rounding (tested to `1e-15`). Periods are equal
+  fractions of the contract year, so a 1 July contract lists July first,
+  and months of unequal length are the caller's (weight by days if it
+  matters). A general density on `[0, 1]` is a later option; nothing in
+  `prospicio-prob` lives there yet. Tested: pooled times of 50,000 years
+  against the season's cdf by Kolmogorov–Smirnov at the 0.1% level, no
+  time in a zero-weight period, and one exhausting loss a year dated in
+  the second half only averages a quarter of the amount-only premium
+  (`2 E[1 − t] = 0.5`), with variance `4 · 0.5² / 12`, within four
+  standard errors. Python `EventSet.with_seasonal_times(weights)`, R
+  `with_seasonal_times()`.
+- **Loss corridors (decided 2026-10-08).** `Layer::loss_corridor(lower,
+  upper, retained)`: of the annual layer loss at 100% after the annual
+  deductible, the cedant keeps `retained` of the part between `lower` and
+  `upper`, and the annual limit caps what is left:
+  `ceded = share × min(D − retained × min(max(D − lower, 0), upper − lower), AAL)`
+  with `D = max(R − AAD, 0)`. The corridor sits between the deductible
+  and the limit because both keep their meaning: the AAD is what the
+  cedant keeps first and the AAL the most the reinsurer pays, so a
+  corridor does not shrink the reinsurer's maximum. Reinstatement
+  premiums follow the loss after the corridor: limit kept in the corridor
+  is not reinstated or charged for. Any layer takes one, including a quota
+  share (the usual case) and a stop-loss. Bounds are amounts at 100% of
+  the layer, like the AAD and AAL; a corridor quoted as loss ratios `lr`
+  on the reinsurer's premium `P` for a share `s` is `lr × P / s`. The
+  annual terms stay non-decreasing in the year's recovery, so the
+  corridor is used up in event order like the deductible
+  (`ceded_by_event`), on the grid it maps the annual recovery as the
+  other annual terms do (a stop-loss with a corridor still has a net
+  grid), and a corridor counts as an annual term that may not inure on
+  the grid. Tower documents write it as `"loss_corridor": {"lower",
+  "upper", "retained"}` only when there is one, and a document without
+  the key loads with none, so the format stays version 1. Tested:
+  hand-worked years through deductible, corridor and limit (whole and
+  per event), the quota share's ceded loss against the closed form and
+  gross = ceded + net in every simulated year, a corridor layer and a
+  stop-loss with a corridor on the grid against 200,000 simulated years
+  by Kolmogorov–Smirnov, and JSON round trips. Python
+  `Layer.with_loss_corridor(lower, upper, retained=1.0)` and
+  `Layer.loss_corridor`, R `with_loss_corridor()` and `@loss_corridor`.
 - **Towers are data.** `Tower::to_json` writes a programme as a versioned
   document (`"format": "risk_rs.tower"`, version 1): its stages in inuring
   order, each a list of layers with every term (basis, and for a surplus
@@ -209,8 +283,7 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   insured, `∫ s f(s) ds / ∫ s ds` (a risk's expected loss is proportional
   to its SI), by Gauss–Legendre on 256 pieces. With bounds, the band's
   given SI is not used: a profile whose total SI over its risks differs
-  from `(L + U) / 2` would need a tilted spread to match both, which is a
-  later option. Tested: a band from 1m to 5m against a 2m surplus cedes
+  from `(L + U) / 2` needs the tilted spread below to match both. Tested: a band from 1m to 5m against a 2m surplus cedes
   3/8 (closed form), where its 3m mean risk cedes 1/3, and simulation
   agrees within four standard errors.
 
@@ -252,9 +325,5 @@ binomial counts. A unit test checks the layer mean and variance against
 
 ## Next
 
-1. Seasonality: event times from a density over the year rather than
-   uniform (a hurricane season).
-2. Loss corridors (a retained band of the layer's annual loss), and other
-   contract features in `architecture.md`'s reinsurance scope.
-3. A spread within a band that matches both its bounds and its total sum
-   insured (a tilted, not uniform, density), if profiles call for it.
+1. Contract features beyond `architecture.md`'s reinsurance scope
+   (sliding-scale and profit commissions, swing rating), on request.

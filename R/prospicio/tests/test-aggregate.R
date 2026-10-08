@@ -139,10 +139,28 @@ stopifnot(inherits(try(apply_tower(reinsurance_tower(list(one)), ev), silent = T
 dated <- with_uniform_times(ev)
 rp <- draw_matrix(apply_tower(reinsurance_tower(list(one)), dated))[, 4]
 stopifnot(abs(mean(rp) - 1) < 4 * sd(rp) / sqrt(n), length(event_times(ev, 1)) == 0)
+# Losses only in the second half of the year: 2 E[1 - t] = 0.5.
+late <- with_seasonal_times(ev, c(0, 1))
+stopifnot(all(sapply(1:100, function(i) event_times(late, i)) >= 0.5))
+rp <- draw_matrix(apply_tower(reinsurance_tower(list(one)), late))[, 4]
+stopifnot(abs(mean(rp) - 0.5) < 4 * sd(rp) / sqrt(n))
+close(event_times(with_seasonal_times(ev, rep(1, 12)), 7), event_times(dated, 7), 1e-15)
+stopifnot(inherits(try(with_seasonal_times(ev, c(0, 0)), silent = TRUE), "try-error"))
 et <- events_from_years(list(c(5, 2), 9), times = list(c(0.1, 0.6), 0.3))
 stopifnot(event_times(et, 2) == 0.3)
 stopifnot(inherits(try(events_from_years(list(c(5, 2)), times = list(c(0.6, 0.1))), silent = TRUE),
                    "try-error"))
+
+# Loss corridors.
+qs <- with_loss_corridor(quota_share("QS", 0.3), 70, 90)
+stopifnot(identical(qs@loss_corridor, c(70, 90, 1)), length(quota_share("Q", 0.3)@loss_corridor) == 0)
+close(ceded(qs, c(50, 30)), 21, 1e-12)
+close(ceded(qs, 120), 30, 1e-12)
+lc <- with_loss_corridor(xol_layer("L", 10, 5, aggregate_deductible = 4, aggregate_limit = 12), 5, 9, 0.5)
+stopifnot(ceded(lc, c(8, 20, 12)) == 12)
+stopifnot(inherits(try(with_loss_corridor(qs, 2, 1), silent = TRUE), "try-error"))
+back <- tower_from_json(tower_to_json(reinsurance_tower(list(qs))))
+stopifnot(identical(back@layer_names, "QS"))
 
 # Towers save and load as JSON.
 tw <- inuring_tower(list(list(quota_share("QS", 0.3), surplus_treaty("S", 1e6, 4)),
