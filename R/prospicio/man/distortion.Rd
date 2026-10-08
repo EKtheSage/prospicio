@@ -43,13 +43,13 @@ risk measure \verb{rho(X) = integral of g(S(x)) dx}.
    \code{"proportional_hazard"} \tab \code{s^rho} \tab \code{rho} in \verb{(0, 1]} \cr
    \code{"dual_power"} \tab \code{1 - (1 - s)^beta} \tab \code{beta >= 1} \cr
    \code{"exponential"} \tab \verb{(1 - exp(-k s)) / (1 - exp(-k))} \tab \code{k > 0} \cr
-   \code{"ccoc"} \tab \verb{min(1, d + (1 - d) s)}, \code{d = r / (1 + r)} \tab \code{r >= 0} \cr
+   \code{"ccoc"} \tab \verb{min(1, d + (1 - d) s)}, \code{d = r / (1 + r)} \tab \code{0 <= r} \cr
    \code{"bitvar"} \tab \verb{(1 - w) TVaR_p0 + w TVaR_p1} \tab \code{c(p0, p1, w)} \cr
    \code{"weighted_tvar"} \tab \verb{sum(w_i min(s / (1 - p_i), 1))} \tab the levels \code{p_i}; \code{weights} the \code{w_i} \cr
    \code{"capped_linear"} \tab \verb{min(1, r0 + slope s)} \tab \code{slope}, with \code{r0} \cr
    \code{"capped_log_linear"} \tab \verb{min(1, exp(r0) s^b)} \tab \code{b} in \verb{(0, 1]}, with \code{r0} \cr
-   \code{"lep"} \tab \verb{min(1, d0 + (1 - d0) s + (d - d0) sqrt(s (1 - s)))} \tab \code{r >= r0}, with \code{r0} \cr
-   \code{"linear_yield"} \tab \verb{(r0 + (1 + r) s) / (1 + r0 + r s)} \tab \code{r >= 0}, with \code{r0} \cr
+   \code{"lep"} \tab \verb{min(1, d0 + (1 - d0) s + (d - d0) sqrt(s (1 - s)))} \tab \code{r0 <= r}, with \code{r0} \cr
+   \code{"linear_yield"} \tab \verb{(r0 + (1 + r) s) / (1 + r0 + r s)} \tab \code{0 <= r}, with \code{r0} \cr
    \code{"beta"} \tab the Beta(a, b) distribution function \tab \code{c(a, b)}, \verb{a <= 1 <= b} \cr
 }
 

@@ -13,13 +13,13 @@ NULL
 #' | `"proportional_hazard"` | `s^rho` | `rho` in `(0, 1]` |
 #' | `"dual_power"` | `1 - (1 - s)^beta` | `beta >= 1` |
 #' | `"exponential"` | `(1 - exp(-k s)) / (1 - exp(-k))` | `k > 0` |
-#' | `"ccoc"` | `min(1, d + (1 - d) s)`, `d = r / (1 + r)` | `r >= 0` |
+#' | `"ccoc"` | `min(1, d + (1 - d) s)`, `d = r / (1 + r)` | `0 <= r` |
 #' | `"bitvar"` | `(1 - w) TVaR_p0 + w TVaR_p1` | `c(p0, p1, w)` |
 #' | `"weighted_tvar"` | `sum(w_i min(s / (1 - p_i), 1))` | the levels `p_i`; `weights` the `w_i` |
 #' | `"capped_linear"` | `min(1, r0 + slope s)` | `slope`, with `r0` |
 #' | `"capped_log_linear"` | `min(1, exp(r0) s^b)` | `b` in `(0, 1]`, with `r0` |
-#' | `"lep"` | `min(1, d0 + (1 - d0) s + (d - d0) sqrt(s (1 - s)))` | `r >= r0`, with `r0` |
-#' | `"linear_yield"` | `(r0 + (1 + r) s) / (1 + r0 + r s)` | `r >= 0`, with `r0` |
+#' | `"lep"` | `min(1, d0 + (1 - d0) s + (d - d0) sqrt(s (1 - s)))` | `r0 <= r`, with `r0` |
+#' | `"linear_yield"` | `(r0 + (1 + r) s) / (1 + r0 + r s)` | `0 <= r`, with `r0` |
 #' | `"beta"` | the Beta(a, b) distribution function | `c(a, b)`, `a <= 1 <= b` |
 #'
 #' `"ccoc"` is the constant cost of capital: the price of a loss `X` backed

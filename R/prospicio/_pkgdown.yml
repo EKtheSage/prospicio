@@ -102,6 +102,9 @@ reference:
     contents:
       - distortion
       - distortion_g
+      - distortion_mass
+      - distortion_mixture
+      - calibrate_distortion
       - risk_measure
       - allocate
       - capital_allocation
