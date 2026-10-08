@@ -39,6 +39,7 @@ reference:
       - negative_binomial_count_from_mean_variance
       - binomial_count
       - claim_count
+      - claim_count_dist
       - pmf
   - title: Distribution functions
     contents:
@@ -91,6 +92,13 @@ reference:
       - excess_frequency
       - layer_rating
       - risk_loaded_price
+      - capital_portfolio
+      - natural_price
+      - calibrate_portfolio
+      - bodoff_allocation
+      - pentagon
+      - premium_bounds
+      - classical_premium
       - mbbefd
       - tabulated_curve
       - risk_profile
@@ -102,6 +110,9 @@ reference:
     contents:
       - distortion
       - distortion_g
+      - distortion_mass
+      - distortion_mixture
+      - calibrate_distortion
       - risk_measure
       - allocate
       - capital_allocation

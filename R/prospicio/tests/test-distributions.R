@@ -98,3 +98,20 @@ for (d in list(lognormal(7, 0.5), pareto(1e5, 1.5), pareto(1e5, 1.5, truncation 
             identical(mean(back), mean(d)))
 }
 stopifnot(inherits(try(dist_to_json(custom_distribution(function(x) 1 - exp(-x))), silent = TRUE), "try-error"))
+
+# More claim counts, against aggregate 1.0.1 where it has them.
+zt <- zero_truncated_count(poisson_count(2))
+stopifnot(pmf(zt, 0) == 0, abs(mean(zt) - 2 / (1 - exp(-2))) < 1e-12)
+zm <- zero_modified_count(negative_binomial_count(2, 1.5), 0.3)
+stopifnot(abs(pmf(zm, 0) - 0.3) < 1e-15)
+pig <- mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian")
+stopifnot(abs(pmf(pig, 0) - 0.0030337404) < 1e-10, abs(variance(pig) - 35) < 1e-9)
+ney <- compound_poisson_count(2, poisson_count(3))
+stopifnot(abs(mean(ney) - 6) < 1e-12)
+stopifnot(abs(pmf(logarithmic_count(0.5), 1) - 0.5 / log(2)) < 1e-15)
+stopifnot(mean(empirical_count(c(0.5, 0.25, 0.25))) == 0.75)
+sev <- grid_distribution(1, c(0.1, 0.3, 0.25, 0.2, 0.1, 0.05))
+a <- compound_distribution(zm, sev, 100, method = "panjer")
+b <- compound_distribution(zm, sev, 100, method = "fft")
+stopifnot(max(abs(a@probs - b@probs)) < 1e-12)
+stopifnot(inherits(try(compound_distribution(pig, sev, 100, method = "panjer"), silent = TRUE), "try-error"))

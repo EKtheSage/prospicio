@@ -73,6 +73,18 @@ conversion reports the error it introduces.
   `quantile`, `sample`), with `Poisson` and `NegativeBinomial` (Klugman's
   `r`, `beta`; SciPy `nbinom(n=r, p=1/(1+beta))`). Parity: claim-count rows
   in `validation/reference/distributions_scipy.csv`.
+- `prospicio_prob::count_families`, the counts of `aggregate` and *Loss
+  Models* beyond the Panjer `(a, b, 0)` class: `ZeroModified` (and
+  zero-truncated) over any base count, `Logarithmic`, `MixedPoisson`
+  (gamma or inverse Gaussian mixing, with a fixed part: negative binomial,
+  Delaporte, Poisson-inverse Gaussian and its shifted version),
+  `CompoundPoisson` (Poisson-stopped sums: Neyman type A, Pólya-Aeppli)
+  and `EmpiricalCount`, with the closed enum `CountDist` over every count.
+  Python `prospicio.distributions.Count`, R `claim_count_dist()` and its
+  constructors (`zero_modified_count()`, `mixed_poisson_count()`, ...).
+  Parity: `validation/reference/counts_aggregate.csv`
+  (`validation/scripts/aggregate_counts.py`), 320 probabilities against
+  `aggregate` 1.0.1 at `1e-12`.
 
 ### Decisions for `Counting`
 
@@ -81,6 +93,22 @@ conversion reports the error it introduces.
   checks they satisfy the recursion `panjer_ab` reports.
 - `quantile(1)` is `u64::MAX`; sampling is inverse transform from 0, so its
   cost grows with the mean (fine for annual claim counts).
+- **`panjer_ab` is optional and means the `(a, b, 1)` class**: `Some((a,
+  b))` when `p_k = (a + b / k) p_{k-1}` for `k >= 2`, `None` otherwise.
+  Panjer's recursion runs on the `(a, b, 1)` form, with the extra term
+  `(p_1 - (a + b) p_0) f_k` that vanishes in the `(a, b, 0)` class, so
+  zero-modified, zero-truncated and logarithmic counts use it; counts
+  outside the class (mixed Poisson, compound, empirical) need FFT, which
+  uses only the pgf.
+- **Counts outside the class keep a probability table** built on
+  construction, out to where the terms fall below `1e-20` past the mean
+  plus ten standard deviations: the Poisson-inverse Gaussian by Willmot's
+  (1987) three-term recursion, compound counts by the compound Poisson
+  recursion, and a fixed part of a mixing by convolution with its
+  Poisson. `pmf` is then a lookup.
+- **A mixing's `cv` is that of the whole mixing variable** `Θ`, fixed part
+  included, as in `aggregate`, so the variance is `λ + λ² cv²` whatever the
+  shift.
 
 ### Decisions for `Grid`
 

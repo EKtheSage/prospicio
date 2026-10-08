@@ -22,8 +22,18 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 
 - `prospicio_prob::risk::{var_sorted, tvar_sorted}`.
 - `prospicio_prob::Distortion`: `Tvar(p)`, `Wang(λ)`, `ProportionalHazard(ρ)`,
-  `DualPower(β)`, with `g`, `weights(n)`, `apply_sorted`,
-  `apply_discrete`; `Empirical::distortion` and `Grid::distortion`.
+  `DualPower(β)`, `Exponential(k)`, and the families of Mildenhall and
+  Major (*Pricing Insurance Risk*, 2022) and CAS Monograph 15: `Ccoc(r)`
+  (constant cost of capital), `BiTvar`, `WeightedTvar`, `CappedLinear`,
+  `CappedLogLinear`, `Lep`, `LinearYield`, `Beta`, `Mixture`, `Minimum`
+  and `Convex` (the concave hull of `(s, g)` points, for distortions read
+  off cat bond or credit spreads). Methods `g`, `g_inv`, `g_dual` (the
+  bid), `mass` (`g(0+)`), `weights(n)`, `apply_sorted`, `apply_discrete`,
+  `apply_discrete_dual`; `Empirical::distortion` and `Grid::distortion`.
+- `distortion::calibrate(Family, values, probs, premium)`: the member of a
+  one-parameter family (`Family::STANDARD` is CCoC, PH, Wang, dual and
+  TVaR) whose price is the premium. Python `prospicio.risk.calibrate`, R
+  `calibrate_distortion()`; both cap the loss at `assets` when given.
 - `PredictiveDistribution::allocate(&Distortion)`: co-measure allocation
   of the total's risk measure to the components (CoTVaR for `Tvar`).
 - `PredictiveDistribution::capital(&Distortion, AllocationMethod)` in
@@ -70,12 +80,52 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   fits) and `evt::hill` (Hill estimates of the tail index for a range of
   `k`), the usual aids to choosing a threshold before `PotTail::fit`.
 
+- `prospicio_pricing::natural`: the pricing and natural allocation of
+  Mildenhall and Major (*Pricing Insurance Risk*, 2022) and CAS Monograph
+  15. A `Portfolio` holds the total's distinct values with their
+  probabilities and each unit's `κᵢ(x) = E[Xᵢ | X = x]`, from scenarios
+  (`from_rows`, `from_predictive`) or from independent units' grids by FFT
+  (`from_independent`). `price(g, a, Allocation)` prices `X ∧ a` and
+  allocates loss (equal priority in default), margin, premium, capital
+  and assets to units, linear or lifted; `bodoff(a)` is Bodoff's
+  percentile layer of capital; `epd(a)` and `assets_for_epd`; `assets(p)`
+  the capital standard; `calibrate(Family, a, Target)` to a premium,
+  return or loss ratio. `Pentagon` holds `L, M, P, Q, a` and
+  `Pentagon::solve` fills it from any three determining amounts or ratios.
+  `premium_bounds(premium, a)` gives each unit's range over every
+  distortion with that total price. Python `prospicio.pricing.Portfolio`,
+  `NaturalPrice`, `Pentagon`; R `capital_portfolio()`, `natural_price()`,
+  `calibrate_portfolio()`, `bodoff_allocation()`, `epd_ratio()`,
+  `assets_for_epd()`, `pentagon()`, `premium_bounds()`.
+- `prospicio_pricing::classical`: the classical premium principles that
+  *Pricing Insurance Risk* compares against (expected value, variance,
+  standard deviation, semi-variance, exponential, Esscher, Dutch, Fischer,
+  VaR), each with `calibrate` for its loading. Python
+  `classical_premium`, `calibrate_classical`; R the same names.
+
 ## Decisions
 
 - **A distortion is a closed enum** of concave distortions of the
-  survival function, so every measure offered is coherent. Each variant
-  has a parameter value that gives the mean. Custom distortions wait for a
-  use.
+  survival function, so every measure offered is coherent; it is `Clone`,
+  not `Copy`, because mixtures and weighted TVaRs hold vectors. Custom
+  distortions wait for a use. `Beta` needs `a <= 1 <= b` and
+  `CappedLogLinear` `b <= 1` to be concave. aggregate's Wang-t and power
+  distortions are left out: Wang-t is not concave for every parameter,
+  and the power distortion is defined through a severity.
+- **A distortion can put mass on the largest outcome.** `Ccoc`, and
+  `CappedLinear`, `Lep` and `LinearYield` with `r0 > 0`, jump at `s = 0`;
+  `apply_discrete` handles the jump without a special case, because the
+  top value's weight is `g(P(X = max))`, which includes the mass. That is
+  how `Ccoc(r)` prices `ν E[X] + δ max X`.
+- **Calibration solves on the discrete distribution, by bisection.** Every
+  family's price is monotone in its parameter, so bisection (on a log
+  scale for an open-ended parameter, after doubling past the target)
+  reaches full precision; `Ccoc` is closed form,
+  `r = (P - E[X]) / (max X - P)`. The caller caps the loss at the assets
+  (`min(X, a)`) to price a limited-liability portfolio, as Mildenhall and
+  Major do; the premium must lie strictly between the capped mean and
+  maximum. LEP's price is bounded below the maximum (its `g` tends to
+  `min(1, s + √(s (1 - s)))`), so a high premium can have no LEP.
 - **The measure is a weighted sum by rank.** For `n` equally likely draws
   sorted ascending, draw `i` (0-based) gets
   `g((n - i) / n) - g((n - i - 1) / n)`. On a discrete distribution the
@@ -143,6 +193,35 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   close to `(6 / π) asin(ρ / 2)`, as for a Gaussian copula with
   correlation `ρ`. Score columns are shuffled by `StreamRng::new(seed, j)`.
 
+- **Natural allocation follows `aggregate` 1.0.1.** The premium of unit
+  `i` is `Σ_{x_k ≤ a} κᵢ(x_k) Δg_k` plus `a g(S(a))` times its share of
+  the totals above `a`: the expected share `αᵢ(a) = E[Xᵢ / X | X > a]`
+  (linear) or the distorted share `βᵢ(a)` (lifted). Capital goes layer by
+  layer: unit `i`'s margin over a layer, `mᵢ(top) - mᵢ(bottom)` with
+  `mᵢ` its premium less its expected loss at that asset level, times the
+  layer's capital per unit of margin, `(1 - g) / (g - S)`. In layers the
+  loss always reaches (`S = g = 1`) that ratio is the limit
+  `g'(1) / (1 - g'(1))` (`Distortion::slope_at_one`). Under the linear
+  allocation `mᵢ` jumps at each total, and the jump belongs to the layer
+  below it, as on `aggregate`'s unit grid.
+- **The portfolio works on the distinct totals, not a grid.** Layers run
+  between consecutive totals, so any asset level works and no bucket is
+  chosen. `S` is summed from the top and is exactly 0 at the largest
+  total, which a distortion with a mass needs: a rounding residue there
+  would add `mass × max` to the price.
+- **Pricing bounds enumerate BiTVaRs exactly.** The distortions with a
+  given price of `X ∧ a` form a convex set whose extreme points are
+  BiTVaRs, and a unit's premium is linear in the distortion. On a discrete
+  total, `TVaR_p` and each unit's share are linear in `p` between the
+  cumulative probabilities of `X ∧ a`, so it is enough to pair those
+  knots (and `p*`, where `TVaR_p* = P`) across `p*`: no grid. As in
+  `aggregate`, levels inside the atom at `a` are not knots; under the
+  linear allocation, which uses `P(X > a)`, they would split units
+  differently though they price the total the same.
+- **Tied totals take the probability-weighted mean of the units.**
+  `aggregate` takes the unweighted mean of tied scenarios, which differs
+  when scenarios have unequal probabilities.
+
 ## Validation
 
 `validation/tests/distributions.rs` checks distortions against
@@ -156,10 +235,40 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   each row states where its error comes from. The Wang rows also equal the
   closed form `exp(μ + λσ + σ²/2)` to 16 digits.
 
+`validation/reference/distortion_aggregate.csv`
+(`validation/scripts/aggregate_distortions.py`, Mildenhall's `aggregate`
+1.0.1) checks `g` of every family the two share at twelve levels, at
+`1e-12`, and the Monograph 15 InsCo example: ten equally likely totals,
+assets 100, priced at a 15% cost of capital, `P = 53.565`. The price at
+aggregate's calibrated CCoC, PH, Wang, dual and TVaR parameters matches at
+`1e-12`, and `calibrate` recovers each parameter within aggregate's own
+tolerance: aggregate stops at a premium error (up to `7.6e-6` for TVaR),
+so the script turns that error into a parameter tolerance through the
+price's slope.
+
+`validation/reference/natural_aggregate.csv`
+(`validation/scripts/aggregate_natural.py`) checks the natural allocation
+against `aggregate` 1.0.1 at `1e-10`, 1,060 values: InsCo and the
+*Pricing Insurance Risk* Discrete case (two independent units, built by
+FFT), each priced under the CCoC, PH, Wang, dual and TVaR distortions
+calibrated to it, linear and lifted, at three asset levels including two
+with default; the loss, margin, premium, capital and assets of each unit
+and the total, and Bodoff's allocation; also the pricing bounds on InsCo
+at two asset levels (`AllocationBounds`) and the classical principles'
+calibrated loadings (`ClassicalPremium`, whose Fischer power the script
+sets to 2 because aggregate reads one it never sets). Unit tests check that every
+allocation adds up, `from_independent` against brute-force enumeration,
+EPD, and that 46 of the 56 triples of pentagon quantities solve.
+
 Unit tests check that `Tvar(p)` matches `tvar_sorted` for 101 levels, that
 weights are a non-decreasing probability vector, and coherence: translation
 and scale equivariance, bounds between the mean and the maximum, and
-monotonicity in each parameter.
+monotonicity in each parameter. Every family is checked to be
+non-decreasing, above the diagonal and concave on a 1,000-point grid,
+with its mass the limit at 0; `g_inv` against `g`; the bid below the mean
+below the ask; `Ccoc` against the equivalent `BiTvar` and its closed-form
+price; the convex hull dropping interior points and keeping a jump at 0;
+and calibration of every family to three premiums.
 
 `validation/reference/special_scipy.csv` checks `beta_inc` and
 `student_t_cdf` against SciPy at `1e-12`. Copula tests check Kendall's

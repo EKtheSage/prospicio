@@ -80,6 +80,12 @@ pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_pri
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
+pricing_pentagon <- function(names, values) .Call(wrap__pricing_pentagon, names, values)
+
+pricing_classical_premium <- function(x, principle, loading, q) .Call(wrap__pricing_classical_premium, x, principle, loading, q)
+
+pricing_calibrate_classical <- function(x, principle, premium, q) .Call(wrap__pricing_calibrate_classical, x, principle, premium, q)
+
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
 
 pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)
@@ -968,6 +974,78 @@ Binomial$sample <- function(n, seed, stream) .Call(wrap__Binomial__sample, self,
 #' @export
 `[[.Binomial` <- `$.Binomial`
 
+ClaimCount <- new.env(parent = emptyenv())
+
+ClaimCount$zero_modified <- function(base, p0) .Call(wrap__ClaimCount__zero_modified, base, p0)
+
+ClaimCount$logarithmic <- function(p) .Call(wrap__ClaimCount__logarithmic, p)
+
+ClaimCount$mixed_poisson <- function(mean, cv, mixing, shift) .Call(wrap__ClaimCount__mixed_poisson, mean, cv, mixing, shift)
+
+ClaimCount$compound_poisson <- function(rate, secondary) .Call(wrap__ClaimCount__compound_poisson, rate, secondary)
+
+ClaimCount$empirical <- function(probs) .Call(wrap__ClaimCount__empirical, probs)
+
+ClaimCount$kind <- function() .Call(wrap__ClaimCount__kind, self)
+
+ClaimCount$pmf <- function(k) .Call(wrap__ClaimCount__pmf, self, k)
+
+ClaimCount$cdf <- function(k) .Call(wrap__ClaimCount__cdf, self, k)
+
+ClaimCount$mean <- function() .Call(wrap__ClaimCount__mean, self)
+
+ClaimCount$variance <- function() .Call(wrap__ClaimCount__variance, self)
+
+ClaimCount$quantile <- function(p) .Call(wrap__ClaimCount__quantile, self, p)
+
+ClaimCount$sample <- function(n, seed, stream) .Call(wrap__ClaimCount__sample, self, n, seed, stream)
+
+#' @export
+`$.ClaimCount` <- function (self, name) { func <- ClaimCount[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ClaimCount` <- `$.ClaimCount`
+
+NaturalPortfolio <- new.env(parent = emptyenv())
+
+NaturalPortfolio$from_rows <- function(units, x, probs) .Call(wrap__NaturalPortfolio__from_rows, units, x, probs)
+
+NaturalPortfolio$from_predictive <- function(pd) .Call(wrap__NaturalPortfolio__from_predictive, pd)
+
+NaturalPortfolio$from_independent <- function(units, grids) .Call(wrap__NaturalPortfolio__from_independent, units, grids)
+
+NaturalPortfolio$units <- function() .Call(wrap__NaturalPortfolio__units, self)
+
+NaturalPortfolio$totals <- function() .Call(wrap__NaturalPortfolio__totals, self)
+
+NaturalPortfolio$probs <- function() .Call(wrap__NaturalPortfolio__probs, self)
+
+NaturalPortfolio$kappa <- function(i) .Call(wrap__NaturalPortfolio__kappa, self, i)
+
+NaturalPortfolio$expected <- function() .Call(wrap__NaturalPortfolio__expected, self)
+
+NaturalPortfolio$assets <- function(p) .Call(wrap__NaturalPortfolio__assets, self, p)
+
+NaturalPortfolio$max <- function() .Call(wrap__NaturalPortfolio__max, self)
+
+NaturalPortfolio$price <- function(distortion, assets, allocation) .Call(wrap__NaturalPortfolio__price, self, distortion, assets, allocation)
+
+NaturalPortfolio$calibrate <- function(family, assets, target, value, r0) .Call(wrap__NaturalPortfolio__calibrate, self, family, assets, target, value, r0)
+
+NaturalPortfolio$bodoff <- function(assets) .Call(wrap__NaturalPortfolio__bodoff, self, assets)
+
+NaturalPortfolio$epd <- function(assets) .Call(wrap__NaturalPortfolio__epd, self, assets)
+
+NaturalPortfolio$assets_for_epd <- function(epd) .Call(wrap__NaturalPortfolio__assets_for_epd, self, epd)
+
+NaturalPortfolio$premium_bounds <- function(premium, assets) .Call(wrap__NaturalPortfolio__premium_bounds, self, premium, assets)
+
+#' @export
+`$.NaturalPortfolio` <- function (self, name) { func <- NaturalPortfolio[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.NaturalPortfolio` <- `$.NaturalPortfolio`
+
 CollectiveModel <- new.env(parent = emptyenv())
 
 CollectiveModel$new <- function(frequency, severity) .Call(wrap__CollectiveModel__new, frequency, severity)
@@ -1513,11 +1591,25 @@ EvtTail$tvar <- function(p) .Call(wrap__EvtTail__tvar, self, p)
 
 RiskDistortion <- new.env(parent = emptyenv())
 
-RiskDistortion$new <- function(kind, param) .Call(wrap__RiskDistortion__new, kind, param)
+RiskDistortion$new <- function(kind, params, weights, r0) .Call(wrap__RiskDistortion__new, kind, params, weights, r0)
+
+RiskDistortion$mixture <- function(parts, weights) .Call(wrap__RiskDistortion__mixture, parts, weights)
+
+RiskDistortion$minimum <- function(parts) .Call(wrap__RiskDistortion__minimum, parts)
+
+RiskDistortion$convex <- function(s, g) .Call(wrap__RiskDistortion__convex, s, g)
+
+RiskDistortion$calibrate <- function(family, x, premium, assets, r0) .Call(wrap__RiskDistortion__calibrate, family, x, premium, assets, r0)
 
 RiskDistortion$kind <- function() .Call(wrap__RiskDistortion__kind, self)
 
 RiskDistortion$param <- function() .Call(wrap__RiskDistortion__param, self)
+
+RiskDistortion$mass <- function() .Call(wrap__RiskDistortion__mass, self)
+
+RiskDistortion$g_inv <- function(y) .Call(wrap__RiskDistortion__g_inv, self, y)
+
+RiskDistortion$g_dual <- function(s) .Call(wrap__RiskDistortion__g_dual, self, s)
 
 RiskDistortion$g <- function(s) .Call(wrap__RiskDistortion__g, self, s)
 

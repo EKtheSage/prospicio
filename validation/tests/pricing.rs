@@ -215,3 +215,129 @@ fn mbbefd_exposure_curves_match_mpmath() {
         }
     });
 }
+
+#[test]
+fn natural_allocation_matches_aggregate() {
+    use prospicio_pricing::natural::{Allocation, Portfolio};
+    use prospicio_prob::Distortion;
+    // Monograph 15's InsCo (validation/scripts/aggregate_natural.py).
+    let rows: Vec<Vec<f64>> = [
+        [15.0, 7.0, 0.0],
+        [15.0, 13.0, 0.0],
+        [5.0, 20.0, 11.0],
+        [7.0, 33.0, 0.0],
+        [13.0, 20.0, 7.0],
+        [5.0, 27.0, 8.0],
+        [15.0, 16.0, 9.0],
+        [26.0, 19.0, 10.0],
+        [17.0, 8.0, 40.0],
+        [16.0, 20.0, 64.0],
+    ]
+    .iter()
+    .map(|r| r.to_vec())
+    .collect();
+    let units = vec!["X1".to_string(), "X2".into(), "X3".into()];
+    let insco = Portfolio::from_rows(units, &rows, None).unwrap();
+    // Pricing Insurance Risk's Discrete case: two independent units.
+    let grid = |atoms: &[(usize, f64)]| {
+        let mut p = vec![0.0; atoms.iter().map(|a| a.0).max().unwrap() + 1];
+        atoms.iter().for_each(|&(x, q)| p[x] = q);
+        prospicio_prob::Grid::new(1.0, p).unwrap()
+    };
+    let discrete = Portfolio::from_independent(
+        vec!["X1".into(), "X2".into()],
+        &[
+            grid(&[(0, 0.5), (8, 0.25), (10, 0.25)]),
+            grid(&[(0, 0.5), (1, 0.25), (90, 0.25)]),
+        ],
+    )
+    .unwrap();
+    let cases = reference("natural_aggregate.csv");
+    check(&cases, |c| {
+        let params: std::collections::HashMap<&str, &str> = c
+            .get("params")
+            .split(';')
+            .filter_map(|kv| kv.split_once('='))
+            .collect();
+        let assets: f64 = params.get("assets")?.parse().ok()?;
+        let port = match *params.get("case")? {
+            "insco" => &insco,
+            "discrete" => &discrete,
+            _ => return None,
+        };
+        match c.get("distribution") {
+            "price" => {
+                let param: f64 = params.get("param")?.parse().ok()?;
+                let g = match *params.get("family")? {
+                    "ccoc" => Distortion::ccoc(param),
+                    "ph" => Distortion::proportional_hazard(param),
+                    "wang" => Distortion::wang(param),
+                    "dual" => Distortion::dual_power(param),
+                    "tvar" => Distortion::tvar(param),
+                    _ => return None,
+                }
+                .ok()?;
+                let method = match *params.get("allocation")? {
+                    "linear" => Allocation::Linear,
+                    "lifted" => Allocation::Lifted,
+                    _ => return None,
+                };
+                let price = port.price(&g, assets, method).ok()?;
+                let (unit, col) = c.get("quantity").split_once('.')?;
+                let p = match unit {
+                    "total" => price.total,
+                    u => price.allocated[price.units.iter().position(|n| n == u)?],
+                };
+                Some(match col {
+                    "L" => p.loss,
+                    "M" => p.margin,
+                    "P" => p.premium,
+                    "Q" => p.capital,
+                    "a" => p.assets,
+                    _ => return None,
+                })
+            }
+            "bodoff" => {
+                let i = port.units().iter().position(|u| u == c.get("quantity"))?;
+                Some(port.bodoff(assets)[i])
+            }
+            "bounds" => {
+                let premium: f64 = params.get("premium")?.parse().ok()?;
+                let (unit, side) = c.get("quantity").split_once('.')?;
+                let i = port.units().iter().position(|u| u == unit)?;
+                let b = &port.premium_bounds(premium, assets).ok()?[i];
+                Some(if side == "lower" { b.lower } else { b.upper })
+            }
+            "classical" => {
+                use prospicio_pricing::classical::{Kind, Principle, calibrate};
+                let premium: f64 = params.get("premium")?.parse().ok()?;
+                let kind = match c.get("quantity") {
+                    "Expected Value" => Kind::ExpectedValue,
+                    "VaR" => Kind::Var,
+                    "Variance" => Kind::Variance,
+                    "Standard Deviation" => Kind::StandardDeviation,
+                    "Semi-Variance" => Kind::SemiVariance,
+                    "Exponential" => Kind::Exponential,
+                    "Esscher" => Kind::Esscher,
+                    "Dutch" => Kind::Dutch,
+                    "Fischer" => Kind::Fischer { q: 2.0 },
+                    _ => return None,
+                };
+                Some(
+                    match calibrate(kind, port.totals(), port.probs(), premium).ok()? {
+                        Principle::ExpectedValue(t)
+                        | Principle::Variance(t)
+                        | Principle::StandardDeviation(t)
+                        | Principle::SemiVariance(t)
+                        | Principle::Exponential(t)
+                        | Principle::Esscher(t)
+                        | Principle::Dutch(t)
+                        | Principle::Var(t) => t,
+                        Principle::Fischer { theta, .. } => theta,
+                    },
+                )
+            }
+            _ => None,
+        }
+    });
+}

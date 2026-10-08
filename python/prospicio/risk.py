@@ -10,6 +10,7 @@ from .prospicio_native import (
     PotTail,
     StudentTCopula,
     allocate,
+    calibrate,
     capital,
     covar,
     entropic,
@@ -24,6 +25,7 @@ from .prospicio_native import (
 
 __all__ = [
     "Distortion",
+    "calibrate",
     "allocate",
     "capital",
     "Allocation",

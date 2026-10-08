@@ -9,7 +9,7 @@ use prospicio_math::special::ln_gamma;
 
 use crate::distribution::check_probability;
 
-/// A distribution of claim counts in the `(a, b, 0)` class.
+/// A distribution of claim counts on `0, 1, 2, …`.
 pub trait Counting {
     /// `P(N = k)`.
     fn pmf(&self, k: u64) -> f64;
@@ -20,8 +20,11 @@ pub trait Counting {
     /// `Var[N]`.
     fn variance(&self) -> f64;
 
-    /// `(a, b)` with `p_k = (a + b / k) p_{k-1}` for `k ≥ 1`.
-    fn panjer_ab(&self) -> (f64, f64);
+    /// `(a, b)` with `p_k = (a + b / k) p_{k-1}` for `k ≥ 2`, when the
+    /// count is in the `(a, b, 1)` class (which holds the `(a, b, 0)`
+    /// class, where it holds from `k = 1`); `None` otherwise. Panjer's
+    /// recursion needs it; FFT aggregation does not.
+    fn panjer_ab(&self) -> Option<(f64, f64)>;
 
     /// Probability generating function `E[z^N]` for `0 ≤ z ≤ 1`. Panjer's
     /// recursion starts from `P(S = 0) = pgf(f_0)`.
@@ -83,7 +86,7 @@ impl<T: Counting + ?Sized> Counting for Box<T> {
         (**self).variance()
     }
 
-    fn panjer_ab(&self) -> (f64, f64) {
+    fn panjer_ab(&self) -> Option<(f64, f64)> {
         (**self).panjer_ab()
     }
 
@@ -115,7 +118,7 @@ impl<T: Counting + ?Sized> Counting for Box<T> {
 ///
 /// let n = Poisson::new(3.0).unwrap();
 /// assert!((n.pmf(0) - (-3f64).exp()).abs() < 1e-15);
-/// assert_eq!(n.panjer_ab(), (0.0, 3.0));
+/// assert_eq!(n.panjer_ab(), Some((0.0, 3.0)));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Poisson {
@@ -159,8 +162,8 @@ impl Counting for Poisson {
         self.lambda
     }
 
-    fn panjer_ab(&self) -> (f64, f64) {
-        (0.0, self.lambda)
+    fn panjer_ab(&self) -> Option<(f64, f64)> {
+        Some((0.0, self.lambda))
     }
 
     /// `exp(lambda (z - 1))`.
@@ -265,9 +268,9 @@ impl Counting for NegativeBinomial {
         self.r * self.beta * (1.0 + self.beta)
     }
 
-    fn panjer_ab(&self) -> (f64, f64) {
+    fn panjer_ab(&self) -> Option<(f64, f64)> {
         let a = self.beta / (1.0 + self.beta);
-        (a, (self.r - 1.0) * a)
+        Some((a, (self.r - 1.0) * a))
     }
 
     /// `(1 - beta (z - 1))^(-r)`.
@@ -350,9 +353,9 @@ impl Counting for Binomial {
         self.n as f64 * self.p * (1.0 - self.p)
     }
 
-    fn panjer_ab(&self) -> (f64, f64) {
+    fn panjer_ab(&self) -> Option<(f64, f64)> {
         let odds = self.p / (1.0 - self.p);
-        (-odds, (self.n as f64 + 1.0) * odds)
+        Some((-odds, (self.n as f64 + 1.0) * odds))
     }
 
     /// `(1 + p (z - 1))^n`.
@@ -467,7 +470,7 @@ impl Counting for PanjerClass {
         self.inner().variance()
     }
 
-    fn panjer_ab(&self) -> (f64, f64) {
+    fn panjer_ab(&self) -> Option<(f64, f64)> {
         self.inner().panjer_ab()
     }
 
@@ -486,7 +489,7 @@ mod tests {
 
     /// The pmf satisfies the (a, b, 0) recursion it reports.
     fn check_recursion(n: &impl Counting) {
-        let (a, b) = n.panjer_ab();
+        let (a, b) = n.panjer_ab().unwrap();
         for k in 1..60u64 {
             let want = (a + b / k as f64) * n.pmf(k - 1);
             let got = n.pmf(k);

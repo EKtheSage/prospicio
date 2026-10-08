@@ -3,6 +3,7 @@ counts, and the joint predictive distribution every model returns."""
 
 from .prospicio_native import (
     Binomial,
+    Count,
     Custom,
     DiscretizationReport,
     Gamma,
@@ -41,6 +42,7 @@ __all__ = [
     "Poisson",
     "NegativeBinomial",
     "Binomial",
+    "Count",
     "claim_count",
     "local_pareto_to_piecewise",
     "Grid",
