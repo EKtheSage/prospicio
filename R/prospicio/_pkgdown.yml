@@ -18,6 +18,11 @@ reference:
       - tweedie
       - weibull_distribution
       - loglogistic_distribution
+      - inverse_gamma_distribution
+      - inverse_gaussian_distribution
+      - burr_distribution
+      - beta_distribution
+      - truncated_distribution
       - mixture_distribution
       - custom_distribution
       - dist_to_json

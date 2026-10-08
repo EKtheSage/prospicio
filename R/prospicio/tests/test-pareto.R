@@ -117,4 +117,29 @@ near(cdf(gc, 24), 0.5, 1e-15)
 near(lev(gc, 1e4) + stop_loss(gc, 1e4), mean(gc), 1e-12)
 stopifnot(inherits(try(loglogistic_distribution(0, 1), silent = TRUE), "try-error"))
 
+# Inverse gamma, inverse Gaussian, Burr, beta, truncation and splicing
+# (SciPy 1.18: invgamma(3, scale=2000).cdf(1000), invgauss(0.5, scale=2000).cdf(1000)).
+ig <- inverse_gamma_distribution(3, 2000)
+near(cdf(ig, 1000), 0.6766764161830634, 1e-12)
+near(mean(ig), 1000, 1e-12)
+iv <- inverse_gaussian_distribution(1000, 2000)
+near(cdf(iv, 1000), 0.6276978381552528, 1e-12)
+near(lev(iv, 800) + stop_loss(iv, 800), 1000, 1e-12)
+b <- burr_distribution(1, 4, 300)
+near(lev(b, 500), lev(loglogistic_distribution(4, 300), 500), 1e-12)
+bt <- beta_distribution(1, 1, 10)
+near(lev(bt, 4), 4 - 0.8, 1e-14)
+tr <- truncated_distribution(gamma_distribution(2, 500), 100, 4000)
+stopifnot(cdf(tr, 100) == 0, cdf(tr, 4000) == 1, tr@family == "gamma")
+near(lev(tr, 1e9), mean(tr), 1e-12)
+sp <- splice_distribution(c(0.9, 0.1), list(lognormal_from_mean_cv(50, 1), pareto(100, 2.5)),
+                          c(0, 100, Inf))
+near(cdf(sp, 100), 0.9, 1e-12)
+near(survival(sp, 400), 0.1 * 0.25^2.5, 1e-12)
+for (d in list(ig, iv, b, bt, tr, sp)) {
+  back <- dist_from_json(dist_to_json(d))
+  stopifnot(identical(class(back), class(d)), mean(back) == mean(d))
+}
+stopifnot(inherits(try(truncated_distribution(pareto(100, 2), 0, 50), silent = TRUE), "try-error"))
+
 cat("prospicio R pareto tests passed\n")

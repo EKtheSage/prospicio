@@ -21,6 +21,11 @@ reference:
       - distributions.Tweedie
       - distributions.Weibull
       - distributions.Loglogistic
+      - distributions.InverseGamma
+      - distributions.InverseGaussian
+      - distributions.Burr
+      - distributions.Beta
+      - distributions.Truncated
       - distributions.Mixture
       - distributions.Custom
       - distributions.to_json

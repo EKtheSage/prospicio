@@ -88,3 +88,13 @@ sources:
   whole mixing variable, fixed part `c` included. `neymana θ` with `n`
   claims has `n / θ` clusters. `pascal cv k` came out with mean 6.0104 for
   6 claims on a 1024-point grid, so it was left out of the parity.
+* **Severities.** aggregate takes any SciPy continuous family by name,
+  so its Burr is `burr12(c, d)` (`burr` is Burr III), the inverse Gaussian
+  is `invgauss(mu, scale)` with mean `mu * scale` and shape `scale`, and
+  the inverse gamma is `invgamma(a, scale)`. `sev_lb` and `sev_ub` with
+  the default `sev_conditional=True` condition the severity on
+  `lb < X <= ub` (the cdf is rescaled by `F(ub) - F(lb)`), and a splice
+  is a mixture of such pieces; prospicio's `Truncated` and
+  `Truncated::splice` follow that. SciPy 1.18 matches prospicio's new
+  families to `1e-10` or better on quantiles (taken by `isf` above the
+  median) and `1e-11` on the cdf.

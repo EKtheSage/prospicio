@@ -264,3 +264,44 @@ def test_more_claim_counts():
         panjer(pig, sev, 100)
     with pytest.raises(ValueError):
         Count.mixed_poisson(1.0, 0.5, mixing="beta")
+
+
+def test_added_severities_and_splicing():
+    import json
+
+    from prospicio.distributions import (
+        Beta, Burr, Gamma, InverseGamma, InverseGaussian, Loglogistic, Lognormal, Mixture,
+        Pareto, Truncated, from_json, to_json,
+    )
+
+    # SciPy 1.18: invgamma(3, scale=2000).cdf(1000), burr12(2, 1.5, scale=900).sf(1000),
+    # invgauss(0.5, scale=2000).cdf(1000), beta(2, 3, scale=5000).cdf(1000).
+    assert InverseGamma(3.0, 2000.0).cdf(1000.0) == pytest.approx(0.6766764161830634, rel=1e-12)
+    assert Burr(1.5, 2.0, 900.0).survival(1000.0) == pytest.approx(
+        (1 + (1000 / 900) ** 2) ** -1.5, rel=1e-13
+    )
+    assert InverseGaussian(1000.0, 2000.0).cdf(1000.0) == pytest.approx(0.6276978381552528, rel=1e-12)
+    assert Beta(2.0, 3.0, 5000.0).cdf(1000.0) == pytest.approx(0.1808, rel=1e-13)
+    # Burr with alpha = 1 is the loglogistic.
+    assert Burr(1.0, 4.0, 300.0).lev(500.0) == pytest.approx(Loglogistic(4.0, 300.0).lev(500.0))
+
+    t = Truncated(Gamma(2.0, 500.0), 100.0, 4000.0)
+    assert t.cdf(100.0) == 0.0 and t.cdf(4000.0) == 1.0
+    assert t.lev(1e9) == pytest.approx(t.mean())
+    assert type(t.severity) is Gamma
+    with pytest.raises(ValueError):
+        Truncated(Pareto(100.0, 2.0), 0.0, 50.0)
+
+    body, tail = Lognormal.from_mean_cv(50.0, 1.0), Pareto(100.0, 2.5)
+    s = Mixture.splice([(0.9, body), (0.1, tail)], [0.0, 100.0, float("inf")])
+    assert s.cdf(100.0) == pytest.approx(0.9)
+    assert s.survival(400.0) == pytest.approx(0.1 * 0.25**2.5)
+
+    for d in [InverseGamma(3.5, 2500.0), InverseGaussian(1000.0, 2000.0), Burr(2.0, 1.5, 900.0),
+              Beta(2.0, 3.0, 5000.0), t, s]:
+        text = to_json(d)
+        back = from_json(text)
+        assert type(back) is type(d)
+        assert to_json(back) == text
+        assert back.mean() == d.mean()
+    assert json.loads(to_json(t))["inner"]["family"] == "gamma"

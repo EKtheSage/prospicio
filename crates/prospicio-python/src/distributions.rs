@@ -225,8 +225,9 @@ impl PyLognormal {
 /// or a ``Sampled``.
 pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
     use crate::pareto::{
-        PyCustom, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture,
-        PyPareto, PyPiecewisePareto, PyTweedie, PyWeibull,
+        PyBeta, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma, PyInverseGaussian,
+        PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto, PyPiecewisePareto, PyTruncated,
+        PyTweedie, PyWeibull,
     };
     if let Ok(d) = obj.extract::<PyRef<'_, PyLognormal>>() {
         return Ok(d.inner.into());
@@ -258,6 +259,21 @@ pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
     if let Ok(d) = obj.extract::<PyRef<'_, PyLoglogistic>>() {
         return Ok(d.inner.into());
     }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyInverseGamma>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyInverseGaussian>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyBurr>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyBeta>>() {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = obj.extract::<PyRef<'_, PyTruncated>>() {
+        return Ok(Dist::Truncated(d.inner.clone()));
+    }
     if let Ok(d) = obj.extract::<PyRef<'_, PyMixture>>() {
         return Ok(d.inner.clone().into());
     }
@@ -276,8 +292,9 @@ pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
 /// A distribution back as the Python class of its family.
 pub(crate) fn dist_to_py(py: Python<'_>, d: Dist) -> PyResult<Py<PyAny>> {
     use crate::pareto::{
-        PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
-        PyPiecewisePareto, PyTweedie, PyWeibull,
+        PyBeta, PyBurr, PyGamma, PyGeneralizedPareto, PyInverseGamma, PyInverseGaussian,
+        PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto, PyPiecewisePareto, PyTruncated,
+        PyTweedie, PyWeibull,
     };
     Ok(match d {
         Dist::Lognormal(inner) => Py::new(py, PyLognormal { inner })?.into_any(),
@@ -289,6 +306,11 @@ pub(crate) fn dist_to_py(py: Python<'_>, d: Dist) -> PyResult<Py<PyAny>> {
         Dist::Tweedie(inner) => Py::new(py, PyTweedie { inner })?.into_any(),
         Dist::Weibull(inner) => Py::new(py, PyWeibull { inner })?.into_any(),
         Dist::Loglogistic(inner) => Py::new(py, PyLoglogistic { inner })?.into_any(),
+        Dist::InverseGamma(inner) => Py::new(py, PyInverseGamma { inner })?.into_any(),
+        Dist::InverseGaussian(inner) => Py::new(py, PyInverseGaussian { inner })?.into_any(),
+        Dist::Burr(inner) => Py::new(py, PyBurr { inner })?.into_any(),
+        Dist::Beta(inner) => Py::new(py, PyBeta { inner })?.into_any(),
+        Dist::Truncated(inner) => Py::new(py, PyTruncated { inner })?.into_any(),
         Dist::Mixture(inner) => Py::new(py, PyMixture { inner })?.into_any(),
         Dist::Grid(inner) => Py::new(py, PyGrid { inner })?.into_any(),
         Dist::Sampled(inner) => Py::new(py, PySampled { inner })?.into_any(),
@@ -353,8 +375,9 @@ pub(crate) fn from_json(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
 }
 
 /// The classes accepted as a severity, for error messages.
-const SEVERITIES: &str = "Lognormal, Gamma, Tweedie, Weibull, Loglogistic, Mixture, Grid, \
-                          Pareto, PiecewisePareto, LogAffinePareto, GeneralizedPareto or Custom";
+const SEVERITIES: &str = "Lognormal, Gamma, Tweedie, Weibull, Loglogistic, InverseGamma, \
+                          InverseGaussian, Burr, Beta, Truncated, Mixture, Grid, Pareto, \
+                          PiecewisePareto, LogAffinePareto, GeneralizedPareto or Custom";
 
 fn type_name(obj: &Bound<'_, PyAny>) -> String {
     obj.get_type()
