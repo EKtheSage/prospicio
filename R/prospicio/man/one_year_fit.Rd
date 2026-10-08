@@ -131,9 +131,9 @@ The bootstrap only drives the simulation: its factors are always
 volume-weighted without a tail, whatever \code{method} refits. On that same
 chain ladder the standard deviation of the CDR is not Merz and
 Wuthrich's: the ODP's process variance is the scale times the mean,
-Mack's \code{sigma^2} times the cumulative value. In total it is 0.61 times
-Merz-Wuthrich on RAA, 1.36 on GenIns and 1.13 on ABC, and per origin
-from 0.50 to 5.98 times
+Mack's \code{sigma^2} times the cumulative value. In total it is 0.62 times
+Merz-Wuthrich on RAA, 1.37 on GenIns and 1.14 on ABC, and per origin
+from 0.50 to 5.96 times
 (\code{knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md}).
 
 \code{mack_one_year()} re-reserves the same way under Mack's process instead,

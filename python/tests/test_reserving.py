@@ -1449,7 +1449,7 @@ def test_one_year_chain_ladder_against_merz_wuthrich(triangles):
         if r["dataset"] == "genins" and r["method"] == "cdr" and r["quantity"] == "total_one_year_se"
     ]
     sd = math.sqrt(fit.cdr.variance())
-    assert abs(sd / mw - 1.3620) < 0.0382
+    assert abs(sd / mw - 1.3733) < 0.0382
     # The opening ultimate is the chain ladder's; the CDR is centred near 0.
     cl = ChainLadder().fit(genins, "values")
     assert fit.opening_ultimate == cl.ultimate
