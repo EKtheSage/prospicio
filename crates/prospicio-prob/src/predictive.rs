@@ -559,6 +559,10 @@ impl PredictiveDistribution {
     /// stream `i` of `seed`. Each row stays a joint draw of one model, so
     /// sums across components remain coherent.
     ///
+    /// The provenance records `seed` and the stream scheme for the choice
+    /// of model, and the samplers the models record when they all record
+    /// the same ones (otherwise none), since every value is a model's draw.
+    ///
     /// Every distribution must have the same dimensions, components (in
     /// the same order) and number of simulations. Weights are normalized;
     /// they must be non-negative and not all zero.
@@ -625,6 +629,7 @@ impl PredictiveDistribution {
             draws.extend_from_slice(&models[k].draws[i * m..(i + 1) * m]);
         }
         let mut provenance = Provenance::new("blend").seed(seed, SIM_INDEX_SCHEME);
+        provenance.samplers = common_samplers(models);
         for (model, w) in models.iter().zip(weights) {
             provenance = provenance.param(model.provenance.model.clone(), w / total);
         }
@@ -645,7 +650,8 @@ impl PredictiveDistribution {
     /// `seed`) against its own cumulative weights, so components with the
     /// same weights take the same model and dependence across components
     /// is kept as far as the weights allow. With equal weights everywhere
-    /// it is [`blend`](Self::blend).
+    /// it is [`blend`](Self::blend), and its provenance records seed,
+    /// stream scheme and samplers the same way.
     pub fn blend_by_component(
         models: &[&PredictiveDistribution],
         weights: &[Vec<f64>],
@@ -701,6 +707,7 @@ impl PredictiveDistribution {
             }
         }
         let mut provenance = Provenance::new("blend_by_component").seed(seed, SIM_INDEX_SCHEME);
+        provenance.samplers = common_samplers(models);
         for model in models {
             provenance = provenance.param("model", model.provenance.model.clone());
         }
@@ -711,6 +718,18 @@ impl PredictiveDistribution {
             provenance,
         )
     }
+}
+
+/// The samplers a blend of `models` records: its values are the models'
+/// draws, so their common record, or `None` (not recorded) when any model
+/// has none or two disagree. The blend's own choice of model is a uniform
+/// per simulation, which no sampler turns into a draw.
+fn common_samplers(models: &[&PredictiveDistribution]) -> Option<Vec<(String, String)>> {
+    let first = models.first()?.provenance.samplers.as_ref()?;
+    models[1..]
+        .iter()
+        .all(|m| m.provenance.samplers.as_ref() == Some(first))
+        .then(|| first.clone())
 }
 
 impl Distribution for PredictiveDistribution {
@@ -1022,6 +1041,62 @@ mod tests {
         assert!(
             PredictiveDistribution::blend_by_component(&[&a, &b], &[vec![1.0, 1.0]], 4).is_err()
         );
+    }
+
+    #[test]
+    fn blend_records_its_inputs_samplers_not_the_builds() {
+        let fresh = uniform_rows(1);
+        let mut prov = fresh.provenance().clone();
+        prov.samplers = None; // as read from a file saved before samplers were recorded
+        let old = PredictiveDistribution::from_draws(
+            fresh.dims.clone(),
+            fresh.components.clone(),
+            fresh.draws.clone(),
+            prov,
+        )
+        .unwrap();
+        let weights = vec![vec![1.0, 1.0]; fresh.n_components()];
+        let blends = |models: &[&PredictiveDistribution]| {
+            [
+                PredictiveDistribution::blend(models, &[1.0, 1.0], 5).unwrap(),
+                PredictiveDistribution::blend_by_component(models, &weights, 5).unwrap(),
+            ]
+        };
+        for (both_fresh, with_old) in blends(&[&fresh, &fresh])
+            .iter()
+            .zip(&blends(&[&fresh, &old]))
+        {
+            assert_eq!(
+                both_fresh.provenance().samplers,
+                fresh.provenance().samplers
+            );
+            // The blend's own seed still marks its choice uniforms.
+            assert_eq!(with_old.provenance().seed, Some(5));
+            assert_eq!(with_old.provenance().samplers, None);
+            assert!(
+                with_old
+                    .provenance()
+                    .shares_streams(both_fresh.provenance())
+            );
+            assert!(
+                !with_old
+                    .provenance()
+                    .replays_same_draws(both_fresh.provenance())
+            );
+        }
+        // Inputs that disagree record nothing either.
+        let mut other = fresh.provenance().clone();
+        other.samplers = Some(vec![]);
+        let other = PredictiveDistribution::from_draws(
+            fresh.dims.clone(),
+            fresh.components.clone(),
+            fresh.draws.clone(),
+            other,
+        )
+        .unwrap();
+        for b in blends(&[&fresh, &other]) {
+            assert_eq!(b.provenance().samplers, None);
+        }
     }
 
     #[test]

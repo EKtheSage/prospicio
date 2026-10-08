@@ -24,21 +24,29 @@
 /// [`SAMPLERS`].
 pub const SIM_INDEX_SCHEME: &str = "chacha20/sim-index/v1";
 
-/// Id of the Gamma family's sampler: Marsaglia and Tsang (2000), with the
-/// `U^(1/shape)` boost below shape 1, since 2026-10-08 (`docs/design/rng.md`,
-/// stability log). It also draws the Student t copula's chi-square and the
-/// Clayton copula's frailty.
+/// Id of the Gamma distribution's sampler ([`crate::Gamma`]'s `sample`,
+/// and so `Dist::Gamma` and the reserving bootstraps' Gamma process):
+/// Marsaglia and Tsang (2000), with the `U^(1/shape)` boost below shape 1,
+/// since 2026-10-08 (`docs/design/rng.md`, stability log); inverse
+/// transform before.
+///
+/// The Student t copula's chi-square and the Clayton copula's frailty run
+/// the same code, but they belong to the copulas' documented method
+/// ([`crate::copula`]), Marsaglia–Tsang since release, and this entry does
+/// not describe them: in a record without it they are still drawn by
+/// Marsaglia–Tsang.
 pub const GAMMA_SAMPLER: &str = "marsaglia-tsang/2026-10";
 
 /// The samplers this build draws with, as `(family, sampler id)` pairs
-/// sorted by family, recorded by [`Provenance::seed`].
+/// sorted by family, recorded by [`Provenance::seed`] (and
+/// [`current_samplers`]).
 ///
 /// A family is listed once its sampler differs from the one it was first
 /// released with. A family missing from a recorded table uses that first
 /// sampler: inverse transform for every [`crate::Distribution`] and
 /// [`crate::Counting`] family, the method documented in [`crate::copula`]
-/// for a copula's frailty. Today only the Gamma is listed (inverse
-/// transform until 2026-10-08).
+/// for a copula's frailty (its Gamma variates included). Today only the
+/// Gamma distribution is listed (inverse transform until 2026-10-08).
 ///
 /// A change to a sampler's draws on a given stream gives it a new id,
 /// `<method>/<year>-<month>` of the change (a second change in one month
@@ -81,11 +89,15 @@ pub struct Provenance {
     pub stream_scheme: Option<String>,
     /// Samplers the draws were made with, as `(family, sampler id)` pairs
     /// sorted by family: the [`SAMPLERS`] of the build that drew them, so
-    /// every sampler the draws may have used. A family missing from it
-    /// draws by its first sampler (inverse transform for a distribution).
-    /// `None` when not recorded: a result without draws, or one saved
-    /// before 2026-10-08, when this field was split from the stream scheme,
-    /// whose Gamma draws (if any) may come from either Gamma sampler.
+    /// every sampler the draws may have used, not only those they did use.
+    /// A family missing from it draws by its first sampler (inverse
+    /// transform for a distribution, the documented method for a copula's
+    /// frailty). `None` when not recorded: a result without draws, one
+    /// computed from draws this build did not make or cannot vouch for
+    /// (years of losses from elsewhere, a blend of models with different
+    /// records), or one made by a build from before this field was split
+    /// from the stream scheme on 2026-10-08, whose Gamma draws (if any) may
+    /// come from either Gamma sampler.
     pub samplers: Option<Vec<(String, String)>>,
     /// Crate versions involved, starting with `prospicio-prob`.
     pub versions: Vec<(String, String)>,
@@ -160,7 +172,7 @@ impl Provenance {
     ///
     /// let a = Provenance::new("odp_bootstrap").seed(1, SIM_INDEX_SCHEME);
     /// let mut b = Provenance::new("collective").seed(1, SIM_INDEX_SCHEME);
-    /// b.samplers = None; // as read from a file saved before 2026-10-08
+    /// b.samplers = None; // as read from a file saved before samplers were recorded
     /// assert!(a.shares_streams(&b));
     /// assert!(!a.shares_streams(&Provenance::new("collective").seed(2, SIM_INDEX_SCHEME)));
     /// assert!(!Provenance::new("fit").shares_streams(&Provenance::new("fit")));
@@ -189,8 +201,8 @@ impl Provenance {
     /// let now = Provenance::new("odp_bootstrap").seed(7, SIM_INDEX_SCHEME);
     /// assert!(saved.replays_same_draws(&now));
     ///
-    /// // Drawn before the Gamma's Marsaglia–Tsang sampler: same streams,
-    /// // other draws.
+    /// // Drawn when `Gamma::sample` was by inverse transform: same
+    /// // streams, other draws.
     /// let mut old = saved.clone();
     /// old.samplers = Some(vec![]);
     /// assert!(old.shares_streams(&now));
@@ -201,8 +213,10 @@ impl Provenance {
     }
 }
 
-/// [`SAMPLERS`] as owned pairs.
-fn current_samplers() -> Vec<(String, String)> {
+/// [`SAMPLERS`] as owned pairs: the samplers of draws this build makes,
+/// for a record of draws made earlier in this build (years of losses
+/// simulated and kept to apply terms to later).
+pub fn current_samplers() -> Vec<(String, String)> {
     SAMPLERS
         .iter()
         .map(|&(family, id)| (family.into(), id.into()))

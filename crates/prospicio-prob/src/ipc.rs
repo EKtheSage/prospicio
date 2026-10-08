@@ -27,16 +27,17 @@
 //! The provenance object has `model`, `parameters` and `versions` (arrays
 //! of `[name, value]` pairs), `seed`, `stream_scheme` and `input_hash`
 //! (strings or `null`), and `samplers` (an array of `[family, sampler id]`
-//! pairs sorted by family, e.g. `[["gamma", "marsaglia-tsang/2026-10"]]`,
-//! or `null`; see [`Provenance::samplers`]). The seed is a decimal string
-//! because JSON numbers lose precision above 2^53.
+//! pairs strictly sorted by family, so one per family, e.g.
+//! `[["gamma", "marsaglia-tsang/2026-10"]]`, or `null`; see
+//! [`Provenance::samplers`]; readers reject any other order). The seed is
+//! a decimal string because JSON numbers lose precision above 2^53.
 //!
 //! A change to any of this is a new `format_version`, except a new
 //! optional provenance key: readers look keys up by name and ignore the
 //! others, and read a missing key as `null`, so files with and without it
 //! are both version 1. `samplers` was added that way on 2026-10-08; a file
-//! without it was written before then, and reads with `samplers` `None`
-//! (not recorded). Readers reject versions they do not know.
+//! without it was written by an earlier build, and reads with `samplers`
+//! `None` (not recorded). Readers reject versions they do not know.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -377,10 +378,21 @@ fn provenance_from_json(v: &Value) -> Result<Provenance, IpcError> {
                 .map_err(|_| format_error(format!("provenance seed {s:?} is not a u64")))
         })
         .transpose()?;
-    // Absent from files written before 2026-10-08.
+    // Absent from files written before samplers were recorded
+    // (2026-10-08). Families must be strictly increasing, one id each, as
+    // written, so that records equal as sets compare equal in
+    // `Provenance::replays_same_draws`.
     let samplers = match v.get("samplers") {
         None | Some(Value::Null) => None,
-        Some(s) => Some(pairs_from_json(Some(s), "samplers")?),
+        Some(s) => {
+            let pairs = pairs_from_json(Some(s), "samplers")?;
+            if !pairs.windows(2).all(|w| w[0].0 < w[1].0) {
+                return Err(format_error(
+                    "provenance samplers are not sorted by family, one id per family",
+                ));
+            }
+            Some(pairs)
+        }
     };
     Ok(Provenance {
         model,
@@ -477,7 +489,7 @@ mod tests {
         let mut want = pd.provenance().clone();
         want.samplers = None;
 
-        // Files written before 2026-10-08 have no samplers key at all.
+        // Files written before samplers were recorded have no key at all.
         prov.as_object_mut().unwrap().remove("samplers");
         let old = with_schema_meta(&batch, PROVENANCE_KEY, Some(&prov.to_string()));
         let back = PredictiveDistribution::from_record_batch(&old).unwrap();
@@ -511,6 +523,17 @@ mod tests {
         prov["samplers"] = json!([["gamma"]]);
         let bad = with_schema_meta(&batch, PROVENANCE_KEY, Some(&prov.to_string()));
         assert!(format_err(&bad).contains("samplers"));
+
+        // Out of order or a family twice: a writer that breaks the spec
+        // would otherwise never replay a record this build makes.
+        for pairs in [
+            json!([["gamma", GAMMA_SAMPLER], ["beta", "x/2026-11"]]),
+            json!([["gamma", GAMMA_SAMPLER], ["gamma", GAMMA_SAMPLER]]),
+        ] {
+            prov["samplers"] = pairs;
+            let bad = with_schema_meta(&batch, PROVENANCE_KEY, Some(&prov.to_string()));
+            assert!(format_err(&bad).contains("not sorted by family"));
+        }
     }
 
     #[test]
