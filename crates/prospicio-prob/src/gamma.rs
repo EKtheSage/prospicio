@@ -1,8 +1,8 @@
 //! The gamma distribution.
 
-use prospicio_core::{Error, Result};
+use prospicio_core::{Error, Result, StreamRng};
 use prospicio_math::roots::bisect;
-use prospicio_math::special::{gamma_inc, ln_gamma};
+use prospicio_math::special::{gamma_inc, ln_gamma, norm_quantile};
 
 use crate::distribution::{Distribution, check_probability};
 use crate::severity::Severity;
@@ -165,6 +165,54 @@ impl Distribution for Gamma {
         }
         Ok(bisect(0.0, hi, below))
     }
+
+    /// `n` draws by Marsaglia and Tsang (2000), not inverse transform:
+    /// each is `θ` times a Gamma(`α`, 1) draw from `rng` (for `α < 1`, a
+    /// draw at `α + 1` times `U^(1/α)`), so draws stay a pure function of
+    /// `(seed, stream)` but are not monotone in one uniform. The quantile
+    /// function costs a bisection on the incomplete gamma function, whose
+    /// series grows with the shape, where this costs about one normal and
+    /// one uniform at any shape.
+    fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
+        (0..n)
+            .map(|_| self.scale * standard_gamma(rng, self.shape))
+            .collect()
+    }
+}
+
+/// A Gamma(`shape`, 1) draw by Marsaglia and Tsang (2000), "A simple
+/// method for generating gamma variables", ACM Transactions on
+/// Mathematical Software 26(3), for `shape >= 1`; below 1, their boost: a
+/// draw at `shape + 1` times `U^(1/shape)`.
+///
+/// Every uniform comes from `rng` in order: for `shape >= 1`, each attempt
+/// takes a normal (by inverse transform) and, unless `1 + c x <= 0`, a
+/// uniform; above shape 1 at least 95% of attempts are accepted. The boost
+/// takes its uniform after the draw at `shape + 1`. A draw below
+/// `f64::MIN_POSITIVE` comes out subnormal, with fewer significant bits,
+/// and one below the smallest subnormal (about `5e-324`) rounds to 0: at
+/// shape `1e-3`, 49% and about 47.5% of the mass.
+pub(crate) fn standard_gamma(rng: &mut StreamRng, shape: f64) -> f64 {
+    if shape < 1.0 {
+        let g = standard_gamma(rng, shape + 1.0);
+        return g * rng.next_open01().powf(1.0 / shape);
+    }
+    let d = shape - 1.0 / 3.0;
+    let c = 1.0 / (9.0 * d).sqrt();
+    loop {
+        let x = norm_quantile(rng.next_open01());
+        let v = 1.0 + c * x;
+        if v <= 0.0 {
+            continue;
+        }
+        let v = v * v * v;
+        let u = rng.next_open01();
+        // The squeeze accepts most draws without the logarithms.
+        let x2 = x * x;
+        if u < 1.0 - 0.0331 * x2 * x2 || u.ln() < 0.5 * x2 + d - d * v + d * v.ln() {
+            return d * v;
+        }
+    }
 }
 
 impl Severity for Gamma {
@@ -272,6 +320,107 @@ mod tests {
         assert!((d.survival(x) / 1e-12 - 1.0).abs() < 1e-3, "{x}");
         assert_eq!(d.quantile(0.0), Ok(0.0));
         assert_eq!(d.quantile(1.0), Ok(f64::INFINITY));
+    }
+
+    /// Central moments `mu_2` to `mu_6` of Gamma(`a`, 1) (index `k` holds
+    /// `mu_k`), from its cumulants `kappa_n = a (n - 1)!`.
+    fn central_moments(a: f64) -> [f64; 7] {
+        let mut mu = [0.0; 7];
+        mu[2] = a;
+        mu[3] = 2.0 * a;
+        mu[4] = 3.0 * a * a + 6.0 * a;
+        mu[5] = 20.0 * a * a + 24.0 * a;
+        mu[6] = 15.0 * a.powi(3) + 130.0 * a * a + 120.0 * a;
+        mu
+    }
+
+    /// The upper `z`-sigma point of a chi-square with `df` degrees of
+    /// freedom, by Wilson and Hilferty (1931).
+    fn chi_square_upper(df: f64, z: f64) -> f64 {
+        let h = 2.0 / (9.0 * df);
+        df * (1.0 - h + z * h.sqrt()).powi(3)
+    }
+
+    /// Mean, second and third central moments (about the true mean, so each
+    /// is an i.i.d. average with an exact standard error) as z-scores, and
+    /// the chi-square of the draws over 100 equiprobable bins cut at the
+    /// distribution's own quantiles, against its `1e-6` upper point, at
+    /// shapes from `1e-3` to `1e6`. Below `f64::MIN_POSITIVE` the quantiles
+    /// (and the draws, subnormal or, below about `5e-324`, 0) cannot be
+    /// told apart, so those bins merge into one: at shape `1e-3` that is
+    /// the lower 49% of the mass.
+    #[test]
+    fn sampler_matches_moments_and_quantiles() {
+        let n = 100_000;
+        let mut failures = Vec::new();
+        let shapes = [
+            1e-3, 0.01, 0.1, 0.5, 0.999, 1.0, 1.5, 3.0, 10.0, 100.0, 1e4, 1e6,
+        ];
+        for (stream, &a) in shapes.iter().enumerate() {
+            let d = Gamma::new(a, 1.0).unwrap();
+            let mut x = d.sample(&mut StreamRng::new(2026, stream as u64), n);
+            let nf = n as f64;
+            let mu = central_moments(a);
+            let average = |f: &dyn Fn(f64) -> f64| x.iter().map(|&v| f(v)).sum::<f64>() / nf;
+            let z = [
+                (average(&|v| v) - a) / (mu[2] / nf).sqrt(),
+                (average(&|v| (v - a).powi(2)) - mu[2]) / ((mu[4] - mu[2] * mu[2]) / nf).sqrt(),
+                (average(&|v| (v - a).powi(3)) - mu[3]) / ((mu[6] - mu[3] * mu[3]) / nf).sqrt(),
+            ];
+            for (name, z) in ["mean", "variance", "third moment"].iter().zip(z) {
+                if z.abs() > 5.0 {
+                    failures.push(format!("shape {a}: {name} z = {z:.2}"));
+                }
+            }
+
+            x.sort_by(f64::total_cmp);
+            let mut edges: Vec<f64> = (1..100)
+                .map(|k| d.quantile(f64::from(k) / 100.0).unwrap())
+                .filter(|&q| q >= f64::MIN_POSITIVE)
+                .collect();
+            edges.dedup();
+            let mut chi2 = 0.0;
+            let (mut below, mut cdf_below) = (0, 0.0);
+            for i in 0..=edges.len() {
+                let (count, cdf) = match edges.get(i) {
+                    Some(&e) => (x.partition_point(|&v| v <= e), d.cdf(e)),
+                    None => (n, 1.0),
+                };
+                let expected = (cdf - cdf_below) * nf;
+                chi2 += ((count - below) as f64 - expected).powi(2) / expected;
+                (below, cdf_below) = (count, cdf);
+            }
+            let critical = chi_square_upper(edges.len() as f64, 4.75);
+            if chi2 > critical {
+                failures.push(format!(
+                    "shape {a}: chi-square {chi2:.1} over {} bins, above {critical:.1}",
+                    edges.len() + 1
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// A regression pin of the sampler's output (Marsaglia–Tsang since
+    /// 2026-10-08), so a change to the draws is deliberate: one shape below
+    /// 1 (the boost) and one above, from one stream.
+    /// `validation/scripts/gamma_sampler.py` reproduces them independently
+    /// (ChaCha20 from `cryptography`, SciPy's `ndtri`) to within 2e-15.
+    #[test]
+    fn sample_is_pinned() {
+        let small = Gamma::new(0.3, 2.0).unwrap();
+        let large = Gamma::new(2.5, 400.0).unwrap();
+        let mut rng = StreamRng::new(42, 3);
+        let draws = [small.sample(&mut rng, 2), large.sample(&mut rng, 2)].concat();
+        assert_eq!(
+            draws,
+            [
+                0.23214754851650782,
+                0.7755693217108093,
+                110.9058975015963,
+                560.609408990688
+            ]
+        );
     }
 
     #[test]

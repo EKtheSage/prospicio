@@ -1449,7 +1449,7 @@ def test_one_year_chain_ladder_against_merz_wuthrich(triangles):
         if r["dataset"] == "genins" and r["method"] == "cdr" and r["quantity"] == "total_one_year_se"
     ]
     sd = math.sqrt(fit.cdr.variance())
-    assert abs(sd / mw - 1.3620) < 0.0382
+    assert abs(sd / mw - 1.3733) < 0.0382
     # The opening ultimate is the chain ladder's; the CDR is centred near 0.
     cl = ChainLadder().fit(genins, "values")
     assert fit.opening_ultimate == cl.ultimate
@@ -1653,10 +1653,10 @@ def test_mack_one_year_fields_and_errors(triangles):
     raa = triangles["raa"]
     boot = MackBootstrap(n_sims=500, seed=1, process="normal", average="simple")
     settings = (boot.n_sims, boot.seed, boot.process, boot.average, boot.sigma_interpolation, boot.centre_residuals)
-    assert settings == (500, 1, "normal", "simple", "log-linear", False)
+    assert settings == (500, 1, "normal", "simple", "log-linear", True)
     assert repr(boot) == (
         'MackBootstrap(n_sims=500, seed=1, process="normal", average="simple", sigma_interpolation="log-linear", '
-        "centre_residuals=False)"
+        "centre_residuals=True)"
     )
     # Mack's rule for the last sigma reaches the model (it differs from the
     # log-linear one only there).
@@ -1665,13 +1665,13 @@ def test_mack_one_year_fields_and_errors(triangles):
     sigma = by_rule.one_year(raa, "values", ChainLadder()).mack.sigma
     assert sigma == Mack(sigma_interpolation="mack").fit(raa, "values").sigma
     assert sigma != Mack().fit(raa, "values").sigma
-    # Centring changes the draws, not the residuals reported.
-    centred = MackBootstrap(n_sims=50, seed=1, centre_residuals=True)
-    assert centred.centre_residuals and repr(centred).endswith("centre_residuals=True)")
-    plain = MackBootstrap(n_sims=50, seed=1).one_year(raa, "values", ChainLadder())
-    centred_fit = centred.one_year(raa, "values", ChainLadder())
-    assert centred_fit.cdr.draw_matrix() != plain.cdr.draw_matrix()
-    assert str(centred_fit.residuals) == str(plain.residuals)
+    # Centring (the default) changes the draws, not the residuals reported.
+    uncentred = MackBootstrap(n_sims=50, seed=1, centre_residuals=False)
+    assert not uncentred.centre_residuals and repr(uncentred).endswith("centre_residuals=False)")
+    centred = MackBootstrap(n_sims=50, seed=1).one_year(raa, "values", ChainLadder())
+    uncentred_fit = uncentred.one_year(raa, "values", ChainLadder())
+    assert uncentred_fit.cdr.draw_matrix() != centred.cdr.draw_matrix()
+    assert str(uncentred_fit.residuals) == str(centred.residuals)
     fit = boot.one_year(raa, "values", ChainLadder(tail=1.05))
     assert fit.cdr.provenance()["model"] == "mack_bootstrap_one_year"
     assert repr(fit) == 'OneYearFit(origins=10, n_sims=500, model="mack")'
@@ -1721,8 +1721,8 @@ def test_mack_one_year_every_segment_at_once():
 
 
 # The lifetime view of Mack's bootstrap (MackBootstrap.fit), as in
-# validation/tests/reserving_mack_bootstrap.rs: with centred residuals the
-# total reserve's standard deviation is Mack's analytic standard error and
+# validation/tests/reserving_mack_bootstrap.rs: with centred residuals (the
+# default) the total reserve's standard deviation is Mack's analytic standard error and
 # its mean the chain ladder's reserve, within five Monte Carlo standard
 # errors (2.5% of the SD and 0.47% of the mean at 20,000 simulations on
 # GenIns). England, Verrall and Wuthrich (2019), Table 4: total expected
@@ -1732,7 +1732,7 @@ def test_mack_one_year_every_segment_at_once():
 
 def test_mack_bootstrap_lifetime_reconciles_with_mack(triangles):
     genins = triangles["genins"]
-    boot = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, sigma_interpolation="mack", centre_residuals=True)
+    boot = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, sigma_interpolation="mack")
     fit = boot.fit(genins, "values")
     assert isinstance(fit, MackBootstrapFit)
     mack = Mack(sigma_interpolation="mack").fit(genins, "values")
@@ -1745,7 +1745,9 @@ def test_mack_bootstrap_lifetime_reconciles_with_mack(triangles):
     # Uncentred (EVW's Appendix 1 as written), the pool's mean biases the
     # pseudo factors: GenIns's mean reserve is about 0.7% above the chain
     # ladder's. The mean does not depend on the process.
-    plain = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, process="none").fit(genins, "values")
+    plain = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, process="none", centre_residuals=False).fit(
+        genins, "values"
+    )
     assert plain.reserves.mean() / mack.total_reserve - 1.0 > 0.004
 
 

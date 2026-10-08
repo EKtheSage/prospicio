@@ -44,7 +44,7 @@ mack_one_year(
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   mack_average = "volume",
   mack_sigma_interpolation = "log-linear",
-  centre_residuals = FALSE
+  centre_residuals = TRUE
 )
 }
 \arguments{
@@ -88,8 +88,8 @@ a single link ratio, as in \code{\link[=mack]{mack()}}.}
 
 \item{centre_residuals}{For \code{mack_one_year()}, subtract the residuals'
 mean before resampling them, so that the pseudo factors are unbiased
-and the mean CDR is about zero. England, Verrall and Wuthrich's
-Appendix 1 does not, hence the default \code{FALSE}.}
+and the mean CDR is about zero (the default); \code{FALSE} resamples them
+uncentred, as England, Verrall and Wuthrich's Appendix 1 is written.}
 }
 \value{
 A \code{one_year_fit} object.
@@ -131,9 +131,9 @@ The bootstrap only drives the simulation: its factors are always
 volume-weighted without a tail, whatever \code{method} refits. On that same
 chain ladder the standard deviation of the CDR is not Merz and
 Wuthrich's: the ODP's process variance is the scale times the mean,
-Mack's \code{sigma^2} times the cumulative value. In total it is 0.61 times
-Merz-Wuthrich on RAA, 1.36 on GenIns and 1.13 on ABC, and per origin
-from 0.50 to 5.98 times
+Mack's \code{sigma^2} times the cumulative value. In total it is 0.62 times
+Merz-Wuthrich on RAA, 1.37 on GenIns and 1.14 on ABC, and per origin
+from 0.50 to 5.96 times
 (\code{knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md}).
 
 \code{mack_one_year()} re-reserves the same way under Mack's process instead,
@@ -145,13 +145,13 @@ draws each cumulative value of the coming year from the one before \code{C}
 \verb{sigma^2 |C|^(2 - alpha)}, with the same pseudo factors all year. With the
 volume-weighted chain ladder and no tail, its standard deviations are
 Merz and Wuthrich's (\code{\link[=claims_development_result]{claims_development_result()}}) within Monte Carlo
-error, which reconciles the two. The reconciliation is of the standard
-deviation: EVW resample the residuals uncentred, and their pool's
-non-zero mean biases the pseudo factors, so the mean CDR is about -0.2
-(RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation
-rather than Merz and Wuthrich's zero. \code{centre_residuals = TRUE} centres
-the pool first, which brings the mean to about zero and keeps the
-standard deviation. Mack's model has no tail here: the
+error, which reconciles the two, and its mean is Merz and Wuthrich's
+zero, because by default (\code{centre_residuals = TRUE}) the pool of
+residuals is centred first. Uncentred (\code{centre_residuals = FALSE}, EVW's
+Appendix 1 as written), the pool's non-zero mean biases the pseudo
+factors: the mean CDR is about -0.2 (RAA), -0.04 (GenIns) and +0.18
+(ABC) times its standard deviation, and RAA's standard deviations up to
+1.3\% wide. Mack's model has no tail here: the
 development past the oldest age moves only through \code{method}'s refitted
 tail. Its fit has \code{model = "mack"}, no \code{scale}, and \code{mack}, the
 \link{mack_fit} it simulates from; it needs no negative cumulative value.
