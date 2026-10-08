@@ -201,11 +201,21 @@ enum Factors {
 /// covariance instead: Merz and Wüthrich's closed form, whose Appendix A
 /// (A.1) replaces each product `prod(1 + a_j) - 1` by `sum(a_j)`.
 /// The pseudo factors of the bootstrap have mean
-/// `f_k + m sigma_k sum(sqrt(C)) / S_k` (`m` the pool's mean, zero when
-/// centred) and variance `(1 - m^2) sigma_k^2 / S_k` (the pool's mean
-/// square is 1). The process shape does not enter: the second moments
-/// need only the first two moments of each `Z`.
+/// `f_k + m sigma_k sum(sqrt(C)) / S_k` (`m` the uncentred pool's mean;
+/// `f_k` when centred) and variance `(1 - m^2) sigma_k^2 / S_k` either way
+/// (the uncentred pool's mean square is 1, and centring shifts the pool
+/// without rescaling it). The process shape does not enter: the second
+/// moments need only the first two moments of each `Z`.
 fn exact_covariance(dataset: &str, factors: Factors, linear: bool) -> Vec<Vec<f64>> {
+    exact_moments(dataset, factors, linear).1
+}
+
+/// The mean closing ultimates and their covariance, as `exact_covariance`
+/// describes. With `Factors::MerzWuthrich` the means are the opening
+/// chain-ladder ultimates: each refitted factor's mean is `f_k`, since
+/// `A_k = f_k S_k`. The oldest origin, which has nothing to develop, has
+/// mean 1 under every `Factors`, so differences of means are its CDR's.
+fn exact_moments(dataset: &str, factors: Factors, linear: bool) -> (Vec<f64>, Vec<Vec<f64>>) {
     let tri = triangle(dataset);
     let fit = MackBootstrap {
         n_sims: 1,
@@ -242,9 +252,11 @@ fn exact_covariance(dataset: &str, factors: Factors, linear: bool) -> Vec<Vec<f6
         let (mean, var) = match factors {
             Factors::MerzWuthrich => (f[k], sigma[k].powi(2) / s),
             Factors::Bootstrap { centred } => {
-                let m = if centred { 0.0 } else { m };
+                // Centring removes the bias from the mean only: the
+                // centred pool's mean square is still `1 - m^2`.
+                let shift = if centred { 0.0 } else { m };
                 (
-                    f[k] + m * sigma[k] * sqrt_sum / s,
+                    f[k] + shift * sigma[k] * sqrt_sum / s,
                     (1.0 - m * m) * sigma[k].powi(2) / s,
                 )
             }
@@ -288,9 +300,12 @@ fn exact_covariance(dataset: &str, factors: Factors, linear: bool) -> Vec<Vec<f6
                 - mean(l) * mean(j)
         }
     };
-    (0..n)
-        .map(|l| (0..n).map(|j| covariance(l, j)).collect())
-        .collect()
+    (
+        (0..n).map(mean).collect(),
+        (0..n)
+            .map(|l| (0..n).map(|j| covariance(l, j)).collect())
+            .collect(),
+    )
 }
 
 /// Each origin's standard deviation from a covariance, then the total's.
@@ -358,9 +373,12 @@ fn uncentred_residuals_raise_raa_young_origins() {
     // of itself, which raises the means of the next values and refitted
     // factors and so the spread of their products: exactly,
     // 1988 to 1990 are 0.48%, 0.93% and 1.20% above Merz and Wüthrich and
-    // the total 1.29%, while centred residuals give 0.47% below to 0.04%
-    // above (the pool's variance, 1 - m^2, shrinks the parameter error). GenIns and
-    // ABC, whose pool means are 0.01 and -0.06, move by 0.13% at most.
+    // the total 1.29%, while centred residuals give 0.46% below to 0.04%
+    // above (the pool's variance, 1 - m^2, shrinks the parameter error):
+    // RAA 1982 0.46% below, as uncentred, and the total 0.01% below.
+    // Merz and Wüthrich's exact values are never below R, so the centred
+    // pins separate the two models. GenIns and ABC, whose pool means are
+    // 0.01 and -0.06, move by 0.13% at most.
     let cdr = reference("reserving_cdr_r.csv");
     let ratios = |dataset: &str, centred| -> Vec<f64> {
         let sd = standard_deviations(&exact_covariance(
@@ -383,11 +401,15 @@ fn uncentred_residuals_raise_raa_young_origins() {
     for (k, want) in [(7, 1.004826), (8, 1.009296), (9, 1.012032), (10, 1.012934)] {
         assert!((raa[k] - want).abs() < 1e-6, "raa {k}: {}", raa[k]);
     }
+    let raa = ratios("raa", true);
+    for (k, want) in [(1, 0.995392), (9, 0.999997), (10, 0.999866)] {
+        assert!((raa[k] - want).abs() < 1e-6, "raa centred {k}: {}", raa[k]);
+    }
     for dataset in ["raa", "genins", "abc"] {
         assert!(
             ratios(dataset, true)
                 .iter()
-                .all(|r| (0.995..1.001).contains(r)),
+                .all(|r| (0.9953..1.0004).contains(r)),
             "{dataset} centred"
         );
         if dataset != "raa" {
@@ -402,10 +424,46 @@ fn uncentred_residuals_raise_raa_young_origins() {
 }
 
 #[test]
+fn exact_mean_cdr_is_the_pool_bias() {
+    // The exact total mean CDR over its exact SD, uncentred, is the
+    // bootstrap's bias that `MEAN_BIAS` pins from 20,000 simulations, within
+    // three Monte Carlo standard errors (about `1 / sqrt(SIMS)`); centred it
+    // is zero. Under Merz and Wüthrich's factors the mean closing ultimates
+    // are the opening chain-ladder ones, which checks the means.
+    for (dataset, want) in [("raa", -0.2041), ("genins", -0.0344), ("abc", 0.1677)] {
+        let ultimate = Mack::default()
+            .fit(&triangle(dataset), "values")
+            .unwrap()
+            .chain_ladder
+            .ultimate;
+        let (opening, _) = exact_moments(dataset, Factors::MerzWuthrich, false);
+        for (o, (u, cl)) in opening.iter().zip(&ultimate).enumerate().skip(1) {
+            assert!((u / cl - 1.0).abs() < 1e-12, "{dataset} {o}: {u} vs {cl}");
+        }
+        for centred in [false, true] {
+            let (closing, cov) = exact_moments(dataset, Factors::Bootstrap { centred }, false);
+            let sd = standard_deviations(&cov)[closing.len()];
+            let mean: f64 = opening.iter().zip(&closing).map(|(u0, u1)| u0 - u1).sum();
+            let ratio = mean / sd;
+            if centred {
+                assert!(ratio.abs() < 1e-9, "{dataset} centred: {ratio}");
+            } else {
+                assert!((ratio - want).abs() < 5e-5, "{dataset}: {ratio}");
+                let (_, simulated) = MEAN_BIAS.iter().find(|(d, _)| *d == dataset).unwrap();
+                assert!(
+                    (ratio - simulated).abs() < 3.0 / (SIMS as f64).sqrt(),
+                    "{dataset}: exact {ratio} vs simulated {simulated}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 #[ignore = "200,000 simulations per configuration: minutes"]
 fn simulation_matches_the_exact_moments() {
     // At 200,000 simulations the bootstrap's standard deviations are within
-    // five Monte Carlo standard errors of `exact_covariance` under its own
+    // four Monte Carlo standard errors of `exact_covariance` under its own
     // pseudo factors, uncentred and centred, Gamma and normal process, on
     // RAA, GenIns and ABC: the RAA gap to Merz and Wüthrich is the
     // uncentred residuals, not Monte Carlo error or the process shape.
@@ -437,7 +495,7 @@ fn simulation_matches_the_exact_moments() {
             ));
             for (k, (origin, draws)) in columns(&fit).into_iter().enumerate() {
                 let (sd, error) = sd_and_error(&draws);
-                if (sd - exact[k]).abs() > 5.0 * error {
+                if (sd - exact[k]).abs() > 4.0 * error {
                     failures.push(format!(
                         "{dataset} {process:?} centred {centred} {origin}: {sd:.1} vs exact \
                          {:.1} ({:+.2} SE)",
