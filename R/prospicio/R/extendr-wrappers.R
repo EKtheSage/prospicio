@@ -118,6 +118,8 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
 
+EventSet$with_seasonal_times <- function(weights) .Call(wrap__EventSet__with_seasonal_times, self, weights)
+
 EventSet$has_times <- function() .Call(wrap__EventSet__has_times, self)
 
 EventSet$times <- function(sim) .Call(wrap__EventSet__times, self, sim)

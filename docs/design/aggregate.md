@@ -125,6 +125,27 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `EventSet.with_uniform_times()`, `EventSet.from_years(..., times=)`; R
   `xol_layer(pro_rata_time = TRUE)`, `with_uniform_times()`,
   `events_from_years(times =)`, `event_times()`.
+- **Seasonal event times (decided 2026-10-08).** `EventSet::with_seasonal_times(weights)`
+  dates losses by a piecewise-constant density over the year: `m =
+  weights.len()` equal periods (12 for months, 52 for weeks) starting at
+  the contract's inception, period `k` with probability `w_k / Σ w`, and
+  uniform within it; a zero weight is a period with no losses (outside a
+  hurricane season). Year `i` takes the same sorted uniform draws as
+  `with_uniform_times` and maps each `u` through the season's quantile,
+  `t = (k + (u − C_k) / (C_{k+1} − C_k)) / m` with `C` the cumulative
+  weights. The quantile is increasing, so the times stay sorted, the
+  i.i.d. argument for uniform times carries over, and equal weights give
+  the uniform times to rounding (tested to `1e-15`). Periods are equal
+  fractions of the contract year, so a 1 July contract lists July first,
+  and months of unequal length are the caller's (weight by days if it
+  matters). A general density on `[0, 1]` is a later option; nothing in
+  `prospicio-prob` lives there yet. Tested: pooled times of 50,000 years
+  against the season's cdf by Kolmogorov–Smirnov at the 0.1% level, no
+  time in a zero-weight period, and one exhausting loss a year dated in
+  the second half only averages a quarter of the amount-only premium
+  (`2 E[1 − t] = 0.5`), with variance `4 · 0.5² / 12`, within four
+  standard errors. Python `EventSet.with_seasonal_times(weights)`, R
+  `with_seasonal_times()`.
 - **Towers are data.** `Tower::to_json` writes a programme as a versioned
   document (`"format": "risk_rs.tower"`, version 1): its stages in inuring
   order, each a list of layers with every term (basis, and for a surplus
@@ -252,9 +273,7 @@ binomial counts. A unit test checks the layer mean and variance against
 
 ## Next
 
-1. Seasonality: event times from a density over the year rather than
-   uniform (a hurricane season).
-2. Loss corridors (a retained band of the layer's annual loss), and other
+1. Loss corridors (a retained band of the layer's annual loss), and other
    contract features in `architecture.md`'s reinsurance scope.
-3. A spread within a band that matches both its bounds and its total sum
+2. A spread within a band that matches both its bounds and its total sum
    insured (a tilted, not uniform, density), if profiles call for it.

@@ -271,7 +271,8 @@ impl Layer {
     /// amount: limit used by a loss at time `t` (the fraction of the year
     /// elapsed) is reinstated for the remaining `1 − t` of the year, so its
     /// premium is scaled by `1 − t`. The events must carry times
-    /// ([`EventSet::with_times`], [`EventSet::with_uniform_times`]).
+    /// ([`EventSet::with_times`], [`EventSet::with_uniform_times`],
+    /// [`EventSet::with_seasonal_times`]).
     ///
     /// ```
     /// use prospicio_aggregate::Layer;
@@ -623,7 +624,7 @@ impl Tower {
         if self.needs_times() && !events.has_times() {
             return Err(Error::Data(
                 "reinstatements pro rata as to time need each event's time: use \
-                 EventSet::with_times or EventSet::with_uniform_times"
+                 EventSet::with_times, with_uniform_times or with_seasonal_times"
                     .into(),
             ));
         }
@@ -1050,7 +1051,7 @@ mod tests {
         .unwrap();
         assert!(tower.apply(&events).is_err());
         assert!(tower.apply_aggregate(&events.totals().unwrap()).is_err());
-        let pd = tower.apply(&events.with_uniform_times()).unwrap();
+        let pd = tower.apply(&events.clone().with_uniform_times()).unwrap();
         let rp = pd
             .marginal(&vec![
                 KeyValue::from("reinstatement_premium"),
@@ -1060,6 +1061,22 @@ mod tests {
         let se = (rp.variance() / n as f64).sqrt();
         assert!((rp.mean() - 1.0).abs() < 4.0 * se, "{} ± {se}", rp.mean());
         assert!((rp.variance() / (4.0 / 12.0) - 1.0).abs() < 0.05);
+
+        // The same losses in the second half of the year only: t is uniform
+        // on [0.5, 1], so the premium averages 2 × 0.25 = 0.5 with variance
+        // 4 × 0.5² / 12.
+        let pd = tower
+            .apply(&events.with_seasonal_times(&[0.0, 1.0]).unwrap())
+            .unwrap();
+        let rp = pd
+            .marginal(&vec![
+                KeyValue::from("reinstatement_premium"),
+                KeyValue::from("10x10"),
+            ])
+            .unwrap();
+        let se = (rp.variance() / n as f64).sqrt();
+        assert!((rp.mean() - 0.5).abs() < 4.0 * se, "{} ± {se}", rp.mean());
+        assert!((rp.variance() / (4.0 * 0.25 / 12.0) - 1.0).abs() < 0.05);
     }
 
     #[test]

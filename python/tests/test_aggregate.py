@@ -221,6 +221,18 @@ def test_reinstatements_pro_rata_as_to_time():
     assert [a.times(i) for i in range(20)] == [b.times(i) for i in range(20)]
     assert a.events(3) == simulate_events(Poisson(3.0), SEV, 20, 4).events(3)
 
+    # Losses only in the second half of the year: 2 E[1 - t] = 0.5.
+    late = events.with_seasonal_times([0.0, 1.0])
+    assert all(0.5 <= late.times(i)[0] <= 1.0 for i in range(100))
+    rp = Tower([one]).apply(late).marginal(("reinstatement_premium", "10x10"))
+    assert abs(rp.mean() - 0.5) < 4 * (rp.variance() / n) ** 0.5
+    flat = simulate_events(Poisson(3.0), SEV, 20, 4).with_seasonal_times([1.0] * 12)
+    for i in range(20):
+        assert flat.times(i) == pytest.approx(a.times(i), abs=1e-15)
+    for bad in ([], [0.0, 0.0], [1.0, -1.0]):
+        with pytest.raises(ValueError):
+            events.with_seasonal_times(bad)
+
 
 def test_towers_save_and_load_as_json():
     import pickle

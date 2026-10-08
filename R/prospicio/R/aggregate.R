@@ -100,6 +100,31 @@ events_from_years <- function(years, sums_insured = NULL, seed = 0, times = NULL
 #' event_times(ev, 1)
 with_uniform_times <- function(x) event_set(ptr = x@ptr$with_uniform_times())
 
+#' Date events by a season
+#'
+#' The same events at times drawn from a seasonal density: the year is cut
+#' into `length(weights)` equal periods (12 for months, 52 for weeks)
+#' starting at the contract's inception, and a loss falls in period `k`
+#' with probability `weights[k] / sum(weights)`, uniformly within it. A
+#' zero weight means no losses in that period (a hurricane season). The
+#' draws are those of [with_uniform_times()], mapped through the season's
+#' quantile, so equal weights give the uniform times.
+#'
+#' @param x An `event_set`.
+#' @param weights Each period's relative weight: non-negative, not all
+#'   zero.
+#' @returns An `event_set` whose losses carry times; [event_times()] reads
+#'   them.
+#' @export
+#' @examples
+#' ev <- simulate_events(poisson_count(3), lognormal(0, 1), 10, seed = 1)
+#' # Atlantic hurricanes, June to November, for a 1 January contract.
+#' hurricanes <- with_seasonal_times(ev, c(0, 0, 0, 0, 0, 1, 2, 6, 8, 3, 1, 0))
+#' event_times(hurricanes, 1)
+with_seasonal_times <- function(x, weights) {
+  event_set(ptr = rust_result(x@ptr$with_seasonal_times(as.double(weights))))
+}
+
 #' Times of one year's losses
 #'
 #' @param x An `event_set` whose losses carry times.

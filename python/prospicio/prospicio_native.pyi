@@ -2571,6 +2571,34 @@ class EventSet:
         -------
         PredictiveDistribution
         """
+    def with_seasonal_times(self, /, weights: Sequence[float]) -> EventSet:
+        """
+        The same events at times drawn from a seasonal density.
+        
+        The year is cut into ``len(weights)`` equal periods (12 for months,
+        52 for weeks) starting at the contract's inception, and a loss
+        falls in period ``k`` with probability ``weights[k] / sum(weights)``,
+        uniformly within it. A zero weight means no losses in that period.
+        The draws are those of ``with_uniform_times``, mapped through the
+        season's quantile, so equal weights give the uniform times.
+        
+        Parameters
+        ----------
+        weights : list of float
+            Each period's relative weight: non-negative, not all zero.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0, 7.0]], seed=3)
+        >>> t = e.with_seasonal_times([0.0, 1.0]).times(0)
+        >>> all(x >= 0.5 for x in t) and t == sorted(t)
+        True
+        """
     def with_uniform_times(self, /) -> EventSet:
         """
         The same events at times spread uniformly over the year.

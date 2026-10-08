@@ -1,5 +1,10 @@
 # Bundle history
 
+## 2026-10-08
+
+* **Update**: [Reinstatements pro rata as to time](/findings/reinstatement-pro-rata-time.md): seasonal event times (`with_seasonal_times`) map the sorted uniform draws through the season's increasing quantile, so they stay exact; equal weights give the uniform times; one exhausting loss a year in the second half only costs a quarter of the amount-only premium. Not yet run by CI. From branch claude/stoic-hawking-qc3qby.
+* **Update**: [Local checks](/environment/local-checks.md): installing R (with `libuv1-dev` for `fs`), roxygen2, uv and the wasm target in a container that lacks them.
+
 ## 2026-10-07
 
 * **Correction**: [The simulated one-year view against Merz-Wuthrich, ODP and Mack's process](/findings/one-year-bootstrap-vs-merz-wuthrich.md): at a quarterly split the ODP's SD halves through its scale, not through quarters carrying a sixteenth of the variance each: the Pearson chi-square is unchanged, so the scale falls by exactly the ratio of degrees of freedom (36/171 on RAA and GenIns, 45/210 on ABC) and the process SD by about 0.46; Mack's zero-sigma first-year quarterly links no longer put zeros in its residual pool (they cut its mean square to 0.854), and the remeasured ratios are ODP 0.43 to 0.47 per origin (0.44 to 0.47 total), Mack 0.48 to 0.72 (0.53 to 0.55); a Gamma or lognormal draw out of floating point range, reachable when Mack's chained quarterly draws come out near zero, is now its limit, zero, not a panic. From the review of branch claude/one-year-grain.

@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Reinstatements pro rata as to time on simulated years
-description: Pro rata as to time charges each event's used limit at the share of the year left after it; dating a year's i.i.d. losses with sorted uniform times in drawn order is exact, and one exhausting loss a year costs half the amount-only premium on average.
+description: Pro rata as to time charges each event's used limit at the share of the year left after it; dating a year's i.i.d. losses with sorted uniform (or seasonal) times in drawn order is exact, and one exhausting loss a year costs half the amount-only premium on average.
 tags: [reinsurance, reinstatements, simulation, aggregate]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T22:30:00Z }
@@ -12,7 +12,7 @@ sources:
     title: prospicio_aggregate::reinsurance (Layer::pro_rata_as_to_time, tests)
   - id: events
     resource: ../crates/prospicio-aggregate/src/monte_carlo.rs
-    title: prospicio_aggregate::EventSet (with_times, with_uniform_times)
+    title: prospicio_aggregate::EventSet (with_times, with_uniform_times, with_seasonal_times)
 ---
 
 # Finding
@@ -33,8 +33,15 @@ sources:
   `premium × rate × E[1 − t] = premium × rate / 2` on average, with
   variance `(premium × rate)^2 / 12`. 20,000 simulated years agree within
   four standard errors.[^layer]
+* A season keeps that exactness: mapping the sorted uniforms through an
+  increasing quantile (a piecewise-constant density over equal periods of
+  the year, `with_seasonal_times`) keeps them sorted, so the times are
+  still i.i.d. draws from the season, sorted. Equal weights reproduce the
+  uniform times to `1e-15`. One exhausting loss a year dated only in the
+  second half costs `premium × rate / 4` on average, half the uniform
+  case.[^events]
 * A compound distribution on a grid has no event times, so `on_grid` and
   `apply_aggregate` refuse a layer pro rata as to time.[^layer]
 
 [^layer]: prospicio_aggregate::reinsurance (Layer::pro_rata_as_to_time, tests)
-[^events]: prospicio_aggregate::EventSet (with_times, with_uniform_times)
+[^events]: prospicio_aggregate::EventSet (with_times, with_uniform_times, with_seasonal_times)
