@@ -179,25 +179,41 @@ uncentred residuals' bias of the pseudo factors.[^mack]
   above R; older origins, where the smaller pool variance `1 - m^2`
   dominates, are 0.46% (1982) to 0.02% (1985) below. GenIns (`m =
   0.0135`) moves by at most +0.13%, ABC (`m = -0.0595`) by at most -0.13%.
-  Centred (`E[f*_k] = f_k`, the same variance), RAA's 1988 to 1990 and
-  total are 0.11% to 0.00% below R, and every origin of the three
-  triangles is between 0.47% below and 0.04% above R. The exact uncentred mean CDR is
-  -0.204, -0.034 and +0.168 times its SD (the 20,000-simulation regression
-  pins -0.214, -0.038, +0.176, within its Monte Carlo error).
+  Centred (`E[f*_k] = f_k`, the same variance `(1 - m^2) sigma_k^2 /
+  S_k`: centring shifts the pool without rescaling it), RAA's 1988 to
+  1990 and total are 0.11% to 0.00% below R, and every origin of the
+  three triangles is between 0.46% below (RAA 1982) and 0.04% above
+  (GenIns 2010) R. Merz-Wuthrich's exact values are never below R, so
+  the centred bootstrap is not their model either. The exact uncentred
+  mean CDR is -0.204, -0.034 and +0.168 times its SD, and zero centred
+  (the 20,000-simulation regression pins -0.214, -0.038, +0.176, within
+  1.5 of its Monte Carlo standard errors, about `1 / sqrt(20,000)`). A
+  fast test pins these numbers and checks that, under Merz-Wuthrich's
+  factors, the exact mean closing ultimates are the opening chain-ladder
+  ones.
 * The simulations agree with the exact values. At 200,000 simulations,
   seed 20,261,006 (Gamma, normal and centred Gamma) and seed 7
   (Gamma), every origin and total of the three triangles is within 2.71
   Monte Carlo standard errors of its exact SD (RAA uncentred within 1.35),
   while RAA's uncentred runs are up to 7.0 standard errors from R. An
   ignored test (`simulation_matches_the_exact_moments`, about four minutes
-  with `--release`) checks it.
+  with `--release`) checks it at four standard errors. Against Merz-
+  Wuthrich's exact values instead, the centred run's RAA 1982 would be
+  -3.41 standard errors: the centred pool keeps the variance `1 - m^2`.
 * (c) The process shape cannot move the SD: the covariances need only the
   first two moments of each `Z`, and Gamma, lognormal and normal share
   them. Gamma and normal on the same seed are both within 1.11 standard
   errors of the exact SD on every RAA origin and the total.
 * (d) The Monte Carlo standard error, `sd sqrt((kurtosis - 1) / (4 n))`,
-  holds: the 124 z-scores against the exact SDs above (four runs of each
-  triangle) are all within 2.71, as standard normal ones would be.
+  is not understated, but the evidence is thinner than the 124 z-scores
+  against the exact SDs suggest. Only two runs per triangle are
+  independent, Gamma uncentred on seeds 20,261,006 and 7: the normal and
+  centred runs on seed 20,261,006 share its random numbers, and their
+  z-scores repeat the Gamma run's (to 0.2 centred and 0.3 normal, except
+  RAA's normal 1990 and total, 1.2 and 1.0). Over the two independent runs the 62
+  z-scores have a root mean square of 0.85 and a maximum of 2.71 (ABC
+  1986), and the origins and total of a run are correlated. That rules
+  out an understated standard error, not a somewhat overstated one.
 
 # Development grain and lagging origins
 

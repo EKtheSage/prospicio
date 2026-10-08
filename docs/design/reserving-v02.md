@@ -798,10 +798,16 @@ the approximation is not the gap. With the bootstrap's moments, mean
 0.93%, 1.20% and 1.29% above R (the first pseudo factor is 14% high) and
 the 200,000 simulations are within 1.4 Monte Carlo standard errors of
 that (Gamma on two seeds, normal on one); centred, every origin and total
-of the three triangles is between 0.47% below and 0.04% above R. Over
+of the three triangles is between 0.46% below and 0.04% above R (the
+centred pseudo factors keep the variance `(1 - m^2) sigma_k^2 / S_k`:
+centring shifts the pool without rescaling it). Over
 every run and triangle the simulations are within 2.7 standard errors of
-the exact values. A fast test pins the exact numbers; an ignored one
-checks the 200,000 simulations against them.
+the exact values; only two runs per triangle (Gamma, two seeds) are
+independent, the others share their random numbers. A fast test pins the
+exact standard deviations, centred and uncentred, and the exact mean CDR
+(-0.204, -0.034 and +0.168 times the SD uncentred, zero centred); an
+ignored one checks the 200,000 simulations against them within four
+standard errors.
 
 Bindings: Python `MackBootstrap(n_sims=10000, seed=0, process="gamma",
 average="volume", sigma_interpolation="log-linear",
