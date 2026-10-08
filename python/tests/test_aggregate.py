@@ -49,7 +49,10 @@ def test_events_are_reproducible_and_feed_a_tower():
         assert gross == pytest.approx(ceded_a + ceded_b + net, abs=1e-6)
     by_kind = result.aggregate(["kind"])
     assert [k[0] for k in by_kind.components()] == ["gross", "ceded", "net"]
-    assert result.provenance()["seed"] == 11
+    prov = result.provenance()
+    assert prov["seed"] == 11
+    assert prov["stream_scheme"] == "chacha20/sim-index/v1"
+    assert prov["samplers"] == [("gamma", "marsaglia-tsang/2026-10")]
 
 
 def test_mean_ceded_matches_the_exact_layer_value():

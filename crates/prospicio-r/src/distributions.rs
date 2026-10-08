@@ -698,6 +698,7 @@ impl PredictiveDistribution {
             parameters = pairs(&p.parameters),
             seed = p.seed.map(|s| s as f64),
             stream_scheme = p.stream_scheme.clone(),
+            samplers = p.samplers.as_deref().map_or_else(|| ().into(), pairs),
             versions = pairs(&p.versions),
             input_hash = p.input_hash.clone()
         )

@@ -31,6 +31,8 @@ e <- tryCatch(events(ev, 0), error = identity)
 stopifnot(grepl("out of range", conditionMessage(e)), identical(conditionCall(e), quote(events(ev, 0))))
 tot <- total(ev)
 stopifnot(S7::S7_inherits(tot, predictive_distribution), identical(provenance(tot)$seed, 11))
+stopifnot(identical(provenance(tot)$stream_scheme, "chacha20/sim-index/v1"),
+          identical(provenance(tot)$samplers, list(gamma = "marsaglia-tsang/2026-10")))
 
 # Layers and towers.
 l <- xol_layer("L", 10, 5, share = 0.5, aggregate_deductible = 4, aggregate_limit = 15)

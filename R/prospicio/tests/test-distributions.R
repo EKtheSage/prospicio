@@ -80,6 +80,7 @@ stopifnot(identical(by_lob@keys$lob, c("Auto", "Home")))
 stopifnot(identical(draw_matrix(by_lob), rbind(c(3, 30), c(7, 70), c(11, 110))))
 stopifnot(identical(total(lob)@draws, c(33, 77, 121)), identical(lob@keys$origin, c(2023, 2024, 2023, 2024)))
 stopifnot(identical(provenance(lob)$model, "r"))
+stopifnot("samplers" %in% names(provenance(lob)), is.null(provenance(lob)$samplers))
 e <- tryCatch(aggregate(lob, keep = "state"), error = identity)
 stopifnot(grepl("dimension", conditionMessage(e)), identical(conditionCall(e), quote(aggregate(lob, keep = "state"))))
 
