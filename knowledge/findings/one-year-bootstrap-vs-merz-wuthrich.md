@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The simulated one-year view against Merz-Wuthrich, ODP and Mack's process
-description: Re-reserving on the ODP bootstrap gives a one-year CDR standard deviation 0.50 to 5.98 times Merz-Wuthrich's per origin; the same re-reserving under Mack's process (MackBootstrap) reconciles its standard deviation with Merz-Wuthrich within Monte Carlo error on RAA, GenIns and ABC, so the gap is the ODP's process model, not the re-reserving. EVW's uncentred residuals bias its mean CDR (-0.21 to +0.18 SD); centring the pool removes the bias. At a quarterly grain split from an annual triangle both models give about half the annual SD, the ODP through its scale, which falls with the degrees of freedom (36/171 on RAA), Mack through sigmas a quarter the size.
+description: Re-reserving on the ODP bootstrap gives a one-year CDR standard deviation 0.50 to 5.98 times Merz-Wuthrich's per origin; the same re-reserving under Mack's process (MackBootstrap) reconciles its standard deviation with Merz-Wuthrich within Monte Carlo error on RAA, GenIns and ABC, so the gap is the ODP's process model, not the re-reserving. EVW's uncentred residuals bias its mean CDR (-0.21 to +0.18 SD), and its SD too, by up to 1.3% on RAA's young origins at 200,000 simulations, which an exact formula for the bootstrap's moments explains (Merz-Wuthrich's linear approximation is worth at most 0.09%); centring the pool removes both. At a quarterly grain split from an annual triangle both models give about half the annual SD, the ODP through its scale, which falls with the degrees of freedom (36/171 on RAA), Mack through sigmas a quarter the size.
 tags: [reserving, one-year, cdr, bootstrap, odp, mack, merz-wuthrich, solvency-ii]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-07T12:00:00-07:00 }
@@ -21,6 +21,9 @@ sources:
   - id: evw
     resource: https://openaccess.city.ac.uk/id/eprint/21270/
     title: England, Verrall and Wuthrich (2019), On the lifetime and one-year views of reserve risk, with application to IFRS 17 and Solvency II risk margins, Insurance - Mathematics and Economics 85
+  - id: mw2008
+    resource: https://www.casact.org/pubs/forum/08fforum/21merz_wuetrich.pdf
+    title: Merz and Wuthrich (2008), Modelling the claims development result for solvency purposes, CAS E-Forum Fall 2008, Appendix A
   - id: boumezoued
     resource: https://arxiv.org/abs/1107.0164
     title: Boumezoued, Angoua, Devineau and Boisseau (2011), One-year reserve risk including a tail factor - closed formula and bootstrap approaches
@@ -97,13 +100,11 @@ absorbed.
 
 * With 200,000 simulations GenIns and ABC are within 0.4% of R per origin
   and in total, but RAA's three youngest origins (1988 to 1990) and its
-  total come out 0.4% to 1.2% above R, 2.5 to 6.4 Monte Carlo standard
-  errors.
-  An inference, not verified: Merz-Wuthrich's formula is a linear
-  approximation of the CDR's MSEP, and RAA's young factors are the most
-  volatile (the first pseudo factor's SD is a third of the factor), where
-  the neglected higher-order terms are largest. At 20,000 simulations five
-  standard errors are 2.5% to 5%, so the test does not resolve it.
+  total come out 0.4% to 1.3% above R, 2.2 to 7.0 Monte Carlo standard
+  errors (three runs). The uncentred residuals cause it, not
+  Merz-Wuthrich's linear approximation: see the next section. At 20,000
+  simulations five standard errors are 2.5% to 5%, so the CI test does
+  not resolve it.
 * The bootstrap's draws equal the hand-written harness of EVW's Appendix 1
   in the unit test bit for bit (GenIns, the first 300 of the harness's
   20,000 simulations, each on its own stream), so the type is that
@@ -125,8 +126,10 @@ absorbed.
   mean, so the pool's mean is 0.1395 (RAA), 0.0135 (GenIns) and -0.0595
   (ABC) with mean square exactly 1, and `E[f*_k] = f_k + m sigma_k
   sum(C^(alpha / 2)) / sum(C^alpha)`. EVW's Appendix 1 does not centre
-  either; their Table 4 expected reserve on Taylor-Ashe (GenIns, pool mean
-  0.0135) is only slightly above the chain ladder's. The `Residuals`
+  either, but their Table 4 lifetime expected reserve on Taylor-Ashe
+  (GenIns) is the chain ladder's within Monte Carlo error (+0.02%), where
+  the uncentred bootstrap gives +0.7%: their numbers agree with centred
+  residuals ([the lifetime finding](/findings/mack-bootstrap-lifetime-vs-mack.md)). The `Residuals`
   process draws from the same pool, so uncentred it adds a bias of its
   own (mean `f* C + m sd`, variance `(1 - m^2) sd^2`).[^mack][^evw]
 * `MackBootstrap::centre_residuals` subtracts the pool's mean before
@@ -141,6 +144,78 @@ absorbed.
   Gamma and `Residuals` means are within four standard errors of it.[^unit]
   A review's independent R harness of EVW's Appendix 1 found the same
   pool means and, centred, RAA -0.013 and ABC +0.001 times the SD.
+
+# RAA's gap at 200,000 simulations
+
+The bootstrap's one-year SD has a closed form, and with it the gap is the
+uncentred residuals' bias of the pseudo factors.[^mack]
+
+* The exact moments. On an annual triangle, volume-weighted, no tail,
+  each open origin's next value `Z_i = f*_k C_i + process` (`k` its
+  latest age) is independent of the others: each origin uses its own
+  pseudo factor, from its own resampled residuals, and its own process
+  draw. The refitted factor at `k` is `(A_k + Z_i) / (S_k + C_i)`, `A_k`
+  and `S_k` the older origins' sums at `k + 1` and `k`. So origin `l`'s
+  closing ultimate, `Z_l` times the refitted factors of the older
+  origins, is a product of independent factors each linear in one `Z`,
+  and every covariance of the CDR is a product of means: it needs each
+  `Z`'s mean `E[f*_k] C_i` and variance `Var[f*_k] C_i^2 + sigma_k^2 C_i`,
+  nothing else. `exact_covariance` in the validation test computes it.
+* (a) Merz-Wuthrich's approximation is not it. With their conditional
+  resampling (`E[f*_k] = f_k`, `Var[f*_k] = sigma_k^2 / S_k`), the
+  first-order (delta method) covariance equals R's `CDR(1)S.E.` to 1e-9
+  relative, per origin and in total, on RAA, GenIns and ABC, which checks
+  the model; the exact one is above it by at most 0.084% (RAA 1990,
+  23,630.22 against 23,610.35; total 25,185.83 against 25,166.30, +0.078%),
+  0.037% on GenIns and 0.0013% on ABC. Merz and Wuthrich (2008),
+  Appendix A, (A.1), replace the product terms `prod(1 + a_j) - 1` by
+  `sum(a_j)`, a lower bound, which is what the exact one undoes. A fast
+  test pins it.[^mw2008]
+* (b) The pseudo factors are. Resampling an uncentred pool with mean `m`
+  and mean square 1 gives `E[f*_k] = f_k + m sigma_k sum(sqrt(C)) / S_k`
+  and `Var[f*_k] = (1 - m^2) sigma_k^2 / S_k`. On RAA (`m = 0.1395`) the
+  first factor is 14.3% high, the next two 3.3% and 2.6%, and 1990's
+  closing ultimate's mean 15.7% above its opening. Higher means of the
+  next values and refitted factors widen their products, and the exact SD
+  becomes 0.48% (1988), 0.93% (1989), 1.20% (1990) and 1.29% (total)
+  above R; older origins, where the smaller pool variance `1 - m^2`
+  dominates, are 0.46% (1982) to 0.02% (1985) below. GenIns (`m =
+  0.0135`) moves by at most +0.13%, ABC (`m = -0.0595`) by at most -0.13%.
+  Centred (`E[f*_k] = f_k`, the same variance `(1 - m^2) sigma_k^2 /
+  S_k`: centring shifts the pool without rescaling it), RAA's 1988 to
+  1990 and total are 0.11% to 0.00% below R, and every origin of the
+  three triangles is between 0.46% below (RAA 1982) and 0.04% above
+  (GenIns 2010) R. Merz-Wuthrich's exact values are never below R, so
+  the centred bootstrap is not their model either. The exact uncentred
+  mean CDR is -0.204, -0.034 and +0.168 times its SD, and zero centred
+  (the 20,000-simulation regression pins -0.214, -0.038, +0.176, within
+  1.5 of its Monte Carlo standard errors, about `1 / sqrt(20,000)`). A
+  fast test pins these numbers and checks that, under Merz-Wuthrich's
+  factors, the exact mean closing ultimates are the opening chain-ladder
+  ones.
+* The simulations agree with the exact values. At 200,000 simulations,
+  seed 20,261,006 (Gamma, normal and centred Gamma) and seed 7
+  (Gamma), every origin and total of the three triangles is within 2.71
+  Monte Carlo standard errors of its exact SD (RAA uncentred within 1.35),
+  while RAA's uncentred runs are up to 7.0 standard errors from R. An
+  ignored test (`simulation_matches_the_exact_moments`, about four minutes
+  with `--release`) checks it at four standard errors. Against Merz-
+  Wuthrich's exact values instead, the centred run's RAA 1982 would be
+  -3.41 standard errors: the centred pool keeps the variance `1 - m^2`.
+* (c) The process shape cannot move the SD: the covariances need only the
+  first two moments of each `Z`, and Gamma, lognormal and normal share
+  them. Gamma and normal on the same seed are both within 1.11 standard
+  errors of the exact SD on every RAA origin and the total.
+* (d) The Monte Carlo standard error, `sd sqrt((kurtosis - 1) / (4 n))`,
+  is not understated, but the evidence is thinner than the 124 z-scores
+  against the exact SDs suggest. Only two runs per triangle are
+  independent, Gamma uncentred on seeds 20,261,006 and 7: the normal and
+  centred runs on seed 20,261,006 share its random numbers, and their
+  z-scores repeat the Gamma run's (to 0.2 centred and 0.3 normal, except
+  RAA's normal 1990 and total, 1.2 and 1.0). Over the two independent runs the 62
+  z-scores have a root mean square of 0.85 and a maximum of 2.71 (ABC
+  1986), and the origins and total of a run are correlated. That rules
+  out an understated standard error, not a somewhat overstated one.
 
 # Development grain and lagging origins
 
@@ -225,3 +300,4 @@ See [R ChainLadder CDR](/references/r-chainladder-cdr.md).
 [^unit]: crates/prospicio-reserving/src/one_year_bootstrap.rs, unit tests
 [^evw]: England, Verrall and Wuthrich (2019), Tables 2 and 4, Section 2.2, Section 7 and Appendix 1
 [^boumezoued]: Boumezoued et al. (2011), Table 2
+[^mw2008]: Merz and Wuthrich (2008), Appendix A, (A.1)
