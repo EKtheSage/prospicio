@@ -941,17 +941,20 @@ factor's variance, and with it every parameter error, is `v` times Mack's
   do not depend on the seed's thread count, and `fit` equals
   `fit_segments` on a single segment.
 
-The Gamma process inverts its cdf, which is slow at the large shapes of
-late cells (ABC's run to the thousands): ABC's lifetime view at 2,000
-simulations takes 30 s in a debug build against about 1 s for RAA or
-GenIns. The validation test simulates ABC with the lognormal of the same
-mean and variance, which at those shapes is close to the Gamma; the
-standard deviation depends on the process only through its first two
-moments as long as the values stay positive. RAA keeps the Gamma: its
-young origins' shapes are below one, where the lognormal's heavy tail
-makes the standard deviation's own standard error unreliable (at 20,000
-simulations RAA 1990 came out 6% low, 3.3 estimated standard errors; at
-200,000, 0.8%). With the weightings `alpha = 0` and `2` the centred
+The Gamma process inverted its cdf until 2026-10-08, which was slow at
+the large shapes of late cells (ABC's run to the thousands): ABC's
+lifetime view at 2,000 simulations took 30 s in a debug build, and the
+validation test simulated ABC with the lognormal of the same mean and
+variance. `Gamma::sample` is now Marsaglia and Tsang's sampler (see
+`rng.md`, stability log): ABC's lifetime view at 20,000 simulations takes
+0.02 s in a release build (39 s before), as the lognormal's does, and the
+validation test uses the Gamma on all three triangles under both rules
+for the last sigma (every origin within 2.4 Monte Carlo standard errors
+of Mack's). The lognormal stays unsuitable for RAA: its young origins'
+shapes are below one, where the lognormal's heavy tail makes the standard
+deviation's own standard error unreliable (at 20,000 simulations RAA 1990
+came out 6% low, 3.3 estimated standard errors; at 200,000, 0.8%). With
+the weightings `alpha = 0` and `2` the centred
 bootstrap also agrees with R's `MackChainLadder(alpha = ...)` on GenIns
 and ABC (within 3.5 standard errors at 50,000 simulations), but RAA's youngest origins come out up to 7% above (`alpha = 0`,
 whose variance is proportional to `C^2`, so the linear approximation

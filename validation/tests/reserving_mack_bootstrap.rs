@@ -32,15 +32,12 @@
 //!   centred residuals; uncentred, the total is eleven combined standard
 //!   errors above theirs, which the test also checks (more than five).
 //!
-//! The Gamma process (EVW's parametric example) draws by inverting its
-//! cdf, which is slow at large shapes: ABC's later cells have shapes in the
-//! thousands. ABC is therefore simulated with the lognormal of the same
-//! mean and variance, which at those shapes is close to the Gamma; the
-//! standard deviation depends on the process only through its mean and
-//! variance as long as the values stay positive, which both keep. RAA's
-//! young origins have shapes below one, where the lognormal's heavy tail
-//! makes the standard deviation's own standard error unreliable, so RAA and
-//! GenIns use the Gamma.
+//! The process is the Gamma, EVW's parametric example, on every dataset.
+//! Until 2026-10-08 the Gamma sampler inverted its cdf, which was slow at
+//! ABC's large shapes (its later cells run to the thousands), and ABC was
+//! simulated with the lognormal of the same mean and variance; with
+//! Marsaglia and Tsang's sampler ABC's lifetime view takes as long as the
+//! lognormal's.
 
 use prospicio_reserving::{
     Development, MackBootstrap, MackBootstrapFit, MackProcess, Period, SigmaInterpolation,
@@ -76,15 +73,6 @@ fn boot(
     bootstrap(sigma_interpolation, process)
         .fit(&triangle(dataset), "values")
         .unwrap_or_else(|e| panic!("{dataset}: {e}"))
-}
-
-/// The process of the reconciliation runs (see the module documentation).
-fn process(dataset: &str) -> MackProcess {
-    if dataset == "abc" {
-        MackProcess::Lognormal
-    } else {
-        MackProcess::Gamma
-    }
 }
 
 /// GenIns with Mack's rule for the last sigma and centred residuals, which
@@ -212,15 +200,10 @@ const RULES: [(&str, SigmaInterpolation); 2] = [
 
 #[test]
 fn bootstrap_reconciles_with_mack() {
-    // The Gamma runs are the slow ones: one rule each for RAA and GenIns
-    // (the rule changes only the last sigma; parameter error alone is
-    // checked under both below), both for ABC.
-    let runs = [
-        ("raa", RULES[0]),
-        ("genins", RULES[1]),
-        ("abc", RULES[0]),
-        ("abc", RULES[1]),
-    ];
+    // Both rules for the last sigma on every dataset.
+    let runs = ["raa", "genins", "abc"]
+        .into_iter()
+        .flat_map(|dataset| RULES.map(|rule| (dataset, rule)));
     let cases = reference("reserving_chainladder_r.csv");
     let mut failures = Vec::new();
     for (dataset, (method, sigma_interpolation)) in runs {
@@ -229,7 +212,7 @@ fn bootstrap_reconciles_with_mack() {
             let fit = if (dataset, sigma_interpolation) == ("genins", SigmaInterpolation::Mack) {
                 genins_mack()
             } else {
-                owned = boot(dataset, sigma_interpolation, process(dataset));
+                owned = boot(dataset, sigma_interpolation, MackProcess::Gamma);
                 &owned
             };
             let v = pool_variance(fit);
