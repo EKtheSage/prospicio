@@ -17,6 +17,8 @@ from .prospicio_native import (
     alpha_between_frequencies,
     alpha_between_frequency_and_layer,
     alpha_between_layers,
+    calibrate_classical,
+    classical_premium,
     fit_pml_curve,
     fit_references,
     ilf,
@@ -51,4 +53,6 @@ __all__ = [
     "Portfolio",
     "NaturalPrice",
     "Pentagon",
+    "classical_premium",
+    "calibrate_classical",
 ]

@@ -46,7 +46,9 @@ mod prospicio_native {
         stacking_weights, time_ordered,
     };
     #[pymodule_export]
-    use super::natural::{PyNaturalPrice, PyPentagon, PyPortfolio};
+    use super::natural::{
+        PyNaturalPrice, PyPentagon, PyPortfolio, calibrate_classical, classical_premium,
+    };
     #[pymodule_export]
     use super::pareto::{
         PyBinomial, PyCustom, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic,

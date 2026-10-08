@@ -7,8 +7,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::distributions::{PyGrid, PyPredictiveDistribution};
-use crate::risk::{PyDistortion, family_from};
+use crate::risk::{PyDistortion, discrete_of, family_from};
 use crate::to_py;
+use prospicio_pricing::classical::{self, Kind, Principle};
 
 /// Loss, margin, premium, capital and assets, with ``P = L + M`` and
 /// ``a = P + Q``.
@@ -488,6 +489,56 @@ impl PyPortfolio {
         self.inner.epd(assets)
     }
 
+    /// The range of each unit's premium over every distortion that prices
+    /// the total, capped at the assets, at ``premium`` (linear allocation).
+    /// The extremes are BiTVaR distortions, found exactly.
+    ///
+    /// Parameters
+    /// ----------
+    /// premium : float
+    /// assets : float, optional
+    /// p : float, optional
+    ///
+    /// Returns
+    /// -------
+    /// list of dict
+    ///     One per unit: ``unit``, ``lower``, ``upper``, and the Distortion
+    ///     giving each, ``lower_distortion`` and ``upper_distortion``.
+    #[pyo3(signature = (premium, assets=None, p=None))]
+    fn premium_bounds<'py>(
+        &self,
+        py: Python<'py>,
+        premium: f64,
+        assets: Option<f64>,
+        p: Option<f64>,
+    ) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        let a = self.level(assets, p)?;
+        let bounds = self.inner.premium_bounds(premium, a).map_err(to_py)?;
+        bounds
+            .into_iter()
+            .zip(self.inner.units())
+            .map(|(b, unit)| {
+                let d = pyo3::types::PyDict::new(py);
+                d.set_item("unit", unit)?;
+                d.set_item("lower", b.lower)?;
+                d.set_item("upper", b.upper)?;
+                d.set_item(
+                    "lower_distortion",
+                    PyDistortion {
+                        inner: b.lower_distortion,
+                    },
+                )?;
+                d.set_item(
+                    "upper_distortion",
+                    PyDistortion {
+                        inner: b.upper_distortion,
+                    },
+                )?;
+                Ok(d)
+            })
+            .collect()
+    }
+
     /// The smallest assets whose total EPD ratio is at most ``epd``.
     ///
     /// Parameters
@@ -508,4 +559,120 @@ impl PyPortfolio {
             self.inner.totals().len()
         )
     }
+}
+
+fn principle(name: &str, loading: f64, q: f64) -> PyResult<Principle> {
+    Ok(match kind(name, q)? {
+        Kind::ExpectedValue => Principle::ExpectedValue(loading),
+        Kind::Variance => Principle::Variance(loading),
+        Kind::StandardDeviation => Principle::StandardDeviation(loading),
+        Kind::SemiVariance => Principle::SemiVariance(loading),
+        Kind::Exponential => Principle::Exponential(loading),
+        Kind::Esscher => Principle::Esscher(loading),
+        Kind::Dutch => Principle::Dutch(loading),
+        Kind::Fischer { q } => Principle::Fischer { theta: loading, q },
+        Kind::Var => Principle::Var(loading),
+    })
+}
+
+fn kind(name: &str, q: f64) -> PyResult<Kind> {
+    Ok(match name {
+        "expected_value" => Kind::ExpectedValue,
+        "variance" => Kind::Variance,
+        "standard_deviation" => Kind::StandardDeviation,
+        "semi_variance" => Kind::SemiVariance,
+        "exponential" => Kind::Exponential,
+        "esscher" => Kind::Esscher,
+        "dutch" => Kind::Dutch,
+        "fischer" => Kind::Fischer { q },
+        "var" => Kind::Var,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown premium principle {other:?}"
+            )));
+        }
+    })
+}
+
+fn loading_of(p: Principle) -> f64 {
+    match p {
+        Principle::ExpectedValue(t)
+        | Principle::Variance(t)
+        | Principle::StandardDeviation(t)
+        | Principle::SemiVariance(t)
+        | Principle::Exponential(t)
+        | Principle::Esscher(t)
+        | Principle::Dutch(t)
+        | Principle::Var(t) => t,
+        Principle::Fischer { theta, .. } => theta,
+    }
+}
+
+/// The premium of a distribution under a classical premium principle.
+///
+/// Parameters
+/// ----------
+/// principle : str
+///     ``"expected_value"`` (``(1 + t) mean``), ``"variance"``
+///     (``mean + t var``), ``"standard_deviation"``, ``"semi_variance"``
+///     (``mean + t E[(X - mean)+**2]``), ``"exponential"``
+///     (``log E[exp(t X)] / t``), ``"esscher"``
+///     (``E[X exp(t X)] / E[exp(t X)]``), ``"dutch"``
+///     (``mean + t E[(X - mean)+]``), ``"fischer"``
+///     (``mean + t E[(X - mean)+**q]**(1/q)``) or ``"var"`` (the lower ``t``
+///     quantile).
+/// dist : Sampled, Grid or PredictiveDistribution
+///     A predictive distribution is priced on its total.
+/// loading : float
+/// q : float, default 2.0
+///     The Fischer power.
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Sampled
+/// >>> from prospicio.pricing import classical_premium
+/// >>> classical_premium("standard_deviation", Sampled([0.0, 10.0]), 0.2)
+/// 6.0
+#[pyfunction]
+#[pyo3(signature = (principle, dist, loading, q=2.0))]
+pub(crate) fn classical_premium(
+    principle: &str,
+    dist: &Bound<'_, PyAny>,
+    loading: f64,
+    q: f64,
+) -> PyResult<f64> {
+    let (x, p) = discrete_of(dist, None)?;
+    self::principle(principle, loading, q)?
+        .premium(&x, &p)
+        .map_err(to_py)
+}
+
+/// The loading of a classical premium principle that gives ``premium``;
+/// see ``classical_premium``.
+///
+/// Parameters
+/// ----------
+/// principle : str
+/// dist : Sampled, Grid or PredictiveDistribution
+/// premium : float
+/// q : float, default 2.0
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+#[pyo3(signature = (principle, dist, premium, q=2.0))]
+pub(crate) fn calibrate_classical(
+    principle: &str,
+    dist: &Bound<'_, PyAny>,
+    premium: f64,
+    q: f64,
+) -> PyResult<f64> {
+    let (x, p) = discrete_of(dist, None)?;
+    let p = classical::calibrate(kind(principle, q)?, &x, &p, premium).map_err(to_py)?;
+    Ok(loading_of(p))
 }

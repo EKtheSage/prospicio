@@ -301,6 +301,42 @@ fn natural_allocation_matches_aggregate() {
                 let i = port.units().iter().position(|u| u == c.get("quantity"))?;
                 Some(port.bodoff(assets)[i])
             }
+            "bounds" => {
+                let premium: f64 = params.get("premium")?.parse().ok()?;
+                let (unit, side) = c.get("quantity").split_once('.')?;
+                let i = port.units().iter().position(|u| u == unit)?;
+                let b = &port.premium_bounds(premium, assets).ok()?[i];
+                Some(if side == "lower" { b.lower } else { b.upper })
+            }
+            "classical" => {
+                use prospicio_pricing::classical::{Kind, Principle, calibrate};
+                let premium: f64 = params.get("premium")?.parse().ok()?;
+                let kind = match c.get("quantity") {
+                    "Expected Value" => Kind::ExpectedValue,
+                    "VaR" => Kind::Var,
+                    "Variance" => Kind::Variance,
+                    "Standard Deviation" => Kind::StandardDeviation,
+                    "Semi-Variance" => Kind::SemiVariance,
+                    "Exponential" => Kind::Exponential,
+                    "Esscher" => Kind::Esscher,
+                    "Dutch" => Kind::Dutch,
+                    "Fischer" => Kind::Fischer { q: 2.0 },
+                    _ => return None,
+                };
+                Some(
+                    match calibrate(kind, port.totals(), port.probs(), premium).ok()? {
+                        Principle::ExpectedValue(t)
+                        | Principle::Variance(t)
+                        | Principle::StandardDeviation(t)
+                        | Principle::SemiVariance(t)
+                        | Principle::Exponential(t)
+                        | Principle::Esscher(t)
+                        | Principle::Dutch(t)
+                        | Principle::Var(t) => t,
+                        Principle::Fischer { theta, .. } => theta,
+                    },
+                )
+            }
             _ => None,
         }
     });

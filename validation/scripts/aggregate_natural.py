@@ -18,7 +18,15 @@ each with probabilities 1/2, 1/4, 1/4, built by `aggregate.build` (which
 convolves the units by FFT), priced at a 10% cost of capital at assets
 100, 90 and 11. Its rows carry `case=discrete` in `params`.
 
-Rows: `distribution` is `price` or `bodoff`; `params` names the
+Pricing bounds (`aggregate.bounds.AllocationBounds`): each unit's lowest
+and highest premium over the distortions that price InsCo at 53.565 with
+assets 100, and at 47 with assets 65 (`distribution` `bounds`, quantity
+`X1.lower`). And the classical premium principles
+(`aggregate.pedagogy.ClassicalPremium`) on InsCo's total, calibrated to
+53.565: the loading of each (`distribution` `classical`). aggregate's
+Fischer principle reads a power it never sets; the script sets it to 2.
+
+Rows: `distribution` is `price`, `bodoff`, `bounds` or `classical`; `params` names the
 distortion, allocation and assets; `quantity` is the unit and the column
 (`X1.P`); `expected` is aggregate's value. aggregate computes on a grid
 with bucket 1, which holds every total, so the only differences are the
@@ -32,6 +40,8 @@ import warnings
 import aggregate
 import pandas as pd
 from aggregate import Distortion, Portfolio, build
+from aggregate.bounds import AllocationBounds
+from aggregate.pedagogy import ClassicalPremium
 
 OUT = "validation/reference/natural_aggregate.csv"
 SOURCE = f"aggregate {aggregate.__version__}"
@@ -72,6 +82,22 @@ def main():
     discrete = build("port Discrete agg X1 1 claim dsev [0 8 10] [1/2 1/4 1/4] fixed "
                      "agg X2 1 claim dsev [0 1 90] [1/2 1/4 1/4] fixed", bs=1, log2=8)
     priced("discrete", discrete, 0.1, [100, 90, 11], ["X1", "X2"], rows)
+    for premium, a in [(53.565217391304344, 100), (47.0, 65)]:
+        b = AllocationBounds(insco, a=a).bounds([premium])
+        for u in ["X1", "X2", "X3"]:
+            for side in ["lower", "upper"]:
+                rows.append(["bounds", f"case=insco;assets={a};premium={premium!r}", f"{u}.{side}",
+                             "", "", repr(float(b.loc[(premium, u), side])), "1e-9", "0.0", SOURCE])
+    classical = ClassicalPremium({"InsCo": insco}, 53.565217391304344)
+    # aggregate reads a Fischer power `self.p` that it never sets; set q = 2.
+    classical.p = 2
+    loadings = classical.calibrate("InsCo", "total", 53.565217391304344)
+    for method, value in loadings.items():
+        # Newton for the nonlinear ones (and Dutch, Fischer, Semi-Variance,
+        # which aggregate also solves numerically); closed forms elsewhere.
+        tol = "1e-12" if method in ("Expected Value", "Variance", "Standard Deviation") else "1e-7"
+        rows.append(["classical", "case=insco;assets=100;premium=53.565217391304344", method,
+                     "", "", repr(float(value)), "0.0", tol, SOURCE])
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "arg2", "expected",

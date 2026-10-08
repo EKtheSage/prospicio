@@ -92,9 +92,16 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   the capital standard; `calibrate(Family, a, Target)` to a premium,
   return or loss ratio. `Pentagon` holds `L, M, P, Q, a` and
   `Pentagon::solve` fills it from any three determining amounts or ratios.
-  Python `prospicio.pricing.Portfolio`, `NaturalPrice`, `Pentagon`; R
-  `capital_portfolio()`, `natural_price()`, `calibrate_portfolio()`,
-  `bodoff_allocation()`, `epd_ratio()`, `assets_for_epd()`, `pentagon()`.
+  `premium_bounds(premium, a)` gives each unit's range over every
+  distortion with that total price. Python `prospicio.pricing.Portfolio`,
+  `NaturalPrice`, `Pentagon`; R `capital_portfolio()`, `natural_price()`,
+  `calibrate_portfolio()`, `bodoff_allocation()`, `epd_ratio()`,
+  `assets_for_epd()`, `pentagon()`, `premium_bounds()`.
+- `prospicio_pricing::classical`: the classical premium principles that
+  *Pricing Insurance Risk* compares against (expected value, variance,
+  standard deviation, semi-variance, exponential, Esscher, Dutch, Fischer,
+  VaR), each with `calibrate` for its loading. Python
+  `classical_premium`, `calibrate_classical`; R the same names.
 
 ## Decisions
 
@@ -202,6 +209,15 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   chosen. `S` is summed from the top and is exactly 0 at the largest
   total, which a distortion with a mass needs: a rounding residue there
   would add `mass × max` to the price.
+- **Pricing bounds enumerate BiTVaRs exactly.** The distortions with a
+  given price of `X ∧ a` form a convex set whose extreme points are
+  BiTVaRs, and a unit's premium is linear in the distortion. On a discrete
+  total, `TVaR_p` and each unit's share are linear in `p` between the
+  cumulative probabilities of `X ∧ a`, so it is enough to pair those
+  knots (and `p*`, where `TVaR_p* = P`) across `p*`: no grid. As in
+  `aggregate`, levels inside the atom at `a` are not knots; under the
+  linear allocation, which uses `P(X > a)`, they would split units
+  differently though they price the total the same.
 - **Tied totals take the probability-weighted mean of the units.**
   `aggregate` takes the unweighted mean of tied scenarios, which differs
   when scenarios have unequal probabilities.
@@ -237,7 +253,10 @@ against `aggregate` 1.0.1 at `1e-10`, 1,060 values: InsCo and the
 FFT), each priced under the CCoC, PH, Wang, dual and TVaR distortions
 calibrated to it, linear and lifted, at three asset levels including two
 with default; the loss, margin, premium, capital and assets of each unit
-and the total, and Bodoff's allocation. Unit tests check that every
+and the total, and Bodoff's allocation; also the pricing bounds on InsCo
+at two asset levels (`AllocationBounds`) and the classical principles'
+calibrated loadings (`ClassicalPremium`, whose Fischer power the script
+sets to 2 because aggregate reads one it never sets). Unit tests check that every
 allocation adds up, `from_independent` against brute-force enumeration,
 EPD, and that 46 of the 56 triples of pentagon quantities solve.
 

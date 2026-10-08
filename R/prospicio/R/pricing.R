@@ -796,3 +796,71 @@ pentagon <- function(loss = NULL, margin = NULL, premium = NULL, capital = NULL,
   r <- rust_result(pricing_pentagon(names(given), as.double(unlist(given))))
   unlist(r[-1])
 }
+
+#' Pricing bounds
+#'
+#' The range of each unit's premium over every distortion that prices the
+#' portfolio's loss, capped at the assets, at `premium`, under the linear
+#' natural allocation (Mildenhall and Major, *Pricing Insurance Risk*,
+#' chapter 11). The extremes are BiTVaR distortions, found exactly.
+#'
+#' @inheritParams natural_price
+#' @param premium The total premium.
+#' @returns A data frame with `unit`, `lower` and `upper`, and list columns
+#'   `lower_distortion` and `upper_distortion` holding the [distortion]
+#'   that gives each.
+#' @export
+#' @examples
+#' insco <- capital_portfolio(cbind(
+#'   A = c(15, 15, 5, 7, 13, 5, 15, 26, 17, 16),
+#'   B = c(7, 13, 20, 33, 20, 27, 16, 19, 8, 20),
+#'   C = c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64)
+#' ))
+#' premium_bounds(insco, 53.565, assets = 100)[, c("unit", "lower", "upper")]
+premium_bounds <- function(port, premium, assets = NULL, p = NULL) {
+  r <- rust_result(port@ptr$premium_bounds(as.double(premium), portfolio_level(port, assets, p)))
+  out <- data.frame(unit = port@units, lower = r$lower, upper = r$upper)
+  out$lower_distortion <- lapply(r$lower_distortion, function(d) distortion(ptr = d))
+  out$upper_distortion <- lapply(r$upper_distortion, function(d) distortion(ptr = d))
+  out
+}
+
+#' Classical premium principles
+#'
+#' `classical_premium()` prices a distribution under a classical premium
+#' principle with loading `t`; `calibrate_classical()` finds the loading
+#' that gives a premium.
+#'
+#' | `principle` | Premium |
+#' |---|---|
+#' | `"expected_value"` | `(1 + t) mean` |
+#' | `"variance"` | `mean + t var` |
+#' | `"standard_deviation"` | `mean + t sd` |
+#' | `"semi_variance"` | `mean + t E[(X - mean)_+^2]` |
+#' | `"exponential"` | `log(E[exp(t X)]) / t` |
+#' | `"esscher"` | `E[X exp(t X)] / E[exp(t X)]` |
+#' | `"dutch"` | `mean + t E[(X - mean)_+]` |
+#' | `"fischer"` | `mean + t E[(X - mean)_+^q]^(1/q)` |
+#' | `"var"` | the lower `t` quantile |
+#'
+#' @param x A [sampled], [grid_distribution] or [predictive_distribution]
+#'   (its total).
+#' @param principle One of the principles in the table.
+#' @param loading The loading `t`.
+#' @param premium The target premium.
+#' @param q The Fischer power.
+#' @returns A number.
+#' @export
+#' @examples
+#' classical_premium(sampled(c(0, 10)), "standard_deviation", 0.2) # 6
+#' insco <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+#' calibrate_classical(insco, "esscher", (46.6 + 15) / 1.15)
+classical_premium <- function(x, principle, loading, q = 2) {
+  rust_result(pricing_classical_premium(x@ptr, principle, as.double(loading), as.double(q)))
+}
+
+#' @rdname classical_premium
+#' @export
+calibrate_classical <- function(x, principle, premium, q = 2) {
+  rust_result(pricing_calibrate_classical(x@ptr, principle, as.double(premium), as.double(q)))
+}

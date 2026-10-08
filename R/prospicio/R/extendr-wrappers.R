@@ -82,6 +82,10 @@ pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__prici
 
 pricing_pentagon <- function(names, values) .Call(wrap__pricing_pentagon, names, values)
 
+pricing_classical_premium <- function(x, principle, loading, q) .Call(wrap__pricing_classical_premium, x, principle, loading, q)
+
+pricing_calibrate_classical <- function(x, principle, premium, q) .Call(wrap__pricing_calibrate_classical, x, principle, premium, q)
+
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
 
 pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)
@@ -1001,6 +1005,8 @@ NaturalPortfolio$bodoff <- function(assets) .Call(wrap__NaturalPortfolio__bodoff
 NaturalPortfolio$epd <- function(assets) .Call(wrap__NaturalPortfolio__epd, self, assets)
 
 NaturalPortfolio$assets_for_epd <- function(epd) .Call(wrap__NaturalPortfolio__assets_for_epd, self, epd)
+
+NaturalPortfolio$premium_bounds <- function(premium, assets) .Call(wrap__NaturalPortfolio__premium_bounds, self, premium, assets)
 
 #' @export
 `$.NaturalPortfolio` <- function (self, name) { func <- NaturalPortfolio[[name]]; environment(func) <- environment(); func }

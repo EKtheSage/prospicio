@@ -96,6 +96,8 @@ reference:
       - calibrate_portfolio
       - bodoff_allocation
       - pentagon
+      - premium_bounds
+      - classical_premium
       - mbbefd
       - tabulated_curve
       - risk_profile

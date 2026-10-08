@@ -5,6 +5,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
+use prospicio_pricing::classical::{self, Kind, Principle};
 use prospicio_pricing::exposure::{
     ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve,
 };
@@ -752,6 +753,71 @@ impl NaturalPortfolio {
     fn assets_for_epd(&self, epd: f64) -> Result<f64> {
         self.inner.assets_for_epd(epd).map_err(to_r)
     }
+
+    /// `list(lower, upper, lower_distortion, upper_distortion)`, one entry
+    /// per unit in each.
+    fn premium_bounds(&self, premium: f64, assets: f64) -> Result<List> {
+        let b = self.inner.premium_bounds(premium, assets).map_err(to_r)?;
+        let wrap = |d: &prospicio_prob::Distortion| Robj::from(RiskDistortion { inner: d.clone() });
+        Ok(list!(
+            lower = b.iter().map(|u| u.lower).collect::<Vec<f64>>(),
+            upper = b.iter().map(|u| u.upper).collect::<Vec<f64>>(),
+            lower_distortion = List::from_values(b.iter().map(|u| wrap(&u.lower_distortion))),
+            upper_distortion = List::from_values(b.iter().map(|u| wrap(&u.upper_distortion)))
+        ))
+    }
+}
+
+fn classical_kind(name: &str, q: f64) -> Result<Kind> {
+    Ok(match name {
+        "expected_value" => Kind::ExpectedValue,
+        "variance" => Kind::Variance,
+        "standard_deviation" => Kind::StandardDeviation,
+        "semi_variance" => Kind::SemiVariance,
+        "exponential" => Kind::Exponential,
+        "esscher" => Kind::Esscher,
+        "dutch" => Kind::Dutch,
+        "fischer" => Kind::Fischer { q },
+        "var" => Kind::Var,
+        other => return Err(Error::Other(format!("unknown premium principle {other:?}"))),
+    })
+}
+
+/// The premium of `x` under a classical principle with this loading.
+#[extendr]
+fn pricing_classical_premium(x: Robj, principle: &str, loading: f64, q: f64) -> Result<f64> {
+    let (v, p) = crate::risk::discrete_of(&x)?;
+    let pr = match classical_kind(principle, q)? {
+        Kind::ExpectedValue => Principle::ExpectedValue(loading),
+        Kind::Variance => Principle::Variance(loading),
+        Kind::StandardDeviation => Principle::StandardDeviation(loading),
+        Kind::SemiVariance => Principle::SemiVariance(loading),
+        Kind::Exponential => Principle::Exponential(loading),
+        Kind::Esscher => Principle::Esscher(loading),
+        Kind::Dutch => Principle::Dutch(loading),
+        Kind::Fischer { q } => Principle::Fischer { theta: loading, q },
+        Kind::Var => Principle::Var(loading),
+    };
+    pr.premium(&v, &p).map_err(to_r)
+}
+
+/// The loading of a classical principle that prices `x` at `premium`.
+#[extendr]
+fn pricing_calibrate_classical(x: Robj, principle: &str, premium: f64, q: f64) -> Result<f64> {
+    let (v, p) = crate::risk::discrete_of(&x)?;
+    Ok(
+        match classical::calibrate(classical_kind(principle, q)?, &v, &p, premium).map_err(to_r)? {
+            Principle::ExpectedValue(t)
+            | Principle::Variance(t)
+            | Principle::StandardDeviation(t)
+            | Principle::SemiVariance(t)
+            | Principle::Exponential(t)
+            | Principle::Esscher(t)
+            | Principle::Dutch(t)
+            | Principle::Var(t) => t,
+            Principle::Fischer { theta, .. } => theta,
+        },
+    )
 }
 
 /// The pentagon from three named quantities (`names`, `values`).
@@ -786,6 +852,8 @@ extendr_module! {
     mod pricing;
     impl NaturalPortfolio;
     fn pricing_pentagon;
+    fn pricing_classical_premium;
+    fn pricing_calibrate_classical;
     impl CollectiveModel;
     impl TowerModel;
     impl Mbbefd;

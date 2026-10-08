@@ -7452,6 +7452,24 @@ class Portfolio:
         -------
         list of float
         """
+    def premium_bounds(self, /, premium: float, assets: float |None = None, p: float |None = None) -> list[dict]:
+        """
+        The range of each unit's premium over every distortion that prices
+        the total, capped at the assets, at ``premium`` (linear allocation).
+        The extremes are BiTVaR distortions, found exactly.
+        
+        Parameters
+        ----------
+        premium : float
+        assets : float, optional
+        p : float, optional
+        
+        Returns
+        -------
+        list of dict
+            One per unit: ``unit``, ``lower``, ``upper``, and the Distortion
+            giving each, ``lower_distortion`` and ``upper_distortion``.
+        """
     def price(self, /, distortion: Distortion, assets: float |None = None, p: float |None = None, allocation: str = "linear") -> NaturalPrice:
         """
         The premium of the loss capped at the assets, and its natural
@@ -9995,6 +10013,23 @@ def calibrate(family: str, dist: Any, premium: float, assets: float |None = None
     True
     """
 
+def calibrate_classical(principle: str, dist: Any, premium: float, q: float = 2.0) -> float:
+    """
+    The loading of a classical premium principle that gives ``premium``;
+    see ``classical_premium``.
+    
+    Parameters
+    ----------
+    principle : str
+    dist : Sampled, Grid or PredictiveDistribution
+    premium : float
+    q : float, default 2.0
+    
+    Returns
+    -------
+    float
+    """
+
 def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "euler") -> Allocation:
     """
     Allocates the distortion risk measure of a portfolio's total to its
@@ -10066,6 +10101,39 @@ def claim_count(mean: float, dispersion: float) -> Any:
     >>> from prospicio.distributions import claim_count
     >>> claim_count(4.0, 2.5)
     NegativeBinomial(r=2.6666666666666665, beta=1.5)
+    """
+
+def classical_premium(principle: str, dist: Any, loading: float, q: float = 2.0) -> float:
+    """
+    The premium of a distribution under a classical premium principle.
+    
+    Parameters
+    ----------
+    principle : str
+        ``"expected_value"`` (``(1 + t) mean``), ``"variance"``
+        (``mean + t var``), ``"standard_deviation"``, ``"semi_variance"``
+        (``mean + t E[(X - mean)+**2]``), ``"exponential"``
+        (``log E[exp(t X)] / t``), ``"esscher"``
+        (``E[X exp(t X)] / E[exp(t X)]``), ``"dutch"``
+        (``mean + t E[(X - mean)+]``), ``"fischer"``
+        (``mean + t E[(X - mean)+**q]**(1/q)``) or ``"var"`` (the lower ``t``
+        quantile).
+    dist : Sampled, Grid or PredictiveDistribution
+        A predictive distribution is priced on its total.
+    loading : float
+    q : float, default 2.0
+        The Fischer power.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.pricing import classical_premium
+    >>> classical_premium("standard_deviation", Sampled([0.0, 10.0]), 0.2)
+    6.0
     """
 
 def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:

@@ -743,6 +743,107 @@ impl Portfolio {
         out
     }
 
+    /// The range of each unit's premium over every distortion that prices
+    /// `X ∧ a` at `premium`, under the linear allocation: Mildenhall and
+    /// Major's pricing bounds (*Pricing Insurance Risk*, chapter 11).
+    ///
+    /// The distortions with a given price form a convex set whose extreme
+    /// points are BiTVaRs: weight `1 - w` on `TVaR_p0` and `w` on
+    /// `TVaR_p1`, with `TVaR_p0 <= premium <= TVaR_p1`. A unit's premium is
+    /// linear in the distortion, so its range is attained at one of them.
+    /// On a discrete total, `TVaR_p` and each unit's share are linear in
+    /// `p` between the cumulative probabilities of `X ∧ a`, so the levels
+    /// `p0` and `p1` need only range over those knots, 0, and the
+    /// level `p*` with `TVaR_p* = premium`: the search is exact. (The top
+    /// knot already gives the maximum, so 1 is not needed.) As in
+    /// `aggregate`, a level inside the atom at `a` is not a knot: it prices
+    /// `X ∧ a` the same as the atom's lower end, though the linear
+    /// allocation, which uses `P(X > a)`, can split it differently.
+    pub fn premium_bounds(&self, premium: f64, a: f64) -> Result<Vec<PremiumBound>> {
+        let capped: Vec<f64> = self.x.iter().map(|x| x.min(a)).collect();
+        let (mean, _) = self.limited_expected(a);
+        let top = capped[capped.len() - 1];
+        if !(premium >= mean && premium <= top) {
+            return Err(Error::Data(format!(
+                "the premium must lie between E[X ∧ a] = {mean} and {top}, not {premium}"
+            )));
+        }
+        let tvar =
+            |p: f64| -> Result<f64> { Ok(Distortion::tvar(p)?.apply_discrete(&capped, &self.p)) };
+        let p_star =
+            prospicio_math::roots::bisect(0.0, 1.0, |p| tvar(p).is_ok_and(|t| t < premium));
+        let mut knots = vec![0.0, p_star];
+        // The knots of X ∧ a: cumulative probabilities below the assets.
+        let mut cum = 0.0;
+        for (&x, &pk) in self.x.iter().zip(&self.p) {
+            cum += pk;
+            if x < a && cum < 1.0 {
+                knots.push(cum);
+            }
+        }
+        knots.sort_by(f64::total_cmp);
+        knots.dedup();
+        let m = self.units.len();
+        // Each unit's premium, and the total's, under TVaR at each knot.
+        let mut t = Vec::with_capacity(knots.len());
+        let mut units = Vec::with_capacity(knots.len());
+        for &p in &knots {
+            t.push(tvar(p)?);
+            let price = self.price(&Distortion::tvar(p)?, a, Allocation::Linear)?;
+            units.push(
+                price
+                    .allocated
+                    .iter()
+                    .map(|u| u.premium)
+                    .collect::<Vec<f64>>(),
+            );
+        }
+        let mut best: Vec<PremiumBound> = (0..m)
+            .map(|_| PremiumBound {
+                lower: f64::INFINITY,
+                upper: f64::NEG_INFINITY,
+                lower_distortion: Distortion::Tvar(p_star),
+                upper_distortion: Distortion::Tvar(p_star),
+            })
+            .collect();
+        let tol = 1e-12 * premium.abs().max(1.0);
+        for i in 0..knots.len() {
+            if t[i] > premium + tol {
+                continue;
+            }
+            for j in i..knots.len() {
+                if t[j] < premium - tol {
+                    continue;
+                }
+                let w = if t[j] - t[i] > tol {
+                    (premium - t[i]) / (t[j] - t[i])
+                } else {
+                    0.0
+                };
+                if !(0.0..=1.0).contains(&w) {
+                    continue;
+                }
+                for (u, b) in best.iter_mut().enumerate() {
+                    let v = (1.0 - w) * units[i][u] + w * units[j][u];
+                    let g = || Distortion::BiTvar {
+                        p0: knots[i],
+                        p1: knots[j],
+                        w,
+                    };
+                    if v < b.lower {
+                        b.lower = v;
+                        b.lower_distortion = g();
+                    }
+                    if v > b.upper {
+                        b.upper = v;
+                        b.upper_distortion = g();
+                    }
+                }
+            }
+        }
+        Ok(best)
+    }
+
     /// The member of `family` that prices `X ∧ a` at the target.
     pub fn calibrate(&self, family: Family, a: f64, target: Target) -> Result<Distortion> {
         let (loss, _) = self.limited_expected(a);
@@ -754,6 +855,20 @@ impl Portfolio {
         let capped: Vec<f64> = self.x.iter().map(|x| x.min(a)).collect();
         calibrate(family, &capped, &self.p, premium)
     }
+}
+
+/// The range of one unit's premium over the distortions with a given
+/// total price, from [`Portfolio::premium_bounds`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct PremiumBound {
+    /// The smallest premium.
+    pub lower: f64,
+    /// The largest premium.
+    pub upper: f64,
+    /// A BiTVaR that gives the smallest.
+    pub lower_distortion: Distortion,
+    /// A BiTVaR that gives the largest.
+    pub upper_distortion: Distortion,
 }
 
 /// What a calibrated distortion must reproduce.
@@ -923,6 +1038,43 @@ mod tests {
         // {L, P, LR}, {P, Q, PQ}, {M, Q, ι}, and the like.
         assert_eq!(solved, 46);
         assert!(Pentagon::solve([(Loss, 1.0), (Margin, 1.0), (Premium, 2.0)]).is_err());
+    }
+
+    #[test]
+    fn premium_bounds_match_aggregate() {
+        // aggregate 1.0.1 AllocationBounds on InsCo, to its printed digits.
+        let port = insco();
+        let b = port.premium_bounds(53.565217391304344, 100.0).unwrap();
+        let want = [
+            (13.097826, 15.032744),
+            (17.465726, 20.411685),
+            (19.254738, 22.098038),
+        ];
+        for (got, (lo, hi)) in b.iter().zip(want) {
+            assert!(
+                (got.lower - lo).abs() < 1e-6 && (got.upper - hi).abs() < 1e-6,
+                "{got:?}"
+            );
+        }
+        let b = port.premium_bounds(47.0, 65.0).unwrap();
+        let want = [
+            (12.374586, 13.881867),
+            (16.335616, 19.292994),
+            (15.057851, 17.671233),
+        ];
+        for (got, (lo, hi)) in b.iter().zip(want) {
+            assert!(
+                (got.lower - lo).abs() < 1e-6 && (got.upper - hi).abs() < 1e-6,
+                "{got:?}"
+            );
+        }
+        // Each bound's distortion prices the total at the premium.
+        let capped: Vec<f64> = port.totals().iter().map(|x| x.min(65.0)).collect();
+        for u in &b {
+            for d in [&u.lower_distortion, &u.upper_distortion] {
+                assert!((d.apply_discrete(&capped, port.probs()) - 47.0).abs() < 1e-9);
+            }
+        }
     }
 
     #[test]

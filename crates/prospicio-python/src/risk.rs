@@ -475,7 +475,10 @@ fn repr(d: &Distortion) -> String {
 
 /// The values, ascending, and their probabilities, of a Sampled, Grid or
 /// PredictiveDistribution (its total), capped at ``assets`` when given.
-fn discrete_of(dist: &Bound<'_, PyAny>, assets: Option<f64>) -> PyResult<(Vec<f64>, Vec<f64>)> {
+pub(crate) fn discrete_of(
+    dist: &Bound<'_, PyAny>,
+    assets: Option<f64>,
+) -> PyResult<(Vec<f64>, Vec<f64>)> {
     let (mut x, p): (Vec<f64>, Vec<f64>) = if let Ok(s) = dist.extract::<PyRef<'_, PySampled>>() {
         let v = s.inner.sorted().to_vec();
         let n = v.len() as f64;

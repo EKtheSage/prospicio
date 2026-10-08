@@ -252,7 +252,7 @@ fn distortions_of(parts: &List) -> Result<Vec<Distortion>> {
 
 /// The values, ascending, and their probabilities, of a sampled, grid or
 /// predictive distribution (its total).
-fn discrete_of(x: &Robj) -> Result<(Vec<f64>, Vec<f64>)> {
+pub(crate) fn discrete_of(x: &Robj) -> Result<(Vec<f64>, Vec<f64>)> {
     let equal = |v: &[f64]| {
         let n = v.len() as f64;
         (v.to_vec(), vec![1.0 / n; v.len()])

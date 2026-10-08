@@ -234,3 +234,18 @@ def test_natural_from_independent_and_predictive():
     from_pd = Portfolio.from_predictive(pd)
     assert from_pd.units == ["A", "B", "C"]
     assert from_pd.totals == [22, 28, 36, 40, 55, 65, 100]
+
+
+def test_premium_bounds_and_classical():
+    from prospicio.distributions import Sampled
+    from prospicio.pricing import Portfolio, calibrate_classical, classical_premium
+
+    port = Portfolio(["A", "B", "C"], INSCO_ROWS)
+    b = port.premium_bounds(53.565217391304344, assets=100)
+    assert [round(u["lower"], 9) for u in b] == [13.097826087, 17.465726051, 19.254738016]
+    assert b[2]["upper"] == pytest.approx(22.098038028339595, abs=1e-9)
+    x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+    assert calibrate_classical("esscher", x, 53.565217391304344) == pytest.approx(0.012851355964986997, rel=1e-8)
+    assert classical_premium("standard_deviation", Sampled([0.0, 10.0]), 0.2) == 6.0
+    with pytest.raises(ValueError):
+        classical_premium("nope", x, 0.1)

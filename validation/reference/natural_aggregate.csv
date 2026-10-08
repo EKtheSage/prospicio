@@ -1059,3 +1059,24 @@ bodoff,case=discrete;assets=100,X1,,,10.35493346978041,1e-10,0.0,aggregate 1.0.1
 bodoff,case=discrete;assets=100,X2,,,89.6450665302196,1e-10,0.0,aggregate 1.0.1
 bodoff,case=discrete;assets=90,X1,,,9.42840285753551,1e-10,0.0,aggregate 1.0.1
 bodoff,case=discrete;assets=90,X2,,,80.5715971424645,1e-10,0.0,aggregate 1.0.1
+bounds,case=insco;assets=100;premium=53.565217391304344,X1.lower,,,13.09782608695652,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=100;premium=53.565217391304344,X1.upper,,,15.032744226390545,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=100;premium=53.565217391304344,X2.lower,,,17.465726050623715,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=100;premium=53.565217391304344,X2.upper,,,20.411684782608695,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=100;premium=53.565217391304344,X3.lower,,,19.25473801560758,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=100;premium=53.565217391304344,X3.upper,,,22.098038028339595,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=65;premium=47.0,X1.lower,,,12.374585635359114,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=65;premium=47.0,X1.upper,,,13.881867145421904,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=65;premium=47.0,X2.lower,,,16.335616438356162,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=65;premium=47.0,X2.upper,,,19.29299363057325,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=65;premium=47.0,X3.lower,,,15.057851239669422,1e-9,0.0,aggregate 1.0.1
+bounds,case=insco;assets=65;premium=47.0,X3.upper,,,17.671232876712338,1e-9,0.0,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,Expected Value,,,0.14946818436275433,0.0,1e-12,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,VaR,,,0.7000000000000001,0.0,1e-7,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,Variance,,,0.015483766208661614,0.0,1e-12,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,Standard Deviation,,,0.3284018844030291,0.0,1e-12,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,Semi-Variance,,,0.02136124180018998,0.0,1e-7,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,Exponential,,,0.02457469509474005,0.0,1e-7,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,Esscher,,,0.012851355964986997,0.0,1e-7,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,Dutch,,,0.8684809714843329,0.0,1e-7,aggregate 1.0.1
+classical,case=insco;assets=100;premium=53.565217391304344,Fischer,,,0.3857274852619927,0.0,1e-7,aggregate 1.0.1

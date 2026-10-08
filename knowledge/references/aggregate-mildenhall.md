@@ -74,3 +74,10 @@ sources:
     CCoC mass times the maximum to the price.
   * 1.0.1 has no `epd` kind in `var_dict`; `priority_epd_df` gives EPD
     by unit, and refuses a portfolio built from a sample.
+* `AllocationBounds(port, a=).bounds([P])` takes its BiTVaR knots from the
+  cumulative probabilities of `X ∧ a`; a level inside the atom at `a`
+  would price the total the same but split the linear allocation
+  differently, and is not searched.
+* `pedagogy.ClassicalPremium`'s Fischer principle reads `self.p`, which
+  nothing sets, so it raises unless the caller sets it. Its semi-variance
+  principle adds `θ E[(X - μ)₊²]`, not the root.
