@@ -2019,9 +2019,14 @@ class Distortion:
     concave distortion ``g`` of the survival function.
     
     Make one with ``Distortion.tvar``, ``Distortion.wang``,
-    ``Distortion.proportional_hazard``, ``Distortion.dual_power`` or
-    ``Distortion.exponential``. Every one is coherent, and each has a
-    parameter value that gives the mean (or a limit that does).
+    ``Distortion.proportional_hazard``, ``Distortion.dual_power``,
+    ``Distortion.exponential``, ``Distortion.ccoc`` (constant cost of
+    capital), ``Distortion.bitvar``, ``Distortion.weighted_tvar``,
+    ``Distortion.capped_linear``, ``Distortion.capped_log_linear``,
+    ``Distortion.lep``, ``Distortion.linear_yield``, ``Distortion.beta``,
+    ``Distortion.mixture``, ``Distortion.minimum`` or ``Distortion.convex``.
+    Every one is concave, so every measure is coherent. ``calibrate``
+    solves for the parameter that gives a target price.
     
     Examples
     --------
@@ -2034,6 +2039,107 @@ class Distortion:
     [0.0, 0.0, 0.5, 0.5]
     """
     def __repr__(self, /) -> str: ...
+    @staticmethod
+    def beta(a: float, b: float) -> Distortion:
+        """
+        The Beta(a, b) distribution function, concave for ``a <= 1 <= b``.
+        
+        Parameters
+        ----------
+        a : float
+            In ``(0, 1]``.
+        b : float
+            ``>= 1``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def bitvar(p0: float, p1: float, w: float) -> Distortion:
+        """
+        Weight ``1 - w`` on ``TVaR(p0)`` and ``w`` on ``TVaR(p1)``.
+        
+        Parameters
+        ----------
+        p0, p1 : float
+            Levels with ``0 <= p0 <= p1 <= 1``.
+        w : float
+            Weight on ``TVaR(p1)``, in ``[0, 1]``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def capped_linear(r0: float, slope: float) -> Distortion:
+        """
+        Capped linear: ``g(s) = min(1, r0 + slope s)`` for ``s > 0``.
+        
+        Parameters
+        ----------
+        r0 : float
+            Mass on the largest outcome, in ``[0, 1)``.
+        slope : float
+            With ``r0 + slope >= 1``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def capped_log_linear(r0: float, b: float) -> Distortion:
+        """
+        Capped log-linear: ``g(s) = min(1, exp(r0) s**b)``.
+        
+        Parameters
+        ----------
+        r0 : float
+            ``>= 0``.
+        b : float
+            In ``(0, 1]``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def ccoc(r: float) -> Distortion:
+        """
+        Constant cost of capital ``r``: ``g(s) = min(1, d + (1 - d) s)`` for
+        ``s > 0``, ``d = r / (1 + r)``. The price is ``(E[X] + r max X) / (1 + r)``.
+        
+        Parameters
+        ----------
+        r : float
+            Return on capital, ``>= 0``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def convex(points: Sequence[tuple[float, float]]) -> Distortion:
+        """
+        The smallest concave distortion above the points ``(s, g)``, for
+        example layers' exceedance probabilities and their prices per unit
+        of limit (a cat bond's expected loss and spread).
+        
+        Parameters
+        ----------
+        points : list of (float, float)
+            In the unit square, with ``g >= s``.
+        
+        Returns
+        -------
+        Distortion
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> Distortion.convex([(0.1, 0.3), (0.5, 0.55)]).g(0.05)
+        0.15
+        """
     @staticmethod
     def dual_power(beta: float) -> Distortion:
         """
@@ -2075,6 +2181,67 @@ class Distortion:
         -------
         float
         """
+    def g_dual(self, /, s: float) -> float:
+        """
+        The dual distortion ``1 - g(1 - s)``, which gives the bid.
+        
+        Parameters
+        ----------
+        s : float
+        
+        Returns
+        -------
+        float
+        """
+    def g_inv(self, /, y: float) -> float:
+        """
+        The smallest ``s`` with ``g(s) >= y``.
+        
+        Parameters
+        ----------
+        y : float
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def lep(r0: float, r: float) -> Distortion:
+        """
+        Leverage-equivalent pricing:
+        ``g(s) = min(1, d + (1 - d) s + (delta - d) sqrt(s (1 - s)))`` with
+        ``d = r0 / (1 + r0)`` and ``delta = r / (1 + r)``.
+        
+        Parameters
+        ----------
+        r0 : float
+            Minimum rate on line, ``>= 0``.
+        r : float
+            Target return, ``>= r0``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def linear_yield(r0: float, r: float) -> Distortion:
+        """
+        Linear yield: ``g(s) = (r0 + (1 + r) s) / (1 + r0 + r s)``.
+        
+        Parameters
+        ----------
+        r0, r : float
+            Both ``>= 0``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @property
+    def mass(self, /) -> float:
+        """
+        The probability mass on the largest outcome, ``g(0+)``.
+        """
     def measure(self, /, dist: Any) -> float:
         """
         The risk measure of a distribution.
@@ -2087,6 +2254,34 @@ class Distortion:
         Returns
         -------
         float
+        """
+    @staticmethod
+    def minimum(distortions: Sequence[Distortion]) -> Distortion:
+        """
+        The pointwise minimum of distortions.
+        
+        Parameters
+        ----------
+        distortions : list of Distortion
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def mixture(distortions: Sequence[Distortion], weights: Sequence[float]) -> Distortion:
+        """
+        A weighted average of distortions.
+        
+        Parameters
+        ----------
+        distortions : list of Distortion
+        weights : list of float
+            Non-negative, summing to 1.
+        
+        Returns
+        -------
+        Distortion
         """
     @staticmethod
     def proportional_hazard(rho: float) -> Distortion:
@@ -2125,6 +2320,22 @@ class Distortion:
         ----------
         lam : float
             Market price of risk, ``>= 0``.
+        
+        Returns
+        -------
+        Distortion
+        """
+    @staticmethod
+    def weighted_tvar(ps: Sequence[float], wts: Sequence[float]) -> Distortion:
+        """
+        A weighted average of TVaRs.
+        
+        Parameters
+        ----------
+        ps : list of float
+            Strictly ascending levels in ``[0, 1]``.
+        wts : list of float
+            Non-negative weights summing to 1.
         
         Returns
         -------
@@ -9446,6 +9657,37 @@ def alpha_between_layers(a: tuple[float, float, float], b: tuple[float, float, f
     Returns
     -------
     float
+    """
+
+def calibrate(family: str, dist: Any, premium: float, assets: float |None = None, r0: float = 0.0) -> Distortion:
+    """
+    The member of a distortion family whose price of ``dist`` is ``premium``.
+    
+    Parameters
+    ----------
+    family : str
+        ``"ccoc"``, ``"ph"``, ``"wang"``, ``"dual"``, ``"tvar"``, ``"exp"``,
+        ``"clin"``, ``"cll"``, ``"lep"`` or ``"ly"``.
+    dist : Sampled, Grid or PredictiveDistribution
+        A predictive distribution is priced on its total.
+    premium : float
+        The target price, strictly between the (capped) mean and maximum.
+    assets : float, optional
+        Price the loss capped at the assets, ``min(X, assets)``.
+    r0 : float, default 0.0
+        The fixed ``r0`` of the ``clin``, ``cll``, ``lep`` and ``ly`` families.
+    
+    Returns
+    -------
+    Distortion
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.risk import calibrate
+    >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+    >>> calibrate("ccoc", x, (46.6 + 15) / 1.15)
+    Distortion.ccoc(0.15000000000000013)
     """
 
 def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "euler") -> Allocation:

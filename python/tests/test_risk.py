@@ -9,6 +9,7 @@ from prospicio.risk import (
     GaussianCopula,
     StudentTCopula,
     allocate,
+    calibrate,
     capital,
     covar,
     entropic,
@@ -36,6 +37,64 @@ def test_distortions():
     with pytest.raises(TypeError):
         Distortion.tvar(0.5).measure([1.0, 2.0])
     assert repr(Distortion.wang(0.25)) == "Distortion.wang(0.25)"
+
+
+# Monograph 15's InsCo: ten equally likely totals, assets 100, priced at a
+# 15% cost of capital (validation/scripts/aggregate_distortions.py).
+INSCO = Sampled([22.0, 28.0, 36.0, 40.0, 40.0, 40.0, 40.0, 55.0, 65.0, 100.0])
+INSCO_P = (46.6 + 0.15 * 100.0) / 1.15
+
+
+def test_more_distortion_families():
+    ccoc = Distortion.ccoc(0.15)
+    assert ccoc.measure(INSCO) == pytest.approx(INSCO_P, rel=1e-12)
+    assert ccoc.mass == pytest.approx(0.15 / 1.15)
+    bt = Distortion.bitvar(0.0, 1.0, 0.15 / 1.15)
+    assert bt.measure(INSCO) == pytest.approx(INSCO_P, rel=1e-12)
+    others = [
+        Distortion.weighted_tvar([0.1, 0.5, 0.9], [0.2, 0.5, 0.3]),
+        Distortion.capped_linear(0.05, 1.4),
+        Distortion.capped_log_linear(0.1, 0.8),
+        Distortion.lep(0.02, 0.2),
+        Distortion.linear_yield(0.03, 0.5),
+        Distortion.beta(0.6, 1.5),
+        Distortion.mixture([Distortion.wang(0.3), ccoc], [0.4, 0.6]),
+        Distortion.minimum([Distortion.proportional_hazard(0.5), Distortion.tvar(0.6)]),
+        Distortion.convex([(0.01, 0.05), (0.1, 0.25)]),
+    ]
+    for d in others:
+        assert d.g(0.0) == 0.0 and d.g(1.0) == pytest.approx(1.0)
+        assert 46.6 <= d.measure(INSCO) <= 100.0
+        assert d.g_dual(0.3) <= 0.3 + 1e-12
+        assert d.g(d.g_inv(0.4)) >= 0.4 - 1e-12
+        assert repr(d).startswith("Distortion.")
+    with pytest.raises(ValueError):
+        Distortion.bitvar(0.9, 0.2, 0.5)
+    with pytest.raises(ValueError):
+        Distortion.mixture([ccoc], [0.5, 0.5])
+
+
+def test_calibrate_matches_aggregate_on_insco():
+    # aggregate 1.0.1's parameters, to its own calibration tolerance.
+    want = {"ph": 0.7204792831878889, "wang": 0.3427309477594301, "dual": 1.5951514670652984}
+    for family, param in want.items():
+        d = calibrate(family, INSCO, INSCO_P)
+        assert d.measure(INSCO) == pytest.approx(INSCO_P, rel=1e-12)
+        assert d.g(0.3) == pytest.approx(
+            {"ph": Distortion.proportional_hazard, "wang": Distortion.wang, "dual": Distortion.dual_power}[
+                family
+            ](param).g(0.3),
+            rel=1e-6,
+        )
+    ccoc = calibrate("ccoc", INSCO, INSCO_P)
+    assert repr(ccoc).startswith("Distortion.ccoc(0.15")
+    # Capped at assets of 65, the premium must lie below 65.
+    capped = calibrate("tvar", INSCO, 50.0, assets=65.0)
+    assert capped.measure(Sampled([min(x, 65.0) for x in INSCO.draws])) == pytest.approx(50.0, rel=1e-9)
+    with pytest.raises(ValueError):
+        calibrate("tvar", INSCO, 70.0, assets=65.0)
+    with pytest.raises(ValueError):
+        calibrate("nope", INSCO, 50.0)
 
 
 def test_allocation_adds_up():

@@ -1513,11 +1513,25 @@ EvtTail$tvar <- function(p) .Call(wrap__EvtTail__tvar, self, p)
 
 RiskDistortion <- new.env(parent = emptyenv())
 
-RiskDistortion$new <- function(kind, param) .Call(wrap__RiskDistortion__new, kind, param)
+RiskDistortion$new <- function(kind, params, weights, r0) .Call(wrap__RiskDistortion__new, kind, params, weights, r0)
+
+RiskDistortion$mixture <- function(parts, weights) .Call(wrap__RiskDistortion__mixture, parts, weights)
+
+RiskDistortion$minimum <- function(parts) .Call(wrap__RiskDistortion__minimum, parts)
+
+RiskDistortion$convex <- function(s, g) .Call(wrap__RiskDistortion__convex, s, g)
+
+RiskDistortion$calibrate <- function(family, x, premium, assets, r0) .Call(wrap__RiskDistortion__calibrate, family, x, premium, assets, r0)
 
 RiskDistortion$kind <- function() .Call(wrap__RiskDistortion__kind, self)
 
 RiskDistortion$param <- function() .Call(wrap__RiskDistortion__param, self)
+
+RiskDistortion$mass <- function() .Call(wrap__RiskDistortion__mass, self)
+
+RiskDistortion$g_inv <- function(y) .Call(wrap__RiskDistortion__g_inv, self, y)
+
+RiskDistortion$g_dual <- function(s) .Call(wrap__RiskDistortion__g_dual, self, s)
 
 RiskDistortion$g <- function(s) .Call(wrap__RiskDistortion__g, self, s)
 

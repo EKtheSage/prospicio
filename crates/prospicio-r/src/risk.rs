@@ -7,7 +7,7 @@ use prospicio_prob::capital::AllocationMethod;
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
 use prospicio_prob::{
-    Archimedean, ArchimedeanCopula, Distortion, Empirical, GaussianCopula, Provenance,
+    Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
     StudentTCopula,
 };
 
@@ -24,39 +24,157 @@ pub(crate) struct RiskDistortion {
 
 #[extendr]
 impl RiskDistortion {
-    /// `kind` is "tvar", "wang", "proportional_hazard", "dual_power" or
-    /// "exponential".
-    fn new(kind: &str, param: f64) -> Result<Self> {
+    /// `kind` is "tvar", "wang", "proportional_hazard", "dual_power",
+    /// "exponential", "ccoc", "bitvar" (`params` p0, p1, w),
+    /// "weighted_tvar" (`params` the levels, `weights` their weights),
+    /// "capped_linear", "capped_log_linear", "lep", "linear_yield" (with
+    /// `r0`) or "beta" (`params` a, b).
+    fn new(kind: &str, params: &[f64], weights: &[f64], r0: f64) -> Result<Self> {
+        let one = || -> Result<f64> {
+            match params {
+                [x] => Ok(*x),
+                _ => Err(Error::Other(format!(
+                    "a {kind} distortion takes one parameter"
+                ))),
+            }
+        };
         let inner = match kind {
-            "tvar" => Distortion::tvar(param),
-            "wang" => Distortion::wang(param),
-            "proportional_hazard" => Distortion::proportional_hazard(param),
-            "dual_power" => Distortion::dual_power(param),
-            "exponential" => Distortion::exponential(param),
+            "tvar" => Distortion::tvar(one()?),
+            "wang" => Distortion::wang(one()?),
+            "proportional_hazard" => Distortion::proportional_hazard(one()?),
+            "dual_power" => Distortion::dual_power(one()?),
+            "exponential" => Distortion::exponential(one()?),
+            "ccoc" => Distortion::ccoc(one()?),
+            "capped_linear" => Distortion::capped_linear(r0, one()?),
+            "capped_log_linear" => Distortion::capped_log_linear(r0, one()?),
+            "lep" => Distortion::lep(r0, one()?),
+            "linear_yield" => Distortion::linear_yield(r0, one()?),
+            "bitvar" => match params {
+                [p0, p1, w] => Distortion::bitvar(*p0, *p1, *w),
+                _ => {
+                    return Err(Error::Other(
+                        "a bitvar distortion takes c(p0, p1, w)".into(),
+                    ));
+                }
+            },
+            "beta" => match params {
+                [a, b] => Distortion::beta(*a, *b),
+                _ => return Err(Error::Other("a beta distortion takes c(a, b)".into())),
+            },
+            "weighted_tvar" => Distortion::weighted_tvar(params.to_vec(), weights.to_vec()),
             other => return Err(Error::Other(format!("unknown distortion {other:?}"))),
         }
         .map_err(to_r)?;
         Ok(Self { inner })
     }
 
+    /// A weighted average of distortions (a list of `RiskDistortion`).
+    fn mixture(parts: List, weights: &[f64]) -> Result<Self> {
+        let ds = distortions_of(&parts)?;
+        if ds.len() != weights.len() {
+            return Err(Error::Other("give one weight per distortion".into()));
+        }
+        let inner = Distortion::mixture(weights.iter().copied().zip(ds).collect()).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    /// The pointwise minimum of distortions.
+    fn minimum(parts: List) -> Result<Self> {
+        let inner = Distortion::minimum(distortions_of(&parts)?).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    /// The smallest concave distortion above the points `(s, g)`.
+    fn convex(s: &[f64], g: &[f64]) -> Result<Self> {
+        if s.len() != g.len() {
+            return Err(Error::Other("s and g must have the same length".into()));
+        }
+        let pts: Vec<(f64, f64)> = s.iter().copied().zip(g.iter().copied()).collect();
+        Ok(Self {
+            inner: Distortion::convex(&pts).map_err(to_r)?,
+        })
+    }
+
+    /// The member of `family` whose price of `x`, capped at `assets` when
+    /// it is finite, is `premium`.
+    fn calibrate(family: &str, x: Robj, premium: f64, assets: f64, r0: f64) -> Result<Self> {
+        let family = match family {
+            "ccoc" => Family::Ccoc,
+            "proportional_hazard" | "ph" => Family::ProportionalHazard,
+            "wang" => Family::Wang,
+            "dual_power" | "dual" => Family::DualPower,
+            "tvar" => Family::Tvar,
+            "exponential" | "exp" => Family::Exponential,
+            "capped_linear" | "clin" => Family::CappedLinear { r0 },
+            "capped_log_linear" | "cll" => Family::CappedLogLinear { r0 },
+            "lep" => Family::Lep { r0 },
+            "linear_yield" | "ly" => Family::LinearYield { r0 },
+            other => return Err(Error::Other(format!("unknown distortion family {other:?}"))),
+        };
+        let (mut v, p) = discrete_of(&x)?;
+        if assets.is_finite() {
+            v.iter_mut().for_each(|x| *x = x.min(assets));
+        }
+        let inner = prospicio_prob::distortion::calibrate(family, &v, &p, premium).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
     fn kind(&self) -> &'static str {
-        match self.inner {
+        match &self.inner {
             Distortion::Tvar(_) => "tvar",
             Distortion::Wang(_) => "wang",
             Distortion::ProportionalHazard(_) => "proportional_hazard",
             Distortion::DualPower(_) => "dual_power",
             Distortion::Exponential(_) => "exponential",
+            Distortion::Ccoc(_) => "ccoc",
+            Distortion::BiTvar { .. } => "bitvar",
+            Distortion::WeightedTvar { .. } => "weighted_tvar",
+            Distortion::CappedLinear { .. } => "capped_linear",
+            Distortion::CappedLogLinear { .. } => "capped_log_linear",
+            Distortion::Lep { .. } => "lep",
+            Distortion::LinearYield { .. } => "linear_yield",
+            Distortion::Beta { .. } => "beta",
+            Distortion::Mixture(_) => "mixture",
+            Distortion::Minimum(_) => "minimum",
+            Distortion::Convex(_) => "convex",
         }
     }
 
-    fn param(&self) -> f64 {
-        match self.inner {
+    /// The parameters: one for the one-parameter kinds (the slope, `b` or
+    /// `r` of the kinds with an `r0`), `c(p0, p1, w)` for bitvar, the
+    /// levels for weighted_tvar, `c(a, b)` for beta, the weights of a
+    /// mixture, and the knots' `s` for convex.
+    fn param(&self) -> Vec<f64> {
+        match &self.inner {
             Distortion::Tvar(a)
             | Distortion::Wang(a)
             | Distortion::ProportionalHazard(a)
             | Distortion::DualPower(a)
-            | Distortion::Exponential(a) => a,
+            | Distortion::Exponential(a)
+            | Distortion::Ccoc(a) => vec![*a],
+            Distortion::BiTvar { p0, p1, w } => vec![*p0, *p1, *w],
+            Distortion::WeightedTvar { ps, .. } => ps.clone(),
+            Distortion::CappedLinear { slope, .. } => vec![*slope],
+            Distortion::CappedLogLinear { b, .. } => vec![*b],
+            Distortion::Lep { r, .. } | Distortion::LinearYield { r, .. } => vec![*r],
+            Distortion::Beta { a, b } => vec![*a, *b],
+            Distortion::Mixture(parts) => parts.iter().map(|(w, _)| *w).collect(),
+            Distortion::Minimum(_) => vec![],
+            Distortion::Convex(knots) => knots.iter().map(|k| k.0).collect(),
         }
+    }
+
+    /// The probability mass on the largest outcome, `g(0+)`.
+    fn mass(&self) -> f64 {
+        self.inner.mass()
+    }
+
+    fn g_inv(&self, y: &[f64]) -> Vec<f64> {
+        y.iter().map(|&y| self.inner.g_inv(y)).collect()
+    }
+
+    fn g_dual(&self, s: &[f64]) -> Vec<f64> {
+        s.iter().map(|&s| self.inner.g_dual(s)).collect()
     }
 
     fn g(&self, s: &[f64]) -> Vec<f64> {
@@ -114,6 +232,39 @@ impl RiskDistortion {
             .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
         Ok(pd.inner.allocate(&self.inner))
     }
+}
+
+fn distortions_of(parts: &List) -> Result<Vec<Distortion>> {
+    parts
+        .values()
+        .map(|d| {
+            <&RiskDistortion>::try_from(&d)
+                .map(|d| d.inner.clone())
+                .map_err(|_| Error::Other("expected a list of distortions".into()))
+        })
+        .collect()
+}
+
+/// The values, ascending, and their probabilities, of a sampled, grid or
+/// predictive distribution (its total).
+fn discrete_of(x: &Robj) -> Result<(Vec<f64>, Vec<f64>)> {
+    let equal = |v: &[f64]| {
+        let n = v.len() as f64;
+        (v.to_vec(), vec![1.0 / n; v.len()])
+    };
+    if let Ok(s) = <&Sampled>::try_from(x) {
+        return Ok(equal(s.inner.sorted()));
+    }
+    if let Ok(g) = <&Grid>::try_from(x) {
+        let v = (0..g.inner.len()).map(|j| g.inner.x(j)).collect();
+        return Ok((v, g.inner.probs().to_vec()));
+    }
+    if let Ok(p) = <&PredictiveDistribution>::try_from(x) {
+        return Ok(equal(p.inner.total().sorted()));
+    }
+    Err(Error::Other(
+        "expected a sampled, grid_distribution or predictive_distribution".into(),
+    ))
 }
 
 fn as_predictive(pd: &Robj) -> Result<&PredictiveDistribution> {

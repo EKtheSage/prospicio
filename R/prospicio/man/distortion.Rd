@@ -5,15 +5,27 @@
 \title{Distortion risk measure}
 \usage{
 distortion(
-  kind = c("tvar", "wang", "proportional_hazard", "dual_power", "exponential"),
-  param
+  kind = c("tvar", "wang", "proportional_hazard", "dual_power", "exponential", "ccoc",
+    "bitvar", "weighted_tvar", "capped_linear", "capped_log_linear", "lep",
+    "linear_yield", "beta"),
+  param,
+  weights = NULL,
+  r0 = 0,
+  ptr = NULL
 )
 }
 \arguments{
-\item{kind}{One of \code{"tvar"}, \code{"wang"}, \code{"proportional_hazard"},
-\code{"dual_power"} and \code{"exponential"}.}
+\item{kind}{The kind of distortion; see the table.}
 
-\item{param}{The distortion's parameter.}
+\item{param}{The distortion's parameter or parameters.}
+
+\item{weights}{For \code{"weighted_tvar"}, the weights of the levels in
+\code{param}: non-negative, summing to 1.}
+
+\item{r0}{For \code{"capped_linear"}, \code{"capped_log_linear"}, \code{"lep"} and
+\code{"linear_yield"}: the intercept, a minimum rate on line.}
+
+\item{ptr}{Internal.}
 }
 \value{
 A \code{distortion} object with \code{kind} and \code{param} properties. Use it
@@ -21,25 +33,36 @@ with \code{\link[=risk_measure]{risk_measure()}} and \code{\link[=allocate]{allo
 }
 \description{
 A concave distortion \code{g} of the survival function, giving the coherent
-risk measure \verb{rho(X) = integral of g(S(x)) dx}. Every kind has a parameter
-value (or limit) that gives the mean.
+risk measure \verb{rho(X) = integral of g(S(x)) dx}.
 }
 \details{
 \tabular{lll}{
-   \code{kind} \tab \code{g(s)} \tab \code{param} \cr
+   \code{kind} \tab \code{g(s)} for \verb{0 < s < 1} \tab \code{param} \cr
    \code{"tvar"} \tab \code{min(s / (1 - p), 1)} \tab \code{p} in \verb{[0, 1]} \cr
    \code{"wang"} \tab \code{pnorm(qnorm(s) + lambda)} \tab \code{lambda >= 0} \cr
    \code{"proportional_hazard"} \tab \code{s^rho} \tab \code{rho} in \verb{(0, 1]} \cr
    \code{"dual_power"} \tab \code{1 - (1 - s)^beta} \tab \code{beta >= 1} \cr
    \code{"exponential"} \tab \verb{(1 - exp(-k s)) / (1 - exp(-k))} \tab \code{k > 0} \cr
+   \code{"ccoc"} \tab \verb{min(1, d + (1 - d) s)}, \code{d = r / (1 + r)} \tab \code{r >= 0} \cr
+   \code{"bitvar"} \tab \verb{(1 - w) TVaR_p0 + w TVaR_p1} \tab \code{c(p0, p1, w)} \cr
+   \code{"weighted_tvar"} \tab \verb{sum(w_i min(s / (1 - p_i), 1))} \tab the levels \code{p_i}; \code{weights} the \code{w_i} \cr
+   \code{"capped_linear"} \tab \verb{min(1, r0 + slope s)} \tab \code{slope}, with \code{r0} \cr
+   \code{"capped_log_linear"} \tab \verb{min(1, exp(r0) s^b)} \tab \code{b} in \verb{(0, 1]}, with \code{r0} \cr
+   \code{"lep"} \tab \verb{min(1, d0 + (1 - d0) s + (d - d0) sqrt(s (1 - s)))} \tab \code{r >= r0}, with \code{r0} \cr
+   \code{"linear_yield"} \tab \verb{(r0 + (1 + r) s) / (1 + r0 + r s)} \tab \code{r >= 0}, with \code{r0} \cr
+   \code{"beta"} \tab the Beta(a, b) distribution function \tab \code{c(a, b)}, \verb{a <= 1 <= b} \cr
 }
 
 
-The exponential kind is the spectral measure with exponential risk
-aversion; it gives the mean only in the limit \code{k -> 0}.
+\code{"ccoc"} is the constant cost of capital: the price of a loss \code{X} backed
+by assets \verb{max X} is \verb{(E[X] + r max X) / (1 + r)}. It and the kinds with
+\code{r0 > 0} put a probability mass on the largest outcome (\code{\link[=distortion_mass]{distortion_mass()}}).
+See also \code{\link[=distortion_mixture]{distortion_mixture()}}, \code{\link[=distortion_minimum]{distortion_minimum()}},
+\code{\link[=distortion_convex]{distortion_convex()}} and \code{\link[=calibrate_distortion]{calibrate_distortion()}}.
 }
 \examples{
 d <- distortion("wang", 0.5)
 risk_measure(sampled(c(10, 20, 30, 40, 50)), d)
 distortion_g(distortion("dual_power", 2), 0.3)
+risk_measure(sampled(c(1, 2, 3, 4)), distortion("ccoc", 0.25)) # (2.5 + 0.25 * 4) / 1.25
 }

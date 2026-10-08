@@ -43,7 +43,7 @@ pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, Student
 pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
 pub use custom::Custom;
 pub use dist::{Dist, SeverityDist};
-pub use distortion::Distortion;
+pub use distortion::{Distortion, Family};
 pub use distribution::Distribution;
 pub use gamma::Gamma;
 pub use grid::{Discretization, DiscretizationReport, Grid};

@@ -534,7 +534,7 @@ fn premium_rule(
 ) -> PyResult<PremiumRule> {
     match (cost_of_capital, distortion) {
         (Some(r), None) => PremiumRule::cost_of_capital(r).map_err(to_py),
-        (None, Some(d)) => Ok(PremiumRule::Distortion(d.inner)),
+        (None, Some(d)) => Ok(PremiumRule::Distortion(d.inner.clone())),
         _ => Err(PyValueError::new_err(
             "give exactly one of cost_of_capital and distortion",
         )),
@@ -772,7 +772,7 @@ pub(crate) fn price_portfolio(
     distortion: Option<PyRef<'_, PyDistortion>>,
 ) -> PyResult<PyPortfolioPrice> {
     let rule = premium_rule(cost_of_capital, distortion)?;
-    let (pd, a) = (&pd.inner, assets.inner);
+    let (pd, a) = (&pd.inner, assets.inner.clone());
     let inner = py
         .detach(|| risk_load::price_portfolio(pd, &rule, &a))
         .map_err(to_py)?;

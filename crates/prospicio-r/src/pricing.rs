@@ -521,7 +521,7 @@ fn pricing_severity_exposure_curve(severity: Robj, mpl: f64, x: &[f64]) -> Resul
 
 fn distortion_arg(d: &Robj, name: &str) -> Result<prospicio_prob::Distortion> {
     <&RiskDistortion>::try_from(d)
-        .map(|d| d.inner)
+        .map(|d| d.inner.clone())
         .map_err(|_| Error::Other(format!("{name} must be a distortion")))
 }
 

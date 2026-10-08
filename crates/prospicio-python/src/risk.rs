@@ -6,7 +6,7 @@ use prospicio_prob::capital::{Allocation, AllocationMethod};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
 use prospicio_prob::{
-    Archimedean, ArchimedeanCopula, Distortion, Empirical, GaussianCopula, Provenance,
+    Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
     StudentTCopula,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -21,9 +21,14 @@ use crate::to_py;
 /// concave distortion ``g`` of the survival function.
 ///
 /// Make one with ``Distortion.tvar``, ``Distortion.wang``,
-/// ``Distortion.proportional_hazard``, ``Distortion.dual_power`` or
-/// ``Distortion.exponential``. Every one is coherent, and each has a
-/// parameter value that gives the mean (or a limit that does).
+/// ``Distortion.proportional_hazard``, ``Distortion.dual_power``,
+/// ``Distortion.exponential``, ``Distortion.ccoc`` (constant cost of
+/// capital), ``Distortion.bitvar``, ``Distortion.weighted_tvar``,
+/// ``Distortion.capped_linear``, ``Distortion.capped_log_linear``,
+/// ``Distortion.lep``, ``Distortion.linear_yield``, ``Distortion.beta``,
+/// ``Distortion.mixture``, ``Distortion.minimum`` or ``Distortion.convex``.
+/// Every one is concave, so every measure is coherent. ``calibrate``
+/// solves for the parameter that gives a target price.
 ///
 /// Examples
 /// --------
@@ -127,6 +132,256 @@ impl PyDistortion {
         })
     }
 
+    /// Constant cost of capital ``r``: ``g(s) = min(1, d + (1 - d) s)`` for
+    /// ``s > 0``, ``d = r / (1 + r)``. The price is ``(E[X] + r max X) / (1 + r)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// r : float
+    ///     Return on capital, ``>= 0``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn ccoc(r: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::ccoc(r).map_err(to_py)?,
+        })
+    }
+
+    /// Weight ``1 - w`` on ``TVaR(p0)`` and ``w`` on ``TVaR(p1)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p0, p1 : float
+    ///     Levels with ``0 <= p0 <= p1 <= 1``.
+    /// w : float
+    ///     Weight on ``TVaR(p1)``, in ``[0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn bitvar(p0: f64, p1: f64, w: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::bitvar(p0, p1, w).map_err(to_py)?,
+        })
+    }
+
+    /// A weighted average of TVaRs.
+    ///
+    /// Parameters
+    /// ----------
+    /// ps : list of float
+    ///     Strictly ascending levels in ``[0, 1]``.
+    /// wts : list of float
+    ///     Non-negative weights summing to 1.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn weighted_tvar(ps: Vec<f64>, wts: Vec<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::weighted_tvar(ps, wts).map_err(to_py)?,
+        })
+    }
+
+    /// Capped linear: ``g(s) = min(1, r0 + slope s)`` for ``s > 0``.
+    ///
+    /// Parameters
+    /// ----------
+    /// r0 : float
+    ///     Mass on the largest outcome, in ``[0, 1)``.
+    /// slope : float
+    ///     With ``r0 + slope >= 1``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn capped_linear(r0: f64, slope: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::capped_linear(r0, slope).map_err(to_py)?,
+        })
+    }
+
+    /// Capped log-linear: ``g(s) = min(1, exp(r0) s**b)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// r0 : float
+    ///     ``>= 0``.
+    /// b : float
+    ///     In ``(0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn capped_log_linear(r0: f64, b: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::capped_log_linear(r0, b).map_err(to_py)?,
+        })
+    }
+
+    /// Leverage-equivalent pricing:
+    /// ``g(s) = min(1, d + (1 - d) s + (delta - d) sqrt(s (1 - s)))`` with
+    /// ``d = r0 / (1 + r0)`` and ``delta = r / (1 + r)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// r0 : float
+    ///     Minimum rate on line, ``>= 0``.
+    /// r : float
+    ///     Target return, ``>= r0``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn lep(r0: f64, r: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::lep(r0, r).map_err(to_py)?,
+        })
+    }
+
+    /// Linear yield: ``g(s) = (r0 + (1 + r) s) / (1 + r0 + r s)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// r0, r : float
+    ///     Both ``>= 0``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn linear_yield(r0: f64, r: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::linear_yield(r0, r).map_err(to_py)?,
+        })
+    }
+
+    /// The Beta(a, b) distribution function, concave for ``a <= 1 <= b``.
+    ///
+    /// Parameters
+    /// ----------
+    /// a : float
+    ///     In ``(0, 1]``.
+    /// b : float
+    ///     ``>= 1``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn beta(a: f64, b: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::beta(a, b).map_err(to_py)?,
+        })
+    }
+
+    /// A weighted average of distortions.
+    ///
+    /// Parameters
+    /// ----------
+    /// distortions : list of Distortion
+    /// weights : list of float
+    ///     Non-negative, summing to 1.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn mixture(distortions: Vec<PyRef<'_, PyDistortion>>, weights: Vec<f64>) -> PyResult<Self> {
+        if distortions.len() != weights.len() {
+            return Err(PyValueError::new_err("give one weight per distortion"));
+        }
+        let parts = weights
+            .into_iter()
+            .zip(distortions.iter().map(|d| d.inner.clone()))
+            .collect();
+        Ok(Self {
+            inner: Distortion::mixture(parts).map_err(to_py)?,
+        })
+    }
+
+    /// The pointwise minimum of distortions.
+    ///
+    /// Parameters
+    /// ----------
+    /// distortions : list of Distortion
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    #[staticmethod]
+    fn minimum(distortions: Vec<PyRef<'_, PyDistortion>>) -> PyResult<Self> {
+        let parts = distortions.iter().map(|d| d.inner.clone()).collect();
+        Ok(Self {
+            inner: Distortion::minimum(parts).map_err(to_py)?,
+        })
+    }
+
+    /// The smallest concave distortion above the points ``(s, g)``, for
+    /// example layers' exceedance probabilities and their prices per unit
+    /// of limit (a cat bond's expected loss and spread).
+    ///
+    /// Parameters
+    /// ----------
+    /// points : list of (float, float)
+    ///     In the unit square, with ``g >= s``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import Distortion
+    /// >>> Distortion.convex([(0.1, 0.3), (0.5, 0.55)]).g(0.05)
+    /// 0.15
+    #[staticmethod]
+    fn convex(points: Vec<(f64, f64)>) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::convex(&points).map_err(to_py)?,
+        })
+    }
+
+    /// The smallest ``s`` with ``g(s) >= y``.
+    ///
+    /// Parameters
+    /// ----------
+    /// y : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn g_inv(&self, y: f64) -> f64 {
+        self.inner.g_inv(y)
+    }
+
+    /// The dual distortion ``1 - g(1 - s)``, which gives the bid.
+    ///
+    /// Parameters
+    /// ----------
+    /// s : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn g_dual(&self, s: f64) -> f64 {
+        self.inner.g_dual(s)
+    }
+
+    /// The probability mass on the largest outcome, ``g(0+)``.
+    #[getter]
+    fn mass(&self) -> f64 {
+        self.inner.mass()
+    }
+
     /// The distortion ``g(s)`` of a survival probability ``s``.
     ///
     /// Parameters
@@ -180,14 +435,133 @@ impl PyDistortion {
     }
 
     fn __repr__(&self) -> String {
-        match self.inner {
-            Distortion::Tvar(p) => format!("Distortion.tvar({p:?})"),
-            Distortion::Wang(l) => format!("Distortion.wang({l:?})"),
-            Distortion::ProportionalHazard(r) => format!("Distortion.proportional_hazard({r:?})"),
-            Distortion::DualPower(b) => format!("Distortion.dual_power({b:?})"),
-            Distortion::Exponential(k) => format!("Distortion.exponential({k:?})"),
-        }
+        repr(&self.inner)
     }
+}
+
+fn repr(d: &Distortion) -> String {
+    match d {
+        Distortion::Tvar(p) => format!("Distortion.tvar({p:?})"),
+        Distortion::Wang(l) => format!("Distortion.wang({l:?})"),
+        Distortion::ProportionalHazard(r) => format!("Distortion.proportional_hazard({r:?})"),
+        Distortion::DualPower(b) => format!("Distortion.dual_power({b:?})"),
+        Distortion::Exponential(k) => format!("Distortion.exponential({k:?})"),
+        Distortion::Ccoc(r) => format!("Distortion.ccoc({r:?})"),
+        Distortion::BiTvar { p0, p1, w } => format!("Distortion.bitvar({p0:?}, {p1:?}, {w:?})"),
+        Distortion::WeightedTvar { ps, wts } => {
+            format!("Distortion.weighted_tvar({ps:?}, {wts:?})")
+        }
+        Distortion::CappedLinear { r0, slope } => {
+            format!("Distortion.capped_linear({r0:?}, {slope:?})")
+        }
+        Distortion::CappedLogLinear { r0, b } => {
+            format!("Distortion.capped_log_linear({r0:?}, {b:?})")
+        }
+        Distortion::Lep { r0, r } => format!("Distortion.lep({r0:?}, {r:?})"),
+        Distortion::LinearYield { r0, r } => format!("Distortion.linear_yield({r0:?}, {r:?})"),
+        Distortion::Beta { a, b } => format!("Distortion.beta({a:?}, {b:?})"),
+        Distortion::Mixture(parts) => {
+            let ds: Vec<String> = parts.iter().map(|(_, d)| repr(d)).collect();
+            let ws: Vec<f64> = parts.iter().map(|(w, _)| *w).collect();
+            format!("Distortion.mixture([{}], {ws:?})", ds.join(", "))
+        }
+        Distortion::Minimum(parts) => {
+            let ds: Vec<String> = parts.iter().map(repr).collect();
+            format!("Distortion.minimum([{}])", ds.join(", "))
+        }
+        Distortion::Convex(knots) => format!("Distortion.convex({knots:?})"),
+    }
+}
+
+/// The values, ascending, and their probabilities, of a Sampled, Grid or
+/// PredictiveDistribution (its total), capped at ``assets`` when given.
+fn discrete_of(dist: &Bound<'_, PyAny>, assets: Option<f64>) -> PyResult<(Vec<f64>, Vec<f64>)> {
+    let (mut x, p): (Vec<f64>, Vec<f64>) = if let Ok(s) = dist.extract::<PyRef<'_, PySampled>>() {
+        let v = s.inner.sorted().to_vec();
+        let n = v.len() as f64;
+        let p = vec![1.0 / n; v.len()];
+        (v, p)
+    } else if let Ok(g) = dist.extract::<PyRef<'_, PyGrid>>() {
+        let v = (0..g.inner.len()).map(|j| g.inner.x(j)).collect();
+        (v, g.inner.probs().to_vec())
+    } else if let Ok(pd) = dist.extract::<PyRef<'_, PyPredictiveDistribution>>() {
+        let total = pd.inner.total();
+        let v = total.sorted().to_vec();
+        let n = v.len() as f64;
+        let p = vec![1.0 / n; v.len()];
+        (v, p)
+    } else {
+        return Err(PyTypeError::new_err(
+            "expected a Sampled, Grid or PredictiveDistribution",
+        ));
+    };
+    if let Some(a) = assets {
+        x.iter_mut().for_each(|v| *v = v.min(a));
+    }
+    Ok((x, p))
+}
+
+/// The member of a distortion family whose price of ``dist`` is ``premium``.
+///
+/// Parameters
+/// ----------
+/// family : str
+///     ``"ccoc"``, ``"ph"``, ``"wang"``, ``"dual"``, ``"tvar"``, ``"exp"``,
+///     ``"clin"``, ``"cll"``, ``"lep"`` or ``"ly"``.
+/// dist : Sampled, Grid or PredictiveDistribution
+///     A predictive distribution is priced on its total.
+/// premium : float
+///     The target price, strictly between the (capped) mean and maximum.
+/// assets : float, optional
+///     Price the loss capped at the assets, ``min(X, assets)``.
+/// r0 : float, default 0.0
+///     The fixed ``r0`` of the ``clin``, ``cll``, ``lep`` and ``ly`` families.
+///
+/// Returns
+/// -------
+/// Distortion
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Sampled
+/// >>> from prospicio.risk import calibrate
+/// >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+/// >>> calibrate("ccoc", x, (46.6 + 15) / 1.15)
+/// Distortion.ccoc(0.15000000000000013)
+#[pyfunction]
+#[pyo3(signature = (family, dist, premium, assets=None, r0=0.0))]
+pub(crate) fn calibrate(
+    family: &str,
+    dist: &Bound<'_, PyAny>,
+    premium: f64,
+    assets: Option<f64>,
+    r0: f64,
+) -> PyResult<PyDistortion> {
+    let family = family_from(family, r0)?;
+    let (x, p) = discrete_of(dist, assets)?;
+    Ok(PyDistortion {
+        inner: prospicio_prob::distortion::calibrate(family, &x, &p, premium).map_err(to_py)?,
+    })
+}
+
+pub(crate) fn family_from(name: &str, r0: f64) -> PyResult<Family> {
+    Ok(match name {
+        "ccoc" => Family::Ccoc,
+        "ph" | "proportional_hazard" => Family::ProportionalHazard,
+        "wang" => Family::Wang,
+        "dual" | "dual_power" => Family::DualPower,
+        "tvar" => Family::Tvar,
+        "exp" | "exponential" => Family::Exponential,
+        "clin" | "capped_linear" => Family::CappedLinear { r0 },
+        "cll" | "capped_log_linear" => Family::CappedLogLinear { r0 },
+        "lep" => Family::Lep { r0 },
+        "ly" | "linear_yield" => Family::LinearYield { r0 },
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown distortion family {other:?}"
+            )));
+        }
+    })
 }
 
 /// Allocates a distortion risk measure of the total to the components.
@@ -222,7 +596,7 @@ pub(crate) fn allocate(
     pd: PyRef<'_, PyPredictiveDistribution>,
     distortion: PyRef<'_, PyDistortion>,
 ) -> Vec<f64> {
-    let (pd, d) = (&pd.inner, distortion.inner);
+    let (pd, d) = (&pd.inner, distortion.inner.clone());
     py.detach(|| pd.allocate(&d))
 }
 
@@ -546,7 +920,7 @@ pub(crate) fn capital(
                 "method must be one of euler, covariance, proportional, marginal, shapley",
             )
         })?;
-    let (pd, d) = (&pd.inner, distortion.inner);
+    let (pd, d) = (&pd.inner, distortion.inner.clone());
     let inner = py.detach(|| pd.capital(&d, method)).map_err(to_py)?;
     Ok(PyAllocation { inner })
 }

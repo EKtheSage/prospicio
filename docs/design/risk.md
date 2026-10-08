@@ -22,8 +22,18 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 
 - `prospicio_prob::risk::{var_sorted, tvar_sorted}`.
 - `prospicio_prob::Distortion`: `Tvar(p)`, `Wang(λ)`, `ProportionalHazard(ρ)`,
-  `DualPower(β)`, with `g`, `weights(n)`, `apply_sorted`,
-  `apply_discrete`; `Empirical::distortion` and `Grid::distortion`.
+  `DualPower(β)`, `Exponential(k)`, and the families of Mildenhall and
+  Major (*Pricing Insurance Risk*, 2022) and CAS Monograph 15: `Ccoc(r)`
+  (constant cost of capital), `BiTvar`, `WeightedTvar`, `CappedLinear`,
+  `CappedLogLinear`, `Lep`, `LinearYield`, `Beta`, `Mixture`, `Minimum`
+  and `Convex` (the concave hull of `(s, g)` points, for distortions read
+  off cat bond or credit spreads). Methods `g`, `g_inv`, `g_dual` (the
+  bid), `mass` (`g(0+)`), `weights(n)`, `apply_sorted`, `apply_discrete`,
+  `apply_discrete_dual`; `Empirical::distortion` and `Grid::distortion`.
+- `distortion::calibrate(Family, values, probs, premium)`: the member of a
+  one-parameter family (`Family::STANDARD` is CCoC, PH, Wang, dual and
+  TVaR) whose price is the premium. Python `prospicio.risk.calibrate`, R
+  `calibrate_distortion()`; both cap the loss at `assets` when given.
 - `PredictiveDistribution::allocate(&Distortion)`: co-measure allocation
   of the total's risk measure to the components (CoTVaR for `Tvar`).
 - `PredictiveDistribution::capital(&Distortion, AllocationMethod)` in
@@ -73,9 +83,26 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 ## Decisions
 
 - **A distortion is a closed enum** of concave distortions of the
-  survival function, so every measure offered is coherent. Each variant
-  has a parameter value that gives the mean. Custom distortions wait for a
-  use.
+  survival function, so every measure offered is coherent; it is `Clone`,
+  not `Copy`, because mixtures and weighted TVaRs hold vectors. Custom
+  distortions wait for a use. `Beta` needs `a <= 1 <= b` and
+  `CappedLogLinear` `b <= 1` to be concave. aggregate's Wang-t and power
+  distortions are left out: Wang-t is not concave for every parameter,
+  and the power distortion is defined through a severity.
+- **A distortion can put mass on the largest outcome.** `Ccoc`, and
+  `CappedLinear`, `Lep` and `LinearYield` with `r0 > 0`, jump at `s = 0`;
+  `apply_discrete` handles the jump without a special case, because the
+  top value's weight is `g(P(X = max))`, which includes the mass. That is
+  how `Ccoc(r)` prices `ν E[X] + δ max X`.
+- **Calibration solves on the discrete distribution, by bisection.** Every
+  family's price is monotone in its parameter, so bisection (on a log
+  scale for an open-ended parameter, after doubling past the target)
+  reaches full precision; `Ccoc` is closed form,
+  `r = (P - E[X]) / (max X - P)`. The caller caps the loss at the assets
+  (`min(X, a)`) to price a limited-liability portfolio, as Mildenhall and
+  Major do; the premium must lie strictly between the capped mean and
+  maximum. LEP's price is bounded below the maximum (its `g` tends to
+  `min(1, s + √(s (1 - s)))`), so a high premium can have no LEP.
 - **The measure is a weighted sum by rank.** For `n` equally likely draws
   sorted ascending, draw `i` (0-based) gets
   `g((n - i) / n) - g((n - i - 1) / n)`. On a discrete distribution the
@@ -156,10 +183,26 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   each row states where its error comes from. The Wang rows also equal the
   closed form `exp(μ + λσ + σ²/2)` to 16 digits.
 
+`validation/reference/distortion_aggregate.csv`
+(`validation/scripts/aggregate_distortions.py`, Mildenhall's `aggregate`
+1.0.1) checks `g` of every family the two share at twelve levels, at
+`1e-12`, and the Monograph 15 InsCo example: ten equally likely totals,
+assets 100, priced at a 15% cost of capital, `P = 53.565`. The price at
+aggregate's calibrated CCoC, PH, Wang, dual and TVaR parameters matches at
+`1e-12`, and `calibrate` recovers each parameter within aggregate's own
+tolerance: aggregate stops at a premium error (up to `7.6e-6` for TVaR),
+so the script turns that error into a parameter tolerance through the
+price's slope.
+
 Unit tests check that `Tvar(p)` matches `tvar_sorted` for 101 levels, that
 weights are a non-decreasing probability vector, and coherence: translation
 and scale equivariance, bounds between the mean and the maximum, and
-monotonicity in each parameter.
+monotonicity in each parameter. Every family is checked to be
+non-decreasing, above the diagonal and concave on a 1,000-point grid,
+with its mass the limit at 0; `g_inv` against `g`; the bid below the mean
+below the ask; `Ccoc` against the equivalent `BiTvar` and its closed-form
+price; the convex hull dropping interior points and keeping a jump at 0;
+and calibration of every family to three premiums.
 
 `validation/reference/special_scipy.csv` checks `beta_inc` and
 `student_t_cdf` against SciPy at `1e-12`. Copula tests check Kendall's
