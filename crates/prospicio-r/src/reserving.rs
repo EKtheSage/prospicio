@@ -15,10 +15,10 @@ use prospicio_reserving::{
     ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
     ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
     ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
-    Long, Mack, MackBootstrap, MackBootstrapSegment, MackFit as MackInner, MackProcess, Month,
-    OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, ProcessDistribution, ReserveFit,
-    SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
-    Triangle as TriangleInner,
+    Long, Mack, MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit as MackInner,
+    MackProcess, Month, OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod,
+    ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail, TailBondy,
+    TailConstant, TailCurve, Triangle as TriangleInner,
 };
 
 use crate::distributions::PredictiveDistribution;
@@ -145,6 +145,41 @@ fn one_year_method(
                  \"bornhuetter_ferguson\", \"benktander\" or \"cape_cod\", got \"{method}\""
             )));
         }
+    })
+}
+
+/// Mack's bootstrap of `mack_bootstrap()` and `mack_one_year()`.
+fn mack_bootstrap(
+    n_sims: f64,
+    seed: f64,
+    process: &str,
+    average: &str,
+    sigma_interpolation: &str,
+    centre_residuals: bool,
+) -> Result<MackBootstrap> {
+    let n_sims = whole(n_sims, "n_sims")? as usize;
+    if n_sims == 0 {
+        return Err(Error::Other("n_sims must be positive".into()));
+    }
+    let process = match process {
+        "gamma" => MackProcess::Gamma,
+        "lognormal" => MackProcess::Lognormal,
+        "residuals" => MackProcess::Residuals,
+        "normal" => MackProcess::Normal,
+        "none" => MackProcess::None,
+        _ => {
+            return Err(Error::Other(format!(
+                "process must be \"gamma\", \"lognormal\", \"residuals\", \"normal\" or \
+                 \"none\", got \"{process}\""
+            )));
+        }
+    };
+    Ok(MackBootstrap {
+        n_sims,
+        seed: whole(seed, "seed")?,
+        process,
+        development: development(average, sigma_interpolation)?,
+        centre_residuals,
     })
 }
 
@@ -730,6 +765,35 @@ impl Triangle {
         Ok(OdpBootstrapFit { inner })
     }
 
+    /// The lifetime view under Mack's bootstrap: each origin's reserve
+    /// simulated to the last age with `process` ("gamma", "lognormal",
+    /// "residuals", "normal" or "none"), Mack's model averaged as `average`
+    /// with `sigma_interpolation`, and the residuals centred before
+    /// resampling if `centre_residuals`.
+    #[allow(clippy::too_many_arguments)]
+    fn mack_bootstrap(
+        &self,
+        column: &str,
+        n_sims: f64,
+        seed: f64,
+        process: &str,
+        average: &str,
+        sigma_interpolation: &str,
+        centre_residuals: bool,
+    ) -> Result<MackBootstrapFit> {
+        let inner = mack_bootstrap(
+            n_sims,
+            seed,
+            process,
+            average,
+            sigma_interpolation,
+            centre_residuals,
+        )?
+        .fit_segments(&self.inner, column)
+        .map_err(to_r)?;
+        Ok(MackBootstrapFit { inner })
+    }
+
     /// The one-year view of `method` ("chain_ladder", "expected_loss",
     /// "bornhuetter_ferguson", "benktander" or "cape_cod") by re-reserving
     /// on the ODP bootstrap. `exposure` is `NULL` for the chain ladder and
@@ -803,30 +867,14 @@ impl Triangle {
             decay,
             pattern(average, sigma_interpolation, tail)?,
         )?;
-        let n_sims = whole(n_sims, "n_sims")? as usize;
-        if n_sims == 0 {
-            return Err(Error::Other("n_sims must be positive".into()));
-        }
-        let process = match process {
-            "gamma" => MackProcess::Gamma,
-            "lognormal" => MackProcess::Lognormal,
-            "residuals" => MackProcess::Residuals,
-            "normal" => MackProcess::Normal,
-            "none" => MackProcess::None,
-            _ => {
-                return Err(Error::Other(format!(
-                    "process must be \"gamma\", \"lognormal\", \"residuals\", \"normal\" or \
-                     \"none\", got \"{process}\""
-                )));
-            }
-        };
-        let inner = MackBootstrap {
+        let inner = mack_bootstrap(
             n_sims,
-            seed: whole(seed, "seed")?,
+            seed,
             process,
-            development: development(mack_average, mack_sigma_interpolation)?,
+            mack_average,
+            mack_sigma_interpolation,
             centre_residuals,
-        }
+        )?
         .one_year_segments(&self.inner, column, &method)
         .map_err(to_r)?;
         Ok(OneYearFit {
@@ -1474,6 +1522,60 @@ impl OdpBootstrapFit {
     }
 }
 
+/// Mack's bootstrap, the lifetime view, of every segment of a triangle
+/// column. `residuals` is row-major over origin x development, NaN where
+/// there is no residual.
+#[extendr]
+pub(crate) struct MackBootstrapFit {
+    inner: MackBootstrapFits,
+}
+
+#[extendr]
+impl MackBootstrapFit {
+    /// The chain ladder of Mack's model.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self.inner.segments.map(|s| s.mack.chain_ladder.clone()),
+        }
+    }
+
+    /// Mack's model on the observed triangle, without a tail.
+    fn mack(&self) -> MackFit {
+        MackFit {
+            inner: self.inner.segments.map(|s| s.mack.clone()),
+        }
+    }
+
+    fn residuals(&self) -> Result<Vec<f64>> {
+        let s = single(&self.inner.segments, "residuals", "")?;
+        Ok(s.residuals.clone())
+    }
+
+    fn reserves(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
+        })
+    }
+}
+
 /// The simulated one-year view of every segment of a triangle column:
 /// each segment's bootstrap and opening ultimate, and the joint claims
 /// development result, from the ODP bootstrap or Mack's.
@@ -1736,6 +1838,7 @@ extendr_module! {
     impl CapeCodFit;
     impl ClaimsDevelopmentResult;
     impl OdpBootstrapFit;
+    impl MackBootstrapFit;
     impl OneYearFit;
     impl ClarkFit;
 }

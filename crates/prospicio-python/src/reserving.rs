@@ -12,9 +12,10 @@ use prospicio_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit,
     ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
     DevelopmentColumn, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, Long, Mack,
-    MackBootstrap, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap, OdpBootstrapFits,
-    OdpBootstrapSegment, OneYearFits, OneYearMethod, ProcessDistribution, ReserveFit, SegmentFits,
-    SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle, view,
+    MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap,
+    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, ProcessDistribution,
+    ReserveFit, SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
+    Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -4370,12 +4371,14 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
     )))
 }
 
-/// Mack's bootstrap for the one-year view (England, Verrall and Wüthrich
-/// 2019, Appendix 1): the scaled bias-adjusted residuals of the link
-/// ratios are resampled into pseudo factors, and each cumulative value of
-/// the coming year is drawn from the one before ``C`` (the observed latest
+/// Mack's bootstrap for the lifetime and one-year views (England, Verrall
+/// and Wüthrich 2019, Appendix 1): the scaled bias-adjusted residuals of
+/// the link ratios are resampled into pseudo factors, and each future
+/// cumulative value, to the last age (``fit``) or over the coming year
+/// (``one_year``), is drawn from the one before ``C`` (the observed latest
 /// value for the first) with mean ``f* C`` and Mack's variance
-/// ``sigma**2 * abs(C)**(2 - alpha)``. Beside
+/// ``sigma**2 * abs(C)**(2 - alpha)``. The lifetime view's standard
+/// deviation approximates Mack's analytic standard error. Beside
 /// ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
 /// the one-year view under Mack's process: with the volume-weighted chain
 /// ladder and no tail, its standard deviation is
@@ -4527,6 +4530,60 @@ impl PyMackBootstrap {
         self.inner.centre_residuals
     }
 
+    /// The lifetime view: bootstraps one measure column in every segment of
+    /// a cumulative triangle, each with its own Mack model and residuals,
+    /// into one joint distribution of the reserves (EVW's Appendix 1). Each
+    /// simulation resamples the residuals into pseudo factors and draws
+    /// every cumulative value from the latest observed one to the last age,
+    /// each from the one before, with Mack's mean and variance; an origin's
+    /// reserve is its last drawn value less its latest. Mack's model has no
+    /// tail here, so development past the oldest age is not simulated. The
+    /// standard deviation approximates Mack's analytic standard error
+    /// (``Mack.fit``); the mean is the chain ladder's reserve only with
+    /// ``centre_residuals``.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative, with any number of segments and any development
+    ///     grain, every origin observed from the first age to its latest
+    ///     with no negative value.
+    /// column : str
+    ///
+    /// Returns
+    /// -------
+    /// MackBootstrapFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``Mack.fit``, if an origin has a gap before its latest age, or
+    ///     if a cumulative value is negative.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reserving import MackBootstrap, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    /// ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    /// ... )
+    /// >>> fit = MackBootstrap(n_sims=2000, seed=42, centre_residuals=True).fit(tri, "values")
+    /// >>> fit.reserves.components()
+    /// [('2020',), ('2021',), ('2022',), ('2023',)]
+    /// >>> abs(fit.reserves.mean() / fit.chain_ladder.total_reserve - 1) < 0.05
+    /// True
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+    ) -> PyResult<PyMackBootstrapFit> {
+        let (boot, tri) = (self.inner, &triangle.inner);
+        let inner = py.detach(|| boot.fit_segments(tri, column)).map_err(err)?;
+        Ok(PyMackBootstrapFit { inner })
+    }
+
     /// The one-year view of any reserving method under Mack's process, as
     /// ``OdpBootstrap.one_year``: each simulation draws the cells of the
     /// coming twelve months from Mack's bootstrap, each from the one before
@@ -4593,6 +4650,152 @@ impl PyMackBootstrap {
             } else {
                 "False"
             },
+        )
+    }
+}
+
+/// A fitted bootstrap of Mack's model, the lifetime view, of every
+/// segment (``MackBootstrap.fit``).
+///
+/// ``reserves`` is one joint distribution with the triangle's keys and
+/// ``"origin"`` as dimensions, so ``reserves.aggregate(["lob"])`` keeps the
+/// dependence between segments. Per-origin lists run over the origins of
+/// each segment in turn, like the rows of ``to_frame()`` and the
+/// components of ``reserves``. ``residuals`` needs a single-segment fit;
+/// for several segments use ``segment(...)``.
+#[pyclass(name = "MackBootstrapFit", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyMackBootstrapFit {
+    inner: MackBootstrapFits,
+}
+
+#[pymethods]
+impl PyMackBootstrapFit {
+    /// The chain ladder of Mack's model (its averaging): the reserves the
+    /// bootstrap's mean equals with ``centre_residuals=True``.
+    #[getter]
+    fn chain_ladder(&self) -> PyChainLadderFit {
+        PyChainLadderFit {
+            inner: self.inner.segments.map(|s| s.mack.chain_ladder.clone()),
+        }
+    }
+
+    /// Mack's model on the observed triangle, without a tail: the factors
+    /// and sigmas the simulation uses, and the analytic standard errors the
+    /// simulated standard deviations approximate.
+    #[getter]
+    fn mack(&self) -> PyMackFit {
+        PyMackFit {
+            inner: self.inner.segments.map(|s| s.mack.clone()),
+        }
+    }
+
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.segments.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner.segments)
+    }
+
+    /// Origin period of each per-origin value and reserve component.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        origin_labels(&self.inner.segments)
+    }
+
+    /// Development ages in months.
+    #[getter]
+    fn development(&self) -> Vec<Lag> {
+        self.inner.segments.fits[0]
+            .mack
+            .chain_ladder
+            .development
+            .development
+            .clone()
+    }
+
+    /// Mack's scaled bias-adjusted residuals of the link ratios,
+    /// ``[origin][development]``, ``[o][k]`` the link from age ``k`` to
+    /// ``k + 1``; ``nan`` where there is none, from a zero, or behind a
+    /// factor with a single link ratio or a zero sigma. Never centred.
+    #[getter]
+    fn residuals(&self) -> PyResult<Vec<Vec<f64>>> {
+        let flat = &single(&self.inner.segments, "residuals", "")?.residuals;
+        let n_dev = self.development().len();
+        Ok(flat.chunks(n_dev.max(1)).map(<[f64]>::to_vec).collect())
+    }
+
+    /// Joint distribution of the reserve (each origin's last simulated
+    /// cumulative value less its latest) by segment and origin: the
+    /// triangle's keys and ``"origin"`` are its dimensions, one component
+    /// per segment and origin, one row per simulation. Its ``mean`` and
+    /// ``quantile`` describe the total reserve. Columns of
+    /// ``draw_matrix()`` follow ``origins``.
+    #[getter]
+    fn reserves(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    /// One row per segment and origin: the key columns, ``origin``, the
+    /// chain ladder's ``latest``, ``ultimate`` and ``reserve``, and the
+    /// ``mean`` and ``std_dev`` of the bootstrapped reserve. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row per segment: the key columns, the chain ladder's totals, and
+    /// the ``mean`` and ``std_dev`` of the segment's bootstrapped total
+    /// reserve. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// The chain ladders' development factors, one row per segment and
+    /// age, as ``ChainLadderFit.development_frame``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.development_table())
+    }
+
+    /// The bootstrap of one segment, chosen by key values as
+    /// ``ChainLadderFit.segment``, with its part of the joint reserves
+    /// (same dimensions).
+    ///
+    /// Returns
+    /// -------
+    /// MackBootstrapFit
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let keys = segment_keys(keys)?;
+        let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        Ok(Self {
+            inner: self.inner.segment(&keys).map_err(err)?,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MackBootstrapFit({}origins={}, n_sims={})",
+            segments_prefix(&self.inner.segments),
+            self.origins().len(),
+            self.inner.reserves.n_sims(),
         )
     }
 }

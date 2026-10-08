@@ -1229,4 +1229,64 @@ for (simulate in list(odp_one_year, mack_one_year)) {
   stopifnot(all(abs(draw_matrix(fit@cdr)[, 3] - want) < 1e-9))
 }
 
+# The lifetime view of Mack's bootstrap (mack_bootstrap), as in
+# validation/tests/reserving_mack_bootstrap.rs: with centred residuals every
+# origin's and the total standard deviation of the reserves is Mack's
+# analytic standard error, its parameter error scaled by the resampled
+# residuals' variance v, within five Monte Carlo standard errors, and the
+# mean is the chain ladder's reserve within five standard errors of the
+# mean.
+mb <- mack_bootstrap(raa, n_sims = 20000, seed = 20261007, centre_residuals = TRUE)
+stopifnot(S7::S7_inherits(mb, mack_bootstrap_fit), S7::S7_inherits(mb@reserves, predictive_distribution),
+          S7::S7_inherits(mb@mack, mack_fit), S7::S7_inherits(mb@chain_ladder, chain_ladder_fit),
+          provenance(mb@reserves)$model == "mack_bootstrap",
+          identical(mb@reserves@dims, "origin"),
+          identical(mb@origins, raa@origins), identical(mb@development, raa@development),
+          identical(mb@mack@standard_error, mack(raa)@standard_error),
+          identical(dim(mb@residuals), c(10L, 10L)), is.na(mb@residuals["1990", "12"]),
+          all(draw_matrix(mb@reserves)[, 1] == 0))
+pool <- mb@residuals[!is.na(mb@residuals)]
+v <- mean(pool^2) - mean(pool)^2
+mb_draws <- draw_matrix(mb@reserves)
+mb_mack <- mb@mack
+mb_cl <- mb@chain_ladder
+for (j in seq_along(raa@origins)[-1]) {
+  want <- sqrt(mb_mack@process_risk[[j]]^2 + v * mb_mack@parameter_risk[[j]]^2)
+  got <- sd_and_error(mb_draws[, j])
+  stopifnot(abs(got[["sd"]] - want) <= 5 * got[["error"]],
+            abs(mean(mb_draws[, j]) - mb_cl@reserve[[j]]) <= 5 * got[["sd"]] / sqrt(20000))
+}
+mb_total <- sd_and_error(rowSums(mb_draws))
+stopifnot(abs(mb_total[["sd"]] - sqrt(mb_mack@total_process_risk^2 + v * mb_mack@total_parameter_risk^2)) <=
+            5 * mb_total[["error"]],
+          abs(mean(mb@reserves) - mb_cl@total_reserve) <= 5 * mb_total[["sd"]] / sqrt(20000))
+# Uncentred (England, Verrall and Wuthrich's Appendix 1 as written), RAA's
+# pooled residuals have mean 0.14, which biases every pseudo factor: the mean
+# reserve is about 17% above the chain ladder's. The mean does not depend on
+# the process.
+uncentred <- mack_bootstrap(raa, n_sims = 2000, seed = 1, process = "none")
+stopifnot(mean(uncentred@reserves) > 1.1 * mb_cl@total_reserve)
+stopifnot(identical(names(as.data.frame(mb)), c("origin", "latest", "ultimate", "reserve", "mean", "std_dev")),
+          identical(names(totals_frame(mb)), c("latest", "ultimate", "reserve", "mean", "std_dev")),
+          nrow(development_frame(mb)) == 10)
+invisible(utils::capture.output(print(mb)))
+# Settings, reproducibility and segments.
+simple_mb <- mack_bootstrap(raa, n_sims = 200, seed = 1, process = "lognormal", average = "simple",
+                            sigma_interpolation = "mack")
+stopifnot(identical(simple_mb@mack@sigma, mack(raa, average = "simple", sigma_interpolation = "mack")@sigma),
+          identical(draw_matrix(simple_mb@reserves),
+                    draw_matrix(mack_bootstrap(raa, n_sims = 200, seed = 1, process = "lognormal",
+                                               average = "simple", sigma_interpolation = "mack")@reserves)))
+for (process in c("gamma", "lognormal", "residuals", "normal", "none")) {
+  stopifnot(mack_bootstrap(raa, n_sims = 10, process = process)@reserves@n_sims == 10)
+}
+lob_mb <- mack_bootstrap(both, "paid", n_sims = 100, seed = 5)
+stopifnot(identical(lob_mb@reserves@dims, c("lob", "origin")),
+          S7::S7_inherits(segment(lob_mb, lob = "clrd_wkcomp"), mack_bootstrap_fit),
+          nrow(totals_frame(lob_mb)) == 2)
+expect_error_like(lob_mb@residuals, "residuals needs a single-segment fit")
+expect_error_like(mack_bootstrap(raa, process = "poisson"), "should be one of")
+expect_error_like(mack_bootstrap(raa, average = "median"), "should be one of")
+expect_error_like(mack_bootstrap(raa, n_sims = 0), "n_sims must be positive")
+
 cat("prospicio R reserving tests passed\n")

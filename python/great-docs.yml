@@ -157,6 +157,7 @@ reference:
       - reserving.OdpBootstrap
       - reserving.OdpBootstrapFit
       - reserving.MackBootstrap
+      - reserving.MackBootstrapFit
       - reserving.OneYearFit
       - reserving.ClarkLdf
       - reserving.ClarkCapeCod

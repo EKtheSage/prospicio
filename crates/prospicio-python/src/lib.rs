@@ -63,9 +63,9 @@ mod prospicio_native {
     use super::reserving::{
         PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder,
         PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf,
-        PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackFit, PyOdpBootstrap,
-        PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear,
-        PyTriangle,
+        PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit,
+        PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve,
+        PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

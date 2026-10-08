@@ -1140,6 +1140,8 @@ Triangle$cape_cod <- function(column, exposure, trend, decay, average, sigma_int
 
 Triangle$odp_bootstrap <- function(column, n_sims, seed, process) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process)
 
+Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals)
+
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process)
 
 Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals) .Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals)
@@ -1364,6 +1366,30 @@ OdpBootstrapFit$segment <- function(keys, values) .Call(wrap__OdpBootstrapFit__s
 
 #' @export
 `[[.OdpBootstrapFit` <- `$.OdpBootstrapFit`
+
+MackBootstrapFit <- new.env(parent = emptyenv())
+
+MackBootstrapFit$chain_ladder <- function() .Call(wrap__MackBootstrapFit__chain_ladder, self)
+
+MackBootstrapFit$mack <- function() .Call(wrap__MackBootstrapFit__mack, self)
+
+MackBootstrapFit$residuals <- function() .Call(wrap__MackBootstrapFit__residuals, self)
+
+MackBootstrapFit$reserves <- function() .Call(wrap__MackBootstrapFit__reserves, self)
+
+MackBootstrapFit$long_table <- function() .Call(wrap__MackBootstrapFit__long_table, self)
+
+MackBootstrapFit$totals_table <- function() .Call(wrap__MackBootstrapFit__totals_table, self)
+
+MackBootstrapFit$development_table <- function() .Call(wrap__MackBootstrapFit__development_table, self)
+
+MackBootstrapFit$segment <- function(keys, values) .Call(wrap__MackBootstrapFit__segment, self, keys, values)
+
+#' @export
+`$.MackBootstrapFit` <- function (self, name) { func <- MackBootstrapFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.MackBootstrapFit` <- `$.MackBootstrapFit`
 
 OneYearFit <- new.env(parent = emptyenv())
 

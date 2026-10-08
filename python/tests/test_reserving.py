@@ -22,6 +22,7 @@ from prospicio.reserving import (
     ExpectedLossFit,
     Mack,
     MackBootstrap,
+    MackBootstrapFit,
     MackFit,
     OdpBootstrap,
     OdpBootstrapFit,
@@ -1717,3 +1718,92 @@ def test_mack_one_year_every_segment_at_once():
     home = fit.segment(lob="Home")
     assert home.model == "mack" and len(home.cdr.components()) == 4
     assert repr(fit).startswith("OneYearFit(segments=2, origins=8, n_sims=400")
+
+
+# The lifetime view of Mack's bootstrap (MackBootstrap.fit), as in
+# validation/tests/reserving_mack_bootstrap.rs: with centred residuals the
+# total reserve's standard deviation is Mack's analytic standard error and
+# its mean the chain ladder's reserve, within five Monte Carlo standard
+# errors (2.5% of the SD and 0.47% of the mean at 20,000 simulations on
+# GenIns). England, Verrall and Wuthrich (2019), Table 4: total expected
+# reserve 18,684,738 and standard deviation 2,448,700 from 500,000
+# simulations, Mack's rule for the last sigma.
+
+
+def test_mack_bootstrap_lifetime_reconciles_with_mack(triangles):
+    genins = triangles["genins"]
+    boot = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, sigma_interpolation="mack", centre_residuals=True)
+    fit = boot.fit(genins, "values")
+    assert isinstance(fit, MackBootstrapFit)
+    mack = Mack(sigma_interpolation="mack").fit(genins, "values")
+    assert fit.mack.standard_error == mack.standard_error
+    sd, mean = math.sqrt(fit.reserves.variance()), fit.reserves.mean()
+    assert abs(sd / mack.total_standard_error - 1.0) < 0.025
+    assert abs(mean / mack.total_reserve - 1.0) < 0.0047
+    assert abs(sd / 2_448_700 - 1.0) < 0.025
+    assert abs(mean / 18_684_738 - 1.0) < 0.0047
+    # Uncentred (EVW's Appendix 1 as written), the pool's mean biases the
+    # pseudo factors: GenIns's mean reserve is about 0.7% above the chain
+    # ladder's. The mean does not depend on the process.
+    plain = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, process="none").fit(genins, "values")
+    assert plain.reserves.mean() / mack.total_reserve - 1.0 > 0.004
+
+
+def test_mack_bootstrap_lifetime_fields_and_errors(triangles):
+    raa = triangles["raa"]
+    fit = MackBootstrap(n_sims=500, seed=3, average="simple").fit(raa, "values")
+    reserves = fit.reserves
+    assert isinstance(reserves, PredictiveDistribution) and reserves.n_sims == 500
+    assert reserves.dims == ["origin"]
+    assert reserves.components() == [(str(y),) for y in range(1981, 1991)]
+    assert reserves.provenance()["model"] == "mack_bootstrap"
+    assert fit.origins == [str(y) for y in range(1981, 1991)]
+    assert fit.development == list(range(12, 121, 12))
+    assert fit.keys == [] and repr(fit) == "MackBootstrapFit(origins=10, n_sims=500)"
+    # The fully developed origin has no reserve.
+    assert all(row[0] == 0.0 for row in reserves.draw_matrix())
+    # Mack's model averages as asked.
+    mack = Mack(average="simple").fit(raa, "values")
+    assert fit.chain_ladder.ldf == mack.ldf
+    assert fit.mack.standard_error == mack.standard_error
+    # The same draws as a second fit; different from another seed.
+    again = MackBootstrap(n_sims=500, seed=3, average="simple").fit(raa, "values")
+    assert again.reserves.draw_matrix() == reserves.draw_matrix()
+    other = MackBootstrap(n_sims=500, seed=4, average="simple").fit(raa, "values")
+    assert other.reserves.draw_matrix() != reserves.draw_matrix()
+    # Link-ratio residuals, [origin][age], as the one-year view's.
+    one_year = MackBootstrap(n_sims=10, average="simple").one_year(raa, "values", ChainLadder())
+    assert str(fit.residuals) == str(one_year.residuals)
+    with pytest.raises(ValueError, match="n_sims must be positive"):
+        MackBootstrap(n_sims=0)
+    negative = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], [1.0, -2.0, 1.0])
+    with pytest.raises(ValueError, match="non-negative cumulative values"):
+        MackBootstrap(n_sims=10).fit(negative, "values")
+    pytest.importorskip("pandas")
+    frame = fit.to_frame()
+    assert list(frame.columns) == ["origin", "latest", "ultimate", "reserve", "mean", "std_dev"]
+    assert frame["std_dev"].iloc[0] == 0.0
+    assert list(fit.totals_frame()["std_dev"]) == [pytest.approx(math.sqrt(reserves.variance()))]
+    assert len(fit.development_frame()) == 10
+
+
+def test_mack_bootstrap_lifetime_every_segment_at_once():
+    paid = [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]
+    data = {
+        "lob": ["Auto"] * 10 + ["Home"] * 10,
+        "year": ([2019] * 4 + [2020] * 3 + [2021] * 2 + [2022]) * 2,
+        "age": [12, 24, 36, 48, 12, 24, 36, 12, 24, 12] * 2,
+        "paid": paid + [3 * v for v in paid],
+    }
+    tri = Triangle.from_frame(data, "year", "age", "paid", keys="lob")
+    fit = MackBootstrap(n_sims=400, seed=5).fit(tri, "paid")
+    assert fit.reserves.dims == ["lob", "origin"] and len(fit.reserves.components()) == 8
+    assert fit.keys == ["lob"] and fit.mack.keys == ["lob"]
+    with pytest.raises(ValueError, match="residuals needs a single-segment fit"):
+        fit.residuals
+    home = fit.segment(lob="Home")
+    assert isinstance(home, MackBootstrapFit) and len(home.reserves.components()) == 4
+    assert len(home.residuals) == 4
+    by_lob = fit.reserves.aggregate(["lob"])
+    assert len(by_lob.components()) == 2
+    assert repr(fit).startswith("MackBootstrapFit(segments=2, origins=8, n_sims=400")

@@ -38,6 +38,7 @@ generated stub, `NAMESPACE` and `man/`. Whichever merges second merges
 | Clark | R ChainLadder `ClarkLDF`, `ClarkCapeCod` | chainladder-python `ClarkLDF` |
 | One-year view | R ChainLadder `CDR(MackChainLadder(...))`, `dev = "all"` for the full run-off | Merz and Wüthrich (2008), published example |
 | Simulated one-year view | ODP: R ChainLadder `CDR(MackChainLadder(...))` times the measured ODP-to-Mack ratio, `BootChainLadder` for the origin with one cell left. Mack's process: R ChainLadder `CDR(MackChainLadder(...))` itself | England, Verrall and Wüthrich (2019), Tables 2 and 4 |
+| Mack's bootstrap, lifetime view | R ChainLadder `MackChainLadder(...)` process and parameter risks | England, Verrall and Wüthrich (2019), Table 4 |
 
 Each family has its own generator script under `validation/scripts/` and
 reference CSV under `validation/reference/` in the format of
@@ -738,16 +739,20 @@ bias every pseudo factor, `E[f*_k] = f_k + m sigma_k sum(C_k^(alpha / 2))
 / sum(C_k^alpha)`, and so the CDR, whose expectation under Mack's model is
 zero: at 20,000 simulations its mean is -0.214 (RAA), -0.038 (GenIns) and
 +0.176 (ABC) times its standard deviation, which shifts every quantile,
-the 99.5% value at risk included. EVW's Appendix 1 does not centre, and
-their Table 4 shows only a small effect on Taylor–Ashe (GenIns), whose
-pool mean is 0.01. `centre_residuals: true` subtracts `m` from the pool
+the 99.5% value at risk included. EVW's Appendix 1 does not centre, but
+their Table 4 lifetime expected reserves on Taylor–Ashe (GenIns, pool
+mean 0.01) agree with centred residuals (Mack's lifetime view, below).
+`centre_residuals: true` subtracts `m` from the pool
 before resampling, for the pseudo factors and the `Residuals` process.
 Centred, the mean CDR is -0.011, -0.003 and +0.007 times its standard
 deviation, within Monte Carlo error of zero, and the standard deviation
 still reconciles (total 1.003, 1.000 and 0.994 times R's, every origin
 within five standard errors; measured once, not in CI). The default stays
-EVW's, so `MackBootstrap` reproduces their algorithm and Table 4; the
-reconciliation below is of the standard deviation only.
+EVW's Appendix 1 as written, whose one-year standard deviations in Table
+4 it reproduces; the reconciliation below is of the standard deviation
+only. Table 4's lifetime expected reserves, though, agree with the
+centred bootstrap and not the uncentred one (the lifetime view, below),
+so whether the default should centre is open.
 
 The model has no tail. Mack's tail is one more step from the oldest age to
 ultimate with its own sigma and standard error; it has no calendar year,
@@ -820,3 +825,140 @@ the same arguments, `process = c("gamma", "lognormal", "residuals",
 Mack's model (the method's `average` and `sigma_interpolation` are
 taken), and `centre_residuals = FALSE`, returns a `one_year_fit` with
 `model == "mack"` and `mack` a `mack_fit`.
+
+#### Mack's lifetime view
+
+Beside the one-year view, `MackBootstrap` gives the lifetime view, as
+`OdpBootstrap::fit` does for the ODP: EVW's Appendix 1, steps 7(a) to (g),
+which is the bootstrap their Table 4 reports.
+
+```rust
+impl MackBootstrap {
+    pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<MackBootstrapFit>;
+    pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<MackBootstrapFits>;
+}
+
+pub struct MackBootstrapFit {
+    pub mack: MackFit,                  // the model on the observed triangle, no tail
+    pub residuals: Vec<f64>,            // link-ratio residuals, origin x development
+    pub reserves: PredictiveDistribution, // dimension origin
+}
+
+pub struct MackBootstrapFits {
+    pub segments: SegmentFits<MackBootstrapSegment>,
+    pub reserves: PredictiveDistribution, // dimensions: the keys, then origin
+}
+```
+
+The names follow the ODP's: `fit` and `fit_segments` for the lifetime
+view, `one_year` and `one_year_segments` for the one-year view, on the
+same settings. `MackBootstrapFits` has the ODP's `to_long`, `totals`,
+`development_table` and `segment`: the chain ladder's `latest`, `ultimate`
+and `reserve` (Mack's averaging) and the `mean` and `std_dev` of the
+simulated reserve, without a `scale`.
+
+Per simulation, on its own stream: the pseudo factors of step 1 above,
+then every future cumulative value of every origin to the triangle's last
+age, each from the one before (the observed latest value for the first),
+mean `f*_k C`, variance `sigma_k^2 |C|^(2 - alpha)`, with the same pseudo
+factors throughout; the reserve is the last value less the latest. The
+draws are the one-year view's machinery (`MackDraw`): the same pseudo
+factors from the same stream, then the cells in origin order, so an origin
+with one cell left draws the same value in both views (a unit test checks
+that its lifetime reserve plus its one-year CDR is its opening reserve in
+every simulation). Any development grain works, and an origin short of the
+latest diagonal develops from its own latest cell.
+
+No tail. A tail factor is not an average of link ratios, so no residual
+gives its parameter error; simulating it would need a distribution for the
+tail factor that EVW do not give (Mack's tail standard error is an
+extrapolation, not an estimate). The reserves run to the triangle's oldest
+age, as Mack's do without a tail.
+
+The mean. Centred, the pseudo factors are unbiased and independent of each
+other and of the cell they multiply, so the mean reserve is the chain
+ladder's. Uncentred (the default, EVW's Appendix 1 as written), the pool's
+mean biases every pseudo factor and the bias compounds over an origin's
+remaining factors: the total mean reserve is about 1.17 (RAA), 1.007
+(GenIns) and 0.992 (ABC) times the chain ladder's, and RAA's standard
+deviation 1.09 times Mack's, because it grows with the mean (50,000
+simulations). EVW's Table 4 expected reserves on Taylor–Ashe (GenIns,
+500,000 simulations) are within Monte Carlo error of the chain ladder's
+(+0.02% in total): they agree with the centred bootstrap, not the
+uncentred one, which comes out eleven combined standard errors above them.
+That is an inference about their implementation, not something they
+state; EVW's Appendix 1 does not mention centring.
+
+The standard deviation. Mack's standard error is the first-order (linear)
+approximation of the bootstrap's. One difference is exact: the resampled
+residuals have the pool's variance `v = 1 - m^2`, not 1, so every pseudo
+factor's variance, and with it every parameter error, is `v` times Mack's
+(RAA 0.981, GenIns 0.9998, ABC 0.996). Checks
+(`validation/tests/reserving_mack_bootstrap.rs`, 20,000 simulations):
+
+* Centred, every origin's and the total standard deviation is
+  `sqrt(process^2 + v parameter^2)` from R ChainLadder's
+  `MackChainLadder` process and parameter risks within five Monte Carlo
+  standard errors of the simulated standard deviation, and the mean within
+  five standard errors of the mean of the chain ladder's reserve: RAA with
+  the log-linear last sigma, GenIns with Mack's rule (both Gamma), ABC with
+  both (lognormal, below). At 50,000 simulations (Gamma, centred, either
+  rule) the standard deviation is 0.991 to 1.007 times Mack's plain
+  standard error per origin and 0.994 to 1.002 in total, every origin
+  within three Monte Carlo standard errors.
+* Parameter error alone (`MackProcess::None`) is `sqrt(v)` times R's
+  parameter risk, every origin and the total, both rules, all three
+  datasets. Before the `v` adjustment RAA's came out 0.8% to 1.2% below
+  R's at every origin but 1990 (2.7 to 3.8 standard errors at 50,000);
+  after it, RAA 1990 is above, the linear approximation's neglected terms
+  on its volatile young factors. Centred, the pseudo factors are
+  independent with mean `f_k` and variance `v sigma_k^2 / S_k`, so the
+  exact parameter variance is `C^2 (prod(f_k^2 + v sigma_k^2 / S_k) -
+  prod f_k^2)` against Mack's linear `C^2 prod f_k^2 sum(v sigma_k^2 /
+  (f_k^2 S_k))`: 1.0066 times `sqrt(v)` times Mack's for RAA 1990, 1.0022
+  for 1989 and at most 1.0009 earlier (log-linear sigma; the linear form
+  reproduces R's 7,275 for 1990). The 1.0% to 1.5% measured at 50,000
+  simulations is within two Monte Carlo standard errors of that.
+* EVW's Table 4 (Mack's rule, GenIns): every origin's and the total
+  expected reserve and standard deviation within five standard errors of
+  the two simulations combined, centred; uncentred, the total expected
+  reserve is more than five above theirs.
+* Unit tests: an exact pattern has a zero-variance run-off equal to the
+  chain ladder's reserve; an origin with one cell left draws as in the
+  one-year view; on RAA the uncentred mean is far above the chain ladder's
+  and the centred one within four standard errors of it; parameter error
+  alone and the one-year view are narrower than the lifetime view; draws
+  do not depend on the seed's thread count, and `fit` equals
+  `fit_segments` on a single segment.
+
+The Gamma process inverts its cdf, which is slow at the large shapes of
+late cells (ABC's run to the thousands): ABC's lifetime view at 2,000
+simulations takes 30 s in a debug build against about 1 s for RAA or
+GenIns. The validation test simulates ABC with the lognormal of the same
+mean and variance, which at those shapes is close to the Gamma; the
+standard deviation depends on the process only through its first two
+moments as long as the values stay positive. RAA keeps the Gamma: its
+young origins' shapes are below one, where the lognormal's heavy tail
+makes the standard deviation's own standard error unreliable (at 20,000
+simulations RAA 1990 came out 6% low, 3.3 estimated standard errors; at
+200,000, 0.8%). With the weightings `alpha = 0` and `2` the centred
+bootstrap also agrees with R's `MackChainLadder(alpha = ...)` on GenIns
+and ABC (within 3.5 standard errors at 50,000 simulations), but RAA's youngest origins come out up to 7% above (`alpha = 0`,
+whose variance is proportional to `C^2`, so the linear approximation
+fails sooner) and two older ones 1.5% to 2% below (`alpha = 2`); measured
+once, not in CI.
+
+Bindings: Python `MackBootstrap(...).fit(triangle, column)` returns a
+`MackBootstrapFit` over every segment, with `chain_ladder`, `mack` (a
+`MackFit`), `keys`, `index`, `origins`, `development`, `residuals`,
+`reserves`, `to_frame()`, `totals_frame()`, `development_frame()` and
+`segment()`, as `OdpBootstrapFit`. R `mack_bootstrap(triangle, column =
+NULL, n_sims = 10000, seed = 0, process = c("gamma", "lognormal",
+"residuals", "normal", "none"), average = "volume", sigma_interpolation =
+"log-linear", centre_residuals = FALSE)` returns a `mack_bootstrap_fit`
+with `chain_ladder`, `mack`, `origins`, `development`, `residuals` and
+`reserves`, and `as.data.frame()`, `totals_frame()`,
+`development_frame()` and `segment()` as the other fits. The model's
+settings are named as in `mack()`, since there is no method to tell them
+from (`mack_one_year()`'s `mack_average` keeps them apart from the
+method's).
