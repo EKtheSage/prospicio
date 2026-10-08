@@ -40,6 +40,9 @@ installed and ran the R and Python checks:
   --release --generate-stubs`, `uv run pytest tests`.
 * `rustup target add wasm32-unknown-unknown`.
 
+That install (R 4.3.3, roxygen2 8.1.0) left none of the noise below:
+`cargo xtask r` changed only the files the code change called for.
+
 # Noise to revert after `cargo xtask r`
 
 The container's roxygen2 and R differ from the committed output. Undo
