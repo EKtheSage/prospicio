@@ -65,7 +65,8 @@ simulate_events <- function(frequency, severity, n_sims, seed) {
 #' @param years A list with one numeric vector of losses per year, in order.
 #' @param sums_insured `NULL`, or a list of the same shape: each loss's sum
 #'   insured, at least the loss.
-#' @param seed Recorded in results' provenance.
+#' @param seed Recorded in results' provenance; the samplers are not, since
+#'   the losses were not drawn here.
 #' @param times `NULL`, or a list of the same shape: each loss's time as the
 #'   fraction of the year elapsed (in `[0, 1]`, non-decreasing within a
 #'   year), which reinstatements pro rata as to time need.

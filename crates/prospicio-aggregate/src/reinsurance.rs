@@ -710,9 +710,9 @@ impl Tower {
                     .into(),
             ));
         }
-        let provenance = Provenance::new("reinsurance_tower")
-            .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
-            .seed(events.seed(), prospicio_prob::provenance::SIM_INDEX_SCHEME);
+        // The events' seed, stream scheme and samplers (none for years
+        // from elsewhere).
+        let provenance = events.provenance("reinsurance_tower");
         self.apply_years(
             (0..events.n_sims())
                 .map(|i| (events.events(i), events.sums_insured(i), events.times(i))),
@@ -1397,5 +1397,32 @@ mod tests {
         assert_eq!(p.stream_scheme.as_deref(), Some(SIM_INDEX_SCHEME));
         assert_eq!(p.samplers, None);
         assert!(p.shares_streams(&source));
+    }
+
+    #[test]
+    fn apply_records_the_samplers_only_of_events_drawn_here() {
+        let tower = Tower::new(vec![Layer::xol("5x5", 5.0, 5.0).unwrap()]).unwrap();
+        let external = EventSet::from_years(vec![vec![7.0], vec![12.0]], 0).unwrap();
+        let p = tower.apply(&external).unwrap().provenance().clone();
+        assert_eq!(p.seed, Some(0));
+        assert_eq!(p.stream_scheme.as_deref(), Some(SIM_INDEX_SCHEME));
+        assert_eq!(p.samplers, None);
+        let other = EventSet::from_years(vec![vec![1.0], vec![]], 0).unwrap();
+        let q = tower.apply(&other).unwrap().provenance().clone();
+        assert!(!p.replays_same_draws(&q));
+
+        let drawn = simulate_events(
+            &Poisson::new(1.0).unwrap(),
+            &Lognormal::from_mean_cv(6.0, 1.0).unwrap(),
+            20,
+            0,
+        )
+        .unwrap();
+        let d = tower.apply(&drawn).unwrap().provenance().clone();
+        assert_eq!(
+            d.samplers,
+            Some(prospicio_prob::provenance::current_samplers())
+        );
+        assert!(d.shares_streams(&p) && !d.replays_same_draws(&p));
     }
 }

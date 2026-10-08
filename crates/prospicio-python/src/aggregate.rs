@@ -243,7 +243,8 @@ impl PyEventSet {
     /// sums_insured : list of list of float, optional
     ///     The same shape: each loss's sum insured, at least the loss.
     /// seed : int, default 0
-    ///     Recorded in results' provenance.
+    ///     Recorded in results' provenance; the samplers are not, since
+    ///     the losses were not drawn here.
     /// times : list of list of float, optional
     ///     The same shape: each loss's time, as the fraction of the year
     ///     elapsed (in ``[0, 1]``, non-decreasing within a year), which

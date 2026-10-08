@@ -176,6 +176,8 @@ def test_surplus_treaty_on_events_with_sums_insured():
     draws = {k: pd.marginal(k).mean() for k in [("ceded", "surplus"), ("ceded", "1x1")]}
     assert draws[("ceded", "surplus")] == pytest.approx((1e6 + 4.8e6) / 3)
     assert draws[("ceded", "1x1")] == pytest.approx(1e6 / 3)
+    # Losses from elsewhere: the seed is recorded, the samplers are not.
+    assert pd.provenance()["seed"] == 0 and pd.provenance()["samplers"] is None
     with pytest.raises(ValueError, match="sum insured"):
         tower.apply(EventSet.from_years([[1.0]]))
     with pytest.raises(ValueError):
