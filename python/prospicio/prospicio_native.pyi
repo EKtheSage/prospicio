@@ -4118,7 +4118,8 @@ class Layer:
     loss, then annual terms.
     
     For one year, ``ceded = share * min(max(sum of per-loss recoveries -
-    aggregate_deductible, 0), aggregate_limit)``.
+    aggregate_deductible, 0), aggregate_limit)``, less any loss corridor
+    (``with_loss_corridor``) before the annual limit.
     
     Parameters
     ----------
@@ -4240,6 +4241,11 @@ class Layer:
     def limit(self, /) -> float:
         """
         Per-occurrence limit.
+        """
+    @property
+    def loss_corridor(self, /) -> tuple[float, float, float] |None:
+        """
+        The loss corridor as ``(lower, upper, retained)``, or ``None``.
         """
     @property
     def name(self, /) -> str:
@@ -4371,6 +4377,39 @@ class Layer:
         >>> s = Layer.surplus("surplus", 1e6, 9.0)
         >>> round(s.ceded_with_sums_insured([2e6, 2e6], [5e6, 20e6]))
         2500000
+        """
+    def with_loss_corridor(self, /, lower: float, upper: float, retained: float = 1.0) -> Layer:
+        """
+        The same layer with a loss corridor.
+        
+        Of the annual layer loss at 100% after the annual deductible, the
+        cedant keeps ``retained`` of the part between ``lower`` and
+        ``upper``; the annual limit then caps what is left, so the reinsurer
+        still pays up to the full annual limit. Reinstatement premiums
+        follow the loss after the corridor. A corridor quoted as loss
+        ratios ``lr`` on the reinsurer's premium ``P`` for a placed share
+        ``s`` is ``lr * P / s`` (for a quota share, ``P / s`` is the
+        subject premium).
+        
+        Parameters
+        ----------
+        lower : float
+            Non-negative.
+        upper : float
+            Finite, above ``lower``.
+        retained : float, default 1.0
+            Share of the band the cedant keeps, in ``(0, 1]``.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = Layer.quota_share("QS", 0.3).with_loss_corridor(70.0, 90.0)
+        >>> round(qs.ceded([50.0, 30.0]), 12), round(qs.ceded([120.0]), 12)
+        (21.0, 30.0)
         """
 
 @final

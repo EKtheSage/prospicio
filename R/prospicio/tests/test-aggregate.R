@@ -151,6 +151,17 @@ stopifnot(event_times(et, 2) == 0.3)
 stopifnot(inherits(try(events_from_years(list(c(5, 2)), times = list(c(0.6, 0.1))), silent = TRUE),
                    "try-error"))
 
+# Loss corridors.
+qs <- with_loss_corridor(quota_share("QS", 0.3), 70, 90)
+stopifnot(identical(qs@loss_corridor, c(70, 90, 1)), length(quota_share("Q", 0.3)@loss_corridor) == 0)
+close(ceded(qs, c(50, 30)), 21, 1e-12)
+close(ceded(qs, 120), 30, 1e-12)
+lc <- with_loss_corridor(xol_layer("L", 10, 5, aggregate_deductible = 4, aggregate_limit = 12), 5, 9, 0.5)
+stopifnot(ceded(lc, c(8, 20, 12)) == 12)
+stopifnot(inherits(try(with_loss_corridor(qs, 2, 1), silent = TRUE), "try-error"))
+back <- tower_from_json(tower_to_json(reinsurance_tower(list(qs))))
+stopifnot(identical(back@layer_names, "QS"))
+
 # Towers save and load as JSON.
 tw <- inuring_tower(list(list(quota_share("QS", 0.3), surplus_treaty("S", 1e6, 4)),
                          list(xol_layer("xl", 2e6, 1e6, premium = 3e5, reinstatement_rates = c(1, 0.5),

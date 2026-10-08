@@ -9,7 +9,8 @@ NULL
 #'
 #' `limit` xs `attachment` on each loss, then annual terms. For one year,
 #' `ceded = share * min(max(sum of per-loss recoveries - aggregate_deductible,
-#' 0), aggregate_limit)`.
+#' 0), aggregate_limit)`, less any loss corridor ([with_loss_corridor()])
+#' before the annual limit.
 #'
 #' @param name Layer name, unique within a tower.
 #' @param limit Per-occurrence limit; may be `Inf`.
@@ -31,9 +32,11 @@ NULL
 #'   charged at `1 - t`. Needs `reinstatement_rates`, and events with times
 #'   ([with_uniform_times()], or `times` in [events_from_years()]).
 #' @param ptr Internal: an existing layer to wrap.
-#' @returns An `xol_layer` object with read-only properties for each term.
+#' @returns An `xol_layer` object with read-only properties for each term
+#'   (`loss_corridor` is `c(lower, upper, retained)`, empty when there is
+#'   none).
 #' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
-#'   types, which are layers too.
+#'   types, which are layers too; [with_loss_corridor()] for a corridor.
 #' @export
 #' @examples
 #' l <- xol_layer("5x5", 5e6, 5e6, reinstatements = 1)
@@ -61,7 +64,8 @@ xol_layer <- S7::new_class(
     reinstatement_rates = S7::new_property(
       S7::class_double, getter = function(self) self@ptr$reinstatement_rates()
     ),
-    pro_rata_time = S7::new_property(S7::class_logical, getter = function(self) self@ptr$pro_rata_time())
+    pro_rata_time = S7::new_property(S7::class_logical, getter = function(self) self@ptr$pro_rata_time()),
+    loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor())
   ),
   constructor = function(name, limit, attachment, share = 1, aggregate_deductible = 0,
                          aggregate_limit = Inf, reinstatements = NULL, premium = 0,
@@ -78,6 +82,34 @@ xol_layer <- S7::new_class(
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
+
+#' Loss corridor
+#'
+#' The same layer with a loss corridor: of the annual layer loss at 100%
+#' after the annual deductible, the cedant keeps `retained` of the part
+#' between `lower` and `upper`; the annual limit then caps what is left, so
+#' the reinsurer still pays up to the full annual limit. Reinstatement
+#' premiums follow the loss after the corridor. A corridor quoted as loss
+#' ratios `lr` on the reinsurer's premium `P` for a placed share `s` is
+#' `lr * P / s` (for a quota share, `P / s` is the subject premium).
+#'
+#' @param layer An [xol_layer] (any contract type).
+#' @param lower Lower bound; non-negative.
+#' @param upper Upper bound; finite, above `lower`.
+#' @param retained Share of the band the cedant keeps, in `(0, 1]`.
+#' @returns An [xol_layer].
+#' @export
+#' @examples
+#' # A 30% quota share; the cedant keeps the loss ratio between 70% and 90%
+#' # of a subject premium of 100.
+#' qs <- with_loss_corridor(quota_share("QS", 0.3), 70, 90)
+#' ceded(qs, c(50, 30))
+#' ceded(qs, 120)
+with_loss_corridor <- function(layer, lower, upper, retained = 1) {
+  xol_layer(ptr = rust_result(layer@ptr$with_loss_corridor(
+    as.double(lower), as.double(upper), as.double(retained)
+  )))
+}
 
 #' Quota share
 #'

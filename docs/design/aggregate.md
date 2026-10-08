@@ -146,6 +146,35 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   (`2 E[1 − t] = 0.5`), with variance `4 · 0.5² / 12`, within four
   standard errors. Python `EventSet.with_seasonal_times(weights)`, R
   `with_seasonal_times()`.
+- **Loss corridors (decided 2026-10-08).** `Layer::loss_corridor(lower,
+  upper, retained)`: of the annual layer loss at 100% after the annual
+  deductible, the cedant keeps `retained` of the part between `lower` and
+  `upper`, and the annual limit caps what is left:
+  `ceded = share × min(D − retained × min(max(D − lower, 0), upper − lower), AAL)`
+  with `D = max(R − AAD, 0)`. The corridor sits between the deductible
+  and the limit because both keep their meaning: the AAD is what the
+  cedant keeps first and the AAL the most the reinsurer pays, so a
+  corridor does not shrink the reinsurer's maximum. Reinstatement
+  premiums follow the loss after the corridor: limit kept in the corridor
+  is not reinstated or charged for. Any layer takes one, including a quota
+  share (the usual case) and a stop-loss. Bounds are amounts at 100% of
+  the layer, like the AAD and AAL; a corridor quoted as loss ratios `lr`
+  on the reinsurer's premium `P` for a share `s` is `lr × P / s`. The
+  annual terms stay non-decreasing in the year's recovery, so the
+  corridor is used up in event order like the deductible
+  (`ceded_by_event`), on the grid it maps the annual recovery as the
+  other annual terms do (a stop-loss with a corridor still has a net
+  grid), and a corridor counts as an annual term that may not inure on
+  the grid. Tower documents write it as `"loss_corridor": {"lower",
+  "upper", "retained"}` only when there is one, and a document without
+  the key loads with none, so the format stays version 1. Tested:
+  hand-worked years through deductible, corridor and limit (whole and
+  per event), the quota share's ceded loss against the closed form and
+  gross = ceded + net in every simulated year, a corridor layer and a
+  stop-loss with a corridor on the grid against 200,000 simulated years
+  by Kolmogorov–Smirnov, and JSON round trips. Python
+  `Layer.with_loss_corridor(lower, upper, retained=1.0)` and
+  `Layer.loss_corridor`, R `with_loss_corridor()` and `@loss_corridor`.
 - **Towers are data.** `Tower::to_json` writes a programme as a versioned
   document (`"format": "risk_rs.tower"`, version 1): its stages in inuring
   order, each a list of layers with every term (basis, and for a surplus
@@ -273,7 +302,7 @@ binomial counts. A unit test checks the layer mean and variance against
 
 ## Next
 
-1. Loss corridors (a retained band of the layer's annual loss), and other
-   contract features in `architecture.md`'s reinsurance scope.
-2. A spread within a band that matches both its bounds and its total sum
+1. A spread within a band that matches both its bounds and its total sum
    insured (a tilted, not uniform, density), if profiles call for it.
+2. Contract features beyond `architecture.md`'s reinsurance scope
+   (sliding-scale and profit commissions, swing rating), on request.

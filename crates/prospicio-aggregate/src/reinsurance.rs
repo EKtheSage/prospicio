@@ -15,8 +15,12 @@ use crate::monte_carlo::EventSet;
 /// ```text
 /// recovery  = Σ min(max(x_e - attachment, 0), limit)
 /// after AAD = max(recovery - aggregate_deductible, 0)
-/// ceded     = share × min(after AAD, aggregate_limit)
+/// corridor  = after AAD - retained × min(max(after AAD - lower, 0), upper - lower)
+/// ceded     = share × min(corridor, aggregate_limit)
 /// ```
+///
+/// where the loss corridor (`lower`, `upper`, `retained`) is optional
+/// ([`Layer::loss_corridor`]).
 ///
 /// Terms are plain data, so a tower can be stored and replayed.
 ///
@@ -53,6 +57,27 @@ pub struct Layer {
     /// Whether reinstatement premiums are also pro rata as to time: each
     /// event's share is scaled by the part of the year left after it.
     pub pro_rata_time: bool,
+    /// A band of the annual layer loss the cedant keeps; see
+    /// [`Layer::loss_corridor`].
+    pub corridor: Option<Corridor>,
+}
+
+/// A loss corridor: of the annual layer loss at 100% after the annual
+/// deductible, the cedant keeps `retained` of the part between `lower`
+/// and `upper`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Corridor {
+    pub lower: f64,
+    pub upper: f64,
+    /// Share of the band the cedant keeps, in `(0, 1]`.
+    pub retained: f64,
+}
+
+impl Corridor {
+    /// The part of an annual layer loss `x` the cedant keeps.
+    fn kept(&self, x: f64) -> f64 {
+        self.retained * (x - self.lower).clamp(0.0, self.upper - self.lower)
+    }
 }
 
 /// What a layer's per-event recovery is figured on.
@@ -106,6 +131,7 @@ impl Layer {
             premium: 0.0,
             reinstatement_rates: Vec::new(),
             pro_rata_time: false,
+            corridor: None,
         })
     }
 
@@ -206,6 +232,49 @@ impl Layer {
             return Err(invalid("aggregate_limit", aal, "must be positive"));
         }
         self.aggregate_limit = aal;
+        Ok(self)
+    }
+
+    /// A loss corridor: of the annual layer loss at 100% after the annual
+    /// deductible, the cedant keeps `retained` of the part between `lower`
+    /// and `upper`; the annual limit then caps what is left. So the
+    /// corridor is used up in event order as the deductible is, and the
+    /// reinsurer still pays up to the full annual limit. Reinstatement
+    /// premiums follow the layer loss after the corridor: limit kept in
+    /// the corridor is not reinstated or charged for.
+    ///
+    /// Corridors are usually quoted as loss ratios on the reinsurer's
+    /// premium: a band from `lr_lower` to `lr_upper` on a premium `P` for
+    /// a placed share `s` is `lower = lr_lower × P / s`, `upper = lr_upper
+    /// × P / s` (for a quota share, `P / s` is the subject premium).
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// // A 30% quota share; the cedant keeps the ceded loss ratio between
+    /// // 70% and 90% of a subject premium of 100.
+    /// let qs = Layer::quota_share("QS", 0.3).unwrap()
+    ///     .loss_corridor(70.0, 90.0, 1.0).unwrap();
+    /// // Losses 80: 10 of them fall in the corridor, so 0.3 × 70 is ceded.
+    /// assert!((qs.ceded(&[50.0, 30.0]) - 21.0).abs() < 1e-12);
+    /// // Losses 120: the whole band of 20 is kept.
+    /// assert!((qs.ceded(&[120.0]) - 30.0).abs() < 1e-12);
+    /// ```
+    pub fn loss_corridor(mut self, lower: f64, upper: f64, retained: f64) -> Result<Self> {
+        if !(lower.is_finite() && lower >= 0.0) {
+            return Err(invalid("lower", lower, "must be finite and non-negative"));
+        }
+        if !(upper.is_finite() && upper > lower) {
+            return Err(invalid("upper", upper, "must be finite and above lower"));
+        }
+        if !(retained > 0.0 && retained <= 1.0) {
+            return Err(invalid("retained", retained, "must be in (0, 1]"));
+        }
+        self.corridor = Some(Corridor {
+            lower,
+            upper,
+            retained,
+        });
         Ok(self)
     }
 
@@ -453,14 +522,27 @@ impl Layer {
         (amount - self.attachment).max(0.0).min(self.limit)
     }
 
-    /// Annual terms applied to an annual recovery total at 100%.
+    /// Annual terms applied to an annual recovery total at 100%: the
+    /// deductible, the corridor, then the annual limit. Non-decreasing in
+    /// `recovery`, so each event's share is its increase.
     pub(crate) fn after_terms(&self, recovery: f64) -> f64 {
         if recovery.is_nan() {
             return f64::NAN;
         }
-        (recovery - self.aggregate_deductible)
-            .max(0.0)
-            .min(self.aggregate_limit)
+        let after_aad = (recovery - self.aggregate_deductible).max(0.0);
+        let after_corridor = match &self.corridor {
+            Some(c) => after_aad - c.kept(after_aad),
+            None => after_aad,
+        };
+        after_corridor.min(self.aggregate_limit)
+    }
+
+    /// Whether the layer has annual terms: a deductible, a corridor or an
+    /// annual limit.
+    pub fn has_annual_terms(&self) -> bool {
+        self.aggregate_deductible > 0.0
+            || self.corridor.is_some()
+            || self.aggregate_limit.is_finite()
     }
 }
 
@@ -812,6 +894,94 @@ mod tests {
             .unwrap();
         assert_eq!(all.ceded(&losses), 7.5);
         assert_eq!(base().ceded(&[]), 0.0);
+    }
+
+    #[test]
+    fn loss_corridors() {
+        let base = || Layer::xol("L", 10.0, 5.0).unwrap();
+        let losses = [8.0, 20.0, 12.0]; // recoveries 3, 10, 7 = 20
+        // After the deductible of 4, 16; the corridor keeps half of 5..9,
+        // so 14; the annual limit of 12 then caps it.
+        let layer = base()
+            .aggregate_deductible(4.0)
+            .unwrap()
+            .loss_corridor(5.0, 9.0, 0.5)
+            .unwrap()
+            .aggregate_limit(12.0)
+            .unwrap();
+        assert_eq!(layer.ceded(&losses), 12.0);
+        assert_eq!(layer.clone().share(0.5).unwrap().ceded(&losses), 6.0);
+        // The reinsurer still pays up to the full annual limit.
+        let wide = base()
+            .aggregate_deductible(4.0)
+            .unwrap()
+            .loss_corridor(5.0, 9.0, 0.5)
+            .unwrap()
+            .aggregate_limit(15.0)
+            .unwrap();
+        assert_eq!(wide.ceded(&losses), 14.0);
+        // Used up in event order: after the deductible 0, 9, 16, after the
+        // corridor 0, 7, 14, after the limit 0, 7, 12.
+        assert_eq!(layer.ceded_by_event(&losses), [0.0, 7.0, 5.0]);
+        assert!(layer.has_annual_terms());
+        assert!(
+            base()
+                .loss_corridor(0.0, 1.0, 1.0)
+                .unwrap()
+                .has_annual_terms()
+        );
+        assert!(!base().has_annual_terms());
+
+        // Reinstatement premiums follow the loss after the corridor:
+        // recovery 2, of which the corridor keeps 1.
+        let paid = || {
+            Layer::xol("10x10", 10.0, 10.0)
+                .unwrap()
+                .paid_reinstatements(2.0, vec![1.0])
+                .unwrap()
+        };
+        assert!((paid().reinstatement_premium(&[12.0]) - 0.4).abs() < 1e-12);
+        let kept = paid().loss_corridor(0.0, 1.0, 1.0).unwrap();
+        assert!((kept.reinstatement_premium(&[12.0]) - 0.2).abs() < 1e-12);
+
+        assert!(base().loss_corridor(-1.0, 1.0, 1.0).is_err());
+        assert!(base().loss_corridor(2.0, 2.0, 1.0).is_err());
+        assert!(base().loss_corridor(1.0, f64::INFINITY, 1.0).is_err());
+        assert!(base().loss_corridor(1.0, 2.0, 0.0).is_err());
+        assert!(base().loss_corridor(1.0, 2.0, 1.5).is_err());
+    }
+
+    #[test]
+    fn corridor_keeps_gross_equal_to_ceded_plus_net() {
+        let tower = Tower::inuring(vec![
+            vec![
+                Layer::quota_share("QS", 0.4)
+                    .unwrap()
+                    .loss_corridor(2e6, 6e6, 0.5)
+                    .unwrap(),
+            ],
+            vec![
+                Layer::xol("5x5", 5e6, 5e6)
+                    .unwrap()
+                    .loss_corridor(2e6, 8e6, 1.0)
+                    .unwrap()
+                    .reinstatements(2)
+                    .unwrap(),
+            ],
+        ])
+        .unwrap();
+        let result = tower.apply(&events()).unwrap();
+        let mut kept = 0;
+        for sim in 0..result.n_sims() {
+            let row = result.row(sim).unwrap();
+            assert!((row[0] - row[1] - row[2] - row[3]).abs() <= 1e-6 * row[0].max(1.0));
+            // The QS cedes 40% of the year's loss less half its corridor.
+            let gross = row[0];
+            let want = 0.4 * (gross - 0.5 * (gross - 2e6).clamp(0.0, 4e6));
+            assert!((row[1] - want).abs() <= 1e-6 * gross.max(1.0));
+            kept += usize::from(gross > 2e6);
+        }
+        assert!(kept > 1_000);
     }
 
     #[test]

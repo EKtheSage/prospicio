@@ -16,6 +16,10 @@
 //!               "premium": 0.0, "reinstatement_rates": [],
 //!               "pro_rata_time": false}]]}
 //! ```
+//!
+//! A layer with a loss corridor also has `"loss_corridor": {"lower": …,
+//! "upper": …, "retained": …}`; a document without one (all those written
+//! before corridors) loads with none.
 
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
@@ -124,6 +128,12 @@ fn layer_json(l: &Layer) -> Value {
         Value::Array(l.reinstatement_rates.iter().map(|&r| num(r)).collect()),
     );
     m.insert("pro_rata_time".into(), json!(l.pro_rata_time));
+    if let Some(c) = &l.corridor {
+        m.insert(
+            "loss_corridor".into(),
+            json!({"lower": num(c.lower), "upper": num(c.upper), "retained": num(c.retained)}),
+        );
+    }
     Value::Object(m)
 }
 
@@ -172,6 +182,19 @@ fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
         None | Some(Value::Bool(false)) => {}
         Some(Value::Bool(true)) => layer = layer.pro_rata_as_to_time()?,
         Some(_) => return Err(Error::Data("pro_rata_time must be true or false".into())),
+    }
+    // Absent in documents written before corridors, and for a layer
+    // without one.
+    match m.get("loss_corridor") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(c)) => {
+            layer = layer.loss_corridor(
+                float(c, "lower")?,
+                float(c, "upper")?,
+                float(c, "retained")?,
+            )?;
+        }
+        Some(_) => return Err(Error::Data("loss_corridor must be an object".into())),
     }
     Ok(layer)
 }
@@ -227,7 +250,10 @@ mod tests {
     fn programme() -> Tower {
         Tower::inuring(vec![
             vec![
-                Layer::quota_share("QS 30%", 0.3).unwrap(),
+                Layer::quota_share("QS 30%", 0.3)
+                    .unwrap()
+                    .loss_corridor(1e6, 3e6, 0.5)
+                    .unwrap(),
                 Layer::surplus("surplus", 1e6, 4.0)
                     .unwrap()
                     .aggregate_limit(2e7)
@@ -295,6 +321,20 @@ mod tests {
         assert!(Tower::from_json(&good.replace("\"loss\"", "\"cat\"")).is_err());
         // A term the builders refuse.
         assert!(Tower::from_json(&good.replace("\"share\":1.0", "\"share\":1.5")).is_err());
+        // A document without a corridor (as all were before corridors)
+        // loads with none; a corridor upside down is refused.
+        assert!(!good.contains("loss_corridor"));
+        assert_eq!(Tower::from_json(&good).unwrap().layers[0].corridor, None);
+        let with = |c: &str| {
+            good.replace(
+                "\"pro_rata_time\":false",
+                &format!("\"pro_rata_time\":false,\"loss_corridor\":{c}"),
+            )
+        };
+        let ok = Tower::from_json(&with(r#"{"lower":1.0,"upper":2.0,"retained":1.0}"#)).unwrap();
+        assert_eq!(ok.layers[0].corridor.unwrap().upper, 2.0);
+        assert!(Tower::from_json(&with(r#"{"lower":2.0,"upper":1.0,"retained":1.0}"#)).is_err());
+        assert!(Tower::from_json(&with("3")).is_err());
         assert!(Tower::from_json(&good.replace("\"stages\":[[", "\"stages\":[[],[")).is_err());
     }
 }

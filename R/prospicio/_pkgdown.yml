@@ -71,6 +71,7 @@ reference:
   - title: Reinsurance
     contents:
       - xol_layer
+      - with_loss_corridor
       - quota_share
       - aggregate_stop_loss
       - surplus_treaty

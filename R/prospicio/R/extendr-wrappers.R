@@ -180,6 +180,10 @@ XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event
 
 XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
 
+XolLayer$with_loss_corridor <- function(lower, upper, retained) .Call(wrap__XolLayer__with_loss_corridor, self, lower, upper, retained)
+
+XolLayer$loss_corridor <- function() .Call(wrap__XolLayer__loss_corridor, self)
+
 XolLayer$reinstatement_premium <- function(losses, times) .Call(wrap__XolLayer__reinstatement_premium, self, losses, times)
 
 #' @export

@@ -102,7 +102,10 @@ impl Tower {
             )));
         }
         for &(start, end) in &stages[..stages.len() - 1] {
-            if let Some(l) = self.layers[start..end].iter().find(|l| has_annual_terms(l)) {
+            if let Some(l) = self.layers[start..end]
+                .iter()
+                .find(|l| l.has_annual_terms())
+            {
                 return Err(Error::InvalidParameter {
                     name: "layers",
                     value: l.aggregate_deductible,
@@ -146,7 +149,7 @@ impl Tower {
             }
         }
 
-        let net = if !self.layers.iter().any(has_annual_terms) {
+        let net = if !self.layers.iter().any(Layer::has_annual_terms) {
             let all = self.layers.len();
             let (net_severity, exact) = severity.map(|x| seen(x, all))?;
             on_points &= exact;
@@ -190,10 +193,6 @@ impl Tower {
         }
         ranges
     }
-}
-
-fn has_annual_terms(layer: &Layer) -> bool {
-    layer.aggregate_deductible > 0.0 || layer.aggregate_limit.is_finite()
 }
 
 /// Unlimited per-occurrence cover from 0: the layer sees the annual total.
@@ -307,6 +306,56 @@ mod tests {
         // One layer with annual terms: no net grid.
         assert!(r.net.is_none());
         matches_simulation(&tower, &Poisson::new(3.0).unwrap());
+    }
+
+    #[test]
+    fn loss_corridors_match_simulation() {
+        // Corridor bounds on the unit points, so the grids are exact.
+        let tower = Tower::new(vec![
+            Layer::xol("3x3", 3.0, 3.0)
+                .unwrap()
+                .loss_corridor(1.0, 4.0, 1.0)
+                .unwrap()
+                .aggregate_limit(6.0)
+                .unwrap(),
+        ])
+        .unwrap();
+        matches_simulation(&tower, &Poisson::new(3.0).unwrap());
+        // A stop-loss with a corridor is still one compound total: net has
+        // a grid.
+        let tower = Tower::inuring(vec![
+            vec![Layer::xol("4x4", 4.0, 4.0).unwrap()],
+            vec![
+                Layer::stop_loss("SL", 10.0, 12.0)
+                    .unwrap()
+                    .loss_corridor(2.0, 5.0, 1.0)
+                    .unwrap(),
+            ],
+        ])
+        .unwrap();
+        let r = tower
+            .on_grid(&Poisson::new(3.0).unwrap(), &severity(), 400)
+            .unwrap();
+        let net = r.net.as_ref().unwrap();
+        let ceded: f64 = r.ceded.iter().map(|g| g.mean()).sum();
+        assert!((r.gross.mean() - ceded - net.mean()).abs() < 1e-10);
+        matches_simulation(&tower, &Poisson::new(3.0).unwrap());
+        // A corridor is an annual term: it may not inure on the grid.
+        let tower = Tower::inuring(vec![
+            vec![
+                Layer::quota_share("QS", 0.5)
+                    .unwrap()
+                    .loss_corridor(1.0, 2.0, 1.0)
+                    .unwrap(),
+            ],
+            vec![Layer::xol("4x4", 4.0, 4.0).unwrap()],
+        ])
+        .unwrap();
+        assert!(
+            tower
+                .on_grid(&Poisson::new(3.0).unwrap(), &severity(), 100)
+                .is_err()
+        );
     }
 
     #[test]

@@ -234,6 +234,28 @@ def test_reinstatements_pro_rata_as_to_time():
             events.with_seasonal_times(bad)
 
 
+def test_loss_corridors():
+    qs = Layer.quota_share("QS", 0.3).with_loss_corridor(70.0, 90.0)
+    assert qs.loss_corridor == (70.0, 90.0, 1.0)
+    assert Layer.quota_share("QS", 0.3).loss_corridor is None
+    assert qs.ceded([50.0, 30.0]) == pytest.approx(21.0)
+    assert qs.ceded([120.0]) == pytest.approx(30.0)
+    # Deductible, corridor, then the annual limit.
+    layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=12.0)
+    layer = layer.with_loss_corridor(5.0, 9.0, 0.5)
+    assert layer.ceded([8.0, 20.0, 12.0]) == 12.0
+    assert layer.ceded_by_event([8.0, 20.0, 12.0]) == [0.0, 7.0, 5.0]
+    for bad in ((2.0, 1.0, 1.0), (-1.0, 1.0, 1.0), (1.0, 2.0, 0.0), (1.0, math.inf, 1.0)):
+        with pytest.raises(ValueError):
+            Layer("L", 1.0, 1.0).with_loss_corridor(*bad)
+    tower = Tower.inuring([[qs], [Layer("4x4", 4.0, 4.0)]])
+    back = Tower.from_json(tower.to_json())
+    assert back.to_json() == tower.to_json()
+    events = simulate_events(Poisson(3.0), SEV, 2_000, 5)
+    a, b = tower.apply(events), back.apply(events)
+    assert a.draw_matrix() == b.draw_matrix()
+
+
 def test_towers_save_and_load_as_json():
     import pickle
 
