@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Mack's bootstrap, lifetime view, against Mack's standard errors and EVW Table 4
-description: Bootstrapping Mack's model to the last age (MackBootstrap::fit, EVW 2019 Appendix 1) reproduces Mack's analytic standard error on RAA, GenIns and ABC within Monte Carlo error only with centred residuals, once the parameter error is scaled by the resampled residuals' variance 1 - m^2; uncentred, the pool's mean biases the mean reserve (RAA +17%, GenIns +0.7%, ABC -0.8%). EVW's Table 4 expected reserves agree with the centred bootstrap, not the uncentred one. Gamma draws are slow at large shapes (ABC).
+description: Bootstrapping Mack's model to the last age (MackBootstrap::fit, EVW 2019 Appendix 1) reproduces Mack's analytic standard error on RAA, GenIns and ABC within Monte Carlo error only with centred residuals, once the parameter error is scaled by the resampled residuals' variance 1 - m^2; uncentred, the pool's mean biases the mean reserve (RAA +17%, GenIns +0.7%, ABC -0.8%). EVW's Table 4 expected reserves agree with the centred bootstrap, not the uncentred one, so centring is the default. Gamma draws are slow at large shapes (ABC).
 tags: [reserving, bootstrap, mack, lifetime, evw, residuals, performance]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-07T18:00:00-07:00 }
@@ -88,8 +88,15 @@ are matched either way, since GenIns's pool mean is only 0.0135 and the
 standard deviation barely moves; the bias shows in the mean, which
 compounds over the lifetime but not over one year.[^test][^evw]
 
-`MackBootstrap::centre_residuals` stays off by default (decision 8);
-whether to turn it on is open.
+`MackBootstrap::centre_residuals` is therefore on by default (decision 8,
+since branch claude/mack-centre-default), in Rust, Python and R: centred,
+the bootstrap matches the chain ladder and EVW's Table 4 in the mean and
+Mack and Merz-Wuthrich in the standard deviation, while uncentred the
+mean reserve is off by +17% (RAA), +0.7% (GenIns) and -0.8% (ABC) and the
+one-year standard deviation up to 1.3% wide on RAA. `centre_residuals:
+false` keeps EVW's Appendix 1 as written. The validation tests now run
+the default; the uncentred total against Table 4 is checked
+explicitly.[^test]
 
 # Performance
 

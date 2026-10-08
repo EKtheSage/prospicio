@@ -15,7 +15,7 @@ mack_bootstrap(
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   average = "volume",
   sigma_interpolation = "log-linear",
-  centre_residuals = FALSE
+  centre_residuals = TRUE
 )
 }
 \arguments{
@@ -40,7 +40,9 @@ times the standard deviation); or \code{"none"} for parameter error only.}
 ratios and fills in a sigma behind a single link ratio, as in \code{\link[=mack]{mack()}}.}
 
 \item{centre_residuals}{Subtract the residuals' mean before resampling
-them, so that the pseudo factors are unbiased.}
+them, so that the pseudo factors are unbiased and the mean reserve is
+the chain ladder's; \code{FALSE} resamples them uncentred, as England,
+Verrall and Wuthrich's Appendix 1 is written.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.
@@ -60,11 +62,14 @@ simulated.
 }
 \details{
 The standard deviation of the reserves approximates Mack's analytic
-standard error (\code{\link[=mack]{mack()}}). The mean is the chain ladder's reserve only
-with \code{centre_residuals = TRUE}: the pooled residuals do not have a zero
-mean, so resampled as they are (EVW's Appendix 1, the default) they bias
-every pseudo factor, and the mean reserve with them (RAA about 17\%
-above the chain ladder's).
+standard error (\code{\link[=mack]{mack()}}), and the mean is the chain ladder's reserve:
+the pooled residuals do not have a zero mean, so by default
+(\code{centre_residuals = TRUE}) they are centred before resampling.
+Resampled as they are (\code{centre_residuals = FALSE}, EVW's Appendix 1 as
+written) they bias every pseudo factor, and the mean reserve with them
+(about 17\% above the chain ladder's on RAA, 0.7\% on GenIns, 0.8\% below
+on ABC); EVW's Table 4 expected reserves agree with the centred
+bootstrap.
 
 Every segment is bootstrapped on its own, with its own Mack model and
 residuals, into one joint distribution of the reserves. Simulation \code{i}
@@ -85,8 +90,7 @@ This is Python's \verb{MackBootstrap(...).fit()}, which returns a
 long <- data.frame(year = rep(2018:2021, 4:1),
                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
-boot <- mack_bootstrap(triangle(long, "year", "age", "paid"), n_sims = 2000, seed = 42,
-                       centre_residuals = TRUE)
+boot <- mack_bootstrap(triangle(long, "year", "age", "paid"), n_sims = 2000, seed = 42)
 boot@reserves@keys
 c(mean = mean(boot@reserves), chain_ladder = boot@chain_ladder@total_reserve)
 c(sd = sqrt(variance(boot@reserves)), mack = boot@mack@total_standard_error)

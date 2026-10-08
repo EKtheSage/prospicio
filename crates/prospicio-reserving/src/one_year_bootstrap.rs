@@ -1673,19 +1673,32 @@ mod tests {
             );
         }
 
-        // `MackBootstrap` is this harness: the same draws, bit for bit.
-        // Simulation `i` uses stream `i`, so its first few hundred are the
-        // harness's first few hundred.
+        // `MackBootstrap` with uncentred residuals (EVW's Appendix 1 as
+        // written) is this harness: the same draws, bit for bit. Simulation
+        // `i` uses stream `i`, so its first few hundred are the harness's
+        // first few hundred. The default centres the pool, so it draws
+        // other pseudo factors from the same random numbers.
         let few = 300;
-        let built = crate::MackBootstrap {
-            n_sims: few,
-            seed: 31,
-            ..Default::default()
-        }
-        .one_year(&tri, "values", &method)
-        .unwrap();
-        assert_eq!(built.cdr.draw_matrix(), &draws.draw_matrix()[..few * no]);
-        assert_eq!(built.cdr.provenance().model, "mack_bootstrap_one_year");
+        let built = |centre_residuals| {
+            crate::MackBootstrap {
+                n_sims: few,
+                seed: 31,
+                centre_residuals,
+                ..Default::default()
+            }
+            .one_year(&tri, "values", &method)
+            .unwrap()
+        };
+        let uncentred = built(false);
+        assert_eq!(
+            uncentred.cdr.draw_matrix(),
+            &draws.draw_matrix()[..few * no]
+        );
+        assert_eq!(uncentred.cdr.provenance().model, "mack_bootstrap_one_year");
+        assert_ne!(
+            built(true).cdr.draw_matrix(),
+            &draws.draw_matrix()[..few * no]
+        );
     }
 
     #[test]

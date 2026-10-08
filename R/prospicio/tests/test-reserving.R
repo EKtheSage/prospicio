@@ -1170,11 +1170,13 @@ for (process in c("gamma", "lognormal", "residuals", "normal", "none")) {
 by_rule <- mack_one_year(raa, n_sims = 10, mack_sigma_interpolation = "mack")
 stopifnot(identical(by_rule@mack@sigma, mack(raa, sigma_interpolation = "mack")@sigma),
           !identical(by_rule@mack@sigma, mack(raa)@sigma))
-# Centring the residuals changes the draws, not the model.
-centred <- mack_one_year(raa, n_sims = 50, seed = 1, centre_residuals = TRUE)
-plain <- mack_one_year(raa, n_sims = 50, seed = 1)
-stopifnot(!identical(draw_matrix(centred@cdr), draw_matrix(plain@cdr)),
-          identical(centred@mack@sigma, plain@mack@sigma))
+# Centring the residuals (the default) changes the draws, not the model.
+centred <- mack_one_year(raa, n_sims = 50, seed = 1)
+uncentred <- mack_one_year(raa, n_sims = 50, seed = 1, centre_residuals = FALSE)
+stopifnot(identical(draw_matrix(centred@cdr),
+                    draw_matrix(mack_one_year(raa, n_sims = 50, seed = 1, centre_residuals = TRUE)@cdr)),
+          !identical(draw_matrix(centred@cdr), draw_matrix(uncentred@cdr)),
+          identical(centred@mack@sigma, uncentred@mack@sigma))
 bf_mk <- mack_one_year(gp, "paid", "bornhuetter_ferguson", exposure = "premium", apriori = 0.6,
                        n_sims = 300, seed = 4)
 stopifnot(identical(bf_mk@opening_ultimate, bornhuetter_ferguson(gp, "paid", "premium", apriori = 0.6)@ultimate))
@@ -1230,13 +1232,14 @@ for (simulate in list(odp_one_year, mack_one_year)) {
 }
 
 # The lifetime view of Mack's bootstrap (mack_bootstrap), as in
-# validation/tests/reserving_mack_bootstrap.rs: with centred residuals every
+# validation/tests/reserving_mack_bootstrap.rs: with centred residuals (the
+# default) every
 # origin's and the total standard deviation of the reserves is Mack's
 # analytic standard error, its parameter error scaled by the resampled
 # residuals' variance v, within five Monte Carlo standard errors, and the
 # mean is the chain ladder's reserve within five standard errors of the
 # mean.
-mb <- mack_bootstrap(raa, n_sims = 20000, seed = 20261007, centre_residuals = TRUE)
+mb <- mack_bootstrap(raa, n_sims = 20000, seed = 20261007)
 stopifnot(S7::S7_inherits(mb, mack_bootstrap_fit), S7::S7_inherits(mb@reserves, predictive_distribution),
           S7::S7_inherits(mb@mack, mack_fit), S7::S7_inherits(mb@chain_ladder, chain_ladder_fit),
           provenance(mb@reserves)$model == "mack_bootstrap",
@@ -1264,7 +1267,7 @@ stopifnot(abs(mb_total[["sd"]] - sqrt(mb_mack@total_process_risk^2 + v * mb_mack
 # pooled residuals have mean 0.14, which biases every pseudo factor: the mean
 # reserve is about 17% above the chain ladder's. The mean does not depend on
 # the process.
-uncentred <- mack_bootstrap(raa, n_sims = 2000, seed = 1, process = "none")
+uncentred <- mack_bootstrap(raa, n_sims = 2000, seed = 1, process = "none", centre_residuals = FALSE)
 stopifnot(mean(uncentred@reserves) > 1.1 * mb_cl@total_reserve)
 stopifnot(identical(names(as.data.frame(mb)), c("origin", "latest", "ultimate", "reserve", "mean", "std_dev")),
           identical(names(totals_frame(mb)), c("latest", "ultimate", "reserve", "mean", "std_dev")),

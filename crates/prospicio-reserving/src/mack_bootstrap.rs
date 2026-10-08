@@ -44,16 +44,19 @@
 //! The residuals of each factor have a zero `C_k^(alpha / 2)`-weighted
 //! sum, not a zero mean, so the pool's mean `m` is not zero (RAA 0.14,
 //! GenIns 0.01, ABC -0.06) and `E[f*_k] = f_k + m sigma_k
-//! sum(C_k^(alpha / 2)) / sum(C_k^alpha)`: the pseudo factors are biased,
-//! and so are the CDR, whose expectation under Mack's model is zero, and
-//! the lifetime view's mean reserve, compounded over each origin's
-//! remaining factors (in total about +17% of the chain ladder's on RAA,
-//! +0.7% on GenIns, -0.8% on ABC). EVW's Appendix 1 resamples the residuals
-//! as they are, which is the default;
+//! sum(C_k^(alpha / 2)) / sum(C_k^alpha)` if they are resampled as they
+//! are: the pseudo factors are biased, and so are the CDR, whose
+//! expectation under Mack's model is zero, and the lifetime view's mean
+//! reserve, compounded over each origin's remaining factors (in total about
+//! +17% of the chain ladder's on RAA, +0.7% on GenIns, -0.8% on ABC), and
+//! the bias widens the one-year view's standard deviation too (up to +1.3%
+//! on RAA against Merz and Wüthrich). So by default
 //! [`MackBootstrap::centre_residuals`] subtracts `m` from the pool first,
-//! and then the mean reserve is the chain ladder's. EVW's Table 4 expected
-//! reserves on Taylor–Ashe agree with the centred bootstrap, not the
-//! uncentred one.
+//! and then the pseudo factors are unbiased, the mean reserve is the chain
+//! ladder's and the mean CDR zero. EVW's Table 4 expected reserves on
+//! Taylor–Ashe agree with the centred bootstrap, not the uncentred one.
+//! Turning it off resamples the residuals uncentred, as EVW's Appendix 1 is
+//! written.
 
 use prospicio_core::StreamRng;
 use prospicio_math::special::norm_quantile;
@@ -85,8 +88,9 @@ use crate::triangle::{Segment, Triangle};
 /// variance and differ only in shape. `Residuals` has the resampled pool's
 /// moments instead: mean `f*_k C + m sd` and variance `(1 - m^2) sd^2`,
 /// `sd` the standard deviation above and `m` the pool's mean (its mean
-/// square is 1), so with uncentred residuals it adds a bias of its own;
-/// with [`MackBootstrap::centre_residuals`] its mean is `f*_k C`.
+/// square is 1): with [`MackBootstrap::centre_residuals`], the default,
+/// its mean is `f*_k C`, and with uncentred residuals it adds a bias of its
+/// own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MackProcess {
     /// Gamma with that mean and variance (EVW's parametric example). A
@@ -166,18 +170,18 @@ fn vanishing(mean: f64, variance: f64) -> f64 {
 /// one-year view reproduces Merz and Wüthrich's
 /// ([`MackFit::claims_development_result`](crate::MackFit::claims_development_result))
 /// within the Monte Carlo error of 20,000 simulations, and any other
-/// method, weighting or tail is re-reserved as the ODP's is. More
-/// simulations resolve the uncentred residuals' bias in the standard
-/// deviation too: RAA's youngest origin and total come out 1.2% and 1.3%
-/// above Merz and Wüthrich (its first pseudo factor is 14% high), against
-/// 0.0% centred.
+/// method, weighting or tail is re-reserved as the ODP's is. Its mean CDR
+/// is Merz and Wüthrich's zero within Monte Carlo error, and its lifetime
+/// view's mean reserve the chain ladder's, because the residuals are
+/// centred by default ([`centre_residuals`](Self::centre_residuals)).
 ///
-/// Its mean is not Merz and Wüthrich's zero unless
-/// [`centre_residuals`](Self::centre_residuals) is set: with EVW's
-/// uncentred residuals the mean CDR is about -0.21 (RAA), -0.04 (GenIns)
-/// and +0.18 (ABC) times its standard deviation, which shifts every
-/// quantile; centred, it is within Monte Carlo error of zero and the
-/// standard deviation still reconciles
+/// Uncentred, as EVW's Appendix 1 is written, the pool's mean biases the
+/// pseudo factors: the mean CDR is about -0.21 (RAA), -0.04 (GenIns) and
+/// +0.18 (ABC) times its standard deviation, which shifts every quantile;
+/// the lifetime mean reserve is about 17% above the chain ladder's on RAA;
+/// and more simulations resolve the bias in the standard deviation too:
+/// RAA's youngest origin and total come out 1.2% and 1.3% above Merz and
+/// Wüthrich (its first pseudo factor is 14% high), against 0.0% centred
 /// (`knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`).
 ///
 /// ```
@@ -226,8 +230,10 @@ pub struct MackBootstrap {
     pub development: Development,
     /// Subtract the pool's mean from the residuals before resampling them,
     /// for the pseudo factors and the `Residuals` process, so that the
-    /// pseudo factors are unbiased and the CDR's mean is about zero. Off by
-    /// default, as EVW's Appendix 1; see the [module
+    /// pseudo factors are unbiased, the CDR's mean is about zero and the
+    /// lifetime mean reserve the chain ladder's. On by default; `false`
+    /// resamples them uncentred, as England, Verrall and Wüthrich's
+    /// Appendix 1 is written. See the [module
     /// documentation](crate::mack_bootstrap).
     pub centre_residuals: bool,
 }
@@ -239,7 +245,7 @@ impl Default for MackBootstrap {
             seed: 0,
             process: MackProcess::Gamma,
             development: Development::default(),
-            centre_residuals: false,
+            centre_residuals: true,
         }
     }
 }
@@ -501,13 +507,14 @@ impl MackBootstrap {
     ///     development_grain: Grain::Year,
     ///     cumulative: true,
     /// })?;
-    /// let boot = MackBootstrap { n_sims: 2_000, seed: 42, centre_residuals: true, ..Default::default() };
+    /// let boot = MackBootstrap { n_sims: 2_000, seed: 42, ..Default::default() };
     /// let fit = boot.fit(&tri, "paid")?;
     /// assert_eq!(fit.reserves.dims(), ["origin"]);
     /// // 2020 is fully developed: no reserve.
     /// assert!(fit.reserves.draw_matrix().chunks(4).all(|row| row[0] == 0.0));
-    /// // Centred, the mean is the chain ladder's reserve within Monte
-    /// // Carlo error, and the standard deviation approximates Mack's.
+    /// // With the residuals centred (the default), the mean is the chain
+    /// // ladder's reserve within Monte Carlo error, and the standard
+    /// // deviation approximates Mack's.
     /// let cl = fit.mack.chain_ladder.total_reserve();
     /// assert!((fit.reserves.mean() / cl - 1.0).abs() < 0.05);
     /// assert!((fit.reserves.std_dev() / fit.mack.total_standard_error - 1.0).abs() < 0.2);
@@ -740,13 +747,13 @@ mod tests {
     use crate::{Grain, Month, OdpBootstrap};
     use prospicio_prob::PredictiveDistribution;
 
+    /// The default bootstrap (centred residuals) with these settings.
     fn boot(n_sims: usize, seed: u64, process: MackProcess) -> MackBootstrap {
         MackBootstrap {
             n_sims,
             seed,
             process,
-            development: Development::default(),
-            centre_residuals: false,
+            ..Default::default()
         }
     }
 
@@ -974,23 +981,36 @@ mod tests {
         // often negative under the normal. Under the Gamma or lognormal it
         // is negative only when its mean is, a pseudo first factor below
         // zero (its standard deviation is a third of the factor). Both draw
-        // one uniform per value, so they share the pseudo factors and go
-        // negative in the same simulations. The closing ultimate is that
-        // value times the refitted factors to ultimate, all positive. (The
-        // Gamma's shape is below 1 here, so a draw can be exactly zero.)
-        let negative = |process| {
+        // one uniform per value, so they share the pseudo factors: where
+        // the lognormal goes negative, so does the Gamma's mean, and the
+        // Gamma of its absolute value is negated: the value is negative
+        // there too. Its shape is below 1 there, so the draw is often tiny
+        // and can round to zero when the test rebuilds the closing value as
+        // `u0 - cdr` (as all 3 do at this seed), but it need not be. The
+        // closing ultimate is that value times the refitted factors to
+        // ultimate, all positive, so it has the value's sign.
+        // Centred (the default), the pseudo factors lose RAA's upward bias
+        // and a few more go below zero (3 at this seed, none uncentred).
+        let closing = |process| {
             let fit = boot(2_000, 3, process)
                 .one_year(&raa(), "values", &chain_ladder())
                 .unwrap();
             let u0 = fit.opening_ultimate[9];
             column(&fit.cdr, 9)
                 .iter()
-                .filter(|&&x| u0 - x < 0.0)
-                .count()
+                .map(|x| u0 - x)
+                .collect::<Vec<f64>>()
         };
-        let gamma = negative(MackProcess::Gamma);
-        assert_eq!(gamma, negative(MackProcess::Lognormal));
-        assert!(negative(MackProcess::Normal) > 10 * gamma.max(1));
+        let negative = |x: &[f64]| (0..x.len()).filter(|&i| x[i] < 0.0).collect::<Vec<_>>();
+        let (gamma, lognormal) = (closing(MackProcess::Gamma), closing(MackProcess::Lognormal));
+        let below = negative(&lognormal);
+        assert_eq!(below.len(), 3);
+        // The signs agree: non-positive exactly where the lognormal is
+        // negative, non-negative everywhere else.
+        for (i, (&g, &l)) in gamma.iter().zip(&lognormal).enumerate() {
+            assert!(if l < 0.0 { g <= 0.0 } else { g >= 0.0 }, "{i}: {g} vs {l}");
+        }
+        assert!(negative(&closing(MackProcess::Normal)).len() > 10 * below.len());
     }
 
     #[test]

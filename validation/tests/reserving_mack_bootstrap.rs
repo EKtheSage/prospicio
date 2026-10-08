@@ -3,8 +3,8 @@
 //! on RAA, GenIns and ABC and against England, Verrall and Wüthrich (2019),
 //! Table 4.
 //!
-//! * The reconciliation: with centred residuals, each origin's and the
-//!   total standard deviation of the simulated reserves match R
+//! * The reconciliation: with the default, centred residuals, each
+//!   origin's and the total standard deviation of the simulated reserves match R
 //!   ChainLadder's `MackChainLadder(tri, est.sigma = ...)`
 //!   (`reference/reserving_chainladder_r.csv`), with either way of filling
 //!   the last sigma, within five Monte Carlo standard errors of the simulated
@@ -23,7 +23,7 @@
 //!   pseudo factor and the mean reserve with it (in total about +17% on
 //!   RAA, +0.7% on GenIns and -0.8% on ABC), and the standard deviation
 //!   grows with the mean (RAA +9%), so only the centred bootstrap
-//!   reconciles.
+//!   reconciles, which is why it is the default.
 //! * England, Verrall and Wüthrich (2019), Table 4: their bootstrap of
 //!   Mack's model, 500,000 simulations on Taylor–Ashe (GenIns) with Mack's
 //!   rule for the last sigma, expected reserve and standard deviation per
@@ -52,12 +52,9 @@ use std::sync::OnceLock;
 const SIMS: usize = 20_000;
 const SEED: u64 = 20_261_007;
 
-fn boot(
-    dataset: &str,
-    sigma_interpolation: SigmaInterpolation,
-    process: MackProcess,
-    centre_residuals: bool,
-) -> MackBootstrapFit {
+/// The bootstrap with these settings, otherwise the default (centred
+/// residuals).
+fn bootstrap(sigma_interpolation: SigmaInterpolation, process: MackProcess) -> MackBootstrap {
     MackBootstrap {
         n_sims: SIMS,
         seed: SEED,
@@ -66,10 +63,19 @@ fn boot(
             sigma_interpolation,
             ..Default::default()
         },
-        centre_residuals,
+        ..Default::default()
     }
-    .fit(&triangle(dataset), "values")
-    .unwrap_or_else(|e| panic!("{dataset}: {e}"))
+}
+
+/// The lifetime view of `dataset` under [`bootstrap`].
+fn boot(
+    dataset: &str,
+    sigma_interpolation: SigmaInterpolation,
+    process: MackProcess,
+) -> MackBootstrapFit {
+    bootstrap(sigma_interpolation, process)
+        .fit(&triangle(dataset), "values")
+        .unwrap_or_else(|e| panic!("{dataset}: {e}"))
 }
 
 /// The process of the reconciliation runs (see the module documentation).
@@ -85,7 +91,7 @@ fn process(dataset: &str) -> MackProcess {
 /// the reconciliation and Table 4 both check: simulated once.
 fn genins_mack() -> &'static MackBootstrapFit {
     static FIT: OnceLock<MackBootstrapFit> = OnceLock::new();
-    FIT.get_or_init(|| boot("genins", SigmaInterpolation::Mack, MackProcess::Gamma, true))
+    FIT.get_or_init(|| boot("genins", SigmaInterpolation::Mack, MackProcess::Gamma))
 }
 
 /// Mean, standard deviation and the Monte Carlo standard error of the
@@ -205,7 +211,7 @@ const RULES: [(&str, SigmaInterpolation); 2] = [
 ];
 
 #[test]
-fn centred_bootstrap_reconciles_with_mack() {
+fn bootstrap_reconciles_with_mack() {
     // The Gamma runs are the slow ones: one rule each for RAA and GenIns
     // (the rule changes only the last sigma; parameter error alone is
     // checked under both below), both for ABC.
@@ -223,7 +229,7 @@ fn centred_bootstrap_reconciles_with_mack() {
             let fit = if (dataset, sigma_interpolation) == ("genins", SigmaInterpolation::Mack) {
                 genins_mack()
             } else {
-                owned = boot(dataset, sigma_interpolation, process(dataset), true);
+                owned = boot(dataset, sigma_interpolation, process(dataset));
                 &owned
             };
             let v = pool_variance(fit);
@@ -251,7 +257,7 @@ fn parameter_error_is_mack_parameter_risk() {
     let mut failures = Vec::new();
     for (method, sigma_interpolation) in RULES {
         for dataset in ["raa", "genins", "abc"] {
-            let fit = boot(dataset, sigma_interpolation, MackProcess::None, true);
+            let fit = boot(dataset, sigma_interpolation, MackProcess::None);
             let v = pool_variance(&fit);
             let want =
                 |origin: &str| v.sqrt() * mack(&cases, dataset, method, "parameter_risk", origin);
@@ -313,10 +319,15 @@ fn evw_2019_table_4() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 
-    // Uncentred, the total expected reserve is far above theirs. The mean
-    // does not depend on the process, so parameter error alone shows it,
-    // with its own smaller standard error.
-    let uncentred = boot("genins", SigmaInterpolation::Mack, MackProcess::None, false);
+    // Uncentred (EVW's Appendix 1 as written), the total expected reserve
+    // is far above theirs. The mean does not depend on the process, so
+    // parameter error alone shows it, with its own smaller standard error.
+    let uncentred = MackBootstrap {
+        centre_residuals: false,
+        ..bootstrap(SigmaInterpolation::Mack, MackProcess::None)
+    }
+    .fit(&triangle("genins"), "values")
+    .unwrap();
     let (mean, sd, _) = moments(&find(&columns(&uncentred), ""));
     let (want, theirs_sd) = (18_684_738.0, 2_448_700.0);
     let combined = (sd * sd / SIMS as f64 + theirs_sd * theirs_sd / THEIRS).sqrt();
