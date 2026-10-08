@@ -1648,6 +1648,202 @@ class CompoundReport:
         """
 
 @final
+class Count:
+    """
+    A claim count from one of the families beyond the Poisson, negative
+    binomial and binomial: zero-modified and zero-truncated counts, the
+    logarithmic, mixed Poisson counts (negative binomial, Delaporte,
+    Poisson-inverse Gaussian and its shifted version), Poisson-stopped sums
+    (Neyman type A, Pólya-Aeppli) and empirical counts. These are
+    ``aggregate``'s ``zm``, ``zt``, ``logarithmic``, ``mixed``,
+    ``neymana`` and ``dfreq``. Make one with a static constructor; every
+    aggregation function takes it like any other count.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Count, Poisson
+    >>> n = Count.zero_truncated(Poisson(2.0))
+    >>> n.pmf(0)
+    0.0
+    >>> pig = Count.mixed_poisson(10.0, 0.5, mixing="inverse_gaussian")
+    >>> round(pig.variance(), 9)
+    35.0
+    """
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, k: int) -> float:
+        """
+        ``P(N <= k)``.
+        
+        Parameters
+        ----------
+        k : int
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def compound_poisson(rate: float, secondary: Any) -> Count:
+        """
+        A Poisson(``rate``) number of clusters, each a ``secondary`` count:
+        Poisson secondaries give the Neyman type A.
+        
+        Parameters
+        ----------
+        rate : float
+        secondary : Poisson, NegativeBinomial, Binomial or Count
+        
+        Returns
+        -------
+        Count
+        """
+    @staticmethod
+    def empirical(probs: Sequence[float]) -> Count:
+        """
+        An empirical count, ``P(N = k) = probs[k]``.
+        
+        Parameters
+        ----------
+        probs : list of float
+            Non-negative, summing to 1.
+        
+        Returns
+        -------
+        Count
+        """
+    @staticmethod
+    def logarithmic(p: float) -> Count:
+        """
+        The logarithmic count on ``1, 2, ...``:
+        ``P(N = k) = -p**k / (k log(1 - p))``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``(0, 1)``.
+        
+        Returns
+        -------
+        Count
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the claim count.
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def mixed_poisson(mean: float, cv: float, mixing: str = "gamma", shift: float = 0.0) -> Count:
+        """
+        A Poisson count whose mean is ``mean * theta``, with the mixing
+        variable ``theta = shift + (1 - shift) G`` of mean 1 and coefficient
+        of variation ``cv``; variance ``mean + mean**2 cv**2``.
+        
+        Parameters
+        ----------
+        mean : float
+        cv : float
+            Coefficient of variation of ``theta``, fixed part included.
+        mixing : {"gamma", "inverse_gaussian"}, default "gamma"
+            The distribution of ``G``. Gamma gives the negative binomial
+            (``shift = 0``) or the Delaporte; inverse Gaussian the
+            Poisson-inverse Gaussian or its shifted version.
+        shift : float, default 0.0
+            The fixed part of ``theta``, in ``[0, 1)``.
+        
+        Returns
+        -------
+        Count
+        """
+    def panjer_ab(self, /) -> tuple[float, float] |None:
+        """
+        ``(a, b)`` of the ``(a, b, 1)`` class, or ``None`` when Panjer's
+        recursion does not apply (use FFT).
+        
+        Returns
+        -------
+        tuple of (float, float) or None
+        """
+    def pmf(self, /, k: int) -> float:
+        """
+        ``P(N = k)``.
+        
+        Parameters
+        ----------
+        k : int
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> int:
+        """
+        Smallest ``k`` with ``P(N <= k) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        int
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[int]:
+        """
+        ``n`` claim counts from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of int
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the claim count.
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def zero_modified(base: Any, p0: float) -> Count:
+        """
+        The base count with ``P(N = 0) = p0``; the other probabilities are
+        scaled to sum to ``1 - p0``.
+        
+        Parameters
+        ----------
+        base : Poisson, NegativeBinomial, Binomial or Count
+        p0 : float
+            In ``[0, 1)``.
+        
+        Returns
+        -------
+        Count
+        """
+    @staticmethod
+    def zero_truncated(base: Any) -> Count:
+        """
+        The base count conditioned on at least one claim.
+        
+        Parameters
+        ----------
+        base : Poisson, NegativeBinomial, Binomial or Count
+        
+        Returns
+        -------
+        Count
+        """
+
+@final
 class Custom:
     """
     A loss severity defined by your own distribution function: the slow

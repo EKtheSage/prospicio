@@ -39,6 +39,7 @@ reference:
       - negative_binomial_count_from_mean_variance
       - binomial_count
       - claim_count
+      - claim_count_dist
       - pmf
   - title: Distribution functions
     contents:

@@ -16,6 +16,7 @@ pub(crate) enum AnyCount {
     Poisson(prospicio_prob::Poisson),
     NegativeBinomial(prospicio_prob::NegativeBinomial),
     Binomial(prospicio_prob::Binomial),
+    Other(prospicio_prob::count_families::CountDist),
 }
 
 impl AnyCount {
@@ -29,8 +30,11 @@ impl AnyCount {
         if let Ok(n) = obj.extract::<PyRef<'_, crate::pareto::PyBinomial>>() {
             return Ok(Self::Binomial(n.inner));
         }
+        if let Ok(n) = obj.extract::<PyRef<'_, crate::counts::PyCount>>() {
+            return Ok(Self::Other(n.inner.clone()));
+        }
         Err(PyTypeError::new_err(
-            "expected a Poisson, a NegativeBinomial or a Binomial",
+            "expected a Poisson, a NegativeBinomial, a Binomial or a Count",
         ))
     }
 
@@ -39,6 +43,7 @@ impl AnyCount {
             Self::Poisson(n) => n,
             Self::NegativeBinomial(n) => n,
             Self::Binomial(n) => n,
+            Self::Other(n) => n,
         }
     }
 }
@@ -53,7 +58,7 @@ impl Counting for AnyCount {
     fn variance(&self) -> f64 {
         self.as_counting().variance()
     }
-    fn panjer_ab(&self) -> (f64, f64) {
+    fn panjer_ab(&self) -> Option<(f64, f64)> {
         self.as_counting().panjer_ab()
     }
     fn pgf(&self, z: f64) -> f64 {

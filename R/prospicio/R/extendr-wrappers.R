@@ -974,6 +974,38 @@ Binomial$sample <- function(n, seed, stream) .Call(wrap__Binomial__sample, self,
 #' @export
 `[[.Binomial` <- `$.Binomial`
 
+ClaimCount <- new.env(parent = emptyenv())
+
+ClaimCount$zero_modified <- function(base, p0) .Call(wrap__ClaimCount__zero_modified, base, p0)
+
+ClaimCount$logarithmic <- function(p) .Call(wrap__ClaimCount__logarithmic, p)
+
+ClaimCount$mixed_poisson <- function(mean, cv, mixing, shift) .Call(wrap__ClaimCount__mixed_poisson, mean, cv, mixing, shift)
+
+ClaimCount$compound_poisson <- function(rate, secondary) .Call(wrap__ClaimCount__compound_poisson, rate, secondary)
+
+ClaimCount$empirical <- function(probs) .Call(wrap__ClaimCount__empirical, probs)
+
+ClaimCount$kind <- function() .Call(wrap__ClaimCount__kind, self)
+
+ClaimCount$pmf <- function(k) .Call(wrap__ClaimCount__pmf, self, k)
+
+ClaimCount$cdf <- function(k) .Call(wrap__ClaimCount__cdf, self, k)
+
+ClaimCount$mean <- function() .Call(wrap__ClaimCount__mean, self)
+
+ClaimCount$variance <- function() .Call(wrap__ClaimCount__variance, self)
+
+ClaimCount$quantile <- function(p) .Call(wrap__ClaimCount__quantile, self, p)
+
+ClaimCount$sample <- function(n, seed, stream) .Call(wrap__ClaimCount__sample, self, n, seed, stream)
+
+#' @export
+`$.ClaimCount` <- function (self, name) { func <- ClaimCount[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ClaimCount` <- `$.ClaimCount`
+
 NaturalPortfolio <- new.env(parent = emptyenv())
 
 NaturalPortfolio$from_rows <- function(units, x, probs) .Call(wrap__NaturalPortfolio__from_rows, units, x, probs)

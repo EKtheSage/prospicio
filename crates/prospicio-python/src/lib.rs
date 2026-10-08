@@ -14,6 +14,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod aggregate;
+mod counts;
 mod distributions;
 mod models;
 mod natural;
@@ -31,6 +32,8 @@ fn to_py(e: prospicio_core::Error) -> PyErr {
 mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{PyCompoundReport, PyEventSet, fft, panjer, simulate_events};
+    #[pymodule_export]
+    use super::counts::PyCount;
     #[pymodule_export]
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,

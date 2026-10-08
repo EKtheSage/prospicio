@@ -42,6 +42,7 @@ reference:
       - distributions.Poisson
       - distributions.NegativeBinomial
       - distributions.Binomial
+      - distributions.Count
       - distributions.claim_count
   - title: Predictive distributions
     desc: The joint result every model returns.

@@ -81,3 +81,10 @@ sources:
 * `pedagogy.ClassicalPremium`'s Fischer principle reads `self.p`, which
   nothing sets, so it raises unless the caller sets it. Its semi-variance
   principle adds `θ E[(X - μ)₊²]`, not the root.
+* Counts: `build('agg A n claims dsev [1] <frequency>')` gives the count's
+  distribution as the aggregate's. `poisson zm p0` fixes the *realized*
+  mean (the base mean is solved); a trailing `!` fixes the base mean
+  instead. `mixed delaporte cv c` and `mixed sig cv c` take the cv of the
+  whole mixing variable, fixed part `c` included. `neymana θ` with `n`
+  claims has `n / θ` clusters. `pascal cv k` came out with mean 6.0104 for
+  6 claims on a 1024-point grid, so it was left out of the parity.

@@ -233,3 +233,34 @@ def test_distributions_save_and_load_as_json():
         to_json(Custom(lambda x: 1 - math.exp(-x)))
     with pytest.raises(ValueError):
         from_json('{"format": "risk_rs.distribution", "format_version": 1, "family": "gamma", "shape": -1, "scale": 1}')
+
+
+def test_more_claim_counts():
+    from prospicio.aggregate import fft, panjer
+    from prospicio.distributions import Count, Grid, NegativeBinomial, Poisson
+
+    zt = Count.zero_truncated(Poisson(2.0))
+    assert zt.pmf(0) == 0.0
+    assert zt.mean() == pytest.approx(2.0 / (1.0 - math.exp(-2.0)))
+    assert zt.panjer_ab() == (0.0, 2.0)
+    zm = Count.zero_modified(NegativeBinomial(2.0, 1.5), 0.3)
+    assert zm.pmf(0) == pytest.approx(0.3)
+    # aggregate 1.0.1's Poisson-inverse Gaussian, mean 10, cv 0.5.
+    pig = Count.mixed_poisson(10.0, 0.5, mixing="inverse_gaussian")
+    assert pig.pmf(0) == pytest.approx(0.0030337404, abs=1e-10)
+    assert pig.panjer_ab() is None
+    ney = Count.compound_poisson(2.0, Poisson(3.0))
+    assert ney.mean() == pytest.approx(6.0)
+    assert Count.logarithmic(0.5).pmf(1) == pytest.approx(0.5 / math.log(2.0))
+    emp = Count.empirical([0.5, 0.25, 0.25])
+    assert emp.mean() == 0.75 and len(emp.sample(10, seed=1)) == 10
+    sev = Grid(1.0, [0.1, 0.3, 0.25, 0.2, 0.1, 0.05])
+    a, _ = panjer(zm, sev, 100)
+    b, _ = fft(zm, sev, 100)
+    assert max(abs(x - y) for x, y in zip(a.probs, b.probs)) < 1e-12
+    c, _ = fft(pig, sev, 400)
+    assert c.mean() == pytest.approx(10.0 * sev.mean(), rel=1e-8)
+    with pytest.raises(ValueError):
+        panjer(pig, sev, 100)
+    with pytest.raises(ValueError):
+        Count.mixed_poisson(1.0, 0.5, mixing="beta")

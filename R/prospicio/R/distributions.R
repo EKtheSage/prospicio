@@ -676,3 +676,103 @@ blend_predictive <- function(models, weights, seed) {
   }
   predictive_distribution(ptr = rust_result(ptr))
 }
+
+#' More claim counts
+#'
+#' Claim counts beyond the Poisson, negative binomial and binomial, as in
+#' `aggregate`'s `zm`, `zt`, `logarithmic`, `mixed`, `neymana` and
+#' `dfreq`:
+#'
+#' - `zero_modified_count()`: `base` with `P(N = 0) = p0`;
+#'   `zero_truncated_count()` is `p0 = 0`.
+#' - `logarithmic_count()`: `P(N = k) = -p^k / (k log(1 - p))` on `1, 2, ...`.
+#' - `mixed_poisson_count()`: Poisson with mean `mean * theta`, where
+#'   `theta = shift + (1 - shift) G` has mean 1 and coefficient of variation
+#'   `cv`, and `G` is gamma (negative binomial, or Delaporte with a shift)
+#'   or inverse Gaussian (Poisson-inverse Gaussian, or its shifted version).
+#'   Variance `mean + mean^2 cv^2`.
+#' - `compound_poisson_count()`: a Poisson(`rate`) number of clusters of
+#'   `secondary` claims (Poisson secondaries give the Neyman type A).
+#' - `empirical_count()`: `P(N = k) = probs[k + 1]`.
+#'
+#' Every aggregation function takes them. Zero-modified and logarithmic
+#' counts work with Panjer's recursion; the others need `method = "fft"`.
+#'
+#' @param base,secondary A claim count.
+#' @param p0 `P(N = 0)`, in `[0, 1)`.
+#' @param p The logarithmic parameter, in `(0, 1)`.
+#' @param mean,cv,shift See above.
+#' @param mixing `"gamma"` or `"inverse_gaussian"`.
+#' @param rate The Poisson rate of clusters.
+#' @param probs Probabilities of `0, 1, ...`, summing to 1.
+#' @param ptr Internal.
+#' @returns A `claim_count_dist`, which inherits from [distribution]: use
+#'   it with [pmf()], [cdf()], [mean()], [variance()], [quantile()] and
+#'   [draws()].
+#' @export
+#' @examples
+#' zt <- zero_truncated_count(poisson_count(2))
+#' pmf(zt, 0:3)
+#' pig <- mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian")
+#' variance(pig) # 10 + 100 * 0.25
+#' compound_distribution(pig, grid_distribution(1, c(0.2, 0.5, 0.3)), 200, method = "fft")
+claim_count_dist <- S7::new_class(
+  "claim_count_dist",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("ClaimCount"),
+    kind = S7::new_property(S7::class_character, getter = function(self) self@ptr$kind())
+  ),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+S7::method(pmf, claim_count_dist) <- function(dist, k, ...) rust_result(dist@ptr$pmf(as.double(k)), s7_call())
+S7::method(cdf, claim_count_dist) <- function(dist, q, ...) rust_result(dist@ptr$cdf(as.double(q)), s7_call())
+S7::method(mean, claim_count_dist) <- function(x, ...) x@ptr$mean()
+S7::method(variance, claim_count_dist) <- function(dist, ...) dist@ptr$variance()
+S7::method(quantile, claim_count_dist) <- function(x, probs, ...) {
+  call <- sys.call()
+  call[[1]] <- quote(quantile)
+  rust_result(x@ptr$quantile(as.double(probs)), call)
+}
+S7::method(draws, claim_count_dist) <- function(dist, n, seed, stream = 0, ...) {
+  rust_result(dist@ptr$sample(as.double(n), as.double(seed), as.double(stream)), s7_call())
+}
+S7::method(print, claim_count_dist) <- function(x, ...) {
+  cat(sprintf("<claim_count_dist> %s, mean %s\n", x@kind, format(mean(x))))
+  invisible(x)
+}
+
+#' @rdname claim_count_dist
+#' @export
+zero_modified_count <- function(base, p0) {
+  claim_count_dist(rust_result(ClaimCount$zero_modified(base@ptr, as.double(p0))))
+}
+
+#' @rdname claim_count_dist
+#' @export
+zero_truncated_count <- function(base) zero_modified_count(base, 0)
+
+#' @rdname claim_count_dist
+#' @export
+logarithmic_count <- function(p) claim_count_dist(rust_result(ClaimCount$logarithmic(as.double(p))))
+
+#' @rdname claim_count_dist
+#' @export
+mixed_poisson_count <- function(mean, cv, mixing = c("gamma", "inverse_gaussian"), shift = 0) {
+  mixing <- match.arg(mixing)
+  claim_count_dist(rust_result(ClaimCount$mixed_poisson(
+    as.double(mean), as.double(cv), mixing, as.double(shift)
+  )))
+}
+
+#' @rdname claim_count_dist
+#' @export
+compound_poisson_count <- function(rate, secondary) {
+  claim_count_dist(rust_result(ClaimCount$compound_poisson(as.double(rate), secondary@ptr)))
+}
+
+#' @rdname claim_count_dist
+#' @export
+empirical_count <- function(probs) claim_count_dist(rust_result(ClaimCount$empirical(as.double(probs))))

@@ -12,6 +12,7 @@
 
 pub mod capital;
 pub mod copula;
+pub mod count_families;
 pub mod counting;
 pub mod custom;
 pub mod dist;

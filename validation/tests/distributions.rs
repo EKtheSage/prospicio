@@ -620,3 +620,35 @@ fn distortions_match_aggregate() {
         }
     });
 }
+
+#[test]
+fn counts_match_aggregate() {
+    use prospicio_prob::count_families::{
+        CompoundPoisson, Logarithmic, MixedPoisson, Mixing, ZeroModified,
+    };
+    use prospicio_prob::{Counting, Poisson};
+    let cases = reference("counts_aggregate.csv");
+    check(&cases, |c| {
+        let k = c.number("arg")? as u64;
+        let v = |name: &str| c.param("params", name);
+        let n: Box<dyn Counting> = match c.get("distribution") {
+            "zm" => Box::new(ZeroModified::new(Poisson::new(v("lambda")).ok()?, v("p0")).ok()?),
+            "zt" => Box::new(ZeroModified::truncated(Poisson::new(v("lambda")).ok()?).ok()?),
+            "logarithmic" => Box::new(Logarithmic::new(v("p")).ok()?),
+            "mixed" => {
+                let cv = v("cv");
+                let mixing = if c.get("params").contains("mixing=gamma") {
+                    Mixing::Gamma { cv }
+                } else {
+                    Mixing::InverseGaussian { cv }
+                };
+                Box::new(MixedPoisson::new(v("lambda"), mixing, v("shift")).ok()?)
+            }
+            "neyman" => {
+                Box::new(CompoundPoisson::new(v("lambda"), Poisson::new(v("theta")).ok()?).ok()?)
+            }
+            _ => return None,
+        };
+        Some(n.pmf(k))
+    });
+}
