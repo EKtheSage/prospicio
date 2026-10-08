@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The simulated one-year view against Merz-Wuthrich, ODP and Mack's process
-description: Re-reserving on the ODP bootstrap gives a one-year CDR standard deviation 0.50 to 5.98 times Merz-Wuthrich's per origin; the same re-reserving under Mack's process (MackBootstrap) reconciles its standard deviation with Merz-Wuthrich within Monte Carlo error on RAA, GenIns and ABC, so the gap is the ODP's process model, not the re-reserving. EVW's uncentred residuals bias its mean CDR (-0.21 to +0.18 SD), and its SD too, by up to 1.3% on RAA's young origins at 200,000 simulations, which an exact formula for the bootstrap's moments explains (Merz-Wuthrich's linear approximation is worth at most 0.09%); centring the pool removes both. At a quarterly grain split from an annual triangle both models give about half the annual SD, the ODP through its scale, which falls with the degrees of freedom (36/171 on RAA), Mack through sigmas a quarter the size.
+description: Re-reserving on the ODP bootstrap gives a one-year CDR standard deviation 0.50 to 5.98 times Merz-Wuthrich's per origin; the same re-reserving under Mack's process (MackBootstrap) reconciles its standard deviation with Merz-Wuthrich within Monte Carlo error on RAA, GenIns and ABC, so the gap is the ODP's process model, not the re-reserving. EVW's uncentred residuals bias its mean CDR (-0.21 to +0.18 SD), and its SD too, by up to 1.3% on RAA's young origins at 200,000 simulations, which an exact formula for the bootstrap's moments explains (Merz-Wuthrich's linear approximation is worth at most 0.09%); centring the pool removes both, so MackBootstrap centres by default. At a quarterly grain split from an annual triangle both models give about half the annual SD, the ODP through its scale, which falls with the degrees of freedom (36/171 on RAA), Mack through sigmas a quarter the size.
 tags: [reserving, one-year, cdr, bootstrap, odp, mack, merz-wuthrich, solvency-ii]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-07T12:00:00-07:00 }
@@ -98,21 +98,26 @@ absorbed.
 
 # Mack's process in detail
 
-* With 200,000 simulations GenIns and ABC are within 0.4% of R per origin
-  and in total, but RAA's three youngest origins (1988 to 1990) and its
-  total come out 0.4% to 1.3% above R, 2.2 to 7.0 Monte Carlo standard
+* Uncentred (EVW's Appendix 1 as written, `centre_residuals: false`), with
+  200,000 simulations GenIns and ABC are within 0.4% of R per origin and
+  in total, but RAA's three youngest origins (1988 to 1990) and its total
+  come out 0.4% to 1.3% above R, 2.2 to 7.0 Monte Carlo standard
   errors (three runs). The uncentred residuals cause it, not
   Merz-Wuthrich's linear approximation: see the next section. At 20,000
   simulations five standard errors are 2.5% to 5%, so the CI test does
   not resolve it.
-* The bootstrap's draws equal the hand-written harness of EVW's Appendix 1
-  in the unit test bit for bit (GenIns, the first 300 of the harness's
-  20,000 simulations, each on its own stream), so the type is that
-  harness.[^unit]
+* The uncentred bootstrap's draws equal the hand-written harness of EVW's
+  Appendix 1 in the unit test bit for bit (GenIns, the first 300 of the
+  harness's 20,000 simulations, each on its own stream), so with
+  `centre_residuals: false` the type is that harness; the default,
+  centred, draws other values from the same random numbers.[^unit]
 * EVW's Table 4 (500,000 simulations, Mack's rule for the last sigma, total
-  one-year SD 1,778,428) against `MackBootstrap` with 20,000: total
-  1,779,997 (+0.09%), 2002 75,547 against 75,502, every origin within five
-  combined standard errors.[^mack][^evw]
+  one-year SD 1,778,428) against `MackBootstrap` with 20,000 (seed
+  20,261,006): centred (the default), total 1,778,254 (-0.01%), 2002
+  75,547 against 75,502, every origin within 1.2 combined standard errors;
+  uncentred, total 1,779,997 (+0.09%), every origin within five. GenIns's
+  pool mean is small, so the one-year SD cannot tell the two
+  apart.[^mack][^evw]
 * The process shape does not move the SD: Gamma and normal agree to 0.1%
   to 0.7% per origin on the same draws; Gamma, lognormal, residuals and
   normal all give GenIns's total within Monte Carlo error. RAA's normal
@@ -121,7 +126,8 @@ absorbed.
 * The mean CDR under Mack's process, with EVW's uncentred residuals, is
   -0.214 (RAA), -0.038 (GenIns) and +0.176 (ABC) times its SD (seed
   20,261,006, 20,000 simulations, log-linear last sigma; pinned in the
-  validation test). Merz-Wuthrich's CDR has mean zero. The cause: each
+  validation test until centring became the default). Merz-Wuthrich's CDR
+  has mean zero. The cause: each
   factor's residuals have a zero `C^(alpha / 2)`-weighted sum, not a zero
   mean, so the pool's mean is 0.1395 (RAA), 0.0135 (GenIns) and -0.0595
   (ABC) with mean square exactly 1, and `E[f*_k] = f_k + m sigma_k
@@ -133,13 +139,18 @@ absorbed.
   process draws from the same pool, so uncentred it adds a bias of its
   own (mean `f* C + m sd`, variance `(1 - m^2) sd^2`).[^mack][^evw]
 * `MackBootstrap::centre_residuals` subtracts the pool's mean before
-  resampling (off by default, as EVW). Centred, at the same seed and
-  20,000 simulations, the total mean CDR is -0.011 (RAA), -0.003 (GenIns)
-  and +0.007 (ABC) times its SD, within Monte Carlo error of zero, and the
-  SD still reconciles: total 1.003, 1.000 and 0.994 times R's
-  `CDR(1)S.E.`, per origin 0.989 to 1.005, 0.994 to 1.006 and 0.987 to
-  1.007, every origin within five Monte Carlo standard errors. Those
-  numbers were measured once, not in CI; a unit test checks on RAA (4,000
+  resampling. It is on by default (since branch
+  claude/mack-centre-default): the mean CDR is then Merz-Wuthrich's zero,
+  the lifetime mean reserve the chain ladder's, the SD Merz-Wuthrich's
+  without RAA's 1.3% excess, and EVW's Table 4 lifetime expected reserves
+  agree; `false` keeps EVW's Appendix 1 as written. Centred, at the same
+  seed and 20,000 simulations, the total mean CDR is -0.0108 (RAA),
+  -0.0035 (GenIns) and +0.0067 (ABC) times its SD, within 1.6 Monte Carlo
+  standard errors of zero (pinned in the validation test, which checks
+  them against the exact zero), and the SD reconciles: total 1.003, 1.000
+  and 0.994 times R's `CDR(1)S.E.`, per origin 0.989 to 1.005, 0.994 to
+  1.006 and 0.987 to 1.007 (measured once), every origin within five Monte
+  Carlo standard errors (the CI test). A unit test checks on RAA (4,000
   simulations) that the uncentred mean is far below zero and the centred
   Gamma and `Residuals` means are within four standard errors of it.[^unit]
   A review's independent R harness of EVW's Appendix 1 found the same
@@ -188,8 +199,9 @@ uncentred residuals' bias of the pseudo factors.[^mack]
   (GenIns 2010) R. Merz-Wuthrich's exact values are never below R, so
   the centred bootstrap is not their model either. The exact uncentred
   mean CDR is -0.204, -0.034 and +0.168 times its SD, and zero centred
-  (the 20,000-simulation regression pins -0.214, -0.038, +0.176, within
-  1.5 of its Monte Carlo standard errors, about `1 / sqrt(20,000)`). A
+  (the 20,000-simulation runs gave -0.214, -0.038, +0.176 uncentred, within
+  1.5 of their Monte Carlo standard errors, about `1 / sqrt(20,000)`, and
+  give -0.0108, -0.0035, +0.0067 centred, which the regression pins). A
   fast test pins these numbers and checks that, under Merz-Wuthrich's
   factors, the exact mean closing ultimates are the opening chain-ladder
   ones.
