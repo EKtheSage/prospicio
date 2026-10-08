@@ -9686,8 +9686,10 @@ def calibrate(family: str, dist: Any, premium: float, assets: float |None = None
     >>> from prospicio.distributions import Sampled
     >>> from prospicio.risk import calibrate
     >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
-    >>> calibrate("ccoc", x, (46.6 + 15) / 1.15)
-    Distortion.ccoc(0.15000000000000013)
+    >>> premium = (46.6 + 0.15 * 100) / 1.15
+    >>> d = calibrate("proportional_hazard", x, premium)
+    >>> round(d.measure(x), 9) == round(premium, 9)
+    True
     """
 
 def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "euler") -> Allocation:

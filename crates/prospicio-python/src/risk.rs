@@ -526,8 +526,10 @@ fn discrete_of(dist: &Bound<'_, PyAny>, assets: Option<f64>) -> PyResult<(Vec<f6
 /// >>> from prospicio.distributions import Sampled
 /// >>> from prospicio.risk import calibrate
 /// >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
-/// >>> calibrate("ccoc", x, (46.6 + 15) / 1.15)
-/// Distortion.ccoc(0.15000000000000013)
+/// >>> premium = (46.6 + 0.15 * 100) / 1.15
+/// >>> d = calibrate("proportional_hazard", x, premium)
+/// >>> round(d.measure(x), 9) == round(premium, 9)
+/// True
 #[pyfunction]
 #[pyo3(signature = (family, dist, premium, assets=None, r0=0.0))]
 pub(crate) fn calibrate(
