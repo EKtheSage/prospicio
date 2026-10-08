@@ -29,7 +29,8 @@ process draw of mean `f* C` and variance `sigma^2 C^(2 - alpha)` (EVW
 2019, Appendix 1, steps 7(a) to (g)). Against R ChainLadder's
 `MackChainLadder` (volume weighting, either rule for the last sigma):[^test]
 
-* **Centred residuals reconcile.** At 50,000 simulations (Gamma) the
+* **Centred residuals reconcile.** At 50,000 simulations (Gamma, by
+  inverse transform before 2026-10-08) the
   standard deviation is 0.991 to 1.007 times Mack's standard error per
   origin and 0.994 to 1.002 in total on RAA, GenIns and ABC, every origin
   within three Monte Carlo standard errors; the mean reserve is the chain
@@ -78,10 +79,14 @@ EVW's Table 4 (Taylor–Ashe, i.e. GenIns, Mack's rule for the last sigma,
 the chain ladder's: total 18,684,738 against 18,680,856 (+0.02%), and no
 origin more than two of their standard errors away.[^evw] The
 centred bootstrap matches every origin's expected reserve and standard
-deviation within five combined standard errors (20,000 simulations: total
-18,703,619 and 2,458,884 against their 2,448,700). The uncentred one, which
+deviation within five combined standard errors (20,000 simulations, seed
+20,261,007, the Marsaglia-Tsang Gamma sampler: total 18,680,964 and
+2,451,202 against their 18,684,738 and 2,448,700, every origin within 1.1
+combined standard errors; by inverse transform, before 2026-10-08,
+18,703,619 and 2,458,884). The uncentred one, which
 is what their Appendix 1 describes, puts the total at 18,816,241, eleven
-combined standard errors above theirs. So their implementation most
+combined standard errors above theirs (parameter error alone, which draws
+no Gamma variables, so either sampler gives it). So their implementation most
 likely resampled zero-mean residuals, by centring or otherwise; the paper
 does not say. An inference. Their one-year standard deviations (Table 4)
 are matched either way, since GenIns's pool mean is only 0.0135 and the

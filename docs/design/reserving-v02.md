@@ -625,8 +625,10 @@ was found, so the independent checks are these:
 
 On the volume-weighted chain ladder the ODP's standard deviation is not
 Merz–Wüthrich's: the ODP's variance is `phi` times the mean, Mack's
-`sigma_k^2` times the cumulative value. The ratio, per origin 0.50 to 5.98
-and in total RAA 0.61, GenIns 1.36, ABC 1.13, is recorded in
+`sigma_k^2` times the cumulative value. The ratio, per origin 0.50 to 5.96
+and in total RAA 0.62, GenIns 1.37, ABC 1.14 (measured with the
+Marsaglia–Tsang Gamma sampler; by inverse transform, before 2026-10-08,
+0.61, 1.36 and 1.13), is recorded in
 `knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`, and a
 seed-pinned regression test holds each standard deviation to R's value
 times that ratio within five Monte Carlo standard errors. It pins this
@@ -910,10 +912,10 @@ factor's variance, and with it every parameter error, is `v` times Mack's
   `sqrt(process^2 + v parameter^2)` from R ChainLadder's
   `MackChainLadder` process and parameter risks within five Monte Carlo
   standard errors of the simulated standard deviation, and the mean within
-  five standard errors of the mean of the chain ladder's reserve: RAA with
-  the log-linear last sigma, GenIns with Mack's rule (both Gamma), ABC with
-  both (lognormal, below). At 50,000 simulations (Gamma, centred, either
-  rule) the standard deviation is 0.991 to 1.007 times Mack's plain
+  five standard errors of the mean of the chain ladder's reserve: every
+  dataset under both rules for the last sigma, Gamma process. At 50,000
+  simulations (Gamma by inverse transform, before 2026-10-08, centred,
+  either rule) the standard deviation is 0.991 to 1.007 times Mack's plain
   standard error per origin and 0.994 to 1.002 in total, every origin
   within three Monte Carlo standard errors.
 * Parameter error alone (`MackProcess::None`) is `sqrt(v)` times R's
