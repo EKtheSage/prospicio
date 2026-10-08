@@ -36,6 +36,13 @@ fn reads_pyarrow_fixture() {
     assert_eq!(p.parameters, [("n_sims".to_string(), "3".to_string())]);
     assert_eq!(p.seed, Some(u64::MAX));
     assert_eq!(p.stream_scheme.as_deref(), Some("chacha20/sim-index/v1"));
+    // The fixture predates the samplers field (2026-10-08): not recorded, so
+    // it shares streams with a result simulated now on its seed but does
+    // not claim to replay it.
+    assert_eq!(p.samplers, None);
+    let now = prospicio_prob::Provenance::new("fixture").seed(u64::MAX, "chacha20/sim-index/v1");
+    assert!(p.shares_streams(&now));
+    assert!(!p.replays_same_draws(&now));
     assert_eq!(
         p.versions,
         // The fixture was written before the crates were renamed from act-*.

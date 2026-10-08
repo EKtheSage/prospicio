@@ -162,8 +162,8 @@ impl PredictiveDistribution {
     /// `rng = StreamRng::new(seed, i)` and fills `row`, one value per
     /// component. Each simulation owns its stream, so the result is
     /// identical for any number of threads and any row can be replayed
-    /// alone. The seed and [`SIM_INDEX_SCHEME`] are recorded in the
-    /// provenance.
+    /// alone. The seed, [`SIM_INDEX_SCHEME`] and this build's samplers
+    /// ([`crate::provenance::SAMPLERS`]) are recorded in the provenance.
     pub fn simulate<F>(
         dims: Vec<String>,
         components: Vec<ComponentKey>,
@@ -1097,6 +1097,17 @@ mod tests {
         assert_eq!(
             one.provenance().stream_scheme.as_deref(),
             Some(SIM_INDEX_SCHEME)
+        );
+        assert_eq!(
+            one.provenance().samplers,
+            Some(vec![(
+                "gamma".to_string(),
+                crate::provenance::GAMMA_SAMPLER.to_string()
+            )])
+        );
+        assert!(
+            one.provenance()
+                .replays_same_draws(uniform_rows(4).provenance())
         );
     }
 

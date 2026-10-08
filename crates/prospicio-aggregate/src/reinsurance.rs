@@ -764,12 +764,12 @@ impl Tower {
         }
         let totals = prospicio_prob::Empirical::draws(pd.total()).to_vec();
         let source = pd.provenance();
-        let mut provenance = Provenance::new("reinsurance_tower")
+        // The input's seed, stream scheme and samplers: the tower draws
+        // nothing itself.
+        let provenance = Provenance::new("reinsurance_tower")
             .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
-            .param("loss", format!("total of {}", source.model));
-        if let (Some(seed), Some(scheme)) = (source.seed, source.stream_scheme.clone()) {
-            provenance = provenance.seed(seed, scheme);
-        }
+            .param("loss", format!("total of {}", source.model))
+            .draws_from(source);
         self.apply_years(
             totals.chunks(1).map(|t| (t, None, None)),
             totals.len(),
@@ -859,6 +859,7 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 mod tests {
     use super::*;
     use crate::simulate_events;
+    use prospicio_prob::provenance::SIM_INDEX_SCHEME;
     use prospicio_prob::{Distribution, Lognormal, Poisson, Severity};
 
     #[test]
@@ -1377,5 +1378,24 @@ mod tests {
         let e = EventSet::from_years(vec![vec![5.0]], 0).unwrap();
         assert!(e.clone().with_sums_insured(vec![4.0]).is_err());
         assert!(e.with_sums_insured(vec![5.0, 6.0]).is_err());
+    }
+
+    #[test]
+    fn apply_aggregate_keeps_the_input_streams_and_samplers() {
+        let tower = Tower::new(vec![Layer::stop_loss("adc", 50.0, 100.0).unwrap()]).unwrap();
+        let mut source = Provenance::new("odp_bootstrap").seed(4, SIM_INDEX_SCHEME);
+        source.samplers = None; // read from a file saved before samplers were recorded
+        let pd = PredictiveDistribution::from_draws(
+            vec![],
+            vec![vec![]],
+            vec![90.0, 120.0],
+            source.clone(),
+        )
+        .unwrap();
+        let p = tower.apply_aggregate(&pd).unwrap().provenance().clone();
+        assert_eq!(p.seed, Some(4));
+        assert_eq!(p.stream_scheme.as_deref(), Some(SIM_INDEX_SCHEME));
+        assert_eq!(p.samplers, None);
+        assert!(p.shares_streams(&source));
     }
 }

@@ -25,12 +25,18 @@
 //! `risk_rs.key`.
 //!
 //! The provenance object has `model`, `parameters` and `versions` (arrays
-//! of `[name, value]` pairs), and `seed`, `stream_scheme` and `input_hash`
-//! (strings or `null`). The seed is a decimal string because JSON numbers
-//! lose precision above 2^53.
+//! of `[name, value]` pairs), `seed`, `stream_scheme` and `input_hash`
+//! (strings or `null`), and `samplers` (an array of `[family, sampler id]`
+//! pairs sorted by family, e.g. `[["gamma", "marsaglia-tsang/2026-10"]]`,
+//! or `null`; see [`Provenance::samplers`]). The seed is a decimal string
+//! because JSON numbers lose precision above 2^53.
 //!
-//! A change to any of this is a new `format_version`. Readers reject
-//! versions they do not know.
+//! A change to any of this is a new `format_version`, except a new
+//! optional provenance key: readers look keys up by name and ignore the
+//! others, and read a missing key as `null`, so files with and without it
+//! are both version 1. `samplers` was added that way on 2026-10-08; a file
+//! without it was written before then, and reads with `samplers` `None`
+//! (not recorded). Readers reject versions they do not know.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -346,6 +352,7 @@ fn provenance_to_json(p: &Provenance) -> Value {
         "parameters": pairs_to_json(&p.parameters),
         "seed": p.seed.map(|s| s.to_string()),
         "stream_scheme": p.stream_scheme,
+        "samplers": p.samplers.as_deref().map(pairs_to_json),
         "versions": pairs_to_json(&p.versions),
         "input_hash": p.input_hash,
     })
@@ -370,11 +377,17 @@ fn provenance_from_json(v: &Value) -> Result<Provenance, IpcError> {
                 .map_err(|_| format_error(format!("provenance seed {s:?} is not a u64")))
         })
         .transpose()?;
+    // Absent from files written before 2026-10-08.
+    let samplers = match v.get("samplers") {
+        None | Some(Value::Null) => None,
+        Some(s) => Some(pairs_from_json(Some(s), "samplers")?),
+    };
     Ok(Provenance {
         model,
         parameters: pairs_from_json(v.get("parameters"), "parameters")?,
         seed,
         stream_scheme: optional_str("stream_scheme")?,
+        samplers,
         versions: pairs_from_json(v.get("versions"), "versions")?,
         input_hash: optional_str("input_hash")?,
     })
@@ -385,7 +398,7 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
-    use crate::provenance::{InputHasher, SIM_INDEX_SCHEME};
+    use crate::provenance::{GAMMA_SAMPLER, InputHasher, SIM_INDEX_SCHEME};
 
     fn sample() -> PredictiveDistribution {
         let q = |y, m| Period::containing(Month::new(y, m).unwrap(), Grain::Quarter);
@@ -451,6 +464,53 @@ mod tests {
         let prov: Value = serde_json::from_str(&batch.schema().metadata()[PROVENANCE_KEY]).unwrap();
         assert_eq!(prov["seed"], json!(u64::MAX.to_string()));
         assert_eq!(prov["parameters"][0], json!(["n_sims", "4"]));
+        assert_eq!(prov["stream_scheme"], json!(SIM_INDEX_SCHEME));
+        assert_eq!(prov["samplers"], json!([["gamma", GAMMA_SAMPLER]]));
+    }
+
+    #[test]
+    fn provenance_without_samplers_reads_as_not_recorded() {
+        let pd = sample();
+        let batch = pd.to_record_batch().unwrap();
+        let mut prov: Value =
+            serde_json::from_str(&batch.schema().metadata()[PROVENANCE_KEY]).unwrap();
+        let mut want = pd.provenance().clone();
+        want.samplers = None;
+
+        // Files written before 2026-10-08 have no samplers key at all.
+        prov.as_object_mut().unwrap().remove("samplers");
+        let old = with_schema_meta(&batch, PROVENANCE_KEY, Some(&prov.to_string()));
+        let back = PredictiveDistribution::from_record_batch(&old).unwrap();
+        assert_eq!(back.provenance(), &want);
+        // Same streams as a file written now, but not the same draws.
+        assert!(back.provenance().shares_streams(pd.provenance()));
+        assert!(!back.provenance().replays_same_draws(pd.provenance()));
+
+        prov["samplers"] = Value::Null;
+        let null = with_schema_meta(&batch, PROVENANCE_KEY, Some(&prov.to_string()));
+        assert_eq!(
+            PredictiveDistribution::from_record_batch(&null)
+                .unwrap()
+                .provenance(),
+            &want
+        );
+
+        // A result without draws writes null and reads back None.
+        let unseeded = PredictiveDistribution::from_draws(
+            vec![],
+            vec![vec![]],
+            vec![1.0, 2.0],
+            Provenance::new("fit"),
+        )
+        .unwrap();
+        let mut buf = Vec::new();
+        unseeded.write_ipc(&mut buf).unwrap();
+        let back = PredictiveDistribution::read_ipc(Cursor::new(buf)).unwrap();
+        assert_eq!(back.provenance().samplers, None);
+
+        prov["samplers"] = json!([["gamma"]]);
+        let bad = with_schema_meta(&batch, PROVENANCE_KEY, Some(&prov.to_string()));
+        assert!(format_err(&bad).contains("samplers"));
     }
 
     #[test]

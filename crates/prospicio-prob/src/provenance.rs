@@ -1,21 +1,69 @@
 //! Where a result came from: model, parameters, seed, versions and a hash
 //! of the input.
+//!
+//! Two fields say how a simulated result's random numbers were made, and
+//! they answer different questions (`docs/design/rng.md`):
+//!
+//! - [`Provenance::stream_scheme`] names the rule mapping simulations to
+//!   streams. Two results with the same seed and scheme draw the same
+//!   uniforms in every simulation, so [`Provenance::shares_streams`], which
+//!   [`crate::PredictiveDistribution::join`] uses to refuse "independent"
+//!   parts that share random numbers, compares only these.
+//! - [`Provenance::samplers`] names the samplers turning those uniforms
+//!   into draws. [`Provenance::replays_same_draws`] compares it as well: a
+//!   result replays only under the same samplers.
+//!
+//! A sampler change gives the sampler a new id in [`SAMPLERS`] and leaves
+//! the stream scheme alone, so the seed-reuse check holds across it.
 
 /// Name of the rule mapping simulations to RNG streams used by
 /// [`crate::PredictiveDistribution::simulate`]: simulation `i` draws only
-/// from `StreamRng::new(seed, i)`. See `docs/design/rng.md`.
+/// from `StreamRng::new(seed, i)`. See `docs/design/rng.md`. It covers the
+/// mapping only (generator, key expansion, uniforms, stream allocation);
+/// the samplers that turn uniforms into draws are versioned in
+/// [`SAMPLERS`].
 pub const SIM_INDEX_SCHEME: &str = "chacha20/sim-index/v1";
+
+/// Id of the Gamma family's sampler: Marsaglia and Tsang (2000), with the
+/// `U^(1/shape)` boost below shape 1, since 2026-10-08 (`docs/design/rng.md`,
+/// stability log). It also draws the Student t copula's chi-square and the
+/// Clayton copula's frailty.
+pub const GAMMA_SAMPLER: &str = "marsaglia-tsang/2026-10";
+
+/// The samplers this build draws with, as `(family, sampler id)` pairs
+/// sorted by family, recorded by [`Provenance::seed`].
+///
+/// A family is listed once its sampler differs from the one it was first
+/// released with. A family missing from a recorded table uses that first
+/// sampler: inverse transform for every [`crate::Distribution`] and
+/// [`crate::Counting`] family, the method documented in [`crate::copula`]
+/// for a copula's frailty. Today only the Gamma is listed (inverse
+/// transform until 2026-10-08).
+///
+/// A change to a sampler's draws on a given stream gives it a new id,
+/// `<method>/<year>-<month>` of the change (a second change in one month
+/// adds the day), with an entry in the stability log of
+/// `docs/design/rng.md`. Ids are compared as text and never reused.
+pub const SAMPLERS: &[(&str, &str)] = &[("gamma", GAMMA_SAMPLER)];
 
 /// Audit record carried by every [`crate::PredictiveDistribution`], so a
 /// result can be traced to its model and replayed from its seed.
 ///
 /// ```
 /// use prospicio_prob::Provenance;
+/// use prospicio_prob::provenance::{GAMMA_SAMPLER, SIM_INDEX_SCHEME};
 ///
 /// let p = Provenance::new("odp_bootstrap").param("n_sims", 10_000);
 /// assert_eq!(p.model, "odp_bootstrap");
 /// assert_eq!(p.parameters, [("n_sims".to_string(), "10000".to_string())]);
 /// assert_eq!(p.versions[0].0, "prospicio-prob");
+/// assert_eq!(p.samplers, None);
+///
+/// let p = p.seed(42, SIM_INDEX_SCHEME);
+/// assert_eq!(
+///     p.samplers,
+///     Some(vec![("gamma".to_string(), GAMMA_SAMPLER.to_string())])
+/// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Provenance {
@@ -25,8 +73,18 @@ pub struct Provenance {
     pub parameters: Vec<(String, String)>,
     /// Seed of the simulation, if the result is simulated.
     pub seed: Option<u64>,
-    /// Rule mapping simulations to streams, e.g. [`SIM_INDEX_SCHEME`].
+    /// Rule mapping simulations to streams, e.g. [`SIM_INDEX_SCHEME`]: which
+    /// uniforms a simulation draws, not how they become draws (that is
+    /// [`samplers`](Self::samplers)).
     pub stream_scheme: Option<String>,
+    /// Samplers the draws were made with, as `(family, sampler id)` pairs
+    /// sorted by family: the [`SAMPLERS`] of the build that drew them, so
+    /// every sampler the draws may have used. A family missing from it
+    /// draws by its first sampler (inverse transform for a distribution).
+    /// `None` when not recorded: a result without draws, or one saved
+    /// before 2026-10-08, when this field was split from the stream scheme,
+    /// whose Gamma draws (if any) may come from either Gamma sampler.
+    pub samplers: Option<Vec<(String, String)>>,
     /// Crate versions involved, starting with `prospicio-prob`.
     pub versions: Vec<(String, String)>,
     /// Hash of the model's canonical input, from [`InputHasher`].
@@ -41,6 +99,7 @@ impl Provenance {
             parameters: Vec::new(),
             seed: None,
             stream_scheme: None,
+            samplers: None,
             versions: vec![("prospicio-prob".into(), env!("CARGO_PKG_VERSION").into())],
             input_hash: None,
         }
@@ -58,10 +117,24 @@ impl Provenance {
         self
     }
 
-    /// Records the seed and the stream scheme it was used with.
+    /// Records the seed, the stream scheme it was used with, and this
+    /// build's [`SAMPLERS`] as the samplers: call it when this build makes
+    /// the draws. A result computed from another result's draws takes that
+    /// result's record with [`draws_from`](Self::draws_from) instead.
     pub fn seed(mut self, seed: u64, stream_scheme: impl Into<String>) -> Self {
         self.seed = Some(seed);
         self.stream_scheme = Some(stream_scheme.into());
+        self.samplers = Some(current_samplers());
+        self
+    }
+
+    /// Copies the seed, stream scheme and samplers of `source`, for a result
+    /// computed from `source`'s draws without drawing again (a reinsurance
+    /// tower applied to a reserve bootstrap).
+    pub fn draws_from(mut self, source: &Provenance) -> Self {
+        self.seed = source.seed;
+        self.stream_scheme = source.stream_scheme.clone();
+        self.samplers = source.samplers.clone();
         self
     }
 
@@ -71,6 +144,67 @@ impl Provenance {
         self.input_hash = Some(hash.into());
         self
     }
+
+    /// Whether simulation `i` of `self` and of `other` draw the same
+    /// uniforms: both have a seed and a stream scheme, and they are equal.
+    /// The samplers are not compared, since two results drawing the same
+    /// uniforms are dependent whatever turns them into draws; this is the
+    /// check [`crate::PredictiveDistribution::join`] makes for independent
+    /// parts.
+    ///
+    /// ```
+    /// use prospicio_prob::Provenance;
+    /// use prospicio_prob::provenance::SIM_INDEX_SCHEME;
+    ///
+    /// let a = Provenance::new("odp_bootstrap").seed(1, SIM_INDEX_SCHEME);
+    /// let mut b = Provenance::new("collective").seed(1, SIM_INDEX_SCHEME);
+    /// b.samplers = None; // as read from a file saved before 2026-10-08
+    /// assert!(a.shares_streams(&b));
+    /// assert!(!a.shares_streams(&Provenance::new("collective").seed(2, SIM_INDEX_SCHEME)));
+    /// assert!(!Provenance::new("fit").shares_streams(&Provenance::new("fit")));
+    /// ```
+    pub fn shares_streams(&self, other: &Provenance) -> bool {
+        self.seed.is_some()
+            && self.stream_scheme.is_some()
+            && self.seed == other.seed
+            && self.stream_scheme == other.stream_scheme
+    }
+
+    /// Whether `self` and `other` make the same draws simulation by
+    /// simulation: they [share streams](Self::shares_streams) and record
+    /// the same samplers. A record without samplers matches nothing, since
+    /// its Gamma draws may come from either sampler. With the same model,
+    /// parameters and input hash, the results are then the same.
+    ///
+    /// To ask whether this build replays a saved result, compare it with a
+    /// record this build makes on the same seed:
+    ///
+    /// ```
+    /// use prospicio_prob::Provenance;
+    /// use prospicio_prob::provenance::SIM_INDEX_SCHEME;
+    ///
+    /// let saved = Provenance::new("odp_bootstrap").seed(7, SIM_INDEX_SCHEME);
+    /// let now = Provenance::new("odp_bootstrap").seed(7, SIM_INDEX_SCHEME);
+    /// assert!(saved.replays_same_draws(&now));
+    ///
+    /// // Drawn before the Gamma's Marsaglia–Tsang sampler: same streams,
+    /// // other draws.
+    /// let mut old = saved.clone();
+    /// old.samplers = Some(vec![]);
+    /// assert!(old.shares_streams(&now));
+    /// assert!(!old.replays_same_draws(&now));
+    /// ```
+    pub fn replays_same_draws(&self, other: &Provenance) -> bool {
+        self.shares_streams(other) && self.samplers.is_some() && self.samplers == other.samplers
+    }
+}
+
+/// [`SAMPLERS`] as owned pairs.
+fn current_samplers() -> Vec<(String, String)> {
+    SAMPLERS
+        .iter()
+        .map(|&(family, id)| (family.into(), id.into()))
+        .collect()
 }
 
 /// BLAKE3 key-derivation context for [`InputHasher`]. It separates input
@@ -185,6 +319,60 @@ fn canonical_bits(x: f64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sampler_table_is_sorted_with_one_id_per_family() {
+        assert!(SAMPLERS.windows(2).all(|w| w[0].0 < w[1].0));
+        assert!(
+            SAMPLERS
+                .iter()
+                .all(|(f, id)| !f.is_empty() && !id.is_empty())
+        );
+        assert_eq!(SAMPLERS, [("gamma", GAMMA_SAMPLER)]);
+    }
+
+    #[test]
+    fn seed_records_the_samplers_and_draws_from_copies_them() {
+        let p = Provenance::new("m").seed(3, SIM_INDEX_SCHEME);
+        assert_eq!(p.samplers, Some(current_samplers()));
+
+        let mut old = Provenance::new("odp_bootstrap").seed(3, SIM_INDEX_SCHEME);
+        old.samplers = None;
+        let derived = Provenance::new("tower").draws_from(&old);
+        assert_eq!(derived.seed, Some(3));
+        assert_eq!(derived.stream_scheme.as_deref(), Some(SIM_INDEX_SCHEME));
+        assert_eq!(derived.samplers, None);
+        assert_eq!(Provenance::new("t").draws_from(&p).samplers, p.samplers);
+        assert_eq!(
+            Provenance::new("t").draws_from(&Provenance::new("fit")),
+            Provenance::new("t")
+        );
+    }
+
+    #[test]
+    fn replay_needs_streams_and_samplers_but_stream_sharing_needs_streams_only() {
+        let now = Provenance::new("m").seed(9, SIM_INDEX_SCHEME);
+        let mut older_gamma = now.clone();
+        older_gamma.samplers = Some(vec![("gamma".into(), "marsaglia-tsang/2026-09".into())]);
+        let mut unrecorded = now.clone();
+        unrecorded.samplers = None;
+        let other_seed = Provenance::new("m").seed(10, SIM_INDEX_SCHEME);
+        let other_scheme = Provenance::new("m").seed(9, "chacha20/sim-index/v2");
+
+        assert!(now.replays_same_draws(&now.clone()));
+        for p in [&older_gamma, &unrecorded] {
+            assert!(now.shares_streams(p) && p.shares_streams(&now));
+            assert!(!now.replays_same_draws(p) && !p.replays_same_draws(&now));
+        }
+        assert!(!unrecorded.replays_same_draws(&unrecorded.clone()));
+        for p in [&other_seed, &other_scheme] {
+            assert!(!now.shares_streams(p));
+            assert!(!now.replays_same_draws(p));
+        }
+        let unseeded = Provenance::new("fit");
+        assert!(!unseeded.shares_streams(&unseeded.clone()));
+        assert!(!unseeded.replays_same_draws(&unseeded.clone()));
+    }
 
     #[test]
     fn matches_an_independent_blake3() {

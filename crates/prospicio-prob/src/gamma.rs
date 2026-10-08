@@ -408,6 +408,10 @@ mod tests {
     /// (ChaCha20 from `cryptography`, SciPy's `ndtri`) to within 2e-15.
     #[test]
     fn sample_is_pinned() {
+        // These draws are the sampler `GAMMA_SAMPLER` names. A change that
+        // moves them gives the sampler a new id (docs/design/rng.md,
+        // stability policy), so the two are pinned together.
+        assert_eq!(crate::provenance::GAMMA_SAMPLER, "marsaglia-tsang/2026-10");
         let small = Gamma::new(0.3, 2.0).unwrap();
         let large = Gamma::new(2.5, 400.0).unwrap();
         let mut rng = StreamRng::new(42, 3);
