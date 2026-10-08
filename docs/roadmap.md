@@ -51,7 +51,9 @@ what it is aiming for by v1.0.
 ### `prospicio-math` (Probability lane)
 
 - **Now:** quadrature, linear algebra, one-dimensional minimizers (Brent,
-  golden section), Nelder–Mead, root finding, special functions, splines.
+  golden section), Nelder–Mead, root finding, special functions (with the
+  incomplete beta and gamma past their usual domain, the exponential
+  integral and the Mills ratio), splines.
 - **Next, on demand:** log-determinants and Hessians for REML smoothing
   (`prospicio-glm`), and Sobol sequences for quasi-Monte Carlo (v1.x).
 - **v1.0:** only the numerics other crates use. No general-purpose
@@ -61,8 +63,9 @@ what it is aiming for by v1.0.
 
 - **Now:**
   - Distributions in three representations (parametric, `Grid`,
-    `Sampled`), plus counts, the Pareto family, mixtures, `Custom` and
-    the `Dist` enum with JSON save and load.
+    `Sampled`), plus counts, the Pareto family, the inverse gamma,
+    inverse Gaussian, Burr and scaled beta, mixtures, truncation and
+    splicing, `Custom` and the `Dist` enum with JSON save and load.
   - `PredictiveDistribution`: join, reorder, blend, Arrow IPC.
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean),
     Iman–Conover, capital allocation (Euler, covariance, Shapley and
