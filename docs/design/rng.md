@@ -75,21 +75,30 @@ large shapes, which made the reserving bootstraps' Gamma process slow.
   - **The samplers** (`samplers`) name how those uniforms become draws:
     `(family, sampler id)` pairs sorted by family, now
     `gamma = marsaglia-tsang/2026-10`, from the build's table
-    `prospicio_prob::provenance::SAMPLERS`, recorded by every seeded
-    result (`Provenance::seed`). A family missing from the table uses its
-    first sampler: inverse transform for every distribution and counting
-    family, the documented method for a copula's frailty. A change to a
-    family's sampling method or to the uniforms it consumes gives the
-    family a new id (`<method>/<year>-<month>`, adding the day for a
-    second change in a month; ids are never reused), never a scheme bump.
+    `prospicio_prob::provenance::SAMPLERS`, recorded by every result
+    whose draws this build made (`Provenance::seed`). A result computed
+    from draws it did not make records their samplers, not the build's:
+    a tower on a distribution copies its source's (`draws_from`), a blend
+    keeps its models' common record, and years of losses from elsewhere
+    (`EventSet::from_years`) record none. A family missing from the
+    table uses its first sampler: inverse transform for every
+    distribution and counting family, the documented method for a
+    copula's frailty. The `gamma` entry is the Gamma distribution's
+    sampler; the Student t and Clayton copulas' Gamma variates run the
+    same code but have been Marsaglia–Tsang since release, as part of
+    the copulas' method, so a record without `gamma` does not change
+    them. A change to a family's sampling method or to the uniforms it
+    consumes gives the family a new id (`<method>/<year>-<month>`,
+    adding the day for a second change in a month; ids are never
+    reused), never a scheme bump.
     A change to a model's documented draw order does the same under the
     model's name (no model has changed its order yet).
   - Replaying a result (`Provenance::replays_same_draws`) needs the same
     seed, scheme and samplers. A sampler change therefore stops replay
     matching without weakening `join`'s seed check.
 - Every change gets a stability-log entry below and a changelog entry.
-- Results saved before 2026-10-08 carry no samplers (`None`, "not
-  recorded"): they all say `chacha20/sim-index/v1`, whether their Gamma
+- Results made by builds from before the split (2026-10-08) carry no
+  samplers (`None`, "not recorded"): they all say `chacha20/sim-index/v1`, whether their Gamma
   draws came by inverse transform (before the Gamma change) or by
   Marsaglia–Tsang (on 2026-10-08, before the split), so
   `replays_same_draws` never matches them, while `join` still refuses
@@ -121,8 +130,11 @@ large shapes, which made the reserving bootstraps' Gamma process slow.
   result records the build's sampler table, today
   `[("gamma", "marsaglia-tsang/2026-10")]`; `Provenance::shares_streams`
   (used by `join`) compares seed and scheme, and
-  `Provenance::replays_same_draws` also the samplers. Arrow IPC files
-  carry them as an optional `samplers` key in the provenance JSON; the
+  `Provenance::replays_same_draws` also the samplers. A result built
+  from draws this build did not make records their samplers or none
+  (towers on a distribution, blends, `EventSet::from_years`). Arrow IPC
+  files carry them as an optional `samplers` key in the provenance JSON,
+  strictly sorted by family (readers reject any other order); the
   format version stays `1`, because readers ignore keys they do not know
   and read a missing key as not recorded, so files written before the
   split (the golden `validation/reference/predictive_distribution_v1.arrow`

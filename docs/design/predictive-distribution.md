@@ -158,7 +158,12 @@ origin in a reserve distribution and an origin in a triangle compare equal.
 
 `stream_scheme` names the rule in `rng.md` that maps simulations to
 streams; `samplers` names the samplers that turned the streams' uniforms
-into draws (a family not listed draws by inverse transform). With both,
+into draws: the build's sampler table, so every sampler the draws may
+have used (a family not listed uses its first sampler, inverse transform
+for a distribution and the documented method for a copula's frailty).
+A result computed from draws it did not make records its source's
+samplers (a tower on a reserve bootstrap; a blend whose models agree) or
+none (years of losses from elsewhere, `EventSet::from_years`). With both,
 a result can be replayed years later (`replays_same_draws`); `join`'s
 check that independent parts do not share random numbers needs only the
 first (`shares_streams`). See `rng.md`, stability policy.

@@ -1591,11 +1591,14 @@ impl PyPredictiveDistribution {
     ///
     /// ``stream_scheme`` names how simulations map to random-number
     /// streams; ``samplers`` lists ``(family, sampler id)`` pairs, e.g.
-    /// ``[("gamma", "marsaglia-tsang/2026-10")]``, naming how those numbers
-    /// became draws (a family not listed draws by inverse transform). A
+    /// ``[("gamma", "marsaglia-tsang/2026-10")]``: the sampler table of the
+    /// build that made the draws, so every sampler they may have used. A
+    /// family not listed uses its first sampler (inverse transform for a
+    /// distribution, the documented method for a copula's frailty). A
     /// result replays only with the same seed, stream scheme and samplers.
     /// ``samplers`` is ``None`` when not recorded: a result without draws,
-    /// or one saved before 2026-10-08.
+    /// one computed from draws made elsewhere, or one made by a build from
+    /// before samplers were recorded (2026-10-08).
     ///
     /// Returns
     /// -------
