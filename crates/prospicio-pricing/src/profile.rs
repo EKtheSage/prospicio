@@ -22,6 +22,12 @@
 //! from `[L, U]` and the band expects `EL / (((L + U)/2) m_b)` losses. The
 //! exposure-rated expectations average over the band, each SI weighted by
 //! its share of the band's loss (`∝ SI`).
+//!
+//! A uniform spread ignores the band's given SI, whose mean `(L + U)/2`
+//! may not match the band's total sum insured over its risks. A tilted
+//! spread ([`Band::with_tilted_bounds`]) keeps both: the density
+//! `∝ exp(θ s)` on `[L, U]` (the most even spread with a given mean, by
+//! entropy) with `θ` solved so its mean is the band's SI.
 
 use prospicio_aggregate::EventSet;
 use prospicio_core::{Error, Result, StreamRng};
@@ -85,9 +91,11 @@ pub struct Band {
     /// The band's exposure curve.
     pub curve: BandCurve,
     /// Bounds `[lower, upper]` between which the band's sums insured are
-    /// spread uniformly; `None` for one representative risk at
-    /// `sum_insured`.
+    /// spread; `None` for one representative risk at `sum_insured`.
     pub bounds: Option<(f64, f64)>,
+    /// The spread's tilt `θ`: its density over the bounds is
+    /// `∝ exp(θ s)`, so 0 is uniform.
+    pub tilt: f64,
 }
 
 impl Band {
@@ -121,6 +129,7 @@ impl Band {
             expected_loss,
             curve: curve.into(),
             bounds: None,
+            tilt: 0.0,
         })
     }
 
@@ -136,18 +145,77 @@ impl Band {
             return Err(invalid("upper", upper, "must be finite and at least lower"));
         }
         self.bounds = Some((lower, upper));
+        self.tilt = 0.0;
         Ok(self)
     }
 
-    /// The band's mean sum insured: `(lower + upper)/2` with bounds,
+    /// The same band with its sums insured spread between `lower` and
+    /// `upper` with mean `sum_insured`, so the spread matches both the
+    /// bounds and the band's total sum insured (`risks × sum_insured`):
+    /// the density `∝ exp(θ s)` on the bounds, with `θ` solved for that
+    /// mean (`θ = 0`, uniform, when `sum_insured` is the midpoint).
+    /// `sum_insured` must lie strictly between the bounds.
+    ///
+    /// ```
+    /// use prospicio_pricing::exposure::Mbbefd;
+    /// use prospicio_pricing::profile::Band;
+    ///
+    /// // 400 risks from 1m to 5m whose sums insured total 800m: mean 2m,
+    /// // below the midpoint, so the spread leans to small risks.
+    /// let b = Band::from_expected_loss(2e6, 400.0, 1.2e6, Mbbefd::swiss_re(3.0).unwrap())
+    ///     .unwrap()
+    ///     .with_tilted_bounds(1e6, 5e6)
+    ///     .unwrap();
+    /// assert!(b.tilt < 0.0);
+    /// assert!((b.mean_sum_insured() - 2e6).abs() < 1e-3);
+    /// ```
+    pub fn with_tilted_bounds(self, lower: f64, upper: f64) -> Result<Self> {
+        let mut b = self.with_bounds(lower, upper)?;
+        let si = b.sum_insured;
+        if !(lower < si && si < upper) {
+            return Err(invalid(
+                "sum_insured",
+                si,
+                "must lie strictly between the bounds for a tilted spread",
+            ));
+        }
+        let w = upper - lower;
+        b.tilt = solve_tilt((si - lower) / w) / w;
+        Ok(b)
+    }
+
+    /// The band's mean sum insured over its risks: with bounds, the
+    /// spread's mean (`(lower + upper)/2` uniform, `sum_insured` tilted);
     /// otherwise `sum_insured`.
     pub fn mean_sum_insured(&self) -> f64 {
-        self.bounds.map_or(self.sum_insured, |(l, u)| 0.5 * (l + u))
+        self.bounds.map_or(self.sum_insured, |(l, u)| {
+            l + (u - l) * tilt_mean((u - l) * self.tilt)
+        })
+    }
+
+    /// A sum insured from the band's spread at probability `p` (inverse
+    /// transform); `sum_insured` without bounds.
+    fn sum_insured_quantile(&self, p: f64) -> f64 {
+        let Some((l, u)) = self.bounds else {
+            return self.sum_insured;
+        };
+        let t = (u - l) * self.tilt;
+        let x = if t.abs() < 1e-12 {
+            p
+        } else if t > 0.0 {
+            // From the top, so exp never overflows.
+            1.0 + ((1.0 - p) * (-t).exp_m1()).ln_1p() / t
+        } else {
+            (p * t.exp_m1()).ln_1p() / t
+        };
+        (l + (u - l) * x.clamp(0.0, 1.0)).clamp(l, u)
     }
 
     /// The loss-weighted average of `f(SI)` over the band: `f(sum_insured)`
-    /// for one risk, `∫ s f(s) ds / ∫ s ds` over the bounds otherwise (a
-    /// risk's expected loss is proportional to its SI).
+    /// for one risk, `E[S f(S)] / E[S]` over the spread `S` otherwise (a
+    /// risk's expected loss is proportional to its SI). The expectations
+    /// are integrals over probability, `∫₀¹ g(Q(p)) dp` with `Q` the
+    /// spread's quantile, so a steep tilt needs no finer grid.
     fn loss_weighted(&self, f: impl Fn(f64) -> Result<f64>) -> Result<f64> {
         let Some((l, u)) = self.bounds else {
             return f(self.sum_insured);
@@ -156,14 +224,23 @@ impl Band {
             return f(l);
         }
         let pieces = 256;
-        let step = (u - l) / pieces as f64;
+        let step = 1.0 / pieces as f64;
         let mut num = 0.0;
+        let mut den = 0.0;
         for k in 0..pieces {
-            let a = l + step * k as f64;
-            let b = if k + 1 == pieces { u } else { a + step };
-            num += gauss_legendre(|s| f(s).map(|v| s * v), a, b)?;
+            let a = step * k as f64;
+            let b = if k + 1 == pieces { 1.0 } else { a + step };
+            num += gauss_legendre(
+                |p| {
+                    let s = self.sum_insured_quantile(p);
+                    f(s).map(|v| s * v)
+                },
+                a,
+                b,
+            )?;
+            den += gauss_legendre(|p| Ok(self.sum_insured_quantile(p)), a, b)?;
         }
-        Ok(num / (0.5 * (u * u - l * l)))
+        Ok(num / den)
     }
 
     /// A band with its premium and an expected loss ratio: expected loss
@@ -326,7 +403,7 @@ impl RiskProfile {
                     .min(self.bands.len() - 1);
                 let band = &self.bands[b];
                 let si = match band.bounds {
-                    Some((l, u)) => l + (u - l) * rng.next_open01(),
+                    Some(_) => band.sum_insured_quantile(rng.next_open01()),
                     None => band.sum_insured,
                 };
                 let rate = band.curve.rate_quantile(rng.next_open01());
@@ -337,6 +414,34 @@ impl RiskProfile {
         }
         EventSet::from_years(years, seed)?.with_sums_insured(sums_insured)
     }
+}
+
+/// The mean of the density `∝ exp(t x)` on `[0, 1]`:
+/// `1 / (1 − e^{−t}) − 1/t`, increasing from 0 to 1, with `1/2` at 0.
+fn tilt_mean(t: f64) -> f64 {
+    if t.abs() < 1e-4 {
+        return 0.5 + t / 12.0 - t.powi(3) / 720.0;
+    }
+    if t < 0.0 {
+        return 1.0 - tilt_mean(-t);
+    }
+    -1.0 / (-t).exp_m1() - 1.0 / t
+}
+
+/// The `t` whose [`tilt_mean`] is `p`, in `(0, 1)`, by bisection.
+fn solve_tilt(p: f64) -> f64 {
+    // tilt_mean(t) ≈ 1 − 1/t for large t, so ±2/min(p, 1 − p) brackets it.
+    let reach = 2.0 / p.min(1.0 - p);
+    let (mut lo, mut hi) = (-reach, reach);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if tilt_mean(mid) < p {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
 }
 
 /// A surplus treaty's cession on a risk with sum insured `si`.
@@ -460,6 +565,136 @@ mod tests {
                 .with_bounds(0.0, 1.0)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn tilt_solves_for_the_mean() {
+        for p in [1e-3, 0.01, 0.2, 0.4999, 0.5, 0.7, 0.99, 0.999] {
+            let t = solve_tilt(p);
+            assert!((tilt_mean(t) - p).abs() < 1e-12, "{p}: {t}");
+        }
+        assert!(solve_tilt(0.5).abs() < 1e-12);
+        // The series and the closed form agree where they meet.
+        let (a, b) = (tilt_mean(0.99e-4), tilt_mean(1.01e-4));
+        assert!(b > a && b - a < 1e-6);
+    }
+
+    #[test]
+    fn tilted_spread_matches_bounds_and_total_sum_insured() {
+        let c = Mbbefd::swiss_re(3.0).unwrap();
+        let (l, u, si) = (1e6, 5e6, 2e6);
+        let band = Band::from_expected_loss(si, 400.0, 1.2e6, c)
+            .unwrap()
+            .with_tilted_bounds(l, u)
+            .unwrap();
+        assert!(band.tilt < 0.0);
+        assert!((band.mean_sum_insured() - si).abs() < 1e-6);
+        // The same claim count as one representative risk at the given SI.
+        let point = Band::from_expected_loss(si, 400.0, 1.2e6, c).unwrap();
+        assert!((band.expected_claims() / point.expected_claims() - 1.0).abs() < 1e-12);
+        // At the midpoint the tilt is 0: the uniform spread.
+        let mid = Band::from_expected_loss(3e6, 400.0, 1.2e6, c).unwrap();
+        let tilted = mid.clone().with_tilted_bounds(l, u).unwrap();
+        assert!(tilted.tilt.abs() < 1e-18);
+        let uniform = RiskProfile::new(vec![mid.with_bounds(l, u).unwrap()]).unwrap();
+        let tilted = RiskProfile::new(vec![tilted]).unwrap();
+        assert!(
+            (tilted.expected_surplus_loss(2e6, 4.0) / uniform.expected_surplus_loss(2e6, 4.0)
+                - 1.0)
+                .abs()
+                < 1e-9
+        );
+
+        // Surplus cession against Simpson's rule in s over the density
+        // exp(θ s), independent of the quadrature over probability.
+        let (r, k) = (2e6, 4.0);
+        let n = 200_000;
+        let h = (u - l) / n as f64;
+        let (mut num, mut den) = (0.0, 0.0);
+        for j in 0..=n {
+            let s = l + h * j as f64;
+            let w = if j == 0 || j == n {
+                1.0
+            } else if j % 2 == 1 {
+                4.0
+            } else {
+                2.0
+            };
+            let d = (band.tilt * (s - l)).exp();
+            num += w * s * d * cession(s, r, k);
+            den += w * s * d;
+        }
+        let want = num / den * 1.2e6;
+        let profile = RiskProfile::new(vec![band.clone()]).unwrap();
+        let got = profile.expected_surplus_loss(r, k);
+        // The cession's kink at the retention falls inside a quadrature
+        // piece over probability, which costs about 3e-8.
+        assert!((got / want - 1.0).abs() < 1e-7, "{got} vs {want}");
+        // Leaning to small risks, it cedes less than the uniform band's 3/8.
+        assert!(got / 1.2e6 < 0.375);
+
+        // Simulated sums insured follow the spread: mean and KS.
+        let events = profile.simulate(80_000, 9).unwrap();
+        let mut drawn: Vec<f64> = (0..events.n_sims())
+            .flat_map(|i| events.sums_insured(i).unwrap().to_vec())
+            .collect();
+        let m = drawn.len() as f64;
+        let mean = drawn.iter().sum::<f64>() / m;
+        let sd = (drawn.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / m).sqrt();
+        assert!((mean - si).abs() < 4.0 * sd / m.sqrt(), "{mean}");
+        drawn.sort_by(f64::total_cmp);
+        let t = band.tilt;
+        let cdf = |x: f64| (t * (x - l)).exp_m1() / (t * (u - l)).exp_m1();
+        let ks = drawn
+            .iter()
+            .enumerate()
+            .map(|(j, &x)| {
+                let f = cdf(x);
+                (f - j as f64 / m).abs().max(((j + 1) as f64 / m - f).abs())
+            })
+            .fold(0.0, f64::max);
+        assert!(ks < 1.95 / m.sqrt(), "KS {ks}");
+
+        // A surplus inuring to a per-risk XL, against exposure rating.
+        let tower = Tower::inuring(vec![
+            vec![Layer::surplus("surplus", r, k).unwrap()],
+            vec![Layer::xol("xl", 0.5e6, 0.5e6).unwrap()],
+        ])
+        .unwrap();
+        let pd = tower.apply(&events).unwrap();
+        let (s, s_se) = ceded_mean(&pd, "surplus");
+        assert!((s - got).abs() < 4.0 * s_se, "surplus {s} vs {got}");
+        let (x, x_se) = ceded_mean(&pd, "xl");
+        let want = profile
+            .expected_layer_loss(0.5e6, 0.5e6, Some((r, k)))
+            .unwrap();
+        assert!((x - want).abs() < 4.0 * x_se, "xl {x} vs {want}");
+
+        // A steep tilt: nearly every risk at the bottom of the band.
+        let steep = Band::from_expected_loss(1.001e6, 1.0, 1.0, c)
+            .unwrap()
+            .with_tilted_bounds(l, u)
+            .unwrap();
+        assert!((steep.mean_sum_insured() / 1.001e6 - 1.0).abs() < 1e-9);
+        let steep = RiskProfile::new(vec![steep]).unwrap();
+        let at_bottom = RiskProfile::new(vec![
+            Band::from_expected_loss(1.001e6, 1.0, 1.0, c).unwrap(),
+        ])
+        .unwrap();
+        let (a, b) = (
+            steep.expected_layer_loss(0.5e6, 0.5e6, None).unwrap(),
+            at_bottom.expected_layer_loss(0.5e6, 0.5e6, None).unwrap(),
+        );
+        assert!((a / b - 1.0).abs() < 1e-3, "{a} vs {b}");
+
+        for bad in [l, u, 0.5e6, 6e6] {
+            assert!(
+                Band::from_expected_loss(bad, 1.0, 1.0, c)
+                    .unwrap()
+                    .with_tilted_bounds(l, u)
+                    .is_err()
+            );
+        }
     }
 
     #[test]

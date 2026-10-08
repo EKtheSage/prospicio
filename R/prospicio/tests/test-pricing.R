@@ -122,3 +122,16 @@ stopifnot(inherits(try(risk_profile(3e6, 1, swiss_re_curve(3), expected_loss = 1
                        silent = TRUE), "try-error"))
 stopifnot(inherits(try(risk_profile(3e6, 1, swiss_re_curve(3), expected_loss = 1, lower = 5e6,
                                     upper = 1e6), silent = TRUE), "try-error"))
+
+# A tilted spread keeps the band's mean sum insured (2m, not the midpoint).
+rt <- risk_profile(2e6, 400, swiss_re_curve(3), expected_loss = 1.2e6, lower = 1e6, upper = 5e6,
+                   spread = "tilted")
+rp2 <- risk_profile(2e6, 400, swiss_re_curve(3), expected_loss = 1.2e6)
+stopifnot(abs(rt@expected_claims / rp2@expected_claims - 1) < 1e-12)
+ct <- profile_surplus_loss(rt, 2e6, 4)
+stopifnot(ct < 0.45e6)
+st <- draw_matrix(apply_tower(reinsurance_tower(list(surplus_treaty("S", 2e6, 4))),
+                              profile_simulate(rt, 50000, seed = 3)))[, 2]
+stopifnot(abs(mean(st) - ct) < 4 * sd(st) / sqrt(50000))
+stopifnot(inherits(try(risk_profile(5e6, 1, swiss_re_curve(3), expected_loss = 1, lower = 1e6,
+                                    upper = 5e6, spread = "tilted"), silent = TRUE), "try-error"))

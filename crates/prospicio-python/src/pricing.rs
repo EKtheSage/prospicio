@@ -1095,6 +1095,12 @@ fn band_curve(obj: &Bound<'_, PyAny>) -> PyResult<prospicio_pricing::profile::Ba
 ///     ``sums_insured``), each simulated loss draws its own ``SI`` between
 ///     the bounds, and the exposure-rated expectations average over the
 ///     band, weighted by sum insured.
+/// spread : {"uniform", "tilted"}, default "uniform"
+///     How a band with bounds spreads its sums insured. ``"tilted"`` keeps
+///     ``sums_insured`` as the mean, so the spread matches both the bounds
+///     and the band's total sum insured: the density ``∝ exp(θ s)`` on the
+///     bounds with ``θ`` solved for that mean (``sums_insured`` must lie
+///     strictly between the bounds).
 ///
 /// Examples
 /// --------
@@ -1114,7 +1120,7 @@ pub(crate) struct PyRiskProfile {
 #[pymethods]
 impl PyRiskProfile {
     #[new]
-    #[pyo3(signature = (sums_insured, risks, curves, expected_losses = None, premiums = None, loss_ratio = None, lower = None, upper = None))]
+    #[pyo3(signature = (sums_insured, risks, curves, expected_losses = None, premiums = None, loss_ratio = None, lower = None, upper = None, spread = "uniform"))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         sums_insured: Vec<f64>,
@@ -1125,6 +1131,7 @@ impl PyRiskProfile {
         loss_ratio: Option<&Bound<'_, PyAny>>,
         lower: Option<Vec<Option<f64>>>,
         upper: Option<Vec<Option<f64>>>,
+        spread: &str,
     ) -> PyResult<Self> {
         use prospicio_pricing::profile::{Band, RiskProfile};
         use pyo3::exceptions::PyValueError;
@@ -1190,6 +1197,15 @@ impl PyRiskProfile {
             }
         }
         .map_err(to_py)?;
+        let tilted = match spread {
+            "uniform" => false,
+            "tilted" => true,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "spread must be \"uniform\" or \"tilted\", not {other:?}"
+                )));
+            }
+        };
         let bands = match (lower, upper) {
             (None, None) => bands,
             (Some(lo), Some(up)) => {
@@ -1203,6 +1219,7 @@ impl PyRiskProfile {
                     .zip(lo.into_iter().zip(up))
                     .map(|(b, bounds)| match bounds {
                         (None, None) => Ok(b),
+                        (Some(l), Some(u)) if tilted => b.with_tilted_bounds(l, u).map_err(to_py),
                         (Some(l), Some(u)) => b.with_bounds(l, u).map_err(to_py),
                         _ => Err(PyValueError::new_err("a band has both bounds or neither")),
                     })

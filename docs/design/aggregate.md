@@ -125,6 +125,30 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `EventSet.with_uniform_times()`, `EventSet.from_years(..., times=)`; R
   `xol_layer(pro_rata_time = TRUE)`, `with_uniform_times()`,
   `events_from_years(times =)`, `event_times()`.
+- **Tilted spreads within a band (decided 2026-10-08).**
+  `Band::with_tilted_bounds(lower, upper)` spreads a band's sums insured
+  on the bounds with density `∝ exp(θ s)` and keeps the band's given SI
+  as the mean, so the spread matches both the bounds and the band's total
+  sum insured (`risks × SI`). Among densities on `[L, U]` with a given
+  mean, this one has the most entropy, so it is the most even spread that
+  matches, and `θ = 0` (an SI at the midpoint) is the uniform spread.
+  `θ` solves `1/(1 − e^{−t}) − 1/t = (SI − L)/(U − L)` with
+  `t = θ (U − L)` by bisection; the SI must lie strictly between the
+  bounds. Simulated losses draw their SI by inverse transform, written
+  with `expm1`/`ln_1p` from the heavier end so no exponential overflows.
+  The exposure-rated expectations average `E[S f(S)] / E[S]` over the
+  spread as integrals over probability, `∫₀¹ g(Q(p)) dp`, by
+  Gauss–Legendre on 256 pieces, which stays accurate for a steep tilt
+  (and is the same integral as before for a uniform spread). The claim
+  count uses the spread's mean SI, the given one. Tested: the solved mean
+  to `1e-12`; the midpoint tilt equals the uniform spread; a 1m–5m band
+  with mean 2m against Simpson's rule in SI (to `1e-7`: the cession's
+  kink at the retention falls inside a piece over probability); simulated
+  SIs by mean and Kolmogorov–Smirnov at the 0.1% level; a surplus and
+  the per-risk XL it inures to within four standard errors of exposure
+  rating; a nearly degenerate tilt against the band's single risk.
+  Python `RiskProfile(..., spread="tilted")`, R
+  `risk_profile(spread = "tilted")`.
 - **Seasonal event times (decided 2026-10-08).** `EventSet::with_seasonal_times(weights)`
   dates losses by a piecewise-constant density over the year: `m =
   weights.len()` equal periods (12 for months, 52 for weeks) starting at
@@ -259,8 +283,7 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   insured, `∫ s f(s) ds / ∫ s ds` (a risk's expected loss is proportional
   to its SI), by Gauss–Legendre on 256 pieces. With bounds, the band's
   given SI is not used: a profile whose total SI over its risks differs
-  from `(L + U) / 2` would need a tilted spread to match both, which is a
-  later option. Tested: a band from 1m to 5m against a 2m surplus cedes
+  from `(L + U) / 2` needs the tilted spread below to match both. Tested: a band from 1m to 5m against a 2m surplus cedes
   3/8 (closed form), where its 3m mean risk cedes 1/3, and simulation
   agrees within four standard errors.
 
@@ -302,7 +325,5 @@ binomial counts. A unit test checks the layer mean and variance against
 
 ## Next
 
-1. A spread within a band that matches both its bounds and its total sum
-   insured (a tilted, not uniform, density), if profiles call for it.
-2. Contract features beyond `architecture.md`'s reinsurance scope
+1. Contract features beyond `architecture.md`'s reinsurance scope
    (sliding-scale and profit commissions, swing rating), on request.

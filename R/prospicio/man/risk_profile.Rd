@@ -15,7 +15,8 @@ risk_profile(
   premium = NULL,
   loss_ratio = NULL,
   lower = NULL,
-  upper = NULL
+  upper = NULL,
+  spread = c("uniform", "tilted")
 )
 
 profile_simulate(profile, n_sims, seed)
@@ -51,6 +52,12 @@ sums insured uniformly between them: its mean \code{SI} is
 \code{(lower + upper) / 2} (in place of \code{sums_insured}), each simulated loss
 draws its own \code{SI} between the bounds, and the exposure-rated
 expectations average over the band, weighted by sum insured.}
+
+\item{spread}{How a band with bounds spreads its sums insured:
+\code{"uniform"}, or \code{"tilted"} to keep \code{sums_insured} as the mean, so the
+spread matches both the bounds and the band's total sum insured (the
+density \code{exp(theta * s)} on the bounds, \code{theta} solved for that mean;
+\code{sums_insured} must lie strictly between the bounds).}
 
 \item{profile}{A \code{risk_profile}.}
 

@@ -7301,6 +7301,12 @@ class RiskProfile:
         ``sums_insured``), each simulated loss draws its own ``SI`` between
         the bounds, and the exposure-rated expectations average over the
         band, weighted by sum insured.
+    spread : {"uniform", "tilted"}, default "uniform"
+        How a band with bounds spreads its sums insured. ``"tilted"`` keeps
+        ``sums_insured`` as the mean, so the spread matches both the bounds
+        and the band's total sum insured: the density ``∝ exp(θ s)`` on the
+        bounds with ``θ`` solved for that mean (``sums_insured`` must lie
+        strictly between the bounds).
     
     Examples
     --------
@@ -7313,7 +7319,7 @@ class RiskProfile:
     >>> events.has_sums_insured
     True
     """
-    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None, lower: Sequence[float |None] |None = None, upper: Sequence[float |None] |None = None) -> RiskProfile: ...
+    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None, lower: Sequence[float |None] |None = None, upper: Sequence[float |None] |None = None, spread: str = "uniform") -> RiskProfile: ...
     def __repr__(self, /) -> str: ...
     def expected_claims(self, /) -> list[float]:
         """

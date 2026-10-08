@@ -516,6 +516,11 @@ S7::method(print, tabulated_curve) <- function(x, ...) {
 #'   `(lower + upper) / 2` (in place of `sums_insured`), each simulated loss
 #'   draws its own `SI` between the bounds, and the exposure-rated
 #'   expectations average over the band, weighted by sum insured.
+#' @param spread How a band with bounds spreads its sums insured:
+#'   `"uniform"`, or `"tilted"` to keep `sums_insured` as the mean, so the
+#'   spread matches both the bounds and the band's total sum insured (the
+#'   density `exp(theta * s)` on the bounds, `theta` solved for that mean;
+#'   `sums_insured` must lie strictly between the bounds).
 #' @returns `risk_profile()`: a `risk_profile` object with properties
 #'   `expected_loss` (all bands) and `expected_claims` (per band).
 #' @export
@@ -538,7 +543,9 @@ risk_profile <- S7::new_class(
     expected_claims = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_claims())
   ),
   constructor = function(sums_insured, risks, curves, expected_loss = NULL, premium = NULL,
-                         loss_ratio = NULL, lower = NULL, upper = NULL) {
+                         loss_ratio = NULL, lower = NULL, upper = NULL,
+                         spread = c("uniform", "tilted")) {
+    spread <- match.arg(spread)
     n <- length(sums_insured)
     if (is.null(lower) != is.null(upper)) stop("give lower and upper together")
     if (!is.list(curves)) curves <- rep(list(curves), n)
@@ -552,7 +559,8 @@ risk_profile <- S7::new_class(
       if (is.null(premium)) double() else as.double(premium),
       if (is.null(loss_ratio)) double() else as.double(loss_ratio),
       if (is.null(lower)) double() else as.double(lower),
-      if (is.null(upper)) double() else as.double(upper)
+      if (is.null(upper)) double() else as.double(upper),
+      spread == "tilted"
     ))
     S7::new_object(S7::S7_object(), ptr = ptr)
   }

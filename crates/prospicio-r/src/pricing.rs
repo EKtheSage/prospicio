@@ -382,7 +382,8 @@ fn band_curve(obj: &Robj) -> Result<prospicio_pricing::profile::BandCurve> {
 
 /// A risk profile; `expected_losses` or `premiums` (with `loss_ratio`, one
 /// value or one per band) is empty when not given. `lower` and `upper` are
-/// empty, or one per band with NA for a band without bounds.
+/// empty, or one per band with NA for a band without bounds; `tilted`
+/// spreads a band with bounds about its given sum insured.
 #[extendr]
 pub(crate) struct RiskProfile {
     inner: prospicio_pricing::profile::RiskProfile,
@@ -400,6 +401,7 @@ impl RiskProfile {
         loss_ratio: &[f64],
         lower: &[f64],
         upper: &[f64],
+        tilted: bool,
     ) -> Result<Self> {
         use prospicio_pricing::profile::{Band, RiskProfile as Inner};
         let n = sums_insured.len();
@@ -457,6 +459,9 @@ impl RiskProfile {
                 .enumerate()
                 .map(|(i, b)| match (lower[i].is_nan(), upper[i].is_nan()) {
                     (true, true) => Ok(b),
+                    (false, false) if tilted => {
+                        b.with_tilted_bounds(lower[i], upper[i]).map_err(to_r)
+                    }
                     (false, false) => b.with_bounds(lower[i], upper[i]).map_err(to_r),
                     _ => Err(Error::Other("a band has both bounds or neither".into())),
                 })

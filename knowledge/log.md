@@ -2,6 +2,8 @@
 
 ## 2026-10-08
 
+* **Update**: [Property exposure curves beyond MBBEFD](/references/property-exposure-curves.md): a tilted (truncated exponential) spread matches a band's bounds and its mean sum insured; a 1m-5m band with mean 2m cedes less than the uniform 3/8 to a 2m surplus; averaging over probability keeps steep tilts accurate, at about 3e-8 from the cession's kink. Not yet run by CI. From branch claude/stoic-hawking-qc3qby.
+
 * **Update**: [Reinstatements pro rata as to time](/findings/reinstatement-pro-rata-time.md): seasonal event times (`with_seasonal_times`) map the sorted uniform draws through the season's increasing quantile, so they stay exact; equal weights give the uniform times; one exhausting loss a year in the second half only costs a quarter of the amount-only premium. Not yet run by CI. From branch claude/stoic-hawking-qc3qby.
 * **Update**: [Local checks](/environment/local-checks.md): installing R (with `libuv1-dev` for `fs`), roxygen2, uv and the wasm target in a container that lacks them.
 

@@ -1064,7 +1064,7 @@ Tabulated$rate_quantile <- function(u) .Call(wrap__Tabulated__rate_quantile, sel
 
 RiskProfile <- new.env(parent = emptyenv())
 
-RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper)
+RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, tilted) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, tilted)
 
 RiskProfile$expected_loss <- function() .Call(wrap__RiskProfile__expected_loss, self)
 

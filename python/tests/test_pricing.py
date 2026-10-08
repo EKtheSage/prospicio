@@ -156,3 +156,30 @@ def test_risk_profile_spreads_sums_insured_between_bounds():
         RiskProfile([3e6], [1], c, expected_losses=[1.0], lower=[1e6], upper=[None])
     with pytest.raises(ValueError):
         RiskProfile([3e6], [1], c, expected_losses=[1.0], lower=[5e6], upper=[1e6])
+
+
+def test_risk_profile_tilts_a_spread_to_its_mean_sum_insured():
+    from prospicio.pricing import Mbbefd, RiskProfile
+    from prospicio.reinsurance import Layer, Tower
+
+    c = Mbbefd.swiss_re(3.0)
+    # 400 risks from 1m to 5m totalling 800m: mean 2m, not the midpoint.
+    tilted = RiskProfile([2e6], [400], c, expected_losses=[1.2e6], lower=[1e6], upper=[5e6],
+                         spread="tilted")
+    point = RiskProfile([2e6], [400], c, expected_losses=[1.2e6])
+    assert tilted.expected_claims() == pytest.approx(point.expected_claims(), rel=1e-12)
+    # Leaning to small risks, it cedes less than the uniform spread's 3/8.
+    ceded = tilted.expected_surplus_loss(2e6, 4.0)
+    assert ceded < 0.375 * 1.2e6
+    n = 50_000
+    pd = Tower([Layer.surplus("surplus", 2e6, 4.0)]).apply(tilted.simulate(n, 3))
+    m = pd.marginal(("ceded", "surplus"))
+    assert abs(m.mean() - ceded) < 4 * m.variance() ** 0.5 / n ** 0.5
+    # At the midpoint the tilted spread is the uniform one.
+    kw = dict(expected_losses=[1.2e6], lower=[1e6], upper=[5e6])
+    mid = RiskProfile([3e6], [400], c, spread="tilted", **kw)
+    assert mid.expected_surplus_loss(2e6, 4.0) == pytest.approx(0.375 * 1.2e6, rel=1e-9)
+    with pytest.raises(ValueError):
+        RiskProfile([5e6], [400], c, spread="tilted", **kw)
+    with pytest.raises(ValueError):
+        RiskProfile([3e6], [400], c, spread="steep", **kw)
