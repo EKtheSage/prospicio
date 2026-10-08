@@ -188,9 +188,10 @@ impl Distribution for Gamma {
 /// Every uniform comes from `rng` in order: for `shape >= 1`, each attempt
 /// takes a normal (by inverse transform) and, unless `1 + c x <= 0`, a
 /// uniform; above shape 1 at least 95% of attempts are accepted. The boost
-/// takes its uniform after the draw at `shape + 1`. A draw below the
-/// smallest positive `f64` (about half the mass at shape `1e-3`)
-/// underflows to 0.
+/// takes its uniform after the draw at `shape + 1`. A draw below
+/// `f64::MIN_POSITIVE` comes out subnormal, with fewer significant bits,
+/// and one below the smallest subnormal (about `5e-324`) rounds to 0: at
+/// shape `1e-3`, 49% and about 47.5% of the mass.
 pub(crate) fn standard_gamma(rng: &mut StreamRng, shape: f64) -> f64 {
     if shape < 1.0 {
         let g = standard_gamma(rng, shape + 1.0);
@@ -345,9 +346,9 @@ mod tests {
     /// the chi-square of the draws over 100 equiprobable bins cut at the
     /// distribution's own quantiles, against its `1e-6` upper point, at
     /// shapes from `1e-3` to `1e6`. Below `f64::MIN_POSITIVE` the quantiles
-    /// (and the draws, which underflow to 0) cannot be told apart, so those
-    /// bins merge into one: at shape `1e-3` that is the lower 49% of the
-    /// mass.
+    /// (and the draws, subnormal or, below about `5e-324`, 0) cannot be
+    /// told apart, so those bins merge into one: at shape `1e-3` that is
+    /// the lower 49% of the mass.
     #[test]
     fn sampler_matches_moments_and_quantiles() {
         let n = 100_000;

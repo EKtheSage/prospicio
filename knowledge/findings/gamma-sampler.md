@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The Gamma sampler, Marsaglia-Tsang instead of inverse transform
-description: Gamma::sample draws by Marsaglia and Tsang (2000) with the U^(1/a) boost below shape 1, on the same ChaCha20 streams; 0.13 to 0.22 microseconds a draw at shapes 1e-3 to 1e6 against 3 to 375 by bisecting the cdf, and Mack's ABC lifetime bootstrap with the Gamma in 0.02 s against 39 s. Every Gamma draw changed; draws are no longer monotone in one uniform; below f64::MIN_POSITIVE draws underflow to 0.
+description: Gamma::sample draws by Marsaglia and Tsang (2000) with the U^(1/a) boost below shape 1, on the same ChaCha20 streams; 0.13 to 0.22 microseconds a draw at shapes 1e-3 to 1e6 against 3 to 375 by bisecting the cdf, and Mack's ABC lifetime bootstrap with the Gamma in 0.02 s against 39 s. Every Gamma draw changed; draws are no longer monotone in one uniform; below f64::MIN_POSITIVE draws are subnormal, and below about 5e-324 they are 0.
 tags: [probability, gamma, sampling, rng, performance, bootstrap, reproducibility]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-08T16:00:00-07:00 }
@@ -72,13 +72,24 @@ SciPy's `ndtri`) to within 2e-15.[^script]
   and independent of the thread count, but no longer a monotone function
   of one uniform, so common random numbers across scenarios hold only for
   code that calls `quantile`.
-* **Underflow at tiny shapes**: below `f64::MIN_POSITIVE` the draw
-  underflows to 0; at shape `1e-3` that is 49% of the mass (the true
-  probability below `2.2e-308`), so the test's lower bins merge there.
-* **One re-pinned value set**: the one-year Mack validation's mean CDR
-  over SD (a seed-pinned regression) went from -0.0108, -0.0035, +0.0067
+* **Underflow at tiny shapes**: below `f64::MIN_POSITIVE` (`2.2e-308`)
+  the draw is subnormal and loses precision, and below the smallest
+  subnormal (about `5e-324`) it rounds to 0. At shape `1e-3`, where
+  `P(X < x)` is about `x^a`, 49% of the mass is below `MIN_POSITIVE` and
+  about 47.5% rounds to 0, so the test's bins below `MIN_POSITIVE` merge
+  into one there.
+* **Re-pinned values**: two seed-pinned regressions moved. The one-year
+  Mack validation's mean CDR over SD went from -0.0108, -0.0035, +0.0067
   to -0.0022, +0.0031, -0.0095 (RAA, GenIns, ABC), within 1.4 Monte Carlo
-  standard errors of the exact zero. Every test against an external
+  standard errors of the exact zero. The ODP one-year view's ratios to
+  Merz-Wuthrich (`GAP`, 31 of them) moved by up to 2.0 of their Monte
+  Carlo standard errors; the totals went from 0.6087, 1.3620 and 1.1329
+  to 0.6150, 1.3733 and 1.1356, re-pinned in Rust and in the R (RAA) and
+  Python (GenIns) tests. Seed-specific figures in the reserving findings
+  moved with them (EVW's Table 4 one-year total at seed 20,261,006 from
+  1,778,254 to 1,761,459, the lifetime total at seed 20,261,007 from
+  18,703,619 and 2,458,884 to 18,680,964 and 2,451,202), all within Monte
+  Carlo error of the references. Every test against an external
   reference (R `BootChainLadder`, `MackChainLadder`, `CDR`, EVW Table 4,
   the exact moments at 200,000 simulations) passed unchanged.
 * **The scheme name** stays `chacha20/sim-index/v1`, though `rng.md`'s
@@ -89,3 +100,9 @@ SciPy's `ndtri`) to within 2e-15.[^script]
 * This edits the Probability lane's crate (`prospicio-prob`), with the
   user's approval, from the Reserving lane's branch
   claude/fast-gamma-sampler.
+
+[^code]: crates/prospicio-prob/src/gamma.rs, `standard_gamma` and its tests
+[^rng]: docs/design/rng.md, the stability log and open question 4
+[^script]: validation/scripts/gamma_sampler.py
+[^mack]: validation/tests/reserving_mack_bootstrap.rs
+[^paper]: Marsaglia and Tsang (2000), A simple method for generating gamma variables, ACM Transactions on Mathematical Software 26(3)

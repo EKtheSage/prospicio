@@ -64,6 +64,11 @@ shapes, which made the reserving bootstraps' Gamma process slow.
 - Changing it (generator, key expansion, uniform conversion, sampling
   method or draw order) requires bumping the scheme name, e.g.
   `…/v2`, recording it in `Provenance`, and a changelog entry.
+  **Exception pending a decision (open question 4):** the Gamma sampler
+  changed on 2026-10-08 under `v1` (stability log). Until that is
+  decided, a result with Gamma draws saved before that date and one saved
+  after carry the same provenance, `chacha20/sim-index/v1`, but do not
+  replay the same; only the date tells them apart.
 - `rand_chacha` / `rand_core` are pinned with `=`; bumping them requires
   the golden tests to pass unchanged.
 
