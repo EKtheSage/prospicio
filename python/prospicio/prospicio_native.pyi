@@ -7285,7 +7285,15 @@ class PredictiveDistribution:
     def provenance(self, /) -> dict:
         """
         Where this result came from: model, parameters, seed, stream scheme,
-        crate versions and input hash.
+        samplers, crate versions and input hash.
+        
+        ``stream_scheme`` names how simulations map to random-number
+        streams; ``samplers`` lists ``(family, sampler id)`` pairs, e.g.
+        ``[("gamma", "marsaglia-tsang/2026-10")]``, naming how those numbers
+        became draws (a family not listed draws by inverse transform). A
+        result replays only with the same seed, stream scheme and samplers.
+        ``samplers`` is ``None`` when not recorded: a result without draws,
+        or one saved before 2026-10-08.
         
         Returns
         -------
