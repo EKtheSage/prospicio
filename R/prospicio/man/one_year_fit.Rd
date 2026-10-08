@@ -214,5 +214,5 @@ c(simulated = sqrt(variance(mk@cdr)),
 }
 \seealso{
 \code{\link[=claims_development_result]{claims_development_result()}} for Merz and Wuthrich's formulas,
-\code{\link[=odp_bootstrap]{odp_bootstrap()}} for the lifetime view.
+\code{\link[=odp_bootstrap]{odp_bootstrap()}} and \code{\link[=mack_bootstrap]{mack_bootstrap()}} for the lifetime view.
 }

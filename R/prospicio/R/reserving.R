@@ -1483,6 +1483,114 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
   odp_bootstrap_fit(ptr = ptr)
 }
 
+#' Bootstrap of Mack's model
+#'
+#' The lifetime view of reserve risk under Mack's model, bootstrapped as
+#' England, Verrall and Wuthrich (2019, Appendix 1) describe: the scaled
+#' bias-adjusted residuals of the link ratios
+#' `sqrt(n_k / (n_k - 1)) C^(alpha / 2) (F - f_k) / sigma_k` are resampled
+#' into pseudo link ratios and re-averaged into pseudo factors (parameter
+#' error), and every future cumulative value is drawn from the one before,
+#' the observed latest value for the first, with mean `f*_k C` and Mack's
+#' variance `sigma_k^2 |C|^(2 - alpha)` (process error), to the triangle's
+#' last age. An origin's reserve is its last drawn value less its latest.
+#' Mack's model has no tail here, so development past the oldest age is not
+#' simulated.
+#'
+#' The standard deviation of the reserves approximates Mack's analytic
+#' standard error ([mack()]). The mean is the chain ladder's reserve only
+#' with `centre_residuals = TRUE`: the pooled residuals do not have a zero
+#' mean, so resampled as they are (EVW's Appendix 1, the default) they bias
+#' every pseudo factor, and the mean reserve with them (RAA about 17%
+#' above the chain ladder's).
+#'
+#' Every segment is bootstrapped on its own, with its own Mack model and
+#' residuals, into one joint distribution of the reserves. Simulation `i`
+#' uses random stream `i` of `seed` for every segment in turn.
+#'
+#' Properties of the fit: `chain_ladder` (the [chain_ladder_fit] of Mack's
+#' averaging), `mack` (the [mack_fit] on the observed triangle, with the
+#' analytic standard errors), `origins`, `development`, `residuals` (an
+#' origin x development matrix, `[o, k]` the residual of the link from age
+#' `k` to `k + 1`, `NA` where there is none; never centred; single segment
+#' only) and `reserves`, a [predictive_distribution] of the reserve with the
+#' triangle's keys and `origin` as dimensions.
+#'
+#' This is Python's `MackBootstrap(...).fit()`, which returns a
+#' `MackBootstrapFit`.
+#'
+#' @param triangle A cumulative [triangle], with any number of segments and
+#'   any development grain, every origin observed from the first age up to
+#'   its latest, with no negative value.
+#' @param column Name of the column to fit; by default the only one.
+#' @param n_sims Number of simulations; positive.
+#' @param seed Seed of the simulation streams, a non-negative whole number.
+#' @param process Process error on each next cumulative value: `"gamma"` or
+#'   `"lognormal"` (negated for a negative mean) or `"normal"`, with Mack's
+#'   mean and variance; `"residuals"` (the mean plus a resampled residual
+#'   times the standard deviation); or `"none"` for parameter error only.
+#' @param average,sigma_interpolation How Mack's model averages the link
+#'   ratios and fills in a sigma behind a single link ratio, as in [mack()].
+#' @param centre_residuals Subtract the residuals' mean before resampling
+#'   them, so that the pseudo factors are unbiased.
+#' @param ptr A `MackBootstrapFit` pointer; used internally.
+#' @returns A `mack_bootstrap_fit` object.
+#' @seealso [mack()] for the analytic standard errors, [mack_one_year()]
+#'   for the one-year view on the same bootstrap, [odp_bootstrap()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' boot <- mack_bootstrap(triangle(long, "year", "age", "paid"), n_sims = 2000, seed = 42,
+#'                        centre_residuals = TRUE)
+#' boot@reserves@keys
+#' c(mean = mean(boot@reserves), chain_ladder = boot@chain_ladder@total_reserve)
+#' c(sd = sqrt(variance(boot@reserves)), mack = boot@mack@total_standard_error)
+#' as.data.frame(boot)
+mack_bootstrap_fit <- S7::new_class(
+  "mack_bootstrap_fit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("MackBootstrapFit"),
+    chain_ladder = chain_ladder_fit,
+    mack = S7::new_property(S7::class_any, getter = function(self) {
+      mack_fit(ptr = self@ptr$mack())
+    }),
+    origins = S7::new_property(S7::class_character, getter = function(self) {
+      self@chain_ladder@origins
+    }),
+    development = S7::new_property(S7::class_integer, getter = function(self) {
+      self@chain_ladder@development
+    }),
+    residuals = S7::new_property(S7::class_double, getter = function(self) {
+      origin_matrix(self, rust_result(self@ptr$residuals(), call = NULL))
+    }),
+    reserves = predictive_distribution
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
+                   reserves = predictive_distribution(ptr = ptr$reserves()))
+  }
+)
+
+#' @rdname mack_bootstrap_fit
+#' @export
+mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
+                           process = c("gamma", "lognormal", "residuals", "normal", "none"),
+                           average = "volume", sigma_interpolation = "log-linear",
+                           centre_residuals = FALSE) {
+  column <- fit_column(triangle, column)
+  process <- match.arg(process)
+  model <- development_args(average, sigma_interpolation)
+  ptr <- rust_result(triangle@ptr$mack_bootstrap(
+    column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
+    model$average, model$sigma, isTRUE(centre_residuals)
+  ))
+  mack_bootstrap_fit(ptr = ptr)
+}
+
 #' Simulated one-year view
 #'
 #' The claims development result (CDR) of the chain ladder or an
@@ -1606,7 +1714,7 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param ptr A `OneYearFit` pointer; used internally.
 #' @returns A `one_year_fit` object.
 #' @seealso [claims_development_result()] for Merz and Wuthrich's formulas,
-#'   [odp_bootstrap()] for the lifetime view.
+#'   [odp_bootstrap()] and [mack_bootstrap()] for the lifetime view.
 #' @export
 #' @examples
 #' long <- data.frame(year = rep(2018:2021, 4:1),
@@ -1925,29 +2033,30 @@ growth <- function(fit, age) {
 
 check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
-                  one_year_fit, clark_fit)
+                  mack_bootstrap_fit, one_year_fit, clark_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
-         "odp_bootstrap_fit, one_year_fit or clark_fit", call. = FALSE)
+         "odp_bootstrap_fit, mack_bootstrap_fit, one_year_fit or clark_fit", call. = FALSE)
   }
 }
 
 #' Long results of a fit over every segment
 #'
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
-#' [cape_cod_fit], [odp_bootstrap_fit], [one_year_fit] or [clark_fit] with
+#' [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
+#' [one_year_fit] or [clark_fit] with
 #' the triangle's key columns by name. `as.data.frame(fit)` has one row per
 #' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
 #' method's own), plus for Mack `process_risk`, `parameter_risk` and
 #' `standard_error`, for the expected-loss methods `exposure` and `apriori`
-#' (and Cape Cod's `trended_apriori`), for the bootstrap the `mean` and
+#' (and Cape Cod's `trended_apriori`), for the bootstraps the `mean` and
 #' `std_dev` of the bootstrapped reserve, and for Clark (Cape Cod)
 #' `exposure`, `expected_ultimate` and the three standard errors. The
 #' one-year view names them `opening_ultimate` and `opening_reserve` and
 #' adds the `cdr_mean` and `cdr_std_dev` of the claims development result.
 #' `totals_frame()` has one row per segment with the same quantities for
 #' the segment's total (for the expected-loss methods the total `exposure`,
-#' for the bootstrap and the one-year view also the bootstrap's `scale`;
+#' for the ODP bootstrap and its one-year view also the bootstrap's `scale`;
 #' for Clark its `omega`, `theta`, `scale` and, for Cape Cod, `elr`).
 #' `development_frame()` has one row per segment and age: `development`,
 #' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
@@ -1958,7 +2067,7 @@ check_fit <- function(fit) {
 #' `segment()` returns the fit of one segment, chosen by key values as in
 #' `segment(fit, lob = "auto")` (compared as character). Keys not named may
 #' take any value, so a fit with one segment needs none; a choice that
-#' matches several segments is an error. For the bootstrap, the segment
+#' matches several segments is an error. For the bootstraps, the segment
 #' keeps its part of the joint `reserves`, and for the one-year view its
 #' part of the joint `cdr`, with the same dimensions.
 #'
@@ -1966,8 +2075,8 @@ check_fit <- function(fit) {
 #' `development_frame()` and `segment(**keys)`.
 #'
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
-#'   [cape_cod_fit], [odp_bootstrap_fit], [one_year_fit] or [clark_fit]
-#'   (not for `development_frame()`).
+#'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
+#'   [one_year_fit] or [clark_fit] (not for `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -2022,6 +2131,7 @@ S7::method(as.data.frame, mack_fit) <- function(x, ...) fit_table_frame(x@ptr$lo
 S7::method(as.data.frame, expected_loss_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, cape_cod_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, odp_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, mack_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, one_year_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, clark_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 
@@ -2048,6 +2158,15 @@ S7::method(print, odp_bootstrap_fit) <- function(x, ...) {
     cat(sprintf("<odp_bootstrap_fit> %d simulations, scale %s\n",
                 as.integer(r@n_sims), format(x@scale, digits = 6)))
   }
+  cat(sprintf("total reserve: chain ladder %s, bootstrap mean %s, sd %s\n",
+              format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
+              format(sqrt(variance(r)), digits = 10)))
+  invisible(x)
+}
+S7::method(print, mack_bootstrap_fit) <- function(x, ...) {
+  r <- x@reserves
+  cat(sprintf("<mack_bootstrap_fit> %d simulations%s\n", as.integer(r@n_sims),
+              segments_note(x@chain_ladder@ptr)))
   cat(sprintf("total reserve: chain ladder %s, bootstrap mean %s, sd %s\n",
               format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
               format(sqrt(variance(r)), digits = 10)))
