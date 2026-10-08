@@ -7,6 +7,12 @@ status: stable
 stale_after: 2027-04-07T00:00:00Z
 generated: { by: claude-code/cloud-session, at: 2026-10-07T12:00:00Z }
 sources:
+  - id: crates-rl
+    resource: https://crates.io/docs/rate-limits
+    title: crates.io, rate limits
+  - id: v001
+    resource: https://github.com/EKtheSage/prospicio/actions/runs/37720822127
+    title: Release workflow run for v0.0.1
   - id: release
     resource: ../docs/release.md
     title: docs/release.md, the release checklist
@@ -54,3 +60,21 @@ sources:
   `python/`, so the installed package is the one imported. The docstring
   test of `prospicio.boosting` needs LightGBM, so the wheel test installs
   the `dev` dependency group (`uv pip install --group dev`).
+* The first release, v0.0.1 (2026-10-08), published to PyPI from the
+  workflow at the first try. crates.io refused it twice. First with `400
+  Bad Request: A verified email address is required to publish crates`:
+  the account needs a verified email before any upload. Then, after five
+  new crates, with `429 Too Many Requests: You have published too many new
+  crates in a short period of time`, with a retry time about 10 minutes
+  out: crates.io limits how fast *new* crate names are created (a burst,
+  then about one every 10 minutes; versions of existing crates are not
+  limited this way).[^crates-rl] An 11-crate first release therefore takes about an
+  hour.[^v001]
+* Rerunning a failed `cargo publish --workspace` job does not resume: it
+  starts again from `prospicio-core`, which now exists, and fails on it.
+  The remaining crates were published one at a time with `cargo publish
+  -p <crate>` from a checkout of the tag, in dependency order
+  (`-glm`, `-pricing`, `-reserving`, `-bayes`, `-nn`, then `prospicio`).[^v001]
+
+[^crates-rl]: crates.io, rate limits
+[^v001]: Release workflow run for v0.0.1
