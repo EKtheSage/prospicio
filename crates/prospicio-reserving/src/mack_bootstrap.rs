@@ -980,10 +980,12 @@ mod tests {
         // RAA's 1990 starts at 2,063 with sigma_0 = 167: its next value is
         // often negative under the normal. Under the Gamma or lognormal it
         // is negative only when its mean is, a pseudo first factor below
-        // zero (its standard deviation is a third of the factor). Both draw
-        // one uniform per value, so they share the pseudo factors: where
-        // the lognormal goes negative, so does the Gamma's mean, and the
-        // Gamma of its absolute value is negated: the value is negative
+        // zero (its standard deviation is a third of the factor). Each
+        // simulation resamples its pseudo factors on its own stream before
+        // any process draw, so the two share them however many uniforms a
+        // process draw takes (the lognormal one, the Gamma at least two):
+        // where the lognormal goes negative, so does the Gamma's mean, and
+        // the Gamma of its absolute value is negated: the value is negative
         // there too. Its shape is below 1 there, so the draw is often tiny
         // and can round to zero when the test rebuilds the closing value as
         // `u0 - cdr` (as all 3 do at this seed), but it need not be. The

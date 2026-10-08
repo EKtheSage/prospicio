@@ -233,6 +233,17 @@ work. Families with a slow quantile may override `sample` with a faster
 method, but must keep output a pure function of `(seed, stream)` and
 document the change in the RNG stability log (see `rng.md`).
 
+`Gamma` does (2026-10-08): Marsaglia and Tsang (2000) with the
+`U^(1/shape)` boost below shape 1, about one normal (by inverse
+transform) and one uniform per draw at any shape, where its quantile is a
+bisection on the incomplete gamma function whose series grows with the
+shape (a draw took 3 µs at shape 1 and 375 µs at `1e6`). Its draws are no
+longer monotone in one uniform; the aggregate simulations, the copulas'
+marginals and the GLM families' simulated responses call `quantile`
+themselves and are unaffected. The Student t and Clayton copulas already
+drew their Gamma variables this way and now share the code
+(`gamma::standard_gamma`), draw for draw.
+
 ## Parameterization
 
 Each family's native parameters follow SciPy and R (actuar) naming, with

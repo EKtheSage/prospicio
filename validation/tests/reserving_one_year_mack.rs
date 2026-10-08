@@ -49,9 +49,12 @@ const SEED: u64 = 20_261_006;
 /// The total CDR's mean over its standard deviation with the log-linear
 /// last sigma, a seed-pinned regression, not a reference. Its exact value
 /// under the centred bootstrap is Merz and Wüthrich's zero
-/// (`exact_mean_cdr_is_the_pool_bias`); uncentred it was -0.2142, -0.0380
-/// and +0.1755 on this seed.
-const MEAN_CDR: [(&str, f64); 3] = [("raa", -0.0108), ("genins", -0.0035), ("abc", 0.0067)];
+/// (`exact_mean_cdr_is_the_pool_bias`), and these are within 1.4 of their
+/// Monte Carlo standard errors, about `1 / sqrt(SIMS)`, of it. Re-pinned
+/// on 2026-10-08 when the Gamma sampler became Marsaglia–Tsang (it was
+/// -0.0108, -0.0035 and +0.0067 by inverse transform); uncentred, by
+/// inverse transform, it was -0.2142, -0.0380 and +0.1755 on this seed.
+const MEAN_CDR: [(&str, f64); 3] = [("raa", -0.0022), ("genins", 0.0031), ("abc", -0.0095)];
 
 /// The default bootstrap (centred residuals, Gamma process).
 fn one_year(
@@ -466,7 +469,7 @@ fn exact_mean_cdr_is_the_pool_bias() {
 }
 
 #[test]
-#[ignore = "200,000 simulations per configuration: minutes"]
+#[ignore = "200,000 simulations per configuration: about 20 s in a debug build"]
 fn simulation_matches_the_exact_moments() {
     // At 200,000 simulations the bootstrap's standard deviations are within
     // four Monte Carlo standard errors of `exact_covariance` under its own

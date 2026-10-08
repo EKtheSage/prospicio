@@ -34,10 +34,13 @@ pub trait Distribution {
     /// `[0, 1]`.
     fn quantile(&self, p: f64) -> Result<f64>;
 
-    /// `n` draws from stream `rng`, by inverse transform.
+    /// `n` draws from stream `rng`, by inverse transform unless the family
+    /// overrides it ([`crate::Gamma`] draws by Marsaglia and Tsang).
     ///
     /// Inverse transform keeps draws a pure function of `(seed, stream)` and
-    /// preserves ordering under common random numbers.
+    /// preserves ordering under common random numbers. An override keeps
+    /// the first but not the second; code that needs draws monotone in a
+    /// uniform calls `quantile` itself.
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
         (0..n)
             .map(|_| {

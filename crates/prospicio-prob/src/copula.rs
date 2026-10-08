@@ -10,6 +10,7 @@ use prospicio_math::linalg::{cholesky, lower_mul, lower_solve};
 use prospicio_math::special::{ln_gamma, norm_cdf, norm_quantile, student_t_cdf};
 
 use crate::distribution::Distribution;
+use crate::gamma::standard_gamma;
 use crate::predictive::{ComponentKey, PredictiveDistribution};
 use crate::provenance::Provenance;
 
@@ -116,7 +117,7 @@ impl Copula for StudentTCopula {
 
     fn sample(&self, rng: &mut StreamRng, u: &mut [f64]) {
         correlated_normals(&self.chol, rng, u);
-        let w = 2.0 * gamma(rng, 0.5 * self.nu);
+        let w = 2.0 * standard_gamma(rng, 0.5 * self.nu);
         let scale = (w / self.nu).sqrt();
         for x in u.iter_mut() {
             *x = open01(student_t_cdf(*x / scale, self.nu));
@@ -211,7 +212,7 @@ impl ArchimedeanCopula {
     fn frailty(&self, rng: &mut StreamRng) -> f64 {
         let th = self.theta;
         match self.family {
-            Archimedean::Clayton => gamma(rng, 1.0 / th),
+            Archimedean::Clayton => standard_gamma(rng, 1.0 / th),
             Archimedean::Gumbel => positive_stable(rng, 1.0 / th),
             Archimedean::Frank => logarithmic(rng, th),
             Archimedean::Joe => sibuya(rng, 1.0 / th),
@@ -562,29 +563,6 @@ fn correlated_normals(chol: &[f64], rng: &mut StreamRng, out: &mut [f64]) {
     lower_mul(chol, &z, out);
 }
 
-/// A Gamma(`shape`, 1) draw by Marsaglia and Tsang (2000), with the
-/// `U^(1/shape)` boost for `shape < 1`. Normals are by inverse transform.
-fn gamma(rng: &mut StreamRng, shape: f64) -> f64 {
-    if shape < 1.0 {
-        let g = gamma(rng, shape + 1.0);
-        return g * rng.next_open01().powf(1.0 / shape);
-    }
-    let d = shape - 1.0 / 3.0;
-    let c = 1.0 / (9.0 * d).sqrt();
-    loop {
-        let x = norm_quantile(rng.next_open01());
-        let v = 1.0 + c * x;
-        if v <= 0.0 {
-            continue;
-        }
-        let v = v * v * v;
-        let u = rng.next_open01();
-        if u.ln() < 0.5 * x * x + d - d * v + d * v.ln() {
-            return d * v;
-        }
-    }
-}
-
 fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
     Error::InvalidParameter {
         name,
@@ -694,7 +672,7 @@ mod tests {
         for shape in [0.35, 1.0, 2.5, 40.0] {
             let n = 100_000;
             let mut rng = StreamRng::new(3, 0);
-            let x: Vec<f64> = (0..n).map(|_| gamma(&mut rng, shape)).collect();
+            let x: Vec<f64> = (0..n).map(|_| standard_gamma(&mut rng, shape)).collect();
             let mean = x.iter().sum::<f64>() / n as f64;
             let var = x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n as f64;
             let se = (shape / n as f64).sqrt();

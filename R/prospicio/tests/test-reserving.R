@@ -1033,14 +1033,14 @@ total_cdr <- sd_and_error(rowSums(cdr_draws))
 stopifnot(abs(mean(one@cdr)) < 0.15 * total_cdr[["sd"]])
 # A seed-pinned regression, not a check against Merz and Wuthrich: R
 # ChainLadder's total CDR(1)S.E. (validation/reference/reserving_cdr_r.csv)
-# times the ratio this implementation measured with this seed, 0.6087,
+# times the ratio this implementation measured with this seed, 0.6150,
 # within five Monte Carlo standard errors. The ODP's process variance (phi
 # times the mean) is not Mack's, so the two differ
 # (knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md).
 mw_total <- cdr_ref$expected[cdr_ref$dataset == "raa" & cdr_ref$method == "cdr" &
                                cdr_ref$quantity == "total_one_year_se"]
 stopifnot(length(mw_total) == 1,
-          abs(total_cdr[["sd"]] - 0.6087 * mw_total) <= 5 * total_cdr[["error"]] + 5e-5 * mw_total)
+          abs(total_cdr[["sd"]] - 0.6150 * mw_total) <= 5 * total_cdr[["error"]] + 5e-5 * mw_total)
 # Against R's BootChainLadder (validation/reference/reserving_bootstrap_r.csv):
 # every origin's one-year standard deviation is at most its lifetime one,
 # and 1982, with one cell left, has its whole run-off in the year: both

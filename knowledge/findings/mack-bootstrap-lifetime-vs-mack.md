@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Mack's bootstrap, lifetime view, against Mack's standard errors and EVW Table 4
-description: Bootstrapping Mack's model to the last age (MackBootstrap::fit, EVW 2019 Appendix 1) reproduces Mack's analytic standard error on RAA, GenIns and ABC within Monte Carlo error only with centred residuals, once the parameter error is scaled by the resampled residuals' variance 1 - m^2; uncentred, the pool's mean biases the mean reserve (RAA +17%, GenIns +0.7%, ABC -0.8%). EVW's Table 4 expected reserves agree with the centred bootstrap, not the uncentred one, so centring is the default. Gamma draws are slow at large shapes (ABC).
+description: Bootstrapping Mack's model to the last age (MackBootstrap::fit, EVW 2019 Appendix 1) reproduces Mack's analytic standard error on RAA, GenIns and ABC within Monte Carlo error only with centred residuals, once the parameter error is scaled by the resampled residuals' variance 1 - m^2; uncentred, the pool's mean biases the mean reserve (RAA +17%, GenIns +0.7%, ABC -0.8%). EVW's Table 4 expected reserves agree with the centred bootstrap, not the uncentred one, so centring is the default. Gamma draws were slow at large shapes (ABC) until the Gamma sampler became Marsaglia-Tsang.
 tags: [reserving, bootstrap, mack, lifetime, evw, residuals, performance]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-07T18:00:00-07:00 }
@@ -29,7 +29,8 @@ process draw of mean `f* C` and variance `sigma^2 C^(2 - alpha)` (EVW
 2019, Appendix 1, steps 7(a) to (g)). Against R ChainLadder's
 `MackChainLadder` (volume weighting, either rule for the last sigma):[^test]
 
-* **Centred residuals reconcile.** At 50,000 simulations (Gamma) the
+* **Centred residuals reconcile.** At 50,000 simulations (Gamma, by
+  inverse transform before 2026-10-08) the
   standard deviation is 0.991 to 1.007 times Mack's standard error per
   origin and 0.994 to 1.002 in total on RAA, GenIns and ABC, every origin
   within three Monte Carlo standard errors; the mean reserve is the chain
@@ -78,10 +79,14 @@ EVW's Table 4 (Taylor–Ashe, i.e. GenIns, Mack's rule for the last sigma,
 the chain ladder's: total 18,684,738 against 18,680,856 (+0.02%), and no
 origin more than two of their standard errors away.[^evw] The
 centred bootstrap matches every origin's expected reserve and standard
-deviation within five combined standard errors (20,000 simulations: total
-18,703,619 and 2,458,884 against their 2,448,700). The uncentred one, which
+deviation within five combined standard errors (20,000 simulations, seed
+20,261,007, the Marsaglia-Tsang Gamma sampler: total 18,680,964 and
+2,451,202 against their 18,684,738 and 2,448,700, every origin within 1.1
+combined standard errors; by inverse transform, before 2026-10-08,
+18,703,619 and 2,458,884). The uncentred one, which
 is what their Appendix 1 describes, puts the total at 18,816,241, eleven
-combined standard errors above theirs. So their implementation most
+combined standard errors above theirs (parameter error alone, which draws
+no Gamma variables, so either sampler gives it). So their implementation most
 likely resampled zero-mean residuals, by centring or otherwise; the paper
 does not say. An inference. Their one-year standard deviations (Table 4)
 are matched either way, since GenIns's pool mean is only 0.0135 and the
@@ -100,18 +105,22 @@ explicitly.[^test]
 
 # Performance
 
-`Gamma::sample` inverts the Gamma cdf, which is slow at large shapes. A
-late cell's shape `f^2 C / sigma^2` runs to the thousands on ABC, so ABC's
-lifetime view at 2,000 simulations took 30 s in a debug build, against
-about 1 s for RAA or GenIns. The validation test simulates ABC with the
-lognormal of the same mean and variance (0.4 s for three datasets at
-20,000 in a debug build), which at those shapes is close to the Gamma; the
-standard deviation depends on the process only through its first two
-moments while values stay positive. The lognormal is not used for RAA: at
+Until 2026-10-08 `Gamma::sample` inverted the Gamma cdf, which was slow at
+large shapes. A late cell's shape `f^2 C / sigma^2` runs to the thousands
+on ABC, so ABC's lifetime view at 2,000 simulations took 30 s in a debug
+build, against about 1 s for RAA or GenIns, and the validation test
+simulated ABC with the lognormal of the same mean and variance. Since the
+sampler is Marsaglia and Tsang's ([the Gamma sampler](gamma-sampler.md)),
+ABC's lifetime view with the Gamma at 20,000 simulations takes 0.02 s in
+a release build, against 39 s before, and the validation test runs the
+Gamma on all three triangles under both rules for the last sigma: every
+origin's and the total standard deviation within 2.4 Monte Carlo standard
+errors of Mack's (ABC total 1.011 and 1.010 times), the mean within 1.9 of
+the chain ladder's.[^test] The lognormal is still unsuitable for RAA: at
 shapes below one its heavy tail makes the sample kurtosis, and so the
 standard deviation's estimated standard error, unreliable (RAA 1990 came
 out 6% low, 3.3 estimated standard errors, at 20,000; 0.8% low at
-200,000).[^test]
+200,000).
 
 # Unit-test facts
 

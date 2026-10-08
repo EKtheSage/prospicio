@@ -625,8 +625,10 @@ was found, so the independent checks are these:
 
 On the volume-weighted chain ladder the ODP's standard deviation is not
 Merz–Wüthrich's: the ODP's variance is `phi` times the mean, Mack's
-`sigma_k^2` times the cumulative value. The ratio, per origin 0.50 to 5.98
-and in total RAA 0.61, GenIns 1.36, ABC 1.13, is recorded in
+`sigma_k^2` times the cumulative value. The ratio, per origin 0.50 to 5.96
+and in total RAA 0.62, GenIns 1.37, ABC 1.14 (measured with the
+Marsaglia–Tsang Gamma sampler; by inverse transform, before 2026-10-08,
+0.61, 1.36 and 1.13), is recorded in
 `knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`, and a
 seed-pinned regression test holds each standard deviation to R's value
 times that ratio within five Monte Carlo standard errors. It pins this
@@ -910,10 +912,10 @@ factor's variance, and with it every parameter error, is `v` times Mack's
   `sqrt(process^2 + v parameter^2)` from R ChainLadder's
   `MackChainLadder` process and parameter risks within five Monte Carlo
   standard errors of the simulated standard deviation, and the mean within
-  five standard errors of the mean of the chain ladder's reserve: RAA with
-  the log-linear last sigma, GenIns with Mack's rule (both Gamma), ABC with
-  both (lognormal, below). At 50,000 simulations (Gamma, centred, either
-  rule) the standard deviation is 0.991 to 1.007 times Mack's plain
+  five standard errors of the mean of the chain ladder's reserve: every
+  dataset under both rules for the last sigma, Gamma process. At 50,000
+  simulations (Gamma by inverse transform, before 2026-10-08, centred,
+  either rule) the standard deviation is 0.991 to 1.007 times Mack's plain
   standard error per origin and 0.994 to 1.002 in total, every origin
   within three Monte Carlo standard errors.
 * Parameter error alone (`MackProcess::None`) is `sqrt(v)` times R's
@@ -941,17 +943,20 @@ factor's variance, and with it every parameter error, is `v` times Mack's
   do not depend on the seed's thread count, and `fit` equals
   `fit_segments` on a single segment.
 
-The Gamma process inverts its cdf, which is slow at the large shapes of
-late cells (ABC's run to the thousands): ABC's lifetime view at 2,000
-simulations takes 30 s in a debug build against about 1 s for RAA or
-GenIns. The validation test simulates ABC with the lognormal of the same
-mean and variance, which at those shapes is close to the Gamma; the
-standard deviation depends on the process only through its first two
-moments as long as the values stay positive. RAA keeps the Gamma: its
-young origins' shapes are below one, where the lognormal's heavy tail
-makes the standard deviation's own standard error unreliable (at 20,000
-simulations RAA 1990 came out 6% low, 3.3 estimated standard errors; at
-200,000, 0.8%). With the weightings `alpha = 0` and `2` the centred
+The Gamma process inverted its cdf until 2026-10-08, which was slow at
+the large shapes of late cells (ABC's run to the thousands): ABC's
+lifetime view at 2,000 simulations took 30 s in a debug build, and the
+validation test simulated ABC with the lognormal of the same mean and
+variance. `Gamma::sample` is now Marsaglia and Tsang's sampler (see
+`rng.md`, stability log): ABC's lifetime view at 20,000 simulations takes
+0.02 s in a release build (39 s before), as the lognormal's does, and the
+validation test uses the Gamma on all three triangles under both rules
+for the last sigma (every origin within 2.4 Monte Carlo standard errors
+of Mack's). The lognormal stays unsuitable for RAA: its young origins'
+shapes are below one, where the lognormal's heavy tail makes the standard
+deviation's own standard error unreliable (at 20,000 simulations RAA 1990
+came out 6% low, 3.3 estimated standard errors; at 200,000, 0.8%). With
+the weightings `alpha = 0` and `2` the centred
 bootstrap also agrees with R's `MackChainLadder(alpha = ...)` on GenIns
 and ABC (within 3.5 standard errors at 50,000 simulations), but RAA's youngest origins come out up to 7% above (`alpha = 0`,
 whose variance is proportional to `C^2`, so the linear approximation
