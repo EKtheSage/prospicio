@@ -5030,12 +5030,16 @@ class MackBootstrap:
     the one-year view under Mack's process: with the volume-weighted chain
     ladder and no tail, its standard deviation is
     ``MackFit.claims_development_result()``'s (Merz and Wüthrich) within
-    Monte Carlo error. Its mean is Merz and Wüthrich's zero only with
-    ``centre_residuals``: EVW resample the residuals uncentred, and their
-    pool's non-zero mean biases the pseudo factors, so the mean CDR is about
-    -0.2 (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard
-    deviation. Simulation ``i`` uses random stream ``i`` of ``seed`` for
-    every segment in turn.
+    Monte Carlo error. The residuals are centred by default
+    (``centre_residuals``), so the mean CDR is Merz and Wüthrich's zero and
+    the lifetime mean reserve the chain ladder's, and EVW's Table 4 expected
+    reserves agree. Uncentred, as EVW's Appendix 1 is written, the pool's
+    non-zero mean biases the pseudo factors: the mean CDR is about -0.2
+    (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation, the
+    lifetime mean reserve about +17%, +0.7% and -0.8% off the chain
+    ladder's, and the one-year standard deviation up to 1.3% wide on RAA.
+    Simulation ``i`` uses random stream ``i`` of ``seed`` for every segment
+    in turn.
     
     Parameters
     ----------
@@ -5053,10 +5057,11 @@ class MackBootstrap:
         How Mack's model averages the link ratios (its ``alpha``).
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a sigma behind a single link ratio is filled in.
-    centre_residuals : bool, default False
+    centre_residuals : bool, default True
         Subtract the residuals' mean before resampling them, so that the
-        pseudo factors are unbiased and the mean CDR is about zero. EVW's
-        Appendix 1 does not.
+        pseudo factors are unbiased, the mean CDR is about zero and the
+        lifetime mean reserve is the chain ladder's. ``False`` resamples them
+        uncentred, as EVW's Appendix 1 is written.
     
     Raises
     ------
@@ -5079,7 +5084,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = False) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -5102,8 +5107,9 @@ class MackBootstrap:
         reserve is its last drawn value less its latest. Mack's model has no
         tail here, so development past the oldest age is not simulated. The
         standard deviation approximates Mack's analytic standard error
-        (``Mack.fit``); the mean is the chain ladder's reserve only with
-        ``centre_residuals``.
+        (``Mack.fit``); the mean is the chain ladder's reserve with
+        ``centre_residuals`` (the default), about 17% above it on RAA
+        without.
         
         Parameters
         ----------
@@ -5131,7 +5137,7 @@ class MackBootstrap:
         ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
         ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
         ... )
-        >>> fit = MackBootstrap(n_sims=2000, seed=42, centre_residuals=True).fit(tri, "values")
+        >>> fit = MackBootstrap(n_sims=2000, seed=42).fit(tri, "values")
         >>> fit.reserves.components()
         [('2020',), ('2021',), ('2022',), ('2023',)]
         >>> abs(fit.reserves.mean() / fit.chain_ladder.total_reserve - 1) < 0.05
@@ -5213,7 +5219,7 @@ class MackBootstrapFit:
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The chain ladder of Mack's model (its averaging): the reserves the
-        bootstrap's mean equals with ``centre_residuals=True``.
+        bootstrap's mean equals with ``centre_residuals=True``, the default.
         """
     @property
     def development(self, /) -> list[int]:

@@ -1498,11 +1498,14 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' simulated.
 #'
 #' The standard deviation of the reserves approximates Mack's analytic
-#' standard error ([mack()]). The mean is the chain ladder's reserve only
-#' with `centre_residuals = TRUE`: the pooled residuals do not have a zero
-#' mean, so resampled as they are (EVW's Appendix 1, the default) they bias
-#' every pseudo factor, and the mean reserve with them (RAA about 17%
-#' above the chain ladder's).
+#' standard error ([mack()]), and the mean is the chain ladder's reserve:
+#' the pooled residuals do not have a zero mean, so by default
+#' (`centre_residuals = TRUE`) they are centred before resampling.
+#' Resampled as they are (`centre_residuals = FALSE`, EVW's Appendix 1 as
+#' written) they bias every pseudo factor, and the mean reserve with them
+#' (about 17% above the chain ladder's on RAA, 0.7% on GenIns, 0.8% below
+#' on ABC); EVW's Table 4 expected reserves agree with the centred
+#' bootstrap.
 #'
 #' Every segment is bootstrapped on its own, with its own Mack model and
 #' residuals, into one joint distribution of the reserves. Simulation `i`
@@ -1532,7 +1535,9 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param average,sigma_interpolation How Mack's model averages the link
 #'   ratios and fills in a sigma behind a single link ratio, as in [mack()].
 #' @param centre_residuals Subtract the residuals' mean before resampling
-#'   them, so that the pseudo factors are unbiased.
+#'   them, so that the pseudo factors are unbiased and the mean reserve is
+#'   the chain ladder's; `FALSE` resamples them uncentred, as England,
+#'   Verrall and Wuthrich's Appendix 1 is written.
 #' @param ptr A `MackBootstrapFit` pointer; used internally.
 #' @returns A `mack_bootstrap_fit` object.
 #' @seealso [mack()] for the analytic standard errors, [mack_one_year()]
@@ -1542,8 +1547,7 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' long <- data.frame(year = rep(2018:2021, 4:1),
 #'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
 #'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
-#' boot <- mack_bootstrap(triangle(long, "year", "age", "paid"), n_sims = 2000, seed = 42,
-#'                        centre_residuals = TRUE)
+#' boot <- mack_bootstrap(triangle(long, "year", "age", "paid"), n_sims = 2000, seed = 42)
 #' boot@reserves@keys
 #' c(mean = mean(boot@reserves), chain_ladder = boot@chain_ladder@total_reserve)
 #' c(sd = sqrt(variance(boot@reserves)), mack = boot@mack@total_standard_error)
@@ -1580,7 +1584,7 @@ mack_bootstrap_fit <- S7::new_class(
 mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                            process = c("gamma", "lognormal", "residuals", "normal", "none"),
                            average = "volume", sigma_interpolation = "log-linear",
-                           centre_residuals = FALSE) {
+                           centre_residuals = TRUE) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   model <- development_args(average, sigma_interpolation)
@@ -1643,13 +1647,13 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' `sigma^2 |C|^(2 - alpha)`, with the same pseudo factors all year. With the
 #' volume-weighted chain ladder and no tail, its standard deviations are
 #' Merz and Wuthrich's ([claims_development_result()]) within Monte Carlo
-#' error, which reconciles the two. The reconciliation is of the standard
-#' deviation: EVW resample the residuals uncentred, and their pool's
-#' non-zero mean biases the pseudo factors, so the mean CDR is about -0.2
-#' (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation
-#' rather than Merz and Wuthrich's zero. `centre_residuals = TRUE` centres
-#' the pool first, which brings the mean to about zero and keeps the
-#' standard deviation. Mack's model has no tail here: the
+#' error, which reconciles the two, and its mean is Merz and Wuthrich's
+#' zero, because by default (`centre_residuals = TRUE`) the pool of
+#' residuals is centred first. Uncentred (`centre_residuals = FALSE`, EVW's
+#' Appendix 1 as written), the pool's non-zero mean biases the pseudo
+#' factors: the mean CDR is about -0.2 (RAA), -0.04 (GenIns) and +0.18
+#' (ABC) times its standard deviation, and RAA's standard deviations up to
+#' 1.3% wide. Mack's model has no tail here: the
 #' development past the oldest age moves only through `method`'s refitted
 #' tail. Its fit has `model = "mack"`, no `scale`, and `mack`, the
 #' [mack_fit] it simulates from; it needs no negative cumulative value.
@@ -1699,8 +1703,8 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'   a single link ratio, as in [mack()].
 #' @param centre_residuals For `mack_one_year()`, subtract the residuals'
 #'   mean before resampling them, so that the pseudo factors are unbiased
-#'   and the mean CDR is about zero. England, Verrall and Wuthrich's
-#'   Appendix 1 does not, hence the default `FALSE`.
+#'   and the mean CDR is about zero (the default); `FALSE` resamples them
+#'   uncentred, as England, Verrall and Wuthrich's Appendix 1 is written.
 #' @param column Name of the loss column; by default the only one.
 #' @param method The reserving method refitted at the start and at the end
 #'   of the year: `"chain_ladder"`, `"expected_loss"`,
@@ -1811,7 +1815,7 @@ mack_one_year <- function(triangle, column = NULL,
                           n_sims = 10000, seed = 0,
                           process = c("gamma", "lognormal", "residuals", "normal", "none"),
                           mack_average = "volume", mack_sigma_interpolation = "log-linear",
-                          centre_residuals = FALSE) {
+                          centre_residuals = TRUE) {
   column <- fit_column(triangle, column)
   method <- match.arg(method)
   process <- match.arg(process)
