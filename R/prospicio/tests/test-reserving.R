@@ -1292,7 +1292,7 @@ expect_error_like(mack_bootstrap(raa, process = "poisson"), "should be one of")
 expect_error_like(mack_bootstrap(raa, average = "median"), "should be one of")
 expect_error_like(mack_bootstrap(raa, n_sims = 0), "n_sims must be positive")
 
-# Dependence between segments (decision 9 of docs/design/reserving-v02.md)
+# Dependence between segments (decision 10 of docs/design/reserving-v02.md)
 # on the CAS loss reserve database lines (validation/data/clrd_lines.csv),
 # as validation/tests/reserving_dependence.rs.
 clrd <- read_long("clrd_lines")
@@ -1337,9 +1337,16 @@ m <- line_totals(odp_bootstrap(three, n_sims = 4000, seed = 5, dependence = "ran
                                spearman = target)@reserves)
 got <- stats::cor(m, method = "spearman")
 stopifnot(all(abs(got - target) < 4 * (1 - target^2) / sqrt(4000) + 1e-12))
-m <- line_totals(mack_one_year(three, n_sims = 2000, seed = 5, dependence = "rank_correlation",
-                               spearman = target)@cdr)
-stopifnot(abs(stats::cor(m[, 1], m[, 2], method = "spearman") - 0.5) < 4 * 0.75 / sqrt(2000))
+# The other views, on the first pair (target 0.5).
+for (fit in list(mack_bootstrap(three, n_sims = 2000, seed = 5, dependence = "rank_correlation",
+                                spearman = target)@reserves,
+                 odp_one_year(three, n_sims = 2000, seed = 5, dependence = "rank_correlation",
+                              spearman = target)@cdr,
+                 mack_one_year(three, n_sims = 2000, seed = 5, dependence = "rank_correlation",
+                               spearman = target)@cdr)) {
+  m <- line_totals(fit)
+  stopifnot(abs(stats::cor(m[, 1], m[, 2], method = "spearman") - 0.5) < 4 * 0.75 / sqrt(2000))
+}
 
 # The joint reserves to capital: more dependence, less diversification.
 tvar <- distortion("tvar", 0.99)

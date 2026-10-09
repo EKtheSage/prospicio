@@ -1811,7 +1811,7 @@ def test_mack_bootstrap_lifetime_every_segment_at_once():
     assert repr(fit).startswith("MackBootstrapFit(segments=2, origins=8, n_sims=400")
 
 
-# Dependence between segments (SegmentDependence, decision 9 of
+# Dependence between segments (SegmentDependence, decision 10 of
 # docs/design/reserving-v02.md) on the CAS loss reserve database lines
 # (validation/data/clrd_lines.csv), as validation/tests/reserving_dependence.rs.
 
@@ -1897,9 +1897,16 @@ def test_rank_correlation_reproduces_the_spearman_matrix():
     for i, j in [(0, 1), (0, 2), (1, 2)]:
         se = (1 - target[i][j] ** 2) / math.sqrt(4000)
         assert abs(spearman(lines[i], lines[j]) - target[i][j]) < 4 * se
+    # The other views, on the first pair (target 0.5).
+    odp = OdpBootstrap(n_sims=2000, seed=5, dependence="rank_correlation", spearman=target)
     mack = MackBootstrap(n_sims=2000, seed=5, dependence="rank_correlation", spearman=target)
-    lines = line_totals(mack.one_year(tri, "paid", ChainLadder()).cdr)
-    assert abs(spearman(lines[0], lines[1]) - 0.5) < 4 * 0.75 / math.sqrt(2000)
+    for pd in [
+        mack.fit(tri, "paid").reserves,
+        odp.one_year(tri, "paid", ChainLadder()).cdr,
+        mack.one_year(tri, "paid", ChainLadder()).cdr,
+    ]:
+        lines = line_totals(pd)
+        assert abs(spearman(lines[0], lines[1]) - 0.5) < 4 * 0.75 / math.sqrt(2000)
 
 
 def test_joint_reserves_to_capital():

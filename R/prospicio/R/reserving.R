@@ -1433,7 +1433,8 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #'   observed cells in every segment; or `"rank_correlation"`, each segment
 #'   bootstrapped independently and the segments' simulations then
 #'   reordered as whole rows (Iman-Conover on the segment totals) to the
-#'   Spearman matrix `spearman`.
+#'   Spearman matrix `spearman` and put in a random order, so that row `i`
+#'   is no longer simulation `i` but any subset of rows is a fair sample.
 #' @param spearman With `dependence = "rank_correlation"` only: Spearman's
 #'   rho between the segments' totals, a symmetric matrix with a unit
 #'   diagonal and one row and column per segment in index order. It is

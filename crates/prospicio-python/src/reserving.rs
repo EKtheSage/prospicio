@@ -4044,7 +4044,8 @@ impl PyClarkFit {
 ///     ages and observed cells in every segment; or each is bootstrapped
 ///     independently and the segments' simulations are reordered as whole
 ///     rows (Iman–Conover on the segment totals) to the Spearman matrix
-///     ``spearman``.
+///     ``spearman`` and then put in a random order, so that row ``i`` is
+///     no longer simulation ``i`` but any subset of rows is a fair sample.
 /// spearman : list of list of float, optional
 ///     With ``dependence="rank_correlation"`` only: Spearman's rho between
 ///     the segments' totals, one row and column per segment in index
@@ -4534,7 +4535,8 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 ///     ages and observed cells in every segment; or each is bootstrapped
 ///     independently and the segments' simulations are reordered as whole
 ///     rows (Iman–Conover on the segment totals) to the Spearman matrix
-///     ``spearman``.
+///     ``spearman`` and then put in a random order, so that row ``i`` is
+///     no longer simulation ``i`` but any subset of rows is a fair sample.
 /// spearman : list of list of float, optional
 ///     With ``dependence="rank_correlation"`` only: Spearman's rho between
 ///     the segments' totals, one row and column per segment in index
@@ -4685,7 +4687,8 @@ impl PyMackBootstrap {
 
     /// The lifetime view: bootstraps one measure column in every segment of
     /// a cumulative triangle, each with its own Mack model and residuals,
-    /// into one joint distribution of the reserves (EVW's Appendix 1). Each
+    /// into one joint distribution of the reserves (EVW's Appendix 1), the
+    /// segments depending on each other as ``dependence`` says. Each
     /// simulation resamples the residuals into pseudo factors and draws
     /// every cumulative value from the latest observed one to the last age,
     /// each from the one before, with Mack's mean and variance; an origin's
@@ -4711,8 +4714,10 @@ impl PyMackBootstrap {
     /// Raises
     /// ------
     /// ValueError
-    ///     As ``Mack.fit``, if an origin has a gap before its latest age, or
-    ///     if a cumulative value is negative.
+    ///     As ``Mack.fit``, and if an origin has a gap before its latest age,
+    ///     a cumulative value is negative, synchronized segments differ in
+    ///     their origins, ages or observed cells, or ``spearman`` does not
+    ///     fit the segments.
     ///
     /// Examples
     /// --------

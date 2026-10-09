@@ -43,7 +43,8 @@ process error stays independent, which needs the same origins, ages and
 observed cells in every segment; or \code{"rank_correlation"}, each segment
 bootstrapped independently and the segments' simulations then
 reordered as whole rows (Iman-Conover on the segment totals) to the
-Spearman matrix \code{spearman}.}
+Spearman matrix \code{spearman} and put in a random order, so that row \code{i}
+is no longer simulation \code{i} but any subset of rows is a fair sample.}
 
 \item{spearman}{With \code{dependence = "rank_correlation"} only: Spearman's
 rho between the segments' totals, a symmetric matrix with a unit
