@@ -42,12 +42,17 @@ which gives its parameter error; a constant one is fixed unless
 \code{tail_std_err} is given. The step from the oldest age to ultimate is
 one more future increment, with mean the pseudo value at the oldest
 age times the tail factor less 1 and the same process error.
-\code{\link[=odp_one_year]{odp_one_year()}} takes its tail from the refitted method instead.}
+\code{\link[=odp_one_year]{odp_one_year()}} takes its tail from the refitted method instead. R's
+rule (\code{\link[=tail_log_linear]{tail_log_linear()}}) refitted on the ODP's pseudo factors is
+often exactly 1 (5.7\% of simulations on RAA) and on average high
+(RAA's oldest origin's mean reserve 78\% above the plug-in); a constant
+tail with \code{tail_std_err} has neither.}
 
 \item{tail_std_err}{Standard error of a constant tail factor: each
 simulation draws the factor from the lognormal with the factor as mean
-and this standard deviation. \code{NULL} keeps it fixed; unused when the
-factor is 1, and an error with an estimated tail.}
+and this standard deviation. \code{NULL} keeps it fixed, unlike
+\code{\link[=mack_bootstrap]{mack_bootstrap()}}, which extrapolates Mack's standard error; unused
+when the factor is 1, and an error with an estimated tail.}
 }
 \value{
 An \code{odp_bootstrap_fit} object.

@@ -1330,5 +1330,33 @@ curve_ob <- odp_bootstrap(raa, n_sims = 200, seed = 3, process = "none", tail = 
 stopifnot(length(unique(draw_matrix(curve_ob@reserves)[, 1])) == 200)
 expect_error_like(odp_bootstrap(raa, n_sims = 10, tail = tail_curve(), tail_std_err = 0.01),
                   "estimated tail")
+# Two segments: the curve fitted from 48 months refits on every simulation
+# of Steady, whose late factors are well above 1, and fails on some of
+# Flat's, whose last two are barely above 1 (as
+# a_failed_refit_names_its_segment in mack_bootstrap.rs). The error counts
+# the failed simulations and names the segment. A constant tail reaches
+# every segment: fixed and without process error, each oldest origin's
+# reserve is 0.05 times its latest value in every simulation.
+sf_origin <- rep(2018:2023, 6:1)
+sf_age <- unlist(lapply(6:1, function(n) seq(12, by = 12, length.out = n)))
+steady <- c(100, 200, 250, 300, 345, 380, 110, 215, 270, 322, 372, 120, 240, 300, 358,
+            100, 205, 255, 105, 210, 100)
+flat <- c(100, 200, 250, 260, 260.5, 260.6, 110, 215, 270, 282, 282, 120, 240, 300, 312,
+          100, 205, 255, 105, 210, 100)
+sf <- triangle(data.frame(lob = rep(c("Steady", "Flat"), each = 21), origin = rep(sf_origin, 2),
+                          development = rep(sf_age, 2), value = c(steady, flat)),
+               "origin", "development", "value", keys = "lob")
+sf_curve <- tail_curve(fit_period = c(48, NA))
+for (msg in c(error_of(mack_bootstrap(sf, n_sims = 200, seed = 1, tail = sf_curve)),
+              error_of(odp_bootstrap(sf, n_sims = 200, tail = sf_curve)))) {
+  stopifnot(grepl("could not be refitted in [0-9]+ of 200 simulations", msg),
+            grepl("segment .*Flat", msg))
+}
+sf_fit <- mack_bootstrap(sf, n_sims = 200, seed = 1, process = "none", tail = 1.05,
+                         tail_std_err = 0)
+for (lob in c("Steady", "Flat")) {
+  latest <- c(Steady = 380, Flat = 260.6)[[lob]]
+  near(draw_matrix(segment(sf_fit, lob = lob)@reserves)[, 1], rep(0.05 * latest, 200), rel = 1e-9)
+}
 
 cat("prospicio R reserving tests passed\n")

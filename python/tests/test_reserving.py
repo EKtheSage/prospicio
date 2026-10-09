@@ -1878,3 +1878,32 @@ def test_odp_bootstrap_with_a_tail(triangles):
     with pytest.raises(ValueError, match="one-year view"):
         OdpBootstrap(n_sims=10, tail=1.05).one_year(raa, "values", ChainLadder())
 
+
+def test_bootstrap_tail_refit_failure_names_its_segment():
+    # Two segments; the curve fitted from 48 months refits on every
+    # simulation of Steady, whose late factors are well above 1, and fails on
+    # some of Flat's, whose last two are barely above 1 (as
+    # a_failed_refit_names_its_segment in mack_bootstrap.rs). The error counts
+    # the failed simulations and names the segment.
+    steady = [100, 200, 250, 300, 345, 380, 110, 215, 270, 322, 372, 120, 240, 300, 358, 100, 205, 255, 105, 210, 100]
+    flat = [100, 200, 250, 260, 260.5, 260.6, 110, 215, 270, 282, 282, 120, 240, 300, 312, 100, 205, 255, 105, 210, 100]
+    years = [2018] * 6 + [2019] * 5 + [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023]
+    ages = [12, 24, 36, 48, 60, 72, 12, 24, 36, 48, 60, 12, 24, 36, 48, 12, 24, 36, 12, 24, 12]
+    data = {
+        "lob": ["Steady"] * 21 + ["Flat"] * 21,
+        "year": years * 2,
+        "age": ages * 2,
+        "paid": [float(v) for v in steady + flat],
+    }
+    tri = Triangle.from_frame(data, "year", "age", "paid", keys="lob")
+    curve = TailCurve(fit_period=(48, None))
+    message = r"could not be refitted in \d+ of 200 simulations, for example: segment .*Flat"
+    for boot in (MackBootstrap(n_sims=200, seed=1, tail=curve), OdpBootstrap(n_sims=200, tail=curve)):
+        with pytest.raises(ValueError, match=message):
+            boot.fit(tri, "paid")
+    # A constant tail reaches every segment.
+    fit = MackBootstrap(n_sims=200, seed=1, tail=1.05, tail_std_err=0.0, process="none").fit(tri, "paid")
+    for lob, latest in (("Steady", 380.0), ("Flat", 260.6)):
+        oldest = [row[0] for row in fit.segment(lob=lob).reserves.draw_matrix()]
+        assert oldest == pytest.approx([0.05 * latest] * 200, rel=1e-9)
+

@@ -6350,8 +6350,9 @@ class MackBootstrap:
     centre_residuals : bool, default True
         Subtract the residuals' mean before resampling them, so that the
         pseudo factors are unbiased, the mean CDR is about zero and the
-        lifetime mean reserve is the chain ladder's. ``False`` resamples them
-        uncentred, as EVW's Appendix 1 is written.
+        lifetime mean reserve is the chain ladder's (without a tail or with
+        a constant one). ``False`` resamples them uncentred, as EVW's
+        Appendix 1 is written.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         Development past the oldest age in the lifetime view (``fit``), as
         ``Mack``'s: one more step, to ultimate, with the process error of
@@ -6366,8 +6367,9 @@ class MackBootstrap:
         Unused when the tail factor is 1.
     tail_std_err : float, optional
         The constant tail factor's standard error (R's ``tail.se``);
-        extrapolated if not given. Unused when the tail factor is 1; an
-        error with an estimated tail.
+        extrapolated if not given, unlike ``OdpBootstrap``, which then keeps
+        the factor fixed. Unused when the tail factor is 1; an error with an
+        estimated tail.
     
     Raises
     ------
@@ -6419,8 +6421,8 @@ class MackBootstrap:
         analytic standard error (``Mack.fit``, with the same tail; for an
         estimated tail the parameter error is the refit's, not Mack's
         extrapolated one); the mean is the chain ladder's reserve with
-        ``centre_residuals`` (the default), about 17% above it on RAA
-        without.
+        ``centre_residuals`` (the default), without a tail or with a
+        constant one, about 17% above it on RAA without centring.
         
         Parameters
         ----------
@@ -6550,8 +6552,10 @@ class MackBootstrapFit:
     @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
-        The chain ladder of Mack's model (its averaging): the reserves the
-        bootstrap's mean equals with ``centre_residuals=True``, the default.
+        The chain ladder of Mack's model (its averaging), with the
+        bootstrap's tail: the reserves the bootstrap's mean equals with
+        ``centre_residuals=True``, the default, without a tail or with a
+        constant one (an estimated tail's refit has its own mean).
         """
     @property
     def development(self, /) -> list[int]:
@@ -6580,9 +6584,10 @@ class MackBootstrapFit:
     @property
     def mack(self, /) -> MackFit:
         """
-        Mack's model on the observed triangle, without a tail: the factors
-        and sigmas the simulation uses, and the analytic standard errors the
-        simulated standard deviations approximate.
+        Mack's model on the observed triangle, with the bootstrap's tail:
+        the factors and sigmas the simulation uses, and the analytic
+        standard errors the simulated standard deviations approximate (with
+        an estimated tail, up to the refit's own parameter error).
         """
     @property
     def origins(self, /) -> list[str]:
@@ -7378,12 +7383,17 @@ class OdpBootstrap:
         given. The step from the oldest age to ultimate is one more future
         increment, with mean the pseudo value at the oldest age times the
         tail factor less 1 and the same process error. ``one_year`` takes
-        its tail from ``method`` instead and rejects one here.
+        its tail from ``method`` instead and rejects one here. R's rule
+        (``TailLogLinear``) refitted on the ODP's pseudo factors is often
+        exactly 1 (5.7% of simulations on RAA) and on average high (RAA's
+        oldest origin's mean reserve 78% above the plug-in); a constant tail
+        with ``tail_std_err`` has neither.
     tail_std_err : float, optional
         Standard error of a constant tail factor: each simulation draws the
         factor from the lognormal with the factor as mean and this standard
-        deviation. Unused when the factor is 1; an error with an estimated
-        tail.
+        deviation. Not given, the factor is fixed, unlike
+        ``MackBootstrap``, which extrapolates Mack's standard error. Unused
+        when the factor is 1; an error with an estimated tail.
     
     Raises
     ------
@@ -7552,7 +7562,7 @@ class OdpBootstrapFit:
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The deterministic volume-weighted chain ladder the bootstrap is
-        centred on.
+        centred on, with the bootstrap's tail.
         """
     @property
     def development(self, /) -> list[int]:

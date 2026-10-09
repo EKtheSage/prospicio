@@ -1494,7 +1494,8 @@ pub(crate) struct OdpBootstrapFit {
 
 #[extendr]
 impl OdpBootstrapFit {
-    /// The chain ladder the bootstrap is centred on.
+    /// The chain ladder the bootstrap is centred on, with the bootstrap's
+    /// tail.
     fn chain_ladder(&self) -> ChainLadderFit {
         ChainLadderFit {
             inner: self.inner.segments.map(|s| s.chain_ladder.clone()),
@@ -1557,7 +1558,7 @@ impl MackBootstrapFit {
         }
     }
 
-    /// Mack's model on the observed triangle, without a tail.
+    /// Mack's model on the observed triangle, with the bootstrap's tail.
     fn mack(&self) -> MackFit {
         MackFit {
             inner: self.inner.segments.map(|s| s.mack.clone()),
