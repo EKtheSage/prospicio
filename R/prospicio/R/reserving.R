@@ -1392,10 +1392,14 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #' exactly, and the reserve distribution within Monte Carlo error
 #' (`validation/reference/reserving_bootstrap_r.csv`).
 #'
-#' Every segment of the triangle is bootstrapped on its own, with its own
-#' residuals and scale, into one joint distribution of the reserves.
-#' Simulation `i` uses random stream `i` of `seed` for every segment in
-#' turn, so results do not depend on the number of threads.
+#' Every segment of the triangle is bootstrapped with its own residuals and
+#' scale, into one joint distribution of the reserves, the segments
+#' depending on each other as `dependence` says: independently by default,
+#' synchronized, or rank-correlated to a Spearman matrix. The joint
+#' distribution goes on to the portfolio's risk measure and its allocation
+#' to the lines ([capital_allocation()]). Simulation `i` uses random stream `i` of
+#' `seed` for every segment in turn, so results do not depend on the number
+#' of threads.
 #'
 #' Properties of the fit: `chain_ladder` (the [chain_ladder_fit] the
 #' bootstrap is centred on), `origins`, `development`, `fitted` (fitted
@@ -1419,6 +1423,23 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #' @param process Process error on each simulated future incremental value:
 #'   `"gamma"` (mean the expected value, variance `scale * |mean|`, R's
 #'   `process.distr = "gamma"`) or `"none"` for parameter error only.
+#' @param dependence How the segments of a multi-segment triangle depend on
+#'   each other: `"independent"`, each resampling its own residuals;
+#'   `"synchronized"`, every segment resampling the residuals of the same
+#'   origins and ages in each simulation (the synchronous bootstrap of
+#'   Taylor and McGuire 2007 and Kirschner, Kerley and Isaacs 2008), so the
+#'   lines' parameter error takes the correlation of their residuals while
+#'   process error stays independent, which needs the same origins, ages and
+#'   observed cells in every segment; or `"rank_correlation"`, each segment
+#'   bootstrapped independently and the segments' simulations then
+#'   reordered as whole rows (Iman-Conover on the segment totals) to the
+#'   Spearman matrix `spearman` and put in a random order, so that row `i`
+#'   is no longer simulation `i` but any subset of rows is a fair sample.
+#' @param spearman With `dependence = "rank_correlation"` only: Spearman's
+#'   rho between the segments' totals, a symmetric matrix with a unit
+#'   diagonal and one row and column per segment in index order. It is
+#'   converted to the normal scores' correlation `2 sin(pi rho / 6)`, which
+#'   must be positive definite.
 #' @param ptr An `OdpBootstrapFit` pointer; used internally.
 #' @returns An `odp_bootstrap_fit` object.
 #' @seealso [chain_ladder()], [mack()]; [odp_one_year()] for the one-year
@@ -1475,12 +1496,29 @@ origin_matrix <- function(fit, flat) {
 #' @rdname odp_bootstrap_fit
 #' @export
 odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
-                          process = c("gamma", "none")) {
+                          process = c("gamma", "none"),
+                          dependence = c("independent", "synchronized", "rank_correlation"),
+                          spearman = NULL) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
+  dependence <- match.arg(dependence)
   ptr <- rust_result(triangle@ptr$odp_bootstrap(column, single_number(n_sims, "n_sims"),
-                                                single_number(seed, "seed"), process))
+                                                single_number(seed, "seed"), process,
+                                                dependence, spearman_arg(spearman)))
   odp_bootstrap_fit(ptr = ptr)
+}
+
+# `spearman` as the binding takes it: NULL, or a square numeric matrix
+# flattened row-major.
+spearman_arg <- function(spearman) {
+  if (is.null(spearman)) {
+    return(NULL)
+  }
+  if (!is.numeric(spearman) || !is.matrix(spearman) || nrow(spearman) != ncol(spearman)) {
+    stop("spearman must be a square numeric matrix, one row and column per segment",
+         call. = FALSE)
+  }
+  as.double(t(spearman))
 }
 
 #' Bootstrap of Mack's model
@@ -1507,9 +1545,12 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' on ABC); EVW's Table 4 expected reserves agree with the centred
 #' bootstrap.
 #'
-#' Every segment is bootstrapped on its own, with its own Mack model and
-#' residuals, into one joint distribution of the reserves. Simulation `i`
-#' uses random stream `i` of `seed` for every segment in turn.
+#' Every segment is bootstrapped with its own Mack model and residuals,
+#' into one joint distribution of the reserves, the segments depending on
+#' each other as `dependence` says, as in [odp_bootstrap()]; synchronized,
+#' every segment resamples the link-ratio residuals of the same origins and
+#' ages. Simulation `i` uses random stream `i` of `seed` for every segment
+#' in turn.
 #'
 #' Properties of the fit: `chain_ladder` (the [chain_ladder_fit] of Mack's
 #' averaging), `mack` (the [mack_fit] on the observed triangle, with the
@@ -1538,6 +1579,8 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'   them, so that the pseudo factors are unbiased and the mean reserve is
 #'   the chain ladder's; `FALSE` resamples them uncentred, as England,
 #'   Verrall and Wuthrich's Appendix 1 is written.
+#' @param dependence,spearman How the segments depend on each other, as in
+#'   [odp_bootstrap()].
 #' @param ptr A `MackBootstrapFit` pointer; used internally.
 #' @returns A `mack_bootstrap_fit` object.
 #' @seealso [mack()] for the analytic standard errors, [mack_one_year()]
@@ -1584,13 +1627,16 @@ mack_bootstrap_fit <- S7::new_class(
 mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                            process = c("gamma", "lognormal", "residuals", "normal", "none"),
                            average = "volume", sigma_interpolation = "log-linear",
-                           centre_residuals = TRUE) {
+                           centre_residuals = TRUE,
+                           dependence = c("independent", "synchronized", "rank_correlation"),
+                           spearman = NULL) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
+  dependence <- match.arg(dependence)
   model <- development_args(average, sigma_interpolation)
   ptr <- rust_result(triangle@ptr$mack_bootstrap(
     column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
-    model$average, model$sigma, isTRUE(centre_residuals)
+    model$average, model$sigma, isTRUE(centre_residuals), dependence, spearman_arg(spearman)
   ))
   mack_bootstrap_fit(ptr = ptr)
 }
@@ -1658,10 +1704,11 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' tail. Its fit has `model = "mack"`, no `scale`, and `mack`, the
 #' [mack_fit] it simulates from; it needs no negative cumulative value.
 #'
-#' Every segment of the triangle is bootstrapped on its own, with its own
-#' residuals and scale, into one joint distribution of the CDR; simulation
-#' `i` uses random stream `i` of `seed` for every segment in turn, so
-#' results do not depend on the number of threads.
+#' Every segment of the triangle is bootstrapped with its own residuals and
+#' scale, into one joint distribution of the CDR, the segments depending on
+#' each other as `dependence` says (as in [odp_bootstrap()]); simulation `i`
+#' uses random stream `i` of `seed` for every segment in turn, so results do
+#' not depend on the number of threads.
 #'
 #' Properties of the fit: `chain_ladder` (the bootstrap's volume-weighted
 #' [chain_ladder_fit]), `keys`, `index`, `origins`, `development`; per
@@ -1705,6 +1752,8 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'   mean before resampling them, so that the pseudo factors are unbiased
 #'   and the mean CDR is about zero (the default); `FALSE` resamples them
 #'   uncentred, as England, Verrall and Wuthrich's Appendix 1 is written.
+#' @param dependence,spearman How the segments depend on each other, as in
+#'   [odp_bootstrap()].
 #' @param column Name of the loss column; by default the only one.
 #' @param method The reserving method refitted at the start and at the end
 #'   of the year: `"chain_ladder"`, `"expected_loss"`,
@@ -1789,10 +1838,13 @@ odp_one_year <- function(triangle, column = NULL,
                                     "benktander", "cape_cod"),
                          exposure = NULL, apriori = 1, n_iters = 1, trend = 0, decay = 1,
                          average = "volume", sigma_interpolation = "log-linear", tail = 1,
-                         n_sims = 10000, seed = 0, process = c("gamma", "none")) {
+                         n_sims = 10000, seed = 0, process = c("gamma", "none"),
+                         dependence = c("independent", "synchronized", "rank_correlation"),
+                         spearman = NULL) {
   column <- fit_column(triangle, column)
   method <- match.arg(method)
   process <- match.arg(process)
+  dependence <- match.arg(dependence)
   check_one_year_settings(method, exposure, c(apriori = !missing(apriori),
                                               n_iters = !missing(n_iters),
                                               trend = !missing(trend), decay = !missing(decay)))
@@ -1800,7 +1852,8 @@ odp_one_year <- function(triangle, column = NULL,
   ptr <- rust_result(triangle@ptr$odp_one_year(
     column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
-    tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process
+    tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
+    dependence, spearman_arg(spearman)
   ))
   one_year_fit(ptr = ptr)
 }
@@ -1815,10 +1868,13 @@ mack_one_year <- function(triangle, column = NULL,
                           n_sims = 10000, seed = 0,
                           process = c("gamma", "lognormal", "residuals", "normal", "none"),
                           mack_average = "volume", mack_sigma_interpolation = "log-linear",
-                          centre_residuals = TRUE) {
+                          centre_residuals = TRUE,
+                          dependence = c("independent", "synchronized", "rank_correlation"),
+                          spearman = NULL) {
   column <- fit_column(triangle, column)
   method <- match.arg(method)
   process <- match.arg(process)
+  dependence <- match.arg(dependence)
   check_one_year_settings(method, exposure, c(apriori = !missing(apriori),
                                               n_iters = !missing(n_iters),
                                               trend = !missing(trend), decay = !missing(decay)))
@@ -1828,7 +1884,7 @@ mack_one_year <- function(triangle, column = NULL,
     column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
     tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
-    model$average, model$sigma, isTRUE(centre_residuals)
+    model$average, model$sigma, isTRUE(centre_residuals), dependence, spearman_arg(spearman)
   ))
   one_year_fit(ptr = ptr)
 }

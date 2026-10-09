@@ -15,7 +15,9 @@ mack_bootstrap(
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   average = "volume",
   sigma_interpolation = "log-linear",
-  centre_residuals = TRUE
+  centre_residuals = TRUE,
+  dependence = c("independent", "synchronized", "rank_correlation"),
+  spearman = NULL
 )
 }
 \arguments{
@@ -43,6 +45,9 @@ ratios and fills in a sigma behind a single link ratio, as in \code{\link[=mack]
 them, so that the pseudo factors are unbiased and the mean reserve is
 the chain ladder's; \code{FALSE} resamples them uncentred, as England,
 Verrall and Wuthrich's Appendix 1 is written.}
+
+\item{dependence, spearman}{How the segments depend on each other, as in
+\code{\link[=odp_bootstrap]{odp_bootstrap()}}.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.
@@ -71,9 +76,12 @@ written) they bias every pseudo factor, and the mean reserve with them
 on ABC); EVW's Table 4 expected reserves agree with the centred
 bootstrap.
 
-Every segment is bootstrapped on its own, with its own Mack model and
-residuals, into one joint distribution of the reserves. Simulation \code{i}
-uses random stream \code{i} of \code{seed} for every segment in turn.
+Every segment is bootstrapped with its own Mack model and residuals,
+into one joint distribution of the reserves, the segments depending on
+each other as \code{dependence} says, as in \code{\link[=odp_bootstrap]{odp_bootstrap()}}; synchronized,
+every segment resamples the link-ratio residuals of the same origins and
+ages. Simulation \code{i} uses random stream \code{i} of \code{seed} for every segment
+in turn.
 
 Properties of the fit: \code{chain_ladder} (the \link{chain_ladder_fit} of Mack's
 averaging), \code{mack} (the \link{mack_fit} on the observed triangle, with the

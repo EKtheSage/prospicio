@@ -23,7 +23,9 @@ odp_one_year(
   tail = 1,
   n_sims = 10000,
   seed = 0,
-  process = c("gamma", "none")
+  process = c("gamma", "none"),
+  dependence = c("independent", "synchronized", "rank_correlation"),
+  spearman = NULL
 )
 
 mack_one_year(
@@ -44,7 +46,9 @@ mack_one_year(
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   mack_average = "volume",
   mack_sigma_interpolation = "log-linear",
-  centre_residuals = TRUE
+  centre_residuals = TRUE,
+  dependence = c("independent", "synchronized", "rank_correlation"),
+  spearman = NULL
 )
 }
 \arguments{
@@ -81,6 +85,9 @@ incremental value: \code{"gamma"} (mean the expected value, variance
 mean and variance; \code{"residuals"} (the mean plus a resampled residual
 times the standard deviation, which carries the residuals' mean and
 variance); or \code{"none"}.}
+
+\item{dependence, spearman}{How the segments depend on each other, as in
+\code{\link[=odp_bootstrap]{odp_bootstrap()}}.}
 
 \item{mack_average, mack_sigma_interpolation}{How Mack's model in
 \code{mack_one_year()} averages the link ratios and fills in a sigma behind
@@ -156,10 +163,11 @@ development past the oldest age moves only through \code{method}'s refitted
 tail. Its fit has \code{model = "mack"}, no \code{scale}, and \code{mack}, the
 \link{mack_fit} it simulates from; it needs no negative cumulative value.
 
-Every segment of the triangle is bootstrapped on its own, with its own
-residuals and scale, into one joint distribution of the CDR; simulation
-\code{i} uses random stream \code{i} of \code{seed} for every segment in turn, so
-results do not depend on the number of threads.
+Every segment of the triangle is bootstrapped with its own residuals and
+scale, into one joint distribution of the CDR, the segments depending on
+each other as \code{dependence} says (as in \code{\link[=odp_bootstrap]{odp_bootstrap()}}); simulation \code{i}
+uses random stream \code{i} of \code{seed} for every segment in turn, so results do
+not depend on the number of threads.
 
 Properties of the fit: \code{chain_ladder} (the bootstrap's volume-weighted
 \link{chain_ladder_fit}), \code{keys}, \code{index}, \code{origins}, \code{development}; per

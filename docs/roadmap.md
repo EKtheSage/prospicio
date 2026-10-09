@@ -125,10 +125,13 @@ what it is aiming for by v1.0.
     for any method, weighting, tail or grain (#150, #156, #157), and
     `MackBootstrap`'s run-off view with centred residuals by default,
     reconciled with Mack and Merz–Wüthrich (#159, #160, #163).
+  - Joint reserves across lines, for capital: `SegmentDependence` on both
+    bootstraps' multi-segment fits, lifetime and one-year (synchronized
+    residuals, Kirschner, Kerley and Isaacs 2008, or a Spearman rank
+    correlation by Iman–Conover), into `capital` (`reserving-v02.md`,
+    decision 10).
 - **Next (from that lane):** open, waiting on the user. Candidates:
-  1. Joint reserves across lines through a copula, for capital.
-  2. Parameter error of the tail in the bootstraps.
-  3. Bayesian reserving with `prospicio-bayes` (v0.7).
+  1. Bayesian reserving with `prospicio-bayes` (v0.7).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
