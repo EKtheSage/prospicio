@@ -1,5 +1,9 @@
 # Bundle history
 
+## 2026-10-09
+
+* **Update**: [The tail in the bootstraps, refitted or drawn, against Mack's tail risk](/findings/bootstrap-tail-parameter-error.md), from review of the bootstrap tails (branch claude/bootstrap-tail-error): a constant tail attached before the oldest age left the factors it replaces fixed and the middle origins 17-30% below Mack's standard deviation; they now move with the pseudo factors' deviations and agree within 3.1 Monte Carlo standard errors. The ODP's refitted log-linear tail on RAA is R's guards at work (5.7% of simulations with exactly no tail, half of the rest leaving a factor at or below 1 out of the line). Not yet run by CI.
+
 ## 2026-10-08
 
 * **Creation**: [The tail in the bootstraps, refitted or drawn, against Mack's tail risk](/findings/bootstrap-tail-parameter-error.md), from adding tails to `OdpBootstrap::fit` and `MackBootstrap::fit` (branch claude/bootstrap-tail-error): a constant tail drawn from the lognormal with Mack's tail standard error, with Mack's tail sigma on the step to ultimate, reconciles with R's `MackChainLadder(tail = ...)` on RAA, GenIns and ABC; a refitted log-linear tail has R's process error and the refit's own parameter error (first order on ABC, 1.56 and 1.12 times it on RAA and GenIns), and moves much more on the ODP's pseudo factors. Not yet run by CI.

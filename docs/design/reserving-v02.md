@@ -1055,6 +1055,22 @@ for Mack) and before any process draw:
      age positive but fails for a factor below 1 and is very skewed (RAA's
      `f - 1` has a coefficient of variation of 0.38 at 1.05 and 0.46 under
      `tail = TRUE`), a skew Mack's estimate gives no ground for.
+   * A constant tail attached before the oldest age (`TailConstant` with an
+     `attachment_age`) replaces the factors from its attachment on with
+     its own, which do not depend on the pseudo factors, but `Mack` still
+     charges those positions the estimated factors' standard errors. So
+     each of those factors moves by its pseudo factor's deviation from the
+     estimate, `f_tail,k + (f*_k - f_k)`: the ages keep their parameter
+     error, with the variance Mack charges and the mean the selected
+     factor's. Kept fixed, they gave the middle origins of RAA, GenIns and
+     ABC standard deviations 17-30% below `Mack`'s with the same tail
+     (Gamma process, 1.05 attached at the fourth-oldest age, 20,000
+     simulations), the means agreeing. Rejected: rejecting an early
+     attachment in the bootstraps (a `ChainLadder` and `Mack` setting they
+     should take as well), and zeroing those standard errors in `Mack`
+     (a selected factor is still uncertain; `Mack`'s behaviour, not this
+     decision's). An estimated tail attached early needs neither: its
+     factors are refitted on the pseudo factors.
 2. **The process error of development past the oldest age.**
    * Mack: every origin, the oldest included, takes one more step after
      the oldest age, its ultimate drawn by `MackProcess` with mean
@@ -1117,6 +1133,13 @@ simulations, against `reserving_tails_r.csv`, R ChainLadder 0.2.21's
   total within 3.2 standard errors, the largest RAA 1990 and RAA's total
   (1.04 times R under the Gamma, parameter error alone 1.004), the
   young-origin nonlinearity the run-off without a tail shows too.
+* **A constant tail attached early reconciles with `Mack`.** A 1.05
+  attached at the fourth-oldest age, against prospicio's `Mack` with the
+  same tail (R's `MackChainLadder` has no attachment age; `Mack`'s tail
+  terms are R's by the check above), the same reference formula, Gamma and
+  parameter error alone: every origin and total within 3.1 standard
+  errors in standard deviation and 3.2 in mean, the largest again RAA 1990
+  and RAA's total under the Gamma.
 * **A refitted tail has Mack's process error.** Run with the Gamma and
   with no process on the same seed, the two share every pseudo factor and
   refitted tail, since the process draws come after them, so the
@@ -1149,7 +1172,12 @@ simulations, against `reserving_tails_r.csv`, R ChainLadder 0.2.21's
   both models; RAA's oldest origin with `tail = 1.05`, `tail_sigma = 1.5`
   and `tail_std_err = 0.003` has Mack's exact variance
   `C^2 0.003^2 + 1.5^2 C` and mean `0.05 C` within five Monte Carlo
-  standard errors; the ODP's oldest origin with a constant tail has the
+  standard errors; a constant tail attached at 84 months keeps RAA's
+  pseudo factors before 84 and moves its own by the pseudo factors'
+  deviations, exactly; on a keyed triangle of two segments each segment's
+  oldest origin takes the tail (`fit_segments`, both models), and a
+  refit that fails in one segment is `TailRefit` wrapping `InSegment`
+  with its label; the ODP's oldest origin with a constant tail has the
   variance `(T - 1)^2 v sum|m| + phi (T - 1) E[P]` worked out from its
   fitted increments `m` and pseudo latest value `P`; a curve fitted to two
   factors barely above 1 fails in some simulations and is reported with
@@ -1169,7 +1197,19 @@ more on the ODP's pseudo factors than on Mack's, whose late link ratios
 are steadier: RAA's oldest origin has a mean reserve of 316 against the
 plug-in 178 (+78%) and a parameter standard deviation of 249, and the
 total mean is 1.064 times the tailed chain ladder's (1.033 without a
-tail); GenIns 1.017 (1.011), ABC 0.999 (0.999).
+tail); GenIns 1.017 (1.011), ABC 0.999 (0.999). On RAA that is R's rule
+refitted where its guards, written for one estimate, decide: 1,136 of the
+20,000 simulations (5.7%) have the product of the third- and second-last
+pseudo factors at most 1.0001 and so exactly no tail (the oldest origin's
+reserve exactly 0), and 9,790 of the others leave a pseudo factor at or
+below 1 out of the line, with a mean `T* - 1` of 0.0211 against 0.0153
+for the rest and 0.0094 plug-in. The point mass pulls the mean down (the
+oldest origin's mean is 336 without it); the selection and the
+extrapolation's convexity push it up. GenIns and ABC have no simulation
+without a tail, and Mack's pseudo factors on RAA none either. The refit is
+kept, as R's rule is what `Tail::LogLinear` means, and documented on
+`OdpBootstrap::tail`: a constant tail with a `tail_std_err` is the one to
+use on the ODP for a tail of a stable form.
 
 Bindings: Python `OdpBootstrap(n_sims=10000, seed=0, process="gamma",
 tail=None, tail_std_err=None)` and `MackBootstrap(..., centre_residuals=True,
@@ -1181,4 +1221,12 @@ tail=None, tail_sigma=None, tail_std_err=None)`, `tail` a float or a
 NULL)` and `mack_bootstrap(..., centre_residuals = TRUE, tail = 1,
 tail_sigma = NULL, tail_std_err = NULL)`, `tail` a number or a tail
 constructor as `mack()`'s. The one-year functions are unchanged: their
-`tail` is the refitted method's.
+`tail` is the refitted method's. `tail_std_err` left out means different
+things in the two, and each binding's parameter documentation says so:
+the ODP keeps a constant tail fixed, while Mack's bootstrap extrapolates
+Mack's standard error, so changing only the bootstrap changes whether a
+constant tail has parameter error. The ODP's chain ladder computes the
+same extrapolation, but the ODP's model has no tail standard error of its
+own, so the default stays fixed. The mean is the chain ladder's (Mack,
+centred residuals) only without a tail or with a constant one; the
+bindings' documentation qualifies it the same way.
