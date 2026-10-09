@@ -12,7 +12,9 @@ odp_bootstrap(
   column = NULL,
   n_sims = 10000,
   seed = 0,
-  process = c("gamma", "none")
+  process = c("gamma", "none"),
+  tail = 1,
+  tail_std_err = NULL
 )
 }
 \arguments{
@@ -30,6 +32,22 @@ every origin observed from the first age up to its latest.}
 \item{process}{Process error on each simulated future incremental value:
 \code{"gamma"} (mean the expected value, variance \verb{scale * |mean|}, R's
 \code{process.distr = "gamma"}) or \code{"none"} for parameter error only.}
+
+\item{tail}{Development past the oldest age: a number (a constant
+factor), \code{\link[=tail_constant]{tail_constant()}}, \code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or
+\code{\link[=tail_log_linear]{tail_log_linear()}}, as in \code{\link[=chain_ladder]{chain_ladder()}}; 1 (no tail, as R's
+\code{BootChainLadder}) by default. An estimated tail (a curve, Bondy or
+the log-linear rule) is refitted on each simulation's pseudo factors,
+which gives its parameter error; a constant one is fixed unless
+\code{tail_std_err} is given. The step from the oldest age to ultimate is
+one more future increment, with mean the pseudo value at the oldest
+age times the tail factor less 1 and the same process error.
+\code{\link[=odp_one_year]{odp_one_year()}} takes its tail from the refitted method instead.}
+
+\item{tail_std_err}{Standard error of a constant tail factor: each
+simulation draws the factor from the lognormal with the factor as mean
+and this standard deviation. \code{NULL} keeps it fixed; unused when the
+factor is 1, and an error with an estimated tail.}
 }
 \value{
 An \code{odp_bootstrap_fit} object.

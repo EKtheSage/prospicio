@@ -180,6 +180,7 @@ fn mack_bootstrap(
         process,
         development: development(average, sigma_interpolation)?,
         centre_residuals,
+        ..Default::default()
     })
 }
 
@@ -202,6 +203,7 @@ fn bootstrap(n_sims: f64, seed: f64, process: &str) -> Result<OdpBootstrap> {
         n_sims,
         seed: whole(seed, "seed")?,
         process,
+        ..Default::default()
     })
 }
 
@@ -752,16 +754,23 @@ impl Triangle {
         Ok(CapeCodFit { inner })
     }
 
+    /// `tail` is a `ReservingTail`, developed past the oldest age in every
+    /// simulation; `tail_std_err` is `NULL` to keep a constant tail fixed.
     fn odp_bootstrap(
         &self,
         column: &str,
         n_sims: f64,
         seed: f64,
         process: &str,
+        tail: Robj,
+        tail_std_err: Nullable<f64>,
     ) -> Result<OdpBootstrapFit> {
-        let inner = bootstrap(n_sims, seed, process)?
-            .fit_segments(&self.inner, column)
-            .map_err(to_r)?;
+        let boot = OdpBootstrap {
+            tail: tail_arg(&tail)?,
+            tail_std_err: optional(tail_std_err),
+            ..bootstrap(n_sims, seed, process)?
+        };
+        let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
         Ok(OdpBootstrapFit { inner })
     }
 
@@ -769,7 +778,9 @@ impl Triangle {
     /// simulated to the last age with `process` ("gamma", "lognormal",
     /// "residuals", "normal" or "none"), Mack's model averaged as `average`
     /// with `sigma_interpolation`, and the residuals centred before
-    /// resampling if `centre_residuals`.
+    /// resampling if `centre_residuals`; then to ultimate with `tail` (a
+    /// `ReservingTail`), whose `tail_sigma` and `tail_std_err` are `NULL`
+    /// to extrapolate them.
     #[allow(clippy::too_many_arguments)]
     fn mack_bootstrap(
         &self,
@@ -780,17 +791,24 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         centre_residuals: bool,
+        tail: Robj,
+        tail_sigma: Nullable<f64>,
+        tail_std_err: Nullable<f64>,
     ) -> Result<MackBootstrapFit> {
-        let inner = mack_bootstrap(
-            n_sims,
-            seed,
-            process,
-            average,
-            sigma_interpolation,
-            centre_residuals,
-        )?
-        .fit_segments(&self.inner, column)
-        .map_err(to_r)?;
+        let boot = MackBootstrap {
+            tail: tail_arg(&tail)?,
+            tail_sigma: optional(tail_sigma),
+            tail_std_err: optional(tail_std_err),
+            ..mack_bootstrap(
+                n_sims,
+                seed,
+                process,
+                average,
+                sigma_interpolation,
+                centre_residuals,
+            )?
+        };
+        let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
         Ok(MackBootstrapFit { inner })
     }
 

@@ -15,7 +15,10 @@ mack_bootstrap(
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   average = "volume",
   sigma_interpolation = "log-linear",
-  centre_residuals = TRUE
+  centre_residuals = TRUE,
+  tail = 1,
+  tail_sigma = NULL,
+  tail_std_err = NULL
 )
 }
 \arguments{
@@ -43,6 +46,19 @@ ratios and fills in a sigma behind a single link ratio, as in \code{\link[=mack]
 them, so that the pseudo factors are unbiased and the mean reserve is
 the chain ladder's; \code{FALSE} resamples them uncentred, as England,
 Verrall and Wuthrich's Appendix 1 is written.}
+
+\item{tail}{Development past the oldest age, as in \code{\link[=mack]{mack()}}: a number (a
+constant factor), \code{\link[=tail_constant]{tail_constant()}}, \code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or
+\code{\link[=tail_log_linear]{tail_log_linear()}}; 1 (no tail) by default. \code{\link[=mack_one_year]{mack_one_year()}} takes
+its tail from the refitted method instead.}
+
+\item{tail_sigma}{The tail's sigma (R's \code{tail.sigma}), the process error
+of the step to ultimate, or \code{NULL} to extrapolate it. Unused when the
+tail factor is 1.}
+
+\item{tail_std_err}{A constant tail factor's standard error (R's
+\code{tail.se}), or \code{NULL} to extrapolate it. Unused when the tail factor
+is 1, and an error with an estimated tail.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.
@@ -57,8 +73,14 @@ error), and every future cumulative value is drawn from the one before,
 the observed latest value for the first, with mean \verb{f*_k C} and Mack's
 variance \verb{sigma_k^2 |C|^(2 - alpha)} (process error), to the triangle's
 last age. An origin's reserve is its last drawn value less its latest.
-Mack's model has no tail here, so development past the oldest age is not
-simulated.
+With a \code{tail} every origin takes one more step, from the oldest age to
+ultimate, with mean the tail factor times the value at the oldest age and
+variance \verb{tail_sigma^2 |C|^(2 - alpha)} (Mack 1999); the tail factor is
+refitted on each simulation's pseudo factors (an estimated tail) or drawn
+from the lognormal with the factor as mean and the tail's standard error
+(a constant one), so the standard deviation approximates \code{\link[=mack]{mack()}}'s with
+the same tail. For an estimated tail the parameter error is the refit's,
+not Mack's extrapolated \code{tail.se}.
 }
 \details{
 The standard deviation of the reserves approximates Mack's analytic
