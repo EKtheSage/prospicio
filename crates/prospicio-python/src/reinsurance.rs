@@ -1,7 +1,7 @@
 //! `prospicio.reinsurance`: wrappers over `prospicio_aggregate::reinsurance`
 //! (layers and towers, applied to simulated losses or on the grid).
 
-use prospicio_aggregate::{Layer, Tower, TowerGrids};
+use prospicio_aggregate::{Commission, Layer, LossSensitivePremium, Tower, TowerGrids};
 use pyo3::prelude::*;
 
 use crate::aggregate::{AnyCount, PyCompoundReport, PyEventSet};
@@ -30,8 +30,10 @@ use crate::to_py;
 ///     ``limit * (reinstatements + 1)``; cannot be combined with
 ///     ``aggregate_limit``.
 /// premium : float, default 0.0
-///     Upfront premium for the placed share; used only by
-///     ``reinstatement_rates``.
+///     Upfront premium for the placed share: the base of paid
+///     reinstatements, ceding and profit commissions and a sliding scale's
+///     loss ratio. ``with_rate_on_line``, ``with_premium_rate`` and
+///     ``with_deposit_premium`` set it from a quote.
 /// reinstatement_rates : list of float, optional
 ///     Paid reinstatements, one rate per reinstatement as a fraction of
 ///     ``premium`` (1.0 is 100%), pro rata as to amount. Sets
@@ -92,12 +94,17 @@ impl PyLayer {
             .and_then(|l| l.aggregate_deductible(aggregate_deductible))
             .map_err(to_py)?;
         layer = match (aggregate_limit, reinstatements, reinstatement_rates) {
-            (Some(aal), None, None) => layer.aggregate_limit(aal).map_err(to_py)?,
-            (None, Some(n), None) => layer.reinstatements(n).map_err(to_py)?,
             (None, None, Some(rates)) => {
                 layer.paid_reinstatements(premium, rates).map_err(to_py)?
             }
-            (None, None, None) => layer,
+            (aal, n, None) if aal.is_none() || n.is_none() => {
+                let layer = match (aal, n) {
+                    (Some(aal), _) => layer.aggregate_limit(aal).map_err(to_py)?,
+                    (_, Some(n)) => layer.reinstatements(n).map_err(to_py)?,
+                    _ => layer,
+                };
+                with_premium(layer, premium)?
+            }
             _ => {
                 return Err(pyo3::exceptions::PyValueError::new_err(
                     "give at most one of aggregate_limit, reinstatements and reinstatement_rates",
@@ -321,6 +328,264 @@ impl PyLayer {
         self.inner.corridor.map(|c| (c.lower, c.upper, c.retained))
     }
 
+    /// The same layer with its premium set from a deposit quoted for 100%
+    /// of the layer: ``premium = share * amount``.
+    ///
+    /// Parameters
+    /// ----------
+    /// amount : float
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> Layer("5x5", 5e6, 5e6, share=0.4).with_deposit_premium(1e6).premium
+    /// 400000.0
+    fn with_deposit_premium(&self, amount: f64) -> PyResult<Self> {
+        self.map(|l| l.deposit_premium(amount))
+    }
+
+    /// The same layer with its premium set from a rate on line:
+    /// ``premium = share * rol * limit``. Needs a finite limit.
+    ///
+    /// Parameters
+    /// ----------
+    /// rol : float
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> Layer("10x10", 10e6, 10e6).with_rate_on_line(0.125).premium
+    /// 1250000.0
+    fn with_rate_on_line(&self, rol: f64) -> PyResult<Self> {
+        self.map(|l| l.rate_on_line(rol))
+    }
+
+    /// The same layer with its premium set as a rate on the subject
+    /// premium: ``premium = share * rate * subject_premium``. A quota
+    /// share's ceded premium is ``with_premium_rate(1.0, subject_premium)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// rate : float
+    /// subject_premium : float
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> Layer.quota_share("QS", 0.3).with_premium_rate(1.0, 1000.0).premium
+    /// 300.0
+    fn with_premium_rate(&self, rate: f64, subject_premium: f64) -> PyResult<Self> {
+        self.map(|l| l.premium_rate(rate, subject_premium))
+    }
+
+    /// The same layer with a flat ceding commission: ``rate`` of the
+    /// year's premium (the swing-rated premium, if any) is paid back to
+    /// the cedant. Reinstatement premiums carry none.
+    ///
+    /// Parameters
+    /// ----------
+    /// rate : float
+    ///     In ``[0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    fn with_ceding_commission(&self, rate: f64) -> PyResult<Self> {
+        self.map(|l| l.ceding_commission(rate))
+    }
+
+    /// The same layer with a sliding-scale ceding commission.
+    ///
+    /// The commission rate at the year's ceded loss ratio (ceded loss over
+    /// premium) is interpolated linearly between ``(commission,
+    /// loss_ratio)`` anchors and flat beyond the first and last, as
+    /// ``aggregate``'s ``slide``. Set the premium first; it cannot be
+    /// combined with swing rating or paid reinstatements, and replaces a
+    /// flat commission.
+    ///
+    /// Parameters
+    /// ----------
+    /// anchors : list of (float, float)
+    ///     ``(commission, loss_ratio)`` pairs; the commission must not rise
+    ///     with the loss ratio.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+    /// ...       .with_sliding_scale([(0.45, 0.60), (0.25, 0.70), (0.19, 0.80)]))
+    /// >>> round(qs.ceding_commission_for(65.0), 12)
+    /// 35.0
+    fn with_sliding_scale(&self, anchors: Vec<(f64, f64)>) -> PyResult<Self> {
+        self.map(|l| l.sliding_scale(anchors))
+    }
+
+    /// The same layer with a profit commission: ``share`` of ``max(premium
+    /// * (1 - allowance) - ceded, 0)``, as ``aggregate``'s ``pc <share>
+    /// after <allowance>``.
+    ///
+    /// The allowance is the reinsurer's expenses and margin as a fraction
+    /// of premium, including any ceding commission the contract deducts
+    /// before profit. Set the premium first; it cannot be combined with
+    /// swing rating or paid reinstatements.
+    ///
+    /// Parameters
+    /// ----------
+    /// share : float
+    ///     In ``[0, 1]``.
+    /// allowance : float, default 0.0
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+    /// ...       .with_profit_commission(0.25, 0.1))
+    /// >>> round(qs.profit_commission_for(60.0), 12)
+    /// 7.5
+    #[pyo3(signature = (share, allowance = 0.0))]
+    fn with_profit_commission(&self, share: f64, allowance: f64) -> PyResult<Self> {
+        self.map(|l| l.profit_commission(share, allowance))
+    }
+
+    /// The same layer, swing rated: the year's premium is ``clip(share *
+    /// basic + lcm * ceded, share * minimum, share * maximum)``.
+    ///
+    /// The terms are quoted for 100% of the layer, as in ``aggregate``; the
+    /// ceded loss is already at the placed share. The swing premium
+    /// replaces the fixed premium in the tower's results. It cannot be
+    /// combined with paid reinstatements, a sliding scale or a profit
+    /// commission.
+    ///
+    /// Parameters
+    /// ----------
+    /// basic : float
+    /// lcm : float
+    ///     Loss conversion factor, such as ``100 / 80``.
+    /// minimum : float, optional
+    ///     Defaults to ``basic``.
+    /// maximum : float, optional
+    ///     Defaults to no cap.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> layer = Layer("L", 1000.0, 0.0).with_swing_rating(0.0, 1.25, 100.0, 300.0)
+    /// >>> [layer.premium_for(x) for x in (40.0, 200.0, 400.0)]
+    /// [100.0, 250.0, 300.0]
+    #[pyo3(signature = (basic, lcm, minimum = None, maximum = None))]
+    fn with_swing_rating(
+        &self,
+        basic: f64,
+        lcm: f64,
+        minimum: Option<f64>,
+        maximum: Option<f64>,
+    ) -> PyResult<Self> {
+        let terms = LossSensitivePremium::new(basic, lcm, minimum, maximum).map_err(to_py)?;
+        self.map(|l| l.swing_rated(terms))
+    }
+
+    /// The flat ceding commission rate, or ``None`` (also when the
+    /// commission slides).
+    #[getter]
+    fn ceding_commission(&self) -> Option<f64> {
+        match self.inner.commission {
+            Some(Commission::Flat(c)) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The sliding scale's ``(commission, loss_ratio)`` anchors in
+    /// increasing loss ratio, or ``None``.
+    #[getter]
+    fn sliding_scale(&self) -> Option<Vec<(f64, f64)>> {
+        match &self.inner.commission {
+            Some(Commission::SlidingScale(a)) => Some(a.clone()),
+            _ => None,
+        }
+    }
+
+    /// The profit commission as ``(share, allowance)``, or ``None``.
+    #[getter]
+    fn profit_commission(&self) -> Option<(f64, f64)> {
+        self.inner
+            .profit_commission
+            .map(|pc| (pc.share, pc.allowance))
+    }
+
+    /// The swing rating at 100% as ``(basic, lcm, minimum, maximum)``, or
+    /// ``None``.
+    #[getter]
+    fn swing_rating(&self) -> Option<(f64, f64, f64, f64)> {
+        self.inner
+            .swing
+            .map(|s| (s.basic, s.lcm, s.minimum, s.maximum))
+    }
+
+    /// The year's premium given its ceded loss: the swing-rated premium,
+    /// or else the fixed ``premium``.
+    ///
+    /// Parameters
+    /// ----------
+    /// ceded : float
+    ///     The layer's ceded loss for the year, at the placed share.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn premium_for(&self, ceded: f64) -> f64 {
+        self.inner.premium_for(ceded)
+    }
+
+    /// The year's ceding commission (flat or sliding) given its ceded loss.
+    ///
+    /// Parameters
+    /// ----------
+    /// ceded : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn ceding_commission_for(&self, ceded: f64) -> f64 {
+        self.inner.ceding_commission_for(ceded)
+    }
+
+    /// The year's profit commission given its ceded loss.
+    ///
+    /// Parameters
+    /// ----------
+    /// ceded : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn profit_commission_for(&self, ceded: f64) -> f64 {
+        self.inner.profit_commission_for(ceded)
+    }
+
     /// Ceded loss for one year's losses.
     ///
     /// Parameters
@@ -393,6 +658,113 @@ impl PyLayer {
         format!(
             "Layer({:?}, limit={:?}, attachment={:?}, share={:?})",
             self.inner.name, self.inner.limit, self.inner.attachment, self.inner.share
+        )
+    }
+}
+
+impl PyLayer {
+    /// A copy of the layer with one builder applied.
+    fn map(&self, f: impl FnOnce(Layer) -> prospicio_core::Result<Layer>) -> PyResult<Self> {
+        let inner = f(self.inner.clone()).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+}
+
+/// Sets the premium of a layer without paid reinstatements, which set it
+/// themselves.
+fn with_premium(mut layer: Layer, premium: f64) -> PyResult<Layer> {
+    if !(premium.is_finite() && premium >= 0.0) {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "premium must be finite and non-negative",
+        ));
+    }
+    layer.premium = premium;
+    Ok(layer)
+}
+
+/// A premium that depends on the year's loss ``x``: ``clip(basic + lcm *
+/// x, minimum, maximum)``.
+///
+/// The premium of a retrospectively rated policy, with ``x`` the account's
+/// loss (net of any reinsurance that inures to it), and of a swing-rated
+/// layer (``Layer.with_swing_rating``). For a retro plan, ``basic`` and
+/// ``lcm`` include the tax multiplier.
+///
+/// Parameters
+/// ----------
+/// basic : float
+/// lcm : float
+///     Loss conversion factor.
+/// minimum : float, optional
+///     Defaults to ``basic``.
+/// maximum : float, optional
+///     Defaults to no cap.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import LossSensitivePremium
+/// >>> retro = LossSensitivePremium(1000.0, 1.1, maximum=2500.0)
+/// >>> [round(p, 9) for p in retro.premium([0.0, 500.0, 1500.0])]
+/// [1000.0, 1550.0, 2500.0]
+#[pyclass(
+    name = "LossSensitivePremium",
+    module = "prospicio.reinsurance",
+    frozen
+)]
+pub(crate) struct PyLossSensitivePremium {
+    inner: LossSensitivePremium,
+}
+
+#[pymethods]
+impl PyLossSensitivePremium {
+    #[new]
+    #[pyo3(signature = (basic, lcm, minimum = None, maximum = None))]
+    fn new(basic: f64, lcm: f64, minimum: Option<f64>, maximum: Option<f64>) -> PyResult<Self> {
+        let inner = LossSensitivePremium::new(basic, lcm, minimum, maximum).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The premium for each loss.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn premium(&self, losses: Vec<f64>) -> Vec<f64> {
+        losses.iter().map(|&x| self.inner.premium(x)).collect()
+    }
+
+    /// The basic premium.
+    #[getter]
+    fn basic(&self) -> f64 {
+        self.inner.basic
+    }
+
+    /// The loss conversion factor.
+    #[getter]
+    fn lcm(&self) -> f64 {
+        self.inner.lcm
+    }
+
+    /// The minimum premium.
+    #[getter]
+    fn minimum(&self) -> f64 {
+        self.inner.minimum
+    }
+
+    /// The maximum premium; ``inf`` when uncapped.
+    #[getter]
+    fn maximum(&self) -> f64 {
+        self.inner.maximum
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LossSensitivePremium(basic={:?}, lcm={:?}, minimum={:?}, maximum={:?})",
+            self.inner.basic, self.inner.lcm, self.inner.minimum, self.inner.maximum
         )
     }
 }
@@ -562,8 +934,11 @@ impl PyTower {
     /// The result has dimensions ``["kind", "layer"]``: ``("gross",
     /// "ground_up")``, ``("ceded", name)`` per layer, ``("net",
     /// "retained")``, then ``("reinstatement_premium", name)`` per layer with
-    /// paid reinstatements. ``aggregate(["kind"])`` gives gross, total ceded
-    /// and net; net is a loss, before premiums.
+    /// paid reinstatements, ``("swing_premium", name)`` per swing-rated
+    /// layer, ``("ceding_commission", name)`` per layer with a flat or
+    /// sliding commission and ``("profit_commission", name)`` per layer with
+    /// a profit commission. ``aggregate(["kind"])`` gives gross, total ceded
+    /// and net; net is a loss, before premiums and commissions.
     ///
     /// Parameters
     /// ----------
@@ -721,6 +1096,25 @@ impl PyTowerGrids {
     #[getter]
     fn expected_reinstatement_premium(&self) -> Vec<f64> {
         self.inner.expected_reinstatement_premium.clone()
+    }
+
+    /// Expected premium of each layer: the swing-rated premium's mean, or
+    /// else the fixed premium (0 when none is set).
+    #[getter]
+    fn expected_premium(&self) -> Vec<f64> {
+        self.inner.expected_premium.clone()
+    }
+
+    /// Expected ceding commission (flat or sliding) of each layer.
+    #[getter]
+    fn expected_ceding_commission(&self) -> Vec<f64> {
+        self.inner.expected_ceding_commission.clone()
+    }
+
+    /// Expected profit commission of each layer.
+    #[getter]
+    fn expected_profit_commission(&self) -> Vec<f64> {
+        self.inner.expected_profit_commission.clone()
     }
 
     /// Whether every boundary and net loss fell on a grid point. When

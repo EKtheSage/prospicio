@@ -70,7 +70,7 @@ mod prospicio_native {
         match_tower, pareto_extrapolation, price, price_portfolio, severity_exposure_curve,
     };
     #[pymodule_export]
-    use super::reinsurance::{PyLayer, PyTower, PyTowerGrids};
+    use super::reinsurance::{PyLayer, PyLossSensitivePremium, PyTower, PyTowerGrids};
     #[pymodule_export]
     use super::reserving::{
         PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder,

@@ -33,6 +33,14 @@ pub struct TowerGrids {
     /// Expected reinstatement premium of each layer; zero without paid
     /// reinstatements.
     pub expected_reinstatement_premium: Vec<f64>,
+    /// Expected premium of each layer for the year: the swing-rated
+    /// premium's mean, or else the fixed premium (zero when none is set).
+    pub expected_premium: Vec<f64>,
+    /// Expected ceding commission of each layer (flat or sliding); zero
+    /// without one.
+    pub expected_ceding_commission: Vec<f64>,
+    /// Expected profit commission of each layer; zero without one.
+    pub expected_profit_commission: Vec<f64>,
     /// `true` when every layer boundary, annual term and net loss fell on
     /// a grid point, so the grids are exact up to the reports' truncation
     /// and aliasing error. When `false`, losses between points were split
@@ -133,6 +141,9 @@ impl Tower {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let mut ceded_reports = Vec::with_capacity(self.layers.len());
         let mut premiums = Vec::with_capacity(self.layers.len());
+        let mut premium = Vec::with_capacity(self.layers.len());
+        let mut commission = Vec::with_capacity(self.layers.len());
+        let mut profit = Vec::with_capacity(self.layers.len());
         for &(start, end) in &stages {
             for layer in &self.layers[start..end] {
                 let (recoveries, exact) = severity.map(|x| layer.recovery(seen(x, start)))?;
@@ -141,10 +152,18 @@ impl Tower {
                 let (after_terms, exact) = annual.map(|r| layer.after_terms(r))?;
                 on_points &= exact;
                 premiums.push(expected_reinstatement_premium(layer, &after_terms));
-                ceded.push(Grid::new(
+                let layer_ceded = Grid::new(
                     layer.share * after_terms.step(),
                     after_terms.probs().to_vec(),
-                )?);
+                )?;
+                premium.push(expectation(&layer_ceded, |c| layer.premium_for(c)));
+                commission.push(expectation(&layer_ceded, |c| {
+                    layer.ceding_commission_for(c)
+                }));
+                profit.push(expectation(&layer_ceded, |c| {
+                    layer.profit_commission_for(c)
+                }));
+                ceded.push(layer_ceded);
                 ceded_reports.push(report);
             }
         }
@@ -173,6 +192,9 @@ impl Tower {
             ceded_reports,
             net,
             expected_reinstatement_premium: premiums,
+            expected_premium: premium,
+            expected_ceding_commission: commission,
+            expected_profit_commission: profit,
             on_points,
         })
     }
@@ -193,6 +215,18 @@ impl Tower {
         }
         ranges
     }
+}
+
+/// `E[f(X)]` for `X` distributed as the grid: exact for the discretized
+/// problem, as the grids are.
+fn expectation(grid: &Grid, f: impl Fn(f64) -> f64) -> f64 {
+    let h = grid.step();
+    grid.probs()
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| **p > 0.0)
+        .map(|(k, p)| p * f(k as f64 * h))
+        .sum()
 }
 
 /// Unlimited per-occurrence cover from 0: the layer sees the annual total.
@@ -397,6 +431,55 @@ mod tests {
         assert!(
             (r.gross.mean() - r.ceded[0].mean() - r.ceded[1].mean() - net.mean()).abs() < 1e-10
         );
+    }
+
+    #[test]
+    fn expected_contract_terms_match_simulation() {
+        // A quota share with a sliding scale and a profit commission, and a
+        // swing-rated excess layer with a flat commission, each in its own
+        // stage-one tower (no inuring, so every grid is marginal and exact).
+        let qs = Layer::quota_share("QS", 0.5)
+            .unwrap()
+            .premium_rate(1.0, 30.0)
+            .unwrap()
+            .sliding_scale(vec![(0.4, 0.5), (0.2, 0.9)])
+            .unwrap()
+            .profit_commission(0.3, 0.25)
+            .unwrap();
+        let swing = crate::LossSensitivePremium::new(1.0, 1.2, Some(2.0), Some(6.0)).unwrap();
+        let xl = Layer::xol("3x3", 3.0, 3.0)
+            .unwrap()
+            .share(0.5)
+            .unwrap()
+            .swing_rated(swing)
+            .unwrap()
+            .ceding_commission(0.1)
+            .unwrap();
+        let tower = Tower::new(vec![qs, xl]).unwrap();
+        let freq = Poisson::new(3.0).unwrap();
+        let r = tower.on_grid(&freq, &severity(), 400).unwrap();
+        let n = 200_000;
+        let sim = tower
+            .apply(&simulate_events(&freq, &severity(), n, 9).unwrap())
+            .unwrap();
+        let check = |kind: &str, layer: &str, expected: f64| {
+            let draws = sim.marginal(&vec![kind.into(), layer.into()]).unwrap();
+            let se = (draws.variance() / n as f64).sqrt();
+            assert!(
+                (expected - draws.mean()).abs() < 4.0 * se,
+                "{kind} {layer}: {expected} vs {} (se {se})",
+                draws.mean()
+            );
+        };
+        check("ceding_commission", "QS", r.expected_ceding_commission[0]);
+        check("profit_commission", "QS", r.expected_profit_commission[0]);
+        check("swing_premium", "3x3", r.expected_premium[1]);
+        check("ceding_commission", "3x3", r.expected_ceding_commission[1]);
+        assert!((r.expected_premium[0] - 15.0).abs() < 1e-12);
+        assert_eq!(r.expected_profit_commission[1], 0.0);
+        // The terms are not constant: the scale slides and the swing moves.
+        assert!(r.expected_ceding_commission[0] < 0.4 * 15.0);
+        assert!(r.expected_premium[1] > 0.5 * 2.0);
     }
 
     #[test]
