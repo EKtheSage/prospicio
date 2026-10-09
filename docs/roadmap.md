@@ -129,10 +129,9 @@ what it is aiming for by v1.0.
     bootstraps' multi-segment fits, lifetime and one-year (synchronized
     residuals, Kirschner, Kerley and Isaacs 2008, or a Spearman rank
     correlation by Iman–Conover), into `capital` (`reserving-v02.md`,
-    decision 9).
+    decision 10).
 - **Next (from that lane):** open, waiting on the user. Candidates:
-  1. Parameter error of the tail in the bootstraps.
-  2. Bayesian reserving with `prospicio-bayes` (v0.7).
+  1. Bayesian reserving with `prospicio-bayes` (v0.7).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.

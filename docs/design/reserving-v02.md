@@ -58,7 +58,7 @@ two inputs are added to `validation/data/`:
   `CumPaidLoss` and `EarnedPremNet` as `paid` and `premium`;
 * `genins_premium.csv`: the premium of R ChainLadder's Clark example,
   `10000000 + 400000 * (0:9)` on GenIns origins;
-* `clrd_lines.csv`, for the dependence between lines (decision 9): the
+* `clrd_lines.csv`, for the dependence between lines (decision 10): the
   paid losses of all six lines of the CAS loss reserve database summed
   over companies (chainladder-python
   `load_sample('clrd').groupby('LOB').sum()`, `CumPaidLoss`), 1988-1997 at
@@ -985,7 +985,7 @@ settings are named as in `mack()`, since there is no method to tell them
 from (`mack_one_year()`'s `mack_average` keeps them apart from the
 method's).
 
-### 9. Dependence between segments
+### 10. Dependence between segments
 
 A triangle with several segments (lines of business) is bootstrapped into
 one joint distribution, components by segment and origin, so a total over
@@ -1032,8 +1032,12 @@ residuals in common). Segments must have the same origins, ages and
 observed cells (`Error::Bootstrap` otherwise), so that a position is the
 same origin and age, i.e. the same calendar period, in every line. When
 every segment has a residual wherever any has (the usual case), each
-segment's own distribution is exactly its independent one: with one
-segment the draws are identical (unit test). A position that only some
+segment's own distribution is exactly its independent one. With one
+segment the draws are identical for the ODP, and for Mack's bootstrap
+when no link has a zero cumulative value or a zero sigma (unit test, on
+RAA); otherwise the synchronized Mack path still draws a position for
+such a link, which the independent one skips, so the stream shifts and
+the draws are equal in distribution only. A position that only some
 segments have a residual at (a zero fitted value in one line, a zero
 link) is left out of all of them, and Mack's centring is then over the
 positions kept; the `Residuals` process resamples from the same shared
@@ -1063,11 +1067,21 @@ scores, whose Spearman rho is `(6/pi) asin(r/2)`, so the Spearman matrix
 the user gives is converted to `r = 2 sin(pi rho / 6)` (the diagonal kept
 at exactly 1); a matrix that is not positive definite after conversion is
 refused (`Error::Core`), and a matrix of the wrong size, without a unit
-diagonal, asymmetric or out of `[-1, 1]` is `Error::InvalidSetting`. The
-reordering's seed is the first number of stream `n_sims` of the
-bootstrap's seed: no simulation uses that stream, so the shuffle shares no
-random numbers with the draws, and the result is reproducible from the
-bootstrap's settings alone. The provenance records `dependence` and
+diagonal, asymmetric or out of `[-1, 1]` is `Error::InvalidSetting`.
+Iman–Conover keeps the first group's column of target ranks in order (only
+the others are shuffled before the rotation, which is lower triangular),
+so its result has the first segment's simulations sorted by their total:
+row `i` would be the `i`-th smallest, a prefix of the rows a biased sample,
+and two such results joined with `Pairing::Independent` (accepted, as their
+seeds differ) strongly dependent. The paired rows are therefore put in a
+random order (Fisher–Yates), which keeps the joint law and the Spearman
+structure; row `i` is then no longer simulation `i`, but the rows are
+exchangeable. Both the reordering's seed (the first number) and the
+shuffle (the rest) come from stream `n_sims` of the bootstrap's seed: no
+simulation uses that stream, so they share no random numbers with the
+draws, and the result is reproducible from the bootstrap's settings alone.
+A unit test checks that the row index has no Spearman correlation with
+either segment's total. The provenance records `dependence` and
 `rank_correlation`. On comauto, ppauto and wkcomp with target rhos 0.5,
 0.25 and -0.3 the totals' Spearman rhos are 0.501, 0.253 and -0.304 at
 10,000 simulations.
@@ -1106,17 +1120,16 @@ Validation (`validation/tests/reserving_dependence.rs`, unit tests in
   and its double are proportional draw by draw; segments of other origins
   or observed cells are refused when synchronized and accepted
   otherwise; the matrix checks; the rank correlation reorders whole rows
-  and is reproducible.
+  (both bootstraps, both views), puts them in a random order and is
+  reproducible.
 
-A caution for such tests: two lines' process errors read the same stream
-one after the other, so the correlation between two pairs of lines
-measured at one seed is not independent across pairs (the same uniforms
-drive each line's process error at the same positions in the stream).
-At 4,000 simulations and one seed every one of the 15 pairs showed a
-process-error correlation of about +0.05 (Mack) or +0.03 (ODP); for
-othliab with wkcomp (Mack) at 20,000 simulations over seeds 1 to 5 it was
--0.013 to +0.005. Measure
-over several seeds before reading a pattern into all pairs.
+The segments of a simulation read separate, consecutive parts of its
+stream, so no two lines share a uniform. On the six CLRD lines at 4,000
+simulations, seeds 1 to 3, the mean of the 15 pairwise correlations of the
+independent totals was within 0.005 of zero for both bootstraps, as was
+that of the synchronized Mack and ODP process error alone (the Gamma run
+minus the run without process error, whose position picks come first in
+the stream and so match).
 
 Bindings: Python `OdpBootstrap(..., dependence="independent",
 spearman=None)` and `MackBootstrap(..., dependence=..., spearman=...)`,

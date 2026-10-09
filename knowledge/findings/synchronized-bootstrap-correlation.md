@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Dependence between reserving lines, synchronized bootstrap and rank correlation
-description: Resampling the same residual positions in every line (Kirschner, Kerley and Isaacs 2008) gives the lines' parameter error about the correlation of their paired residuals, at most its absolute value; on the six CLRD lines the ODP's is within 0.055 of it, Mack's within 0.145, and process error dilutes it. Iman-Conover on the line totals reproduces a Spearman matrix after converting it to 2 sin(pi rho / 6). One seed's correlations are shared across pairs through common random numbers.
+description: Resampling the same residual positions in every line (Kirschner, Kerley and Isaacs 2008) gives the lines' parameter error about the correlation of their paired residuals, at most its absolute value; on the six CLRD lines the ODP's is within 0.055 of it, Mack's within 0.145, and process error dilutes it. Iman-Conover on the line totals reproduces a Spearman matrix after converting it to 2 sin(pi rho / 6). Iman-Conover leaves the first line's rows sorted by its total, so the paired rows are shuffled afterwards.
 tags: [reserving, bootstrap, dependence, correlation, capital, iman-conover, clrd]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-08T21:00:00-07:00 }
@@ -14,7 +14,7 @@ sources:
     title: Taylor and McGuire (2007), A synchronous bootstrap to account for dependencies between lines of business in the estimation of loss reserve prediction error, North American Actuarial Journal 11(3), 70-88
   - id: design
     resource: ../docs/design/reserving-v02.md
-    title: Design note, reserving v0.2, decision 9
+    title: Design note, reserving v0.2, decision 10
   - id: test
     resource: ../validation/tests/reserving_dependence.rs
     title: Validation test of SegmentDependence on the six CLRD lines
@@ -47,7 +47,11 @@ sources:
 * **Each line keeps its distribution** when every line has a residual
   wherever any has: the pool and the draw count are the same, only the
   pairing changes. With one segment the synchronized draws are the
-  independent ones bit for bit.[^design]
+  independent ones bit for bit for the ODP, and for Mack's bootstrap when
+  no link has a zero cumulative value or a zero sigma; otherwise Mack's
+  synchronized path draws a position for such a link where the independent
+  one draws nothing, so the stream shifts and the draws are equal in
+  distribution only.[^design]
 * **Rank correlation.** Iman–Conover on normal scores gives a Spearman rho
   near `(6/pi) asin(r/2)`, so a Spearman target goes in as
   `r = 2 sin(pi rho / 6)`. With targets 0.5, 0.25 and -0.3 on comauto,
@@ -58,13 +62,19 @@ sources:
   99% of the total and its diversification benefit: 4,949,627 and 136,529
   independent, 5,011,717 and 78,069 synchronized, 5,075,655 and 10,501 at
   a Spearman rho of 0.9.[^test]
-* **Common random numbers across pairs.** The lines' process errors read
-  one stream in turn at nearly fixed offsets, so at one seed every pair of
-  lines sees almost the same uniforms. At 4,000 simulations and seed 1 all
-  15 pairs showed a process-error correlation near +0.05 (Mack) and +0.03
-  (ODP), one fluke repeated; othliab with wkcomp at 20,000 simulations over
-  seeds 1 to 5 gave -0.013 to +0.005. A pattern across all pairs at one
-  seed is not 15 independent observations.[^design]
+* **No shared uniforms between lines.** The segments of a simulation read
+  separate, consecutive parts of its stream. On the six CLRD lines at 4,000
+  simulations, seeds 1 to 3, the mean of the 15 pairwise correlations of
+  the independent totals, and of the synchronized process error alone, was
+  within 0.005 of zero for both bootstraps.[^design]
+* **Iman–Conover sorts the first group.** `reorder_groups` keeps the first
+  group's column of target ranks in order, so its result lists the first
+  segment's simulations by increasing total: a prefix of the rows is then
+  a biased sample, and two such results joined with
+  `Pairing::Independent` (accepted, as the seeds differ) are strongly
+  dependent through that common order. prospicio shuffles
+  the paired rows afterwards; a unit test checks the row index is
+  uncorrelated with each segment's total.[^design]
 
 # Consequences
 

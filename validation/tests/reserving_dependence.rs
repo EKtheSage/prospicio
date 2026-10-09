@@ -1,5 +1,5 @@
 //! Joint reserves across lines of business (`SegmentDependence`, decision
-//! 9 of `docs/design/reserving-v02.md`) on the six lines of the CAS loss
+//! 10 of `docs/design/reserving-v02.md`) on the six lines of the CAS loss
 //! reserve database (`data/clrd_lines.csv`, paid losses summed over
 //! companies, chainladder-python 0.10.1), and the capital path from the
 //! joint distribution to an allocation.
