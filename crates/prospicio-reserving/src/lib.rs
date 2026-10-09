@@ -40,6 +40,7 @@ pub mod backtest;
 pub mod bootstrap;
 pub mod chain_ladder;
 pub mod clark;
+pub mod dependence;
 pub mod development;
 pub mod error;
 pub mod expected_loss;
@@ -62,6 +63,7 @@ pub use bootstrap::{
 };
 pub use chain_ladder::{ChainLadder, ChainLadderFit};
 pub use clark::{ClarkCapeCod, ClarkFit, ClarkLdf, GrowthCurve};
+pub use dependence::SegmentDependence;
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
 pub use error::{Error, Result};
 pub use expected_loss::{

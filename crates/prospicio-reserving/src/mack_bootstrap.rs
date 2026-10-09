@@ -65,9 +65,10 @@ use prospicio_prob::{
 };
 
 use crate::bootstrap::{
-    component_sums, hash_segment, origin_keys, pick_segment, push_moments, segment_sums,
+    component_sums, hash_segment, origin_keys, pick_segment, pool_at, push_moments, segment_sums,
 };
 use crate::chain_ladder::ChainLadderFit;
+use crate::dependence::{Resample, SegmentDependence, SharedPool, synchronize};
 use crate::development::{Development, DevelopmentFit};
 use crate::error::{Error, Result};
 use crate::mack::{Mack, MackFit};
@@ -212,7 +213,7 @@ fn vanishing(mean: f64, variance: f64) -> f64 {
 /// assert!(fit.cdr.std_dev() < fit.bootstrap.mack.total_standard_error);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MackBootstrap {
     /// Number of simulations.
     pub n_sims: usize,
@@ -236,6 +237,11 @@ pub struct MackBootstrap {
     /// Appendix 1 is written. See the [module
     /// documentation](crate::mack_bootstrap).
     pub centre_residuals: bool,
+    /// How the segments of [`fit_segments`](Self::fit_segments) and
+    /// [`one_year_segments`](Self::one_year_segments) depend on each other;
+    /// independent by default. Synchronized, every segment resamples the
+    /// link-ratio residuals of the same origins and factors.
+    pub dependence: SegmentDependence,
 }
 
 impl Default for MackBootstrap {
@@ -246,6 +252,7 @@ impl Default for MackBootstrap {
             process: MackProcess::Gamma,
             development: Development::default(),
             centre_residuals: true,
+            dependence: SegmentDependence::Independent,
         }
     }
 }
@@ -271,6 +278,28 @@ impl ReserveFit for MackBootstrapSegment {
     }
 }
 
+impl Resample for MackBootstrapSegment {
+    fn residuals(&self) -> &[f64] {
+        &self.residuals
+    }
+
+    /// Every observed link ratio, factor by factor and, within a factor,
+    /// by origin: each may draw a residual.
+    fn draw_positions(&self) -> Vec<usize> {
+        let latest = &self.mack.chain_ladder.latest_position;
+        let nd = self.residuals.len() / latest.len();
+        (0..nd.saturating_sub(1))
+            .flat_map(|k| {
+                latest
+                    .iter()
+                    .enumerate()
+                    .filter(move |&(_, &last)| last > k)
+                    .map(move |(o, _)| o * nd + k)
+            })
+            .collect()
+    }
+}
+
 /// A fitted bootstrap of Mack's model, the lifetime view
 /// ([`MackBootstrap::fit`]): the model on the observed triangle and the
 /// joint distribution of the simulated reserves.
@@ -292,9 +321,10 @@ pub struct MackBootstrapFit {
 /// A bootstrap of Mack's model, the lifetime view, in every segment of a
 /// triangle column ([`MackBootstrap::fit_segments`]).
 ///
-/// Segments are bootstrapped independently, each with its own Mack model
-/// and residuals. Simulation `i` uses stream `i` for every segment, in
-/// index order, as in [`OdpBootstrapFits`](crate::OdpBootstrapFits).
+/// Each segment is bootstrapped with its own Mack model and residuals,
+/// independently of the others unless [`MackBootstrap::dependence`] says
+/// otherwise. Simulation `i` uses stream `i` for every segment, in index
+/// order, as in [`OdpBootstrapFits`](crate::OdpBootstrapFits).
 ///
 /// ```
 /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, MackBootstrap, Month, Triangle};
@@ -370,6 +400,23 @@ pub(crate) struct MackDraw {
     links: Vec<Vec<(f64, f64)>>,
     pool: Vec<f64>,
     process: MackProcess,
+    /// Whether the pool is centred.
+    centre: bool,
+}
+
+impl SharedPool for MackDraw {
+    fn share(&mut self, residuals: &[f64], positions: &[usize]) {
+        self.pool = centred(pool_at(residuals, positions), self.centre);
+    }
+}
+
+/// `pool` less its mean when `centre` (and not empty).
+fn centred(mut pool: Vec<f64>, centre: bool) -> Vec<f64> {
+    if centre && !pool.is_empty() {
+        let m = pool.iter().sum::<f64>() / pool.len() as f64;
+        pool.iter_mut().for_each(|r| *r -= m);
+    }
+    pool
 }
 
 /// A residual drawn from `pool` with replacement.
@@ -394,18 +441,29 @@ impl MackDraw {
     /// The pseudo factors of one simulation (its parameter error): a
     /// resampled residual for every observed link, turned into a pseudo
     /// link ratio, and their weighted averages with the observed weights.
-    fn factors(&self, dev: &DevelopmentFit, rng: &mut StreamRng) -> Vec<f64> {
+    /// The residual of the `l`-th observed link (factor by factor) is drawn
+    /// from `rng`, or, synchronized, is `pool[picks[l]]`.
+    fn factors(
+        &self,
+        dev: &DevelopmentFit,
+        rng: &mut StreamRng,
+        picks: Option<&[usize]>,
+    ) -> Vec<f64> {
         let (f, sigma, alpha) = (&dev.ldf, &dev.sigma, dev.alpha);
         let mut factors = Vec::with_capacity(self.links.len());
+        let mut link = 0;
         for (k, pairs) in self.links.iter().enumerate() {
             let (mut num, mut den) = (0.0, 0.0);
             for &(c, c1) in pairs {
+                link += 1;
                 if c == 0.0 {
                     num += power(c, alpha - 1.0) * c1;
                     continue;
                 }
                 let r = if sigma[k] == 0.0 {
                     0.0
+                } else if let Some(picks) = picks {
+                    self.pool[picks[link - 1]]
                 } else {
                     resample(&self.pool, rng)
                 };
@@ -440,11 +498,12 @@ impl NextYear for MackBootstrapSegment {
         draw: &MackDraw,
         _segment: &Segment,
         year: &[YearCells],
+        picks: Option<&[usize]>,
         rng: &mut StreamRng,
     ) -> Vec<(usize, usize, f64)> {
         let cl = &self.mack.chain_ladder;
         let dev = &cl.development;
-        let factors = draw.factors(dev, rng);
+        let factors = draw.factors(dev, rng, picks);
 
         // Each cell from the one before, drawn or observed, with the same
         // pseudo factors all year.
@@ -466,11 +525,18 @@ impl MackBootstrapSegment {
     /// One simulation of the run-off: fills `reserves` with each origin's
     /// last cumulative value, drawn cell by cell from its observed latest
     /// value to the last age with one set of pseudo factors, less that
-    /// latest value (EVW's Appendix 1, steps 7(a) to (g)).
-    fn run_off(&self, draw: &MackDraw, rng: &mut StreamRng, reserves: &mut [f64]) {
+    /// latest value (EVW's Appendix 1, steps 7(a) to (g)); `picks` as in
+    /// [`MackDraw::factors`].
+    fn run_off(
+        &self,
+        draw: &MackDraw,
+        rng: &mut StreamRng,
+        reserves: &mut [f64],
+        picks: Option<&[usize]>,
+    ) {
         let cl = &self.mack.chain_ladder;
         let dev = &cl.development;
-        let factors = draw.factors(dev, rng);
+        let factors = draw.factors(dev, rng, picks);
         for (o, reserve) in reserves.iter_mut().enumerate() {
             let latest = cl.latest[o];
             let mut c = latest;
@@ -533,7 +599,7 @@ impl MackBootstrap {
             self.n_sims,
             self.seed,
             self.lifetime_provenance(column, hasher),
-            |rng, row| fit.run_off(&draw, rng, row),
+            |rng, row| fit.run_off(&draw, rng, row, None),
         )?;
         let MackBootstrapSegment { mack, residuals } = fit;
         Ok(MackBootstrapFit {
@@ -545,14 +611,26 @@ impl MackBootstrap {
 
     /// The lifetime view of `column` in every segment of a cumulative
     /// triangle, each with its own Mack model and residuals, into one joint
-    /// distribution of the reserves; see [`MackBootstrapFits`]. A failure
-    /// names its segment.
+    /// distribution of the reserves, the segments depending on each other
+    /// as [`dependence`](Self::dependence) says; see
+    /// [`MackBootstrapFits`]. A failure names its segment.
     pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<MackBootstrapFits> {
         self.check()?;
-        let prepared = fit_each(triangle, column, |s| {
+        let mut prepared = fit_each(triangle, column, |s| {
             let (fit, draw) = self.model(s)?;
             Ok((fit, draw, s.clone()))
         })?;
+        let shared = match self.dependence {
+            SegmentDependence::Synchronized => {
+                let (shared, positions) =
+                    synchronize(prepared.fits.iter().map(|(fit, _, s)| (s, fit)))?;
+                for (fit, draw, _) in &mut prepared.fits {
+                    draw.share(&fit.residuals, &positions);
+                }
+                Some(shared)
+            }
+            _ => None,
+        };
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
@@ -571,20 +649,21 @@ impl MackBootstrap {
             self.n_sims,
             self.seed,
             self.lifetime_provenance(column, hasher)
-                .param("segments", prepared.len()),
+                .param("segments", prepared.len())
+                .param("dependence", format!("{:?}", self.dependence)),
             |rng, row| {
+                let picks = shared.map(|s| s.picks(rng));
                 let mut start = 0;
                 for (fit, draw, segment) in &runs {
                     let end = start + segment.n_origins;
-                    fit.run_off(draw, rng, &mut row[start..end]);
+                    fit.run_off(draw, rng, &mut row[start..end], picks.as_deref());
                     start = end;
                 }
             },
         )?;
-        Ok(MackBootstrapFits {
-            segments: prepared.map(|(fit, _, _)| fit.clone()),
-            reserves,
-        })
+        let segments = prepared.map(|(fit, _, _)| fit.clone());
+        let reserves = self.dependence.reorder(reserves, &segments, self.seed)?;
+        Ok(MackBootstrapFits { segments, reserves })
     }
 
     fn check(&self) -> Result<()> {
@@ -630,7 +709,8 @@ impl MackBootstrap {
 
     /// The one-year view of `column` in every segment of a cumulative
     /// triangle, each with its own Mack model and residuals, into one joint
-    /// distribution of the claims development result, as
+    /// distribution of the claims development result, the segments
+    /// depending on each other as [`dependence`](Self::dependence) says, as
     /// [`OdpBootstrap::one_year_segments`](crate::OdpBootstrap::one_year_segments).
     pub fn one_year_segments(
         &self,
@@ -642,6 +722,7 @@ impl MackBootstrap {
             triangle,
             column,
             method,
+            &self.dependence,
             |s| self.model(s),
             |hasher| self.provenance(column, method, hasher),
         )
@@ -708,16 +789,13 @@ impl MackBootstrap {
         if pool.is_empty() && sigma.iter().any(|&s| s != 0.0) {
             return Err(Error::Bootstrap("no residuals to resample"));
         }
-        if self.centre_residuals {
-            let m = pool.iter().sum::<f64>() / pool.len() as f64;
-            pool.iter_mut().for_each(|r| *r -= m);
-        }
         Ok((
             MackBootstrapSegment { mack, residuals },
             MackDraw {
                 links,
-                pool,
+                pool: centred(pool, self.centre_residuals),
                 process: self.process,
+                centre: self.centre_residuals,
             },
         ))
     }
