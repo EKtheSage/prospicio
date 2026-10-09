@@ -1,7 +1,7 @@
 //! Monte Carlo frequency-severity: simulated years of individual losses.
 
 use prospicio_core::{Error, Result, StreamRng};
-use prospicio_prob::provenance::SIM_INDEX_SCHEME;
+use prospicio_prob::provenance::{SIM_INDEX_SCHEME, current_samplers};
 use prospicio_prob::{Counting, Distribution, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
@@ -30,6 +30,9 @@ pub struct EventSet {
     /// `[0, 1]`, non-decreasing within each year.
     times: Option<Vec<f64>>,
     seed: u64,
+    /// The samplers the losses were drawn with, for results' provenance:
+    /// this build's when it drew them, `None` for years from elsewhere.
+    samplers: Option<Vec<(String, String)>>,
 }
 
 /// Year `i`'s event times come from stream `TIME_STREAM + i`, apart from
@@ -102,14 +105,19 @@ where
         sums_insured: None,
         times: None,
         seed,
+        samplers: Some(current_samplers()),
     })
 }
 
 impl EventSet {
     /// Years of losses from elsewhere (your own simulation, or a
     /// catastrophe model's event loss table by year), in order within each
-    /// year. `seed` is recorded in results' provenance; give the one your
-    /// simulation used, or 0.
+    /// year. `seed` is recorded in results' provenance, and keys the draws
+    /// of [`EventSet::with_uniform_times`]; give the one your simulation
+    /// used, or 0. The samplers are not recorded (`None` in results'
+    /// provenance), since the losses were not drawn here; a simulation in
+    /// this build that builds its years by hand records them with
+    /// [`EventSet::with_samplers`].
     ///
     /// ```
     /// use prospicio_aggregate::EventSet;
@@ -142,7 +150,42 @@ impl EventSet {
             sums_insured: None,
             times: None,
             seed,
+            samplers: None,
         })
+    }
+
+    /// The same events, recorded as drawn with `samplers`
+    /// ([`Provenance::samplers`]): [`current_samplers`] for years this
+    /// build simulated, as a risk profile's simulation does, or `None` when
+    /// unknown.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    /// use prospicio_prob::provenance::current_samplers;
+    ///
+    /// let events = EventSet::from_years(vec![vec![5.0]], 4).unwrap();
+    /// assert_eq!(events.totals().unwrap().provenance().samplers, None);
+    /// let drawn = events.with_samplers(Some(current_samplers()));
+    /// assert_eq!(drawn.totals().unwrap().provenance().samplers, Some(current_samplers()));
+    /// ```
+    pub fn with_samplers(mut self, samplers: Option<Vec<(String, String)>>) -> Self {
+        self.samplers = samplers;
+        self
+    }
+
+    /// The samplers the losses were drawn with, if recorded.
+    pub fn samplers(&self) -> Option<&[(String, String)]> {
+        self.samplers.as_deref()
+    }
+
+    /// Provenance for `model` on these years: the set's seed and stream
+    /// scheme, and its samplers.
+    pub(crate) fn provenance(&self, model: &str) -> Provenance {
+        let mut p = Provenance::new(model)
+            .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
+            .seed(self.seed, SIM_INDEX_SCHEME);
+        p.samplers = self.samplers.clone();
+        p
     }
 
     /// The same events, each on a risk with the given sum insured: one
@@ -370,7 +413,8 @@ impl EventSet {
     }
 
     /// Each year's total loss, as a one-component [`PredictiveDistribution`]
-    /// (no dimensions), with the seed and stream scheme in its provenance.
+    /// (no dimensions), with the seed, stream scheme and samplers in its
+    /// provenance.
     pub fn totals(&self) -> Result<PredictiveDistribution> {
         let totals = (0..self.n_sims())
             .map(|i| self.events(i).iter().sum())
@@ -379,9 +423,7 @@ impl EventSet {
             vec![],
             vec![vec![]],
             totals,
-            Provenance::new("frequency_severity_monte_carlo")
-                .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
-                .seed(self.seed, SIM_INDEX_SCHEME),
+            self.provenance("frequency_severity_monte_carlo"),
         )
     }
 }
@@ -473,10 +515,25 @@ mod tests {
         assert_eq!(totals.n_sims(), 10);
         assert_eq!(totals.provenance().seed, Some(77));
         assert_eq!(totals.provenance().model, "frequency_severity_monte_carlo");
+        assert_eq!(totals.provenance().samplers, Some(current_samplers()));
         assert_eq!(
             events.counts().iter().sum::<usize>(),
             (0..10).map(|i| events.events(i).len()).sum::<usize>()
         );
+    }
+
+    #[test]
+    fn years_from_elsewhere_record_no_samplers() {
+        // Two event loss tables with the default seed: same streams, but
+        // nothing says they are the same draws.
+        let a = EventSet::from_years(vec![vec![1.0, 2.0], vec![3.0]], 0).unwrap();
+        let b = EventSet::from_years(vec![vec![4.0], vec![]], 0).unwrap();
+        assert_eq!(a.samplers(), None);
+        let (pa, pb) = (a.totals().unwrap(), b.totals().unwrap());
+        assert_eq!(pa.provenance().samplers, None);
+        assert_eq!(pa.provenance().seed, Some(0));
+        assert!(pa.provenance().shares_streams(pb.provenance()));
+        assert!(!pa.provenance().replays_same_draws(pb.provenance()));
     }
 
     #[test]

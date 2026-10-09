@@ -66,7 +66,9 @@ what it is aiming for by v1.0.
     `Sampled`), plus counts, the Pareto family, the inverse gamma,
     inverse Gaussian, Burr and scaled beta, mixtures, truncation and
     splicing, `Custom` and the `Dist` enum with JSON save and load.
-  - `PredictiveDistribution`: join, reorder, blend, Arrow IPC.
+  - `PredictiveDistribution`: join, reorder, blend, Arrow IPC; provenance
+    records the stream scheme and, apart from it, the sampler versions
+    (`docs/design/rng.md`).
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean),
     Iman–Conover, capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill).

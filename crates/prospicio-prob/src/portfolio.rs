@@ -22,7 +22,8 @@ use crate::provenance::Provenance;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pairing {
     /// Simulated separately: two parts with the same seed and stream
-    /// scheme would share random numbers, so they are refused.
+    /// scheme would share random numbers, so they are refused, whatever
+    /// samplers they were drawn with ([`Provenance::shares_streams`]).
     Independent,
     /// Derived from the same simulations (a cover applied to a reserve, a
     /// tower's ceded and net): simulation `i` of every part is the same
@@ -80,7 +81,7 @@ impl PredictiveDistribution {
             .ok_or_else(|| Error::Data("join needs at least one part".into()))?;
         let n = first.n_sims();
         let mut labels = HashSet::new();
-        let mut seeds = HashSet::new();
+        let mut seeded: Vec<&Provenance> = Vec::new();
         let mut dims: Vec<String> = vec![dim.to_string()];
         for (label, pd) in parts {
             if pd.n_sims() != n {
@@ -97,17 +98,20 @@ impl PredictiveDistribution {
                     "part {label:?} already has a dimension {dim:?}"
                 )));
             }
+            // Seed and stream scheme only: parts drawn with different
+            // samplers (before and after a sampler change) still share
+            // their uniforms.
             let prov = pd.provenance();
-            if let (Pairing::Independent, Some(seed), Some(scheme)) =
-                (pairing, prov.seed, prov.stream_scheme.as_ref())
-            {
-                if !seeds.insert((seed, scheme.clone())) {
+            if pairing == Pairing::Independent {
+                let shared = seeded.iter().any(|p| prov.shares_streams(p));
+                if let (true, Some(seed)) = (shared, prov.seed) {
                     return Err(Error::Data(format!(
                         "part {label:?} reuses seed {seed} with the same stream scheme as an \
                          earlier part, so their simulations would share random numbers; \
                          simulate it with another seed"
                     )));
                 }
+                seeded.push(prov);
             }
             for d in pd.dims() {
                 if !dims.contains(d) {
@@ -296,6 +300,53 @@ mod tests {
         assert_eq!(
             j.marginal(&j.components()[1].clone()).unwrap().draws(),
             a.marginal(&vec![KeyValue::Int(2)]).unwrap().draws()
+        );
+    }
+
+    /// `part` with its provenance's samplers replaced.
+    fn with_samplers(
+        pd: &PredictiveDistribution,
+        samplers: Option<Vec<(String, String)>>,
+    ) -> PredictiveDistribution {
+        let mut prov = pd.provenance().clone();
+        prov.samplers = samplers;
+        PredictiveDistribution::from_draws(
+            pd.dims().to_vec(),
+            pd.components().to_vec(),
+            pd.draw_matrix().to_vec(),
+            prov,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn join_refuses_a_shared_seed_across_a_sampler_change() {
+        // The same seed drawn under today's samplers, under an earlier Gamma
+        // sampler, and read from a file saved before samplers were recorded:
+        // the uniforms are the same, so the parts are not independent.
+        let new = part("origin", &[1], 10, 5, |i, _| i as f64);
+        let before = with_samplers(&new, Some(vec![]));
+        let unrecorded = with_samplers(&new, None);
+        assert!(!new.provenance().replays_same_draws(before.provenance()));
+        for old in [&before, &unrecorded] {
+            for parts in [[("new", &new), ("old", old)], [("old", old), ("new", &new)]] {
+                let err = PredictiveDistribution::join(&parts, "risk", Pairing::Independent)
+                    .unwrap_err()
+                    .to_string();
+                assert!(err.contains("reuses seed 5"), "{err}");
+                assert!(
+                    PredictiveDistribution::join(&parts, "risk", Pairing::SameSimulations).is_ok()
+                );
+            }
+        }
+        let other_seed = with_samplers(&part("origin", &[1], 10, 6, |i, _| i as f64), None);
+        assert!(
+            PredictiveDistribution::join(
+                &[("new", &new), ("other", &other_seed)],
+                "risk",
+                Pairing::Independent
+            )
+            .is_ok()
         );
     }
 

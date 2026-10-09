@@ -108,7 +108,7 @@ The object every model returns and every risk measure consumes.
 
 - Stores **joint** draws or a joint structure across its components (origin years, LOBs, layers). The 99.5% of a total reserve is not the sum of per-origin 99.5%s.
 - Exposes `mean`, `variance`, `cdf`, `quantile`, `sample`, `var`, `tvar`, plus `marginal(key)` and `aggregate(keys)`.
-- Carries provenance: model, parameters, seed, stream ids, package version.
+- Carries provenance: model, parameters, seed, stream scheme, sampler versions, package version and input hash.
 
 ```text
 Bootstrap Chain Ladder ─┐
@@ -271,7 +271,7 @@ Parallelize the outermost loop only, and make every result reproducible from a s
 - **Rayon on the outer loop:** bootstrap replicates, Monte Carlo paths, MCMC chains, CV folds, hyperparameter search, portfolio scenarios.
 - **Inner math single-threaded:** no Polars or BLAS thread pools inside a Rayon task. Configure faer and any BLAS to one thread within parallel regions.
 - **Deterministic streams:** simulation i always draws from stream i (see RNG streams), so 1 thread and 64 threads give identical output.
-- **Provenance on every result:** seed, stream scheme, package version and input hash travel with the PredictiveDistribution for audit and model-governance documentation.
+- **Provenance on every result:** seed, stream scheme, sampler versions (recorded apart from the stream scheme, `rng.md`), package version and input hash travel with the PredictiveDistribution for audit and model-governance documentation.
 
 ## User-facing API surface
 

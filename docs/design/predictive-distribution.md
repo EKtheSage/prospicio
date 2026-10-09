@@ -9,20 +9,24 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
 - `from_draws(dims, components, draws, provenance)` for draws already laid
   out simulation-major;
 - `simulate(dims, components, n_sims, seed, provenance, f)`, which fills row
-  `i` in parallel from `StreamRng::new(seed, i)`, and records the seed and
-  `SIM_INDEX_SCHEME` (`"chacha20/sim-index/v1"`) in the provenance;
+  `i` in parallel from `StreamRng::new(seed, i)`, and records the seed,
+  `SIM_INDEX_SCHEME` (`"chacha20/sim-index/v1"`) and the build's samplers
+  (`provenance::SAMPLERS`) in the provenance;
 - `marginal(key) -> Option<Sampled>`, `aggregate(keep) -> PredictiveDistribution`
   and `resample(rng, n)`, which draws whole rows;
 - `total() -> &Sampled` (row sums, computed on first use). The
   `Distribution` and `Empirical` impls (`mean`, `quantile`, `var`, `tvar`, …)
   describe the total and go through `risk::*`;
 - `Provenance` with `model`, `parameters`, `seed`, `stream_scheme`,
-  `versions` (starting with `prospicio-prob`) and `input_hash`;
+  `samplers`, `versions` (starting with `prospicio-prob`) and
+  `input_hash`, and the checks `shares_streams` (seed and scheme) and
+  `replays_same_draws` (seed, scheme and samplers);
 - `prospicio_prob::portfolio`: `join(parts, dim, Pairing)` puts distributions of
   different models side by side under a new leading dimension (the union
   of their dimensions after it, `""` where a part lacks one), pairing
   simulation `i` of every part; `Pairing::Independent` refuses two parts
-  with the same seed and stream scheme, which would share random numbers,
+  with the same seed and stream scheme, which would share random numbers
+  whatever their samplers,
   and `Pairing::SameSimulations` is for parts derived from the same
   scenarios. `reorder_groups(dim, correlation, seed)` sets the dependence
   between groups by Iman–Conover on their totals, moving each group's
@@ -74,7 +78,11 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
   "Y"}}`). The schema metadata holds the format name, `format_version`
   `"1"`, the dimension names and the provenance as JSON, with the seed as
   a decimal string because JSON numbers lose precision above 2^53.
-  Readers reject unknown versions. The full spec is in the `ipc` module
+  Readers reject unknown versions. A new optional provenance key is not a
+  new version: readers look keys up by name, ignore the others and read
+  a missing one as `null`. `samplers` was added that way on 2026-10-08
+  (`rng.md`), so the version-1 files written before it, the pyarrow
+  fixture among them, read with `samplers` not recorded. The full spec is in the `ipc` module
   docs. `validation/scripts/predictive_ipc.py` writes a fixture from that
   spec with pyarrow, which `validation/tests/predictive.rs` must read
   back, and it can check a file Rust wrote. Errors use `ipc::IpcError`
@@ -144,11 +152,21 @@ origin in a reserve distribution and an origin in a triangle compare equal.
 | `model` | `"odp_bootstrap"` |
 | `parameters` | ordered key/value list (serializable) |
 | `seed`, `stream_scheme` | `42`, `"chacha20/sim-index/v1"` |
-| `package_version` | crate version of `prospicio-prob` and the model's crate |
+| `samplers` | `[("gamma", "marsaglia-tsang/2026-10")]`, or none when not recorded |
+| `versions` | crate version of `prospicio-prob` and the model's crate |
 | `input_hash` | hash of the canonical input bytes (Arrow IPC of the triangle) |
 
 `stream_scheme` names the rule in `rng.md` that maps simulations to
-streams, so a result can be replayed years later.
+streams; `samplers` names the samplers that turned the streams' uniforms
+into draws: the build's sampler table, so every sampler the draws may
+have used (a family not listed uses its first sampler, inverse transform
+for a distribution and the documented method for a copula's frailty).
+A result computed from draws it did not make records its source's
+samplers (a tower on a reserve bootstrap; a blend whose models agree) or
+none (years of losses from elsewhere, `EventSet::from_years`). With both,
+a result can be replayed years later (`replays_same_draws`); `join`'s
+check that independent parts do not share random numbers needs only the
+first (`shares_streams`). See `rng.md`, stability policy.
 
 ## Memory
 

@@ -278,8 +278,10 @@ are refused with the reason. Python `distributions.to_json(d)` /
 Inverse transform by default: draws are a pure, monotone function of the
 uniforms, so common random numbers and replaying a single simulation both
 work. Families with a slow quantile may override `sample` with a faster
-method, but must keep output a pure function of `(seed, stream)` and
-document the change in the RNG stability log (see `rng.md`).
+method, but must keep output a pure function of `(seed, stream)`,
+document the change in the RNG stability log and give the family a new
+sampler id in `provenance::SAMPLERS`, which results record as
+`Provenance::samplers` (see `rng.md`); the stream scheme does not change.
 
 `Gamma` does (2026-10-08): Marsaglia and Tsang (2000) with the
 `U^(1/shape)` boost below shape 1, about one normal (by inverse

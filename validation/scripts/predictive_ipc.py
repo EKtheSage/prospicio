@@ -69,6 +69,15 @@ def check(path):
     prov = json.loads(meta["risk_rs.provenance"])
     assert isinstance(prov["model"], str)
     assert prov["seed"] is None or int(prov["seed"]) >= 0
+    # Optional: absent (or null) in files written before 2026-10-08, like the
+    # fixture; otherwise [family, sampler id] pairs sorted by family.
+    samplers = prov.get("samplers")
+    if samplers is not None:
+        assert all(
+            isinstance(p, list) and len(p) == 2 and all(isinstance(x, str) for x in p)
+            for p in samplers
+        ), samplers
+        assert [p[0] for p in samplers] == sorted({p[0] for p in samplers}), samplers
     for field in table.schema:
         assert field.type == pa.float64(), field
         key = json.loads(field.metadata[b"risk_rs.key"])

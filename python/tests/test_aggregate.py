@@ -49,7 +49,10 @@ def test_events_are_reproducible_and_feed_a_tower():
         assert gross == pytest.approx(ceded_a + ceded_b + net, abs=1e-6)
     by_kind = result.aggregate(["kind"])
     assert [k[0] for k in by_kind.components()] == ["gross", "ceded", "net"]
-    assert result.provenance()["seed"] == 11
+    prov = result.provenance()
+    assert prov["seed"] == 11
+    assert prov["stream_scheme"] == "chacha20/sim-index/v1"
+    assert prov["samplers"] == [("gamma", "marsaglia-tsang/2026-10")]
 
 
 def test_mean_ceded_matches_the_exact_layer_value():
@@ -173,6 +176,8 @@ def test_surplus_treaty_on_events_with_sums_insured():
     draws = {k: pd.marginal(k).mean() for k in [("ceded", "surplus"), ("ceded", "1x1")]}
     assert draws[("ceded", "surplus")] == pytest.approx((1e6 + 4.8e6) / 3)
     assert draws[("ceded", "1x1")] == pytest.approx(1e6 / 3)
+    # Losses from elsewhere: the seed is recorded, the samplers are not.
+    assert pd.provenance()["seed"] == 0 and pd.provenance()["samplers"] is None
     with pytest.raises(ValueError, match="sum insured"):
         tower.apply(EventSet.from_years([[1.0]]))
     with pytest.raises(ValueError):

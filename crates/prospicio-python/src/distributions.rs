@@ -1610,7 +1610,18 @@ impl PyPredictiveDistribution {
     }
 
     /// Where this result came from: model, parameters, seed, stream scheme,
-    /// crate versions and input hash.
+    /// samplers, crate versions and input hash.
+    ///
+    /// ``stream_scheme`` names how simulations map to random-number
+    /// streams; ``samplers`` lists ``(family, sampler id)`` pairs, e.g.
+    /// ``[("gamma", "marsaglia-tsang/2026-10")]``: the sampler table of the
+    /// build that made the draws, so every sampler they may have used. A
+    /// family not listed uses its first sampler (inverse transform for a
+    /// distribution, the documented method for a copula's frailty). A
+    /// result replays only with the same seed, stream scheme and samplers.
+    /// ``samplers`` is ``None`` when not recorded: a result without draws,
+    /// one computed from draws made elsewhere, or one made by a build from
+    /// before samplers were recorded (2026-10-08).
     ///
     /// Returns
     /// -------
@@ -1622,6 +1633,7 @@ impl PyPredictiveDistribution {
         d.set_item("parameters", p.parameters.clone())?;
         d.set_item("seed", p.seed)?;
         d.set_item("stream_scheme", p.stream_scheme.clone())?;
+        d.set_item("samplers", p.samplers.clone())?;
         d.set_item("versions", p.versions.clone())?;
         d.set_item("input_hash", p.input_hash.clone())?;
         Ok(d)

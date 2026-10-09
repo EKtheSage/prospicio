@@ -115,6 +115,7 @@ def test_predictive_distribution_is_joint():
     assert pd.marginal(("Home", 2023)).draws == [10.0, 30.0, 50.0]
     assert pd.marginal(("Home", 2025)) is None
     assert pd.provenance()["model"] == "python"
+    assert pd.provenance()["samplers"] is None
     with pytest.raises(ValueError, match="row 1"):
         ar.distributions.PredictiveDistribution(["x"], [(1,)], [[1.0], [1.0, 2.0]])
     with pytest.raises(ValueError):

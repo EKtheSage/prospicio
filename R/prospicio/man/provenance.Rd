@@ -11,10 +11,19 @@ provenance(dist, ...)
 }
 \value{
 A list with \code{model}, \code{parameters}, \code{seed}, \code{stream_scheme},
-\code{versions} and \code{input_hash}.
+\code{samplers}, \code{versions} and \code{input_hash}.
 }
 \description{
-Where a result came from
+\code{stream_scheme} names how simulations map to random-number streams;
+\code{samplers} is a named list of sampler ids by family (for example
+\code{list(gamma = "marsaglia-tsang/2026-10")}): the sampler table of the
+build that made the draws, so every sampler they may have used. A family
+not listed uses its first sampler (inverse transform for a distribution,
+the documented method for a copula's frailty). A result replays only
+with the same seed, stream scheme and samplers. \code{samplers} is \code{NULL}
+when not recorded: a result without draws, one computed from draws made
+elsewhere, or one made by a build from before samplers were recorded
+(2026-10-08).
 }
 \examples{
 pd <- predictive_distribution(matrix(1:6, ncol = 2), data.frame(year = c(2023, 2024)))

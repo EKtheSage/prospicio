@@ -32,6 +32,7 @@
 use prospicio_aggregate::EventSet;
 use prospicio_core::{Error, Result, StreamRng};
 use prospicio_math::integrate::gauss_legendre;
+use prospicio_prob::provenance::current_samplers;
 use prospicio_prob::{Counting, Poisson};
 
 use crate::exposure::{ExposureCurve, Mbbefd, TabulatedCurve};
@@ -369,7 +370,8 @@ impl RiskProfile {
     /// Year `i` uses stream `i` of `seed`: first the loss count (Poisson
     /// with mean [`expected_claims`](Self::expected_claims)), then for each
     /// loss a band, its sum insured (only for a band with bounds) and a
-    /// destruction rate, all by inverse transform.
+    /// destruction rate, all by inverse transform. The set records this
+    /// build's samplers ([`EventSet::samplers`]) for results' provenance.
     pub fn simulate(&self, n_sims: usize, seed: u64) -> Result<EventSet> {
         if n_sims == 0 {
             return Err(invalid("n_sims", 0.0, "must be positive"));
@@ -412,7 +414,9 @@ impl RiskProfile {
             }
             years.push(year);
         }
-        EventSet::from_years(years, seed)?.with_sums_insured(sums_insured)
+        EventSet::from_years(years, seed)?
+            .with_samplers(Some(current_samplers()))
+            .with_sums_insured(sums_insured)
     }
 }
 
@@ -701,6 +705,11 @@ mod tests {
     fn checks_and_replays() {
         let p = profile();
         assert_eq!(p.simulate(50, 3).unwrap(), p.simulate(50, 3).unwrap());
+        // Drawn here, so the samplers are recorded, unlike years from elsewhere.
+        assert_eq!(
+            p.simulate(50, 3).unwrap().samplers(),
+            Some(&current_samplers()[..])
+        );
         assert!(p.simulate(0, 3).is_err());
         assert!(RiskProfile::new(vec![]).is_err());
         let c = Mbbefd::swiss_re(2.0).unwrap();
