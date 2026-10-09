@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163; decision 9 on branch `claude/bootstrap-tail-error`) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -39,6 +39,7 @@ generated stub, `NAMESPACE` and `man/`. Whichever merges second merges
 | One-year view | R ChainLadder `CDR(MackChainLadder(...))`, `dev = "all"` for the full run-off | Merz and Wüthrich (2008), published example |
 | Simulated one-year view | ODP: R ChainLadder `CDR(MackChainLadder(...))` times the measured ODP-to-Mack ratio, `BootChainLadder` for the origin with one cell left. Mack's process: R ChainLadder `CDR(MackChainLadder(...))` itself | England, Verrall and Wüthrich (2019), Tables 2 and 4 |
 | Mack's bootstrap, lifetime view | R ChainLadder `MackChainLadder(...)` process and parameter risks | England, Verrall and Wüthrich (2019), Table 4 |
+| Tails in the bootstraps | R ChainLadder `MackChainLadder(tail = ...)` process and parameter risks with the tail (`reserving_tails_r.csv`) | Mack (1999); the delta method on R's tail rule |
 
 Each family has its own generator script under `validation/scripts/` and
 reference CSV under `validation/reference/` in the format of
@@ -678,7 +679,7 @@ impl MackBootstrap {
 }
 
 pub struct MackBootstrapSegment {
-    pub mack: MackFit,         // the model on the observed triangle, no tail
+    pub mack: MackFit,         // the model on the observed triangle (no tail here; decision 9)
     pub residuals: Vec<f64>,   // link-ratio residuals, origin x development
 }
 
@@ -846,7 +847,7 @@ impl MackBootstrap {
 }
 
 pub struct MackBootstrapFit {
-    pub mack: MackFit,                  // the model on the observed triangle, no tail
+    pub mack: MackFit,                  // the model on the observed triangle, with the tail (decision 9)
     pub residuals: Vec<f64>,            // link-ratio residuals, origin x development
     pub reserves: PredictiveDistribution, // dimension origin
 }
@@ -876,11 +877,13 @@ that its lifetime reserve plus its one-year CDR is its opening reserve in
 every simulation). Any development grain works, and an origin short of the
 latest diagonal develops from its own latest cell.
 
-No tail. A tail factor is not an average of link ratios, so no residual
-gives its parameter error; simulating it would need a distribution for the
-tail factor that EVW do not give (Mack's tail standard error is an
-extrapolation, not an estimate). The reserves run to the triangle's oldest
-age, as Mack's do without a tail.
+No tail, as first built: a tail factor is not an average of link
+ratios, so no residual gives its parameter error, and EVW give no
+distribution for it (Mack's tail standard error is an extrapolation, not
+an estimate), so the reserves ran to the triangle's oldest age. Decision 9
+adds one: an estimated tail refitted on each simulation's pseudo factors,
+a constant one drawn from the lognormal with Mack's standard error, and
+the step to ultimate with Mack's tail sigma.
 
 The mean. Centred (the default), the pseudo factors are unbiased and
 independent of each other and of the cell they multiply, so the mean
@@ -977,3 +980,205 @@ with `chain_ladder`, `mack`, `origins`, `development`, `residuals` and
 settings are named as in `mack()`, since there is no method to tell them
 from (`mack_one_year()`'s `mack_average` keeps them apart from the
 method's).
+
+### 9. Tails in the bootstraps' lifetime view
+
+Until this decision `MackBootstrap::fit` had no tail (decision 8) and
+`OdpBootstrap::fit` none either, as R's `BootChainLadder`: the simulated
+reserves ran to the oldest age, so a reserve with a tail had no simulated
+distribution, and neither the tail factor's parameter error nor the
+process error of development past the oldest age was simulated. Both
+lifetime views now take a tail:
+
+```rust
+pub struct OdpBootstrap {
+    /* n_sims, seed, process, as before */
+    pub tail: Tail,                 // default none
+    pub tail_std_err: Option<f64>,  // a constant tail's standard error; None keeps it fixed
+}
+
+pub struct MackBootstrap {
+    /* n_sims, seed, process, development, centre_residuals, as before */
+    pub tail: Tail,                 // default none
+    pub tail_sigma: Option<f64>,    // R's tail.sigma; None extrapolates, as Mack
+    pub tail_std_err: Option<f64>,  // R's tail.se; None extrapolates, as Mack
+}
+
+pub enum Error { /* ... */ TailRefit { failed: usize, n_sims: usize, source: Box<Error> } }
+```
+
+The fields mirror `Mack`'s and `ChainLadder`'s `tail`, so the settings
+read the same in every method. `Tail` holds floats, so neither bootstrap
+derives `Eq` any more, and a struct literal that names every field needs
+`..Default::default()`. Without a tail (a constant 1 at the oldest age,
+whatever its decay and whatever sigma or standard error is given, which
+are unused as in `Mack`) every draw, input hash and provenance is as
+before: checked by hashing every draw of `fit`, `fit_segments` and
+`one_year` under both ODP processes and all five of Mack's, centred and
+not, on RAA, GenIns and ABC (108 hashes, identical before and after; not a
+CI test, as in decision 8), and by unit tests that a constant 1 with
+another decay draws as the default.
+
+Per simulation, after the pseudo factors (the pseudo triangle's
+volume-weighted factors for the ODP, the re-averaged pseudo link ratios
+for Mack) and before any process draw:
+
+1. **The tail's parameter error.**
+   * An estimated tail (`Tail::Curve`, `Tail::Bondy`, `Tail::LogLinear`)
+     is refitted on the simulation's pseudo factors, with the same
+     settings and ages. That gives the factor to ultimate and the selected
+     factors within the triangle: a tail attached before the oldest age
+     replaces the pseudo factors from its attachment on, as it replaces
+     the estimated ones on the observed triangle. No random number is
+     drawn. The tail is a function of the estimated factors, so refitting
+     it carries their parameter error through the tail estimator itself,
+     its nonlinearity included, where Mack's (1999) `tail.se` is a
+     log-linear extrapolation of the factors' standard errors, not the
+     estimator's sampling error. A `tail_std_err` with an estimated tail
+     would count that error twice and is an error.
+   * A constant tail is drawn, when it has a standard error, from the
+     lognormal with the factor as mean and the standard error as standard
+     deviation, after the pseudo factors on the same stream and
+     independent of them. For Mack the standard error is Mack's: the given
+     `tail_std_err` or, as in `Mack`, extrapolated (R's `tail.se`), so the
+     drawn factor has exactly the variance Mack's formula gives the tail.
+     The ODP has no estimate of its own, so its constant tail is fixed
+     unless `tail_std_err` is given. The lognormal is positive, as the
+     factor is; it has exactly the mean and variance, so to first order
+     the bootstrap reproduces Mack's parameter error; at the coefficient of
+     variation a tail factor's standard error gives it (R's extrapolated
+     `tail.se` on RAA: 1.8% at a tail of 1.05, 0.4% under `tail = TRUE`)
+     it is close to the normal, as the pseudo factors of the triangle are;
+     and it works for a factor below 1, which `Tail` allows. Rejected: the
+     normal, which can go below zero at a large standard error; a
+     lognormal or Gamma of `f - 1`, which keeps development past the oldest
+     age positive but fails for a factor below 1 and is very skewed (RAA's
+     `f - 1` has a coefficient of variation of 0.38 at 1.05 and 0.46 under
+     `tail = TRUE`), a skew Mack's estimate gives no ground for.
+2. **The process error of development past the oldest age.**
+   * Mack: every origin, the oldest included, takes one more step after
+     the oldest age, its ultimate drawn by `MackProcess` with mean
+     `T* C` and variance `tail_sigma^2 |C|^(2 - alpha)`, `T*` the
+     simulation's tail factor and `C` its value at the oldest age: Mack's
+     (1999) process variance of the tail step, the term his recursion
+     adds. `tail_sigma` is the observed fit's (given, or extrapolated as
+     R's `tail.sigma`), as every sigma of the bootstrap is the observed
+     triangle's.
+   * ODP: the step to ultimate is one more future increment, with mean
+     `C* (T* - 1)`, `C*` the pseudo value at the oldest age (the pseudo
+     latest value carried forward on the pseudo factors, as every
+     projected increment is), and the process error of every other
+     increment, Gamma with variance `phi |mean|`. The ODP's process
+     variance is the scale times the mean of a future increment, and
+     development past the oldest age is a future increment like the
+     others; with no observed cell beyond the oldest age there is nothing
+     to estimate a scale of its own from, and no process error at all
+     would leave out the least known part of the run-off.
+3. **Failures.** A refit can fail on a simulation's pseudo factors (a
+   curve left with fewer than two factors above 1.00001 in its fit period,
+   a Bondy exponent outside (0, 1), a log-linear tail without two factors
+   above 1). The simulation's row is zeroed, every simulation still runs,
+   and the call returns `Error::TailRefit` with the number that failed and
+   the failure whose message sorts first, as the one-year view's
+   `Error::OneYear` does, so the error does not depend on the threads.
+4. **The one-year view is unchanged.** `one_year` and `one_year_segments`
+   of both bootstraps reject a bootstrap tail (`Error::Bootstrap`): as
+   decision 8 says, Mack's tail is a step without a calendar year, so no
+   coming year holds it (R's `CDR` rejects a tail too), and development
+   past the oldest age moves only through the refitted method's own tail.
+5. **What the fits report.** `OdpBootstrapFit::chain_ladder` and
+   `MackBootstrapFit::mack` are fitted with the bootstrap's tail (ultimate,
+   reserve, and Mack's standard errors with the tail), so `to_long` and
+   `totals` compare the simulated reserves with the tailed chain ladder.
+   The ODP's fitted values and residuals do not change: they come from the
+   estimated factors, which a tail does not touch. The provenance records
+   the tail's settings when there is a tail and nothing new without one.
+
+Checks (`validation/tests/reserving_bootstrap_tail.rs`, 20,000
+simulations, against `reserving_tails_r.csv`, R ChainLadder 0.2.21's
+`MackChainLadder(tri, tail = ...)` on RAA, GenIns and ABC):
+
+* **A constant tail reconciles with Mack.** With the Gamma process, each
+  origin's and the total standard deviation is R's `Mack.S.E` with the
+  tail within five Monte Carlo standard errors, and the mean R's reserve
+  within five standard errors of the mean: `tail = 1.05` with the tail's
+  sigma and standard error extrapolated (either rule for the last sigma)
+  or given (`tail.se` half the last factor's, `tail.sigma` twice its
+  sigma), and `tail = TRUE` too when the bootstrap's tail is the constant
+  R's rule fits, since R's `tail.se` for `tail = TRUE` is the
+  extrapolation at that factor, as a constant tail's is (the test checks
+  the tail's sigma and standard error are R's to `1e-8`). As without a
+  tail, the reference parameter variance of the factors within the
+  triangle is scaled by the resampled residuals' variance `v`; the tail
+  factor's draw has Mack's variance exactly, so the reference is
+  `process^2 + v parameter^2 + (1 - v) (C se)^2`, `C` the projected value
+  at the oldest age. Parameter error alone (`MackProcess::None`) is
+  checked the same way. Measured at seed 20,261,008: every origin and
+  total within 3.2 standard errors, the largest RAA 1990 and RAA's total
+  (1.04 times R under the Gamma, parameter error alone 1.004), the
+  young-origin nonlinearity the run-off without a tail shows too.
+* **A refitted tail has Mack's process error.** Run with the Gamma and
+  with no process on the same seed, the two share every pseudo factor and
+  refitted tail, since the process draws come after them, so the
+  per-simulation difference of their reserves is the process error alone:
+  its standard deviation is R's `Mack.ProcessRisk` with `tail = TRUE`
+  within five standard errors for every origin and total, both rules for
+  the last sigma (measured within 2.5).
+* **A refitted tail's parameter error is the refit's.** On the oldest
+  origin, whose reserve is the tail step alone, parameter error alone is
+  `C (T* - 1)`; its standard deviation is within five standard errors of
+  the first-order (delta-method) error of R's rule, `C sqrt(sum (dT/df_k)^2
+  v se_k^2)` with the gradient by central differences, on ABC (0.998
+  times), and above it on RAA (1.56) and GenIns (1.12), where the
+  extrapolation runs far past the data and the refitted tail is convex in
+  the factors: its mean is above the plug-in tail too (RAA's oldest
+  reserve 200 against 178, +13%; GenIns -2%, ABC -0.1%). The first-order
+  standard error of the refitted tail factor is of the order of R's
+  extrapolated `tail.se` (RAA 0.0051 against 0.0044, GenIns 0.0099
+  against 0.0083, ABC 0.00068 against 0.00089; the test checks they are
+  within a factor of 2). In total the refitted bootstrap's standard
+  deviation is 1.003 (RAA), 1.072 (GenIns) and 1.011 (ABC) times R's
+  `Mack.S.E` with `tail = TRUE` (measured once, not in CI). So a user who
+  wants R's `tail = TRUE` standard error gives the constant R's rule fits;
+  the estimated tail gives the tail estimator's own error.
+* **Unit tests** (`bootstrap.rs`, `mack_bootstrap.rs`): with a constant
+  tail and no process error, each simulation's reserve of the oldest and
+  the next origin is rebuilt bit for bit from the pseudo triangle and the
+  lognormal's draw on the same stream; an estimated tail's refit is
+  rebuilt bit for bit from the pseudo factors of the same stream, under
+  both models; RAA's oldest origin with `tail = 1.05`, `tail_sigma = 1.5`
+  and `tail_std_err = 0.003` has Mack's exact variance
+  `C^2 0.003^2 + 1.5^2 C` and mean `0.05 C` within five Monte Carlo
+  standard errors; the ODP's oldest origin with a constant tail has the
+  variance `(T - 1)^2 v sum|m| + phi (T - 1) E[P]` worked out from its
+  fitted increments `m` and pseudo latest value `P`; a curve fitted to two
+  factors barely above 1 fails in some simulations and is reported with
+  the count, under both models; a standard error with an estimated tail,
+  a negative or NaN one, and a tail in the one-year view are errors.
+
+The ODP has no reference with a tail (R's `BootChainLadder` has none);
+its checks are the unit tests above. Measured once (20,000 simulations,
+seed 20,261,008, not in CI): with a constant 1.05 the total mean is the
+tailed chain ladder's times about the same ratio as without a tail (RAA
+1.029 against 1.032, GenIns 1.010 against 1.011, ABC 0.999 both: the ODP
+bootstrap's own bias, which R's `BootChainLadder` shares) and the
+coefficient of variation falls (RAA 0.350 to 0.310), the tail adding a
+nearly fixed share; a standard error of 0.01 widens ABC's total standard
+deviation by 31% and RAA's by 0.4%. A refitted log-linear tail moves much
+more on the ODP's pseudo factors than on Mack's, whose late link ratios
+are steadier: RAA's oldest origin has a mean reserve of 316 against the
+plug-in 178 (+78%) and a parameter standard deviation of 249, and the
+total mean is 1.064 times the tailed chain ladder's (1.033 without a
+tail); GenIns 1.017 (1.011), ABC 0.999 (0.999).
+
+Bindings: Python `OdpBootstrap(n_sims=10000, seed=0, process="gamma",
+tail=None, tail_std_err=None)` and `MackBootstrap(..., centre_residuals=True,
+tail=None, tail_sigma=None, tail_std_err=None)`, `tail` a float or a
+`TailConstant`, `TailCurve`, `TailBondy` or `TailLogLinear` as
+`ChainLadder`'s and `Mack`'s, with getters of the same names; their
+`repr` shows the tail (`tail=1.0` without one, as `Mack`'s). R
+`odp_bootstrap(..., process = c("gamma", "none"), tail = 1, tail_std_err =
+NULL)` and `mack_bootstrap(..., centre_residuals = TRUE, tail = 1,
+tail_sigma = NULL, tail_std_err = NULL)`, `tail` a number or a tail
+constructor as `mack()`'s. The one-year functions are unchanged: their
+`tail` is the refitted method's.
