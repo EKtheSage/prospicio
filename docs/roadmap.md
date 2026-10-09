@@ -82,8 +82,9 @@ what it is aiming for by v1.0.
 ### `prospicio-aggregate` (Aggregate lane)
 
 - **Now:**
-  - Panjer, FFT, Monte Carlo event sets (with sums insured and times),
-    the collective model.
+  - Panjer, FFT (with the grid sized automatically, as `aggregate`),
+    Monte Carlo event sets (with sums insured and times), the collective
+    model.
   - Layers on the loss or surplus basis, with annual terms and
     reinstatements pro rata as to amount and time.
   - Inuring towers, applied to events, to aggregates, or exactly on the

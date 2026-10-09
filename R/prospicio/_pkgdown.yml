@@ -65,6 +65,7 @@ reference:
   - title: Aggregate loss
     contents:
       - compound_distribution
+      - recommend_grid
       - simulate_events
       - events_from_years
       - event_sums_insured

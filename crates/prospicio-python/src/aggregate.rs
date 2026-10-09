@@ -218,6 +218,208 @@ pub(crate) fn fft(
     compound(py.detach(|| prospicio_aggregate::fft(n.as_counting(), &sev, points)))
 }
 
+/// A recommended FFT grid, from ``recommend_grid`` or ``fft_auto``.
+#[pyclass(name = "GridSize", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyGridSize {
+    pub(crate) inner: prospicio_aggregate::GridSize,
+}
+
+#[pymethods]
+impl PyGridSize {
+    /// Bucket size, a ``round_bucket`` rung.
+    #[getter]
+    fn step(&self) -> f64 {
+        self.inner.step
+    }
+
+    /// Number of points, a power of two.
+    #[getter]
+    fn points(&self) -> usize {
+        self.inner.points
+    }
+
+    /// The extent the grid was sized to cover.
+    #[getter]
+    fn extent(&self) -> f64 {
+        self.inner.extent
+    }
+
+    /// What sized it: ``"moments"`` or ``"single_big_jump"``.
+    #[getter]
+    fn method(&self) -> &'static str {
+        match self.inner.method {
+            prospicio_aggregate::SizingMethod::Moments => "moments",
+            prospicio_aggregate::SizingMethod::SingleBigJump => "single_big_jump",
+        }
+    }
+
+    /// The moment extent, or ``None`` with an infinite variance.
+    #[getter]
+    fn moment_extent(&self) -> Option<f64> {
+        self.inner.moment_extent
+    }
+
+    /// The single-big-jump extent at ``p_star``, or ``None``.
+    #[getter]
+    fn jump_extent(&self) -> Option<f64> {
+        self.inner.jump_extent
+    }
+
+    /// ``min(1, E[N] S_X(top))``: roughly the probability beyond the grid
+    /// from one claim alone. Raise ``log2`` when it is not small.
+    #[getter]
+    fn tail_estimate(&self) -> f64 {
+        self.inner.tail_estimate
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "GridSize(step={:?}, points={}, method={:?}, tail_estimate={:e})",
+            self.inner.step,
+            self.inner.points,
+            self.method(),
+            self.inner.tail_estimate
+        )
+    }
+}
+
+fn sizing(log2: u32, p: f64, p_star: f64) -> prospicio_aggregate::Sizing {
+    prospicio_aggregate::Sizing {
+        log2,
+        p,
+        p_star,
+        ..prospicio_aggregate::Sizing::default()
+    }
+}
+
+/// Rounds a bucket size up to a "nice" value, as ``aggregate``'s
+/// ``round_bucket``: ``{1, 2, 4, 5, 8} * 10**k`` at 1 and above, a power of
+/// two below.
+///
+/// Parameters
+/// ----------
+/// bs : float
+///     Positive and finite.
+///
+/// Returns
+/// -------
+/// float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``bs`` is not positive and finite.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import round_bucket
+/// >>> round_bucket(3.4), round_bucket(0.3)
+/// (4.0, 0.5)
+#[pyfunction]
+pub(crate) fn round_bucket(bs: f64) -> PyResult<f64> {
+    prospicio_aggregate::round_bucket(bs).map_err(to_py)
+}
+
+/// A grid for the compound distribution of ``frequency`` claims of
+/// ``severity``, as ``aggregate`` sizes one when no bucket is given: the
+/// larger of a lognormal or gamma fitted to the aggregate's mean and
+/// variance at ``p``, and one big claim on a typical bulk at ``p``; then
+/// one big claim at ``p_star`` when it fits at the same bucket.
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+///     Any distribution but ``Sampled``.
+/// log2 : int, default 16
+///     At most ``2**log2`` points.
+/// p : float, default 1 - 1e-5
+/// p_star : float, default 1 - 1e-12
+///
+/// Returns
+/// -------
+/// GridSize
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the aggregate mean is not finite and positive, or ``log2`` is not
+///     in ``1..=30``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import recommend_grid
+/// >>> from prospicio.distributions import Gamma, Poisson
+/// >>> g = recommend_grid(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+/// >>> g.step, g.points, g.method
+/// (0.0625, 65536, 'moments')
+#[pyfunction]
+#[pyo3(signature = (frequency, severity, log2 = 16, p = 1.0 - 1e-5, p_star = 1.0 - 1e-12))]
+pub(crate) fn recommend_grid(
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    log2: u32,
+    p: f64,
+    p_star: f64,
+) -> PyResult<PyGridSize> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = crate::distributions::extract_severity(severity)?;
+    let inner =
+        prospicio_aggregate::recommend_grid(n.as_counting(), &sev, &sizing(log2, p, p_star))
+            .map_err(to_py)?;
+    Ok(PyGridSize { inner })
+}
+
+/// The compound distribution by FFT on the grid ``recommend_grid``
+/// chooses, the severity discretized by rounding.
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+/// log2 : int, default 16
+/// p : float, default 1 - 1e-5
+/// p_star : float, default 1 - 1e-12
+///
+/// Returns
+/// -------
+/// tuple of (Grid, CompoundReport, GridSize)
+///
+/// Raises
+/// ------
+/// ValueError
+///     As ``recommend_grid``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import fft_auto
+/// >>> from prospicio.distributions import Lognormal, Poisson
+/// >>> agg, report, size = fft_auto(Poisson(5.0), Lognormal.from_mean_cv(100.0, 1.0))
+/// >>> round(agg.mean()), report.aliasing_error < 1e-12
+/// (500, True)
+#[pyfunction]
+#[pyo3(signature = (frequency, severity, log2 = 16, p = 1.0 - 1e-5, p_star = 1.0 - 1e-12))]
+pub(crate) fn fft_auto(
+    py: Python<'_>,
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    log2: u32,
+    p: f64,
+    p_star: f64,
+) -> PyResult<(PyGrid, PyCompoundReport, PyGridSize)> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = crate::distributions::extract_severity(severity)?;
+    let s = sizing(log2, p, p_star);
+    let (grid, report, size) = py
+        .detach(|| prospicio_aggregate::fft_auto(n.as_counting(), &sev, &s))
+        .map_err(to_py)?;
+    Ok((
+        PyGrid { inner: grid },
+        PyCompoundReport { inner: report },
+        PyGridSize { inner: size },
+    ))
+}
+
 /// Simulated years of individual losses, for applying per-loss terms such
 /// as reinsurance layers.
 ///

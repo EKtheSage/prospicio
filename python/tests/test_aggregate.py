@@ -284,3 +284,26 @@ def test_towers_save_and_load_as_json():
         Tower.from_json(text.replace('"share":0.6', '"share":1.6'))
     with pytest.raises(ValueError):
         Tower.from_json("{}")
+
+
+def test_grid_sizing():
+    from prospicio.aggregate import fft_auto, recommend_grid, round_bucket
+    from prospicio.distributions import Gamma, Pareto, Poisson
+
+    # aggregate 1.0.1's round_bucket rungs.
+    assert [round_bucket(x) for x in (1.1, 2.5, 5.5, 2412.0, 0.3, 1e-21)] == [
+        2.0, 4.0, 8.0, 4000.0, 0.5, 2.0**-69,
+    ]
+    with pytest.raises(ValueError):
+        round_bucket(0.0)
+    # aggregate sizes this book at bs = 1/16 too.
+    g = recommend_grid(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    assert (g.step, g.points, g.method) == (0.0625, 65536, "moments")
+    # Infinite variance: the single big jump sizes the grid.
+    heavy = recommend_grid(Poisson(20.0), Pareto(100.0, 1.5), log2=14)
+    assert heavy.method == "single_big_jump" and heavy.moment_extent is None
+    agg, report, size = fft_auto(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    assert report.aliasing_error < 1e-12 and size.points == len(agg.probs)
+    assert agg.mean() == pytest.approx(500.0, rel=1e-6)
+    with pytest.raises(ValueError):
+        recommend_grid(Poisson(1.0), Pareto(1.0, 0.8))

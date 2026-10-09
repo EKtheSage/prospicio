@@ -39,6 +39,11 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   (`E[N] Var[Y] + Var[N] E[Y]^2`) and excess frequency, the treaty
   pricing model of `pareto.md`; `simulate` reuses `simulate_events`.
   Python `prospicio.pricing.CollectiveModel`, R `collective_model()`.
+- `prospicio_aggregate::{recommend_grid, fft_auto, round_bucket}`: the FFT
+  grid (bucket and points) chosen from the frequency and severity, as
+  `aggregate` 1.0.1 does when no bucket is given ("Grid sizing" below).
+  Python `prospicio.aggregate.{recommend_grid, fft_auto, round_bucket}`,
+  R `recommend_grid()`, `compound_auto()`, `round_bucket()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -287,6 +292,37 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   3/8 (closed form), where its 3m mean risk cedes 1/3, and simulation
   agrees within four standard errors.
 
+### Grid sizing
+
+`recommend_grid` sizes a 0-based grid with at most `2^log2` points
+(default 16), with `aggregate`'s defaults (`p = 1 - 1e-5`,
+`p* = 1 - 1e-12`, severity tail floor `1e-14`):
+
+1. The bulk extent is the larger of the moment extent (the `p` quantile
+   of a lognormal or gamma with the aggregate's mean and variance) and
+   one big claim on a typical bulk at the same `p`,
+   `E[S] - E[X] + q_X(1 - (1 - p)/E[N])`, so one claim leaves about
+   `1 - p` beyond the grid.
+2. `step = round_bucket(extent / 2^log2)` on `aggregate`'s ladder
+   (`{1, 2, 4, 5, 8} × 10^k`, powers of two below 1), with the fewest
+   points that cover the extent; when `2^log2` do not,
+   `round_bucket(extent / (2^log2 - 1))`.
+3. The single big jump at `p*` extends the grid when it fits at that step
+   within `2^log2` points; a far tail never coarsens the step.
+4. With an infinite variance the single big jump at `p` alone sizes the
+   bulk. An infinite mean is refused: choose the step by hand.
+
+`fft_auto` discretizes the severity by rounding on that grid (lumping the
+mass beyond its top onto the last point) and runs `fft`.
+
+Departures from `aggregate`, on purpose: it fits shifted lognormal and
+gamma to three moments, where `Severity` stops at two, so step 1 adds the
+bulk single big jump to reach as far on skewed books; its single big
+jump uses a quantile fitted to the severity's moments, prospicio the
+severity's own quantile; it refuses infinite-variance books without a
+bucket. Signed and offset windows (a grid not starting at 0, for P&L)
+wait on signed grids (`roadmap.md`, `prospicio-prob`).
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -322,6 +358,15 @@ and `PGP_Model` (`validation/scripts/r_collective.R`): layer means at
 high layers), and excess frequencies, for binomial, Poisson and negative
 binomial counts. A unit test checks the layer mean and variance against
 200,000 simulated years.
+
+Grid sizing is checked against `aggregate` 1.0.1
+(`validation/scripts/aggregate_sizing.py`): `round_bucket` exactly on its
+own docstring cases and their reciprocals, and on five books (Poisson and
+gamma-mixed counts; gamma, lognormal, Weibull and Lomax severities) the
+exact mean at `1e-3` and `aggregate`'s quantiles at 0.5 to 0.9999 within
+two of its buckets, with aliasing below `1e-12`, the one-claim tail
+estimate below `1e-5`, and a step never coarser than `aggregate`'s
+(the same on two books, one to three rungs finer on three).
 
 ## Next
 

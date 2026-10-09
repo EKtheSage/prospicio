@@ -58,6 +58,10 @@ reference:
     contents:
       - aggregate.panjer
       - aggregate.fft
+      - aggregate.fft_auto
+      - aggregate.recommend_grid
+      - aggregate.round_bucket
+      - aggregate.GridSize
       - aggregate.CompoundReport
       - aggregate.simulate_events
       - aggregate.EventSet

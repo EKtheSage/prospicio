@@ -112,6 +112,16 @@ tot <- draw_matrix(aggregate(ro, keep = "risk"))
 stopifnot(cor(tot[, 1], tot[, 2], method = "spearman") > 0.5)
 stopifnot(inherits(try(join_predictive(list(res, prem), "risk"), silent = TRUE), "try-error"))
 
+# FFT grid sizing (aggregate 1.0.1: round_bucket rungs; bs 1/16 on this book).
+stopifnot(identical(round_bucket(c(1.1, 2.5, 5.5, 2412, 0.3)), c(2, 4, 8, 4000, 0.5)))
+g <- recommend_grid(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49))
+stopifnot(g$step == 0.0625, g$points == 65536, g$method == "moments")
+h <- recommend_grid(poisson_count(20), pareto(100, 1.5), log2 = 14)
+stopifnot(h$method == "single_big_jump", is.nan(h$moment_extent))
+agg <- compound_auto(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49))
+stopifnot(agg@report$aliasing_error < 1e-12, agg@report$sizing$points == 65536)
+stopifnot(abs(mean(agg) / 500 - 1) < 1e-6)
+
 cat("prospicio R aggregate tests passed\n")
 
 # Surplus treaty on events that carry sums insured.

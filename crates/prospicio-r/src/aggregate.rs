@@ -108,6 +108,81 @@ fn compound(frequency: Robj, severity: Robj, points: f64, method: &str) -> Resul
     Ok(Grid::with_report(inner, compound_list(&report)))
 }
 
+fn sizing(log2: f64, p: f64, p_star: f64) -> Result<prospicio_aggregate::Sizing> {
+    Ok(prospicio_aggregate::Sizing {
+        log2: whole(log2, "log2")? as u32,
+        p,
+        p_star,
+        ..prospicio_aggregate::Sizing::default()
+    })
+}
+
+fn grid_size_list(g: &prospicio_aggregate::GridSize) -> List {
+    let method = match g.method {
+        prospicio_aggregate::SizingMethod::Moments => "moments",
+        prospicio_aggregate::SizingMethod::SingleBigJump => "single_big_jump",
+    };
+    list!(
+        step = g.step,
+        points = g.points as f64,
+        extent = g.extent,
+        method = method,
+        moment_extent = g.moment_extent.unwrap_or(f64::NAN),
+        jump_extent = g.jump_extent.unwrap_or(f64::NAN),
+        tail_estimate = g.tail_estimate
+    )
+}
+
+/// `aggregate`'s `round_bucket`, elementwise.
+#[extendr]
+fn round_bucket_rust(bs: &[f64]) -> Result<Vec<f64>> {
+    bs.iter()
+        .map(|&b| prospicio_aggregate::round_bucket(b).map_err(to_r))
+        .collect()
+}
+
+/// The recommended FFT grid as a list.
+#[extendr]
+fn recommend_grid_rust(
+    frequency: Robj,
+    severity: Robj,
+    log2: f64,
+    p: f64,
+    p_star: f64,
+) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = crate::distributions::severity_from_robj(&severity)?;
+    let g = prospicio_aggregate::recommend_grid(n.as_counting(), &sev, &sizing(log2, p, p_star)?)
+        .map_err(to_r)?;
+    Ok(grid_size_list(&g))
+}
+
+/// The compound distribution by FFT on the recommended grid; its report
+/// also holds the grid's sizing under `sizing`.
+#[extendr]
+fn compound_auto_rust(
+    frequency: Robj,
+    severity: Robj,
+    log2: f64,
+    p: f64,
+    p_star: f64,
+) -> Result<Grid> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = crate::distributions::severity_from_robj(&severity)?;
+    let (inner, report, size) =
+        prospicio_aggregate::fft_auto(n.as_counting(), &sev, &sizing(log2, p, p_star)?)
+            .map_err(to_r)?;
+    let mut rep = compound_list(&report);
+    let mut names: Vec<String> = rep
+        .names()
+        .map_or_else(Vec::new, |n| n.map(String::from).collect());
+    let mut values: Vec<Robj> = rep.values().collect();
+    names.push("sizing".into());
+    values.push(grid_size_list(&size).into());
+    rep = List::from_names_and_values(names, values).map_err(|e| Error::Other(e.to_string()))?;
+    Ok(Grid::with_report(inner, rep))
+}
+
 /// Simulated years of individual losses.
 #[extendr]
 pub(crate) struct EventSet {
@@ -261,5 +336,8 @@ impl EventSet {
 extendr_module! {
     mod aggregate;
     fn compound;
+    fn compound_auto_rust;
+    fn recommend_grid_rust;
+    fn round_bucket_rust;
     impl EventSet;
 }

@@ -28,6 +28,12 @@ blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, we
 
 compound <- function(frequency, severity, points, method) .Call(wrap__compound, frequency, severity, points, method)
 
+compound_auto_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap__compound_auto_rust, frequency, severity, log2, p, p_star)
+
+recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap__recommend_grid_rust, frequency, severity, log2, p, p_star)
+
+round_bucket_rust <- function(bs) .Call(wrap__round_bucket_rust, bs)
+
 stacking_weights_rust <- function(lpd, k) .Call(wrap__stacking_weights_rust, lpd, k)
 
 pseudo_bma_weights_rust <- function(lpd, k, n_draws, seed) .Call(wrap__pseudo_bma_weights_rust, lpd, k, n_draws, seed)

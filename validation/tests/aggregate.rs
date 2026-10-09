@@ -211,3 +211,60 @@ fn reserve_and_tower_feed_capital_end_to_end() {
         .unwrap();
     assert!(portfolio.distortion(&tvar) > independent.distortion(&tvar));
 }
+
+/// FFT grid sizing against `aggregate` 1.0.1: its `round_bucket` exactly,
+/// and on five books sized with no bucket given, the exact mean and
+/// aggregate's quantiles within two of its buckets
+/// (`validation/scripts/aggregate_sizing.py`).
+#[test]
+fn grid_sizing_matches_aggregate() {
+    use prospicio_aggregate::{Sizing, fft_auto, round_bucket};
+    use prospicio_prob::count_families::{MixedPoisson, Mixing};
+    use prospicio_prob::{
+        Burr, Counting, Dist, Distribution, Gamma, Lognormal, Poisson, SeverityDist, Weibull,
+    };
+
+    // One FFT per book, shared by its rows.
+    let books = std::cell::RefCell::new(std::collections::HashMap::new());
+    let cases = prospicio_validation::reference("sizing_aggregate.csv");
+    prospicio_validation::check(&cases, |c| {
+        if c.get("distribution") == "round_bucket" {
+            return round_bucket(c.number("arg")?).ok();
+        }
+        let v = |k: &str| c.param("params", k);
+        let params = c.get("params");
+        if !books.borrow().contains_key(params) {
+            let n: Box<dyn Counting> = if params.contains("mixing_cv") {
+                Box::new(
+                    MixedPoisson::new(v("lambda"), Mixing::Gamma { cv: v("mixing_cv") }, 0.0)
+                        .ok()?,
+                )
+            } else {
+                Box::new(Poisson::new(v("lambda")).ok()?)
+            };
+            let sev: Dist = if params.contains("severity=gamma") {
+                Gamma::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+            } else if params.contains("severity=lognormal") {
+                Lognormal::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+            } else if params.contains("severity=weibull") {
+                Weibull::new(v("shape"), v("scale")).ok()?.into()
+            } else {
+                Burr::new(v("alpha"), 1.0, v("scale")).ok()?.into()
+            };
+            let sev = SeverityDist::try_from(sev).ok()?;
+            let (agg, report, size) = fft_auto(n.as_ref(), &sev, &Sizing::default()).ok()?;
+            assert!(report.aliasing_error < 1e-12, "{params}");
+            assert!(size.tail_estimate < 1e-5, "{params}");
+            // Never coarser than aggregate's bucket on these books.
+            assert!(size.step <= v("agg_bs"), "{params}: {}", size.step);
+            books.borrow_mut().insert(params.to_string(), agg);
+        }
+        let books = books.borrow();
+        let agg = &books[params];
+        match c.get("quantity") {
+            "mean" => Some(agg.mean()),
+            "quantile" => agg.quantile(c.number("arg")?).ok(),
+            _ => None,
+        }
+    });
+}
