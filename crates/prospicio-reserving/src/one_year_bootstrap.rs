@@ -67,6 +67,7 @@ use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::error::{Error, Result};
 use crate::expected_loss::{Benktander, BornhuetterFerguson, CapeCod, ExpectedLoss};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each, fit_each_with_exposure};
+use crate::tail::Tail;
 use crate::triangle::{Segment, Triangle};
 
 /// The reserving method the one-year bootstrap refits at the end of the
@@ -428,6 +429,7 @@ impl NextYear for OdpBootstrapSegment {
             pool: &draw.pool,
             scale: self.scale,
             process: draw.process,
+            tail: None,
         };
         let (pseudo, factors) = sim.resample(rng);
         let mut cells = Vec::new();
@@ -553,13 +555,13 @@ impl<B: NextYear> Run<'_, B> {
 /// The failures of re-reserving: how many, and the one whose message sorts
 /// first, so the error reported does not depend on the threads.
 #[derive(Default)]
-struct Failures {
-    count: usize,
-    first: Option<(String, Error)>,
+pub(crate) struct Failures {
+    pub(crate) count: usize,
+    pub(crate) first: Option<(String, Error)>,
 }
 
 impl Failures {
-    fn record(&mut self, error: Error) {
+    pub(crate) fn record(&mut self, error: Error) {
         self.count += 1;
         let message = error.to_string();
         if self.first.as_ref().is_none_or(|(m, _)| message < *m) {
@@ -573,12 +575,22 @@ impl Failures {
 pub(crate) struct Sims {
     pub(crate) n_sims: usize,
     pub(crate) seed: u64,
+    /// Whether the bootstrap has a tail of its own, which the one-year view
+    /// rejects: development past the oldest age moves only through the
+    /// refitted method's tail.
+    pub(crate) tail: bool,
 }
 
 impl Sims {
     fn check(self) -> Result<()> {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
+        }
+        if self.tail {
+            return Err(Error::Bootstrap(
+                "the one-year view develops past the oldest age only through the refitted \
+                 method's tail: leave the bootstrap's tail at none",
+            ));
         }
         Ok(())
     }
@@ -790,12 +802,14 @@ impl OdpBootstrap {
         Sims {
             n_sims: self.n_sims,
             seed: self.seed,
+            tail: !self.tail.is_none(),
         }
     }
 
-    /// The bootstrap of one segment and the residuals it resamples.
+    /// The bootstrap of one segment and the residuals it resamples, without
+    /// a tail.
     fn model(&self, segment: &Segment) -> Result<(OdpBootstrapSegment, OdpDraw)> {
-        let (fit, pool) = prepare(segment, &segment.ages)?;
+        let (fit, pool) = prepare(segment, &segment.ages, Tail::default())?;
         Ok((
             fit,
             OdpDraw {
@@ -887,6 +901,7 @@ mod tests {
             n_sims,
             seed,
             process: ProcessDistribution::Gamma,
+            ..Default::default()
         }
     }
 

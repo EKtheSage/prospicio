@@ -57,6 +57,17 @@
 //! Taylor–Ashe agree with the centred bootstrap, not the uncentred one.
 //! Turning it off resamples the residuals uncentred, as EVW's Appendix 1 is
 //! written.
+//!
+//! With a [`Tail`] ([`MackBootstrap::tail`]) the lifetime view develops
+//! past the oldest age (decision 9): Mack's tail is one more step, from the
+//! oldest age to ultimate, with mean the tail factor times the value at the
+//! oldest age and variance `tail_sigma^2 |C|^(2 - alpha)`, Mack's (1999)
+//! process error of the tail. Its factor has parameter error too: an
+//! estimated tail is refitted on each simulation's pseudo factors, and a
+//! constant one is drawn from the lognormal with the factor as mean and
+//! Mack's standard error of the tail (given or extrapolated) as standard
+//! deviation, so the simulated standard deviation approximates Mack's with
+//! the tail as it does without one.
 
 use prospicio_core::StreamRng;
 use prospicio_math::special::norm_quantile;
@@ -65,7 +76,8 @@ use prospicio_prob::{
 };
 
 use crate::bootstrap::{
-    component_sums, hash_segment, origin_keys, pick_segment, push_moments, segment_sums,
+    TailDraw, component_sums, hash_segment, in_segment, origin_keys, pick_segment, push_moments,
+    segment_sums, simulate_lifetime,
 };
 use crate::chain_ladder::ChainLadderFit;
 use crate::development::{Development, DevelopmentFit};
@@ -75,6 +87,7 @@ use crate::one_year_bootstrap::{
     NextYear, OneYearFit, OneYearFits, OneYearMethod, Sims, YearCells,
 };
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
+use crate::tail::Tail;
 use crate::triangle::{Segment, Triangle};
 
 /// Process error on the next cumulative value of Mack's bootstrap, with
@@ -212,7 +225,7 @@ fn vanishing(mean: f64, variance: f64) -> f64 {
 /// assert!(fit.cdr.std_dev() < fit.bootstrap.mack.total_standard_error);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MackBootstrap {
     /// Number of simulations.
     pub n_sims: usize,
@@ -221,12 +234,7 @@ pub struct MackBootstrap {
     /// Process error on the next cumulative values.
     pub process: MackProcess,
     /// Mack's factors (their `alpha`) and how unestimable sigmas are filled
-    /// in. Mack's tail is a step from the oldest age to ultimate that no
-    /// coming year holds, so the model has none: in the one-year view
-    /// development past the oldest age moves only through the refitted
-    /// method's tail, as with the ODP. Nor does the lifetime view simulate
-    /// one: a tail factor is not an average of link ratios, so no residual
-    /// gives its parameter error, and its reserves run to the oldest age.
+    /// in.
     pub development: Development,
     /// Subtract the pool's mean from the residuals before resampling them,
     /// for the pseudo factors and the `Residuals` process, so that the
@@ -236,6 +244,27 @@ pub struct MackBootstrap {
     /// Appendix 1 is written. See the [module
     /// documentation](crate::mack_bootstrap).
     pub centre_residuals: bool,
+    /// Development past the oldest age in the lifetime view
+    /// ([`fit`](Self::fit), [`fit_segments`](Self::fit_segments)), as
+    /// [`Mack::tail`]; the default is none, the reserves running to the
+    /// oldest age. The step to ultimate has Mack's process error with the
+    /// tail's sigma; an estimated tail ([`Tail::Curve`], [`Tail::Bondy`],
+    /// [`Tail::LogLinear`]) is refitted on each simulation's pseudo factors,
+    /// which gives its parameter error, and a constant one is drawn from
+    /// the lognormal with Mack's tail standard error. Mack's tail has no
+    /// calendar year, so no coming year holds it: the one-year view takes
+    /// its tail from the refitted method, and a tail here is an error
+    /// there.
+    pub tail: Tail,
+    /// The tail's sigma, R's `tail.sigma`, for the process error of the
+    /// step to ultimate; `None` extrapolates it as [`Mack`] does. Unused
+    /// when the tail factor is 1.
+    pub tail_sigma: Option<f64>,
+    /// The constant tail factor's standard error, R's `tail.se`; `None`
+    /// extrapolates it as [`Mack`] does. Unused when the tail factor is 1,
+    /// and an error with an estimated tail, whose refit gives its parameter
+    /// error.
+    pub tail_std_err: Option<f64>,
 }
 
 impl Default for MackBootstrap {
@@ -246,6 +275,9 @@ impl Default for MackBootstrap {
             process: MackProcess::Gamma,
             development: Development::default(),
             centre_residuals: true,
+            tail: Tail::default(),
+            tail_sigma: None,
+            tail_std_err: None,
         }
     }
 }
@@ -253,8 +285,9 @@ impl Default for MackBootstrap {
 /// What Mack's bootstrap estimates in one segment before simulating.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MackBootstrapSegment {
-    /// Mack's model on the observed triangle, without a tail: the factors
-    /// and sigmas the simulation uses, and its lifetime standard errors.
+    /// Mack's model on the observed triangle, with the bootstrap's tail in
+    /// the lifetime view (none in the one-year view): the factors and
+    /// sigmas the simulation uses, and its lifetime standard errors.
     pub mack: MackFit,
     /// The scaled bias-adjusted residuals of the link ratios, row-major
     /// over origin × development: element `(o, k)` is the link from age `k`
@@ -276,16 +309,18 @@ impl ReserveFit for MackBootstrapSegment {
 /// joint distribution of the simulated reserves.
 #[derive(Debug, Clone)]
 pub struct MackBootstrapFit {
-    /// Mack's model on the observed triangle, without a tail: the factors
-    /// and sigmas the simulation uses, and the analytic standard errors
-    /// the simulated reserves' standard deviations approximate.
+    /// Mack's model on the observed triangle, with the bootstrap's tail:
+    /// the factors and sigmas the simulation uses, and the analytic
+    /// standard errors the simulated reserves' standard deviations
+    /// approximate.
     pub mack: MackFit,
     /// The scaled bias-adjusted residuals of the link ratios, as
     /// [`MackBootstrapSegment::residuals`].
     pub residuals: Vec<f64>,
     /// Joint distribution of the reserve (each origin's last simulated
-    /// cumulative value less its latest observed value) by origin:
-    /// dimension `origin`, one component per origin period.
+    /// cumulative value, at ultimate with a tail, less its latest observed
+    /// value) by origin: dimension `origin`, one component per origin
+    /// period.
     pub reserves: PredictiveDistribution,
 }
 
@@ -370,6 +405,8 @@ pub(crate) struct MackDraw {
     links: Vec<Vec<(f64, f64)>>,
     pool: Vec<f64>,
     process: MackProcess,
+    /// The lifetime view's tail and its sigma; `None` without one.
+    tail: Option<(TailDraw, f64)>,
 }
 
 /// A residual drawn from `pool` with replacement.
@@ -466,19 +503,35 @@ impl MackBootstrapSegment {
     /// One simulation of the run-off: fills `reserves` with each origin's
     /// last cumulative value, drawn cell by cell from its observed latest
     /// value to the last age with one set of pseudo factors, less that
-    /// latest value (EVW's Appendix 1, steps 7(a) to (g)).
-    fn run_off(&self, draw: &MackDraw, rng: &mut StreamRng, reserves: &mut [f64]) {
+    /// latest value (EVW's Appendix 1, steps 7(a) to (g)). With a tail, the
+    /// selected pseudo factors and the tail factor are drawn after the
+    /// pseudo factors, and each origin takes one more step, to ultimate,
+    /// with the tail's sigma; it fails when the tail cannot be refitted on
+    /// the pseudo factors.
+    fn run_off(&self, draw: &MackDraw, rng: &mut StreamRng, reserves: &mut [f64]) -> Result<()> {
         let cl = &self.mack.chain_ladder;
         let dev = &cl.development;
         let factors = draw.factors(dev, rng);
+        let (factors, tail) = match &draw.tail {
+            None => (factors, None),
+            Some((tail, sigma)) => {
+                let (selected, factor) = tail.draw(&factors, rng)?;
+                (selected, Some((factor, sigma)))
+            }
+        };
         for (o, reserve) in reserves.iter_mut().enumerate() {
             let latest = cl.latest[o];
             let mut c = latest;
             for d in cl.latest_position[o]..factors.len() {
                 c = draw.next(dev, &factors, d, c, rng);
             }
+            if let Some((factor, sigma)) = tail {
+                let variance = sigma.powi(2) * power(c.abs(), 2.0 - dev.alpha);
+                c = draw.process.draw(factor * c, variance, &draw.pool, rng);
+            }
             *reserve = c - latest;
         }
+        Ok(())
     }
 }
 
@@ -488,7 +541,10 @@ impl MackBootstrap {
     /// Mack's parameter and process error (EVW's Appendix 1, steps 7(a) to
     /// (g)); see the [module documentation](crate::mack_bootstrap). Every
     /// origin must be observed from the first age to its latest, with no
-    /// negative value, and Mack's model must fit ([`Mack::fit`]).
+    /// negative value, and Mack's model must fit ([`Mack::fit`]), with the
+    /// [`tail`](Self::tail). A simulation whose pseudo factors the tail
+    /// cannot be refitted on fails, and the call returns
+    /// [`Error::TailRefit`] with the number that failed.
     ///
     /// ```
     /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, MackBootstrap, Month, Triangle};
@@ -527,7 +583,7 @@ impl MackBootstrap {
         let mut hasher = InputHasher::new();
         hasher.str(column);
         hash_segment(&mut hasher, &segment, &fit.mack.chain_ladder, &segment.ages);
-        let reserves = PredictiveDistribution::simulate(
+        let reserves = simulate_lifetime(
             vec!["origin".into()],
             segment.origins.iter().map(|&p| vec![p.into()]).collect(),
             self.n_sims,
@@ -554,18 +610,20 @@ impl MackBootstrap {
             Ok((fit, draw, s.clone()))
         })?;
 
+        let keyed = !prepared.key_names.is_empty();
         let mut hasher = InputHasher::new();
         hasher.str(column);
         let mut dims = prepared.key_names.clone();
         dims.push("origin".into());
         let mut components = Vec::new();
-        for (label, (fit, _, segment)) in prepared.iter() {
+        let mut runs = Vec::with_capacity(prepared.len());
+        for (label, (fit, draw, segment)) in prepared.iter() {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, segment, &fit.mack.chain_ladder, &segment.ages);
             components.extend(origin_keys(label, &segment.origins));
+            runs.push((fit, draw, segment, keyed.then(|| label.to_string())));
         }
-        let runs: Vec<_> = prepared.fits.iter().collect();
-        let reserves = PredictiveDistribution::simulate(
+        let reserves = simulate_lifetime(
             dims,
             components,
             self.n_sims,
@@ -574,11 +632,13 @@ impl MackBootstrap {
                 .param("segments", prepared.len()),
             |rng, row| {
                 let mut start = 0;
-                for (fit, draw, segment) in &runs {
+                for (fit, draw, segment, label) in &runs {
                     let end = start + segment.n_origins;
-                    fit.run_off(draw, rng, &mut row[start..end]);
+                    fit.run_off(draw, rng, &mut row[start..end])
+                        .map_err(|e| in_segment(label, e))?;
                     start = end;
                 }
+                Ok(())
             },
         )?;
         Ok(MackBootstrapFits {
@@ -595,11 +655,21 @@ impl MackBootstrap {
     }
 
     fn lifetime_provenance(&self, column: &str, hasher: InputHasher) -> Provenance {
-        Provenance::new("mack_bootstrap")
+        let provenance = Provenance::new("mack_bootstrap")
             .param("n_sims", self.n_sims)
             .param("process", format!("{:?}", self.process))
             .param("development", format!("{:?}", self.development))
-            .param("centre_residuals", self.centre_residuals)
+            .param("centre_residuals", self.centre_residuals);
+        // Without a tail, the provenance is as it was before tails.
+        let provenance = if self.tail.is_none() {
+            provenance
+        } else {
+            provenance
+                .param("tail", format!("{:?}", self.tail))
+                .param("tail_sigma", format!("{:?}", self.tail_sigma))
+                .param("tail_std_err", format!("{:?}", self.tail_std_err))
+        };
+        provenance
             .param("column", column)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
             .input_hash(hasher.finish())
@@ -612,7 +682,9 @@ impl MackBootstrap {
     /// documentation](crate::mack_bootstrap). Every origin must be observed
     /// from the first age to its latest (it may stop short of the latest
     /// diagonal), with no negative value, and Mack's model must fit
-    /// ([`Mack::fit`]).
+    /// ([`Mack::fit`]). The bootstrap's [`tail`](Self::tail) must be none:
+    /// development past the oldest age moves only through the refitted
+    /// method's tail.
     pub fn one_year(
         &self,
         triangle: &Triangle,
@@ -651,10 +723,12 @@ impl MackBootstrap {
         Sims {
             n_sims: self.n_sims,
             seed: self.seed,
+            tail: !self.tail.is_none(),
         }
     }
 
-    /// Mack's model of one segment, its residuals and links.
+    /// Mack's model of one segment with the bootstrap's tail, its residuals
+    /// and links, and the tail each simulation draws.
     pub(crate) fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
         for o in 0..segment.n_origins {
             let (last, _) = segment.latest(o)?;
@@ -676,10 +750,20 @@ impl MackBootstrap {
         }
         let mack = Mack {
             development: self.development,
-            ..Default::default()
+            tail: self.tail,
+            tail_sigma: self.tail_sigma,
+            tail_std_err: self.tail_std_err,
         }
         .fit_segment(segment, &segment.ages)?;
         let cl = &mack.chain_ladder;
+        // A constant tail's factor is drawn with Mack's standard error; an
+        // estimated tail's is refitted, and a given standard error is an
+        // error.
+        let std_err = match self.tail {
+            Tail::Constant(_) => Some(cl.tail.std_err),
+            _ => self.tail_std_err,
+        };
+        let tail = TailDraw::new(self.tail, cl, std_err)?.map(|t| (t, cl.tail.sigma));
 
         let (no, nd) = (segment.n_origins, segment.n_dev);
         let dev = &cl.development;
@@ -718,6 +802,7 @@ impl MackBootstrap {
                 links,
                 pool,
                 process: self.process,
+                tail,
             },
         ))
     }
@@ -1354,5 +1439,203 @@ mod tests {
                 .unwrap_err(),
             Error::Bootstrap("n_sims must be positive")
         );
+    }
+
+    /// The lifetime view of RAA with this tail.
+    fn tailed(n_sims: usize, process: MackProcess, tail: Tail) -> MackBootstrap {
+        MackBootstrap {
+            tail,
+            ..boot(n_sims, 21, process)
+        }
+    }
+
+    #[test]
+    fn no_tail_draws_as_before() {
+        // A constant 1 at the oldest age is no tail whatever its decay or
+        // the given sigma and standard error (unused, as in Mack): the
+        // same draws and provenance as the default.
+        let plain = boot(300, 7, MackProcess::Gamma)
+            .fit(&raa(), "values")
+            .unwrap();
+        let one = MackBootstrap {
+            tail: Tail::Constant(crate::TailConstant {
+                factor: 1.0,
+                decay: 0.75,
+                attachment_age: None,
+            }),
+            tail_sigma: Some(3.0),
+            tail_std_err: Some(0.1),
+            ..boot(300, 7, MackProcess::Gamma)
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        assert_eq!(plain.reserves.draw_matrix(), one.reserves.draw_matrix());
+        assert_eq!(plain.reserves.provenance(), one.reserves.provenance());
+        assert_eq!(plain.mack, one.mack);
+    }
+
+    #[test]
+    fn oldest_origin_takes_mack_tail_step() {
+        // RAA 1981 is at the last age, so its reserve is the tail step
+        // alone: the observed latest value C times a factor drawn from the
+        // lognormal with mean 1.05 and standard deviation 0.003, plus the
+        // process error of variance 1.5^2 C. Its variance is
+        // C^2 0.003^2 + 1.5^2 C exactly, Mack's (R's MackChainLadder(tail =
+        // 1.05, tail.se = 0.003, tail.sigma = 1.5) for the oldest origin),
+        // and its mean 0.05 C.
+        let n_sims = 20_000;
+        let fit = MackBootstrap {
+            tail_sigma: Some(1.5),
+            tail_std_err: Some(0.003),
+            ..tailed(n_sims, MackProcess::Gamma, 1.05.into())
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        let c = RAA[0][9];
+        assert_eq!(fit.mack.chain_ladder.latest[0], c);
+        let want = (c * c * 0.003f64.powi(2) + 1.5f64.powi(2) * c).sqrt();
+        assert!((fit.mack.standard_error[0] - want).abs() < 1e-9 * want);
+        let x = column(&fit.reserves, 0);
+        let (sd, error) = sd_and_error(&x);
+        assert!((sd - want).abs() < 5.0 * error, "{sd} vs {want} ({error})");
+        let mean = x.iter().sum::<f64>() / n_sims as f64;
+        let mean_error = sd / (n_sims as f64).sqrt();
+        assert!((mean - 0.05 * c).abs() < 5.0 * mean_error, "{mean}");
+        // Every origin carries the tail.
+        let plain = boot(n_sims, 21, MackProcess::Gamma)
+            .fit(&raa(), "values")
+            .unwrap();
+        for j in 1..10 {
+            let (tailed_sd, _) = sd_and_error(&column(&fit.reserves, j));
+            let (plain_sd, _) = sd_and_error(&column(&plain.reserves, j));
+            assert!(tailed_sd > plain_sd, "{j}: {tailed_sd} vs {plain_sd}");
+        }
+    }
+
+    #[test]
+    fn estimated_tail_is_refitted_on_the_pseudo_factors() {
+        // Parameter error alone: simulation i's oldest origin's reserve is
+        // C (T* - 1), T* the log-linear tail refitted on simulation i's
+        // pseudo factors, drawn from stream i as the bootstrap draws them.
+        let b = tailed(500, MackProcess::None, Tail::LogLinear);
+        let fit = b.fit(&raa(), "values").unwrap();
+        let segment = raa().segment("values").unwrap();
+        let (model, draw) = b.model(&segment).unwrap();
+        let dev = &model.mack.chain_ladder.development;
+        let c = model.mack.chain_ladder.latest[0];
+        let mut tails = Vec::new();
+        for i in [0, 3, 499] {
+            let mut rng = StreamRng::new(21, i);
+            let factors = draw.factors(dev, &mut rng);
+            let refit = Tail::LogLinear
+                .fit(&crate::DevelopmentFit {
+                    ldf: factors,
+                    ..dev.clone()
+                })
+                .unwrap()
+                .factor;
+            assert_eq!(fit.reserves.row(i as usize).unwrap()[0], refit * c - c);
+            tails.push(refit);
+        }
+        assert!(tails.windows(2).all(|w| w[0] != w[1]));
+        // A constant tail without process error is the lognormal's draw
+        // after the pseudo factors.
+        let b = tailed(50, MackProcess::None, 1.05.into());
+        let fit = b.fit(&raa(), "values").unwrap();
+        let se = fit.mack.chain_ladder.tail.std_err;
+        assert!(se > 0.0);
+        let lognormal = Lognormal::from_mean_cv(1.05, se / 1.05).unwrap();
+        let (_, draw) = b.model(&segment).unwrap();
+        let mut rng = StreamRng::new(21, 4);
+        draw.factors(dev, &mut rng);
+        let factor = lognormal.sample(&mut rng, 1)[0];
+        let got = fit.reserves.row(4).unwrap()[0];
+        assert!(
+            (got - (factor * c - c)).abs() < 1e-9 * c,
+            "{got} vs {}",
+            factor * c - c
+        );
+    }
+
+    #[test]
+    fn a_failed_tail_refit_is_counted_and_reported() {
+        // The last two factors are barely above 1, so a curve fitted to
+        // them alone fails whenever a pseudo factor dips below 1.00001.
+        let tri = annual(
+            2018,
+            &[
+                &[100.0, 200.0, 250.0, 260.0, 260.5, 260.6],
+                &[110.0, 215.0, 270.0, 282.0, 282.0],
+                &[120.0, 240.0, 300.0, 312.0],
+                &[100.0, 205.0, 255.0],
+                &[105.0, 210.0],
+                &[100.0],
+            ],
+        );
+        let curve = Tail::Curve(crate::TailCurve {
+            fit_period: (Some(48), None),
+            ..Default::default()
+        });
+        assert!(
+            Mack {
+                tail: curve,
+                ..Default::default()
+            }
+            .fit(&tri, "values")
+            .is_ok()
+        );
+        let err = MackBootstrap {
+            tail: curve,
+            ..boot(200, 1, MackProcess::Gamma)
+        }
+        .fit(&tri, "values")
+        .unwrap_err();
+        match err {
+            Error::TailRefit {
+                failed,
+                n_sims,
+                source,
+            } => {
+                assert!(failed > 0 && failed < n_sims, "{failed} of {n_sims}");
+                assert!(matches!(*source, Error::Tail(_)), "{source}");
+            }
+            e => panic!("{e}"),
+        }
+        let odp = OdpBootstrap {
+            n_sims: 200,
+            tail: curve,
+            ..Default::default()
+        }
+        .fit(&tri, "values");
+        assert!(matches!(odp, Err(Error::TailRefit { .. })), "{odp:?}");
+    }
+
+    #[test]
+    fn tail_settings_are_checked() {
+        // An estimated tail gets its parameter error from the refit, so a
+        // standard error is an error; the one-year view takes its tail from
+        // the method.
+        let b = MackBootstrap {
+            tail_std_err: Some(0.01),
+            ..tailed(10, MackProcess::Gamma, Tail::LogLinear)
+        };
+        assert!(matches!(b.fit(&raa(), "values"), Err(Error::Tail(_))));
+        let b = tailed(10, MackProcess::Gamma, 1.05.into());
+        assert!(matches!(
+            b.one_year(&raa(), "values", &chain_ladder()),
+            Err(Error::Bootstrap(_))
+        ));
+        assert!(matches!(
+            b.one_year_segments(&raa(), "values", &chain_ladder()),
+            Err(Error::Bootstrap(_))
+        ));
+        let bad = MackBootstrap {
+            tail_sigma: Some(-1.0),
+            ..b
+        };
+        assert!(matches!(bad.fit(&raa(), "values"), Err(Error::Tail(_))));
+        // The provenance records the tail.
+        let fit = b.fit(&raa(), "values").unwrap();
+        assert!(format!("{:?}", fit.reserves.provenance()).contains("tail_sigma"));
     }
 }

@@ -14,15 +14,26 @@
 //! Every simulation draws from its own [`StreamRng`] stream
 //! (`PredictiveDistribution::simulate`), so results do not depend on the
 //! number of threads.
+//!
+//! With a [`Tail`] ([`OdpBootstrap::tail`]) each simulation also develops
+//! past the oldest age (`docs/design/reserving-v02.md`, decision 9): an
+//! estimated tail is refitted on the pseudo factors, a constant one is
+//! fixed or, with a standard error, drawn from a lognormal, and the step
+//! to ultimate is one more future increment with the ODP's process error.
+
+use std::sync::Mutex;
 
 use prospicio_core::{Lag, Period, StreamRng};
 use prospicio_prob::{
-    Distribution, Gamma, InputHasher, KeyValue, PredictiveDistribution, Provenance, Sampled,
+    ComponentKey, Distribution, Gamma, InputHasher, KeyValue, Lognormal, PredictiveDistribution,
+    Provenance, Sampled,
 };
 
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::error::{Error, Result};
+use crate::one_year_bootstrap::Failures;
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
+use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
 
 /// Process error added to each simulated future incremental value.
@@ -61,7 +72,7 @@ pub enum ProcessDistribution {
 /// assert!(boot.reserves.mean() > 0.0);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OdpBootstrap {
     /// Number of simulations.
     pub n_sims: usize,
@@ -69,6 +80,26 @@ pub struct OdpBootstrap {
     pub seed: u64,
     /// Process error on the simulated future values.
     pub process: ProcessDistribution,
+    /// Development past the oldest age in the lifetime view
+    /// ([`fit`](Self::fit), [`fit_segments`](Self::fit_segments)); the
+    /// default is none, the reserves running to the oldest age as R's
+    /// `BootChainLadder`'s do. An estimated tail ([`Tail::Curve`],
+    /// [`Tail::Bondy`], [`Tail::LogLinear`]) is refitted on each
+    /// simulation's pseudo factors, which gives its parameter error; a
+    /// constant one is fixed unless [`tail_std_err`](Self::tail_std_err)
+    /// is given. Either way the step from the oldest age to ultimate is one
+    /// more future increment, with mean the pseudo value at the oldest age
+    /// times the tail factor less 1 and the process error of every other
+    /// increment. The one-year view takes its tail from the refitted method
+    /// instead, and a tail here is an error there.
+    pub tail: Tail,
+    /// Standard error of a constant tail factor: each simulation draws the
+    /// factor from the lognormal with the factor as mean and this standard
+    /// deviation. `None` (or zero) keeps the factor fixed; the ODP has no
+    /// estimate of its own, unlike Mack's extrapolated `tail.se`. Unused
+    /// when the factor is 1, and an error with an estimated tail, whose
+    /// refit gives its parameter error.
+    pub tail_std_err: Option<f64>,
 }
 
 impl Default for OdpBootstrap {
@@ -77,6 +108,8 @@ impl Default for OdpBootstrap {
             n_sims: 10_000,
             seed: 0,
             process: ProcessDistribution::Gamma,
+            tail: Tail::default(),
+            tail_std_err: None,
         }
     }
 }
@@ -85,7 +118,7 @@ impl Default for OdpBootstrap {
 #[derive(Debug, Clone)]
 pub struct OdpBootstrapFit {
     /// The deterministic volume-weighted chain ladder the bootstrap is
-    /// centred on.
+    /// centred on, with the bootstrap's tail.
     pub chain_ladder: ChainLadderFit,
     /// Fitted incremental values, row-major over origin × development; NaN
     /// where the triangle is not observed.
@@ -104,7 +137,8 @@ pub struct OdpBootstrapFit {
 /// fields of [`OdpBootstrapFit`] but the reserves.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OdpBootstrapSegment {
-    /// The volume-weighted chain ladder of the segment.
+    /// The volume-weighted chain ladder of the segment, with the
+    /// bootstrap's tail in the lifetime view (none in the one-year view).
     pub chain_ladder: ChainLadderFit,
     /// Fitted incremental values, row-major over origin × development.
     pub fitted: Vec<f64>,
@@ -294,13 +328,17 @@ pub(crate) fn origin_keys(label: &Label, origins: &[Period]) -> Vec<Vec<KeyValue
 impl OdpBootstrap {
     /// Bootstraps `column` of a single-segment cumulative triangle. Every
     /// origin must be observed at every age from the first up to its latest.
+    /// With a [`tail`](Self::tail), a simulation whose pseudo factors the
+    /// tail cannot be refitted on fails, and the call returns
+    /// [`Error::TailRefit`] with the number that failed.
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<OdpBootstrapFit> {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
         let segment = triangle.segment(column)?;
         let ages = &segment.ages;
-        let (fit, pool) = prepare(&segment, ages)?;
+        let (fit, pool) = prepare(&segment, ages, self.tail)?;
+        let tail = self.tail_draw(&fit.chain_ladder)?;
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
@@ -312,8 +350,9 @@ impl OdpBootstrap {
             pool: &pool,
             scale: fit.scale,
             process: self.process,
+            tail: tail.as_ref(),
         };
-        let reserves = PredictiveDistribution::simulate(
+        let reserves = simulate_lifetime(
             vec!["origin".into()],
             segment.origins.iter().map(|&p| vec![p.into()]).collect(),
             self.n_sims,
@@ -344,30 +383,34 @@ impl OdpBootstrap {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
         let prepared = fit_each(triangle, column, |s| {
-            let (fit, pool) = prepare(s, &s.ages)?;
-            Ok((fit, pool, s.clone()))
+            let (fit, pool) = prepare(s, &s.ages, self.tail)?;
+            let tail = self.tail_draw(&fit.chain_ladder)?;
+            Ok((fit, pool, tail, s.clone()))
         })?;
 
+        let keyed = !prepared.key_names.is_empty();
         let mut hasher = InputHasher::new();
         hasher.str(column);
         let mut dims = prepared.key_names.clone();
         dims.push("origin".into());
         let mut components = Vec::new();
         let mut sims = Vec::with_capacity(prepared.len());
-        for (label, (fit, pool, segment)) in prepared.iter() {
+        for (label, (fit, pool, tail, segment)) in prepared.iter() {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, segment, &fit.chain_ladder, &segment.ages);
             components.extend(origin_keys(label, &segment.origins));
-            sims.push(Simulation {
+            let sim = Simulation {
                 segment,
                 latest: &fit.chain_ladder.latest_position,
                 fitted: &fit.fitted,
                 pool,
                 scale: fit.scale,
                 process: self.process,
-            });
+                tail: tail.as_ref(),
+            };
+            sims.push((sim, keyed.then(|| label.to_string())));
         }
-        let reserves = PredictiveDistribution::simulate(
+        let reserves = simulate_lifetime(
             dims,
             components,
             self.n_sims,
@@ -376,26 +419,164 @@ impl OdpBootstrap {
                 .param("segments", prepared.len()),
             |rng, row| {
                 let mut start = 0;
-                for sim in &sims {
+                for (sim, label) in &sims {
                     let end = start + sim.segment.n_origins;
-                    sim.run(rng, &mut row[start..end]);
+                    sim.run(rng, &mut row[start..end])
+                        .map_err(|e| in_segment(label, e))?;
                     start = end;
                 }
+                Ok(())
             },
         )?;
         Ok(OdpBootstrapFits {
-            segments: prepared.map(|(fit, _, _)| fit.clone()),
+            segments: prepared.map(|(fit, _, _, _)| fit.clone()),
             reserves,
         })
     }
 
+    /// The tail each simulation draws, `None` without one; see
+    /// [`tail`](Self::tail).
+    fn tail_draw(&self, cl: &ChainLadderFit) -> Result<Option<TailDraw>> {
+        TailDraw::new(self.tail, cl, self.tail_std_err)
+    }
+
     fn provenance(&self, column: &str, hasher: InputHasher) -> Provenance {
-        Provenance::new("odp_bootstrap")
+        let provenance = Provenance::new("odp_bootstrap")
             .param("n_sims", self.n_sims)
-            .param("process", format!("{:?}", self.process))
+            .param("process", format!("{:?}", self.process));
+        // Without a tail, the provenance is as it was before tails.
+        let provenance = if self.tail.is_none() {
+            provenance
+        } else {
+            provenance
+                .param("tail", format!("{:?}", self.tail))
+                .param("tail_std_err", format!("{:?}", self.tail_std_err))
+        };
+        provenance
             .param("column", column)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
             .input_hash(hasher.finish())
+    }
+}
+
+/// The tail of a bootstrap's lifetime view, drawn in each simulation from
+/// its pseudo factors (`docs/design/reserving-v02.md`, decision 9).
+#[derive(Debug, Clone)]
+pub(crate) struct TailDraw {
+    tail: Tail,
+    /// The ages the tail is fitted between.
+    ages: Vec<Lag>,
+    /// For a constant tail with a standard error, the lognormal its factor
+    /// to ultimate is drawn from; `None` keeps the fitted factor: a
+    /// constant one fixed, an estimated one refitted.
+    constant: Option<Lognormal>,
+}
+
+impl TailDraw {
+    /// The tail of `cl` (fitted with `tail`), `None` when there is none.
+    /// `std_err` is the standard error of a constant tail factor (`None`
+    /// or zero keeps it fixed), and must be `None` for an estimated tail,
+    /// whose parameter error comes from refitting it.
+    pub(crate) fn new(
+        tail: Tail,
+        cl: &ChainLadderFit,
+        std_err: Option<f64>,
+    ) -> Result<Option<Self>> {
+        if tail.is_none() {
+            return Ok(None);
+        }
+        let factor = cl.tail.factor;
+        let constant = match (tail, std_err) {
+            (_, Some(se)) if !se.is_finite() || se < 0.0 => {
+                return Err(Error::Tail(
+                    "a tail standard error must be finite and non-negative",
+                ));
+            }
+            (Tail::Constant(_), Some(se)) if se > 0.0 && factor != 1.0 => {
+                Some(Lognormal::from_mean_cv(factor, se / factor)?)
+            }
+            (Tail::Constant(_), _) | (_, None) => None,
+            (_, Some(_)) => {
+                return Err(Error::Tail(
+                    "an estimated tail's parameter error comes from refitting it on each \
+                     simulation: a standard error is for a constant tail",
+                ));
+            }
+        };
+        Ok(Some(Self {
+            tail,
+            ages: cl.development.development.clone(),
+            constant,
+        }))
+    }
+
+    /// One simulation's selected factors within the triangle (its pseudo
+    /// factors `pseudo`, with the tail's from its attachment on) and its
+    /// factor from the oldest age to ultimate.
+    pub(crate) fn draw(&self, pseudo: &[f64], rng: &mut StreamRng) -> Result<(Vec<f64>, f64)> {
+        let (_, mut ldf, factor) = self.tail.select(pseudo, &self.ages)?;
+        ldf.truncate(pseudo.len());
+        let factor = match &self.constant {
+            Some(lognormal) => lognormal.sample(rng, 1)[0],
+            None => factor,
+        };
+        Ok((ldf, factor))
+    }
+}
+
+/// `error`, inside the segment `label` when there are several.
+pub(crate) fn in_segment(label: &Option<String>, error: Error) -> Error {
+    match label {
+        Some(label) => Error::InSegment {
+            label: label.clone(),
+            source: Box::new(error),
+        },
+        None => error,
+    }
+}
+
+/// [`PredictiveDistribution::simulate`] for a lifetime view whose
+/// simulations can fail (a tail that cannot be refitted on a simulation's
+/// pseudo factors). A failed simulation's row is zeroed, and once all have
+/// run the call returns [`Error::TailRefit`] with the number that failed
+/// and the failure whose message sorts first, so the error does not depend
+/// on the threads. Without failures the draws are `simulate`'s.
+pub(crate) fn simulate_lifetime(
+    dims: Vec<String>,
+    components: Vec<ComponentKey>,
+    n_sims: usize,
+    seed: u64,
+    provenance: Provenance,
+    run: impl Fn(&mut StreamRng, &mut [f64]) -> Result<()> + Sync,
+) -> Result<PredictiveDistribution> {
+    let failures = Mutex::new(Failures::default());
+    let draws = PredictiveDistribution::simulate(
+        dims,
+        components,
+        n_sims,
+        seed,
+        provenance,
+        |rng, row| {
+            if let Err(e) = run(rng, row) {
+                // Keep the draws finite; the failure is reported.
+                row.fill(0.0);
+                failures
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .record(e);
+            }
+        },
+    )?;
+    let failures = failures
+        .into_inner()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    match failures.first {
+        Some((_, source)) => Err(Error::TailRefit {
+            failed: failures.count,
+            n_sims,
+            source: Box::new(source),
+        }),
+        None => Ok(draws),
     }
 }
 
@@ -415,11 +596,20 @@ pub(crate) fn hash_segment(
     }
 }
 
-/// The chain ladder, fitted values, residuals and scale of one segment,
-/// and the pool of residuals to resample.
-pub(crate) fn prepare(segment: &Segment, ages: &[Lag]) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
+/// The chain ladder (with `tail`, which leaves the fitted values and
+/// residuals as they are), fitted values, residuals and scale of one
+/// segment, and the pool of residuals to resample.
+pub(crate) fn prepare(
+    segment: &Segment,
+    ages: &[Lag],
+    tail: Tail,
+) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
     let (no, nd) = (segment.n_origins, segment.n_dev);
-    let chain_ladder = ChainLadder::default().fit_segment(segment, ages)?;
+    let chain_ladder = ChainLadder {
+        tail,
+        ..Default::default()
+    }
+    .fit_segment(segment, ages)?;
     let ldf = &chain_ladder.development.ldf;
     let latest = &chain_ladder.latest_position;
     for (o, &last) in latest.iter().enumerate() {
@@ -501,24 +691,37 @@ pub(crate) struct Simulation<'a> {
     pub(crate) pool: &'a [f64],
     pub(crate) scale: f64,
     pub(crate) process: ProcessDistribution,
+    /// The lifetime view's tail; `None` in the one-year view.
+    pub(crate) tail: Option<&'a TailDraw>,
 }
 
 impl Simulation<'_> {
     /// One bootstrap replicate: fills `reserves` with each origin's
-    /// simulated reserve.
-    fn run(&self, rng: &mut StreamRng, reserves: &mut [f64]) {
+    /// simulated reserve. With a tail, the selected pseudo factors and the
+    /// tail factor are drawn after the pseudo triangle, and the step to
+    /// ultimate is each origin's last increment; it fails when the tail
+    /// cannot be refitted on the pseudo factors.
+    fn run(&self, rng: &mut StreamRng, reserves: &mut [f64]) -> Result<()> {
         let nd = self.segment.n_dev;
         let (pseudo, factors) = self.resample(rng);
+        let (factors, tail) = match self.tail {
+            None => (factors, None),
+            Some(tail) => {
+                let (selected, factor) = tail.draw(&factors, rng)?;
+                (selected, Some(factor))
+            }
+        };
         for (o, reserve) in reserves.iter_mut().enumerate() {
             let mut cum = pseudo[o * nd + self.latest[o]];
             let mut total = 0.0;
-            for f in &factors[self.latest[o]..] {
+            for f in factors[self.latest[o]..].iter().chain(&tail) {
                 let next = cum * f;
                 total += self.with_process(next - cum, rng);
                 cum = next;
             }
             *reserve = total;
         }
+        Ok(())
     }
 
     /// A pseudo cumulative triangle from resampled residuals, row-major
@@ -576,6 +779,7 @@ impl Simulation<'_> {
 mod tests {
     use super::*;
     use crate::triangle::tests::{annual, raa};
+    use crate::{DevelopmentFit, TailConstant};
     use prospicio_core::Period;
 
     fn boot(process: ProcessDistribution, n_sims: usize) -> OdpBootstrapFit {
@@ -583,6 +787,7 @@ mod tests {
             n_sims,
             seed: 7,
             process,
+            ..Default::default()
         }
         .fit(&raa(), "values")
         .unwrap()
@@ -630,6 +835,7 @@ mod tests {
             n_sims: 300,
             seed: 8,
             process: ProcessDistribution::Gamma,
+            ..Default::default()
         }
         .fit(&raa(), "values")
         .unwrap();
@@ -670,5 +876,197 @@ mod tests {
             none.fit(&raa(), "values"),
             Err(Error::Bootstrap(_))
         ));
+    }
+
+    /// RAA's bootstrap with this tail and process, and simulation `i`'s
+    /// pseudo triangle and factors, drawn as the bootstrap draws them.
+    fn tailed(tail: Tail, tail_std_err: Option<f64>, process: ProcessDistribution) -> OdpBootstrap {
+        OdpBootstrap {
+            n_sims: 2_000,
+            seed: 11,
+            process,
+            tail,
+            tail_std_err,
+        }
+    }
+
+    /// The pseudo triangle and factors of simulation `i` of RAA, and the
+    /// stream positioned after them.
+    fn pseudo(seed: u64, i: u64) -> (Vec<f64>, Vec<f64>, StreamRng) {
+        let segment = raa().segment("values").unwrap();
+        let (fit, pool) = prepare(&segment, &segment.ages, Tail::default()).unwrap();
+        let sim = Simulation {
+            segment: &segment,
+            latest: &fit.chain_ladder.latest_position,
+            fitted: &fit.fitted,
+            pool: &pool,
+            scale: fit.scale,
+            process: ProcessDistribution::None,
+            tail: None,
+        };
+        let mut rng = StreamRng::new(seed, i);
+        let (pseudo, factors) = sim.resample(&mut rng);
+        (pseudo, factors, rng)
+    }
+
+    #[test]
+    fn no_tail_draws_as_before() {
+        // A constant 1 at the oldest age is no tail whatever its decay:
+        // the same draws and provenance as the default.
+        let plain = boot(ProcessDistribution::Gamma, 300);
+        let one = OdpBootstrap {
+            tail: Tail::Constant(TailConstant {
+                factor: 1.0,
+                decay: 0.75,
+                attachment_age: None,
+            }),
+            tail_std_err: Some(0.01),
+            ..tailed(Tail::default(), None, ProcessDistribution::Gamma)
+        };
+        let one = OdpBootstrap {
+            n_sims: 300,
+            seed: 7,
+            ..one
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        assert_eq!(plain.reserves.draw_matrix(), one.reserves.draw_matrix());
+        assert_eq!(plain.reserves.provenance(), one.reserves.provenance());
+    }
+
+    #[test]
+    fn constant_tail_is_one_more_increment() {
+        // Parameter error alone: every simulation's reserve of the oldest
+        // origin is its pseudo latest value times the tail less 1, and with
+        // a standard error the factor is the lognormal's draw after the
+        // pseudo triangle, on the same stream.
+        let nd = 10;
+        for std_err in [None, Some(0.02)] {
+            let fit = tailed(1.05.into(), std_err, ProcessDistribution::None)
+                .fit(&raa(), "values")
+                .unwrap();
+            assert!((fit.chain_ladder.tail.factor - 1.05).abs() < 1e-12);
+            let lognormal = Lognormal::from_mean_cv(
+                fit.chain_ladder.tail.factor,
+                0.02 / fit.chain_ladder.tail.factor,
+            )
+            .unwrap();
+            for i in [0, 1, 777] {
+                let (pseudo, factors, mut rng) = pseudo(11, i);
+                let factor = match std_err {
+                    None => fit.chain_ladder.tail.factor,
+                    Some(_) => lognormal.sample(&mut rng, 1)[0],
+                };
+                let cum = pseudo[9];
+                let want = 0.0 + (cum * factor - cum);
+                assert_eq!(
+                    fit.reserves.row(i as usize).unwrap()[0],
+                    want,
+                    "{std_err:?} {i}"
+                );
+                // The next origin develops on its pseudo factor, then the tail.
+                let (c1, c2) = (pseudo[nd + 8], pseudo[nd + 8] * factors[8]);
+                let want = 0.0 + (c2 - c1) + (c2 * factor - c2);
+                assert_eq!(fit.reserves.row(i as usize).unwrap()[1], want);
+            }
+        }
+    }
+
+    #[test]
+    fn estimated_tail_is_refitted_on_the_pseudo_factors() {
+        let fit = tailed(Tail::LogLinear, None, ProcessDistribution::None)
+            .fit(&raa(), "values")
+            .unwrap();
+        let dev = &fit.chain_ladder.development;
+        let mut factors_seen = Vec::new();
+        for i in [0, 5, 1999] {
+            let (pseudo, factors, _) = pseudo(11, i);
+            let refit = Tail::LogLinear
+                .fit(&DevelopmentFit {
+                    ldf: factors.clone(),
+                    ..dev.clone()
+                })
+                .unwrap()
+                .factor;
+            let cum = pseudo[9];
+            assert_eq!(
+                fit.reserves.row(i as usize).unwrap()[0],
+                0.0 + (cum * refit - cum)
+            );
+            factors_seen.push(refit);
+        }
+        // The tail moves with the pseudo factors: its parameter error.
+        assert!(factors_seen.windows(2).all(|w| w[0] != w[1]));
+    }
+
+    #[test]
+    fn tail_process_error_has_the_odp_variance() {
+        // The oldest origin's reserve is the Gamma of mean P (T - 1) and
+        // variance phi |mean|, P its pseudo latest value: the sum of its
+        // fitted increments m plus a resampled residual times sqrt(|m|).
+        // So its variance is (T - 1)^2 v sum|m| + phi (T - 1) E[P], with v
+        // the pool's variance and E[P] = latest + mean(pool) sum(sqrt|m|).
+        let n_sims = 20_000;
+        let t = 1.05;
+        let fit = OdpBootstrap {
+            n_sims,
+            ..tailed(t.into(), None, ProcessDistribution::Gamma)
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        let pool: Vec<f64> = fit
+            .residuals
+            .iter()
+            .copied()
+            .filter(|r| !r.is_nan())
+            .collect();
+        let n = pool.len() as f64;
+        let mean = pool.iter().sum::<f64>() / n;
+        let v = pool.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / n;
+        let m = &fit.fitted[..10];
+        let (abs, root): (f64, f64) = m
+            .iter()
+            .fold((0.0, 0.0), |(a, r), x| (a + x.abs(), r + x.abs().sqrt()));
+        let p = fit.chain_ladder.latest[0] + mean * root;
+        let want = ((t - 1.0).powi(2) * v * abs + fit.scale * (t - 1.0) * p).sqrt();
+        let x: Vec<f64> = fit
+            .reserves
+            .draw_matrix()
+            .chunks(10)
+            .map(|r| r[0])
+            .collect();
+        let mu = x.iter().sum::<f64>() / n_sims as f64;
+        let m2 = x.iter().map(|y| (y - mu).powi(2)).sum::<f64>() / n_sims as f64;
+        let m4 = x.iter().map(|y| (y - mu).powi(4)).sum::<f64>() / n_sims as f64;
+        let sd = m2.sqrt();
+        let error = sd * ((m4 / (m2 * m2) - 1.0) / (4.0 * n_sims as f64)).sqrt();
+        assert!(
+            (sd - want).abs() < 5.0 * error,
+            "{sd} vs {want} (SE {error})"
+        );
+        assert!((mu - p * (t - 1.0)).abs() < 5.0 * sd / (n_sims as f64).sqrt());
+    }
+
+    #[test]
+    fn tail_settings_are_checked() {
+        let raa = raa();
+        let bad =
+            |tail, std_err| tailed(tail, std_err, ProcessDistribution::Gamma).fit(&raa, "values");
+        assert!(matches!(
+            bad(Tail::LogLinear, Some(0.01)),
+            Err(Error::Tail(_))
+        ));
+        assert!(matches!(bad(1.05.into(), Some(-0.01)), Err(Error::Tail(_))));
+        assert!(matches!(
+            bad(1.05.into(), Some(f64::NAN)),
+            Err(Error::Tail(_))
+        ));
+        // The one-year view takes its tail from the method.
+        let one_year = tailed(1.05.into(), None, ProcessDistribution::Gamma).one_year(
+            &raa,
+            "values",
+            &crate::OneYearMethod::ChainLadder(ChainLadder::default()),
+        );
+        assert!(matches!(one_year, Err(Error::Bootstrap(_))));
     }
 }
