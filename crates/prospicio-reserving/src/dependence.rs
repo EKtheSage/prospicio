@@ -1,6 +1,6 @@
 //! Dependence between the segments of a multi-segment bootstrap: joint
 //! reserves across lines of business, for capital
-//! (`docs/design/reserving-v02.md`, decision 12).
+//! (`docs/design/reserving-v02.md`, decision 9).
 //!
 //! [`OdpBootstrap::fit_segments`](crate::OdpBootstrap::fit_segments),
 //! [`MackBootstrap::fit_segments`](crate::MackBootstrap::fit_segments) and

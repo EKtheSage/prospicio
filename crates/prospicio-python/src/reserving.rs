@@ -14,8 +14,8 @@ use prospicio_reserving::{
     DevelopmentColumn, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, Long, Mack,
     MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap,
     OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, ProcessDistribution,
-    ReserveFit, SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
-    Triangle, view,
+    ReserveFit, SegmentDependence, SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant,
+    TailCurve, Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -85,6 +85,63 @@ fn process_name(p: ProcessDistribution) -> &'static str {
     match p {
         ProcessDistribution::Gamma => "gamma",
         ProcessDistribution::None => "none",
+    }
+}
+
+/// The dependence between segments named `name`, with the Spearman matrix
+/// that `"rank_correlation"` needs and the others refuse.
+fn segment_dependence(name: &str, spearman: Option<Vec<Vec<f64>>>) -> PyResult<SegmentDependence> {
+    match (name, spearman) {
+        ("independent", None) => Ok(SegmentDependence::Independent),
+        ("synchronized", None) => Ok(SegmentDependence::Synchronized),
+        ("rank_correlation", Some(rows)) => {
+            if rows.iter().any(|r| r.len() != rows.len()) {
+                return Err(PyValueError::new_err(
+                    "spearman must be a square matrix, one row and column per segment",
+                ));
+            }
+            Ok(SegmentDependence::RankCorrelation {
+                spearman: rows.into_iter().flatten().collect(),
+            })
+        }
+        ("rank_correlation", None) => Err(PyValueError::new_err(
+            "dependence=\"rank_correlation\" needs a spearman matrix",
+        )),
+        ("independent" | "synchronized", Some(_)) => Err(PyValueError::new_err(
+            "spearman is taken only with dependence=\"rank_correlation\"",
+        )),
+        _ => Err(PyValueError::new_err(format!(
+            "dependence must be \"independent\", \"synchronized\" or \"rank_correlation\", \
+             got {name:?}"
+        ))),
+    }
+}
+
+fn dependence_name(d: &SegmentDependence) -> &'static str {
+    match d {
+        SegmentDependence::Independent => "independent",
+        SegmentDependence::Synchronized => "synchronized",
+        SegmentDependence::RankCorrelation { .. } => "rank_correlation",
+    }
+}
+
+/// The Spearman matrix of a rank correlation, as rows; `None` otherwise.
+fn dependence_spearman(d: &SegmentDependence) -> Option<Vec<Vec<f64>>> {
+    match d {
+        SegmentDependence::RankCorrelation { spearman } => {
+            let n = (spearman.len() as f64).sqrt().round() as usize;
+            Some(spearman.chunks(n.max(1)).map(<[f64]>::to_vec).collect())
+        }
+        _ => None,
+    }
+}
+
+/// `, dependence=...` for a bootstrap's repr; empty when independent.
+fn dependence_repr(d: &SegmentDependence) -> String {
+    match dependence_spearman(d) {
+        None if *d == SegmentDependence::Independent => String::new(),
+        None => format!(", dependence={:?}", dependence_name(d)),
+        Some(m) => format!(", dependence={:?}, spearman={m:?}", dependence_name(d)),
     }
 }
 
@@ -3976,11 +4033,31 @@ impl PyClarkFit {
 ///     Process error on each simulated future incremental value: Gamma with
 ///     the expected value as mean and variance ``scale * |mean|`` (R's
 ///     ``process.distr = "gamma"``), or none for parameter error only.
+/// dependence : {"independent", "synchronized", "rank_correlation"}, default "independent"
+///     How the segments of a multi-segment triangle depend on each other
+///     in ``fit`` and ``one_year``: each resamples its own residuals
+///     independently; every segment resamples the residuals of the same
+///     origins and ages in each simulation (the synchronous bootstrap of
+///     Taylor and McGuire 2007 and Kirschner, Kerley and Isaacs 2008), so
+///     the lines' parameter error takes the correlation of their residuals
+///     and process error stays independent, which needs the same origins,
+///     ages and observed cells in every segment; or each is bootstrapped
+///     independently and the segments' simulations are reordered as whole
+///     rows (Iman–Conover on the segment totals) to the Spearman matrix
+///     ``spearman``.
+/// spearman : list of list of float, optional
+///     With ``dependence="rank_correlation"`` only: Spearman's rho between
+///     the segments' totals, one row and column per segment in index
+///     order, symmetric with a unit diagonal. It is converted to the normal
+///     scores' correlation ``2 sin(pi rho / 6)``, which must be positive
+///     definite.
 ///
 /// Raises
 /// ------
 /// ValueError
-///     If ``n_sims`` is zero or ``process`` is unknown.
+///     If ``n_sims`` is zero, ``process`` or ``dependence`` is unknown, or
+///     ``spearman`` is missing for ``"rank_correlation"``, given for another
+///     dependence or not square.
 /// OverflowError
 ///     If ``n_sims`` or ``seed`` is negative or too large.
 ///
@@ -4005,8 +4082,20 @@ pub(crate) struct PyOdpBootstrap {
 #[pymethods]
 impl PyOdpBootstrap {
     #[new]
-    #[pyo3(signature = (n_sims = 10_000, seed = 0, process = "gamma"))]
-    fn new(n_sims: usize, seed: u64, process: &str) -> PyResult<Self> {
+    #[pyo3(signature = (
+        n_sims = 10_000,
+        seed = 0,
+        process = "gamma",
+        dependence = "independent",
+        spearman = None,
+    ))]
+    fn new(
+        n_sims: usize,
+        seed: u64,
+        process: &str,
+        dependence: &str,
+        spearman: Option<Vec<Vec<f64>>>,
+    ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
         }
@@ -4015,6 +4104,7 @@ impl PyOdpBootstrap {
                 n_sims,
                 seed,
                 process: process_distribution(process)?,
+                dependence: segment_dependence(dependence, spearman)?,
             },
         })
     }
@@ -4037,10 +4127,25 @@ impl PyOdpBootstrap {
         process_name(self.inner.process)
     }
 
+    /// How the segments depend on each other: ``"independent"``,
+    /// ``"synchronized"`` or ``"rank_correlation"``.
+    #[getter]
+    fn dependence(&self) -> &'static str {
+        dependence_name(&self.inner.dependence)
+    }
+
+    /// The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+    /// otherwise.
+    #[getter]
+    fn spearman(&self) -> Option<Vec<Vec<f64>>> {
+        dependence_spearman(&self.inner.dependence)
+    }
+
     /// Bootstraps one measure column in every segment of a cumulative
     /// triangle, each with its own residuals and scale, into one joint
-    /// distribution of the reserves. Every origin must be observed from the
-    /// first age up to its latest.
+    /// distribution of the reserves, the segments depending on each other
+    /// as ``dependence`` says. Every origin must be observed from the first
+    /// age up to its latest.
     ///
     /// Parameters
     /// ----------
@@ -4056,15 +4161,17 @@ impl PyOdpBootstrap {
     /// ------
     /// ValueError
     ///     As ``ChainLadder.fit``, and if an origin has a gap before its
-    ///     latest age or a segment has too few observed cells for the
-    ///     degrees of freedom to be positive.
+    ///     latest age, a segment has too few observed cells for the
+    ///     degrees of freedom to be positive, synchronized segments differ
+    ///     in their origins, ages or observed cells, or ``spearman`` does
+    ///     not fit the segments.
     fn fit(
         &self,
         py: Python<'_>,
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
     ) -> PyResult<PyOdpBootstrapFit> {
-        let (boot, tri) = (self.inner, &triangle.inner);
+        let (boot, tri) = (&self.inner, &triangle.inner);
         let inner = py.detach(|| boot.fit_segments(tri, column)).map_err(err)?;
         Ok(PyOdpBootstrapFit { inner })
     }
@@ -4144,7 +4251,7 @@ impl PyOdpBootstrap {
         exposure: Option<String>,
     ) -> PyResult<PyOneYearFit> {
         let method = one_year_method(method, exposure)?;
-        let (boot, tri) = (self.inner, &triangle.inner);
+        let (boot, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| boot.one_year_segments(tri, column, &method))
             .map_err(err)?;
@@ -4155,10 +4262,11 @@ impl PyOdpBootstrap {
 
     fn __repr__(&self) -> String {
         format!(
-            "OdpBootstrap(n_sims={}, seed={}, process={:?})",
+            "OdpBootstrap(n_sims={}, seed={}, process={:?}{})",
             self.inner.n_sims,
             self.inner.seed,
-            self.process()
+            self.process(),
+            dependence_repr(&self.inner.dependence),
         )
     }
 }
@@ -4415,11 +4523,31 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 ///     pseudo factors are unbiased, the mean CDR is about zero and the
 ///     lifetime mean reserve is the chain ladder's. ``False`` resamples them
 ///     uncentred, as EVW's Appendix 1 is written.
+/// dependence : {"independent", "synchronized", "rank_correlation"}, default "independent"
+///     How the segments of a multi-segment triangle depend on each other
+///     in ``fit`` and ``one_year``: each resamples its own residuals
+///     independently; every segment resamples the link-ratio residuals of
+///     the same origins and ages in each simulation (the synchronous bootstrap of
+///     Taylor and McGuire 2007 and Kirschner, Kerley and Isaacs 2008), so
+///     the lines' parameter error takes the correlation of their residuals
+///     and process error stays independent, which needs the same origins,
+///     ages and observed cells in every segment; or each is bootstrapped
+///     independently and the segments' simulations are reordered as whole
+///     rows (Iman–Conover on the segment totals) to the Spearman matrix
+///     ``spearman``.
+/// spearman : list of list of float, optional
+///     With ``dependence="rank_correlation"`` only: Spearman's rho between
+///     the segments' totals, one row and column per segment in index
+///     order, symmetric with a unit diagonal. It is converted to the normal
+///     scores' correlation ``2 sin(pi rho / 6)``, which must be positive
+///     definite.
 ///
 /// Raises
 /// ------
 /// ValueError
-///     If ``n_sims`` is zero or a setting is unknown.
+///     If ``n_sims`` is zero, a setting is unknown, or ``spearman`` is
+///     missing for ``"rank_correlation"``, given for another dependence or
+///     not square.
 /// OverflowError
 ///     If ``n_sims`` or ``seed`` is negative or too large.
 ///
@@ -4475,7 +4603,10 @@ impl PyMackBootstrap {
         average = "volume",
         sigma_interpolation = "log-linear",
         centre_residuals = true,
+        dependence = "independent",
+        spearman = None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         n_sims: usize,
         seed: u64,
@@ -4483,6 +4614,8 @@ impl PyMackBootstrap {
         average: &str,
         sigma_interpolation: &str,
         centre_residuals: bool,
+        dependence: &str,
+        spearman: Option<Vec<Vec<f64>>>,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -4494,6 +4627,7 @@ impl PyMackBootstrap {
                 process: mack_process(process)?,
                 development: development(average, sigma_interpolation)?,
                 centre_residuals,
+                dependence: segment_dependence(dependence, spearman)?,
             },
         })
     }
@@ -4533,6 +4667,20 @@ impl PyMackBootstrap {
     #[getter]
     fn centre_residuals(&self) -> bool {
         self.inner.centre_residuals
+    }
+
+    /// How the segments depend on each other: ``"independent"``,
+    /// ``"synchronized"`` or ``"rank_correlation"``.
+    #[getter]
+    fn dependence(&self) -> &'static str {
+        dependence_name(&self.inner.dependence)
+    }
+
+    /// The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+    /// otherwise.
+    #[getter]
+    fn spearman(&self) -> Option<Vec<Vec<f64>>> {
+        dependence_spearman(&self.inner.dependence)
     }
 
     /// The lifetime view: bootstraps one measure column in every segment of
@@ -4585,7 +4733,7 @@ impl PyMackBootstrap {
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
     ) -> PyResult<PyMackBootstrapFit> {
-        let (boot, tri) = (self.inner, &triangle.inner);
+        let (boot, tri) = (&self.inner, &triangle.inner);
         let inner = py.detach(|| boot.fit_segments(tri, column)).map_err(err)?;
         Ok(PyMackBootstrapFit { inner })
     }
@@ -4633,7 +4781,7 @@ impl PyMackBootstrap {
         exposure: Option<String>,
     ) -> PyResult<PyOneYearFit> {
         let method = one_year_method(method, exposure)?;
-        let (boot, tri) = (self.inner, &triangle.inner);
+        let (boot, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| boot.one_year_segments(tri, column, &method))
             .map_err(err)?;
@@ -4645,7 +4793,7 @@ impl PyMackBootstrap {
     fn __repr__(&self) -> String {
         format!(
             "MackBootstrap(n_sims={}, seed={}, process={:?}, average={:?}, \
-             sigma_interpolation={:?}, centre_residuals={})",
+             sigma_interpolation={:?}, centre_residuals={}{})",
             self.inner.n_sims,
             self.inner.seed,
             self.process(),
@@ -4656,6 +4804,7 @@ impl PyMackBootstrap {
             } else {
                 "False"
             },
+            dependence_repr(&self.inner.dependence),
         )
     }
 }

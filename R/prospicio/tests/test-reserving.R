@@ -1292,4 +1292,81 @@ expect_error_like(mack_bootstrap(raa, process = "poisson"), "should be one of")
 expect_error_like(mack_bootstrap(raa, average = "median"), "should be one of")
 expect_error_like(mack_bootstrap(raa, n_sims = 0), "n_sims must be positive")
 
+# Dependence between segments (decision 9 of docs/design/reserving-v02.md)
+# on the CAS loss reserve database lines (validation/data/clrd_lines.csv),
+# as validation/tests/reserving_dependence.rs.
+clrd <- read_long("clrd_lines")
+clrd_lines <- function(lines, names = lines, shift = 0) {
+  parts <- lapply(seq_along(lines), function(i) {
+    rows <- clrd[clrd$lob == lines[i], ]
+    rows$lob <- names[i]
+    rows$origin <- rows$origin + if (i == length(lines)) shift else 0
+    rows
+  })
+  triangle(do.call(rbind, parts), "origin", "development", "paid", keys = "lob")
+}
+line_totals <- function(pd) draw_matrix(aggregate(pd, keep = "lob"))
+
+# Synchronized, two identical lines move together without process error.
+twins <- clrd_lines(c("wkcomp", "wkcomp"), c("a", "b"))
+for (fit in list(odp_bootstrap(twins, n_sims = 500, seed = 3, process = "none",
+                               dependence = "synchronized")@reserves,
+                 mack_bootstrap(twins, n_sims = 500, seed = 3, process = "none",
+                                dependence = "synchronized")@reserves,
+                 odp_one_year(twins, n_sims = 500, seed = 3, process = "none",
+                              dependence = "synchronized")@cdr,
+                 mack_one_year(twins, n_sims = 500, seed = 3, process = "none",
+                               dependence = "synchronized")@cdr)) {
+  m <- line_totals(fit)
+  stopifnot(identical(m[, 1], m[, 2]), length(unique(m[, 1])) > 1)
+}
+
+# Synchronized parameter error takes the residuals' correlation.
+pair <- clrd_lines(c("comauto", "wkcomp"))
+sync <- odp_bootstrap(pair, n_sims = 4000, seed = 5, process = "none", dependence = "synchronized")
+res <- cbind(as.vector(segment(sync, lob = "comauto")@residuals),
+             as.vector(segment(sync, lob = "wkcomp")@residuals))
+rho <- stats::cor(res[stats::complete.cases(res), ])[1, 2]
+m <- line_totals(sync@reserves)
+stopifnot(rho > 0.4, abs(stats::cor(m[, 1], m[, 2]) - rho) < 0.08)
+
+# Rank correlation reproduces the target Spearman matrix.
+three <- clrd_lines(c("comauto", "ppauto", "wkcomp"))
+target <- matrix(c(1, 0.5, 0.25, 0.5, 1, -0.3, 0.25, -0.3, 1), 3)
+m <- line_totals(odp_bootstrap(three, n_sims = 4000, seed = 5, dependence = "rank_correlation",
+                               spearman = target)@reserves)
+got <- stats::cor(m, method = "spearman")
+stopifnot(all(abs(got - target) < 4 * (1 - target^2) / sqrt(4000) + 1e-12))
+m <- line_totals(mack_one_year(three, n_sims = 2000, seed = 5, dependence = "rank_correlation",
+                               spearman = target)@cdr)
+stopifnot(abs(stats::cor(m[, 1], m[, 2], method = "spearman") - 0.5) < 4 * 0.75 / sqrt(2000))
+
+# The joint reserves to capital: more dependence, less diversification.
+tvar <- distortion("tvar", 0.99)
+benefit <- vapply(list(list(), list(dependence = "synchronized"),
+                       list(dependence = "rank_correlation", spearman = matrix(c(1, 0.9, 0.9, 1), 2))),
+                  function(kw) {
+                    boot <- do.call(odp_bootstrap, c(list(pair, n_sims = 4000, seed = 5), kw))
+                    by <- aggregate(boot@reserves, keep = "lob")
+                    a <- capital_allocation(by, tvar)
+                    near(a$total, TVaR(by, 0.99), rel = 1e-9)
+                    near(sum(a$by_component$allocated), a$total, rel = 1e-9)
+                    a$diversification_benefit
+                  }, 0)
+stopifnot(benefit[1] > benefit[2], benefit[2] > benefit[3], benefit[3] > 0)
+
+# Errors.
+expect_error_like(odp_bootstrap(pair, dependence = "copula"), "should be one of")
+expect_error_like(odp_bootstrap(pair, n_sims = 10, dependence = "rank_correlation"),
+                  "needs a spearman matrix")
+expect_error_like(mack_bootstrap(pair, n_sims = 10, dependence = "synchronized", spearman = diag(2)),
+                  "only with dependence")
+expect_error_like(odp_bootstrap(pair, n_sims = 10, dependence = "rank_correlation", spearman = c(1, 0)),
+                  "square numeric matrix")
+expect_error_like(odp_bootstrap(pair, n_sims = 10, dependence = "rank_correlation", spearman = diag(3)),
+                  "spearman")
+expect_error_like(odp_bootstrap(clrd_lines(c("comauto", "wkcomp"), shift = 1), n_sims = 10,
+                                dependence = "synchronized"),
+                  "same origins, ages and observed cells")
+
 cat("prospicio R reserving tests passed\n")

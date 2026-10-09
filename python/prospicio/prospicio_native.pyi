@@ -6352,11 +6352,31 @@ class MackBootstrap:
         pseudo factors are unbiased, the mean CDR is about zero and the
         lifetime mean reserve is the chain ladder's. ``False`` resamples them
         uncentred, as EVW's Appendix 1 is written.
+    dependence : {"independent", "synchronized", "rank_correlation"}, default "independent"
+        How the segments of a multi-segment triangle depend on each other
+        in ``fit`` and ``one_year``: each resamples its own residuals
+        independently; every segment resamples the link-ratio residuals of
+        the same origins and ages in each simulation (the synchronous bootstrap of
+        Taylor and McGuire 2007 and Kirschner, Kerley and Isaacs 2008), so
+        the lines' parameter error takes the correlation of their residuals
+        and process error stays independent, which needs the same origins,
+        ages and observed cells in every segment; or each is bootstrapped
+        independently and the segments' simulations are reordered as whole
+        rows (Iman–Conover on the segment totals) to the Spearman matrix
+        ``spearman``.
+    spearman : list of list of float, optional
+        With ``dependence="rank_correlation"`` only: Spearman's rho between
+        the segments' totals, one row and column per segment in index
+        order, symmetric with a unit diagonal. It is converted to the normal
+        scores' correlation ``2 sin(pi rho / 6)``, which must be positive
+        definite.
     
     Raises
     ------
     ValueError
-        If ``n_sims`` is zero or a setting is unknown.
+        If ``n_sims`` is zero, a setting is unknown, or ``spearman`` is
+        missing for ``"rank_correlation"``, given for another dependence or
+        not square.
     OverflowError
         If ``n_sims`` or ``seed`` is negative or too large.
     
@@ -6374,7 +6394,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -6385,6 +6405,12 @@ class MackBootstrap:
     def centre_residuals(self, /) -> bool:
         """
         Whether the residuals are centred before they are resampled.
+        """
+    @property
+    def dependence(self, /) -> str:
+        """
+        How the segments depend on each other: ``"independent"``,
+        ``"synchronized"`` or ``"rank_correlation"``.
         """
     def fit(self, /, triangle: Triangle, column: str) -> MackBootstrapFit:
         """
@@ -6489,6 +6515,12 @@ class MackBootstrap:
     def sigma_interpolation(self, /) -> str:
         """
         How a sigma behind a single link ratio is filled in.
+        """
+    @property
+    def spearman(self, /) -> list[list[float]] |None:
+        """
+        The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+        otherwise.
         """
 
 @final
@@ -7327,11 +7359,31 @@ class OdpBootstrap:
         Process error on each simulated future incremental value: Gamma with
         the expected value as mean and variance ``scale * |mean|`` (R's
         ``process.distr = "gamma"``), or none for parameter error only.
+    dependence : {"independent", "synchronized", "rank_correlation"}, default "independent"
+        How the segments of a multi-segment triangle depend on each other
+        in ``fit`` and ``one_year``: each resamples its own residuals
+        independently; every segment resamples the residuals of the same
+        origins and ages in each simulation (the synchronous bootstrap of
+        Taylor and McGuire 2007 and Kirschner, Kerley and Isaacs 2008), so
+        the lines' parameter error takes the correlation of their residuals
+        and process error stays independent, which needs the same origins,
+        ages and observed cells in every segment; or each is bootstrapped
+        independently and the segments' simulations are reordered as whole
+        rows (Iman–Conover on the segment totals) to the Spearman matrix
+        ``spearman``.
+    spearman : list of list of float, optional
+        With ``dependence="rank_correlation"`` only: Spearman's rho between
+        the segments' totals, one row and column per segment in index
+        order, symmetric with a unit diagonal. It is converted to the normal
+        scores' correlation ``2 sin(pi rho / 6)``, which must be positive
+        definite.
     
     Raises
     ------
     ValueError
-        If ``n_sims`` is zero or ``process`` is unknown.
+        If ``n_sims`` is zero, ``process`` or ``dependence`` is unknown, or
+        ``spearman`` is missing for ``"rank_correlation"``, given for another
+        dependence or not square.
     OverflowError
         If ``n_sims`` or ``seed`` is negative or too large.
     
@@ -7349,14 +7401,21 @@ class OdpBootstrap:
     >>> fit.reserves.mean() > 0
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma") -> OdpBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> OdpBootstrap: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def dependence(self, /) -> str:
+        """
+        How the segments depend on each other: ``"independent"``,
+        ``"synchronized"`` or ``"rank_correlation"``.
+        """
     def fit(self, /, triangle: Triangle, column: str) -> OdpBootstrapFit:
         """
         Bootstraps one measure column in every segment of a cumulative
         triangle, each with its own residuals and scale, into one joint
-        distribution of the reserves. Every origin must be observed from the
-        first age up to its latest.
+        distribution of the reserves, the segments depending on each other
+        as ``dependence`` says. Every origin must be observed from the first
+        age up to its latest.
         
         Parameters
         ----------
@@ -7372,8 +7431,10 @@ class OdpBootstrap:
         ------
         ValueError
             As ``ChainLadder.fit``, and if an origin has a gap before its
-            latest age or a segment has too few observed cells for the
-            degrees of freedom to be positive.
+            latest age, a segment has too few observed cells for the
+            degrees of freedom to be positive, synchronized segments differ
+            in their origins, ages or observed cells, or ``spearman`` does
+            not fit the segments.
         """
     @property
     def n_sims(self, /) -> int:
@@ -7457,6 +7518,12 @@ class OdpBootstrap:
     def seed(self, /) -> int:
         """
         Seed of the simulation streams.
+        """
+    @property
+    def spearman(self, /) -> list[list[float]] |None:
+        """
+        The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+        otherwise.
         """
 
 @final
