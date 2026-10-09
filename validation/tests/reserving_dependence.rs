@@ -33,7 +33,7 @@ use prospicio_prob::capital::AllocationMethod;
 use prospicio_prob::{Distortion, Empirical, KeyValue, PredictiveDistribution};
 use prospicio_reserving::{
     ChainLadder, DevelopmentColumn, Grain, Long, MackBootstrap, MackProcess, Month, OdpBootstrap,
-    OneYearMethod, ProcessDistribution, SegmentDependence, Triangle,
+    OneYearMethod, ProcessDistribution, SegmentDependence, Tail, TailConstant, Triangle,
 };
 
 const LINES: [&str; 6] = [
@@ -132,6 +132,7 @@ fn odp(process: ProcessDistribution, dependence: SegmentDependence) -> OdpBootst
         seed: SEED,
         process,
         dependence,
+        ..Default::default()
     }
 }
 
@@ -481,4 +482,141 @@ fn capital_path_from_joint_reserves() {
     // diversification.
     assert!(independent.tvar < synchronized.tvar && synchronized.tvar < strong.tvar);
     assert!(independent.benefit > synchronized.benefit && synchronized.benefit > strong.benefit);
+}
+
+/// Tails with dependence (decision 9 of `docs/design/reserving-v02.md`
+/// with decision 10). A synchronized bootstrap shares only the residuals'
+/// positions, so an estimated tail, refitted on each line's pseudo
+/// factors, follows them: two identical lines without process error keep
+/// equal reserves, tail included. A constant tail's lognormal draw is each
+/// line's own, like process error, so the copies then differ but stay
+/// correlated. Rank correlation reorders whole simulations, tail included:
+/// each component keeps the independent fit's draws and the lines' totals
+/// take the target Spearman matrix.
+#[test]
+fn tails_with_dependence() {
+    let twins = clrd(&[("wkcomp", "a"), ("wkcomp", "b")]);
+    let sync = SegmentDependence::Synchronized;
+    let constant = Tail::Constant(TailConstant {
+        factor: 1.05,
+        ..Default::default()
+    });
+
+    // An estimated tail follows the shared residuals.
+    let equal = |pd: &PredictiveDistribution, untailed: &PredictiveDistribution, what: &str| {
+        let lines = by_line(pd);
+        assert!(
+            lines[0].iter().zip(&lines[1]).all(|(a, b)| a == b),
+            "{what}"
+        );
+        assert!(lines[0].iter().any(|&v| v != lines[0][0]), "{what} varies");
+        let mean = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
+        let without = by_line(untailed);
+        eprintln!(
+            "{what}: mean {:.0} with the tail, {:.0} without",
+            mean(&lines[0]),
+            mean(&without[0])
+        );
+        assert!(mean(&lines[0]) > mean(&without[0]), "{what}: the tail adds");
+    };
+    let o = OdpBootstrap {
+        tail: Tail::LogLinear,
+        ..odp(ProcessDistribution::None, sync.clone())
+    };
+    let o_plain = odp(ProcessDistribution::None, sync.clone());
+    equal(
+        &o.fit_segments(&twins, "paid").unwrap().reserves,
+        &o_plain.fit_segments(&twins, "paid").unwrap().reserves,
+        "ODP, log-linear tail",
+    );
+    let m = MackBootstrap {
+        tail: Tail::LogLinear,
+        ..mack(MackProcess::None, sync.clone())
+    };
+    let m_plain = mack(MackProcess::None, sync.clone());
+    equal(
+        &m.fit_segments(&twins, "paid").unwrap().reserves,
+        &m_plain.fit_segments(&twins, "paid").unwrap().reserves,
+        "Mack, log-linear tail",
+    );
+
+    // A constant tail's parameter error is each line's own draw.
+    let correlated = |pd: &PredictiveDistribution, what: &str| {
+        let lines = by_line(pd);
+        assert!(
+            lines[0].iter().zip(&lines[1]).any(|(a, b)| a != b),
+            "{what}: the tails are drawn apart"
+        );
+        let r = pearson(&lines[0], &lines[1]);
+        eprintln!("{what}: correlation {r:.4}");
+        assert!(r > 0.1 && r < 0.9, "{what}: {r}");
+    };
+    let o = OdpBootstrap {
+        tail: constant,
+        tail_std_err: Some(0.02),
+        ..odp(ProcessDistribution::None, sync.clone())
+    };
+    correlated(
+        &o.fit_segments(&twins, "paid").unwrap().reserves,
+        "ODP, constant tail",
+    );
+    let m = MackBootstrap {
+        tail: constant,
+        tail_std_err: Some(0.02),
+        ..mack(MackProcess::None, sync)
+    };
+    correlated(
+        &m.fit_segments(&twins, "paid").unwrap().reserves,
+        "Mack, constant tail",
+    );
+
+    // Rank correlation moves whole simulations, tail included.
+    let tri = clrd(&[("comauto", "comauto"), ("wkcomp", "wkcomp")]);
+    let rank = SegmentDependence::RankCorrelation {
+        spearman: vec![1.0, 0.5, 0.5, 1.0],
+    };
+    let check = |independent: &PredictiveDistribution, ranked: &PredictiveDistribution, what| {
+        for j in 0..independent.n_components() {
+            let mut a = column(independent, j);
+            let mut b = column(ranked, j);
+            a.sort_by(f64::total_cmp);
+            b.sort_by(f64::total_cmp);
+            assert_eq!(a, b, "{what}: component {j}");
+        }
+        let lines = by_line(ranked);
+        let got = spearman(&lines[0], &lines[1]);
+        eprintln!("{what}: Spearman {got:.4} vs 0.5");
+        assert!(
+            (got - 0.5).abs() < 4.0 * correlation_se(0.5),
+            "{what}: {got}"
+        );
+    };
+    let odp_tail = |dependence| OdpBootstrap {
+        tail: constant,
+        tail_std_err: Some(0.02),
+        ..odp(ProcessDistribution::Gamma, dependence)
+    };
+    check(
+        &odp_tail(SegmentDependence::Independent)
+            .fit_segments(&tri, "paid")
+            .unwrap()
+            .reserves,
+        &odp_tail(rank.clone())
+            .fit_segments(&tri, "paid")
+            .unwrap()
+            .reserves,
+        "ODP",
+    );
+    let mack_tail = |dependence| MackBootstrap {
+        tail: Tail::LogLinear,
+        ..mack(MackProcess::Gamma, dependence)
+    };
+    check(
+        &mack_tail(SegmentDependence::Independent)
+            .fit_segments(&tri, "paid")
+            .unwrap()
+            .reserves,
+        &mack_tail(rank).fit_segments(&tri, "paid").unwrap().reserves,
+        "Mack",
+    );
 }

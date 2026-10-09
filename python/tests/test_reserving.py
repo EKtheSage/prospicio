@@ -962,7 +962,7 @@ def test_bootstrap_process_error(triangles):
     # Process error adds variance; the residuals and scale do not change.
     assert param.reserves.variance() < gamma.reserves.variance()
     assert param.scale == gamma.scale
-    assert "OdpBootstrap(n_sims=10000, seed=0, process=\"gamma\")" == repr(OdpBootstrap())
+    assert "OdpBootstrap(n_sims=10000, seed=0, process=\"gamma\", tail=1.0)" == repr(OdpBootstrap())
     assert repr(param).startswith("OdpBootstrapFit(origins=10, n_sims=5000")
 
 
@@ -1656,7 +1656,7 @@ def test_mack_one_year_fields_and_errors(triangles):
     assert settings == (500, 1, "normal", "simple", "log-linear", True)
     assert repr(boot) == (
         'MackBootstrap(n_sims=500, seed=1, process="normal", average="simple", sigma_interpolation="log-linear", '
-        "centre_residuals=True)"
+        "centre_residuals=True, tail=1.0)"
     )
     # Mack's rule for the last sigma reaches the model (it differs from the
     # log-linear one only there).
@@ -1667,7 +1667,7 @@ def test_mack_one_year_fields_and_errors(triangles):
     assert sigma != Mack().fit(raa, "values").sigma
     # Centring (the default) changes the draws, not the residuals reported.
     uncentred = MackBootstrap(n_sims=50, seed=1, centre_residuals=False)
-    assert not uncentred.centre_residuals and repr(uncentred).endswith("centre_residuals=False)")
+    assert not uncentred.centre_residuals and repr(uncentred).endswith("centre_residuals=False, tail=1.0)")
     centred = MackBootstrap(n_sims=50, seed=1).one_year(raa, "values", ChainLadder())
     uncentred_fit = uncentred.one_year(raa, "values", ChainLadder())
     assert uncentred_fit.cdr.draw_matrix() != centred.cdr.draw_matrix()
@@ -1811,6 +1811,102 @@ def test_mack_bootstrap_lifetime_every_segment_at_once():
     assert repr(fit).startswith("MackBootstrapFit(segments=2, origins=8, n_sims=400")
 
 
+# The bootstraps' lifetime view with a tail (decision 9 of
+# docs/design/reserving-v02.md). Mack's bootstrap with a constant tail
+# reproduces Mack's standard error with the same tail: on RAA's oldest
+# origin, at the last age, the reserve is the tail step alone, with variance
+# C^2 tail_std_err^2 + tail_sigma^2 C exactly; on GenIns's total within 2.5%
+# (five Monte Carlo standard errors at 20,000 simulations; measured 0.4%,
+# validation/tests/reserving_bootstrap_tail.rs).
+
+
+def test_mack_bootstrap_with_a_tail(triangles):
+    raa, genins = triangles["raa"], triangles["genins"]
+    boot = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, tail=1.05, tail_sigma=1.5, tail_std_err=0.003)
+    assert (boot.tail, boot.tail_sigma, boot.tail_std_err) == (1.05, 1.5, 0.003)
+    assert repr(boot).endswith("centre_residuals=True, tail=1.05, tail_sigma=1.5, tail_std_err=0.003)")
+    fit = boot.fit(raa, "values")
+    mack = Mack(tail=1.05, tail_sigma=1.5, tail_std_err=0.003).fit(raa, "values")
+    assert fit.mack.standard_error == mack.standard_error
+    assert fit.chain_ladder.tail == pytest.approx(1.05)
+    oldest = [row[0] for row in fit.reserves.draw_matrix()]
+    mean = sum(oldest) / len(oldest)
+    sd = math.sqrt(sum((x - mean) ** 2 for x in oldest) / len(oldest))
+    assert abs(sd / mack.standard_error[0] - 1.0) < 0.025
+    assert abs(mean / (0.05 * mack.chain_ladder.latest[0]) - 1.0) < 0.01
+    # GenIns in total, the tail's sigma and standard error extrapolated.
+    fit = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, tail=1.05).fit(genins, "values")
+    mack = Mack(tail=1.05).fit(genins, "values")
+    assert abs(math.sqrt(fit.reserves.variance()) / mack.total_standard_error - 1.0) < 0.025
+    assert abs(fit.reserves.mean() / mack.total_reserve - 1.0) < 0.0047
+    # An estimated tail is refitted on every simulation's pseudo factors.
+    refitted = MackBootstrap(n_sims=200, seed=1, tail=TailLogLinear(), process="none")
+    assert isinstance(refitted.tail, TailLogLinear)
+    refit = refitted.fit(raa, "values")
+    assert len({row[0] for row in refit.reserves.draw_matrix()}) == 200
+    with pytest.raises(ValueError, match="estimated tail"):
+        MackBootstrap(n_sims=10, tail=TailLogLinear(), tail_std_err=0.01).fit(raa, "values")
+    with pytest.raises(ValueError, match="one-year view"):
+        MackBootstrap(n_sims=10, tail=1.05).one_year(raa, "values", ChainLadder())
+    with pytest.raises(TypeError, match="tail must be"):
+        MackBootstrap(tail="loglinear")
+
+
+def test_odp_bootstrap_with_a_tail(triangles):
+    raa = triangles["raa"]
+    boot = OdpBootstrap(n_sims=2_000, seed=3, tail=1.05, tail_std_err=0.01)
+    assert (boot.tail, boot.tail_std_err) == (1.05, 0.01)
+    assert repr(boot) == 'OdpBootstrap(n_sims=2000, seed=3, process="gamma", tail=1.05, tail_std_err=0.01)'
+    fit = boot.fit(raa, "values")
+    assert fit.chain_ladder.tail == pytest.approx(1.05)
+    # The oldest origin develops past the oldest age, by about 5% of its
+    # latest value; without a tail it has no reserve.
+    oldest = [row[0] for row in fit.reserves.draw_matrix()]
+    mean = sum(oldest) / len(oldest)
+    assert abs(mean / (0.05 * fit.chain_ladder.latest[0]) - 1.0) < 0.1
+    plain = OdpBootstrap(n_sims=2_000, seed=3).fit(raa, "values")
+    assert all(row[0] == 0.0 for row in plain.reserves.draw_matrix())
+    assert fit.reserves.variance() > plain.reserves.variance()
+    # A tail of 1 is no tail: the same draws.
+    one = OdpBootstrap(n_sims=2_000, seed=3, tail=1.0).fit(raa, "values")
+    assert one.reserves.draw_matrix() == plain.reserves.draw_matrix()
+    curve = OdpBootstrap(n_sims=200, seed=3, tail=TailCurve(), process="none")
+    assert isinstance(curve.tail, TailCurve)
+    assert len({row[0] for row in curve.fit(raa, "values").reserves.draw_matrix()}) == 200
+    with pytest.raises(ValueError, match="estimated tail"):
+        OdpBootstrap(n_sims=10, tail=TailCurve(), tail_std_err=0.01).fit(raa, "values")
+    with pytest.raises(ValueError, match="one-year view"):
+        OdpBootstrap(n_sims=10, tail=1.05).one_year(raa, "values", ChainLadder())
+
+
+def test_bootstrap_tail_refit_failure_names_its_segment():
+    # Two segments; the curve fitted from 48 months refits on every
+    # simulation of Steady, whose late factors are well above 1, and fails on
+    # some of Flat's, whose last two are barely above 1 (as
+    # a_failed_refit_names_its_segment in mack_bootstrap.rs). The error counts
+    # the failed simulations and names the segment.
+    steady = [100, 200, 250, 300, 345, 380, 110, 215, 270, 322, 372, 120, 240, 300, 358, 100, 205, 255, 105, 210, 100]
+    flat = [100, 200, 250, 260, 260.5, 260.6, 110, 215, 270, 282, 282, 120, 240, 300, 312, 100, 205, 255, 105, 210, 100]
+    years = [2018] * 6 + [2019] * 5 + [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023]
+    ages = [12, 24, 36, 48, 60, 72, 12, 24, 36, 48, 60, 12, 24, 36, 48, 12, 24, 36, 12, 24, 12]
+    data = {
+        "lob": ["Steady"] * 21 + ["Flat"] * 21,
+        "year": years * 2,
+        "age": ages * 2,
+        "paid": [float(v) for v in steady + flat],
+    }
+    tri = Triangle.from_frame(data, "year", "age", "paid", keys="lob")
+    curve = TailCurve(fit_period=(48, None))
+    message = r"could not be refitted in \d+ of 200 simulations, for example: segment .*Flat"
+    for boot in (MackBootstrap(n_sims=200, seed=1, tail=curve), OdpBootstrap(n_sims=200, tail=curve)):
+        with pytest.raises(ValueError, match=message):
+            boot.fit(tri, "paid")
+    # A constant tail reaches every segment.
+    fit = MackBootstrap(n_sims=200, seed=1, tail=1.05, tail_std_err=0.0, process="none").fit(tri, "paid")
+    for lob, latest in (("Steady", 380.0), ("Flat", 260.6)):
+        oldest = [row[0] for row in fit.segment(lob=lob).reserves.draw_matrix()]
+        assert oldest == pytest.approx([0.05 * latest] * 200, rel=1e-9)
+
 # Dependence between segments (SegmentDependence, decision 10 of
 # docs/design/reserving-v02.md) on the CAS loss reserve database lines
 # (validation/data/clrd_lines.csv), as validation/tests/reserving_dependence.rs.
@@ -1869,8 +1965,8 @@ def test_synchronized_identical_lines_move_together():
         assert a == b and len(set(a)) > 1
         a, b = line_totals(boot.one_year(tri, "paid", ChainLadder()).cdr)
         assert a == b
-    # Independent, the default, leaves the repr as it was.
-    assert repr(OdpBootstrap()) == 'OdpBootstrap(n_sims=10000, seed=0, process="gamma")'
+    # Independent, the default, adds nothing to the repr.
+    assert repr(OdpBootstrap()) == 'OdpBootstrap(n_sims=10000, seed=0, process="gamma", tail=1.0)'
     assert OdpBootstrap().dependence == "independent"
 
 
@@ -1949,3 +2045,34 @@ def test_dependence_errors():
     ragged = clrd_lines([("comauto", "comauto"), ("wkcomp", "wkcomp")], shift={"wkcomp": 1})
     with pytest.raises(ValueError, match="same origins, ages and observed cells"):
         OdpBootstrap(n_sims=100, dependence="synchronized").fit(ragged, "paid")
+
+
+def test_tails_with_dependence():
+    # Decision 9 with decision 10: synchronized, an estimated tail is
+    # refitted on each line's pseudo factors and follows the shared
+    # residuals; a constant tail's lognormal draw is each line's own.
+    twins = clrd_lines([("wkcomp", "a"), ("wkcomp", "b")])
+    for cls in (OdpBootstrap, MackBootstrap):
+        boot = cls(n_sims=500, seed=3, process="none", tail=TailLogLinear(), dependence="synchronized")
+        assert boot.dependence == "synchronized" and isinstance(boot.tail, TailLogLinear)
+        assert 'tail=TailLogLinear()' in repr(boot) and 'dependence="synchronized"' in repr(boot)
+        a, b = line_totals(boot.fit(twins, "paid").reserves)
+        plain, _ = line_totals(
+            cls(n_sims=500, seed=3, process="none", dependence="synchronized").fit(twins, "paid").reserves
+        )
+        assert a == b and len(set(a)) > 1
+        assert sum(a) > sum(plain)
+        boot = cls(n_sims=2000, seed=3, process="none", tail=1.05, tail_std_err=0.02, dependence="synchronized")
+        assert boot.tail_std_err == 0.02
+        a, b = line_totals(boot.fit(twins, "paid").reserves)
+        assert a != b and 0.1 < pearson(a, b) < 0.9
+    # Rank correlation reorders whole simulations, tail included.
+    pair = clrd_lines([("comauto", "comauto"), ("wkcomp", "wkcomp")])
+    for cls in (OdpBootstrap, MackBootstrap):
+        kw = dict(n_sims=2000, seed=5, tail=1.05, tail_std_err=0.02)
+        independent = cls(**kw).fit(pair, "paid").reserves
+        ranked = cls(dependence="rank_correlation", spearman=[[1.0, 0.5], [0.5, 1.0]], **kw).fit(pair, "paid").reserves
+        for x, y in zip(line_totals(independent), line_totals(ranked)):
+            assert sorted(x) == sorted(y)
+        x, y = line_totals(ranked)
+        assert abs(spearman(x, y) - 0.5) < 4 * 0.75 / math.sqrt(2000)

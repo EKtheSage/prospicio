@@ -1423,6 +1423,25 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #' @param process Process error on each simulated future incremental value:
 #'   `"gamma"` (mean the expected value, variance `scale * |mean|`, R's
 #'   `process.distr = "gamma"`) or `"none"` for parameter error only.
+#' @param tail Development past the oldest age: a number (a constant
+#'   factor), [tail_constant()], [tail_curve()], [tail_bondy()] or
+#'   [tail_log_linear()], as in [chain_ladder()]; 1 (no tail, as R's
+#'   `BootChainLadder`) by default. An estimated tail (a curve, Bondy or
+#'   the log-linear rule) is refitted on each simulation's pseudo factors,
+#'   which gives its parameter error; a constant one is fixed unless
+#'   `tail_std_err` is given. The step from the oldest age to ultimate is
+#'   one more future increment, with mean the pseudo value at the oldest
+#'   age times the tail factor less 1 and the same process error.
+#'   [odp_one_year()] takes its tail from the refitted method instead. R's
+#'   rule ([tail_log_linear()]) refitted on the ODP's pseudo factors is
+#'   often exactly 1 (5.7% of simulations on RAA) and on average high
+#'   (RAA's oldest origin's mean reserve 78% above the plug-in); a constant
+#'   tail with `tail_std_err` has neither.
+#' @param tail_std_err Standard error of a constant tail factor: each
+#'   simulation draws the factor from the lognormal with the factor as mean
+#'   and this standard deviation. `NULL` keeps it fixed, unlike
+#'   [mack_bootstrap()], which extrapolates Mack's standard error; unused
+#'   when the factor is 1, and an error with an estimated tail.
 #' @param dependence How the segments of a multi-segment triangle depend on
 #'   each other: `"independent"`, each resampling its own residuals;
 #'   `"synchronized"`, every segment resampling the residuals of the same
@@ -1496,7 +1515,7 @@ origin_matrix <- function(fit, flat) {
 #' @rdname odp_bootstrap_fit
 #' @export
 odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
-                          process = c("gamma", "none"),
+                          process = c("gamma", "none"), tail = 1, tail_std_err = NULL,
                           dependence = c("independent", "synchronized", "rank_correlation"),
                           spearman = NULL) {
   column <- fit_column(triangle, column)
@@ -1504,6 +1523,8 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
   dependence <- match.arg(dependence)
   ptr <- rust_result(triangle@ptr$odp_bootstrap(column, single_number(n_sims, "n_sims"),
                                                 single_number(seed, "seed"), process,
+                                                tail_ptr(tail),
+                                                optional_number(tail_std_err, "tail_std_err"),
                                                 dependence, spearman_arg(spearman)))
   odp_bootstrap_fit(ptr = ptr)
 }
@@ -1532,13 +1553,24 @@ spearman_arg <- function(spearman) {
 #' the observed latest value for the first, with mean `f*_k C` and Mack's
 #' variance `sigma_k^2 |C|^(2 - alpha)` (process error), to the triangle's
 #' last age. An origin's reserve is its last drawn value less its latest.
-#' Mack's model has no tail here, so development past the oldest age is not
-#' simulated.
+#' With a `tail` every origin takes one more step, from the oldest age to
+#' ultimate, with mean the tail factor times the value at the oldest age and
+#' variance `tail_sigma^2 |C|^(2 - alpha)` (Mack 1999); the tail factor is
+#' refitted on each simulation's pseudo factors (an estimated tail) or drawn
+#' from the lognormal with the factor as mean and the tail's standard error
+#' (a constant one). A constant tail attached before the oldest age moves
+#' each factor it replaces by the pseudo factor's deviation from the
+#' estimate, which [mack()] charges with the estimated factor's standard
+#' error. With a constant tail the standard deviation approximates
+#' [mack()]'s with the same tail; for an estimated tail the parameter error
+#' and the mean are the refit's, not Mack's extrapolated `tail.se` and the
+#' chain ladder's reserve.
 #'
 #' The standard deviation of the reserves approximates Mack's analytic
-#' standard error ([mack()]), and the mean is the chain ladder's reserve:
-#' the pooled residuals do not have a zero mean, so by default
-#' (`centre_residuals = TRUE`) they are centred before resampling.
+#' standard error ([mack()]), and the mean is the chain ladder's reserve
+#' (without a tail or with a constant one): the pooled residuals do not have
+#' a zero mean, so by default (`centre_residuals = TRUE`) they are centred
+#' before resampling.
 #' Resampled as they are (`centre_residuals = FALSE`, EVW's Appendix 1 as
 #' written) they bias every pseudo factor, and the mean reserve with them
 #' (about 17% above the chain ladder's on RAA, 0.7% on GenIns, 0.8% below
@@ -1577,8 +1609,20 @@ spearman_arg <- function(spearman) {
 #'   ratios and fills in a sigma behind a single link ratio, as in [mack()].
 #' @param centre_residuals Subtract the residuals' mean before resampling
 #'   them, so that the pseudo factors are unbiased and the mean reserve is
-#'   the chain ladder's; `FALSE` resamples them uncentred, as England,
+#'   the chain ladder's (without a tail or with a constant one); `FALSE`
+#'   resamples them uncentred, as England,
 #'   Verrall and Wuthrich's Appendix 1 is written.
+#' @param tail Development past the oldest age, as in [mack()]: a number (a
+#'   constant factor), [tail_constant()], [tail_curve()], [tail_bondy()] or
+#'   [tail_log_linear()]; 1 (no tail) by default. [mack_one_year()] takes
+#'   its tail from the refitted method instead.
+#' @param tail_sigma The tail's sigma (R's `tail.sigma`), the process error
+#'   of the step to ultimate, or `NULL` to extrapolate it. Unused when the
+#'   tail factor is 1.
+#' @param tail_std_err A constant tail factor's standard error (R's
+#'   `tail.se`), or `NULL` to extrapolate it (unlike [odp_bootstrap()],
+#'   which then keeps the factor fixed). Unused when the tail factor is 1,
+#'   and an error with an estimated tail.
 #' @param dependence,spearman How the segments depend on each other, as in
 #'   [odp_bootstrap()].
 #' @param ptr A `MackBootstrapFit` pointer; used internally.
@@ -1627,7 +1671,8 @@ mack_bootstrap_fit <- S7::new_class(
 mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                            process = c("gamma", "lognormal", "residuals", "normal", "none"),
                            average = "volume", sigma_interpolation = "log-linear",
-                           centre_residuals = TRUE,
+                           centre_residuals = TRUE, tail = 1, tail_sigma = NULL,
+                           tail_std_err = NULL,
                            dependence = c("independent", "synchronized", "rank_correlation"),
                            spearman = NULL) {
   column <- fit_column(triangle, column)
@@ -1636,7 +1681,9 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
   model <- development_args(average, sigma_interpolation)
   ptr <- rust_result(triangle@ptr$mack_bootstrap(
     column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
-    model$average, model$sigma, isTRUE(centre_residuals), dependence, spearman_arg(spearman)
+    model$average, model$sigma, isTRUE(centre_residuals), tail_ptr(tail),
+    optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
+    dependence, spearman_arg(spearman)
   ))
   mack_bootstrap_fit(ptr = ptr)
 }

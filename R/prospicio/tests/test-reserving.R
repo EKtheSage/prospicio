@@ -1292,6 +1292,73 @@ expect_error_like(mack_bootstrap(raa, process = "poisson"), "should be one of")
 expect_error_like(mack_bootstrap(raa, average = "median"), "should be one of")
 expect_error_like(mack_bootstrap(raa, n_sims = 0), "n_sims must be positive")
 
+# The bootstraps' lifetime view with a tail (decision 9 of
+# docs/design/reserving-v02.md, validation/tests/reserving_bootstrap_tail.rs).
+# RAA's oldest origin is at the last age, so its reserve under Mack's
+# bootstrap is the tail step alone: the latest value C times a factor drawn
+# from the lognormal with mean 1.05 and standard deviation tail_std_err,
+# plus process error of variance tail_sigma^2 C. Its standard deviation is
+# mack()'s with the same tail, sqrt(C^2 0.003^2 + 1.5^2 C), within five
+# Monte Carlo standard errors, and its mean 0.05 C.
+tb <- mack_bootstrap(raa, n_sims = 20000, seed = 20261008, tail = 1.05, tail_sigma = 1.5,
+                     tail_std_err = 0.003)
+tm <- mack(raa, tail = 1.05, tail_sigma = 1.5, tail_std_err = 0.003)
+stopifnot(identical(tb@mack@standard_error, tm@standard_error),
+          abs(tb@chain_ladder@tail - 1.05) < 1e-12, tb@mack@tail_sigma == 1.5)
+oldest <- sd_and_error(draw_matrix(tb@reserves)[, 1])
+c_oldest <- tb@chain_ladder@latest[[1]]
+near(tm@standard_error[[1]], sqrt(c_oldest^2 * 0.003^2 + 1.5^2 * c_oldest), rel = 1e-9)
+stopifnot(abs(oldest[["sd"]] - tm@standard_error[[1]]) <= 5 * oldest[["error"]],
+          abs(mean(draw_matrix(tb@reserves)[, 1]) - 0.05 * c_oldest) <= 5 * oldest[["sd"]] / sqrt(20000))
+# An estimated tail is refitted on every simulation's pseudo factors.
+refit <- mack_bootstrap(raa, n_sims = 200, seed = 1, process = "none", tail = tail_log_linear())
+stopifnot(length(unique(draw_matrix(refit@reserves)[, 1])) == 200)
+expect_error_like(mack_bootstrap(raa, n_sims = 10, tail = tail_log_linear(), tail_std_err = 0.01),
+                  "estimated tail")
+expect_error_like(mack_bootstrap(raa, n_sims = 10, tail = "yes"), "tail must be")
+# The ODP: the oldest origin develops by about 5% of its latest value, one
+# more increment with the ODP's process error; a tail of 1 draws as none.
+ob <- odp_bootstrap(raa, n_sims = 2000, seed = 3, tail = 1.05, tail_std_err = 0.01)
+plain_ob <- odp_bootstrap(raa, n_sims = 2000, seed = 3)
+stopifnot(abs(ob@chain_ladder@tail - 1.05) < 1e-12,
+          abs(mean(draw_matrix(ob@reserves)[, 1]) / (0.05 * ob@chain_ladder@latest[[1]]) - 1) < 0.1,
+          all(draw_matrix(plain_ob@reserves)[, 1] == 0),
+          variance(ob@reserves) > variance(plain_ob@reserves),
+          identical(draw_matrix(odp_bootstrap(raa, n_sims = 2000, seed = 3, tail = 1)@reserves),
+                    draw_matrix(plain_ob@reserves)))
+curve_ob <- odp_bootstrap(raa, n_sims = 200, seed = 3, process = "none", tail = tail_curve())
+stopifnot(length(unique(draw_matrix(curve_ob@reserves)[, 1])) == 200)
+expect_error_like(odp_bootstrap(raa, n_sims = 10, tail = tail_curve(), tail_std_err = 0.01),
+                  "estimated tail")
+# Two segments: the curve fitted from 48 months refits on every simulation
+# of Steady, whose late factors are well above 1, and fails on some of
+# Flat's, whose last two are barely above 1 (as
+# a_failed_refit_names_its_segment in mack_bootstrap.rs). The error counts
+# the failed simulations and names the segment. A constant tail reaches
+# every segment: fixed and without process error, each oldest origin's
+# reserve is 0.05 times its latest value in every simulation.
+sf_origin <- rep(2018:2023, 6:1)
+sf_age <- unlist(lapply(6:1, function(n) seq(12, by = 12, length.out = n)))
+steady <- c(100, 200, 250, 300, 345, 380, 110, 215, 270, 322, 372, 120, 240, 300, 358,
+            100, 205, 255, 105, 210, 100)
+flat <- c(100, 200, 250, 260, 260.5, 260.6, 110, 215, 270, 282, 282, 120, 240, 300, 312,
+          100, 205, 255, 105, 210, 100)
+sf <- triangle(data.frame(lob = rep(c("Steady", "Flat"), each = 21), origin = rep(sf_origin, 2),
+                          development = rep(sf_age, 2), value = c(steady, flat)),
+               "origin", "development", "value", keys = "lob")
+sf_curve <- tail_curve(fit_period = c(48, NA))
+for (msg in c(error_of(mack_bootstrap(sf, n_sims = 200, seed = 1, tail = sf_curve)),
+              error_of(odp_bootstrap(sf, n_sims = 200, tail = sf_curve)))) {
+  stopifnot(grepl("could not be refitted in [0-9]+ of 200 simulations", msg),
+            grepl("segment .*Flat", msg))
+}
+sf_fit <- mack_bootstrap(sf, n_sims = 200, seed = 1, process = "none", tail = 1.05,
+                         tail_std_err = 0)
+for (lob in c("Steady", "Flat")) {
+  latest <- c(Steady = 380, Flat = 260.6)[[lob]]
+  near(draw_matrix(segment(sf_fit, lob = lob)@reserves)[, 1], rep(0.05 * latest, 200), rel = 1e-9)
+}
+
 # Dependence between segments (decision 10 of docs/design/reserving-v02.md)
 # on the CAS loss reserve database lines (validation/data/clrd_lines.csv),
 # as validation/tests/reserving_dependence.rs.
@@ -1375,5 +1442,30 @@ expect_error_like(odp_bootstrap(pair, n_sims = 10, dependence = "rank_correlatio
 expect_error_like(odp_bootstrap(clrd_lines(c("comauto", "wkcomp"), shift = 1), n_sims = 10,
                                 dependence = "synchronized"),
                   "same origins, ages and observed cells")
+
+# Tails with dependence (decision 9 with decision 10): synchronized, an
+# estimated tail is refitted on each line's pseudo factors and follows the
+# shared residuals; a constant tail's lognormal draw is each line's own.
+for (boot in list(odp_bootstrap, mack_bootstrap)) {
+  m <- line_totals(boot(twins, n_sims = 500, seed = 3, process = "none", tail = tail_log_linear(),
+                        dependence = "synchronized")@reserves)
+  plain <- line_totals(boot(twins, n_sims = 500, seed = 3, process = "none",
+                            dependence = "synchronized")@reserves)
+  stopifnot(identical(m[, 1], m[, 2]), length(unique(m[, 1])) > 1, sum(m[, 1]) > sum(plain[, 1]))
+  m <- line_totals(boot(twins, n_sims = 2000, seed = 3, process = "none", tail = 1.05,
+                        tail_std_err = 0.02, dependence = "synchronized")@reserves)
+  r <- stats::cor(m[, 1], m[, 2])
+  stopifnot(!identical(m[, 1], m[, 2]), r > 0.1, r < 0.9)
+  # Rank correlation reorders whole simulations, tail included.
+  independent <- line_totals(boot(pair, n_sims = 2000, seed = 5, tail = 1.05,
+                                  tail_std_err = 0.02)@reserves)
+  ranked <- line_totals(boot(pair, n_sims = 2000, seed = 5, tail = 1.05, tail_std_err = 0.02,
+                             dependence = "rank_correlation",
+                             spearman = matrix(c(1, 0.5, 0.5, 1), 2))@reserves)
+  stopifnot(identical(sort(independent[, 1]), sort(ranked[, 1])),
+            identical(sort(independent[, 2]), sort(ranked[, 2])),
+            abs(stats::cor(ranked[, 1], ranked[, 2], method = "spearman") - 0.5) <
+              4 * 0.75 / sqrt(2000))
+}
 
 cat("prospicio R reserving tests passed\n")

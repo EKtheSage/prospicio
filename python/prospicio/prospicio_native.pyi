@@ -6350,8 +6350,26 @@ class MackBootstrap:
     centre_residuals : bool, default True
         Subtract the residuals' mean before resampling them, so that the
         pseudo factors are unbiased, the mean CDR is about zero and the
-        lifetime mean reserve is the chain ladder's. ``False`` resamples them
-        uncentred, as EVW's Appendix 1 is written.
+        lifetime mean reserve is the chain ladder's (without a tail or with
+        a constant one). ``False`` resamples them uncentred, as EVW's
+        Appendix 1 is written.
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        Development past the oldest age in the lifetime view (``fit``), as
+        ``Mack``'s: one more step, to ultimate, with the process error of
+        the tail's sigma (Mack 1999). An estimated tail (``TailCurve``,
+        ``TailBondy``, ``TailLogLinear``) is refitted on each simulation's
+        pseudo factors, which gives its parameter error; a constant one is
+        drawn from the lognormal with the factor as mean and the tail's
+        standard error. No tail by default. ``one_year`` takes its tail from
+        ``method`` instead and rejects one here.
+    tail_sigma : float, optional
+        The tail's sigma (R's ``tail.sigma``); extrapolated if not given.
+        Unused when the tail factor is 1.
+    tail_std_err : float, optional
+        The constant tail factor's standard error (R's ``tail.se``);
+        extrapolated if not given, unlike ``OdpBootstrap``, which then keeps
+        the factor fixed. Unused when the tail factor is 1; an error with an
+        estimated tail.
     dependence : {"independent", "synchronized", "rank_correlation"}, default "independent"
         How the segments of a multi-segment triangle depend on each other
         in ``fit`` and ``one_year``: each resamples its own residuals
@@ -6378,6 +6396,8 @@ class MackBootstrap:
         If ``n_sims`` is zero, a setting is unknown, or ``spearman`` is
         missing for ``"rank_correlation"``, given for another dependence or
         not square.
+    TypeError
+        If ``tail`` is not a number or a tail estimator.
     OverflowError
         If ``n_sims`` or ``seed`` is negative or too large.
     
@@ -6395,7 +6415,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -6422,12 +6442,15 @@ class MackBootstrap:
         simulation resamples the residuals into pseudo factors and draws
         every cumulative value from the latest observed one to the last age,
         each from the one before, with Mack's mean and variance; an origin's
-        reserve is its last drawn value less its latest. Mack's model has no
-        tail here, so development past the oldest age is not simulated. The
-        standard deviation approximates Mack's analytic standard error
-        (``Mack.fit``); the mean is the chain ladder's reserve with
-        ``centre_residuals`` (the default), about 17% above it on RAA
-        without.
+        reserve is its last drawn value less its latest. With a ``tail``
+        each origin takes one more step, to ultimate, with the tail's sigma,
+        the tail factor refitted (an estimated tail) or drawn (a constant
+        one) per simulation. The standard deviation approximates Mack's
+        analytic standard error (``Mack.fit``, with the same tail; for an
+        estimated tail the parameter error is the refit's, not Mack's
+        extrapolated one); the mean is the chain ladder's reserve with
+        ``centre_residuals`` (the default), without a tail or with a
+        constant one, about 17% above it on RAA without centring.
         
         Parameters
         ----------
@@ -6444,10 +6467,12 @@ class MackBootstrap:
         Raises
         ------
         ValueError
-            As ``Mack.fit``, and if an origin has a gap before its latest age,
-            a cumulative value is negative, synchronized segments differ in
-            their origins, ages or observed cells, or ``spearman`` does not
-            fit the segments.
+            As ``Mack.fit``, if an origin has a gap before its latest age, if
+            a cumulative value is negative, if synchronized segments differ in
+            their origins, ages or observed cells, if ``spearman`` does not
+            fit the segments, if ``tail_std_err`` is given with an estimated
+            tail, or if the tail cannot be refitted on some simulation's
+            pseudo factors (the message counts them and gives one).
         
         Examples
         --------
@@ -6476,7 +6501,8 @@ class MackBootstrap:
         with the same pseudo factors, appends them to the triangle, refits
         ``method`` and records ``CDR = opening ultimate - closing
         ultimate``. Mack's model has no tail here: development past the
-        oldest age moves only through ``method``'s refitted tail.
+        oldest age moves only through ``method``'s refitted tail, and a
+        bootstrap ``tail`` is an error.
         
         Parameters
         ----------
@@ -6501,8 +6527,8 @@ class MackBootstrap:
         TypeError
             If ``method`` is not one of the classes above.
         ValueError
-            As ``OdpBootstrap.one_year`` and ``Mack.fit``, and if a
-            cumulative value is negative.
+            As ``OdpBootstrap.one_year`` and ``Mack.fit``, if a cumulative
+            value is negative, and if the bootstrap has a ``tail``.
         """
     @property
     def process(self, /) -> str:
@@ -6526,6 +6552,23 @@ class MackBootstrap:
         The Spearman matrix of ``dependence="rank_correlation"``; ``None``
         otherwise.
         """
+    @property
+    def tail(self, /) -> Any:
+        """
+        The lifetime view's tail: a constant factor as a number, otherwise
+        its estimator.
+        """
+    @property
+    def tail_sigma(self, /) -> float |None:
+        """
+        The given tail sigma, or ``None`` to extrapolate it.
+        """
+    @property
+    def tail_std_err(self, /) -> float |None:
+        """
+        The given standard error of a constant tail factor, or ``None`` to
+        extrapolate it.
+        """
 
 @final
 class MackBootstrapFit:
@@ -6544,8 +6587,10 @@ class MackBootstrapFit:
     @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
-        The chain ladder of Mack's model (its averaging): the reserves the
-        bootstrap's mean equals with ``centre_residuals=True``, the default.
+        The chain ladder of Mack's model (its averaging), with the
+        bootstrap's tail: the reserves the bootstrap's mean equals with
+        ``centre_residuals=True``, the default, without a tail or with a
+        constant one (an estimated tail's refit has its own mean).
         """
     @property
     def development(self, /) -> list[int]:
@@ -6574,9 +6619,10 @@ class MackBootstrapFit:
     @property
     def mack(self, /) -> MackFit:
         """
-        Mack's model on the observed triangle, without a tail: the factors
-        and sigmas the simulation uses, and the analytic standard errors the
-        simulated standard deviations approximate.
+        Mack's model on the observed triangle, with the bootstrap's tail:
+        the factors and sigmas the simulation uses, and the analytic
+        standard errors the simulated standard deviations approximate (with
+        an estimated tail, up to the refit's own parameter error).
         """
     @property
     def origins(self, /) -> list[str]:
@@ -7363,6 +7409,26 @@ class OdpBootstrap:
         Process error on each simulated future incremental value: Gamma with
         the expected value as mean and variance ``scale * |mean|`` (R's
         ``process.distr = "gamma"``), or none for parameter error only.
+    tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+        Development past the oldest age in the lifetime view (``fit``), as
+        ``ChainLadder``'s; no tail by default, as R's ``BootChainLadder``.
+        An estimated tail (``TailCurve``, ``TailBondy``, ``TailLogLinear``)
+        is refitted on each simulation's pseudo factors, which gives its
+        parameter error; a constant one is fixed unless ``tail_std_err`` is
+        given. The step from the oldest age to ultimate is one more future
+        increment, with mean the pseudo value at the oldest age times the
+        tail factor less 1 and the same process error. ``one_year`` takes
+        its tail from ``method`` instead and rejects one here. R's rule
+        (``TailLogLinear``) refitted on the ODP's pseudo factors is often
+        exactly 1 (5.7% of simulations on RAA) and on average high (RAA's
+        oldest origin's mean reserve 78% above the plug-in); a constant tail
+        with ``tail_std_err`` has neither.
+    tail_std_err : float, optional
+        Standard error of a constant tail factor: each simulation draws the
+        factor from the lognormal with the factor as mean and this standard
+        deviation. Not given, the factor is fixed, unlike
+        ``MackBootstrap``, which extrapolates Mack's standard error. Unused
+        when the factor is 1; an error with an estimated tail.
     dependence : {"independent", "synchronized", "rank_correlation"}, default "independent"
         How the segments of a multi-segment triangle depend on each other
         in ``fit`` and ``one_year``: each resamples its own residuals
@@ -7389,6 +7455,8 @@ class OdpBootstrap:
         If ``n_sims`` is zero, ``process`` or ``dependence`` is unknown, or
         ``spearman`` is missing for ``"rank_correlation"``, given for another
         dependence or not square.
+    TypeError
+        If ``tail`` is not a number or a tail estimator.
     OverflowError
         If ``n_sims`` or ``seed`` is negative or too large.
     
@@ -7406,7 +7474,7 @@ class OdpBootstrap:
     >>> fit.reserves.mean() > 0
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> OdpBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> OdpBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def dependence(self, /) -> str:
@@ -7439,7 +7507,9 @@ class OdpBootstrap:
             latest age, a segment has too few observed cells for the
             degrees of freedom to be positive, synchronized segments differ
             in their origins, ages or observed cells, or ``spearman`` does
-            not fit the segments.
+            not fit the segments; with an estimated ``tail``, if it cannot be
+            refitted on some simulation's pseudo factors (the message counts
+            them and gives one).
         """
     @property
     def n_sims(self, /) -> int:
@@ -7530,6 +7600,18 @@ class OdpBootstrap:
         The Spearman matrix of ``dependence="rank_correlation"``; ``None``
         otherwise.
         """
+    @property
+    def tail(self, /) -> Any:
+        """
+        The lifetime view's tail: a constant factor as a number, otherwise
+        its estimator.
+        """
+    @property
+    def tail_std_err(self, /) -> float |None:
+        """
+        The standard error a constant tail factor is drawn with, or
+        ``None`` to keep it fixed.
+        """
 
 @final
 class OdpBootstrapFit:
@@ -7551,7 +7633,7 @@ class OdpBootstrapFit:
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The deterministic volume-weighted chain ladder the bootstrap is
-        centred on.
+        centred on, with the bootstrap's tail.
         """
     @property
     def development(self, /) -> list[int]:

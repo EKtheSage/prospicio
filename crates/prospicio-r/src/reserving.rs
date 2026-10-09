@@ -205,6 +205,7 @@ fn mack_bootstrap(
         development: development(average, sigma_interpolation)?,
         centre_residuals,
         dependence,
+        ..Default::default()
     })
 }
 
@@ -233,6 +234,7 @@ fn bootstrap(
         seed: whole(seed, "seed")?,
         process,
         dependence,
+        ..Default::default()
     })
 }
 
@@ -786,19 +788,27 @@ impl Triangle {
     /// The ODP bootstrap of every segment, the segments depending on each
     /// other as `dependence` ("independent", "synchronized" or
     /// "rank_correlation" with the row-major `spearman` matrix) says.
+    /// `tail` is a `ReservingTail`, developed past the oldest age in every
+    /// simulation; `tail_std_err` is `NULL` to keep a constant tail fixed.
+    #[allow(clippy::too_many_arguments)]
     fn odp_bootstrap(
         &self,
         column: &str,
         n_sims: f64,
         seed: f64,
         process: &str,
+        tail: Robj,
+        tail_std_err: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<OdpBootstrapFit> {
         let dependence = segment_dependence(dependence, spearman)?;
-        let inner = bootstrap(n_sims, seed, process, dependence)?
-            .fit_segments(&self.inner, column)
-            .map_err(to_r)?;
+        let boot = OdpBootstrap {
+            tail: tail_arg(&tail)?,
+            tail_std_err: optional(tail_std_err),
+            ..bootstrap(n_sims, seed, process, dependence)?
+        };
+        let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
         Ok(OdpBootstrapFit { inner })
     }
 
@@ -807,7 +817,9 @@ impl Triangle {
     /// "residuals", "normal" or "none"), Mack's model averaged as `average`
     /// with `sigma_interpolation`, the residuals centred before resampling
     /// if `centre_residuals`, and the segments depending on each other as
-    /// `dependence` and `spearman` say (as `odp_bootstrap`).
+    /// `dependence` and `spearman` say (as `odp_bootstrap`); then to
+    /// ultimate with `tail` (a `ReservingTail`), whose `tail_sigma` and
+    /// `tail_std_err` are `NULL` to extrapolate them.
     #[allow(clippy::too_many_arguments)]
     fn mack_bootstrap(
         &self,
@@ -818,20 +830,27 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         centre_residuals: bool,
+        tail: Robj,
+        tail_sigma: Nullable<f64>,
+        tail_std_err: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<MackBootstrapFit> {
-        let inner = mack_bootstrap(
-            n_sims,
-            seed,
-            process,
-            average,
-            sigma_interpolation,
-            centre_residuals,
-            segment_dependence(dependence, spearman)?,
-        )?
-        .fit_segments(&self.inner, column)
-        .map_err(to_r)?;
+        let boot = MackBootstrap {
+            tail: tail_arg(&tail)?,
+            tail_sigma: optional(tail_sigma),
+            tail_std_err: optional(tail_std_err),
+            ..mack_bootstrap(
+                n_sims,
+                seed,
+                process,
+                average,
+                sigma_interpolation,
+                centre_residuals,
+                segment_dependence(dependence, spearman)?,
+            )?
+        };
+        let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
         Ok(MackBootstrapFit { inner })
     }
 
@@ -1526,7 +1545,8 @@ pub(crate) struct OdpBootstrapFit {
 
 #[extendr]
 impl OdpBootstrapFit {
-    /// The chain ladder the bootstrap is centred on.
+    /// The chain ladder the bootstrap is centred on, with the bootstrap's
+    /// tail.
     fn chain_ladder(&self) -> ChainLadderFit {
         ChainLadderFit {
             inner: self.inner.segments.map(|s| s.chain_ladder.clone()),
@@ -1589,7 +1609,7 @@ impl MackBootstrapFit {
         }
     }
 
-    /// Mack's model on the observed triangle, without a tail.
+    /// Mack's model on the observed triangle, with the bootstrap's tail.
     fn mack(&self) -> MackFit {
         MackFit {
             inner: self.inner.segments.map(|s| s.mack.clone()),
