@@ -310,7 +310,7 @@ pub struct MackBootstrapFit {
     /// the simulated reserves' standard deviations approximate.
     pub mack: MackFit,
     /// The scaled bias-adjusted residuals of the link ratios, as
-    /// [`MackBootstrapSegment::residuals`].
+    /// [`MackBootstrapSegment`]'s `residuals`.
     pub residuals: Vec<f64>,
     /// Joint distribution of the reserve (each origin's last simulated
     /// cumulative value less its latest observed value) by origin:
