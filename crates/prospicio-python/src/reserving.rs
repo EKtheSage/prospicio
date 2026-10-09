@@ -3976,11 +3976,28 @@ impl PyClarkFit {
 ///     Process error on each simulated future incremental value: Gamma with
 ///     the expected value as mean and variance ``scale * |mean|`` (R's
 ///     ``process.distr = "gamma"``), or none for parameter error only.
+/// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+///     Development past the oldest age in the lifetime view (``fit``), as
+///     ``ChainLadder``'s; no tail by default, as R's ``BootChainLadder``.
+///     An estimated tail (``TailCurve``, ``TailBondy``, ``TailLogLinear``)
+///     is refitted on each simulation's pseudo factors, which gives its
+///     parameter error; a constant one is fixed unless ``tail_std_err`` is
+///     given. The step from the oldest age to ultimate is one more future
+///     increment, with mean the pseudo value at the oldest age times the
+///     tail factor less 1 and the same process error. ``one_year`` takes
+///     its tail from ``method`` instead and rejects one here.
+/// tail_std_err : float, optional
+///     Standard error of a constant tail factor: each simulation draws the
+///     factor from the lognormal with the factor as mean and this standard
+///     deviation. Unused when the factor is 1; an error with an estimated
+///     tail.
 ///
 /// Raises
 /// ------
 /// ValueError
 ///     If ``n_sims`` is zero or ``process`` is unknown.
+/// TypeError
+///     If ``tail`` is not a number or a tail estimator.
 /// OverflowError
 ///     If ``n_sims`` or ``seed`` is negative or too large.
 ///
@@ -4005,8 +4022,14 @@ pub(crate) struct PyOdpBootstrap {
 #[pymethods]
 impl PyOdpBootstrap {
     #[new]
-    #[pyo3(signature = (n_sims = 10_000, seed = 0, process = "gamma"))]
-    fn new(n_sims: usize, seed: u64, process: &str) -> PyResult<Self> {
+    #[pyo3(signature = (n_sims = 10_000, seed = 0, process = "gamma", tail = None, tail_std_err = None))]
+    fn new(
+        n_sims: usize,
+        seed: u64,
+        process: &str,
+        tail: Option<&Bound<'_, PyAny>>,
+        tail_std_err: Option<f64>,
+    ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
         }
@@ -4015,6 +4038,8 @@ impl PyOdpBootstrap {
                 n_sims,
                 seed,
                 process: process_distribution(process)?,
+                tail: tail_arg(tail)?,
+                tail_std_err,
             },
         })
     }
@@ -4037,6 +4062,20 @@ impl PyOdpBootstrap {
         process_name(self.inner.process)
     }
 
+    /// The lifetime view's tail: a constant factor as a number, otherwise
+    /// its estimator.
+    #[getter]
+    fn tail<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        tail_object(py, &self.inner.tail)
+    }
+
+    /// The standard error a constant tail factor is drawn with, or
+    /// ``None`` to keep it fixed.
+    #[getter]
+    fn tail_std_err(&self) -> Option<f64> {
+        self.inner.tail_std_err
+    }
+
     /// Bootstraps one measure column in every segment of a cumulative
     /// triangle, each with its own residuals and scale, into one joint
     /// distribution of the reserves. Every origin must be observed from the
@@ -4057,7 +4096,9 @@ impl PyOdpBootstrap {
     /// ValueError
     ///     As ``ChainLadder.fit``, and if an origin has a gap before its
     ///     latest age or a segment has too few observed cells for the
-    ///     degrees of freedom to be positive.
+    ///     degrees of freedom to be positive; with an estimated ``tail``,
+    ///     if it cannot be refitted on some simulation's pseudo factors (the
+    ///     message counts them and gives one).
     fn fit(
         &self,
         py: Python<'_>,
@@ -4154,11 +4195,16 @@ impl PyOdpBootstrap {
     }
 
     fn __repr__(&self) -> String {
+        let std_err = self
+            .inner
+            .tail_std_err
+            .map_or(String::new(), |v| format!(", tail_std_err={v:?}"));
         format!(
-            "OdpBootstrap(n_sims={}, seed={}, process={:?})",
+            "OdpBootstrap(n_sims={}, seed={}, process={:?}, tail={}{std_err})",
             self.inner.n_sims,
             self.inner.seed,
-            self.process()
+            self.process(),
+            tail_arg_repr(&self.inner.tail),
         )
     }
 }
@@ -4415,11 +4461,29 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 ///     pseudo factors are unbiased, the mean CDR is about zero and the
 ///     lifetime mean reserve is the chain ladder's. ``False`` resamples them
 ///     uncentred, as EVW's Appendix 1 is written.
+/// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
+///     Development past the oldest age in the lifetime view (``fit``), as
+///     ``Mack``'s: one more step, to ultimate, with the process error of
+///     the tail's sigma (Mack 1999). An estimated tail (``TailCurve``,
+///     ``TailBondy``, ``TailLogLinear``) is refitted on each simulation's
+///     pseudo factors, which gives its parameter error; a constant one is
+///     drawn from the lognormal with the factor as mean and the tail's
+///     standard error. No tail by default. ``one_year`` takes its tail from
+///     ``method`` instead and rejects one here.
+/// tail_sigma : float, optional
+///     The tail's sigma (R's ``tail.sigma``); extrapolated if not given.
+///     Unused when the tail factor is 1.
+/// tail_std_err : float, optional
+///     The constant tail factor's standard error (R's ``tail.se``);
+///     extrapolated if not given. Unused when the tail factor is 1; an
+///     error with an estimated tail.
 ///
 /// Raises
 /// ------
 /// ValueError
 ///     If ``n_sims`` is zero or a setting is unknown.
+/// TypeError
+///     If ``tail`` is not a number or a tail estimator.
 /// OverflowError
 ///     If ``n_sims`` or ``seed`` is negative or too large.
 ///
@@ -4475,7 +4539,11 @@ impl PyMackBootstrap {
         average = "volume",
         sigma_interpolation = "log-linear",
         centre_residuals = true,
+        tail = None,
+        tail_sigma = None,
+        tail_std_err = None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         n_sims: usize,
         seed: u64,
@@ -4483,6 +4551,9 @@ impl PyMackBootstrap {
         average: &str,
         sigma_interpolation: &str,
         centre_residuals: bool,
+        tail: Option<&Bound<'_, PyAny>>,
+        tail_sigma: Option<f64>,
+        tail_std_err: Option<f64>,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -4494,6 +4565,9 @@ impl PyMackBootstrap {
                 process: mack_process(process)?,
                 development: development(average, sigma_interpolation)?,
                 centre_residuals,
+                tail: tail_arg(tail)?,
+                tail_sigma,
+                tail_std_err,
             },
         })
     }
@@ -4535,16 +4609,39 @@ impl PyMackBootstrap {
         self.inner.centre_residuals
     }
 
+    /// The lifetime view's tail: a constant factor as a number, otherwise
+    /// its estimator.
+    #[getter]
+    fn tail<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        tail_object(py, &self.inner.tail)
+    }
+
+    /// The given tail sigma, or ``None`` to extrapolate it.
+    #[getter]
+    fn tail_sigma(&self) -> Option<f64> {
+        self.inner.tail_sigma
+    }
+
+    /// The given standard error of a constant tail factor, or ``None`` to
+    /// extrapolate it.
+    #[getter]
+    fn tail_std_err(&self) -> Option<f64> {
+        self.inner.tail_std_err
+    }
+
     /// The lifetime view: bootstraps one measure column in every segment of
     /// a cumulative triangle, each with its own Mack model and residuals,
     /// into one joint distribution of the reserves (EVW's Appendix 1). Each
     /// simulation resamples the residuals into pseudo factors and draws
     /// every cumulative value from the latest observed one to the last age,
     /// each from the one before, with Mack's mean and variance; an origin's
-    /// reserve is its last drawn value less its latest. Mack's model has no
-    /// tail here, so development past the oldest age is not simulated. The
-    /// standard deviation approximates Mack's analytic standard error
-    /// (``Mack.fit``); the mean is the chain ladder's reserve with
+    /// reserve is its last drawn value less its latest. With a ``tail``
+    /// each origin takes one more step, to ultimate, with the tail's sigma,
+    /// the tail factor refitted (an estimated tail) or drawn (a constant
+    /// one) per simulation. The standard deviation approximates Mack's
+    /// analytic standard error (``Mack.fit``, with the same tail; for an
+    /// estimated tail the parameter error is the refit's, not Mack's
+    /// extrapolated one); the mean is the chain ladder's reserve with
     /// ``centre_residuals`` (the default), about 17% above it on RAA
     /// without.
     ///
@@ -4563,8 +4660,11 @@ impl PyMackBootstrap {
     /// Raises
     /// ------
     /// ValueError
-    ///     As ``Mack.fit``, if an origin has a gap before its latest age, or
-    ///     if a cumulative value is negative.
+    ///     As ``Mack.fit``, if an origin has a gap before its latest age, if
+    ///     a cumulative value is negative, if ``tail_std_err`` is given with
+    ///     an estimated tail, or if the tail cannot be refitted on some
+    ///     simulation's pseudo factors (the message counts them and gives
+    ///     one).
     ///
     /// Examples
     /// --------
@@ -4596,7 +4696,8 @@ impl PyMackBootstrap {
     /// with the same pseudo factors, appends them to the triangle, refits
     /// ``method`` and records ``CDR = opening ultimate - closing
     /// ultimate``. Mack's model has no tail here: development past the
-    /// oldest age moves only through ``method``'s refitted tail.
+    /// oldest age moves only through ``method``'s refitted tail, and a
+    /// bootstrap ``tail`` is an error.
     ///
     /// Parameters
     /// ----------
@@ -4621,8 +4722,8 @@ impl PyMackBootstrap {
     /// TypeError
     ///     If ``method`` is not one of the classes above.
     /// ValueError
-    ///     As ``OdpBootstrap.one_year`` and ``Mack.fit``, and if a
-    ///     cumulative value is negative.
+    ///     As ``OdpBootstrap.one_year`` and ``Mack.fit``, if a cumulative
+    ///     value is negative, and if the bootstrap has a ``tail``.
     #[pyo3(signature = (triangle, column, method, exposure = None))]
     fn one_year(
         &self,
@@ -4643,9 +4744,11 @@ impl PyMackBootstrap {
     }
 
     fn __repr__(&self) -> String {
+        let given =
+            |name: &str, v: Option<f64>| v.map_or(String::new(), |v| format!(", {name}={v:?}"));
         format!(
             "MackBootstrap(n_sims={}, seed={}, process={:?}, average={:?}, \
-             sigma_interpolation={:?}, centre_residuals={})",
+             sigma_interpolation={:?}, centre_residuals={}, tail={}{}{})",
             self.inner.n_sims,
             self.inner.seed,
             self.process(),
@@ -4656,6 +4759,9 @@ impl PyMackBootstrap {
             } else {
                 "False"
             },
+            tail_arg_repr(&self.inner.tail),
+            given("tail_sigma", self.inner.tail_sigma),
+            given("tail_std_err", self.inner.tail_std_err),
         )
     }
 }

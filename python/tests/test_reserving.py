@@ -962,7 +962,7 @@ def test_bootstrap_process_error(triangles):
     # Process error adds variance; the residuals and scale do not change.
     assert param.reserves.variance() < gamma.reserves.variance()
     assert param.scale == gamma.scale
-    assert "OdpBootstrap(n_sims=10000, seed=0, process=\"gamma\")" == repr(OdpBootstrap())
+    assert "OdpBootstrap(n_sims=10000, seed=0, process=\"gamma\", tail=1.0)" == repr(OdpBootstrap())
     assert repr(param).startswith("OdpBootstrapFit(origins=10, n_sims=5000")
 
 
@@ -1656,7 +1656,7 @@ def test_mack_one_year_fields_and_errors(triangles):
     assert settings == (500, 1, "normal", "simple", "log-linear", True)
     assert repr(boot) == (
         'MackBootstrap(n_sims=500, seed=1, process="normal", average="simple", sigma_interpolation="log-linear", '
-        "centre_residuals=True)"
+        "centre_residuals=True, tail=1.0)"
     )
     # Mack's rule for the last sigma reaches the model (it differs from the
     # log-linear one only there).
@@ -1667,7 +1667,7 @@ def test_mack_one_year_fields_and_errors(triangles):
     assert sigma != Mack().fit(raa, "values").sigma
     # Centring (the default) changes the draws, not the residuals reported.
     uncentred = MackBootstrap(n_sims=50, seed=1, centre_residuals=False)
-    assert not uncentred.centre_residuals and repr(uncentred).endswith("centre_residuals=False)")
+    assert not uncentred.centre_residuals and repr(uncentred).endswith("centre_residuals=False, tail=1.0)")
     centred = MackBootstrap(n_sims=50, seed=1).one_year(raa, "values", ChainLadder())
     uncentred_fit = uncentred.one_year(raa, "values", ChainLadder())
     assert uncentred_fit.cdr.draw_matrix() != centred.cdr.draw_matrix()
@@ -1809,3 +1809,72 @@ def test_mack_bootstrap_lifetime_every_segment_at_once():
     by_lob = fit.reserves.aggregate(["lob"])
     assert len(by_lob.components()) == 2
     assert repr(fit).startswith("MackBootstrapFit(segments=2, origins=8, n_sims=400")
+
+
+# The bootstraps' lifetime view with a tail (decision 9 of
+# docs/design/reserving-v02.md). Mack's bootstrap with a constant tail
+# reproduces Mack's standard error with the same tail: on RAA's oldest
+# origin, at the last age, the reserve is the tail step alone, with variance
+# C^2 tail_std_err^2 + tail_sigma^2 C exactly; on GenIns's total within 2.5%
+# (five Monte Carlo standard errors at 20,000 simulations; measured 0.4%,
+# validation/tests/reserving_bootstrap_tail.rs).
+
+
+def test_mack_bootstrap_with_a_tail(triangles):
+    raa, genins = triangles["raa"], triangles["genins"]
+    boot = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, tail=1.05, tail_sigma=1.5, tail_std_err=0.003)
+    assert (boot.tail, boot.tail_sigma, boot.tail_std_err) == (1.05, 1.5, 0.003)
+    assert repr(boot).endswith("centre_residuals=True, tail=1.05, tail_sigma=1.5, tail_std_err=0.003)")
+    fit = boot.fit(raa, "values")
+    mack = Mack(tail=1.05, tail_sigma=1.5, tail_std_err=0.003).fit(raa, "values")
+    assert fit.mack.standard_error == mack.standard_error
+    assert fit.chain_ladder.tail == pytest.approx(1.05)
+    oldest = [row[0] for row in fit.reserves.draw_matrix()]
+    mean = sum(oldest) / len(oldest)
+    sd = math.sqrt(sum((x - mean) ** 2 for x in oldest) / len(oldest))
+    assert abs(sd / mack.standard_error[0] - 1.0) < 0.025
+    assert abs(mean / (0.05 * mack.chain_ladder.latest[0]) - 1.0) < 0.01
+    # GenIns in total, the tail's sigma and standard error extrapolated.
+    fit = MackBootstrap(n_sims=ONE_YEAR_SIMS, seed=ONE_YEAR_SEED, tail=1.05).fit(genins, "values")
+    mack = Mack(tail=1.05).fit(genins, "values")
+    assert abs(math.sqrt(fit.reserves.variance()) / mack.total_standard_error - 1.0) < 0.025
+    assert abs(fit.reserves.mean() / mack.total_reserve - 1.0) < 0.0047
+    # An estimated tail is refitted on every simulation's pseudo factors.
+    refitted = MackBootstrap(n_sims=200, seed=1, tail=TailLogLinear(), process="none")
+    assert isinstance(refitted.tail, TailLogLinear)
+    refit = refitted.fit(raa, "values")
+    assert len({row[0] for row in refit.reserves.draw_matrix()}) == 200
+    with pytest.raises(ValueError, match="estimated tail"):
+        MackBootstrap(n_sims=10, tail=TailLogLinear(), tail_std_err=0.01).fit(raa, "values")
+    with pytest.raises(ValueError, match="one-year view"):
+        MackBootstrap(n_sims=10, tail=1.05).one_year(raa, "values", ChainLadder())
+    with pytest.raises(TypeError, match="tail must be"):
+        MackBootstrap(tail="loglinear")
+
+
+def test_odp_bootstrap_with_a_tail(triangles):
+    raa = triangles["raa"]
+    boot = OdpBootstrap(n_sims=2_000, seed=3, tail=1.05, tail_std_err=0.01)
+    assert (boot.tail, boot.tail_std_err) == (1.05, 0.01)
+    assert repr(boot) == 'OdpBootstrap(n_sims=2000, seed=3, process="gamma", tail=1.05, tail_std_err=0.01)'
+    fit = boot.fit(raa, "values")
+    assert fit.chain_ladder.tail == pytest.approx(1.05)
+    # The oldest origin develops past the oldest age, by about 5% of its
+    # latest value; without a tail it has no reserve.
+    oldest = [row[0] for row in fit.reserves.draw_matrix()]
+    mean = sum(oldest) / len(oldest)
+    assert abs(mean / (0.05 * fit.chain_ladder.latest[0]) - 1.0) < 0.1
+    plain = OdpBootstrap(n_sims=2_000, seed=3).fit(raa, "values")
+    assert all(row[0] == 0.0 for row in plain.reserves.draw_matrix())
+    assert fit.reserves.variance() > plain.reserves.variance()
+    # A tail of 1 is no tail: the same draws.
+    one = OdpBootstrap(n_sims=2_000, seed=3, tail=1.0).fit(raa, "values")
+    assert one.reserves.draw_matrix() == plain.reserves.draw_matrix()
+    curve = OdpBootstrap(n_sims=200, seed=3, tail=TailCurve(), process="none")
+    assert isinstance(curve.tail, TailCurve)
+    assert len({row[0] for row in curve.fit(raa, "values").reserves.draw_matrix()}) == 200
+    with pytest.raises(ValueError, match="estimated tail"):
+        OdpBootstrap(n_sims=10, tail=TailCurve(), tail_std_err=0.01).fit(raa, "values")
+    with pytest.raises(ValueError, match="one-year view"):
+        OdpBootstrap(n_sims=10, tail=1.05).one_year(raa, "values", ChainLadder())
+
