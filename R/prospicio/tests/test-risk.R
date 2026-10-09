@@ -13,6 +13,38 @@ stopifnot(risk_measure(grid_distribution(1, c(0.5, 0.25, 0.25)), distortion("tva
 stopifnot(inherits(try(distortion("proportional_hazard", 1.5), silent = TRUE), "try-error"))
 stopifnot(inherits(try(distortion("variance", 1), silent = TRUE), "try-error"))
 
+# More families, on Monograph 15's InsCo totals (assets 100, 15% cost of
+# capital); calibration matches aggregate 1.0.1's parameters.
+insco <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+insco_p <- (46.6 + 15) / 1.15
+ccoc <- distortion("ccoc", 0.15)
+stopifnot(abs(risk_measure(insco, ccoc) - insco_p) < 1e-12)
+stopifnot(abs(distortion_mass(ccoc) - 0.15 / 1.15) < 1e-15)
+stopifnot(abs(risk_measure(insco, distortion("bitvar", c(0, 1, 0.15 / 1.15))) - insco_p) < 1e-12)
+for (d in list(
+  distortion("weighted_tvar", c(0.1, 0.5, 0.9), weights = c(0.2, 0.5, 0.3)),
+  distortion("capped_linear", 1.4, r0 = 0.05), distortion("capped_log_linear", 0.8, r0 = 0.1),
+  distortion("lep", 0.2, r0 = 0.02), distortion("linear_yield", 0.5, r0 = 0.03),
+  distortion("beta", c(0.6, 1.5)),
+  distortion_mixture(list(distortion("wang", 0.3), ccoc), c(0.4, 0.6)),
+  distortion_minimum(list(distortion("proportional_hazard", 0.5), distortion("tvar", 0.6))),
+  distortion_convex(c(0.01, 0.1), c(0.05, 0.25))
+)) {
+  m <- risk_measure(insco, d)
+  stopifnot(m >= 46.6, m <= 100, distortion_g_dual(d, 0.3) <= 0.3 + 1e-12)
+  stopifnot(distortion_g(d, distortion_g_inv(d, 0.4)) >= 0.4 - 1e-12)
+}
+want <- c(proportional_hazard = 0.7204792831878889, wang = 0.3427309477594301,
+          dual_power = 1.5951514670652984)
+for (f in names(want)) {
+  d <- calibrate_distortion(f, insco, insco_p)
+  stopifnot(abs(risk_measure(insco, d) - insco_p) < 1e-9, abs(d@param - want[[f]]) < 1e-6)
+}
+stopifnot(abs(calibrate_distortion("ccoc", insco, insco_p)@param - 0.15) < 1e-12)
+capped <- calibrate_distortion("tvar", insco, 50, assets = 65)
+stopifnot(abs(risk_measure(sampled(pmin(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100), 65)), capped) - 50) < 1e-9)
+stopifnot(inherits(try(calibrate_distortion("tvar", insco, 70, assets = 65), silent = TRUE), "try-error"))
+
 # Copulas: uniforms in (0, 1), rows replay, Kendall's tau near its closed form.
 r <- matrix(c(1, 0.6, 0.6, 1), 2)
 for (cop in list(gaussian_copula(r), t_copula(r, 4), archimedean_copula("gumbel", 2.5))) {

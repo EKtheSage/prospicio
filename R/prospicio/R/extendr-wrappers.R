@@ -80,6 +80,12 @@ pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_pri
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
+pricing_pentagon <- function(names, values) .Call(wrap__pricing_pentagon, names, values)
+
+pricing_classical_premium <- function(x, principle, loading, q) .Call(wrap__pricing_classical_premium, x, principle, loading, q)
+
+pricing_calibrate_classical <- function(x, principle, premium, q) .Call(wrap__pricing_calibrate_classical, x, principle, premium, q)
+
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
 
 pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)
@@ -910,9 +916,189 @@ LoglogisticDist$sample <- function(n, seed, stream) .Call(wrap__LoglogisticDist_
 #' @export
 `[[.LoglogisticDist` <- `$.LoglogisticDist`
 
+InverseGammaDist <- new.env(parent = emptyenv())
+
+InverseGammaDist$new <- function(shape, scale) .Call(wrap__InverseGammaDist__new, shape, scale)
+
+InverseGammaDist$shape <- function() .Call(wrap__InverseGammaDist__shape, self)
+
+InverseGammaDist$scale <- function() .Call(wrap__InverseGammaDist__scale, self)
+
+InverseGammaDist$mean <- function() .Call(wrap__InverseGammaDist__mean, self)
+
+InverseGammaDist$variance <- function() .Call(wrap__InverseGammaDist__variance, self)
+
+InverseGammaDist$cdf <- function(x) .Call(wrap__InverseGammaDist__cdf, self, x)
+
+InverseGammaDist$survival <- function(x) .Call(wrap__InverseGammaDist__survival, self, x)
+
+InverseGammaDist$quantile <- function(p) .Call(wrap__InverseGammaDist__quantile, self, p)
+
+InverseGammaDist$lev <- function(limit) .Call(wrap__InverseGammaDist__lev, self, limit)
+
+InverseGammaDist$stop_loss <- function(retention) .Call(wrap__InverseGammaDist__stop_loss, self, retention)
+
+InverseGammaDist$layer <- function(limit, attachment) .Call(wrap__InverseGammaDist__layer, self, limit, attachment)
+
+InverseGammaDist$layer_variance <- function(limit, attachment) .Call(wrap__InverseGammaDist__layer_variance, self, limit, attachment)
+
+InverseGammaDist$sample <- function(n, seed, stream) .Call(wrap__InverseGammaDist__sample, self, n, seed, stream)
+
+#' @export
+`$.InverseGammaDist` <- function (self, name) { func <- InverseGammaDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.InverseGammaDist` <- `$.InverseGammaDist`
+
+InverseGaussianDist <- new.env(parent = emptyenv())
+
+InverseGaussianDist$new <- function(mean, shape) .Call(wrap__InverseGaussianDist__new, mean, shape)
+
+InverseGaussianDist$mean_param <- function() .Call(wrap__InverseGaussianDist__mean_param, self)
+
+InverseGaussianDist$shape <- function() .Call(wrap__InverseGaussianDist__shape, self)
+
+InverseGaussianDist$mean <- function() .Call(wrap__InverseGaussianDist__mean, self)
+
+InverseGaussianDist$variance <- function() .Call(wrap__InverseGaussianDist__variance, self)
+
+InverseGaussianDist$cdf <- function(x) .Call(wrap__InverseGaussianDist__cdf, self, x)
+
+InverseGaussianDist$survival <- function(x) .Call(wrap__InverseGaussianDist__survival, self, x)
+
+InverseGaussianDist$quantile <- function(p) .Call(wrap__InverseGaussianDist__quantile, self, p)
+
+InverseGaussianDist$lev <- function(limit) .Call(wrap__InverseGaussianDist__lev, self, limit)
+
+InverseGaussianDist$stop_loss <- function(retention) .Call(wrap__InverseGaussianDist__stop_loss, self, retention)
+
+InverseGaussianDist$layer <- function(limit, attachment) .Call(wrap__InverseGaussianDist__layer, self, limit, attachment)
+
+InverseGaussianDist$layer_variance <- function(limit, attachment) .Call(wrap__InverseGaussianDist__layer_variance, self, limit, attachment)
+
+InverseGaussianDist$sample <- function(n, seed, stream) .Call(wrap__InverseGaussianDist__sample, self, n, seed, stream)
+
+#' @export
+`$.InverseGaussianDist` <- function (self, name) { func <- InverseGaussianDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.InverseGaussianDist` <- `$.InverseGaussianDist`
+
+BurrDist <- new.env(parent = emptyenv())
+
+BurrDist$new <- function(alpha, gamma, scale) .Call(wrap__BurrDist__new, alpha, gamma, scale)
+
+BurrDist$alpha <- function() .Call(wrap__BurrDist__alpha, self)
+
+BurrDist$gamma <- function() .Call(wrap__BurrDist__gamma, self)
+
+BurrDist$scale <- function() .Call(wrap__BurrDist__scale, self)
+
+BurrDist$mean <- function() .Call(wrap__BurrDist__mean, self)
+
+BurrDist$variance <- function() .Call(wrap__BurrDist__variance, self)
+
+BurrDist$cdf <- function(x) .Call(wrap__BurrDist__cdf, self, x)
+
+BurrDist$survival <- function(x) .Call(wrap__BurrDist__survival, self, x)
+
+BurrDist$quantile <- function(p) .Call(wrap__BurrDist__quantile, self, p)
+
+BurrDist$lev <- function(limit) .Call(wrap__BurrDist__lev, self, limit)
+
+BurrDist$stop_loss <- function(retention) .Call(wrap__BurrDist__stop_loss, self, retention)
+
+BurrDist$layer <- function(limit, attachment) .Call(wrap__BurrDist__layer, self, limit, attachment)
+
+BurrDist$layer_variance <- function(limit, attachment) .Call(wrap__BurrDist__layer_variance, self, limit, attachment)
+
+BurrDist$sample <- function(n, seed, stream) .Call(wrap__BurrDist__sample, self, n, seed, stream)
+
+#' @export
+`$.BurrDist` <- function (self, name) { func <- BurrDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BurrDist` <- `$.BurrDist`
+
+BetaDist <- new.env(parent = emptyenv())
+
+BetaDist$new <- function(a, b, scale) .Call(wrap__BetaDist__new, a, b, scale)
+
+BetaDist$a <- function() .Call(wrap__BetaDist__a, self)
+
+BetaDist$b <- function() .Call(wrap__BetaDist__b, self)
+
+BetaDist$scale <- function() .Call(wrap__BetaDist__scale, self)
+
+BetaDist$mean <- function() .Call(wrap__BetaDist__mean, self)
+
+BetaDist$variance <- function() .Call(wrap__BetaDist__variance, self)
+
+BetaDist$cdf <- function(x) .Call(wrap__BetaDist__cdf, self, x)
+
+BetaDist$survival <- function(x) .Call(wrap__BetaDist__survival, self, x)
+
+BetaDist$quantile <- function(p) .Call(wrap__BetaDist__quantile, self, p)
+
+BetaDist$lev <- function(limit) .Call(wrap__BetaDist__lev, self, limit)
+
+BetaDist$stop_loss <- function(retention) .Call(wrap__BetaDist__stop_loss, self, retention)
+
+BetaDist$layer <- function(limit, attachment) .Call(wrap__BetaDist__layer, self, limit, attachment)
+
+BetaDist$layer_variance <- function(limit, attachment) .Call(wrap__BetaDist__layer_variance, self, limit, attachment)
+
+BetaDist$sample <- function(n, seed, stream) .Call(wrap__BetaDist__sample, self, n, seed, stream)
+
+#' @export
+`$.BetaDist` <- function (self, name) { func <- BetaDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BetaDist` <- `$.BetaDist`
+
+TruncatedDist <- new.env(parent = emptyenv())
+
+TruncatedDist$new <- function(severity, lower, upper) .Call(wrap__TruncatedDist__new, severity, lower, upper)
+
+TruncatedDist$lower <- function() .Call(wrap__TruncatedDist__lower, self)
+
+TruncatedDist$upper <- function() .Call(wrap__TruncatedDist__upper, self)
+
+TruncatedDist$probability <- function() .Call(wrap__TruncatedDist__probability, self)
+
+TruncatedDist$family <- function() .Call(wrap__TruncatedDist__family, self)
+
+TruncatedDist$mean <- function() .Call(wrap__TruncatedDist__mean, self)
+
+TruncatedDist$variance <- function() .Call(wrap__TruncatedDist__variance, self)
+
+TruncatedDist$cdf <- function(x) .Call(wrap__TruncatedDist__cdf, self, x)
+
+TruncatedDist$survival <- function(x) .Call(wrap__TruncatedDist__survival, self, x)
+
+TruncatedDist$quantile <- function(p) .Call(wrap__TruncatedDist__quantile, self, p)
+
+TruncatedDist$lev <- function(limit) .Call(wrap__TruncatedDist__lev, self, limit)
+
+TruncatedDist$stop_loss <- function(retention) .Call(wrap__TruncatedDist__stop_loss, self, retention)
+
+TruncatedDist$layer <- function(limit, attachment) .Call(wrap__TruncatedDist__layer, self, limit, attachment)
+
+TruncatedDist$layer_variance <- function(limit, attachment) .Call(wrap__TruncatedDist__layer_variance, self, limit, attachment)
+
+TruncatedDist$sample <- function(n, seed, stream) .Call(wrap__TruncatedDist__sample, self, n, seed, stream)
+
+#' @export
+`$.TruncatedDist` <- function (self, name) { func <- TruncatedDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.TruncatedDist` <- `$.TruncatedDist`
+
 MixtureDist <- new.env(parent = emptyenv())
 
 MixtureDist$new <- function(weights, components) .Call(wrap__MixtureDist__new, weights, components)
+
+MixtureDist$splice <- function(weights, components, breaks) .Call(wrap__MixtureDist__splice, weights, components, breaks)
 
 MixtureDist$weights <- function() .Call(wrap__MixtureDist__weights, self)
 
@@ -967,6 +1153,78 @@ Binomial$sample <- function(n, seed, stream) .Call(wrap__Binomial__sample, self,
 
 #' @export
 `[[.Binomial` <- `$.Binomial`
+
+ClaimCount <- new.env(parent = emptyenv())
+
+ClaimCount$zero_modified <- function(base, p0) .Call(wrap__ClaimCount__zero_modified, base, p0)
+
+ClaimCount$logarithmic <- function(p) .Call(wrap__ClaimCount__logarithmic, p)
+
+ClaimCount$mixed_poisson <- function(mean, cv, mixing, shift) .Call(wrap__ClaimCount__mixed_poisson, mean, cv, mixing, shift)
+
+ClaimCount$compound_poisson <- function(rate, secondary) .Call(wrap__ClaimCount__compound_poisson, rate, secondary)
+
+ClaimCount$empirical <- function(probs) .Call(wrap__ClaimCount__empirical, probs)
+
+ClaimCount$kind <- function() .Call(wrap__ClaimCount__kind, self)
+
+ClaimCount$pmf <- function(k) .Call(wrap__ClaimCount__pmf, self, k)
+
+ClaimCount$cdf <- function(k) .Call(wrap__ClaimCount__cdf, self, k)
+
+ClaimCount$mean <- function() .Call(wrap__ClaimCount__mean, self)
+
+ClaimCount$variance <- function() .Call(wrap__ClaimCount__variance, self)
+
+ClaimCount$quantile <- function(p) .Call(wrap__ClaimCount__quantile, self, p)
+
+ClaimCount$sample <- function(n, seed, stream) .Call(wrap__ClaimCount__sample, self, n, seed, stream)
+
+#' @export
+`$.ClaimCount` <- function (self, name) { func <- ClaimCount[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ClaimCount` <- `$.ClaimCount`
+
+NaturalPortfolio <- new.env(parent = emptyenv())
+
+NaturalPortfolio$from_rows <- function(units, x, probs) .Call(wrap__NaturalPortfolio__from_rows, units, x, probs)
+
+NaturalPortfolio$from_predictive <- function(pd) .Call(wrap__NaturalPortfolio__from_predictive, pd)
+
+NaturalPortfolio$from_independent <- function(units, grids) .Call(wrap__NaturalPortfolio__from_independent, units, grids)
+
+NaturalPortfolio$units <- function() .Call(wrap__NaturalPortfolio__units, self)
+
+NaturalPortfolio$totals <- function() .Call(wrap__NaturalPortfolio__totals, self)
+
+NaturalPortfolio$probs <- function() .Call(wrap__NaturalPortfolio__probs, self)
+
+NaturalPortfolio$kappa <- function(i) .Call(wrap__NaturalPortfolio__kappa, self, i)
+
+NaturalPortfolio$expected <- function() .Call(wrap__NaturalPortfolio__expected, self)
+
+NaturalPortfolio$assets <- function(p) .Call(wrap__NaturalPortfolio__assets, self, p)
+
+NaturalPortfolio$max <- function() .Call(wrap__NaturalPortfolio__max, self)
+
+NaturalPortfolio$price <- function(distortion, assets, allocation) .Call(wrap__NaturalPortfolio__price, self, distortion, assets, allocation)
+
+NaturalPortfolio$calibrate <- function(family, assets, target, value, r0) .Call(wrap__NaturalPortfolio__calibrate, self, family, assets, target, value, r0)
+
+NaturalPortfolio$bodoff <- function(assets) .Call(wrap__NaturalPortfolio__bodoff, self, assets)
+
+NaturalPortfolio$epd <- function(assets) .Call(wrap__NaturalPortfolio__epd, self, assets)
+
+NaturalPortfolio$assets_for_epd <- function(epd) .Call(wrap__NaturalPortfolio__assets_for_epd, self, epd)
+
+NaturalPortfolio$premium_bounds <- function(premium, assets) .Call(wrap__NaturalPortfolio__premium_bounds, self, premium, assets)
+
+#' @export
+`$.NaturalPortfolio` <- function (self, name) { func <- NaturalPortfolio[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.NaturalPortfolio` <- `$.NaturalPortfolio`
 
 CollectiveModel <- new.env(parent = emptyenv())
 
@@ -1513,11 +1771,25 @@ EvtTail$tvar <- function(p) .Call(wrap__EvtTail__tvar, self, p)
 
 RiskDistortion <- new.env(parent = emptyenv())
 
-RiskDistortion$new <- function(kind, param) .Call(wrap__RiskDistortion__new, kind, param)
+RiskDistortion$new <- function(kind, params, weights, r0) .Call(wrap__RiskDistortion__new, kind, params, weights, r0)
+
+RiskDistortion$mixture <- function(parts, weights) .Call(wrap__RiskDistortion__mixture, parts, weights)
+
+RiskDistortion$minimum <- function(parts) .Call(wrap__RiskDistortion__minimum, parts)
+
+RiskDistortion$convex <- function(s, g) .Call(wrap__RiskDistortion__convex, s, g)
+
+RiskDistortion$calibrate <- function(family, x, premium, assets, r0) .Call(wrap__RiskDistortion__calibrate, family, x, premium, assets, r0)
 
 RiskDistortion$kind <- function() .Call(wrap__RiskDistortion__kind, self)
 
 RiskDistortion$param <- function() .Call(wrap__RiskDistortion__param, self)
+
+RiskDistortion$mass <- function() .Call(wrap__RiskDistortion__mass, self)
+
+RiskDistortion$g_inv <- function(y) .Call(wrap__RiskDistortion__g_inv, self, y)
+
+RiskDistortion$g_dual <- function(s) .Call(wrap__RiskDistortion__g_dual, self, s)
 
 RiskDistortion$g <- function(s) .Call(wrap__RiskDistortion__g, self, s)
 

@@ -82,7 +82,9 @@ large shapes, which made the reserving bootstraps' Gamma process slow.
     keeps its models' common record, and years of losses from elsewhere
     (`EventSet::from_years`) record none. A family missing from the
     table uses its first sampler: inverse transform for every
-    distribution and counting family, the documented method for a
+    distribution and counting family (except the inverse gamma, which
+    draws as one over a Gamma variate and follows the `gamma` entry),
+    the documented method for a
     copula's frailty. The `gamma` entry is the Gamma distribution's
     sampler; the Student t and Clayton copulas' Gamma variates run the
     same code but have been Marsaglia–Tsang since release, as part of

@@ -135,3 +135,35 @@ st <- draw_matrix(apply_tower(reinsurance_tower(list(surplus_treaty("S", 2e6, 4)
 stopifnot(abs(mean(st) - ct) < 4 * sd(st) / sqrt(50000))
 stopifnot(inherits(try(risk_profile(5e6, 1, swiss_re_curve(3), expected_loss = 1, lower = 1e6,
                                     upper = 5e6, spread = "tilted"), silent = TRUE), "try-error"))
+
+# Natural allocation on Monograph 15's InsCo, against aggregate 1.0.1.
+insco <- capital_portfolio(cbind(
+  A = c(15, 15, 5, 7, 13, 5, 15, 26, 17, 16),
+  B = c(7, 13, 20, 33, 20, 27, 16, 19, 8, 20),
+  C = c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64)
+))
+stopifnot(identical(insco@totals, c(22, 28, 36, 40, 55, 65, 100)))
+np <- natural_price(insco, distortion("ccoc", 0.15))
+stopifnot(abs(np$premium[4] - 53.565217391304344) < 1e-12, max(abs(np$assets[1:3] - c(16, 20, 64))) < 1e-12)
+ph <- calibrate_portfolio(insco, "proportional_hazard", return_on_capital = 0.15)
+lifted <- natural_price(insco, ph, p = 0.85, allocation = "lifted")
+stopifnot(max(abs(lifted$capital[1:3] - c(1.947189207380, -0.070344428313, 16.219694433834))) < 1e-6)
+stopifnot(abs(sum(lifted$premium[1:3]) - lifted$premium[4]) < 1e-10)
+stopifnot(abs(sum(bodoff_allocation(insco, assets = 100)) - 100) < 1e-10)
+stopifnot(abs(epd_ratio(insco, 65)$total - 3.5 / 46.6) < 1e-15, abs(assets_for_epd(insco, 3.5 / 46.6) - 65) < 1e-9)
+pent <- pentagon(loss = 46.6, assets = 100, return_on_capital = 0.15)
+stopifnot(abs(pent[["premium"]] - 53.565217391304344) < 1e-12)
+stopifnot(inherits(try(pentagon(loss = 1, premium = 2), silent = TRUE), "try-error"))
+# Independent units by FFT: PIR's Discrete case.
+g1 <- grid_distribution(1, replace(numeric(11), c(1, 9, 11), c(0.5, 0.25, 0.25)))
+g2 <- grid_distribution(1, replace(numeric(91), c(1, 2, 91), c(0.5, 0.25, 0.25)))
+disc <- capital_portfolio(list(X1 = g1, X2 = g2))
+stopifnot(identical(disc@units, c("X1", "X2")), abs(sum(disc@expected) - 27.25) < 1e-12)
+# Pricing bounds and classical principles on InsCo, against aggregate 1.0.1.
+pb <- premium_bounds(insco, 53.565217391304344, assets = 100)
+stopifnot(max(abs(pb$lower - c(13.09782608695652, 17.465726050623715, 19.25473801560758))) < 1e-9)
+stopifnot(max(abs(pb$upper - c(15.032744226390545, 20.411684782608695, 22.098038028339595))) < 1e-9)
+stopifnot(S7::S7_inherits(pb$lower_distortion[[1]], distortion))
+xs <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+stopifnot(abs(calibrate_classical(xs, "esscher", 53.565217391304344) - 0.012851355964986997) < 1e-9)
+stopifnot(abs(classical_premium(sampled(c(0, 10)), "standard_deviation", 0.2) - 6) < 1e-15)

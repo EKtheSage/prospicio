@@ -46,6 +46,25 @@ conversion reports the error it introduces.
   integrals, SciPy for the mean and variance, and 40-digit closed forms
   for the quantile, cdf and survival (SciPy's `fisk` loses about five
   digits at `p = 0.999999`).
+- `prospicio_prob::InverseGamma` (shape, scale; SciPy's `invgamma`),
+  `InverseGaussian` (mean, shape `λ`; SciPy's `invgauss(μ/λ, scale=λ)`),
+  `Burr` (the Burr XII: tail shape `α`, power `γ`, scale; SciPy's
+  `burr12(c=γ, d=α)`) and `Beta` (shapes `a`, `b` on `[0, θ]`), for
+  `aggregate` parity. Each gives its limited moments `E[min(X, u)^j]` and
+  tail moments `E[X^j; X > u] - u^j S(u)` (the crate's `Moments` trait),
+  and layers difference the first below the mean and the second above
+  it. Limited moments exist past the moments that do, through
+  `prospicio_math::special::{beta_lower, gamma_upper}` (the incomplete beta
+  and gamma at a non-positive argument). The inverse Gaussian is written
+  with the Mills ratio, so `e^(2λ/μ)` never forms
+  (`knowledge/findings/inverse-gaussian-mills-ratio.md`).
+- `prospicio_prob::Truncated` conditions any severity on
+  `lower < X <= upper` (`aggregate`'s `sev_lb`, `sev_ub`), with layer
+  moments from the inner severity's; `Truncated::splice` is a `Mixture` of
+  such pieces with consecutive windows. Parity for all five: SciPy for
+  the cdf, survival, quantile and moments, and 30-digit integration of the
+  survival for layer means and second moments
+  (`validation/scripts/mpmath_layer_moments.py`).
 - **Growth curves.** Clark's LDF and Cape Cod methods model the share of
   ultimate reported by age `t` as a growth curve `G(t)`, usually the
   loglogistic `t^ω / (t^ω + θ^ω)` or the Weibull `1 - exp(-(t/θ)^ω)`.
@@ -73,6 +92,18 @@ conversion reports the error it introduces.
   `quantile`, `sample`), with `Poisson` and `NegativeBinomial` (Klugman's
   `r`, `beta`; SciPy `nbinom(n=r, p=1/(1+beta))`). Parity: claim-count rows
   in `validation/reference/distributions_scipy.csv`.
+- `prospicio_prob::count_families`, the counts of `aggregate` and *Loss
+  Models* beyond the Panjer `(a, b, 0)` class: `ZeroModified` (and
+  zero-truncated) over any base count, `Logarithmic`, `MixedPoisson`
+  (gamma or inverse Gaussian mixing, with a fixed part: negative binomial,
+  Delaporte, Poisson-inverse Gaussian and its shifted version),
+  `CompoundPoisson` (Poisson-stopped sums: Neyman type A, Pólya-Aeppli)
+  and `EmpiricalCount`, with the closed enum `CountDist` over every count.
+  Python `prospicio.distributions.Count`, R `claim_count_dist()` and its
+  constructors (`zero_modified_count()`, `mixed_poisson_count()`, ...).
+  Parity: `validation/reference/counts_aggregate.csv`
+  (`validation/scripts/aggregate_counts.py`), 320 probabilities against
+  `aggregate` 1.0.1 at `1e-12`.
 
 ### Decisions for `Counting`
 
@@ -81,6 +112,22 @@ conversion reports the error it introduces.
   checks they satisfy the recursion `panjer_ab` reports.
 - `quantile(1)` is `u64::MAX`; sampling is inverse transform from 0, so its
   cost grows with the mean (fine for annual claim counts).
+- **`panjer_ab` is optional and means the `(a, b, 1)` class**: `Some((a,
+  b))` when `p_k = (a + b / k) p_{k-1}` for `k >= 2`, `None` otherwise.
+  Panjer's recursion runs on the `(a, b, 1)` form, with the extra term
+  `(p_1 - (a + b) p_0) f_k` that vanishes in the `(a, b, 0)` class, so
+  zero-modified, zero-truncated and logarithmic counts use it; counts
+  outside the class (mixed Poisson, compound, empirical) need FFT, which
+  uses only the pgf.
+- **Counts outside the class keep a probability table** built on
+  construction, out to where the terms fall below `1e-20` past the mean
+  plus ten standard deviations: the Poisson-inverse Gaussian by Willmot's
+  (1987) three-term recursion, compound counts by the compound Poisson
+  recursion, and a fixed part of a mixing by convolution with its
+  Poisson. `pmf` is then a lookup.
+- **A mixing's `cv` is that of the whole mixing variable** `Θ`, fixed part
+  included, as in `aggregate`, so the variance is `λ + λ² cv²` whatever the
+  shift.
 
 ### Decisions for `Grid`
 
@@ -177,10 +224,11 @@ pub enum Dist {
 - `Custom` is the single "slow path" door the plan describes; code that
   sees it runs single-threaded and records that in diagnostics.
 
-Done: `prospicio_prob::Dist` with the eleven severity families (`Lognormal`,
+Done: `prospicio_prob::Dist` with the sixteen severity families (`Lognormal`,
 `Pareto`, `PiecewisePareto`, `LogAffinePareto`, `GeneralizedPareto`,
-`Gamma`, `Tweedie`, `Weibull`, `Loglogistic`, `Mixture` in an `Arc`,
-`Grid`) and `Sampled`. It implements `Distribution` by `match` (no
+`Gamma`, `Tweedie`, `Weibull`, `Loglogistic`, `InverseGamma`,
+`InverseGaussian`, `Burr`, `Beta`, `Truncated` and `Mixture` each in an
+`Arc`, `Grid`) and `Sampled`. It implements `Distribution` by `match` (no
 vtable), names its `family()`, and `as_severity()` gives the `Severity`
 of every variant but `Sampled`, which has no exact layer moments (the
 compile-time absence above becomes a `None` at the boundary). `From` each

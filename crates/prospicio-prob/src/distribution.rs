@@ -103,3 +103,33 @@ pub(crate) fn check_probability(p: f64) -> Result<()> {
         Err(prospicio_core::Error::InvalidProbability(p))
     }
 }
+
+/// The smallest `x >= lo` with `cdf(x) >= p` (`p` in `(0, 1)`), by
+/// bisection: on the distribution function below the median and on the
+/// survival function above it, so both tails keep their precision. The
+/// bracket grows from `hi` by doubling, up to `top` (the end of the
+/// support, or infinity).
+pub(crate) fn bisect_quantile(
+    p: f64,
+    lo: f64,
+    hi: f64,
+    top: f64,
+    cdf: impl Fn(f64) -> f64,
+    survival: impl Fn(f64) -> f64,
+) -> f64 {
+    let below = |x: f64| {
+        if p <= 0.5 {
+            cdf(x) < p
+        } else {
+            survival(x) > 1.0 - p
+        }
+    };
+    let mut hi = hi.min(top);
+    while below(hi) && hi < top {
+        hi = (2.0 * hi).min(top);
+        if hi == f64::INFINITY {
+            return f64::INFINITY;
+        }
+    }
+    prospicio_math::roots::bisect(lo, hi, below)
+}

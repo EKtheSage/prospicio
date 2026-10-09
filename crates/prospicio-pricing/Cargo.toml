@@ -18,3 +18,5 @@ prospicio-core.workspace = true
 prospicio-math.workspace = true
 prospicio-prob.workspace = true
 microlp.workspace = true
+# Conditional expectations of independent units by FFT (natural::Portfolio).
+rustfft.workspace = true

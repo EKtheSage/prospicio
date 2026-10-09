@@ -51,7 +51,9 @@ what it is aiming for by v1.0.
 ### `prospicio-math` (Probability lane)
 
 - **Now:** quadrature, linear algebra, one-dimensional minimizers (Brent,
-  golden section), Nelder–Mead, root finding, special functions, splines.
+  golden section), Nelder–Mead, root finding, special functions (with the
+  incomplete beta and gamma past their usual domain, the exponential
+  integral and the Mills ratio), splines.
 - **Next, on demand:** log-determinants and Hessians for REML smoothing
   (`prospicio-glm`), and Sobol sequences for quasi-Monte Carlo (v1.x).
 - **v1.0:** only the numerics other crates use. No general-purpose
@@ -61,8 +63,9 @@ what it is aiming for by v1.0.
 
 - **Now:**
   - Distributions in three representations (parametric, `Grid`,
-    `Sampled`), plus counts, the Pareto family, mixtures, `Custom` and
-    the `Dist` enum with JSON save and load.
+    `Sampled`), plus counts, the Pareto family, the inverse gamma,
+    inverse Gaussian, Burr and scaled beta, mixtures, truncation and
+    splicing, `Custom` and the `Dist` enum with JSON save and load.
   - `PredictiveDistribution`: join, reorder, blend, Arrow IPC; provenance
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
@@ -117,10 +120,14 @@ what it is aiming for by v1.0.
     fits, the diagonal backtest.
   - v0.2 methods: expected loss, BF, Benktander, Cape Cod, tails, Clark,
     Merz–Wüthrich.
-- **Next (from that lane):**
-  1. A simulated one-year view: re-reserving on the ODP bootstrap for any
-     method.
-  2. Bayesian reserving with `prospicio-bayes` (v0.7).
+  - The simulated one-year view, re-reserving on the ODP or Mack bootstrap
+    for any method, weighting, tail or grain (#150, #156, #157), and
+    `MackBootstrap`'s run-off view with centred residuals by default,
+    reconciled with Mack and Merz–Wüthrich (#159, #160, #163).
+- **Next (from that lane):** open, waiting on the user. Candidates:
+  1. Joint reserves across lines through a copula, for capital.
+  2. Parameter error of the tail in the bootstraps.
+  3. Bayesian reserving with `prospicio-bayes` (v0.7).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
@@ -189,7 +196,6 @@ Decided 2026-10-07 (`architecture.md`, "Open decisions"): the name
 packages), the licence (MIT OR Apache-2.0), IP ownership (Ethan Kang) and
 the WASM scope; the docs are published to GitHub Pages. Still open:
 
-- the first release to PyPI and crates.io, which reserves the names. The
-  release workflow and the umbrella crate `prospicio` are in place; the
-  one-time registry setup in `docs/release.md` needs the user's accounts,
-  then a pushed tag `v0.0.1` publishes. CRAN comes later.
+- ~~the first release to PyPI and crates.io~~: done 2026-10-08, v0.0.1
+  (PyPI `prospicio` and the 11 crates; `knowledge/environment/publishing.md`).
+  CRAN comes later.

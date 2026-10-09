@@ -23,7 +23,7 @@ use prospicio_core::{Error, Result};
 use prospicio_prob::{ComponentKey, Distortion, Empirical, PredictiveDistribution};
 
 /// How the premium is set from the losses and the assets.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PremiumRule {
     /// The premium is the distortion risk measure of the losses. The
     /// distortion should load less than the asset measure, or the
@@ -271,7 +271,7 @@ mod tests {
         let wang = Distortion::wang(0.3).unwrap();
         let p = price(
             &s,
-            &PremiumRule::Distortion(wang),
+            &PremiumRule::Distortion(wang.clone()),
             &Distortion::tvar(0.9).unwrap(),
         )
         .unwrap();

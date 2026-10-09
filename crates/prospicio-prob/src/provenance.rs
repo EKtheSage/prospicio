@@ -44,7 +44,8 @@ pub const GAMMA_SAMPLER: &str = "marsaglia-tsang/2026-10";
 /// A family is listed once its sampler differs from the one it was first
 /// released with. A family missing from a recorded table uses that first
 /// sampler: inverse transform for every [`crate::Distribution`] and
-/// [`crate::Counting`] family, the method documented in [`crate::copula`]
+/// [`crate::Counting`] family (except the inverse gamma, which draws as
+/// one over a Gamma variate and so follows the `gamma` entry), the method documented in [`crate::copula`]
 /// for a copula's frailty (its Gamma variates included). Today only the
 /// Gamma distribution is listed (inverse transform until 2026-10-08).
 ///

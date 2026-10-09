@@ -86,6 +86,55 @@ fn loglogistic_matches_scipy() {
     });
 }
 
+/// The families added for `aggregate` parity, from a row's `params`:
+/// inverse gamma, inverse Gaussian, Burr, scaled beta, and a lognormal or
+/// Burr conditioned on `(lower, upper]`.
+fn added_severity(c: &prospicio_validation::Case) -> Option<prospicio_prob::Dist> {
+    use prospicio_prob::{
+        Beta, Burr, Dist, InverseGamma, InverseGaussian, SeverityDist, Truncated,
+    };
+    let p = |k: &str| c.param("params", k);
+    let burr = || Burr::new(p("alpha"), p("gamma"), p("scale")).ok();
+    Some(match c.get("distribution") {
+        "inverse_gamma" => InverseGamma::new(p("shape"), p("scale")).ok()?.into(),
+        "inverse_gaussian" => InverseGaussian::new(p("mean"), p("shape")).ok()?.into(),
+        "burr" => burr()?.into(),
+        "beta" => Beta::new(p("a"), p("b"), p("scale")).ok()?.into(),
+        "truncated" => {
+            let inner: Dist = if c.get("params").contains("inner=burr") {
+                burr()?.into()
+            } else {
+                Lognormal::new(p("meanlog"), p("sdlog")).ok()?.into()
+            };
+            let inner = SeverityDist::try_from(inner).ok()?;
+            Truncated::new(inner, p("lower"), p("upper")).ok()?.into()
+        }
+        _ => return None,
+    })
+}
+
+#[test]
+fn added_severities_match_scipy() {
+    let names = ["inverse_gamma", "inverse_gaussian", "burr", "beta"];
+    let cases: Vec<_> = reference("distributions_scipy.csv")
+        .into_iter()
+        .filter(|c| names.contains(&c.get("distribution")))
+        .collect();
+    assert!(cases.len() > 100);
+    check(&cases, |c| {
+        let d = added_severity(c)?;
+        let arg = c.number("arg");
+        match c.get("quantity") {
+            "mean" => Some(d.mean()),
+            "variance" => Some(d.variance()),
+            "cdf" => Some(d.cdf(arg?)),
+            "survival" => Some(d.survival(arg?)),
+            "quantile" => d.quantile(arg?).ok(),
+            _ => None,
+        }
+    });
+}
+
 #[test]
 fn severities_match_integration() {
     use prospicio_prob::{Gamma, Loglogistic, Weibull};
@@ -310,7 +359,7 @@ fn layer_moments_match_integration() {
             "lognormal" => Box::new(
                 Lognormal::new(c.param("params", "meanlog"), c.param("params", "sdlog")).ok()?,
             ),
-            _ => return None,
+            _ => Box::new(prospicio_prob::SeverityDist::try_from(added_severity(c)?).ok()?),
         };
         match c.get("quantity") {
             "layer" => Some(sev.layer(cover, att)),
@@ -560,5 +609,95 @@ fn tweedie_matches_mpmath() {
             "lev" => Some(y.lev(arg)),
             _ => None,
         }
+    });
+}
+
+#[test]
+fn distortions_match_aggregate() {
+    use prospicio_prob::Distortion;
+    use prospicio_prob::distortion::{Family, calibrate};
+    // Monograph 15's InsCo totals (validation/scripts/aggregate_distortions.py).
+    let x = [22.0, 28.0, 36.0, 40.0, 55.0, 65.0, 100.0];
+    let p = [0.1, 0.1, 0.1, 0.4, 0.1, 0.1, 0.1];
+    let family = |name: &str| match name {
+        "ccoc" => Some(Family::Ccoc),
+        "ph" => Some(Family::ProportionalHazard),
+        "wang" => Some(Family::Wang),
+        "dual" => Some(Family::DualPower),
+        "tvar" => Some(Family::Tvar),
+        _ => None,
+    };
+    let cases = reference("distortion_aggregate.csv");
+    check(&cases, |c| {
+        let arg = c.number("arg")?;
+        let q = c.get("quantity");
+        match c.get("distribution") {
+            "g" => {
+                let v = |k: &str| c.param("params", k);
+                let d = match q {
+                    "tvar" => Distortion::tvar(v("p")),
+                    "wang" => Distortion::wang(v("lambda")),
+                    "ph" => Distortion::proportional_hazard(v("rho")),
+                    "dual" => Distortion::dual_power(v("beta")),
+                    "ccoc" => Distortion::ccoc(v("r")),
+                    "bitvar" => Distortion::bitvar(v("p0"), v("p1"), v("w")),
+                    "clin" => Distortion::capped_linear(v("r0"), v("slope")),
+                    "cll" => Distortion::capped_log_linear(v("r0"), v("b")),
+                    "lep" => Distortion::lep(v("r0"), v("r")),
+                    "ly" => Distortion::linear_yield(v("r0"), v("r")),
+                    "beta" => Distortion::beta(v("a"), v("b")),
+                    "wtdtvar" => {
+                        Distortion::weighted_tvar(vec![0.1, 0.5, 0.9], vec![0.2, 0.5, 0.3])
+                    }
+                    _ => return None,
+                }
+                .ok()?;
+                Some(d.g(arg))
+            }
+            "insco_price" => Some(family(q)?.with(arg).ok()?.apply_discrete(&x, &p)),
+            "insco_calibrate" => {
+                let d = calibrate(family(q)?, &x, &p, arg).ok()?;
+                match d {
+                    Distortion::ProportionalHazard(a)
+                    | Distortion::Wang(a)
+                    | Distortion::DualPower(a)
+                    | Distortion::Tvar(a) => Some(a),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn counts_match_aggregate() {
+    use prospicio_prob::count_families::{
+        CompoundPoisson, Logarithmic, MixedPoisson, Mixing, ZeroModified,
+    };
+    use prospicio_prob::{Counting, Poisson};
+    let cases = reference("counts_aggregate.csv");
+    check(&cases, |c| {
+        let k = c.number("arg")? as u64;
+        let v = |name: &str| c.param("params", name);
+        let n: Box<dyn Counting> = match c.get("distribution") {
+            "zm" => Box::new(ZeroModified::new(Poisson::new(v("lambda")).ok()?, v("p0")).ok()?),
+            "zt" => Box::new(ZeroModified::truncated(Poisson::new(v("lambda")).ok()?).ok()?),
+            "logarithmic" => Box::new(Logarithmic::new(v("p")).ok()?),
+            "mixed" => {
+                let cv = v("cv");
+                let mixing = if c.get("params").contains("mixing=gamma") {
+                    Mixing::Gamma { cv }
+                } else {
+                    Mixing::InverseGaussian { cv }
+                };
+                Box::new(MixedPoisson::new(v("lambda"), mixing, v("shift")).ok()?)
+            }
+            "neyman" => {
+                Box::new(CompoundPoisson::new(v("lambda"), Poisson::new(v("theta")).ok()?).ok()?)
+            }
+            _ => return None,
+        };
+        Some(n.pmf(k))
     });
 }

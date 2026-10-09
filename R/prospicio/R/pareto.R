@@ -18,6 +18,8 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' Defined for the Pareto-family severities ([pareto], [piecewise_pareto],
 #' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution],
 #' [tweedie], [weibull_distribution], [loglogistic_distribution],
+#' [inverse_gamma_distribution], [inverse_gaussian_distribution],
+#' [burr_distribution], [beta_distribution], [truncated_distribution],
 #' [mixture_distribution] and [custom_distribution].
 #'
 #' @param dist A Pareto-family severity.
@@ -491,6 +493,200 @@ loglogistic_distribution <- S7::new_class(
   }
 )
 
+#' Inverse gamma distribution
+#'
+#' `X = scale / G` for `G` a unit-scale gamma with shape `shape`, as
+#' actuar's `dinvgamma()` and SciPy's `invgamma`. The tail is Pareto-like:
+#' the mean is infinite for `shape <= 1` and the variance for `shape <= 2`;
+#' limited and layer moments always exist. Properties: `d@shape`,
+#' `d@scale`.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param shape,scale Finite and positive.
+#' @param ptr Internal: an existing object to wrap.
+#' @returns An `inverse_gamma_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' d <- inverse_gamma_distribution(3, 2000)
+#' mean(d)
+#' layer(d, 4000, 1000)
+inverse_gamma_distribution <- S7::new_class(
+  "inverse_gamma_distribution",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("InverseGammaDist"),
+    shape = S7::new_property(S7::class_double, getter = function(self) self@ptr$shape()),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
+  ),
+  constructor = function(shape, scale, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(InverseGammaDist$new(as.double(shape), as.double(scale)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Inverse Gaussian distribution
+#'
+#' Mean `mean` and shape `shape` (lambda), variance `mean^3 / shape`, as
+#' actuar's `dinvgauss()`. Properties: `d@mean_param`, `d@shape`.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param mean,shape Finite and positive.
+#' @param ptr Internal: an existing object to wrap.
+#' @returns An `inverse_gaussian_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' d <- inverse_gaussian_distribution(1000, 4000)
+#' sqrt(variance(d))
+#' stop_loss(d, 2000)
+inverse_gaussian_distribution <- S7::new_class(
+  "inverse_gaussian_distribution",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("InverseGaussianDist"),
+    mean_param = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean_param()),
+    shape = S7::new_property(S7::class_double, getter = function(self) self@ptr$shape())
+  ),
+  constructor = function(mean, shape, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(InverseGaussianDist$new(as.double(mean), as.double(shape)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Burr distribution
+#'
+#' The Burr (type XII): `P(X > x) = (1 + (x / scale)^gamma)^(-alpha)`, as
+#' actuar's `dburr(shape1 = alpha, shape2 = gamma, scale)` and SciPy's
+#' `burr12(c = gamma, d = alpha)`. With `alpha = 1` it is the
+#' [loglogistic_distribution]; with `gamma = 1`, the Lomax. Moments exist
+#' below `alpha * gamma`; limited and layer moments always do. Properties:
+#' `d@alpha`, `d@gamma`, `d@scale`.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param alpha,gamma,scale Finite and positive.
+#' @param ptr Internal: an existing object to wrap.
+#' @returns A `burr_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' d <- burr_distribution(1.5, 2, 1500)
+#' survival(d, 3000)
+#' layer(d, 1e5, 1e4)
+burr_distribution <- S7::new_class(
+  "burr_distribution",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("BurrDist"),
+    alpha = S7::new_property(S7::class_double, getter = function(self) self@ptr$alpha()),
+    gamma = S7::new_property(S7::class_double, getter = function(self) self@ptr$gamma()),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
+  ),
+  constructor = function(alpha, gamma, scale, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(BurrDist$new(as.double(alpha), as.double(gamma), as.double(scale)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Beta distribution on `[0, scale]`
+#'
+#' `X / scale` is Beta(`a`, `b`): a bounded severity, such as a damage
+#' ratio times a sum insured. Properties: `d@a`, `d@b`, `d@scale`.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param a,b,scale Finite and positive.
+#' @param ptr Internal: an existing object to wrap.
+#' @returns A `beta_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' d <- beta_distribution(2, 5, 10000)
+#' mean(d)
+#' lev(d, 3000)
+beta_distribution <- S7::new_class(
+  "beta_distribution",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("BetaDist"),
+    a = S7::new_property(S7::class_double, getter = function(self) self@ptr$a()),
+    b = S7::new_property(S7::class_double, getter = function(self) self@ptr$b()),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
+  ),
+  constructor = function(a, b, scale = 1, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(BetaDist$new(as.double(a), as.double(b), as.double(scale)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' Truncated severity and splicing
+#'
+#' `truncated_distribution()` conditions a severity on
+#' `lower < X <= upper`, as `aggregate`'s `sev_lb` and `sev_ub`: its
+#' distribution function is `(F(x) - F(lower)) / (F(upper) - F(lower))` on
+#' the window. Layer moments are exact, from the inner severity's.
+#' Properties: `d@lower`, `d@upper`, `d@probability` (of the window under
+#' the inner severity), `d@family` (the inner severity's).
+#'
+#' `splice_distribution()` is a [mixture_distribution] of such pieces:
+#' component `i` conditioned on `(breaks[i], breaks[i + 1]]` with weight
+#' `weights[i]`, such as a lognormal body and a Pareto tail.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param severity Any severity but a [sampled] distribution.
+#' @param lower,upper The window, `0 <= lower < upper <= Inf`.
+#' @param weights Positive weights summing to 1.
+#' @param components A list of severities, one per piece.
+#' @param breaks One more than the components: 0, the joins, and the top
+#'   (which may be `Inf`).
+#' @param ptr Internal: an existing object to wrap.
+#' @returns A `truncated_distribution` or a [mixture_distribution], which
+#'   inherit from [distribution].
+#' @export
+#' @examples
+#' t <- truncated_distribution(lognormal_from_mean_cv(1000, 1), upper = 5000)
+#' cdf(t, 5000)
+#' s <- splice_distribution(c(0.9, 0.1),
+#'   list(lognormal_from_mean_cv(50, 1), pareto(100, 1.8)), c(0, 100, Inf))
+#' cdf(s, 100)
+truncated_distribution <- S7::new_class(
+  "truncated_distribution",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("TruncatedDist"),
+    lower = S7::new_property(S7::class_double, getter = function(self) self@ptr$lower()),
+    upper = S7::new_property(S7::class_double, getter = function(self) self@ptr$upper()),
+    probability = S7::new_property(S7::class_double, getter = function(self) self@ptr$probability()),
+    family = S7::new_property(S7::class_character, getter = function(self) self@ptr$family())
+  ),
+  constructor = function(severity, lower = 0, upper = Inf, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(TruncatedDist$new(severity@ptr, as.double(lower), as.double(upper)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' @rdname truncated_distribution
+#' @export
+splice_distribution <- function(weights, components, breaks) {
+  ptr <- rust_result(MixtureDist$splice(
+    as.double(weights), lapply(components, function(c) c@ptr), as.double(breaks)
+  ))
+  mixture_distribution(ptr = ptr)
+}
+
 #' Mixture of severities
 #'
 #' A loss from component `i` with probability `weights[i]`: attritional and
@@ -597,7 +793,9 @@ S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.do
 
 for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
                  gamma_distribution, tweedie, weibull_distribution, loglogistic_distribution,
-                 mixture_distribution, custom_distribution)) {
+                 inverse_gamma_distribution, inverse_gaussian_distribution, burr_distribution,
+                 beta_distribution, truncated_distribution, mixture_distribution,
+                 custom_distribution)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
   S7::method(cdf, cls) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
@@ -662,6 +860,32 @@ S7::method(print, weibull_distribution) <- function(x, ...) {
 S7::method(print, loglogistic_distribution) <- function(x, ...) {
   cat(sprintf("<loglogistic_distribution> shape = %s, scale = %s\n",
               format(x@shape, digits = 15), format(x@scale, digits = 15)))
+  invisible(x)
+}
+S7::method(print, inverse_gamma_distribution) <- function(x, ...) {
+  cat(sprintf("<inverse_gamma_distribution> shape = %s, scale = %s\n",
+              format(x@shape, digits = 15), format(x@scale, digits = 15)))
+  invisible(x)
+}
+S7::method(print, inverse_gaussian_distribution) <- function(x, ...) {
+  cat(sprintf("<inverse_gaussian_distribution> mean = %s, shape = %s\n",
+              format(x@mean_param, digits = 15), format(x@shape, digits = 15)))
+  invisible(x)
+}
+S7::method(print, burr_distribution) <- function(x, ...) {
+  cat(sprintf("<burr_distribution> alpha = %s, gamma = %s, scale = %s\n",
+              format(x@alpha, digits = 15), format(x@gamma, digits = 15),
+              format(x@scale, digits = 15)))
+  invisible(x)
+}
+S7::method(print, beta_distribution) <- function(x, ...) {
+  cat(sprintf("<beta_distribution> a = %s, b = %s, scale = %s\n",
+              format(x@a, digits = 15), format(x@b, digits = 15), format(x@scale, digits = 15)))
+  invisible(x)
+}
+S7::method(print, truncated_distribution) <- function(x, ...) {
+  cat(sprintf("<truncated_distribution> %s on (%s, %s]\n", x@family,
+              format(x@lower, digits = 15), format(x@upper, digits = 15)))
   invisible(x)
 }
 S7::method(print, custom_distribution) <- function(x, ...) {
@@ -780,7 +1004,9 @@ dist_from_json <- function(text) {
     lognormal = lognormal, pareto = pareto, piecewise_pareto = piecewise_pareto,
     log_affine_pareto = log_affine_pareto, generalized_pareto = generalized_pareto,
     gamma = gamma_distribution, tweedie = tweedie, weibull = weibull_distribution,
-    loglogistic = loglogistic_distribution, mixture = mixture_distribution,
+    loglogistic = loglogistic_distribution, inverse_gamma = inverse_gamma_distribution,
+    inverse_gaussian = inverse_gaussian_distribution, burr = burr_distribution,
+    beta = beta_distribution, truncated = truncated_distribution, mixture = mixture_distribution,
     grid = grid_distribution, sampled = sampled,
     stop("unknown family ", r$family)
   )

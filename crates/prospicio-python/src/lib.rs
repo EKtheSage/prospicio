@@ -14,8 +14,10 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod aggregate;
+mod counts;
 mod distributions;
 mod models;
+mod natural;
 mod pareto;
 mod pricing;
 mod reinsurance;
@@ -31,6 +33,8 @@ mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{PyCompoundReport, PyEventSet, fft, panjer, simulate_events};
     #[pymodule_export]
+    use super::counts::PyCount;
+    #[pymodule_export]
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
         PyPredictiveDistribution, PySampled, from_json, to_json,
@@ -45,9 +49,14 @@ mod prospicio_native {
         stacking_weights, time_ordered,
     };
     #[pymodule_export]
+    use super::natural::{
+        PyNaturalPrice, PyPentagon, PyPortfolio, calibrate_classical, classical_premium,
+    };
+    #[pymodule_export]
     use super::pareto::{
-        PyBinomial, PyCustom, PyGamma, PyGeneralizedPareto, PyLogAffinePareto, PyLoglogistic,
-        PyMixture, PyPareto, PyPiecewisePareto, PyTweedie, PyWeibull, claim_count,
+        PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma,
+        PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
+        PyPiecewisePareto, PyTruncated, PyTweedie, PyWeibull, claim_count,
         local_pareto_to_piecewise,
     };
     #[pymodule_export]
@@ -70,7 +79,7 @@ mod prospicio_native {
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail,
-        PyStudentTCopula, allocate, capital, covar, entropic, esscher, esscher_allocation, hill,
-        iman_conover, marginal_expected_shortfall, mean_excess, simulate,
+        PyStudentTCopula, allocate, calibrate, capital, covar, entropic, esscher,
+        esscher_allocation, hill, iman_conover, marginal_expected_shortfall, mean_excess, simulate,
     };
 }

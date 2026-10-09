@@ -5,15 +5,19 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
+use prospicio_pricing::classical::{self, Kind, Principle};
 use prospicio_pricing::exposure::{
     ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve,
 };
 use prospicio_pricing::layer::XsLayer;
+use prospicio_pricing::natural::{
+    Allocation, Pentagon, Portfolio as NaturalInner, Quantity, Target,
+};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
 
 use crate::aggregate::{AnyCount, EventSet};
-use crate::distributions::{PredictiveDistribution, Sampled, severity_from_robj};
+use crate::distributions::{Grid, PredictiveDistribution, Sampled, severity_from_robj};
 use crate::pareto::PiecewisePareto;
 use crate::risk::RiskDistortion;
 use crate::{to_r, whole};
@@ -521,7 +525,7 @@ fn pricing_severity_exposure_curve(severity: Robj, mpl: f64, x: &[f64]) -> Resul
 
 fn distortion_arg(d: &Robj, name: &str) -> Result<prospicio_prob::Distortion> {
     <&RiskDistortion>::try_from(d)
-        .map(|d| d.inner)
+        .map(|d| d.inner.clone())
         .map_err(|_| Error::Other(format!("{name} must be a distortion")))
 }
 
@@ -598,8 +602,258 @@ fn pricing_price_portfolio(
     ))
 }
 
+/// A portfolio as its total's distribution and each unit's conditional
+/// expectation given the total (`prospicio_pricing::natural`).
+#[extendr]
+pub(crate) struct NaturalPortfolio {
+    inner: NaturalInner,
+}
+
+fn natural_allocation(name: &str) -> Result<Allocation> {
+    match name {
+        "linear" => Ok(Allocation::Linear),
+        "lifted" => Ok(Allocation::Lifted),
+        other => Err(Error::Other(format!(
+            "allocation must be linear or lifted, not {other:?}"
+        ))),
+    }
+}
+
+fn pentagon_list(rows: &[&Pentagon], units: Vec<String>) -> List {
+    let col = |f: &dyn Fn(&Pentagon) -> f64| rows.iter().map(|p| f(p)).collect::<Vec<f64>>();
+    list!(
+        unit = units,
+        loss = col(&|p| p.loss),
+        margin = col(&|p| p.margin),
+        premium = col(&|p| p.premium),
+        capital = col(&|p| p.capital),
+        assets = col(&|p| p.assets),
+        loss_ratio = col(&Pentagon::loss_ratio),
+        premium_to_capital = col(&Pentagon::premium_to_capital),
+        return_on_capital = col(&Pentagon::return_on_capital)
+    )
+}
+
+#[extendr]
+impl NaturalPortfolio {
+    /// From scenarios: `x` holds unit losses scenario-major (`n_rows` rows
+    /// of `units.len()`), with `probs` (empty for equal).
+    fn from_rows(units: Vec<String>, x: &[f64], probs: &[f64]) -> Result<Self> {
+        let m = units.len();
+        if m == 0 || x.len() % m != 0 {
+            return Err(Error::Other(
+                "the loss matrix must have one column per unit".into(),
+            ));
+        }
+        let rows: Vec<Vec<f64>> = x.chunks_exact(m).map(<[f64]>::to_vec).collect();
+        let probs = if probs.is_empty() { None } else { Some(probs) };
+        Ok(Self {
+            inner: NaturalInner::from_rows(units, &rows, probs).map_err(to_r)?,
+        })
+    }
+
+    fn from_predictive(pd: Robj) -> Result<Self> {
+        let pd = <&PredictiveDistribution>::try_from(&pd)
+            .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
+        Ok(Self {
+            inner: NaturalInner::from_predictive(&pd.inner).map_err(to_r)?,
+        })
+    }
+
+    /// From independent units, a list of grid distributions with one step.
+    fn from_independent(units: Vec<String>, grids: List) -> Result<Self> {
+        let grids = grids
+            .values()
+            .map(|g| {
+                <&Grid>::try_from(&g)
+                    .map(|g| g.inner.clone())
+                    .map_err(|_| Error::Other("expected a list of grid_distribution".into()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            inner: NaturalInner::from_independent(units, &grids).map_err(to_r)?,
+        })
+    }
+
+    fn units(&self) -> Vec<String> {
+        self.inner.units().to_vec()
+    }
+
+    fn totals(&self) -> Vec<f64> {
+        self.inner.totals().to_vec()
+    }
+
+    fn probs(&self) -> Vec<f64> {
+        self.inner.probs().to_vec()
+    }
+
+    /// Unit `i` (1-based) conditional expectations.
+    fn kappa(&self, i: f64) -> Result<Vec<f64>> {
+        let i = whole(i, "unit")? as usize;
+        if i == 0 || i > self.inner.units().len() {
+            return Err(Error::Other(format!("no unit {i}")));
+        }
+        Ok(self.inner.kappa(i - 1))
+    }
+
+    fn expected(&self) -> Vec<f64> {
+        self.inner.expected()
+    }
+
+    fn assets(&self, p: f64) -> Result<f64> {
+        self.inner.assets(p).map_err(to_r)
+    }
+
+    fn max(&self) -> f64 {
+        self.inner.max()
+    }
+
+    fn price(&self, distortion: Robj, assets: f64, allocation: &str) -> Result<List> {
+        let g = distortion_arg(&distortion, "distortion")?;
+        let p = self
+            .inner
+            .price(&g, assets, natural_allocation(allocation)?)
+            .map_err(to_r)?;
+        let rows: Vec<&Pentagon> = p.allocated.iter().chain([&p.total]).collect();
+        let mut units = p.units.clone();
+        units.push("total".into());
+        Ok(pentagon_list(&rows, units))
+    }
+
+    /// `target` is "premium", "return_on_capital" or "loss_ratio".
+    fn calibrate(
+        &self,
+        family: &str,
+        assets: f64,
+        target: &str,
+        value: f64,
+        r0: f64,
+    ) -> Result<RiskDistortion> {
+        let target = match target {
+            "premium" => Target::Premium(value),
+            "return_on_capital" => Target::ReturnOnCapital(value),
+            "loss_ratio" => Target::LossRatio(value),
+            other => return Err(Error::Other(format!("unknown target {other:?}"))),
+        };
+        let family = crate::risk::family_from(family, r0)?;
+        Ok(RiskDistortion {
+            inner: self.inner.calibrate(family, assets, target).map_err(to_r)?,
+        })
+    }
+
+    fn bodoff(&self, assets: f64) -> Vec<f64> {
+        self.inner.bodoff(assets)
+    }
+
+    fn epd(&self, assets: f64) -> List {
+        let (total, units) = self.inner.epd(assets);
+        list!(total = total, units = units)
+    }
+
+    fn assets_for_epd(&self, epd: f64) -> Result<f64> {
+        self.inner.assets_for_epd(epd).map_err(to_r)
+    }
+
+    /// `list(lower, upper, lower_distortion, upper_distortion)`, one entry
+    /// per unit in each.
+    fn premium_bounds(&self, premium: f64, assets: f64) -> Result<List> {
+        let b = self.inner.premium_bounds(premium, assets).map_err(to_r)?;
+        let wrap = |d: &prospicio_prob::Distortion| Robj::from(RiskDistortion { inner: d.clone() });
+        Ok(list!(
+            lower = b.iter().map(|u| u.lower).collect::<Vec<f64>>(),
+            upper = b.iter().map(|u| u.upper).collect::<Vec<f64>>(),
+            lower_distortion = List::from_values(b.iter().map(|u| wrap(&u.lower_distortion))),
+            upper_distortion = List::from_values(b.iter().map(|u| wrap(&u.upper_distortion)))
+        ))
+    }
+}
+
+fn classical_kind(name: &str, q: f64) -> Result<Kind> {
+    Ok(match name {
+        "expected_value" => Kind::ExpectedValue,
+        "variance" => Kind::Variance,
+        "standard_deviation" => Kind::StandardDeviation,
+        "semi_variance" => Kind::SemiVariance,
+        "exponential" => Kind::Exponential,
+        "esscher" => Kind::Esscher,
+        "dutch" => Kind::Dutch,
+        "fischer" => Kind::Fischer { q },
+        "var" => Kind::Var,
+        other => return Err(Error::Other(format!("unknown premium principle {other:?}"))),
+    })
+}
+
+/// The premium of `x` under a classical principle with this loading.
+#[extendr]
+fn pricing_classical_premium(x: Robj, principle: &str, loading: f64, q: f64) -> Result<f64> {
+    let (v, p) = crate::risk::discrete_of(&x)?;
+    let pr = match classical_kind(principle, q)? {
+        Kind::ExpectedValue => Principle::ExpectedValue(loading),
+        Kind::Variance => Principle::Variance(loading),
+        Kind::StandardDeviation => Principle::StandardDeviation(loading),
+        Kind::SemiVariance => Principle::SemiVariance(loading),
+        Kind::Exponential => Principle::Exponential(loading),
+        Kind::Esscher => Principle::Esscher(loading),
+        Kind::Dutch => Principle::Dutch(loading),
+        Kind::Fischer { q } => Principle::Fischer { theta: loading, q },
+        Kind::Var => Principle::Var(loading),
+    };
+    pr.premium(&v, &p).map_err(to_r)
+}
+
+/// The loading of a classical principle that prices `x` at `premium`.
+#[extendr]
+fn pricing_calibrate_classical(x: Robj, principle: &str, premium: f64, q: f64) -> Result<f64> {
+    let (v, p) = crate::risk::discrete_of(&x)?;
+    Ok(
+        match classical::calibrate(classical_kind(principle, q)?, &v, &p, premium).map_err(to_r)? {
+            Principle::ExpectedValue(t)
+            | Principle::Variance(t)
+            | Principle::StandardDeviation(t)
+            | Principle::SemiVariance(t)
+            | Principle::Exponential(t)
+            | Principle::Esscher(t)
+            | Principle::Dutch(t)
+            | Principle::Var(t) => t,
+            Principle::Fischer { theta, .. } => theta,
+        },
+    )
+}
+
+/// The pentagon from three named quantities (`names`, `values`).
+#[extendr]
+fn pricing_pentagon(names: Vec<String>, values: &[f64]) -> Result<List> {
+    if names.len() != 3 || values.len() != 3 {
+        return Err(Error::Other("give exactly three quantities".into()));
+    }
+    let q = |n: &str| -> Result<Quantity> {
+        Ok(match n {
+            "loss" => Quantity::Loss,
+            "margin" => Quantity::Margin,
+            "premium" => Quantity::Premium,
+            "capital" => Quantity::Capital,
+            "assets" => Quantity::Assets,
+            "loss_ratio" => Quantity::LossRatio,
+            "premium_to_capital" => Quantity::PremiumToCapital,
+            "return_on_capital" => Quantity::ReturnOnCapital,
+            other => return Err(Error::Other(format!("unknown quantity {other:?}"))),
+        })
+    };
+    let known = [
+        (q(&names[0])?, values[0]),
+        (q(&names[1])?, values[1]),
+        (q(&names[2])?, values[2]),
+    ];
+    let p = Pentagon::solve(known).map_err(to_r)?;
+    Ok(pentagon_list(&[&p], vec!["total".into()]))
+}
+
 extendr_module! {
     mod pricing;
+    impl NaturalPortfolio;
+    fn pricing_pentagon;
+    fn pricing_classical_premium;
+    fn pricing_calibrate_classical;
     impl CollectiveModel;
     impl TowerModel;
     impl Mbbefd;

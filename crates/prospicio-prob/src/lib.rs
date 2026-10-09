@@ -10,8 +10,11 @@
 //! With the `arrow` feature, [`PredictiveDistribution`] reads and writes
 //! Arrow IPC files; the format is described in `ipc`.
 
+pub mod beta;
+pub mod burr;
 pub mod capital;
 pub mod copula;
+pub mod count_families;
 pub mod counting;
 pub mod custom;
 pub mod dist;
@@ -20,6 +23,8 @@ pub mod distribution;
 pub mod evt;
 pub mod gamma;
 pub mod grid;
+pub mod inverse_gamma;
+pub mod inverse_gaussian;
 #[cfg(feature = "arrow")]
 pub mod ipc;
 pub mod large_losses;
@@ -36,17 +41,22 @@ pub mod risk;
 pub mod sampled;
 pub mod serial;
 pub mod severity;
+pub mod truncated;
 pub mod tweedie;
 pub mod weibull;
 
+pub use beta::Beta;
+pub use burr::Burr;
 pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, StudentTCopula};
 pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
 pub use custom::Custom;
 pub use dist::{Dist, SeverityDist};
-pub use distortion::Distortion;
+pub use distortion::{Distortion, Family};
 pub use distribution::Distribution;
 pub use gamma::Gamma;
 pub use grid::{Discretization, DiscretizationReport, Grid};
+pub use inverse_gamma::InverseGamma;
+pub use inverse_gaussian::InverseGaussian;
 pub use large_losses::LargeLosses;
 pub use local_pareto::{
     LocalParetoApproximation, LocalParetoConversion, LogAffinePareto, local_pareto_to_piecewise,
@@ -60,5 +70,6 @@ pub use predictive::{ComponentKey, KeyValue, PredictiveDistribution};
 pub use provenance::{InputHasher, Provenance};
 pub use sampled::{Empirical, Sampled};
 pub use severity::Severity;
+pub use truncated::Truncated;
 pub use tweedie::Tweedie;
 pub use weibull::Weibull;

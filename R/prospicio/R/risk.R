@@ -4,23 +4,37 @@ NULL
 #' Distortion risk measure
 #'
 #' A concave distortion `g` of the survival function, giving the coherent
-#' risk measure `rho(X) = integral of g(S(x)) dx`. Every kind has a parameter
-#' value (or limit) that gives the mean.
+#' risk measure `rho(X) = integral of g(S(x)) dx`.
 #'
-#' | `kind` | `g(s)` | `param` |
+#' | `kind` | `g(s)` for `0 < s < 1` | `param` |
 #' |---|---|---|
 #' | `"tvar"` | `min(s / (1 - p), 1)` | `p` in `[0, 1]` |
 #' | `"wang"` | `pnorm(qnorm(s) + lambda)` | `lambda >= 0` |
 #' | `"proportional_hazard"` | `s^rho` | `rho` in `(0, 1]` |
 #' | `"dual_power"` | `1 - (1 - s)^beta` | `beta >= 1` |
 #' | `"exponential"` | `(1 - exp(-k s)) / (1 - exp(-k))` | `k > 0` |
+#' | `"ccoc"` | `min(1, d + (1 - d) s)`, `d = r / (1 + r)` | `0 <= r` |
+#' | `"bitvar"` | `(1 - w) TVaR_p0 + w TVaR_p1` | `c(p0, p1, w)` |
+#' | `"weighted_tvar"` | `sum(w_i min(s / (1 - p_i), 1))` | the levels `p_i`; `weights` the `w_i` |
+#' | `"capped_linear"` | `min(1, r0 + slope s)` | `slope`, with `r0` |
+#' | `"capped_log_linear"` | `min(1, exp(r0) s^b)` | `b` in `(0, 1]`, with `r0` |
+#' | `"lep"` | `min(1, d0 + (1 - d0) s + (d - d0) sqrt(s (1 - s)))` | `r0 <= r`, with `r0` |
+#' | `"linear_yield"` | `(r0 + (1 + r) s) / (1 + r0 + r s)` | `0 <= r`, with `r0` |
+#' | `"beta"` | the Beta(a, b) distribution function | `c(a, b)`, `a <= 1 <= b` |
 #'
-#' The exponential kind is the spectral measure with exponential risk
-#' aversion; it gives the mean only in the limit `k -> 0`.
+#' `"ccoc"` is the constant cost of capital: the price of a loss `X` backed
+#' by assets `max X` is `(E[X] + r max X) / (1 + r)`. It and the kinds with
+#' `r0 > 0` put a probability mass on the largest outcome ([distortion_mass()]).
+#' See also [distortion_mixture()], [distortion_minimum()],
+#' [distortion_convex()] and [calibrate_distortion()].
 #'
-#' @param kind One of `"tvar"`, `"wang"`, `"proportional_hazard"`,
-#'   `"dual_power"` and `"exponential"`.
-#' @param param The distortion's parameter.
+#' @param kind The kind of distortion; see the table.
+#' @param param The distortion's parameter or parameters.
+#' @param weights For `"weighted_tvar"`, the weights of the levels in
+#'   `param`: non-negative, summing to 1.
+#' @param r0 For `"capped_linear"`, `"capped_log_linear"`, `"lep"` and
+#'   `"linear_yield"`: the intercept, a minimum rate on line.
+#' @param ptr Internal.
 #' @returns A `distortion` object with `kind` and `param` properties. Use it
 #'   with [risk_measure()] and [allocate()].
 #' @export
@@ -28,6 +42,7 @@ NULL
 #' d <- distortion("wang", 0.5)
 #' risk_measure(sampled(c(10, 20, 30, 40, 50)), d)
 #' distortion_g(distortion("dual_power", 2), 0.3)
+#' risk_measure(sampled(c(1, 2, 3, 4)), distortion("ccoc", 0.25)) # (2.5 + 0.25 * 4) / 1.25
 distortion <- S7::new_class(
   "distortion",
   package = "prospicio",
@@ -36,17 +51,114 @@ distortion <- S7::new_class(
     kind = S7::new_property(S7::class_character, getter = function(self) self@ptr$kind()),
     param = S7::new_property(S7::class_double, getter = function(self) self@ptr$param())
   ),
-  constructor = function(kind = c("tvar", "wang", "proportional_hazard", "dual_power", "exponential"),
-                         param) {
-    kind <- match.arg(kind)
-    S7::new_object(S7::S7_object(), ptr = rust_result(RiskDistortion$new(kind, as.double(param))))
+  constructor = function(kind = c(
+                           "tvar", "wang", "proportional_hazard", "dual_power", "exponential",
+                           "ccoc", "bitvar", "weighted_tvar", "capped_linear",
+                           "capped_log_linear", "lep", "linear_yield", "beta"
+                         ),
+                         param, weights = NULL, r0 = 0, ptr = NULL) {
+    if (is.null(ptr)) {
+      kind <- match.arg(kind)
+      ptr <- rust_result(RiskDistortion$new(
+        kind, as.double(param), as.double(if (is.null(weights)) numeric() else weights),
+        as.double(r0)
+      ))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
 
 S7::method(print, distortion) <- function(x, ...) {
-  cat(sprintf("<distortion> %s(%s)\n", x@kind, format(x@param)))
+  cat(sprintf("<distortion> %s(%s)\n", x@kind, paste(format(x@param), collapse = ", ")))
   invisible(x)
 }
+
+#' Mixtures, minimums and convex hulls of distortions
+#'
+#' `distortion_mixture()` is the weighted average of distortions,
+#' `distortion_minimum()` their pointwise minimum, and
+#' `distortion_convex()` the smallest concave distortion above the points
+#' `(s, g)`, for example layers' exceedance probabilities and their prices
+#' per unit of limit (a cat bond's expected loss and its spread).
+#'
+#' @param distortions A list of [distortion] objects.
+#' @param weights Non-negative weights summing to 1, one per distortion.
+#' @param s,g The points, in the unit square with `g >= s`.
+#' @returns A [distortion].
+#' @export
+#' @examples
+#' d <- distortion_mixture(list(distortion("wang", 0.3), distortion("dual_power", 2)), c(0.5, 0.5))
+#' distortion_g(d, 0.1)
+#' distortion_g(distortion_convex(c(0.1, 0.5), c(0.3, 0.55)), 0.05) # 0.15
+distortion_mixture <- function(distortions, weights) {
+  ptrs <- lapply(distortions, function(d) d@ptr)
+  distortion(ptr = rust_result(RiskDistortion$mixture(ptrs, as.double(weights))))
+}
+
+#' @rdname distortion_mixture
+#' @export
+distortion_minimum <- function(distortions) {
+  ptrs <- lapply(distortions, function(d) d@ptr)
+  distortion(ptr = rust_result(RiskDistortion$minimum(ptrs)))
+}
+
+#' @rdname distortion_mixture
+#' @export
+distortion_convex <- function(s, g) {
+  distortion(ptr = rust_result(RiskDistortion$convex(as.double(s), as.double(g))))
+}
+
+#' Calibrate a distortion to a price
+#'
+#' The member of a family of distortions whose risk measure of `x` equals
+#' `premium`. With `assets`, `x` is capped at the assets first, so the
+#' premium prices `min(X, assets)`. The premium must lie strictly between
+#' the (capped) mean and maximum. CCoC is solved in closed form; the other
+#' families by bisection to full precision.
+#'
+#' @param family One of `"ccoc"`, `"proportional_hazard"` (`"ph"`),
+#'   `"wang"`, `"dual_power"` (`"dual"`), `"tvar"`, `"exponential"`,
+#'   `"capped_linear"`, `"capped_log_linear"`, `"lep"` and `"linear_yield"`.
+#' @param x A [sampled], [grid_distribution] or [predictive_distribution]
+#'   (its total).
+#' @param premium The target price.
+#' @param assets Optional assets at which to cap the loss.
+#' @param r0 The fixed `r0` of the families that have one.
+#' @returns A [distortion].
+#' @export
+#' @examples
+#' x <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+#' calibrate_distortion("ccoc", x, (46.6 + 15) / 1.15) # r = 0.15
+#' calibrate_distortion("proportional_hazard", x, (46.6 + 15) / 1.15)
+calibrate_distortion <- function(family, x, premium, assets = NULL, r0 = 0) {
+  a <- if (is.null(assets)) Inf else as.double(assets)
+  distortion(ptr = rust_result(RiskDistortion$calibrate(
+    family, x@ptr, as.double(premium), a, as.double(r0)
+  )))
+}
+
+#' Distortion mass, inverse and dual
+#'
+#' `distortion_mass()` is the probability mass the distortion puts on the
+#' largest outcome, `g(0+)`; `distortion_g_inv()` the smallest `s` with
+#' `g(s) >= y`; `distortion_g_dual()` the dual `1 - g(1 - s)`, which prices
+#' the bid.
+#'
+#' @param d A [distortion].
+#' @param y,s Probabilities in `[0, 1]`.
+#' @returns A number, or a numeric vector.
+#' @export
+#' @examples
+#' distortion_mass(distortion("ccoc", 0.25)) # 0.2
+distortion_mass <- function(d) d@ptr$mass()
+
+#' @rdname distortion_mass
+#' @export
+distortion_g_inv <- function(d, y) d@ptr$g_inv(as.double(y))
+
+#' @rdname distortion_mass
+#' @export
+distortion_g_dual <- function(d, s) d@ptr$g_dual(as.double(s))
 
 #' Distortion function and rank weights
 #'
