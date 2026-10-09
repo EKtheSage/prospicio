@@ -66,8 +66,14 @@
 //! estimated tail is refitted on each simulation's pseudo factors, and a
 //! constant one is drawn from the lognormal with the factor as mean and
 //! Mack's standard error of the tail (given or extrapolated) as standard
-//! deviation, so the simulated standard deviation approximates Mack's with
-//! the tail as it does without one.
+//! deviation. A constant tail attached before the oldest age replaces the
+//! factors from its attachment on, which Mack still charges the estimated
+//! factors' standard errors, so each of them moves by its pseudo factor's
+//! deviation from the estimate. With a constant tail the simulated standard
+//! deviation then approximates Mack's with the tail as it does without one,
+//! and the mean (centred residuals) the chain ladder's; an estimated tail
+//! has the refit's parameter error and mean instead, not Mack's
+//! extrapolated `tail.se`.
 
 use prospicio_core::StreamRng;
 use prospicio_math::special::norm_quantile;
@@ -312,7 +318,8 @@ pub struct MackBootstrapFit {
     /// Mack's model on the observed triangle, with the bootstrap's tail:
     /// the factors and sigmas the simulation uses, and the analytic
     /// standard errors the simulated reserves' standard deviations
-    /// approximate.
+    /// approximate (with an estimated tail, up to the refit's own parameter
+    /// error; see the [module documentation](crate::mack_bootstrap)).
     pub mack: MackFit,
     /// The scaled bias-adjusted residuals of the link ratios, as
     /// [`MackBootstrapSegment::residuals`].
@@ -1608,6 +1615,158 @@ mod tests {
         }
         .fit(&tri, "values");
         assert!(matches!(odp, Err(Error::TailRefit { .. })), "{odp:?}");
+    }
+
+    /// Annual cumulative values from 2018 whose late factors are well above
+    /// 1.
+    const STEADY: [&[f64]; 6] = [
+        &[100.0, 200.0, 250.0, 300.0, 345.0, 380.0],
+        &[110.0, 215.0, 270.0, 322.0, 372.0],
+        &[120.0, 240.0, 300.0, 358.0],
+        &[100.0, 205.0, 255.0],
+        &[105.0, 210.0],
+        &[100.0],
+    ];
+
+    /// Annual cumulative values from 2018 whose last two factors are barely
+    /// above 1 (the triangle of `a_failed_tail_refit_is_counted_and_reported`).
+    const FLAT: [&[f64]; 6] = [
+        &[100.0, 200.0, 250.0, 260.0, 260.5, 260.6],
+        &[110.0, 215.0, 270.0, 282.0, 282.0],
+        &[120.0, 240.0, 300.0, 312.0],
+        &[100.0, 205.0, 255.0],
+        &[105.0, 210.0],
+        &[100.0],
+    ];
+
+    /// [`STEADY`] and [`FLAT`] as the segments `Steady` and `Flat` of `lob`.
+    fn steady_and_flat() -> Triangle {
+        let (mut lob, mut origin, mut ages, mut paid) = (vec![], vec![], vec![], vec![]);
+        for (name, rows) in [("Steady", STEADY), ("Flat", FLAT)] {
+            for (k, row) in rows.iter().enumerate() {
+                for (d, &v) in row.iter().enumerate() {
+                    lob.push(name);
+                    origin.push(Month::january(2018 + k as i32));
+                    ages.push(12 * (d as u32 + 1));
+                    paid.push(v);
+                }
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[("lob", &lob)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn segments_each_take_the_tail() {
+        // A fixed constant tail (no standard error) and no process error:
+        // each segment's oldest origin, at the last age, has the reserve
+        // C (1.05 - 1) in every simulation of Mack's bootstrap, C its own
+        // latest value. The ODP's oldest origin develops on its pseudo
+        // latest value, so its mean is near 0.05 C; without a tail it is 0.
+        let tri = steady_and_flat();
+        let latest = [("Steady", 380.0), ("Flat", 260.6)];
+        let fits = MackBootstrap {
+            tail: 1.05.into(),
+            tail_std_err: Some(0.0),
+            ..boot(500, 3, MackProcess::None)
+        }
+        .fit_segments(&tri, "paid")
+        .unwrap();
+        assert_eq!(fits.reserves.n_components(), 12);
+        for (s, c) in latest {
+            let fit = fits.segment(&[("lob", s)]).unwrap();
+            let tail = &fit.segments.iter().next().unwrap().1.mack.chain_ladder.tail;
+            assert!((tail.factor - 1.05).abs() < 1e-12, "{s}");
+            let want = c * tail.factor - c;
+            assert!(column(&fit.reserves, 0).iter().all(|&r| r == want), "{s}");
+        }
+        for tail in [Tail::default(), 1.05.into()] {
+            let fits = OdpBootstrap {
+                n_sims: 2_000,
+                process: crate::ProcessDistribution::None,
+                tail,
+                ..Default::default()
+            }
+            .fit_segments(&tri, "paid")
+            .unwrap();
+            for (s, c) in latest {
+                let x = column(&fits.segment(&[("lob", s)]).unwrap().reserves, 0);
+                let mean = x.iter().sum::<f64>() / x.len() as f64;
+                if tail.is_none() {
+                    assert_eq!(mean, 0.0);
+                } else {
+                    assert!((mean / (0.05 * c) - 1.0).abs() < 0.1, "{s}: {mean}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_refit_names_its_segment() {
+        // The curve fitted from 48 months refits on every simulation of the
+        // steady segment and fails on some of the flat one's: the error
+        // counts them and names the segment, under both models.
+        let tri = steady_and_flat();
+        let curve = Tail::Curve(crate::TailCurve {
+            fit_period: (Some(48), None),
+            ..Default::default()
+        });
+        let steady = annual(2018, &STEADY);
+        assert!(
+            MackBootstrap {
+                tail: curve,
+                ..boot(200, 1, MackProcess::Gamma)
+            }
+            .fit(&steady, "values")
+            .is_ok()
+        );
+        assert!(
+            OdpBootstrap {
+                n_sims: 200,
+                tail: curve,
+                ..Default::default()
+            }
+            .fit(&steady, "values")
+            .is_ok()
+        );
+        let mack = MackBootstrap {
+            tail: curve,
+            ..boot(200, 1, MackProcess::Gamma)
+        }
+        .fit_segments(&tri, "paid");
+        let odp = OdpBootstrap {
+            n_sims: 200,
+            tail: curve,
+            ..Default::default()
+        }
+        .fit_segments(&tri, "paid");
+        for result in [mack.map(|_| ()), odp.map(|_| ())] {
+            match result {
+                Err(Error::TailRefit {
+                    failed,
+                    n_sims,
+                    source,
+                }) => {
+                    assert!(failed > 0 && failed < n_sims, "{failed} of {n_sims}");
+                    match *source {
+                        Error::InSegment { label, source } => {
+                            assert!(label.contains("Flat"), "{label}");
+                            assert!(matches!(*source, Error::Tail(_)), "{source}");
+                        }
+                        e => panic!("{e}"),
+                    }
+                }
+                r => panic!("{r:?}"),
+            }
+        }
     }
 
     #[test]

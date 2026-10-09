@@ -20,6 +20,9 @@
 //! estimated tail is refitted on the pseudo factors, a constant one is
 //! fixed or, with a standard error, drawn from a lognormal, and the step
 //! to ultimate is one more future increment with the ODP's process error.
+//! A constant tail attached before the oldest age moves each factor it
+//! replaces by the pseudo factor's deviation from the estimate, so those
+//! ages keep their parameter error.
 
 use std::sync::Mutex;
 
@@ -92,6 +95,16 @@ pub struct OdpBootstrap {
     /// times the tail factor less 1 and the process error of every other
     /// increment. The one-year view takes its tail from the refitted method
     /// instead, and a tail here is an error there.
+    ///
+    /// [`Tail::LogLinear`] refits R's rule, whose guards were written for
+    /// one estimate: it is exactly 1 when the product of the third- and
+    /// second-last factors is at most 1.0001, and its line leaves out every
+    /// factor at or below 1. The ODP's late pseudo factors cross both
+    /// often: on RAA (20,000 simulations) 5.7% have no tail at all, half
+    /// the others leave a factor out and have a higher tail, and the oldest
+    /// origin's mean reserve is 78% above the plug-in (decision 9). A
+    /// constant tail, with a `tail_std_err` for its parameter error, has
+    /// neither.
     pub tail: Tail,
     /// Standard error of a constant tail factor: each simulation draws the
     /// factor from the lognormal with the factor as mean and this standard
@@ -466,6 +479,10 @@ pub(crate) struct TailDraw {
     tail: Tail,
     /// The ages the tail is fitted between.
     ages: Vec<Lag>,
+    /// The factors estimated on the observed triangle, against which a
+    /// constant tail attached before the oldest age measures the pseudo
+    /// factors' deviations.
+    estimated: Vec<f64>,
     /// For a constant tail with a standard error, the lognormal its factor
     /// to ultimate is drawn from; `None` keeps the fitted factor: a
     /// constant one fixed, an estimated one refitted.
@@ -506,6 +523,7 @@ impl TailDraw {
         Ok(Some(Self {
             tail,
             ages: cl.development.development.clone(),
+            estimated: cl.development.ldf.clone(),
             constant,
         }))
     }
@@ -513,9 +531,26 @@ impl TailDraw {
     /// One simulation's selected factors within the triangle (its pseudo
     /// factors `pseudo`, with the tail's from its attachment on) and its
     /// factor from the oldest age to ultimate.
+    ///
+    /// A refitted tail's factors from its attachment on move with the
+    /// pseudo factors; a constant tail's do not. So a constant attached
+    /// before the oldest age moves each of its factors within the triangle
+    /// by the pseudo factor's deviation from its estimate, `f*_k - f_k`:
+    /// those ages keep their estimates' parameter error, which Mack's
+    /// analytic standard error charges on the selected factors too.
     pub(crate) fn draw(&self, pseudo: &[f64], rng: &mut StreamRng) -> Result<(Vec<f64>, f64)> {
-        let (_, mut ldf, factor) = self.tail.select(pseudo, &self.ages)?;
+        let (attachment, mut ldf, factor) = self.tail.select(pseudo, &self.ages)?;
         ldf.truncate(pseudo.len());
+        if let Tail::Constant(_) = self.tail {
+            for ((f, p), e) in ldf
+                .iter_mut()
+                .zip(pseudo)
+                .zip(&self.estimated)
+                .skip(attachment)
+            {
+                *f += p - e;
+            }
+        }
         let factor = match &self.constant {
             Some(lognormal) => lognormal.sample(rng, 1)[0],
             None => factor,
@@ -970,6 +1005,46 @@ mod tests {
                 assert_eq!(fit.reserves.row(i as usize).unwrap()[1], want);
             }
         }
+    }
+
+    #[test]
+    fn constant_tail_attached_early_moves_with_the_pseudo_factors() {
+        // RAA with a constant 1.05 attached at 84 months: the pseudo factors
+        // before the attachment are kept, and each of the tail's factors
+        // within the triangle moves by its pseudo factor's deviation from
+        // the estimate, so those ages keep their parameter error, which
+        // Mack charges on them (decision 9). The factor to ultimate is the
+        // tail's.
+        let tail = Tail::Constant(TailConstant {
+            factor: 1.05,
+            attachment_age: Some(84),
+            ..Default::default()
+        });
+        let cl = crate::ChainLadder {
+            tail,
+            ..Default::default()
+        }
+        .fit(&raa(), "values")
+        .unwrap();
+        assert_eq!(cl.tail.attachment, 6);
+        let draw = TailDraw::new(tail, &cl, None).unwrap().unwrap();
+        let estimated = &cl.development.ldf;
+        let mut rng = StreamRng::new(1, 0);
+        // At the estimates the selected factors are the chain ladder's.
+        let (ldf, factor) = draw.draw(estimated, &mut rng).unwrap();
+        assert_eq!(ldf, cl.ldf());
+        assert_eq!(factor, cl.tail.factor);
+        let pseudo: Vec<f64> = estimated
+            .iter()
+            .enumerate()
+            .map(|(k, f)| f + 0.001 * (k as f64 - 4.0))
+            .collect();
+        let (ldf, factor) = draw.draw(&pseudo, &mut rng).unwrap();
+        assert_eq!(ldf[..6], pseudo[..6]);
+        for k in 6..9 {
+            assert_eq!(ldf[k], cl.ldf()[k] + (pseudo[k] - estimated[k]), "{k}");
+        }
+        assert_eq!(factor, cl.tail.factor);
     }
 
     #[test]

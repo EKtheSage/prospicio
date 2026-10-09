@@ -23,6 +23,10 @@
 //!   value at the oldest age (the ultimate over the tail factor) and `se`
 //!   the tail's standard error, all from R. Parameter error alone
 //!   (`MackProcess::None`) is checked the same way without the process.
+//! * A constant 1.05 attached at the fourth-oldest age, whose factors
+//!   within the triangle move by the pseudo factors' deviations from the
+//!   estimates: the same reference from prospicio's `Mack` with the same
+//!   tail, since R's `MackChainLadder` has no attachment age.
 //! * An estimated tail (`Tail::LogLinear`, R's `tail = TRUE` rule) refitted
 //!   on each simulation's pseudo factors: its process error is R's. Run with
 //!   the Gamma process and with none on the same seed, the two share every
@@ -37,8 +41,8 @@
 //!   the factors (`knowledge/findings/bootstrap-tail-parameter-error.md`).
 
 use prospicio_reserving::{
-    Development, DevelopmentFit, MackBootstrap, MackBootstrapFit, MackProcess, SigmaInterpolation,
-    Tail,
+    ChainLadder, Development, DevelopmentFit, MackBootstrap, MackBootstrapFit, MackProcess,
+    SigmaInterpolation, Tail, TailConstant,
 };
 use prospicio_validation::{Case, reference, triangle};
 
@@ -314,4 +318,77 @@ fn refitted_tail_parameter_error_is_the_refits() {
             assert!(z > 5.0, "{dataset}: {sd} vs {first_order} ({z:+.2})");
         }
     }
+}
+
+/// Checks a constant 1.05 attached at the fourth-oldest age against the
+/// analytic standard errors of `Mack` with the same tail. R's
+/// `MackChainLadder` has no attachment age, so the reference is
+/// prospicio's `Mack`, whose tail terms the constant-tail runs above check
+/// against R. Mack charges each factor the tail replaces the standard
+/// error of the estimated one; the bootstrap moves each of them by its
+/// pseudo factor's deviation from the estimate, so the reference is the
+/// one above, from Mack's fit: `process^2 + v parameter^2 + (1 - v) (C
+/// se)^2`.
+fn check_early_attachment(process: MackProcess) {
+    let mut failures = Vec::new();
+    for dataset in DATASETS {
+        let tri = triangle(dataset);
+        let ages = ChainLadder::default()
+            .fit(&tri, "values")
+            .unwrap()
+            .development
+            .development;
+        let tail = Tail::Constant(TailConstant {
+            factor: 1.05,
+            attachment_age: Some(ages[ages.len() - 4]),
+            ..Default::default()
+        });
+        let fit = bootstrap(process, "mack_tail_constant", tail)
+            .fit(&tri, "values")
+            .unwrap_or_else(|e| panic!("{dataset}: {e}"));
+        let mack = &fit.mack;
+        let cl = &mack.chain_ladder;
+        assert_eq!(cl.tail.attachment, ages.len() - 4, "{dataset}");
+        let v = pool_variance(&fit);
+        let reserves = cl.reserves();
+        for (j, (origin, draws)) in columns(&fit).into_iter().enumerate() {
+            let pick = |per: &[f64], all: f64| if origin.is_empty() { all } else { per[j] };
+            let parameter = pick(&mack.parameter_risk, mack.total_parameter_risk);
+            let process_risk = pick(&mack.process_risk, mack.total_process_risk);
+            let at_oldest = pick(&cl.ultimate, cl.total_ultimate()) / cl.tail.factor;
+            let mut want =
+                v * parameter * parameter + (1.0 - v) * (at_oldest * cl.tail.std_err).powi(2);
+            if process != MackProcess::None {
+                want += process_risk * process_risk;
+            }
+            let want = want.sqrt();
+            let reserve = pick(&reserves, cl.total_reserve());
+            let (mean, sd, error) = moments(&draws);
+            let label = format!("{dataset} {process:?} {origin}");
+            if (sd - want).abs() > 5.0 * error {
+                failures.push(format!(
+                    "{label}: sd {sd:.1} vs Mack {want:.1} ({:+.2} Monte Carlo SE)",
+                    (sd - want) / error
+                ));
+            }
+            let mean_error = sd / (SIMS as f64).sqrt();
+            if (mean - reserve).abs() > 5.0 * mean_error {
+                failures.push(format!(
+                    "{label}: mean {mean:.1} vs Mack {reserve:.1} ({:+.2} Monte Carlo SE)",
+                    (mean - reserve) / mean_error
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn constant_tail_attached_early_reconciles_with_mack() {
+    check_early_attachment(MackProcess::Gamma);
+}
+
+#[test]
+fn constant_tail_attached_early_parameter_error_is_mack() {
+    check_early_attachment(MackProcess::None);
 }
