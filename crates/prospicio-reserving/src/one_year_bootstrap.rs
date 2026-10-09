@@ -246,9 +246,12 @@ impl<B: ReserveFit> ReserveFit for OneYearSegment<B> {
 
 /// The one-year bootstrap of every segment of a triangle column.
 ///
-/// Segments are bootstrapped independently, each with its own residuals
-/// and scale; simulation `i` uses stream `i` for every segment in turn, as
-/// in [`OdpBootstrapFits`](crate::OdpBootstrapFits).
+/// Each segment is bootstrapped with its own residuals and scale,
+/// independently of the others unless the bootstrap's `dependence` says
+/// otherwise; simulation `i` uses stream `i` for every segment in turn, as
+/// in [`OdpBootstrapFits`](crate::OdpBootstrapFits), and with
+/// [`RankCorrelation`](crate::SegmentDependence::RankCorrelation) the
+/// paired simulations are then put in a random order.
 ///
 /// ```
 /// use prospicio_reserving::{

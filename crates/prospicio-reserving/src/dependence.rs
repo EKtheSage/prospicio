@@ -1,6 +1,6 @@
 //! Dependence between the segments of a multi-segment bootstrap: joint
 //! reserves across lines of business, for capital
-//! (`docs/design/reserving-v02.md`, decision 9).
+//! (`docs/design/reserving-v02.md`, decision 10).
 //!
 //! [`OdpBootstrap::fit_segments`](crate::OdpBootstrap::fit_segments),
 //! [`MackBootstrap::fit_segments`](crate::MackBootstrap::fit_segments) and
@@ -103,9 +103,13 @@ pub enum SegmentDependence {
     /// `S × S` matrix over the segments in index order, row-major,
     /// symmetric with a unit diagonal. Iman–Conover sets the correlation of
     /// normal scores, so the matrix is converted to
-    /// `r = 2 sin(pi rho / 6)`, which must be positive definite. The
-    /// reordering's seed is the first number of stream `n_sims` of the
-    /// bootstrap's seed, a stream no simulation draws from.
+    /// `r = 2 sin(pi rho / 6)`, which must be positive definite. The paired
+    /// rows are then put in a random order, since Iman–Conover leaves them
+    /// sorted by the first segment's total: row `i` is no longer simulation
+    /// `i`, but the rows are exchangeable, so any subset of them is a fair
+    /// sample. Both use stream `n_sims` of the bootstrap's seed, a stream no
+    /// simulation draws from: its first number seeds the reordering, the
+    /// rest shuffle the rows.
     RankCorrelation {
         /// Spearman's rho between the segments' totals, `S × S`
         /// row-major.
@@ -269,8 +273,26 @@ fn rank_correlate(
         draws.draw_matrix().to_vec(),
         draws.provenance().clone(),
     )?;
-    let reorder_seed = StreamRng::new(seed, draws.n_sims() as u64).next_u64();
-    let reordered = grouped.reorder_groups("segment", &normal, reorder_seed)?;
+    // Stream `n_sims`, which no simulation draws from: its first number
+    // seeds Iman–Conover, the rest shuffle the rows.
+    let n_sims = draws.n_sims();
+    let mut rng = StreamRng::new(seed, n_sims as u64);
+    let reordered = grouped.reorder_groups("segment", &normal, rng.next_u64())?;
+    // Iman–Conover leaves the first segment's rows sorted by its total, so
+    // row `i` would rank the simulations rather than stand for one: put the
+    // paired rows in a random order (Fisher–Yates), which keeps the joint
+    // law.
+    let mut order: Vec<usize> = (0..n_sims).collect();
+    for i in (1..n_sims).rev() {
+        let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
+        order.swap(i, j);
+    }
+    let n = draws.n_components();
+    let paired = reordered.draw_matrix();
+    let rows = order
+        .iter()
+        .flat_map(|&r| paired[r * n..(r + 1) * n].iter().copied())
+        .collect();
     let provenance = reordered
         .provenance()
         .clone()
@@ -278,7 +300,7 @@ fn rank_correlate(
     Ok(PredictiveDistribution::from_draws(
         draws.dims().to_vec(),
         draws.components().to_vec(),
-        reordered.draw_matrix().to_vec(),
+        rows,
         provenance,
     )?)
 }
@@ -547,36 +569,80 @@ mod tests {
 
     #[test]
     fn rank_correlation_moves_whole_simulations() {
+        // For both bootstraps, lifetime and one-year views: each segment's
+        // rows (its ten origins) are the independent bootstrap's rows, each
+        // used once, in another order.
         let tri = keyed(&[("a", 2001, &GENINS), ("b", 2001, &RAA)]);
-        let rank = || {
-            odp(SegmentDependence::RankCorrelation {
-                spearman: vec![1.0, 0.8, 0.8, 1.0],
-            })
-            .fit_segments(&tri, "paid")
-            .unwrap()
+        let cl = OneYearMethod::ChainLadder(ChainLadder::default());
+        let rank = SegmentDependence::RankCorrelation {
+            spearman: vec![1.0, 0.8, 0.8, 1.0],
         };
-        let ind = odp(SegmentDependence::Independent)
-            .fit_segments(&tri, "paid")
-            .unwrap();
-        let ranked = rank();
-        assert_eq!(ranked.reserves.dims(), ind.reserves.dims());
-        assert_eq!(ranked.reserves.components(), ind.reserves.components());
-        // Each segment's rows (its ten origins) are the independent
-        // bootstrap's rows, each used once.
-        let n = ind.reserves.n_components();
-        for range in [0..10, 10..20] {
-            let rows = |pd: &PredictiveDistribution| {
-                let mut rows: Vec<Vec<u64>> = pd
-                    .draw_matrix()
-                    .chunks(n)
-                    .map(|r| r[range.clone()].iter().map(|v| v.to_bits()).collect())
-                    .collect();
-                rows.sort();
-                rows
-            };
-            assert_eq!(rows(&ind.reserves), rows(&ranked.reserves));
+        type Run<'a> = Box<dyn Fn(SegmentDependence) -> PredictiveDistribution + 'a>;
+        let runs: [Run; 4] = [
+            Box::new(|d| odp(d).fit_segments(&tri, "paid").unwrap().reserves),
+            Box::new(|d| mack(d).fit_segments(&tri, "paid").unwrap().reserves),
+            Box::new(|d| odp(d).one_year_segments(&tri, "paid", &cl).unwrap().cdr),
+            Box::new(|d| mack(d).one_year_segments(&tri, "paid", &cl).unwrap().cdr),
+        ];
+        for run in &runs {
+            let ind = run(SegmentDependence::Independent);
+            let ranked = run(rank.clone());
+            assert_eq!(ranked.dims(), ind.dims());
+            assert_eq!(ranked.components(), ind.components());
+            assert_ne!(draws(&ranked), draws(&ind));
+            let n = ind.n_components();
+            assert_eq!(n, 20);
+            for range in [0..10, 10..20] {
+                let rows = |pd: &PredictiveDistribution| {
+                    let mut rows: Vec<Vec<u64>> = pd
+                        .draw_matrix()
+                        .chunks(n)
+                        .map(|r| r[range.clone()].iter().map(|v| v.to_bits()).collect())
+                        .collect();
+                    rows.sort();
+                    rows
+                };
+                assert_eq!(rows(&ind), rows(&ranked));
+            }
+            // Reproducible: the reordering's seed comes from the bootstrap's.
+            assert_eq!(draws(&run(rank.clone())), draws(&ranked));
         }
-        // Reproducible: the reordering's seed comes from the bootstrap's.
-        assert_eq!(draws(&rank().reserves), draws(&ranked.reserves));
+    }
+
+    #[test]
+    fn rank_correlated_rows_are_in_a_random_order() {
+        // Iman–Conover alone leaves the first segment's rows sorted by its
+        // total (its column of target ranks is the identity), so row `i`
+        // would rank the simulations: a prefix of them would be biased, and
+        // two seeds would pair their rows in common order. After the shuffle
+        // the row index is unrelated to every segment's total: its Spearman
+        // rho with each is within 4 standard errors (1 / sqrt(n - 1)) of 0.
+        let tri = keyed(&[("a", 2001, &GENINS), ("b", 2001, &RAA)]);
+        let ranked = odp(SegmentDependence::RankCorrelation {
+            spearman: vec![1.0, 0.8, 0.8, 1.0],
+        })
+        .fit_segments(&tri, "paid")
+        .unwrap()
+        .reserves;
+        let (n, k) = (ranked.n_sims(), ranked.n_components());
+        for range in [0..10, 10..20] {
+            let totals: Vec<f64> = ranked
+                .draw_matrix()
+                .chunks(k)
+                .map(|r| r[range.clone()].iter().sum())
+                .collect();
+            assert!(totals.windows(2).any(|w| w[0] > w[1]));
+            let mut by_total: Vec<usize> = (0..n).collect();
+            by_total.sort_by(|&a, &b| totals[a].total_cmp(&totals[b]));
+            let mut rank = vec![0.0; n];
+            for (r, &i) in by_total.iter().enumerate() {
+                rank[i] = r as f64;
+            }
+            let mean = (n - 1) as f64 / 2.0;
+            let num: f64 = (0..n).map(|i| (i as f64 - mean) * (rank[i] - mean)).sum();
+            let den: f64 = (0..n).map(|i| (i as f64 - mean).powi(2)).sum();
+            let rho = num / den;
+            assert!(rho.abs() < 4.0 / ((n - 1) as f64).sqrt(), "{rho}");
+        }
     }
 }

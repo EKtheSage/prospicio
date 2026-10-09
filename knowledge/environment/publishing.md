@@ -1,7 +1,7 @@
 ---
 type: Environment Fact
 title: Publishing to PyPI and crates.io
-description: How the crates and the Python package package for the registries, what each registry's trusted publishing needs, the name check, and that crates.io now publishes by trusted publishing (the token secret is gone).
+description: How the crates and the Python package package for the registries, what each registry's trusted publishing needs, and the name check.
 tags: [environment, release, pypi, crates-io, maturin]
 status: stable
 stale_after: 2027-04-07T00:00:00Z
@@ -75,15 +75,6 @@ sources:
   The remaining crates were published one at a time with `cargo publish
   -p <crate>` from a checkout of the tag, in dependency order
   (`-glm`, `-pricing`, `-reserving`, `-bayes`, `-nn`, then `prospicio`).[^v001]
-* On 2026-10-08 the user set up crates.io trusted publishing for all 11
-  crates, as `docs/release.md` ("After the first release") lists, and
-  deleted the `CARGO_REGISTRY_TOKEN` Actions secret.[^release] Without the
-  secret the release workflow's `crates-io` job asks crates.io for a
-  short-lived token (`rust-lang/crates-io-auth-action`, which runs only
-  when the secret is empty) and publishes with it.[^workflow] The API token
-  the secret held still exists until the user revokes it on crates.io
-  (*Account Settings → API Tokens*); only the user can, so it is theirs to
-  do, not a session's.
 
 [^crates-rl]: crates.io, rate limits
 [^v001]: Release workflow run for v0.0.1

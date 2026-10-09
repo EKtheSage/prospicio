@@ -158,7 +158,10 @@ pub(crate) fn pool_at(residuals: &[f64], positions: &[usize]) -> Vec<f64> {
 /// independently of the others unless [`OdpBootstrap::dependence`] says
 /// otherwise. Simulation `i` uses stream `i` for every segment, in index
 /// order, so the result is reproducible and does not depend on the number
-/// of threads; a segment's draws differ from bootstrapping it alone.
+/// of threads; a segment's draws differ from bootstrapping it alone. With
+/// [`RankCorrelation`](crate::SegmentDependence::RankCorrelation) the
+/// segments' simulations are then paired anew and put in a random order,
+/// so row `i` is no longer simulation `i`.
 ///
 /// ```
 /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, OdpBootstrap, Triangle};

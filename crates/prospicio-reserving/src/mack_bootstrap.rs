@@ -324,7 +324,8 @@ pub struct MackBootstrapFit {
 /// Each segment is bootstrapped with its own Mack model and residuals,
 /// independently of the others unless [`MackBootstrap::dependence`] says
 /// otherwise. Simulation `i` uses stream `i` for every segment, in index
-/// order, as in [`OdpBootstrapFits`](crate::OdpBootstrapFits).
+/// order, and rank correlation reorders the rows, as in
+/// [`OdpBootstrapFits`](crate::OdpBootstrapFits).
 ///
 /// ```
 /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, MackBootstrap, Month, Triangle};
