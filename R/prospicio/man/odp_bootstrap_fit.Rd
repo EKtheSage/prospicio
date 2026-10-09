@@ -14,7 +14,9 @@ odp_bootstrap(
   seed = 0,
   process = c("gamma", "none"),
   tail = 1,
-  tail_std_err = NULL
+  tail_std_err = NULL,
+  dependence = c("independent", "synchronized", "rank_correlation"),
+  spearman = NULL
 )
 }
 \arguments{
@@ -53,6 +55,25 @@ simulation draws the factor from the lognormal with the factor as mean
 and this standard deviation. \code{NULL} keeps it fixed, unlike
 \code{\link[=mack_bootstrap]{mack_bootstrap()}}, which extrapolates Mack's standard error; unused
 when the factor is 1, and an error with an estimated tail.}
+
+\item{dependence}{How the segments of a multi-segment triangle depend on
+each other: \code{"independent"}, each resampling its own residuals;
+\code{"synchronized"}, every segment resampling the residuals of the same
+origins and ages in each simulation (the synchronous bootstrap of
+Taylor and McGuire 2007 and Kirschner, Kerley and Isaacs 2008), so the
+lines' parameter error takes the correlation of their residuals while
+process error stays independent, which needs the same origins, ages and
+observed cells in every segment; or \code{"rank_correlation"}, each segment
+bootstrapped independently and the segments' simulations then
+reordered as whole rows (Iman-Conover on the segment totals) to the
+Spearman matrix \code{spearman} and put in a random order, so that row \code{i}
+is no longer simulation \code{i} but any subset of rows is a fair sample.}
+
+\item{spearman}{With \code{dependence = "rank_correlation"} only: Spearman's
+rho between the segments' totals, a symmetric matrix with a unit
+diagonal and one row and column per segment in index order. It is
+converted to the normal scores' correlation \verb{2 sin(pi rho / 6)}, which
+must be positive definite.}
 }
 \value{
 An \code{odp_bootstrap_fit} object.
@@ -67,10 +88,14 @@ exactly, and the reserve distribution within Monte Carlo error
 (\code{validation/reference/reserving_bootstrap_r.csv}).
 }
 \details{
-Every segment of the triangle is bootstrapped on its own, with its own
-residuals and scale, into one joint distribution of the reserves.
-Simulation \code{i} uses random stream \code{i} of \code{seed} for every segment in
-turn, so results do not depend on the number of threads.
+Every segment of the triangle is bootstrapped with its own residuals and
+scale, into one joint distribution of the reserves, the segments
+depending on each other as \code{dependence} says: independently by default,
+synchronized, or rank-correlated to a Spearman matrix. The joint
+distribution goes on to the portfolio's risk measure and its allocation
+to the lines (\code{\link[=capital_allocation]{capital_allocation()}}). Simulation \code{i} uses random stream \code{i} of
+\code{seed} for every segment in turn, so results do not depend on the number
+of threads.
 
 Properties of the fit: \code{chain_ladder} (the \link{chain_ladder_fit} the
 bootstrap is centred on), \code{origins}, \code{development}, \code{fitted} (fitted

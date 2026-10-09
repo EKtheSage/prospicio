@@ -1408,13 +1408,13 @@ Triangle$benktander <- function(column, exposure, apriori, n_iters, average, sig
 
 Triangle$cape_cod <- function(column, exposure, trend, decay, average, sigma_interpolation, tail) .Call(wrap__Triangle__cape_cod, self, column, exposure, trend, decay, average, sigma_interpolation, tail)
 
-Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std_err) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process, tail, tail_std_err)
+Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std_err, dependence, spearman) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process, tail, tail_std_err, dependence, spearman)
 
-Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err)
+Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman)
 
-Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process)
+Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, dependence, spearman) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, dependence, spearman)
 
-Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals) .Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals)
+Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals, dependence, spearman) .Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals, dependence, spearman)
 
 Triangle$clark_ldf <- function(column, curve, max_age) .Call(wrap__Triangle__clark_ldf, self, column, curve, max_age)
 

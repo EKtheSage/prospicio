@@ -1,6 +1,6 @@
-# Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view)
+# Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163; decision 9 on branch `claude/bootstrap-tail-error`) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10; decision 9 on branch `claude/bootstrap-tail-error`) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -40,6 +40,7 @@ generated stub, `NAMESPACE` and `man/`. Whichever merges second merges
 | Simulated one-year view | ODP: R ChainLadder `CDR(MackChainLadder(...))` times the measured ODP-to-Mack ratio, `BootChainLadder` for the origin with one cell left. Mack's process: R ChainLadder `CDR(MackChainLadder(...))` itself | England, Verrall and Wüthrich (2019), Tables 2 and 4 |
 | Mack's bootstrap, lifetime view | R ChainLadder `MackChainLadder(...)` process and parameter risks | England, Verrall and Wüthrich (2019), Table 4 |
 | Tails in the bootstraps | R ChainLadder `MackChainLadder(tail = ...)` process and parameter risks with the tail (`reserving_tails_r.csv`) | Mack (1999); the delta method on R's tail rule |
+| Dependence between segments | Kirschner, Kerley and Isaacs (2008), Two approaches to calculating correlated reserve indications across multiple lines of business, Variance 2(1); Taylor and McGuire (2007), A synchronous bootstrap to account for dependencies between lines of business, NAAJ 11(3) | the residuals' own correlation; Iman and Conover (1982) through `prospicio_prob` |
 
 Each family has its own generator script under `validation/scripts/` and
 reference CSV under `validation/reference/` in the format of
@@ -57,7 +58,13 @@ two inputs are added to `validation/data/`:
   `load_sample('clrd').groupby('LOB').sum().loc['wkcomp']`), columns
   `CumPaidLoss` and `EarnedPremNet` as `paid` and `premium`;
 * `genins_premium.csv`: the premium of R ChainLadder's Clark example,
-  `10000000 + 400000 * (0:9)` on GenIns origins.
+  `10000000 + 400000 * (0:9)` on GenIns origins;
+* `clrd_lines.csv`, for the dependence between lines (decision 10): the
+  paid losses of all six lines of the CAS loss reserve database summed
+  over companies (chainladder-python
+  `load_sample('clrd').groupby('LOB').sum()`, `CumPaidLoss`), 1988-1997 at
+  12 to 120 months, in a `lob` column; its wkcomp rows are
+  `clrd_wkcomp.csv`'s `paid`.
 
 ## Decisions
 
@@ -1230,3 +1237,198 @@ same extrapolation, but the ODP's model has no tail standard error of its
 own, so the default stays fixed. The mean is the chain ladder's (Mack,
 centred residuals) only without a tail or with a constant one; the
 bindings' documentation qualifies it the same way.
+
+#### With dependence between segments
+
+A tail combines with every `SegmentDependence` of decision 10 in
+`fit_segments`; the one-year views still take no bootstrap tail.
+
+* **Independent.** Each segment refits or draws its own tail, as a single
+  segment does.
+* **Synchronized.** Only the residuals' positions are shared, as
+  Kirschner, Kerley and Isaacs share them. An estimated tail is refitted
+  on each segment's own pseudo factors, which come from the shared
+  positions, so its parameter error follows the shared residuals: two
+  identical lines without process error keep equal reserves, tail
+  included. A constant tail's lognormal draw is each segment's own, like
+  its process error, after that segment's pseudo factors on the same
+  stream. A shared draw (one normal quantile for every segment) would
+  assert that the lines' tail judgments err together, which the residuals
+  say nothing about; a rank correlation of the segments' totals is the
+  way to ask for more dependence. On two copies of CLRD's wkcomp,
+  10,000 simulations without process error, a constant 1.05 with
+  `tail_std_err` 0.02 brings the copies' correlation from 1 to 0.19 (ODP)
+  and 0.16 (Mack): the tail's draw dominates the reserve's parameter error
+  there.
+* **Rank correlation.** Each segment is simulated independently, tail
+  included, and whole rows are reordered afterwards, so every component
+  keeps the independent fit's draws and the segments' totals, tail
+  included, take the target Spearman matrix (0.501 against 0.5 on comauto
+  and wkcomp).
+
+`validation/tests/reserving_dependence.rs` (`tails_with_dependence`) and
+each binding's tests check the synchronized and rank-correlated cases.
+
+### 10. Dependence between segments
+
+A triangle with several segments (lines of business) is bootstrapped into
+one joint distribution, components by segment and origin, so a total over
+the lines, its quantiles and a capital allocation come from one set of
+simulations. Until now the segments were independent: each resampled its
+own residuals on the shared stream of simulation `i`. For capital the
+lines' dependence matters, so it is now a choice,
+`prospicio_reserving::SegmentDependence`, a field `dependence` on
+`OdpBootstrap` and `MackBootstrap` next to `process`, used by
+`fit_segments` and `one_year_segments` (lifetime and one-year views of
+both bootstraps; the single-segment `fit` and `one_year` ignore it):
+
+| Variant | What it does | Dependence from |
+|---|---|---|
+| `Independent` (default) | each segment resamples its own residuals | none |
+| `Synchronized` | every segment resamples the residuals of the same positions | the data: the lines' paired residuals |
+| `RankCorrelation { spearman }` | each segment bootstrapped independently, then whole simulations of each segment reordered by Iman–Conover on the segment totals | the user: a Spearman matrix |
+
+A field, not a method argument, because it is a setting of the bootstrap
+like `process`, the bindings take it as a constructor argument, and it
+keeps one `fit_segments` per bootstrap. The rank-correlation matrix is a
+`Vec<f64>`, so `OdpBootstrap` and `MackBootstrap` are no longer `Copy` or
+`Eq` (still `Clone` and `PartialEq`); the bindings borrow them.
+
+**Independent** draws are bit-identical to those before the field: a
+checksum of the draws of `fit_segments` and `one_year_segments` of both
+bootstraps (the Mack one with the Gamma and residual processes, centred and
+not; three CLRD lines, 2,000 simulations) matched `main`'s on all ten
+configurations, and no seed-pinned test moved.
+
+**Synchronized** is the synchronous bootstrap of Taylor and McGuire (2007)
+and the correlated bootstrap of Kirschner, Kerley and Isaacs (2008, section
+4.5, Table 9: "the choice of which variability parameter to pick is the
+same across lines"). Precisely: each simulation first draws, from its
+stream, one position index for every residual a segment draws, in the
+order the segment draws them (ODP: every observed cell, row-major; Mack:
+every observed link ratio, factor by factor, then by origin), uniformly
+from the positions where *every* segment has a residual, with the formula
+the independent bootstrap uses. Each segment then takes its own residual
+at each position and goes on drawing its process error from the same
+stream, so process error is independent between segments, as the
+residuals carry the dependence (Kirschner et al. resample only the
+residuals in common). Segments must have the same origins, ages and
+observed cells (`Error::Bootstrap` otherwise), so that a position is the
+same origin and age, i.e. the same calendar period, in every line. When
+every segment has a residual wherever any has (the usual case), each
+segment's own distribution is exactly its independent one. With one
+segment the draws are identical for the ODP, and for Mack's bootstrap
+when no link has a zero cumulative value or a zero sigma (unit test, on
+RAA); otherwise the synchronized Mack path still draws a position for
+such a link, which the independent one skips, so the stream shifts and
+the draws are equal in distribution only. A position that only some
+segments have a residual at (a zero fitted value in one line, a zero
+link) is left out of all of them, and Mack's centring is then over the
+positions kept; the `Residuals` process resamples from the same shared
+pool.
+
+To first order a line's reserve is `sum_c a_c r(p_c)`, so two synchronized
+lines' parameter error has correlation `rho a1.a2 / (|a1| |a2|)`, `rho` the
+correlation of their paired residuals: at most `|rho|`, and close to it
+when the lines develop alike. On the six CAS loss reserve database lines
+(`validation/data/clrd_lines.csv`; 15 pairs, `rho` from -0.15 to 0.60,
+10,000 simulations) the ODP's parameter-error correlation is within 0.055
+of `rho`, Mack's within 0.145 (ppauto, which develops much faster, against
+wkcomp: 0.18 against 0.32). Process error dilutes it (ODP comauto with
+wkcomp: 0.53 parameter only, 0.40 with the Gamma process; Mack's process
+error is larger, 0.49 and 0.17).
+
+**RankCorrelation** is Kirschner et al.'s first approach, a rank
+correlation of the simulated reserves by line to a user's matrix, with
+`prospicio_prob::PredictiveDistribution::reorder_groups` (Iman and Conover
+1982 on the group totals, moving each group's simulations as whole rows,
+so each line keeps its distribution and its joint structure across
+origins). `reorder_groups` groups by one dimension, so the reordering runs
+on a copy whose components are keyed by segment number, which also covers
+triangles with several keys, and the result takes back the fit's
+dimensions and components. Iman–Conover sets the correlation of normal
+scores, whose Spearman rho is `(6/pi) asin(r/2)`, so the Spearman matrix
+the user gives is converted to `r = 2 sin(pi rho / 6)` (the diagonal kept
+at exactly 1); a matrix that is not positive definite after conversion is
+refused (`Error::Core`), and a matrix of the wrong size, without a unit
+diagonal, asymmetric or out of `[-1, 1]` is `Error::InvalidSetting`.
+Iman–Conover keeps the first group's column of target ranks in order (only
+the others are shuffled before the rotation, which is lower triangular),
+so its result has the first segment's simulations sorted by their total:
+row `i` would be the `i`-th smallest, a prefix of the rows a biased sample,
+and two such results joined with `Pairing::Independent` (accepted, as their
+seeds differ) strongly dependent. The paired rows are therefore put in a
+random order (Fisher–Yates), which keeps the joint law and the Spearman
+structure; row `i` is then no longer simulation `i`, but the rows are
+exchangeable. Both the reordering's seed (the first number) and the
+shuffle (the rest) come from stream `n_sims` of the bootstrap's seed: no
+simulation uses that stream, so they share no random numbers with the
+draws, and the result is reproducible from the bootstrap's settings alone.
+A unit test checks that the row index has no Spearman correlation with
+either segment's total. The provenance records `dependence` and
+`rank_correlation`. On comauto, ppauto and wkcomp with target rhos 0.5,
+0.25 and -0.3 the totals' Spearman rhos are 0.501, 0.253 and -0.304 at
+10,000 simulations.
+
+**Capital.** The joint reserves aggregate to one component per line
+(`reserves.aggregate(&["lob"])`) and go to
+`PredictiveDistribution::capital` with a distortion (TVaR) and an
+allocation method. On comauto and wkcomp (ODP, Gamma process, 10,000
+simulations) the total's TVaR at 99% and the TVaR diversification benefit
+are 4,949,627 and 136,529 independent, 5,011,717 and 78,069 synchronized,
+5,075,655 and 10,501 at a Spearman rho of 0.9, and in every case the
+standalone VaRs at 99.5% add to more than the total's.
+
+Validation (`validation/tests/reserving_dependence.rs`, unit tests in
+`dependence.rs`):
+
+* two copies of wkcomp, synchronized without process error, have equal
+  reserves and CDRs in every simulation, for both bootstraps and both
+  views; with the Gamma process their correlation is between 0.3 and 0.95,
+  independent within four standard errors of zero;
+* on the 15 CLRD pairs: the synchronized parameter-error correlation is
+  within 0.08 (ODP) or 0.16 (Mack) of the residuals' and not above it in
+  absolute value beyond four standard errors; with process error it keeps
+  the sign and shrinks for pairs with `|rho| > 0.25`; independent pairs
+  are uncorrelated within four standard errors; the ODP lines' standard
+  deviations are their independent ones within 5%;
+* the rank correlation's Spearman rhos are within four standard errors of
+  the target, every component keeps its draws, a line's origins stay
+  together, and Mack's one-year view takes the same rank correlation;
+* the capital path: the TVaR is the total's, the Euler allocation adds up
+  to it, the diversification benefit is positive and the standalone VaRs
+  add to more than the total's, and both the TVaR and the benefit order
+  independent, synchronized, rank 0.9;
+* unit tests: one synchronized segment draws as the independent bootstrap
+  (ODP; Mack with the Gamma and residual processes; both views); a line
+  and its double are proportional draw by draw; segments of other origins
+  or observed cells are refused when synchronized and accepted
+  otherwise; the matrix checks; the rank correlation reorders whole rows
+  (both bootstraps, both views), puts them in a random order and is
+  reproducible.
+
+The segments of a simulation read separate, consecutive parts of its
+stream, so no two lines share a uniform. On the six CLRD lines at 4,000
+simulations, seeds 1 to 3, the mean of the 15 pairwise correlations of the
+independent totals was within 0.005 of zero for both bootstraps, as was
+that of the synchronized Mack and ODP process error alone (the Gamma run
+minus the run without process error, whose position picks come first in
+the stream and so match).
+
+Bindings: Python `OdpBootstrap(..., dependence="independent",
+spearman=None)` and `MackBootstrap(..., dependence=..., spearman=...)`,
+with `dependence` one of `"independent"`, `"synchronized"`,
+`"rank_correlation"` and `spearman` a square list of lists, required with
+`"rank_correlation"` and refused otherwise; both are read back as
+properties and shown in the repr when not independent. R
+`odp_bootstrap()`, `mack_bootstrap()`, `odp_one_year()` and
+`mack_one_year()` take `dependence = c("independent", "synchronized",
+"rank_correlation")` and `spearman = NULL`, a square numeric matrix, and
+`capital_allocation()` takes the aggregated reserves.
+
+Not done: other copulas than Iman–Conover's normal scores (a t copula's
+tail dependence would need `reorder_groups` to take other scores), a
+correlation estimated from the data other than through the synchronized
+residuals, dependent process error, and synchronizing segments of
+different shapes (it would need positions matched by calendar period
+rather than by origin and age).

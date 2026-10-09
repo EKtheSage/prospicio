@@ -33,6 +33,7 @@ use prospicio_prob::{
 };
 
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
+use crate::dependence::{Resample, SegmentDependence, synchronize};
 use crate::error::{Error, Result};
 use crate::one_year_bootstrap::Failures;
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
@@ -75,7 +76,7 @@ pub enum ProcessDistribution {
 /// assert!(boot.reserves.mean() > 0.0);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OdpBootstrap {
     /// Number of simulations.
     pub n_sims: usize,
@@ -113,6 +114,10 @@ pub struct OdpBootstrap {
     /// when the factor is 1, and an error with an estimated tail, whose
     /// refit gives its parameter error.
     pub tail_std_err: Option<f64>,
+    /// How the segments of [`fit_segments`](Self::fit_segments) and
+    /// [`one_year_segments`](Self::one_year_segments) depend on each other;
+    /// independent by default.
+    pub dependence: SegmentDependence,
 }
 
 impl Default for OdpBootstrap {
@@ -123,6 +128,7 @@ impl Default for OdpBootstrap {
             process: ProcessDistribution::Gamma,
             tail: Tail::default(),
             tail_std_err: None,
+            dependence: SegmentDependence::Independent,
         }
     }
 }
@@ -171,12 +177,38 @@ impl ReserveFit for OdpBootstrapSegment {
     }
 }
 
+impl Resample for OdpBootstrapSegment {
+    fn residuals(&self) -> &[f64] {
+        &self.residuals
+    }
+
+    /// Every observed cell, row-major: each draws a residual.
+    fn draw_positions(&self) -> Vec<usize> {
+        let nd = self.residuals.len() / self.chain_ladder.latest_position.len();
+        self.chain_ladder
+            .latest_position
+            .iter()
+            .enumerate()
+            .flat_map(|(o, &last)| (0..=last).map(move |d| o * nd + d))
+            .collect()
+    }
+}
+
+/// `residuals` at `positions`, in that order: a synchronized pool.
+pub(crate) fn pool_at(residuals: &[f64], positions: &[usize]) -> Vec<f64> {
+    positions.iter().map(|&p| residuals[p]).collect()
+}
+
 /// An ODP bootstrap of every segment of a triangle column.
 ///
-/// Segments are bootstrapped independently, each with its own residuals
-/// and scale. Simulation `i` uses stream `i` for every segment, in index
+/// Each segment is bootstrapped with its own residuals and scale,
+/// independently of the others unless [`OdpBootstrap::dependence`] says
+/// otherwise. Simulation `i` uses stream `i` for every segment, in index
 /// order, so the result is reproducible and does not depend on the number
-/// of threads; a segment's draws differ from bootstrapping it alone.
+/// of threads; a segment's draws differ from bootstrapping it alone. With
+/// [`RankCorrelation`](crate::SegmentDependence::RankCorrelation) the
+/// segments' simulations are then paired anew and put in a random order,
+/// so row `i` is no longer simulation `i`.
 ///
 /// ```
 /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, OdpBootstrap, Triangle};
@@ -248,7 +280,10 @@ impl OdpBootstrapFits {
 
 /// Positions of segment `s`'s components in a joint distribution whose
 /// components run over the origins of each segment of `fits` in turn.
-fn components_of<T: ReserveFit>(fits: &SegmentFits<T>, s: usize) -> std::ops::Range<usize> {
+pub(crate) fn components_of<T: ReserveFit>(
+    fits: &SegmentFits<T>,
+    s: usize,
+) -> std::ops::Range<usize> {
     let n_origins = |f: &T| f.chain_ladder().origins.len();
     let start: usize = fits.fits[..s].iter().map(n_origins).sum();
     start..start + n_origins(&fits.fits[s])
@@ -371,7 +406,7 @@ impl OdpBootstrap {
             self.n_sims,
             self.seed,
             self.provenance(column, hasher),
-            |rng, row| sim.run(rng, row),
+            |rng, row| sim.run(rng, row, None),
         )?;
         let OdpBootstrapSegment {
             chain_ladder,
@@ -390,16 +425,29 @@ impl OdpBootstrap {
 
     /// Bootstraps `column` in every segment of a cumulative triangle, each
     /// with its own residuals and scale, into one joint distribution of the
-    /// reserves; see [`OdpBootstrapFits`]. A failure names its segment.
+    /// reserves, the segments depending on each other as
+    /// [`dependence`](Self::dependence) says; see [`OdpBootstrapFits`]. A
+    /// failure names its segment.
     pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<OdpBootstrapFits> {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
-        let prepared = fit_each(triangle, column, |s| {
+        let mut prepared = fit_each(triangle, column, |s| {
             let (fit, pool) = prepare(s, &s.ages, self.tail)?;
             let tail = self.tail_draw(&fit.chain_ladder)?;
             Ok((fit, pool, tail, s.clone()))
         })?;
+        let shared = match self.dependence {
+            SegmentDependence::Synchronized => {
+                let (shared, positions) =
+                    synchronize(prepared.fits.iter().map(|(fit, _, _, s)| (s, fit)))?;
+                for (fit, pool, _, _) in &mut prepared.fits {
+                    *pool = pool_at(&fit.residuals, &positions);
+                }
+                Some(shared)
+            }
+            _ => None,
+        };
 
         let keyed = !prepared.key_names.is_empty();
         let mut hasher = InputHasher::new();
@@ -429,22 +477,23 @@ impl OdpBootstrap {
             self.n_sims,
             self.seed,
             self.provenance(column, hasher)
-                .param("segments", prepared.len()),
+                .param("segments", prepared.len())
+                .param("dependence", format!("{:?}", self.dependence)),
             |rng, row| {
+                let picks = shared.map(|s| s.picks(rng));
                 let mut start = 0;
                 for (sim, label) in &sims {
                     let end = start + sim.segment.n_origins;
-                    sim.run(rng, &mut row[start..end])
+                    sim.run(rng, &mut row[start..end], picks.as_deref())
                         .map_err(|e| in_segment(label, e))?;
                     start = end;
                 }
                 Ok(())
             },
         )?;
-        Ok(OdpBootstrapFits {
-            segments: prepared.map(|(fit, _, _, _)| fit.clone()),
-            reserves,
-        })
+        let segments = prepared.map(|(fit, _, _, _)| fit.clone());
+        let reserves = self.dependence.reorder(reserves, &segments, self.seed)?;
+        Ok(OdpBootstrapFits { segments, reserves })
     }
 
     /// The tail each simulation draws, `None` without one; see
@@ -732,13 +781,22 @@ pub(crate) struct Simulation<'a> {
 
 impl Simulation<'_> {
     /// One bootstrap replicate: fills `reserves` with each origin's
-    /// simulated reserve. With a tail, the selected pseudo factors and the
-    /// tail factor are drawn after the pseudo triangle, and the step to
-    /// ultimate is each origin's last increment; it fails when the tail
-    /// cannot be refitted on the pseudo factors.
-    fn run(&self, rng: &mut StreamRng, reserves: &mut [f64]) -> Result<()> {
+    /// simulated reserve; `picks` as in [`resample`](Self::resample). With
+    /// a tail, the selected pseudo factors and the tail factor are drawn
+    /// after the pseudo triangle, and the step to ultimate is each origin's
+    /// last increment; it fails when the tail cannot be refitted on the
+    /// pseudo factors. A synchronized bootstrap shares only the residuals'
+    /// positions: the tail is refitted on this segment's pseudo factors
+    /// (so it follows the shared residuals), and a constant tail's
+    /// lognormal draw is this segment's own.
+    fn run(
+        &self,
+        rng: &mut StreamRng,
+        reserves: &mut [f64],
+        picks: Option<&[usize]>,
+    ) -> Result<()> {
         let nd = self.segment.n_dev;
-        let (pseudo, factors) = self.resample(rng);
+        let (pseudo, factors) = self.resample(rng, picks);
         let (factors, tail) = match self.tail {
             None => (factors, None),
             Some(tail) => {
@@ -761,18 +819,29 @@ impl Simulation<'_> {
 
     /// A pseudo cumulative triangle from resampled residuals, row-major
     /// over origin × development (zero where not observed), and its
-    /// volume-weighted factors: the parameter error of one replicate.
-    pub(crate) fn resample(&self, rng: &mut StreamRng) -> (Vec<f64>, Vec<f64>) {
+    /// volume-weighted factors: the parameter error of one replicate. The
+    /// residual of the `c`-th observed cell (row-major) is drawn from `rng`,
+    /// or, synchronized, is `pool[picks[c]]`.
+    pub(crate) fn resample(
+        &self,
+        rng: &mut StreamRng,
+        picks: Option<&[usize]>,
+    ) -> (Vec<f64>, Vec<f64>) {
         let (no, nd) = (self.segment.n_origins, self.segment.n_dev);
 
         // Pseudo cumulative triangle from resampled residuals.
         let mut pseudo = vec![0.0; no * nd];
+        let mut cell = 0;
         for o in 0..no {
             let mut cum = 0.0;
             for d in 0..=self.latest[o] {
                 let m = self.fitted[o * nd + d];
-                let k = ((rng.next_open01() * self.pool.len() as f64) as usize)
-                    .min(self.pool.len() - 1);
+                let k = match picks {
+                    Some(picks) => picks[cell],
+                    None => ((rng.next_open01() * self.pool.len() as f64) as usize)
+                        .min(self.pool.len() - 1),
+                };
+                cell += 1;
                 cum += m + self.pool[k] * m.abs().sqrt();
                 pseudo[o * nd + d] = cum;
             }
@@ -922,6 +991,7 @@ mod tests {
             process,
             tail,
             tail_std_err,
+            dependence: SegmentDependence::Independent,
         }
     }
 
@@ -940,7 +1010,7 @@ mod tests {
             tail: None,
         };
         let mut rng = StreamRng::new(seed, i);
-        let (pseudo, factors) = sim.resample(&mut rng);
+        let (pseudo, factors) = sim.resample(&mut rng, None);
         (pseudo, factors, rng)
     }
 

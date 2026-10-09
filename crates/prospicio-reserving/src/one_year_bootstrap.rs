@@ -61,9 +61,10 @@ use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
     OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, component_sums,
-    hash_segment, origin_keys, pick_segment, prepare, push_moments, segment_sums,
+    hash_segment, origin_keys, pick_segment, pool_at, prepare, push_moments, segment_sums,
 };
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
+use crate::dependence::{Resample, SegmentDependence, Shared, SharedPool, synchronize};
 use crate::error::{Error, Result};
 use crate::expected_loss::{Benktander, BornhuetterFerguson, CapeCod, ExpectedLoss};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each, fit_each_with_exposure};
@@ -246,9 +247,12 @@ impl<B: ReserveFit> ReserveFit for OneYearSegment<B> {
 
 /// The one-year bootstrap of every segment of a triangle column.
 ///
-/// Segments are bootstrapped independently, each with its own residuals
-/// and scale; simulation `i` uses stream `i` for every segment in turn, as
-/// in [`OdpBootstrapFits`](crate::OdpBootstrapFits).
+/// Each segment is bootstrapped with its own residuals and scale,
+/// independently of the others unless the bootstrap's `dependence` says
+/// otherwise; simulation `i` uses stream `i` for every segment in turn, as
+/// in [`OdpBootstrapFits`](crate::OdpBootstrapFits), and with
+/// [`RankCorrelation`](crate::SegmentDependence::RankCorrelation) the
+/// paired simulations are then put in a random order.
 ///
 /// ```
 /// use prospicio_reserving::{
@@ -385,18 +389,21 @@ impl YearCells {
 /// A bootstrap model that simulates a segment's coming year: what it
 /// estimated on the observed triangle (`self`) and what each simulation
 /// resamples ([`Draw`](Self::Draw)).
-pub(crate) trait NextYear: ReserveFit + Clone + Send + Sync {
+pub(crate) trait NextYear: ReserveFit + Resample + Clone + Send + Sync {
     /// What each simulation draws from beyond the fit: the residuals to
     /// resample and the process error.
-    type Draw: Send + Sync;
+    type Draw: SharedPool + Send + Sync;
 
     /// The cells of `year` to append to `segment`, as `(origin, position,
-    /// cumulative value)`, each origin's in development order.
+    /// cumulative value)`, each origin's in development order. `picks` are
+    /// the positions of a synchronized bootstrap's residuals, `None` to
+    /// draw them from `rng`.
     fn year_cells(
         &self,
         draw: &Self::Draw,
         segment: &Segment,
         year: &[YearCells],
+        picks: Option<&[usize]>,
         rng: &mut StreamRng,
     ) -> Vec<(usize, usize, f64)>;
 }
@@ -405,6 +412,12 @@ pub(crate) trait NextYear: ReserveFit + Clone + Send + Sync {
 pub(crate) struct OdpDraw {
     pool: Vec<f64>,
     process: ProcessDistribution,
+}
+
+impl SharedPool for OdpDraw {
+    fn share(&mut self, residuals: &[f64], positions: &[usize]) {
+        self.pool = pool_at(residuals, positions);
+    }
 }
 
 impl NextYear for OdpBootstrapSegment {
@@ -418,6 +431,7 @@ impl NextYear for OdpBootstrapSegment {
         draw: &OdpDraw,
         segment: &Segment,
         year: &[YearCells],
+        picks: Option<&[usize]>,
         rng: &mut StreamRng,
     ) -> Vec<(usize, usize, f64)> {
         let cl = &self.chain_ladder;
@@ -431,7 +445,7 @@ impl NextYear for OdpBootstrapSegment {
             process: draw.process,
             tail: None,
         };
-        let (pseudo, factors) = sim.resample(rng);
+        let (pseudo, factors) = sim.resample(rng, picks);
         let mut cells = Vec::new();
         for y in year {
             let o = y.origin;
@@ -524,13 +538,13 @@ impl<B: NextYear> Run<'_, B> {
     }
 
     /// One simulation: fills `cdr` with each origin's claims development
-    /// result.
-    fn run(&self, rng: &mut StreamRng, cdr: &mut [f64]) -> Result<()> {
+    /// result; `picks` as in [`NextYear::year_cells`].
+    fn run(&self, rng: &mut StreamRng, cdr: &mut [f64], picks: Option<&[usize]>) -> Result<()> {
         let p = self.prepared;
         let next = p
             .fit
             .bootstrap
-            .year_cells(&p.draw, &p.segment, &p.year, rng);
+            .year_cells(&p.draw, &p.segment, &p.year, picks, rng);
         self.rereserve(next, cdr)
     }
 
@@ -632,6 +646,7 @@ impl Sims {
             vec!["origin".into()],
             segment.origins.iter().map(|&p| vec![p.into()]).collect(),
             &[run],
+            None,
             provenance(hasher),
         )?;
         let OneYearSegment {
@@ -649,24 +664,37 @@ impl Sims {
 
     /// The one-year view of `column` in every segment of a triangle, each
     /// with its own bootstrap model fitted by `model`, into one joint
-    /// distribution; `provenance` names it, given the hash of the inputs.
+    /// distribution, the segments depending on each other as `dependence`
+    /// says; `provenance` names it, given the hash of the inputs.
     pub(crate) fn one_year_segments<B: NextYear>(
         self,
         triangle: &Triangle,
         column: &str,
         method: &OneYearMethod,
+        dependence: &SegmentDependence,
         model: impl Fn(&Segment) -> Result<(B, B::Draw)>,
         provenance: impl FnOnce(InputHasher) -> Provenance,
     ) -> Result<OneYearFits<B>> {
         self.check()?;
         let (opening, closing) = valuations(triangle)?;
-        let prepared = match method.exposure() {
+        let mut prepared = match method.exposure() {
             None => fit_each(triangle, column, |s| {
                 Prepared::new(triangle, s, None, method, opening, &model)
             })?,
             Some(exposure) => fit_each_with_exposure(triangle, column, exposure, |s, e| {
                 Prepared::new(triangle, s, Some(e), method, opening, &model)
             })?,
+        };
+        let shared = match dependence {
+            SegmentDependence::Synchronized => {
+                let (shared, positions) =
+                    synchronize(prepared.fits.iter().map(|p| (&p.segment, &p.fit.bootstrap)))?;
+                for p in &mut prepared.fits {
+                    p.draw.share(p.fit.bootstrap.residuals(), &positions);
+                }
+                Some(shared)
+            }
+            _ => None,
         };
 
         let keyed = !prepared.key_names.is_empty();
@@ -691,22 +719,27 @@ impl Sims {
             dims,
             components,
             &runs,
-            provenance(hasher).param("segments", prepared.len()),
+            shared,
+            provenance(hasher)
+                .param("segments", prepared.len())
+                .param("dependence", format!("{dependence:?}")),
         )?;
-        Ok(OneYearFits {
-            segments: prepared.map(|p| p.fit.clone()),
-            cdr,
-        })
+        let segments = prepared.map(|p| p.fit.clone());
+        let cdr = dependence.reorder(cdr, &segments, self.seed)?;
+        Ok(OneYearFits { segments, cdr })
     }
 
     /// Simulates the claims development result of every segment in `runs`,
-    /// in turn, into one joint distribution. A failed simulation is
-    /// reported after all have run, with the number that failed.
+    /// in turn, into one joint distribution; `shared` draws a synchronized
+    /// bootstrap's positions once per simulation for every segment. A
+    /// failed simulation is reported after all have run, with the number
+    /// that failed.
     fn simulate_cdr<B: NextYear>(
         self,
         dims: Vec<String>,
         components: Vec<Vec<KeyValue>>,
         runs: &[Run<'_, B>],
+        shared: Option<Shared>,
         provenance: Provenance,
     ) -> Result<PredictiveDistribution> {
         let failures = Mutex::new(Failures::default());
@@ -717,10 +750,11 @@ impl Sims {
             self.seed,
             provenance,
             |rng, row| {
+                let picks = shared.map(|s| s.picks(rng));
                 let mut start = 0;
                 for run in runs {
                     let end = start + run.n_origins();
-                    if let Err(e) = run.run(rng, &mut row[start..end]) {
+                    if let Err(e) = run.run(rng, &mut row[start..end], picks.as_deref()) {
                         // Keep the draws finite; the failure is reported.
                         row.fill(0.0);
                         let e = match &run.label {
@@ -781,8 +815,9 @@ impl OdpBootstrap {
     /// The one-year view of `column` in every segment of a cumulative
     /// triangle, each bootstrapped with its own residuals and scale and
     /// refitted with its own exposure, into one joint distribution of the
-    /// claims development result; see [`OneYearFits`]. A failure names its
-    /// segment.
+    /// claims development result, the segments depending on each other as
+    /// [`dependence`](Self::dependence) says; see [`OneYearFits`]. A failure
+    /// names its segment.
     pub fn one_year_segments(
         &self,
         triangle: &Triangle,
@@ -793,6 +828,7 @@ impl OdpBootstrap {
             triangle,
             column,
             method,
+            &self.dependence,
             |s| self.model(s),
             |hasher| self.one_year_provenance(column, method, hasher),
         )
@@ -1394,10 +1430,10 @@ mod tests {
         };
         let (odp, draw) = boot(1, 0).model(&segment).unwrap();
         let mut rng = StreamRng::new(0, 0);
-        let cells = odp.year_cells(&draw, &segment, &year, &mut rng);
+        let cells = odp.year_cells(&draw, &segment, &year, None, &mut rng);
         assert_eq!(positions(cells), want, "ODP");
         let (mack, draw) = crate::MackBootstrap::default().model(&segment).unwrap();
-        let cells = mack.year_cells(&draw, &segment, &year, &mut rng);
+        let cells = mack.year_cells(&draw, &segment, &year, None, &mut rng);
         assert_eq!(positions(cells), want, "Mack");
     }
 

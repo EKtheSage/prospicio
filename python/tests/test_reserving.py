@@ -1907,3 +1907,172 @@ def test_bootstrap_tail_refit_failure_names_its_segment():
         oldest = [row[0] for row in fit.segment(lob=lob).reserves.draw_matrix()]
         assert oldest == pytest.approx([0.05 * latest] * 200, rel=1e-9)
 
+# Dependence between segments (SegmentDependence, decision 10 of
+# docs/design/reserving-v02.md) on the CAS loss reserve database lines
+# (validation/data/clrd_lines.csv), as validation/tests/reserving_dependence.rs.
+
+
+def clrd_lines(pairs, shift=None):
+    """The `(line, name)` pairs of clrd_lines.csv as segments of a `lob` key,
+    each line's origins moved by `shift[line]` years."""
+    shift = shift or {}
+    rows = read_csv(VALIDATION / "data" / "clrd_lines.csv")
+    origin, development, paid, lob = [], [], [], []
+    for line, name in pairs:
+        for r in rows:
+            if r["lob"] == line:
+                origin.append(int(r["origin"]) + shift.get(line, 0))
+                development.append(int(r["development"]))
+                paid.append(float(r["paid"]))
+                lob.append(name)
+    return Triangle.from_long(origin, development, {"paid": paid}, keys={"lob": lob})
+
+
+def line_totals(pd):
+    by = pd.aggregate(["lob"]).draw_matrix()
+    return [[row[j] for row in by] for j in range(len(by[0]))]
+
+
+def pearson(x, y):
+    n = len(x)
+    mx, my = sum(x) / n, sum(y) / n
+    sxy = sum((a - mx) * (b - my) for a, b in zip(x, y))
+    sxx = sum((a - mx) ** 2 for a in x)
+    syy = sum((b - my) ** 2 for b in y)
+    return sxy / math.sqrt(sxx * syy)
+
+
+def spearman(x, y):
+    def ranks(v):
+        order = sorted(range(len(v)), key=v.__getitem__)
+        r = [0.0] * len(v)
+        for k, i in enumerate(order):
+            r[i] = float(k)
+        return r
+
+    return pearson(ranks(x), ranks(y))
+
+
+def test_synchronized_identical_lines_move_together():
+    tri = clrd_lines([("wkcomp", "a"), ("wkcomp", "b")])
+    for boot in [
+        OdpBootstrap(n_sims=500, seed=3, process="none", dependence="synchronized"),
+        MackBootstrap(n_sims=500, seed=3, process="none", dependence="synchronized"),
+    ]:
+        assert boot.dependence == "synchronized" and boot.spearman is None
+        assert 'dependence="synchronized"' in repr(boot)
+        a, b = line_totals(boot.fit(tri, "paid").reserves)
+        assert a == b and len(set(a)) > 1
+        a, b = line_totals(boot.one_year(tri, "paid", ChainLadder()).cdr)
+        assert a == b
+    # Independent, the default, adds nothing to the repr.
+    assert repr(OdpBootstrap()) == 'OdpBootstrap(n_sims=10000, seed=0, process="gamma", tail=1.0)'
+    assert OdpBootstrap().dependence == "independent"
+
+
+def test_synchronized_takes_the_residual_correlation():
+    tri = clrd_lines([("comauto", "comauto"), ("wkcomp", "wkcomp")])
+    fit = OdpBootstrap(n_sims=4000, seed=5, process="none", dependence="synchronized").fit(
+        tri, "paid"
+    )
+    a = [v for row in fit.segment(lob="comauto").residuals for v in row]
+    b = [v for row in fit.segment(lob="wkcomp").residuals for v in row]
+    both = [(x, y) for x, y in zip(a, b) if not (math.isnan(x) or math.isnan(y))]
+    rho = pearson([x for x, _ in both], [y for _, y in both])
+    x, y = line_totals(fit.reserves)
+    assert rho > 0.4 and abs(pearson(x, y) - rho) < 0.08
+
+
+def test_rank_correlation_reproduces_the_spearman_matrix():
+    tri = clrd_lines([("comauto", "comauto"), ("ppauto", "ppauto"), ("wkcomp", "wkcomp")])
+    target = [[1.0, 0.5, 0.25], [0.5, 1.0, -0.3], [0.25, -0.3, 1.0]]
+    boot = OdpBootstrap(n_sims=4000, seed=5, dependence="rank_correlation", spearman=target)
+    assert boot.spearman == target
+    assert "spearman=" in repr(boot)
+    lines = line_totals(boot.fit(tri, "paid").reserves)
+    for i, j in [(0, 1), (0, 2), (1, 2)]:
+        se = (1 - target[i][j] ** 2) / math.sqrt(4000)
+        assert abs(spearman(lines[i], lines[j]) - target[i][j]) < 4 * se
+    # The other views, on the first pair (target 0.5).
+    odp = OdpBootstrap(n_sims=2000, seed=5, dependence="rank_correlation", spearman=target)
+    mack = MackBootstrap(n_sims=2000, seed=5, dependence="rank_correlation", spearman=target)
+    for pd in [
+        mack.fit(tri, "paid").reserves,
+        odp.one_year(tri, "paid", ChainLadder()).cdr,
+        mack.one_year(tri, "paid", ChainLadder()).cdr,
+    ]:
+        lines = line_totals(pd)
+        assert abs(spearman(lines[0], lines[1]) - 0.5) < 4 * 0.75 / math.sqrt(2000)
+
+
+def test_joint_reserves_to_capital():
+    from prospicio.risk import Distortion, capital
+
+    tri = clrd_lines([("comauto", "comauto"), ("wkcomp", "wkcomp")])
+    tvar = Distortion.tvar(0.99)
+    benefits = []
+    for kw in [
+        {},
+        {"dependence": "synchronized"},
+        {"dependence": "rank_correlation", "spearman": [[1.0, 0.9], [0.9, 1.0]]},
+    ]:
+        reserves = OdpBootstrap(n_sims=4000, seed=5, **kw).fit(tri, "paid").reserves
+        by = reserves.aggregate(["lob"])
+        a = capital(by, tvar)
+        assert a.total == pytest.approx(by.total().tvar(0.99), rel=1e-9)
+        assert sum(a.allocated) == pytest.approx(a.total, rel=1e-9)
+        assert sum(a.standalone) >= a.total
+        benefits.append(a.diversification_benefit())
+    # More dependence, less diversification.
+    assert benefits[0] > benefits[1] > benefits[2] > 0
+
+
+def test_dependence_errors():
+    with pytest.raises(ValueError, match="dependence must be"):
+        OdpBootstrap(dependence="copula")
+    with pytest.raises(ValueError, match="needs a spearman matrix"):
+        MackBootstrap(dependence="rank_correlation")
+    with pytest.raises(ValueError, match="only with"):
+        OdpBootstrap(dependence="synchronized", spearman=[[1.0]])
+    with pytest.raises(ValueError, match="square"):
+        OdpBootstrap(dependence="rank_correlation", spearman=[[1.0, 0.5]])
+    tri = clrd_lines([("comauto", "comauto"), ("wkcomp", "wkcomp")])
+    with pytest.raises(ValueError, match="spearman"):
+        OdpBootstrap(
+            n_sims=100, dependence="rank_correlation", spearman=[[1.0, 0.5, 0.0], [0.5, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        ).fit(tri, "paid")
+    # wkcomp a year later: other origins.
+    ragged = clrd_lines([("comauto", "comauto"), ("wkcomp", "wkcomp")], shift={"wkcomp": 1})
+    with pytest.raises(ValueError, match="same origins, ages and observed cells"):
+        OdpBootstrap(n_sims=100, dependence="synchronized").fit(ragged, "paid")
+
+
+def test_tails_with_dependence():
+    # Decision 9 with decision 10: synchronized, an estimated tail is
+    # refitted on each line's pseudo factors and follows the shared
+    # residuals; a constant tail's lognormal draw is each line's own.
+    twins = clrd_lines([("wkcomp", "a"), ("wkcomp", "b")])
+    for cls in (OdpBootstrap, MackBootstrap):
+        boot = cls(n_sims=500, seed=3, process="none", tail=TailLogLinear(), dependence="synchronized")
+        assert boot.dependence == "synchronized" and isinstance(boot.tail, TailLogLinear)
+        assert 'tail=TailLogLinear()' in repr(boot) and 'dependence="synchronized"' in repr(boot)
+        a, b = line_totals(boot.fit(twins, "paid").reserves)
+        plain, _ = line_totals(
+            cls(n_sims=500, seed=3, process="none", dependence="synchronized").fit(twins, "paid").reserves
+        )
+        assert a == b and len(set(a)) > 1
+        assert sum(a) > sum(plain)
+        boot = cls(n_sims=2000, seed=3, process="none", tail=1.05, tail_std_err=0.02, dependence="synchronized")
+        assert boot.tail_std_err == 0.02
+        a, b = line_totals(boot.fit(twins, "paid").reserves)
+        assert a != b and 0.1 < pearson(a, b) < 0.9
+    # Rank correlation reorders whole simulations, tail included.
+    pair = clrd_lines([("comauto", "comauto"), ("wkcomp", "wkcomp")])
+    for cls in (OdpBootstrap, MackBootstrap):
+        kw = dict(n_sims=2000, seed=5, tail=1.05, tail_std_err=0.02)
+        independent = cls(**kw).fit(pair, "paid").reserves
+        ranked = cls(dependence="rank_correlation", spearman=[[1.0, 0.5], [0.5, 1.0]], **kw).fit(pair, "paid").reserves
+        for x, y in zip(line_totals(independent), line_totals(ranked)):
+            assert sorted(x) == sorted(y)
+        x, y = line_totals(ranked)
+        assert abs(spearman(x, y) - 0.5) < 4 * 0.75 / math.sqrt(2000)

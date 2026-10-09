@@ -18,7 +18,9 @@ mack_bootstrap(
   centre_residuals = TRUE,
   tail = 1,
   tail_sigma = NULL,
-  tail_std_err = NULL
+  tail_std_err = NULL,
+  dependence = c("independent", "synchronized", "rank_correlation"),
+  spearman = NULL
 )
 }
 \arguments{
@@ -61,6 +63,9 @@ tail factor is 1.}
 \code{tail.se}), or \code{NULL} to extrapolate it (unlike \code{\link[=odp_bootstrap]{odp_bootstrap()}},
 which then keeps the factor fixed). Unused when the tail factor is 1,
 and an error with an estimated tail.}
+
+\item{dependence, spearman}{How the segments depend on each other, as in
+\code{\link[=odp_bootstrap]{odp_bootstrap()}}.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.
@@ -100,9 +105,12 @@ written) they bias every pseudo factor, and the mean reserve with them
 on ABC); EVW's Table 4 expected reserves agree with the centred
 bootstrap.
 
-Every segment is bootstrapped on its own, with its own Mack model and
-residuals, into one joint distribution of the reserves. Simulation \code{i}
-uses random stream \code{i} of \code{seed} for every segment in turn.
+Every segment is bootstrapped with its own Mack model and residuals,
+into one joint distribution of the reserves, the segments depending on
+each other as \code{dependence} says, as in \code{\link[=odp_bootstrap]{odp_bootstrap()}}; synchronized,
+every segment resamples the link-ratio residuals of the same origins and
+ages. Simulation \code{i} uses random stream \code{i} of \code{seed} for every segment
+in turn.
 
 Properties of the fit: \code{chain_ladder} (the \link{chain_ladder_fit} of Mack's
 averaging), \code{mack} (the \link{mack_fit} on the observed triangle, with the

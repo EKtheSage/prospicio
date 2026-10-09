@@ -18,6 +18,9 @@ sources:
   - id: unit
     resource: ../crates/prospicio-reserving/src/mack_bootstrap.rs
     title: Unit tests of MackBootstrap::fit with a tail (and bootstrap.rs for the ODP)
+  - id: dependence
+    resource: ../validation/tests/reserving_dependence.rs
+    title: Validation test of tails with dependence between segments (tails_with_dependence)
   - id: mack1999
     resource: https://doi.org/10.2143/AST.29.2.504622
     title: Mack (1999), The standard error of chain ladder reserve estimates, recursive calculation and inclusion of a tail factor, ASTIN Bulletin 29(2)
@@ -94,6 +97,17 @@ and the estimated tail gives the tail estimator's own sampling error and
 mean, which R's extrapolated `tail.se` only approximates in order of
 magnitude.[^design]
 
+**With dependence between segments** (decision 10), only the residuals'
+positions are shared when synchronized: an estimated tail refitted on each
+line's pseudo factors follows them, so two copies of CLRD's wkcomp without
+process error keep equal reserves with `Tail::LogLinear` (mean 2.94 million
+against 2.78 million without a tail, 10,000 simulations), while a constant
+tail's lognormal draw is each line's own: with 1.05 and `tail_std_err` 0.02
+the copies' correlation falls from 1 to 0.19 (ODP) and 0.16 (Mack). Rank
+correlation reorders whole simulations, tail included: each component keeps
+the independent fit's draws and the totals' Spearman is 0.501 against a
+target of 0.5 (comauto and wkcomp).[^dependence]
+
 [^test]: `validation/tests/reserving_bootstrap_tail.rs` checks the
     constant tail against R (Gamma and parameter error alone), the refit's
     process error, the oldest origin's refit against the delta method on
@@ -104,3 +118,6 @@ magnitude.[^design]
 [^reference]: `validation/reference/reserving_tails_r.csv`, from
     `validation/scripts/reserving_tails_r.R`.
 [^design]: `docs/design/reserving-v02.md`, decision 9.
+[^dependence]: `validation/tests/reserving_dependence.rs`,
+    `tails_with_dependence`, checks the equal copies, the constant tail's
+    correlation between 0.1 and 0.9, and the rank-correlated Spearman.
