@@ -1,5 +1,9 @@
 # Bundle history
 
+## 2026-10-09
+
+* **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md): where aggregate's contract terms live and how they are defined (swing and retro as a collared affine premium with the swing's amounts scaled by the share, sliding scales from `(commission, loss_ratio)` anchors with flat ends, a profit commission that does not deduct the ceding commission, one variable feature per program and none with reinstatements, `deposit` and `rol` quoted at 100%), and how its loss-ratio corridor differs from prospicio's, from adding contract terms to `prospicio_aggregate::Layer` (branch claude/stoic-hawking-qc3qby), which matches aggregate 1.0.1 at 475 losses to `1e-12`. Not yet run by CI.
+
 ## 2026-10-08
 
 * **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md): how `aggregate` sizes the FFT grid when no bucket is given (moment fits, the single big jump with a moment-fitted severity quantile, `round_bucket`'s ladder, the refusal of infinite variance), that `est_m` is the grid's mean, and that its default `normalize=True` thins the tail (0.65% on a Lomax book's 0.9999 quantile), from adding `prospicio_aggregate::recommend_grid` (branch claude/stoic-hawking-qc3qby). Not yet run by CI.

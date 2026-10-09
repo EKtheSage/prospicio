@@ -268,3 +268,64 @@ fn grid_sizing_matches_aggregate() {
         }
     });
 }
+
+/// Swing and retro premiums, sliding-scale and profit commissions against
+/// `aggregate` 1.0.1's `contract_terms` at losses through every kink
+/// (`validation/scripts/aggregate_contract_terms.py`).
+#[test]
+fn contract_terms_match_aggregate() {
+    use prospicio_aggregate::{Layer, LossSensitivePremium};
+
+    let cases = prospicio_validation::reference("contract_terms_aggregate.csv");
+    prospicio_validation::check(&cases, |c| {
+        let v = |k: &str| c.param("params", k);
+        let has = |k: &str| c.get("params").contains(&format!("{k}="));
+        let x = c.number("arg")?;
+        let collar = || {
+            LossSensitivePremium::new(
+                v("basic"),
+                v("lcm"),
+                has("minimum").then(|| v("minimum")),
+                has("maximum").then(|| v("maximum")),
+            )
+            .ok()
+        };
+        // A layer whose premium is `premium` for the placed share.
+        let priced = || {
+            Layer::quota_share("L", 1.0)
+                .ok()?
+                .deposit_premium(v("premium"))
+                .ok()
+        };
+        match c.get("quantity") {
+            "swing_premium" => {
+                let layer = Layer::xol("L", f64::INFINITY, 0.0)
+                    .ok()?
+                    .share(v("share"))
+                    .ok()?
+                    .swing_rated(collar()?)
+                    .ok()?;
+                Some(layer.premium_for(x))
+            }
+            "retro_premium" => Some(collar()?.premium(x)),
+            "sliding_commission" => {
+                let anchors = (0..v("n") as usize)
+                    .map(|i| (v(&format!("c{i}")), v(&format!("lr{i}"))))
+                    .collect();
+                Some(
+                    priced()?
+                        .sliding_scale(anchors)
+                        .ok()?
+                        .ceding_commission_for(x),
+                )
+            }
+            "profit_commission" => Some(
+                priced()?
+                    .profit_commission(v("share"), v("allowance"))
+                    .ok()?
+                    .profit_commission_for(x),
+            ),
+            _ => None,
+        }
+    });
+}

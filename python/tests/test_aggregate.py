@@ -261,6 +261,76 @@ def test_loss_corridors():
     assert a.draw_matrix() == b.draw_matrix()
 
 
+def test_contract_terms():
+    from prospicio.reinsurance import LossSensitivePremium
+
+    # Premiums from quotes, at the placed share.
+    assert Layer("10x10", 10.0, 10.0, share=0.4).with_rate_on_line(0.2).premium == pytest.approx(0.8)
+    assert Layer("10x10", 10.0, 10.0, share=0.4).with_deposit_premium(3.0).premium == pytest.approx(1.2)
+    # A premium in the constructor is kept without paid reinstatements.
+    assert Layer("L", 10.0, 10.0, premium=2.5).premium == 2.5
+    qs = Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+    assert qs.premium == 100.0
+    with pytest.raises(ValueError):
+        Layer.quota_share("QS", 0.5).with_rate_on_line(0.1)
+
+    # aggregate's sliding scale and profit commission examples.
+    slide = qs.with_sliding_scale([(0.25, 0.70), (0.45, 0.60), (0.19, 0.80)])
+    assert slide.sliding_scale == [(0.45, 0.60), (0.25, 0.70), (0.19, 0.80)]
+    assert slide.ceding_commission is None
+    for lr, c in [(0.55, 0.45), (0.65, 0.35), (0.75, 0.22), (0.90, 0.19)]:
+        assert slide.ceding_commission_for(100.0 * lr) == pytest.approx(100.0 * c)
+    pc = qs.with_profit_commission(0.25, 0.10)
+    assert pc.profit_commission == (0.25, 0.10)
+    assert pc.profit_commission_for(60.0) == pytest.approx(7.5)
+    assert pc.profit_commission_for(95.0) == 0.0
+    assert qs.with_ceding_commission(0.3).ceding_commission_for(500.0) == pytest.approx(30.0)
+    with pytest.raises(ValueError, match="premium"):
+        Layer.quota_share("QS", 0.5).with_sliding_scale([(0.3, 0.6)])
+    with pytest.raises(ValueError):
+        qs.with_sliding_scale([(0.2, 0.6), (0.3, 0.7)])
+
+    # Swing rating at a 40% share: amounts scale, the factor does not.
+    swing = Layer("L", 1000.0, 0.0, share=0.4).with_swing_rating(20.0, 1.25, 50.0, 300.0)
+    assert swing.swing_rating == (20.0, 1.25, 50.0, 300.0)
+    assert swing.premium_for(40.0) == pytest.approx(58.0)
+    assert swing.premium_for(1000.0) == pytest.approx(120.0)
+    with pytest.raises(ValueError, match="swing"):
+        qs.with_sliding_scale([(0.3, 0.6)]).with_swing_rating(0.0, 1.0)
+    with pytest.raises(ValueError):
+        Layer("10x10", 10.0, 10.0, premium=1.0, reinstatement_rates=[1.0]).with_swing_rating(0.0, 1.0)
+
+    retro = LossSensitivePremium(1000.0, 1.1, maximum=2500.0)
+    assert retro.minimum == 1000.0 and retro.maximum == 2500.0
+    assert retro.premium([0.0, 500.0, 1500.0]) == pytest.approx([1000.0, 1550.0, 2500.0])
+
+    # In a tower: components per term, joint with the ceded losses.
+    xl = Layer("3x3", 3.0, 3.0, share=0.5).with_swing_rating(1.0, 1.2, 2.0, 6.0).with_ceding_commission(0.1)
+    book = Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 30.0)
+    book = book.with_sliding_scale([(0.4, 0.5), (0.2, 0.9)]).with_profit_commission(0.3, 0.25)
+    tower = Tower([book, xl])
+    result = tower.apply(simulate_events(Poisson(3.0), SEV, 20_000, 9))
+    assert [k[0] for k in result.components()] == [
+        "gross", "ceded", "ceded", "net", "swing_premium", "ceding_commission", "ceding_commission",
+        "profit_commission",
+    ]
+    rows = result.draw_matrix()
+    for row in rows[:500]:
+        assert row[4] == xl.premium_for(row[2])
+        assert row[5] == book.ceding_commission_for(row[1])
+        assert row[7] == book.profit_commission_for(row[1])
+    # The grid's expectations agree with the simulation.
+    grids = tower.on_grid(Poisson(3.0), SEV, 400)
+    assert grids.expected_premium[0] == pytest.approx(15.0)
+    sim = result.marginal(("ceding_commission", "QS")).draws
+    mean = sum(sim) / len(sim)
+    se = math.sqrt(sum((x - mean) ** 2 for x in sim) / len(sim) / len(sim))
+    assert abs(grids.expected_ceding_commission[0] - mean) < 4 * se
+    assert grids.expected_profit_commission[1] == 0.0
+    # Saved and loaded with every term.
+    assert Tower.from_json(tower.to_json()).to_json() == tower.to_json()
+
+
 def test_towers_save_and_load_as_json():
     import pickle
 

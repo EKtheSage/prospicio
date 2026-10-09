@@ -1,6 +1,6 @@
 # Roadmap: milestones and the plan for each crate
 
-2026-10-06. Where the project stands against the release plan in
+2026-10-09. Where the project stands against the release plan in
 [`architecture.md`](architecture.md#roadmap-and-releases), and what each
 crate should do next. Lanes and owners are in [`AGENTS.md`](../AGENTS.md);
 each lane's details are in its note under `docs/design/`. Update this file
@@ -19,7 +19,7 @@ then joins them and sets and allocates capital.
 | Phase 0: Foundation | Workspace, core traits, design notes, RNG streams, Python and R skeletons, parity harness | Done |
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
 | v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136) |
-| v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time |
+| v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
@@ -89,12 +89,15 @@ what it is aiming for by v1.0.
     reinstatements pro rata as to amount and time.
   - Inuring towers, applied to events, to aggregates, or exactly on the
     grid.
+  - Contract terms on a layer, with `aggregate`'s definitions: premium
+    as a rate on line, a rate or a deposit; flat and sliding-scale ceding
+    commissions, profit commissions, swing rating; retro premiums.
+    (Also done: towers saved as JSON, seasonal event times, loss
+    corridors.)
 - **Next:**
-  1. Seasonal event times, from a density over the year.
-  2. Loss corridors and other contract features listed in
-     `architecture.md`.
-  (Done: towers saved and loaded as JSON, so a programme can be stored
-  and replayed.)
+  1. Deficit and credit carry-forward in profit commissions and sliding
+     scales, once multi-year simulation exists.
+  2. The rest of `aggregate` parity tier 2, on request.
 - **v1.0:** a reinsurance programme described once and applied to any
   loss source.
 
@@ -105,7 +108,7 @@ what it is aiming for by v1.0.
   - Exposure curves (MBBEFD, tabulated, from a severity) and risk
     profiles with spread sums insured.
   - Risk-loaded prices from simulated losses.
-- **Next:**
+- **Next** (the Aggregate lane's next items, after the R packaging PR):
   1. Rate indication: trend, on-level premium and loss development into
      an indicated rate change. This is the v0.6 pricing scope.
   2. Credibility (limited fluctuation, Bühlmann, Bühlmann–Straub). It may
@@ -186,6 +189,19 @@ what it is aiming for by v1.0.
      over them (`wasm-bindgen`) for a browser page or an Excel add-in.
   2. (Done: the docs sites are published to GitHub Pages from `main`.)
 - **v1.0:** API review and deprecation pass, then semver.
+
+## Order of work (set by the user 2026-10-09)
+
+1. Contract terms in `prospicio-aggregate` (done).
+2. The R package self-contained, so `remotes::install_github` and
+   r-universe can build it without a checkout of the whole repository: a
+   bindings and release PR of its own, and the first step towards CRAN.
+3. Rate indication and credibility in `prospicio-pricing`.
+4. Release v0.0.2.
+5. Bayesian reserving (Meyers, compartmental, Clark growth curves,
+   Gaussian processes), with `prospicio-bayes`. Which session takes it
+   is the user's call: it spans the Reserving lane (local session) and
+   the Models lane.
 
 ## Waiting on the user
 

@@ -25,5 +25,7 @@ pub use fft::fft;
 pub use grid_reinsurance::TowerGrids;
 pub use monte_carlo::{EventSet, simulate_events};
 pub use panjer::panjer;
-pub use reinsurance::{Basis, Corridor, Layer, Tower};
+pub use reinsurance::{
+    Basis, Commission, Corridor, Layer, LossSensitivePremium, ProfitCommission, Tower,
+};
 pub use sizing::{GridSize, Sizing, SizingMethod, fft_auto, recommend_grid, round_bucket};

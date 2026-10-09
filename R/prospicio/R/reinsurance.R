@@ -21,8 +21,9 @@ NULL
 #' @param reinstatements Number of free reinstatements, which sets the annual
 #'   limit to `limit * (reinstatements + 1)`; cannot be combined with a finite
 #'   `aggregate_limit`.
-#' @param premium Upfront premium for the placed share; used only by
-#'   `reinstatement_rates`.
+#' @param premium Upfront premium for the placed share: the base of paid
+#'   reinstatements, ceding and profit commissions and a sliding scale's loss
+#'   ratio. [with_rate_on_line()] and its siblings set it from a quote.
 #' @param reinstatement_rates Paid reinstatements: one rate per reinstatement,
 #'   as a fraction of `premium` (1 is 100%), pro rata as to amount. Sets the
 #'   annual limit to `limit * (length(reinstatement_rates) + 1)`; cannot be
@@ -33,10 +34,15 @@ NULL
 #'   ([with_uniform_times()], or `times` in [events_from_years()]).
 #' @param ptr Internal: an existing layer to wrap.
 #' @returns An `xol_layer` object with read-only properties for each term
-#'   (`loss_corridor` is `c(lower, upper, retained)`, empty when there is
-#'   none).
+#'   (`loss_corridor` is `c(lower, upper, retained)`, `ceding_commission` the
+#'   flat rate, `sliding_scale` a data frame of `commission` and `loss_ratio`
+#'   (or `NULL`), `profit_commission` `c(share, allowance)` and
+#'   `swing_rating` `c(basic, lcm, minimum, maximum)`; each empty when there
+#'   is none).
 #' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
-#'   types, which are layers too; [with_loss_corridor()] for a corridor.
+#'   types, which are layers too; [with_loss_corridor()] for a corridor;
+#'   [with_rate_on_line()], [with_ceding_commission()] and
+#'   [with_swing_rating()] for premiums and commissions.
 #' @export
 #' @examples
 #' l <- xol_layer("5x5", 5e6, 5e6, reinstatements = 1)
@@ -65,7 +71,24 @@ xol_layer <- S7::new_class(
       S7::class_double, getter = function(self) self@ptr$reinstatement_rates()
     ),
     pro_rata_time = S7::new_property(S7::class_logical, getter = function(self) self@ptr$pro_rata_time()),
-    loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor())
+    loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor()),
+    ceding_commission = S7::new_property(
+      S7::class_double, getter = function(self) self@ptr$ceding_commission()
+    ),
+    sliding_scale = S7::new_property(S7::class_any, getter = function(self) {
+      a <- self@ptr$sliding_scale()
+      if (!length(a)) return(NULL)
+      n <- length(a) / 2
+      data.frame(commission = a[seq_len(n)], loss_ratio = a[n + seq_len(n)])
+    }),
+    profit_commission = S7::new_property(S7::class_double, getter = function(self) {
+      p <- self@ptr$profit_commission()
+      if (length(p)) stats::setNames(p, c("share", "allowance")) else p
+    }),
+    swing_rating = S7::new_property(S7::class_double, getter = function(self) {
+      p <- self@ptr$swing_rating()
+      if (length(p)) stats::setNames(p, c("basic", "lcm", "minimum", "maximum")) else p
+    })
   ),
   constructor = function(name, limit, attachment, share = 1, aggregate_deductible = 0,
                          aggregate_limit = Inf, reinstatements = NULL, premium = 0,
@@ -110,6 +133,175 @@ with_loss_corridor <- function(layer, lower, upper, retained = 1) {
     as.double(lower), as.double(upper), as.double(retained)
   )))
 }
+
+#' Layer premium from a quote
+#'
+#' The same layer with its premium for the placed share set from a quote at
+#' 100% of the layer: a rate on line (`share * rol * limit`; needs a finite
+#' limit), a rate on the subject premium (`share * rate * subject_premium`;
+#' a quota share's ceded premium is a rate of 1), or a deposit amount
+#' (`share * amount`). Set the share first. The premium is the base of
+#' paid reinstatements, commissions and a sliding scale's loss ratio.
+#'
+#' @param layer An [xol_layer] (any contract type).
+#' @param rol Rate on line.
+#' @param rate Rate on the subject premium.
+#' @param subject_premium The subject (underlying) premium.
+#' @param amount Deposit premium at 100% of the layer.
+#' @returns An [xol_layer].
+#' @export
+#' @examples
+#' with_rate_on_line(xol_layer("10x10", 10e6, 10e6), 0.125)@premium
+#' with_premium_rate(quota_share("QS", 0.3), 1, 1000)@premium
+#' with_deposit_premium(xol_layer("5x5", 5e6, 5e6, share = 0.4), 1e6)@premium
+with_rate_on_line <- function(layer, rol) {
+  xol_layer(ptr = rust_result(layer@ptr$with_rate_on_line(as.double(rol))))
+}
+
+#' @rdname with_rate_on_line
+#' @export
+with_premium_rate <- function(layer, rate, subject_premium) {
+  xol_layer(ptr = rust_result(layer@ptr$with_premium_rate(as.double(rate), as.double(subject_premium))))
+}
+
+#' @rdname with_rate_on_line
+#' @export
+with_deposit_premium <- function(layer, amount) {
+  xol_layer(ptr = rust_result(layer@ptr$with_deposit_premium(as.double(amount))))
+}
+
+#' Ceding and profit commissions
+#'
+#' The same layer with a commission paid back to the cedant, figured on the
+#' year's premium and ceded loss:
+#'
+#' - `with_ceding_commission()`: a flat `rate` of the year's premium (the
+#'   swing-rated premium, if any; reinstatement premiums carry none).
+#' - `with_sliding_scale()`: the commission rate at the year's ceded loss
+#'   ratio (ceded loss over premium), linear between the anchors
+#'   `(commission, loss_ratio)` and flat beyond the first and last, as
+#'   `aggregate`'s `slide`. It replaces a flat commission.
+#' - `with_profit_commission()`: `share * max(premium * (1 - allowance) -
+#'   ceded, 0)`, as `aggregate`'s `pc <share> after <allowance>`; the
+#'   allowance includes any ceding commission deducted before profit.
+#'
+#' A sliding scale and a profit commission need the premium set first, and
+#' cannot be combined with swing rating or paid reinstatements. The tower's
+#' results report each as its own component ([apply_tower()]).
+#'
+#' @param layer An [xol_layer].
+#' @param rate Flat commission rate, in `[0, 1]`.
+#' @param commission Commission rates at the anchors; must not rise with the
+#'   loss ratio.
+#' @param loss_ratio Loss ratios of the anchors, one per commission.
+#' @param share Share of the profit, in `[0, 1]`.
+#' @param allowance The reinsurer's expense allowance, as a fraction of
+#'   premium.
+#' @returns An [xol_layer].
+#' @export
+#' @examples
+#' qs <- with_premium_rate(quota_share("QS", 0.5), 1, 200)
+#' slid <- with_sliding_scale(qs, c(0.45, 0.25, 0.19), c(0.60, 0.70, 0.80))
+#' ceding_commission_for(slid, c(55, 65, 90))
+#' pc <- with_profit_commission(qs, 0.25, 0.1)
+#' profit_commission_for(pc, c(60, 95))
+with_ceding_commission <- function(layer, rate) {
+  xol_layer(ptr = rust_result(layer@ptr$with_ceding_commission(as.double(rate))))
+}
+
+#' @rdname with_ceding_commission
+#' @export
+with_sliding_scale <- function(layer, commission, loss_ratio) {
+  xol_layer(ptr = rust_result(layer@ptr$with_sliding_scale(as.double(commission), as.double(loss_ratio))))
+}
+
+#' @rdname with_ceding_commission
+#' @export
+with_profit_commission <- function(layer, share, allowance = 0) {
+  xol_layer(ptr = rust_result(layer@ptr$with_profit_commission(as.double(share), as.double(allowance))))
+}
+
+#' Swing-rated premium
+#'
+#' The same layer, swing rated: the year's premium is `pmin(pmax(share *
+#' basic + lcm * ceded, share * minimum), share * maximum)`, with the terms
+#' quoted for 100% of the layer, as in `aggregate`, and the ceded loss at the
+#' placed share. It replaces the fixed premium in the tower's results
+#' (component `swing_premium`). It cannot be combined with paid
+#' reinstatements, a sliding scale or a profit commission.
+#'
+#' @param layer An [xol_layer].
+#' @param basic Basic premium.
+#' @param lcm Loss conversion factor, such as `100 / 80`.
+#' @param minimum Minimum premium; `NULL` for `basic`.
+#' @param maximum Maximum premium; `NULL` for no cap.
+#' @returns An [xol_layer].
+#' @seealso [retro_premium()] for the same formula on an account's loss.
+#' @export
+#' @examples
+#' l <- with_swing_rating(xol_layer("L", 1000, 0), 0, 1.25, 100, 300)
+#' premium_for(l, c(40, 200, 400))
+with_swing_rating <- function(layer, basic, lcm, minimum = NULL, maximum = NULL) {
+  xol_layer(ptr = rust_result(layer@ptr$with_swing_rating(
+    as.double(basic), as.double(lcm), nan_if_null(minimum), nan_if_null(maximum)
+  )))
+}
+
+#' Premium and commissions for a year's ceded loss
+#'
+#' The year's premium (swing rated, or else the layer's fixed premium),
+#' ceding commission (flat or sliding) and profit commission, for each
+#' value of the layer's ceded loss at the placed share.
+#'
+#' @param layer An [xol_layer].
+#' @param ceded Numeric vector of annual ceded losses.
+#' @returns A numeric vector, one entry per ceded loss.
+#' @export
+#' @examples
+#' qs <- with_ceding_commission(with_premium_rate(quota_share("QS", 0.3), 1, 1000), 0.3)
+#' premium_for(qs, 150)
+#' ceding_commission_for(qs, 150)
+premium_for <- function(layer, ceded) {
+  layer@ptr$premium_for(as.double(ceded))
+}
+
+#' @rdname premium_for
+#' @export
+ceding_commission_for <- function(layer, ceded) {
+  layer@ptr$ceding_commission_for(as.double(ceded))
+}
+
+#' @rdname premium_for
+#' @export
+profit_commission_for <- function(layer, ceded) {
+  layer@ptr$profit_commission_for(as.double(ceded))
+}
+
+#' Retrospectively rated premium
+#'
+#' `pmin(pmax(basic + lcm * losses, minimum), maximum)`: the premium of a
+#' retrospectively rated policy for each value of the account's loss (net of
+#' any reinsurance that inures to it), as `aggregate`'s `RetroTerms`. For a
+#' retro plan, `basic` and `lcm` include the tax multiplier.
+#'
+#' @param losses Numeric vector of annual losses.
+#' @param basic Basic premium.
+#' @param lcm Loss conversion factor.
+#' @param minimum Minimum premium; `NULL` for `basic`.
+#' @param maximum Maximum premium; `NULL` for no cap.
+#' @returns A numeric vector, one premium per loss.
+#' @seealso [with_swing_rating()] for a swing-rated reinsurance layer.
+#' @export
+#' @examples
+#' retro_premium(c(0, 500, 1500), basic = 1000, lcm = 1.1, maximum = 2500)
+retro_premium <- function(losses, basic, lcm, minimum = NULL, maximum = NULL) {
+  rust_result(retro_premium_rust(
+    as.double(losses), as.double(basic), as.double(lcm), nan_if_null(minimum), nan_if_null(maximum)
+  ))
+}
+
+# extendr refuses NA for a double, so a missing term travels as NaN.
+nan_if_null <- function(x) if (is.null(x)) NaN else as.double(x)
 
 #' Quota share
 #'
@@ -344,8 +536,12 @@ tower_ceded <- function(tower, losses) {
 #' @returns A [predictive_distribution] with dimensions `kind` and `layer`:
 #'   `("gross", "ground_up")`, `("ceded", <layer name>)` per layer,
 #'   `("net", "retained")`, then `("reinstatement_premium", <layer name>)` per
-#'   layer with paid reinstatements. `aggregate(result, keep = "kind")` gives
-#'   gross, total ceded and net per year; net is a loss, before premiums.
+#'   layer with paid reinstatements, `("swing_premium", <layer name>)` per
+#'   swing-rated layer, `("ceding_commission", <layer name>)` per layer with a
+#'   flat or sliding commission and `("profit_commission", <layer name>)` per
+#'   layer with a profit commission. `aggregate(result, keep = "kind")` gives
+#'   gross, total ceded and net per year; net is a loss, before premiums and
+#'   commissions.
 #' @export
 #' @examples
 #' ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 1000, seed = 7)
@@ -391,8 +587,10 @@ S7::method(print, reinsurance_tower) <- function(x, ...) {
 #'   describes the compound calculation), `ceded` (a named list of
 #'   [grid_distribution]s at the placed share; a share `c` gives step
 #'   `c * step`), `net` (a [grid_distribution] or `NULL`),
-#'   `expected_reinstatement_premium` (named, 0 without paid reinstatements)
-#'   and `on_points`.
+#'   `expected_reinstatement_premium` (named, 0 without paid reinstatements),
+#'   `expected_premium` (the swing-rated premium's mean, or else the fixed
+#'   premium), `expected_ceding_commission`, `expected_profit_commission`
+#'   (each named, 0 without the term) and `on_points`.
 #' @export
 #' @examples
 #' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))
@@ -408,6 +606,9 @@ tower_on_grid <- function(tower, frequency, severity, points) {
     ceded = stats::setNames(lapply(r$ceded, function(p) grid_distribution(ptr = p)), names),
     net = if (is.null(r$net)) NULL else grid_distribution(ptr = r$net),
     expected_reinstatement_premium = stats::setNames(r$expected_reinstatement_premium, names),
+    expected_premium = stats::setNames(r$expected_premium, names),
+    expected_ceding_commission = stats::setNames(r$expected_ceding_commission, names),
+    expected_profit_commission = stats::setNames(r$expected_profit_commission, names),
     on_points = r$on_points
   )
 }

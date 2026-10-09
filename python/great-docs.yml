@@ -69,6 +69,7 @@ reference:
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:
       - reinsurance.Layer
+      - reinsurance.LossSensitivePremium
       - reinsurance.Tower
       - reinsurance.TowerGrids
   - title: Models

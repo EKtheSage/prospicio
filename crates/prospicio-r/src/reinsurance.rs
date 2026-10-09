@@ -3,7 +3,7 @@
 
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
-use prospicio_aggregate::{Layer, Tower};
+use prospicio_aggregate::{Commission, Layer, LossSensitivePremium, Tower};
 
 use crate::aggregate::{AnyCount, EventSet, compound_list};
 use crate::distributions::{Grid, PredictiveDistribution};
@@ -58,6 +58,16 @@ impl XolLayer {
                 ));
             }
         };
+        // Without paid reinstatements, which set it themselves.
+        let mut layer = layer;
+        if !paid {
+            if !(premium.is_finite() && premium >= 0.0) {
+                return Err(Error::Other(
+                    "premium must be finite and non-negative".into(),
+                ));
+            }
+            layer.premium = premium;
+        }
         let layer = if pro_rata_time {
             layer.pro_rata_as_to_time().map_err(to_r)?
         } else {
@@ -153,6 +163,97 @@ impl XolLayer {
             .unwrap_or_default()
     }
 
+    fn with_deposit_premium(&self, amount: f64) -> Result<Self> {
+        self.map(|l| l.deposit_premium(amount))
+    }
+
+    fn with_rate_on_line(&self, rol: f64) -> Result<Self> {
+        self.map(|l| l.rate_on_line(rol))
+    }
+
+    fn with_premium_rate(&self, rate: f64, subject_premium: f64) -> Result<Self> {
+        self.map(|l| l.premium_rate(rate, subject_premium))
+    }
+
+    fn with_ceding_commission(&self, rate: f64) -> Result<Self> {
+        self.map(|l| l.ceding_commission(rate))
+    }
+
+    fn with_sliding_scale(&self, commission: &[f64], loss_ratio: &[f64]) -> Result<Self> {
+        if commission.len() != loss_ratio.len() {
+            return Err(Error::Other("give one loss ratio per commission".into()));
+        }
+        let anchors = commission
+            .iter()
+            .copied()
+            .zip(loss_ratio.iter().copied())
+            .collect();
+        self.map(|l| l.sliding_scale(anchors))
+    }
+
+    fn with_profit_commission(&self, share: f64, allowance: f64) -> Result<Self> {
+        self.map(|l| l.profit_commission(share, allowance))
+    }
+
+    /// `minimum` and `maximum` NaN for the defaults.
+    fn with_swing_rating(&self, basic: f64, lcm: f64, minimum: f64, maximum: f64) -> Result<Self> {
+        let terms = loss_sensitive(basic, lcm, minimum, maximum)?;
+        self.map(|l| l.swing_rated(terms))
+    }
+
+    /// The flat rate, empty when there is none (or the commission slides).
+    fn ceding_commission(&self) -> Vec<f64> {
+        match self.inner.commission {
+            Some(Commission::Flat(c)) => vec![c],
+            _ => Vec::new(),
+        }
+    }
+
+    /// `c(commission..., loss_ratio...)` in increasing loss ratio, empty
+    /// when there is none.
+    fn sliding_scale(&self) -> Vec<f64> {
+        match &self.inner.commission {
+            Some(Commission::SlidingScale(a)) => {
+                a.iter().map(|p| p.0).chain(a.iter().map(|p| p.1)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// `c(share, allowance)`, empty when there is none.
+    fn profit_commission(&self) -> Vec<f64> {
+        self.inner
+            .profit_commission
+            .map(|pc| vec![pc.share, pc.allowance])
+            .unwrap_or_default()
+    }
+
+    /// `c(basic, lcm, minimum, maximum)` at 100%, empty when there is none.
+    fn swing_rating(&self) -> Vec<f64> {
+        self.inner
+            .swing
+            .map(|s| vec![s.basic, s.lcm, s.minimum, s.maximum])
+            .unwrap_or_default()
+    }
+
+    fn premium_for(&self, ceded: &[f64]) -> Vec<f64> {
+        ceded.iter().map(|&c| self.inner.premium_for(c)).collect()
+    }
+
+    fn ceding_commission_for(&self, ceded: &[f64]) -> Vec<f64> {
+        ceded
+            .iter()
+            .map(|&c| self.inner.ceding_commission_for(c))
+            .collect()
+    }
+
+    fn profit_commission_for(&self, ceded: &[f64]) -> Vec<f64> {
+        ceded
+            .iter()
+            .map(|&c| self.inner.profit_commission_for(c))
+            .collect()
+    }
+
     /// `times` empty when not given.
     fn reinstatement_premium(&self, losses: &[f64], times: &[f64]) -> Result<f64> {
         if times.is_empty() {
@@ -215,7 +316,9 @@ impl ReinsuranceTower {
     }
 
     /// Gross, ceded and net annual distributions on the grid, by FFT:
-    /// `list(gross, ceded, net, expected_reinstatement_premium, on_points)`,
+    /// `list(gross, ceded, net, expected_reinstatement_premium,
+    /// expected_premium, expected_ceding_commission,
+    /// expected_profit_commission, on_points)`,
     /// with `net` NULL when it is not one compound total.
     fn on_grid(&self, frequency: Robj, severity: Robj, points: f64) -> Result<List> {
         let n = AnyCount::from_robj(&frequency)?;
@@ -241,6 +344,9 @@ impl ReinsuranceTower {
             ceded = List::from_values(ceded),
             net = net,
             expected_reinstatement_premium = r.expected_reinstatement_premium,
+            expected_premium = r.expected_premium,
+            expected_ceding_commission = r.expected_ceding_commission,
+            expected_profit_commission = r.expected_profit_commission,
             on_points = r.on_points
         ))
     }
@@ -262,6 +368,40 @@ impl ReinsuranceTower {
     }
 }
 
+impl XolLayer {
+    /// A copy of the layer with one builder applied.
+    fn map(&self, f: impl FnOnce(Layer) -> prospicio_core::Result<Layer>) -> Result<Self> {
+        let inner = f(self.inner.clone()).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+}
+
+/// Loss-sensitive premium terms, NaN `minimum` or `maximum` for the
+/// defaults.
+fn loss_sensitive(
+    basic: f64,
+    lcm: f64,
+    minimum: f64,
+    maximum: f64,
+) -> Result<LossSensitivePremium> {
+    let given = |x: f64| (!x.is_nan()).then_some(x);
+    LossSensitivePremium::new(basic, lcm, given(minimum), given(maximum)).map_err(to_r)
+}
+
+/// Retrospectively rated premium for each loss: `clip(basic + lcm * x,
+/// minimum, maximum)`.
+#[extendr]
+fn retro_premium_rust(
+    losses: &[f64],
+    basic: f64,
+    lcm: f64,
+    minimum: f64,
+    maximum: f64,
+) -> Result<Vec<f64>> {
+    let terms = loss_sensitive(basic, lcm, minimum, maximum)?;
+    Ok(losses.iter().map(|&x| terms.premium(x)).collect())
+}
+
 fn layer_list(layers: List) -> Result<Vec<Layer>> {
     layers
         .values()
@@ -275,6 +415,7 @@ fn layer_list(layers: List) -> Result<Vec<Layer>> {
 
 extendr_module! {
     mod reinsurance;
+    fn retro_premium_rust;
     impl XolLayer;
     impl ReinsuranceTower;
 }

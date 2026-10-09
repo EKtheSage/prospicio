@@ -174,6 +174,44 @@ stopifnot(inherits(try(with_loss_corridor(qs, 2, 1), silent = TRUE), "try-error"
 back <- tower_from_json(tower_to_json(reinsurance_tower(list(qs))))
 stopifnot(identical(back@layer_names, "QS"))
 
+# Contract terms: premiums from quotes, commissions, swing and retro.
+close(with_rate_on_line(xol_layer("10x10", 10, 10, share = 0.4), 0.2)@premium, 0.8, 1e-12)
+close(with_deposit_premium(xol_layer("10x10", 10, 10, share = 0.4), 3)@premium, 1.2, 1e-12)
+stopifnot(xol_layer("L", 10, 10, premium = 2.5)@premium == 2.5)
+qs <- with_premium_rate(quota_share("QS", 0.5), 1, 200)
+stopifnot(qs@premium == 100, length(qs@ceding_commission) == 0, is.null(qs@sliding_scale))
+slid <- with_sliding_scale(qs, c(0.25, 0.45, 0.19), c(0.70, 0.60, 0.80))
+stopifnot(identical(slid@sliding_scale$loss_ratio, c(0.60, 0.70, 0.80)))
+close(ceding_commission_for(slid, c(55, 65, 75, 90)), c(45, 35, 22, 19), 1e-10)
+pc <- with_profit_commission(qs, 0.25, 0.1)
+stopifnot(identical(pc@profit_commission, c(share = 0.25, allowance = 0.1)))
+close(profit_commission_for(pc, c(60, 95)), c(7.5, 0), 1e-12)
+close(ceding_commission_for(with_ceding_commission(qs, 0.3), 500), 30, 1e-12)
+stopifnot(inherits(try(with_sliding_scale(quota_share("Q", 0.5), 0.3, 0.6), silent = TRUE), "try-error"))
+stopifnot(inherits(try(with_sliding_scale(qs, c(0.2, 0.3), c(0.6, 0.7)), silent = TRUE), "try-error"))
+sw <- with_swing_rating(xol_layer("L", 1000, 0, share = 0.4), 20, 1.25, 50, 300)
+stopifnot(identical(sw@swing_rating, c(basic = 20, lcm = 1.25, minimum = 50, maximum = 300)))
+close(premium_for(sw, c(40, 1000)), c(58, 120), 1e-12)
+stopifnot(inherits(try(with_swing_rating(slid, 0, 1), silent = TRUE), "try-error"))
+close(retro_premium(c(0, 500, 1500), 1000, 1.1, maximum = 2500), c(1000, 1550, 2500), 1e-9)
+stopifnot(retro_premium(1e6, 1000, 1.1) > 1e6)
+# In a tower: one component per term, joint with the ceded losses, and the
+# grid's expectations.
+xl <- with_ceding_commission(with_swing_rating(xol_layer("3x3", 3, 3, share = 0.5), 1, 1.2, 2, 6), 0.1)
+book <- with_profit_commission(with_sliding_scale(with_premium_rate(quota_share("QS", 0.5), 1, 30),
+                                                  c(0.4, 0.2), c(0.5, 0.9)), 0.3, 0.25)
+tw <- reinsurance_tower(list(book, xl))
+sev <- grid_distribution(1, c(0.1, 0.3, 0.25, 0.2, 0.1, 0.05))
+res <- apply_tower(tw, simulate_events(poisson_count(3), sev, 5000, seed = 9))
+m <- draw_matrix(res)
+stopifnot(ncol(m) == 8)
+stopifnot(isTRUE(all.equal(m[, 5], premium_for(xl, m[, 3]))))
+stopifnot(isTRUE(all.equal(m[, 6], ceding_commission_for(book, m[, 2]))))
+g <- tower_on_grid(tw, poisson_count(3), sev, points = 400)
+close(g$expected_premium[["QS"]], 15, 1e-12)
+stopifnot(abs(g$expected_ceding_commission[["QS"]] - mean(m[, 6])) < 4 * sd(m[, 6]) / sqrt(nrow(m)))
+stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(tw))), tower_to_json(tw)))
+
 # Towers save and load as JSON.
 tw <- inuring_tower(list(list(quota_share("QS", 0.3), surplus_treaty("S", 1e6, 4)),
                          list(xol_layer("xl", 2e6, 1e6, premium = 3e5, reinstatement_rates = c(1, 0.5),
