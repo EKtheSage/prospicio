@@ -27,7 +27,7 @@ under "Unreleased" until then.
   shifted gamma, shifted lognormal), `prospicio_aggregate::moments`.
   Python `prospicio.aggregate.compound_moments`; R `compound_moments()`,
   `moment_approximation()`, `approximation_cdf()`,
-  `approximation_quantile()`.
+  `approximation_quantile()` (#184).
 
 ### Reserving
 
