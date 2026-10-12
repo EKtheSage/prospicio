@@ -28,9 +28,19 @@ uv run --no-project --with prospicio --with matplotlib --with jupyter jupyter la
 
 PyPI has prebuilt wheels for Python 3.9
 and later on Windows, macOS and Linux, so no Rust toolchain is needed. Then
-open the notebook in Jupyter. To run a notebook against unreleased changes
-in this repository, build the package from source instead
-(`cd python && maturin develop`, which needs Rust). To save it again with
+open the notebook in Jupyter.
+
+To run a notebook against unreleased changes in this repository, use the
+uv project in `python/` (needs Rust). From the repository root:
+
+```sh
+uv run --project python --group examples jupyter lab
+```
+
+This keeps one environment in `python/.venv` with prospicio built from
+source, Jupyter and `matplotlib`. uv rebuilds the extension whenever a
+Rust source changes (`[tool.uv] cache-keys` in `python/pyproject.toml`),
+so the notebook never runs a stale build. To save a notebook again with
 fresh outputs:
 
 ```sh

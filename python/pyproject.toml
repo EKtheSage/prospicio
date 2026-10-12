@@ -44,6 +44,12 @@ dev = [
 docs = [
     "great-docs>=0.17 ; python_full_version >= '3.11'",
 ]
+# Jupyter and charts for the notebooks in examples/:
+# `uv run --project python --group examples jupyter lab` from the repository root.
+examples = [
+    "jupyter",
+    "matplotlib",
+]
 
 [tool.maturin]
 manifest-path = "../crates/prospicio-python/Cargo.toml"
