@@ -108,6 +108,14 @@ pricing_alpha_between_frequency_and_layer <- function(threshold, frequency, limi
 
 pricing_alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, frequency_2, truncation_at) .Call(wrap__pricing_alpha_between_frequencies, threshold_1, frequency_1, threshold_2, frequency_2, truncation_at)
 
+year_fractions <- function(year, month, day) .Call(wrap__year_fractions, year, month, day)
+
+period_dates <- function(kind, start, end, term) .Call(wrap__period_dates, kind, start, end, term)
+
+rate_level_rust <- function(effective, values, applies_to, levels, kind, start, end, term) .Call(wrap__rate_level_rust, effective, values, applies_to, levels, kind, start, end, term)
+
+trend_fit_rust <- function(times, values, kind) .Call(wrap__trend_fit_rust, times, values, kind)
+
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)

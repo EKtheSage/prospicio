@@ -23,6 +23,7 @@ Collate:
     'extendr-wrappers.R'
     'pareto.R'
     'pricing.R'
+    'ratemaking.R'
     'reinsurance.R'
     'reserving.R'
     'risk.R'
