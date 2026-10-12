@@ -1846,8 +1846,15 @@ def test_mack_bootstrap_with_a_tail(triangles):
     assert len({row[0] for row in refit.reserves.draw_matrix()}) == 200
     with pytest.raises(ValueError, match="estimated tail"):
         MackBootstrap(n_sims=10, tail=TailLogLinear(), tail_std_err=0.01).fit(raa, "values")
-    with pytest.raises(ValueError, match="one-year view"):
+    # The one-year view takes the bootstrap's tail step for the oldest
+    # origin, which needs the method's tail to be the bootstrap's.
+    with pytest.raises(ValueError, match="re-reserving method's tail"):
         MackBootstrap(n_sims=10, tail=1.05).one_year(raa, "values", ChainLadder())
+    with pytest.raises(ValueError, match="re-reserving method's tail"):
+        MackBootstrap(n_sims=10, tail=TailLogLinear()).one_year(raa, "values", ChainLadder(tail=1.05))
+    for tail in [1.05, TailLogLinear()]:
+        fit = MackBootstrap(n_sims=200, seed=1, tail=tail).one_year(raa, "values", ChainLadder(tail=tail))
+        assert len({row[0] for row in fit.cdr.draw_matrix()}) == 200
     with pytest.raises(TypeError, match="tail must be"):
         MackBootstrap(tail="loglinear")
 
@@ -1875,8 +1882,16 @@ def test_odp_bootstrap_with_a_tail(triangles):
     assert len({row[0] for row in curve.fit(raa, "values").reserves.draw_matrix()}) == 200
     with pytest.raises(ValueError, match="estimated tail"):
         OdpBootstrap(n_sims=10, tail=TailCurve(), tail_std_err=0.01).fit(raa, "values")
-    with pytest.raises(ValueError, match="one-year view"):
+    with pytest.raises(ValueError, match="re-reserving method's tail"):
         OdpBootstrap(n_sims=10, tail=1.05).one_year(raa, "values", ChainLadder())
+    # With the method's tail, the oldest origin takes the tail step in the
+    # coming year: its one-year CDR moves; without a bootstrap tail it does
+    # not.
+    one_year = boot.one_year(raa, "values", ChainLadder(tail=1.05))
+    assert len({row[0] for row in one_year.cdr.draw_matrix()}) > 1
+    plain = OdpBootstrap(n_sims=200, seed=3).one_year(raa, "values", ChainLadder(tail=1.05))
+    assert all(row[0] == 0.0 for row in plain.cdr.draw_matrix())
+
 
 
 def test_bootstrap_tail_refit_failure_names_its_segment():

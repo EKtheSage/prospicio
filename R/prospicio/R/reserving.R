@@ -1432,7 +1432,7 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #'   `tail_std_err` is given. The step from the oldest age to ultimate is
 #'   one more future increment, with mean the pseudo value at the oldest
 #'   age times the tail factor less 1 and the same process error.
-#'   [odp_one_year()] takes its tail from the refitted method instead. R's
+#'   [odp_one_year()] takes it with `bootstrap_tail = TRUE`. R's
 #'   rule ([tail_log_linear()]) refitted on the ODP's pseudo factors is
 #'   often exactly 1 (5.7% of simulations on RAA) and on average high
 #'   (RAA's oldest origin's mean reserve 78% above the plug-in); a constant
@@ -1615,7 +1615,7 @@ spearman_arg <- function(spearman) {
 #' @param tail Development past the oldest age, as in [mack()]: a number (a
 #'   constant factor), [tail_constant()], [tail_curve()], [tail_bondy()] or
 #'   [tail_log_linear()]; 1 (no tail) by default. [mack_one_year()] takes
-#'   its tail from the refitted method instead.
+#'   it with `bootstrap_tail = TRUE`.
 #' @param tail_sigma The tail's sigma (R's `tail.sigma`), the process error
 #'   of the step to ultimate, or `NULL` to extrapolate it. Unused when the
 #'   tail factor is 1.
@@ -1746,10 +1746,21 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' Appendix 1 as written), the pool's non-zero mean biases the pseudo
 #' factors: the mean CDR is about -0.2 (RAA), -0.04 (GenIns) and +0.18
 #' (ABC) times its standard deviation, and RAA's standard deviations up to
-#' 1.3% wide. Mack's model has no tail here: the
-#' development past the oldest age moves only through `method`'s refitted
-#' tail. Its fit has `model = "mack"`, no `scale`, and `mack`, the
+#' 1.3% wide. Its fit has `model = "mack"`, no `scale`, and `mack`, the
 #' [mack_fit] it simulates from; it needs no negative cumulative value.
+#'
+#' By default the bootstrap has no tail of its own: its simulation stops at
+#' the oldest age, and the development past it moves only through
+#' `method`'s refitted `tail`. With `bootstrap_tail = TRUE` the bootstrap
+#' takes `method`'s `tail` too, drawn in each simulation as in
+#' [odp_bootstrap()] or [mack_bootstrap()] (an estimated tail refitted on
+#' the pseudo factors, a constant one fixed or drawn with `tail_std_err`),
+#' and its step to ultimate is valued one development period after the
+#' oldest age: an origin whose step falls in the coming year (with an
+#' annual grain, one already at the oldest age) takes it and is closed at
+#' that simulated ultimate. With a constant tail and Mack's process, the
+#' other origins' CDR is the tail factor times its value without one, and
+#' the oldest origin's standard deviation is [mack()]'s with the tail.
 #'
 #' Every segment of the triangle is bootstrapped with its own residuals and
 #' scale, into one joint distribution of the CDR, the segments depending on
@@ -1811,6 +1822,16 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param trend,decay As in [cape_cod()].
 #' @param average,sigma_interpolation,tail The chain ladder or development
 #'   pattern of `method`, as in [chain_ladder()].
+#' @param bootstrap_tail Whether the bootstrap takes `method`'s `tail` too,
+#'   developing past the oldest age in the coming year (above); `FALSE` by
+#'   default.
+#' @param tail_sigma For `mack_one_year()` with `bootstrap_tail`, the tail's
+#'   sigma (R's `tail.sigma`), or `NULL` to extrapolate it, as in
+#'   [mack_bootstrap()].
+#' @param tail_std_err With `bootstrap_tail`, a constant tail factor's
+#'   standard error: `NULL` keeps it fixed in `odp_one_year()` and
+#'   extrapolates it in `mack_one_year()`, as in [odp_bootstrap()] and
+#'   [mack_bootstrap()]; an error with an estimated tail.
 #' @param ptr A `OneYearFit` pointer; used internally.
 #' @returns A `one_year_fit` object.
 #' @seealso [claims_development_result()] for Merz and Wuthrich's formulas,
@@ -1840,6 +1861,11 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' mk@model
 #' c(simulated = sqrt(variance(mk@cdr)),
 #'   merz_wuthrich = claims_development_result(mk@mack)@total_one_year_standard_error)
+#'
+#' # The bootstrap's own tail moves the oldest origin in the coming year.
+#' tailed <- mack_one_year(tri, "paid", tail = 1.05, bootstrap_tail = TRUE, n_sims = 2000,
+#'                         seed = 42)
+#' as.data.frame(tailed)[1, c("origin", "cdr_std_dev")]
 one_year_fit <- S7::new_class(
   "one_year_fit",
   package = "prospicio",
@@ -1885,6 +1911,7 @@ odp_one_year <- function(triangle, column = NULL,
                                     "benktander", "cape_cod"),
                          exposure = NULL, apriori = 1, n_iters = 1, trend = 0, decay = 1,
                          average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                         bootstrap_tail = FALSE, tail_std_err = NULL,
                          n_sims = 10000, seed = 0, process = c("gamma", "none"),
                          dependence = c("independent", "synchronized", "rank_correlation"),
                          spearman = NULL) {
@@ -1899,8 +1926,9 @@ odp_one_year <- function(triangle, column = NULL,
   ptr <- rust_result(triangle@ptr$odp_one_year(
     column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
-    tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
-    dependence, spearman_arg(spearman)
+    tail_ptr(tail), isTRUE(bootstrap_tail),
+    optional_number(tail_std_err, "tail_std_err"), single_number(n_sims, "n_sims"),
+    single_number(seed, "seed"), process, dependence, spearman_arg(spearman)
   ))
   one_year_fit(ptr = ptr)
 }
@@ -1912,6 +1940,7 @@ mack_one_year <- function(triangle, column = NULL,
                                      "benktander", "cape_cod"),
                           exposure = NULL, apriori = 1, n_iters = 1, trend = 0, decay = 1,
                           average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                          bootstrap_tail = FALSE, tail_sigma = NULL, tail_std_err = NULL,
                           n_sims = 10000, seed = 0,
                           process = c("gamma", "lognormal", "residuals", "normal", "none"),
                           mack_average = "volume", mack_sigma_interpolation = "log-linear",
@@ -1930,8 +1959,11 @@ mack_one_year <- function(triangle, column = NULL,
   ptr <- rust_result(triangle@ptr$mack_one_year(
     column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
-    tail_ptr(tail), single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
+    tail_ptr(tail), isTRUE(bootstrap_tail),
+    optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
+    single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, isTRUE(centre_residuals), dependence, spearman_arg(spearman)
+
   ))
   one_year_fit(ptr = ptr)
 }
