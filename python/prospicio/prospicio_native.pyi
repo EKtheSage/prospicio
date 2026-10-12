@@ -3370,6 +3370,16 @@ class EventSet:
         """
         Whether the losses carry times.
         """
+    def maxima(self, /) -> PredictiveDistribution:
+        """
+        Each year's largest loss (0 in a year with none): its survival
+        function is the simulated occurrence exceedance (OEP) curve, and its
+        quantiles the occurrence PMLs.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
     @property
     def n_sims(self, /) -> int:
         """
@@ -7877,6 +7887,40 @@ class NegativeBinomial:
         Returns
         -------
         float
+        """
+
+@final
+class OccurrencePml:
+    """
+    One point of the occurrence PML curve, from ``occurrence_pml``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def annual_return_period(self, /) -> float:
+        """
+        ``1 / probability``, the average time between years with such an
+        occurrence.
+        """
+    @property
+    def loss(self, /) -> float:
+        """
+        The loss whose occurrence exceedance is the probability.
+        """
+    @property
+    def occurrence_return_period(self, /) -> float:
+        """
+        ``1 / (E[N] P(X > loss))``, the average time between occurrences
+        above the loss; it can be shorter than a year.
+        """
+    @property
+    def probability(self, /) -> float:
+        """
+        The annual probability asked for.
+        """
+    @property
+    def severity_survival(self, /) -> float:
+        """
+        The severity's exceedance ``P(X > loss)``.
         """
 
 @final
@@ -13204,6 +13248,64 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     >>> from prospicio.risk import mean_excess
     >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
     [(2.0, 1.5, 2)]
+    """
+
+def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
+    """
+    The chance that the year's largest occurrence exceeds ``x``,
+    ``1 - G_N(F(x))`` with ``G_N`` the count's generating function: the
+    occurrence exceedance (OEP) curve.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    x : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> import math
+    >>> from prospicio.aggregate import occurrence_exceedance
+    >>> from prospicio.distributions import Lognormal, Poisson
+    >>> sev = Lognormal.from_mean_cv(100.0, 2.0)
+    >>> oep = occurrence_exceedance(Poisson(2.0), sev, 500.0)
+    >>> abs(oep - (1 - math.exp(-2 * (1 - sev.cdf(500.0))))) < 1e-12
+    True
+    """
+
+def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
+    """
+    The occurrence PML at an annual probability ``p``: the loss whose
+    occurrence exceedance is ``p``, for any claim count (the Python package
+    ``aggregate``'s ``oep`` covers Poisson counts).
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    p : float
+        In ``(0, 1 - P(N = 0))``.
+    
+    Returns
+    -------
+    OccurrencePml
+    
+    Raises
+    ------
+    ValueError
+        If ``p`` is outside ``(0, 1 - P(N = 0))``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import occurrence_pml
+    >>> from prospicio.distributions import Lognormal, Poisson
+    >>> pml = occurrence_pml(Poisson(2.0), Lognormal.from_mean_cv(100.0, 2.0), 0.01)
+    >>> round(pml.loss, 4), pml.annual_return_period
+    (1171.4979, 100.0)
     """
 
 def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:

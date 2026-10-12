@@ -65,6 +65,9 @@ reference:
       - aggregate.CompoundReport
       - aggregate.simulate_events
       - aggregate.EventSet
+      - aggregate.occurrence_exceedance
+      - aggregate.occurrence_pml
+      - aggregate.OccurrencePml
   - title: Reinsurance
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:

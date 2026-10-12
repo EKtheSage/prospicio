@@ -1,12 +1,16 @@
 """Aggregate loss: compound distributions by Panjer and FFT, and simulated
-events. Layers and towers are in ``prospicio.reinsurance``."""
+events, and the occurrence exceedance (OEP) curve. Layers and towers are in
+``prospicio.reinsurance``."""
 
 from .prospicio_native import (
     CompoundReport,
     EventSet,
     GridSize,
+    OccurrencePml,
     fft,
     fft_auto,
+    occurrence_exceedance,
+    occurrence_pml,
     panjer,
     recommend_grid,
     round_bucket,
@@ -23,4 +27,7 @@ __all__ = [
     "CompoundReport",
     "simulate_events",
     "EventSet",
+    "occurrence_exceedance",
+    "occurrence_pml",
+    "OccurrencePml",
 ]
