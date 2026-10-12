@@ -20,7 +20,7 @@ default-members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -34,17 +34,17 @@ categories = ["science", "mathematics", "finance"]
 [workspace.dependencies]
 # The version must match workspace.package.version: `cargo publish` uploads
 # it in place of the path (docs/release.md).
-prospicio = { version = "0.0.1", path = "crates/prospicio" }
-prospicio-core = { version = "0.0.1", path = "crates/prospicio-core" }
-prospicio-math = { version = "0.0.1", path = "crates/prospicio-math" }
-prospicio-aggregate = { version = "0.0.1", path = "crates/prospicio-aggregate" }
-prospicio-prob = { version = "0.0.1", path = "crates/prospicio-prob" }
-prospicio-pricing = { version = "0.0.1", path = "crates/prospicio-pricing" }
-prospicio-models = { version = "0.0.1", path = "crates/prospicio-models" }
-prospicio-glm = { version = "0.0.1", path = "crates/prospicio-glm" }
-prospicio-bayes = { version = "0.0.1", path = "crates/prospicio-bayes" }
-prospicio-nn = { version = "0.0.1", path = "crates/prospicio-nn" }
-prospicio-reserving = { version = "0.0.1", path = "crates/prospicio-reserving" }
+prospicio = { version = "0.0.2", path = "crates/prospicio" }
+prospicio-core = { version = "0.0.2", path = "crates/prospicio-core" }
+prospicio-math = { version = "0.0.2", path = "crates/prospicio-math" }
+prospicio-aggregate = { version = "0.0.2", path = "crates/prospicio-aggregate" }
+prospicio-prob = { version = "0.0.2", path = "crates/prospicio-prob" }
+prospicio-pricing = { version = "0.0.2", path = "crates/prospicio-pricing" }
+prospicio-models = { version = "0.0.2", path = "crates/prospicio-models" }
+prospicio-glm = { version = "0.0.2", path = "crates/prospicio-glm" }
+prospicio-bayes = { version = "0.0.2", path = "crates/prospicio-bayes" }
+prospicio-nn = { version = "0.0.2", path = "crates/prospicio-nn" }
+prospicio-reserving = { version = "0.0.2", path = "crates/prospicio-reserving" }
 # PredictiveDistribution to and from Arrow IPC (prospicio-prob's `arrow`
 # feature). 59.x is the last line that builds on rust-version 1.85.
 arrow-array = { version = "59.3.0", default-features = false }

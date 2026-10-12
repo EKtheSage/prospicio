@@ -4,6 +4,10 @@
 
 * **Creation**: [Installing the R package from GitHub, and why it needs bootstrap.R](/environment/r-install-from-github.md), from making the R package self-contained (branch claude/stoic-hawking-qc3qby): `install_github(subdir=)` installs a tarball of `R/prospicio` alone, which failed on the Makevars' `../../../crates`; pkgbuild's `Config/build/bootstrap` runs `bootstrap.R`, which copies `prospicio-r`'s workspace crates, the root manifest and the lockfile into `src/rust/`. Installed that way and passed every R test locally. Not yet run by CI.
 
+## 2026-10-11
+
+* **Update**: [Publishing to PyPI and crates.io](/environment/publishing.md), from preparing v0.0.2 (branch release-0.0.2): the crates.io token secret is gone and the token revoked, so the release workflow now uses only trusted publishing, and a new crate needs one publish by hand before it can be added. Not yet run by CI.
+
 ## 2026-10-09
 
 * **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md): where aggregate's contract terms live and how they are defined (swing and retro as a collared affine premium with the swing's amounts scaled by the share, sliding scales from `(commission, loss_ratio)` anchors with flat ends, a profit commission that does not deduct the ceding commission, one variable feature per program and none with reinstatements, `deposit` and `rol` quoted at 100%), and how its loss-ratio corridor differs from prospicio's, from adding contract terms to `prospicio_aggregate::Layer` (branch claude/stoic-hawking-qc3qby), which matches aggregate 1.0.1 at 475 losses to `1e-12`. Not yet run by CI.
