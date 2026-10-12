@@ -18,8 +18,12 @@ apply_tower(tower, events, ...)
 A \link{predictive_distribution} with dimensions \code{kind} and \code{layer}:
 \verb{("gross", "ground_up")}, \verb{("ceded", <layer name>)} per layer,
 \verb{("net", "retained")}, then \verb{("reinstatement_premium", <layer name>)} per
-layer with paid reinstatements. \code{aggregate(result, keep = "kind")} gives
-gross, total ceded and net per year; net is a loss, before premiums.
+layer with paid reinstatements, \verb{("swing_premium", <layer name>)} per
+swing-rated layer, \verb{("ceding_commission", <layer name>)} per layer with a
+flat or sliding commission and \verb{("profit_commission", <layer name>)} per
+layer with a profit commission. \code{aggregate(result, keep = "kind")} gives
+gross, total ceded and net per year; net is a loss, before premiums and
+commissions.
 }
 \description{
 With an \code{event_set} each year's individual losses go through the tower.

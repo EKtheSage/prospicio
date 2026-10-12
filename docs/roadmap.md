@@ -1,6 +1,6 @@
 # Roadmap: milestones and the plan for each crate
 
-2026-10-06. Where the project stands against the release plan in
+2026-10-09. Where the project stands against the release plan in
 [`architecture.md`](architecture.md#roadmap-and-releases), and what each
 crate should do next. Lanes and owners are in [`AGENTS.md`](../AGENTS.md);
 each lane's details are in its note under `docs/design/`. Update this file
@@ -19,11 +19,11 @@ then joins them and sets and allocates capital.
 | Phase 0: Foundation | Workspace, core traits, design notes, RNG streams, Python and R skeletons, parity harness | Done |
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
 | v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136) |
-| v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time |
+| v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
-| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves. Still to do: REML, tensor smooths, rate indication, trend and on-level, credibility |
+| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub). Still to do: REML, tensor smooths, rate indication, trend and on-level |
 | v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD. Still to do: Bayesian reserving and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
@@ -89,12 +89,15 @@ what it is aiming for by v1.0.
     reinstatements pro rata as to amount and time.
   - Inuring towers, applied to events, to aggregates, or exactly on the
     grid.
+  - Contract terms on a layer, with `aggregate`'s definitions: premium
+    as a rate on line, a rate or a deposit; flat and sliding-scale ceding
+    commissions, profit commissions, swing rating; retro premiums.
+    (Also done: towers saved as JSON, seasonal event times, loss
+    corridors.)
 - **Next:**
-  1. Seasonal event times, from a density over the year.
-  2. Loss corridors and other contract features listed in
-     `architecture.md`.
-  (Done: towers saved and loaded as JSON, so a programme can be stored
-  and replayed.)
+  1. Deficit and credit carry-forward in profit commissions and sliding
+     scales, once multi-year simulation exists.
+  2. The rest of `aggregate` parity tier 2, on request.
 - **v1.0:** a reinsurance programme described once and applied to any
   loss source.
 
@@ -105,12 +108,13 @@ what it is aiming for by v1.0.
   - Exposure curves (MBBEFD, tabulated, from a severity) and risk
     profiles with spread sums insured.
   - Risk-loaded prices from simulated losses.
+  - Classical credibility: limited fluctuation standards and the
+    Bühlmann–Straub model (`docs/design/credibility.md`). It may become
+    `prospicio-credibility` once it has a Bayesian side.
 - **Next:**
   1. Rate indication: trend, on-level premium and loss development into
      an indicated rate change. This is the v0.6 pricing scope.
-  2. Credibility (limited fluctuation, Bühlmann, Bühlmann–Straub). It may
-     become `prospicio-credibility` once it has a Bayesian side.
-  3. Log-log interpolation for tabulated curves, and a tilted spread
+  2. Log-log interpolation for tabulated curves, and a tilted spread
      within bands.
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
@@ -199,6 +203,42 @@ what it is aiming for by v1.0.
      over them (`wasm-bindgen`) for a browser page or an Excel add-in.
   2. (Done: the docs sites are published to GitHub Pages from `main`.)
 - **v1.0:** API review and deprecation pass, then semver.
+
+## Order of work (set by the user 2026-10-09)
+
+1. Contract terms in `prospicio-aggregate` (done).
+2. The R package self-contained, so `remotes::install_github` and
+   r-universe can build it without a checkout of the whole repository
+   (done for `install_github`: `R/prospicio/bootstrap.R` copies the crates
+   into the tarball, and CI installs it that way. r-universe needs a
+   registry repository from the user and has not been tried. CRAN still
+   needs the third-party crates vendored).
+3. Rate indication and credibility in `prospicio-pricing` (credibility
+   done: limited fluctuation and Bühlmann–Straub).
+4. Release v0.0.2 (done 2026-10-12, at the user's call before rate
+   indication, which moves to v0.0.3). Its contents are in `CHANGELOG.md`.
+   For each later release, coordinated between the sessions (decided
+   2026-10-12):
+   - One release PR changes the workspace version in the root
+     `Cargo.toml` (`workspace.package.version` and the `prospicio-*`
+     entries in `[workspace.dependencies]`) and moves `CHANGELOG.md`'s
+     "Unreleased" items into the new version's section. Nothing else goes
+     in that PR.
+   - Each feature PR adds its line under "Unreleased" in `CHANGELOG.md`,
+     so the changelog always says which release a feature ships in.
+   - Open PRs either merge before the release PR or wait for the next
+     version; neither session changes versions or the release workflow
+     outside that PR.
+   - After the release PR merges, the user (or the local session at the
+     user's word) runs the Release workflow by hand on `main` (a dry
+     run), then pushes the tag (`docs/release.md`); the cloud session
+     cannot push tags.
+5. Bayesian reserving (Meyers, compartmental, Clark growth curves,
+   Gaussian processes), with `prospicio-bayes`: the local session
+   (Reserving lane) takes it, so the cloud session stays out of
+   `prospicio-reserving` and `prospicio-bayes`. Credibility in item 3 is
+   the classical kind (limited fluctuation, Bühlmann, Bühlmann–Straub);
+   hierarchical and Bayesian credibility stay with v0.7.
 
 ## Waiting on the user
 

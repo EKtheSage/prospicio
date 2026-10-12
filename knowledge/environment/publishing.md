@@ -75,6 +75,11 @@ sources:
   The remaining crates were published one at a time with `cargo publish
   -p <crate>` from a checkout of the tag, in dependency order
   (`-glm`, `-pricing`, `-reserving`, `-bayes`, `-nn`, then `prospicio`).[^v001]
+* After v0.0.1 the `CARGO_REGISTRY_TOKEN` secret was deleted and the token
+  revoked (2026-10-11). From v0.0.2 the `crates-io` job takes only the
+  short-lived token from trusted publishing, so publishing any crate
+  without a trusted publisher fails, a new one included; a new crate is
+  published once by hand first (`docs/release.md`).
 
 [^crates-rl]: crates.io, rate limits
 [^v001]: Release workflow run for v0.0.1

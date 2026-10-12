@@ -20,8 +20,10 @@ A list with \code{gross} (a \link{grid_distribution} whose \code{report}
 describes the compound calculation), \code{ceded} (a named list of
 \link{grid_distribution}s at the placed share; a share \code{c} gives step
 \code{c * step}), \code{net} (a \link{grid_distribution} or \code{NULL}),
-\code{expected_reinstatement_premium} (named, 0 without paid reinstatements)
-and \code{on_points}.
+\code{expected_reinstatement_premium} (named, 0 without paid reinstatements),
+\code{expected_premium} (the swing-rated premium's mean, or else the fixed
+premium), \code{expected_ceding_commission}, \code{expected_profit_commission}
+(each named, 0 without the term) and \code{on_points}.
 }
 \description{
 Exact annual distributions of gross, each layer's ceded loss and net, by

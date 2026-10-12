@@ -4,8 +4,17 @@
 #
 # Paths are relative (from this src/ directory): Windows cargo does not
 # understand the /c/... paths that $(CURDIR) gives under Rtools' make.
+#
+# A source tarball made by pkgbuild carries the Rust sources in src/rust/
+# (bootstrap.R); `R CMD INSTALL R/prospicio` in a repository checkout builds
+# from the surrounding workspace instead.
 TARGET = x86_64-pc-windows-gnu
-LIBDIR = ../../../target/$(TARGET)/release
+ifneq ($(wildcard rust/Cargo.toml),)
+CARGO_WORKSPACE = rust
+else
+CARGO_WORKSPACE = ../../..
+endif
+LIBDIR = $(CARGO_WORKSPACE)/target/$(TARGET)/release
 STATLIB = $(LIBDIR)/libprospicio_r.a
 # System libraries the Rust standard library needs, from
 # `cargo rustc -p prospicio-r --target x86_64-pc-windows-gnu -- --print native-static-libs`.
@@ -20,4 +29,4 @@ $(SHLIB): $(STATLIB)
 $(STATLIB):
 	@rustup target list --installed | grep -q "^$(TARGET)" || \
 		{ echo "Rust target $(TARGET) missing: run 'rustup target add $(TARGET)'"; exit 1; }
-	cargo build --lib --release --target $(TARGET) --manifest-path=../../../crates/prospicio-r/Cargo.toml
+	cargo build --lib --release --target $(TARGET) --manifest-path=$(CARGO_WORKSPACE)/crates/prospicio-r/Cargo.toml

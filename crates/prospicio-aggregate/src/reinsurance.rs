@@ -47,8 +47,11 @@ pub struct Layer {
     pub aggregate_deductible: f64,
     /// Annual aggregate limit (AAL); infinite when unlimited.
     pub aggregate_limit: f64,
-    /// Upfront premium for the placed share; used only for reinstatement
-    /// premiums.
+    /// Upfront premium for the placed share: the base of paid
+    /// reinstatements, ceding and profit commissions, and the loss ratio
+    /// of a sliding scale. Set it with [`Layer::deposit_premium`],
+    /// [`Layer::rate_on_line`], [`Layer::premium_rate`] or
+    /// [`Layer::paid_reinstatements`].
     pub premium: f64,
     /// Premium rate of each paid reinstatement, as a fraction of
     /// `premium` (1.0 is 100%), pro rata as to amount. Empty when
@@ -60,6 +63,137 @@ pub struct Layer {
     /// A band of the annual layer loss the cedant keeps; see
     /// [`Layer::loss_corridor`].
     pub corridor: Option<Corridor>,
+    /// Ceding commission paid back to the cedant on the year's premium:
+    /// a flat rate or a sliding scale; see [`Layer::ceding_commission`].
+    pub commission: Option<Commission>,
+    /// Profit commission; see [`Layer::profit_commission`].
+    pub profit_commission: Option<ProfitCommission>,
+    /// Swing rating at 100% of the layer: the year's premium as a function
+    /// of its ceded loss, in place of `premium`; see [`Layer::swing_rated`].
+    pub swing: Option<LossSensitivePremium>,
+}
+
+/// A premium that depends on the year's loss `x`:
+/// `clip(basic + lcm × x, minimum, maximum)`.
+///
+/// It is the premium of a swing-rated reinsurance layer (with `x` the
+/// layer's ceded loss; see [`Layer::swing_rated`]) and of a
+/// retrospectively rated policy (with `x` the account's loss, net of any
+/// reinsurance that inures to it). `lcm` is the loss conversion factor,
+/// often written as a loading such as `100/80` and, for a retro plan,
+/// multiplied by the tax multiplier along with `basic`. As in `aggregate`,
+/// the minimum defaults to `basic` and the maximum to no cap.
+///
+/// ```
+/// use prospicio_aggregate::LossSensitivePremium;
+///
+/// // aggregate's retro example: basic 1000, factor 1.1, maximum 2500.
+/// let retro = LossSensitivePremium::new(1000.0, 1.1, None, Some(2500.0)).unwrap();
+/// assert_eq!(retro.premium(0.0), 1000.0);
+/// assert!((retro.premium(500.0) - 1550.0).abs() < 1e-9);
+/// assert_eq!(retro.premium(1500.0), 2500.0);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LossSensitivePremium {
+    pub basic: f64,
+    /// Loss conversion factor applied to the loss.
+    pub lcm: f64,
+    pub minimum: f64,
+    /// May be infinite (no cap).
+    pub maximum: f64,
+}
+
+impl LossSensitivePremium {
+    /// `minimum` defaults to `basic`, `maximum` to infinity. Fails unless
+    /// `basic`, `lcm` and the minimum are finite and non-negative and the
+    /// minimum is at most the maximum.
+    pub fn new(basic: f64, lcm: f64, minimum: Option<f64>, maximum: Option<f64>) -> Result<Self> {
+        if !(basic.is_finite() && basic >= 0.0) {
+            return Err(invalid("basic", basic, "must be finite and non-negative"));
+        }
+        if !(lcm.is_finite() && lcm >= 0.0) {
+            return Err(invalid("lcm", lcm, "must be finite and non-negative"));
+        }
+        let minimum = minimum.unwrap_or(basic);
+        let maximum = maximum.unwrap_or(f64::INFINITY);
+        if !(minimum.is_finite() && minimum >= 0.0) {
+            return Err(invalid(
+                "minimum",
+                minimum,
+                "must be finite and non-negative",
+            ));
+        }
+        if maximum.is_nan() || maximum < minimum {
+            return Err(invalid("maximum", maximum, "must be at least the minimum"));
+        }
+        Ok(Self {
+            basic,
+            lcm,
+            minimum,
+            maximum,
+        })
+    }
+
+    /// The premium for a loss `x`.
+    pub fn premium(&self, x: f64) -> f64 {
+        (self.basic + self.lcm * x).clamp(self.minimum, self.maximum)
+    }
+
+    /// The terms for a placed share `s`: the currency amounts scaled by
+    /// `s`, the factor kept (it applies to a loss that is already at the
+    /// placed share).
+    fn placed(&self, s: f64) -> Self {
+        Self {
+            basic: s * self.basic,
+            lcm: self.lcm,
+            minimum: s * self.minimum,
+            maximum: s * self.maximum,
+        }
+    }
+}
+
+/// A ceding commission, as a fraction of the year's premium.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Commission {
+    /// The same rate whatever the losses.
+    Flat(f64),
+    /// A sliding scale: `(commission, loss_ratio)` anchors in increasing
+    /// loss ratio, the commission linear between them and flat beyond the
+    /// first and last (the maximum and minimum commission).
+    SlidingScale(Vec<(f64, f64)>),
+}
+
+impl Commission {
+    /// The commission rate at ceded loss ratio `lr`.
+    pub fn rate(&self, lr: f64) -> f64 {
+        match self {
+            Commission::Flat(c) => *c,
+            Commission::SlidingScale(anchors) => {
+                let (first, last) = (anchors[0], anchors[anchors.len() - 1]);
+                if lr <= first.1 {
+                    return first.0;
+                }
+                if lr >= last.1 {
+                    return last.0;
+                }
+                let k = anchors.partition_point(|a| a.1 <= lr);
+                let ((c0, l0), (c1, l1)) = (anchors[k - 1], anchors[k]);
+                c0 + (c1 - c0) * (lr - l0) / (l1 - l0)
+            }
+        }
+    }
+}
+
+/// A profit commission: `share` of the reinsurer's profit after an
+/// expense allowance, `share × max(1 − LR − allowance, 0)` of the year's
+/// premium, with `LR` the ceded loss ratio.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProfitCommission {
+    pub share: f64,
+    /// The reinsurer's allowance for its expenses and margin, as a
+    /// fraction of premium; it includes any ceding commission the contract
+    /// deducts before profit.
+    pub allowance: f64,
 }
 
 /// A loss corridor: of the annual layer loss at 100% after the annual
@@ -132,6 +266,9 @@ impl Layer {
             reinstatement_rates: Vec::new(),
             pro_rata_time: false,
             corridor: None,
+            commission: None,
+            profit_commission: None,
+            swing: None,
         })
     }
 
@@ -321,6 +458,17 @@ impl Layer {
                 "must be finite and non-negative",
             ));
         }
+        if !rates.is_empty()
+            && (self.swing.is_some()
+                || self.profit_commission.is_some()
+                || matches!(self.commission, Some(Commission::SlidingScale(_))))
+        {
+            return Err(invalid(
+                "reinstatement_rates",
+                rates.len() as f64,
+                "cannot be combined with swing rating, a sliding scale or a profit commission",
+            ));
+        }
         if let Some(&rate) = rates.iter().find(|r| !r.is_finite() || **r < 0.0) {
             return Err(invalid(
                 "reinstatement_rates",
@@ -370,6 +518,279 @@ impl Layer {
     /// rata as to time).
     pub fn needs_times(&self) -> bool {
         self.pro_rata_time
+    }
+
+    /// Sets the premium from a deposit `amount` quoted for 100% of the
+    /// layer: the premium for the placed share is `share × amount`, so
+    /// set the share first.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// let l = Layer::xol("5x5", 5e6, 5e6).unwrap().share(0.4).unwrap()
+    ///     .deposit_premium(1e6).unwrap();
+    /// assert_eq!(l.premium, 4e5);
+    /// ```
+    pub fn deposit_premium(mut self, amount: f64) -> Result<Self> {
+        if !(amount.is_finite() && amount >= 0.0) {
+            return Err(invalid("amount", amount, "must be finite and non-negative"));
+        }
+        self.premium = self.share * amount;
+        Ok(self)
+    }
+
+    /// Sets the premium from a rate on line: `share × rol × limit`, so set
+    /// the share first. Needs a finite per-occurrence limit.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// // 10m xs 10m at a 12.5% rate on line.
+    /// let l = Layer::xol("10x10", 10e6, 10e6).unwrap().rate_on_line(0.125).unwrap();
+    /// assert_eq!(l.premium, 1.25e6);
+    /// ```
+    pub fn rate_on_line(mut self, rol: f64) -> Result<Self> {
+        if !self.limit.is_finite() {
+            return Err(invalid(
+                "limit",
+                self.limit,
+                "must be finite for a rate on line",
+            ));
+        }
+        if !(rol.is_finite() && rol >= 0.0) {
+            return Err(invalid("rol", rol, "must be finite and non-negative"));
+        }
+        self.premium = self.share * rol * self.limit;
+        Ok(self)
+    }
+
+    /// Sets the premium as a rate on the subject (underlying) premium:
+    /// `share × rate × subject_premium`, so set the share first. A quota
+    /// share's ceded premium is `premium_rate(1.0, subject_premium)`.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// let qs = Layer::quota_share("QS", 0.3).unwrap().premium_rate(1.0, 1000.0).unwrap();
+    /// assert_eq!(qs.premium, 300.0);
+    /// // An excess layer at 2.5% of a subject premium of 40m.
+    /// let xl = Layer::xol("5x5", 5e6, 5e6).unwrap().premium_rate(0.025, 40e6).unwrap();
+    /// assert_eq!(xl.premium, 1e6);
+    /// ```
+    pub fn premium_rate(mut self, rate: f64, subject_premium: f64) -> Result<Self> {
+        if !(rate.is_finite() && rate >= 0.0) {
+            return Err(invalid("rate", rate, "must be finite and non-negative"));
+        }
+        if !(subject_premium.is_finite() && subject_premium >= 0.0) {
+            return Err(invalid(
+                "subject_premium",
+                subject_premium,
+                "must be finite and non-negative",
+            ));
+        }
+        self.premium = self.share * rate * subject_premium;
+        Ok(self)
+    }
+
+    /// A flat ceding commission: the reinsurer pays back `rate` of the
+    /// year's premium (the swing-rated premium, if any; reinstatement
+    /// premiums carry none).
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// let qs = Layer::quota_share("QS", 0.3).unwrap()
+    ///     .premium_rate(1.0, 1000.0).unwrap()
+    ///     .ceding_commission(0.3).unwrap();
+    /// assert!((qs.ceding_commission_for(150.0) - 90.0).abs() < 1e-12);
+    /// ```
+    pub fn ceding_commission(mut self, rate: f64) -> Result<Self> {
+        if !(rate.is_finite() && (0.0..=1.0).contains(&rate)) {
+            return Err(invalid("rate", rate, "must be in [0, 1]"));
+        }
+        self.commission = Some(Commission::Flat(rate));
+        Ok(self)
+    }
+
+    /// A sliding-scale ceding commission from `(commission, loss_ratio)`
+    /// anchors: the commission at the year's ceded loss ratio (ceded loss
+    /// over premium), linear between anchors and flat beyond the first and
+    /// last, as `aggregate`'s `slide`. The commission must not rise with
+    /// the loss ratio, and the loss ratios must differ. Set the premium
+    /// first; a sliding scale cannot be combined with swing rating or paid
+    /// reinstatements (as in `aggregate`), and replaces any flat
+    /// commission.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// // 45% at a 60% loss ratio, sliding to 25% at 70% and 19% at 80%.
+    /// let qs = Layer::quota_share("QS", 0.5).unwrap()
+    ///     .premium_rate(1.0, 200.0).unwrap()
+    ///     .sliding_scale(vec![(0.45, 0.60), (0.25, 0.70), (0.19, 0.80)]).unwrap();
+    /// // Ceded loss 65 on a premium of 100: a 65% loss ratio, 35% commission.
+    /// assert!((qs.ceding_commission_for(65.0) - 35.0).abs() < 1e-12);
+    /// assert!((qs.ceding_commission_for(90.0) - 19.0).abs() < 1e-12);
+    /// ```
+    pub fn sliding_scale(mut self, anchors: Vec<(f64, f64)>) -> Result<Self> {
+        self.check_loss_ratio_terms("sliding_scale")?;
+        if anchors.is_empty() {
+            return Err(invalid("anchors", 0.0, "must not be empty"));
+        }
+        let mut anchors = anchors;
+        for &(c, lr) in &anchors {
+            if !(c.is_finite() && (0.0..=1.0).contains(&c)) {
+                return Err(invalid("commission", c, "must be in [0, 1]"));
+            }
+            if !(lr.is_finite() && lr >= 0.0) {
+                return Err(invalid("loss_ratio", lr, "must be finite and non-negative"));
+            }
+        }
+        anchors.sort_by(|a, b| a.1.total_cmp(&b.1));
+        for w in anchors.windows(2) {
+            if w[1].1 == w[0].1 {
+                return Err(invalid("loss_ratio", w[1].1, "must not repeat"));
+            }
+            if w[1].0 > w[0].0 {
+                return Err(invalid(
+                    "commission",
+                    w[1].0,
+                    "must not rise with the loss ratio",
+                ));
+            }
+        }
+        self.commission = Some(Commission::SlidingScale(anchors));
+        Ok(self)
+    }
+
+    /// A profit commission: `share` of `max(premium × (1 − allowance) −
+    /// ceded loss, 0)`, as `aggregate`'s `pc <share> after <allowance>`.
+    /// The allowance is the reinsurer's expenses and margin as a fraction
+    /// of premium, including any ceding commission the contract deducts
+    /// before profit. Set the premium first; it cannot be combined with
+    /// swing rating or paid reinstatements (as in `aggregate`).
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// // 25% of the profit after a 10% allowance, on a premium of 100.
+    /// let qs = Layer::quota_share("QS", 0.5).unwrap()
+    ///     .premium_rate(1.0, 200.0).unwrap()
+    ///     .profit_commission(0.25, 0.1).unwrap();
+    /// assert!((qs.profit_commission_for(60.0) - 7.5).abs() < 1e-12);
+    /// assert_eq!(qs.profit_commission_for(95.0), 0.0);
+    /// ```
+    pub fn profit_commission(mut self, share: f64, allowance: f64) -> Result<Self> {
+        self.check_loss_ratio_terms("profit_commission")?;
+        if !(share.is_finite() && (0.0..=1.0).contains(&share)) {
+            return Err(invalid("share", share, "must be in [0, 1]"));
+        }
+        if !(allowance.is_finite() && allowance >= 0.0) {
+            return Err(invalid(
+                "allowance",
+                allowance,
+                "must be finite and non-negative",
+            ));
+        }
+        self.profit_commission = Some(ProfitCommission { share, allowance });
+        Ok(self)
+    }
+
+    /// Swing rating: the year's premium is `terms.premium(ceded loss)`,
+    /// with the terms quoted for 100% of the layer and scaled to the
+    /// placed share as `aggregate` does: `clip(share × basic + lcm ×
+    /// ceded, share × minimum, share × maximum)`, where the ceded loss is
+    /// already at the placed share. It replaces the fixed premium in the
+    /// tower's results and in a flat ceding commission. It cannot be
+    /// combined with paid reinstatements, a sliding scale or a profit
+    /// commission (as in `aggregate`).
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, LossSensitivePremium};
+    ///
+    /// // Pay back losses at 100/80, between 100 and 300.
+    /// let swing = LossSensitivePremium::new(0.0, 1.25, Some(100.0), Some(300.0)).unwrap();
+    /// let l = Layer::xol("L", 1000.0, 0.0).unwrap().swing_rated(swing).unwrap();
+    /// assert_eq!(l.premium_for(40.0), 100.0);
+    /// assert_eq!(l.premium_for(200.0), 250.0);
+    /// assert_eq!(l.premium_for(400.0), 300.0);
+    /// ```
+    pub fn swing_rated(mut self, terms: LossSensitivePremium) -> Result<Self> {
+        if !self.reinstatement_rates.is_empty() {
+            return Err(invalid(
+                "swing",
+                terms.basic,
+                "cannot be combined with paid reinstatements",
+            ));
+        }
+        if matches!(self.commission, Some(Commission::SlidingScale(_)))
+            || self.profit_commission.is_some()
+        {
+            return Err(invalid(
+                "swing",
+                terms.basic,
+                "cannot be combined with a sliding scale or a profit commission",
+            ));
+        }
+        self.swing = Some(terms);
+        Ok(self)
+    }
+
+    /// A sliding scale and a profit commission read the loss ratio on a
+    /// fixed premium.
+    fn check_loss_ratio_terms(&self, name: &'static str) -> Result<()> {
+        if self.swing.is_some() {
+            return Err(invalid(name, 0.0, "cannot be combined with swing rating"));
+        }
+        if !self.reinstatement_rates.is_empty() {
+            return Err(invalid(
+                name,
+                0.0,
+                "cannot be combined with paid reinstatements",
+            ));
+        }
+        if self.premium.is_nan() || self.premium <= 0.0 {
+            return Err(invalid(
+                "premium",
+                self.premium,
+                "must be set (positive) before a sliding scale or profit commission",
+            ));
+        }
+        Ok(())
+    }
+
+    /// The year's premium for the placed share given its ceded loss: the
+    /// swing-rated premium, or else the fixed `premium`. Reinstatement
+    /// premiums are separate.
+    pub fn premium_for(&self, ceded: f64) -> f64 {
+        match &self.swing {
+            Some(s) => s.placed(self.share).premium(ceded),
+            None => self.premium,
+        }
+    }
+
+    /// The year's ceding commission given its ceded loss: the rate (flat,
+    /// or from the sliding scale at the loss ratio `ceded / premium`) times
+    /// the year's premium; zero without one.
+    pub fn ceding_commission_for(&self, ceded: f64) -> f64 {
+        let Some(commission) = &self.commission else {
+            return 0.0;
+        };
+        let premium = self.premium_for(ceded);
+        if premium == 0.0 {
+            return 0.0;
+        }
+        commission.rate(ceded / premium) * premium
+    }
+
+    /// The year's profit commission given its ceded loss:
+    /// `share × max(premium × (1 − allowance) − ceded, 0)`; zero without
+    /// one.
+    pub fn profit_commission_for(&self, ceded: f64) -> f64 {
+        match &self.profit_commission {
+            Some(pc) => pc.share * (self.premium * (1.0 - pc.allowance) - ceded).max(0.0),
+            None => 0.0,
+        }
     }
 
     /// Ceded loss for one year's losses (NaN for a surplus, which needs
@@ -671,9 +1092,14 @@ impl Tower {
     /// `(gross, ground_up)`, `(ceded, <layer name>)` for each layer, and
     /// `(net, retained)`, kept joint per year, then
     /// `(reinstatement_premium, <layer name>)` for each layer with paid
-    /// reinstatements. `aggregate(&["kind"])` gives gross, total ceded and
-    /// net (and total reinstatement premium); `net = gross - Σ ceded` in
-    /// every year, so net is a loss, before any premium.
+    /// reinstatements, `(swing_premium, <layer name>)` for each
+    /// swing-rated layer, `(ceding_commission, <layer name>)` for each
+    /// layer with a flat or sliding commission and `(profit_commission,
+    /// <layer name>)` for each with a profit commission. A fixed premium
+    /// is the layer's `premium` and gets no component.
+    /// `aggregate(&["kind"])` gives gross, total ceded and net (and the
+    /// totals of the others); `net = gross - Σ ceded` in every year, so
+    /// net is a loss, before any premium or commission.
     ///
     /// ```
     /// use prospicio_aggregate::{Layer, Tower, simulate_events};
@@ -777,6 +1203,13 @@ impl Tower {
         )
     }
 
+    /// Indices of the layers that satisfy `f`.
+    fn indices(&self, f: impl Fn(&Layer) -> bool) -> Vec<usize> {
+        (0..self.layers.len())
+            .filter(|&i| f(&self.layers[i]))
+            .collect()
+    }
+
     fn apply_years<'a>(
         &self,
         years: impl Iterator<Item = (&'a [f64], Option<&'a [f64]>, Option<&'a [f64]>)>,
@@ -788,7 +1221,16 @@ impl Tower {
             .iter()
             .map(|l| !l.reinstatement_rates.is_empty())
             .collect();
-        let n_components = self.layers.len() + 2 + paid.iter().filter(|&&p| p).count();
+        // Layers with each term that varies with the year's ceded loss.
+        let swing: Vec<usize> = self.indices(|l| l.swing.is_some());
+        let commission: Vec<usize> = self.indices(|l| l.commission.is_some());
+        let profit: Vec<usize> = self.indices(|l| l.profit_commission.is_some());
+        let n_components = self.layers.len()
+            + 2
+            + paid.iter().filter(|&&p| p).count()
+            + swing.len()
+            + commission.len()
+            + profit.len();
         let mut draws = Vec::with_capacity(n_sims * n_components);
         for (losses, si, times) in years {
             let gross: f64 = losses.iter().sum();
@@ -802,6 +1244,18 @@ impl Tower {
                     .zip(&paid)
                     .filter(|(_, p)| **p)
                     .map(|((_, rp), _)| rp),
+            );
+            let ceded = |i: usize| year[i].0;
+            draws.extend(swing.iter().map(|&i| self.layers[i].premium_for(ceded(i))));
+            draws.extend(
+                commission
+                    .iter()
+                    .map(|&i| self.layers[i].ceding_commission_for(ceded(i))),
+            );
+            draws.extend(
+                profit
+                    .iter()
+                    .map(|&i| self.layers[i].profit_commission_for(ceded(i))),
             );
         }
 
@@ -817,6 +1271,13 @@ impl Tower {
                 .filter(|l| !l.reinstatement_rates.is_empty())
                 .map(|l| key("reinstatement_premium", &l.name)),
         );
+        for (kind, layers) in [
+            ("swing_premium", &swing),
+            ("ceding_commission", &commission),
+            ("profit_commission", &profit),
+        ] {
+            components.extend(layers.iter().map(|&i| key(kind, &self.layers[i].name)));
+        }
 
         let mut provenance = base;
         for (l, stage) in self.layers.iter().zip(&self.stages) {
@@ -835,6 +1296,25 @@ impl Tower {
                 if l.pro_rata_time {
                     terms += ", pro rata as to time";
                 }
+            }
+            if l.reinstatement_rates.is_empty() && l.premium > 0.0 {
+                terms += &format!(", premium {}", l.premium);
+            }
+            if let Some(s) = &l.swing {
+                terms += &format!(
+                    ", swing basic {} lcm {} min {} max {} at 100%",
+                    s.basic, s.lcm, s.minimum, s.maximum
+                );
+            }
+            match &l.commission {
+                Some(Commission::Flat(c)) => terms += &format!(", ceding commission {c}"),
+                Some(Commission::SlidingScale(a)) => {
+                    terms += &format!(", sliding scale (commission, loss ratio) {a:?}");
+                }
+                None => {}
+            }
+            if let Some(pc) = &l.profit_commission {
+                terms += &format!(", profit commission {} after {}", pc.share, pc.allowance);
             }
             provenance = provenance.param(format!("layer:{}", l.name), terms);
         }
@@ -999,6 +1479,265 @@ mod tests {
         assert!(Tower::new(vec![]).is_err());
         let l = Layer::xol("L", 1.0, 0.0).unwrap();
         assert!(Tower::new(vec![l.clone(), l]).is_err());
+    }
+
+    #[test]
+    fn premiums_from_quotes() {
+        let xl = || Layer::xol("10x10", 10.0, 10.0).unwrap().share(0.4).unwrap();
+        assert!((xl().rate_on_line(0.2).unwrap().premium - 0.8).abs() < 1e-12);
+        assert!((xl().deposit_premium(3.0).unwrap().premium - 1.2).abs() < 1e-12);
+        assert!((xl().premium_rate(0.05, 50.0).unwrap().premium - 1.0).abs() < 1e-12);
+        assert!(
+            Layer::quota_share("QS", 0.3)
+                .unwrap()
+                .rate_on_line(0.1)
+                .is_err()
+        );
+        assert!(xl().rate_on_line(-0.1).is_err());
+        assert!(xl().deposit_premium(f64::NAN).is_err());
+        assert!(xl().premium_rate(0.1, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn commissions_on_hand_worked_years() {
+        // A 50% quota share of a subject premium of 200: premium 100.
+        let qs = || {
+            Layer::quota_share("QS", 0.5)
+                .unwrap()
+                .premium_rate(1.0, 200.0)
+                .unwrap()
+        };
+        let flat = qs().ceding_commission(0.3).unwrap();
+        assert!((flat.ceding_commission_for(0.0) - 30.0).abs() < 1e-12);
+        assert!((flat.ceding_commission_for(500.0) - 30.0).abs() < 1e-12);
+        assert_eq!(flat.premium_for(500.0), 100.0);
+        assert_eq!(flat.profit_commission_for(10.0), 0.0);
+
+        // aggregate's worked example: 45% at 60%, 25% at 70%, 19% at 80%,
+        // given out of order.
+        let slide = qs()
+            .sliding_scale(vec![(0.25, 0.70), (0.45, 0.60), (0.19, 0.80)])
+            .unwrap();
+        for (lr, c) in [
+            (0.55, 0.45),
+            (0.60, 0.45),
+            (0.65, 0.35),
+            (0.70, 0.25),
+            (0.75, 0.22),
+            (0.80, 0.19),
+            (0.90, 0.19),
+        ] {
+            let got = slide.ceding_commission_for(100.0 * lr);
+            assert!((got - 100.0 * c).abs() < 1e-10, "{lr}: {got}");
+        }
+        // A one-anchor scale is flat.
+        let one = qs().sliding_scale(vec![(0.3, 0.6)]).unwrap();
+        assert!((one.ceding_commission_for(90.0) - 30.0).abs() < 1e-12);
+        // A sliding scale replaces a flat commission.
+        let replaced = qs()
+            .ceding_commission(0.1)
+            .unwrap()
+            .sliding_scale(vec![(0.3, 0.6)])
+            .unwrap();
+        assert!((replaced.ceding_commission_for(10.0) - 30.0).abs() < 1e-12);
+
+        // aggregate's profit commission example: 25% after 10%.
+        let pc = qs().profit_commission(0.25, 0.10).unwrap();
+        for (lr, want) in [(0.50, 0.10), (0.60, 0.075), (0.90, 0.0), (0.95, 0.0)] {
+            assert!((pc.profit_commission_for(100.0 * lr) - 100.0 * want).abs() < 1e-10);
+        }
+        // With a flat commission too: each is figured on its own.
+        let both = qs()
+            .ceding_commission(0.3)
+            .unwrap()
+            .profit_commission(0.25, 0.4)
+            .unwrap();
+        assert!((both.ceding_commission_for(40.0) - 30.0).abs() < 1e-12);
+        assert!((both.profit_commission_for(40.0) - 5.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn swing_and_retro_premiums() {
+        // aggregate's swing example: basic 0, lcm 1, between 100 and 300.
+        let terms = LossSensitivePremium::new(0.0, 1.0, Some(100.0), Some(300.0)).unwrap();
+        assert_eq!(terms.premium(50.0), 100.0);
+        assert_eq!(terms.premium(200.0), 200.0);
+        assert_eq!(terms.premium(400.0), 300.0);
+        // The minimum defaults to the basic premium, the maximum to no cap.
+        let retro = LossSensitivePremium::new(1000.0, 1.1, None, None).unwrap();
+        assert_eq!(retro.minimum, 1000.0);
+        assert!((retro.premium(1e6) - 1_101_000.0).abs() < 1e-6);
+        // At a placed share of 40%, the amounts scale and the factor does
+        // not: clip(0.4 × 20 + 1.25 × ceded, 0.4 × 50, 0.4 × 300).
+        let swing = LossSensitivePremium::new(20.0, 1.25, Some(50.0), Some(300.0)).unwrap();
+        let layer = Layer::xol("L", 1000.0, 0.0)
+            .unwrap()
+            .share(0.4)
+            .unwrap()
+            .swing_rated(swing)
+            .unwrap();
+        assert!((layer.premium_for(0.0) - 20.0).abs() < 1e-12);
+        assert!((layer.premium_for(40.0) - 58.0).abs() < 1e-12);
+        assert!((layer.premium_for(1000.0) - 120.0).abs() < 1e-12);
+        // A flat commission applies to the swing premium.
+        let comm = layer.clone().ceding_commission(0.1).unwrap();
+        assert!((comm.ceding_commission_for(40.0) - 5.8).abs() < 1e-12);
+
+        assert!(LossSensitivePremium::new(-1.0, 1.0, None, None).is_err());
+        assert!(LossSensitivePremium::new(1.0, f64::NAN, None, None).is_err());
+        assert!(LossSensitivePremium::new(1.0, 1.0, Some(5.0), Some(4.0)).is_err());
+        assert!(LossSensitivePremium::new(1.0, 1.0, Some(f64::INFINITY), None).is_err());
+    }
+
+    #[test]
+    fn refuses_terms_that_do_not_combine() {
+        let qs = || Layer::quota_share("QS", 0.5).unwrap();
+        let priced = || qs().premium_rate(1.0, 200.0).unwrap();
+        let swing = LossSensitivePremium::new(0.0, 1.0, None, None).unwrap();
+        // A loss ratio needs a premium.
+        assert!(qs().sliding_scale(vec![(0.3, 0.6)]).is_err());
+        assert!(qs().profit_commission(0.2, 0.1).is_err());
+        // Swing rating against loss-ratio terms and paid reinstatements, in
+        // either order.
+        assert!(
+            priced()
+                .swing_rated(swing)
+                .unwrap()
+                .sliding_scale(vec![(0.3, 0.6)])
+                .is_err()
+        );
+        assert!(
+            priced()
+                .sliding_scale(vec![(0.3, 0.6)])
+                .unwrap()
+                .swing_rated(swing)
+                .is_err()
+        );
+        assert!(
+            priced()
+                .profit_commission(0.2, 0.1)
+                .unwrap()
+                .swing_rated(swing)
+                .is_err()
+        );
+        let xl = || Layer::xol("10x10", 10.0, 10.0).unwrap();
+        assert!(
+            xl().paid_reinstatements(1.0, vec![1.0])
+                .unwrap()
+                .swing_rated(swing)
+                .is_err()
+        );
+        assert!(
+            xl().swing_rated(swing)
+                .unwrap()
+                .paid_reinstatements(1.0, vec![1.0])
+                .is_err()
+        );
+        assert!(
+            xl().paid_reinstatements(1.0, vec![1.0])
+                .unwrap()
+                .profit_commission(0.2, 0.1)
+                .is_err()
+        );
+        assert!(
+            xl().rate_on_line(0.1)
+                .unwrap()
+                .sliding_scale(vec![(0.3, 0.6)])
+                .unwrap()
+                .paid_reinstatements(1.0, vec![1.0])
+                .is_err()
+        );
+        // A flat commission combines with paid reinstatements and swing.
+        assert!(
+            xl().paid_reinstatements(1.0, vec![1.0])
+                .unwrap()
+                .ceding_commission(0.1)
+                .is_ok()
+        );
+        assert!(
+            xl().swing_rated(swing)
+                .unwrap()
+                .ceding_commission(0.1)
+                .is_ok()
+        );
+        // Bad values.
+        assert!(priced().ceding_commission(1.5).is_err());
+        assert!(priced().sliding_scale(vec![]).is_err());
+        assert!(
+            priced()
+                .sliding_scale(vec![(0.2, 0.6), (0.3, 0.7)])
+                .is_err()
+        );
+        assert!(
+            priced()
+                .sliding_scale(vec![(0.3, 0.6), (0.2, 0.6)])
+                .is_err()
+        );
+        assert!(priced().sliding_scale(vec![(1.2, 0.6)]).is_err());
+        assert!(priced().profit_commission(1.5, 0.1).is_err());
+        assert!(priced().profit_commission(0.2, -0.1).is_err());
+    }
+
+    #[test]
+    fn tower_reports_contract_terms() {
+        let swing = LossSensitivePremium::new(2e5, 1.25, Some(4e5), Some(3e6)).unwrap();
+        let tower = Tower::inuring(vec![
+            vec![
+                Layer::quota_share("QS", 0.3)
+                    .unwrap()
+                    .premium_rate(1.0, 20e6)
+                    .unwrap()
+                    .sliding_scale(vec![(0.35, 0.5), (0.25, 0.7)])
+                    .unwrap()
+                    .profit_commission(0.2, 0.3)
+                    .unwrap(),
+            ],
+            vec![
+                Layer::xol("5x5", 5e6, 5e6)
+                    .unwrap()
+                    .swing_rated(swing)
+                    .unwrap(),
+            ],
+        ])
+        .unwrap();
+        let result = tower.apply(&events()).unwrap();
+        let kinds: Vec<String> = result
+            .components()
+            .iter()
+            .map(|k| format!("{}/{}", k[0], k[1]))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "gross/ground_up",
+                "ceded/QS",
+                "ceded/5x5",
+                "net/retained",
+                "swing_premium/5x5",
+                "ceding_commission/QS",
+                "profit_commission/QS"
+            ]
+        );
+        let (qs, xl) = (&tower.layers[0], &tower.layers[1]);
+        let mut slid = 0;
+        for sim in 0..result.n_sims() {
+            let row = result.row(sim).unwrap();
+            assert!((row[0] - row[1] - row[2] - row[3]).abs() <= 1e-6 * row[0].max(1.0));
+            assert_eq!(row[4], xl.premium_for(row[2]));
+            assert_eq!(row[5], qs.ceding_commission_for(row[1]));
+            assert_eq!(row[6], qs.profit_commission_for(row[1]));
+            let lr = row[1] / 6e6;
+            slid += usize::from(lr > 0.5 && lr < 0.7);
+        }
+        // The scale slides in some years, not only at its ends.
+        assert!(slid > 1_000, "{slid}");
+        assert!(
+            result
+                .provenance()
+                .parameters
+                .iter()
+                .any(|(k, v)| k == "layer:QS" && v.contains("sliding scale"))
+        );
     }
 
     fn events() -> EventSet {

@@ -2,3 +2,5 @@
 ^docs$
 ^pkgdown$
 ^LICENSE\.md$
+^bootstrap\.R$
+^src/rust/target$

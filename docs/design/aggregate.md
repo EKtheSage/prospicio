@@ -204,6 +204,66 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   by Kolmogorov–Smirnov, and JSON round trips. Python
   `Layer.with_loss_corridor(lower, upper, retained=1.0)` and
   `Layer.loss_corridor`, R `with_loss_corridor()` and `@loss_corridor`.
+- **Contract terms (decided 2026-10-09).** Premiums and commissions that
+  depend on the year's ceded loss are terms of a `Layer`, with
+  `aggregate` 1.0.1's definitions (`aggregate.contract_terms`):
+  - *Premium quotes* set `premium`, the placed share's premium: a deposit
+    for 100% of the layer (`deposit_premium`, `share × amount`), a rate on
+    line (`rate_on_line`, `share × rol × limit`) or a rate on the subject
+    premium (`premium_rate`, `share × rate × SPI`; a quota share's ceded
+    premium is a rate of 1). Each reads the share when called, so the
+    share comes first. `premium` keeps its old meaning (the base of paid
+    reinstatements) and is now also the base of the commissions.
+  - *Ceding commission*: flat (`ceding_commission(rate)`) or a sliding
+    scale (`sliding_scale` from `(commission, loss_ratio)` anchors, linear
+    between them and flat beyond the ends; the commission may not rise
+    with the loss ratio), times the year's premium; the loss ratio is
+    ceded loss over premium.
+  - *Profit commission*: `share × max(premium (1 − allowance) − ceded,
+    0)`, `aggregate`'s `pc <share> after <allowance>`. As there, it does
+    not deduct the ceding commission; the allowance carries it.
+  - *Swing rating*: `swing_rated(LossSensitivePremium)` makes the year's
+    premium `clip(s·basic + lcm·ceded, s·minimum, s·maximum)` for the
+    placed share `s`, terms quoted at 100%, as `aggregate`'s underwriter
+    scales them. The minimum defaults to the basic premium, the maximum to
+    no cap. `LossSensitivePremium::premium` alone is the retrospectively
+    rated premium of an account's loss (`aggregate`'s `RetroTerms`); it
+    is not a layer term, since it rates the cedant's own policy.
+  - *What combines*: as in `aggregate`, a sliding scale and a profit
+    commission need a positive premium first and refuse swing rating and
+    paid reinstatements (a reinstatement premium would change the loss
+    ratio's base); swing rating refuses paid reinstatements. Unlike
+    `aggregate`, a layer may carry several terms at once (a sliding
+    scale and a profit commission; a flat commission on a swing premium
+    or beside paid reinstatements), since each is figured on its own.
+  - *Results*: the terms never change ceded or net loss. `Tower::apply`
+    adds a component per layer and term, `(swing_premium, name)`,
+    `(ceding_commission, name)` and `(profit_commission, name)`, after
+    the reinstatement premiums; a fixed premium is the layer's `premium`
+    and gets none. `on_grid` reports each layer's `expected_premium`,
+    `expected_ceding_commission` and `expected_profit_commission` from its
+    ceded grid. Tower documents write each term only when present
+    (`ceding_commission`, `sliding_scale`, `profit_commission`, `swing`),
+    so older documents load unchanged (format version 1).
+  - *Not done*: a deficit or credit carried forward between years in a
+    profit commission or sliding scale (simulated years are independent;
+    it needs multi-year simulation), and premium quoted as a rate of the
+    gross premium the programme itself prices (`aggregate` refuses that
+    loop too).
+  Tested: hand-worked years and `aggregate`'s own examples for each term,
+  the refused combinations, every simulated year's components against
+  the per-year functions with gross = ceded + net, the grid's
+  expectations within four standard errors of 200,000 simulated years, a
+  JSON round trip with every term, and parity with `aggregate` 1.0.1's
+  `SwingTerms`, `RetroTerms`, `SlideTerms` and `ProfitCommissionTerms` at
+  475 losses through every kink to `1e-12`
+  (`validation/scripts/aggregate_contract_terms.py`). Python
+  `Layer.with_deposit_premium`, `with_rate_on_line`, `with_premium_rate`,
+  `with_ceding_commission`, `with_sliding_scale`,
+  `with_profit_commission`, `with_swing_rating`, `premium_for`,
+  `ceding_commission_for`, `profit_commission_for` and
+  `LossSensitivePremium`; R the same `with_*()` and `*_for()` functions
+  and `retro_premium()`.
 - **Towers are data.** `Tower::to_json` writes a programme as a versioned
   document (`"format": "risk_rs.tower"`, version 1): its stages in inuring
   order, each a list of layers with every term (basis, and for a surplus
@@ -370,5 +430,6 @@ estimate below `1e-5`, and a step never coarser than `aggregate`'s
 
 ## Next
 
-1. Contract features beyond `architecture.md`'s reinsurance scope
-   (sliding-scale and profit commissions, swing rating), on request.
+1. Deficit and credit carry-forward in profit commissions and sliding
+   scales, once multi-year simulation exists.
+2. The rest of `aggregate` parity tier 2, on request.

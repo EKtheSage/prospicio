@@ -79,6 +79,11 @@ reference:
     contents:
       - xol_layer
       - with_loss_corridor
+      - with_rate_on_line
+      - with_ceding_commission
+      - with_swing_rating
+      - premium_for
+      - retro_premium
       - quota_share
       - aggregate_stop_loss
       - surplus_treaty
@@ -112,6 +117,10 @@ reference:
       - fit_pml_curve
       - fit_references
       - tower_model
+  - title: Credibility
+    contents:
+      - credibility_standard
+      - buhlmann_straub
   - title: Risk measures
     contents:
       - distortion
