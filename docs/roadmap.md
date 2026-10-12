@@ -203,14 +203,19 @@ what it is aiming for by v1.0.
 
 1. Contract terms in `prospicio-aggregate` (done).
 2. The R package self-contained, so `remotes::install_github` and
-   r-universe can build it without a checkout of the whole repository: a
-   bindings and release PR of its own, and the first step towards CRAN.
+   r-universe can build it without a checkout of the whole repository
+   (done for `install_github`: `R/prospicio/bootstrap.R` copies the crates
+   into the tarball, and CI installs it that way. r-universe needs a
+   registry repository from the user and has not been tried. CRAN still
+   needs the third-party crates vendored).
 3. Rate indication and credibility in `prospicio-pricing`.
 4. Release v0.0.2.
 5. Bayesian reserving (Meyers, compartmental, Clark growth curves,
-   Gaussian processes), with `prospicio-bayes`. Which session takes it
-   is the user's call: it spans the Reserving lane (local session) and
-   the Models lane.
+   Gaussian processes), with `prospicio-bayes`: the local session
+   (Reserving lane) takes it, so the cloud session stays out of
+   `prospicio-reserving` and `prospicio-bayes`. Credibility in item 3 is
+   the classical kind (limited fluctuation, Bühlmann, Bühlmann–Straub);
+   hierarchical and Bayesian credibility stay with v0.7.
 
 ## Waiting on the user
 
