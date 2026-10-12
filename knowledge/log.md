@@ -1,5 +1,11 @@
 # Bundle history
 
+## 2026-10-11
+
+* **Creation**: [The one-year view with a bootstrap tail, against Merz-Wuthrich and Mack's tail risk](/findings/one-year-bootstrap-tail.md), from allowing the bootstraps' tail in the one-year view (branch one-year-tail, decision 11 of `docs/design/reserving-v02.md`): the tail step is valued one development period after the oldest age and closes the origins it falls on in the coming year; with a constant 1.05 tail Mack's bootstrap gives the open origins 1.05 times R's `CDR(1)S.E.`, the oldest origin R's `Mack.S.E` with the tail and the total their combination, on RAA, GenIns and ABC within 2.2 Monte Carlo standard errors; R's refitted log-linear tail's process error is R's tail sigma. R ChainLadder 0.2.21's `CDR` still rejects a tail (re-checked 2026-10-11). Not yet run by CI.
+* **Update**: [The tail in the bootstraps, refitted or drawn, against Mack's tail risk](/findings/bootstrap-tail-parameter-error.md): the one-year view no longer rejects a bootstrap tail (decision 11).
+
+
 ## 2026-10-09
 
 * **Update**: [The tail in the bootstraps, refitted or drawn, against Mack's tail risk](/findings/bootstrap-tail-parameter-error.md), from merging the bootstrap tails with `SegmentDependence` (branch claude/bootstrap-tail-error, decision 9 with decision 10 of `docs/design/reserving-v02.md`): synchronized, an estimated tail refitted on each line's pseudo factors follows the shared residuals (two copies of CLRD's wkcomp without process error stay equal, tail included), while a constant tail's lognormal draw is each line's own (with 1.05 and `tail_std_err` 0.02 the copies' correlation falls from 1 to 0.19 for the ODP, 0.16 for Mack, 10,000 simulations); rank correlation reorders whole simulations, tail included (Spearman 0.501 against 0.5 on comauto and wkcomp). Not yet run by CI.

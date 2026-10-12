@@ -125,12 +125,16 @@ what it is aiming for by v1.0.
     for any method, weighting, tail or grain (#150, #156, #157), and
     `MackBootstrap`'s run-off view with centred residuals by default,
     reconciled with Mack and Merz–Wüthrich (#159, #160, #163).
-  - Tails in both bootstraps' lifetime view: an estimated tail refitted on
-    each simulation's pseudo factors, a constant one drawn from the
-    lognormal with its standard error, and process error past the oldest
-    age (Mack's tail sigma, the ODP's scale); reconciled with R's
+  - Tails in both bootstraps, lifetime and one-year view: an estimated
+    tail refitted on each simulation's pseudo factors, a constant one drawn
+    from the lognormal with its standard error, and process error past the
+    oldest age (Mack's tail sigma, the ODP's scale); reconciled with R's
     `MackChainLadder(tail = ...)` (`reserving-v02.md`, decision 9), and
-    combined with every dependence between segments.
+    combined with every dependence between segments. In the one-year view
+    the tail step is one more development period, closing the origins it
+    falls on in the coming year, reconciled with R's `CDR(1)S.E.` and
+    `Mack.S.E` with the tail (decision 11).
+
   - Joint reserves across lines, for capital: `SegmentDependence` on both
     bootstraps' multi-segment fits, lifetime and one-year (synchronized
     residuals, Kirschner, Kerley and Isaacs 2008, or a Spearman rank
