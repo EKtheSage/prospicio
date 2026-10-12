@@ -76,7 +76,6 @@ pub(crate) fn trend_factor(rate: f64, years: f64) -> f64 {
 /// >>> future.average_written_date(1.0) - cy.average_written_date(1.0)
 /// 2.5
 #[pyclass(name = "Period", module = "prospicio.pricing", frozen)]
-#[derive(Clone)]
 pub(crate) struct PyPeriod {
     inner: Period,
 }
