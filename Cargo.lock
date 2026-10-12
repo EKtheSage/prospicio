@@ -3992,6 +3992,7 @@ dependencies = [
 name = "prospicio-reserving"
 version = "0.0.2"
 dependencies = [
+ "prospicio-bayes",
  "prospicio-core",
  "prospicio-glm",
  "prospicio-math",

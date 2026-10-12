@@ -76,6 +76,10 @@ pub enum Error {
     Bootstrap(&'static str),
     /// The ODP GLM cannot be fitted to this triangle.
     OdpGlm(String),
+    /// A Bayesian reserving model cannot be fitted to this triangle or
+    /// with these settings, for example an origin whose observed increments
+    /// sum to zero or less, which leaves the log-linear mean undefined.
+    Bayes(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
@@ -166,6 +170,7 @@ impl fmt::Display for Error {
             } => write!(f, "{name} = {value} is invalid: expected {expected}"),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
+            Self::Bayes(why) => write!(f, "Bayesian reserving: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {

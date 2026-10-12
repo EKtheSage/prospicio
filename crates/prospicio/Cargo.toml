@@ -28,7 +28,7 @@ prospicio-nn = { workspace = true, optional = true }
 # The default set is the WASM scope (docs/architecture.md) plus the GLM that
 # reserving fits on. Sampling and neural networks are opt-in: they pull in
 # nuts-rs and Burn, which Chain Ladder users should not compile.
-bayes = ["dep:prospicio-bayes"]
+bayes = ["dep:prospicio-bayes", "prospicio-reserving/bayes"]
 nn = ["dep:prospicio-nn"]
 # PredictiveDistribution to and from Arrow IPC files.
 arrow = ["prospicio-prob/arrow"]

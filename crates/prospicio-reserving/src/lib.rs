@@ -14,6 +14,9 @@
 //! Results are checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.
 //!
+//! With the `bayes` feature, the `bayes` module adds the Bayesian chain
+//! ladder, `BayesOdp`, sampled with NUTS (`docs/design/reserving-bayes.md`).
+//!
 //! ```
 //! use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
 //!
@@ -37,6 +40,8 @@
 //! ```
 
 pub mod backtest;
+#[cfg(feature = "bayes")]
+pub mod bayes;
 pub mod bootstrap;
 pub mod chain_ladder;
 pub mod clark;
@@ -58,6 +63,8 @@ pub mod view;
 pub use backtest::{
     Backtest, CellForecast, GlmCandidate, METRICS, TriangleModel, diagonal_backtest,
 };
+#[cfg(feature = "bayes")]
+pub use bayes::{BayesOdp, BayesOdpFit, Diagnostics};
 pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
 };
