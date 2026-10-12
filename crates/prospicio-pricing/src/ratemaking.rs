@@ -1,6 +1,6 @@
-//! Ratemaking: premium at the current rate level and trend
-//! (`docs/design/ratemaking.md`), after Werner and Modlin, *Basic
-//! Ratemaking* (5th ed., CAS, 2016), chapters 5 and 6.
+//! Ratemaking: premium at the current rate level, trend and the overall
+//! rate indication (`docs/design/ratemaking.md`), after Werner and Modlin,
+//! *Basic Ratemaking* (5th ed., CAS, 2016), chapters 5 to 8 and 12.
 //!
 //! Time is a year fraction (2011.5 is 1 July 2011), so nothing here needs a
 //! calendar; [`year_fraction`] puts a date on the book's half-month grid.
@@ -16,6 +16,15 @@
 //!   the current level.
 //! - [`TrendFit`]: exponential and linear trends fitted by least squares,
 //!   and [`trend_factor`].
+//! - [`LossRatioYear`] and [`PurePremiumYear`]: an experience year
+//!   projected to the forecast period, and [`LossRatioExperience`] and
+//!   [`PurePremiumExperience`], the years combined as a ratio of totals.
+//! - [`Provisions`]: the variable expense and profit provisions, the
+//!   permissible loss ratio, and the loss ratio and pure premium methods;
+//!   [`premium_based_expenses`] splits expense ratios into fixed and
+//!   variable.
+//! - [`credibility_weighted`] and [`trended_present_rates`]: the indication
+//!   weighted against a complement.
 //!
 //! Nothing rounds: the book's exhibits round at each step, so a parity
 //! test rounds between the steps it reproduces.
@@ -564,6 +573,321 @@ impl TrendFit {
             TrendKind::Linear => self.slope,
         }
     }
+}
+
+/// One experience year for the loss ratio method: its earned premium
+/// brought to the current rate level and trended, and its losses developed,
+/// trended and loaded for loss adjustment expense (Werner and Modlin,
+/// ch. 8). Factors that do not apply are 1 (a net trend sits in
+/// `loss_trend` with `premium_trend` at 1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LossRatioYear {
+    pub earned_premium: f64,
+    /// To the current rate level.
+    pub on_level_factor: f64,
+    pub premium_trend: f64,
+    /// Reported (or paid) losses, with whatever LAE they include.
+    pub losses: f64,
+    /// Loss development to ultimate.
+    pub development: f64,
+    pub loss_trend: f64,
+    /// `1 +` the LAE ratio to losses not in `losses` (ULAE, say).
+    pub lae_factor: f64,
+}
+
+impl LossRatioYear {
+    /// Premium at the current rate level, trended to the forecast period.
+    pub fn projected_premium(&self) -> f64 {
+        self.earned_premium * self.on_level_factor * self.premium_trend
+    }
+
+    /// Ultimate losses and LAE, trended to the forecast period.
+    pub fn projected_losses(&self) -> f64 {
+        self.losses * self.development * self.loss_trend * self.lae_factor
+    }
+
+    /// `projected_losses / projected_premium`.
+    pub fn loss_ratio(&self) -> f64 {
+        self.projected_losses() / self.projected_premium()
+    }
+}
+
+/// One experience year for the pure premium method: its losses developed,
+/// trended and loaded for LAE, over its earned exposure.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PurePremiumYear {
+    pub exposure: f64,
+    pub losses: f64,
+    pub development: f64,
+    pub loss_trend: f64,
+    pub lae_factor: f64,
+}
+
+impl PurePremiumYear {
+    /// Ultimate losses and LAE, trended to the forecast period.
+    pub fn projected_losses(&self) -> f64 {
+        self.losses * self.development * self.loss_trend * self.lae_factor
+    }
+
+    /// `projected_losses / exposure`.
+    pub fn pure_premium(&self) -> f64 {
+        self.projected_losses() / self.exposure
+    }
+}
+
+fn check_positive(name: &'static str, value: f64) -> Result<()> {
+    if value.is_finite() && value > 0.0 {
+        Ok(())
+    } else {
+        Err(Error::InvalidParameter {
+            name,
+            value,
+            reason: "must be finite and positive",
+        })
+    }
+}
+
+fn check_finite_non_negative(name: &'static str, value: f64) -> Result<()> {
+    if value.is_finite() && value >= 0.0 {
+        Ok(())
+    } else {
+        Err(Error::InvalidParameter {
+            name,
+            value,
+            reason: "must be finite and not negative",
+        })
+    }
+}
+
+/// Experience years for the loss ratio method, combined as the ratio of
+/// their totals (premium-weighted loss ratios, Werner and Modlin ch. 8).
+///
+/// ```
+/// use prospicio_pricing::ratemaking::{LossRatioExperience, LossRatioYear};
+///
+/// let year = |premium, losses| LossRatioYear {
+///     earned_premium: premium,
+///     on_level_factor: 1.0,
+///     premium_trend: 1.0,
+///     losses,
+///     development: 1.0,
+///     loss_trend: 1.0,
+///     lae_factor: 1.0,
+/// };
+/// let e = LossRatioExperience::new(&[year(100.0, 50.0), year(300.0, 250.0)]).unwrap();
+/// assert_eq!(e.loss_ratio(), 0.75);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct LossRatioExperience {
+    years: Vec<LossRatioYear>,
+}
+
+impl LossRatioExperience {
+    /// At least one year; premium and factors positive, losses not negative.
+    pub fn new(years: &[LossRatioYear]) -> Result<Self> {
+        if years.is_empty() {
+            return Err(Error::Data("an experience period needs a year".into()));
+        }
+        for y in years {
+            check_positive("earned_premium", y.earned_premium)?;
+            check_positive("on_level_factor", y.on_level_factor)?;
+            check_positive("premium_trend", y.premium_trend)?;
+            check_finite_non_negative("losses", y.losses)?;
+            check_positive("development", y.development)?;
+            check_positive("loss_trend", y.loss_trend)?;
+            check_positive("lae_factor", y.lae_factor)?;
+        }
+        Ok(Self {
+            years: years.to_vec(),
+        })
+    }
+
+    /// The years.
+    pub fn years(&self) -> &[LossRatioYear] {
+        &self.years
+    }
+
+    /// Total projected premium at the current rate level.
+    pub fn projected_premium(&self) -> f64 {
+        self.years.iter().map(|y| y.projected_premium()).sum()
+    }
+
+    /// Total projected ultimate losses and LAE.
+    pub fn projected_losses(&self) -> f64 {
+        self.years.iter().map(|y| y.projected_losses()).sum()
+    }
+
+    /// The projected loss and LAE ratio, the ratio of the totals.
+    pub fn loss_ratio(&self) -> f64 {
+        self.projected_losses() / self.projected_premium()
+    }
+}
+
+/// Experience years for the pure premium method, combined as the ratio of
+/// their totals (exposure-weighted pure premiums).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PurePremiumExperience {
+    years: Vec<PurePremiumYear>,
+}
+
+impl PurePremiumExperience {
+    /// At least one year; exposure and factors positive, losses not
+    /// negative.
+    pub fn new(years: &[PurePremiumYear]) -> Result<Self> {
+        if years.is_empty() {
+            return Err(Error::Data("an experience period needs a year".into()));
+        }
+        for y in years {
+            check_positive("exposure", y.exposure)?;
+            check_finite_non_negative("losses", y.losses)?;
+            check_positive("development", y.development)?;
+            check_positive("loss_trend", y.loss_trend)?;
+            check_positive("lae_factor", y.lae_factor)?;
+        }
+        Ok(Self {
+            years: years.to_vec(),
+        })
+    }
+
+    /// The years.
+    pub fn years(&self) -> &[PurePremiumYear] {
+        &self.years
+    }
+
+    /// Total earned exposure.
+    pub fn exposure(&self) -> f64 {
+        self.years.iter().map(|y| y.exposure).sum()
+    }
+
+    /// Total projected ultimate losses and LAE.
+    pub fn projected_losses(&self) -> f64 {
+        self.years.iter().map(|y| y.projected_losses()).sum()
+    }
+
+    /// The projected pure premium, the ratio of the totals.
+    pub fn pure_premium(&self) -> f64 {
+        self.projected_losses() / self.exposure()
+    }
+}
+
+/// The provisions of the price that are proportional to it: variable
+/// expenses `V` and the target underwriting profit `Q` (Werner and Modlin,
+/// ch. 7 and 8). Fixed expenses enter each method separately, as a ratio to
+/// premium or an amount per exposure.
+///
+/// ```
+/// use prospicio_pricing::ratemaking::Provisions;
+///
+/// // Werner and Modlin, ch. 8: V = 25%, Q = 10%.
+/// let p = Provisions::new(0.25, 0.10).unwrap();
+/// // Pure premium method: ($300 + $25) / 0.65 = $500.
+/// assert!((p.pure_premium_rate(300.0, 25.0) - 500.0).abs() < 1e-12);
+/// // Loss ratio method: (65% + 6.5%) / 65% - 1 = +10%.
+/// assert!((p.loss_ratio_change(0.65, 0.065) - 0.10).abs() < 1e-12);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Provisions {
+    pub variable: f64,
+    pub profit: f64,
+}
+
+impl Provisions {
+    /// Variable expense and profit as fractions of premium; the profit may
+    /// be negative (investment income), and `variable + profit < 1`.
+    pub fn new(variable: f64, profit: f64) -> Result<Self> {
+        if !(variable.is_finite() && (0.0..1.0).contains(&variable)) {
+            return Err(Error::InvalidParameter {
+                name: "variable",
+                value: variable,
+                reason: "must be in [0, 1)",
+            });
+        }
+        if !(profit.is_finite() && variable + profit < 1.0) {
+            return Err(Error::InvalidParameter {
+                name: "profit",
+                value: profit,
+                reason: "must be finite with variable + profit < 1",
+            });
+        }
+        Ok(Self { variable, profit })
+    }
+
+    /// `1 − V − Q`, the variable permissible loss ratio.
+    pub fn variable_permissible_loss_ratio(&self) -> f64 {
+        1.0 - self.variable - self.profit
+    }
+
+    /// `1 − F − V − Q`, the permissible loss ratio with a fixed expense
+    /// ratio `F`.
+    pub fn permissible_loss_ratio(&self, fixed_ratio: f64) -> f64 {
+        self.variable_permissible_loss_ratio() - fixed_ratio
+    }
+
+    /// The loss ratio method's indicated change, `(LR + F) / (1 − V − Q) −
+    /// 1`, from the projected loss and LAE ratio at current rates and the
+    /// fixed expense ratio.
+    pub fn loss_ratio_change(&self, loss_ratio: f64, fixed_ratio: f64) -> f64 {
+        (loss_ratio + fixed_ratio) / self.variable_permissible_loss_ratio() - 1.0
+    }
+
+    /// The pure premium method's indicated average rate, `(PP + fixed) /
+    /// (1 − V − Q)`, from the projected pure premium (with LAE) and the
+    /// fixed expense per exposure. Other costs per exposure, such as net
+    /// reinsurance, add to either.
+    pub fn pure_premium_rate(&self, pure_premium: f64, fixed_per_exposure: f64) -> f64 {
+        (pure_premium + fixed_per_exposure) / self.variable_permissible_loss_ratio()
+    }
+}
+
+/// An expense ratio to premium and the share of it that is fixed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExpenseCategory {
+    pub ratio: f64,
+    pub fixed_share: f64,
+}
+
+/// The fixed and variable expense ratios of the premium-based projection
+/// method: each category's ratio split by its fixed share, summed over the
+/// categories, as `(fixed, variable)`. With every share 0 it is the
+/// all-variable method.
+pub fn premium_based_expenses(categories: &[ExpenseCategory]) -> Result<(f64, f64)> {
+    let (mut fixed, mut variable) = (0.0, 0.0);
+    for c in categories {
+        check_finite_non_negative("ratio", c.ratio)?;
+        if !(0.0..=1.0).contains(&c.fixed_share) {
+            return Err(Error::InvalidParameter {
+                name: "fixed_share",
+                value: c.fixed_share,
+                reason: "must be in [0, 1]",
+            });
+        }
+        fixed += c.ratio * c.fixed_share;
+        variable += c.ratio * (1.0 - c.fixed_share);
+    }
+    Ok((fixed, variable))
+}
+
+/// `Z × estimate + (1 − Z) × complement`.
+pub fn credibility_weighted(estimate: f64, credibility: f64, complement: f64) -> f64 {
+    credibility * estimate + (1.0 - credibility) * complement
+}
+
+/// The trended present rates complement as an indicated change (Werner
+/// and Modlin, ch. 12): the residual of the last review,
+/// `(1 + prior indicated) / (1 + prior implemented)`, times `trend`, the
+/// factor from the last review's target effective date to the new one (the
+/// loss trend factor over the premium trend factor in the loss ratio
+/// method), less 1. For a rate, multiply the present rate by one plus it.
+///
+/// ```
+/// use prospicio_pricing::ratemaking::{trend_factor, trended_present_rates};
+///
+/// // $200 present rate, 5% trend for 2 years, +10% indicated, +6% taken.
+/// let change = trended_present_rates(0.10, 0.06, trend_factor(0.05, 2.0));
+/// assert!((200.0 * (1.0 + change) - 228.82).abs() < 0.01);
+/// ```
+pub fn trended_present_rates(prior_indicated: f64, prior_implemented: f64, trend: f64) -> f64 {
+    (1.0 + prior_indicated) / (1.0 + prior_implemented) * trend - 1.0
 }
 
 #[cfg(test)]
