@@ -1605,7 +1605,8 @@ spearman_arg <- function(spearman) {
 #' @param seed Seed of the chains and of the simulations, a non-negative
 #'   whole number.
 #' @param target_accept Target mean acceptance rate of the step-size
-#'   adaptation.
+#'   adaptation; above NUTS's usual 0.8, which on triangles such as RAA
+#'   usually leaves a few divergent transitions.
 #' @param max_depth Largest NUTS tree depth.
 #' @param ptr A `BayesOdpFit` pointer; used internally.
 #' @returns A `bayes_odp_fit` object.
@@ -1657,7 +1658,7 @@ bayes_odp_fit <- S7::new_class(
 bayes_odp <- function(triangle, column = NULL, intercept_sd = 10, origin_sd = 10,
                       development_sd = 10, process = c("gamma", "none"), chains = 4,
                       tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
-                      target_accept = 0.8, max_depth = 10) {
+                      target_accept = 0.95, max_depth = 10) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   ptr <- rust_result(triangle@ptr$bayes_odp(

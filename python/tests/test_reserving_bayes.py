@@ -49,7 +49,7 @@ def test_settings_and_defaults():
     assert (m.intercept_sd, m.origin_sd, m.development_sd) == (10.0, 10.0, 10.0)
     assert m.process == "gamma"
     assert (m.chains, m.tune, m.draws, m.n_sims, m.seed) == (4, 1000, 1000, 10_000, 0)
-    assert (m.target_accept, m.max_depth) == (0.8, 10)
+    assert (m.target_accept, m.max_depth) == (0.95, 10)
     m = BayesOdp(origin_sd=2.0, process="none", chains=3, seed=9)
     assert (m.origin_sd, m.process, m.chains, m.seed) == (2.0, "none", 3, 9)
     assert repr(m).startswith("BayesOdp(intercept_sd=10.0, origin_sd=2.0")
@@ -70,7 +70,7 @@ def test_fit_fields(fit, genins):
     assert r.n_sims == 2000
     assert r.components() == [(o,) for o in fit.origins]
     assert r.provenance()["model"] == "bayes_odp"
-    # The posterior mean reserve sits near the chain ladder's (+0.8% with
+    # The posterior mean reserve sits near the chain ladder's (+0.7% with
     # the defaults; Monte Carlo error with these short chains).
     cl = fit.chain_ladder.total_reserve
     assert r.mean() == pytest.approx(cl, rel=0.05)

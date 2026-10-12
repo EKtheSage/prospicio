@@ -278,8 +278,10 @@ class BayesOdp:
         posterior draws; positive.
     seed : int, default 0
         Seed of the chains and of the simulations, from 0 to ``2**64 - 1``.
-    target_accept : float, default 0.8
-        Target mean acceptance rate of the step-size adaptation.
+    target_accept : float, default 0.95
+        Target mean acceptance rate of the step-size adaptation; above
+        NUTS's usual 0.8, which on triangles such as RAA usually leaves a
+        few divergent transitions.
     max_depth : int, default 10
         Largest NUTS tree depth.
     
@@ -306,7 +308,7 @@ class BayesOdp:
     >>> fit.parameter_names[:2]
     ['c', 'a[2]']
     """
-    def __new__(cls, /, intercept_sd: float = 10.0, origin_sd: float = 10.0, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.8, max_depth: int = 10) -> BayesOdp: ...
+    def __new__(cls, /, intercept_sd: float = 10.0, origin_sd: float = 10.0, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> BayesOdp: ...
     def __repr__(self, /) -> str: ...
     @property
     def chains(self, /) -> int:

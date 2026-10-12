@@ -5391,8 +5391,10 @@ impl PyOneYearFit {
 ///     posterior draws; positive.
 /// seed : int, default 0
 ///     Seed of the chains and of the simulations, from 0 to ``2**64 - 1``.
-/// target_accept : float, default 0.8
-///     Target mean acceptance rate of the step-size adaptation.
+/// target_accept : float, default 0.95
+///     Target mean acceptance rate of the step-size adaptation; above
+///     NUTS's usual 0.8, which on triangles such as RAA usually leaves a
+///     few divergent transitions.
 /// max_depth : int, default 10
 ///     Largest NUTS tree depth.
 ///
@@ -5436,7 +5438,7 @@ impl PyBayesOdp {
         draws = 1000,
         n_sims = 10_000,
         seed = 0,
-        target_accept = 0.8,
+        target_accept = 0.95,
         max_depth = 10,
     ))]
     #[allow(clippy::too_many_arguments)]

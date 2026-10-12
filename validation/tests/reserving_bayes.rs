@@ -5,13 +5,18 @@
 //! * Stan parity: `reference/reserving_bayes_stan.csv`, from
 //!   `scripts/reserving_bayes_stan.py` (CmdStan 2.39.0, 4 chains of 25,000
 //!   draws, dense metric). Our side runs the defaults: 4 chains of 1,000
-//!   draws and 10,000 simulations, seed 0. With `s` Stan's posterior sd,
-//!   means must agree within `0.1 s` (our MCSE is about `0.02 s`, Stan's
-//!   `0.003 s`), sds within 8% (our MCSE about 1.2%), and the 5%, 50% and
-//!   95% reserve percentiles within `0.15 s` (about 0.02 to 0.03 `s` of
-//!   MCSE from 10,000 simulations). `phi` and `c0`, the plug-ins, agree to
-//!   1e-9. Different samplers never give the same draws, so parity is on
-//!   summaries.
+//!   draws (target acceptance 0.95) and 10,000 simulations, seed 0. The
+//!   tolerances are each at least 4 times our Monte Carlo error, measured
+//!   per row as the seed-to-seed sd over seeds 0 to 19 (Stan's is
+//!   negligible). With `s` Stan's posterior sd: means within `0.1 s`
+//!   (RAA `0.15 s`; our error at most `0.018 s` on GenIns, `0.03 s` on
+//!   RAA), sds within 10% (RAA 20%; our error at most 2.4% and 4.6%, the
+//!   latter RAA's 1982 reserve, one cell on the skewed `b[10]`), and the
+//!   5%, 50% and 95% reserve percentiles within `0.3 s` (RAA `0.4 s`; at
+//!   most `0.066 s` and `0.083 s`, both a 95% percentile). Seeds 0 to 29
+//!   all pass, using at most 0.80 of any tolerance. `phi` and `c0`, the
+//!   plug-ins, agree to 1e-9. Different samplers never give the same
+//!   draws, so parity is on summaries.
 //! * Sanity, not parity: on GenIns the posterior mean reserve is within 2%
 //!   of the chain ladder's and of the ODP bootstrap's mean, and its sd
 //!   within 10% of the bootstrap's (England and Verrall: vague priors give
@@ -95,18 +100,18 @@ fn stan_parity() {
     });
 }
 
+/// With target acceptance 0.95, seeds 0 to 29 gave no divergence on either
+/// triangle and a max R-hat of at most 1.006, so the defaults pass every
+/// threshold on both.
 #[test]
 fn defaults_pass_the_diagnostics() {
     for name in ["genins", "raa"] {
         let d = &fit(name).diagnostics;
         assert!(d.max_rhat < 1.01, "{name}: {d:?}");
         assert!(d.min_ess_bulk > 400.0, "{name}: {d:?}");
+        assert_eq!(d.divergences, 0, "{name}: {d:?}");
+        assert!(d.warnings.is_empty(), "{name}: {d:?}");
     }
-    assert!(
-        fit("genins").diagnostics.warnings.is_empty(),
-        "{:?}",
-        fit("genins").diagnostics
-    );
 }
 
 #[test]

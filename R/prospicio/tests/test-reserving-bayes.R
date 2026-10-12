@@ -59,7 +59,7 @@ stopifnot(
   r@n_sims == 2000,
   identical(names(r@keys), "origin"), identical(r@keys$origin, fit@origins)
 )
-# Near the chain ladder's total (+0.8% with the defaults).
+# Near the chain ladder's total (+0.7% with the defaults).
 near(mean(r), fit@chain_ladder@total_reserve, 0.05)
 
 d <- fit@diagnostics

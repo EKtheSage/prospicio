@@ -107,15 +107,20 @@ pub struct BayesOdp {
 
 impl Default for BayesOdp {
     /// Prior standard deviations 10 on the log scale, Gamma process error,
-    /// four chains of 1,000 warm-up and 1,000 kept draws, 10,000
-    /// simulations, seed 0.
+    /// four chains of 1,000 warm-up and 1,000 kept draws with target
+    /// acceptance 0.95 (above the sampler's 0.8: at 0.8 a triangle whose
+    /// last development column has one small cell, such as RAA, usually
+    /// gives a few divergent transitions), 10,000 simulations, seed 0.
     fn default() -> Self {
         Self {
             intercept_sd: 10.0,
             origin_sd: 10.0,
             development_sd: 10.0,
             process: ProcessDistribution::Gamma,
-            sampler: Sampler::default(),
+            sampler: Sampler {
+                target_accept: 0.95,
+                ..Sampler::default()
+            },
             n_sims: 10_000,
             seed: 0,
             dependence: SegmentDependence::Independent,
@@ -361,10 +366,9 @@ impl BayesOdpFit {
         let model = &self.model;
         if let Some(&(w, d, x)) = model.cells.iter().find(|c| c.2 < 0.0) {
             return Err(Error::Bayes(format!(
-                "loo needs non-negative increments, and origin {} at development position {} \
-                 is {x}",
-                self.chain_ladder.origins[w],
-                d + 1
+                "loo needs non-negative increments, and origin {} at development age {} \
+                 months is {x}",
+                self.chain_ladder.origins[w], self.chain_ladder.development.development[d]
             )));
         }
         let n = model.cells.len();
@@ -1016,7 +1020,8 @@ mod tests {
         let fit = quick(8).fit(&raa(), "values").unwrap();
         let e = fit.loo().unwrap_err();
         assert!(
-            matches!(&e, Error::Bayes(m) if m.contains("non-negative")),
+            matches!(&e, Error::Bayes(m) if m.contains("non-negative")
+                && m.contains("origin 1982 at development age 84 months is")),
             "{e}"
         );
         // A short run keeps the quadrature cheap; validation/tests/reserving_bayes.rs

@@ -281,10 +281,14 @@ in `θ` and in `z` matches central differences.
 
 RAA's last development effect rests on one small cell (an increment of
 172 against `φ = 984`, shape `x/φ ≈ 0.17`), so its posterior is strongly
-skewed and the curvature varies: at the default target acceptance 0.8 our
-sampler gives 3 divergent transitions in 4,000 draws (a warning) and Stan
-15 in 100,000 with a dense metric. The summaries still agree (decision
-10); the Stan reference runs at `adapt_delta = 0.99`, which removes them.
+skewed and the curvature varies: at NUTS's usual target acceptance 0.8
+our sampler gave divergent transitions in 4,000 draws at 7 of seeds 0 to 7
+(0 to 6 each, a warning), and Stan 15 in 100,000 with a dense metric.
+`BayesOdp`'s default target acceptance is therefore 0.95: seeds 0 to 29
+then give no divergence on RAA or GenIns, the summaries are unchanged
+within Monte Carlo error, and a fit costs little more (about 0.1 s on
+GenIns in a release build). The Stan reference runs at
+`adapt_delta = 0.99` for the same reason.
 
 ### 4. The predictive distribution
 
@@ -342,9 +346,12 @@ with these changes from the sketch below, which is kept as proposed:
 * **Diagnostics** come from the summary of the natural-scale draws: a
   warning per parameter with R-hat above 1.01 (or NaN) or bulk or tail ESS
   below `100 × chains`, naming the parameter, its value and the threshold,
-  and one for any divergence. Defaults on GenIns: max R-hat 1.002, min bulk
-  ESS 5,563, min tail ESS 2,379, no divergence; on RAA: max R-hat 1.003,
-  min bulk ESS 2,306, 3 divergences (decision 3).
+  and one for any divergence. The fields `max_rhat`, `min_ess_bulk` and
+  `min_ess_tail` are NaN when any parameter's value is (a constant draw),
+  so they never look healthier than the warnings. Defaults (seed 0) on
+  GenIns: max R-hat 1.003, min bulk ESS 4,550, min tail ESS 2,368, no
+  divergence; on RAA: max R-hat 1.003, min bulk ESS 2,125, min tail ESS
+  1,625, no divergence (decision 3).
 * **`loo()`** uses `Family::Poisson.log_density(x, μ, φ, 1)` with
   `r_eff` per cell from `ess_mean`, as `BayesGlmFit::loo` does. That density
   is minus infinity at a negative increment, so `loo()` returns
@@ -364,7 +371,7 @@ pub mod bayes {
         pub origin_sd: f64,             // 10
         pub development_sd: f64,        // 10
         pub process: ProcessDistribution, // Gamma
-        pub sampler: prospicio_bayes::Sampler, // 4 chains, 1000 tune, 1000 draws, target 0.8, depth 10
+        pub sampler: prospicio_bayes::Sampler, // 4 chains, 1000 tune, 1000 draws, target 0.95, depth 10
         pub n_sims: usize,              // 10_000
         pub seed: u64,                  // the chains and the simulations
         pub dependence: SegmentDependence, // decision 11; fit() ignores it
@@ -543,7 +550,9 @@ Monte Carlo error is negligible.
   not), and in PR 3 Meyers' `crc.stan` and `csr.stan` copied unchanged
   from the CAS appendix (licence and attribution checked when copied).
 * **Generator**: `validation/scripts/reserving_bayes_stan.py`, run with
-  `uv run --no-project --with cmdstanpy==<pinned> --with pandas` against
+  `uv run --no-project --python 3.14 --with cmdstanpy==1.3.0 --with
+  pandas==3.0.6 --with numpy==2.5.4` (versions recorded in the CSV
+  header) against
   CmdStan 2.39.0 (built locally at `~/.cmdstan/cmdstan-2.39.0`). Fixed
   seed, 4 chains, 2,000 warm-up and 25,000 draws each, so a mean's MCSE is
   under 1% of a posterior sd. The script prints the CmdStan version, the
@@ -557,13 +566,20 @@ Monte Carlo error is negligible.
   5th, 50th and 95th percentiles of each origin's reserve and of the total
   (process `Gamma` is drawn in Stan's generated quantities the same way).
   CI reads the committed CSV and never runs Stan.
-* **Tolerances**, per quantity with posterior sd `s` (Stan's), following
-  `BayesGlm`'s grid parity (`models.md`: means within 0.1 sd, sds within
-  8%): means within `0.1 s`; sds within 8%; reserve percentiles within
-  `0.15 s` (tail percentiles carry more Monte Carlo error). Our side runs
-  the defaults (4×1,000 draws, 10,000 simulations), whose MCSE is about
-  `0.02 s` on the means. Different samplers never give identical draws,
-  so parity is on summaries, never draws.
+* **Tolerances**, per quantity with posterior sd `s` (Stan's), sized from
+  our own Monte Carlo error, since Stan's is negligible: each is at least 4
+  times the seed-to-seed sd of that row over seeds 0 to 19 of the defaults
+  (4×1,000 draws, 10,000 simulations). GenIns: means within `0.1 s`, sds
+  within 10%, reserve percentiles within `0.3 s` (measured error at most
+  `0.018 s`, 2.4% and `0.066 s`). RAA: `0.15 s`, 20% and `0.4 s` (at most
+  `0.03 s`, 4.6% and `0.083 s`). RAA's errors are about twice GenIns'
+  because its young origins' reserves ride on the skewed `b[9]` and
+  `b[10]`: the 1982 reserve is one cell on `b[10]` (posterior sd 3.6). The
+  first tolerances (`0.1 s`, 8%, `0.15 s`, from `BayesGlm`'s grid parity
+  in `models.md`) assumed an sd error of about 1.2%, which holds for
+  GenIns' parameters but not for RAA's reserves, and failed RAA at 10 of
+  20 seeds. Different samplers never give identical draws, so parity is on
+  summaries, never draws.
 * **Sanity checks, not parity** (unit tests in PR 1): with the priors
   switched off (Newton on the likelihood alone) the mode equals the chain
   ladder's GLM fit to 1e-8. With priors of sd 1,000 it cannot: a prior
@@ -593,19 +609,19 @@ GenIns and RAA, with the defaults (seed 0). As built:
   R-hat 1.0001 on GenIns and 1.0002 on RAA, no divergence. CmdStan's `make`
   is RTools 4.5's, which cmdstanpy is told through `MAKE`; the model is
   compiled under `target/stan/`. About 60 s with a compiled model.
-* Every row passes; the largest share of its tolerance any row uses is
-  0.70 (RAA's 1982 reserve sd, 676 against 640 with 8% allowed). By kind,
-  the largest shares: parameter means 0.23 (GenIns) and 0.34 (RAA), sds
-  0.44 and 0.62, reserve means 0.22 and 0.27, reserve sds 0.37 and 0.70,
-  95th percentiles 0.49 and 0.66.
-* GenIns totals: Stan mean 18,851,576 and sd 2,984,047; ours 18,834,037 and
-  2,937,848; the chain ladder 18,680,856; `OdpBootstrap` (20,000
-  simulations, seed 1) 18,851,366 and 2,998,662. So the posterior mean is
-  0.8% above the chain ladder and 0.1% below the bootstrap, and the sd 2.0%
-  below the bootstrap's (the sanity bounds are 2% and 10%). The bootstrap's
-  residual scaling `sqrt(n/(n−p))` did not open a large gap.
+* Every row passes at each of seeds 0 to 29 (a release-build sweep, not
+  in CI), using at most 0.80 of any tolerance (RAA's 1982 reserve sd).
+  Mean over the seeds, our summaries sit within 0.2 of a tolerance of
+  Stan's, so the two samplers agree on the posterior.
+* GenIns totals: Stan mean 18,851,576 and sd 2,984,047; ours (seed 0)
+  18,803,484 and 2,924,291; the chain ladder 18,680,856; `OdpBootstrap`
+  (20,000 simulations, seed 1) 18,851,366 and 2,998,662. So the posterior
+  mean is 0.7% above the chain ladder and 0.3% below the bootstrap, and
+  the sd 2.5% below the bootstrap's (the sanity bounds are 2% and 10%).
+  The bootstrap's residual scaling `sqrt(n/(n−p))` did not open a large
+  gap.
 * Runtime: a default GenIns fit (4×1,000 draws after 4×1,000 warm-up,
-  10,000 simulations) takes about 80 ms in a release build and 1.1 s in a
+  10,000 simulations) takes about 0.1 s in a release build and 1.5 s in a
   debug one; the whole test file about 7 s in a debug build (one test
   thread), most of it `loo()`. The parity closure computes parameter means
   and sds from the draws: calling `summary()` (R-hat and ESS too) for each
@@ -673,7 +689,7 @@ the sketch below, which is kept as proposed:
   condition it returns the fit, and a condition on a key is an error.
 * **Arguments.** Python `BayesOdp(intercept_sd=10, origin_sd=10,
   development_sd=10, process="gamma", chains=4, tune=1000, draws=1000,
-  n_sims=10000, seed=0, target_accept=0.8, max_depth=10)` and R
+  n_sims=10000, seed=0, target_accept=0.95, max_depth=10)` and R
   `bayes_odp(triangle, column = NULL, ...)` with the same arguments in the
   same order: `BayesGlm`'s other two sampler settings come last, so the
   order of the sketch holds. `Sampler::seed` is not an argument (`seed`

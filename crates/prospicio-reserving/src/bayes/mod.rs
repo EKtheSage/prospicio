@@ -35,11 +35,12 @@ use prospicio_core::StreamRng;
 /// still returned; check them before relying on it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diagnostics {
-    /// The largest R-hat over the parameters.
+    /// The largest R-hat over the parameters; NaN when any parameter's is
+    /// NaN (a constant draw).
     pub max_rhat: f64,
-    /// The smallest bulk ESS over the parameters.
+    /// The smallest bulk ESS over the parameters; NaN when any is NaN.
     pub min_ess_bulk: f64,
-    /// The smallest tail ESS over the parameters.
+    /// The smallest tail ESS over the parameters; NaN when any is NaN.
     pub min_ess_tail: f64,
     /// Divergent transitions among the kept draws, over all chains.
     pub divergences: usize,
@@ -85,8 +86,16 @@ impl Diagnostics {
                 "{divergences} divergent transitions among the kept draws"
             ));
         }
+        // A NaN R-hat or ESS (a constant draw) propagates, so the summary
+        // fields never look healthier than the warnings.
         let fold = |f: fn(&ParamSummary) -> f64, init: f64, pick: fn(f64, f64) -> f64| {
-            summary.iter().map(f).fold(init, pick)
+            summary.iter().map(f).fold(init, |acc, v| {
+                if acc.is_nan() || v.is_nan() {
+                    f64::NAN
+                } else {
+                    pick(acc, v)
+                }
+            })
         };
         Self {
             max_rhat: fold(|s| s.rhat, f64::NEG_INFINITY, f64::max),
@@ -162,6 +171,21 @@ mod tests {
         assert!(bad.warnings[3].starts_with("3 divergent"));
         assert_eq!((bad.min_ess_bulk, bad.min_ess_tail), (300.0, 399.0));
         assert_eq!(bad.divergences, 3);
+    }
+
+    #[test]
+    fn a_nan_diagnostic_propagates_to_the_summary_fields() {
+        let d = Diagnostics::new(
+            &[
+                summary("c", 1.001, 3000.0, 2500.0),
+                summary("a[2]", f64::NAN, f64::NAN, f64::NAN),
+                summary("b[2]", 1.002, 2000.0, 1500.0),
+            ],
+            4,
+            0,
+        );
+        assert!(d.max_rhat.is_nan() && d.min_ess_bulk.is_nan() && d.min_ess_tail.is_nan());
+        assert_eq!(d.warnings.len(), 3, "{:?}", d.warnings);
     }
 
     #[test]

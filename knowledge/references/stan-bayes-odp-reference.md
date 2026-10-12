@@ -48,6 +48,12 @@ sources:
   against `phi = 984` (shape 0.17), so its posterior is skewed with a steep
   exponential side, which no fixed metric whitens. 0.99 removes them; the
   posterior is unchanged.[^design]
-* The reference's tolerances are set from Stan's posterior sd `s`: means
-  `0.1 s`, sds 8%, reserve percentiles `0.15 s`, the oldest origin's
+* The reference's tolerances are in units of Stan's posterior sd `s`,
+  sized at 4 times `BayesOdp`'s own Monte Carlo error over 20 seeds (the
+  reference's is negligible): GenIns means `0.1 s`, sds 10%, reserve
+  percentiles `0.3 s`; RAA `0.15 s`, 20% and `0.4 s`; the oldest origin's
   reserve an exact 0.[^csv]
+* The generator pins its Python environment (Python 3.14, cmdstanpy 1.3.0,
+  pandas 3.0.6, numpy 2.5.4) and records the versions in the CSV header.
+  Rerun with the same CmdStan and seed, it reproduced every expected value
+  bit for bit.[^script]

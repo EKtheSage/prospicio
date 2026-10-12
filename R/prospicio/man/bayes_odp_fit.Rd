@@ -19,7 +19,7 @@ bayes_odp(
   draws = 1000,
   n_sims = 10000,
   seed = 0,
-  target_accept = 0.8,
+  target_accept = 0.95,
   max_depth = 10
 )
 }
@@ -54,7 +54,8 @@ of posterior draws; positive.}
 whole number.}
 
 \item{target_accept}{Target mean acceptance rate of the step-size
-adaptation.}
+adaptation; above NUTS's usual 0.8, which on triangles such as RAA
+usually leaves a few divergent transitions.}
 
 \item{max_depth}{Largest NUTS tree depth.}
 }
