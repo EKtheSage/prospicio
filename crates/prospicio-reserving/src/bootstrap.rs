@@ -94,8 +94,10 @@ pub struct OdpBootstrap {
     /// is given. Either way the step from the oldest age to ultimate is one
     /// more future increment, with mean the pseudo value at the oldest age
     /// times the tail factor less 1 and the process error of every other
-    /// increment. The one-year view takes its tail from the refitted method
-    /// instead, and a tail here is an error there.
+    /// increment. The one-year view ([`one_year`](Self::one_year)) takes
+    /// that step in the coming year for the origins whose tail falls in it
+    /// and closes them (decision 11); its method's tail must then be this
+    /// one.
     ///
     /// [`Tail::LogLinear`] refits R's rule, whose guards were written for
     /// one estimate: it is exactly 1 when the product of the third- and
@@ -157,7 +159,7 @@ pub struct OdpBootstrapFit {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OdpBootstrapSegment {
     /// The volume-weighted chain ladder of the segment, with the
-    /// bootstrap's tail in the lifetime view (none in the one-year view).
+    /// bootstrap's tail.
     pub chain_ladder: ChainLadderFit,
     /// Fitted incremental values, row-major over origin × development.
     pub fitted: Vec<f64>,
@@ -498,7 +500,7 @@ impl OdpBootstrap {
 
     /// The tail each simulation draws, `None` without one; see
     /// [`tail`](Self::tail).
-    fn tail_draw(&self, cl: &ChainLadderFit) -> Result<Option<TailDraw>> {
+    pub(crate) fn tail_draw(&self, cl: &ChainLadderFit) -> Result<Option<TailDraw>> {
         TailDraw::new(self.tail, cl, self.tail_std_err)
     }
 
@@ -775,7 +777,8 @@ pub(crate) struct Simulation<'a> {
     pub(crate) pool: &'a [f64],
     pub(crate) scale: f64,
     pub(crate) process: ProcessDistribution,
-    /// The lifetime view's tail; `None` in the one-year view.
+    /// The lifetime view's tail; `None` in the one-year view, which draws
+    /// the tail itself.
     pub(crate) tail: Option<&'a TailDraw>,
 }
 

@@ -21,6 +21,8 @@ odp_one_year(
   average = "volume",
   sigma_interpolation = "log-linear",
   tail = 1,
+  bootstrap_tail = FALSE,
+  tail_std_err = NULL,
   n_sims = 10000,
   seed = 0,
   process = c("gamma", "none"),
@@ -41,6 +43,9 @@ mack_one_year(
   average = "volume",
   sigma_interpolation = "log-linear",
   tail = 1,
+  bootstrap_tail = FALSE,
+  tail_sigma = NULL,
+  tail_std_err = NULL,
   n_sims = 10000,
   seed = 0,
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
@@ -73,6 +78,16 @@ methods; \code{NULL} for the chain ladder.}
 \item{average, sigma_interpolation, tail}{The chain ladder or development
 pattern of \code{method}, as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 
+\item{bootstrap_tail}{Whether the bootstrap takes \code{method}'s \code{tail} too,
+developing past the oldest age in the coming year (above); \code{FALSE} by
+default.}
+
+\item{tail_std_err}{With \code{bootstrap_tail}, a constant tail factor's
+standard error: \code{NULL} keeps it fixed in \code{odp_one_year()} and
+extrapolates it in \code{mack_one_year()}, as in \code{\link[=odp_bootstrap]{odp_bootstrap()}} and
+\code{\link[=mack_bootstrap]{mack_bootstrap()}}; an error with an estimated tail or without
+\code{bootstrap_tail}.}
+
 \item{n_sims}{Number of simulations; positive.}
 
 \item{seed}{Seed of the simulation streams, a non-negative whole number.}
@@ -88,6 +103,10 @@ variance); or \code{"none"}.}
 
 \item{dependence, spearman}{How the segments depend on each other, as in
 \code{\link[=odp_bootstrap]{odp_bootstrap()}}.}
+
+\item{tail_sigma}{For \code{mack_one_year()} with \code{bootstrap_tail}, the tail's
+sigma (R's \code{tail.sigma}), or \code{NULL} to extrapolate it, as in
+\code{\link[=mack_bootstrap]{mack_bootstrap()}}; an error without \code{bootstrap_tail}.}
 
 \item{mack_average, mack_sigma_interpolation}{How Mack's model in
 \code{mack_one_year()} averages the link ratios and fills in a sigma behind
@@ -158,10 +177,26 @@ residuals is centred first. Uncentred (\code{centre_residuals = FALSE}, EVW's
 Appendix 1 as written), the pool's non-zero mean biases the pseudo
 factors: the mean CDR is about -0.2 (RAA), -0.04 (GenIns) and +0.18
 (ABC) times its standard deviation, and RAA's standard deviations up to
-1.3\% wide. Mack's model has no tail here: the
-development past the oldest age moves only through \code{method}'s refitted
-tail. Its fit has \code{model = "mack"}, no \code{scale}, and \code{mack}, the
+1.3\% wide. Its fit has \code{model = "mack"}, no \code{scale}, and \code{mack}, the
 \link{mack_fit} it simulates from; it needs no negative cumulative value.
+
+By default the bootstrap has no tail of its own: its simulation stops at
+the oldest age, and the development past it moves only through
+\code{method}'s refitted \code{tail}. With \code{bootstrap_tail = TRUE} the bootstrap
+takes \code{method}'s \code{tail} too, drawn in each simulation as in
+\code{\link[=odp_bootstrap]{odp_bootstrap()}} or \code{\link[=mack_bootstrap]{mack_bootstrap()}} (an estimated tail refitted on
+the pseudo factors, a constant one fixed or drawn with \code{tail_std_err}),
+and its step to ultimate is valued one development period after the
+oldest age: an origin whose step falls in the coming year (with an
+annual grain, one already at the oldest age) takes it and is closed at
+that simulated ultimate. The step is the whole tail: a curve or a decayed
+constant tail is taken as the product of its factors in that one step,
+so an origin that takes it has its lifetime tail risk in the coming
+year, an upper bound on its one-year risk. With a constant tail attached
+at the oldest age and Mack's process, the other origins' CDR is the tail
+factor times its value without one in distribution (simulation by
+simulation when the factor is fixed, \code{tail_std_err = 0}), and the oldest
+origin's standard deviation is \code{\link[=mack]{mack()}}'s with the tail.
 
 Every segment of the triangle is bootstrapped with its own residuals and
 scale, into one joint distribution of the CDR, the segments depending on
@@ -219,6 +254,11 @@ mk <- mack_one_year(tri, "paid", n_sims = 2000, seed = 42)
 mk@model
 c(simulated = sqrt(variance(mk@cdr)),
   merz_wuthrich = claims_development_result(mk@mack)@total_one_year_standard_error)
+
+# The bootstrap's own tail moves the oldest origin in the coming year.
+tailed <- mack_one_year(tri, "paid", tail = 1.05, bootstrap_tail = TRUE, n_sims = 2000,
+                        seed = 42)
+as.data.frame(tailed)[1, c("origin", "cdr_std_dev")]
 }
 \seealso{
 \code{\link[=claims_development_result]{claims_development_result()}} for Merz and Wuthrich's formulas,

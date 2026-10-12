@@ -620,3 +620,158 @@ fn tails_with_dependence() {
         "Mack",
     );
 }
+
+/// One-year views with a bootstrap tail and dependence (decision 11 with
+/// decision 10): as in the lifetime view, a synchronized bootstrap refits
+/// an estimated tail on each line's pseudo factors, so two identical lines
+/// without process error keep equal CDRs, the oldest origins' tail steps
+/// included; a constant tail's lognormal draw is each line's own; and rank
+/// correlation reorders whole simulations.
+#[test]
+fn one_year_tails_with_dependence() {
+    const N: usize = 2_000;
+    let twins = clrd(&[("wkcomp", "a"), ("wkcomp", "b")]);
+    let sync = SegmentDependence::Synchronized;
+    let method = |tail| {
+        OneYearMethod::ChainLadder(ChainLadder {
+            tail,
+            ..Default::default()
+        })
+    };
+    let (log_linear, constant) = (
+        Tail::LogLinear,
+        Tail::Constant(TailConstant {
+            factor: 1.05,
+            ..Default::default()
+        }),
+    );
+    let odp_with = |tail, tail_std_err, process, dependence| OdpBootstrap {
+        n_sims: N,
+        tail,
+        tail_std_err,
+        ..odp(process, dependence)
+    };
+    let mack_with = |tail, tail_std_err, process, dependence| MackBootstrap {
+        n_sims: N,
+        tail,
+        tail_std_err,
+        ..mack(process, dependence)
+    };
+
+    // An estimated tail follows the shared residuals.
+    let cdrs = [
+        (
+            "ODP",
+            odp_with(log_linear, None, ProcessDistribution::None, sync.clone())
+                .one_year_segments(&twins, "paid", &method(log_linear))
+                .unwrap()
+                .cdr,
+        ),
+        (
+            "Mack",
+            mack_with(log_linear, None, MackProcess::None, sync.clone())
+                .one_year_segments(&twins, "paid", &method(log_linear))
+                .unwrap()
+                .cdr,
+        ),
+    ];
+    for (what, cdr) in &cdrs {
+        let lines = by_line(cdr);
+        assert!(lines[0] == lines[1], "{what}: equal lines");
+        // The oldest origin of each line is closed by its tail step.
+        let oldest = column(cdr, 0);
+        assert!(oldest.iter().any(|&v| v != oldest[0]), "{what}: oldest");
+    }
+
+    // A constant tail's parameter error is each line's own draw.
+    let cdrs = [
+        (
+            "ODP",
+            odp_with(
+                constant,
+                Some(0.02),
+                ProcessDistribution::None,
+                sync.clone(),
+            )
+            .one_year_segments(&twins, "paid", &method(constant))
+            .unwrap()
+            .cdr,
+        ),
+        (
+            "Mack",
+            mack_with(constant, Some(0.02), MackProcess::None, sync)
+                .one_year_segments(&twins, "paid", &method(constant))
+                .unwrap()
+                .cdr,
+        ),
+    ];
+    for (what, cdr) in &cdrs {
+        let lines = by_line(cdr);
+        assert!(
+            lines[0].iter().zip(&lines[1]).any(|(a, b)| a != b),
+            "{what}: the tails are drawn apart"
+        );
+        let r = pearson(&lines[0], &lines[1]);
+        eprintln!("{what}, one-year constant tail: correlation {r:.4}");
+        assert!(r > 0.1 && r < 1.0, "{what}: {r}");
+    }
+
+    // Rank correlation reorders whole simulations, tail steps included.
+    let tri = clrd(&[("comauto", "comauto"), ("wkcomp", "wkcomp")]);
+    let rank = SegmentDependence::RankCorrelation {
+        spearman: vec![1.0, 0.5, 0.5, 1.0],
+    };
+    let pairs = [
+        (
+            "ODP",
+            odp_with(
+                constant,
+                Some(0.02),
+                ProcessDistribution::Gamma,
+                SegmentDependence::Independent,
+            )
+            .one_year_segments(&tri, "paid", &method(constant))
+            .unwrap()
+            .cdr,
+            odp_with(
+                constant,
+                Some(0.02),
+                ProcessDistribution::Gamma,
+                rank.clone(),
+            )
+            .one_year_segments(&tri, "paid", &method(constant))
+            .unwrap()
+            .cdr,
+        ),
+        (
+            "Mack",
+            mack_with(
+                log_linear,
+                None,
+                MackProcess::Gamma,
+                SegmentDependence::Independent,
+            )
+            .one_year_segments(&tri, "paid", &method(log_linear))
+            .unwrap()
+            .cdr,
+            mack_with(log_linear, None, MackProcess::Gamma, rank)
+                .one_year_segments(&tri, "paid", &method(log_linear))
+                .unwrap()
+                .cdr,
+        ),
+    ];
+    for (what, independent, ranked) in &pairs {
+        for j in 0..independent.n_components() {
+            let mut a = column(independent, j);
+            let mut b = column(ranked, j);
+            a.sort_by(f64::total_cmp);
+            b.sort_by(f64::total_cmp);
+            assert_eq!(a, b, "{what}: component {j}");
+        }
+        let lines = by_line(ranked);
+        let got = spearman(&lines[0], &lines[1]);
+        let se = (1.0 - 0.25) / (N as f64).sqrt();
+        eprintln!("{what}, one-year: Spearman {got:.4} vs 0.5");
+        assert!((got - 0.5).abs() < 4.0 * se, "{what}: {got}");
+    }
+}

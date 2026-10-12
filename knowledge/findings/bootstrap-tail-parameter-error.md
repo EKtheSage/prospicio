@@ -28,7 +28,11 @@ sources:
 
 # Finding
 
-Both bootstraps' lifetime views take a tail (decision 9). An estimated
+Both bootstraps' lifetime views take a tail (decision 9), and since
+decision 11 their one-year views too, the tail step valued one development
+period after the oldest age
+([one-year view with a bootstrap tail](/findings/one-year-bootstrap-tail.md));
+the one-year view no longer rejects a bootstrap tail. An estimated
 tail (`Tail::Curve`, `Tail::Bondy`, `Tail::LogLinear`) is refitted on each
 simulation's pseudo factors; a constant one is drawn from the lognormal
 with the factor as mean and the tail's standard error (Mack's, given or
