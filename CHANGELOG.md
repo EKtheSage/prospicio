@@ -15,6 +15,18 @@ under "Unreleased" until then.
   error is drawn as in the lifetime view. R gains `bootstrap_tail`,
   `tail_std_err` and `tail_sigma` on `odp_one_year()` and
   `mack_one_year()` (#176).
+- The Bayesian chain ladder, `prospicio_reserving::bayes::BayesOdp`, behind
+  a new `bayes` feature of `prospicio-reserving` (on in the umbrella's
+  `bayes` feature; the default build and the WASM scope are unchanged):
+  England and Verrall's over-dispersed Poisson model with log-linear
+  origin and development effects, normal priors and the chain ladder's
+  Pearson scale plugged in, sampled with NUTS on a scale whitened at the
+  posterior mode. Reserves are a `PredictiveDistribution` by origin, as
+  the ODP bootstrap's, with Gamma process error or none; the fit carries
+  the posterior draws, R-hat, ESS and divergence warnings, and PSIS-LOO.
+  Checked against the same model in Stan (CmdStan 2.39.0) on GenIns and
+  RAA, and against the chain ladder and the ODP bootstrap on GenIns
+  (`docs/design/reserving-bayes.md`).
 
 ### Pricing
 
