@@ -76,9 +76,14 @@ fn stan_parity() {
                 .parse()
                 .ok()?,
             "mean" | "sd" => {
-                let summary = fit.summary().ok()?;
-                let p = summary.iter().find(|p| p.name == arg)?;
-                if quantity == "mean" { p.mean } else { p.sd }
+                // The draws' moments directly: summary() also computes
+                // R-hat and ESS, slow in a debug build for every case.
+                let j = fit.posterior.names().iter().position(|n| n == arg)?;
+                let draws = fit.posterior.parameter(j).concat();
+                let n = draws.len() as f64;
+                let mean = draws.iter().sum::<f64>() / n;
+                let var = draws.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
+                if quantity == "mean" { mean } else { var.sqrt() }
             }
             "reserve_mean" => reserve().mean(),
             "reserve_sd" => reserve().std_dev(),
