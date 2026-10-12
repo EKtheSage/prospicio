@@ -147,6 +147,11 @@ impl<C: Counting> Counting for ZeroModified<C> {
         self.scale() * self.base.mean()
     }
 
+    /// The base's moment scaled like its probabilities above 0.
+    fn third_moment(&self) -> f64 {
+        self.scale() * self.base.third_moment()
+    }
+
     fn variance(&self) -> f64 {
         let second = self.scale() * (self.base.variance() + self.base.mean().powi(2));
         second - self.mean().powi(2)
@@ -627,6 +632,9 @@ impl Counting for CountDist {
     }
     fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
         self.inner().pgf_complex(z)
+    }
+    fn third_moment(&self) -> f64 {
+        self.inner().third_moment()
     }
     fn cdf(&self, k: u64) -> f64 {
         self.inner().cdf(k)

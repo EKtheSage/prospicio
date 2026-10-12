@@ -67,6 +67,9 @@ impl Counting for AnyCount {
     fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
         self.as_counting().pgf_complex(z)
     }
+    fn third_moment(&self) -> f64 {
+        self.as_counting().third_moment()
+    }
 }
 
 /// What a compound calculation produced and the error it introduced.

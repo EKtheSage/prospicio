@@ -34,6 +34,23 @@ pub trait Counting {
     /// FFT aggregation applies it to the transform of the severity grid.
     fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64);
 
+    /// The third raw moment `E[N^3]` (not central). The default sums
+    /// `k³ P(N = k)` until the probabilities past the mean run out; the
+    /// families with a closed form override it.
+    fn third_moment(&self) -> f64 {
+        let (mut total, mut mass, mut k) = (0.0, 0.0, 0u64);
+        loop {
+            let q = self.pmf(k);
+            let kf = k as f64;
+            total += kf * kf * kf * q;
+            mass += q;
+            if (q == 0.0 || mass >= 1.0) && kf > self.mean() {
+                return total;
+            }
+            k += 1;
+        }
+    }
+
     /// `P(N ≤ k)`.
     fn cdf(&self, k: u64) -> f64 {
         (0..=k).map(|j| self.pmf(j)).sum::<f64>().min(1.0)
@@ -98,6 +115,10 @@ impl<T: Counting + ?Sized> Counting for Box<T> {
         (**self).pgf_complex(z)
     }
 
+    fn third_moment(&self) -> f64 {
+        (**self).third_moment()
+    }
+
     fn cdf(&self, k: u64) -> f64 {
         (**self).cdf(k)
     }
@@ -146,6 +167,12 @@ impl Poisson {
 }
 
 impl Counting for Poisson {
+    /// `λ³ + 3λ² + λ`.
+    fn third_moment(&self) -> f64 {
+        let l = self.lambda;
+        l * (l * l + 3.0 * l + 1.0)
+    }
+
     fn pmf(&self, k: u64) -> f64 {
         if self.lambda == 0.0 {
             return if k == 0 { 1.0 } else { 0.0 };
@@ -251,6 +278,17 @@ impl NegativeBinomial {
 }
 
 impl Counting for NegativeBinomial {
+    /// From the cumulants `rβ`, `rβ(1 + β)` and `rβ(1 + β)(1 + 2β)`.
+    fn third_moment(&self) -> f64 {
+        let (r, b) = (self.r, self.beta);
+        let (m, k2, k3) = (
+            r * b,
+            r * b * (1.0 + b),
+            r * b * (1.0 + b) * (1.0 + 2.0 * b),
+        );
+        k3 + 3.0 * m * k2 + m.powi(3)
+    }
+
     fn pmf(&self, k: u64) -> f64 {
         let (r, beta) = (self.r, self.beta);
         let k = k as f64;
@@ -331,6 +369,17 @@ impl Binomial {
 }
 
 impl Counting for Binomial {
+    /// From the cumulants `np`, `np(1 − p)` and `np(1 − p)(1 − 2p)`.
+    fn third_moment(&self) -> f64 {
+        let (n, p) = (self.n as f64, self.p);
+        let (m, k2, k3) = (
+            n * p,
+            n * p * (1.0 - p),
+            n * p * (1.0 - p) * (1.0 - 2.0 * p),
+        );
+        k3 + 3.0 * m * k2 + m.powi(3)
+    }
+
     fn pmf(&self, k: u64) -> f64 {
         if k > self.n {
             return 0.0;

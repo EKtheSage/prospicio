@@ -401,6 +401,11 @@ impl Distribution for Grid {
 }
 
 impl Severity for Grid {
+    /// `Σ x³ p` over the grid points.
+    fn third_moment(&self) -> Option<f64> {
+        Some(self.points().map(|(x, p)| x * x * x * p).sum())
+    }
+
     fn lev(&self, limit: f64) -> f64 {
         if limit <= 0.0 {
             return limit;

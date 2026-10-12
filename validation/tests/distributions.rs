@@ -701,3 +701,97 @@ fn counts_match_aggregate() {
         Some(n.pmf(k))
     });
 }
+
+/// Third raw moments against mpmath at 30 digits: `3 ∫ x² S(x) dx` for the
+/// severities, an exact sum for the counts, and the compound Poisson–gamma
+/// for the Tweedie (`validation/scripts/mpmath_third_moments.py`).
+#[test]
+fn third_moments_match_mpmath() {
+    use prospicio_prob::{
+        Beta, Binomial, Burr, Counting, Gamma, InverseGamma, InverseGaussian, Loglogistic,
+        NegativeBinomial, Pareto, Poisson, Tweedie, Weibull, evt::Gpd,
+    };
+    let cases = reference("third_moments_mpmath.csv");
+    check(&cases, |c| {
+        let v = |k: &str| c.param("params", k);
+        let has = |k: &str| c.get("params").contains(&format!("{k}="));
+        let sev: Box<dyn Severity> = match c.get("distribution") {
+            "poisson" => return Some(Poisson::new(v("lambda")).ok()?.third_moment()),
+            "negative_binomial" => {
+                return Some(
+                    NegativeBinomial::new(v("r"), v("beta"))
+                        .ok()?
+                        .third_moment(),
+                );
+            }
+            "binomial" => {
+                return Some(Binomial::new(v("n") as u64, v("p")).ok()?.third_moment());
+            }
+            "lognormal" => Box::new(Lognormal::new(v("meanlog"), v("sdlog")).ok()?),
+            "gamma" => Box::new(Gamma::new(v("shape"), v("scale")).ok()?),
+            "weibull" => Box::new(Weibull::new(v("shape"), v("scale")).ok()?),
+            "loglogistic" => Box::new(Loglogistic::new(v("shape"), v("scale")).ok()?),
+            "inverse_gamma" => Box::new(InverseGamma::new(v("shape"), v("scale")).ok()?),
+            "burr" => Box::new(Burr::new(v("alpha"), v("gamma"), v("scale")).ok()?),
+            "beta" => Box::new(Beta::new(v("a"), v("b"), v("scale")).ok()?),
+            "inverse_gaussian" => Box::new(InverseGaussian::new(v("mean"), v("shape")).ok()?),
+            "pareto" if has("truncation") => Box::new(
+                Pareto::new(v("t"), v("alpha"))
+                    .ok()?
+                    .truncated(v("truncation"))
+                    .ok()?,
+            ),
+            "pareto" => Box::new(Pareto::new(v("t"), v("alpha")).ok()?),
+            "gpd" => Box::new(Gpd::new(v("xi"), v("beta")).ok()?),
+            "tweedie" => Box::new(Tweedie::new(v("mean"), v("dispersion"), v("power")).ok()?),
+            _ => return None,
+        };
+        sev.third_moment()
+    });
+}
+
+/// Divergent third moments are infinite, families without a closed form
+/// give none, and the wrappers forward the closed forms: `Box`, `Dist`
+/// through `SeverityDist`, mixtures, zero-modified counts, and the default
+/// pmf sum for counts without one.
+#[test]
+fn third_moments_diverge_combine_and_forward() {
+    use prospicio_prob::count_families::{MixedPoisson, Mixing, ZeroModified};
+    use prospicio_prob::{
+        Burr, Counting, Dist, Gamma, InverseGamma, Loglogistic, Mixture, NegativeBinomial, Pareto,
+        Poisson, SeverityDist, Truncated, evt::Gpd,
+    };
+    let inf = Some(f64::INFINITY);
+    assert_eq!(Pareto::new(100.0, 3.0).unwrap().third_moment(), inf);
+    assert_eq!(Burr::new(1.4, 2.0, 100.0).unwrap().third_moment(), inf);
+    assert_eq!(Loglogistic::new(3.0, 100.0).unwrap().third_moment(), inf);
+    assert_eq!(InverseGamma::new(3.0, 100.0).unwrap().third_moment(), inf);
+    assert_eq!(Gpd::new(0.34, 10.0).unwrap().third_moment(), inf);
+
+    let g = Gamma::new(2.0, 10.0).unwrap();
+    let ln = Lognormal::new(3.0, 0.5).unwrap();
+    let (mg, ml) = (g.third_moment().unwrap(), ln.third_moment().unwrap());
+    // Forwarded through a box and through the `Dist` enum.
+    let boxed: Box<dyn Severity> = Box::new(g);
+    assert_eq!(boxed.third_moment(), Some(mg));
+    let d = SeverityDist::try_from(Dist::from(ln)).unwrap();
+    assert_eq!(d.third_moment(), Some(ml));
+    // A mixture is the weighted sum; a truncation has no closed form.
+    let mix = Mixture::new(vec![(0.25, Box::new(g)), (0.75, Box::new(ln))]).unwrap();
+    assert!((mix.third_moment().unwrap() / (0.25 * mg + 0.75 * ml) - 1.0).abs() < 1e-15);
+    let cut = Truncated::new(SeverityDist::try_from(Dist::from(g)).unwrap(), 0.0, 50.0).unwrap();
+    assert_eq!(cut.third_moment(), None);
+
+    // Counts: a gamma-mixed Poisson is a negative binomial, through the
+    // default pmf sum; a zero-truncated Poisson scales the moment.
+    let (lambda, cv) = (8.0, 0.5);
+    let mixed = MixedPoisson::new(lambda, Mixing::Gamma { cv }, 0.0).unwrap();
+    let nb = NegativeBinomial::new(1.0 / (cv * cv), lambda * cv * cv).unwrap();
+    // The mixed Poisson's pmf is accurate to about 2e-12 relative.
+    assert!((mixed.third_moment() / nb.third_moment() - 1.0).abs() < 1e-10);
+    let p = Poisson::new(2.0).unwrap();
+    let zt = ZeroModified::truncated(p).unwrap();
+    assert!((zt.third_moment() - 22.0 / (1.0 - (-2.0f64).exp())).abs() < 1e-12);
+    let boxed: Box<dyn Counting> = Box::new(p);
+    assert_eq!(boxed.third_moment(), 22.0);
+}

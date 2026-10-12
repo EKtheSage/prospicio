@@ -109,6 +109,11 @@ impl Distribution for Lognormal {
 }
 
 impl Severity for Lognormal {
+    /// `exp(3μ + 9σ²/2)`.
+    fn third_moment(&self) -> Option<f64> {
+        Some((3.0 * self.meanlog + 4.5 * self.sdlog * self.sdlog).exp())
+    }
+
     /// `E[min(X, d)] = e^(mu + s^2/2) Phi((ln d - mu - s^2) / s) + d (1 - Phi((ln d - mu) / s))`.
     fn lev(&self, limit: f64) -> f64 {
         if limit <= 0.0 {
