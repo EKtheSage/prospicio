@@ -73,12 +73,21 @@ Data:
 * new for PR 3: `validation/data/clrd_comauto_353.csv`, Meyers' illustrative
   insurer, group 353 Commercial Auto, 1988-1997 at 12 to 120 months,
   columns `paid`, `incurred` and `premium` (net earned premium), the full
-  10×10 square so that the outcome can be checked. Source: the company-level
-  CAS loss reserve database, as shipped in chainladder-python
-  (`load_sample('clrd')`, `GRCODE == 353`, `LOB == 'comauto'`). The
-  generator checks it against Meyers' Tables 2.1-2.3 before writing it
-  (that they agree is not yet verified). The repo's existing
-  `clrd_*.csv` are industry sums and do not hold it.
+  10×10 square so that the outcome can be checked. Source (decided
+  2026-10-12 by the user): the CAS loss reserve database as rebuilt by
+  [EKtheSage/cas-schedule-p-data-model](https://github.com/EKtheSage/cas-schedule-p-data-model),
+  table `mart_reserving_model_training` from release `20260613_041006`
+  (public; the generator pins the publish id and checks the Parquet's
+  sha256 against the release's `manifest.json`). `company_code = '353'`,
+  `line_of_business = 'commercial_auto'`, accident years 1988-1997, ages
+  1-10 (100 cells); `paid` is `cum_paid_loss`, `incurred` is case incurred
+  `incurred_loss - bulk_loss`, `premium` is `earned_prem_net`, all in USD
+  thousands. The generator asserts the outcomes Meyers prints before
+  writing (age-10 sums: paid 40,000, incurred 40,061; both checked
+  2026-10-12); a cell-by-cell check against Tables 2.1-2.3 is still to do.
+  The data is the NAIC Schedule P extract the CAS publishes for research
+  (Meyers and Shi); the CSV header and the knowledge entry credit it. The
+  repo's existing `clrd_*.csv` are industry sums and do not hold it.
 
 ## Decisions
 
@@ -617,10 +626,13 @@ are settled.
    posterior by the next diagonal (PSIS, with `k̂` as the guard); (c) a
    Laplace update for the ODP model only; (d) MCMC refit per simulation.
    *Recommended: (a) now, then (b)* in its own PR after PR 3, decision 12.
-7. **Meyers' data source.** (a) chainladder-python's company-level
-   `clrd`, checked against Tables 2.1-2.3; (b) R `raw`; (c) typed from the
-   monograph's tables. *Recommended: (a)*: reproducible by script, and the
-   check against the printed tables catches a mismatch.
+7. **Meyers' data source.** Decided 2026-10-12 by the user:
+   `EKtheSage/cas-schedule-p-data-model` (see Data above), which holds the
+   full 10×10 squares that chainladder-python's `clrd` (upper triangles
+   only) lacks. Its company screen for the 200-triangle panel
+   (`cas_schedule_p.screens.select_companies`) is rebuilt from Meyers'
+   appendix criteria, not his own list, so a claim about the panel needs a
+   check against his appendix first; the group 353 checks do not need it.
 8. **Bayesian Bornhuetter–Ferguson.** (a) In scope as PR 4; (b) later.
    *Recommended: (a)*: it is the main thing priors buy an actuary, and it
    reuses PR 1's model.
