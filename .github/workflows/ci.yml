@@ -90,6 +90,38 @@ jobs:
       - name: Run the R tests
         shell: bash
         run: for f in R/prospicio/tests/*.R; do Rscript "$f" || exit 1; done
+      # remotes::install_github(subdir = "R/prospicio") and r-universe build
+      # a tarball of R/prospicio alone, which carries its Rust sources only
+      # because pkgbuild runs bootstrap.R first. Install from such a tarball,
+      # into a library of its own, and run the tests against it. It compiles
+      # the crates again (a few minutes), so a PR runs it only when the
+      # package's build inputs change; the weekly run always does.
+      - name: Check whether the R build inputs changed
+        id: rbuild
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git fetch -q --depth=1 origin "${{ github.base_ref }}" && \
+              git diff --name-only FETCH_HEAD HEAD \
+              | grep -qE '^(R/prospicio/(bootstrap\.R|DESCRIPTION|\.Rbuildignore|src/)|Cargo\.(toml|lock)|crates/[^/]+/Cargo\.toml|\.github/workflows/ci\.yml)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install as install_github does, and run the R tests on it
+        if: steps.rbuild.outputs.run == 'true'
+        run: |
+          # Forward slashes: R reads the paths inside string literals.
+          tmp=$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
+          Rscript -e "install.packages(c('remotes', 'pkgbuild'))"
+          git archive --format=tar.gz --prefix=prospicio/ -o "$tmp/repo.tar.gz" HEAD
+          mkdir "$tmp/rlib"
+          Rscript -e "remotes::install_local('$tmp/repo.tar.gz', subdir = 'R/prospicio', lib = '$tmp/rlib', dependencies = FALSE, upgrade = 'never', force = TRUE)"
+          for f in R/prospicio/tests/*.R; do
+            R_LIBS="$tmp/rlib" Rscript \
+              -e "stopifnot(normalizePath(dirname(find.package('prospicio')), '/') == normalizePath('$tmp/rlib', '/'))" \
+              -e "source('$f')" || exit 1
+          done
 
   # Builds both bindings through `cargo xtask docs`, which regenerates their
   # docs, and fails if a committed generated file (the Python stub, R's man/

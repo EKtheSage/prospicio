@@ -1,11 +1,11 @@
 ---
 type: Reference
 title: Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15
-description: The Python aggregate package (1.0.1) as the reference for distortions, calibration and natural allocation; where the Pricing Insurance Risk and Monograph 15 examples live, and the API and tolerance quirks met reproducing them.
+description: The Python aggregate package (1.0.1) as the reference for distortions, calibration, natural allocation and contract terms; where the Pricing Insurance Risk and Monograph 15 examples live, and the API and tolerance quirks met reproducing them.
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-08T15:00:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-09T12:00:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -19,6 +19,9 @@ sources:
   - id: script
     resource: ../validation/scripts/aggregate_distortions.py
     title: aggregate_distortions.py
+  - id: terms
+    resource: ../validation/scripts/aggregate_contract_terms.py
+    title: aggregate_contract_terms.py
 ---
 
 # Which source for what
@@ -115,3 +118,33 @@ sources:
   14,401 where finer and longer grids converge on 14,494.5;
   `normalize=False` gives 14,495, which is what prospicio's rounding
   (lumping the mass on the last point) gives.
+* **Contract terms** live in `aggregate.contract_terms` (`SwingTerms`,
+  `RetroTerms`, `SlideTerms`, `ProfitCommissionTerms`, `CorridorTerms`,
+  `ReinstatementTerms`), each a map `phi` of one loss quantity; DecL
+  writes them `swing basic b lcm m [min lo] [max hi]`, `slide c1 at lr1
+  and c2 at lr2 ...`, `pc <share> after <allowance>` and `corridor`.[^terms]
+  * Swing and retro are `clip(basic + lcm x, minimum, maximum)`, the
+    minimum defaulting to `basic` and the maximum to no cap. For swing,
+    `x` is the layer's ceded loss at the placed share, and the
+    underwriter (`Underwriter._make_feature_terms`) scales `basic`, the
+    minimum and the maximum by the share but not `lcm`.
+  * A sliding scale's anchors are `(commission, loss_ratio)` pairs,
+    interpolated with flat ends (`numpy.interp`); commissions must not rise
+    with the loss ratio. The profit commission is `share (1 - LR -
+    allowance)+` of premium: it does not deduct the ceding commission, so
+    a contract that does puts it in the allowance.
+  * The loss ratio is ceded loss over a fixed ceded premium (`deposit`,
+    `rol` or `rate`), so slide, pc and corridor need one and refuse swing;
+    a program carries at most one variable feature and none with
+    reinstatements; `cede` (a flat commission) needs a premium and
+    cannot sit with `slide`. `deposit` and `rol` are quoted for 100% of
+    the layer (`share x amount`, `share x rol x limit`).
+  * Its loss-ratio corridor (`corridor <share> po <width> xs <attach>`)
+    acts on the ceded loss ratio after the share; prospicio's
+    `Layer::loss_corridor` acts on the layer loss at 100% after the
+    annual deductible and before the annual limit, so they agree only
+    without an annual limit.
+  * prospicio matches `phi` for swing, retro, slide and pc at 475 losses
+    through every kink to `1e-12` relative.[^terms]
+
+[^terms]: aggregate_contract_terms.py
