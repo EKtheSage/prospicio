@@ -218,24 +218,24 @@ pure_premium_experience <- function(exposure, losses, development = 1, loss_tren
 #' @export
 #' @examples
 #' # Werner and Modlin, ch. 8: +10% and $500.
-#' indicated_change(0.65, 0.065, variable = 0.25, profit = 0.10)
-#' indicated_rate(300, 25, variable = 0.25, profit = 0.10)
-#' permissible_loss_ratio(variable = 0.25, profit = 0.10)
-indicated_change <- function(loss_ratio, fixed_ratio = 0, variable, profit) {
+#' indicated_change(0.65, variable = 0.25, profit = 0.10, fixed_ratio = 0.065)
+#' indicated_rate(300, 0.25, 0.10, fixed_per_exposure = 25)
+#' permissible_loss_ratio(0.25, 0.10)
+indicated_change <- function(loss_ratio, variable, profit, fixed_ratio = 0) {
   rust_result(indication_rust(as.double(variable), as.double(profit), as.double(fixed_ratio),
                               as.double(loss_ratio), 0, 0))[[2]]
 }
 
 #' @rdname indicated_change
 #' @export
-indicated_rate <- function(pure_premium, fixed_per_exposure = 0, variable, profit) {
+indicated_rate <- function(pure_premium, variable, profit, fixed_per_exposure = 0) {
   rust_result(indication_rust(as.double(variable), as.double(profit), 0, 0,
                               as.double(pure_premium), as.double(fixed_per_exposure)))[[3]]
 }
 
 #' @rdname indicated_change
 #' @export
-permissible_loss_ratio <- function(fixed_ratio = 0, variable, profit) {
+permissible_loss_ratio <- function(variable, profit, fixed_ratio = 0) {
   rust_result(indication_rust(as.double(variable), as.double(profit), as.double(fixed_ratio),
                               0, 0, 0))[[1]]
 }

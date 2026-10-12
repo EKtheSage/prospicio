@@ -6,20 +6,20 @@
 \alias{permissible_loss_ratio}
 \title{The overall rate indication}
 \usage{
-indicated_change(loss_ratio, fixed_ratio = 0, variable, profit)
+indicated_change(loss_ratio, variable, profit, fixed_ratio = 0)
 
-indicated_rate(pure_premium, fixed_per_exposure = 0, variable, profit)
+indicated_rate(pure_premium, variable, profit, fixed_per_exposure = 0)
 
-permissible_loss_ratio(fixed_ratio = 0, variable, profit)
+permissible_loss_ratio(variable, profit, fixed_ratio = 0)
 }
 \arguments{
 \item{loss_ratio}{The projected loss and LAE ratio at current rates.}
 
-\item{fixed_ratio}{Fixed expenses as a ratio to premium.}
-
 \item{variable}{The variable expense provision.}
 
 \item{profit}{The target underwriting profit provision.}
+
+\item{fixed_ratio}{Fixed expenses as a ratio to premium.}
 
 \item{pure_premium}{The projected pure premium, with LAE.}
 
@@ -39,7 +39,7 @@ per exposure, such as net reinsurance, add to either.
 }
 \examples{
 # Werner and Modlin, ch. 8: +10\% and $500.
-indicated_change(0.65, 0.065, variable = 0.25, profit = 0.10)
-indicated_rate(300, 25, variable = 0.25, profit = 0.10)
-permissible_loss_ratio(variable = 0.25, profit = 0.10)
+indicated_change(0.65, variable = 0.25, profit = 0.10, fixed_ratio = 0.065)
+indicated_rate(300, 0.25, 0.10, fixed_per_exposure = 25)
+permissible_loss_ratio(0.25, 0.10)
 }
