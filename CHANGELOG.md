@@ -35,7 +35,7 @@ under "Unreleased" until then.
   each view of a tower on the grid priced under a distortion,
   `reins_price_df` (`TowerGrids::price`). Python
   `prospicio.reinsurance.occurrence_layer_statistics`,
-  `TowerGrids.price`; R `occurrence_layer_statistics()`, `tower_price()`.
+  `TowerGrids.price`; R `occurrence_layer_statistics()`, `tower_price()` (#187).
 
 ### Reserving
 
