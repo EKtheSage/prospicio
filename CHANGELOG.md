@@ -14,7 +14,7 @@ under "Unreleased" until then.
   occurrence_pml}`, and each simulated year's largest loss,
   `EventSet::maxima()`, matching `aggregate` 1.0.1's `oep` on Poisson
   books. Python `prospicio.aggregate`; R `occurrence_exceedance()`,
-  `occurrence_pml()`, `annual_maxima()`.
+  `occurrence_pml()`, `annual_maxima()` (#182).
 
 ### Reserving
 
