@@ -15,6 +15,7 @@ pub mod fft;
 pub mod grid_reinsurance;
 pub mod monte_carlo;
 pub mod panjer;
+pub mod pml;
 pub mod reinsurance;
 pub mod serial;
 pub mod sizing;
@@ -25,6 +26,7 @@ pub use fft::fft;
 pub use grid_reinsurance::TowerGrids;
 pub use monte_carlo::{EventSet, simulate_events};
 pub use panjer::panjer;
+pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{
     Basis, Commission, Corridor, Layer, LossSensitivePremium, ProfitCommission, Tower,
 };
