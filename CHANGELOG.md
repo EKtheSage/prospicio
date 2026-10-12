@@ -7,6 +7,12 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+### Distributions and probability
+
+- Third raw moments: `Severity::third_moment()` (`None` where a family has
+  no closed form, infinite where the moment diverges) and
+  `Counting::third_moment()`, for compound moments to third order.
+
 ### Aggregate and reinsurance
 
 - The occurrence exceedance (OEP) curve and occurrence PMLs for any claim

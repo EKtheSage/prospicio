@@ -66,6 +66,7 @@ what it is aiming for by v1.0.
     `Sampled`), plus counts, the Pareto family, the inverse gamma,
     inverse Gaussian, Burr and scaled beta, mixtures, truncation and
     splicing, `Custom` and the `Dist` enum with JSON save and load.
+    Third raw moments on `Severity` and `Counting`.
   - `PredictiveDistribution`: join, reorder, blend, Arrow IPC; provenance
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
