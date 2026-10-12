@@ -61,6 +61,15 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   moments" below). Python `prospicio.aggregate.compound_moments`, R
   `compound_moments()`, `moment_approximation()`, `approximation_cdf()`,
   `approximation_quantile()`.
+- `prospicio_aggregate::layer_statistics::{occurrence_layer_statistics,
+  LayerStatistics}`: a per-occurrence layer's chances of attaching,
+  detaching and a loss in the year, its loss on line, and the moments of
+  the excess count, the layer severity given a loss and the annual ceded
+  loss; `TowerGrids::price` prices the gross, each layer's cession and the
+  net on their own under a distortion (`TowerPrice`, `ViewPrice`) ("Layer
+  statistics and prices by view" below). Python
+  `prospicio.reinsurance.occurrence_layer_statistics` and
+  `TowerGrids.price`, R `occurrence_layer_statistics()`, `tower_price()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -440,6 +449,39 @@ error for a shifted fit without positive skewness, and for a gamma or
 lognormal fit without a positive mean. `Aggregate.approximate` fits the
 moments estimated from its grid; prospicio fits the exact ones.
 
+### Layer statistics and prices by view
+
+`aggregate`'s `reins_stats_df` and `reins_price_df`, built from the pieces
+above. For `share × min(max(X − a, 0), l)` on the severity grid:
+
+- `pr_attach = P(X > a)` (exclusive) and `pr_detach = P(X ≥ a + l)`
+  (inclusive), as `aggregate`, compared within `1e-9` of a step so a
+  boundary on a point is not lost to rounding; `pr_loss` is the occurrence
+  exceedance at `a`, `1 − G_N(F(a))` ("Occurrence PML");
+- the excess count is the count thinned with `p = pr_attach`, by its
+  cumulants: `κ₁ = p E[N]`, `κ₂ = p² Var[N] + p(1 − p) E[N]`,
+  `κ₃ = p³ κ₃[N] + 3p²(1 − p) Var[N] + p(1 − p)(1 − 2p) E[N]`;
+- the layer severity given a loss is the full layer's raw moments on the
+  grid over `p` (`aggregate`'s conditional basis, so the excess count times
+  it gives the annual mean); the annual ceded loss is `compound_moments`
+  of the count and the full layer's grid; the loss on line is its mean
+  over `share × l` (0 for an unlimited layer).
+
+The share scales the `k`-th cumulant by `share^k` exactly. `aggregate`
+instead maps the shared losses onto the grid, which splits a ceded 0.5
+between 0 and 1: its `pr_loss` for a 50% layer is 0.4% low and its shape
+smeared. The annual moments are exact for the grid; `aggregate` reports
+the moments of its FFT density.
+
+`TowerGrids::price` prices each view on its own: `L` is the grid's mean,
+`P` its distorted expectation (`Grid::distortion`), `M = P − L`,
+`LR = L / P`. A concave distortion's prices are subadditive, so then the
+ceded and net premiums together are at least the gross. A stage with several layers has a price
+per layer; `aggregate` also prices their total cession, which needs a
+total-ceded grid (a small item below). `reins_price_df`'s capital columns
+(`Q`, `a`, `ROE`) come with an asset level; `pricing.rs`'s pentagon gives
+them for any grid.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -503,6 +545,21 @@ are cross-checked against `aggregate`'s analytic statistics to `1e-8`:
 (numerical severity moments) and 2.5e-10 off the skewness at a Poisson mean
 of 1,000 (raw moments converted).
 
+Layer statistics and prices by view are checked against `aggregate`
+1.0.1's `reins_stats_df`, `reins_price_df` (proportional hazard, ρ = 0.7)
+and `reins_density_df` (`validation/scripts/aggregate_reinsurance.py`,
+131 values) on three books on a step of 1 with `2^14` points: a Poisson
+with one occurrence layer, the same with an aggregate stop-loss inuring
+(an inuring tower), and a gamma-mixed Poisson with a gamma severity, a 50%
+layer and a second layer. The grid towers match `aggregate`'s densities
+point by point at `1e-13` absolute; statistics read from the severity grid
+match at `1e-12`; the annual moments, which `aggregate` takes from its FFT
+density, at `1e-9` (mean), `1e-8` (cv) and `5e-7` (skewness, observed
+1.3e-7 at a skew of 18); premiums at `2e-8`, because the distortion raises
+FFT round-off of `1e-16` in the far tail to the power 0.7 (`aggregate`'s
+own two ways of forming the survival differ by as much). The 50% layer is
+compared on its means and grid probabilities only (above).
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
@@ -510,18 +567,17 @@ of 1,000 (raw moments converted).
    item, now done):
    1. (Done: compound moments to third order and the moment
       approximations.)
-   2. Reinsurance statistics by view (gross, each layer, ceded, net:
-      frequency, severity and aggregate moments, the probabilities of
-      attaching, detaching and loss, loss on line) and pricing a cession
-      under a distortion (`reins_stats_df`, `reins_price_df`). It also
-      gives the first check of the grid towers against `aggregate` itself.
+   2. (Done: per-occurrence layer statistics and pricing each view under
+      a distortion; the grid towers checked against `aggregate` itself.)
    3. A senior and junior priority ladder for capital (`priority_epd_df`,
       `priority_kappa`); prospicio has equal priority only.
    4. Eventual ruin by Pollaczeck–Khinchine (`pollaczeck_khinchine`,
       `eventual_ruin`).
    5. Layer loss picks (`Aggregate.picks`).
    6. `Bounds` and `PricingBounds`, the rest of the 2022 pricing bounds.
-   Small items to fold into these: `tvar_threshold`, a stand-alone price on
+   Small items to fold into these: a total-ceded grid for a stage with
+   several layers (its price and statistics, `reins_stats_df`'s `Ceded`
+   column), statistics of aggregate covers, `tvar_threshold`, a stand-alone price on
    a grid portfolio, comonotonic allocation, named fixed, Bernoulli and
    geometric counts, and a reinstatement premium check against `aggregate`.
    Parked as large: the P&L ledger (`pnl`, which needs signed grids),

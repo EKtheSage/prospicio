@@ -136,6 +136,8 @@ premium_based_expenses_rust <- function(ratio, fixed_share) .Call(wrap__premium_
 
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
+occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
+
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
 
 esscher_rust <- function(draws, h) .Call(wrap__esscher_rust, draws, h)

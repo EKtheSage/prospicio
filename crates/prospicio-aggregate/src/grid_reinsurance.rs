@@ -8,7 +8,7 @@
 //! compounds it ([`fft`]), so the results carry no sampling error.
 
 use prospicio_core::{Error, Result};
-use prospicio_prob::{Counting, Grid};
+use prospicio_prob::{Counting, Distortion, Distribution, Grid};
 
 use crate::compound::CompoundReport;
 use crate::fft::fft;
@@ -47,6 +47,59 @@ pub struct TowerGrids {
     /// between their neighbours: means stay exact, the shape is smeared
     /// by up to one step.
     pub on_points: bool,
+}
+
+/// The price of one view of a tower under a distortion: expected loss `L`,
+/// premium `P = ρ_g(X)`, margin `M = P − L` and loss ratio `L / P`, as the
+/// Python package `aggregate`'s `reins_price_df`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewPrice {
+    pub loss: f64,
+    pub premium: f64,
+    pub margin: f64,
+    pub loss_ratio: f64,
+}
+
+impl ViewPrice {
+    fn of(grid: &Grid, distortion: &Distortion) -> Self {
+        let loss = grid.mean();
+        let premium = grid.distortion(distortion);
+        Self {
+            loss,
+            premium,
+            margin: premium - loss,
+            loss_ratio: loss / premium,
+        }
+    }
+}
+
+/// [`ViewPrice`] of the gross, each layer's ceded and the net annual loss;
+/// see [`TowerGrids::price`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct TowerPrice {
+    pub gross: ViewPrice,
+    /// One per layer, in tower order.
+    pub ceded: Vec<ViewPrice>,
+    /// `None` when the tower has no net grid.
+    pub net: Option<ViewPrice>,
+}
+
+impl TowerGrids {
+    /// Each view priced on its own by the distortion `distortion`: the
+    /// stand-alone price of the gross, of every cession and of the
+    /// retention. A concave distortion's prices are subadditive, so then the
+    /// ceded and net premiums together are at least the gross premium.
+    pub fn price(&self, distortion: &Distortion) -> TowerPrice {
+        TowerPrice {
+            gross: ViewPrice::of(&self.gross, distortion),
+            ceded: self
+                .ceded
+                .iter()
+                .map(|g| ViewPrice::of(g, distortion))
+                .collect(),
+            net: self.net.as_ref().map(|g| ViewPrice::of(g, distortion)),
+        }
+    }
 }
 
 impl Tower {
