@@ -1,8 +1,12 @@
-# Builds crates/prospicio-r from the surrounding workspace. Installing from a
-# repository checkout only; a CRAN tarball will vendor the crates instead
-# (docs/architecture.md, Language boundary).
-WORKSPACE = $(CURDIR)/../../..
-LIBDIR = $(WORKSPACE)/target/release
+# Builds the Rust library prospicio-r. A source tarball made by pkgbuild
+# carries it in src/rust/ (bootstrap.R); `R CMD INSTALL R/prospicio` in a
+# repository checkout builds it from the surrounding workspace instead.
+ifneq ($(wildcard $(CURDIR)/rust/Cargo.toml),)
+CARGO_WORKSPACE = $(CURDIR)/rust
+else
+CARGO_WORKSPACE = $(CURDIR)/../../..
+endif
+LIBDIR = $(CARGO_WORKSPACE)/target/release
 STATLIB = $(LIBDIR)/libprospicio_r.a
 PKG_LIBS = -L$(LIBDIR) -lprospicio_r
 
@@ -12,4 +16,4 @@ $(SHLIB): $(STATLIB)
 
 .PHONY: $(STATLIB)
 $(STATLIB):
-	cargo build --lib --release --manifest-path=$(WORKSPACE)/crates/prospicio-r/Cargo.toml
+	cargo build --lib --release --manifest-path=$(CARGO_WORKSPACE)/crates/prospicio-r/Cargo.toml

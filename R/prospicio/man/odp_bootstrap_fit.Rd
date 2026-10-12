@@ -44,7 +44,7 @@ which gives its parameter error; a constant one is fixed unless
 \code{tail_std_err} is given. The step from the oldest age to ultimate is
 one more future increment, with mean the pseudo value at the oldest
 age times the tail factor less 1 and the same process error.
-\code{\link[=odp_one_year]{odp_one_year()}} takes its tail from the refitted method instead. R's
+\code{\link[=odp_one_year]{odp_one_year()}} takes it with \code{bootstrap_tail = TRUE}. R's
 rule (\code{\link[=tail_log_linear]{tail_log_linear()}}) refitted on the ODP's pseudo factors is
 often exactly 1 (5.7\% of simulations on RAA) and on average high
 (RAA's oldest origin's mean reserve 78\% above the plug-in); a constant

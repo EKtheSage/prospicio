@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 
 mod aggregate;
 mod counts;
+mod credibility;
 mod distributions;
 mod models;
 mod natural;
@@ -37,6 +38,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::counts::PyCount;
+    #[pymodule_export]
+    use super::credibility::{PyBuhlmannStraubFit, PyLimitedFluctuation, buhlmann_straub};
     #[pymodule_export]
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
@@ -70,7 +73,7 @@ mod prospicio_native {
         match_tower, pareto_extrapolation, price, price_portfolio, severity_exposure_curve,
     };
     #[pymodule_export]
-    use super::reinsurance::{PyLayer, PyTower, PyTowerGrids};
+    use super::reinsurance::{PyLayer, PyLossSensitivePremium, PyTower, PyTowerGrids};
     #[pymodule_export]
     use super::reserving::{
         PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder,

@@ -53,7 +53,7 @@ Verrall and Wuthrich's Appendix 1 is written.}
 \item{tail}{Development past the oldest age, as in \code{\link[=mack]{mack()}}: a number (a
 constant factor), \code{\link[=tail_constant]{tail_constant()}}, \code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or
 \code{\link[=tail_log_linear]{tail_log_linear()}}; 1 (no tail) by default. \code{\link[=mack_one_year]{mack_one_year()}} takes
-its tail from the refitted method instead.}
+it with \code{bootstrap_tail = TRUE}.}
 
 \item{tail_sigma}{The tail's sigma (R's \code{tail.sigma}), the process error
 of the step to ultimate, or \code{NULL} to extrapolate it. Unused when the

@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10; decision 9 on branch `claude/bootstrap-tail-error`) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -686,7 +686,7 @@ impl MackBootstrap {
 }
 
 pub struct MackBootstrapSegment {
-    pub mack: MackFit,         // the model on the observed triangle (no tail here; decision 9)
+    pub mack: MackFit,         // the model on the observed triangle, with the bootstrap's tail
     pub residuals: Vec<f64>,   // link-ratio residuals, origin x development
 }
 
@@ -765,11 +765,11 @@ with either (GenIns's pool mean is small). So the default centres, and
 `centre_residuals: false` keeps EVW's Appendix 1 as written, for
 comparison.
 
-The model has no tail. Mack's tail is one more step from the oldest age to
-ultimate with its own sigma and standard error; it has no calendar year,
-so no coming year holds it (R's `CDR` rejects a tail for the same reason).
-As with the ODP, development past the oldest age moves only through the
-refitted method's tail, and an origin at the last age gets no new cell.
+*Superseded by decision 11 when the bootstrap has a tail.* Without one,
+the model has no tail. Mack's tail is one more step from the oldest age to
+ultimate with its own sigma and standard error; R's `CDR` rejects a tail.
+As with the ODP, development past the oldest age then moves only through
+the refitted method's tail, and an origin at the last age gets no new cell.
 Mack's model needs no negative cumulative value and, like the ODP, every
 origin observed from the first age to its latest.
 
@@ -1104,11 +1104,12 @@ for Mack) and before any process draw:
    and the call returns `Error::TailRefit` with the number that failed and
    the failure whose message sorts first, as the one-year view's
    `Error::OneYear` does, so the error does not depend on the threads.
-4. **The one-year view is unchanged.** `one_year` and `one_year_segments`
-   of both bootstraps reject a bootstrap tail (`Error::Bootstrap`): as
-   decision 8 says, Mack's tail is a step without a calendar year, so no
-   coming year holds it (R's `CDR` rejects a tail too), and development
-   past the oldest age moves only through the refitted method's own tail.
+4. **The one-year view** (*superseded by decision 11*). As first built,
+   `one_year` and `one_year_segments` of both bootstraps rejected a
+   bootstrap tail (`Error::Bootstrap`), the tail being a step without a
+   calendar year. Decision 11 gives it one and takes it in the coming
+   year.
+
 5. **What the fits report.** `OdpBootstrapFit::chain_ladder` and
    `MackBootstrapFit::mack` are fitted with the bootstrap's tail (ultimate,
    reserve, and Mack's standard errors with the tail), so `to_long` and
@@ -1188,8 +1189,9 @@ simulations, against `reserving_tails_r.csv`, R ChainLadder 0.2.21's
   variance `(T - 1)^2 v sum|m| + phi (T - 1) E[P]` worked out from its
   fitted increments `m` and pseudo latest value `P`; a curve fitted to two
   factors barely above 1 fails in some simulations and is reported with
-  the count, under both models; a standard error with an estimated tail,
-  a negative or NaN one, and a tail in the one-year view are errors.
+  the count, under both models; a standard error with an estimated tail
+  and a negative or NaN one are errors, and so, in the one-year view, is
+  a bootstrap tail that is not the method's (decision 11).
 
 The ODP has no reference with a tail (R's `BootChainLadder` has none);
 its checks are the unit tests above. Measured once (20,000 simulations,
@@ -1432,3 +1434,134 @@ correlation estimated from the data other than through the synchronized
 residuals, dependent process error, and synchronizing segments of
 different shapes (it would need positions matched by calendar period
 rather than by origin and age).
+
+### 11. The one-year view with a bootstrap tail
+
+Decisions 8 and 9 left the bootstraps' tail out of the one-year view: Mack
+(1999) treats the tail as a factor with its own sigma and standard error
+but gives it no calendar time, and R ChainLadder 0.2.21's
+`CDR(MackChainLadder(tri, tail = 1.05))` stops with "tail factors are
+currently not supported" (re-checked 2026-10-11). chainladder-python has no
+CDR. So there is no reference implementation, and these are modelling
+choices.
+
+1. **The tail is one more development period.** The step from the oldest
+   age to ultimate is valued one development period (the difference of the
+   last two ages) after the oldest age, and falls in the coming year when
+   that valuation is at most `V + 12` months. With an annual grain only
+   the origins already at the oldest age take it; with a quarterly grain
+   also those that reach the oldest age within nine months. This keeps
+   decision 8's property that an origin whose remaining development falls
+   in the year has its lifetime run-off as its one-year view. Rejected:
+   keeping the tail without a calendar year (the bootstrap tail would add
+   nothing to the one-year view), and spreading it over several years (no
+   data calibrates a spread). The choice is conservative for an origin at
+   the oldest age if the true tail runs off over several years: its whole
+   tail uncertainty is in the coming year. A lagging origin whose tail
+   valuation is before `V` (it stopped at the oldest age long ago) takes
+   the step too: none of it is observed, and it is realised by the end of
+   the year. The step is the whole tail, whatever its shape: a curve
+   (`TailCurve`) or a decayed constant (`decay < 1`) selects one factor
+   per period for a year past the oldest age and a remainder beyond, and
+   the step takes their product, all of it within one development period
+   (three months on a quarterly grain). So such a tail is collapsed into
+   one step, and the one-year standard deviation of an origin that takes
+   it is its lifetime tail risk, an upper bound on its one-year risk when
+   the tail's own factors put part of the development in later years.
+   Not built: taking only the factors valued in the year and leaving the
+   origin open at the next age, re-reserved with the method's tail.
+2. **A closed origin.** An origin that takes the tail step is closed at the
+   end of the year: its closing ultimate is its simulated ultimate, not the
+   refitted method's, and its CDR is the opening ultimate less it. The step
+   is drawn as in the lifetime view (decision 9): Mack's from the value at
+   the oldest age `C` (observed for an origin already there), mean `T* C`,
+   variance `tail_sigma^2 |C|^(2 - alpha)`; the ODP's as one more increment,
+   mean the pseudo value at the oldest age times `T* - 1`, with the
+   bootstrap's process error. For the expected loss ratio method, whose
+   ultimate ignores the losses, a closed origin's CDR is then its opening
+   ultimate less the simulated ultimate.
+3. **The tail's parameter error.** Each simulation draws the tail exactly
+   as the lifetime view does (`TailDraw::draw`), after the pseudo factors
+   and before any process draw: an estimated tail is refitted on the pseudo
+   factors, a constant one is fixed or drawn from its lognormal, and an
+   early attachment moves its factors within the triangle by the pseudo
+   factors' deviations. The selected factors drive the year's cells. An
+   origin that stays open keeps the method's own tail at the end of the
+   year (a constant one fixed, an estimated one refitted on the closing
+   triangle); nothing updates it from the closed origins' tail steps. So a
+   constant tail's parameter error enters the one-year view only through
+   the closed origins, as in Merz and Wüthrich only estimates revised in
+   the year contribute.
+4. **The method's tail must be the bootstrap's.** With a bootstrap tail
+   that is not none, `method.tail()` must equal it (`Tail: PartialEq`, so
+   the attachment age and decay count), or the call returns
+   `Error::Bootstrap("the bootstrap's tail must be the re-reserving
+   method's tail")`. The bootstrap's tail models the true development and
+   the method's is the actuary's estimate of it: a mismatch would move the
+   closed origins' mean CDR for a reason the user did not choose, and
+   overriding the method would silently change what the user specified. A
+   bootstrap without a tail and a method with one is the previous
+   behaviour, unchanged.
+5. **Random stream and failures.** Each simulation draws the pseudo
+   factors, then the tail, then the year's cells origin by origin, then the
+   tail steps in origin order, after all the cells. Without a bootstrap
+   tail every draw is as before (the seed-pinned one-year tests are
+   unchanged), and with a fixed constant tail attached at the oldest age
+   the open origins' cells are the untailed ones, so their CDR is the tail
+   factor times the untailed CDR, simulation by simulation. Drawn with a
+   standard error, the lognormal draw shifts the random stream and the
+   relation holds in distribution only; attached earlier, the tail's
+   factors replace estimated ones inside the triangle and move with the
+   pseudo factors, and it does not hold. A tail that cannot be refitted on a
+   simulation's pseudo factors fails that simulation like a failed refit:
+   `Error::OneYear { failed, n_sims, source: Error::Tail(..) }`, the source
+   inside `Error::InSegment` with segments.
+6. **Dependence.** Synchronized segments share residual positions only:
+   the refit follows each segment's own pseudo factors (two identical lines
+   without process error keep equal CDRs, tail steps included), and a
+   constant tail's lognormal draw is each segment's own. Rank correlation
+   reorders whole CDR rows, as before.
+
+What the fits report: the bootstrap model in `OneYearSegment::bootstrap`
+is now fitted with the bootstrap's tail (its chain ladder's ultimate and,
+for Mack, its standard errors include it); the provenance records the
+tail's settings only when there is a tail.
+
+Checks (`validation/tests/reserving_one_year_tail.rs`, 20,000 simulations
+per run, both rules for the last sigma, RAA, GenIns and ABC, five Monte
+Carlo standard errors of the simulated standard deviation):
+
+* **A constant tail `T = 1.05`** with Mack's process, its sigma and
+  standard error extrapolated as R does: every open origin's standard
+  deviation is `T` times R's `CDR(1)S.E.`; the oldest origin's is
+  `sqrt(C^2 se^2 + tail_sigma^2 C)`, which is R's `Mack.S.E` of that origin
+  under `MackChainLadder(tri, tail = 1.05)`, with mean zero; and the
+  total's is `sqrt(T^2 total^2 + var_oldest)`, the oldest origin's CDR
+  being independent of the others. All within 2.2 standard errors.
+* **The refitted log-linear tail:** the Gamma run less the run without
+  process error, on one seed, isolates the oldest origin's tail-step
+  process error, whose standard deviation is R's `tail_sigma sqrt(C)`; and
+  the oldest origin's one-year standard deviation is its lifetime one on
+  another seed. The mean is not asserted: the refit is convex in the
+  factors (decision 9).
+* Unit tests: the tail step's timing (annual, quarterly development of
+  annual origins, quarterly origins); an exact pattern with a bootstrap
+  tail has a zero CDR; the per-simulation scaling of the open origins for
+  both models; the ODP oldest origin's closing value equals the observed
+  value plus its pseudo value at the oldest age times the tail less 1,
+  rebuilt from the stream; the oldest origin's one-year and lifetime
+  standard deviations agree; the mismatch error, attachment age included;
+  a failed refit counted, and named by segment.
+* `validation/tests/reserving_dependence.rs`: synchronized log-linear
+  twins give equal CDRs, a constant tail's draws differ by line, and rank
+  correlation keeps each component's draws and reaches the target
+  Spearman.
+
+Bindings: Python needs no new parameter (`OdpBootstrap(tail=...)` and
+`MackBootstrap(tail=...)` with `one_year(..., ChainLadder(tail=...))`);
+the docstrings state the rule. R's `odp_one_year()` and `mack_one_year()`
+use `tail` for the method's tail, so they gain `bootstrap_tail = FALSE`
+(when `TRUE` the bootstrap takes the same tail, which satisfies item 4 by
+construction), `tail_std_err = NULL`, and for Mack `tail_sigma = NULL`;
+either of these given without `bootstrap_tail = TRUE` is an error, since
+the bootstrap would have no tail to apply it to.

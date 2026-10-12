@@ -717,6 +717,59 @@ class BornhuetterFerguson:
         """
 
 @final
+class BuhlmannStraubFit:
+    """
+    A fitted Bühlmann–Straub model, from ``buhlmann_straub``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def between_variance(self, /) -> float:
+        """
+        The between-group variance ``a`` (may be negative; the factors are
+        then 0).
+        """
+    @property
+    def collective_mean(self, /) -> float:
+        """
+        The credibility-weighted collective mean.
+        """
+    @property
+    def credibility(self, /) -> list[float]:
+        """
+        Each group's credibility factor.
+        """
+    @property
+    def group_means(self, /) -> list[float]:
+        """
+        Each group's weighted mean.
+        """
+    @property
+    def group_weights(self, /) -> list[float]:
+        """
+        Each group's total weight.
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        Iterations of the iterative estimator (0 for the unbiased one).
+        """
+    @property
+    def k(self, /) -> float:
+        """
+        Bühlmann's ``k = s2 / a`` (``inf`` when ``a <= 0``).
+        """
+    @property
+    def premiums(self, /) -> list[float]:
+        """
+        Each group's credibility premium.
+        """
+    @property
+    def within_variance(self, /) -> float:
+        """
+        The within-group variance ``s2``.
+        """
+
+@final
 class Burr:
     """
     Burr (type XII) distribution with tail shape ``alpha``, power ``gamma``
@@ -5359,8 +5412,10 @@ class Layer:
         ``limit * (reinstatements + 1)``; cannot be combined with
         ``aggregate_limit``.
     premium : float, default 0.0
-        Upfront premium for the placed share; used only by
-        ``reinstatement_rates``.
+        Upfront premium for the placed share: the base of paid
+        reinstatements, ceding and profit commissions and a sliding scale's
+        loss ratio. ``with_rate_on_line``, ``with_premium_rate`` and
+        ``with_deposit_premium`` set it from a quote.
     reinstatement_rates : list of float, optional
         Paid reinstatements, one rate per reinstatement as a fraction of
         ``premium`` (1.0 is 100%), pro rata as to amount. Sets
@@ -5461,6 +5516,24 @@ class Layer:
         float
         """
     @property
+    def ceding_commission(self, /) -> float |None:
+        """
+        The flat ceding commission rate, or ``None`` (also when the
+        commission slides).
+        """
+    def ceding_commission_for(self, /, ceded: float) -> float:
+        """
+        The year's ceding commission (flat or sliding) given its ceded loss.
+        
+        Parameters
+        ----------
+        ceded : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
     def limit(self, /) -> float:
         """
         Per-occurrence limit.
@@ -5485,10 +5558,41 @@ class Layer:
         """
         Upfront premium for the placed share.
         """
+    def premium_for(self, /, ceded: float) -> float:
+        """
+        The year's premium given its ceded loss: the swing-rated premium,
+        or else the fixed ``premium``.
+        
+        Parameters
+        ----------
+        ceded : float
+            The layer's ceded loss for the year, at the placed share.
+        
+        Returns
+        -------
+        float
+        """
     @property
     def pro_rata_time(self, /) -> bool:
         """
         Whether paid reinstatements are pro rata as to time.
+        """
+    @property
+    def profit_commission(self, /) -> tuple[float, float] |None:
+        """
+        The profit commission as ``(share, allowance)``, or ``None``.
+        """
+    def profit_commission_for(self, /, ceded: float) -> float:
+        """
+        The year's profit commission given its ceded loss.
+        
+        Parameters
+        ----------
+        ceded : float
+        
+        Returns
+        -------
+        float
         """
     @staticmethod
     def quota_share(name: str, cession: float) -> Layer:
@@ -5544,6 +5648,12 @@ class Layer:
     def share(self, /) -> float:
         """
         Placed share.
+        """
+    @property
+    def sliding_scale(self, /) -> list[tuple[float, float]] |None:
+        """
+        The sliding scale's ``(commission, loss_ratio)`` anchors in
+        increasing loss ratio, or ``None``.
         """
     @staticmethod
     def stop_loss(name: str, limit: float, retention: float) -> Layer:
@@ -5601,6 +5711,46 @@ class Layer:
         >>> round(s.ceded_with_sums_insured([2e6, 2e6], [5e6, 20e6]))
         2500000
         """
+    @property
+    def swing_rating(self, /) -> tuple[float, float, float, float] |None:
+        """
+        The swing rating at 100% as ``(basic, lcm, minimum, maximum)``, or
+        ``None``.
+        """
+    def with_ceding_commission(self, /, rate: float) -> Layer:
+        """
+        The same layer with a flat ceding commission: ``rate`` of the
+        year's premium (the swing-rated premium, if any) is paid back to
+        the cedant. Reinstatement premiums carry none.
+        
+        Parameters
+        ----------
+        rate : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        Layer
+        """
+    def with_deposit_premium(self, /, amount: float) -> Layer:
+        """
+        The same layer with its premium set from a deposit quoted for 100%
+        of the layer: ``premium = share * amount``.
+        
+        Parameters
+        ----------
+        amount : float
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("5x5", 5e6, 5e6, share=0.4).with_deposit_premium(1e6).premium
+        400000.0
+        """
     def with_loss_corridor(self, /, lower: float, upper: float, retained: float = 1.0) -> Layer:
         """
         The same layer with a loss corridor.
@@ -5633,6 +5783,215 @@ class Layer:
         >>> qs = Layer.quota_share("QS", 0.3).with_loss_corridor(70.0, 90.0)
         >>> round(qs.ceded([50.0, 30.0]), 12), round(qs.ceded([120.0]), 12)
         (21.0, 30.0)
+        """
+    def with_premium_rate(self, /, rate: float, subject_premium: float) -> Layer:
+        """
+        The same layer with its premium set as a rate on the subject
+        premium: ``premium = share * rate * subject_premium``. A quota
+        share's ceded premium is ``with_premium_rate(1.0, subject_premium)``.
+        
+        Parameters
+        ----------
+        rate : float
+        subject_premium : float
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer.quota_share("QS", 0.3).with_premium_rate(1.0, 1000.0).premium
+        300.0
+        """
+    def with_profit_commission(self, /, share: float, allowance: float = 0.0) -> Layer:
+        """
+        The same layer with a profit commission: ``share`` of ``max(premium
+        * (1 - allowance) - ceded, 0)``, as ``aggregate``'s ``pc <share>
+        after <allowance>``.
+        
+        The allowance is the reinsurer's expenses and margin as a fraction
+        of premium, including any ceding commission the contract deducts
+        before profit. Set the premium first; it cannot be combined with
+        swing rating or paid reinstatements.
+        
+        Parameters
+        ----------
+        share : float
+            In ``[0, 1]``.
+        allowance : float, default 0.0
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+        ...       .with_profit_commission(0.25, 0.1))
+        >>> round(qs.profit_commission_for(60.0), 12)
+        7.5
+        """
+    def with_rate_on_line(self, /, rol: float) -> Layer:
+        """
+        The same layer with its premium set from a rate on line:
+        ``premium = share * rol * limit``. Needs a finite limit.
+        
+        Parameters
+        ----------
+        rol : float
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("10x10", 10e6, 10e6).with_rate_on_line(0.125).premium
+        1250000.0
+        """
+    def with_sliding_scale(self, /, anchors: Sequence[tuple[float, float]]) -> Layer:
+        """
+        The same layer with a sliding-scale ceding commission.
+        
+        The commission rate at the year's ceded loss ratio (ceded loss over
+        premium) is interpolated linearly between ``(commission,
+        loss_ratio)`` anchors and flat beyond the first and last, as
+        ``aggregate``'s ``slide``. Set the premium first; it cannot be
+        combined with swing rating or paid reinstatements, and replaces a
+        flat commission.
+        
+        Parameters
+        ----------
+        anchors : list of (float, float)
+            ``(commission, loss_ratio)`` pairs; the commission must not rise
+            with the loss ratio.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+        ...       .with_sliding_scale([(0.45, 0.60), (0.25, 0.70), (0.19, 0.80)]))
+        >>> round(qs.ceding_commission_for(65.0), 12)
+        35.0
+        """
+    def with_swing_rating(self, /, basic: float, lcm: float, minimum: float |None = None, maximum: float |None = None) -> Layer:
+        """
+        The same layer, swing rated: the year's premium is ``clip(share *
+        basic + lcm * ceded, share * minimum, share * maximum)``.
+        
+        The terms are quoted for 100% of the layer, as in ``aggregate``; the
+        ceded loss is already at the placed share. The swing premium
+        replaces the fixed premium in the tower's results. It cannot be
+        combined with paid reinstatements, a sliding scale or a profit
+        commission.
+        
+        Parameters
+        ----------
+        basic : float
+        lcm : float
+            Loss conversion factor, such as ``100 / 80``.
+        minimum : float, optional
+            Defaults to ``basic``.
+        maximum : float, optional
+            Defaults to no cap.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> layer = Layer("L", 1000.0, 0.0).with_swing_rating(0.0, 1.25, 100.0, 300.0)
+        >>> [layer.premium_for(x) for x in (40.0, 200.0, 400.0)]
+        [100.0, 250.0, 300.0]
+        """
+
+@final
+class LimitedFluctuation:
+    """
+    Limited fluctuation (classical) credibility: the expected number of
+    claims for the observed value to lie within ``k`` of its mean with
+    probability ``p``, under a Poisson count and the normal approximation.
+    
+    With ``z = Phi^-1((1 + p) / 2)`` and ``n_F = (z / k)**2``, the full
+    standards in claims are ``n_F`` for the frequency, ``n_F * cv**2`` for
+    the severity and ``n_F * (1 + cv**2)`` for the pure premium; partial
+    credibility is ``min(1, sqrt(n / standard))``.
+    
+    Parameters
+    ----------
+    p : float, default 0.90
+    k : float, default 0.05
+    
+    Raises
+    ------
+    ValueError
+        If ``p`` is not in ``(0, 1)`` or ``k`` is not positive.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import LimitedFluctuation
+    >>> lf = LimitedFluctuation(0.90, 0.05)
+    >>> round(lf.frequency_standard())
+    1082
+    """
+    def __new__(cls, /, p: float = 0.90, k: float = 0.05) -> LimitedFluctuation: ...
+    def __repr__(self, /) -> str: ...
+    def credibility(self, /, n: float, standard: float) -> float:
+        """
+        Credibility ``min(1, sqrt(n / standard))`` of ``n`` claims.
+        
+        Parameters
+        ----------
+        n : float
+        standard : float
+        
+        Returns
+        -------
+        float
+        """
+    def frequency_standard(self, /) -> float:
+        """
+        Full standard for the frequency, in expected claims.
+        
+        Returns
+        -------
+        float
+        """
+    def pure_premium_standard(self, /, cv: float) -> float:
+        """
+        Full standard for the pure premium, in expected claims.
+        
+        Parameters
+        ----------
+        cv : float
+            The severity's coefficient of variation.
+        
+        Returns
+        -------
+        float
+        """
+    def severity_standard(self, /, cv: float) -> float:
+        """
+        Full standard for the severity, in claims.
+        
+        Parameters
+        ----------
+        cv : float
+            The severity's coefficient of variation.
+        
+        Returns
+        -------
+        float
         """
 
 @final
@@ -6215,6 +6574,69 @@ class Lognormal:
         """
 
 @final
+class LossSensitivePremium:
+    """
+    A premium that depends on the year's loss ``x``: ``clip(basic + lcm *
+    x, minimum, maximum)``.
+    
+    The premium of a retrospectively rated policy, with ``x`` the account's
+    loss (net of any reinsurance that inures to it), and of a swing-rated
+    layer (``Layer.with_swing_rating``). For a retro plan, ``basic`` and
+    ``lcm`` include the tax multiplier.
+    
+    Parameters
+    ----------
+    basic : float
+    lcm : float
+        Loss conversion factor.
+    minimum : float, optional
+        Defaults to ``basic``.
+    maximum : float, optional
+        Defaults to no cap.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import LossSensitivePremium
+    >>> retro = LossSensitivePremium(1000.0, 1.1, maximum=2500.0)
+    >>> [round(p, 9) for p in retro.premium([0.0, 500.0, 1500.0])]
+    [1000.0, 1550.0, 2500.0]
+    """
+    def __new__(cls, /, basic: float, lcm: float, minimum: float |None = None, maximum: float |None = None) -> LossSensitivePremium: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def basic(self, /) -> float:
+        """
+        The basic premium.
+        """
+    @property
+    def lcm(self, /) -> float:
+        """
+        The loss conversion factor.
+        """
+    @property
+    def maximum(self, /) -> float:
+        """
+        The maximum premium; ``inf`` when uncapped.
+        """
+    @property
+    def minimum(self, /) -> float:
+        """
+        The minimum premium.
+        """
+    def premium(self, /, losses: Sequence[float]) -> list[float]:
+        """
+        The premium for each loss.
+        
+        Parameters
+        ----------
+        losses : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+
+@final
 class Mack:
     """
     Mack's distribution-free chain ladder: the chain-ladder projection plus
@@ -6360,8 +6782,9 @@ class MackBootstrap:
         ``TailBondy``, ``TailLogLinear``) is refitted on each simulation's
         pseudo factors, which gives its parameter error; a constant one is
         drawn from the lognormal with the factor as mean and the tail's
-        standard error. No tail by default. ``one_year`` takes its tail from
-        ``method`` instead and rejects one here.
+        standard error. No tail by default. ``one_year`` takes the step for
+        the origins whose step falls in the coming year, as
+        ``OdpBootstrap``'s does; ``method``'s tail must then be this one.
     tail_sigma : float, optional
         The tail's sigma (R's ``tail.sigma``); extrapolated if not given.
         Unused when the tail factor is 1.
@@ -6500,9 +6923,11 @@ class MackBootstrap:
         coming twelve months from Mack's bootstrap, each from the one before
         with the same pseudo factors, appends them to the triangle, refits
         ``method`` and records ``CDR = opening ultimate - closing
-        ultimate``. Mack's model has no tail here: development past the
-        oldest age moves only through ``method``'s refitted tail, and a
-        bootstrap ``tail`` is an error.
+        ultimate``. Without a bootstrap ``tail``, development past the
+        oldest age moves only through ``method``'s refitted tail; with one,
+        which must be ``method``'s, the origins whose tail step falls in
+        the coming year take Mack's step to ultimate and are closed, as in
+        ``OdpBootstrap.one_year``.
         
         Parameters
         ----------
@@ -6528,7 +6953,8 @@ class MackBootstrap:
             If ``method`` is not one of the classes above.
         ValueError
             As ``OdpBootstrap.one_year`` and ``Mack.fit``, if a cumulative
-            value is negative, and if the bootstrap has a ``tail``.
+            value is negative, and if the bootstrap has a ``tail`` that is
+            not ``method``'s.
         """
     @property
     def process(self, /) -> str:
@@ -7417,8 +7843,10 @@ class OdpBootstrap:
         parameter error; a constant one is fixed unless ``tail_std_err`` is
         given. The step from the oldest age to ultimate is one more future
         increment, with mean the pseudo value at the oldest age times the
-        tail factor less 1 and the same process error. ``one_year`` takes
-        its tail from ``method`` instead and rejects one here. R's rule
+        tail factor less 1 and the same process error. ``one_year`` values
+        that step one development period after the oldest age and takes it
+        for the origins whose step falls in the coming year, closing them;
+        ``method``'s tail must then be this one. R's rule
         (``TailLogLinear``) refitted on the ODP's pseudo factors is often
         exactly 1 (5.7% of simulations on RAA) and on average high (RAA's
         oldest origin's mean reserve 78% above the plug-in); a constant tail
@@ -7537,6 +7965,18 @@ class OdpBootstrap:
         ``MackFit.claims_development_result()`` (Merz and Wüthrich), any
         averaging, tail and development grain are allowed.
         
+        Without a bootstrap ``tail``, development past the oldest age moves
+        only through ``method``'s refitted tail. With one, which must be
+        ``method``'s tail, the tail is drawn in each simulation as ``fit``
+        draws it, and its step to ultimate is valued one development period
+        after the oldest age: an origin whose step falls in the coming year
+        (with an annual grain, one already at the oldest age) takes it and
+        is closed at that simulated ultimate. The step is the whole tail: a
+        curve or a decayed constant tail is taken as the product of its
+        factors in that one step, so an origin that takes it has its
+        lifetime tail risk in the coming year, an upper bound on its
+        one-year risk.
+        
         Parameters
         ----------
         triangle : Triangle
@@ -7561,8 +8001,9 @@ class OdpBootstrap:
         ValueError
             As ``fit`` and the method's own ``fit``; if ``exposure`` is
             missing for an expected-loss method or given for
-            ``ChainLadder``; or if the refit fails in any simulation (the
-            message counts them and gives one).
+            ``ChainLadder``; if the bootstrap has a ``tail`` that is not
+            ``method``'s; or if the refit (or the bootstrap's tail refit)
+            fails in any simulation (the message counts them and gives one).
         
         Examples
         --------
@@ -9879,8 +10320,11 @@ class Tower:
         The result has dimensions ``["kind", "layer"]``: ``("gross",
         "ground_up")``, ``("ceded", name)`` per layer, ``("net",
         "retained")``, then ``("reinstatement_premium", name)`` per layer with
-        paid reinstatements. ``aggregate(["kind"])`` gives gross, total ceded
-        and net; net is a loss, before premiums.
+        paid reinstatements, ``("swing_premium", name)`` per swing-rated
+        layer, ``("ceding_commission", name)`` per layer with a flat or
+        sliding commission and ``("profit_commission", name)`` per layer with
+        a profit commission. ``aggregate(["kind"])`` gives gross, total ceded
+        and net; net is a loss, before premiums and commissions.
         
         Parameters
         ----------
@@ -10070,6 +10514,22 @@ class TowerGrids:
         """
         The compound calculation behind each layer: its annual recovery at
         100%, before annual terms.
+        """
+    @property
+    def expected_ceding_commission(self, /) -> list[float]:
+        """
+        Expected ceding commission (flat or sliding) of each layer.
+        """
+    @property
+    def expected_premium(self, /) -> list[float]:
+        """
+        Expected premium of each layer: the swing-rated premium's mean, or
+        else the fixed premium (0 when none is set).
+        """
+    @property
+    def expected_profit_commission(self, /) -> list[float]:
+        """
+        Expected profit commission of each layer.
         """
     @property
     def expected_reinstatement_premium(self, /) -> list[float]:
@@ -11384,6 +11844,44 @@ def alpha_between_layers(a: tuple[float, float, float], b: tuple[float, float, f
     Returns
     -------
     float
+    """
+
+def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]] |None = None, estimator: str = "unbiased", tol: float = 1.4901161193847656e-8, max_iter: int = 100) -> BuhlmannStraubFit:
+    """
+    The Bühlmann–Straub credibility model, as R's ``actuar::cm(~group)``:
+    group ``i`` in period ``j`` has ratio ``X_ij`` (loss per unit of
+    exposure) with weight ``w_ij``. Without weights it is Bühlmann's model.
+    
+    Parameters
+    ----------
+    ratios : list of list of float
+        One row per group, one column per period; NaN for a missing cell.
+    weights : list of list of float, optional
+        The same shape, NaN in the same places; equal weights if omitted.
+    estimator : {"unbiased", "iterative"}, default "unbiased"
+        The between variance: Bühlmann and Straub's unbiased estimator
+        (``actuar``'s ``"Buhlmann-Gisler"`` and ``"Ohlsson"``), or Bichsel
+        and Straub's iterative one.
+    tol : float, default 1.49e-8
+        Relative tolerance of the iterative estimator.
+    max_iter : int, default 100
+    
+    Returns
+    -------
+    BuhlmannStraubFit
+    
+    Raises
+    ------
+    ValueError
+        For fewer than two groups, too few observations, mismatched shapes
+        or missing cells, or missing ratios without weights.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import buhlmann_straub
+    >>> fit = buhlmann_straub([[1.0, 2.0, 3.0], [4.0, 5.0, 9.0]])
+    >>> fit.within_variance
+    4.0
     """
 
 def calibrate(family: str, dist: Any, premium: float, assets: float |None = None, r0: float = 0.0) -> Distortion:

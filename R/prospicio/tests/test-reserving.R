@@ -1187,6 +1187,36 @@ expect_error_like(mack_one_year(raa, mack_average = "median"), "should be one of
 expect_error_like(mack_one_year(raa, apriori = 0.7), "method \"chain_ladder\" does not use apriori")
 expect_error_like(mack_one_year(raa, n_sims = 0), "n_sims must be positive")
 
+# The bootstrap's own tail (bootstrap_tail = TRUE, decision 11): the oldest
+# origin's tail step falls in the coming year, so its CDR moves; without it
+# the bootstrap stops at the oldest age and the oldest origin does not move.
+# A fixed constant tail draws nothing before the cells, so every other
+# origin's CDR is the tail times its CDR without one (Mack's process).
+plain_mk <- mack_one_year(raa, tail = 1.05, n_sims = 300, seed = 4)
+tailed_mk <- mack_one_year(raa, tail = 1.05, bootstrap_tail = TRUE, tail_std_err = 0,
+                           n_sims = 300, seed = 4)
+untailed_mk <- mack_one_year(raa, n_sims = 300, seed = 4)
+stopifnot(all(draw_matrix(plain_mk@cdr)[, 1] == 0),
+          length(unique(draw_matrix(tailed_mk@cdr)[, 1])) > 1,
+          isTRUE(all.equal(draw_matrix(tailed_mk@cdr)[, -1], 1.05 * draw_matrix(untailed_mk@cdr)[, -1],
+                           tolerance = 1e-9)))
+for (tail in list(1.05, tail_log_linear())) {
+  odp_tailed <- odp_one_year(raa, tail = tail, bootstrap_tail = TRUE, n_sims = 200, seed = 4)
+  stopifnot(length(unique(draw_matrix(odp_tailed@cdr)[, 1])) > 1)
+}
+stopifnot(length(unique(draw_matrix(
+  mack_one_year(raa, tail = 1.05, bootstrap_tail = TRUE, tail_sigma = 2, tail_std_err = 0.01,
+                n_sims = 100, seed = 4)@cdr)[, 1])) > 1)
+expect_error_like(odp_one_year(raa, tail = tail_log_linear(), bootstrap_tail = TRUE, tail_std_err = 0.01),
+                  "estimated tail")
+# The bootstrap tail's settings without bootstrap_tail are a mistake, not ignored.
+expect_error_like(mack_one_year(raa, tail = 1.05, tail_std_err = 0.01),
+                  "tail_std_err needs bootstrap_tail = TRUE")
+expect_error_like(mack_one_year(raa, tail = 1.05, tail_sigma = 2),
+                  "tail_sigma needs bootstrap_tail = TRUE")
+expect_error_like(odp_one_year(raa, tail = 1.05, tail_std_err = -1),
+                  "tail_std_err needs bootstrap_tail = TRUE")
+
 # Any development grain: the coming year is every cell valued in the twelve
 # months after the valuation, four for a quarterly grain. An exact annual
 # pattern (every origin a multiple of the first) split into equal quarters is

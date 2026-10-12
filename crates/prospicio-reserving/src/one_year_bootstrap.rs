@@ -51,8 +51,33 @@
 //! Wüthrich's standard error.
 //!
 //! A new origin period written in the coming year is not simulated, as in
-//! Merz–Wüthrich, and the development beyond the last age moves only
-//! through the refitted tail.
+//! Merz–Wüthrich.
+//!
+//! Without a tail of its own ([`OdpBootstrap::tail`]), the bootstrap stops
+//! at the last age, and the development beyond it moves only through the
+//! refitted method's tail. With one (decision 11), the bootstrap's tail is
+//! one more development step, valued one development period after the
+//! last age: in the coming year when that valuation is at most twelve
+//! months after `V`, so for an annual grain the origins already at the last
+//! age, and for a quarterly one those that reach it within nine months too.
+//! Each simulation draws the tail after the pseudo factors, as the lifetime
+//! view does (an estimated tail refitted on them, a constant one fixed or
+//! drawn from its lognormal, an early attachment moving its factors within
+//! the triangle by the pseudo factors' deviations), and the year's cells
+//! are drawn with the selected factors. After every origin's cells, each
+//! origin whose tail step falls in the year takes it, in origin order, with
+//! the process error of the bootstrap's other steps; it is then closed: its
+//! closing ultimate is that simulated ultimate, not the refitted method's,
+//! and its CDR the opening ultimate less it. So an origin whose remaining
+//! development, tail included, falls in the coming year still has its
+//! lifetime run-off as its one-year view. An origin that stays open keeps
+//! the method's own tail at the end of the year (a constant one fixed, an
+//! estimated one refitted on the closing triangle). The bootstrap's tail
+//! must be the method's: a mismatch is an error. The step is the whole
+//! tail: a curve or a decayed constant, whose selected factors spread it
+//! over later periods, is taken as their product in that one step, so the
+//! one-year standard deviation of an origin that takes it is its lifetime
+//! tail risk, an upper bound on its one-year risk.
 
 use std::sync::Mutex;
 
@@ -60,7 +85,7 @@ use prospicio_core::{Month, StreamRng};
 use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
-    OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, component_sums,
+    OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, TailDraw, component_sums,
     hash_segment, origin_keys, pick_segment, pool_at, prepare, push_moments, segment_sums,
 };
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
@@ -108,6 +133,24 @@ impl OneYearMethod {
             | Self::BornhuetterFerguson(_, e)
             | Self::Benktander(_, e)
             | Self::CapeCod(_, e) => Some(e),
+        }
+    }
+
+    /// The tail of the method's chain ladder.
+    ///
+    /// ```
+    /// use prospicio_reserving::{ChainLadder, OneYearMethod, Tail};
+    ///
+    /// let cl = OneYearMethod::ChainLadder(ChainLadder { tail: Tail::LogLinear, ..Default::default() });
+    /// assert_eq!(cl.tail(), Tail::LogLinear);
+    /// ```
+    pub fn tail(&self) -> Tail {
+        match self {
+            Self::ChainLadder(cl) => cl.tail,
+            Self::ExpectedLoss(m, _) => m.chain_ladder.tail,
+            Self::BornhuetterFerguson(m, _) => m.chain_ladder.tail,
+            Self::Benktander(m, _) => m.chain_ladder.tail,
+            Self::CapeCod(m, _) => m.chain_ladder.tail,
         }
     }
 
@@ -341,24 +384,32 @@ fn opening_names(mut table: FitTable) -> FitTable {
 /// The cells one origin develops through in the coming year: from its
 /// latest observed position `latest`, positions `latest + 1` to `last` are
 /// drawn in turn, and those from `first` on, whose valuation falls in the
-/// year, are appended to the triangle (`latest < first <= last`).
+/// year, are appended to the triangle (`latest <= last`, `latest < first`;
+/// none when `first > last`). With `tail`, the origin then takes the
+/// bootstrap's tail step from the last age to ultimate and is closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct YearCells {
     pub(crate) origin: usize,
     pub(crate) latest: usize,
     pub(crate) first: usize,
     pub(crate) last: usize,
+    pub(crate) tail: bool,
 }
 
 impl YearCells {
     /// The cells of every origin of `segment`, whose latest positions are
     /// `latest`, in the twelve months after the segment's valuation;
-    /// `valuation` gives a cell's valuation month. An origin with no cell in
-    /// the year (at the last age) has none.
+    /// `valuation` gives a cell's valuation month. With `tail` (the
+    /// bootstrap has one), the tail step is valued one development period
+    /// (the last two ages' difference) after the last age, and an origin
+    /// that reaches the last age by the end of the year takes it when that
+    /// valuation is in the year or before (decision 11). An origin with
+    /// nothing in the year has no entry.
     fn of(
         segment: &Segment,
         latest: &[usize],
         valuation: impl Fn(usize, usize) -> Month,
+        tail: bool,
     ) -> Vec<Self> {
         let opening = latest
             .iter()
@@ -367,23 +418,46 @@ impl YearCells {
             .max()
             .expect("a segment has an origin");
         let closing = opening.add_months(12);
+        let nd = segment.n_dev;
+        // One development period past the last age; none with a single age.
+        let step =
+            (tail && nd >= 2).then(|| i64::from(segment.ages[nd - 1] - segment.ages[nd - 2]));
         latest
             .iter()
             .enumerate()
             .filter_map(|(origin, &d)| {
-                let last = (d + 1..segment.n_dev)
+                let last = (d + 1..nd)
                     .take_while(|&e| valuation(origin, e) <= closing)
-                    .last()?;
-                let first = (d + 1..=last).find(|&e| valuation(origin, e) > opening)?;
+                    .last()
+                    .unwrap_or(d);
+                let first = (d + 1..=last).find(|&e| valuation(origin, e) > opening);
+                let tail = last + 1 == nd
+                    && step.is_some_and(|s| valuation(origin, last).add_months(s) <= closing);
+                let first = match (first, tail) {
+                    (Some(first), _) => first,
+                    (None, true) => nd,
+                    (None, false) => return None,
+                };
                 Some(Self {
                     origin,
                     latest: d,
                     first,
                     last,
+                    tail,
                 })
             })
             .collect()
     }
+}
+
+/// One simulation's coming year of a segment: the cells to append to it, as
+/// `(origin, position, cumulative value)`, each origin's in development
+/// order, and the origins closed by the tail step with their simulated
+/// ultimates.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct NextCells {
+    pub(crate) cells: Vec<(usize, usize, f64)>,
+    pub(crate) closed: Vec<(usize, f64)>,
 }
 
 /// A bootstrap model that simulates a segment's coming year: what it
@@ -394,10 +468,10 @@ pub(crate) trait NextYear: ReserveFit + Resample + Clone + Send + Sync {
     /// resample and the process error.
     type Draw: SharedPool + Send + Sync;
 
-    /// The cells of `year` to append to `segment`, as `(origin, position,
-    /// cumulative value)`, each origin's in development order. `picks` are
-    /// the positions of a synchronized bootstrap's residuals, `None` to
-    /// draw them from `rng`.
+    /// The cells of `year` to append to `segment` and the origins its tail
+    /// step closes. `picks` are the positions of a synchronized bootstrap's
+    /// residuals, `None` to draw them from `rng`. Fails when the
+    /// bootstrap's tail cannot be refitted on the pseudo factors.
     fn year_cells(
         &self,
         draw: &Self::Draw,
@@ -405,13 +479,15 @@ pub(crate) trait NextYear: ReserveFit + Resample + Clone + Send + Sync {
         year: &[YearCells],
         picks: Option<&[usize]>,
         rng: &mut StreamRng,
-    ) -> Vec<(usize, usize, f64)>;
+    ) -> Result<NextCells>;
 }
 
 /// What the ODP bootstrap resamples in each simulation.
 pub(crate) struct OdpDraw {
     pool: Vec<f64>,
     process: ProcessDistribution,
+    /// The bootstrap's tail; `None` without one.
+    tail: Option<TailDraw>,
 }
 
 impl SharedPool for OdpDraw {
@@ -424,8 +500,11 @@ impl NextYear for OdpBootstrapSegment {
     type Draw = OdpDraw;
 
     /// The observed latest value plus the increments projected from the
-    /// pseudo latest value with the resampled factors, each with its own
-    /// process error.
+    /// pseudo latest value with the resampled factors (selected by the tail,
+    /// with one), each with its own process error; then, for each origin
+    /// whose tail step is in the year, one more increment with mean the
+    /// pseudo value at the last age times the tail factor less 1, as the
+    /// lifetime view draws it.
     fn year_cells(
         &self,
         draw: &OdpDraw,
@@ -433,7 +512,7 @@ impl NextYear for OdpBootstrapSegment {
         year: &[YearCells],
         picks: Option<&[usize]>,
         rng: &mut StreamRng,
-    ) -> Vec<(usize, usize, f64)> {
+    ) -> Result<NextCells> {
         let cl = &self.chain_ladder;
         let nd = segment.n_dev;
         let sim = Simulation {
@@ -446,7 +525,17 @@ impl NextYear for OdpBootstrapSegment {
             tail: None,
         };
         let (pseudo, factors) = sim.resample(rng, picks);
-        let mut cells = Vec::new();
+        let (factors, tail) = match &draw.tail {
+            None => (factors, None),
+            Some(tail) => {
+                let (selected, factor) = tail.draw(&factors, rng)?;
+                (selected, Some(factor))
+            }
+        };
+        // Every origin's cells, then the tail steps in origin order: without
+        // a tail the draws are as they were before tails.
+        let mut next = NextCells::default();
+        let mut at_last_age = Vec::new();
         for y in year {
             let o = y.origin;
             let (mut expected, mut value) = (pseudo[o * nd + y.latest], cl.latest[o]);
@@ -454,11 +543,21 @@ impl NextYear for OdpBootstrapSegment {
                 value += sim.with_process(expected * (f - 1.0), rng);
                 expected *= f;
                 if d + 1 >= y.first {
-                    cells.push((o, d + 1, value));
+                    next.cells.push((o, d + 1, value));
                 }
             }
+            if y.tail {
+                at_last_age.push((o, expected, value));
+            }
         }
-        cells
+        if let Some(factor) = tail {
+            for (o, expected, value) in at_last_age {
+                let ultimate = expected * factor;
+                next.closed
+                    .push((o, value + sim.with_process(ultimate - expected, rng)));
+            }
+        }
+        Ok(next)
     }
 }
 
@@ -474,13 +573,15 @@ struct Prepared<B: NextYear> {
 }
 
 impl<B: NextYear> Prepared<B> {
-    /// `model` fits the bootstrap model to the segment.
+    /// `model` fits the bootstrap model to the segment; `tail` is whether
+    /// it has a tail.
     fn new(
         triangle: &Triangle,
         segment: &Segment,
         exposure: Option<&Segment>,
         method: &OneYearMethod,
         opening: Month,
+        tail: bool,
         model: &impl Fn(&Segment) -> Result<(B, B::Draw)>,
     ) -> Result<Self> {
         let (bootstrap, draw) = model(segment)?;
@@ -488,6 +589,7 @@ impl<B: NextYear> Prepared<B> {
             segment,
             &bootstrap.chain_ladder().latest_position,
             |o, d| triangle.valuation_of(o + segment.origin_offset, d + segment.dev_offset),
+            tail,
         );
         let opening_ultimate = method.ultimate(segment, exposure, opening)?;
         let opening_reserve = opening_ultimate
@@ -544,18 +646,22 @@ impl<B: NextYear> Run<'_, B> {
         let next = p
             .fit
             .bootstrap
-            .year_cells(&p.draw, &p.segment, &p.year, picks, rng);
+            .year_cells(&p.draw, &p.segment, &p.year, picks, rng)?;
         self.rereserve(next, cdr)
     }
 
-    /// Appends `next` to the observed triangle, refits the method on it and
-    /// fills `cdr` with each origin's opening less closing ultimate.
-    fn rereserve(&self, next: Vec<(usize, usize, f64)>, cdr: &mut [f64]) -> Result<()> {
+    /// Appends `next`'s cells to the observed triangle, refits the method
+    /// on it, closes the origins `next` closes at their simulated ultimates
+    /// and fills `cdr` with each origin's opening less closing ultimate.
+    fn rereserve(&self, next: NextCells, cdr: &mut [f64]) -> Result<()> {
         let p = self.prepared;
-        let closing = p.segment.with_values(next);
-        let ultimate = self
+        let closing = p.segment.with_values(next.cells);
+        let mut ultimate = self
             .method
             .ultimate(&closing, p.exposure.as_ref(), self.closing)?;
+        for (o, u) in next.closed {
+            ultimate[o] = u;
+        }
         for ((x, u0), u1) in cdr.iter_mut().zip(&p.fit.opening_ultimate).zip(&ultimate) {
             *x = u0 - u1;
             if !x.is_finite() {
@@ -589,21 +695,28 @@ impl Failures {
 pub(crate) struct Sims {
     pub(crate) n_sims: usize,
     pub(crate) seed: u64,
-    /// Whether the bootstrap has a tail of its own, which the one-year view
-    /// rejects: development past the oldest age moves only through the
-    /// refitted method's tail.
-    pub(crate) tail: bool,
+    /// The bootstrap's own tail, which must then be the method's
+    /// (decision 11).
+    pub(crate) tail: Tail,
 }
 
 impl Sims {
-    fn check(self) -> Result<()> {
+    /// Whether the bootstrap has a tail of its own.
+    fn tailed(self) -> bool {
+        !self.tail.is_none()
+    }
+
+    /// The settings are usable with `method`: a bootstrap with a tail
+    /// models the true development past the last age, the method's tail is
+    /// the actuary's estimate of it, and the two must agree, or the closed
+    /// origins' mean CDR would move for a reason the user did not choose.
+    fn check(self, method: &OneYearMethod) -> Result<()> {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
-        if self.tail {
+        if self.tailed() && method.tail() != self.tail {
             return Err(Error::Bootstrap(
-                "the one-year view develops past the oldest age only through the refitted \
-                 method's tail: leave the bootstrap's tail at none",
+                "the bootstrap's tail must be the re-reserving method's tail",
             ));
         }
         Ok(())
@@ -620,7 +733,7 @@ impl Sims {
         model: impl Fn(&Segment) -> Result<(B, B::Draw)>,
         provenance: impl FnOnce(InputHasher) -> Provenance,
     ) -> Result<OneYearFit<B>> {
-        self.check()?;
+        self.check(method)?;
         let (opening, closing) = valuations(triangle)?;
         let segment = triangle.segment(column)?;
         let exposure = method.exposure().map(|e| triangle.segment(e)).transpose()?;
@@ -630,6 +743,7 @@ impl Sims {
             exposure.as_ref(),
             method,
             opening,
+            self.tailed(),
             &model,
         )?;
 
@@ -675,14 +789,15 @@ impl Sims {
         model: impl Fn(&Segment) -> Result<(B, B::Draw)>,
         provenance: impl FnOnce(InputHasher) -> Provenance,
     ) -> Result<OneYearFits<B>> {
-        self.check()?;
+        self.check(method)?;
         let (opening, closing) = valuations(triangle)?;
+        let tailed = self.tailed();
         let mut prepared = match method.exposure() {
             None => fit_each(triangle, column, |s| {
-                Prepared::new(triangle, s, None, method, opening, &model)
+                Prepared::new(triangle, s, None, method, opening, tailed, &model)
             })?,
             Some(exposure) => fit_each_with_exposure(triangle, column, exposure, |s, e| {
-                Prepared::new(triangle, s, Some(e), method, opening, &model)
+                Prepared::new(triangle, s, Some(e), method, opening, tailed, &model)
             })?,
         };
         let shared = match dependence {
@@ -796,7 +911,11 @@ impl OdpBootstrap {
     /// documentation](crate::one_year_bootstrap). Every origin must be
     /// observed from the first age to its latest (it may stop short of the
     /// latest diagonal), and an expected-loss method's exposure column must
-    /// have a positive value for every origin.
+    /// have a positive value for every origin. With a
+    /// [`tail`](Self::tail), the method's tail must be the same, or the
+    /// call returns [`Error::Bootstrap`]; a simulation whose pseudo factors
+    /// the tail cannot be refitted on fails like a failed refit, counted in
+    /// [`Error::OneYear`].
     pub fn one_year(
         &self,
         triangle: &Triangle,
@@ -838,19 +957,21 @@ impl OdpBootstrap {
         Sims {
             n_sims: self.n_sims,
             seed: self.seed,
-            tail: !self.tail.is_none(),
+            tail: self.tail,
         }
     }
 
-    /// The bootstrap of one segment and the residuals it resamples, without
-    /// a tail.
+    /// The bootstrap of one segment with its tail, the residuals it
+    /// resamples and the tail each simulation draws.
     fn model(&self, segment: &Segment) -> Result<(OdpBootstrapSegment, OdpDraw)> {
-        let (fit, pool) = prepare(segment, &segment.ages, Tail::default())?;
+        let (fit, pool) = prepare(segment, &segment.ages, self.tail)?;
+        let tail = self.tail_draw(&fit.chain_ladder)?;
         Ok((
             fit,
             OdpDraw {
                 pool,
                 process: self.process,
+                tail,
             },
         ))
     }
@@ -861,9 +982,18 @@ impl OdpBootstrap {
         method: &OneYearMethod,
         hasher: InputHasher,
     ) -> Provenance {
-        Provenance::new("odp_bootstrap_one_year")
+        let provenance = Provenance::new("odp_bootstrap_one_year")
             .param("n_sims", self.n_sims)
-            .param("process", format!("{:?}", self.process))
+            .param("process", format!("{:?}", self.process));
+        // Without a tail, the provenance is as it was before tails.
+        let provenance = if self.tail.is_none() {
+            provenance
+        } else {
+            provenance
+                .param("tail", format!("{:?}", self.tail))
+                .param("tail_std_err", format!("{:?}", self.tail_std_err))
+        };
+        provenance
             .param("column", column)
             .param("method", format!("{method:?}"))
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
@@ -1178,19 +1308,31 @@ mod tests {
         );
     }
 
-    /// The cells of the coming year of `column`'s only segment, as
-    /// `(origin, latest, first, last)` positions.
-    fn year_of(tri: &Triangle, column: &str) -> Vec<(usize, usize, usize, usize)> {
+    /// The cells of the coming year of `column`'s only segment, `tail` as
+    /// in `YearCells::of`.
+    fn year_cells_of(tri: &Triangle, column: &str, tail: bool) -> Vec<YearCells> {
         let segment = tri.segment(column).unwrap();
         let latest: Vec<usize> = (0..segment.n_origins)
             .map(|o| segment.latest(o).unwrap().0)
             .collect();
-        YearCells::of(&segment, &latest, |o, d| {
-            tri.valuation_of(o + segment.origin_offset, d + segment.dev_offset)
-        })
-        .iter()
-        .map(|y| (y.origin, y.latest, y.first, y.last))
-        .collect()
+        YearCells::of(
+            &segment,
+            &latest,
+            |o, d| tri.valuation_of(o + segment.origin_offset, d + segment.dev_offset),
+            tail,
+        )
+    }
+
+    /// The cells of the coming year of `column`'s only segment, as
+    /// `(origin, latest, first, last)` positions, without a tail.
+    fn year_of(tri: &Triangle, column: &str) -> Vec<(usize, usize, usize, usize)> {
+        year_cells_of(tri, column, false)
+            .iter()
+            .map(|y| {
+                assert!(!y.tail);
+                (y.origin, y.latest, y.first, y.last)
+            })
+            .collect()
     }
 
     /// Annual origins from `first_year` with cumulative `rows` at annual
@@ -1413,15 +1555,7 @@ mod tests {
             .collect();
         let tri = with_premium(1981, &cut, &[1.0; 10]);
         let segment = tri.segment("paid").unwrap();
-        let year: Vec<YearCells> = year_of(&tri, "paid")
-            .into_iter()
-            .map(|(origin, latest, first, last)| YearCells {
-                origin,
-                latest,
-                first,
-                last,
-            })
-            .collect();
+        let year = year_cells_of(&tri, "paid", false);
         let want: Vec<(usize, usize)> = (1..10)
             .map(|o| (o, if o == 4 { 6 } else { 10 - o }))
             .collect();
@@ -1431,10 +1565,10 @@ mod tests {
         let (odp, draw) = boot(1, 0).model(&segment).unwrap();
         let mut rng = StreamRng::new(0, 0);
         let cells = odp.year_cells(&draw, &segment, &year, None, &mut rng);
-        assert_eq!(positions(cells), want, "ODP");
+        assert_eq!(positions(cells.unwrap().cells), want, "ODP");
         let (mack, draw) = crate::MackBootstrap::default().model(&segment).unwrap();
         let cells = mack.year_cells(&draw, &segment, &year, None, &mut rng);
-        assert_eq!(positions(cells), want, "Mack");
+        assert_eq!(positions(cells.unwrap().cells), want, "Mack");
     }
 
     #[test]
@@ -1621,8 +1755,10 @@ mod tests {
         let method = chain_ladder();
         let (opening, closing) = valuations(&tri).unwrap();
         let odp = boot(1, 0);
-        let prepared =
-            Prepared::new(&tri, &segment, None, &method, opening, &|s| odp.model(s)).unwrap();
+        let prepared = Prepared::new(&tri, &segment, None, &method, opening, false, &|s| {
+            odp.model(s)
+        })
+        .unwrap();
         let run = Run {
             prepared: &prepared,
             method: &method,
@@ -1687,6 +1823,10 @@ mod tests {
                         (o, d + 1, gamma.sample(rng, 1)[0])
                     })
                     .collect();
+                let next = NextCells {
+                    cells: next,
+                    closed: vec![],
+                };
                 run.rereserve(next, row).unwrap();
             },
         )
@@ -1798,5 +1938,241 @@ mod tests {
             home.totals().column("cdr_std_dev").unwrap()[0],
             totals.column("cdr_std_dev").unwrap()[1]
         );
+    }
+
+    /// The chain ladder with this tail, as a one-year method.
+    fn with_tail(tail: Tail) -> OneYearMethod {
+        OneYearMethod::ChainLadder(ChainLadder {
+            tail,
+            ..Default::default()
+        })
+    }
+
+    /// The ODP bootstrap with this tail.
+    fn tailed(n_sims: usize, seed: u64, process: ProcessDistribution, tail: Tail) -> OdpBootstrap {
+        OdpBootstrap {
+            tail,
+            process,
+            ..boot(n_sims, seed)
+        }
+    }
+
+    #[test]
+    fn the_tail_step_is_one_period_past_the_last_age() {
+        // Annual: only the origin already at the last age takes the tail
+        // step (valued twelve months on), with no cell of its own.
+        let year = year_cells_of(&raa(), "values", true);
+        assert_eq!(
+            (year[0].origin, year[0].latest, year[0].first, year[0].last),
+            (0, 9, 10, 9)
+        );
+        assert!(year[0].tail);
+        assert!(year[1..].iter().all(|y| !y.tail));
+        assert_eq!(
+            year[1..]
+                .iter()
+                .map(|y| (y.origin, y.latest, y.first, y.last))
+                .collect::<Vec<_>>(),
+            year_of(&raa(), "values")
+        );
+
+        // Quarterly development of annual origins: the oldest origin's step
+        // is a quarter after its last age; the next one reaches the last
+        // age only at the end of the year, so its step falls after it.
+        let split = quarterly(
+            2020,
+            &[
+                &[4.0, 8.0, 12.0, 15.0],
+                &[8.0, 16.0, 24.0],
+                &[12.0, 24.0],
+                &[16.0],
+            ],
+            &[1.0; 4],
+        );
+        let year: Vec<_> = year_cells_of(&split, "paid", true)
+            .iter()
+            .map(|y| (y.origin, y.latest, y.first, y.last, y.tail))
+            .collect();
+        assert_eq!(
+            year,
+            [
+                (0, 15, 16, 15, true),
+                (1, 11, 12, 15, false),
+                (2, 7, 8, 11, false),
+                (3, 3, 4, 7, false)
+            ]
+        );
+
+        // Quarterly origins (valuation December 2022, last age 12 months):
+        // every origin reaches the last age within nine months, so each
+        // takes the tail step, a quarter later, in the year.
+        let by_quarter = by_quarter();
+        let year: Vec<_> = year_cells_of(&by_quarter, "paid", true)
+            .iter()
+            .map(|y| (y.origin, y.latest, y.first, y.last, y.tail))
+            .collect();
+        assert_eq!(
+            year,
+            [
+                (0, 3, 4, 3, true),
+                (1, 2, 3, 3, true),
+                (2, 1, 2, 3, true),
+                (3, 0, 1, 3, true)
+            ]
+        );
+    }
+
+    /// Quarterly origins of 2022 on an exact pattern (1 : 2 : 3 : 4),
+    /// valued December 2022.
+    fn by_quarter() -> Triangle {
+        let origin: Vec<Month> = [1, 1, 1, 1, 4, 4, 4, 7, 7, 10]
+            .iter()
+            .map(|&m| Month::new(2022, m).unwrap())
+            .collect();
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[3, 6, 9, 12, 3, 6, 9, 3, 6, 3]),
+            values: &[("paid", &[1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 1.0, 2.0, 1.0])],
+            origin_grain: Grain::Quarter,
+            development_grain: Grain::Quarter,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn exact_pattern_with_a_bootstrap_tail_has_zero_cdr() {
+        // With no noise every closed origin's simulated ultimate is its
+        // opening one, tail included, and the open ones refit to it.
+        for (tri, column) in [(exact(), "paid"), (by_quarter(), "paid")] {
+            let fit = tailed(50, 1, ProcessDistribution::Gamma, 1.1.into())
+                .one_year(&tri, column, &with_tail(1.1.into()))
+                .unwrap();
+            assert_eq!(fit.bootstrap.scale, 0.0);
+            let scale = fit.opening_ultimate.iter().fold(0.0f64, |m, &u| m.max(u));
+            assert!(
+                fit.cdr
+                    .draw_matrix()
+                    .iter()
+                    .all(|x| x.abs() < 1e-12 * scale),
+                "{:?}",
+                &fit.cdr.draw_matrix()[..4]
+            );
+        }
+    }
+
+    #[test]
+    fn constant_tail_scales_the_open_origins() {
+        // A fixed constant tail draws nothing before the cells, which come
+        // before every tail step, so the open origins' cells are those
+        // without a tail and their CDR the tail times its value without.
+        let plain = boot(300, 6)
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+        let fit = tailed(300, 6, ProcessDistribution::Gamma, 1.05.into())
+            .one_year(&raa(), "values", &with_tail(1.05.into()))
+            .unwrap();
+        for j in 1..10 {
+            let scale = fit.opening_ultimate[j];
+            for (a, b) in column(&fit.cdr, j).iter().zip(column(&plain.cdr, j)) {
+                assert!((a - 1.05 * b).abs() < 1e-9 * scale, "{j}: {a} vs {b}");
+            }
+        }
+        assert!(column(&fit.cdr, 0).iter().any(|&x| x != 0.0));
+        assert!(format!("{:?}", fit.cdr.provenance()).contains("tail_std_err"));
+        assert!(!format!("{:?}", plain.cdr.provenance()).contains("tail_std_err"));
+    }
+
+    #[test]
+    fn the_oldest_origin_takes_the_tail_increment() {
+        // Parameter error alone: simulation i's oldest origin closes at its
+        // observed value plus its pseudo value at the last age times the
+        // tail less 1, the lifetime view's tail increment, with the pseudo
+        // triangle drawn from stream i. A tail standard error draws the
+        // factor from the lognormal right after the pseudo triangle.
+        let segment = raa().segment("values").unwrap();
+        for std_err in [None, Some(0.02)] {
+            let b = OdpBootstrap {
+                tail_std_err: std_err,
+                ..tailed(50, 3, ProcessDistribution::None, 1.05.into())
+            };
+            let fit = b
+                .one_year(&raa(), "values", &with_tail(1.05.into()))
+                .unwrap();
+            let (model, draw) = b.model(&segment).unwrap();
+            let sim = Simulation {
+                segment: &segment,
+                latest: &model.chain_ladder.latest_position,
+                fitted: &model.fitted,
+                pool: &draw.pool,
+                scale: model.scale,
+                process: ProcessDistribution::None,
+                tail: None,
+            };
+            let f = model.chain_ladder.tail.factor;
+            let lognormal = prospicio_prob::Lognormal::from_mean_cv(f, 0.02 / f).unwrap();
+            let c = model.chain_ladder.latest[0];
+            for i in [0, 7, 49] {
+                let mut rng = StreamRng::new(3, i);
+                let (pseudo, _) = sim.resample(&mut rng, None);
+                let factor = match std_err {
+                    None => f,
+                    Some(_) => lognormal.sample(&mut rng, 1)[0],
+                };
+                let p = pseudo[9];
+                let want = fit.opening_ultimate[0] - (c + (p * factor - p));
+                assert_eq!(fit.cdr.row(i as usize).unwrap()[0], want, "{std_err:?} {i}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_oldest_origin_one_year_view_is_its_lifetime_view() {
+        // Its remaining development, the tail step, falls in the year: the
+        // standard deviations of its one-year CDR and lifetime reserve agree
+        // within five Monte Carlo standard errors of the two runs.
+        let n = 10_000;
+        let sd_and_error = |x: &[f64]| {
+            let n = x.len() as f64;
+            let m = x.iter().sum::<f64>() / n;
+            let m2 = x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / n;
+            let m4 = x.iter().map(|v| (v - m).powi(4)).sum::<f64>() / n;
+            (
+                m2.sqrt(),
+                m2.sqrt() * ((m4 / (m2 * m2) - 1.0) / (4.0 * n)).sqrt(),
+            )
+        };
+        let tail = Tail::from(1.05);
+        let b = OdpBootstrap {
+            tail_std_err: Some(0.01),
+            ..tailed(n, 31, ProcessDistribution::Gamma, tail)
+        };
+        let one = b.one_year(&raa(), "values", &with_tail(tail)).unwrap();
+        let lifetime = OdpBootstrap { seed: 32, ..b }
+            .fit(&raa(), "values")
+            .unwrap();
+        let (a, ea) = sd_and_error(&column(&one.cdr, 0));
+        let (l, el) = sd_and_error(&column(&lifetime.reserves, 0));
+        assert!(
+            (a - l).abs() < 5.0 * (ea * ea + el * el).sqrt(),
+            "one-year {a}, lifetime {l}"
+        );
+    }
+
+    #[test]
+    fn an_estimated_tail_is_refitted_in_the_year() {
+        // The log-linear tail refitted on the pseudo factors moves the
+        // oldest origin; a lagging or quarterly triangle runs too.
+        let fit = tailed(200, 4, ProcessDistribution::Gamma, Tail::LogLinear)
+            .one_year(&raa(), "values", &with_tail(Tail::LogLinear))
+            .unwrap();
+        assert!(column(&fit.cdr, 0).iter().any(|&x| x != 0.0));
+        assert!(fit.cdr.draw_matrix().iter().all(|x| x.is_finite()));
+        let split = quarterly(1981, &RAA, &[1.0; 10]);
+        let fit = tailed(50, 4, ProcessDistribution::Gamma, 1.05.into())
+            .one_year(&split, "paid", &with_tail(1.05.into()))
+            .unwrap();
+        assert!(column(&fit.cdr, 0).iter().any(|&x| x != 0.0));
     }
 }

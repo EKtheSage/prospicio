@@ -341,3 +341,57 @@ fn natural_allocation_matches_aggregate() {
         }
     });
 }
+
+/// Classical credibility against R's `actuar` 3.3.7
+/// (`validation/scripts/r_credibility.R`): the Bühlmann–Straub model on
+/// Hachemeister's data with the unbiased and the iterative estimator,
+/// Bühlmann's model (equal weights), a fit with missing cells, and the
+/// limited fluctuation standards.
+#[test]
+fn credibility_matches_actuar() {
+    use prospicio_pricing::credibility::{BuhlmannStraub, LimitedFluctuation, StructureEstimator};
+
+    let data = reference("hachemeister.csv");
+    let mut ratios = vec![vec![0.0; 12]; 5];
+    let mut weights = vec![vec![0.0; 12]; 5];
+    for row in &data {
+        let i = row.number("state").unwrap() as usize - 1;
+        let j = row.number("quarter").unwrap() as usize - 1;
+        ratios[i][j] = row.number("ratio").unwrap();
+        weights[i][j] = row.number("weight").unwrap();
+    }
+    let cases = reference("credibility_actuar.csv");
+    check(&cases, |c| {
+        if c.get("distribution") == "limited_fluctuation" {
+            let lf =
+                LimitedFluctuation::new(c.param("params", "p"), c.param("params", "k")).ok()?;
+            return Some(lf.frequency_standard());
+        }
+        let params = c.get("params");
+        let (mut r, mut w) = (ratios.clone(), weights.clone());
+        if let Some(cells) = params.split(';').find_map(|kv| kv.strip_prefix("missing=")) {
+            for cell in cells.split('|') {
+                let (i, j) = cell.split_once('.')?;
+                let (i, j) = (i.parse::<usize>().ok()? - 1, j.parse::<usize>().ok()? - 1);
+                r[i][j] = f64::NAN;
+                w[i][j] = f64::NAN;
+            }
+        }
+        let estimator = if params.contains("estimator=iterative") {
+            StructureEstimator::iterative()
+        } else {
+            StructureEstimator::Unbiased
+        };
+        let weights = params.contains("weights=yes").then_some(w.as_slice());
+        let fit = BuhlmannStraub::new(estimator).fit(&r, weights).ok()?;
+        let group = || Some(c.number("arg")? as usize - 1);
+        match c.get("quantity") {
+            "collective_mean" => Some(fit.collective_mean),
+            "between_variance" => Some(fit.between_variance),
+            "within_variance" => Some(fit.within_variance),
+            "credibility" => Some(fit.credibility[group()?]),
+            "premium" => Some(fit.premiums[group()?]),
+            _ => None,
+        }
+    });
+}
