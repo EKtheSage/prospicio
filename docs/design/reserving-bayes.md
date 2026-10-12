@@ -16,9 +16,13 @@ it unchanged. Two things it adds that the bootstraps cannot:
   expected loss ratio enters as a prior (a Bayesian Bornhuetter–Ferguson),
   instead of as a separate deterministic method;
 * **models the bootstraps do not cover**: Meyers' changing settlement rate
-  (CSR) and correlated accident year (CAY) models, which Meyers (2015,
-  2019) shows to be better calibrated than Mack and the ODP bootstrap on
-  200 Schedule P triangles.
+  (CSR) and correlated accident year (CAY) models. Meyers (2019, CAS
+  Monograph 8, sec. 5 to 7) tests them on 200 Schedule P triangles: his
+  baseline, the correlated chain ladder on cumulative values (CRC), is not
+  better calibrated than Mack or the ODP bootstrap (paid CRC predicts too
+  high, as the ODP does; incurred CRC still understates variability). CSR
+  fixes the paid failure and CAY the incurred one. CRC is the common base
+  of both, not a calibration gain in itself.
 
 Out of scope here, kept for later notes: compartmental reserving (Gesmann
 and Morris 2020), hierarchical growth curves across companies (Guszcza
@@ -35,7 +39,7 @@ together, as in `reserving-v02.md` decision 7.
 |---|---|---|---|
 | 0 | `bayes-reserving-design` | this note | `main` |
 | 1 | `claude/bayes-odp` | the `bayes` feature of `prospicio-reserving` (decision 2); `BayesOdp` (decisions 3 to 6); Stan reference on GenIns and RAA; bindings | PR 0 |
-| 2 | `claude/bayes-segments` | `BayesOdp::fit_segments` with `SegmentDependence`; `TriangleModel` for the diagonal backtest (decision 8) | PR 1 |
+| 2 | `claude/bayes-segments` | `BayesOdp::fit_segments` with `SegmentDependence` and per-segment seeds (decision 11); `TriangleModel` for `BayesOdp` in the diagonal backtest (decision 8) | PR 1 |
 | 3 | `claude/bayes-meyers` | `Meyers` with `Crc` and `Csr` on cumulative values with premium (decision 7); Meyers' group 353 data; reference from Meyers' own Stan code | PR 1 |
 | 4 | `claude/bayes-bf` | informative priors on the origin parameters: the Bayesian Bornhuetter–Ferguson (decision 9) | PR 1 |
 | 5 | later | `Cay` and the paid-incurred `Ipi`; then compartmental reserving in its own note | PR 3 |
@@ -53,9 +57,9 @@ does not merge them by hand.
 |---|---|---|
 | Bayesian ODP chain ladder | the same model in Stan, run with CmdStan 2.39.0 (decision 10) | England and Verrall (2002, BAJ 8(3)), (2006, AAS 1(2)); our `OdpBootstrap` and chain ladder on the same triangle |
 | Bayesian Bornhuetter–Ferguson | the same model in Stan | Verrall (2004, NAAJ); England, Verrall and Wüthrich (2012, AAS 6(2), 258-283) |
-| CRC, CSR (later CAY, IPI) | Meyers' R/Stan code, `meyers-appendix.zip` (CAS), run with CmdStan 2.39.0 | Meyers (2019), CAS Monograph 8, 2nd ed.: group 353 Commercial Auto, Tables 2.1-2.3, 5.1, 7.1 and the totals quoted in decision 7 |
+| CRC, CSR (later CAY, IPI) | Meyers' R/Stan code, `meyers-appendix.zip` (CAS), run with CmdStan 2.39.0 | Meyers (2019), CAS Monograph 8, 2nd ed.: group 353 Commercial Auto, data in Tables 2.1-2.3, parameter summaries in Tables 5.1 and 7.1, totals in Tables 5.2 (CRC paid), 5.3 (CRC incurred) and 7.2 (CSR paid), elpd_loo in Tables 6.4 and 7.3 |
 | Diagnostics | `prospicio_bayes` (`rhat`, `ess_bulk`, `ess_tail`), already at parity with R `posterior` | |
-| Model comparison | `prospicio_bayes::elpd::loo`, already at parity with R `loo` 2.6.0 | Meyers' elpd_loo for CSR (49.76) and CRC (47.80) |
+| Model comparison | `prospicio_bayes::elpd::loo`, already at parity with R `loo` 2.6.0 | Meyers' elpd_loo for CSR (49.76) and CRC (47.80), Tables 6.4 and 7.3; only between models of the same response (decision 5) |
 
 R `ChainLadder` and chainladder-python have no MCMC reserving model, so
 the reference is a Stan program of the same model, not a package. R
@@ -95,9 +99,13 @@ it can be checked three ways (a Stan run, the chain ladder, the ODP
 bootstrap). It also builds everything the later models reuse: the feature
 flag, the density and its finite-difference test, the predictive step,
 diagnostics in the fit, the Stan reference pipeline and the bindings.
-CRC and CSR come second because they are what a user would choose a
-Bayesian model *for* (better calibrated on Meyers' 200 triangles), and
-Meyers' code gives a parity target. Growth curves and compartmental
+CRC and CSR come second. CRC alone gives no calibration gain over the
+bootstraps (Meyers 2019, sec. 5); it is the base that CSR and CAY extend,
+and CSR is what improves calibration on paid data. On incurred data the
+model that improves calibration is CAY, which PR 5 holds, so until then
+the plan offers no better-calibrated incurred model than Mack. Moving CAY
+into PR 3 is open decision 1 (d). Meyers' code gives a parity target for
+all of them. Growth curves and compartmental
 models wait: neither has a reproducible reference, and the compartmental
 model's identification problems need informative priors that a library
 default should not choose.
@@ -113,15 +121,19 @@ rustfft, and whether `nuts-rs` builds for `wasm32` is not verified. So
 
 | Option | Ownership | WASM | Access to reserving internals | Cost |
 |---|---|---|---|---|
-| A. A `reserving` module in `prospicio-bayes`, depending on `prospicio-reserving` | Models lane's crate; Reserving would edit it | clean: `prospicio-bayes` is outside the scope | none: `NextYear`, `Resample`, `SharedPool` are `pub(crate)` | a lane crossing on every PR |
-| B. An optional feature `bayes` and a module `bayes` in `prospicio-reserving` | Reserving lane's own crate | the default-feature check is unchanged | full: one crate, so the one-year view and dependence internals are reachable | a feature to keep compiled in CI |
-| C. A new crate `prospicio-reserving-bayes` | Reserving lane, new crate | clean | none, as A | one more crate to version, publish and re-export |
+| A. A `reserving` module in `prospicio-bayes`, depending on `prospicio-reserving` | Models lane's crate; Reserving would edit it | clean: `prospicio-bayes` is outside the scope | public API only (`NextYear`, `Resample`, `SharedPool`, `SegmentDependence::reorder` and `rank_correlate` are `pub(crate)`); PRs 1 to 4 need none of them | a lane crossing on every PR |
+| B. An optional feature `bayes` and a module `bayes` in `prospicio-reserving` | Reserving lane's own crate | the default-feature check is unchanged | full: one crate | a feature to keep compiled in CI |
+| C. A new crate `prospicio-reserving-bayes` | Reserving lane, new crate | clean | public API only, as A | one more crate to version, publish and re-export |
 
-**Option B.** It keeps the work in the Reserving lane's crate, it is the
-only option that can reach the `pub(crate)` machinery of the bootstraps
-(the one-year view and `SegmentDependence`, decisions 8 and 11) without
-widening `prospicio-reserving`'s public API, and it adds no crate to the
-release.
+**Option B**, for lane ownership and release simplicity: the work stays in
+the Reserving lane's crate, so no PR crosses into the Models lane's, and it
+adds no crate to version, publish and re-export. Access to internals is not
+the reason: PRs 1 to 4 use only public items (`SegmentDependence`,
+`TriangleModel`, `PredictiveDistribution::reorder_groups`). Internal access
+would matter only for a later one-year view (decision 12), or to reuse
+`SegmentDependence::reorder` and `rank_correlate` (both `pub(crate)`)
+instead of reimplementing them, which B allows and A and C do not without
+widening the public API.
 
 ```toml
 # crates/prospicio-reserving/Cargo.toml
@@ -137,8 +149,11 @@ bayes = ["dep:prospicio-bayes", "prospicio-reserving/bayes"]
 
 There is no dependency cycle: `prospicio-bayes` depends on core, glm,
 math, models and prob, not on reserving. The Python and R binding crates
-already depend on `prospicio-bayes` and turn on `prospicio-reserving/bayes`,
-so wheels and the R package gain no new native dependency.
+already depend on `prospicio-bayes` and on `prospicio-reserving` (without
+the feature). PR 1 changes their `Cargo.toml` to turn on
+`prospicio-reserving/bayes`, so wheels and the R package gain no new
+native dependency. The umbrella's `bayes` feature exists today as
+`["dep:prospicio-bayes"]`; PR 1 adds `"prospicio-reserving/bayes"` to it.
 
 CI: the WASM check selects packages with `-p`, so it builds
 `prospicio-reserving` with default features and stays as it is. The
@@ -151,9 +166,15 @@ also adds `cargo check -p prospicio-reserving --no-default-features` and
 `--features bayes` to the local check list in AGENTS.md if the inference
 fails.
 
-Lane ownership: everything in this note is the Reserving lane's, in
+Lane ownership: the model code is the Reserving lane's, in
 `crates/prospicio-reserving/src/bayes/`, `validation/tests/reserving_bayes*.rs`
-and this note. `prospicio-bayes` stays the Models lane's. If PR 1 needs a
+and this note. PR 1 also touches shared files, named in its description:
+`crates/prospicio/Cargo.toml` (the umbrella `bayes` feature, a release
+file under AGENTS.md "Releases"), `crates/prospicio-python/Cargo.toml` and
+`crates/prospicio-r/Cargo.toml` (the feature on `prospicio-reserving`),
+`crates/prospicio-reserving/Cargo.toml`, and the validation crate's
+`Cargo.toml` if its tests need the feature turned on there.
+`prospicio-bayes` stays the Models lane's. If PR 1 needs a
 change there (for example a public way to split one seed between the
 chains and the predictive step, or a dense mass matrix, decision 5), it
 goes in a small PR of its own with the user's go-ahead, and merges first.
@@ -190,12 +211,23 @@ as such, and with sd 10 on the log scale it is vague. The names follow
 Why this likelihood: the quasi log likelihood `(x η − e^η)/φ` has second
 derivative `−e^η/φ < 0` for any `x`, so with normal priors the log
 posterior is strictly concave: one mode, no funnels, and NUTS samples it
-well. Negative increments are allowed, as in the chain ladder; the
-posterior is proper whenever the priors are (they always are), and the
-mode exists without priors under the chain ladder's own condition (each
-development column's observed sum positive). With vague priors the mode is
-the chain ladder (the ODP GLM's MLE is the chain ladder), which is the
-first test.
+well. Negative increments are allowed cell by cell; the posterior is proper
+whenever the priors are (they always are). The mode without priors (the
+MLE) exists only when every development column's and every origin's
+observed increments sum to a positive value (necessary; Kuang, Nielsen and
+Nielsen 2009 give the exact conditions for the log-linear model). The
+origin condition is not implied by the column one: the newest origin has
+one cell, so a negative or zero `X_n1` sends `a_n` to `−∞`. The chain
+ladder has no such condition (it accepts factors below 1 and negative
+column sums, common in incurred data), so a triangle the chain ladder fits
+can have no log-linear mean. With a non-positive row or column sum, the
+posterior of that `a_w` or `b_d` is driven by its `N(0, 10²)` prior alone
+and drifts far negative, where `OdpBootstrap` gives a signed fit.
+`BayesOdp` therefore checks both sums before sampling and returns
+`Error::InvalidSetting` naming the origin or age (decision 5); tests use a
+triangle with a negative development column and one with a negative
+newest-origin cell. Where the MLE exists it is the chain ladder (the ODP
+GLM's MLE is the chain ladder), which is the first test.
 
 Gradient, by hand (there is no autodiff in `prospicio-bayes`):
 `∂/∂η_wd = (X_wd − μ_wd)/φ`, summed into `c`, `a_w` and `b_d`, plus the
@@ -293,14 +325,26 @@ pub mod bayes {
   decision 4.
 * `summary()` returns the posterior summary of `prospicio_bayes`
   (mean, sd, quantiles, R-hat, bulk and tail ESS) per parameter, and
-  `loo()` the PSIS-LOO of the pointwise log likelihood, so a Bayesian ODP
-  and a CRC can be compared on the same triangle as Meyers does.
-* Errors: the chain ladder's own (a non-positive development column, an
-  unknown column), the existing `Error::InvalidSetting { name, value,
-  expected }` for a
-  non-positive or non-finite prior standard deviation, and a new
-  `Error::Bayes(String)` for a sampler error from `prospicio-bayes` or a
-  setting the model does not support.
+  `loo()` the PSIS-LOO of the pointwise log likelihood. The pointwise term
+  is a normalised density, not the quasi likelihood of decision 3 (which
+  is not normalised in `x`, so its elpd is not a log predictive density):
+  `prospicio_models::Family::log_density` (`family.rs:344`) at `μ_wd` and
+  `φ`, the density `backtest.rs` already scores the ODP with. elpd is
+  compared only between models of the same response, as Meyers compares
+  CRC with CSR (Tables 6.4 and 7.3): a Bayesian ODP (incremental values)
+  with another incremental model, CRC with CSR (cumulative values). Across
+  responses, for example `BayesOdp` against CRC, the comparison is the
+  diagonal backtest's held-out scoring (decision 8), not elpd.
+* Errors: the chain ladder's own (for example an unknown column); the
+  existing `Error::InvalidSetting { name, value, expected }` for a
+  non-positive or non-finite prior standard deviation and for a triangle
+  whose observed increments sum to a non-positive value in some origin or
+  development column (decision 3); sampler errors from `prospicio-bayes`,
+  which are already `prospicio_core::Error`, through the existing
+  `Error::Core`, so the structured error is kept; and a new
+  `Error::Bayes(&'static str)`, in the style of `Error::Bootstrap`, only
+  for a setting the model does not support (for example `Synchronized`,
+  decision 11).
 
 ### 6. Dispersion
 
@@ -331,9 +375,12 @@ Priors as Meyers' Stan code has them: `logelr ~ N(−0.4, ·)`,
 monograph prints the scales as "10"; whether that is a variance or a
 standard deviation, and the exact transform Meyers uses to keep `s_i` away
 from 0 (an inverse gamma mapped through a CDF), are read from the
-appendix code in PR 3 and copied exactly, since parity is against that
-code. On the sampler's unconstrained scale `s_i` is a logit with its log
-Jacobian.
+appendix code in PR 3, and the prior scales are copied exactly. For
+`s_i`, Meyers' transform and a logit with its log Jacobian both give a
+`U(0, 1)` prior and so the same posterior; we implement the logit (the
+simpler unconstrained map for our sampler), and parity is on posterior
+summaries, which is all parity can be with a different sampler (decision
+10).
 
 Output: `ultimates` (simulated `C_wm` per origin: cells are conditionally
 independent given the parameters, so only the last age is drawn) and
@@ -348,25 +395,40 @@ impl Meyers { pub fn fit(&self, triangle: &Triangle, column: &str, premium: &str
 ```
 
 Meyers' published targets for group 353 Commercial Auto, 10,000 draws:
-CRC paid total 40,121 (SE 2,487); CRC incurred 39,147 (SE 1,642); CSR
-paid 37,597 (SE 2,401) with `γ` 0.0446 (sd 0.0282); the outcome 40,000;
-elpd_loo CSR 49.76, CRC 47.80. These are a secondary check (decision 10).
+CRC paid total 40,121 (SE 2,487, Table 5.2); CRC incurred 39,147 (SE
+1,642, Table 5.3); CSR paid 37,597 (SE 2,401, Table 7.2) with `γ` 0.0446
+(sd 0.0282, Table 7.1); the outcomes, paid 40,000 and incurred 40,061;
+elpd_loo CSR 49.76, CRC 47.80 (Tables 6.4 and 7.3). These are a secondary
+check (decision 10).
 
 Notes carried into PR 3: no development past age `m`, since `β_m = 0`
-fixes the last age as ultimate; `a_1 = 0` and `β_m = 0` and the σ
-ordering are needed for identification; CAY's recursion (`ρ` times the
+fixes the last age as ultimate; `a_1 = 0` and `β_m = 0` are needed for
+identification; the σ ordering is a modelling constraint (variability
+falls as claims settle), not an identification one; CAY's recursion (`ρ` times the
 previous origin's residual) makes the likelihood depend on observed lagged
 cells and is why CAY waits for PR 5.
 
 ### 8. The diagonal backtest
 
-Proposed (PR 2). `BayesOdp` and `Meyers` implement `TriangleModel`
+Proposed (PR 2). `BayesOdp` implements `TriangleModel`
 (`backtest.rs:40`), whose doc already names "a Bayesian model": `forecast`
 fits on the train rows and returns `n_sims` joint posterior predictive
-draws of the test rows. `fit_rows` keeps every train row, negative
-increments included, since the quasi likelihood accepts them (the Poisson
-GLM's drops them). This gives Meyers-style calibration on held-out
-diagonals beside the bootstraps and the GLM.
+draws of the test rows, with `log_density` from the normalised density of
+decision 5. `fit_rows` keeps every train row, negative increments
+included, since the quasi likelihood accepts them (the Poisson GLM's drops
+them), subject to decision 3's row and column check. This gives
+Meyers-style calibration on held-out diagonals beside the bootstraps and
+the GLM.
+
+`Meyers` does not implement `TriangleModel` in PR 2 or PR 3. The trait's
+rows carry incremental values (`frame.rs:31`), while CRC and CSR model
+cumulative values with premium. An adapter would have to rebuild
+cumulatives from the frame's increments, read premium from its `exposure`
+column, simulate each origin's whole cumulative path jointly (differences
+of independently drawn cumulative cells would inflate the variance and
+often be negative) and leave `log_density` as `None` (the density of a
+difference of lognormals has no closed form). That adapter, or a backtest
+on cumulative cells for these models, is a later PR.
 
 ### 9. Informative priors: the Bayesian Bornhuetter–Ferguson
 
@@ -413,8 +475,13 @@ Monte Carlo error is negligible.
   the defaults (4×1,000 draws, 10,000 simulations), whose MCSE is about
   `0.02 s` on the means. Different samplers never give identical draws,
   so parity is on summaries, never draws.
-* **Sanity checks, not parity** (unit tests in PR 1): with priors of sd
-  1,000 the posterior mode equals the chain ladder's GLM fit to 1e-8; the
+* **Sanity checks, not parity** (unit tests in PR 1): with the priors
+  switched off (Newton on the likelihood alone) the mode equals the chain
+  ladder's GLM fit to 1e-8. With priors of sd 1,000 it cannot: a prior
+  shifts a parameter by about `(θ − m)/(sd² I)` for Fisher information
+  `I`, about 1e-6 on GenIns's last development parameter (one cell,
+  information about 1.3), so that test checks instead that the difference
+  shrinks as `1/sd²` between sd 100 and 1,000; the
   posterior mean reserve on GenIns is within 2% of the chain ladder's and
   of `OdpBootstrap`'s mean, and its sd within 10% of the bootstrap's (the
   England and Verrall result that the two agree under vague priors); exact
@@ -434,13 +501,26 @@ same model, independently), and the output has the shape of
 `to_long`, `totals` and `development_table`. `dependence` is the existing
 `SegmentDependence`:
 
-* `Independent` (default): each segment's simulations as drawn;
+* `Independent` (default): each segment's simulations as drawn, with a
+  distinct seed per segment. `PosteriorDraws::predictive` gives simulation
+  `i` the stream `StreamRng::new(seed, i)` (through
+  `PredictiveDistribution::simulate`), and each segment calls it on its
+  own, so the same `seed` in every segment would give every segment the
+  same uniforms in simulation `i` (the same posterior-draw pick and the
+  same Gamma uniforms), a strong spurious positive dependence. Segment `k`
+  (in key order) therefore uses a seed derived from `(seed, k)` for both
+  its chains and its predictive step, by the same derivation as decision
+  5's split, fixed in PR 1. The bootstraps avoid the problem differently,
+  by drawing all segments of simulation `i` from one stream in index order
+  (`dependence.rs`), which is not available when each segment samples its
+  own posterior. A test checks that the rank correlation between segment
+  totals under `Independent` is about 0 (within `3/√n_sims`);
 * `RankCorrelation { spearman }`: whole simulations of each segment
   reordered by Iman–Conover on the segment totals through
   `reorder_groups`, exactly as for the bootstraps, since it needs only a
   `PredictiveDistribution` per segment;
-* `Synchronized`: an error (`Error::Bayes`), since it shares residual
-  positions and a posterior has none.
+* `Synchronized`: an error (`Error::Bayes`, decision 5), since it shares
+  residual positions and a posterior has none.
 
 Dependence learned from the data through shared parameters (a joint
 posterior across lines, Zhang and Dukic 2013, Meyers 2019 ch. 8) is a
@@ -503,15 +583,20 @@ the ODP bootstrap agree on GenIns and by how much (findings), with
 Each has a recommendation; nothing is built until the user picks.
 
 1. **First model.** (a) Bayesian ODP, then CRC and CSR; (b) CRC and CSR
-   first; (c) both in one PR. *Recommended: (a)*, decision 1: the roadmap
-   names the chain ladder, it is the easiest to sample with a hand-written
-   gradient, and it checks against both a Stan run and our bootstrap.
+   first; (c) both in one PR; (d) as (a), with CAY moved from PR 5 into
+   PR 3. *Recommended: (a)*, decision 1: the roadmap names the chain
+   ladder, it is the easiest to sample with a hand-written gradient, and it
+   checks against both a Stan run and our bootstrap. CRC itself is not
+   better calibrated than the bootstraps; CSR is the paid improvement, and
+   the incurred one (CAY) arrives only in PR 5 under (a). Choose (d) if a
+   better-calibrated incurred model matters sooner.
 2. **Where the code lives.** (a) A `bayes` feature and module in
    `prospicio-reserving`; (b) a `reserving` module in `prospicio-bayes`;
    (c) a new `prospicio-reserving-bayes` crate. *Recommended: (a)*,
    decision 2: the Reserving lane's own crate, WASM check unchanged, and
-   access to the one-year and dependence internals without widening the
-   public API.
+   no crate added to the release. PRs 1 to 4 need no internals; (a) only
+   helps a later one-year view or reuse of the `pub(crate)` dependence
+   helpers.
 3. **Dispersion.** (a) Plug in the chain ladder's Pearson `φ`; (b) sample
    `φ` with a prior under the quasi likelihood; (c) a separate proper
    model (gamma or Tweedie increments) with sampled dispersion, later.
