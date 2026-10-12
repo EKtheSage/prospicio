@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Proposed** (2026-10-11; every decision below waits on the user, see "Open decisions for the user") · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended, and decisions 1, 2 and 10 below are settled; the rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -84,7 +84,7 @@ Data:
 
 ### 1. Which model ships first
 
-Proposed. Four families were compared:
+Decided 2026-10-12 (the user, open decision 1: option (a)). Four families were compared:
 
 | Candidate | Fits the roadmap ("Bayesian chain ladder") | Reference parity | Sampler difficulty |
 |---|---|---|---|
@@ -112,7 +112,7 @@ default should not choose.
 
 ### 2. Where the code lives
 
-Proposed. `prospicio-reserving` is in the WASM scope (AGENTS.md "Checks",
+Decided 2026-10-12 (the user, open decision 2: option (a)). `prospicio-reserving` is in the WASM scope (AGENTS.md "Checks",
 `docs/architecture.md`, `ci.yml` line 38, default features), and heavy
 engines "never become required Rust dependencies"
 (`docs/architecture.md`). `prospicio-bayes` pulls in `nuts-rs`, Rayon and
@@ -444,7 +444,7 @@ program of the paper's model. Exposure is a measure column, as in
 
 ### 10. Validation
 
-Proposed. There is no package to match, so the reference is the same
+Decided 2026-10-12 (the user, open decision 5: option (a), CmdStan through cmdstanpy under `uv`). There is no package to match, so the reference is the same
 model written in Stan and sampled long enough that the reference's own
 Monte Carlo error is negligible.
 
@@ -580,7 +580,9 @@ the ODP bootstrap agree on GenIns and by how much (findings), with
 
 ## Open decisions for the user
 
-Each has a recommendation; nothing is built until the user picks.
+Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a) and
+5 (a). The others wait on the user; nothing past PR 1 is built until they
+are settled.
 
 1. **First model.** (a) Bayesian ODP, then CRC and CSR; (b) CRC and CSR
    first; (c) both in one PR; (d) as (a), with CAY moved from PR 5 into
