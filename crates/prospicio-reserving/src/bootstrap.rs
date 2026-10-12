@@ -868,16 +868,29 @@ impl Simulation<'_> {
     /// An incremental value with expected value `mean` and the process
     /// error of [`ProcessDistribution`].
     pub(crate) fn with_process(&self, mean: f64, rng: &mut StreamRng) -> f64 {
-        match self.process {
-            ProcessDistribution::None => mean,
-            ProcessDistribution::Gamma => {
-                if mean == 0.0 || self.scale == 0.0 {
-                    return mean;
-                }
-                let gamma = Gamma::new(mean.abs() / self.scale, self.scale)
-                    .expect("shape and scale are finite and positive");
-                mean.signum() * gamma.sample(rng, 1)[0]
+        process_draw(self.process, self.scale, mean, rng)
+    }
+}
+
+/// An incremental value with expected value `mean` and the process error of
+/// `process` at scale `scale`: for [`ProcessDistribution::Gamma`], shape
+/// `|mean| / scale` and scale `scale` (variance `scale |mean|`), signed like
+/// the mean. Shared by the bootstraps and the Bayesian ODP.
+pub(crate) fn process_draw(
+    process: ProcessDistribution,
+    scale: f64,
+    mean: f64,
+    rng: &mut StreamRng,
+) -> f64 {
+    match process {
+        ProcessDistribution::None => mean,
+        ProcessDistribution::Gamma => {
+            if mean == 0.0 || scale == 0.0 {
+                return mean;
             }
+            let gamma = Gamma::new(mean.abs() / scale, scale)
+                .expect("shape and scale are finite and positive");
+            mean.signum() * gamma.sample(rng, 1)[0]
         }
     }
 }

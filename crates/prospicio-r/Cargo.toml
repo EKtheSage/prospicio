@@ -21,7 +21,8 @@ prospicio-glm.workspace = true
 prospicio-models.workspace = true
 prospicio-prob.workspace = true
 prospicio-pricing.workspace = true
-prospicio-reserving.workspace = true
+# The bayes feature: BayesOdp (docs/design/reserving-bayes.md, decision 2).
+prospicio-reserving = { workspace = true, features = ["bayes"] }
 # result_condition: Rust errors come back as R condition objects (raised by
 # R/prospicio/R/distributions.R) instead of panics, so R prints no Rust
 # panic message for ordinary input errors.

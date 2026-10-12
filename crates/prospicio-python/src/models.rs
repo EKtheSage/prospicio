@@ -1800,6 +1800,18 @@ pub(crate) struct PyElpd {
     k_threshold: Option<f64>,
 }
 
+impl PyElpd {
+    /// A PSIS-LOO result, as ``BayesGlmFit.loo`` returns it; also used by
+    /// the reserving lane's ``BayesOdpFit.loo``.
+    pub(crate) fn from_loo(l: prospicio_bayes::elpd::Loo) -> Self {
+        Self {
+            inner: l.estimate,
+            pareto_k: Some(l.pareto_k),
+            k_threshold: Some(l.k_threshold),
+        }
+    }
+}
+
 #[pymethods]
 impl PyElpd {
     /// Expected log pointwise predictive density, summed.
@@ -2352,11 +2364,7 @@ impl PyBayesGlmFit {
     fn loo(&self, py: Python<'_>, design: PyRef<'_, PyDesign>, y: Vec<f64>) -> PyResult<PyElpd> {
         let (fit, d) = (&self.inner, &design.inner);
         let l = py.detach(|| fit.loo(d, &y)).map_err(to_py)?;
-        Ok(PyElpd {
-            inner: l.estimate,
-            pareto_k: Some(l.pareto_k),
-            k_threshold: Some(l.k_threshold),
-        })
+        Ok(PyElpd::from_loo(l))
     }
 
     /// Posterior mean of each row's mean.

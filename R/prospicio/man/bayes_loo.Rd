@@ -7,7 +7,8 @@
 bayes_loo(model)
 }
 \arguments{
-\item{model}{A \link{bayes_glm_model}.}
+\item{model}{A \link{bayes_glm_model}, or a \link{bayes_odp_fit} for the PSIS-LOO
+of its observed increments.}
 }
 \value{
 As \code{\link[=elpd_loo]{elpd_loo()}}.
