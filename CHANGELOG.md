@@ -27,6 +27,17 @@ under "Unreleased" until then.
   `prospicio.pricing`; R `rate_level()`, `trend_fit()`, `trend_factor()`,
   `average_written_date()`, `average_earned_date()`, `year_fraction()`
   (#179).
+- The overall rate indication in `prospicio_pricing::ratemaking`: the loss
+  ratio and pure premium methods over experience years projected to the
+  forecast period (`LossRatioExperience`, `PurePremiumExperience`),
+  expense and profit provisions with the permissible loss ratio
+  (`Provisions`, `premium_based_expenses`), and credibility against a
+  complement (`credibility_weighted`, `trended_present_rates`), matching
+  Werner and Modlin's Appendices A to C. Python `prospicio.pricing`; R
+  `loss_ratio_experience()`, `pure_premium_experience()`,
+  `indicated_change()`, `indicated_rate()`, `permissible_loss_ratio()`,
+  `premium_based_expenses()`, `credibility_weighted()`,
+  `trended_present_rates()`.
 
 ## 0.0.2 (2026-10-12)
 
