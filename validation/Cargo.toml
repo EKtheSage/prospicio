@@ -9,7 +9,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-prospicio-reserving.workspace = true
+prospicio-reserving = { workspace = true, features = ["bayes"] }
 
 [dev-dependencies]
 prospicio-aggregate.workspace = true

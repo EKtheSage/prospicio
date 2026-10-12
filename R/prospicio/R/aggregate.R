@@ -149,6 +149,64 @@ annual_maxima <- function(events) {
   predictive_distribution(ptr = rust_result(events@ptr$maxima()))
 }
 
+#' Compound moments to third order and moment approximations
+#'
+#' `compound_moments()` is the mean, variance, third cumulant, cv and
+#' skewness of `S = X_1 + ... + X_N`, from the count's cumulants and the
+#' severity's first three moments. `moment_approximation()` fits a
+#' distribution to them, as the Python package `aggregate`'s `approximate`:
+#' `"normal"`, `"gamma"` or `"lognormal"` (mean and cv), `"shifted_gamma"` or
+#' `"shifted_lognormal"` (mean, cv and skewness, which must be positive).
+#' `approximation_cdf()` and `approximation_quantile()` evaluate a fit.
+#'
+#' @param frequency A claim count, as for [simulate_events()].
+#' @param severity A severity with a closed-form third moment.
+#' @param kind The family.
+#' @param approximation A fit from `moment_approximation()`.
+#' @param x Values.
+#' @param p Probabilities.
+#' @returns `compound_moments()`: a named vector. `moment_approximation()`: a
+#'   list with `kind`, `parameters` (named: `mean` and `sd`; `shape` and
+#'   `scale`; `meanlog` and `sdlog`; plus `shift`) and `moments`. The others:
+#'   numeric vectors.
+#' @export
+#' @examples
+#' m <- compound_moments(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49))
+#' m
+#' fit <- moment_approximation(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49),
+#'                             "shifted_gamma")
+#' fit$parameters
+#' approximation_quantile(fit, c(0.5, 0.99))
+compound_moments <- function(frequency, severity) {
+  m <- rust_result(compound_moments_rust(frequency@ptr, severity@ptr))
+  stats::setNames(m, c("mean", "variance", "third_cumulant", "cv", "skew"))
+}
+
+#' @rdname compound_moments
+#' @export
+moment_approximation <- function(frequency, severity,
+                                 kind = c("shifted_lognormal", "shifted_gamma", "gamma",
+                                          "lognormal", "normal")) {
+  kind <- match.arg(kind)
+  m <- compound_moments(frequency, severity)[c("mean", "variance", "third_cumulant")]
+  params <- rust_result(approximation_parameters_rust(unname(m), kind))
+  list(kind = kind, parameters = unlist(params), moments = m)
+}
+
+#' @rdname compound_moments
+#' @export
+approximation_cdf <- function(approximation, x) {
+  rust_result(approximation_eval_rust(unname(approximation$moments), approximation$kind,
+                                      as.double(x), FALSE))
+}
+
+#' @rdname compound_moments
+#' @export
+approximation_quantile <- function(approximation, p) {
+  rust_result(approximation_eval_rust(unname(approximation$moments), approximation$kind,
+                                      as.double(p), TRUE))
+}
+
 #' Years of losses from elsewhere
 #'
 #' Builds an `event_set` from your own simulation, or a catastrophe model's

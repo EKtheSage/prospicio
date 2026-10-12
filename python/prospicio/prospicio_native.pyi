@@ -48,6 +48,59 @@ class Allocation:
         """
 
 @final
+class Approximation:
+    """
+    A distribution fitted to compound moments, from
+    ``CompoundMoments.approximate``.
+    """
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(S <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        The family: ``"normal"``, ``"gamma"``, ``"lognormal"``,
+        ``"shifted_gamma"`` or ``"shifted_lognormal"``.
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def parameters(self, /) -> list[tuple[str, float]]:
+        """
+        The parameters by name: ``mean`` and ``sd``; ``shape`` and
+        ``scale``; ``meanlog`` and ``sdlog``; with ``shift`` for the
+        shifted families.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The ``p`` quantile.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class ArchimedeanCopula:
     """
     An exchangeable Archimedean copula: Clayton, Gumbel, Frank or Joe.
@@ -233,6 +286,285 @@ class BayesGlmFit:
         Returns
         -------
         list of dict
+        """
+
+@final
+class BayesOdp:
+    """
+    The Bayesian chain ladder of England and Verrall (2002, 2006): the
+    over-dispersed Poisson model of a cumulative triangle's incremental
+    values ``X`` with mean ``exp(c + a[w] + b[d])`` (``a[1] = b[1] = 0``),
+    normal priors on the log scale, and the chain ladder's Pearson scale
+    ``phi`` (``OdpBootstrapFit.scale``) plugged in. The posterior is sampled
+    with NUTS, and each draw projects the future cells up to the oldest
+    observed age (no tail) with the process error of ``process``, as
+    ``OdpBootstrap`` does. Every origin's and every development column's
+    observed increments must sum to more than zero; negative cells are
+    allowed.
+    
+    One ``seed`` replays a fit exactly, whatever the number of threads: the
+    chains and the simulations each take a seed derived from it.
+    
+    Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
+    per chain, any divergent transition) do not fail the fit: ``fit``
+    raises one ``UserWarning`` listing them, and they stay in
+    ``BayesOdpFit.diagnostics``.
+    
+    Parameters
+    ----------
+    intercept_sd : float, default 10.0
+        Standard deviation of the normal prior on the intercept ``c``,
+        centred on the log of the mean observed increment.
+    origin_sd : float, default 10.0
+        Standard deviation of the normal prior on each origin effect
+        ``a[w]``, ``w >= 2``, centred on 0.
+    development_sd : float, default 10.0
+        Standard deviation of the normal prior on each development effect
+        ``b[d]``, ``d >= 2``, centred on 0.
+    process : {"gamma", "none"}, default "gamma"
+        Process error on each simulated future increment: Gamma with mean
+        ``mu`` and variance ``phi * mu``, or none for parameter error only.
+    chains, tune, draws : int, default 4, 1000, 1000
+        NUTS chains, warm-up draws per chain and kept draws per chain.
+    n_sims : int, default 10000
+        Number of predictive simulations, independent of the number of
+        posterior draws; positive.
+    seed : int, default 0
+        Seed of the chains and of the simulations, from 0 to ``2**64 - 1``.
+    target_accept : float, default 0.95
+        Target mean acceptance rate of the step-size adaptation; above
+        NUTS's usual 0.8, which on triangles such as RAA usually leaves a
+        few divergent transitions.
+    max_depth : int, default 10
+        Largest NUTS tree depth.
+    
+    Raises
+    ------
+    ValueError
+        If ``n_sims`` is zero or ``process`` is unknown.
+    OverflowError
+        If an integer setting is negative or too large.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import BayesOdp, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ... )
+    >>> fit = BayesOdp(n_sims=2000, seed=1).fit(tri, "values")
+    >>> fit.reserves.components()
+    [('2020',), ('2021',), ('2022',), ('2023',)]
+    >>> fit.reserves.mean() > 0
+    True
+    >>> fit.parameter_names[:2]
+    ['c', 'a[2]']
+    """
+    def __new__(cls, /, intercept_sd: float = 10.0, origin_sd: float = 10.0, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> BayesOdp: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of NUTS chains.
+        """
+    @property
+    def development_sd(self, /) -> float:
+        """
+        Standard deviation of each development effect's prior.
+        """
+    @property
+    def draws(self, /) -> int:
+        """
+        Kept draws per chain.
+        """
+    def fit(self, /, triangle: Triangle, column: str) -> BayesOdpFit:
+        """
+        Samples the posterior of one measure column of a single-segment
+        cumulative triangle and simulates its reserves. Every origin must be
+        observed from the first age up to its latest, there must be more
+        observed cells than parameters, and every origin's and every
+        development column's increments must sum to more than zero. Raises
+        one ``UserWarning`` listing the failed diagnostics, if any.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        column : str
+        
+        Returns
+        -------
+        BayesOdpFit
+        
+        Raises
+        ------
+        ValueError
+            As ``OdpBootstrap.fit``; if the triangle has several segments; if
+            a prior standard deviation is not positive and finite or a
+            sampler setting is invalid; or if an origin's or a development
+            column's increments do not sum to more than zero.
+        """
+    @property
+    def intercept_sd(self, /) -> float:
+        """
+        Standard deviation of the intercept's prior.
+        """
+    @property
+    def max_depth(self, /) -> int:
+        """
+        Largest NUTS tree depth.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of predictive simulations.
+        """
+    @property
+    def origin_sd(self, /) -> float:
+        """
+        Standard deviation of each origin effect's prior.
+        """
+    @property
+    def process(self, /) -> str:
+        """
+        Process error: ``"gamma"`` or ``"none"``.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        Seed of the chains and of the simulations.
+        """
+    @property
+    def target_accept(self, /) -> float:
+        """
+        Target mean acceptance rate.
+        """
+    @property
+    def tune(self, /) -> int:
+        """
+        Warm-up draws per chain.
+        """
+
+@final
+class BayesOdpFit:
+    """
+    A fitted ``BayesOdp``: the posterior of ``c``, ``a[2..n]`` and
+    ``b[2..m]``, its MCMC diagnostics, and the posterior predictive
+    distribution of the reserves, laid out as ``OdpBootstrapFit.reserves``.
+    The frames' ``latest``, ``ultimate`` and ``reserve`` are the
+    volume-weighted chain ladder's (``chain_ladder``); ``mean`` and
+    ``std_dev`` are the posterior predictive reserve's.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of the triangle, whose latest
+        values and Pearson scale the model uses.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladder's development factors, one row per age, as
+        ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
+        ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
+        failed threshold; empty when every threshold holds).
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws, one row per draw (chain by chain), one column per
+        parameter in the order of ``parameter_names``.
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of the observed increments, with each cell's relative
+        efficiency from the chains, as ``BayesGlmFit.loo``. The pointwise
+        term is the normalised over-dispersed Poisson density at the cell's
+        mean and ``scale``, so compare the result only with models of the
+        same incremental values.
+        
+        Returns
+        -------
+        Elpd
+        
+        Raises
+        ------
+        ValueError
+            If an observed increment is negative (the density does not
+            exist there).
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each reserve component.
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names: ``c``, ``a[2]`` to ``a[n]``, ``b[2]`` to ``b[m]``.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of the reserve (the sum of
+        future incremental values) by origin: dimension ``"origin"``, one
+        component per origin, one row per simulation.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The plugged-in scale ``phi``, the chain ladder's Pearson scale (the
+        ODP bootstrap's).
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary, one row per parameter: ``parameter``, ``mean``,
+        ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and
+        ``ess_tail``, the fields of ``BayesGlmFit.summary``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, the chain ladder's ``latest``,
+        ``ultimate`` and ``reserve``, and the ``mean`` and ``std_dev`` of
+        the posterior predictive reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row: the chain ladder's totals, the ``scale``, and the ``mean``
+        and ``std_dev`` of the posterior predictive total reserve. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
         """
 
 @final
@@ -2028,6 +2360,58 @@ class CollectiveModel:
         Returns
         -------
         float
+        """
+
+@final
+class CompoundMoments:
+    """
+    Compound moments to third order, from ``compound_moments``.
+    """
+    def __repr__(self, /) -> str: ...
+    def approximate(self, /, kind: str) -> Approximation:
+        """
+        The moment-matched approximation: ``"normal"``, ``"gamma"``,
+        ``"lognormal"`` (mean and cv), ``"shifted_gamma"`` or
+        ``"shifted_lognormal"`` (mean, cv and skewness).
+        
+        Parameters
+        ----------
+        kind : str
+        
+        Returns
+        -------
+        Approximation
+        
+        Raises
+        ------
+        ValueError
+            For an unknown kind, a non-positive mean (gamma, lognormal) or a
+            non-positive skewness (the shifted fits).
+        """
+    @property
+    def cv(self, /) -> float:
+        """
+        The coefficient of variation.
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        ``E[S]``.
+        """
+    @property
+    def skew(self, /) -> float:
+        """
+        The skewness.
+        """
+    @property
+    def third_cumulant(self, /) -> float:
+        """
+        The third cumulant, ``E[(S - E[S])^3]``.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        ``Var[S]``.
         """
 
 @final
@@ -5923,6 +6307,64 @@ class Layer:
         >>> layer = Layer("L", 1000.0, 0.0).with_swing_rating(0.0, 1.25, 100.0, 300.0)
         >>> [layer.premium_for(x) for x in (40.0, 200.0, 400.0)]
         [100.0, 250.0, 300.0]
+        """
+
+@final
+class LayerStatistics:
+    """
+    A per-occurrence layer's statistics, from
+    ``occurrence_layer_statistics``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aggregate(self, /) -> CompoundMoments:
+        """
+        The annual ceded loss, at the share.
+        """
+    @property
+    def attachment(self, /) -> float:
+        """
+        The attachment.
+        """
+    @property
+    def count(self, /) -> CompoundMoments:
+        """
+        The number of claims that reach the layer.
+        """
+    @property
+    def limit(self, /) -> float:
+        """
+        The per-occurrence limit.
+        """
+    @property
+    def loss_on_line(self, /) -> float:
+        """
+        The annual ceded mean over ``share * limit``.
+        """
+    @property
+    def pr_attach(self, /) -> float:
+        """
+        ``P(X > attachment)``, per claim.
+        """
+    @property
+    def pr_detach(self, /) -> float:
+        """
+        ``P(X >= attachment + limit)``, per claim.
+        """
+    @property
+    def pr_loss(self, /) -> float:
+        """
+        The chance of a loss to the layer in the year.
+        """
+    @property
+    def severity(self, /) -> CompoundMoments:
+        """
+        The ceded loss of a claim that reaches the layer, at the share.
+        """
+    @property
+    def share(self, /) -> float:
+        """
+        The placed share.
         """
 
 @final
@@ -10998,6 +11440,31 @@ class TowerGrids:
         ``False``, means are still exact but shapes are smeared by up to a
         step.
         """
+    def price(self, /, distortion: Distortion) -> TowerPrice:
+        """
+        Each view priced on its own by a distortion: the stand-alone price
+        of the gross, of every layer's cession and of the net, as
+        ``aggregate``'s ``reins_price_df``.
+        
+        Parameters
+        ----------
+        distortion : Distortion
+        
+        Returns
+        -------
+        TowerPrice
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> from prospicio.distributions import Grid, Poisson
+        >>> from prospicio.risk import Distortion
+        >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+        >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
+        >>> p = r.price(Distortion.proportional_hazard(0.7))
+        >>> round(p.ceded[0].loss, 12), p.ceded[0].premium > p.ceded[0].loss
+        (1.2, True)
+        """
 
 @final
 class TowerModel:
@@ -11040,6 +11507,28 @@ class TowerModel:
     def severity(self, /) -> PiecewisePareto:
         """
         The fitted severity.
+        """
+
+@final
+class TowerPrice:
+    """
+    A tower's views priced by a distortion, from ``TowerGrids.price``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ceded(self, /) -> list[ViewPrice]:
+        """
+        Each layer's cession, in tower order.
+        """
+    @property
+    def gross(self, /) -> ViewPrice:
+        """
+        The gross.
+        """
+    @property
+    def net(self, /) -> ViewPrice |None:
+        """
+        The net, or ``None`` when the tower has no net grid.
         """
 
 @final
@@ -12064,6 +12553,35 @@ class Tweedie:
         """
 
 @final
+class ViewPrice:
+    """
+    One view's price under a distortion, from ``TowerGrids.price``: the
+    expected loss ``loss``, the premium, the margin ``premium - loss`` and
+    the loss ratio ``loss / premium``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def loss(self, /) -> float:
+        """
+        The expected loss.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        ``loss / premium``.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        ``premium - loss``.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The distorted expectation.
+        """
+
+@final
 class Weibull:
     """
     Weibull distribution with shape ``k`` and scale ``lam``:
@@ -12567,6 +13085,39 @@ def classical_premium(principle: str, dist: Any, loading: float, q: float = 2.0)
     >>> from prospicio.pricing import classical_premium
     >>> classical_premium("standard_deviation", Sampled([0.0, 10.0]), 0.2)
     6.0
+    """
+
+def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
+    """
+    Compound moments to third order: the mean, variance and third cumulant
+    of ``S = X_1 + ... + X_N``, from the count's cumulants and the
+    severity's first three moments, and the approximations fitted to them
+    (the Python package ``aggregate``'s ``approximate``).
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity with a closed-form third moment
+    
+    Returns
+    -------
+    CompoundMoments
+    
+    Raises
+    ------
+    ValueError
+        If the severity has no closed-form third moment, or an infinite one.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import compound_moments
+    >>> from prospicio.distributions import Gamma, Poisson
+    >>> m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    >>> round(m.mean, 6), round(m.cv, 6), round(m.skew, 6)
+    (500.0, 0.386005, 0.512946)
+    >>> fit = m.approximate("shifted_gamma")
+    >>> [(k, round(v, 4)) for k, v in fit.parameters]
+    [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
     """
 
 def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:
@@ -13275,6 +13826,48 @@ def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
     >>> oep = occurrence_exceedance(Poisson(2.0), sev, 500.0)
     >>> abs(oep - (1 - math.exp(-2 * (1 - sev.cdf(500.0))))) < 1e-12
     True
+    """
+
+def occurrence_layer_statistics(frequency: Any, severity: Grid, share: float, limit: float, attachment: float) -> LayerStatistics:
+    """
+    The statistics of ``share`` of ``limit`` xs ``attachment`` per
+    occurrence on a severity grid, as ``aggregate``'s ``reins_stats_df``.
+    
+    The chances that a claim reaches the layer (``P(X > a)``, exclusive)
+    and exhausts it (``P(X >= a + l)``, inclusive), and that the year has a
+    loss to it; the excess count (the count thinned to the claims that
+    reach the layer), the layer severity given a loss to it and the annual
+    ceded loss, each by its first three cumulants; and the loss on line.
+    The share scales the moments exactly.
+    
+    Parameters
+    ----------
+    frequency : Poisson, NegativeBinomial or Binomial
+    severity : Grid
+    share : float
+        In ``(0, 1]``.
+    limit : float
+        May be ``inf``; the loss on line is then 0.
+    attachment : float
+    
+    Returns
+    -------
+    LayerStatistics
+    
+    Raises
+    ------
+    ValueError
+        For a share outside ``(0, 1]``, a non-positive limit or a negative
+        attachment.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import occurrence_layer_statistics
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    >>> s = occurrence_layer_statistics(Poisson(3.0), sev, 1.0, 2.0, 2.0)
+    >>> round(s.pr_attach, 12), round(s.count.mean, 12), round(s.aggregate.mean, 12)
+    (0.3, 0.9, 1.2)
     """
 
 def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:

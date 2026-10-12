@@ -856,3 +856,222 @@ pub(crate) fn occurrence_pml(
     let inner = prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_py)?;
     Ok(PyOccurrencePml { inner })
 }
+
+/// Compound moments to third order, from ``compound_moments``.
+#[pyclass(name = "CompoundMoments", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyCompoundMoments {
+    pub(crate) inner: prospicio_aggregate::CompoundMoments,
+}
+
+fn approximation_kind(kind: &str) -> PyResult<prospicio_aggregate::ApproximationKind> {
+    use prospicio_aggregate::ApproximationKind as K;
+    Ok(match kind {
+        "normal" => K::Normal,
+        "gamma" => K::Gamma,
+        "lognormal" => K::Lognormal,
+        "shifted_gamma" => K::ShiftedGamma,
+        "shifted_lognormal" => K::ShiftedLognormal,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "kind must be \"normal\", \"gamma\", \"lognormal\", \"shifted_gamma\" or \"shifted_lognormal\", got {other:?}"
+            )));
+        }
+    })
+}
+
+#[pymethods]
+impl PyCompoundMoments {
+    /// ``E[S]``.
+    #[getter]
+    fn mean(&self) -> f64 {
+        self.inner.mean
+    }
+
+    /// ``Var[S]``.
+    #[getter]
+    fn variance(&self) -> f64 {
+        self.inner.variance
+    }
+
+    /// The third cumulant, ``E[(S - E[S])^3]``.
+    #[getter]
+    fn third_cumulant(&self) -> f64 {
+        self.inner.third_cumulant
+    }
+
+    /// The coefficient of variation.
+    #[getter]
+    fn cv(&self) -> f64 {
+        self.inner.cv()
+    }
+
+    /// The skewness.
+    #[getter]
+    fn skew(&self) -> f64 {
+        self.inner.skew()
+    }
+
+    /// The moment-matched approximation: ``"normal"``, ``"gamma"``,
+    /// ``"lognormal"`` (mean and cv), ``"shifted_gamma"`` or
+    /// ``"shifted_lognormal"`` (mean, cv and skewness).
+    ///
+    /// Parameters
+    /// ----------
+    /// kind : str
+    ///
+    /// Returns
+    /// -------
+    /// Approximation
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For an unknown kind, a non-positive mean (gamma, lognormal) or a
+    ///     non-positive skewness (the shifted fits).
+    fn approximate(&self, kind: &str) -> PyResult<PyApproximation> {
+        let inner = self
+            .inner
+            .approximate(approximation_kind(kind)?)
+            .map_err(to_py)?;
+        Ok(PyApproximation { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CompoundMoments(mean={:?}, cv={:?}, skew={:?})",
+            self.inner.mean,
+            self.inner.cv(),
+            self.inner.skew()
+        )
+    }
+}
+
+/// A distribution fitted to compound moments, from
+/// ``CompoundMoments.approximate``.
+#[pyclass(name = "Approximation", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyApproximation {
+    inner: prospicio_aggregate::Approximation,
+}
+
+#[pymethods]
+impl PyApproximation {
+    /// The family: ``"normal"``, ``"gamma"``, ``"lognormal"``,
+    /// ``"shifted_gamma"`` or ``"shifted_lognormal"``.
+    #[getter]
+    fn kind(&self) -> &'static str {
+        use prospicio_aggregate::Approximation as A;
+        match self.inner {
+            A::Normal { .. } => "normal",
+            A::Gamma { .. } => "gamma",
+            A::Lognormal { .. } => "lognormal",
+            A::ShiftedGamma { .. } => "shifted_gamma",
+            A::ShiftedLognormal { .. } => "shifted_lognormal",
+        }
+    }
+
+    /// The parameters by name: ``mean`` and ``sd``; ``shape`` and
+    /// ``scale``; ``meanlog`` and ``sdlog``; with ``shift`` for the
+    /// shifted families.
+    #[getter]
+    fn parameters(&self) -> Vec<(&'static str, f64)> {
+        use prospicio_aggregate::Approximation as A;
+        match self.inner {
+            A::Normal { mean, sd } => vec![("mean", mean), ("sd", sd)],
+            A::Gamma { shape, scale } => vec![("shape", shape), ("scale", scale)],
+            A::Lognormal { meanlog, sdlog } => vec![("meanlog", meanlog), ("sdlog", sdlog)],
+            A::ShiftedGamma {
+                shape,
+                scale,
+                shift,
+            } => vec![("shape", shape), ("scale", scale), ("shift", shift)],
+            A::ShiftedLognormal {
+                meanlog,
+                sdlog,
+                shift,
+            } => vec![("meanlog", meanlog), ("sdlog", sdlog), ("shift", shift)],
+        }
+    }
+
+    /// The mean.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// ``P(S <= x)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn cdf(&self, x: f64) -> PyResult<f64> {
+        self.inner.cdf(x).map_err(to_py)
+    }
+
+    /// The ``p`` quantile.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn quantile(&self, p: f64) -> PyResult<f64> {
+        self.inner.quantile(p).map_err(to_py)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Approximation(kind={:?}, parameters={:?})",
+            self.kind(),
+            self.parameters()
+        )
+    }
+}
+
+/// Compound moments to third order: the mean, variance and third cumulant
+/// of ``S = X_1 + ... + X_N``, from the count's cumulants and the
+/// severity's first three moments, and the approximations fitted to them
+/// (the Python package ``aggregate``'s ``approximate``).
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity with a closed-form third moment
+///
+/// Returns
+/// -------
+/// CompoundMoments
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the severity has no closed-form third moment, or an infinite one.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import compound_moments
+/// >>> from prospicio.distributions import Gamma, Poisson
+/// >>> m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+/// >>> round(m.mean, 6), round(m.cv, 6), round(m.skew, 6)
+/// (500.0, 0.386005, 0.512946)
+/// >>> fit = m.approximate("shifted_gamma")
+/// >>> [(k, round(v, 4)) for k, v in fit.parameters]
+/// [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
+#[pyfunction]
+pub(crate) fn compound_moments(
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+) -> PyResult<PyCompoundMoments> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = extract_severity(severity)?;
+    let inner = prospicio_aggregate::compound_moments(n.as_counting(), &sev).map_err(to_py)?;
+    Ok(PyCompoundMoments { inner })
+}

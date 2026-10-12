@@ -22,6 +22,20 @@ under "Unreleased" until then.
   `EventSet::maxima()`, matching `aggregate` 1.0.1's `oep` on Poisson
   books. Python `prospicio.aggregate`; R `occurrence_exceedance()`,
   `occurrence_pml()`, `annual_maxima()` (#182).
+- Compound moments to third order by cumulants and the moment
+  approximations of `aggregate`'s `approximate` (normal, gamma, lognormal,
+  shifted gamma, shifted lognormal), `prospicio_aggregate::moments`.
+  Python `prospicio.aggregate.compound_moments`; R `compound_moments()`,
+  `moment_approximation()`, `approximation_cdf()`,
+  `approximation_quantile()` (#184).
+- Per-occurrence layer statistics, `aggregate`'s `reins_stats_df`: the
+  chances of attaching, detaching and a loss in the year, the loss on line,
+  and the moments of the excess count, the layer severity and the annual
+  ceded loss (`prospicio_aggregate::occurrence_layer_statistics`); and
+  each view of a tower on the grid priced under a distortion,
+  `reins_price_df` (`TowerGrids::price`). Python
+  `prospicio.reinsurance.occurrence_layer_statistics`,
+  `TowerGrids.price`; R `occurrence_layer_statistics()`, `tower_price()` (#187).
 
 ### Examples
 
@@ -39,6 +53,23 @@ under "Unreleased" until then.
   error is drawn as in the lifetime view. R gains `bootstrap_tail`,
   `tail_std_err` and `tail_sigma` on `odp_one_year()` and
   `mack_one_year()` (#176).
+- The Bayesian chain ladder, `prospicio_reserving::bayes::BayesOdp`, behind
+  a new `bayes` feature of `prospicio-reserving` (on in the umbrella's
+  `bayes` feature; the default build and the WASM scope are unchanged):
+  England and Verrall's over-dispersed Poisson model with log-linear
+  origin and development effects, normal priors and the chain ladder's
+  Pearson scale plugged in, sampled with NUTS on a scale whitened at the
+  posterior mode (target acceptance 0.95 by default). Reserves are a
+  `PredictiveDistribution` by origin, as the ODP
+  bootstrap's, with Gamma process error or none; the fit carries
+  the posterior draws, R-hat, ESS and divergence warnings, and PSIS-LOO.
+  Checked against the same model in Stan (CmdStan 2.39.0) on GenIns and
+  RAA, and against the chain ladder and the ODP bootstrap on GenIns
+  (`docs/design/reserving-bayes.md`). In Python as
+  `prospicio.reserving.BayesOdp` and in R as `bayes_odp()`, for a
+  single-segment triangle, with the posterior summary, the long tables,
+  PSIS-LOO (`BayesOdpFit.loo()`, R's `bayes_loo()`), and failed
+  diagnostics raised as a Python `UserWarning` or an R `warning()`.
 
 ### Pricing
 

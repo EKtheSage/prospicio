@@ -26,7 +26,8 @@ unlink(out, recursive = TRUE)
 dir.create(file.path(out, "crates"), recursive = TRUE)
 
 # The workspace crates prospicio-r needs: its [dependencies] that are
-# `prospicio-*.workspace = true`, and theirs, transitively.
+# `prospicio-*.workspace = true` or `prospicio-* = { workspace = true, ... }`
+# (the form that turns on features), and theirs, transitively.
 internal_deps <- function(crate) {
   lines <- readLines(file.path(root, "crates", crate, "Cargo.toml"))
   section <- ""
@@ -34,7 +35,10 @@ internal_deps <- function(crate) {
   for (line in lines) {
     if (grepl("^\\[", line)) section <- trimws(line)
     if (section == "[dependencies]") {
-      m <- regmatches(line, regexpr("^prospicio[a-z-]*(?=\\.workspace)", line, perl = TRUE))
+      m <- regmatches(line, regexpr(
+        "^prospicio[a-z-]*(?=\\.workspace|\\s*=\\s*\\{[^}]*workspace\\s*=\\s*true)",
+        line, perl = TRUE
+      ))
       deps <- c(deps, m)
     }
   }

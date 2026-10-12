@@ -68,6 +68,9 @@ reference:
       - aggregate.occurrence_exceedance
       - aggregate.occurrence_pml
       - aggregate.OccurrencePml
+      - aggregate.compound_moments
+      - aggregate.CompoundMoments
+      - aggregate.Approximation
   - title: Reinsurance
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:
@@ -75,6 +78,10 @@ reference:
       - reinsurance.LossSensitivePremium
       - reinsurance.Tower
       - reinsurance.TowerGrids
+      - reinsurance.TowerPrice
+      - reinsurance.ViewPrice
+      - reinsurance.occurrence_layer_statistics
+      - reinsurance.LayerStatistics
   - title: Models
     desc: Terms and design matrices, GLMs and GAMs, metrics, resampling and MCMC diagnostics.
     contents:

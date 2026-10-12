@@ -18,6 +18,14 @@ prospicio-glm.workspace = true
 prospicio-math.workspace = true
 prospicio-models.workspace = true
 prospicio-prob.workspace = true
+# The Bayesian chain ladder (the `bayes` module), off by default so that the
+# WASM scope does not compile nuts-rs (docs/design/reserving-bayes.md,
+# decision 2).
+prospicio-bayes = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
+
+[features]
+bayes = ["dep:prospicio-bayes", "dep:rayon"]
 
 [dev-dependencies]
 rayon.workspace = true

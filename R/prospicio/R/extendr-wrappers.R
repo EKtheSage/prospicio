@@ -34,6 +34,12 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 round_bucket_rust <- function(bs) .Call(wrap__round_bucket_rust, bs)
 
+compound_moments_rust <- function(frequency, severity) .Call(wrap__compound_moments_rust, frequency, severity)
+
+approximation_parameters_rust <- function(moments, kind) .Call(wrap__approximation_parameters_rust, moments, kind)
+
+approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap__approximation_eval_rust, moments, kind, values, quantile)
+
 occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
 
 occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
@@ -129,6 +135,8 @@ indication_rust <- function(variable, profit, fixed_ratio, loss_ratio, pure_prem
 premium_based_expenses_rust <- function(ratio, fixed_share) .Call(wrap__premium_based_expenses_rust, ratio, fixed_share)
 
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
+
+occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
 
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
 
@@ -1466,6 +1474,8 @@ Triangle$cape_cod <- function(column, exposure, trend, decay, average, sigma_int
 
 Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std_err, dependence, spearman) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process, tail, tail_std_err, dependence, spearman)
 
+Triangle$bayes_odp <- function(column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_odp, self, column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
+
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman)
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman)
@@ -1692,6 +1702,40 @@ OdpBootstrapFit$segment <- function(keys, values) .Call(wrap__OdpBootstrapFit__s
 
 #' @export
 `[[.OdpBootstrapFit` <- `$.OdpBootstrapFit`
+
+BayesOdpFit <- new.env(parent = emptyenv())
+
+BayesOdpFit$chain_ladder <- function() .Call(wrap__BayesOdpFit__chain_ladder, self)
+
+BayesOdpFit$scale <- function() .Call(wrap__BayesOdpFit__scale, self)
+
+BayesOdpFit$reserves <- function() .Call(wrap__BayesOdpFit__reserves, self)
+
+BayesOdpFit$diagnostics <- function() .Call(wrap__BayesOdpFit__diagnostics, self)
+
+BayesOdpFit$parameter_names <- function() .Call(wrap__BayesOdpFit__parameter_names, self)
+
+BayesOdpFit$draws <- function() .Call(wrap__BayesOdpFit__draws, self)
+
+BayesOdpFit$chains <- function() .Call(wrap__BayesOdpFit__chains, self)
+
+BayesOdpFit$summary <- function() .Call(wrap__BayesOdpFit__summary, self)
+
+BayesOdpFit$loo <- function() .Call(wrap__BayesOdpFit__loo, self)
+
+BayesOdpFit$long_table <- function() .Call(wrap__BayesOdpFit__long_table, self)
+
+BayesOdpFit$totals_table <- function() .Call(wrap__BayesOdpFit__totals_table, self)
+
+BayesOdpFit$development_table <- function() .Call(wrap__BayesOdpFit__development_table, self)
+
+BayesOdpFit$segment <- function(keys, values) .Call(wrap__BayesOdpFit__segment, self, keys, values)
+
+#' @export
+`$.BayesOdpFit` <- function (self, name) { func <- BayesOdpFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesOdpFit` <- `$.BayesOdpFit`
 
 MackBootstrapFit <- new.env(parent = emptyenv())
 

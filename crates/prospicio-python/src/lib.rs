@@ -34,9 +34,9 @@ fn to_py(e: prospicio_core::Error) -> PyErr {
 mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{
-        PyCompoundReport, PyEventSet, PyGridSize, PyOccurrencePml, fft, fft_auto,
-        occurrence_exceedance, occurrence_pml, panjer, recommend_grid, round_bucket,
-        simulate_events,
+        PyApproximation, PyCompoundMoments, PyCompoundReport, PyEventSet, PyGridSize,
+        PyOccurrencePml, compound_moments, fft, fft_auto, occurrence_exceedance, occurrence_pml,
+        panjer, recommend_grid, round_bucket, simulate_events,
     };
     #[pymodule_export]
     use super::counts::PyCount;
@@ -81,14 +81,17 @@ mod prospicio_native {
         trended_present_rates, year_fraction,
     };
     #[pymodule_export]
-    use super::reinsurance::{PyLayer, PyLossSensitivePremium, PyTower, PyTowerGrids};
+    use super::reinsurance::{
+        PyLayer, PyLayerStatistics, PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice,
+        PyViewPrice, occurrence_layer_statistics,
+    };
     #[pymodule_export]
     use super::reserving::{
-        PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder,
-        PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf,
-        PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit,
-        PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve,
-        PyTailLogLinear, PyTriangle,
+        PyBayesOdp, PyBayesOdpFit, PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit,
+        PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit,
+        PyClarkLdf, PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit,
+        PyMackFit, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant,
+        PyTailCurve, PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

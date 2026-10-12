@@ -1,11 +1,14 @@
 """Reserving: the loss triangle, the chain ladder with tail factors, Mack's
 model with its one-year view, the expected-loss methods, Clark's growth
 curves, and the ODP bootstrap with its simulated one-year view of the chain
-ladder and the expected-loss methods, and Mack's bootstrap for the lifetime and
-one-year views under Mack's process (docs/design/triangle.md,
-docs/design/reserving-v02.md)."""
+ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
+one-year views under Mack's process, and the Bayesian ODP chain ladder
+sampled with NUTS (docs/design/triangle.md, docs/design/reserving-v02.md,
+docs/design/reserving-bayes.md)."""
 
 from .prospicio_native import (
+    BayesOdp,
+    BayesOdpFit,
     Benktander,
     BornhuetterFerguson,
     CapeCod,
@@ -52,6 +55,8 @@ __all__ = [
     "OdpBootstrapFit",
     "MackBootstrap",
     "MackBootstrapFit",
+    "BayesOdp",
+    "BayesOdpFit",
     "OneYearFit",
     "TailConstant",
     "TailCurve",

@@ -1,11 +1,15 @@
 //! `prospicio.reinsurance`: wrappers over `prospicio_aggregate::reinsurance`
 //! (layers and towers, applied to simulated losses or on the grid).
 
-use prospicio_aggregate::{Commission, Layer, LossSensitivePremium, Tower, TowerGrids};
+use prospicio_aggregate::{
+    Commission, Layer, LayerStatistics, LossSensitivePremium, Tower, TowerGrids, TowerPrice,
+    ViewPrice,
+};
 use pyo3::prelude::*;
 
-use crate::aggregate::{AnyCount, PyCompoundReport, PyEventSet};
+use crate::aggregate::{AnyCount, PyCompoundMoments, PyCompoundReport, PyEventSet};
 use crate::distributions::{PyGrid, PyPredictiveDistribution};
+use crate::risk::PyDistortion;
 use crate::to_py;
 
 /// A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
@@ -1117,6 +1121,34 @@ impl PyTowerGrids {
         self.inner.expected_profit_commission.clone()
     }
 
+    /// Each view priced on its own by a distortion: the stand-alone price
+    /// of the gross, of every layer's cession and of the net, as
+    /// ``aggregate``'s ``reins_price_df``.
+    ///
+    /// Parameters
+    /// ----------
+    /// distortion : Distortion
+    ///
+    /// Returns
+    /// -------
+    /// TowerPrice
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> from prospicio.distributions import Grid, Poisson
+    /// >>> from prospicio.risk import Distortion
+    /// >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    /// >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
+    /// >>> p = r.price(Distortion.proportional_hazard(0.7))
+    /// >>> round(p.ceded[0].loss, 12), p.ceded[0].premium > p.ceded[0].loss
+    /// (1.2, True)
+    fn price(&self, distortion: PyRef<'_, PyDistortion>) -> PyTowerPrice {
+        PyTowerPrice {
+            inner: self.inner.price(&distortion.inner),
+        }
+    }
+
     /// Whether every boundary and net loss fell on a grid point. When
     /// ``False``, means are still exact but shapes are smeared by up to a
     /// step.
@@ -1133,4 +1165,233 @@ impl PyTowerGrids {
             self.inner.on_points
         )
     }
+}
+
+/// One view's price under a distortion, from ``TowerGrids.price``: the
+/// expected loss ``loss``, the premium, the margin ``premium - loss`` and
+/// the loss ratio ``loss / premium``.
+#[pyclass(name = "ViewPrice", module = "prospicio.reinsurance", frozen)]
+pub(crate) struct PyViewPrice {
+    inner: ViewPrice,
+}
+
+#[pymethods]
+impl PyViewPrice {
+    /// The expected loss.
+    #[getter]
+    fn loss(&self) -> f64 {
+        self.inner.loss
+    }
+
+    /// The distorted expectation.
+    #[getter]
+    fn premium(&self) -> f64 {
+        self.inner.premium
+    }
+
+    /// ``premium - loss``.
+    #[getter]
+    fn margin(&self) -> f64 {
+        self.inner.margin
+    }
+
+    /// ``loss / premium``.
+    #[getter]
+    fn loss_ratio(&self) -> f64 {
+        self.inner.loss_ratio
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ViewPrice(loss={}, premium={})",
+            self.inner.loss, self.inner.premium
+        )
+    }
+}
+
+/// A tower's views priced by a distortion, from ``TowerGrids.price``.
+#[pyclass(name = "TowerPrice", module = "prospicio.reinsurance", frozen)]
+pub(crate) struct PyTowerPrice {
+    inner: TowerPrice,
+}
+
+#[pymethods]
+impl PyTowerPrice {
+    /// The gross.
+    #[getter]
+    fn gross(&self) -> PyViewPrice {
+        PyViewPrice {
+            inner: self.inner.gross,
+        }
+    }
+
+    /// Each layer's cession, in tower order.
+    #[getter]
+    fn ceded(&self) -> Vec<PyViewPrice> {
+        self.inner
+            .ceded
+            .iter()
+            .map(|&inner| PyViewPrice { inner })
+            .collect()
+    }
+
+    /// The net, or ``None`` when the tower has no net grid.
+    #[getter]
+    fn net(&self) -> Option<PyViewPrice> {
+        self.inner.net.map(|inner| PyViewPrice { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TowerPrice(gross={}, layers={}, net={})",
+            self.inner.gross.premium,
+            self.inner.ceded.len(),
+            self.inner.net.is_some()
+        )
+    }
+}
+
+/// A per-occurrence layer's statistics, from
+/// ``occurrence_layer_statistics``.
+#[pyclass(name = "LayerStatistics", module = "prospicio.reinsurance", frozen)]
+pub(crate) struct PyLayerStatistics {
+    inner: LayerStatistics,
+}
+
+#[pymethods]
+impl PyLayerStatistics {
+    /// The placed share.
+    #[getter]
+    fn share(&self) -> f64 {
+        self.inner.share
+    }
+
+    /// The per-occurrence limit.
+    #[getter]
+    fn limit(&self) -> f64 {
+        self.inner.limit
+    }
+
+    /// The attachment.
+    #[getter]
+    fn attachment(&self) -> f64 {
+        self.inner.attachment
+    }
+
+    /// ``P(X > attachment)``, per claim.
+    #[getter]
+    fn pr_attach(&self) -> f64 {
+        self.inner.pr_attach
+    }
+
+    /// ``P(X >= attachment + limit)``, per claim.
+    #[getter]
+    fn pr_detach(&self) -> f64 {
+        self.inner.pr_detach
+    }
+
+    /// The chance of a loss to the layer in the year.
+    #[getter]
+    fn pr_loss(&self) -> f64 {
+        self.inner.pr_loss
+    }
+
+    /// The annual ceded mean over ``share * limit``.
+    #[getter]
+    fn loss_on_line(&self) -> f64 {
+        self.inner.loss_on_line
+    }
+
+    /// The number of claims that reach the layer.
+    #[getter]
+    fn count(&self) -> PyCompoundMoments {
+        PyCompoundMoments {
+            inner: self.inner.count,
+        }
+    }
+
+    /// The ceded loss of a claim that reaches the layer, at the share.
+    #[getter]
+    fn severity(&self) -> PyCompoundMoments {
+        PyCompoundMoments {
+            inner: self.inner.severity,
+        }
+    }
+
+    /// The annual ceded loss, at the share.
+    #[getter]
+    fn aggregate(&self) -> PyCompoundMoments {
+        PyCompoundMoments {
+            inner: self.inner.aggregate,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LayerStatistics({} x {} xs {}, pr_loss={}, loss_on_line={})",
+            self.inner.share,
+            self.inner.limit,
+            self.inner.attachment,
+            self.inner.pr_loss,
+            self.inner.loss_on_line
+        )
+    }
+}
+
+/// The statistics of ``share`` of ``limit`` xs ``attachment`` per
+/// occurrence on a severity grid, as ``aggregate``'s ``reins_stats_df``.
+///
+/// The chances that a claim reaches the layer (``P(X > a)``, exclusive)
+/// and exhausts it (``P(X >= a + l)``, inclusive), and that the year has a
+/// loss to it; the excess count (the count thinned to the claims that
+/// reach the layer), the layer severity given a loss to it and the annual
+/// ceded loss, each by its first three cumulants; and the loss on line.
+/// The share scales the moments exactly.
+///
+/// Parameters
+/// ----------
+/// frequency : Poisson, NegativeBinomial or Binomial
+/// severity : Grid
+/// share : float
+///     In ``(0, 1]``.
+/// limit : float
+///     May be ``inf``; the loss on line is then 0.
+/// attachment : float
+///
+/// Returns
+/// -------
+/// LayerStatistics
+///
+/// Raises
+/// ------
+/// ValueError
+///     For a share outside ``(0, 1]``, a non-positive limit or a negative
+///     attachment.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import occurrence_layer_statistics
+/// >>> from prospicio.distributions import Grid, Poisson
+/// >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+/// >>> s = occurrence_layer_statistics(Poisson(3.0), sev, 1.0, 2.0, 2.0)
+/// >>> round(s.pr_attach, 12), round(s.count.mean, 12), round(s.aggregate.mean, 12)
+/// (0.3, 0.9, 1.2)
+#[pyfunction]
+pub(crate) fn occurrence_layer_statistics(
+    frequency: &Bound<'_, PyAny>,
+    severity: PyRef<'_, PyGrid>,
+    share: f64,
+    limit: f64,
+    attachment: f64,
+) -> PyResult<PyLayerStatistics> {
+    let n = AnyCount::extract(frequency)?;
+    let inner = prospicio_aggregate::occurrence_layer_statistics(
+        n.as_counting(),
+        &severity.inner,
+        share,
+        limit,
+        attachment,
+    )
+    .map_err(to_py)?;
+    Ok(PyLayerStatistics { inner })
 }

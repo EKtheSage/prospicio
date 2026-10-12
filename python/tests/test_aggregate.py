@@ -399,3 +399,59 @@ def test_occurrence_pml():
     assert abs(share - 0.1) < 4 * math.sqrt(0.1 * 0.9 / 20_000)
     with pytest.raises(ValueError):
         occurrence_pml(Poisson(0.1), sev, 0.2)
+
+
+def test_compound_moments_and_approximations():
+    from prospicio.aggregate import compound_moments
+    from prospicio.distributions import Gamma, Pareto, Poisson
+
+    m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    # aggregate 1.0.1 on "agg B 10 claims sev gamma 50 cv 0.7 poisson".
+    assert m.mean == pytest.approx(500.0, rel=1e-12)
+    assert m.cv == pytest.approx(0.38600518131237566, rel=1e-12)
+    assert m.skew == pytest.approx(0.5129464825493272, rel=1e-12)
+    expected = {
+        "gamma": {"shape": 6.7114093959731544, "scale": 74.5},
+        "lognormal": {"sdlog": 0.3726821686995752},
+        "shifted_gamma": {"shape": 15.202530354045754, "shift": -252.52525252525868},
+        "shifted_lognormal": {"sdlog": 0.16816686089041927, "shift": -639.5805099091635},
+    }
+    for kind, params in expected.items():
+        fit = m.approximate(kind)
+        got = dict(fit.parameters)
+        for k, v in params.items():
+            assert got[k] == pytest.approx(v, rel=1e-10), (kind, k)
+        assert fit.mean() == pytest.approx(500.0, rel=1e-12)
+        assert fit.cdf(fit.quantile(0.99)) == pytest.approx(0.99, abs=1e-10)
+    with pytest.raises(ValueError):
+        m.approximate("weibull")
+    with pytest.raises(ValueError):
+        compound_moments(Poisson(2.0), Pareto(100.0, 2.5))
+
+
+def test_layer_statistics_and_prices_by_view():
+    from prospicio.aggregate import compound_moments
+    from prospicio.reinsurance import occurrence_layer_statistics
+    from prospicio.risk import Distortion
+
+    sev, _ = Grid.rounding(Lognormal.from_mean_cv(100.0, 2.0), 1.0, 1001)
+    n = Poisson(2.0)
+    s = occurrence_layer_statistics(n, sev, 1.0, 500.0, 100.0)
+    # aggregate 1.0.1, reins_stats_df (validation/scripts/aggregate_reinsurance.py)
+    assert s.pr_attach == pytest.approx(0.261655626646, rel=1e-10)
+    assert s.count.mean == pytest.approx(2.0 * s.pr_attach, rel=1e-14)
+    assert s.loss_on_line == pytest.approx(0.151169062665, rel=1e-9)
+    assert s.aggregate.mean == pytest.approx(s.count.mean * s.severity.mean, rel=1e-12)
+    half = occurrence_layer_statistics(n, sev, 0.5, 500.0, 100.0)
+    assert half.aggregate.skew == pytest.approx(s.aggregate.skew, rel=1e-12)
+    with pytest.raises(ValueError):
+        occurrence_layer_statistics(n, sev, 0.0, 500.0, 100.0)
+
+    grids = Tower([Layer("occ", 500.0, 100.0)]).on_grid(n, sev, 1 << 14)
+    p = grids.price(Distortion.proportional_hazard(0.7))
+    assert p.gross.premium == pytest.approx(297.443189953534, rel=2e-8)
+    assert p.ceded[0].loss == pytest.approx(s.aggregate.mean, rel=1e-9)
+    assert p.net.margin == pytest.approx(p.net.premium - p.net.loss)
+    # Distortion prices are subadditive.
+    assert p.ceded[0].premium + p.net.premium >= p.gross.premium
+    assert compound_moments(n, sev).mean == pytest.approx(p.gross.loss, rel=1e-9)

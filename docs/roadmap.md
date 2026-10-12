@@ -28,7 +28,7 @@ numbers of Mildenhall's `aggregate`.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. Still to do: REML, tensor smooths |
-| v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD. Still to do: Bayesian reserving and credibility |
+| v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -100,12 +100,14 @@ what it is aiming for by v1.0.
     (Also done: towers saved as JSON, seasonal event times, loss
     corridors.)
   - The occurrence exceedance (OEP) curve and occurrence PMLs for any
-    count, exact and simulated.
+    count, exact and simulated; compound moments to third order and the
+    moment approximations (normal, gamma, lognormal, shifted gamma and
+    lognormal); per-occurrence layer statistics and each view of a tower
+    priced under a distortion, the grid towers checked against
+    `aggregate` point by point.
 - **Next:**
   1. The rest of `aggregate` parity tier 2 (the user's choice, 2026-10-12),
-     in the order listed in `docs/design/aggregate.md`: third-order
-     compound moments and moment approximations, reinsurance statistics by
-     view and pricing a cession, a priority ladder, eventual ruin, layer
+     in the order listed in `docs/design/aggregate.md`: a priority ladder, eventual ruin, layer
      loss picks, pricing bounds.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
@@ -158,8 +160,16 @@ what it is aiming for by v1.0.
     residuals, Kirschner, Kerley and Isaacs 2008, or a Spearman rank
     correlation by Iman–Conover), into `capital` (`reserving-v02.md`,
     decision 10).
-- **Next (from that lane):** open, waiting on the user. Candidates:
-  1. Bayesian reserving with `prospicio-bayes` (v0.7).
+  - The Bayesian chain ladder, `BayesOdp`, behind the `bayes` feature
+    (`reserving-bayes.md`, PR 1): the ODP model with log-linear effects
+    and the chain ladder's scale, sampled with NUTS, reserves as a
+    `PredictiveDistribution`, at parity with the same model in Stan on
+    GenIns and RAA, in Python (`BayesOdp`) and R (`bayes_odp()`).
+- **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
+  (v0.7), by the PRs of `reserving-bayes.md`:
+  1. PR 2: `BayesOdp::fit_segments` with `SegmentDependence`, and
+     `BayesOdp` in the diagonal backtest.
+  2. PR 3: Meyers' CRC and CSR; PR 4: the Bayesian Bornhuetter–Ferguson.
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
@@ -200,8 +210,11 @@ what it is aiming for by v1.0.
 - **Now:** NUTS on nuts-rs, Bayesian GLM, Bayesian and hierarchical
   stacking, ELPD (PSIS-LOO, WAIC), MCMC diagnostics.
 - **Next:**
-  1. Bayesian chain ladder and compartmental reserving, with the
-     Reserving lane.
+  1. Bayesian reserving, with the Reserving lane, which builds it in
+     `prospicio-reserving`'s `bayes` feature on this crate's NUTS
+     (`docs/design/reserving-bayes.md`): the Bayesian ODP chain ladder is
+     in (PR 1, no change here was needed); Meyers' models and the Bayesian
+     Bornhuetter–Ferguson follow, compartmental reserving in a later note.
   2. Hierarchical credibility.
   3. Posterior predictive checks.
 - **v1.0:** our own model specs and diagnostics, with sampling delegated.
