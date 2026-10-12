@@ -1,5 +1,9 @@
 # Bundle history
 
+## 2026-10-12
+
+* **Creation**: [Installing the R package from GitHub, and why it needs bootstrap.R](/environment/r-install-from-github.md), from making the R package self-contained (branch claude/stoic-hawking-qc3qby): `install_github(subdir=)` installs a tarball of `R/prospicio` alone, which failed on the Makevars' `../../../crates`; pkgbuild's `Config/build/bootstrap` runs `bootstrap.R`, which copies `prospicio-r`'s workspace crates, the root manifest and the lockfile into `src/rust/`. Installed that way and passed every R test locally. Not yet run by CI.
+
 ## 2026-10-09
 
 * **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md): where aggregate's contract terms live and how they are defined (swing and retro as a collared affine premium with the swing's amounts scaled by the share, sliding scales from `(commission, loss_ratio)` anchors with flat ends, a profit commission that does not deduct the ceding commission, one variable feature per program and none with reinstatements, `deposit` and `rol` quoted at 100%), and how its loss-ratio corridor differs from prospicio's, from adding contract terms to `prospicio_aggregate::Layer` (branch claude/stoic-hawking-qc3qby), which matches aggregate 1.0.1 at 475 losses to `1e-12`. Not yet run by CI.

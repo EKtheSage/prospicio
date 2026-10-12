@@ -24,3 +24,4 @@ validation/data/external/
 
 # Release builds (maturin build --out dist)
 python/dist/
+R/prospicio/src/rust/

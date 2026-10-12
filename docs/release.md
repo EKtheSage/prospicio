@@ -13,7 +13,12 @@ does the work; this note is the checklist around it.
 | crates.io | `prospicio-core`, `-math`, `-prob`, `-aggregate`, `-pricing`, `-reserving`, `-models`, `-glm`, `-bayes`, `-nn` | `crates/prospicio-*` |
 
 `prospicio-python`, `prospicio-r`, `validation` and `xtask` set
-`publish = false`. CRAN is separate and not set up yet.
+`publish = false`. CRAN is separate and not set up yet. The R package
+installs from GitHub with `remotes::install_github("EKtheSage/prospicio",
+subdir = "R/prospicio")`: `R/prospicio/bootstrap.R`, which pkgbuild runs
+before `R CMD build`, copies `prospicio-r` and the workspace crates it
+depends on into the tarball's `src/rust/`. CRAN will also need the
+third-party crates vendored for an offline build.
 
 Every crate and the Python package take their version from
 `workspace.package.version` in the root `Cargo.toml`. The `prospicio-*`

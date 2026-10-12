@@ -53,7 +53,18 @@ uv run python        # a Python shell with prospicio installed
 
 ### R
 
-From the repository root (a terminal where `cargo --version` works). The
+Without a checkout, with Rust (`cargo`, rustc 1.85 or later) installed:
+
+```r
+install.packages(c("remotes", "S7"))
+remotes::install_github("EKtheSage/prospicio", subdir = "R/prospicio")
+```
+
+`remotes` builds a source tarball of `R/prospicio`; the package's
+`bootstrap.R` first copies the Rust crates it needs into `src/rust/`, so the
+tarball compiles on its own (third-party crates still come from crates.io).
+
+From a checkout, at the repository root (a terminal where `cargo --version` works). The
 package's R API is built on [S7](https://rconsortium.github.io/S7/), so
 install that first:
 
