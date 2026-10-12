@@ -686,7 +686,7 @@ impl MackBootstrap {
 }
 
 pub struct MackBootstrapSegment {
-    pub mack: MackFit,         // the model on the observed triangle (no tail here; decision 9)
+    pub mack: MackFit,         // the model on the observed triangle, with the bootstrap's tail
     pub residuals: Vec<f64>,   // link-ratio residuals, origin x development
 }
 
@@ -1189,8 +1189,9 @@ simulations, against `reserving_tails_r.csv`, R ChainLadder 0.2.21's
   variance `(T - 1)^2 v sum|m| + phi (T - 1) E[P]` worked out from its
   fitted increments `m` and pseudo latest value `P`; a curve fitted to two
   factors barely above 1 fails in some simulations and is reported with
-  the count, under both models; a standard error with an estimated tail,
-  a negative or NaN one, and a tail in the one-year view are errors.
+  the count, under both models; a standard error with an estimated tail
+  and a negative or NaN one are errors, and so, in the one-year view, is
+  a bootstrap tail that is not the method's (decision 11).
 
 The ODP has no reference with a tail (R's `BootChainLadder` has none);
 its checks are the unit tests above. Measured once (20,000 simulations,
@@ -1459,7 +1460,16 @@ choices.
    tail uncertainty is in the coming year. A lagging origin whose tail
    valuation is before `V` (it stopped at the oldest age long ago) takes
    the step too: none of it is observed, and it is realised by the end of
-   the year.
+   the year. The step is the whole tail, whatever its shape: a curve
+   (`TailCurve`) or a decayed constant (`decay < 1`) selects one factor
+   per period for a year past the oldest age and a remainder beyond, and
+   the step takes their product, all of it within one development period
+   (three months on a quarterly grain). So such a tail is collapsed into
+   one step, and the one-year standard deviation of an origin that takes
+   it is its lifetime tail risk, an upper bound on its one-year risk when
+   the tail's own factors put part of the development in later years.
+   Not built: taking only the factors valued in the year and leaving the
+   origin open at the next age, re-reserved with the method's tail.
 2. **A closed origin.** An origin that takes the tail step is closed at the
    end of the year: its closing ultimate is its simulated ultimate, not the
    refitted method's, and its CDR is the opening ultimate less it. The step
@@ -1496,9 +1506,13 @@ choices.
    factors, then the tail, then the year's cells origin by origin, then the
    tail steps in origin order, after all the cells. Without a bootstrap
    tail every draw is as before (the seed-pinned one-year tests are
-   unchanged), and with a fixed constant tail the open origins' cells are
-   the untailed ones, so their CDR is the tail factor times the untailed
-   CDR, simulation by simulation. A tail that cannot be refitted on a
+   unchanged), and with a fixed constant tail attached at the oldest age
+   the open origins' cells are the untailed ones, so their CDR is the tail
+   factor times the untailed CDR, simulation by simulation. Drawn with a
+   standard error, the lognormal draw shifts the random stream and the
+   relation holds in distribution only; attached earlier, the tail's
+   factors replace estimated ones inside the triangle and move with the
+   pseudo factors, and it does not hold. A tail that cannot be refitted on a
    simulation's pseudo factors fails that simulation like a failed refit:
    `Error::OneYear { failed, n_sims, source: Error::Tail(..) }`, the source
    inside `Error::InSegment` with segments.
@@ -1548,4 +1562,6 @@ Bindings: Python needs no new parameter (`OdpBootstrap(tail=...)` and
 the docstrings state the rule. R's `odp_one_year()` and `mack_one_year()`
 use `tail` for the method's tail, so they gain `bootstrap_tail = FALSE`
 (when `TRUE` the bootstrap takes the same tail, which satisfies item 4 by
-construction), `tail_std_err = NULL`, and for Mack `tail_sigma = NULL`.
+construction), `tail_std_err = NULL`, and for Mack `tail_sigma = NULL`;
+either of these given without `bootstrap_tail = TRUE` is an error, since
+the bootstrap would have no tail to apply it to.

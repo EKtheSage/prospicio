@@ -73,7 +73,11 @@
 //! lifetime run-off as its one-year view. An origin that stays open keeps
 //! the method's own tail at the end of the year (a constant one fixed, an
 //! estimated one refitted on the closing triangle). The bootstrap's tail
-//! must be the method's: a mismatch is an error.
+//! must be the method's: a mismatch is an error. The step is the whole
+//! tail: a curve or a decayed constant, whose selected factors spread it
+//! over later periods, is taken as their product in that one step, so the
+//! one-year standard deviation of an origin that takes it is its lifetime
+//! tail risk, an upper bound on its one-year risk.
 
 use std::sync::Mutex;
 

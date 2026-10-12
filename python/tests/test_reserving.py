@@ -1893,7 +1893,6 @@ def test_odp_bootstrap_with_a_tail(triangles):
     assert all(row[0] == 0.0 for row in plain.cdr.draw_matrix())
 
 
-
 def test_bootstrap_tail_refit_failure_names_its_segment():
     # Two segments; the curve fitted from 48 months refits on every
     # simulation of Steady, whose late factors are well above 1, and fails on

@@ -132,9 +132,9 @@ what it is aiming for by v1.0.
     `MackChainLadder(tail = ...)` (`reserving-v02.md`, decision 9), and
     combined with every dependence between segments. In the one-year view
     the tail step is one more development period, closing the origins it
-    falls on in the coming year, reconciled with R's `CDR(1)S.E.` and
-    `Mack.S.E` with the tail (decision 11).
-
+    falls on in the coming year, checked against targets built from R's
+    `CDR(1)S.E.` (scaled by the tail) and `Mack.S.E` with the tail; R's
+    `CDR` has no tail (decision 11).
   - Joint reserves across lines, for capital: `SegmentDependence` on both
     bootstraps' multi-segment fits, lifetime and one-year (synchronized
     residuals, Kirschner, Kerley and Isaacs 2008, or a Spearman rank

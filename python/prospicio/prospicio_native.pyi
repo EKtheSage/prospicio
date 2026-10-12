@@ -7549,7 +7549,11 @@ class OdpBootstrap:
         draws it, and its step to ultimate is valued one development period
         after the oldest age: an origin whose step falls in the coming year
         (with an annual grain, one already at the oldest age) takes it and
-        is closed at that simulated ultimate.
+        is closed at that simulated ultimate. The step is the whole tail: a
+        curve or a decayed constant tail is taken as the product of its
+        factors in that one step, so an origin that takes it has its
+        lifetime tail risk in the coming year, an upper bound on its
+        one-year risk.
         
         Parameters
         ----------

@@ -975,7 +975,6 @@ impl Triangle {
         }
         .one_year_segments(&self.inner, column, &method)
         .map_err(to_r)?;
-
         Ok(OneYearFit {
             inner: OneYear::Mack(inner),
         })

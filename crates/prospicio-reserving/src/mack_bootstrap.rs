@@ -80,10 +80,14 @@
 //! development period after the oldest age: an origin whose step falls in
 //! the coming year (an annual origin already at the oldest age) takes it
 //! from its value at the oldest age, observed or drawn, and is closed at
-//! that simulated ultimate. With a constant tail, the other origins' CDR is
-//! the factor times its value without one, and the oldest origin's
-//! variance Mack's for it, `C^2 se^2 + tail_sigma^2 C`
-//! (`validation/tests/reserving_one_year_tail.rs`).
+//! that simulated ultimate. With a constant tail attached at the oldest
+//! age, the other origins' CDR is the factor times its value without one in
+//! distribution (simulation by simulation only when the factor is fixed,
+//! `tail_std_err` 0), and the oldest origin's variance Mack's for it,
+//! `C^2 se^2 + tail_sigma^2 C`
+//! (`validation/tests/reserving_one_year_tail.rs`). A curve or decayed
+//! constant tail is still one step to ultimate, its factors' product
+//! (decision 11).
 
 use prospicio_core::StreamRng;
 use prospicio_math::special::norm_quantile;

@@ -85,7 +85,8 @@ default.}
 \item{tail_std_err}{With \code{bootstrap_tail}, a constant tail factor's
 standard error: \code{NULL} keeps it fixed in \code{odp_one_year()} and
 extrapolates it in \code{mack_one_year()}, as in \code{\link[=odp_bootstrap]{odp_bootstrap()}} and
-\code{\link[=mack_bootstrap]{mack_bootstrap()}}; an error with an estimated tail.}
+\code{\link[=mack_bootstrap]{mack_bootstrap()}}; an error with an estimated tail or without
+\code{bootstrap_tail}.}
 
 \item{n_sims}{Number of simulations; positive.}
 
@@ -105,7 +106,7 @@ variance); or \code{"none"}.}
 
 \item{tail_sigma}{For \code{mack_one_year()} with \code{bootstrap_tail}, the tail's
 sigma (R's \code{tail.sigma}), or \code{NULL} to extrapolate it, as in
-\code{\link[=mack_bootstrap]{mack_bootstrap()}}.}
+\code{\link[=mack_bootstrap]{mack_bootstrap()}}; an error without \code{bootstrap_tail}.}
 
 \item{mack_average, mack_sigma_interpolation}{How Mack's model in
 \code{mack_one_year()} averages the link ratios and fills in a sigma behind
@@ -188,9 +189,14 @@ the pseudo factors, a constant one fixed or drawn with \code{tail_std_err}),
 and its step to ultimate is valued one development period after the
 oldest age: an origin whose step falls in the coming year (with an
 annual grain, one already at the oldest age) takes it and is closed at
-that simulated ultimate. With a constant tail and Mack's process, the
-other origins' CDR is the tail factor times its value without one, and
-the oldest origin's standard deviation is \code{\link[=mack]{mack()}}'s with the tail.
+that simulated ultimate. The step is the whole tail: a curve or a decayed
+constant tail is taken as the product of its factors in that one step,
+so an origin that takes it has its lifetime tail risk in the coming
+year, an upper bound on its one-year risk. With a constant tail attached
+at the oldest age and Mack's process, the other origins' CDR is the tail
+factor times its value without one in distribution (simulation by
+simulation when the factor is fixed, \code{tail_std_err = 0}), and the oldest
+origin's standard deviation is \code{\link[=mack]{mack()}}'s with the tail.
 
 Every segment of the triangle is bootstrapped with its own residuals and
 scale, into one joint distribution of the CDR, the segments depending on

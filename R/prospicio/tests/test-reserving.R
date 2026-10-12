@@ -1209,7 +1209,13 @@ stopifnot(length(unique(draw_matrix(
                 n_sims = 100, seed = 4)@cdr)[, 1])) > 1)
 expect_error_like(odp_one_year(raa, tail = tail_log_linear(), bootstrap_tail = TRUE, tail_std_err = 0.01),
                   "estimated tail")
-
+# The bootstrap tail's settings without bootstrap_tail are a mistake, not ignored.
+expect_error_like(mack_one_year(raa, tail = 1.05, tail_std_err = 0.01),
+                  "tail_std_err needs bootstrap_tail = TRUE")
+expect_error_like(mack_one_year(raa, tail = 1.05, tail_sigma = 2),
+                  "tail_sigma needs bootstrap_tail = TRUE")
+expect_error_like(odp_one_year(raa, tail = 1.05, tail_std_err = -1),
+                  "tail_std_err needs bootstrap_tail = TRUE")
 
 # Any development grain: the coming year is every cell valued in the twelve
 # months after the valuation, four for a quarterly grain. An exact annual

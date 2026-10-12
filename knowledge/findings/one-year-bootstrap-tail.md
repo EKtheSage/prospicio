@@ -44,9 +44,13 @@ reproduces (20,000 simulations, seed 20,261,011, Gamma process, centred
 residuals, both rules for the last sigma):[^test]
 
 * **Open origins** have opening and closing ultimates both `T` times those
-  without a tail, so their CDR is `T` times the untailed CDR (exactly, per
-  simulation, when the tail factor is fixed, which the unit tests check),
-  and their standard deviation `T` times Merz and Wüthrich's `CDR(1)S.E.`
+  without a tail (for a tail attached at the oldest age), so their CDR is
+  `T` times the untailed CDR in distribution (exactly, per simulation,
+  only when the tail factor is fixed, which the unit tests check; a drawn
+  factor shifts the random stream), and their standard deviation `T`
+  times Merz and Wüthrich's `CDR(1)S.E.` A tail attached before the
+  oldest age replaces estimated factors inside the triangle, which move
+  with the pseudo factors, and does not scale this way.
 * **The oldest origin** has CDR `U0 - C*`, `C*` drawn from its observed
   value `C` with a lognormal factor of mean `T` and Mack's standard error
   `se` and process variance `tail_sigma^2 C`. Its variance,
@@ -78,6 +82,13 @@ Consequences of the semantics, not of the data:
 * An annual origin at the oldest age carries its whole tail uncertainty in
   the coming year: its one-year SD is its lifetime SD. That is
   conservative if the true tail runs off over several years.
+* The step is the whole tail whatever its shape. A curve (`TailCurve`,
+  100 extrapolated periods by default) or a decayed constant selects one
+  factor per period for a year past the oldest age and a remainder, yet
+  the step takes their product within one development period (three
+  months on a quarterly grain). For such tails the one-year SD of an
+  origin that takes the step is an upper bound, not the tail's own
+  calendar pattern.
 * A constant tail's parameter error enters the one-year view only through
   the closed origins: the open origins keep the method's constant at the
   end of the year.

@@ -1758,9 +1758,14 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' and its step to ultimate is valued one development period after the
 #' oldest age: an origin whose step falls in the coming year (with an
 #' annual grain, one already at the oldest age) takes it and is closed at
-#' that simulated ultimate. With a constant tail and Mack's process, the
-#' other origins' CDR is the tail factor times its value without one, and
-#' the oldest origin's standard deviation is [mack()]'s with the tail.
+#' that simulated ultimate. The step is the whole tail: a curve or a decayed
+#' constant tail is taken as the product of its factors in that one step,
+#' so an origin that takes it has its lifetime tail risk in the coming
+#' year, an upper bound on its one-year risk. With a constant tail attached
+#' at the oldest age and Mack's process, the other origins' CDR is the tail
+#' factor times its value without one in distribution (simulation by
+#' simulation when the factor is fixed, `tail_std_err = 0`), and the oldest
+#' origin's standard deviation is [mack()]'s with the tail.
 #'
 #' Every segment of the triangle is bootstrapped with its own residuals and
 #' scale, into one joint distribution of the CDR, the segments depending on
@@ -1827,11 +1832,12 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'   default.
 #' @param tail_sigma For `mack_one_year()` with `bootstrap_tail`, the tail's
 #'   sigma (R's `tail.sigma`), or `NULL` to extrapolate it, as in
-#'   [mack_bootstrap()].
+#'   [mack_bootstrap()]; an error without `bootstrap_tail`.
 #' @param tail_std_err With `bootstrap_tail`, a constant tail factor's
 #'   standard error: `NULL` keeps it fixed in `odp_one_year()` and
 #'   extrapolates it in `mack_one_year()`, as in [odp_bootstrap()] and
-#'   [mack_bootstrap()]; an error with an estimated tail.
+#'   [mack_bootstrap()]; an error with an estimated tail or without
+#'   `bootstrap_tail`.
 #' @param ptr A `OneYearFit` pointer; used internally.
 #' @returns A `one_year_fit` object.
 #' @seealso [claims_development_result()] for Merz and Wuthrich's formulas,
@@ -1922,6 +1928,7 @@ odp_one_year <- function(triangle, column = NULL,
   check_one_year_settings(method, exposure, c(apriori = !missing(apriori),
                                               n_iters = !missing(n_iters),
                                               trend = !missing(trend), decay = !missing(decay)))
+  check_bootstrap_tail_settings(bootstrap_tail, list(tail_std_err = tail_std_err))
   args <- development_args(average, sigma_interpolation)
   ptr <- rust_result(triangle@ptr$odp_one_year(
     column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
@@ -1954,6 +1961,8 @@ mack_one_year <- function(triangle, column = NULL,
   check_one_year_settings(method, exposure, c(apriori = !missing(apriori),
                                               n_iters = !missing(n_iters),
                                               trend = !missing(trend), decay = !missing(decay)))
+  check_bootstrap_tail_settings(bootstrap_tail,
+                                list(tail_sigma = tail_sigma, tail_std_err = tail_std_err))
   args <- development_args(average, sigma_interpolation)
   model <- development_args(mack_average, mack_sigma_interpolation)
   ptr <- rust_result(triangle@ptr$mack_one_year(
@@ -1963,9 +1972,18 @@ mack_one_year <- function(triangle, column = NULL,
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, isTRUE(centre_residuals), dependence, spearman_arg(spearman)
-
   ))
   one_year_fit(ptr = ptr)
+}
+
+# The bootstrap tail's settings apply only with `bootstrap_tail = TRUE`;
+# without it the bootstrap has no tail and would ignore them.
+check_bootstrap_tail_settings <- function(bootstrap_tail, settings) {
+  for (arg in names(settings)) {
+    if (!is.null(settings[[arg]]) && !isTRUE(bootstrap_tail)) {
+      stop(sprintf("%s needs bootstrap_tail = TRUE", arg), call. = FALSE)
+    }
+  }
 }
 
 # A one-year view's method reads only its own settings (`given` says which
