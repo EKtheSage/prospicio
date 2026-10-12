@@ -852,3 +852,336 @@ mod ratemaking {
         }
     }
 }
+
+// The overall indication against Werner and Modlin, chapters 7, 8 and 12
+// and Appendices A to C; the book's rounding is reproduced where it changes
+// a printed figure.
+mod indication {
+    use prospicio_pricing::credibility::LimitedFluctuation;
+    use prospicio_pricing::ratemaking::{
+        ExpenseCategory, LossRatioExperience, LossRatioYear, Provisions, PurePremiumExperience,
+        PurePremiumYear, credibility_weighted, premium_based_expenses, trend_factor,
+        trended_present_rates,
+    };
+
+    fn round(x: f64, dp: i32) -> f64 {
+        let s = 10f64.powi(dp);
+        (x * s).round() / s
+    }
+
+    fn printed(x: f64, book: f64, dp: i32) {
+        let tol = 0.5 * 10f64.powi(-dp) + 1e-9;
+        assert!((x - book).abs() <= tol, "{x} is not {book} at {dp} dp");
+    }
+
+    #[test]
+    fn chapters_7_8_and_12() {
+        // Chapter 7: $180 of loss and LAE, $20 fixed, V 15%, Q 5%: $250.
+        let p = Provisions::new(0.15, 0.05).unwrap();
+        printed(p.pure_premium_rate(180.0, 20.0), 250.0, 2);
+        // Table 7.3: the right premium against the all-variable one.
+        let all_variable = Provisions::new(0.23, 0.05).unwrap();
+        for (loss, right, wrong) in [
+            (135.0, 193.75, 187.50),
+            (180.0, 250.0, 250.0),
+            (225.0, 306.25, 312.50),
+        ] {
+            printed(p.pure_premium_rate(loss, 20.0), right, 2);
+            printed(all_variable.pure_premium_rate(loss, 0.0), wrong, 2);
+        }
+        // Premium-based projection with a 10% fixed ratio on $250: $256.25.
+        printed(p.pure_premium_rate(180.0, 0.10 * 250.0), 256.25, 2);
+        // Table 7.4: 5.9% general expenses, 75% fixed: 4.4% and 1.5%.
+        let (fixed, variable) = premium_based_expenses(&[ExpenseCategory {
+            ratio: 0.059,
+            fixed_share: 0.75,
+        }])
+        .unwrap();
+        printed(100.0 * fixed, 4.4, 1);
+        printed(100.0 * variable, 1.5, 1);
+        // Chapter 8: $500 and +10%.
+        let p = Provisions::new(0.25, 0.10).unwrap();
+        printed(p.pure_premium_rate(300.0, 25.0), 500.0, 2);
+        printed(p.loss_ratio_change(0.65, 0.065), 0.10, 4);
+        // Chapter 12: 100 claims against 1,082, Z 0.30; $270.
+        let lf = LimitedFluctuation::new(0.90, 0.05).unwrap();
+        let z = lf.credibility(100.0, lf.frequency_standard().round());
+        printed(z, 0.30, 2);
+        printed(credibility_weighted(200.0, round(z, 2), 300.0), 270.0, 2);
+        // Trended present rates: $229; the larger group's change: $220.
+        let c = trended_present_rates(0.10, 0.06, trend_factor(0.05, 2.0));
+        printed(200.0 * (1.0 + c), 229.0, 0);
+        printed(200.0 * 330.0 / 300.0, 220.0, 2);
+    }
+
+    #[test]
+    fn methods_agree_on_consistent_data() {
+        // Chapter 8: with premium at current rates P_C = X × current rate,
+        // the loss ratio method's factor times the current rate is the pure
+        // premium method's rate.
+        let (exposure, current_rate, losses, fixed_dollars) = (1_000.0, 480.0, 310_000.0, 26_000.0);
+        let p = Provisions::new(0.22, 0.04).unwrap();
+        let premium = exposure * current_rate;
+        let factor = 1.0 + p.loss_ratio_change(losses / premium, fixed_dollars / premium);
+        let rate = p.pure_premium_rate(losses / exposure, fixed_dollars / exposure);
+        assert!((factor * current_rate - rate).abs() < 1e-10);
+    }
+
+    #[test]
+    fn appendix_a_loss_ratio() {
+        // LR Indication-1: (EP, CRL, premium trend, losses, LDF, loss trend)
+        // with ULAE 1.143.
+        let rows = [
+            (
+                1_122_372.0,
+                1.2161,
+                1.1342,
+                856_495.0,
+                1.0000,
+                0.9912,
+                1_548_088.0,
+                970_359.0,
+            ),
+            (
+                1_154_508.0,
+                1.2176,
+                1.1116,
+                867_184.0,
+                0.9799,
+                0.9962,
+                1_562_608.0,
+                967_578.0,
+            ),
+            (
+                1_280_545.0,
+                1.1311,
+                1.0879,
+                835_120.0,
+                1.0003,
+                1.0012,
+                1_575_741.0,
+                955_974.0,
+            ),
+            (
+                1_369_976.0,
+                1.0892,
+                1.0663,
+                821_509.0,
+                1.0282,
+                1.0062,
+                1_591_109.0,
+                971_450.0,
+            ),
+            (
+                1_397_750.0,
+                1.0991,
+                1.0452,
+                797_866.0,
+                1.0966,
+                1.0113,
+                1_605_706.0,
+                1_011_357.0,
+            ),
+        ];
+        let years: Vec<LossRatioYear> = rows
+            .iter()
+            .map(|&(ep, crl, pt, l, ldf, lt, _, _)| LossRatioYear {
+                earned_premium: ep,
+                on_level_factor: crl,
+                premium_trend: pt,
+                losses: l,
+                development: ldf,
+                loss_trend: lt,
+                lae_factor: 1.143,
+            })
+            .collect();
+        for (y, r) in years.iter().zip(&rows) {
+            printed(y.projected_premium(), r.6, 0);
+            printed(y.projected_losses(), r.7, 0);
+        }
+        let e = LossRatioExperience::new(&years).unwrap();
+        // The book sums rounded rows: 7,883,252 against 7,883,253.19.
+        assert!((e.projected_premium() - 7_883_253.19).abs() < 0.01);
+        printed(e.projected_losses(), 4_876_718.0, 0);
+        printed(100.0 * e.loss_ratio(), 61.9, 1);
+        // Expense-1: premium-based, the selected ratios split and rounded
+        // to 0.1%: 11.3% fixed, 17.0% variable.
+        let split = |ratio: f64, share: f64| {
+            let (f, v) = premium_based_expenses(&[ExpenseCategory {
+                ratio,
+                fixed_share: share,
+            }])
+            .unwrap();
+            (round(100.0 * f, 1), round(100.0 * v, 1))
+        };
+        let parts = [
+            split(0.063, 0.75),
+            split(0.085, 0.75),
+            split(0.002, 1.0),
+            split(0.112, 0.0),
+            split(0.021, 0.0),
+        ];
+        let (fixed, variable): (f64, f64) =
+            parts.iter().fold((0.0, 0.0), |a, p| (a.0 + p.0, a.1 + p.1));
+        printed(fixed, 11.3, 1);
+        printed(variable, 17.0, 1);
+        // -6.2% from the selected 61.9%, 11.3%, 17.0% and 5% profit.
+        let p = Provisions::new(0.170, 0.05).unwrap();
+        printed(100.0 * p.variable_permissible_loss_ratio(), 78.0, 1);
+        printed(100.0 * p.loss_ratio_change(0.619, 0.113), -6.2, 1);
+        // Credibility-1: 3,612 claims are fully credible; the complement
+        // is 13.2% indicated, 5.0% taken, net trend 1.005 / 1.02 for a year.
+        let lf = LimitedFluctuation::new(0.90, 0.05).unwrap();
+        assert_eq!(lf.credibility(3_612.0, 1_082.0), 1.0);
+        let complement = trended_present_rates(0.132, 0.05, (1.005f64 / 1.02).powf(1.0));
+        printed(100.0 * complement, 6.2, 1);
+        printed(
+            100.0 * credibility_weighted(p.loss_ratio_change(0.619, 0.113), 1.0, complement),
+            -6.2,
+            1,
+        );
+    }
+
+    #[test]
+    fn appendix_b_pure_premium() {
+        // PP Indication-1: (exposure, non-cat losses, LDF, loss trend) with
+        // ULAE 1.012, and the projected losses.
+        let rows = [
+            (12_760.0, 5_161_624.0, 1.0000, 1.1939, 6_236_412.0),
+            (12_766.0, 4_820_968.0, 1.0012, 1.1705, 5_717_511.0),
+            (12_805.0, 4_112_172.0, 1.0055, 1.1476, 4_802_025.0),
+            (12_834.0, 5_052_052.0, 1.0186, 1.1251, 5_859_265.0),
+            (13_411.0, 6_559_224.0, 1.0555, 1.1030, 7_727_993.0),
+        ];
+        let years: Vec<PurePremiumYear> = rows
+            .iter()
+            .map(|&(x, l, ldf, lt, _)| PurePremiumYear {
+                exposure: x,
+                losses: l,
+                development: ldf,
+                loss_trend: lt,
+                lae_factor: 1.012,
+            })
+            .collect();
+        for (y, r) in years.iter().zip(&rows) {
+            printed(y.projected_losses(), r.4, 0);
+        }
+        let e = PurePremiumExperience::new(&years).unwrap();
+        printed(e.projected_losses(), 30_343_206.0, 0);
+        printed(e.pure_premium(), 469.88, 2);
+        // 683 claims against 1,082: Z 79.5%, rounded before weighting.
+        let z = LimitedFluctuation::new(0.90, 0.05)
+            .unwrap()
+            .credibility(683.0, 1_082.0);
+        printed(z, 0.795, 3);
+        let weighted = credibility_weighted(469.88, round(z, 3), 585.75);
+        printed(weighted, 493.63, 2);
+        // Reinsurance-1: $214,575 over 13,411 exposures grown 1% for 2 years.
+        let reinsurance = 214_575.0 / round(13_411.0 * trend_factor(0.01, 2.0), 0);
+        printed(reinsurance, 15.68, 2);
+        // Expense-1: $72.79 fixed per exposure trended 3.4% for 2 years.
+        let fixed = 72.79 * round(trend_factor(0.034, 2.0), 4);
+        printed(fixed, 77.83, 2);
+        // Variable 13.8%, profit 5%: (493.63 + 29.11 + 74.57 + 15.68 +
+        // 77.83) / 81.2% = $850.76.
+        let p = Provisions::new(0.138, 0.05).unwrap();
+        let pure_premium = 493.63 + 29.11 + 74.57;
+        printed(pure_premium, 597.31, 2);
+        printed(p.pure_premium_rate(pure_premium + 15.68, 77.83), 850.76, 2);
+    }
+
+    #[test]
+    fn appendix_c_loss_ratio_net_trend() {
+        // LR Indication-1: (EP, CRL, ultimate loss and ALAE, net trend), no
+        // premium trend, no ULAE in the losses.
+        let rows = [
+            (
+                14_904_664.0,
+                1.2029,
+                11_673_500.0,
+                1.7902,
+                17_928_820.0,
+                20_897_900.0,
+            ),
+            (
+                14_494_543.0,
+                1.2058,
+                11_200_835.0,
+                1.6439,
+                17_477_520.0,
+                18_413_053.0,
+            ),
+            (
+                14_442_449.0,
+                1.2724,
+                6_290_368.0,
+                1.5095,
+                18_376_572.0,
+                9_495_310.0,
+            ),
+            (
+                14_834_605.0,
+                1.3018,
+                18_254_793.0,
+                1.3862,
+                19_311_689.0,
+                25_304_794.0,
+            ),
+            (
+                18_265_093.0,
+                1.2391,
+                23_371_444.0,
+                1.2729,
+                22_632_277.0,
+                29_749_511.0,
+            ),
+        ];
+        let years: Vec<LossRatioYear> = rows
+            .iter()
+            .map(|&(ep, crl, l, nt, _, _)| LossRatioYear {
+                earned_premium: ep,
+                on_level_factor: crl,
+                premium_trend: 1.0,
+                losses: l,
+                development: 1.0,
+                loss_trend: nt,
+                lae_factor: 1.0,
+            })
+            .collect();
+        for (y, r) in years.iter().zip(&rows) {
+            printed(y.projected_premium(), r.4, 0);
+            printed(y.projected_losses(), r.5, 0);
+        }
+        let e = LossRatioExperience::new(&years).unwrap();
+        printed(e.projected_premium(), 95_726_878.0, 0);
+        printed(e.projected_losses(), 103_860_568.0, 0);
+        printed(100.0 * e.loss_ratio(), 108.5, 1);
+        // Expense-1: all variable, 32.3% underwriting and 2.4% ULAE.
+        let categories: Vec<ExpenseCategory> = [0.064, 0.026, 0.021, 0.212, 0.024]
+            .iter()
+            .map(|&ratio| ExpenseCategory {
+                ratio,
+                fixed_share: 0.0,
+            })
+            .collect();
+        let (fixed, variable) = premium_based_expenses(&categories).unwrap();
+        assert_eq!(fixed, 0.0);
+        printed(100.0 * variable, 34.7, 1);
+        // Profit -5%: permissible 70.3%, indicated +54.3%.
+        let p = Provisions::new(variable, -0.05).unwrap();
+        printed(100.0 * p.permissible_loss_ratio(0.0), 70.3, 1);
+        let indicated = p.loss_ratio_change(1.085, 0.0);
+        printed(100.0 * indicated, 54.3, 1);
+        // 283 claims against 683 (k 7.5%, p 95%): Z 64.4%; with the
+        // countrywide +18.5%, +41.6%.
+        let lf = LimitedFluctuation::new(0.95, 0.075).unwrap();
+        printed(lf.frequency_standard(), 683.0, 0);
+        let z = lf.credibility(283.0, 683.0);
+        printed(z, 0.644, 3);
+        printed(
+            100.0 * credibility_weighted(round(indicated, 3), round(z, 3), 0.185),
+            41.6,
+            1,
+        );
+    }
+}

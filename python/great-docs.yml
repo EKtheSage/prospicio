@@ -158,7 +158,7 @@ reference:
       - credibility.buhlmann_straub
       - credibility.BuhlmannStraubFit
   - title: Ratemaking
-    desc: Premium at the current rate level by the parallelogram method, and trend fits, factors and lengths (Werner and Modlin).
+    desc: Premium at the current rate level by the parallelogram method, trend fits, factors and lengths, and the overall indication by the loss ratio and pure premium methods (Werner and Modlin).
     contents:
       - pricing.year_fraction
       - pricing.Period
@@ -166,6 +166,12 @@ reference:
       - pricing.RateLevel
       - pricing.TrendFit
       - pricing.trend_factor
+      - pricing.LossRatioExperience
+      - pricing.PurePremiumExperience
+      - pricing.Provisions
+      - pricing.premium_based_expenses
+      - pricing.credibility_weighted
+      - pricing.trended_present_rates
   - title: Reserving
     desc: Loss triangles, the chain ladder with tail factors, Mack's model with its one-year view, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
     contents:

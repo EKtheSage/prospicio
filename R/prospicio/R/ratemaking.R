@@ -134,3 +134,152 @@ trend_fit <- function(times, values, kind = c("exponential", "linear")) {
 trend_factor <- function(rate, years) {
   (1 + as.double(rate))^as.double(years)
 }
+
+#' Experience for the loss ratio and pure premium methods
+#'
+#' Each experience year is projected to the forecast period. For the loss
+#' ratio method, earned premium is brought to the current rate level and
+#' trended. For both methods, losses are developed, trended and loaded for
+#' LAE. The years are combined as the ratio of their totals (Werner and
+#' Modlin, ch. 8). Factors are recycled to the number of years, so a single
+#' number applies to every year; a net trend goes in `loss_trend`.
+#'
+#' @param earned_premium Earned premium by year.
+#' @param exposure Earned exposure by year.
+#' @param losses Reported or paid losses by year, with whatever LAE they
+#'   include.
+#' @param on_level_factor,premium_trend,development,loss_trend Factors by
+#'   year.
+#' @param lae_factor `1 +` the LAE ratio to losses not in `losses`.
+#' @returns A list. `loss_ratio_experience()`: `by_year`, a data frame with
+#'   each year's `projected_premium`, `projected_losses` and `loss_ratio`,
+#'   and the totals `projected_premium`, `projected_losses` and
+#'   `loss_ratio`. `pure_premium_experience()`: `by_year` with
+#'   `projected_losses` and `pure_premium`, and the totals `exposure`,
+#'   `projected_losses` and `pure_premium`.
+#' @export
+#' @examples
+#' e <- loss_ratio_experience(c(100, 300), c(50, 250), loss_trend = 1.05)
+#' e$loss_ratio
+#' pure_premium_experience(c(10, 30), c(1000, 2000), lae_factor = 1.1)$pure_premium
+loss_ratio_experience <- function(earned_premium, losses, on_level_factor = 1, premium_trend = 1,
+                                  development = 1, loss_trend = 1, lae_factor = 1) {
+  n <- length(earned_premium)
+  col <- function(x) rep_len(as.double(x), n)
+  r <- rust_result(loss_ratio_experience_rust(col(earned_premium), as.double(losses),
+                                              col(on_level_factor), col(premium_trend),
+                                              col(development), col(loss_trend),
+                                              col(lae_factor)))
+  list(
+    by_year = data.frame(projected_premium = r$projected_premium_by_year,
+                         projected_losses = r$projected_losses_by_year,
+                         loss_ratio = r$loss_ratio_by_year),
+    projected_premium = r$projected_premium,
+    projected_losses = r$projected_losses,
+    loss_ratio = r$loss_ratio
+  )
+}
+
+#' @rdname loss_ratio_experience
+#' @export
+pure_premium_experience <- function(exposure, losses, development = 1, loss_trend = 1,
+                                    lae_factor = 1) {
+  n <- length(exposure)
+  col <- function(x) rep_len(as.double(x), n)
+  r <- rust_result(pure_premium_experience_rust(col(exposure), as.double(losses),
+                                                col(development), col(loss_trend),
+                                                col(lae_factor)))
+  list(
+    by_year = data.frame(projected_losses = r$projected_losses_by_year,
+                         pure_premium = r$pure_premium_by_year),
+    exposure = r$exposure,
+    projected_losses = r$projected_losses,
+    pure_premium = r$pure_premium
+  )
+}
+
+#' The overall rate indication
+#'
+#' The loss ratio method's indicated change, `(LR + F) / (1 - V - Q) - 1`,
+#' and the pure premium method's indicated rate,
+#' `(PP + fixed) / (1 - V - Q)`, with variable expense `V`, target profit
+#' `Q` (negative with investment income) and fixed expenses as a ratio `F`
+#' or an amount per exposure (Werner and Modlin, ch. 7 and 8). Other costs
+#' per exposure, such as net reinsurance, add to either.
+#' `permissible_loss_ratio()` is `1 - F - V - Q`.
+#'
+#' @param loss_ratio The projected loss and LAE ratio at current rates.
+#' @param pure_premium The projected pure premium, with LAE.
+#' @param fixed_ratio Fixed expenses as a ratio to premium.
+#' @param fixed_per_exposure Fixed expenses per exposure.
+#' @param variable The variable expense provision.
+#' @param profit The target underwriting profit provision.
+#' @returns A number.
+#' @export
+#' @examples
+#' # Werner and Modlin, ch. 8: +10% and $500.
+#' indicated_change(0.65, variable = 0.25, profit = 0.10, fixed_ratio = 0.065)
+#' indicated_rate(300, 0.25, 0.10, fixed_per_exposure = 25)
+#' permissible_loss_ratio(0.25, 0.10)
+indicated_change <- function(loss_ratio, variable, profit, fixed_ratio = 0) {
+  rust_result(indication_rust(as.double(variable), as.double(profit), as.double(fixed_ratio),
+                              as.double(loss_ratio), 0, 0))[[2]]
+}
+
+#' @rdname indicated_change
+#' @export
+indicated_rate <- function(pure_premium, variable, profit, fixed_per_exposure = 0) {
+  rust_result(indication_rust(as.double(variable), as.double(profit), 0, 0,
+                              as.double(pure_premium), as.double(fixed_per_exposure)))[[3]]
+}
+
+#' @rdname indicated_change
+#' @export
+permissible_loss_ratio <- function(variable, profit, fixed_ratio = 0) {
+  rust_result(indication_rust(as.double(variable), as.double(profit), as.double(fixed_ratio),
+                              0, 0, 0))[[1]]
+}
+
+#' Expense provisions and credibility against a complement
+#'
+#' `premium_based_expenses()` is the premium-based projection: each expense
+#' ratio split by its fixed share and summed (all shares 0 is the
+#' all-variable method). `credibility_weighted()` is
+#' `Z * estimate + (1 - Z) * complement`. `trended_present_rates()` is the
+#' trended present rates complement as a change,
+#' `(1 + prior_indicated) / (1 + prior_implemented) * trend - 1`, with
+#' `trend` the factor from the last review's target effective date to the
+#' new one (the loss trend over the premium trend for a loss ratio).
+#'
+#' @param ratio Expense ratios to premium.
+#' @param fixed_share The share of each that is fixed; recycled.
+#' @param estimate,complement The indication and its complement.
+#' @param credibility The credibility `Z`.
+#' @param prior_indicated,prior_implemented The last review's indicated
+#'   and implemented changes.
+#' @param trend The trend factor between the reviews' target effective
+#'   dates.
+#' @returns `premium_based_expenses()`: a named vector (`fixed`,
+#'   `variable`); the others, numbers.
+#' @export
+#' @examples
+#' premium_based_expenses(c(0.063, 0.085, 0.112), c(0.75, 0.75, 0))
+#' credibility_weighted(200, 0.3, 300)
+#' 200 * (1 + trended_present_rates(0.10, 0.06, trend_factor(0.05, 2)))
+premium_based_expenses <- function(ratio, fixed_share) {
+  r <- rust_result(premium_based_expenses_rust(as.double(ratio),
+                                               rep_len(as.double(fixed_share), length(ratio))))
+  stats::setNames(r, c("fixed", "variable"))
+}
+
+#' @rdname premium_based_expenses
+#' @export
+credibility_weighted <- function(estimate, credibility, complement) {
+  credibility * estimate + (1 - credibility) * complement
+}
+
+#' @rdname premium_based_expenses
+#' @export
+trended_present_rates <- function(prior_indicated, prior_implemented, trend) {
+  (1 + prior_indicated) / (1 + prior_implemented) * trend - 1
+}

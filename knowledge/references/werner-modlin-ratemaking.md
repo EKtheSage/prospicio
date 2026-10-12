@@ -5,7 +5,7 @@ description: The CAS study note behind prospicio_pricing::ratemaking; its exhibi
 resource: https://www.casact.org/sites/default/files/2021-03/5_Werner_Modlin.pdf
 tags: [pricing, ratemaking, trend, on-level, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-12T05:00:39Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-12T07:40:54Z }
 sources:
   - id: wm
     resource: https://www.casact.org/sites/default/files/2021-03/5_Werner_Modlin.pdf
@@ -48,12 +48,27 @@ precision, half up, and chain on the rounded values.[^wm]
   8-point fit from −1.24% to −1.30% (printed −1.2%).
 * Appendix C rounds trend lengths to 2 dp (6.83 for 6.8333; 1.089^6.83 =
   1.7902, 1.089^6.8333 = 1.7907).
-* Further steps for the indication (next PR): Appendix B rounds the
-  credibility to 79.5% before weighting and its non-modelled catastrophe
-  load to 3 dp at each step ($29.11 printed, $29.28 exact); Appendix B's
-  age-to-ultimate factors are chained with rounding and Appendix D's are
-  exact products; expense ratios and trend selections are rounded to 0.1%
-  before use.
+* The indications round each year's projected premium and losses to the
+  dollar and sum the rounded rows: Appendix A's projected premium is
+  7,883,252 printed, 7,883,253.19 exact. Every row reproduces to the
+  dollar from the printed factors.
+* The indicated change is computed from the selected, rounded loss ratio:
+  Appendix A's (61.9% + 11.3%) / 78.0% − 1 = −6.15%, printed −6.2%
+  (−6.20% from the exact 61.862%).
+* Appendix A splits each selected expense ratio by its fixed share and
+  rounds each part to 0.1% (6.3% × 75% = 4.725% → 4.7%) before summing to
+  11.3% fixed and 17.0% variable.
+* Appendix B rounds the credibility to 79.5% before weighting ($493.63;
+  $493.69 with the exact 0.7945), projects reinsurance exposures to whole
+  units (13,681) and trends fixed expense with a factor rounded to 4 dp
+  ($77.83). Its non-modelled catastrophe load rounds to 3 dp at each step
+  ($29.11 printed, $29.28 exact); the tests take $29.11 as an input.
+* Appendix C rounds the indication and the credibility to 0.1% before
+  weighting (0.644 × 54.3% + 0.356 × 18.5% = 41.6%); its full standard of
+  683 claims is `(Φ⁻¹(0.975) / 0.075)²` = 682.95 rounded.
+* Appendix B's age-to-ultimate factors are chained with rounding and
+  Appendix D's are exact products; development is outside
+  `prospicio_pricing`, so the tests take the printed factors.
 
 # Dates
 

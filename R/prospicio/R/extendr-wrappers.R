@@ -116,6 +116,14 @@ rate_level_rust <- function(effective, values, applies_to, levels, kind, start, 
 
 trend_fit_rust <- function(times, values, kind) .Call(wrap__trend_fit_rust, times, values, kind)
 
+loss_ratio_experience_rust <- function(earned_premium, losses, on_level_factor, premium_trend, development, loss_trend, lae_factor) .Call(wrap__loss_ratio_experience_rust, earned_premium, losses, on_level_factor, premium_trend, development, loss_trend, lae_factor)
+
+pure_premium_experience_rust <- function(exposure, losses, development, loss_trend, lae_factor) .Call(wrap__pure_premium_experience_rust, exposure, losses, development, loss_trend, lae_factor)
+
+indication_rust <- function(variable, profit, fixed_ratio, loss_ratio, pure_premium, fixed_per_exposure) .Call(wrap__indication_rust, variable, profit, fixed_ratio, loss_ratio, pure_premium, fixed_per_exposure)
+
+premium_based_expenses_rust <- function(ratio, fixed_share) .Call(wrap__premium_based_expenses_rust, ratio, fixed_share)
+
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
