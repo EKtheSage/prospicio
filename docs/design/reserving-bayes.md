@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended, and decisions 1, 2 and 10 below are settled; the rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and decisions 1, 2 and 10 below are settled; the rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -589,8 +589,9 @@ the ODP bootstrap agree on GenIns and by how much (findings), with
 
 ## Open decisions for the user
 
-Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a) and
-5 (a). The others wait on the user; nothing past PR 1 is built until they
+Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a),
+5 (a) and 7 (the CAS data model repository). The others wait on the user
+and will be revisited; nothing past PR 1 is built until they
 are settled.
 
 1. **First model.** (a) Bayesian ODP, then CRC and CSR; (b) CRC and CSR
