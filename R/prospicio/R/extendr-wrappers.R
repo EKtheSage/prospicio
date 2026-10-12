@@ -104,6 +104,8 @@ pricing_alpha_between_frequency_and_layer <- function(threshold, frequency, limi
 
 pricing_alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, frequency_2, truncation_at) .Call(wrap__pricing_alpha_between_frequencies, threshold_1, frequency_1, threshold_2, frequency_2, truncation_at)
 
+retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
+
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
 
 esscher_rust <- function(draws, h) .Call(wrap__esscher_rust, draws, h)
@@ -195,6 +197,34 @@ XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
 XolLayer$with_loss_corridor <- function(lower, upper, retained) .Call(wrap__XolLayer__with_loss_corridor, self, lower, upper, retained)
 
 XolLayer$loss_corridor <- function() .Call(wrap__XolLayer__loss_corridor, self)
+
+XolLayer$with_deposit_premium <- function(amount) .Call(wrap__XolLayer__with_deposit_premium, self, amount)
+
+XolLayer$with_rate_on_line <- function(rol) .Call(wrap__XolLayer__with_rate_on_line, self, rol)
+
+XolLayer$with_premium_rate <- function(rate, subject_premium) .Call(wrap__XolLayer__with_premium_rate, self, rate, subject_premium)
+
+XolLayer$with_ceding_commission <- function(rate) .Call(wrap__XolLayer__with_ceding_commission, self, rate)
+
+XolLayer$with_sliding_scale <- function(commission, loss_ratio) .Call(wrap__XolLayer__with_sliding_scale, self, commission, loss_ratio)
+
+XolLayer$with_profit_commission <- function(share, allowance) .Call(wrap__XolLayer__with_profit_commission, self, share, allowance)
+
+XolLayer$with_swing_rating <- function(basic, lcm, minimum, maximum) .Call(wrap__XolLayer__with_swing_rating, self, basic, lcm, minimum, maximum)
+
+XolLayer$ceding_commission <- function() .Call(wrap__XolLayer__ceding_commission, self)
+
+XolLayer$sliding_scale <- function() .Call(wrap__XolLayer__sliding_scale, self)
+
+XolLayer$profit_commission <- function() .Call(wrap__XolLayer__profit_commission, self)
+
+XolLayer$swing_rating <- function() .Call(wrap__XolLayer__swing_rating, self)
+
+XolLayer$premium_for <- function(ceded) .Call(wrap__XolLayer__premium_for, self, ceded)
+
+XolLayer$ceding_commission_for <- function(ceded) .Call(wrap__XolLayer__ceding_commission_for, self, ceded)
+
+XolLayer$profit_commission_for <- function(ceded) .Call(wrap__XolLayer__profit_commission_for, self, ceded)
 
 XolLayer$reinstatement_premium <- function(losses, times) .Call(wrap__XolLayer__reinstatement_premium, self, losses, times)
 

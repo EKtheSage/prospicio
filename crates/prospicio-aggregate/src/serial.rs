@@ -19,12 +19,16 @@
 //!
 //! A layer with a loss corridor also has `"loss_corridor": {"lower": …,
 //! "upper": …, "retained": …}`; a document without one (all those written
-//! before corridors) loads with none.
+//! before corridors) loads with none. Contract terms are written the same
+//! way, only when present: `"ceding_commission": rate`, `"sliding_scale":
+//! [[commission, loss_ratio], …]`, `"profit_commission": {"share": …,
+//! "allowance": …}` and `"swing": {"basic": …, "lcm": …, "minimum": …,
+//! "maximum": …}` (at 100% of the layer).
 
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
 
-use crate::reinsurance::{Basis, Layer, Tower};
+use crate::reinsurance::{Basis, Commission, Layer, LossSensitivePremium, Tower};
 
 /// Value of the `format` field.
 const FORMAT: &str = "risk_rs.tower";
@@ -134,6 +138,32 @@ fn layer_json(l: &Layer) -> Value {
             json!({"lower": num(c.lower), "upper": num(c.upper), "retained": num(c.retained)}),
         );
     }
+    match &l.commission {
+        Some(Commission::Flat(c)) => {
+            m.insert("ceding_commission".into(), num(*c));
+        }
+        Some(Commission::SlidingScale(anchors)) => {
+            let pairs = anchors
+                .iter()
+                .map(|&(c, lr)| Value::Array(vec![num(c), num(lr)]))
+                .collect();
+            m.insert("sliding_scale".into(), Value::Array(pairs));
+        }
+        None => {}
+    }
+    if let Some(pc) = &l.profit_commission {
+        m.insert(
+            "profit_commission".into(),
+            json!({"share": num(pc.share), "allowance": num(pc.allowance)}),
+        );
+    }
+    if let Some(s) = &l.swing {
+        m.insert(
+            "swing".into(),
+            json!({"basic": num(s.basic), "lcm": num(s.lcm),
+                   "minimum": num(s.minimum), "maximum": num(s.maximum)}),
+        );
+    }
     Value::Object(m)
 }
 
@@ -196,6 +226,49 @@ fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
         }
         Some(_) => return Err(Error::Data("loss_corridor must be an object".into())),
     }
+    // Contract terms, after the premium they read; absent in documents
+    // written before them.
+    if m.contains_key("ceding_commission") {
+        layer = layer.ceding_commission(float(m, "ceding_commission")?)?;
+    }
+    match m.get("sliding_scale") {
+        None | Some(Value::Null) => {}
+        Some(Value::Array(pairs)) => {
+            let anchors = pairs
+                .iter()
+                .map(|p| match p.as_array().map(Vec::as_slice) {
+                    Some([c, lr]) => {
+                        Ok((to_f64(c, "sliding_scale")?, to_f64(lr, "sliding_scale")?))
+                    }
+                    _ => Err(Error::Data(
+                        "sliding_scale must list [commission, loss_ratio] pairs".into(),
+                    )),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            layer = layer.sliding_scale(anchors)?;
+        }
+        Some(_) => return Err(Error::Data("sliding_scale must be a list".into())),
+    }
+    match m.get("profit_commission") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(pc)) => {
+            layer = layer.profit_commission(float(pc, "share")?, float(pc, "allowance")?)?;
+        }
+        Some(_) => return Err(Error::Data("profit_commission must be an object".into())),
+    }
+    match m.get("swing") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(s)) => {
+            let terms = LossSensitivePremium::new(
+                float(s, "basic")?,
+                float(s, "lcm")?,
+                Some(float(s, "minimum")?),
+                Some(float(s, "maximum")?),
+            )?;
+            layer = layer.swing_rated(terms)?;
+        }
+        Some(_) => return Err(Error::Data("swing must be an object".into())),
+    }
     Ok(layer)
 }
 
@@ -244,7 +317,7 @@ fn object<'a>(v: &'a Value, what: &str) -> Result<&'a Map<String, Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::simulate_events;
+    use crate::{LossSensitivePremium, simulate_events};
     use prospicio_prob::{Lognormal, Poisson};
 
     fn programme() -> Tower {
@@ -253,6 +326,12 @@ mod tests {
                 Layer::quota_share("QS 30%", 0.3)
                     .unwrap()
                     .loss_corridor(1e6, 3e6, 0.5)
+                    .unwrap()
+                    .premium_rate(1.0, 2e7)
+                    .unwrap()
+                    .sliding_scale(vec![(0.35, 0.55), (0.3, 0.6), (0.2, 0.75)])
+                    .unwrap()
+                    .profit_commission(0.15, 0.35)
                     .unwrap(),
                 Layer::surplus("surplus", 1e6, 4.0)
                     .unwrap()
@@ -269,10 +348,16 @@ mod tests {
                     .paid_reinstatements(3e5, vec![1.0, 0.5])
                     .unwrap()
                     .pro_rata_as_to_time()
+                    .unwrap()
+                    .ceding_commission(0.1)
                     .unwrap(),
                 Layer::xol("free", 5e6, 3e6)
                     .unwrap()
                     .reinstatements(2)
+                    .unwrap()
+                    .swing_rated(
+                        LossSensitivePremium::new(1e5, 1.25, Some(2e5), Some(2e6)).unwrap(),
+                    )
                     .unwrap(),
             ],
             vec![Layer::stop_loss("SL", f64::INFINITY, 2e7).unwrap()],
@@ -285,6 +370,14 @@ mod tests {
         let tower = programme();
         let text = tower.to_json();
         assert!(text.contains("\"inf\""));
+        for key in [
+            "sliding_scale",
+            "profit_commission",
+            "ceding_commission",
+            "swing",
+        ] {
+            assert!(text.contains(key), "{key}");
+        }
         let back = Tower::from_json(&text).unwrap();
         assert_eq!(back, tower);
         assert_eq!(back.to_json(), text);
@@ -335,6 +428,29 @@ mod tests {
         assert_eq!(ok.layers[0].corridor.unwrap().upper, 2.0);
         assert!(Tower::from_json(&with(r#"{"lower":2.0,"upper":1.0,"retained":1.0}"#)).is_err());
         assert!(Tower::from_json(&with("3")).is_err());
+        // Contract terms: a sliding scale needs the premium; terms that do
+        // not combine are refused; a malformed scale is refused.
+        assert!(Tower::from_json(&with(r#"null,"sliding_scale":[[0.3,0.6]]"#)).is_err());
+        let priced = good.replace("\"premium\":0.0", "\"premium\":1.0");
+        let terms = |t: &str| {
+            priced.replace(
+                "\"pro_rata_time\":false",
+                &format!("\"pro_rata_time\":false,{t}"),
+            )
+        };
+        let slid = Tower::from_json(&terms(r#""sliding_scale":[[0.3,0.6],[0.2,0.7]]"#)).unwrap();
+        assert!(slid.layers[0].commission.is_some());
+        let swing = r#""swing":{"basic":0.0,"lcm":1.0,"minimum":0.0,"maximum":"inf"}"#;
+        assert!(
+            Tower::from_json(&terms(swing)).unwrap().layers[0]
+                .swing
+                .is_some()
+        );
+        assert!(
+            Tower::from_json(&terms(&format!(r#""sliding_scale":[[0.3,0.6]],{swing}"#))).is_err()
+        );
+        assert!(Tower::from_json(&terms(r#""sliding_scale":[[0.3]]"#)).is_err());
+        assert!(Tower::from_json(&terms(r#""profit_commission":{"share":0.2}"#)).is_err());
         assert!(Tower::from_json(&good.replace("\"stages\":[[", "\"stages\":[[],[")).is_err());
     }
 }

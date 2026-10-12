@@ -35,8 +35,9 @@ xol_layer(
 limit to \code{limit * (reinstatements + 1)}; cannot be combined with a finite
 \code{aggregate_limit}.}
 
-\item{premium}{Upfront premium for the placed share; used only by
-\code{reinstatement_rates}.}
+\item{premium}{Upfront premium for the placed share: the base of paid
+reinstatements, ceding and profit commissions and a sliding scale's loss
+ratio. \code{\link[=with_rate_on_line]{with_rate_on_line()}} and its siblings set it from a quote.}
 
 \item{reinstatement_rates}{Paid reinstatements: one rate per reinstatement,
 as a fraction of \code{premium} (1 is 100\%), pro rata as to amount. Sets the
@@ -52,8 +53,11 @@ charged at \code{1 - t}. Needs \code{reinstatement_rates}, and events with times
 }
 \value{
 An \code{xol_layer} object with read-only properties for each term
-(\code{loss_corridor} is \code{c(lower, upper, retained)}, empty when there is
-none).
+(\code{loss_corridor} is \code{c(lower, upper, retained)}, \code{ceding_commission} the
+flat rate, \code{sliding_scale} a data frame of \code{commission} and \code{loss_ratio}
+(or \code{NULL}), \code{profit_commission} \code{c(share, allowance)} and
+\code{swing_rating} \code{c(basic, lcm, minimum, maximum)}; each empty when there
+is none).
 }
 \description{
 \code{limit} xs \code{attachment} on each loss, then annual terms. For one year,
@@ -72,5 +76,7 @@ reinstatement_premium(timed, c(22, 12), times = c(0.25, 0.5))
 }
 \seealso{
 \code{\link[=quota_share]{quota_share()}} and \code{\link[=aggregate_stop_loss]{aggregate_stop_loss()}} for the other contract
-types, which are layers too; \code{\link[=with_loss_corridor]{with_loss_corridor()}} for a corridor.
+types, which are layers too; \code{\link[=with_loss_corridor]{with_loss_corridor()}} for a corridor;
+\code{\link[=with_rate_on_line]{with_rate_on_line()}}, \code{\link[=with_ceding_commission]{with_ceding_commission()}} and
+\code{\link[=with_swing_rating]{with_swing_rating()}} for premiums and commissions.
 }
