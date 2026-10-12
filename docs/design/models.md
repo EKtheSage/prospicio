@@ -94,8 +94,15 @@ models and compares them.
   DrivAge classes, BonusMalus, VehBrand, VehGas, log Density, Region),
   offset log(Exposure). Poisson coefficients at 1e-8, standard errors,
   quasi-Poisson and HC0 standard errors at 1e-7, deviance, null deviance,
-  log-likelihood and AIC at 1e-10: 202 values. The fits take about 30 s in
-  a release build (statsmodels: 1 m 45 s); `validation/tests/fremtpl2.rs`
+  log-likelihood and AIC at 1e-10: 202 values. On the same design without
+  the offset, a logistic regression of whether a policy has a claim
+  (ClaimNb > 0) over all policies, and a gamma GLM with log link of the
+  average claim amount on freMTPL2sev (OpenML 41215, also SHA-256 checked)
+  aggregated per policy and joined to the portfolio (24,944 policies),
+  weighted by the number of amounts (statsmodels' `var_weights`), each with
+  HC0 standard errors and the gamma's Pearson scale at 1e-8: 303 more
+  values, 505 in all. The fits take about 30 s in
+  a release build (statsmodels: 2 m 30 s); `validation/tests/fremtpl2.rs`
   skips unoptimized builds and a missing file unless
   `RISK_RS_REQUIRE_FREMTPL2` is set, as CI's `fremtpl2` job sets it. Not
   done: glum (its elastic-net objective differs from glmnet's, which
