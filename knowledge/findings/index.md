@@ -1,5 +1,6 @@
 # Findings
 
+* [Third raw moments, closed forms against mpmath](third-moments.md) - Severity and Counting third moments match mpmath at 30 digits to 1e-10; mpmath's nsum fails on a Poisson mean of 1,000; the mixed Poisson's pmf carries about 2e-12 into its moment.
 * [Normal draws bias the log-link mean](odp-normal-draws-bias.md) - Drawing beta from N(beta_hat, Sigma) and exponentiating raises each mean by exp(x'Sigma x / 2); MeanPreserving draws remove it exactly.
 * [Negative increments in the ODP](odp-negative-increments.md) - A quasi-likelihood ODP needs only V(mu) = mu and mu > 0; negative responses are fitted with a quasi-deviance that is not a distance.
 * [ODP log density](odp-continuous-density.md) - The ODP's lattice probability is -inf off the lattice; its continuation through Gamma, normalized by C(lambda), is a proper density in y.

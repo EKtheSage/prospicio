@@ -316,6 +316,19 @@ impl Gpd {
 }
 
 impl Severity for Gpd {
+    /// From `E[Y^k] = β^k k! / Π_{i≤k} (1 − iξ)` for the excess `Y` over
+    /// the location `u`; infinite for `ξ ≥ 1/3`.
+    fn third_moment(&self) -> Option<f64> {
+        let (xi, b, u) = (self.xi, self.beta, self.location);
+        if xi >= 1.0 / 3.0 {
+            return Some(f64::INFINITY);
+        }
+        let m1 = b / (1.0 - xi);
+        let m2 = 2.0 * b * b / ((1.0 - xi) * (1.0 - 2.0 * xi));
+        let m3 = 6.0 * b.powi(3) / ((1.0 - xi) * (1.0 - 2.0 * xi) * (1.0 - 3.0 * xi));
+        Some(u.powi(3) + 3.0 * u * u * m1 + 3.0 * u * m2 + m3)
+    }
+
     fn lev(&self, limit: f64) -> f64 {
         if limit <= 0.0 {
             return limit;

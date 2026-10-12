@@ -175,8 +175,9 @@ jobs:
           name: docs-site
           path: target/docs-site
 
-  # GLM parity at scale: the freMTPL2 claim frequency GLM (678,013
-  # policies) against statsmodels, in a release build (about 30 s; six
+  # GLM parity at scale: the freMTPL2 claim frequency GLM and claim
+  # indicator logit (678,013 policies) and the freMTPL2sev gamma severity
+  # GLM against statsmodels, in a release build (about 30 s; several
   # minutes unoptimized). The data is downloaded from OpenML once and
   # cached. On a pull request it runs only when the GLM code or the
   # freMTPL2 parity files change; otherwise its steps are skipped.
@@ -212,8 +213,9 @@ jobs:
           path: validation/data/external
           key: fremtpl2-${{ hashFiles('validation/scripts/fetch_fremtpl2.py') }}
       - if: steps.changes.outputs.run == 'true'
-        name: Fetch freMTPL2freq
-        run: test -f validation/data/external/freMTPL2freq_glm.csv || python3 validation/scripts/fetch_fremtpl2.py
+        name: Fetch freMTPL2freq and freMTPL2sev
+        run: |
+          test -f validation/data/external/freMTPL2freq_glm.csv             && test -f validation/data/external/freMTPL2sev_glm.csv             || python3 validation/scripts/fetch_fremtpl2.py
       - if: steps.changes.outputs.run == 'true'
         run: cargo test --release -p prospicio-validation --test fremtpl2
         env:

@@ -70,6 +70,7 @@ what it is aiming for by v1.0.
     `Sampled`), plus counts, the Pareto family, the inverse gamma,
     inverse Gaussian, Burr and scaled beta, mixtures, truncation and
     splicing, `Custom` and the `Dist` enum with JSON save and load.
+    Third raw moments on `Severity` and `Counting`.
   - `PredictiveDistribution`: join, reorder, blend, Arrow IPC; provenance
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
@@ -98,10 +99,16 @@ what it is aiming for by v1.0.
     commissions, profit commissions, swing rating; retro premiums.
     (Also done: towers saved as JSON, seasonal event times, loss
     corridors.)
+  - The occurrence exceedance (OEP) curve and occurrence PMLs for any
+    count, exact and simulated.
 - **Next:**
-  1. Deficit and credit carry-forward in profit commissions and sliding
+  1. The rest of `aggregate` parity tier 2 (the user's choice, 2026-10-12),
+     in the order listed in `docs/design/aggregate.md`: third-order
+     compound moments and moment approximations, reinsurance statistics by
+     view and pricing a cession, a priority ladder, eventual ruin, layer
+     loss picks, pricing bounds.
+  2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
-  2. The rest of `aggregate` parity tier 2, on request.
 - **v1.0:** a reinsurance programme described once and applied to any
   loss source.
 
@@ -121,8 +128,8 @@ what it is aiming for by v1.0.
     against a complement (`docs/design/ratemaking.md`). This finishes the
     v0.6 pricing scope.
 - **Next:**
-  1. Log-log interpolation for tabulated curves, and a tilted spread
-     within bands.
+  1. Log-log interpolation for tabulated curves (the tilted spread within
+     bands is done).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)

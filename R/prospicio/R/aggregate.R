@@ -106,6 +106,49 @@ simulate_events <- function(frequency, severity, n_sims, seed) {
   event_set(ptr = ptr)
 }
 
+#' The occurrence exceedance (OEP) curve and occurrence PMLs
+#'
+#' `occurrence_exceedance()` is the chance that a year's largest occurrence
+#' exceeds `x`, `1 - G_N(F(x))` with `G_N` the count's generating function
+#' (`1 - exp(-lambda * S(x))` for a Poisson count). `occurrence_pml()`
+#' inverts it: the loss whose occurrence exceedance is the annual probability
+#' `p`, for any claim count (the Python package `aggregate`'s `oep` covers
+#' Poisson counts). `annual_maxima()` is each simulated year's largest loss,
+#' whose survival function is the simulated OEP curve.
+#'
+#' @param frequency A claim count, as for [simulate_events()].
+#' @param severity A severity, as for [simulate_events()].
+#' @param x Losses.
+#' @param p Annual probabilities in `(0, 1 - P(N = 0))`.
+#' @param events An `event_set`.
+#' @returns `occurrence_exceedance()`: probabilities. `occurrence_pml()`: a
+#'   data frame with `probability`, `loss`, `severity_survival`,
+#'   `occurrence_return_period` (`1 / (E[N] S(loss))`, which can be shorter
+#'   than a year) and `annual_return_period` (`1 / p`). `annual_maxima()`: a
+#'   [predictive_distribution].
+#' @export
+#' @examples
+#' sev <- lognormal_from_mean_cv(100, 2)
+#' occurrence_pml(poisson_count(2), sev, c(0.1, 0.01, 0.001))
+#' occurrence_exceedance(negative_binomial_count(1.5, 2), sev, c(500, 1000))
+#' ev <- simulate_events(poisson_count(2), sev, 10000, seed = 1)
+#' mean(annual_maxima(ev))
+occurrence_pml <- function(frequency, severity, p) {
+  as.data.frame(rust_result(occurrence_pml_rust(frequency@ptr, severity@ptr, as.double(p))))
+}
+
+#' @rdname occurrence_pml
+#' @export
+occurrence_exceedance <- function(frequency, severity, x) {
+  rust_result(occurrence_exceedance_rust(frequency@ptr, severity@ptr, as.double(x)))
+}
+
+#' @rdname occurrence_pml
+#' @export
+annual_maxima <- function(events) {
+  predictive_distribution(ptr = rust_result(events@ptr$maxima()))
+}
+
 #' Years of losses from elsewhere
 #'
 #' Builds an `event_set` from your own simulation, or a catastrophe model's

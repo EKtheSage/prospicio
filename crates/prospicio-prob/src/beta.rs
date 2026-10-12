@@ -69,6 +69,10 @@ impl Beta {
 }
 
 impl Moments for Beta {
+    fn third(&self) -> f64 {
+        self.raw_moment(3.0)
+    }
+
     fn limited(&self, j: i32, u: f64) -> f64 {
         let jf = f64::from(j);
         if u <= 0.0 {

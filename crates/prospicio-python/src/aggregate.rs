@@ -67,6 +67,12 @@ impl Counting for AnyCount {
     fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
         self.as_counting().pgf_complex(z)
     }
+    fn third_moment(&self) -> f64 {
+        self.as_counting().third_moment()
+    }
+    fn third_cumulant(&self) -> f64 {
+        self.as_counting().third_cumulant()
+    }
 }
 
 /// What a compound calculation produced and the error it introduced.
@@ -663,6 +669,18 @@ impl PyEventSet {
         Ok(PyPredictiveDistribution { inner })
     }
 
+    /// Each year's largest loss (0 in a year with none): its survival
+    /// function is the simulated occurrence exceedance (OEP) curve, and its
+    /// quantiles the occurrence PMLs.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn maxima(&self) -> PyResult<PyPredictiveDistribution> {
+        let inner = self.inner.maxima().map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "EventSet(n_sims={}, seed={})",
@@ -712,4 +730,129 @@ pub(crate) fn simulate_events(
         .detach(|| prospicio_aggregate::simulate_events(n.as_counting(), &sev, n_sims, seed))
         .map_err(to_py)?;
     Ok(PyEventSet { inner })
+}
+
+/// The chance that the year's largest occurrence exceeds ``x``,
+/// ``1 - G_N(F(x))`` with ``G_N`` the count's generating function: the
+/// occurrence exceedance (OEP) curve.
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+/// x : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from prospicio.aggregate import occurrence_exceedance
+/// >>> from prospicio.distributions import Lognormal, Poisson
+/// >>> sev = Lognormal.from_mean_cv(100.0, 2.0)
+/// >>> oep = occurrence_exceedance(Poisson(2.0), sev, 500.0)
+/// >>> abs(oep - (1 - math.exp(-2 * (1 - sev.cdf(500.0))))) < 1e-12
+/// True
+#[pyfunction]
+pub(crate) fn occurrence_exceedance(
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    x: f64,
+) -> PyResult<f64> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = extract_severity(severity)?;
+    Ok(prospicio_aggregate::occurrence_exceedance(
+        n.as_counting(),
+        &sev,
+        x,
+    ))
+}
+
+/// One point of the occurrence PML curve, from ``occurrence_pml``.
+#[pyclass(name = "OccurrencePml", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyOccurrencePml {
+    inner: prospicio_aggregate::OccurrencePml,
+}
+
+#[pymethods]
+impl PyOccurrencePml {
+    /// The annual probability asked for.
+    #[getter]
+    fn probability(&self) -> f64 {
+        self.inner.probability
+    }
+
+    /// The loss whose occurrence exceedance is the probability.
+    #[getter]
+    fn loss(&self) -> f64 {
+        self.inner.loss
+    }
+
+    /// The severity's exceedance ``P(X > loss)``.
+    #[getter]
+    fn severity_survival(&self) -> f64 {
+        self.inner.severity_survival
+    }
+
+    /// ``1 / (E[N] P(X > loss))``, the average time between occurrences
+    /// above the loss; it can be shorter than a year.
+    #[getter]
+    fn occurrence_return_period(&self) -> f64 {
+        self.inner.occurrence_return_period
+    }
+
+    /// ``1 / probability``, the average time between years with such an
+    /// occurrence.
+    #[getter]
+    fn annual_return_period(&self) -> f64 {
+        self.inner.annual_return_period
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "OccurrencePml(probability={:?}, loss={:?})",
+            self.inner.probability, self.inner.loss
+        )
+    }
+}
+
+/// The occurrence PML at an annual probability ``p``: the loss whose
+/// occurrence exceedance is ``p``, for any claim count (the Python package
+/// ``aggregate``'s ``oep`` covers Poisson counts).
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+/// p : float
+///     In ``(0, 1 - P(N = 0))``.
+///
+/// Returns
+/// -------
+/// OccurrencePml
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``p`` is outside ``(0, 1 - P(N = 0))``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import occurrence_pml
+/// >>> from prospicio.distributions import Lognormal, Poisson
+/// >>> pml = occurrence_pml(Poisson(2.0), Lognormal.from_mean_cv(100.0, 2.0), 0.01)
+/// >>> round(pml.loss, 4), pml.annual_return_period
+/// (1171.4979, 100.0)
+#[pyfunction]
+pub(crate) fn occurrence_pml(
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    p: f64,
+) -> PyResult<PyOccurrencePml> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = extract_severity(severity)?;
+    let inner = prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_py)?;
+    Ok(PyOccurrencePml { inner })
 }
