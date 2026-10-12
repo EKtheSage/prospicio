@@ -89,6 +89,14 @@ pub enum Error {
         n_sims: usize,
         source: Box<Error>,
     },
+    /// The tail could not be refitted on the pseudo factors of `failed` of
+    /// `n_sims` simulations of a bootstrap's lifetime view; `source` is one
+    /// of the failures (the first in the order of their messages).
+    TailRefit {
+        failed: usize,
+        n_sims: usize,
+        source: Box<Error>,
+    },
     /// An error from a shared crate (simulation, distributions).
     Core(prospicio_core::Error),
 }
@@ -167,6 +175,14 @@ impl fmt::Display for Error {
             } => write!(
                 f,
                 "one-year bootstrap: re-reserving failed in {failed} of {n_sims} simulations, for example: {source}"
+            ),
+            Self::TailRefit {
+                failed,
+                n_sims,
+                source,
+            } => write!(
+                f,
+                "bootstrap: the tail could not be refitted in {failed} of {n_sims} simulations, for example: {source}"
             ),
             Self::Core(e) => e.fmt(f),
         }

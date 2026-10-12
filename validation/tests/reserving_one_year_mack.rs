@@ -490,6 +490,7 @@ fn simulation_matches_the_exact_moments() {
                 process,
                 development: Development::default(),
                 centre_residuals: centred,
+                ..Default::default()
             }
             .one_year(
                 &triangle(dataset),

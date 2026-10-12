@@ -15,7 +15,12 @@ mack_bootstrap(
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   average = "volume",
   sigma_interpolation = "log-linear",
-  centre_residuals = TRUE
+  centre_residuals = TRUE,
+  tail = 1,
+  tail_sigma = NULL,
+  tail_std_err = NULL,
+  dependence = c("independent", "synchronized", "rank_correlation"),
+  spearman = NULL
 )
 }
 \arguments{
@@ -41,8 +46,26 @@ ratios and fills in a sigma behind a single link ratio, as in \code{\link[=mack]
 
 \item{centre_residuals}{Subtract the residuals' mean before resampling
 them, so that the pseudo factors are unbiased and the mean reserve is
-the chain ladder's; \code{FALSE} resamples them uncentred, as England,
+the chain ladder's (without a tail or with a constant one); \code{FALSE}
+resamples them uncentred, as England,
 Verrall and Wuthrich's Appendix 1 is written.}
+
+\item{tail}{Development past the oldest age, as in \code{\link[=mack]{mack()}}: a number (a
+constant factor), \code{\link[=tail_constant]{tail_constant()}}, \code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or
+\code{\link[=tail_log_linear]{tail_log_linear()}}; 1 (no tail) by default. \code{\link[=mack_one_year]{mack_one_year()}} takes
+its tail from the refitted method instead.}
+
+\item{tail_sigma}{The tail's sigma (R's \code{tail.sigma}), the process error
+of the step to ultimate, or \code{NULL} to extrapolate it. Unused when the
+tail factor is 1.}
+
+\item{tail_std_err}{A constant tail factor's standard error (R's
+\code{tail.se}), or \code{NULL} to extrapolate it (unlike \code{\link[=odp_bootstrap]{odp_bootstrap()}},
+which then keeps the factor fixed). Unused when the tail factor is 1,
+and an error with an estimated tail.}
+
+\item{dependence, spearman}{How the segments depend on each other, as in
+\code{\link[=odp_bootstrap]{odp_bootstrap()}}.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.
@@ -57,23 +80,37 @@ error), and every future cumulative value is drawn from the one before,
 the observed latest value for the first, with mean \verb{f*_k C} and Mack's
 variance \verb{sigma_k^2 |C|^(2 - alpha)} (process error), to the triangle's
 last age. An origin's reserve is its last drawn value less its latest.
-Mack's model has no tail here, so development past the oldest age is not
-simulated.
+With a \code{tail} every origin takes one more step, from the oldest age to
+ultimate, with mean the tail factor times the value at the oldest age and
+variance \verb{tail_sigma^2 |C|^(2 - alpha)} (Mack 1999); the tail factor is
+refitted on each simulation's pseudo factors (an estimated tail) or drawn
+from the lognormal with the factor as mean and the tail's standard error
+(a constant one). A constant tail attached before the oldest age moves
+each factor it replaces by the pseudo factor's deviation from the
+estimate, which \code{\link[=mack]{mack()}} charges with the estimated factor's standard
+error. With a constant tail the standard deviation approximates
+\code{\link[=mack]{mack()}}'s with the same tail; for an estimated tail the parameter error
+and the mean are the refit's, not Mack's extrapolated \code{tail.se} and the
+chain ladder's reserve.
 }
 \details{
 The standard deviation of the reserves approximates Mack's analytic
-standard error (\code{\link[=mack]{mack()}}), and the mean is the chain ladder's reserve:
-the pooled residuals do not have a zero mean, so by default
-(\code{centre_residuals = TRUE}) they are centred before resampling.
+standard error (\code{\link[=mack]{mack()}}), and the mean is the chain ladder's reserve
+(without a tail or with a constant one): the pooled residuals do not have
+a zero mean, so by default (\code{centre_residuals = TRUE}) they are centred
+before resampling.
 Resampled as they are (\code{centre_residuals = FALSE}, EVW's Appendix 1 as
 written) they bias every pseudo factor, and the mean reserve with them
 (about 17\% above the chain ladder's on RAA, 0.7\% on GenIns, 0.8\% below
 on ABC); EVW's Table 4 expected reserves agree with the centred
 bootstrap.
 
-Every segment is bootstrapped on its own, with its own Mack model and
-residuals, into one joint distribution of the reserves. Simulation \code{i}
-uses random stream \code{i} of \code{seed} for every segment in turn.
+Every segment is bootstrapped with its own Mack model and residuals,
+into one joint distribution of the reserves, the segments depending on
+each other as \code{dependence} says, as in \code{\link[=odp_bootstrap]{odp_bootstrap()}}; synchronized,
+every segment resamples the link-ratio residuals of the same origins and
+ages. Simulation \code{i} uses random stream \code{i} of \code{seed} for every segment
+in turn.
 
 Properties of the fit: \code{chain_ladder} (the \link{chain_ladder_fit} of Mack's
 averaging), \code{mack} (the \link{mack_fit} on the observed triangle, with the

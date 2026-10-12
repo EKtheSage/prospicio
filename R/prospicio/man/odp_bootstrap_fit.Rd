@@ -12,7 +12,11 @@ odp_bootstrap(
   column = NULL,
   n_sims = 10000,
   seed = 0,
-  process = c("gamma", "none")
+  process = c("gamma", "none"),
+  tail = 1,
+  tail_std_err = NULL,
+  dependence = c("independent", "synchronized", "rank_correlation"),
+  spearman = NULL
 )
 }
 \arguments{
@@ -30,6 +34,46 @@ every origin observed from the first age up to its latest.}
 \item{process}{Process error on each simulated future incremental value:
 \code{"gamma"} (mean the expected value, variance \verb{scale * |mean|}, R's
 \code{process.distr = "gamma"}) or \code{"none"} for parameter error only.}
+
+\item{tail}{Development past the oldest age: a number (a constant
+factor), \code{\link[=tail_constant]{tail_constant()}}, \code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or
+\code{\link[=tail_log_linear]{tail_log_linear()}}, as in \code{\link[=chain_ladder]{chain_ladder()}}; 1 (no tail, as R's
+\code{BootChainLadder}) by default. An estimated tail (a curve, Bondy or
+the log-linear rule) is refitted on each simulation's pseudo factors,
+which gives its parameter error; a constant one is fixed unless
+\code{tail_std_err} is given. The step from the oldest age to ultimate is
+one more future increment, with mean the pseudo value at the oldest
+age times the tail factor less 1 and the same process error.
+\code{\link[=odp_one_year]{odp_one_year()}} takes its tail from the refitted method instead. R's
+rule (\code{\link[=tail_log_linear]{tail_log_linear()}}) refitted on the ODP's pseudo factors is
+often exactly 1 (5.7\% of simulations on RAA) and on average high
+(RAA's oldest origin's mean reserve 78\% above the plug-in); a constant
+tail with \code{tail_std_err} has neither.}
+
+\item{tail_std_err}{Standard error of a constant tail factor: each
+simulation draws the factor from the lognormal with the factor as mean
+and this standard deviation. \code{NULL} keeps it fixed, unlike
+\code{\link[=mack_bootstrap]{mack_bootstrap()}}, which extrapolates Mack's standard error; unused
+when the factor is 1, and an error with an estimated tail.}
+
+\item{dependence}{How the segments of a multi-segment triangle depend on
+each other: \code{"independent"}, each resampling its own residuals;
+\code{"synchronized"}, every segment resampling the residuals of the same
+origins and ages in each simulation (the synchronous bootstrap of
+Taylor and McGuire 2007 and Kirschner, Kerley and Isaacs 2008), so the
+lines' parameter error takes the correlation of their residuals while
+process error stays independent, which needs the same origins, ages and
+observed cells in every segment; or \code{"rank_correlation"}, each segment
+bootstrapped independently and the segments' simulations then
+reordered as whole rows (Iman-Conover on the segment totals) to the
+Spearman matrix \code{spearman} and put in a random order, so that row \code{i}
+is no longer simulation \code{i} but any subset of rows is a fair sample.}
+
+\item{spearman}{With \code{dependence = "rank_correlation"} only: Spearman's
+rho between the segments' totals, a symmetric matrix with a unit
+diagonal and one row and column per segment in index order. It is
+converted to the normal scores' correlation \verb{2 sin(pi rho / 6)}, which
+must be positive definite.}
 }
 \value{
 An \code{odp_bootstrap_fit} object.
@@ -44,10 +88,14 @@ exactly, and the reserve distribution within Monte Carlo error
 (\code{validation/reference/reserving_bootstrap_r.csv}).
 }
 \details{
-Every segment of the triangle is bootstrapped on its own, with its own
-residuals and scale, into one joint distribution of the reserves.
-Simulation \code{i} uses random stream \code{i} of \code{seed} for every segment in
-turn, so results do not depend on the number of threads.
+Every segment of the triangle is bootstrapped with its own residuals and
+scale, into one joint distribution of the reserves, the segments
+depending on each other as \code{dependence} says: independently by default,
+synchronized, or rank-correlated to a Spearman matrix. The joint
+distribution goes on to the portfolio's risk measure and its allocation
+to the lines (\code{\link[=capital_allocation]{capital_allocation()}}). Simulation \code{i} uses random stream \code{i} of
+\code{seed} for every segment in turn, so results do not depend on the number
+of threads.
 
 Properties of the fit: \code{chain_ladder} (the \link{chain_ladder_fit} the
 bootstrap is centred on), \code{origins}, \code{development}, \code{fitted} (fitted

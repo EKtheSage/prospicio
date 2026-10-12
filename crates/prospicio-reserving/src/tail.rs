@@ -263,26 +263,7 @@ impl Tail {
     /// Fits the tail to an estimated development pattern, whose ages
     /// (`development`) locate the attachment and fit ages.
     pub fn fit(&self, development: &DevelopmentFit) -> Result<TailFit> {
-        let estimated = &development.ldf;
-        let n_links = estimated.len();
-        let ages = &development.development;
-        let periods = periods_per_year(ages);
-        let (attachment, ldf) = match self {
-            Self::Constant(t) => t.select(estimated, ages, periods)?,
-            Self::Curve(t) => t.select(estimated, ages, periods)?,
-            Self::Bondy(t) => t.select(estimated, ages)?,
-            Self::LogLinear => {
-                let mut ldf = estimated.clone();
-                ldf.push(log_linear_factor(estimated)?);
-                (n_links, ldf)
-            }
-        };
-        let factor: f64 = ldf[n_links..].iter().product();
-        if !factor.is_finite() || factor <= 0.0 {
-            return Err(Error::Tail(
-                "the fitted tail factor is not finite and positive",
-            ));
-        }
+        let (attachment, ldf, factor) = self.select(&development.ldf, &development.development)?;
         // No tail carries no risk. A tail below 1 has no position on the
         // line through ln(f - 1), so chainladder-python's
         // `_get_tail_weighted_time_period` reads it where 1.001 would be.
@@ -298,6 +279,38 @@ impl Tail {
             sigma,
             std_err,
         })
+    }
+
+    /// The selected factors of [`TailFit`] (`attachment`, `ldf` and
+    /// `factor`) for the `estimated` factors between `ages`, without the
+    /// tail's sigma and standard error: what a bootstrap refits on each
+    /// simulation's pseudo factors.
+    pub(crate) fn select(&self, estimated: &[f64], ages: &[Lag]) -> Result<(usize, Vec<f64>, f64)> {
+        let n_links = estimated.len();
+        let periods = periods_per_year(ages);
+        let (attachment, ldf) = match self {
+            Self::Constant(t) => t.select(estimated, ages, periods)?,
+            Self::Curve(t) => t.select(estimated, ages, periods)?,
+            Self::Bondy(t) => t.select(estimated, ages)?,
+            Self::LogLinear => {
+                let mut ldf = estimated.to_vec();
+                ldf.push(log_linear_factor(estimated)?);
+                (n_links, ldf)
+            }
+        };
+        let factor: f64 = ldf[n_links..].iter().product();
+        if !factor.is_finite() || factor <= 0.0 {
+            return Err(Error::Tail(
+                "the fitted tail factor is not finite and positive",
+            ));
+        }
+        Ok((attachment, ldf, factor))
+    }
+
+    /// Whether this is no tail: a constant factor of 1 at the oldest age,
+    /// which leaves the estimated factors as they are.
+    pub(crate) fn is_none(&self) -> bool {
+        matches!(self, Self::Constant(t) if t.factor == 1.0 && t.attachment_age.is_none())
     }
 }
 

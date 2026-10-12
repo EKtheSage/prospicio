@@ -17,8 +17,8 @@ use prospicio_reserving::{
     ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
     Long, Mack, MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit as MackInner,
     MackProcess, Month, OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod,
-    ProcessDistribution, ReserveFit, SegmentFits, SigmaInterpolation, Tail, TailBondy,
-    TailConstant, TailCurve, Triangle as TriangleInner,
+    ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits, SigmaInterpolation, Tail,
+    TailBondy, TailConstant, TailCurve, Triangle as TriangleInner,
 };
 
 use crate::distributions::PredictiveDistribution;
@@ -148,6 +148,29 @@ fn one_year_method(
     })
 }
 
+/// The dependence between segments named `dependence` ("independent",
+/// "synchronized" or "rank_correlation"), with the row-major Spearman
+/// matrix that "rank_correlation" needs and the others refuse.
+fn segment_dependence(dependence: &str, spearman: Nullable<Vec<f64>>) -> Result<SegmentDependence> {
+    match (dependence, spearman) {
+        ("independent", Nullable::Null) => Ok(SegmentDependence::Independent),
+        ("synchronized", Nullable::Null) => Ok(SegmentDependence::Synchronized),
+        ("rank_correlation", Nullable::NotNull(spearman)) => {
+            Ok(SegmentDependence::RankCorrelation { spearman })
+        }
+        ("rank_correlation", Nullable::Null) => Err(Error::Other(
+            "dependence = \"rank_correlation\" needs a spearman matrix".into(),
+        )),
+        ("independent" | "synchronized", Nullable::NotNull(_)) => Err(Error::Other(
+            "spearman is taken only with dependence = \"rank_correlation\"".into(),
+        )),
+        _ => Err(Error::Other(format!(
+            "dependence must be \"independent\", \"synchronized\" or \"rank_correlation\", \
+             got \"{dependence}\""
+        ))),
+    }
+}
+
 /// Mack's bootstrap of `mack_bootstrap()` and `mack_one_year()`.
 fn mack_bootstrap(
     n_sims: f64,
@@ -156,6 +179,7 @@ fn mack_bootstrap(
     average: &str,
     sigma_interpolation: &str,
     centre_residuals: bool,
+    dependence: SegmentDependence,
 ) -> Result<MackBootstrap> {
     let n_sims = whole(n_sims, "n_sims")? as usize;
     if n_sims == 0 {
@@ -180,11 +204,18 @@ fn mack_bootstrap(
         process,
         development: development(average, sigma_interpolation)?,
         centre_residuals,
+        dependence,
+        ..Default::default()
     })
 }
 
 /// The ODP bootstrap of `odp_bootstrap()` and `odp_one_year()`.
-fn bootstrap(n_sims: f64, seed: f64, process: &str) -> Result<OdpBootstrap> {
+fn bootstrap(
+    n_sims: f64,
+    seed: f64,
+    process: &str,
+    dependence: SegmentDependence,
+) -> Result<OdpBootstrap> {
     let n_sims = whole(n_sims, "n_sims")? as usize;
     if n_sims == 0 {
         return Err(Error::Other("n_sims must be positive".into()));
@@ -202,6 +233,8 @@ fn bootstrap(n_sims: f64, seed: f64, process: &str) -> Result<OdpBootstrap> {
         n_sims,
         seed: whole(seed, "seed")?,
         process,
+        dependence,
+        ..Default::default()
     })
 }
 
@@ -752,24 +785,41 @@ impl Triangle {
         Ok(CapeCodFit { inner })
     }
 
+    /// The ODP bootstrap of every segment, the segments depending on each
+    /// other as `dependence` ("independent", "synchronized" or
+    /// "rank_correlation" with the row-major `spearman` matrix) says.
+    /// `tail` is a `ReservingTail`, developed past the oldest age in every
+    /// simulation; `tail_std_err` is `NULL` to keep a constant tail fixed.
+    #[allow(clippy::too_many_arguments)]
     fn odp_bootstrap(
         &self,
         column: &str,
         n_sims: f64,
         seed: f64,
         process: &str,
+        tail: Robj,
+        tail_std_err: Nullable<f64>,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
     ) -> Result<OdpBootstrapFit> {
-        let inner = bootstrap(n_sims, seed, process)?
-            .fit_segments(&self.inner, column)
-            .map_err(to_r)?;
+        let dependence = segment_dependence(dependence, spearman)?;
+        let boot = OdpBootstrap {
+            tail: tail_arg(&tail)?,
+            tail_std_err: optional(tail_std_err),
+            ..bootstrap(n_sims, seed, process, dependence)?
+        };
+        let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
         Ok(OdpBootstrapFit { inner })
     }
 
     /// The lifetime view under Mack's bootstrap: each origin's reserve
     /// simulated to the last age with `process` ("gamma", "lognormal",
     /// "residuals", "normal" or "none"), Mack's model averaged as `average`
-    /// with `sigma_interpolation`, and the residuals centred before
-    /// resampling if `centre_residuals`.
+    /// with `sigma_interpolation`, the residuals centred before resampling
+    /// if `centre_residuals`, and the segments depending on each other as
+    /// `dependence` and `spearman` say (as `odp_bootstrap`); then to
+    /// ultimate with `tail` (a `ReservingTail`), whose `tail_sigma` and
+    /// `tail_std_err` are `NULL` to extrapolate them.
     #[allow(clippy::too_many_arguments)]
     fn mack_bootstrap(
         &self,
@@ -780,17 +830,27 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         centre_residuals: bool,
+        tail: Robj,
+        tail_sigma: Nullable<f64>,
+        tail_std_err: Nullable<f64>,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
     ) -> Result<MackBootstrapFit> {
-        let inner = mack_bootstrap(
-            n_sims,
-            seed,
-            process,
-            average,
-            sigma_interpolation,
-            centre_residuals,
-        )?
-        .fit_segments(&self.inner, column)
-        .map_err(to_r)?;
+        let boot = MackBootstrap {
+            tail: tail_arg(&tail)?,
+            tail_sigma: optional(tail_sigma),
+            tail_std_err: optional(tail_std_err),
+            ..mack_bootstrap(
+                n_sims,
+                seed,
+                process,
+                average,
+                sigma_interpolation,
+                centre_residuals,
+                segment_dependence(dependence, spearman)?,
+            )?
+        };
+        let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
         Ok(MackBootstrapFit { inner })
     }
 
@@ -798,7 +858,9 @@ impl Triangle {
     /// "bornhuetter_ferguson", "benktander" or "cape_cod") by re-reserving
     /// on the ODP bootstrap. `exposure` is `NULL` for the chain ladder and
     /// names the exposure column of the other methods; each method reads
-    /// only its own settings (`apriori`, `n_iters`, `trend`, `decay`).
+    /// only its own settings (`apriori`, `n_iters`, `trend`, `decay`). The
+    /// segments depend on each other as `dependence` and `spearman` say (as
+    /// `odp_bootstrap`).
     #[allow(clippy::too_many_arguments)]
     fn odp_one_year(
         &self,
@@ -815,6 +877,8 @@ impl Triangle {
         n_sims: f64,
         seed: f64,
         process: &str,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
     ) -> Result<OneYearFit> {
         let method = one_year_method(
             method,
@@ -825,7 +889,8 @@ impl Triangle {
             decay,
             pattern(average, sigma_interpolation, tail)?,
         )?;
-        let inner = bootstrap(n_sims, seed, process)?
+        let dependence = segment_dependence(dependence, spearman)?;
+        let inner = bootstrap(n_sims, seed, process, dependence)?
             .one_year_segments(&self.inner, column, &method)
             .map_err(to_r)?;
         Ok(OneYearFit {
@@ -836,8 +901,9 @@ impl Triangle {
     /// The one-year view of `method`, as `odp_one_year`, under Mack's
     /// process: Mack's bootstrap with `process` ("gamma", "lognormal",
     /// "residuals", "normal" or "none"), Mack's model averaged as
-    /// `mack_average` with `mack_sigma_interpolation`, and the residuals
-    /// centred before resampling if `centre_residuals`.
+    /// `mack_average` with `mack_sigma_interpolation`, the residuals centred
+    /// before resampling if `centre_residuals`, and the segments depending
+    /// on each other as `dependence` and `spearman` say.
     #[allow(clippy::too_many_arguments)]
     fn mack_one_year(
         &self,
@@ -857,6 +923,8 @@ impl Triangle {
         mack_average: &str,
         mack_sigma_interpolation: &str,
         centre_residuals: bool,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
     ) -> Result<OneYearFit> {
         let method = one_year_method(
             method,
@@ -874,6 +942,7 @@ impl Triangle {
             mack_average,
             mack_sigma_interpolation,
             centre_residuals,
+            segment_dependence(dependence, spearman)?,
         )?
         .one_year_segments(&self.inner, column, &method)
         .map_err(to_r)?;
@@ -1476,7 +1545,8 @@ pub(crate) struct OdpBootstrapFit {
 
 #[extendr]
 impl OdpBootstrapFit {
-    /// The chain ladder the bootstrap is centred on.
+    /// The chain ladder the bootstrap is centred on, with the bootstrap's
+    /// tail.
     fn chain_ladder(&self) -> ChainLadderFit {
         ChainLadderFit {
             inner: self.inner.segments.map(|s| s.chain_ladder.clone()),
@@ -1539,7 +1609,7 @@ impl MackBootstrapFit {
         }
     }
 
-    /// Mack's model on the observed triangle, without a tail.
+    /// Mack's model on the observed triangle, with the bootstrap's tail.
     fn mack(&self) -> MackFit {
         MackFit {
             inner: self.inner.segments.map(|s| s.mack.clone()),

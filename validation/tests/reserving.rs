@@ -152,6 +152,7 @@ fn bootstrap_matches_r_bootchainladder() {
                     n_sims: BOOTSTRAP_SIMS,
                     seed: 20_261_004,
                     process,
+                    ..Default::default()
                 }
                 .fit(&triangle(dataset), "values")
                 .unwrap_or_else(|e| panic!("{dataset} {method}: {e}"))
@@ -674,6 +675,7 @@ fn every_segment_at_once_on_lob_and_coverage() {
         n_sims: 2_000,
         seed: 11,
         process: ProcessDistribution::Gamma,
+        ..Default::default()
     };
     let joint = boot.fit_segments(&tri, "paid").unwrap();
     assert_eq!(joint.reserves.dims(), ["lob", "coverage", "origin"]);

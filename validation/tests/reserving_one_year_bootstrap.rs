@@ -86,6 +86,7 @@ fn one_year(dataset: &str) -> OneYearFit {
         n_sims: SIMS,
         seed: SEED,
         process: ProcessDistribution::Gamma,
+        ..Default::default()
     }
     .one_year(
         &triangle(dataset),
@@ -317,6 +318,7 @@ fn quarterly_split_halves_the_one_year_sd() {
                 n_sims,
                 seed: SEED,
                 process: ProcessDistribution::Gamma,
+                ..Default::default()
             }
             .one_year(tri, "values", &cl)
             .unwrap_or_else(|e| panic!("{dataset}: {e}"))
