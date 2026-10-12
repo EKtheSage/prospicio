@@ -329,3 +329,134 @@ fn contract_terms_match_aggregate() {
         }
     });
 }
+
+/// The occurrence PML against `aggregate` 1.0.1's `oep` on three Poisson
+/// books: the loss, the severity's exceedance and the occurrence return
+/// period at eight annual probabilities, at `1e-10`
+/// (`validation/scripts/aggregate_oep.py`).
+#[test]
+fn occurrence_pml_matches_aggregate() {
+    use prospicio_aggregate::pml::occurrence_pml;
+    use prospicio_prob::{Dist, Gamma, Lognormal, Poisson, Weibull};
+
+    let cases = prospicio_validation::reference("oep_aggregate.csv");
+    prospicio_validation::check(&cases, |c| {
+        let v = |k: &str| c.param("params", k);
+        let params = c.get("params");
+        let n = Poisson::new(v("lambda")).ok()?;
+        let sev: Dist = if params.contains("severity=gamma") {
+            Gamma::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+        } else if params.contains("severity=lognormal") {
+            Lognormal::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+        } else {
+            Weibull::new(v("shape"), v("scale")).ok()?.into()
+        };
+        let pml = occurrence_pml(&n, &sev, c.number("arg")?).ok()?;
+        match c.get("quantity") {
+            "loss" => Some(pml.loss),
+            "severity_survival" => Some(pml.severity_survival),
+            "occurrence_return_period" => Some(pml.occurrence_return_period),
+            _ => None,
+        }
+    });
+}
+
+/// The simulated OEP, each year's largest event, against the exact curve
+/// for a negative binomial count (which `aggregate`'s `oep` does not
+/// cover): 200,000 years, within four standard errors at five losses.
+#[test]
+fn simulated_maxima_match_the_occurrence_exceedance() {
+    use prospicio_aggregate::pml::{occurrence_exceedance, occurrence_pml};
+    use prospicio_aggregate::simulate_events;
+    use prospicio_prob::{Distribution, Lognormal, NegativeBinomial};
+
+    let n = NegativeBinomial::new(1.5, 2.0).unwrap();
+    let x = Lognormal::from_mean_cv(100.0, 2.0).unwrap();
+    let sims = 200_000;
+    let maxima = simulate_events(&n, &x, sims, 20_261_012)
+        .unwrap()
+        .maxima()
+        .unwrap();
+    let simulated = maxima.total();
+    for p in [0.3, 0.1, 0.03, 0.01, 0.003] {
+        let loss = occurrence_pml(&n, &x, p).unwrap().loss;
+        let exact = occurrence_exceedance(&n, &x, loss);
+        assert!((exact / p - 1.0).abs() < 1e-9);
+        let se = (p * (1.0 - p) / sims as f64).sqrt();
+        let observed = 1.0 - simulated.cdf(loss);
+        assert!((observed - p).abs() < 4.0 * se, "p {p}: {observed} ({se})");
+    }
+}
+
+/// Compound mean, cv and skewness against `aggregate` 1.0.1's analytic
+/// statistics, and the five moment approximations against its own fitting
+/// code on those moments, on five books (`validation/scripts/aggregate_moments.py`).
+#[test]
+fn compound_moments_and_approximations_match_aggregate() {
+    use prospicio_aggregate::{Approximation, ApproximationKind, compound_moments};
+    use prospicio_prob::{
+        Dist, Gamma, Lognormal, NegativeBinomial, Poisson, SeverityDist, Weibull,
+    };
+
+    let cases = prospicio_validation::reference("moments_aggregate.csv");
+    prospicio_validation::check(&cases, |c| {
+        let v = |k: &str| c.param("params", k);
+        let params = c.get("params");
+        let sev: Dist = if params.contains("severity=gamma") {
+            Gamma::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+        } else if params.contains("severity=lognormal") {
+            Lognormal::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+        } else {
+            Weibull::new(v("shape"), v("scale")).ok()?.into()
+        };
+        let sev = SeverityDist::try_from(sev).ok()?;
+        // aggregate's `mixed gamma c` count is the negative binomial with
+        // r = 1/c² and β = λc².
+        let m = if params.contains("mixing_cv") {
+            let c2 = v("mixing_cv").powi(2);
+            compound_moments(
+                &NegativeBinomial::new(1.0 / c2, v("lambda") * c2).ok()?,
+                &sev,
+            )
+        } else {
+            compound_moments(&Poisson::new(v("lambda")).ok()?, &sev)
+        }
+        .ok()?;
+        let q = c.get("quantity");
+        match q {
+            "mean" => return Some(m.mean),
+            "cv" => return Some(m.cv()),
+            "skew" => return Some(m.skew()),
+            _ => {}
+        }
+        let (fit, key) = q.split_once('_')?;
+        let kind = match fit {
+            "norm" => ApproximationKind::Normal,
+            "gamma" => ApproximationKind::Gamma,
+            "lognorm" => ApproximationKind::Lognormal,
+            "sgamma" => ApproximationKind::ShiftedGamma,
+            _ => ApproximationKind::ShiftedLognormal,
+        };
+        // scipy's (shape, loc, scale) for each family.
+        let (shape, loc, scale) = match m.approximate(kind).ok()? {
+            Approximation::Normal { mean, sd } => (f64::NAN, mean, sd),
+            Approximation::Gamma { shape, scale } => (shape, 0.0, scale),
+            Approximation::Lognormal { meanlog, sdlog } => (sdlog, 0.0, meanlog.exp()),
+            Approximation::ShiftedGamma {
+                shape,
+                scale,
+                shift,
+            } => (shape, shift, scale),
+            Approximation::ShiftedLognormal {
+                meanlog,
+                sdlog,
+                shift,
+            } => (sdlog, shift, meanlog.exp()),
+        };
+        match key {
+            "shape" => Some(shape),
+            "loc" => Some(loc),
+            _ => Some(scale),
+        }
+    });
+}

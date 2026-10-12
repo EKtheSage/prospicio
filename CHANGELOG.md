@@ -7,6 +7,28 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+### Distributions and probability
+
+- Third raw moments: `Severity::third_moment()` (`None` where a family has
+  no closed form, infinite where the moment diverges) and
+  `Counting::third_moment()` with `Counting::third_cumulant()`, for
+  compound moments to third order (#183).
+
+### Aggregate and reinsurance
+
+- The occurrence exceedance (OEP) curve and occurrence PMLs for any claim
+  count, `prospicio_aggregate::pml::{occurrence_exceedance,
+  occurrence_pml}`, and each simulated year's largest loss,
+  `EventSet::maxima()`, matching `aggregate` 1.0.1's `oep` on Poisson
+  books. Python `prospicio.aggregate`; R `occurrence_exceedance()`,
+  `occurrence_pml()`, `annual_maxima()` (#182).
+- Compound moments to third order by cumulants and the moment
+  approximations of `aggregate`'s `approximate` (normal, gamma, lognormal,
+  shifted gamma, shifted lognormal), `prospicio_aggregate::moments`.
+  Python `prospicio.aggregate.compound_moments`; R `compound_moments()`,
+  `moment_approximation()`, `approximation_cdf()`,
+  `approximation_quantile()` (#184).
+
 ### Reserving
 
 - The one-year view of both bootstraps accepts a bootstrap tail, which

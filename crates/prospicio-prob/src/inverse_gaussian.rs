@@ -109,6 +109,12 @@ impl InverseGaussian {
 }
 
 impl Moments for InverseGaussian {
+    /// `μ³ + 3μ⁴/λ + 3μ⁵/λ²` with mean `μ` and shape `λ`.
+    fn third(&self) -> f64 {
+        let (m, l) = (self.mean, self.shape);
+        m.powi(3) + 3.0 * m.powi(4) / l + 3.0 * m.powi(5) / (l * l)
+    }
+
     fn limited(&self, j: i32, u: f64) -> f64 {
         if u <= 0.0 {
             return 0.0;

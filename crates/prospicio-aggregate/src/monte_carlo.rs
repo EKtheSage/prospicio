@@ -426,6 +426,22 @@ impl EventSet {
             self.provenance("frequency_severity_monte_carlo"),
         )
     }
+
+    /// Each year's largest loss (0 in a year with none), as a one-component
+    /// [`PredictiveDistribution`]: its survival function is the simulated
+    /// occurrence exceedance (OEP) curve, and its quantiles the occurrence
+    /// PMLs ([`crate::pml`]).
+    pub fn maxima(&self) -> Result<PredictiveDistribution> {
+        let maxima = (0..self.n_sims())
+            .map(|i| self.events(i).iter().copied().fold(0.0, f64::max))
+            .collect();
+        PredictiveDistribution::from_draws(
+            vec![],
+            vec![vec![]],
+            maxima,
+            self.provenance("frequency_severity_monte_carlo_maxima"),
+        )
+    }
 }
 
 #[cfg(test)]

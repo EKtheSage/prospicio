@@ -377,3 +377,53 @@ def test_grid_sizing():
     assert agg.mean() == pytest.approx(500.0, rel=1e-6)
     with pytest.raises(ValueError):
         recommend_grid(Poisson(1.0), Pareto(1.0, 0.8))
+
+
+def test_occurrence_pml():
+    from prospicio.aggregate import occurrence_exceedance, occurrence_pml, simulate_events
+    from prospicio.distributions import Lognormal, NegativeBinomial, Poisson
+
+    sev = Lognormal.from_mean_cv(100.0, 2.0)
+    # aggregate 1.0.1's oep on "agg O 2 claims sev lognorm 100 cv 2 poisson".
+    for p, loss, rp in [(0.1, 348.934754485, 9.491222), (0.001, 2906.643201, 999.499917)]:
+        pml = occurrence_pml(Poisson(2.0), sev, p)
+        assert pml.loss == pytest.approx(loss, rel=1e-9)
+        assert pml.occurrence_return_period == pytest.approx(rp, rel=1e-6)
+        assert pml.annual_return_period == pytest.approx(1 / p)
+    nb = NegativeBinomial(1.5, 2.0)
+    pml = occurrence_pml(nb, sev, 0.05)
+    assert occurrence_exceedance(nb, sev, pml.loss) == pytest.approx(0.05, rel=1e-9)
+    # The simulated OEP at the 10% PML, within four standard errors.
+    maxima = [row[0] for row in simulate_events(Poisson(2.0), sev, 20_000, 7).maxima().draw_matrix()]
+    share = sum(m > 348.934754485 for m in maxima) / len(maxima)
+    assert abs(share - 0.1) < 4 * math.sqrt(0.1 * 0.9 / 20_000)
+    with pytest.raises(ValueError):
+        occurrence_pml(Poisson(0.1), sev, 0.2)
+
+
+def test_compound_moments_and_approximations():
+    from prospicio.aggregate import compound_moments
+    from prospicio.distributions import Gamma, Pareto, Poisson
+
+    m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    # aggregate 1.0.1 on "agg B 10 claims sev gamma 50 cv 0.7 poisson".
+    assert m.mean == pytest.approx(500.0, rel=1e-12)
+    assert m.cv == pytest.approx(0.38600518131237566, rel=1e-12)
+    assert m.skew == pytest.approx(0.5129464825493272, rel=1e-12)
+    expected = {
+        "gamma": {"shape": 6.7114093959731544, "scale": 74.5},
+        "lognormal": {"sdlog": 0.3726821686995752},
+        "shifted_gamma": {"shape": 15.202530354045754, "shift": -252.52525252525868},
+        "shifted_lognormal": {"sdlog": 0.16816686089041927, "shift": -639.5805099091635},
+    }
+    for kind, params in expected.items():
+        fit = m.approximate(kind)
+        got = dict(fit.parameters)
+        for k, v in params.items():
+            assert got[k] == pytest.approx(v, rel=1e-10), (kind, k)
+        assert fit.mean() == pytest.approx(500.0, rel=1e-12)
+        assert fit.cdf(fit.quantile(0.99)) == pytest.approx(0.99, abs=1e-10)
+    with pytest.raises(ValueError):
+        m.approximate("weibull")
+    with pytest.raises(ValueError):
+        compound_moments(Poisson(2.0), Pareto(100.0, 2.5))

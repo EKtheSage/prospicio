@@ -14,6 +14,8 @@ categories.workspace = true
 
 [dependencies]
 prospicio-core.workspace = true
+# Bisection for the occurrence PML (pml).
+prospicio-math.workspace = true
 prospicio-prob.workspace = true
 rayon.workspace = true
 rustfft.workspace = true

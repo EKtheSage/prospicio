@@ -13,8 +13,10 @@ pub mod collective;
 pub mod compound;
 pub mod fft;
 pub mod grid_reinsurance;
+pub mod moments;
 pub mod monte_carlo;
 pub mod panjer;
+pub mod pml;
 pub mod reinsurance;
 pub mod serial;
 pub mod sizing;
@@ -23,8 +25,10 @@ pub use collective::CollectiveModel;
 pub use compound::{CompoundMethod, CompoundReport};
 pub use fft::fft;
 pub use grid_reinsurance::TowerGrids;
+pub use moments::{Approximation, ApproximationKind, CompoundMoments, compound_moments};
 pub use monte_carlo::{EventSet, simulate_events};
 pub use panjer::panjer;
+pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{
     Basis, Commission, Corridor, Layer, LossSensitivePremium, ProfitCommission, Tower,
 };

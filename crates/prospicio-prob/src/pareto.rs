@@ -206,6 +206,25 @@ impl Distribution for Pareto {
 }
 
 impl Severity for Pareto {
+    /// `α t³ / (α − 3)` untruncated (infinite for `α ≤ 3`); below a
+    /// truncation `T`, `α t^α (T^(3−α) − t^(3−α)) / ((3 − α) F(T))`.
+    fn third_moment(&self) -> Option<f64> {
+        let (t, a) = (self.t, self.alpha);
+        match self.truncation {
+            None if a > 3.0 => Some(a * t.powi(3) / (a - 3.0)),
+            None => Some(f64::INFINITY),
+            Some(tr) => {
+                let mass = 1.0 - (t / tr).powf(a);
+                let integral = if (a - 3.0).abs() < 1e-12 {
+                    a * t.powi(3) * (tr / t).ln()
+                } else {
+                    a * t.powf(a) * (tr.powf(3.0 - a) - t.powf(3.0 - a)) / (3.0 - a)
+                };
+                Some(integral / mass)
+            }
+        }
+    }
+
     fn lev(&self, limit: f64) -> f64 {
         if limit <= 0.0 {
             return limit;

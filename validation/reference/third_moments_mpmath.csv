@@ -1,0 +1,24 @@
+distribution,params,quantity,arg,expected,abs_tol,rel_tol,source
+lognormal,meanlog=4;sdlog=1,third_moment,,14650719.42895351691,0.0,1e-10,mpmath 1.4.1 at 30 digits
+lognormal,meanlog=3.8;sdlog=1.2686362411795196,third_moment,,124830903.31387003747,0.0,1e-10,mpmath 1.4.1 at 30 digits
+gamma,shape=2.0408163265306123;scale=24.5,third_moment,,368775.00000000002167,0.0,1e-10,mpmath 1.4.1 at 30 digits
+gamma,shape=0.5;scale=10,third_moment,,1875.0,0.0,1e-10,mpmath 1.4.1 at 30 digits
+weibull,shape=0.7;scale=1000,third_moment,,37234018932.662259734,0.0,1e-10,mpmath 1.4.1 at 30 digits
+weibull,shape=2;scale=5,third_moment,,166.16754852239212756,0.0,1e-10,mpmath 1.4.1 at 30 digits
+loglogistic,shape=5;scale=100,third_moment,,1981959.5995164744631,0.0,1e-10,mpmath 1.4.1 at 30 digits
+inverse_gamma,shape=5;scale=400,third_moment,,2666666.6666666666667,0.0,1e-10,mpmath 1.4.1 at 30 digits
+burr,alpha=3;gamma=2;scale=100,third_moment,,589048.62254808623221,0.0,1e-10,mpmath 1.4.1 at 30 digits
+beta,a=2;b=5;scale=1000,third_moment,,47619047.619047619048,0.0,1e-10,mpmath 1.4.1 at 30 digits
+inverse_gaussian,mean=100;shape=50,third_moment,,19000000.0,0.0,1e-10,mpmath 1.4.1 at 30 digits
+pareto,t=100;alpha=4.5,third_moment,,3000000.0,0.0,1e-10,mpmath 1.4.1 at 30 digits
+pareto,t=100;alpha=2;truncation=10000,third_moment,,198019801.98019801284,0.0,1e-10,mpmath 1.4.1 at 30 digits
+pareto,t=100;alpha=3;truncation=5000,third_moment,,11736162.905587682797,0.0,1e-10,mpmath 1.4.1 at 30 digits
+gpd,xi=0.2;beta=50,third_moment,,3906250.0,0.0,1e-10,mpmath 1.4.1 at 30 digits
+gpd,xi=-0.3;beta=50,third_moment,,189777.32793522267206,0.0,1e-10,mpmath 1.4.1 at 30 digits
+poisson,lambda=2,third_moment,,22.0,0.0,1e-10,mpmath 1.4.1 at 30 digits
+poisson,lambda=1000,third_moment,,1003001000.0,0.0,1e-10,mpmath 1.4.1 at 30 digits
+negative_binomial,r=1.5;beta=2,third_moment,,152.9999999999998951,0.0,1e-10,mpmath 1.4.1 at 30 digits
+negative_binomial,r=11.111111111111111;beta=0.9,third_moment,,1623.1999999999999581,0.0,1e-10,mpmath 1.4.1 at 30 digits
+binomial,n=20;p=0.3,third_moment,,293.28,0.0,1e-10,mpmath 1.4.1 at 30 digits
+tweedie,mean=100;dispersion=2;power=1.5,third_moment,,1660000.0,0.0,1e-10,mpmath 1.4.1 at 30 digits
+tweedie,mean=10;dispersion=0.5;power=1.8,third_moment,,2125.584243469363637,0.0,1e-10,mpmath 1.4.1 at 30 digits

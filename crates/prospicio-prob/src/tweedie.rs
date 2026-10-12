@@ -294,6 +294,14 @@ impl Distribution for Tweedie {
 }
 
 impl Severity for Tweedie {
+    /// From the cumulants `κ₂ = φ μ^p` and `κ₃ = φ² p μ^(2p−1)`.
+    fn third_moment(&self) -> Option<f64> {
+        let (m, phi, p) = (self.mean, self.dispersion, self.power);
+        let k2 = phi * m.powf(p);
+        let k3 = phi * phi * p * m.powf(2.0 * p - 1.0);
+        Some(k3 + 3.0 * m * k2 + m.powi(3))
+    }
+
     fn lev(&self, limit: f64) -> f64 {
         if limit <= 0.0 {
             return limit;

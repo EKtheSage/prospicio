@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-09T12:00:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-12T16:19:31Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -22,6 +22,12 @@ sources:
   - id: terms
     resource: ../validation/scripts/aggregate_contract_terms.py
     title: aggregate_contract_terms.py
+  - id: oep
+    resource: ../validation/scripts/aggregate_oep.py
+    title: aggregate_oep.py
+  - id: moments
+    resource: ../validation/scripts/aggregate_moments.py
+    title: aggregate_moments.py
 ---
 
 # Which source for what
@@ -147,4 +153,39 @@ sources:
   * prospicio matches `phi` for swing, retro, slide and pc at 475 losses
     through every kink to `1e-12` relative.[^terms]
 
+# The occurrence PML, and what 1.0.1 does not have
+
+* `aggregate.utilities.oep(agg, p, freq=0)` is closed form from the
+  severity and the expected count: the loss at the severity quantile
+  `1 + ln(1 − p) / λ`, with `S_sev`, `F_sev`, the occurrence return period
+  `1 / (λ S_sev)` and the annual one `1 / p`. It never reads the
+  aggregate's grid, so `bs` and `log2` do not matter, and it refuses
+  non-Poisson and zero-modified counts. prospicio's `occurrence_pml` takes
+  any count through its pgf and matches `oep` on three Poisson books at
+  `1e-10`.[^oep]
+* Found while listing the gaps against 1.0.1's source (2026-10-12):
+  `Aggregate.update` has no `tilt` option; `sev_calc='moment'` raises
+  `NotImplementedError` (prospicio's `Grid::local_moment` goes further);
+  the FFT engine never uses Panjer's recursion; and point-by-point
+  densities need `normalize=False`, because the default renormalizes the
+  severity cut at the grid's top and thins the tail.
+
+# Compound moments and approximate
+
+* `Aggregate.stats_df['mixed']` holds the analytic `ex1` to `ex3`, mean,
+  cv and skewness of frequency, severity and aggregate, from raw moments.
+  Against 30-digit closed forms it is 6.5e-10 off a Weibull severity's
+  mean and 2e-9 off the skewness (its severity moments are numerical), and
+  2.5e-10 off the skewness at a Poisson mean of 1,000 (raw moments
+  converted to central ones cancel).[^moments]
+* `Aggregate.approximate(kind)` fits `stats_df['empirical']`, the moments
+  of the computed grid, when the aggregate has been updated, not the
+  analytic ones; on a gamma book at `bs=1` its normal fit's location is
+  500.000005 for a mean of 500. The formulas are
+  `_fits.approximate_from_mcvsk`, which takes `(m, cv, skew)` directly; the
+  scipy parameters are `(shape, loc, scale)`, the lognormal's `shape` being
+  `σ` and `scale` `e^μ`.[^moments]
+
 [^terms]: aggregate_contract_terms.py
+[^moments]: aggregate_moments.py
+[^oep]: aggregate_oep.py

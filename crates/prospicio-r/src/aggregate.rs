@@ -69,6 +69,12 @@ impl Counting for AnyCount {
     fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
         self.as_counting().pgf_complex(z)
     }
+    fn third_moment(&self) -> f64 {
+        self.as_counting().third_moment()
+    }
+    fn third_cumulant(&self) -> f64 {
+        self.as_counting().third_cumulant()
+    }
 }
 
 pub(crate) fn compound_list(r: &CompoundReport) -> List {
@@ -331,13 +337,123 @@ impl EventSet {
         let inner = self.inner.totals().map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
+
+    fn maxima(&self) -> Result<PredictiveDistribution> {
+        let inner = self.inner.maxima().map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
+/// The occurrence exceedance `1 − G_N(F(x))` at each `x`.
+#[extendr]
+fn occurrence_exceedance_rust(frequency: Robj, severity: Robj, x: &[f64]) -> Result<Vec<f64>> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = severity_from_robj(&severity)?;
+    Ok(x.iter()
+        .map(|&x| prospicio_aggregate::occurrence_exceedance(n.as_counting(), &sev, x))
+        .collect())
+}
+
+/// The occurrence PML at each annual probability, as columns.
+#[extendr]
+fn occurrence_pml_rust(frequency: Robj, severity: Robj, p: &[f64]) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = severity_from_robj(&severity)?;
+    let pmls = p
+        .iter()
+        .map(|&p| prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_r))
+        .collect::<Result<Vec<_>>>()?;
+    let column = |f: fn(&prospicio_aggregate::OccurrencePml) -> f64| -> Vec<f64> {
+        pmls.iter().map(f).collect()
+    };
+    Ok(list!(
+        probability = column(|x| x.probability),
+        loss = column(|x| x.loss),
+        severity_survival = column(|x| x.severity_survival),
+        occurrence_return_period = column(|x| x.occurrence_return_period),
+        annual_return_period = column(|x| x.annual_return_period)
+    ))
+}
+
+/// `c(mean, variance, third_cumulant, cv, skew)` of the compound sum.
+#[extendr]
+fn compound_moments_rust(frequency: Robj, severity: Robj) -> Result<Vec<f64>> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = severity_from_robj(&severity)?;
+    let m = prospicio_aggregate::compound_moments(n.as_counting(), &sev).map_err(to_r)?;
+    Ok(vec![m.mean, m.variance, m.third_cumulant, m.cv(), m.skew()])
+}
+
+fn approximation(moments: &[f64], kind: &str) -> Result<prospicio_aggregate::Approximation> {
+    use prospicio_aggregate::ApproximationKind as K;
+    let kind = match kind {
+        "normal" => K::Normal,
+        "gamma" => K::Gamma,
+        "lognormal" => K::Lognormal,
+        "shifted_gamma" => K::ShiftedGamma,
+        "shifted_lognormal" => K::ShiftedLognormal,
+        other => return Err(Error::Other(format!("unknown approximation {other}"))),
+    };
+    let [mean, variance, third_cumulant] = moments else {
+        return Err(Error::Other(
+            "moments must be c(mean, variance, third_cumulant)".into(),
+        ));
+    };
+    prospicio_aggregate::CompoundMoments {
+        mean: *mean,
+        variance: *variance,
+        third_cumulant: *third_cumulant,
+    }
+    .approximate(kind)
+    .map_err(to_r)
+}
+
+/// The fitted parameters, named.
+#[extendr]
+fn approximation_parameters_rust(moments: &[f64], kind: &str) -> Result<List> {
+    use prospicio_aggregate::Approximation as A;
+    Ok(match approximation(moments, kind)? {
+        A::Normal { mean, sd } => list!(mean = mean, sd = sd),
+        A::Gamma { shape, scale } => list!(shape = shape, scale = scale),
+        A::Lognormal { meanlog, sdlog } => list!(meanlog = meanlog, sdlog = sdlog),
+        A::ShiftedGamma {
+            shape,
+            scale,
+            shift,
+        } => list!(shape = shape, scale = scale, shift = shift),
+        A::ShiftedLognormal {
+            meanlog,
+            sdlog,
+            shift,
+        } => list!(meanlog = meanlog, sdlog = sdlog, shift = shift),
+    })
+}
+
+/// The approximation's cdf at `x`, or its quantiles at `p` when `quantile`.
+#[extendr]
+fn approximation_eval_rust(
+    moments: &[f64],
+    kind: &str,
+    values: &[f64],
+    quantile: bool,
+) -> Result<Vec<f64>> {
+    let a = approximation(moments, kind)?;
+    values
+        .iter()
+        .map(|&v| if quantile { a.quantile(v) } else { a.cdf(v) }.map_err(to_r))
+        .collect()
 }
 
 extendr_module! {
     mod aggregate;
+    fn compound_moments_rust;
+    fn approximation_parameters_rust;
+    fn approximation_eval_rust;
     fn compound;
     fn compound_auto_rust;
     fn recommend_grid_rust;
     fn round_bucket_rust;
+    fn occurrence_exceedance_rust;
+    fn occurrence_pml_rust;
     impl EventSet;
 }

@@ -107,6 +107,11 @@ impl Distribution for Weibull {
 }
 
 impl Severity for Weibull {
+    /// `θ³ Γ(1 + 3/k)`.
+    fn third_moment(&self) -> Option<f64> {
+        Some(self.raw_moment(3.0))
+    }
+
     /// `E[min(X, u)] = λ Γ(1 + 1/k) P(1 + 1/k, z) + u e^(-z)`.
     fn lev(&self, limit: f64) -> f64 {
         if limit <= 0.0 {

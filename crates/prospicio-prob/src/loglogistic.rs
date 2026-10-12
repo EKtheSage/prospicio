@@ -195,6 +195,11 @@ impl Distribution for Loglogistic {
 }
 
 impl Severity for Loglogistic {
+    /// `θ³ (3π/β) / sin(3π/β)`; infinite for `β ≤ 3`.
+    fn third_moment(&self) -> Option<f64> {
+        Some(self.raw_moment(3.0))
+    }
+
     fn lev(&self, limit: f64) -> f64 {
         if limit <= 0.0 {
             return limit;

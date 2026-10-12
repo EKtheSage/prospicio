@@ -220,3 +220,26 @@ txt <- tower_to_json(tw)
 back <- tower_from_json(txt)
 stopifnot(identical(tower_to_json(back), txt), identical(back@layer_names, tw@layer_names))
 stopifnot(inherits(try(tower_from_json("{}"), silent = TRUE), "try-error"))
+
+# The occurrence PML against aggregate 1.0.1's oep on
+# "agg O 2 claims sev lognorm 100 cv 2 poisson".
+sev <- lognormal_from_mean_cv(100, 2)
+pml <- occurrence_pml(poisson_count(2), sev, c(0.1, 0.001))
+stopifnot(all(abs(pml$loss / c(348.934754485, 2906.643201) - 1) < 1e-9))
+stopifnot(all(abs(pml$annual_return_period - c(10, 1000)) < 1e-9))
+nb <- negative_binomial_count(1.5, 2)
+stopifnot(abs(occurrence_exceedance(nb, sev, occurrence_pml(nb, sev, 0.05)$loss) - 0.05) < 1e-10)
+stopifnot(inherits(try(occurrence_pml(poisson_count(0.1), sev, 0.2), silent = TRUE), "try-error"))
+stopifnot(mean(annual_maxima(simulate_events(poisson_count(2), sev, 2000, seed = 1))) > 0)
+
+# Compound moments and approximations against aggregate 1.0.1 on
+# "agg B 10 claims sev gamma 50 cv 0.7 poisson".
+g <- gamma_distribution(1 / 0.49, 50 * 0.49)
+m <- compound_moments(poisson_count(10), g)
+stopifnot(abs(m[["mean"]] / 500 - 1) < 1e-12, abs(m[["skew"]] / 0.5129464825493272 - 1) < 1e-12)
+fit <- moment_approximation(poisson_count(10), g, "shifted_gamma")
+stopifnot(abs(fit$parameters[["shift"]] / -252.52525252525868 - 1) < 1e-10)
+q <- approximation_quantile(fit, c(0.5, 0.99))
+stopifnot(all(abs(approximation_cdf(fit, q) - c(0.5, 0.99)) < 1e-10))
+stopifnot(inherits(try(compound_moments(poisson_count(2), pareto(100, 2.5)), silent = TRUE),
+                   "try-error"))

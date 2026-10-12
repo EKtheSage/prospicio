@@ -165,6 +165,15 @@ impl Distribution for Mixture {
 }
 
 impl Severity for Mixture {
+    /// `Σ w_i E[X_i^3]`; `None` if a component has no closed form.
+    fn third_moment(&self) -> Option<f64> {
+        self.weights
+            .iter()
+            .zip(&self.components)
+            .map(|(w, c)| c.third_moment().map(|m| w * m))
+            .sum()
+    }
+
     fn lev(&self, limit: f64) -> f64 {
         self.sum(|c| c.lev(limit))
     }

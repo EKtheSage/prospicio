@@ -106,6 +106,107 @@ simulate_events <- function(frequency, severity, n_sims, seed) {
   event_set(ptr = ptr)
 }
 
+#' The occurrence exceedance (OEP) curve and occurrence PMLs
+#'
+#' `occurrence_exceedance()` is the chance that a year's largest occurrence
+#' exceeds `x`, `1 - G_N(F(x))` with `G_N` the count's generating function
+#' (`1 - exp(-lambda * S(x))` for a Poisson count). `occurrence_pml()`
+#' inverts it: the loss whose occurrence exceedance is the annual probability
+#' `p`, for any claim count (the Python package `aggregate`'s `oep` covers
+#' Poisson counts). `annual_maxima()` is each simulated year's largest loss,
+#' whose survival function is the simulated OEP curve.
+#'
+#' @param frequency A claim count, as for [simulate_events()].
+#' @param severity A severity, as for [simulate_events()].
+#' @param x Losses.
+#' @param p Annual probabilities in `(0, 1 - P(N = 0))`.
+#' @param events An `event_set`.
+#' @returns `occurrence_exceedance()`: probabilities. `occurrence_pml()`: a
+#'   data frame with `probability`, `loss`, `severity_survival`,
+#'   `occurrence_return_period` (`1 / (E[N] S(loss))`, which can be shorter
+#'   than a year) and `annual_return_period` (`1 / p`). `annual_maxima()`: a
+#'   [predictive_distribution].
+#' @export
+#' @examples
+#' sev <- lognormal_from_mean_cv(100, 2)
+#' occurrence_pml(poisson_count(2), sev, c(0.1, 0.01, 0.001))
+#' occurrence_exceedance(negative_binomial_count(1.5, 2), sev, c(500, 1000))
+#' ev <- simulate_events(poisson_count(2), sev, 10000, seed = 1)
+#' mean(annual_maxima(ev))
+occurrence_pml <- function(frequency, severity, p) {
+  as.data.frame(rust_result(occurrence_pml_rust(frequency@ptr, severity@ptr, as.double(p))))
+}
+
+#' @rdname occurrence_pml
+#' @export
+occurrence_exceedance <- function(frequency, severity, x) {
+  rust_result(occurrence_exceedance_rust(frequency@ptr, severity@ptr, as.double(x)))
+}
+
+#' @rdname occurrence_pml
+#' @export
+annual_maxima <- function(events) {
+  predictive_distribution(ptr = rust_result(events@ptr$maxima()))
+}
+
+#' Compound moments to third order and moment approximations
+#'
+#' `compound_moments()` is the mean, variance, third cumulant, cv and
+#' skewness of `S = X_1 + ... + X_N`, from the count's cumulants and the
+#' severity's first three moments. `moment_approximation()` fits a
+#' distribution to them, as the Python package `aggregate`'s `approximate`:
+#' `"normal"`, `"gamma"` or `"lognormal"` (mean and cv), `"shifted_gamma"` or
+#' `"shifted_lognormal"` (mean, cv and skewness, which must be positive).
+#' `approximation_cdf()` and `approximation_quantile()` evaluate a fit.
+#'
+#' @param frequency A claim count, as for [simulate_events()].
+#' @param severity A severity with a closed-form third moment.
+#' @param kind The family.
+#' @param approximation A fit from `moment_approximation()`.
+#' @param x Values.
+#' @param p Probabilities.
+#' @returns `compound_moments()`: a named vector. `moment_approximation()`: a
+#'   list with `kind`, `parameters` (named: `mean` and `sd`; `shape` and
+#'   `scale`; `meanlog` and `sdlog`; plus `shift`) and `moments`. The others:
+#'   numeric vectors.
+#' @export
+#' @examples
+#' m <- compound_moments(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49))
+#' m
+#' fit <- moment_approximation(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49),
+#'                             "shifted_gamma")
+#' fit$parameters
+#' approximation_quantile(fit, c(0.5, 0.99))
+compound_moments <- function(frequency, severity) {
+  m <- rust_result(compound_moments_rust(frequency@ptr, severity@ptr))
+  stats::setNames(m, c("mean", "variance", "third_cumulant", "cv", "skew"))
+}
+
+#' @rdname compound_moments
+#' @export
+moment_approximation <- function(frequency, severity,
+                                 kind = c("shifted_lognormal", "shifted_gamma", "gamma",
+                                          "lognormal", "normal")) {
+  kind <- match.arg(kind)
+  m <- compound_moments(frequency, severity)[c("mean", "variance", "third_cumulant")]
+  params <- rust_result(approximation_parameters_rust(unname(m), kind))
+  list(kind = kind, parameters = unlist(params), moments = m)
+}
+
+#' @rdname compound_moments
+#' @export
+approximation_cdf <- function(approximation, x) {
+  rust_result(approximation_eval_rust(unname(approximation$moments), approximation$kind,
+                                      as.double(x), FALSE))
+}
+
+#' @rdname compound_moments
+#' @export
+approximation_quantile <- function(approximation, p) {
+  rust_result(approximation_eval_rust(unname(approximation$moments), approximation$kind,
+                                      as.double(p), TRUE))
+}
+
 #' Years of losses from elsewhere
 #'
 #' Builds an `event_set` from your own simulation, or a catastrophe model's

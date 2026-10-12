@@ -67,6 +67,12 @@ impl Counting for AnyCount {
     fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
         self.as_counting().pgf_complex(z)
     }
+    fn third_moment(&self) -> f64 {
+        self.as_counting().third_moment()
+    }
+    fn third_cumulant(&self) -> f64 {
+        self.as_counting().third_cumulant()
+    }
 }
 
 /// What a compound calculation produced and the error it introduced.
@@ -663,6 +669,18 @@ impl PyEventSet {
         Ok(PyPredictiveDistribution { inner })
     }
 
+    /// Each year's largest loss (0 in a year with none): its survival
+    /// function is the simulated occurrence exceedance (OEP) curve, and its
+    /// quantiles the occurrence PMLs.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn maxima(&self) -> PyResult<PyPredictiveDistribution> {
+        let inner = self.inner.maxima().map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "EventSet(n_sims={}, seed={})",
@@ -712,4 +730,348 @@ pub(crate) fn simulate_events(
         .detach(|| prospicio_aggregate::simulate_events(n.as_counting(), &sev, n_sims, seed))
         .map_err(to_py)?;
     Ok(PyEventSet { inner })
+}
+
+/// The chance that the year's largest occurrence exceeds ``x``,
+/// ``1 - G_N(F(x))`` with ``G_N`` the count's generating function: the
+/// occurrence exceedance (OEP) curve.
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+/// x : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from prospicio.aggregate import occurrence_exceedance
+/// >>> from prospicio.distributions import Lognormal, Poisson
+/// >>> sev = Lognormal.from_mean_cv(100.0, 2.0)
+/// >>> oep = occurrence_exceedance(Poisson(2.0), sev, 500.0)
+/// >>> abs(oep - (1 - math.exp(-2 * (1 - sev.cdf(500.0))))) < 1e-12
+/// True
+#[pyfunction]
+pub(crate) fn occurrence_exceedance(
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    x: f64,
+) -> PyResult<f64> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = extract_severity(severity)?;
+    Ok(prospicio_aggregate::occurrence_exceedance(
+        n.as_counting(),
+        &sev,
+        x,
+    ))
+}
+
+/// One point of the occurrence PML curve, from ``occurrence_pml``.
+#[pyclass(name = "OccurrencePml", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyOccurrencePml {
+    inner: prospicio_aggregate::OccurrencePml,
+}
+
+#[pymethods]
+impl PyOccurrencePml {
+    /// The annual probability asked for.
+    #[getter]
+    fn probability(&self) -> f64 {
+        self.inner.probability
+    }
+
+    /// The loss whose occurrence exceedance is the probability.
+    #[getter]
+    fn loss(&self) -> f64 {
+        self.inner.loss
+    }
+
+    /// The severity's exceedance ``P(X > loss)``.
+    #[getter]
+    fn severity_survival(&self) -> f64 {
+        self.inner.severity_survival
+    }
+
+    /// ``1 / (E[N] P(X > loss))``, the average time between occurrences
+    /// above the loss; it can be shorter than a year.
+    #[getter]
+    fn occurrence_return_period(&self) -> f64 {
+        self.inner.occurrence_return_period
+    }
+
+    /// ``1 / probability``, the average time between years with such an
+    /// occurrence.
+    #[getter]
+    fn annual_return_period(&self) -> f64 {
+        self.inner.annual_return_period
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "OccurrencePml(probability={:?}, loss={:?})",
+            self.inner.probability, self.inner.loss
+        )
+    }
+}
+
+/// The occurrence PML at an annual probability ``p``: the loss whose
+/// occurrence exceedance is ``p``, for any claim count (the Python package
+/// ``aggregate``'s ``oep`` covers Poisson counts).
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+/// p : float
+///     In ``(0, 1 - P(N = 0))``.
+///
+/// Returns
+/// -------
+/// OccurrencePml
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``p`` is outside ``(0, 1 - P(N = 0))``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import occurrence_pml
+/// >>> from prospicio.distributions import Lognormal, Poisson
+/// >>> pml = occurrence_pml(Poisson(2.0), Lognormal.from_mean_cv(100.0, 2.0), 0.01)
+/// >>> round(pml.loss, 4), pml.annual_return_period
+/// (1171.4979, 100.0)
+#[pyfunction]
+pub(crate) fn occurrence_pml(
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    p: f64,
+) -> PyResult<PyOccurrencePml> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = extract_severity(severity)?;
+    let inner = prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_py)?;
+    Ok(PyOccurrencePml { inner })
+}
+
+/// Compound moments to third order, from ``compound_moments``.
+#[pyclass(name = "CompoundMoments", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyCompoundMoments {
+    inner: prospicio_aggregate::CompoundMoments,
+}
+
+fn approximation_kind(kind: &str) -> PyResult<prospicio_aggregate::ApproximationKind> {
+    use prospicio_aggregate::ApproximationKind as K;
+    Ok(match kind {
+        "normal" => K::Normal,
+        "gamma" => K::Gamma,
+        "lognormal" => K::Lognormal,
+        "shifted_gamma" => K::ShiftedGamma,
+        "shifted_lognormal" => K::ShiftedLognormal,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "kind must be \"normal\", \"gamma\", \"lognormal\", \"shifted_gamma\" or \"shifted_lognormal\", got {other:?}"
+            )));
+        }
+    })
+}
+
+#[pymethods]
+impl PyCompoundMoments {
+    /// ``E[S]``.
+    #[getter]
+    fn mean(&self) -> f64 {
+        self.inner.mean
+    }
+
+    /// ``Var[S]``.
+    #[getter]
+    fn variance(&self) -> f64 {
+        self.inner.variance
+    }
+
+    /// The third cumulant, ``E[(S - E[S])^3]``.
+    #[getter]
+    fn third_cumulant(&self) -> f64 {
+        self.inner.third_cumulant
+    }
+
+    /// The coefficient of variation.
+    #[getter]
+    fn cv(&self) -> f64 {
+        self.inner.cv()
+    }
+
+    /// The skewness.
+    #[getter]
+    fn skew(&self) -> f64 {
+        self.inner.skew()
+    }
+
+    /// The moment-matched approximation: ``"normal"``, ``"gamma"``,
+    /// ``"lognormal"`` (mean and cv), ``"shifted_gamma"`` or
+    /// ``"shifted_lognormal"`` (mean, cv and skewness).
+    ///
+    /// Parameters
+    /// ----------
+    /// kind : str
+    ///
+    /// Returns
+    /// -------
+    /// Approximation
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For an unknown kind, a non-positive mean (gamma, lognormal) or a
+    ///     non-positive skewness (the shifted fits).
+    fn approximate(&self, kind: &str) -> PyResult<PyApproximation> {
+        let inner = self
+            .inner
+            .approximate(approximation_kind(kind)?)
+            .map_err(to_py)?;
+        Ok(PyApproximation { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CompoundMoments(mean={:?}, cv={:?}, skew={:?})",
+            self.inner.mean,
+            self.inner.cv(),
+            self.inner.skew()
+        )
+    }
+}
+
+/// A distribution fitted to compound moments, from
+/// ``CompoundMoments.approximate``.
+#[pyclass(name = "Approximation", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyApproximation {
+    inner: prospicio_aggregate::Approximation,
+}
+
+#[pymethods]
+impl PyApproximation {
+    /// The family: ``"normal"``, ``"gamma"``, ``"lognormal"``,
+    /// ``"shifted_gamma"`` or ``"shifted_lognormal"``.
+    #[getter]
+    fn kind(&self) -> &'static str {
+        use prospicio_aggregate::Approximation as A;
+        match self.inner {
+            A::Normal { .. } => "normal",
+            A::Gamma { .. } => "gamma",
+            A::Lognormal { .. } => "lognormal",
+            A::ShiftedGamma { .. } => "shifted_gamma",
+            A::ShiftedLognormal { .. } => "shifted_lognormal",
+        }
+    }
+
+    /// The parameters by name: ``mean`` and ``sd``; ``shape`` and
+    /// ``scale``; ``meanlog`` and ``sdlog``; with ``shift`` for the
+    /// shifted families.
+    #[getter]
+    fn parameters(&self) -> Vec<(&'static str, f64)> {
+        use prospicio_aggregate::Approximation as A;
+        match self.inner {
+            A::Normal { mean, sd } => vec![("mean", mean), ("sd", sd)],
+            A::Gamma { shape, scale } => vec![("shape", shape), ("scale", scale)],
+            A::Lognormal { meanlog, sdlog } => vec![("meanlog", meanlog), ("sdlog", sdlog)],
+            A::ShiftedGamma {
+                shape,
+                scale,
+                shift,
+            } => vec![("shape", shape), ("scale", scale), ("shift", shift)],
+            A::ShiftedLognormal {
+                meanlog,
+                sdlog,
+                shift,
+            } => vec![("meanlog", meanlog), ("sdlog", sdlog), ("shift", shift)],
+        }
+    }
+
+    /// The mean.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// ``P(S <= x)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn cdf(&self, x: f64) -> PyResult<f64> {
+        self.inner.cdf(x).map_err(to_py)
+    }
+
+    /// The ``p`` quantile.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn quantile(&self, p: f64) -> PyResult<f64> {
+        self.inner.quantile(p).map_err(to_py)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Approximation(kind={:?}, parameters={:?})",
+            self.kind(),
+            self.parameters()
+        )
+    }
+}
+
+/// Compound moments to third order: the mean, variance and third cumulant
+/// of ``S = X_1 + ... + X_N``, from the count's cumulants and the
+/// severity's first three moments, and the approximations fitted to them
+/// (the Python package ``aggregate``'s ``approximate``).
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity with a closed-form third moment
+///
+/// Returns
+/// -------
+/// CompoundMoments
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the severity has no closed-form third moment, or an infinite one.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import compound_moments
+/// >>> from prospicio.distributions import Gamma, Poisson
+/// >>> m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+/// >>> round(m.mean, 6), round(m.cv, 6), round(m.skew, 6)
+/// (500.0, 0.386005, 0.512946)
+/// >>> fit = m.approximate("shifted_gamma")
+/// >>> [(k, round(v, 4)) for k, v in fit.parameters]
+/// [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
+#[pyfunction]
+pub(crate) fn compound_moments(
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+) -> PyResult<PyCompoundMoments> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = extract_severity(severity)?;
+    let inner = prospicio_aggregate::compound_moments(n.as_counting(), &sev).map_err(to_py)?;
+    Ok(PyCompoundMoments { inner })
 }

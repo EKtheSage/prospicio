@@ -80,6 +80,16 @@ sources:
   short-lived token from trusted publishing, so publishing any crate
   without a trusted publisher fails, a new one included; a new crate is
   published once by hand first (`docs/release.md`).
+* v0.0.2 (2026-10-12) went to PyPI at the first try, but crates.io
+  refused the token exchange: `400 ... The Trusted Publishing config for
+  repository `EKtheSage/prospicio` does not match the environment
+  `crates-io` in the JWT. Expected environments: `crates.io``. The
+  crates' trusted publishers named the environment `crates.io`, the
+  workflow `crates-io`; the environment must match exactly. The
+  exchange fails before any upload, so after the user corrected the 11
+  configs, rerunning only the failed job (`gh run rerun <id> --failed`)
+  published all 11 crates. A rerun uses the workflow as of the tag, so the
+  fix belongs on crates.io, not in `release.yml`.
 
 [^crates-rl]: crates.io, rate limits
 [^v001]: Release workflow run for v0.0.1

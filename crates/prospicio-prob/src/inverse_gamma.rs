@@ -79,6 +79,10 @@ impl InverseGamma {
 }
 
 impl Moments for InverseGamma {
+    fn third(&self) -> f64 {
+        self.raw_moment(3.0)
+    }
+
     fn limited(&self, j: i32, u: f64) -> f64 {
         if u <= 0.0 {
             return 0.0;

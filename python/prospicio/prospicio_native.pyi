@@ -48,6 +48,59 @@ class Allocation:
         """
 
 @final
+class Approximation:
+    """
+    A distribution fitted to compound moments, from
+    ``CompoundMoments.approximate``.
+    """
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(S <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        The family: ``"normal"``, ``"gamma"``, ``"lognormal"``,
+        ``"shifted_gamma"`` or ``"shifted_lognormal"``.
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def parameters(self, /) -> list[tuple[str, float]]:
+        """
+        The parameters by name: ``mean`` and ``sd``; ``shape`` and
+        ``scale``; ``meanlog`` and ``sdlog``; with ``shift`` for the
+        shifted families.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The ``p`` quantile.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class ArchimedeanCopula:
     """
     An exchangeable Archimedean copula: Clayton, Gumbel, Frank or Joe.
@@ -2310,6 +2363,58 @@ class CollectiveModel:
         """
 
 @final
+class CompoundMoments:
+    """
+    Compound moments to third order, from ``compound_moments``.
+    """
+    def __repr__(self, /) -> str: ...
+    def approximate(self, /, kind: str) -> Approximation:
+        """
+        The moment-matched approximation: ``"normal"``, ``"gamma"``,
+        ``"lognormal"`` (mean and cv), ``"shifted_gamma"`` or
+        ``"shifted_lognormal"`` (mean, cv and skewness).
+        
+        Parameters
+        ----------
+        kind : str
+        
+        Returns
+        -------
+        Approximation
+        
+        Raises
+        ------
+        ValueError
+            For an unknown kind, a non-positive mean (gamma, lognormal) or a
+            non-positive skewness (the shifted fits).
+        """
+    @property
+    def cv(self, /) -> float:
+        """
+        The coefficient of variation.
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        ``E[S]``.
+        """
+    @property
+    def skew(self, /) -> float:
+        """
+        The skewness.
+        """
+    @property
+    def third_cumulant(self, /) -> float:
+        """
+        The third cumulant, ``E[(S - E[S])^3]``.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        ``Var[S]``.
+        """
+
+@final
 class CompoundReport:
     """
     What a compound calculation produced and the error it introduced.
@@ -3648,6 +3753,16 @@ class EventSet:
     def has_times(self, /) -> bool:
         """
         Whether the losses carry times.
+        """
+    def maxima(self, /) -> PredictiveDistribution:
+        """
+        Each year's largest loss (0 in a year with none): its survival
+        function is the simulated occurrence exceedance (OEP) curve, and its
+        quantiles the occurrence PMLs.
+        
+        Returns
+        -------
+        PredictiveDistribution
         """
     @property
     def n_sims(self, /) -> int:
@@ -8156,6 +8271,40 @@ class NegativeBinomial:
         Returns
         -------
         float
+        """
+
+@final
+class OccurrencePml:
+    """
+    One point of the occurrence PML curve, from ``occurrence_pml``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def annual_return_period(self, /) -> float:
+        """
+        ``1 / probability``, the average time between years with such an
+        occurrence.
+        """
+    @property
+    def loss(self, /) -> float:
+        """
+        The loss whose occurrence exceedance is the probability.
+        """
+    @property
+    def occurrence_return_period(self, /) -> float:
+        """
+        ``1 / (E[N] P(X > loss))``, the average time between occurrences
+        above the loss; it can be shorter than a year.
+        """
+    @property
+    def probability(self, /) -> float:
+        """
+        The annual probability asked for.
+        """
+    @property
+    def severity_survival(self, /) -> float:
+        """
+        The severity's exceedance ``P(X > loss)``.
         """
 
 @final
@@ -12804,6 +12953,39 @@ def classical_premium(principle: str, dist: Any, loading: float, q: float = 2.0)
     6.0
     """
 
+def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
+    """
+    Compound moments to third order: the mean, variance and third cumulant
+    of ``S = X_1 + ... + X_N``, from the count's cumulants and the
+    severity's first three moments, and the approximations fitted to them
+    (the Python package ``aggregate``'s ``approximate``).
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity with a closed-form third moment
+    
+    Returns
+    -------
+    CompoundMoments
+    
+    Raises
+    ------
+    ValueError
+        If the severity has no closed-form third moment, or an infinite one.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import compound_moments
+    >>> from prospicio.distributions import Gamma, Poisson
+    >>> m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    >>> round(m.mean, 6), round(m.cv, 6), round(m.skew, 6)
+    (500.0, 0.386005, 0.512946)
+    >>> fit = m.approximate("shifted_gamma")
+    >>> [(k, round(v, 4)) for k, v in fit.parameters]
+    [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
+    """
+
 def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:
     """
     CoVaR of a component: the total's VaR at level ``q`` over the
@@ -13483,6 +13665,64 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     >>> from prospicio.risk import mean_excess
     >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
     [(2.0, 1.5, 2)]
+    """
+
+def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
+    """
+    The chance that the year's largest occurrence exceeds ``x``,
+    ``1 - G_N(F(x))`` with ``G_N`` the count's generating function: the
+    occurrence exceedance (OEP) curve.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    x : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> import math
+    >>> from prospicio.aggregate import occurrence_exceedance
+    >>> from prospicio.distributions import Lognormal, Poisson
+    >>> sev = Lognormal.from_mean_cv(100.0, 2.0)
+    >>> oep = occurrence_exceedance(Poisson(2.0), sev, 500.0)
+    >>> abs(oep - (1 - math.exp(-2 * (1 - sev.cdf(500.0))))) < 1e-12
+    True
+    """
+
+def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
+    """
+    The occurrence PML at an annual probability ``p``: the loss whose
+    occurrence exceedance is ``p``, for any claim count (the Python package
+    ``aggregate``'s ``oep`` covers Poisson counts).
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    p : float
+        In ``(0, 1 - P(N = 0))``.
+    
+    Returns
+    -------
+    OccurrencePml
+    
+    Raises
+    ------
+    ValueError
+        If ``p`` is outside ``(0, 1 - P(N = 0))``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import occurrence_pml
+    >>> from prospicio.distributions import Lognormal, Poisson
+    >>> pml = occurrence_pml(Poisson(2.0), Lognormal.from_mean_cv(100.0, 2.0), 0.01)
+    >>> round(pml.loss, 4), pml.annual_return_period
+    (1171.4979, 100.0)
     """
 
 def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
