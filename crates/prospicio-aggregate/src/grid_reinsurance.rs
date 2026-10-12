@@ -87,8 +87,8 @@ pub struct TowerPrice {
 impl TowerGrids {
     /// Each view priced on its own by the distortion `distortion`: the
     /// stand-alone price of the gross, of every cession and of the
-    /// retention. Distortion prices are subadditive, so the ceded and net
-    /// premiums together are at least the gross premium.
+    /// retention. A concave distortion's prices are subadditive, so then the
+    /// ceded and net premiums together are at least the gross premium.
     pub fn price(&self, distortion: &Distortion) -> TowerPrice {
         TowerPrice {
             gross: ViewPrice::of(&self.gross, distortion),

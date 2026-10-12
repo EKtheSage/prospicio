@@ -21,8 +21,8 @@ Prices the gross, every layer's cession and the net of \code{\link[=tower_on_gri
 each on its own by a distortion, as the Python package \code{aggregate}'s
 \code{reins_price_df}: the expected loss, the premium (the distorted
 expectation, \code{\link[=risk_measure]{risk_measure()}}), the margin \code{premium - loss} and the loss
-ratio \code{loss / premium}. Distortion prices are subadditive, so the ceded
-and net premiums together are at least the gross premium.
+ratio \code{loss / premium}. A concave distortion's prices are subadditive, so
+then the ceded and net premiums together are at least the gross premium.
 }
 \examples{
 sev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))

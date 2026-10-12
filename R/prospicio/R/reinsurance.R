@@ -619,8 +619,8 @@ tower_on_grid <- function(tower, frequency, severity, points) {
 #' each on its own by a distortion, as the Python package `aggregate`'s
 #' `reins_price_df`: the expected loss, the premium (the distorted
 #' expectation, [risk_measure()]), the margin `premium - loss` and the loss
-#' ratio `loss / premium`. Distortion prices are subadditive, so the ceded
-#' and net premiums together are at least the gross premium.
+#' ratio `loss / premium`. A concave distortion's prices are subadditive, so
+#' then the ceded and net premiums together are at least the gross premium.
 #'
 #' @param grids The result of [tower_on_grid()].
 #' @param distortion A [distortion].

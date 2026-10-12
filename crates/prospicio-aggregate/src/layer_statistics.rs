@@ -30,7 +30,8 @@ pub struct LayerStatistics {
     pub attachment: f64,
     /// `P(X > a)`, per claim.
     pub pr_attach: f64,
-    /// `P(X ≥ a + l)`, per claim.
+    /// `P(X ≥ a + l)`, per claim; 0 for an unlimited layer (`aggregate`
+    /// gives NaN).
     pub pr_detach: f64,
     /// The chance of a loss to the layer in the year.
     pub pr_loss: f64,

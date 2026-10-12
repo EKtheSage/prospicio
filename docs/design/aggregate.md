@@ -475,8 +475,8 @@ the moments of its FFT density.
 
 `TowerGrids::price` prices each view on its own: `L` is the grid's mean,
 `P` its distorted expectation (`Grid::distortion`), `M = P − L`,
-`LR = L / P`. Prices are subadditive, so the ceded and net premiums
-together are at least the gross. A stage with several layers has a price
+`LR = L / P`. A concave distortion's prices are subadditive, so then the
+ceded and net premiums together are at least the gross. A stage with several layers has a price
 per layer; `aggregate` also prices their total cession, which needs a
 total-ceded grid (a small item below). `reins_price_df`'s capital columns
 (`Q`, `a`, `ROE`) come with an asset level; `pricing.rs`'s pentagon gives
