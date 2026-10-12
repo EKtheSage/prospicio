@@ -7,12 +7,12 @@
 rate_level(
   effective,
   change = NULL,
-  level = NULL,
   start,
   end,
   term,
   period = c("calendar", "policy"),
-  applies = "written"
+  applies = "written",
+  level = NULL
 )
 }
 \arguments{
@@ -20,9 +20,6 @@ rate_level(
 in order.}
 
 \item{change}{Overall average changes, \code{0.05} for +5\%.}
-
-\item{level}{Instead of \code{change}, the cumulative level after each change,
-as an exhibit prints them (rounded levels carry into the factors).}
 
 \item{start, end}{The period, as year fractions.}
 
@@ -34,6 +31,9 @@ as an exhibit prints them (rounded levels carry into the factors).}
 \item{applies}{For each change, \code{"written"} (policies written on or
 after the date) or \code{"in_force"} (all premium earned on or after it, a
 law change); recycled.}
+
+\item{level}{Instead of \code{change}, the cumulative level after each change,
+as an exhibit prints them (rounded levels carry into the factors).}
 }
 \value{
 A list: \code{portions}, a data frame with one row per cell of

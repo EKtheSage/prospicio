@@ -64,8 +64,6 @@ average_earned_date <- function(start, end, term, period = c("calendar", "policy
 #' @param effective Effective dates of the rate changes, as year fractions,
 #'   in order.
 #' @param change Overall average changes, `0.05` for +5%.
-#' @param level Instead of `change`, the cumulative level after each change,
-#'   as an exhibit prints them (rounded levels carry into the factors).
 #' @param start,end The period, as year fractions.
 #' @param term The policy term in years.
 #' @param period `"calendar"` (premium earned in the window) or `"policy"`
@@ -73,6 +71,8 @@ average_earned_date <- function(start, end, term, period = c("calendar", "policy
 #' @param applies For each change, `"written"` (policies written on or
 #'   after the date) or `"in_force"` (all premium earned on or after it, a
 #'   law change); recycled.
+#' @param level Instead of `change`, the cumulative level after each change,
+#'   as an exhibit prints them (rounded levels carry into the factors).
 #' @returns A list: `portions`, a data frame with one row per cell of
 #'   constant level (`written_changes` and `in_force_changes` in effect,
 #'   `level`, `share`), `average_level`, `current_level` and
@@ -84,8 +84,8 @@ average_earned_date <- function(start, end, term, period = c("calendar", "policy
 #'                 start = 2011, end = 2012, term = 1)
 #' r$portions
 #' r$on_level_factor
-rate_level <- function(effective, change = NULL, level = NULL, start, end, term,
-                       period = c("calendar", "policy"), applies = "written") {
+rate_level <- function(effective, change = NULL, start, end, term,
+                       period = c("calendar", "policy"), applies = "written", level = NULL) {
   period <- match.arg(period)
   if (is.null(change) == is.null(level)) stop("give one of `change` and `level`")
   values <- as.double(if (is.null(level)) change else level)

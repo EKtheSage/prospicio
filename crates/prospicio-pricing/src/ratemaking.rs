@@ -26,7 +26,9 @@ use prospicio_core::{Error, Result};
 /// a month is its start, a day near the middle is half way, and the last
 /// day is the next month's start (30 June ≡ 1 July, 31 December ≡ 1
 /// January). Werner and Modlin round dates to the nearest half-month, so
-/// 1/1/11 to 6/30/13 is 2.5 years and 11/15/11 to 6/30/13 is 1.625.
+/// 1/1/11 to 6/30/13 is 2.5 years and 11/15/11 to 6/30/13 is 1.625. Any
+/// day is rounded the same way, so the 24th of a 31-day month is already
+/// the next month's start.
 ///
 /// ```
 /// use prospicio_pricing::ratemaking::year_fraction;

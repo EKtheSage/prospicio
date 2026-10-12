@@ -5,7 +5,7 @@ description: The CAS study note behind prospicio_pricing::ratemaking; its exhibi
 resource: https://www.casact.org/sites/default/files/2021-03/5_Werner_Modlin.pdf
 tags: [pricing, ratemaking, trend, on-level, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-12T08:00:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-12T05:00:39Z }
 sources:
   - id: wm
     resource: https://www.casact.org/sites/default/files/2021-03/5_Werner_Modlin.pdf
