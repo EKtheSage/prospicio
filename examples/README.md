@@ -8,6 +8,7 @@ running anything. CI runs each notebook's code with fewer simulations
 | Example | What it shows |
 |---|---|
 | [`one_year_view.ipynb`](one_year_view.ipynb) | A small P&C insurer's year ahead: reserve risk (ODP bootstrap of GenIns), fleet motor premium risk (Poisson and gamma GLMs into a collective model), property per-risk (risk profile, surplus inuring to a per-risk XL with a reinstatement pro rata as to time), a risk-loaded XL price, then the three risks joined with a rank correlation and TVaR 99% allocated by Euler, gross and net of reinsurance |
+| [`reinsurance_pricing.ipynb`](reinsurance_pricing.ipynb) | Six reinsurance contracts priced on the FFT grid and compared with Mildenhall's `aggregate` (321 independent comparisons against its reference file, `aggregate` not needed): an occurrence tower, a two-layer program and a share, an aggregate limit with reinstatements, stop loss and aggregate deductible, retro and swing premium with profit and sliding-scale commission, and risk-adjusted premiums from distortions at a capital standard |
 
 To run one, build the package (`cd python && maturin develop`) and open
 the notebook in Jupyter (the charts need `matplotlib`). To save it again

@@ -10,7 +10,11 @@ For an end-to-end use of the library, see
 the notebook [`examples/one_year_view.ipynb`](../examples/one_year_view.ipynb),
 saved with its results and charts. It covers
 reserve risk, premium risk from GLMs and property per-risk reinsurance,
-then joins them and sets and allocates capital.
+then joins them and sets and allocates capital. The notebook
+[`examples/reinsurance_pricing.ipynb`](../examples/reinsurance_pricing.ipynb)
+prices towers, aggregate limits, reinstatements, stop losses, variable
+premiums and commissions, and risk-adjusted premiums, each beside the
+numbers of Mildenhall's `aggregate`.
 
 ## Milestones
 
