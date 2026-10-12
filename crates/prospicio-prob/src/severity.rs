@@ -40,6 +40,13 @@ pub trait Severity: Distribution {
         let m = self.layer(limit, attachment);
         self.layer_second_moment(limit, attachment) - m * m
     }
+
+    /// The third raw moment `E[X^3]` (not central): `Some(f64::INFINITY)`
+    /// when it diverges, `None` when the family has no closed form for it.
+    /// Compound moments to third order and the skewness need it.
+    fn third_moment(&self) -> Option<f64> {
+        None
+    }
 }
 
 impl<T: Severity + ?Sized> Severity for Box<T> {
@@ -61,6 +68,10 @@ impl<T: Severity + ?Sized> Severity for Box<T> {
 
     fn layer_variance(&self, limit: f64, attachment: f64) -> f64 {
         (**self).layer_variance(limit, attachment)
+    }
+
+    fn third_moment(&self) -> Option<f64> {
+        (**self).third_moment()
     }
 }
 
@@ -84,6 +95,9 @@ pub(crate) trait Moments: Distribution {
     /// Where the layer integral switches from limited to tail moments, or
     /// `None` when the `j`-th moment is infinite.
     fn pivot(&self, j: i32) -> Option<f64>;
+
+    /// `E[X^3]`, infinite when it diverges ([`Severity::third_moment`]).
+    fn third(&self) -> f64;
 
     /// `∫_a^b x^(j-1) S(x) dx` for `0 <= a <= b <= ∞`.
     fn partial(&self, j: i32, a: f64, b: f64) -> f64 {
@@ -148,6 +162,10 @@ macro_rules! severity_from_moments {
                     return f64::INFINITY;
                 }
                 (2.0 * (p2 - a * p1)).max(0.0)
+            }
+
+            fn third_moment(&self) -> Option<f64> {
+                Some($crate::severity::Moments::third(self))
             }
         }
     };

@@ -216,6 +216,12 @@ pub(crate) fn standard_gamma(rng: &mut StreamRng, shape: f64) -> f64 {
 }
 
 impl Severity for Gamma {
+    /// `θ³ α (α + 1) (α + 2)`.
+    fn third_moment(&self) -> Option<f64> {
+        let (a, t) = (self.shape, self.scale);
+        Some(t.powi(3) * a * (a + 1.0) * (a + 2.0))
+    }
+
     /// `E[min(X, u)] = αθ P(α + 1, u/θ) + u Q(α, u/θ)`.
     fn lev(&self, limit: f64) -> f64 {
         if limit <= 0.0 {

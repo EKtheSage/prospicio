@@ -2,6 +2,7 @@
 
 ## 2026-10-12
 
+* **Creation**: [Third raw moments, closed forms against mpmath](/findings/third-moments.md), from adding `Severity::third_moment` and `Counting::third_moment` to `prospicio-prob` (branch claude/stoic-hawking-qc3qby): 16 severities, 5 counts and 2 Tweedies match mpmath at `1e-10`; `mpmath.nsum` fails on a Poisson mean of 1,000; the mixed Poisson's pmf error shows in its moment. Not yet run by CI.
 * **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md), from adding the occurrence PML to `prospicio_aggregate` (branch claude/stoic-hawking-qc3qby): `oep` is closed form from the severity and takes Poisson counts only; 1.0.1 has no `tilt`, `sev_calc='moment'` is not implemented, its FFT never uses Panjer, and point densities need `normalize=False`. Not yet run by CI.
 * **Update**: [R actuar's credibility models](/references/actuar-credibility.md) is verified: its parity tests ran green in CI on #175, which is merged.
 * **Update**: [Werner and Modlin's Basic Ratemaking](/references/werner-modlin-ratemaking.md), from adding the overall indication to `prospicio_pricing::ratemaking` (branch claude/stoic-hawking-qc3qby): Appendices A to C end to end, and the rounding they need (rows rounded to the dollar and summed, the change from the selected loss ratio, expense parts rounded to 0.1%, credibility rounded before weighting, Appendix B's reinsurance exposures and fixed-expense trend factor). Not yet run by CI.

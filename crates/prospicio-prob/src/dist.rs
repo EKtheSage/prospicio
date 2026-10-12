@@ -333,6 +333,10 @@ impl Severity for SeverityDist {
     fn layer_variance(&self, limit: f64, attachment: f64) -> f64 {
         each_severity!(self, d => d.layer_variance(limit, attachment))
     }
+
+    fn third_moment(&self) -> Option<f64> {
+        each_severity!(self, d => d.third_moment())
+    }
 }
 
 impl From<Mixture> for Dist {
