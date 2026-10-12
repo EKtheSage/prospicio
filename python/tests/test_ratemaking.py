@@ -73,3 +73,56 @@ def test_trend_fits():
     with pytest.raises(ValueError):
         TrendFit.exponential([0.0, 1.0], [1.0, -1.0])
     assert trend_factor(0.02, 2.5) == pytest.approx(math.pow(1.02, 2.5))
+
+
+def test_loss_ratio_indication_appendix_a():
+    from prospicio.pricing import (
+        LossRatioExperience,
+        Provisions,
+        credibility_weighted,
+        premium_based_expenses,
+        trended_present_rates,
+    )
+
+    e = LossRatioExperience(
+        [1_122_372, 1_154_508, 1_280_545, 1_369_976, 1_397_750],
+        [856_495, 867_184, 835_120, 821_509, 797_866],
+        on_level_factor=[1.2161, 1.2176, 1.1311, 1.0892, 1.0991],
+        premium_trend=[1.1342, 1.1116, 1.0879, 1.0663, 1.0452],
+        development=[1.0000, 0.9799, 1.0003, 1.0282, 1.0966],
+        loss_trend=[0.9912, 0.9962, 1.0012, 1.0062, 1.0113],
+        lae_factor=1.143,
+    )
+    assert [round(x) for x in e.projected_losses_by_year] == [970_359, 967_578, 955_974, 971_450, 1_011_357]
+    assert round(e.loss_ratio, 3) == 0.619
+    p = Provisions(0.17, 0.05)
+    assert round(p.variable_permissible_loss_ratio, 3) == 0.78
+    assert round(p.loss_ratio_change(0.619, 0.113), 3) == -0.062
+    complement = trended_present_rates(0.132, 0.05, 1.005 / 1.02)
+    assert round(complement, 3) == 0.062
+    assert credibility_weighted(-0.06, 1.0, complement) == pytest.approx(-0.06)
+    fixed, variable = premium_based_expenses([0.063, 0.085, 0.112], [0.75, 0.75, 0.0])
+    assert fixed == pytest.approx(0.063 * 0.75 + 0.085 * 0.75)
+    assert variable == pytest.approx(0.063 * 0.25 + 0.085 * 0.25 + 0.112)
+    with pytest.raises(ValueError):
+        LossRatioExperience([1.0, 2.0], [1.0])
+    with pytest.raises(ValueError):
+        LossRatioExperience([1.0], [1.0], development=[1.0, 2.0])
+    with pytest.raises(ValueError):
+        Provisions(0.9, 0.2)
+
+
+def test_pure_premium_indication_appendix_b():
+    from prospicio.pricing import Provisions, PurePremiumExperience
+
+    e = PurePremiumExperience(
+        [12_760, 12_766, 12_805, 12_834, 13_411],
+        [5_161_624, 4_820_968, 4_112_172, 5_052_052, 6_559_224],
+        development=[1.0000, 1.0012, 1.0055, 1.0186, 1.0555],
+        loss_trend=[1.1939, 1.1705, 1.1476, 1.1251, 1.1030],
+        lae_factor=1.012,
+    )
+    assert round(e.projected_losses) == 30_343_206
+    assert round(e.pure_premium, 2) == 469.88
+    p = Provisions(0.138, 0.05)
+    assert round(p.pure_premium_rate(493.63 + 29.11 + 74.57 + 15.68, 77.83), 2) == 850.76
