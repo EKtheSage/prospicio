@@ -1,0 +1,111 @@
+# Changelog
+
+What each release of prospicio contains. Every crate, the Python package
+`prospicio` and the R package share one version (`docs/release.md`). A
+release PR adds its section here; work merged since the last release goes
+under "Unreleased" until then.
+
+## Unreleased
+
+Nothing yet. Open at the time of v0.0.2 and planned for v0.0.3: the
+one-year view with a bootstrap tail (#176), rate indication in
+`prospicio-pricing`, and the Bayesian reserving design (#177).
+
+## 0.0.2 (2026-10-12)
+
+### Breaking changes
+
+- `MackBootstrap` centres the residuals by default (`centre_residuals`
+  is `true` in Rust, `True` in Python, `TRUE` in R), so its results change.
+  Pass `false` for England and Verrall's Appendix 1 as written (#163).
+- Every Gamma draw changes: `Gamma::sample` uses Marsaglia and Tsang instead
+  of the inverse transform. This moves `Dist::Gamma`, the Gamma process of
+  the ODP and Mack bootstraps, and the bindings' `sample` at a fixed seed.
+  Sampler versions are now recorded in `Provenance::samplers` (#164, #169).
+- `Distortion` is `Clone`, no longer `Copy` (#165).
+- `Counting::panjer_ab` returns an `Option` and means the (a, b, 1) class
+  (#165).
+- `OdpBootstrap` and `MackBootstrap` are no longer `Copy` or `Eq`; struct
+  literals need `..Default::default()` (#171).
+- The Python and R layer constructors keep a `premium` given without paid
+  reinstatements; it used to be dropped (#170).
+
+### Reserving
+
+- `MackBootstrap::fit` and `fit_segments`: the lifetime (run-off) view,
+  `MackBootstrapFit` and `MackBootstrapFits` (#159).
+- `SegmentDependence` for joint reserves across lines in both bootstraps:
+  `Independent` (default), `Synchronized` residuals, or
+  `RankCorrelation { spearman }`, in the lifetime and one-year views (#171).
+- Tails in both bootstraps' lifetime view: an estimated tail refitted per
+  simulation, a constant one drawn with its standard error, Mack's
+  `tail_sigma` or the ODP's process past the oldest age; reconciled with
+  R's `MackChainLadder(tail = ...)` (#172).
+- Closed-form tests pinning the Mack bootstrap against Merz and Wüthrich
+  (#160).
+
+### Distributions and probability
+
+- Severities: `InverseGamma`, `InverseGaussian`, `Burr`, scaled `Beta`,
+  `Truncated` and splicing (#167).
+- Claim counts beyond (a, b, 0): zero-modified and zero-truncated,
+  logarithmic, mixed Poisson (negative binomial, Delaporte,
+  Poisson-inverse Gaussian), Neyman A, Pólya-Aeppli and empirical, under
+  the new `CountDist` (#165).
+- Distortions: `Ccoc`, `BiTvar`, `WeightedTvar`, `CappedLinear`,
+  `CappedLogLinear`, `Lep`, `LinearYield`, `Beta`, `Mixture`, `Minimum`,
+  `Convex`, with `g_inv`, `g_dual`, `mass`, `slope_at_one` and
+  `distortion::calibrate` (#165).
+- A faster Gamma sampler: the Mack bootstrap on ABC takes 0.02 s instead of
+  39 s (#164).
+- `Provenance::samplers`, `shares_streams`, `replays_same_draws` and
+  `current_samplers()`; older files still load (#169).
+
+### Aggregate and reinsurance
+
+- Seasonal event times (`EventSet::with_seasonal_times`), loss corridors
+  (`Layer::loss_corridor`) and sums insured tilted within a band
+  (`Band::with_tilted_bounds`) (#162).
+- The FFT grid sized automatically: `recommend_grid`, `fft_auto`,
+  `round_bucket` (#168).
+- Contract terms on `Layer`: deposit premium, rate on line, premium rate,
+  ceding, sliding-scale and profit commissions, and swing rating
+  (`LossSensitivePremium`) (#170).
+
+### Pricing
+
+- Natural allocation (`prospicio_pricing::natural`: `Portfolio`,
+  `NaturalPrice`, `Pentagon`) and classical premium principles with
+  calibration (`prospicio_pricing::classical`) (#165).
+- Classical credibility (`prospicio_pricing::credibility`): limited
+  fluctuation and Bühlmann–Straub, checked against `actuar::cm`; Python
+  `prospicio.credibility` (#175).
+
+### Packaging
+
+- The R package installs with
+  `remotes::install_github("EKtheSage/prospicio", subdir = "R/prospicio")`
+  (#174).
+- crates.io publishing through trusted publishing only (#173).
+
+## 0.0.1 (2026-10-07)
+
+The first release, to PyPI (`prospicio`) and crates.io (11 crates).
+
+- **Reserving**: `Triangle`; chain ladder, Mack, ODP bootstrap and ODP GLM;
+  expected loss, Bornhuetter–Ferguson, Benktander, Cape Cod, tails and
+  Clark; the Merz–Wüthrich one-year view and a simulated one-year view by
+  re-reserving on the ODP or Mack bootstrap; diagonal backtest and segment
+  fits. Parity with R ChainLadder and chainladder-python.
+- **Distributions**: severities and counts, `Grid`, the Pareto family,
+  `PredictiveDistribution` (join, reorder, blend, Arrow IPC), distortions,
+  allocation, copulas, EVT, the `Dist` enum, `Custom`, JSON save and load.
+- **Aggregate and reinsurance**: compound distributions, collective model,
+  towers, layer rating and tower matching, exposure curves (MBBEFD,
+  tabulated, severity), sums insured on events, surplus treaties, risk
+  profiles, reinstatements pro rata as to time, towers as JSON.
+- **Pricing**: risk-loaded pricing.
+- **Models**: GLM, GAM, elastic net and Tweedie (statsmodels parity,
+  freMTPL2); `prospicio-nn`; `prospicio-bayes` (NUTS, Bayesian GLM,
+  stacking); LightGBM and XGBoost adapters in Python and R.
+- **Bindings**: Python and R across every lane.

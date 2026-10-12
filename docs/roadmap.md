@@ -211,20 +211,24 @@ what it is aiming for by v1.0.
    needs the third-party crates vendored).
 3. Rate indication and credibility in `prospicio-pricing` (credibility
    done: limited fluctuation and Bühlmann–Straub).
-4. Release v0.0.2, coordinated between the sessions (decided
+4. Release v0.0.2 (done 2026-10-12, at the user's call before rate
+   indication, which moves to v0.0.3). Its contents are in `CHANGELOG.md`.
+   For each later release, coordinated between the sessions (decided
    2026-10-12):
-   - The cloud session opens the release PR once rate indication has
-     merged: the workspace version to 0.0.2 in the root `Cargo.toml`
-     (`workspace.package.version` and the `prospicio-*` entries in
-     `[workspace.dependencies]`), and a v0.0.2 changelog in
-     `docs/release.md`. Nothing else goes in that PR.
-   - The local session's open Reserving PRs either merge before it or
-     wait for v0.0.3; neither session changes versions or the release
-     workflow outside that PR. A local PR that should be in v0.0.2 says so
-     in its description, and the release PR waits for it.
-   - After the release PR merges, the user runs the Release workflow by
-     hand on `main` (a dry run), then pushes the tag `v0.0.2`
-     (`docs/release.md`); the cloud session cannot push tags.
+   - One release PR changes the workspace version in the root
+     `Cargo.toml` (`workspace.package.version` and the `prospicio-*`
+     entries in `[workspace.dependencies]`) and moves `CHANGELOG.md`'s
+     "Unreleased" items into the new version's section. Nothing else goes
+     in that PR.
+   - Each feature PR adds its line under "Unreleased" in `CHANGELOG.md`,
+     so the changelog always says which release a feature ships in.
+   - Open PRs either merge before the release PR or wait for the next
+     version; neither session changes versions or the release workflow
+     outside that PR.
+   - After the release PR merges, the user (or the local session at the
+     user's word) runs the Release workflow by hand on `main` (a dry
+     run), then pushes the tag (`docs/release.md`); the cloud session
+     cannot push tags.
 5. Bayesian reserving (Meyers, compartmental, Clark growth curves,
    Gaussian processes), with `prospicio-bayes`: the local session
    (Reserving lane) takes it, so the cloud session stays out of
