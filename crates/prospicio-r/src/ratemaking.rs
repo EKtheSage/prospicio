@@ -43,7 +43,10 @@ fn period(kind: &str, start: f64, end: f64) -> Result<Period> {
 #[extendr]
 fn period_dates(kind: &str, start: f64, end: f64, term: f64) -> Result<Vec<f64>> {
     let p = period(kind, start, end)?;
-    Ok(vec![p.average_written_date(term), p.average_earned_date(term)])
+    Ok(vec![
+        p.average_written_date(term),
+        p.average_earned_date(term),
+    ])
 }
 
 fn applies(values: &[String]) -> Result<Vec<Applies>> {
@@ -100,8 +103,14 @@ fn rate_level_rust(
         .map_err(to_r)?;
     let p = &level.portions;
     Ok(list!(
-        written_changes = p.iter().map(|x| x.written_changes as f64).collect::<Vec<_>>(),
-        in_force_changes = p.iter().map(|x| x.in_force_changes as f64).collect::<Vec<_>>(),
+        written_changes = p
+            .iter()
+            .map(|x| x.written_changes as f64)
+            .collect::<Vec<_>>(),
+        in_force_changes = p
+            .iter()
+            .map(|x| x.in_force_changes as f64)
+            .collect::<Vec<_>>(),
         level = p.iter().map(|x| x.level).collect::<Vec<_>>(),
         share = p.iter().map(|x| x.share).collect::<Vec<_>>(),
         average_level = level.average_level,

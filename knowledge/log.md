@@ -2,6 +2,7 @@
 
 ## 2026-10-12
 
+* **Creation**: [Werner and Modlin's Basic Ratemaking](/references/werner-modlin-ratemaking.md), from adding `prospicio_pricing::ratemaking` (branch claude/stoic-hawking-qc3qby): the exhibits round each step half up to the printed precision and chain on the rounded values (Appendix A's on-level factor 1.2176 needs the printed levels, 1.2175 exact; Table 5.29 divides by 740.00), dates sit on a half-month grid, trend fits use the printed values, and the book errors met (a transcription of chapter 5's six-month average as 1.128763 was wrong; the book's 1.12875 is exact). Not yet run by CI.
 * **Creation**: [R actuar's credibility models](/references/actuar-credibility.md), from adding `prospicio_pricing::credibility` (branch claude/stoic-hawking-qc3qby): how `cm()` fits one level (its Bühlmann–Gisler and Ohlsson methods coincide there), the credibility-weighted collective mean, the zero factors when the between variance is not positive, and Hachemeister's values. Not yet run by CI.
 * **Creation**: [Installing the R package from GitHub, and why it needs bootstrap.R](/environment/r-install-from-github.md), from making the R package self-contained (branch claude/stoic-hawking-qc3qby): `install_github(subdir=)` installs a tarball of `R/prospicio` alone, which failed on the Makevars' `../../../crates`; pkgbuild's `Config/build/bootstrap` runs `bootstrap.R`, which copies `prospicio-r`'s workspace crates, the root manifest and the lockfile into `src/rust/`. Installed that way and passed every R test locally. Not yet run by CI.
 

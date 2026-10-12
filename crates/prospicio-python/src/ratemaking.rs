@@ -223,11 +223,7 @@ pub(crate) struct PyRateHistory {
 impl PyRateHistory {
     #[new]
     #[pyo3(signature = (effective, changes, applies = None))]
-    fn new(
-        effective: Vec<f64>,
-        changes: Vec<f64>,
-        applies: Option<Vec<String>>,
-    ) -> PyResult<Self> {
+    fn new(effective: Vec<f64>, changes: Vec<f64>, applies: Option<Vec<String>>) -> PyResult<Self> {
         if effective.len() != changes.len() {
             return Err(PyValueError::new_err(
                 "effective and changes must have the same length",
