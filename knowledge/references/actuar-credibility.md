@@ -6,6 +6,7 @@ resource: https://cran.r-project.org/package=actuar
 tags: [pricing, credibility, buhlmann-straub, parity, r]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-12T03:00:00Z }
+verified: { by: process:ci, at: 2026-10-12T02:58:59Z }
 sources:
   - id: actuar
     resource: https://cran.r-project.org/package=actuar

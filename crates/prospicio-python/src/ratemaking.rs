@@ -1,9 +1,11 @@
 //! `prospicio.pricing`: ratemaking, premium at the current rate level by
-//! the parallelogram method and trend (Aggregate lane,
+//! the parallelogram method, trend and the overall indication (Aggregate lane,
 //! `docs/design/ratemaking.md`).
 
 use prospicio_pricing::ratemaking::{
-    Applies, Period, RateChange, RateHistory, RateLevel, TrendFit, TrendKind,
+    Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, Provisions,
+    PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, RateLevel, TrendFit,
+    TrendKind,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -484,4 +486,454 @@ impl PyTrendFit {
             self.inner.n
         )
     }
+}
+
+/// A column of per-year values: a list of ``n`` numbers, a single number
+/// for every year, or ``None`` for 1.
+fn column(value: Option<&Bound<'_, PyAny>>, n: usize, name: &str) -> PyResult<Vec<f64>> {
+    let Some(value) = value else {
+        return Ok(vec![1.0; n]);
+    };
+    if let Ok(x) = value.extract::<f64>() {
+        return Ok(vec![x; n]);
+    }
+    let v: Vec<f64> = value.extract()?;
+    if v.len() != n {
+        return Err(PyValueError::new_err(format!(
+            "{name} has {} values for {n} years",
+            v.len()
+        )));
+    }
+    Ok(v)
+}
+
+/// Experience years for the loss ratio method: earned premium brought to
+/// the current rate level and trended, and losses developed, trended and
+/// loaded for LAE, combined as the ratio of their totals (Werner and
+/// Modlin, ch. 8).
+///
+/// Every factor is a list with one value per year, one number for all
+/// years, or ``None`` for 1.
+///
+/// Parameters
+/// ----------
+/// earned_premium : list of float
+/// losses : list of float
+///     Reported or paid losses, with whatever LAE they include.
+/// on_level_factor, premium_trend, development, loss_trend, lae_factor : list of float or float, optional
+///     ``lae_factor`` is ``1 +`` the LAE ratio not in ``losses``; a net
+///     trend goes in ``loss_trend``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     For no years, mismatched lengths, or a premium or factor that is not
+///     positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import LossRatioExperience
+/// >>> e = LossRatioExperience([100.0, 300.0], [50.0, 250.0])
+/// >>> e.loss_ratio
+/// 0.75
+#[pyclass(name = "LossRatioExperience", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyLossRatioExperience {
+    inner: LossRatioExperience,
+}
+
+#[pymethods]
+impl PyLossRatioExperience {
+    #[new]
+    #[pyo3(signature = (earned_premium, losses, on_level_factor = None, premium_trend = None, development = None, loss_trend = None, lae_factor = None))]
+    fn new(
+        earned_premium: Vec<f64>,
+        losses: Vec<f64>,
+        on_level_factor: Option<&Bound<'_, PyAny>>,
+        premium_trend: Option<&Bound<'_, PyAny>>,
+        development: Option<&Bound<'_, PyAny>>,
+        loss_trend: Option<&Bound<'_, PyAny>>,
+        lae_factor: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let n = earned_premium.len();
+        if losses.len() != n {
+            return Err(PyValueError::new_err(
+                "earned_premium and losses must have the same length",
+            ));
+        }
+        let olf = column(on_level_factor, n, "on_level_factor")?;
+        let pt = column(premium_trend, n, "premium_trend")?;
+        let dev = column(development, n, "development")?;
+        let lt = column(loss_trend, n, "loss_trend")?;
+        let lae = column(lae_factor, n, "lae_factor")?;
+        let years: Vec<LossRatioYear> = (0..n)
+            .map(|i| LossRatioYear {
+                earned_premium: earned_premium[i],
+                on_level_factor: olf[i],
+                premium_trend: pt[i],
+                losses: losses[i],
+                development: dev[i],
+                loss_trend: lt[i],
+                lae_factor: lae[i],
+            })
+            .collect();
+        Ok(Self {
+            inner: LossRatioExperience::new(&years).map_err(to_py)?,
+        })
+    }
+
+    /// Total projected premium at the current rate level.
+    #[getter]
+    fn projected_premium(&self) -> f64 {
+        self.inner.projected_premium()
+    }
+
+    /// Total projected ultimate losses and LAE.
+    #[getter]
+    fn projected_losses(&self) -> f64 {
+        self.inner.projected_losses()
+    }
+
+    /// The projected loss and LAE ratio, the ratio of the totals.
+    #[getter]
+    fn loss_ratio(&self) -> f64 {
+        self.inner.loss_ratio()
+    }
+
+    /// Each year's projected premium.
+    #[getter]
+    fn projected_premium_by_year(&self) -> Vec<f64> {
+        self.inner
+            .years()
+            .iter()
+            .map(|y| y.projected_premium())
+            .collect()
+    }
+
+    /// Each year's projected losses and LAE.
+    #[getter]
+    fn projected_losses_by_year(&self) -> Vec<f64> {
+        self.inner
+            .years()
+            .iter()
+            .map(|y| y.projected_losses())
+            .collect()
+    }
+
+    /// Each year's projected loss ratio.
+    #[getter]
+    fn loss_ratio_by_year(&self) -> Vec<f64> {
+        self.inner.years().iter().map(|y| y.loss_ratio()).collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LossRatioExperience(years={}, loss_ratio={:?})",
+            self.inner.years().len(),
+            self.inner.loss_ratio()
+        )
+    }
+}
+
+/// Experience years for the pure premium method: losses developed, trended
+/// and loaded for LAE over earned exposure, combined as the ratio of their
+/// totals.
+///
+/// Parameters
+/// ----------
+/// exposure : list of float
+/// losses : list of float
+/// development, loss_trend, lae_factor : list of float or float, optional
+///
+/// Raises
+/// ------
+/// ValueError
+///     For no years, mismatched lengths, or an exposure or factor that is
+///     not positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import PurePremiumExperience
+/// >>> e = PurePremiumExperience([10.0, 30.0], [1000.0, 2000.0], loss_trend=1.1)
+/// >>> round(e.pure_premium, 6)
+/// 82.5
+#[pyclass(name = "PurePremiumExperience", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyPurePremiumExperience {
+    inner: PurePremiumExperience,
+}
+
+#[pymethods]
+impl PyPurePremiumExperience {
+    #[new]
+    #[pyo3(signature = (exposure, losses, development = None, loss_trend = None, lae_factor = None))]
+    fn new(
+        exposure: Vec<f64>,
+        losses: Vec<f64>,
+        development: Option<&Bound<'_, PyAny>>,
+        loss_trend: Option<&Bound<'_, PyAny>>,
+        lae_factor: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let n = exposure.len();
+        if losses.len() != n {
+            return Err(PyValueError::new_err(
+                "exposure and losses must have the same length",
+            ));
+        }
+        let dev = column(development, n, "development")?;
+        let lt = column(loss_trend, n, "loss_trend")?;
+        let lae = column(lae_factor, n, "lae_factor")?;
+        let years: Vec<PurePremiumYear> = (0..n)
+            .map(|i| PurePremiumYear {
+                exposure: exposure[i],
+                losses: losses[i],
+                development: dev[i],
+                loss_trend: lt[i],
+                lae_factor: lae[i],
+            })
+            .collect();
+        Ok(Self {
+            inner: PurePremiumExperience::new(&years).map_err(to_py)?,
+        })
+    }
+
+    /// Total earned exposure.
+    #[getter]
+    fn exposure(&self) -> f64 {
+        self.inner.exposure()
+    }
+
+    /// Total projected ultimate losses and LAE.
+    #[getter]
+    fn projected_losses(&self) -> f64 {
+        self.inner.projected_losses()
+    }
+
+    /// The projected pure premium, the ratio of the totals.
+    #[getter]
+    fn pure_premium(&self) -> f64 {
+        self.inner.pure_premium()
+    }
+
+    /// Each year's projected losses and LAE.
+    #[getter]
+    fn projected_losses_by_year(&self) -> Vec<f64> {
+        self.inner
+            .years()
+            .iter()
+            .map(|y| y.projected_losses())
+            .collect()
+    }
+
+    /// Each year's projected pure premium.
+    #[getter]
+    fn pure_premium_by_year(&self) -> Vec<f64> {
+        self.inner
+            .years()
+            .iter()
+            .map(|y| y.pure_premium())
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PurePremiumExperience(years={}, pure_premium={:?})",
+            self.inner.years().len(),
+            self.inner.pure_premium()
+        )
+    }
+}
+
+/// The provisions proportional to premium: variable expenses ``V`` and the
+/// target underwriting profit ``Q`` (Werner and Modlin, ch. 7 and 8).
+///
+/// Parameters
+/// ----------
+/// variable : float
+///     In ``[0, 1)``.
+/// profit : float
+///     May be negative (investment income); ``variable + profit < 1``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import Provisions
+/// >>> p = Provisions(0.25, 0.10)
+/// >>> round(p.pure_premium_rate(300.0, 25.0), 6)
+/// 500.0
+/// >>> round(p.loss_ratio_change(0.65, 0.065), 6)
+/// 0.1
+#[pyclass(name = "Provisions", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyProvisions {
+    inner: Provisions,
+}
+
+#[pymethods]
+impl PyProvisions {
+    #[new]
+    fn new(variable: f64, profit: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Provisions::new(variable, profit).map_err(to_py)?,
+        })
+    }
+
+    /// The variable expense provision.
+    #[getter]
+    fn variable(&self) -> f64 {
+        self.inner.variable
+    }
+
+    /// The target profit provision.
+    #[getter]
+    fn profit(&self) -> f64 {
+        self.inner.profit
+    }
+
+    /// ``1 - V - Q``.
+    #[getter]
+    fn variable_permissible_loss_ratio(&self) -> f64 {
+        self.inner.variable_permissible_loss_ratio()
+    }
+
+    /// ``1 - F - V - Q``.
+    ///
+    /// Parameters
+    /// ----------
+    /// fixed_ratio : float, default 0.0
+    ///
+    /// Returns
+    /// -------
+    /// float
+    #[pyo3(signature = (fixed_ratio = 0.0))]
+    fn permissible_loss_ratio(&self, fixed_ratio: f64) -> f64 {
+        self.inner.permissible_loss_ratio(fixed_ratio)
+    }
+
+    /// The loss ratio method's indicated change, ``(LR + F) / (1 - V - Q) - 1``.
+    ///
+    /// Parameters
+    /// ----------
+    /// loss_ratio : float
+    ///     The projected loss and LAE ratio at current rates.
+    /// fixed_ratio : float, default 0.0
+    ///
+    /// Returns
+    /// -------
+    /// float
+    #[pyo3(signature = (loss_ratio, fixed_ratio = 0.0))]
+    fn loss_ratio_change(&self, loss_ratio: f64, fixed_ratio: f64) -> f64 {
+        self.inner.loss_ratio_change(loss_ratio, fixed_ratio)
+    }
+
+    /// The pure premium method's indicated rate, ``(PP + fixed) / (1 - V - Q)``.
+    /// Other costs per exposure, such as net reinsurance, add to either.
+    ///
+    /// Parameters
+    /// ----------
+    /// pure_premium : float
+    /// fixed_per_exposure : float, default 0.0
+    ///
+    /// Returns
+    /// -------
+    /// float
+    #[pyo3(signature = (pure_premium, fixed_per_exposure = 0.0))]
+    fn pure_premium_rate(&self, pure_premium: f64, fixed_per_exposure: f64) -> f64 {
+        self.inner
+            .pure_premium_rate(pure_premium, fixed_per_exposure)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Provisions(variable={:?}, profit={:?})",
+            self.inner.variable, self.inner.profit
+        )
+    }
+}
+
+/// The premium-based projection of expenses: each expense ratio split by
+/// its fixed share and summed, as ``(fixed, variable)``. With every share 0
+/// it is the all-variable method.
+///
+/// Parameters
+/// ----------
+/// ratios : list of float
+///     Expense ratios to premium.
+/// fixed_shares : list of float
+///     The share of each that is fixed, in ``[0, 1]``.
+///
+/// Returns
+/// -------
+/// tuple of float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import premium_based_expenses
+/// >>> fixed, variable = premium_based_expenses([0.06, 0.10], [0.5, 0.0])
+/// >>> round(fixed, 6), round(variable, 6)
+/// (0.03, 0.13)
+#[pyfunction]
+pub(crate) fn premium_based_expenses(
+    ratios: Vec<f64>,
+    fixed_shares: Vec<f64>,
+) -> PyResult<(f64, f64)> {
+    if ratios.len() != fixed_shares.len() {
+        return Err(PyValueError::new_err(
+            "ratios and fixed_shares must have the same length",
+        ));
+    }
+    let categories: Vec<ExpenseCategory> = ratios
+        .iter()
+        .zip(&fixed_shares)
+        .map(|(&ratio, &fixed_share)| ExpenseCategory { ratio, fixed_share })
+        .collect();
+    prospicio_pricing::ratemaking::premium_based_expenses(&categories).map_err(to_py)
+}
+
+/// ``Z * estimate + (1 - Z) * complement``.
+///
+/// Parameters
+/// ----------
+/// estimate : float
+/// credibility : float
+/// complement : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import credibility_weighted
+/// >>> round(credibility_weighted(200.0, 0.3, 300.0), 6)
+/// 270.0
+#[pyfunction]
+pub(crate) fn credibility_weighted(estimate: f64, credibility: f64, complement: f64) -> f64 {
+    prospicio_pricing::ratemaking::credibility_weighted(estimate, credibility, complement)
+}
+
+/// The trended present rates complement as an indicated change:
+/// ``(1 + prior_indicated) / (1 + prior_implemented) * trend - 1``, with
+/// ``trend`` the factor from the last review's target effective date to the
+/// new one (the loss trend over the premium trend for a loss ratio).
+///
+/// Parameters
+/// ----------
+/// prior_indicated : float
+/// prior_implemented : float
+/// trend : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import trend_factor, trended_present_rates
+/// >>> c = trended_present_rates(0.10, 0.06, trend_factor(0.05, 2.0))
+/// >>> round(200 * (1 + c), 2)
+/// 228.82
+#[pyfunction]
+pub(crate) fn trended_present_rates(
+    prior_indicated: f64,
+    prior_implemented: f64,
+    trend: f64,
+) -> f64 {
+    prospicio_pricing::ratemaking::trended_present_rates(prior_indicated, prior_implemented, trend)
 }
