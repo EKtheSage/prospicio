@@ -17,6 +17,7 @@ mod distributions;
 mod models;
 mod pareto;
 mod pricing;
+mod ratemaking;
 mod reinsurance;
 mod reserving;
 mod risk;
@@ -45,6 +46,7 @@ extendr_module! {
     use models;
     use pareto;
     use pricing;
+    use ratemaking;
     use reinsurance;
     use reserving;
     use risk;

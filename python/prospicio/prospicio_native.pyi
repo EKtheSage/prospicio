@@ -8613,6 +8613,86 @@ class Pentagon:
         """
 
 @final
+class Period:
+    """
+    An experience or forecast period ``[start, end)`` in year fractions:
+    premium earned (losses occurring) in a calendar window, or policies
+    written in a policy window. A forecast period is the policy period of
+    the policies written while new rates are in effect.
+    
+    Build one with ``Period.calendar`` or ``Period.policy``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import Period
+    >>> cy = Period.calendar(2011.0, 2012.0)
+    >>> future = Period.policy(2013.0, 2014.0)
+    >>> future.average_written_date(1.0) - cy.average_written_date(1.0)
+    2.5
+    """
+    def __repr__(self, /) -> str: ...
+    def average_earned_date(self, /, term: float) -> float:
+        """
+        The average date the period's premium is earned, the average
+        accident date of its losses: losses are trended from and to these
+        dates.
+        
+        Parameters
+        ----------
+        term : float
+        
+        Returns
+        -------
+        float
+        """
+    def average_written_date(self, /, term: float) -> float:
+        """
+        The average date the period's premium was written, for policies of
+        ``term`` years: premium is trended from and to these dates.
+        
+        Parameters
+        ----------
+        term : float
+        
+        Returns
+        -------
+        float
+        """
+    @staticmethod
+    def calendar(start: float, end: float) -> Period:
+        """
+        Premium earned (losses occurring) in ``[start, end)``.
+        
+        Parameters
+        ----------
+        start : float
+        end : float
+        
+        Returns
+        -------
+        Period
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        ``"calendar"`` or ``"policy"``.
+        """
+    @staticmethod
+    def policy(start: float, end: float) -> Period:
+        """
+        Policies written in ``[start, end)``, over their whole term.
+        
+        Parameters
+        ----------
+        start : float
+        end : float
+        
+        Returns
+        -------
+        Period
+        """
+
+@final
 class PiecewisePareto:
     """
     Piecewise Pareto: alpha ``alpha[k]`` above threshold ``t[k]``, the
@@ -9604,6 +9684,121 @@ class Price:
     def return_on_capital(self, /) -> float:
         """
         Return on capital, margin over capital.
+        """
+
+@final
+class RateHistory:
+    """
+    A history of rate changes from an initial level of 1, and the
+    parallelogram method: the portion of a period's premium at each rate
+    level under uniform writing and earning, and the factor to the current
+    level (Werner and Modlin, ch. 5).
+    
+    Parameters
+    ----------
+    effective : list of float
+        Effective dates as year fractions, in order.
+    changes : list of float
+        Overall average changes, ``0.05`` for +5%.
+    applies : list of str, optional
+        ``"written"`` (policies written on or after the date; the default)
+        or ``"in_force"`` (all premium earned on or after it, a law change).
+    
+    Raises
+    ------
+    ValueError
+        For dates out of order, a change of -100% or less, or mismatched
+        lengths.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import Period, RateHistory
+    >>> h = RateHistory([2010.5, 2011.0, 2012.25], [0.05, 0.10, -0.01])
+    >>> level = h.rate_level(Period.calendar(2011.0, 2012.0), term=1.0)
+    >>> level.shares
+    [0.125, 0.375, 0.5]
+    >>> round(level.on_level_factor, 4)
+    1.0431
+    """
+    def __new__(cls, /, effective: Sequence[float], changes: Sequence[float], applies: Sequence[str] |None = None) -> RateHistory: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def current_level(self, /) -> float:
+        """
+        The level after every change.
+        """
+    @staticmethod
+    def from_levels(effective: Sequence[float], levels: Sequence[float], applies: Sequence[str] |None = None) -> RateHistory:
+        """
+        A history from the cumulative level after each change, as an
+        exhibit prints them; rounded printed levels carry into the factors.
+        
+        Parameters
+        ----------
+        effective : list of float
+        levels : list of float
+        applies : list of str, optional
+        
+        Returns
+        -------
+        RateHistory
+        """
+    def rate_level(self, /, period: Period, term: float) -> RateLevel:
+        """
+        The portion of ``period``'s premium at each rate level, for
+        policies of ``term`` years.
+        
+        Parameters
+        ----------
+        period : Period
+        term : float
+        
+        Returns
+        -------
+        RateLevel
+        """
+
+@final
+class RateLevel:
+    """
+    A period's premium by rate level, from ``RateHistory.rate_level``. Each
+    list has one entry per cell of constant level with a positive share.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def average_level(self, /) -> float:
+        """
+        ``sum(shares * levels)``.
+        """
+    @property
+    def current_level(self, /) -> float:
+        """
+        The level after every change in the history.
+        """
+    @property
+    def in_force_changes(self, /) -> list[int]:
+        """
+        The number of in-force changes in effect for each cell.
+        """
+    @property
+    def levels(self, /) -> list[float]:
+        """
+        Each cell's cumulative rate level.
+        """
+    @property
+    def on_level_factor(self, /) -> float:
+        """
+        ``current_level / average_level``.
+        """
+    @property
+    def shares(self, /) -> list[float]:
+        """
+        Each cell's share of the period's premium.
+        """
+    @property
+    def written_changes(self, /) -> list[int]:
+        """
+        The number of written-policy changes in effect for each cell.
         """
 
 @final
@@ -10601,6 +10796,96 @@ class TowerModel:
     def severity(self, /) -> PiecewisePareto:
         """
         The fitted severity.
+        """
+
+@final
+class TrendFit:
+    """
+    A trend fitted by least squares to values at times in years:
+    ``log(y)`` on time for an exponential trend, ``y`` for a linear one. For
+    quarterly points, pass times a quarter apart.
+    
+    Build one with ``TrendFit.exponential`` or ``TrendFit.linear``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import TrendFit
+    >>> t = [0.0, 0.25, 0.5, 0.75]
+    >>> fit = TrendFit.exponential(t, [100 * 1.03 ** x for x in t])
+    >>> round(fit.annual_change, 6)
+    0.03
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def annual_change(self, /) -> float:
+        """
+        The annual trend: ``exp(slope) - 1`` for an exponential fit, the
+        slope (an amount a year) for a linear one.
+        """
+    @staticmethod
+    def exponential(times: Sequence[float], values: Sequence[float]) -> TrendFit:
+        """
+        Fit ``log(y) = a + b t``; every value must be positive.
+        
+        Parameters
+        ----------
+        times : list of float
+        values : list of float
+        
+        Returns
+        -------
+        TrendFit
+        """
+    def fitted(self, /, time: float) -> float:
+        """
+        The fitted value at ``time``.
+        
+        Parameters
+        ----------
+        time : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def intercept(self, /) -> float:
+        """
+        The intercept, on the log scale for an exponential fit.
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        ``"exponential"`` or ``"linear"``.
+        """
+    @staticmethod
+    def linear(times: Sequence[float], values: Sequence[float]) -> TrendFit:
+        """
+        Fit ``y = a + b t``.
+        
+        Parameters
+        ----------
+        times : list of float
+        values : list of float
+        
+        Returns
+        -------
+        TrendFit
+        """
+    @property
+    def n(self, /) -> int:
+        """
+        The number of points.
+        """
+    @property
+    def r_squared(self, /) -> float:
+        """
+        The coefficient of determination, on the fitted scale.
+        """
+    @property
+    def slope(self, /) -> float:
+        """
+        The slope per year, on the log scale for an exponential fit.
         """
 
 @final
@@ -13199,4 +13484,53 @@ def to_json(dist: Any) -> str:
     >>> text = to_json(Lognormal(7.0, 0.5))
     >>> from_json(text).mean() == Lognormal(7.0, 0.5).mean()
     True
+    """
+
+def trend_factor(rate: float, years: float) -> float:
+    """
+    ``(1 + rate) ** years``, the factor of an exponential trend.
+    
+    Parameters
+    ----------
+    rate : float
+        The annual trend, ``0.02`` for +2%.
+    years : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import trend_factor
+    >>> round(trend_factor(0.02, 2.5), 4)
+    1.0508
+    """
+
+def year_fraction(year: int, month: int, day: int) -> float:
+    """
+    The year fraction of a date on Werner and Modlin's half-month grid: the
+    first of a month is its start, a day near the middle is half way, and
+    the last day is the next month's start (6/30 is 7/1).
+    
+    Parameters
+    ----------
+    year : int
+    month : int
+    day : int
+    
+    Returns
+    -------
+    float
+    
+    Raises
+    ------
+    ValueError
+        If the month or day does not exist.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import year_fraction
+    >>> year_fraction(2013, 6, 30) - year_fraction(2011, 1, 1)
+    2.5
     """

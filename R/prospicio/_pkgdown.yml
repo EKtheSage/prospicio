@@ -121,6 +121,12 @@ reference:
     contents:
       - credibility_standard
       - buhlmann_straub
+  - title: Ratemaking
+    contents:
+      - year_fraction
+      - average_written_date
+      - rate_level
+      - trend_fit
   - title: Risk measures
     contents:
       - distortion
