@@ -18,6 +18,9 @@
 //! - [`risk_load`]: risk-loaded prices from simulated losses (a distortion
 //!   or a cost of capital on distortion-measured assets), for one cover
 //!   or allocated across a portfolio's components.
+//! - [`ratemaking`]: premium at the current rate level by the
+//!   parallelogram method, and trend: fits, factors and the average written
+//!   and earned dates that set trend lengths (Werner and Modlin).
 //! - [`tower`]: matching a tower of reinsurance layer prices with
 //!   one collective model (Riegel 2018).
 //!
@@ -29,5 +32,6 @@ pub mod exposure;
 pub mod layer;
 pub mod natural;
 pub mod profile;
+pub mod ratemaking;
 pub mod risk_load;
 pub mod tower;
