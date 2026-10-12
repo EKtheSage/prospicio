@@ -2,6 +2,7 @@
 
 ## 2026-10-12
 
+* **Creation**: [R actuar's credibility models](/references/actuar-credibility.md), from adding `prospicio_pricing::credibility` (branch claude/stoic-hawking-qc3qby): how `cm()` fits one level (its Bühlmann–Gisler and Ohlsson methods coincide there), the credibility-weighted collective mean, the zero factors when the between variance is not positive, and Hachemeister's values. Not yet run by CI.
 * **Creation**: [Installing the R package from GitHub, and why it needs bootstrap.R](/environment/r-install-from-github.md), from making the R package self-contained (branch claude/stoic-hawking-qc3qby): `install_github(subdir=)` installs a tarball of `R/prospicio` alone, which failed on the Makevars' `../../../crates`; pkgbuild's `Config/build/bootstrap` runs `bootstrap.R`, which copies `prospicio-r`'s workspace crates, the root manifest and the lockfile into `src/rust/`. Installed that way and passed every R test locally. Not yet run by CI.
 
 ## 2026-10-11

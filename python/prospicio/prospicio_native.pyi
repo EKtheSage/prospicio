@@ -717,6 +717,59 @@ class BornhuetterFerguson:
         """
 
 @final
+class BuhlmannStraubFit:
+    """
+    A fitted Bühlmann–Straub model, from ``buhlmann_straub``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def between_variance(self, /) -> float:
+        """
+        The between-group variance ``a`` (may be negative; the factors are
+        then 0).
+        """
+    @property
+    def collective_mean(self, /) -> float:
+        """
+        The credibility-weighted collective mean.
+        """
+    @property
+    def credibility(self, /) -> list[float]:
+        """
+        Each group's credibility factor.
+        """
+    @property
+    def group_means(self, /) -> list[float]:
+        """
+        Each group's weighted mean.
+        """
+    @property
+    def group_weights(self, /) -> list[float]:
+        """
+        Each group's total weight.
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        Iterations of the iterative estimator (0 for the unbiased one).
+        """
+    @property
+    def k(self, /) -> float:
+        """
+        Bühlmann's ``k = s2 / a`` (``inf`` when ``a <= 0``).
+        """
+    @property
+    def premiums(self, /) -> list[float]:
+        """
+        Each group's credibility premium.
+        """
+    @property
+    def within_variance(self, /) -> float:
+        """
+        The within-group variance ``s2``.
+        """
+
+@final
 class Burr:
     """
     Burr (type XII) distribution with tail shape ``alpha``, power ``gamma``
@@ -5860,6 +5913,85 @@ class Layer:
         >>> layer = Layer("L", 1000.0, 0.0).with_swing_rating(0.0, 1.25, 100.0, 300.0)
         >>> [layer.premium_for(x) for x in (40.0, 200.0, 400.0)]
         [100.0, 250.0, 300.0]
+        """
+
+@final
+class LimitedFluctuation:
+    """
+    Limited fluctuation (classical) credibility: the expected number of
+    claims for the observed value to lie within ``k`` of its mean with
+    probability ``p``, under a Poisson count and the normal approximation.
+    
+    With ``z = Phi^-1((1 + p) / 2)`` and ``n_F = (z / k)**2``, the full
+    standards in claims are ``n_F`` for the frequency, ``n_F * cv**2`` for
+    the severity and ``n_F * (1 + cv**2)`` for the pure premium; partial
+    credibility is ``min(1, sqrt(n / standard))``.
+    
+    Parameters
+    ----------
+    p : float, default 0.90
+    k : float, default 0.05
+    
+    Raises
+    ------
+    ValueError
+        If ``p`` is not in ``(0, 1)`` or ``k`` is not positive.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import LimitedFluctuation
+    >>> lf = LimitedFluctuation(0.90, 0.05)
+    >>> round(lf.frequency_standard())
+    1082
+    """
+    def __new__(cls, /, p: float = 0.90, k: float = 0.05) -> LimitedFluctuation: ...
+    def __repr__(self, /) -> str: ...
+    def credibility(self, /, n: float, standard: float) -> float:
+        """
+        Credibility ``min(1, sqrt(n / standard))`` of ``n`` claims.
+        
+        Parameters
+        ----------
+        n : float
+        standard : float
+        
+        Returns
+        -------
+        float
+        """
+    def frequency_standard(self, /) -> float:
+        """
+        Full standard for the frequency, in expected claims.
+        
+        Returns
+        -------
+        float
+        """
+    def pure_premium_standard(self, /, cv: float) -> float:
+        """
+        Full standard for the pure premium, in expected claims.
+        
+        Parameters
+        ----------
+        cv : float
+            The severity's coefficient of variation.
+        
+        Returns
+        -------
+        float
+        """
+    def severity_standard(self, /, cv: float) -> float:
+        """
+        Full standard for the severity, in claims.
+        
+        Parameters
+        ----------
+        cv : float
+            The severity's coefficient of variation.
+        
+        Returns
+        -------
+        float
         """
 
 @final
@@ -11693,6 +11825,44 @@ def alpha_between_layers(a: tuple[float, float, float], b: tuple[float, float, f
     Returns
     -------
     float
+    """
+
+def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]] |None = None, estimator: str = "unbiased", tol: float = 1.4901161193847656e-8, max_iter: int = 100) -> BuhlmannStraubFit:
+    """
+    The Bühlmann–Straub credibility model, as R's ``actuar::cm(~group)``:
+    group ``i`` in period ``j`` has ratio ``X_ij`` (loss per unit of
+    exposure) with weight ``w_ij``. Without weights it is Bühlmann's model.
+    
+    Parameters
+    ----------
+    ratios : list of list of float
+        One row per group, one column per period; NaN for a missing cell.
+    weights : list of list of float, optional
+        The same shape, NaN in the same places; equal weights if omitted.
+    estimator : {"unbiased", "iterative"}, default "unbiased"
+        The between variance: Bühlmann and Straub's unbiased estimator
+        (``actuar``'s ``"Buhlmann-Gisler"`` and ``"Ohlsson"``), or Bichsel
+        and Straub's iterative one.
+    tol : float, default 1.49e-8
+        Relative tolerance of the iterative estimator.
+    max_iter : int, default 100
+    
+    Returns
+    -------
+    BuhlmannStraubFit
+    
+    Raises
+    ------
+    ValueError
+        For fewer than two groups, too few observations, mismatched shapes
+        or missing cells, or missing ratios without weights.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import buhlmann_straub
+    >>> fit = buhlmann_straub([[1.0, 2.0, 3.0], [4.0, 5.0, 9.0]])
+    >>> fit.within_variance
+    4.0
     """
 
 def calibrate(family: str, dist: Any, premium: float, assets: float |None = None, r0: float = 0.0) -> Distortion:

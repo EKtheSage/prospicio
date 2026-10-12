@@ -23,7 +23,7 @@ then joins them and sets and allocates capital.
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
-| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves. Still to do: REML, tensor smooths, rate indication, trend and on-level, credibility |
+| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub). Still to do: REML, tensor smooths, rate indication, trend and on-level |
 | v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD. Still to do: Bayesian reserving and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
@@ -108,12 +108,13 @@ what it is aiming for by v1.0.
   - Exposure curves (MBBEFD, tabulated, from a severity) and risk
     profiles with spread sums insured.
   - Risk-loaded prices from simulated losses.
-- **Next** (the Aggregate lane's next items, after the R packaging PR):
+  - Classical credibility: limited fluctuation standards and the
+    Bühlmann–Straub model (`docs/design/credibility.md`). It may become
+    `prospicio-credibility` once it has a Bayesian side.
+- **Next:**
   1. Rate indication: trend, on-level premium and loss development into
      an indicated rate change. This is the v0.6 pricing scope.
-  2. Credibility (limited fluctuation, Bühlmann, Bühlmann–Straub). It may
-     become `prospicio-credibility` once it has a Bayesian side.
-  3. Log-log interpolation for tabulated curves, and a tilted spread
+  2. Log-log interpolation for tabulated curves, and a tilted spread
      within bands.
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
@@ -208,8 +209,22 @@ what it is aiming for by v1.0.
    into the tarball, and CI installs it that way. r-universe needs a
    registry repository from the user and has not been tried. CRAN still
    needs the third-party crates vendored).
-3. Rate indication and credibility in `prospicio-pricing`.
-4. Release v0.0.2.
+3. Rate indication and credibility in `prospicio-pricing` (credibility
+   done: limited fluctuation and Bühlmann–Straub).
+4. Release v0.0.2, coordinated between the sessions (decided
+   2026-10-12):
+   - The cloud session opens the release PR once rate indication has
+     merged: the workspace version to 0.0.2 in the root `Cargo.toml`
+     (`workspace.package.version` and the `prospicio-*` entries in
+     `[workspace.dependencies]`), and a v0.0.2 changelog in
+     `docs/release.md`. Nothing else goes in that PR.
+   - The local session's open Reserving PRs either merge before it or
+     wait for v0.0.3; neither session changes versions or the release
+     workflow outside that PR. A local PR that should be in v0.0.2 says so
+     in its description, and the release PR waits for it.
+   - After the release PR merges, the user runs the Release workflow by
+     hand on `main` (a dry run), then pushes the tag `v0.0.2`
+     (`docs/release.md`); the cloud session cannot push tags.
 5. Bayesian reserving (Meyers, compartmental, Clark growth curves,
    Gaussian processes), with `prospicio-bayes`: the local session
    (Reserving lane) takes it, so the cloud session stays out of

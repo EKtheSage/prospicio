@@ -3,6 +3,8 @@
 //! - [`classical`]: the classical premium principles (expected value,
 //!   variance, standard deviation, semi-variance, exponential, Esscher,
 //!   Dutch, Fischer, VaR), each calibrated to a premium.
+//! - [`credibility`]: classical credibility, the limited fluctuation
+//!   standards and the Bühlmann–Straub model.
 //! - [`natural`]: pricing with limited liability and the natural
 //!   allocation of Mildenhall and Major, with Bodoff's allocation, EPD,
 //!   the premium pentagon and pricing bounds.
@@ -22,6 +24,7 @@
 //! See `docs/design/pareto.md`.
 
 pub mod classical;
+pub mod credibility;
 pub mod exposure;
 pub mod layer;
 pub mod natural;
