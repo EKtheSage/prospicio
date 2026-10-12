@@ -25,7 +25,8 @@ under "Unreleased" until then.
   average written and earned dates that set trend lengths (`Period`,
   `year_fraction`), after Werner and Modlin's *Basic Ratemaking*. Python
   `prospicio.pricing`; R `rate_level()`, `trend_fit()`, `trend_factor()`,
-  `average_written_date()`, `average_earned_date()`, `year_fraction()`.
+  `average_written_date()`, `average_earned_date()`, `year_fraction()`
+  (#179).
 
 ## 0.0.2 (2026-10-12)
 
