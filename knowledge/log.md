@@ -1,5 +1,9 @@
 # Bundle history
 
+## 2026-10-11
+
+* **Update**: [Publishing to PyPI and crates.io](/environment/publishing.md), from preparing v0.0.2 (branch release-0.0.2): the crates.io token secret is gone and the token revoked, so the release workflow now uses only trusted publishing, and a new crate needs one publish by hand before it can be added. Not yet run by CI.
+
 ## 2026-10-09
 
 * **Update**: [The tail in the bootstraps, refitted or drawn, against Mack's tail risk](/findings/bootstrap-tail-parameter-error.md), from merging the bootstrap tails with `SegmentDependence` (branch claude/bootstrap-tail-error, decision 9 with decision 10 of `docs/design/reserving-v02.md`): synchronized, an estimated tail refitted on each line's pseudo factors follows the shared residuals (two copies of CLRD's wkcomp without process error stay equal, tail included), while a constant tail's lognormal draw is each line's own (with 1.05 and `tail_std_err` 0.02 the copies' correlation falls from 1 to 0.19 for the ODP, 0.16 for Mack, 10,000 simulations); rank correlation reorders whole simulations, tail included (Spearman 0.501 against 0.5 on comauto and wkcomp). Not yet run by CI.

@@ -121,20 +121,17 @@ jobs:
     environment: crates-io
     permissions:
       id-token: write
-    env:
-      # crates.io trusted publishing works only for crates that already
-      # exist, so the first release uses a token stored as this secret
-      # (docs/release.md). Delete the secret once trusted publishing is set
-      # up for every crate.
-      HAS_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # Trusted publishing: crates.io accepts this repository, workflow and
+      # environment for each crate (docs/release.md) and hands out a
+      # short-lived token; no token is stored. A new crate has to be
+      # published once by hand before it can be added.
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
-        if: env.HAS_TOKEN != 'true'
       # Publishes the crates in dependency order, waiting for each to be
       # indexed before the crates that need it.
       - run: cargo publish --workspace
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

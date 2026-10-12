@@ -38,13 +38,17 @@ Do these once, before the first release.
 
    No token is stored anywhere. A pending publisher does not reserve the
    name; the first upload does.
-2. **crates.io, first release.** Sign in at crates.io with GitHub and
-   verify an email address. Trusted publishing works only for crates that
-   already exist, so the first release uses a token: under *Account
-   Settings → API Tokens*, create one with the scopes `publish-new` and
-   `publish-update`, and an expiry a few days out. Add it to this
-   repository as the Actions secret `CARGO_REGISTRY_TOKEN`
-   (*Settings → Secrets and variables → Actions*).
+2. **crates.io.** Sign in at crates.io with GitHub and verify an email
+   address. On each of the 11 crates' *Settings → Trusted Publishing*, add
+   GitHub with the same fields as PyPI's: owner `EKtheSage`, repository
+   `prospicio` (no owner or slash), workflow `release.yml`, environment
+   `crates-io`. The workflow then asks crates.io for a short-lived token
+   itself (`rust-lang/crates-io-auth-action`); no token is stored.
+   Trusted publishing works only for crates that already exist, so a new
+   `prospicio-*` crate is published once by hand (see "Publishing from a
+   laptop instead", with a token scoped to `publish-new` and a short
+   expiry, revoked afterwards) and then added here. The first release,
+   v0.0.1, used such a token for all 11 crates.
 3. **GitHub environments** (optional but recommended). The publish jobs run
    in the environments `pypi` and `crates-io`; GitHub creates them on first
    use. Adding yourself as a required reviewer on each (*Settings →
@@ -60,8 +64,8 @@ Do these once, before the first release.
 3. Tag the merge commit and push the tag:
 
    ```sh
-   git tag v0.0.1
-   git push origin v0.0.1
+   git tag v0.0.2
+   git push origin v0.0.2
    ```
 
    The workflow checks that the tag matches the workspace version, builds
@@ -74,19 +78,9 @@ partway, the crates already uploaded stay published, and rerunning it fails
 on them; publish the remaining crates with `cargo publish -p <crate>`, in
 dependency order.
 
-## After the first release
-
-1. On crates.io, open each of the 11 crates' *Settings → Trusted
-   Publishing* and add GitHub with the same fields as PyPI's: owner
-   `EKtheSage`, repository `prospicio` (no owner or slash), workflow
-   `release.yml`, environment `crates-io`.
-2. Delete the `CARGO_REGISTRY_TOKEN` secret and revoke the token. The
-   workflow then asks crates.io for a short-lived token itself
-   (`rust-lang/crates-io-auth-action`).
-
 ## Publishing from a laptop instead
 
-If the workflow is not wanted for the first release, the same result comes
+For a new crate, or if the workflow cannot be used, the same result comes
 from a clean checkout of the tagged commit:
 
 ```sh
