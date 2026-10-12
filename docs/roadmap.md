@@ -23,7 +23,7 @@ then joins them and sets and allocates capital.
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
-| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub). Still to do: REML, tensor smooths, rate indication, trend and on-level |
+| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. Still to do: REML, tensor smooths |
 | v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD. Still to do: Bayesian reserving and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
@@ -111,10 +111,13 @@ what it is aiming for by v1.0.
   - Classical credibility: limited fluctuation standards and the
     Bühlmann–Straub model (`docs/design/credibility.md`). It may become
     `prospicio-credibility` once it has a Bayesian side.
+  - Ratemaking: premium at the current rate level by the parallelogram
+    method, trend fits, factors and lengths, and the overall rate
+    indication by the loss ratio and pure premium methods with credibility
+    against a complement (`docs/design/ratemaking.md`). This finishes the
+    v0.6 pricing scope.
 - **Next:**
-  1. Rate indication: trend, on-level premium and loss development into
-     an indicated rate change. This is the v0.6 pricing scope.
-  2. Log-log interpolation for tabulated curves, and a tilted spread
+  1. Log-log interpolation for tabulated curves, and a tilted spread
      within bands.
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
@@ -214,7 +217,8 @@ what it is aiming for by v1.0.
    registry repository from the user and has not been tried. CRAN still
    needs the third-party crates vendored).
 3. Rate indication and credibility in `prospicio-pricing` (credibility
-   done: limited fluctuation and Bühlmann–Straub).
+   done: limited fluctuation and Bühlmann–Straub; rate indication done,
+   with premium at the current rate level and trend).
 4. Release v0.0.2 (done 2026-10-12, at the user's call before rate
    indication, which moves to v0.0.3). Its contents are in `CHANGELOG.md`.
    For each later release, coordinated between the sessions (decided

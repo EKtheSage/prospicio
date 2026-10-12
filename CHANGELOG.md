@@ -16,6 +16,29 @@ under "Unreleased" until then.
   `tail_std_err` and `tail_sigma` on `odp_one_year()` and
   `mack_one_year()` (#176).
 
+### Pricing
+
+- Ratemaking in `prospicio_pricing::ratemaking`: premium at the current
+  rate level by the parallelogram method (`RateHistory`, for calendar or
+  policy periods, any term, and changes to written or in-force policies),
+  trend fits (`TrendFit`, exponential or linear) and factors, and the
+  average written and earned dates that set trend lengths (`Period`,
+  `year_fraction`), after Werner and Modlin's *Basic Ratemaking*. Python
+  `prospicio.pricing`; R `rate_level()`, `trend_fit()`, `trend_factor()`,
+  `average_written_date()`, `average_earned_date()`, `year_fraction()`
+  (#179).
+- The overall rate indication in `prospicio_pricing::ratemaking`: the loss
+  ratio and pure premium methods over experience years projected to the
+  forecast period (`LossRatioExperience`, `PurePremiumExperience`),
+  expense and profit provisions with the permissible loss ratio
+  (`Provisions`, `premium_based_expenses`), and credibility against a
+  complement (`credibility_weighted`, `trended_present_rates`), matching
+  Werner and Modlin's Appendices A to C. Python `prospicio.pricing`; R
+  `loss_ratio_experience()`, `pure_premium_experience()`,
+  `indicated_change()`, `indicated_rate()`, `permissible_loss_ratio()`,
+  `premium_based_expenses()`, `credibility_weighted()`,
+  `trended_present_rates()` (#180).
+
 ## 0.0.2 (2026-10-12)
 
 ### Breaking changes

@@ -21,6 +21,7 @@ mod models;
 mod natural;
 mod pareto;
 mod pricing;
+mod ratemaking;
 mod reinsurance;
 mod reserving;
 mod risk;
@@ -71,6 +72,12 @@ mod prospicio_native {
         PyTowerModel, alpha_between_frequencies, alpha_between_frequency_and_layer,
         alpha_between_layers, fit_pml_curve, fit_references, ilf, loss_elimination_ratio,
         match_tower, pareto_extrapolation, price, price_portfolio, severity_exposure_curve,
+    };
+    #[pymodule_export]
+    use super::ratemaking::{
+        PyLossRatioExperience, PyPeriod, PyProvisions, PyPurePremiumExperience, PyRateHistory,
+        PyRateLevel, PyTrendFit, credibility_weighted, premium_based_expenses, trend_factor,
+        trended_present_rates, year_fraction,
     };
     #[pymodule_export]
     use super::reinsurance::{PyLayer, PyLossSensitivePremium, PyTower, PyTowerGrids};

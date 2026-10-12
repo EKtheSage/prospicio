@@ -1,33 +1,48 @@
 """Pricing: the collective model, layer rating shared by primary and
 reinsurance pricing, reinsurance tower matching (Riegel 2018),
 risk-loaded prices from simulated losses, and the natural allocation of
-Mildenhall and Major (Portfolio, Pentagon)."""
+Mildenhall and Major (Portfolio, Pentagon), and ratemaking: premium at
+the current rate level by the parallelogram method (RateHistory) and trend
+(TrendFit, trend_factor) and the overall indication (LossRatioExperience,
+PurePremiumExperience, Provisions)."""
 
 from .prospicio_native import (
     CollectiveModel,
+    LossRatioExperience,
     Mbbefd,
     NaturalPrice,
     Pentagon,
+    Period,
     Portfolio,
     PortfolioPrice,
     Price,
+    Provisions,
+    PurePremiumExperience,
+    RateHistory,
+    RateLevel,
     RiskProfile,
     TabulatedCurve,
     TowerModel,
+    TrendFit,
     alpha_between_frequencies,
     alpha_between_frequency_and_layer,
     alpha_between_layers,
     calibrate_classical,
     classical_premium,
+    credibility_weighted,
     fit_pml_curve,
     fit_references,
     ilf,
     loss_elimination_ratio,
     match_tower,
     pareto_extrapolation,
+    premium_based_expenses,
     price,
     price_portfolio,
     severity_exposure_curve,
+    trend_factor,
+    trended_present_rates,
+    year_fraction,
 )
 
 __all__ = [
@@ -55,4 +70,16 @@ __all__ = [
     "Pentagon",
     "classical_premium",
     "calibrate_classical",
+    "year_fraction",
+    "Period",
+    "RateHistory",
+    "RateLevel",
+    "TrendFit",
+    "trend_factor",
+    "LossRatioExperience",
+    "PurePremiumExperience",
+    "Provisions",
+    "premium_based_expenses",
+    "credibility_weighted",
+    "trended_present_rates",
 ]
