@@ -18,7 +18,15 @@ To run one, clone the repository (the notebooks read their data from
 pip install prospicio matplotlib jupyter
 ```
 
-(`uv pip install` works the same.) PyPI has prebuilt wheels for Python 3.9
+With [uv](https://docs.astral.sh/uv/) nothing needs installing: from
+`examples/`, this starts Jupyter in a temporary environment with the
+released package:
+
+```sh
+uv run --no-project --with prospicio --with matplotlib --with jupyter jupyter lab
+```
+
+PyPI has prebuilt wheels for Python 3.9
 and later on Windows, macOS and Linux, so no Rust toolchain is needed. Then
 open the notebook in Jupyter. To run a notebook against unreleased changes
 in this repository, build the package from source instead
