@@ -636,6 +636,9 @@ impl Counting for CountDist {
     fn third_moment(&self) -> f64 {
         self.inner().third_moment()
     }
+    fn third_cumulant(&self) -> f64 {
+        self.inner().third_cumulant()
+    }
     fn cdf(&self, k: u64) -> f64 {
         self.inner().cdf(k)
     }

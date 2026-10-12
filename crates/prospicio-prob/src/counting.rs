@@ -51,6 +51,16 @@ pub trait Counting {
         }
     }
 
+    /// The third cumulant `E[(N − E[N])^3]`, the third central moment. The
+    /// default converts [`Counting::third_moment`], which cancels when the
+    /// mean is large (six digits lost at a Poisson mean of 1,000); the
+    /// families with a closed form override it.
+    fn third_cumulant(&self) -> f64 {
+        let m = self.mean();
+        let m2 = self.variance() + m * m;
+        self.third_moment() - 3.0 * m * m2 + 2.0 * m * m * m
+    }
+
     /// `P(N ≤ k)`.
     fn cdf(&self, k: u64) -> f64 {
         (0..=k).map(|j| self.pmf(j)).sum::<f64>().min(1.0)
@@ -119,6 +129,10 @@ impl<T: Counting + ?Sized> Counting for Box<T> {
         (**self).third_moment()
     }
 
+    fn third_cumulant(&self) -> f64 {
+        (**self).third_cumulant()
+    }
+
     fn cdf(&self, k: u64) -> f64 {
         (**self).cdf(k)
     }
@@ -171,6 +185,11 @@ impl Counting for Poisson {
     fn third_moment(&self) -> f64 {
         let l = self.lambda;
         l * (l * l + 3.0 * l + 1.0)
+    }
+
+    /// `λ`.
+    fn third_cumulant(&self) -> f64 {
+        self.lambda
     }
 
     fn pmf(&self, k: u64) -> f64 {
@@ -289,6 +308,12 @@ impl Counting for NegativeBinomial {
         k3 + 3.0 * m * k2 + m.powi(3)
     }
 
+    /// `rβ(1 + β)(1 + 2β)`.
+    fn third_cumulant(&self) -> f64 {
+        let (r, b) = (self.r, self.beta);
+        r * b * (1.0 + b) * (1.0 + 2.0 * b)
+    }
+
     fn pmf(&self, k: u64) -> f64 {
         let (r, beta) = (self.r, self.beta);
         let k = k as f64;
@@ -378,6 +403,12 @@ impl Counting for Binomial {
             n * p * (1.0 - p) * (1.0 - 2.0 * p),
         );
         k3 + 3.0 * m * k2 + m.powi(3)
+    }
+
+    /// `np(1 − p)(1 − 2p)`.
+    fn third_cumulant(&self) -> f64 {
+        let (n, p) = (self.n as f64, self.p);
+        n * p * (1.0 - p) * (1.0 - 2.0 * p)
     }
 
     fn pmf(&self, k: u64) -> f64 {

@@ -190,9 +190,14 @@ Decided 2026-10-12:
 - **Counts:** `Counting::third_moment() -> f64`, by default the sum of
   `k³ P(N = k)` until the probabilities past the mean run out; Poisson,
   negative binomial and binomial from their cumulants, a zero-modified
-  count by scaling its base's.
+  count by scaling its base's. `Counting::third_cumulant()`, the third
+  central moment, defaults to converting the raw moment and has closed
+  forms for the Poisson (`λ`), negative binomial and binomial: the
+  conversion cancels at large means (six digits at a Poisson mean of
+  1,000), and compound skewness needs the cumulant.
 - **Forwarding:** `Box`, `SeverityDist` (so `Dist` reaches every family),
-  `CountDist`, `Mixture` and the bindings' count wrappers pass it through.
+  `CountDist`, `Mixture` and the bindings' count wrappers pass both
+  through.
 - Rust only for now; the bindings expose it with the compound moments.
 
 ## Proposed trait layout

@@ -11,7 +11,8 @@ under "Unreleased" until then.
 
 - Third raw moments: `Severity::third_moment()` (`None` where a family has
   no closed form, infinite where the moment diverges) and
-  `Counting::third_moment()`, for compound moments to third order (#183).
+  `Counting::third_moment()` with `Counting::third_cumulant()`, for
+  compound moments to third order (#183).
 
 ### Aggregate and reinsurance
 

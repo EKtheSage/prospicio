@@ -794,4 +794,21 @@ fn third_moments_diverge_combine_and_forward() {
     assert!((zt.third_moment() - 22.0 / (1.0 - (-2.0f64).exp())).abs() < 1e-12);
     let boxed: Box<dyn Counting> = Box::new(p);
     assert_eq!(boxed.third_moment(), 22.0);
+
+    // The third cumulant: closed forms against the default conversion.
+    assert_eq!(Poisson::new(1000.0).unwrap().third_cumulant(), 1000.0);
+    let nb = NegativeBinomial::new(1.5, 2.0).unwrap();
+    assert!((nb.third_cumulant() - 1.5 * 2.0 * 3.0 * 5.0).abs() < 1e-12);
+    // The default, through the gamma-mixed Poisson, agrees with it to the
+    // pmf's accuracy.
+    let mixed = MixedPoisson::new(
+        3.0,
+        Mixing::Gamma {
+            cv: 1.0 / 1.5f64.sqrt(),
+        },
+        0.0,
+    )
+    .unwrap();
+    assert!((mixed.third_cumulant() / nb.third_cumulant() - 1.0).abs() < 1e-9);
+    assert_eq!(boxed.third_cumulant(), 2.0);
 }
