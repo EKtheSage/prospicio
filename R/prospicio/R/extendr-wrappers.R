@@ -34,6 +34,10 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 round_bucket_rust <- function(bs) .Call(wrap__round_bucket_rust, bs)
 
+occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
+
+occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
+
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
@@ -171,6 +175,8 @@ EventSet$events <- function(sim) .Call(wrap__EventSet__events, self, sim)
 EventSet$counts <- function() .Call(wrap__EventSet__counts, self)
 
 EventSet$totals <- function() .Call(wrap__EventSet__totals, self)
+
+EventSet$maxima <- function() .Call(wrap__EventSet__maxima, self)
 
 #' @export
 `$.EventSet` <- function (self, name) { func <- EventSet[[name]]; environment(func) <- environment(); func }

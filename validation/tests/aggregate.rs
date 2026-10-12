@@ -329,3 +329,61 @@ fn contract_terms_match_aggregate() {
         }
     });
 }
+
+/// The occurrence PML against `aggregate` 1.0.1's `oep` on three Poisson
+/// books: the loss, the severity's exceedance and the occurrence return
+/// period at eight annual probabilities, at `1e-10`
+/// (`validation/scripts/aggregate_oep.py`).
+#[test]
+fn occurrence_pml_matches_aggregate() {
+    use prospicio_aggregate::pml::occurrence_pml;
+    use prospicio_prob::{Dist, Gamma, Lognormal, Poisson, Weibull};
+
+    let cases = prospicio_validation::reference("oep_aggregate.csv");
+    prospicio_validation::check(&cases, |c| {
+        let v = |k: &str| c.param("params", k);
+        let params = c.get("params");
+        let n = Poisson::new(v("lambda")).ok()?;
+        let sev: Dist = if params.contains("severity=gamma") {
+            Gamma::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+        } else if params.contains("severity=lognormal") {
+            Lognormal::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+        } else {
+            Weibull::new(v("shape"), v("scale")).ok()?.into()
+        };
+        let pml = occurrence_pml(&n, &sev, c.number("arg")?).ok()?;
+        match c.get("quantity") {
+            "loss" => Some(pml.loss),
+            "severity_survival" => Some(pml.severity_survival),
+            "occurrence_return_period" => Some(pml.occurrence_return_period),
+            _ => None,
+        }
+    });
+}
+
+/// The simulated OEP, each year's largest event, against the exact curve
+/// for a negative binomial count (which `aggregate`'s `oep` does not
+/// cover): 200,000 years, within four standard errors at five losses.
+#[test]
+fn simulated_maxima_match_the_occurrence_exceedance() {
+    use prospicio_aggregate::pml::{occurrence_exceedance, occurrence_pml};
+    use prospicio_aggregate::simulate_events;
+    use prospicio_prob::{Distribution, Lognormal, NegativeBinomial};
+
+    let n = NegativeBinomial::new(1.5, 2.0).unwrap();
+    let x = Lognormal::from_mean_cv(100.0, 2.0).unwrap();
+    let sims = 200_000;
+    let maxima = simulate_events(&n, &x, sims, 20_261_012)
+        .unwrap()
+        .maxima()
+        .unwrap();
+    let simulated = maxima.total();
+    for p in [0.3, 0.1, 0.03, 0.01, 0.003] {
+        let loss = occurrence_pml(&n, &x, p).unwrap().loss;
+        let exact = occurrence_exceedance(&n, &x, loss);
+        assert!((exact / p - 1.0).abs() < 1e-9);
+        let se = (p * (1.0 - p) / sims as f64).sqrt();
+        let observed = 1.0 - simulated.cdf(loss);
+        assert!((observed - p).abs() < 4.0 * se, "p {p}: {observed} ({se})");
+    }
+}

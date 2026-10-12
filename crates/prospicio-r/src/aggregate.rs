@@ -331,6 +331,42 @@ impl EventSet {
         let inner = self.inner.totals().map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
+
+    fn maxima(&self) -> Result<PredictiveDistribution> {
+        let inner = self.inner.maxima().map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
+/// The occurrence exceedance `1 − G_N(F(x))` at each `x`.
+#[extendr]
+fn occurrence_exceedance_rust(frequency: Robj, severity: Robj, x: &[f64]) -> Result<Vec<f64>> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = severity_from_robj(&severity)?;
+    Ok(x.iter()
+        .map(|&x| prospicio_aggregate::occurrence_exceedance(n.as_counting(), &sev, x))
+        .collect())
+}
+
+/// The occurrence PML at each annual probability, as columns.
+#[extendr]
+fn occurrence_pml_rust(frequency: Robj, severity: Robj, p: &[f64]) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = severity_from_robj(&severity)?;
+    let pmls = p
+        .iter()
+        .map(|&p| prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_r))
+        .collect::<Result<Vec<_>>>()?;
+    let column = |f: fn(&prospicio_aggregate::OccurrencePml) -> f64| -> Vec<f64> {
+        pmls.iter().map(f).collect()
+    };
+    Ok(list!(
+        probability = column(|x| x.probability),
+        loss = column(|x| x.loss),
+        severity_survival = column(|x| x.severity_survival),
+        occurrence_return_period = column(|x| x.occurrence_return_period),
+        annual_return_period = column(|x| x.annual_return_period)
+    ))
 }
 
 extendr_module! {
@@ -339,5 +375,7 @@ extendr_module! {
     fn compound_auto_rust;
     fn recommend_grid_rust;
     fn round_bucket_rust;
+    fn occurrence_exceedance_rust;
+    fn occurrence_pml_rust;
     impl EventSet;
 }

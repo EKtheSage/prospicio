@@ -2,6 +2,7 @@
 
 ## 2026-10-12
 
+* **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md), from adding the occurrence PML to `prospicio_aggregate` (branch claude/stoic-hawking-qc3qby): `oep` is closed form from the severity and takes Poisson counts only; 1.0.1 has no `tilt`, `sev_calc='moment'` is not implemented, its FFT never uses Panjer, and point densities need `normalize=False`. Not yet run by CI.
 * **Update**: [R actuar's credibility models](/references/actuar-credibility.md) is verified: its parity tests ran green in CI on #175, which is merged.
 * **Update**: [Werner and Modlin's Basic Ratemaking](/references/werner-modlin-ratemaking.md), from adding the overall indication to `prospicio_pricing::ratemaking` (branch claude/stoic-hawking-qc3qby): Appendices A to C end to end, and the rounding they need (rows rounded to the dollar and summed, the change from the selected loss ratio, expense parts rounded to 0.1%, credibility rounded before weighting, Appendix B's reinsurance exposures and fixed-expense trend factor). Not yet run by CI.
 * **Update**: [Publishing to PyPI and crates.io](/environment/publishing.md), from releasing v0.0.2: crates.io trusted publishing requires the environment name to match exactly (`crates.io` was configured, the workflow uses `crates-io`); the token exchange fails before any upload, so rerunning the failed job after the fix is safe. Not run by CI.
