@@ -7,6 +7,15 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+### Aggregate and reinsurance
+
+- The occurrence exceedance (OEP) curve and occurrence PMLs for any claim
+  count, `prospicio_aggregate::pml::{occurrence_exceedance,
+  occurrence_pml}`, and each simulated year's largest loss,
+  `EventSet::maxima()`, matching `aggregate` 1.0.1's `oep` on Poisson
+  books. Python `prospicio.aggregate`; R `occurrence_exceedance()`,
+  `occurrence_pml()`, `annual_maxima()`.
+
 ### Reserving
 
 - The one-year view of both bootstraps accepts a bootstrap tail, which

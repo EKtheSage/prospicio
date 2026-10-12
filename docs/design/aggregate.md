@@ -44,6 +44,15 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `aggregate` 1.0.1 does when no bucket is given ("Grid sizing" below).
   Python `prospicio.aggregate.{recommend_grid, fft_auto, round_bucket}`,
   R `recommend_grid()`, `compound_auto()`, `round_bucket()`.
+- `prospicio_aggregate::pml::{occurrence_exceedance, occurrence_pml}`:
+  the occurrence exceedance (OEP) curve `1 − G_N(F(x))` for any count and
+  severity, and its inverse, the occurrence PML at an annual probability
+  with the severity's exceedance and the occurrence and annual return
+  periods ("Occurrence PML" below). `EventSet::maxima()` is each simulated
+  year's largest loss, the simulated OEP curve. Python
+  `prospicio.aggregate.{occurrence_exceedance, occurrence_pml}` and
+  `EventSet.maxima()`, R `occurrence_exceedance()`, `occurrence_pml()`,
+  `annual_maxima()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -383,6 +392,26 @@ severity's own quantile; it refuses infinite-variance books without a
 bucket. Signed and offset windows (a grid not starting at 0, for P&L)
 wait on signed grids (`roadmap.md`, `prospicio-prob`).
 
+### Occurrence PML
+
+The year's largest occurrence is at most `x` with probability
+`E[F(x)^N] = G_N(F(x))`, so the occurrence exceedance is
+`OEP(x) = 1 − G_N(F(x))` for any count independent of the severities. For a
+Poisson count that is `1 − exp(−λ S(x))` and the PML at `p` is the
+severity quantile at `1 + ln(1 − p) / λ`, `aggregate`'s `oep`, which takes
+Poisson counts only. prospicio takes any count through its pgf: a negative
+binomial's clustering puts more of the years' occurrences in fewer years,
+so the OEP is lower at the same mean.
+
+`occurrence_pml` solves `1 − G_N(1 − s) = p` for the severity's exceedance
+`s` by bisection on a log scale, then takes the severity quantile at
+`1 − s`. `p` must lie in `(0, 1 − P(N = 0))`, the chance of at least one
+occurrence. The occurrence return period is `1 / (E[N] s)`, the average
+time between occurrences above the loss (for a Poisson count, the thinned
+process's rate); it can be shorter than a year. The annual return period is
+`1 / p`. Far in the tail (`s` below about `1e-12`) the quantile at `1 − s`
+loses relative precision.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -428,8 +457,40 @@ two of its buckets, with aliasing below `1e-12`, the one-claim tail
 estimate below `1e-5`, and a step never coarser than `aggregate`'s
 (the same on two books, one to three rungs finer on three).
 
+The occurrence PML is checked against `aggregate` 1.0.1's `oep`
+(`validation/scripts/aggregate_oep.py`) on three Poisson books (lognormal,
+gamma and Weibull severities) at eight annual probabilities from 0.3 to
+`1e-5`: the loss at `1e-10`, the severity's exceedance and the occurrence
+return period at `1e-9`. The simulated OEP, each year's largest event in
+200,000 years, matches the exact curve for a negative binomial count (which
+`oep` does not cover) within four standard errors at five losses.
+
 ## Next
 
-1. Deficit and credit carry-forward in profit commissions and sliding
+1. The rest of `aggregate` parity tier 2, in this order (the gap list of
+   2026-10-12 against `aggregate` 1.0.1's source; the OEP was its first
+   item, now done):
+   1. Exact compound moments to third order (mean, cv, skew from the
+      count's and severity's first three moments), then `aggregate`'s
+      `approximate`: normal, gamma, lognormal, shifted gamma and shifted
+      lognormal fitted by moments. Needs a third moment on `Counting` and
+      `Severity` in `prospicio-prob`, as default trait methods.
+   2. Reinsurance statistics by view (gross, each layer, ceded, net:
+      frequency, severity and aggregate moments, the probabilities of
+      attaching, detaching and loss, loss on line) and pricing a cession
+      under a distortion (`reins_stats_df`, `reins_price_df`). It also
+      gives the first check of the grid towers against `aggregate` itself.
+   3. A senior and junior priority ladder for capital (`priority_epd_df`,
+      `priority_kappa`); prospicio has equal priority only.
+   4. Eventual ruin by Pollaczeck–Khinchine (`pollaczeck_khinchine`,
+      `eventual_ruin`).
+   5. Layer loss picks (`Aggregate.picks`).
+   6. `Bounds` and `PricingBounds`, the rest of the 2022 pricing bounds.
+   Small items to fold into these: `tvar_threshold`, a stand-alone price on
+   a grid portfolio, comonotonic allocation, named fixed, Bernoulli and
+   geometric counts, and a reinstatement premium check against `aggregate`.
+   Parked as large: the P&L ledger (`pnl`, which needs signed grids),
+   bivariate FFT aggregates and `clash`, renewal counts with Wiener–Hopf
+   ruin.
+2. Deficit and credit carry-forward in profit commissions and sliding
    scales, once multi-year simulation exists.
-2. The rest of `aggregate` parity tier 2, on request.
