@@ -387,3 +387,76 @@ fn simulated_maxima_match_the_occurrence_exceedance() {
         assert!((observed - p).abs() < 4.0 * se, "p {p}: {observed} ({se})");
     }
 }
+
+/// Compound mean, cv and skewness against `aggregate` 1.0.1's analytic
+/// statistics, and the five moment approximations against its own fitting
+/// code on those moments, on five books (`validation/scripts/aggregate_moments.py`).
+#[test]
+fn compound_moments_and_approximations_match_aggregate() {
+    use prospicio_aggregate::{Approximation, ApproximationKind, compound_moments};
+    use prospicio_prob::{
+        Dist, Gamma, Lognormal, NegativeBinomial, Poisson, SeverityDist, Weibull,
+    };
+
+    let cases = prospicio_validation::reference("moments_aggregate.csv");
+    prospicio_validation::check(&cases, |c| {
+        let v = |k: &str| c.param("params", k);
+        let params = c.get("params");
+        let sev: Dist = if params.contains("severity=gamma") {
+            Gamma::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+        } else if params.contains("severity=lognormal") {
+            Lognormal::from_mean_cv(v("mean"), v("cv")).ok()?.into()
+        } else {
+            Weibull::new(v("shape"), v("scale")).ok()?.into()
+        };
+        let sev = SeverityDist::try_from(sev).ok()?;
+        // aggregate's `mixed gamma c` count is the negative binomial with
+        // r = 1/c² and β = λc².
+        let m = if params.contains("mixing_cv") {
+            let c2 = v("mixing_cv").powi(2);
+            compound_moments(
+                &NegativeBinomial::new(1.0 / c2, v("lambda") * c2).ok()?,
+                &sev,
+            )
+        } else {
+            compound_moments(&Poisson::new(v("lambda")).ok()?, &sev)
+        }
+        .ok()?;
+        let q = c.get("quantity");
+        match q {
+            "mean" => return Some(m.mean),
+            "cv" => return Some(m.cv()),
+            "skew" => return Some(m.skew()),
+            _ => {}
+        }
+        let (fit, key) = q.split_once('_')?;
+        let kind = match fit {
+            "norm" => ApproximationKind::Normal,
+            "gamma" => ApproximationKind::Gamma,
+            "lognorm" => ApproximationKind::Lognormal,
+            "sgamma" => ApproximationKind::ShiftedGamma,
+            _ => ApproximationKind::ShiftedLognormal,
+        };
+        // scipy's (shape, loc, scale) for each family.
+        let (shape, loc, scale) = match m.approximate(kind).ok()? {
+            Approximation::Normal { mean, sd } => (f64::NAN, mean, sd),
+            Approximation::Gamma { shape, scale } => (shape, 0.0, scale),
+            Approximation::Lognormal { meanlog, sdlog } => (sdlog, 0.0, meanlog.exp()),
+            Approximation::ShiftedGamma {
+                shape,
+                scale,
+                shift,
+            } => (shape, shift, scale),
+            Approximation::ShiftedLognormal {
+                meanlog,
+                sdlog,
+                shift,
+            } => (sdlog, shift, meanlog.exp()),
+        };
+        match key {
+            "shape" => Some(shape),
+            "loc" => Some(loc),
+            _ => Some(scale),
+        }
+    });
+}

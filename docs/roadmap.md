@@ -96,12 +96,13 @@ what it is aiming for by v1.0.
     (Also done: towers saved as JSON, seasonal event times, loss
     corridors.)
   - The occurrence exceedance (OEP) curve and occurrence PMLs for any
-    count, exact and simulated.
+    count, exact and simulated; compound moments to third order and the
+    moment approximations (normal, gamma, lognormal, shifted gamma and
+    lognormal).
 - **Next:**
   1. The rest of `aggregate` parity tier 2 (the user's choice, 2026-10-12),
-     in the order listed in `docs/design/aggregate.md`: third-order
-     compound moments and moment approximations, reinsurance statistics by
-     view and pricing a cession, a priority ladder, eventual ruin, layer
+     in the order listed in `docs/design/aggregate.md`: reinsurance
+     statistics by view and pricing a cession, a priority ladder, eventual ruin, layer
      loss picks, pricing bounds.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.

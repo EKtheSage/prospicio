@@ -231,3 +231,15 @@ nb <- negative_binomial_count(1.5, 2)
 stopifnot(abs(occurrence_exceedance(nb, sev, occurrence_pml(nb, sev, 0.05)$loss) - 0.05) < 1e-10)
 stopifnot(inherits(try(occurrence_pml(poisson_count(0.1), sev, 0.2), silent = TRUE), "try-error"))
 stopifnot(mean(annual_maxima(simulate_events(poisson_count(2), sev, 2000, seed = 1))) > 0)
+
+# Compound moments and approximations against aggregate 1.0.1 on
+# "agg B 10 claims sev gamma 50 cv 0.7 poisson".
+g <- gamma_distribution(1 / 0.49, 50 * 0.49)
+m <- compound_moments(poisson_count(10), g)
+stopifnot(abs(m[["mean"]] / 500 - 1) < 1e-12, abs(m[["skew"]] / 0.5129464825493272 - 1) < 1e-12)
+fit <- moment_approximation(poisson_count(10), g, "shifted_gamma")
+stopifnot(abs(fit$parameters[["shift"]] / -252.52525252525868 - 1) < 1e-10)
+q <- approximation_quantile(fit, c(0.5, 0.99))
+stopifnot(all(abs(approximation_cdf(fit, q) - c(0.5, 0.99)) < 1e-10))
+stopifnot(inherits(try(compound_moments(poisson_count(2), pareto(100, 2.5)), silent = TRUE),
+                   "try-error"))

@@ -48,6 +48,59 @@ class Allocation:
         """
 
 @final
+class Approximation:
+    """
+    A distribution fitted to compound moments, from
+    ``CompoundMoments.approximate``.
+    """
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(S <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        The family: ``"normal"``, ``"gamma"``, ``"lognormal"``,
+        ``"shifted_gamma"`` or ``"shifted_lognormal"``.
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def parameters(self, /) -> list[tuple[str, float]]:
+        """
+        The parameters by name: ``mean`` and ``sd``; ``shape`` and
+        ``scale``; ``meanlog`` and ``sdlog``; with ``shift`` for the
+        shifted families.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The ``p`` quantile.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class ArchimedeanCopula:
     """
     An exchangeable Archimedean copula: Clayton, Gumbel, Frank or Joe.
@@ -2028,6 +2081,58 @@ class CollectiveModel:
         Returns
         -------
         float
+        """
+
+@final
+class CompoundMoments:
+    """
+    Compound moments to third order, from ``compound_moments``.
+    """
+    def __repr__(self, /) -> str: ...
+    def approximate(self, /, kind: str) -> Approximation:
+        """
+        The moment-matched approximation: ``"normal"``, ``"gamma"``,
+        ``"lognormal"`` (mean and cv), ``"shifted_gamma"`` or
+        ``"shifted_lognormal"`` (mean, cv and skewness).
+        
+        Parameters
+        ----------
+        kind : str
+        
+        Returns
+        -------
+        Approximation
+        
+        Raises
+        ------
+        ValueError
+            For an unknown kind, a non-positive mean (gamma, lognormal) or a
+            non-positive skewness (the shifted fits).
+        """
+    @property
+    def cv(self, /) -> float:
+        """
+        The coefficient of variation.
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        ``E[S]``.
+        """
+    @property
+    def skew(self, /) -> float:
+        """
+        The skewness.
+        """
+    @property
+    def third_cumulant(self, /) -> float:
+        """
+        The third cumulant, ``E[(S - E[S])^3]``.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        ``Var[S]``.
         """
 
 @final
@@ -12567,6 +12672,39 @@ def classical_premium(principle: str, dist: Any, loading: float, q: float = 2.0)
     >>> from prospicio.pricing import classical_premium
     >>> classical_premium("standard_deviation", Sampled([0.0, 10.0]), 0.2)
     6.0
+    """
+
+def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
+    """
+    Compound moments to third order: the mean, variance and third cumulant
+    of ``S = X_1 + ... + X_N``, from the count's cumulants and the
+    severity's first three moments, and the approximations fitted to them
+    (the Python package ``aggregate``'s ``approximate``).
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity with a closed-form third moment
+    
+    Returns
+    -------
+    CompoundMoments
+    
+    Raises
+    ------
+    ValueError
+        If the severity has no closed-form third moment, or an infinite one.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import compound_moments
+    >>> from prospicio.distributions import Gamma, Poisson
+    >>> m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    >>> round(m.mean, 6), round(m.cv, 6), round(m.skew, 6)
+    (500.0, 0.386005, 0.512946)
+    >>> fit = m.approximate("shifted_gamma")
+    >>> [(k, round(v, 4)) for k, v in fit.parameters]
+    [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
     """
 
 def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:
