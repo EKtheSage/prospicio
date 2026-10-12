@@ -860,7 +860,7 @@ pub(crate) fn occurrence_pml(
 /// Compound moments to third order, from ``compound_moments``.
 #[pyclass(name = "CompoundMoments", module = "prospicio.aggregate", frozen)]
 pub(crate) struct PyCompoundMoments {
-    inner: prospicio_aggregate::CompoundMoments,
+    pub(crate) inner: prospicio_aggregate::CompoundMoments,
 }
 
 fn approximation_kind(kind: &str) -> PyResult<prospicio_aggregate::ApproximationKind> {

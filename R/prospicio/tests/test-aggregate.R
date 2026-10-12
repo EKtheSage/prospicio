@@ -243,3 +243,20 @@ q <- approximation_quantile(fit, c(0.5, 0.99))
 stopifnot(all(abs(approximation_cdf(fit, q) - c(0.5, 0.99)) < 1e-10))
 stopifnot(inherits(try(compound_moments(poisson_count(2), pareto(100, 2.5)), silent = TRUE),
                    "try-error"))
+
+# Layer statistics and prices by view against aggregate 1.0.1 on
+# "agg C 2 claims 1000 xs 0 sev lognorm 100 cv 2 occurrence net of 500 xs 100 poisson".
+sev <- discretize(lognormal_from_mean_cv(100, 2), 1, 1001, "rounding")
+s <- occurrence_layer_statistics(poisson_count(2), sev, limit = 500, attachment = 100)
+stopifnot(abs(s$pr_attach / 0.261655626646 - 1) < 1e-10,
+          abs(s$loss_on_line / 0.151169062665 - 1) < 1e-9,
+          abs(s$count[["mean"]] - 2 * s$pr_attach) < 1e-14)
+half <- occurrence_layer_statistics(poisson_count(2), sev, 500, 100, share = 0.5)
+stopifnot(abs(half$aggregate[["skew"]] / s$aggregate[["skew"]] - 1) < 1e-12)
+r <- tower_on_grid(reinsurance_tower(list(xol_layer("occ", 500, 100))), poisson_count(2), sev,
+                   points = 2^14)
+p <- tower_price(r, distortion("proportional_hazard", 0.7))
+stopifnot(identical(p$view, c("gross", "occ", "net")),
+          abs(p$premium / c(297.443189953534, 139.358753189474, 164.315772212950) - 1) < 2e-8)
+stopifnot(inherits(try(occurrence_layer_statistics(poisson_count(2), sev, 500, 100, share = 0),
+                       silent = TRUE), "try-error"))

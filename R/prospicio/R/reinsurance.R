@@ -612,3 +612,68 @@ tower_on_grid <- function(tower, frequency, severity, points) {
     on_points = r$on_points
   )
 }
+
+#' Price each view of a tower on the grid
+#'
+#' Prices the gross, every layer's cession and the net of [tower_on_grid()]
+#' each on its own by a distortion, as the Python package `aggregate`'s
+#' `reins_price_df`: the expected loss, the premium (the distorted
+#' expectation, [risk_measure()]), the margin `premium - loss` and the loss
+#' ratio `loss / premium`. Distortion prices are subadditive, so the ceded
+#' and net premiums together are at least the gross premium.
+#'
+#' @param grids The result of [tower_on_grid()].
+#' @param distortion A [distortion].
+#' @returns A data frame with columns `view` (`"gross"`, each layer's name,
+#'   `"net"` when the tower has a net grid), `loss`, `premium`, `margin` and
+#'   `loss_ratio`.
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))
+#' tw <- reinsurance_tower(list(xol_layer("2x2", 2, 2)))
+#' r <- tower_on_grid(tw, poisson_count(3), sev, points = 200)
+#' tower_price(r, distortion("proportional_hazard", 0.7))
+tower_price <- function(grids, distortion) {
+  views <- c(list(gross = grids$gross), grids$ceded,
+             if (!is.null(grids$net)) list(net = grids$net))
+  loss <- vapply(views, mean, numeric(1))
+  premium <- vapply(views, function(g) risk_measure(g, distortion), numeric(1))
+  data.frame(view = names(views), loss = unname(loss), premium = unname(premium),
+             margin = unname(premium - loss), loss_ratio = unname(loss / premium))
+}
+
+#' Statistics of a per-occurrence layer
+#'
+#' The numbers on a reinsurance submission for `share` of `limit` xs
+#' `attachment` per occurrence on a severity grid, as the Python package
+#' `aggregate`'s `reins_stats_df`: the chances that a claim reaches the
+#' layer, `P(X > attachment)` (exclusive), and exhausts it,
+#' `P(X >= attachment + limit)` (inclusive); the chance of a loss to the
+#' layer in the year; the loss on line, the annual ceded mean over
+#' `share * limit` (0 for an unlimited layer); and the moments of the excess
+#' count (the count thinned to the claims that reach the layer), the layer
+#' severity given a loss to it and the annual ceded loss. The share scales
+#' the moments exactly.
+#'
+#' @param frequency A [poisson_count], [negative_binomial_count] or [binomial_count].
+#' @param severity A [grid_distribution].
+#' @param limit Per-occurrence limit; may be `Inf`.
+#' @param attachment Attachment.
+#' @param share Placed share, in `(0, 1]`.
+#' @returns A list with `pr_attach`, `pr_detach`, `pr_loss`, `loss_on_line`,
+#'   and `count`, `severity` and `aggregate`, each a named vector as
+#'   [compound_moments()].
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))
+#' s <- occurrence_layer_statistics(poisson_count(3), sev, limit = 2, attachment = 2)
+#' s$pr_attach
+#' s$aggregate
+occurrence_layer_statistics <- function(frequency, severity, limit, attachment, share = 1) {
+  r <- rust_result(occurrence_layer_statistics_rust(
+    frequency@ptr, severity@ptr, as.double(share), as.double(limit), as.double(attachment)
+  ))
+  names <- c("mean", "variance", "third_cumulant", "cv", "skew")
+  for (k in c("count", "severity", "aggregate")) r[[k]] <- stats::setNames(r[[k]], names)
+  r
+}
