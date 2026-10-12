@@ -2,6 +2,7 @@
 
 ## 2026-10-12
 
+* **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md), from adding compound moments and the moment approximations to `prospicio_aggregate` (branch claude/stoic-hawking-qc3qby): `stats_df['mixed']` is 6.5e-10 to 2e-9 off for a Weibull severity and 2.5e-10 off the skewness at a Poisson mean of 1,000; `approximate` fits the grid's moments, not the analytic ones. Not yet run by CI.
 * **Creation**: [Third raw moments, closed forms against mpmath](/findings/third-moments.md), from adding `Severity::third_moment` and `Counting::third_moment` to `prospicio-prob` (branch claude/stoic-hawking-qc3qby): 16 severities, 5 counts and 2 Tweedies match mpmath at `1e-10`; `mpmath.nsum` fails on a Poisson mean of 1,000; the mixed Poisson's pmf error shows in its moment. Not yet run by CI.
 * **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md), from adding the occurrence PML to `prospicio_aggregate` (branch claude/stoic-hawking-qc3qby): `oep` is closed form from the severity and takes Poisson counts only; 1.0.1 has no `tilt`, `sev_calc='moment'` is not implemented, its FFT never uses Panjer, and point densities need `normalize=False`. Not yet run by CI.
 * **Update**: [R actuar's credibility models](/references/actuar-credibility.md) is verified: its parity tests ran green in CI on #175, which is merged.

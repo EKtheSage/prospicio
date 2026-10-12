@@ -53,6 +53,14 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `prospicio.aggregate.{occurrence_exceedance, occurrence_pml}` and
   `EventSet.maxima()`, R `occurrence_exceedance()`, `occurrence_pml()`,
   `annual_maxima()`.
+- `prospicio_aggregate::moments::{compound_moments, CompoundMoments,
+  Approximation}`: the compound mean, variance and third cumulant (cv,
+  skewness) from the count's cumulants and the severity's first three
+  moments, and the normal, gamma, lognormal, shifted gamma and shifted
+  lognormal fitted to them, with `cdf`, `quantile` and `mean` ("Compound
+  moments" below). Python `prospicio.aggregate.compound_moments`, R
+  `compound_moments()`, `moment_approximation()`, `approximation_cdf()`,
+  `approximation_quantile()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -412,6 +420,26 @@ process's rate); it can be shorter than a year. The annual return period is
 `1 / p`. Far in the tail (`s` below about `1e-12`) the quantile at `1 − s`
 loses relative precision.
 
+### Compound moments
+
+By cumulants, so nothing cancels at large counts:
+`E[S] = E[N] E[X]`, `Var[S] = E[N] Var[X] + Var[N] E[X]²` and
+`κ₃[S] = E[N] κ₃[X] + 3 Var[N] E[X] Var[X] + κ₃[N] E[X]³`, with the count's
+third cumulant from `Counting::third_cumulant` and the severity's from its
+raw third moment (`distributions.md`, "Third moments"). A severity without
+a closed-form third moment, or with an infinite one, is an error.
+
+The approximations are `aggregate`'s method-of-moments fits
+(`_fits.py`): the gamma `α = cv⁻²`, `θ = m/α`; the lognormal
+`σ² = ln(1 + cv²)`, `μ = ln m − σ²/2`; the shifted gamma `α = 4/skew²`,
+`θ = σ skew/2`, `shift = m − αθ`; the shifted lognormal with
+`η = sqrt(e^σ² − 1)` solving `η³ + 3η = skew`, `shift = m − σ/η`,
+`μ = ln(m − shift) − σ²/2`. Departures: `aggregate` falls back to a normal
+for a symmetric book and reflects a left-skewed one; prospicio returns an
+error for a shifted fit without positive skewness, and for a gamma or
+lognormal fit without a positive mean. `Aggregate.approximate` fits the
+moments estimated from its grid; prospicio fits the exact ones.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -465,16 +493,23 @@ return period at `1e-9`. The simulated OEP, each year's largest event in
 200,000 years, matches the exact curve for a negative binomial count (which
 `oep` does not cover) within four standard errors at five losses.
 
+Compound moments are checked on five books (Poisson with gamma, lognormal
+and Weibull severities, a gamma-mixed Poisson, and a Poisson mean of 1,000)
+against 30-digit mpmath closed forms at `1e-12`, and the five fits against
+`aggregate`'s own `approximate_from_mcvsk` on those moments at `1e-10`
+(`validation/scripts/aggregate_moments.py`, 85 values). The exact moments
+are cross-checked against `aggregate`'s analytic statistics to `1e-8`:
+`aggregate` is 6.5e-10 off the Weibull's mean and 2e-9 off its skewness
+(numerical severity moments) and 2.5e-10 off the skewness at a Poisson mean
+of 1,000 (raw moments converted).
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
    2026-10-12 against `aggregate` 1.0.1's source; the OEP was its first
    item, now done):
-   1. Exact compound moments to third order (mean, cv, skew from the
-      count's and severity's first three moments), then `aggregate`'s
-      `approximate`: normal, gamma, lognormal, shifted gamma and shifted
-      lognormal fitted by moments. Needs a third moment on `Counting` and
-      `Severity` in `prospicio-prob`, as default trait methods.
+   1. (Done: compound moments to third order and the moment
+      approximations.)
    2. Reinsurance statistics by view (gross, each layer, ceded, net:
       frequency, severity and aggregate moments, the probabilities of
       attaching, detaching and loss, loss on line) and pricing a cession

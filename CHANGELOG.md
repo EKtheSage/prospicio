@@ -22,6 +22,12 @@ under "Unreleased" until then.
   `EventSet::maxima()`, matching `aggregate` 1.0.1's `oep` on Poisson
   books. Python `prospicio.aggregate`; R `occurrence_exceedance()`,
   `occurrence_pml()`, `annual_maxima()` (#182).
+- Compound moments to third order by cumulants and the moment
+  approximations of `aggregate`'s `approximate` (normal, gamma, lognormal,
+  shifted gamma, shifted lognormal), `prospicio_aggregate::moments`.
+  Python `prospicio.aggregate.compound_moments`; R `compound_moments()`,
+  `moment_approximation()`, `approximation_cdf()`,
+  `approximation_quantile()`.
 
 ### Reserving
 

@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-12T15:06:44Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-12T16:19:31Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -25,6 +25,9 @@ sources:
   - id: oep
     resource: ../validation/scripts/aggregate_oep.py
     title: aggregate_oep.py
+  - id: moments
+    resource: ../validation/scripts/aggregate_moments.py
+    title: aggregate_moments.py
 ---
 
 # Which source for what
@@ -167,5 +170,22 @@ sources:
   densities need `normalize=False`, because the default renormalizes the
   severity cut at the grid's top and thins the tail.
 
+# Compound moments and approximate
+
+* `Aggregate.stats_df['mixed']` holds the analytic `ex1` to `ex3`, mean,
+  cv and skewness of frequency, severity and aggregate, from raw moments.
+  Against 30-digit closed forms it is 6.5e-10 off a Weibull severity's
+  mean and 2e-9 off the skewness (its severity moments are numerical), and
+  2.5e-10 off the skewness at a Poisson mean of 1,000 (raw moments
+  converted to central ones cancel).[^moments]
+* `Aggregate.approximate(kind)` fits `stats_df['empirical']`, the moments
+  of the computed grid, when the aggregate has been updated, not the
+  analytic ones; on a gamma book at `bs=1` its normal fit's location is
+  500.000005 for a mean of 500. The formulas are
+  `_fits.approximate_from_mcvsk`, which takes `(m, cv, skew)` directly; the
+  scipy parameters are `(shape, loc, scale)`, the lognormal's `shape` being
+  `σ` and `scale` `e^μ`.[^moments]
+
 [^terms]: aggregate_contract_terms.py
+[^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
