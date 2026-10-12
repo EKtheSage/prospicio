@@ -37,7 +37,7 @@ under "Unreleased" until then.
   `loss_ratio_experience()`, `pure_premium_experience()`,
   `indicated_change()`, `indicated_rate()`, `permissible_loss_ratio()`,
   `premium_based_expenses()`, `credibility_weighted()`,
-  `trended_present_rates()`.
+  `trended_present_rates()` (#180).
 
 ## 0.0.2 (2026-10-12)
 
