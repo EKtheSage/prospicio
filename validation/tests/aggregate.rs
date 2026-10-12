@@ -460,3 +460,139 @@ fn compound_moments_and_approximations_match_aggregate() {
         }
     });
 }
+
+/// Reinsurance on the grid against `aggregate`'s `reins_stats_df`,
+/// `reins_price_df` and `reins_density_df`
+/// (`validation/scripts/aggregate_reinsurance.py`): the occurrence layers'
+/// statistics, each view priced by a proportional hazard distortion, and
+/// an inuring tower's densities point by point.
+#[test]
+fn reinsurance_statistics_and_prices_match_aggregate() {
+    use prospicio_aggregate::{
+        CompoundMoments, Layer, Tower, compound_moments, occurrence_layer_statistics,
+    };
+    use prospicio_prob::{Distortion, Distribution, Gamma, Lognormal, Severity};
+
+    let cases = reference("reinsurance_aggregate.csv");
+    // One tower's grids per book.
+    let towers = std::cell::RefCell::new(std::collections::HashMap::new());
+    check(&cases, |c| {
+        let v = |k: &str| c.param("params", k);
+        let params = c.get("params");
+        let text = |k: &str| {
+            params
+                .split(';')
+                .find_map(|p| p.strip_prefix(k)?.strip_prefix('='))
+        };
+        let n: Box<dyn Counting> = if params.contains("mixing_cv") {
+            let c2 = v("mixing_cv").powi(2);
+            Box::new(NegativeBinomial::new(1.0 / c2, v("lambda") * c2).ok()?)
+        } else {
+            Box::new(Poisson::new(v("lambda")).ok()?)
+        };
+        // `aggregate` rounds the severity limited to `cap` onto the grid.
+        let points = v("cap") as usize + 1;
+        let (sev, _) = if params.contains("severity=gamma") {
+            Grid::rounding(&Gamma::from_mean_cv(v("mean"), v("cv")).ok()?, 1.0, points)
+        } else {
+            Grid::rounding(
+                &Lognormal::from_mean_cv(v("mean"), v("cv")).ok()?,
+                1.0,
+                points,
+            )
+        }
+        .ok()?;
+        // `share:limit:attachment`, `+` between layers.
+        let occ: Vec<[f64; 3]> = text("occ")?
+            .split('+')
+            .map(|l| {
+                let f: Vec<f64> = l.split(':').map(|x| x.parse().unwrap()).collect();
+                [f[0], f[1], f[2]]
+            })
+            .collect();
+        let pick = |m: &CompoundMoments, s: &str| match s {
+            "mean" => Some(m.mean),
+            "cv" => Some(m.cv()),
+            "skew" => Some(m.skew()),
+            _ => None,
+        };
+
+        let q = c.get("quantity");
+        if let Some((col, stat)) = q.split_once(':') {
+            if let Some(i) = col.strip_prefix("layer.") {
+                let [share, limit, attach] = occ[i.parse::<usize>().ok()? - 1];
+                let s = occurrence_layer_statistics(&*n, &sev, share, limit, attach).ok()?;
+                return match stat.split_once('_') {
+                    Some(("pr", "attach")) => Some(s.pr_attach),
+                    Some(("pr", "detach")) => Some(s.pr_detach),
+                    Some(("pr", "loss")) => Some(s.pr_loss),
+                    Some(("freq", m)) => pick(&s.count, m),
+                    Some(("sev", m)) => pick(&s.severity, m),
+                    Some(("agg", m)) => pick(&s.aggregate, m),
+                    _ if stat == "lol" => Some(s.loss_on_line),
+                    _ => None,
+                };
+            }
+            if col == "gross" {
+                let (block, m) = stat.split_once('_')?;
+                let moments = if block == "agg" {
+                    compound_moments(&*n, &sev).ok()?
+                } else {
+                    let (m1, var) = (sev.mean(), sev.variance());
+                    let m3 = sev.third_moment()?;
+                    CompoundMoments {
+                        mean: m1,
+                        variance: var,
+                        third_cumulant: m3 - 3.0 * m1 * (var + m1 * m1) + 2.0 * m1.powi(3),
+                    }
+                };
+                return pick(&moments, m);
+            }
+        }
+
+        let mut stages = vec![
+            occ.iter()
+                .enumerate()
+                .map(|(i, &[share, limit, attach])| {
+                    Layer::xol(format!("occ{i}"), limit, attach)
+                        .and_then(|l| l.share(share))
+                        .unwrap()
+                })
+                .collect::<Vec<_>>(),
+        ];
+        if let Some(agg) = text("agg") {
+            let (limit, retention) = agg.split_once(':')?;
+            stages.push(vec![
+                Layer::stop_loss("agg", limit.parse().ok()?, retention.parse().ok()?).ok()?,
+            ]);
+        }
+        let mut towers = towers.borrow_mut();
+        if !towers.contains_key(params) {
+            let grids = Tower::inuring(stages)
+                .ok()?
+                .on_grid(&*n, &sev, 1 << 14)
+                .ok()?;
+            towers.insert(params.to_string(), grids);
+        }
+        let grids = &towers[params];
+        let view = |name: &str| match name {
+            "gross" => Some(&grids.gross),
+            "ceded_occ" => grids.ceded.first(),
+            "ceded" => grids.ceded.get(1),
+            "net" => grids.net.as_ref(),
+            _ => None,
+        };
+        if let Some(rest) = q.strip_prefix("price:") {
+            let (name, stat) = rest.split_once(':')?;
+            let price = view(name)?.distortion(&Distortion::proportional_hazard(0.7).ok()?);
+            return match stat {
+                "L" => Some(view(name)?.mean()),
+                "P" => Some(price),
+                _ => None,
+            };
+        }
+        let name = q.strip_prefix("density_")?;
+        let x = c.number("arg")? as usize;
+        Some(view(name)?.probs().get(x).copied().unwrap_or(0.0))
+    });
+}

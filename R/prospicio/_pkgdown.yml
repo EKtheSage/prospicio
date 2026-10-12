@@ -98,6 +98,8 @@ reference:
       - tower_ceded
       - apply_tower
       - tower_on_grid
+      - tower_price
+      - occurrence_layer_statistics
   - title: Pricing
     contents:
       - collective_model

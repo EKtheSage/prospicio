@@ -81,7 +81,10 @@ mod prospicio_native {
         trended_present_rates, year_fraction,
     };
     #[pymodule_export]
-    use super::reinsurance::{PyLayer, PyLossSensitivePremium, PyTower, PyTowerGrids};
+    use super::reinsurance::{
+        PyLayer, PyLayerStatistics, PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice,
+        PyViewPrice, occurrence_layer_statistics,
+    };
     #[pymodule_export]
     use super::reserving::{
         PyBayesOdp, PyBayesOdpFit, PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit,

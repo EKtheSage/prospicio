@@ -6310,6 +6310,64 @@ class Layer:
         """
 
 @final
+class LayerStatistics:
+    """
+    A per-occurrence layer's statistics, from
+    ``occurrence_layer_statistics``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aggregate(self, /) -> CompoundMoments:
+        """
+        The annual ceded loss, at the share.
+        """
+    @property
+    def attachment(self, /) -> float:
+        """
+        The attachment.
+        """
+    @property
+    def count(self, /) -> CompoundMoments:
+        """
+        The number of claims that reach the layer.
+        """
+    @property
+    def limit(self, /) -> float:
+        """
+        The per-occurrence limit.
+        """
+    @property
+    def loss_on_line(self, /) -> float:
+        """
+        The annual ceded mean over ``share * limit``.
+        """
+    @property
+    def pr_attach(self, /) -> float:
+        """
+        ``P(X > attachment)``, per claim.
+        """
+    @property
+    def pr_detach(self, /) -> float:
+        """
+        ``P(X >= attachment + limit)``, per claim.
+        """
+    @property
+    def pr_loss(self, /) -> float:
+        """
+        The chance of a loss to the layer in the year.
+        """
+    @property
+    def severity(self, /) -> CompoundMoments:
+        """
+        The ceded loss of a claim that reaches the layer, at the share.
+        """
+    @property
+    def share(self, /) -> float:
+        """
+        The placed share.
+        """
+
+@final
 class LimitedFluctuation:
     """
     Limited fluctuation (classical) credibility: the expected number of
@@ -11382,6 +11440,31 @@ class TowerGrids:
         ``False``, means are still exact but shapes are smeared by up to a
         step.
         """
+    def price(self, /, distortion: Distortion) -> TowerPrice:
+        """
+        Each view priced on its own by a distortion: the stand-alone price
+        of the gross, of every layer's cession and of the net, as
+        ``aggregate``'s ``reins_price_df``.
+        
+        Parameters
+        ----------
+        distortion : Distortion
+        
+        Returns
+        -------
+        TowerPrice
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> from prospicio.distributions import Grid, Poisson
+        >>> from prospicio.risk import Distortion
+        >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+        >>> r = Tower([Layer("2x2", 2.0, 2.0)]).on_grid(Poisson(3.0), sev, 200)
+        >>> p = r.price(Distortion.proportional_hazard(0.7))
+        >>> round(p.ceded[0].loss, 12), p.ceded[0].premium > p.ceded[0].loss
+        (1.2, True)
+        """
 
 @final
 class TowerModel:
@@ -11424,6 +11507,28 @@ class TowerModel:
     def severity(self, /) -> PiecewisePareto:
         """
         The fitted severity.
+        """
+
+@final
+class TowerPrice:
+    """
+    A tower's views priced by a distortion, from ``TowerGrids.price``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ceded(self, /) -> list[ViewPrice]:
+        """
+        Each layer's cession, in tower order.
+        """
+    @property
+    def gross(self, /) -> ViewPrice:
+        """
+        The gross.
+        """
+    @property
+    def net(self, /) -> ViewPrice |None:
+        """
+        The net, or ``None`` when the tower has no net grid.
         """
 
 @final
@@ -12445,6 +12550,35 @@ class Tweedie:
         Returns
         -------
         float
+        """
+
+@final
+class ViewPrice:
+    """
+    One view's price under a distortion, from ``TowerGrids.price``: the
+    expected loss ``loss``, the premium, the margin ``premium - loss`` and
+    the loss ratio ``loss / premium``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def loss(self, /) -> float:
+        """
+        The expected loss.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        ``loss / premium``.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        ``premium - loss``.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The distorted expectation.
         """
 
 @final
@@ -13692,6 +13826,48 @@ def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
     >>> oep = occurrence_exceedance(Poisson(2.0), sev, 500.0)
     >>> abs(oep - (1 - math.exp(-2 * (1 - sev.cdf(500.0))))) < 1e-12
     True
+    """
+
+def occurrence_layer_statistics(frequency: Any, severity: Grid, share: float, limit: float, attachment: float) -> LayerStatistics:
+    """
+    The statistics of ``share`` of ``limit`` xs ``attachment`` per
+    occurrence on a severity grid, as ``aggregate``'s ``reins_stats_df``.
+    
+    The chances that a claim reaches the layer (``P(X > a)``, exclusive)
+    and exhausts it (``P(X >= a + l)``, inclusive), and that the year has a
+    loss to it; the excess count (the count thinned to the claims that
+    reach the layer), the layer severity given a loss to it and the annual
+    ceded loss, each by its first three cumulants; and the loss on line.
+    The share scales the moments exactly.
+    
+    Parameters
+    ----------
+    frequency : Poisson, NegativeBinomial or Binomial
+    severity : Grid
+    share : float
+        In ``(0, 1]``.
+    limit : float
+        May be ``inf``; the loss on line is then 0.
+    attachment : float
+    
+    Returns
+    -------
+    LayerStatistics
+    
+    Raises
+    ------
+    ValueError
+        For a share outside ``(0, 1]``, a non-positive limit or a negative
+        attachment.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import occurrence_layer_statistics
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    >>> s = occurrence_layer_statistics(Poisson(3.0), sev, 1.0, 2.0, 2.0)
+    >>> round(s.pr_attach, 12), round(s.count.mean, 12), round(s.aggregate.mean, 12)
+    (0.3, 0.9, 1.2)
     """
 
 def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:

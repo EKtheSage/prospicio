@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-12T16:19:31Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-12T18:30:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -28,6 +28,9 @@ sources:
   - id: moments
     resource: ../validation/scripts/aggregate_moments.py
     title: aggregate_moments.py
+  - id: reins
+    resource: ../validation/scripts/aggregate_reinsurance.py
+    title: aggregate_reinsurance.py
 ---
 
 # Which source for what
@@ -186,6 +189,34 @@ sources:
   scipy parameters are `(shape, loc, scale)`, the lognormal's `shape` being
   `σ` and `scale` `e^μ`.[^moments]
 
+# Reinsurance statistics and prices
+
+* The reinsurance frames live on the `Aggregate`: `reins_stats_df`
+  (statistics by view, `occ` and `agg` blocks), `reins_price_df(distortion)`
+  (`L`, `M`, `P`, `LR` and capital columns per view; it needs a distortion
+  or `calibrate_distortions` first) and `reins_density_df`, the densities
+  (`p_sev_gross`, `p_agg_gross`, `p_agg_ceded_occ`, `p_agg_net_occ`,
+  `p_agg_ceded`, `p_agg_net`), not `density_df`. DecL places a share as
+  `200 po 400 xs 100` (part of), not `so`.[^reins]
+* `reins_stats_df`'s layer columns are conditional on a loss to the layer
+  (frequency `E[N] pr_attach`, severity over `pr_attach`); attach is
+  exclusive, detach inclusive. Its `agg` rows are the moments of the FFT
+  density, not analytic: against prospicio's cumulants on the same grid
+  they are 1e-9 off the mean and cv and up to 1.3e-7 off the skewness of a
+  rare layer. Its gross severity skewness is 4e-11 to 4e-10 off the
+  grid's.[^reins]
+* A layer at a share below 1 is mapped onto the grid with the share
+  applied, so a ceded 0.5 splits between 0 and 1: its `pr_loss` for 50% of
+  400 xs 100 is 0.4% below `1 − G_N(F(100))`, and its cv and skewness are
+  smeared (1e-5 to 1e-4). prospicio scales the full layer's cumulants
+  exactly.[^reins]
+* Distortion prices are sensitive to the far tail: the proportional
+  hazard at 0.7 raises FFT round-off of `1e-16` enough to move `P` by
+  about 1e-8 relative, and `aggregate`'s own `1 − cumsum(p)` and sum from
+  the top differ by as much. With `normalize=False`, prospicio's
+  `Tower::on_grid` matches its densities at `1e-14`.[^reins]
+
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
+[^reins]: aggregate_reinsurance.py

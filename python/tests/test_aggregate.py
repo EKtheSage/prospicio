@@ -427,3 +427,31 @@ def test_compound_moments_and_approximations():
         m.approximate("weibull")
     with pytest.raises(ValueError):
         compound_moments(Poisson(2.0), Pareto(100.0, 2.5))
+
+
+def test_layer_statistics_and_prices_by_view():
+    from prospicio.aggregate import compound_moments
+    from prospicio.reinsurance import occurrence_layer_statistics
+    from prospicio.risk import Distortion
+
+    sev, _ = Grid.rounding(Lognormal.from_mean_cv(100.0, 2.0), 1.0, 1001)
+    n = Poisson(2.0)
+    s = occurrence_layer_statistics(n, sev, 1.0, 500.0, 100.0)
+    # aggregate 1.0.1, reins_stats_df (validation/scripts/aggregate_reinsurance.py)
+    assert s.pr_attach == pytest.approx(0.261655626646, rel=1e-10)
+    assert s.count.mean == pytest.approx(2.0 * s.pr_attach, rel=1e-14)
+    assert s.loss_on_line == pytest.approx(0.151169062665, rel=1e-9)
+    assert s.aggregate.mean == pytest.approx(s.count.mean * s.severity.mean, rel=1e-12)
+    half = occurrence_layer_statistics(n, sev, 0.5, 500.0, 100.0)
+    assert half.aggregate.skew == pytest.approx(s.aggregate.skew, rel=1e-12)
+    with pytest.raises(ValueError):
+        occurrence_layer_statistics(n, sev, 0.0, 500.0, 100.0)
+
+    grids = Tower([Layer("occ", 500.0, 100.0)]).on_grid(n, sev, 1 << 14)
+    p = grids.price(Distortion.proportional_hazard(0.7))
+    assert p.gross.premium == pytest.approx(297.443189953534, rel=2e-8)
+    assert p.ceded[0].loss == pytest.approx(s.aggregate.mean, rel=1e-9)
+    assert p.net.margin == pytest.approx(p.net.premium - p.net.loss)
+    # Distortion prices are subadditive.
+    assert p.ceded[0].premium + p.net.premium >= p.gross.premium
+    assert compound_moments(n, sev).mean == pytest.approx(p.gross.loss, rel=1e-9)
