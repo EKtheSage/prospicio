@@ -34,6 +34,10 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 round_bucket_rust <- function(bs) .Call(wrap__round_bucket_rust, bs)
 
+credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
+
+buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
+
 stacking_weights_rust <- function(lpd, k) .Call(wrap__stacking_weights_rust, lpd, k)
 
 pseudo_bma_weights_rust <- function(lpd, k, n_draws, seed) .Call(wrap__pseudo_bma_weights_rust, lpd, k, n_draws, seed)

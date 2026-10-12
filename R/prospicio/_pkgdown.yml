@@ -117,6 +117,10 @@ reference:
       - fit_pml_curve
       - fit_references
       - tower_model
+  - title: Credibility
+    contents:
+      - credibility_standard
+      - buhlmann_straub
   - title: Risk measures
     contents:
       - distortion
