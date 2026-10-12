@@ -24,7 +24,7 @@ then joins them and sets and allocates capital.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. Still to do: REML, tensor smooths |
-| v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust; bindings in progress). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -151,13 +151,12 @@ what it is aiming for by v1.0.
     (`reserving-bayes.md`, PR 1): the ODP model with log-linear effects
     and the chain ladder's scale, sampled with NUTS, reserves as a
     `PredictiveDistribution`, at parity with the same model in Stan on
-    GenIns and RAA. Python and R bindings in progress.
+    GenIns and RAA, in Python (`BayesOdp`) and R (`bayes_odp()`).
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
-  1. PR 1's bindings.
-  2. PR 2: `BayesOdp::fit_segments` with `SegmentDependence`, and
+  1. PR 2: `BayesOdp::fit_segments` with `SegmentDependence`, and
      `BayesOdp` in the diagonal backtest.
-  3. PR 3: Meyers' CRC and CSR; PR 4: the Bayesian Bornhuetter–Ferguson.
+  2. PR 3: Meyers' CRC and CSR; PR 4: the Bayesian Bornhuetter–Ferguson.
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.

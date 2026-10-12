@@ -83,11 +83,11 @@ mod prospicio_native {
     use super::reinsurance::{PyLayer, PyLossSensitivePremium, PyTower, PyTowerGrids};
     #[pymodule_export]
     use super::reserving::{
-        PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder,
-        PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf,
-        PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit,
-        PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve,
-        PyTailLogLinear, PyTriangle,
+        PyBayesOdp, PyBayesOdpFit, PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit,
+        PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit,
+        PyClarkLdf, PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit,
+        PyMackFit, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant,
+        PyTailCurve, PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

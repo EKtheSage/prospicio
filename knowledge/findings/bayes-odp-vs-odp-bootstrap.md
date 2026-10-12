@@ -15,6 +15,9 @@ sources:
   - id: design
     resource: ../docs/design/reserving-bayes.md
     title: Design note, Bayesian reserving (decisions 3, 5 and 10)
+  - id: bindings
+    resource: ../python/tests/test_reserving_bayes.py
+    title: The Python binding's tests (R's are R/prospicio/tests/test-reserving-bayes.R)
 ---
 
 # Finding
@@ -44,5 +47,12 @@ sources:
 * Speed: a default GenIns fit takes about 80 ms in a release build. The
   pointwise density in `loo()` integrates a normalising constant per draw
   and cell, 5.1 s serially for 4,000 x 55, 0.56 s in parallel.[^design]
+* Short chains do not pass the diagnostics on GenIns: 2 chains of 300
+  draws (300 warm-up) gave R-hat above 1.01 for some parameter at seeds
+  0, 1 and 3 (largest 1.014 to 1.023, the bulk ESS still above 770), and 4
+  chains of 500 at seed 1 (b[6] 1.013). The defaults passed at all three
+  seeds (largest R-hat 1.002 to 1.005), so the binding tests that expect no
+  warning use the defaults, and 2 chains of 10 kept draws give a sure ESS
+  warning.[^bindings]
 
 Not yet run by CI.

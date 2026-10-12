@@ -1542,6 +1542,139 @@ spearman_arg <- function(spearman) {
   as.double(t(spearman))
 }
 
+#' Bayesian over-dispersed Poisson chain ladder
+#'
+#' The Bayesian chain ladder of England and Verrall (2002, 2006): the
+#' over-dispersed Poisson model of a cumulative triangle's incremental
+#' values with mean `exp(c + a[w] + b[d])` (`a[1] = b[1] = 0`), normal
+#' priors on the log scale (`c` centred on the log of the mean observed
+#' increment, the others on 0), and the chain ladder's Pearson scale `phi`
+#' (the `scale` of [odp_bootstrap()]) plugged in. The posterior is sampled
+#' with NUTS, and each draw projects the future cells up to the oldest
+#' observed age (no tail) with the process error of `process`, as
+#' [odp_bootstrap()] does. Every origin's and every development column's
+#' observed increments must sum to more than zero; negative cells are
+#' allowed. One `seed` replays a fit exactly, whatever the number of
+#' threads: the chains and the simulations each take a seed derived from
+#' it.
+#'
+#' Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
+#' per chain, any divergent transition) do not fail the fit:
+#' `bayes_odp()` raises one [warning()] listing them, and they stay in the
+#' fit's `diagnostics`.
+#'
+#' Properties of the fit: `chain_ladder` (the volume-weighted
+#' [chain_ladder_fit] whose latest values and scale the model uses),
+#' `origins`, `development`, `scale` (the plugged-in `phi`), `reserves` (a
+#' [predictive_distribution] of the reserve with dimension `origin`, one
+#' component per origin, laid out as [odp_bootstrap()]'s), `diagnostics` (a
+#' list of `max_rhat`, `min_ess_bulk`, `min_ess_tail`, `divergences` and
+#' `warnings`), `summary` (the posterior summary as `bayes_glm_model`'s:
+#' `parameter`, `mean`, `sd`, `q05`, `q50`, `q95`, `rhat`, `ess_bulk` and
+#' `ess_tail`; also `summary(fit)`) and `draws` (a matrix of the posterior
+#' draws of `c`, `a[2]`, ..., `b[2]`, ..., one row per draw, chain by
+#' chain). [bayes_loo()] gives the PSIS-LOO of the observed increments, with
+#' the normalised over-dispersed Poisson density as the pointwise term, so
+#' compare it only with models of the same incremental values; it is an
+#' error on a triangle with a negative increment. `as.data.frame()`,
+#' [totals_frame()], [development_frame()] and [segment()] work as for
+#' [odp_bootstrap()], with the `mean` and `std_dev` of the posterior
+#' predictive reserve.
+#'
+#' Errors: as [odp_bootstrap()]; if the triangle has several segments; if a
+#' prior standard deviation is not positive and finite or a sampler setting
+#' is invalid; or if an origin's or a development column's increments do
+#' not sum to more than zero.
+#'
+#' @param triangle A cumulative [triangle] with one segment, every origin
+#'   observed from the first age up to its latest.
+#' @param column Name of the column to fit; by default the only one.
+#' @param intercept_sd Standard deviation of the normal prior on the
+#'   intercept `c`.
+#' @param origin_sd Standard deviation of the normal prior on each origin
+#'   effect `a[w]`, `w >= 2`.
+#' @param development_sd Standard deviation of the normal prior on each
+#'   development effect `b[d]`, `d >= 2`.
+#' @param process Process error on each simulated future increment:
+#'   `"gamma"` (mean `mu`, variance `phi * mu`) or `"none"` for parameter
+#'   error only.
+#' @param chains,tune,draws NUTS chains, warm-up draws per chain and kept
+#'   draws per chain.
+#' @param n_sims Number of predictive simulations, independent of the number
+#'   of posterior draws; positive.
+#' @param seed Seed of the chains and of the simulations, a non-negative
+#'   whole number.
+#' @param target_accept Target mean acceptance rate of the step-size
+#'   adaptation.
+#' @param max_depth Largest NUTS tree depth.
+#' @param ptr A `BayesOdpFit` pointer; used internally.
+#' @returns A `bayes_odp_fit` object.
+#' @seealso [odp_bootstrap()], [bayes_loo()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' fit <- bayes_odp(triangle(long, "year", "age", "paid"), n_sims = 2000, seed = 1)
+#' fit@diagnostics$max_rhat
+#' head(fit@summary)
+#' mean(fit@reserves)
+#' quantile(fit@reserves, 0.995)
+bayes_odp_fit <- S7::new_class(
+  "bayes_odp_fit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("BayesOdpFit"),
+    chain_ladder = chain_ladder_fit,
+    origins = S7::new_property(S7::class_character, getter = function(self) {
+      self@chain_ladder@origins
+    }),
+    development = S7::new_property(S7::class_integer, getter = function(self) {
+      self@chain_ladder@development
+    }),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale()),
+    reserves = predictive_distribution,
+    diagnostics = S7::new_property(S7::class_list, getter = function(self) {
+      self@ptr$diagnostics()
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$parameter_names()
+      matrix(self@ptr$draws(), ncol = length(nm), byrow = TRUE, dimnames = list(NULL, nm))
+    })
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
+                   reserves = predictive_distribution(ptr = ptr$reserves()))
+  }
+)
+
+#' @rdname bayes_odp_fit
+#' @export
+bayes_odp <- function(triangle, column = NULL, intercept_sd = 10, origin_sd = 10,
+                      development_sd = 10, process = c("gamma", "none"), chains = 4,
+                      tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
+                      target_accept = 0.8, max_depth = 10) {
+  column <- fit_column(triangle, column)
+  process <- match.arg(process)
+  ptr <- rust_result(triangle@ptr$bayes_odp(
+    column, single_number(intercept_sd, "intercept_sd"), single_number(origin_sd, "origin_sd"),
+    single_number(development_sd, "development_sd"), process, single_number(chains, "chains"),
+    single_number(tune, "tune"), single_number(draws, "draws"), single_number(n_sims, "n_sims"),
+    single_number(seed, "seed"), single_number(target_accept, "target_accept"),
+    single_number(max_depth, "max_depth")))
+  fit <- bayes_odp_fit(ptr = ptr)
+  failed <- fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("bayes_odp: the MCMC diagnostics failed; check them before relying on the fit: ",
+            paste(failed, collapse = "; "), call. = FALSE)
+  }
+  fit
+}
+
 #' Bootstrap of Mack's model
 #'
 #' The lifetime view of reserve risk under Mack's model, bootstrapped as
@@ -2190,10 +2323,11 @@ growth <- function(fit, age) {
 
 check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
-                  mack_bootstrap_fit, one_year_fit, clark_fit)
+                  mack_bootstrap_fit, bayes_odp_fit, one_year_fit, clark_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
-         "odp_bootstrap_fit, mack_bootstrap_fit, one_year_fit or clark_fit", call. = FALSE)
+         "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, one_year_fit or clark_fit",
+         call. = FALSE)
   }
 }
 
@@ -2201,19 +2335,21 @@ check_fit <- function(fit) {
 #'
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #' [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
-#' [one_year_fit] or [clark_fit] with
+#' [bayes_odp_fit], [one_year_fit] or [clark_fit] with
 #' the triangle's key columns by name. `as.data.frame(fit)` has one row per
 #' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
 #' method's own), plus for Mack `process_risk`, `parameter_risk` and
 #' `standard_error`, for the expected-loss methods `exposure` and `apriori`
 #' (and Cape Cod's `trended_apriori`), for the bootstraps the `mean` and
-#' `std_dev` of the bootstrapped reserve, and for Clark (Cape Cod)
+#' `std_dev` of the bootstrapped reserve (for [bayes_odp()] of the posterior
+#' predictive reserve), and for Clark (Cape Cod)
 #' `exposure`, `expected_ultimate` and the three standard errors. The
 #' one-year view names them `opening_ultimate` and `opening_reserve` and
 #' adds the `cdr_mean` and `cdr_std_dev` of the claims development result.
 #' `totals_frame()` has one row per segment with the same quantities for
 #' the segment's total (for the expected-loss methods the total `exposure`,
-#' for the ODP bootstrap and its one-year view also the bootstrap's `scale`;
+#' for the ODP bootstrap, its one-year view and [bayes_odp()] also the
+#' `scale`;
 #' for Clark its `omega`, `theta`, `scale` and, for Cape Cod, `elr`).
 #' `development_frame()` has one row per segment and age: `development`,
 #' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
@@ -2233,7 +2369,8 @@ check_fit <- function(fit) {
 #'
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
-#'   [one_year_fit] or [clark_fit] (not for `development_frame()`).
+#'   [bayes_odp_fit], [one_year_fit] or [clark_fit] (not for
+#'   `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -2289,6 +2426,8 @@ S7::method(as.data.frame, expected_loss_fit) <- function(x, ...) fit_table_frame
 S7::method(as.data.frame, cape_cod_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, odp_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, mack_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, bayes_odp_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(summary, bayes_odp_fit) <- function(object, ...) object@summary
 S7::method(as.data.frame, one_year_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, clark_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 
@@ -2316,6 +2455,21 @@ S7::method(print, odp_bootstrap_fit) <- function(x, ...) {
                 as.integer(r@n_sims), format(x@scale, digits = 6)))
   }
   cat(sprintf("total reserve: chain ladder %s, bootstrap mean %s, sd %s\n",
+              format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
+              format(sqrt(variance(r)), digits = 10)))
+  invisible(x)
+}
+S7::method(print, bayes_odp_fit) <- function(x, ...) {
+  r <- x@reserves
+  d <- x@diagnostics
+  cat(sprintf("<bayes_odp_fit> %d draws in %d chains, %d simulations, scale %s\n",
+              nrow(x@draws), as.integer(x@ptr$chains()), as.integer(r@n_sims),
+              format(x@scale, digits = 6)))
+  cat(sprintf("diagnostics: max R-hat %s, min bulk ESS %s, min tail ESS %s, %d divergences%s\n",
+              format(d$max_rhat, digits = 4), format(d$min_ess_bulk, digits = 4),
+              format(d$min_ess_tail, digits = 4), as.integer(d$divergences),
+              if (length(d$warnings)) sprintf(", %d warnings", length(d$warnings)) else ""))
+  cat(sprintf("total reserve: chain ladder %s, posterior mean %s, sd %s\n",
               format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
               format(sqrt(variance(r)), digits = 10)))
   invisible(x)

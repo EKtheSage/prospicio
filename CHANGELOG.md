@@ -26,7 +26,11 @@ under "Unreleased" until then.
   the posterior draws, R-hat, ESS and divergence warnings, and PSIS-LOO.
   Checked against the same model in Stan (CmdStan 2.39.0) on GenIns and
   RAA, and against the chain ladder and the ODP bootstrap on GenIns
-  (`docs/design/reserving-bayes.md`).
+  (`docs/design/reserving-bayes.md`). In Python as
+  `prospicio.reserving.BayesOdp` and in R as `bayes_odp()`, for a
+  single-segment triangle, with the posterior summary, the long tables,
+  PSIS-LOO (`BayesOdpFit.loo()`, R's `bayes_loo()`), and failed
+  diagnostics raised as a Python `UserWarning` or an R `warning()`.
 
 ### Pricing
 

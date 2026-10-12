@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 in progress** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1's Rust core is built on `claude/bayes-odp`: the `bayes` feature, `BayesOdp` and the Stan reference on GenIns and RAA; its bindings (decision 13) are still to come. The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 in progress** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 is built on `claude/bayes-odp`: the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -664,8 +664,52 @@ posterior for the ODP model, whose posterior is close to normal.
 
 ### 13. Bindings
 
-Proposed. Every model lands in Python and R in its own PR, in the style of
-`OdpBootstrap` and `odp_bootstrap()`:
+Proposed; built for `BayesOdp` in PR 1 (2026-10-12) with these changes from
+the sketch below, which is kept as proposed:
+
+* **One segment.** `fit_segments`, the `dependence` argument and Python's
+  `segment(...)` wait for PR 2 with the Rust side. R's `segment()` takes a
+  `bayes_odp_fit` as it takes any single-segment fit without keys: with no
+  condition it returns the fit, and a condition on a key is an error.
+* **Arguments.** Python `BayesOdp(intercept_sd=10, origin_sd=10,
+  development_sd=10, process="gamma", chains=4, tune=1000, draws=1000,
+  n_sims=10000, seed=0, target_accept=0.8, max_depth=10)` and R
+  `bayes_odp(triangle, column = NULL, ...)` with the same arguments in the
+  same order: `BayesGlm`'s other two sampler settings come last, so the
+  order of the sketch holds. `Sampler::seed` is not an argument (`seed`
+  drives both streams).
+* **The fit.** Both languages have `chain_ladder`, `origins`,
+  `development`, `scale`, `reserves` (a `PredictiveDistribution` by
+  origin), `diagnostics` (a dict or list of `max_rhat`, `min_ess_bulk`,
+  `min_ess_tail`, `divergences` and `warnings`), `parameter_names` (Python)
+  and `draws` (one row per draw, chain by chain; R a matrix with the names
+  as columns). The long tables are Python's `to_frame()`, `totals_frame()`
+  and `development_frame()` and R's `as.data.frame()`, `totals_frame()` and
+  `development_frame()`, with the `mean` and `std_dev` of the posterior
+  predictive reserve, as the bootstraps'.
+* **Summary and LOO** reuse what `BayesGlmFit` exposes: the same columns
+  (`parameter`, `mean`, `sd`, `q05`, `q50`, `q95`, `rhat`, `ess_bulk`,
+  `ess_tail`), as a pandas frame from Python's `summary()` (the reserving
+  fits' tables are frames) and as R's `@summary`, which `summary(fit)` also
+  returns; PSIS-LOO is Python's `Elpd` from `loo()` and R's `bayes_loo()`,
+  whose result has the shape it has for a `bayes_glm_model`. This touched
+  two Models-lane files, each by a few lines: `PyElpd::from_loo` in
+  `crates/prospicio-python/src/models.rs` (the fields are private to that
+  module, and `BayesGlmFit.loo` now uses it too) and the `model` argument's
+  documentation of `bayes_loo()` in `R/prospicio/R/models.R`.
+* **Warnings.** A fit with failed diagnostics raises one Python
+  `UserWarning` or one R `warning()` that lists every message, and is
+  returned.
+* **Tests**: `python/tests/test_reserving_bayes.py` and
+  `R/prospicio/tests/test-reserving-bayes.R` fit GenIns with the default
+  chains (no warning, the Stan-matched scale, the reserves near the chain
+  ladder, the summary, the frames and LOO), replay a fit by seed, warn on
+  2 × 10 kept draws, and check the errors (settings, a negative origin
+  sum, several segments, LOO on RAA). The parity with Stan stays in
+  `validation/tests/reserving_bayes.rs`.
+
+The sketch, as proposed. Every model lands in Python and R in its own PR,
+in the style of `OdpBootstrap` and `odp_bootstrap()`:
 
 * Python: `prospicio.reserving.BayesOdp(intercept_sd=10, origin_sd=10,
   development_sd=10, process="gamma", chains=4, tune=1000, draws=1000,
