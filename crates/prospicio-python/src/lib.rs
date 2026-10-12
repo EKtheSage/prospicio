@@ -34,9 +34,9 @@ fn to_py(e: prospicio_core::Error) -> PyErr {
 mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{
-        PyCompoundReport, PyEventSet, PyGridSize, PyOccurrencePml, fft, fft_auto,
-        occurrence_exceedance, occurrence_pml, panjer, recommend_grid, round_bucket,
-        simulate_events,
+        PyApproximation, PyCompoundMoments, PyCompoundReport, PyEventSet, PyGridSize,
+        PyOccurrencePml, compound_moments, fft, fft_auto, occurrence_exceedance, occurrence_pml,
+        panjer, recommend_grid, round_bucket, simulate_events,
     };
     #[pymodule_export]
     use super::counts::PyCount;

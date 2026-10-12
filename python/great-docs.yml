@@ -68,6 +68,9 @@ reference:
       - aggregate.occurrence_exceedance
       - aggregate.occurrence_pml
       - aggregate.OccurrencePml
+      - aggregate.compound_moments
+      - aggregate.CompoundMoments
+      - aggregate.Approximation
   - title: Reinsurance
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:

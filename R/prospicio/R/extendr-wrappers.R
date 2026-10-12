@@ -34,6 +34,12 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 round_bucket_rust <- function(bs) .Call(wrap__round_bucket_rust, bs)
 
+compound_moments_rust <- function(frequency, severity) .Call(wrap__compound_moments_rust, frequency, severity)
+
+approximation_parameters_rust <- function(moments, kind) .Call(wrap__approximation_parameters_rust, moments, kind)
+
+approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap__approximation_eval_rust, moments, kind, values, quantile)
+
 occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
 
 occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
