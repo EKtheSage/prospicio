@@ -860,7 +860,10 @@ impl Triangle {
     /// names the exposure column of the other methods; each method reads
     /// only its own settings (`apriori`, `n_iters`, `trend`, `decay`). The
     /// segments depend on each other as `dependence` and `spearman` say (as
-    /// `odp_bootstrap`).
+    /// `odp_bootstrap`). With `bootstrap_tail`, the bootstrap takes
+    /// `method`'s `tail` too, with `tail_std_err` (`NULL` to keep a constant
+    /// tail fixed), and the origins whose tail step falls in the coming year
+    /// take it.
     #[allow(clippy::too_many_arguments)]
     fn odp_one_year(
         &self,
@@ -874,12 +877,19 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         tail: Robj,
+        bootstrap_tail: bool,
+        tail_std_err: Nullable<f64>,
         n_sims: f64,
         seed: f64,
         process: &str,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<OneYearFit> {
+        let boot_tail = if bootstrap_tail {
+            tail_arg(&tail)?
+        } else {
+            Tail::default()
+        };
         let method = one_year_method(
             method,
             exposure,
@@ -890,9 +900,13 @@ impl Triangle {
             pattern(average, sigma_interpolation, tail)?,
         )?;
         let dependence = segment_dependence(dependence, spearman)?;
-        let inner = bootstrap(n_sims, seed, process, dependence)?
-            .one_year_segments(&self.inner, column, &method)
-            .map_err(to_r)?;
+        let inner = OdpBootstrap {
+            tail: boot_tail,
+            tail_std_err: optional(tail_std_err),
+            ..bootstrap(n_sims, seed, process, dependence)?
+        }
+        .one_year_segments(&self.inner, column, &method)
+        .map_err(to_r)?;
         Ok(OneYearFit {
             inner: OneYear::Odp(inner),
         })
@@ -903,7 +917,9 @@ impl Triangle {
     /// "residuals", "normal" or "none"), Mack's model averaged as
     /// `mack_average` with `mack_sigma_interpolation`, the residuals centred
     /// before resampling if `centre_residuals`, and the segments depending
-    /// on each other as `dependence` and `spearman` say.
+    /// on each other as `dependence` and `spearman` say. With
+    /// `bootstrap_tail`, Mack's bootstrap takes `method`'s `tail` too, its
+    /// `tail_sigma` and `tail_std_err` `NULL` to extrapolate them.
     #[allow(clippy::too_many_arguments)]
     fn mack_one_year(
         &self,
@@ -917,6 +933,9 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         tail: Robj,
+        bootstrap_tail: bool,
+        tail_sigma: Nullable<f64>,
+        tail_std_err: Nullable<f64>,
         n_sims: f64,
         seed: f64,
         process: &str,
@@ -926,6 +945,11 @@ impl Triangle {
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<OneYearFit> {
+        let boot_tail = if bootstrap_tail {
+            tail_arg(&tail)?
+        } else {
+            Tail::default()
+        };
         let method = one_year_method(
             method,
             exposure,
@@ -935,15 +959,20 @@ impl Triangle {
             decay,
             pattern(average, sigma_interpolation, tail)?,
         )?;
-        let inner = mack_bootstrap(
-            n_sims,
-            seed,
-            process,
-            mack_average,
-            mack_sigma_interpolation,
-            centre_residuals,
-            segment_dependence(dependence, spearman)?,
-        )?
+        let inner = MackBootstrap {
+            tail: boot_tail,
+            tail_sigma: optional(tail_sigma),
+            tail_std_err: optional(tail_std_err),
+            ..mack_bootstrap(
+                n_sims,
+                seed,
+                process,
+                mack_average,
+                mack_sigma_interpolation,
+                centre_residuals,
+                segment_dependence(dependence, spearman)?,
+            )?
+        }
         .one_year_segments(&self.inner, column, &method)
         .map_err(to_r)?;
         Ok(OneYearFit {

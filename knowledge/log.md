@@ -8,6 +8,9 @@
 ## 2026-10-11
 
 * **Update**: [Publishing to PyPI and crates.io](/environment/publishing.md), from preparing v0.0.2 (branch release-0.0.2): the crates.io token secret is gone and the token revoked, so the release workflow now uses only trusted publishing, and a new crate needs one publish by hand before it can be added. Not yet run by CI.
+* **Creation**: [The one-year view with a bootstrap tail, against Merz-Wuthrich and Mack's tail risk](/findings/one-year-bootstrap-tail.md), from allowing the bootstraps' tail in the one-year view (branch one-year-tail, decision 11 of `docs/design/reserving-v02.md`): the tail step is valued one development period after the oldest age and closes the origins it falls on in the coming year; with a constant 1.05 tail Mack's bootstrap gives the open origins 1.05 times R's `CDR(1)S.E.`, the oldest origin R's `Mack.S.E` with the tail and the total their combination, on RAA, GenIns and ABC within 2.2 Monte Carlo standard errors; R's refitted log-linear tail's process error is R's tail sigma. R ChainLadder 0.2.21's `CDR` still rejects a tail (re-checked 2026-10-11). Not yet run by CI.
+* **Update**: [The one-year view with a bootstrap tail, against Merz-Wuthrich and Mack's tail risk](/findings/one-year-bootstrap-tail.md), after review: a curve or decayed constant tail, whose factors spread over later periods, is collapsed into the one step, so the one-year SD of an origin that takes it is an upper bound; the open origins' scaling by `T` holds for a tail attached at the oldest age, in distribution (per simulation only for a fixed factor).
+* **Update**: [The tail in the bootstraps, refitted or drawn, against Mack's tail risk](/findings/bootstrap-tail-parameter-error.md): the one-year view no longer rejects a bootstrap tail (decision 11).
 
 ## 2026-10-09
 

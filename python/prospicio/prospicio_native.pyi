@@ -6782,8 +6782,9 @@ class MackBootstrap:
         ``TailBondy``, ``TailLogLinear``) is refitted on each simulation's
         pseudo factors, which gives its parameter error; a constant one is
         drawn from the lognormal with the factor as mean and the tail's
-        standard error. No tail by default. ``one_year`` takes its tail from
-        ``method`` instead and rejects one here.
+        standard error. No tail by default. ``one_year`` takes the step for
+        the origins whose step falls in the coming year, as
+        ``OdpBootstrap``'s does; ``method``'s tail must then be this one.
     tail_sigma : float, optional
         The tail's sigma (R's ``tail.sigma``); extrapolated if not given.
         Unused when the tail factor is 1.
@@ -6922,9 +6923,11 @@ class MackBootstrap:
         coming twelve months from Mack's bootstrap, each from the one before
         with the same pseudo factors, appends them to the triangle, refits
         ``method`` and records ``CDR = opening ultimate - closing
-        ultimate``. Mack's model has no tail here: development past the
-        oldest age moves only through ``method``'s refitted tail, and a
-        bootstrap ``tail`` is an error.
+        ultimate``. Without a bootstrap ``tail``, development past the
+        oldest age moves only through ``method``'s refitted tail; with one,
+        which must be ``method``'s, the origins whose tail step falls in
+        the coming year take Mack's step to ultimate and are closed, as in
+        ``OdpBootstrap.one_year``.
         
         Parameters
         ----------
@@ -6950,7 +6953,8 @@ class MackBootstrap:
             If ``method`` is not one of the classes above.
         ValueError
             As ``OdpBootstrap.one_year`` and ``Mack.fit``, if a cumulative
-            value is negative, and if the bootstrap has a ``tail``.
+            value is negative, and if the bootstrap has a ``tail`` that is
+            not ``method``'s.
         """
     @property
     def process(self, /) -> str:
@@ -7839,8 +7843,10 @@ class OdpBootstrap:
         parameter error; a constant one is fixed unless ``tail_std_err`` is
         given. The step from the oldest age to ultimate is one more future
         increment, with mean the pseudo value at the oldest age times the
-        tail factor less 1 and the same process error. ``one_year`` takes
-        its tail from ``method`` instead and rejects one here. R's rule
+        tail factor less 1 and the same process error. ``one_year`` values
+        that step one development period after the oldest age and takes it
+        for the origins whose step falls in the coming year, closing them;
+        ``method``'s tail must then be this one. R's rule
         (``TailLogLinear``) refitted on the ODP's pseudo factors is often
         exactly 1 (5.7% of simulations on RAA) and on average high (RAA's
         oldest origin's mean reserve 78% above the plug-in); a constant tail
@@ -7959,6 +7965,18 @@ class OdpBootstrap:
         ``MackFit.claims_development_result()`` (Merz and Wüthrich), any
         averaging, tail and development grain are allowed.
         
+        Without a bootstrap ``tail``, development past the oldest age moves
+        only through ``method``'s refitted tail. With one, which must be
+        ``method``'s tail, the tail is drawn in each simulation as ``fit``
+        draws it, and its step to ultimate is valued one development period
+        after the oldest age: an origin whose step falls in the coming year
+        (with an annual grain, one already at the oldest age) takes it and
+        is closed at that simulated ultimate. The step is the whole tail: a
+        curve or a decayed constant tail is taken as the product of its
+        factors in that one step, so an origin that takes it has its
+        lifetime tail risk in the coming year, an upper bound on its
+        one-year risk.
+        
         Parameters
         ----------
         triangle : Triangle
@@ -7983,8 +8001,9 @@ class OdpBootstrap:
         ValueError
             As ``fit`` and the method's own ``fit``; if ``exposure`` is
             missing for an expected-loss method or given for
-            ``ChainLadder``; or if the refit fails in any simulation (the
-            message counts them and gives one).
+            ``ChainLadder``; if the bootstrap has a ``tail`` that is not
+            ``method``'s; or if the refit (or the bootstrap's tail refit)
+            fails in any simulation (the message counts them and gives one).
         
         Examples
         --------

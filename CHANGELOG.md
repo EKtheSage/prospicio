@@ -7,9 +7,14 @@ under "Unreleased" until then.
 
 ## Unreleased
 
-Nothing yet. Open at the time of v0.0.2 and planned for v0.0.3: the
-one-year view with a bootstrap tail (#176), rate indication in
-`prospicio-pricing`, and the Bayesian reserving design (#177).
+### Reserving
+
+- The one-year view of both bootstraps accepts a bootstrap tail, which
+  must equal the re-reserving method's tail: an origin whose tail step falls
+  in the year closes at its simulated ultimate, and the tail's parameter
+  error is drawn as in the lifetime view. R gains `bootstrap_tail`,
+  `tail_std_err` and `tail_sigma` on `odp_one_year()` and
+  `mack_one_year()` (#176).
 
 ## 0.0.2 (2026-10-12)
 
