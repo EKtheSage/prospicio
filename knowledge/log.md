@@ -2,6 +2,8 @@
 
 ## 2026-10-12
 
+* **Update**: [freMTPL2freq and freMTPL2sev](/datasets/fremtpl2.md), from adding the claim indicator logit and the gamma severity GLM to the freMTPL2 parity (branch fremtpl2-binomial-gamma): freMTPL2sev's SHA-256 and download path, the per-policy join (24,944 policies; 6 freMTPL2sev policies not in freMTPL2freq, 9,116 policies with claims but no amounts), both fits' deviances, and `prospicio_glm` matching statsmodels 0.15.0 on 303 more values at the Poisson case's tolerances. Not yet run by CI.
+
 * **Creation**: [Third raw moments, closed forms against mpmath](/findings/third-moments.md), from adding `Severity::third_moment` and `Counting::third_moment` to `prospicio-prob` (branch claude/stoic-hawking-qc3qby): 16 severities, 5 counts and 2 Tweedies match mpmath at `1e-10`; `mpmath.nsum` fails on a Poisson mean of 1,000; the mixed Poisson's pmf error shows in its moment. Not yet run by CI.
 * **Update**: [Mildenhall's aggregate package, Pricing Insurance Risk and CAS Monograph 15](/references/aggregate-mildenhall.md), from adding the occurrence PML to `prospicio_aggregate` (branch claude/stoic-hawking-qc3qby): `oep` is closed form from the severity and takes Poisson counts only; 1.0.1 has no `tilt`, `sev_calc='moment'` is not implemented, its FFT never uses Panjer, and point densities need `normalize=False`. Not yet run by CI.
 * **Update**: [R actuar's credibility models](/references/actuar-credibility.md) is verified: its parity tests ran green in CI on #175, which is merged.
