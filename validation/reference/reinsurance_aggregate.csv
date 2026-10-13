@@ -197,3 +197,7 @@ T,lambda=5;severity=gamma;mean=50;cv=1.5;cap=1000;occ=1:100:100+1:200:200;agg=30
 T,lambda=5;severity=gamma;mean=50;cv=1.5;cap=1000;occ=1:100:100+1:200:200;agg=300:200,price:ceded_occ:P,,111.0007062267948,0.0,2e-08,aggregate 1.0.1
 T,lambda=5;severity=gamma;mean=50;cv=1.5;cap=1000;occ=1:100:100+1:200:200;agg=300:200,price:ceded:L,,38.776119584157605,0.0,1e-09,aggregate 1.0.1
 T,lambda=5;severity=gamma;mean=50;cv=1.5;cap=1000;occ=1:100:100+1:200:200;agg=300:200,price:ceded:P,,66.57519304059699,0.0,2e-08,aggregate 1.0.1
+RI2,lambda=2;severity=lognormal;mean=100;cv=2;cap=1000;occ=1:500:100;rol=0.2;rates=1.0,reinstatement_premium,,14.41441168391045,0.0,1e-10,aggregate 1.0.1
+RI2,lambda=2;severity=lognormal;mean=100;cv=2;cap=1000;occ=1:500:100;rol=0.2;rates=1.0+0.5,reinstatement_premium,,14.756281713092417,0.0,1e-10,aggregate 1.0.1
+RI10,lambda=10;severity=lognormal;mean=100;cv=2;cap=1000;occ=1:500:100;rol=0.2;rates=1.0,reinstatement_premium,,57.729771348133376,0.0,1e-10,aggregate 1.0.1
+RI10,lambda=10;severity=lognormal;mean=100;cv=2;cap=1000;occ=1:500:100;rol=0.2;rates=1.0+0.5,reinstatement_premium,,65.32698018447671,0.0,1e-10,aggregate 1.0.1

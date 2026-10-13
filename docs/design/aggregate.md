@@ -70,6 +70,12 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   statistics and prices by view" below). Python
   `prospicio.reinsurance.occurrence_layer_statistics` and
   `TowerGrids.price`, R `occurrence_layer_statistics()`, `tower_price()`.
+- `natural::Portfolio::{price_stand_alone, comonotonic_kappa}`: each unit
+  priced alone at its own VaR against the book priced together, and
+  Denuit et al.'s comonotonic allocation ("Stand-alone price and the
+  comonotonic allocation" below). Python `Portfolio.price_stand_alone`
+  (`StandAlone`) and `Portfolio.comonotonic_kappa`, R
+  `price_stand_alone()` and `comonotonic_allocation()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -613,6 +619,27 @@ were already `Portfolio::premium_bounds` (`docs/design/risk.md`).
   p) / 2`), which is affine in `p`, not `1 / (1 − p)`, so the hull on the
   breakpoints is not exact there; and `Bounds`' cloud and plots.
 
+### Stand-alone price and the comonotonic allocation
+
+`aggregate`'s `Portfolio.price_stand_alone` and
+`make_comonotonic_allocations`, on `natural::Portfolio`.
+
+- A unit alone holds assets at its own lower `p` quantile and is priced
+  as `Aggregate.price` prices it: `L = E[Xᵢ ∧ aᵢ]`, `P = ρ_g(Xᵢ ∧ aᵢ)`.
+  prospicio prices each unit's marginal as a one-unit portfolio, so the
+  convention is `Portfolio::price`'s. The book is priced at the VaR of its
+  total; `sum` adds the stand-alone loss, premium and assets, and the
+  ratios follow from those sums, as `aggregate`'s `complete_pentagon`. A
+  unit whose VaR is 0 has a zero pentagon.
+- The comonotonic allocation is Denuit, Dhaene, Ghossoub and Robert
+  (*IME* 120, 2025, Theorem 3.1), ported step for step from `aggregate`:
+  the result depends on the sweep order, the violators' order and how the
+  flattened mass is shared out (in proportion to the other units' rise),
+  so a "cleaner" rewrite would not reproduce it. It runs on the totals
+  with positive probability; `aggregate` runs on its whole grid, where
+  the zero-probability points (with `exeqa` 0) leave the values at the
+  others unchanged (to 3e-14), so they are not carried.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -738,6 +765,23 @@ inequalities (outside it, within 0.05; it pokes out by up to 2.4e-4, from
 its root tolerance and interpolation). Unit tests reprice every bound's
 BiTVaR: it prices `X` at `P` and `Y` at the bound, to `1e-10`.
 
+The stand-alone price and the comonotonic allocation are checked against
+`aggregate` 1.0.1 (`validation/scripts/aggregate_natural.py`, 276 values)
+on the Discrete case and its three-unit extension: each unit's, the
+book's and the sum's `L`, `P` and `a` under the proportional hazard at 0.7
+and Wang at 0.3 at VaR levels 0.8, 0.9 and 0.95, and each unit's
+comonotonic allocation at every total, at `1e-10`. A doctest checks that
+the allocations add up to the total and do not fall.
+
+The expected reinstatement premium of a grid tower is checked against
+`aggregate`'s `ReinstatementTerms` (`contract_terms.py`) applied to its
+own unlimited annual occurrence recovery
+(`validation/scripts/aggregate_reinsurance.py`, 4 values): 500 xs 100 at
+a 20% rate on line on the lognormal book at 2 and 10 claims, with one
+reinstatement at 100% and with two at 100% and 50%, at `1e-10` relative.
+`aggregate` prices reinstatements only inside its P&L builders, pro rata
+as to amount; prospicio's pro rata as to time has no counterpart there.
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
@@ -755,13 +799,15 @@ BiTVaR: it prices `X` at `P` and `Y` at the bound, to `1e-10`.
       `prospicio_aggregate::picks`.)
    6. (Done: `Bounds` and `PricingBounds`, the rest of the 2022 pricing
       bounds, in `prospicio_pricing::bounds`.)
-   Small items to fold into these (done: the total cession of a stage with
-   several layers, its price and statistics, `reins_stats_df`'s `Ceded`
-   column, and statistics of aggregate covers): `tvar_threshold`, a
-   stand-alone price on a grid portfolio, comonotonic allocation, named
-   fixed, Bernoulli and geometric counts, and a reinstatement premium check
-   against `aggregate`.
-   Parked as large: the P&L ledger (`pnl`, which needs signed grids),
+   (Done, tier 2 complete: the small items folded into these, the total
+   cession of a stage with several layers, its price and statistics,
+   `reins_stats_df`'s `Ceded` column, statistics of aggregate covers,
+   `tvar_threshold` and the named fixed, Bernoulli and geometric counts
+   (`distributions.md`), the stand-alone price on a grid portfolio, the
+   comonotonic allocation, and a reinstatement premium check against
+   `aggregate`.)
+   Parked as large, and the candidates for what comes next (the user's
+   choice): the P&L ledger (`pnl`, which needs signed grids),
    bivariate FFT aggregates and `clash`, renewal counts with Wiener–Hopf
    ruin.
 2. Deficit and credit carry-forward in profit commissions and sliding

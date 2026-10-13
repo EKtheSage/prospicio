@@ -3,7 +3,7 @@
 //! total, over `prospicio_pricing::natural`.
 
 use prospicio_pricing::natural::{
-    Allocation, NaturalPrice, Pentagon, Portfolio, Quantity, Rule, Target,
+    Allocation, NaturalPrice, Pentagon, Portfolio, Quantity, Rule, StandAlone, Target,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -200,24 +200,100 @@ impl PyNaturalPrice {
             .collect();
         let mut names = self.inner.units.clone();
         names.push("total".into());
-        let d = pyo3::types::PyDict::new(py);
-        d.set_item("unit", names)?;
-        let col = |f: fn(&Pentagon) -> f64| rows.iter().map(|p| f(p)).collect::<Vec<f64>>();
-        d.set_item("loss", col(|p| p.loss))?;
-        d.set_item("margin", col(|p| p.margin))?;
-        d.set_item("premium", col(|p| p.premium))?;
-        d.set_item("capital", col(|p| p.capital))?;
-        d.set_item("assets", col(|p| p.assets))?;
-        d.set_item("loss_ratio", col(Pentagon::loss_ratio))?;
-        d.set_item("premium_to_capital", col(Pentagon::premium_to_capital))?;
-        d.set_item("return_on_capital", col(Pentagon::return_on_capital))?;
-        Ok(d)
+        pentagon_dict(py, names, &rows)
     }
 
     fn __repr__(&self) -> String {
         format!(
             "NaturalPrice(units={:?}, premium={}, assets={})",
             self.inner.units, self.inner.total.premium, self.inner.total.assets
+        )
+    }
+}
+
+fn pentagon_dict<'py>(
+    py: Python<'py>,
+    names: Vec<String>,
+    rows: &[&Pentagon],
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("unit", names)?;
+    let col = |f: fn(&Pentagon) -> f64| rows.iter().map(|p| f(p)).collect::<Vec<f64>>();
+    d.set_item("loss", col(|p| p.loss))?;
+    d.set_item("margin", col(|p| p.margin))?;
+    d.set_item("premium", col(|p| p.premium))?;
+    d.set_item("capital", col(|p| p.capital))?;
+    d.set_item("assets", col(|p| p.assets))?;
+    d.set_item("loss_ratio", col(Pentagon::loss_ratio))?;
+    d.set_item("premium_to_capital", col(Pentagon::premium_to_capital))?;
+    d.set_item("return_on_capital", col(Pentagon::return_on_capital))?;
+    Ok(d)
+}
+
+/// Each unit priced alone, the book priced together and the sum of the
+/// parts, from ``Portfolio.price_stand_alone``.
+#[pyclass(name = "StandAlone", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyStandAlone {
+    inner: StandAlone,
+}
+
+#[pymethods]
+impl PyStandAlone {
+    /// Unit names.
+    #[getter]
+    fn units(&self) -> Vec<String> {
+        self.inner.units.clone()
+    }
+
+    /// Each unit as if it were the whole book, at its own VaR: a list of
+    /// Pentagon.
+    #[getter]
+    fn stand_alone(&self) -> Vec<PyPentagon> {
+        self.inner
+            .stand_alone
+            .iter()
+            .map(|&inner| PyPentagon { inner })
+            .collect()
+    }
+
+    /// The book, at the VaR of its total: a Pentagon.
+    #[getter]
+    fn total(&self) -> PyPentagon {
+        PyPentagon {
+            inner: self.inner.total,
+        }
+    }
+
+    /// The stand-alone loss, premium and assets added up: a Pentagon.
+    #[getter]
+    fn sum(&self) -> PyPentagon {
+        PyPentagon {
+            inner: self.inner.sum,
+        }
+    }
+
+    /// The table as a dict of columns, as ``NaturalPrice.to_dict``, with
+    /// rows for the units, ``"total"`` and ``"sum"``.
+    ///
+    /// Returns
+    /// -------
+    /// dict of str to list
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let rows: Vec<&Pentagon> = self
+            .inner
+            .stand_alone
+            .iter()
+            .chain([&self.inner.total, &self.inner.sum])
+            .collect();
+        let mut names = self.inner.units.clone();
+        names.extend(["total".into(), "sum".into()]);
+        pentagon_dict(py, names, &rows)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "StandAlone(units={:?}, sum={}, total={})",
+            self.inner.units, self.inner.sum.premium, self.inner.total.premium
         )
     }
 }
@@ -378,6 +454,84 @@ impl PyPortfolio {
     /// float
     fn assets(&self, p: f64) -> PyResult<f64> {
         self.inner.assets(p).map_err(to_py)
+    }
+
+    /// The level ``t`` at which the total's TVaR reaches its VaR at ``p``,
+    /// ``aggregate``'s ``Portfolio.tvar_threshold(p, 'lower')``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``p`` is outside ``[0, 1]``.
+    fn tvar_threshold(&self, p: f64) -> PyResult<f64> {
+        self.inner.tvar_threshold(p).map_err(to_py)
+    }
+
+    /// Each unit priced as if it were the whole book, at its own lower
+    /// ``p`` quantile, against the book priced together at the VaR of its
+    /// total, ``aggregate``'s ``Portfolio.price_stand_alone``. The excess
+    /// of ``sum`` over ``total`` is the diversification benefit.
+    ///
+    /// Parameters
+    /// ----------
+    /// distortion : Distortion
+    /// p : float
+    ///     The VaR capital standard, in ``(0, 1)``.
+    ///
+    /// Returns
+    /// -------
+    /// StandAlone
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``p`` is outside ``(0, 1)``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import Portfolio
+    /// >>> from prospicio.risk import Distortion
+    /// >>> port = Portfolio(["a", "b"], [[0, 0], [1, 4], [4, 1], [5, 5]])
+    /// >>> s = port.price_stand_alone(Distortion.proportional_hazard(0.5), 0.75)
+    /// >>> [u.assets for u in s.stand_alone], s.total.assets
+    /// ([4.0, 4.0], 5.0)
+    fn price_stand_alone(
+        &self,
+        distortion: PyRef<'_, PyDistortion>,
+        p: f64,
+    ) -> PyResult<PyStandAlone> {
+        Ok(PyStandAlone {
+            inner: self
+                .inner
+                .price_stand_alone(&distortion.inner, p)
+                .map_err(to_py)?,
+        })
+    }
+
+    /// Each unit's comonotonic allocation at each total, a non-decreasing
+    /// function of the total that still adds up to it: Denuit et al.'s
+    /// (2025) improvement of ``kappa``, ``aggregate``'s
+    /// ``make_comonotonic_allocations``.
+    ///
+    /// Returns
+    /// -------
+    /// dict of str to list of float
+    ///     Unit name to its allocation at each of ``totals()``.
+    fn comonotonic_kappa(&self) -> std::collections::HashMap<String, Vec<f64>> {
+        self.inner
+            .units()
+            .iter()
+            .cloned()
+            .zip(self.inner.comonotonic_kappa())
+            .collect()
     }
 
     /// The premium of the loss capped at the assets, and its natural

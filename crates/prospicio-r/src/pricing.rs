@@ -745,6 +745,22 @@ impl NaturalPortfolio {
         self.inner.bodoff(assets)
     }
 
+    /// Each unit alone at its own VaR, the book together, and their sum:
+    /// a pentagon table with rows for the units, "total" and "sum".
+    fn price_stand_alone(&self, distortion: Robj, p: f64) -> Result<List> {
+        let g = distortion_arg(&distortion, "distortion")?;
+        let s = self.inner.price_stand_alone(&g, p).map_err(to_r)?;
+        let rows: Vec<&Pentagon> = s.stand_alone.iter().chain([&s.total, &s.sum]).collect();
+        let mut units = s.units.clone();
+        units.extend(["total".into(), "sum".into()]);
+        Ok(pentagon_list(&rows, units))
+    }
+
+    /// Each unit's comonotonic allocation at each total, unit by unit.
+    fn comonotonic_kappa(&self) -> List {
+        List::from_values(self.inner.comonotonic_kappa())
+    }
+
     fn epd(&self, assets: f64) -> List {
         let (total, units) = self.inner.epd(assets);
         list!(total = total, units = units)

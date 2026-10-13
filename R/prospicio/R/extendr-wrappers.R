@@ -20,6 +20,10 @@ dist_to_json_rust <- function(dist) .Call(wrap__dist_to_json_rust, dist)
 
 dist_from_json_rust <- function(text) .Call(wrap__dist_from_json_rust, text)
 
+tvar_weighted_rust <- function(values, probs, p) .Call(wrap__tvar_weighted_rust, values, probs, p)
+
+tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
+
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
 
 reorder_groups_rust <- function(pd, dim, correlation, seed) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed)
@@ -1248,6 +1252,12 @@ ClaimCount$compound_poisson <- function(rate, secondary) .Call(wrap__ClaimCount_
 
 ClaimCount$empirical <- function(probs) .Call(wrap__ClaimCount__empirical, probs)
 
+ClaimCount$fixed <- function(n) .Call(wrap__ClaimCount__fixed, n)
+
+ClaimCount$bernoulli <- function(p) .Call(wrap__ClaimCount__bernoulli, p)
+
+ClaimCount$geometric <- function(mean) .Call(wrap__ClaimCount__geometric, mean)
+
 ClaimCount$kind <- function() .Call(wrap__ClaimCount__kind, self)
 
 ClaimCount$pmf <- function(k) .Call(wrap__ClaimCount__pmf, self, k)
@@ -1295,6 +1305,10 @@ NaturalPortfolio$price <- function(distortion, assets, allocation) .Call(wrap__N
 NaturalPortfolio$calibrate <- function(family, assets, target, value, r0) .Call(wrap__NaturalPortfolio__calibrate, self, family, assets, target, value, r0)
 
 NaturalPortfolio$bodoff <- function(assets) .Call(wrap__NaturalPortfolio__bodoff, self, assets)
+
+NaturalPortfolio$price_stand_alone <- function(distortion, p) .Call(wrap__NaturalPortfolio__price_stand_alone, self, distortion, p)
+
+NaturalPortfolio$comonotonic_kappa <- function() .Call(wrap__NaturalPortfolio__comonotonic_kappa, self)
 
 NaturalPortfolio$epd <- function(assets) .Call(wrap__NaturalPortfolio__epd, self, assets)
 

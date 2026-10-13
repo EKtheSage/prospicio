@@ -53,6 +53,7 @@ reference:
       - draws
       - severity
       - risk_measures
+      - tvar_threshold
   - title: Predictive distributions
     contents:
       - predictive_distribution
@@ -115,6 +116,7 @@ reference:
       - calibrate_portfolio
       - bodoff_allocation
       - priority_ladder
+      - price_stand_alone
       - pentagon
       - premium_bounds
       - pricing_bounds

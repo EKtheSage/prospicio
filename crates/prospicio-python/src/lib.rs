@@ -59,8 +59,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::natural::{
-        PyNaturalPrice, PyPentagon, PyPortfolio, PyPricingBounds, calibrate_classical,
-        classical_premium, distortion_envelope,
+        PyNaturalPrice, PyPentagon, PyPortfolio, PyPricingBounds, PyStandAlone,
+        calibrate_classical, classical_premium, distortion_envelope,
     };
     #[pymodule_export]
     use super::pareto::{

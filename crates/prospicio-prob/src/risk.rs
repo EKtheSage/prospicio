@@ -64,6 +64,127 @@ pub fn tvar_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     Ok((partial + tail) / (1.0 - p))
 }
 
+/// Value at risk of a discrete distribution: the smallest value `x` with
+/// `P(X <= x) >= p`, the lower quantile. `values` are ascending, `probs`
+/// their probabilities. `p = 0` gives the smallest value.
+///
+/// ```
+/// use prospicio_prob::risk::var_weighted;
+///
+/// let (x, w) = ([0.0, 1.0, 2.0], [0.5, 0.3, 0.2]);
+/// assert_eq!(var_weighted(&x, &w, 0.5), Ok(0.0));
+/// assert_eq!(var_weighted(&x, &w, 0.6), Ok(1.0));
+/// ```
+pub fn var_weighted(values: &[f64], probs: &[f64], p: f64) -> Result<f64> {
+    check_probability(p)?;
+    check_weighted(values, probs)?;
+    let mut cum = 0.0;
+    for (&x, &w) in values.iter().zip(probs) {
+        cum += w;
+        if cum >= p {
+            return Ok(x);
+        }
+    }
+    // Rounding left the total a hair below p.
+    Ok(values[values.len() - 1])
+}
+
+/// Tail value at risk of a discrete distribution,
+/// `(1 / (1 - p)) * integral from p to 1 of VaR(u) du`: the value at the
+/// VaR counted with the share of its mass above `p`, then every larger
+/// value. `values` are ascending, `probs` their probabilities. `p = 0`
+/// gives the mean; at or beyond the last value's cumulative start, the
+/// largest value (as `aggregate`).
+///
+/// ```
+/// use prospicio_prob::risk::tvar_weighted;
+///
+/// let (x, w) = ([0.0, 1.0, 2.0], [0.5, 0.3, 0.2]);
+/// // Above p = 0.6: 0.2 of the value 1, then 0.2 of the value 2.
+/// assert!((tvar_weighted(&x, &w, 0.6).unwrap() - 1.5).abs() < 1e-15);
+/// ```
+pub fn tvar_weighted(values: &[f64], probs: &[f64], p: f64) -> Result<f64> {
+    check_probability(p)?;
+    check_weighted(values, probs)?;
+    Ok(tvar_unchecked(values, probs, p))
+}
+
+fn tvar_unchecked(values: &[f64], probs: &[f64], p: f64) -> f64 {
+    let n = values.len();
+    let mut cum = 0.0;
+    for j in 0..n {
+        cum += probs[j];
+        if cum > p {
+            if j == n - 1 {
+                return values[n - 1];
+            }
+            let tail: f64 = values[j + 1..]
+                .iter()
+                .zip(&probs[j + 1..])
+                .map(|(x, w)| x * w)
+                .sum();
+            return ((cum - p) * values[j] + tail) / (1.0 - p);
+        }
+    }
+    values[n - 1]
+}
+
+/// The level `t` at which the tail value at risk reaches the value at
+/// risk at `p`, `TVaR(t) = VaR(p)` (the lower VaR), as `aggregate`'s
+/// `tvar_threshold`. TVaR rises continuously from the mean at `t = 0` to
+/// the largest value, so `t <= p`; it is found by bisection to the last
+/// bit. `p = 0`, or a VaR at or below the mean, gives 0 (`aggregate`
+/// returns 0 at `p = 0` and fails below the mean); a VaR at the largest
+/// value, where every `t` from the last value's cumulative start up
+/// qualifies, gives 1, as `aggregate`'s bisection.
+///
+/// ```
+/// use prospicio_prob::risk::{tvar_threshold, tvar_weighted, var_weighted};
+///
+/// let (x, w) = ([0.0, 1.0, 2.0, 5.0], [0.4, 0.3, 0.2, 0.1]);
+/// let t = tvar_threshold(&x, &w, 0.85).unwrap();
+/// let target = var_weighted(&x, &w, 0.85).unwrap();
+/// assert!((tvar_weighted(&x, &w, t).unwrap() - target).abs() < 1e-12);
+/// assert!(t < 0.85);
+/// ```
+pub fn tvar_threshold(values: &[f64], probs: &[f64], p: f64) -> Result<f64> {
+    let target = var_weighted(values, probs, p)?;
+    if p == 0.0 {
+        return Ok(0.0);
+    }
+    if target >= values[values.len() - 1] {
+        return Ok(1.0);
+    }
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    if tvar_unchecked(values, probs, lo) >= target {
+        return Ok(0.0);
+    }
+    while hi - lo > f64::EPSILON * hi {
+        let mid = 0.5 * (lo + hi);
+        if mid <= lo || mid >= hi {
+            break;
+        }
+        if tvar_unchecked(values, probs, mid) < target {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(0.5 * (lo + hi))
+}
+
+fn check_weighted(values: &[f64], probs: &[f64]) -> Result<()> {
+    if values.is_empty() || values.len() != probs.len() {
+        return Err(Error::InvalidParameter {
+            name: "values",
+            value: values.len() as f64,
+            reason: "must be non-empty and as long as probs",
+        });
+    }
+    debug_assert!(is_sorted(values), "values must be sorted ascending");
+    Ok(())
+}
+
 /// Entropic risk measure `(1/θ) log E[e^(θX)]` of equally likely draws
 /// (losses positive), the certainty equivalent under exponential utility
 /// with risk aversion `θ > 0`. It increases from the mean (`θ → 0`) to the

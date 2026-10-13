@@ -2563,6 +2563,25 @@ class Count:
     35.0
     """
     def __repr__(self, /) -> str: ...
+    @staticmethod
+    def bernoulli(p: float) -> Count:
+        """
+        A Bernoulli count, one claim with probability ``p`` in ``[0, 1)``,
+        ``aggregate``'s ``bernoulli``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        Count
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1)``.
+        """
     def cdf(self, /, k: int) -> float:
         """
         ``P(N <= k)``.
@@ -2603,6 +2622,51 @@ class Count:
         Returns
         -------
         Count
+        """
+    @staticmethod
+    def fixed(n: int) -> Count:
+        """
+        A fixed count, ``N = n``, ``aggregate``'s ``fixed``.
+        
+        Parameters
+        ----------
+        n : int
+        
+        Returns
+        -------
+        Count
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Count
+        >>> n = Count.fixed(3)
+        >>> n.mean(), n.variance()
+        (3.0, 0.0)
+        """
+    @staticmethod
+    def geometric(mean: float) -> Count:
+        """
+        A geometric count on ``0, 1, ...`` with this mean, a negative
+        binomial with ``r = 1``, ``aggregate``'s ``geometric``.
+        
+        Parameters
+        ----------
+        mean : float
+        
+        Returns
+        -------
+        Count
+        
+        Raises
+        ------
+        ValueError
+            If ``mean`` is not finite and positive.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Count
+        >>> round(Count.geometric(3.0).pmf(0), 12)
+        0.25
         """
     @staticmethod
     def logarithmic(p: float) -> Count:
@@ -5345,6 +5409,51 @@ class Grid:
         Returns
         -------
         float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p``: the mean of the worst ``1 - p`` of the
+        distribution, the point at the VaR counted with its mass above
+        ``p``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def tvar_threshold(self, /, p: float) -> float:
+        """
+        The level ``t`` with ``TVaR(t) = VaR(p)`` (the lower VaR), as
+        ``aggregate``'s ``tvar_threshold``; ``t <= p``, and ``p = 0`` gives 0.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Grid
+        >>> g = Grid(1.0, [0.4, 0.3, 0.2, 0.1])
+        >>> t = g.tvar_threshold(0.85)
+        >>> round(g.tvar(t), 12) == g.quantile(0.85)
+        True
         """
     def variance(self, /) -> float:
         """
@@ -10093,6 +10202,18 @@ class Portfolio:
         -------
         Distortion
         """
+    def comonotonic_kappa(self, /) -> dict[str, list[float]]:
+        """
+        Each unit's comonotonic allocation at each total, a non-decreasing
+        function of the total that still adds up to it: Denuit et al.'s
+        (2025) improvement of ``kappa``, ``aggregate``'s
+        ``make_comonotonic_allocations``.
+        
+        Returns
+        -------
+        dict of str to list of float
+            Unit name to its allocation at each of ``totals()``.
+        """
     def epd(self, /, assets: float) -> tuple[float, list[float]]:
         """
         The expected policyholder deficit ratio with these assets: in
@@ -10193,6 +10314,37 @@ class Portfolio:
         -------
         NaturalPrice
         """
+    def price_stand_alone(self, /, distortion: Distortion, p: float) -> StandAlone:
+        """
+        Each unit priced as if it were the whole book, at its own lower
+        ``p`` quantile, against the book priced together at the VaR of its
+        total, ``aggregate``'s ``Portfolio.price_stand_alone``. The excess
+        of ``sum`` over ``total`` is the diversification benefit.
+        
+        Parameters
+        ----------
+        distortion : Distortion
+        p : float
+            The VaR capital standard, in ``(0, 1)``.
+        
+        Returns
+        -------
+        StandAlone
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``(0, 1)``.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import Portfolio
+        >>> from prospicio.risk import Distortion
+        >>> port = Portfolio(["a", "b"], [[0, 0], [1, 4], [4, 1], [5, 5]])
+        >>> s = port.price_stand_alone(Distortion.proportional_hazard(0.5), 0.75)
+        >>> [u.assets for u in s.stand_alone], s.total.assets
+        ([4.0, 4.0], 5.0)
+        """
     def priority(self, /, assets: float |None = None, p: float |None = None) -> dict:
         """
         The priority ladder: each unit's recovery from the assets when it
@@ -10253,6 +10405,24 @@ class Portfolio:
     def totals(self, /) -> list[float]:
         """
         The distinct totals, ascending.
+        """
+    def tvar_threshold(self, /, p: float) -> float:
+        """
+        The level ``t`` at which the total's TVaR reaches its VaR at ``p``,
+        ``aggregate``'s ``Portfolio.tvar_threshold(p, 'lower')``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
         """
     @property
     def units(self, /) -> list[str]:
@@ -11363,6 +11533,44 @@ class StackingFit:
         Returns
         -------
         list of list of float
+        """
+
+@final
+class StandAlone:
+    """
+    Each unit priced alone, the book priced together and the sum of the
+    parts, from ``Portfolio.price_stand_alone``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def stand_alone(self, /) -> list[Pentagon]:
+        """
+        Each unit as if it were the whole book, at its own VaR: a list of
+        Pentagon.
+        """
+    @property
+    def sum(self, /) -> Pentagon:
+        """
+        The stand-alone loss, premium and assets added up: a Pentagon.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The table as a dict of columns, as ``NaturalPrice.to_dict``, with
+        rows for the units, ``"total"`` and ``"sum"``.
+        
+        Returns
+        -------
+        dict of str to list
+        """
+    @property
+    def total(self, /) -> Pentagon:
+        """
+        The book, at the VaR of its total: a Pentagon.
+        """
+    @property
+    def units(self, /) -> list[str]:
+        """
+        Unit names.
         """
 
 @final

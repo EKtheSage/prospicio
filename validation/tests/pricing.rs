@@ -268,13 +268,47 @@ fn natural_allocation_matches_aggregate() {
             .split(';')
             .filter_map(|kv| kv.split_once('='))
             .collect();
-        let assets: f64 = params.get("assets")?.parse().ok()?;
         let port = match *params.get("case")? {
             "insco" => &insco,
             "discrete" => &discrete,
             "discrete3" => &discrete3,
             _ => return None,
         };
+        match c.get("distribution") {
+            "tvar_threshold" => return port.tvar_threshold(c.number("arg")?).ok(),
+            "stand_alone" => {
+                let shape: f64 = params.get("shape")?.parse().ok()?;
+                let g = match *params.get("distortion")? {
+                    "ph" => Distortion::proportional_hazard(shape),
+                    "wang" => Distortion::wang(shape),
+                    _ => return None,
+                }
+                .ok()?;
+                let s = port
+                    .price_stand_alone(&g, params.get("p")?.parse().ok()?)
+                    .ok()?;
+                let (unit, stat) = c.get("quantity").split_once('.')?;
+                let pent = match unit {
+                    "total" => s.total,
+                    "sum" => s.sum,
+                    u => s.stand_alone[s.units.iter().position(|v| v == u)?],
+                };
+                return match stat {
+                    "L" => Some(pent.loss),
+                    "P" => Some(pent.premium),
+                    "a" => Some(pent.assets),
+                    _ => None,
+                };
+            }
+            "comonotonic" => {
+                let i = port.units().iter().position(|u| u == c.get("quantity"))?;
+                let x = c.number("arg")?;
+                let k = port.totals().iter().position(|&t| t == x)?;
+                return Some(port.comonotonic_kappa()[i][k]);
+            }
+            _ => {}
+        }
+        let assets: f64 = params.get("assets")?.parse().ok()?;
         match c.get("distribution") {
             "priority" => {
                 use prospicio_pricing::natural::Rule;

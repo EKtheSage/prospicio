@@ -294,3 +294,37 @@ def test_pricing_bounds_and_envelope():
     # aggregate 1.0.1's PricingBounds against Bernoulli risks.
     assert lower == pytest.approx([0.1372282608695652, 0.5652173913043478], abs=1e-12)
     assert upper[0] == pytest.approx(0.217391304347826, abs=1e-12)
+
+
+def test_tvar_threshold_on_a_portfolio():
+    from prospicio.pricing import Portfolio
+
+    # aggregate 1.0.1, Portfolio.tvar_threshold(0.9, 'lower') on PIR's Discrete case
+    x1, x2, w = [0, 8, 10], [0, 1, 90], [0.5, 0.25, 0.25]
+    rows = [[a, b] for a in x1 for b in x2]
+    probs = [p * q for p in w for q in w]
+    port = Portfolio(["X1", "X2"], rows, probs)
+    assert port.tvar_threshold(0.9) == pytest.approx(0.859375, abs=1e-11)
+
+
+def test_stand_alone_and_comonotonic_allocation():
+    from prospicio.pricing import Portfolio
+    from prospicio.risk import Distortion
+
+    # aggregate 1.0.1 on PIR's Discrete case (aggregate_natural.py)
+    x1, x2, w = [0, 8, 10], [0, 1, 90], [0.5, 0.25, 0.25]
+    rows = [[a, b] for a in x1 for b in x2]
+    probs = [p * q for p in w for q in w]
+    port = Portfolio(["X1", "X2"], rows, probs)
+    s = port.price_stand_alone(Distortion.proportional_hazard(0.7), 0.9)
+    assert s.stand_alone[0].premium == pytest.approx(5.682435936634864, abs=1e-10)
+    assert s.total.premium == pytest.approx(39.27576430346102, abs=1e-10)
+    assert s.sum.premium == pytest.approx(40.02270174816368, abs=1e-10)
+    assert s.to_dict()["unit"] == ["X1", "X2", "total", "sum"]
+    with pytest.raises(ValueError):
+        port.price_stand_alone(Distortion.proportional_hazard(0.7), 1.0)
+    co = port.comonotonic_kappa()
+    totals = port.totals
+    assert co["X1"][totals.index(8.0)] == pytest.approx(6.607142857142858, abs=1e-10)
+    for k, x in enumerate(totals):
+        assert co["X1"][k] + co["X2"][k] == pytest.approx(x, abs=1e-12)

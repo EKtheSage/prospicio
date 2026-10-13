@@ -35,8 +35,25 @@ unit's and senior pool's expected shortfall given the total
 (`priority_kappa`, quantity `X1.junior`, `arg` the total). aggregate
 needs independent units, so InsCo has no ladder here.
 
+The level at which the total's TVaR reaches its VaR at `arg`
+(`Portfolio.tvar_threshold(p, 'lower')`, `distribution` `tvar_threshold`)
+on InsCo and both Discrete cases, at the levels where aggregate's
+bisection has a root (a VaR above the mean). Its bisection stops within
+scipy's `xtol` of `2e-12`: tolerance `1e-11`.
+
+Each unit priced alone against the book priced together
+(`Portfolio.price_stand_alone`, `distribution` `stand_alone`, quantity
+`X1.P`, `total.a` or `sum.L`) on both Discrete cases, under the
+proportional hazard at 0.7 and Wang at 0.3, at VaR levels 0.8, 0.9 and
+0.95. And Denuit et al.'s comonotonic allocation
+(`Portfolio.make_comonotonic_allocations`, `distribution` `comonotonic`,
+quantity the unit, `arg` the total) at the totals with positive
+probability: aggregate's zero-probability grid points leave those values
+unchanged (to 3e-14).
+
 Rows: `distribution` is `price`, `bodoff`, `bounds`, `classical`,
-`priority` or `priority_kappa`; `params` names the
+`priority`, `priority_kappa`, `tvar_threshold`, `stand_alone` or
+`comonotonic`; `params` names the
 distortion, allocation and assets; `quantity` is the unit and the column
 (`X1.P`); `expected` is aggregate's value. aggregate computes on a grid
 with bucket 1, which holds every total, so the only differences are the
@@ -130,6 +147,30 @@ def main():
                             rows.append(["priority_kappa", f"case={case};assets={a}",
                                          f"{unit}.{side}", str(x), "", repr(float(v)), "1e-9",
                                          "0.0", SOURCE])
+    for case, port in [("insco", insco), ("discrete", discrete), ("discrete3", discrete3)]:
+        for p in [0.7, 0.8, 0.9, 0.95, 0.99]:
+            try:
+                t = port.tvar_threshold(p, "lower")
+            except ValueError:
+                continue  # the VaR is at or below the mean: no root to bracket
+            rows.append(["tvar_threshold", f"case={case}", "t", repr(p), "", repr(float(t)),
+                         "1e-11", "0.0", SOURCE])
+    for case, port in [("discrete", discrete), ("discrete3", discrete3)]:
+        units = list(port.unit_names)
+        for name, shape in [("ph", 0.7), ("wang", 0.3)]:
+            for p in [0.8, 0.9, 0.95]:
+                df = port.price_stand_alone(Distortion(name, shape), p).droplevel(0)
+                for u in units + ["total", "sum"]:
+                    for stat in ["L", "P", "a"]:
+                        rows.append(["stand_alone", f"case={case};distortion={name};shape={shape};p={p}",
+                                     f"{u}.{stat}", "", "", repr(float(df.loc[u, stat])), "1e-10",
+                                     "0.0", SOURCE])
+        co = port.make_comonotonic_allocations()
+        co = co[co.p_total > 0]
+        for u in units:
+            for x, v in zip(co.loss, co[f"exeqa_{u}_t"]):
+                rows.append(["comonotonic", f"case={case}", u, repr(float(x)), "",
+                             repr(float(v)), "1e-10", "0.0", SOURCE])
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "arg2", "expected",

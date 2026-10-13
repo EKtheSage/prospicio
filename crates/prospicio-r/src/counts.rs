@@ -77,6 +77,27 @@ impl ClaimCount {
         })
     }
 
+    fn fixed(n: f64) -> Result<Self> {
+        let n = crate::whole(n, "n")?;
+        Ok(Self {
+            inner: CountDist::Empirical(EmpiricalCount::fixed(n)),
+        })
+    }
+
+    fn bernoulli(p: f64) -> Result<Self> {
+        Ok(Self {
+            inner: CountDist::Binomial(prospicio_prob::Binomial::bernoulli(p).map_err(to_r)?),
+        })
+    }
+
+    fn geometric(mean: f64) -> Result<Self> {
+        Ok(Self {
+            inner: CountDist::NegativeBinomial(
+                prospicio_prob::NegativeBinomial::geometric(mean).map_err(to_r)?,
+            ),
+        })
+    }
+
     fn kind(&self) -> &'static str {
         match &self.inner {
             CountDist::ZeroModified(_) => "zero_modified",

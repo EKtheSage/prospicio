@@ -827,6 +827,45 @@ priority_kappa <- function(port, unit, assets = NULL, p = NULL) {
   data.frame(total = port@ptr$totals(), junior = r$junior, senior = r$senior)
 }
 
+#' Each unit priced alone, and the comonotonic allocation
+#'
+#' `price_stand_alone()` prices each unit as if it were the whole book, at
+#' its own lower `p` quantile (`L = E[X_i ∧ a_i]`, `P = ρ_g(X_i ∧ a_i)`),
+#' against the book priced together at the VaR of its total, as
+#' `aggregate`'s `Portfolio.price_stand_alone`; the `sum` row adds the
+#' stand-alone loss, premium and assets, and its excess over `total` is the
+#' diversification benefit.
+#'
+#' `comonotonic_allocation()` is Denuit et al.'s (2025) convex-order
+#' improvement of the conditional mean risk sharing `E[X_i | X]`: each
+#' unit's allocation as a non-decreasing function of the total, still adding
+#' up to it (`aggregate`'s `make_comonotonic_allocations`).
+#'
+#' @inheritParams natural_price
+#' @param p The VaR capital standard, in `(0, 1)`.
+#' @returns `price_stand_alone()`: a data frame as [natural_price()] with
+#'   rows for the units, `total` and `sum`. `comonotonic_allocation()`: a
+#'   data frame with the `total` and one column per unit.
+#' @export
+#' @examples
+#' port <- capital_portfolio(cbind(a = c(0, 1, 4, 5), b = c(0, 4, 1, 5)))
+#' price_stand_alone(port, distortion("proportional_hazard", 0.5), p = 0.75)
+#' comonotonic_allocation(capital_portfolio(cbind(A = c(0, 1, 6, 7), B = c(0, 3, 0, 3))))
+price_stand_alone <- function(port, distortion, p) {
+  as.data.frame(rust_result(port@ptr$price_stand_alone(distortion@ptr, as.double(p))))
+}
+
+#' @rdname price_stand_alone
+#' @export
+comonotonic_allocation <- function(port) {
+  k <- stats::setNames(port@ptr$comonotonic_kappa(), port@units)
+  data.frame(total = port@totals, k, check.names = FALSE)
+}
+
+S7::method(tvar_threshold, capital_portfolio) <- function(x, p, ...) {
+  rust_result(tvar_threshold_rust(x@ptr$totals(), x@ptr$probs(), as.double(p)), s7_call())
+}
+
 #' Premium, margin and capital pentagon
 #'
 #' Loss `L`, margin `M`, premium `P`, capital `Q` and assets `a`, with
