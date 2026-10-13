@@ -10,7 +10,8 @@ risk_loaded_price(x, assets, cost_of_capital = NULL, distortion = NULL)
 price_portfolio(x, assets, cost_of_capital = NULL, distortion = NULL)
 }
 \arguments{
-\item{x}{A \link{sampled} or a \link{predictive_distribution} (its total) for
+\item{x}{A \link{sampled}, a \link{predictive_distribution} (its total) or a
+\link{grid_distribution} for
 \code{risk_loaded_price()}; a \link{predictive_distribution} whose components add
 up to the portfolio (segments or covers, not gross, ceded and net side
 by side) for \code{price_portfolio()}.}
@@ -34,7 +35,9 @@ data frame of \code{x} with the allocated \code{expected_loss}, \code{premium},
 \code{standalone_premium}.
 }
 \description{
-\code{risk_loaded_price()} prices one cover from its loss draws;
+\code{risk_loaded_price()} prices one cover from its loss draws, or from its
+loss distribution on a grid (a layer's exact annual loss from
+\code{\link[=tower_on_grid]{tower_on_grid()}});
 \code{price_portfolio()} prices a portfolio and allocates the price to its
 components. The assets backing the loss are the distortion risk measure
 \code{assets} of it. The premium is either the pricing distortion
@@ -50,6 +53,9 @@ component earns the rate on its allocated capital.
 }
 \examples{
 risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
+                  cost_of_capital = 0.25)$premium
+# The same on a grid: 0, 2 or 6 with probabilities 1/2, 1/4, 1/4.
+risk_loaded_price(grid_distribution(2, c(0.5, 0.25, 0, 0.25)), distortion("tvar", 0.5),
                   cost_of_capital = 0.25)$premium
 pd <- predictive_distribution(
   matrix(c(0, 1, 4, 8, 2, 1, 0, 0), ncol = 2),
