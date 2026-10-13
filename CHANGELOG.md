@@ -28,6 +28,22 @@ under "Unreleased" until then.
   Python `prospicio.aggregate.compound_moments`; R `compound_moments()`,
   `moment_approximation()`, `approximation_cdf()`,
   `approximation_quantile()` (#184).
+- Per-occurrence layer statistics, `aggregate`'s `reins_stats_df`: the
+  chances of attaching, detaching and a loss in the year, the loss on line,
+  and the moments of the excess count, the layer severity and the annual
+  ceded loss (`prospicio_aggregate::occurrence_layer_statistics`); and
+  each view of a tower on the grid priced under a distortion,
+  `reins_price_df` (`TowerGrids::price`). Python
+  `prospicio.reinsurance.occurrence_layer_statistics`,
+  `TowerGrids.price`; R `occurrence_layer_statistics()`, `tower_price()` (#187).
+
+### Examples
+
+- `examples/reinsurance_pricing.ipynb` prices an occurrence tower, a
+  program and a share, an aggregate limit with reinstatements, stop loss and
+  aggregate deductible, retro, swing, profit commission and sliding scale,
+  and distortion premiums, and compares 343 results (321 independent
+  comparisons and 22 consistency checks) with Mildenhall's `aggregate` 1.0.1 (reference file `validation/reference/re_pricing_aggregate.csv`) (#186).
 
 ### Reserving
 

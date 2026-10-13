@@ -10,7 +10,11 @@ For an end-to-end use of the library, see
 the notebook [`examples/one_year_view.ipynb`](../examples/one_year_view.ipynb),
 saved with its results and charts. It covers
 reserve risk, premium risk from GLMs and property per-risk reinsurance,
-then joins them and sets and allocates capital.
+then joins them and sets and allocates capital. The notebook
+[`examples/reinsurance_pricing.ipynb`](../examples/reinsurance_pricing.ipynb)
+prices towers, aggregate limits, reinstatements, stop losses, variable
+premiums and commissions, and risk-adjusted premiums, each beside the
+numbers of Mildenhall's `aggregate`.
 
 ## Milestones
 
@@ -98,11 +102,12 @@ what it is aiming for by v1.0.
   - The occurrence exceedance (OEP) curve and occurrence PMLs for any
     count, exact and simulated; compound moments to third order and the
     moment approximations (normal, gamma, lognormal, shifted gamma and
-    lognormal).
+    lognormal); per-occurrence layer statistics and each view of a tower
+    priced under a distortion, the grid towers checked against
+    `aggregate` point by point.
 - **Next:**
   1. The rest of `aggregate` parity tier 2 (the user's choice, 2026-10-12),
-     in the order listed in `docs/design/aggregate.md`: reinsurance
-     statistics by view and pricing a cession, a priority ladder, eventual ruin, layer
+     in the order listed in `docs/design/aggregate.md`: a priority ladder, eventual ruin, layer
      loss picks, pricing bounds.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.

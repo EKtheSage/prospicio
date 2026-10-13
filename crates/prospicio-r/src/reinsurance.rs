@@ -413,9 +413,47 @@ fn layer_list(layers: List) -> Result<Vec<Layer>> {
         .collect()
 }
 
+fn moments_vec(m: &prospicio_aggregate::CompoundMoments) -> Vec<f64> {
+    vec![m.mean, m.variance, m.third_cumulant, m.cv(), m.skew()]
+}
+
+/// `list(pr_attach, pr_detach, pr_loss, loss_on_line, count, severity,
+/// aggregate)`, the moments each `c(mean, variance, third_cumulant, cv,
+/// skew)`.
+#[extendr]
+fn occurrence_layer_statistics_rust(
+    frequency: Robj,
+    severity: Robj,
+    share: f64,
+    limit: f64,
+    attachment: f64,
+) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = <&Grid>::try_from(&severity)
+        .map_err(|_| Error::Other("severity must be a grid_distribution".into()))?;
+    let s = prospicio_aggregate::occurrence_layer_statistics(
+        n.as_counting(),
+        &sev.inner,
+        share,
+        limit,
+        attachment,
+    )
+    .map_err(to_r)?;
+    Ok(list!(
+        pr_attach = s.pr_attach,
+        pr_detach = s.pr_detach,
+        pr_loss = s.pr_loss,
+        loss_on_line = s.loss_on_line,
+        count = moments_vec(&s.count),
+        severity = moments_vec(&s.severity),
+        aggregate = moments_vec(&s.aggregate)
+    ))
+}
+
 extendr_module! {
     mod reinsurance;
     fn retro_premium_rust;
+    fn occurrence_layer_statistics_rust;
     impl XolLayer;
     impl ReinsuranceTower;
 }
