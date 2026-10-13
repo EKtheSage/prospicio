@@ -46,6 +46,12 @@ approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap_
 
 eventual_ruin_rust <- function(severity, rho, points, part, value, p) .Call(wrap__eventual_ruin_rust, severity, rho, points, part, value, p)
 
+fft_bivariate_rust <- function(frequency, probs, rows, cols, step_a, step_b, points_a, points_b) .Call(wrap__fft_bivariate_rust, frequency, probs, rows, cols, step_a, step_b, points_a, points_b)
+
+clash_rust <- function(counts) .Call(wrap__clash_rust, counts)
+
+clash_aggregate_rust <- function(counts, frequency, a, b, points_a, points_b) .Call(wrap__clash_aggregate_rust, counts, frequency, a, b, points_a, points_b)
+
 layer_loss_picks_rust <- function(severity, attachments, picks, claims) .Call(wrap__layer_loss_picks_rust, severity, attachments, picks, claims)
 
 occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)

@@ -620,10 +620,121 @@ fn aggregate_elt_simulate(
     Ok(list!(events = EventSet { inner }, ids = ids))
 }
 
+/// A joint grid's results for R: the density row by row with its shape and
+/// steps, both marginals and the total as grids, and the moments.
+fn joint_list(
+    joint: &prospicio_aggregate::JointGrid,
+    report: Option<&prospicio_aggregate::BivariateReport>,
+) -> Result<List> {
+    let [rows, cols] = joint.shape();
+    let [ha, hb] = joint.steps();
+    let report: Robj = match report {
+        Some(r) => list!(
+            tail_mass = r.tail_mass.to_vec(),
+            aliasing_mass = r.aliasing_mass.to_vec(),
+            expected_means = r.expected_means.to_vec(),
+            grid_means = r.grid_means.to_vec()
+        )
+        .into(),
+        None => ().into(),
+    };
+    Ok(list!(
+        probs = joint.probs().to_vec(),
+        rows = rows as f64,
+        cols = cols as f64,
+        steps = vec![ha, hb],
+        marginal_a = Grid::wrap(joint.marginal(0).map_err(to_r)?),
+        marginal_b = Grid::wrap(joint.marginal(1).map_err(to_r)?),
+        total = Grid::wrap(joint.total().map_err(to_r)?),
+        means = vec![joint.mean(0), joint.mean(1)],
+        variances = vec![joint.variance(0), joint.variance(1)],
+        covariance = joint.covariance(),
+        correlation = joint.correlation(),
+        report = report
+    ))
+}
+
+/// The joint annual loss of two lines by a 2-D FFT; `probs` is the
+/// per-event severity row by row (`rows` points of line A).
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn fft_bivariate_rust(
+    frequency: Robj,
+    probs: &[f64],
+    rows: f64,
+    cols: f64,
+    step_a: f64,
+    step_b: f64,
+    points_a: f64,
+    points_b: f64,
+) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let shape = [whole(rows, "rows")? as usize, whole(cols, "cols")? as usize];
+    let sev = prospicio_aggregate::JointGrid::new([step_a, step_b], shape, probs.to_vec())
+        .map_err(to_r)?;
+    let points = [
+        whole(points_a, "points")? as usize,
+        whole(points_b, "points")? as usize,
+    ];
+    let (joint, report) =
+        prospicio_aggregate::fft_bivariate(n.as_counting(), &sev, points).map_err(to_r)?;
+    joint_list(&joint, Some(&report))
+}
+
+fn clash_from(counts: &[f64]) -> Result<prospicio_aggregate::Clash> {
+    match counts {
+        [a, b, c] => prospicio_aggregate::Clash::new(*a, *b, *c).map_err(to_r),
+        _ => Err(Error::Other("a clash model takes three counts".into())),
+    }
+}
+
+fn grid_arg(obj: &Robj, name: &str) -> Result<prospicio_prob::Grid> {
+    <&Grid>::try_from(obj)
+        .map(|g| g.inner.clone())
+        .map_err(|_| Error::Other(format!("{name} must be a grid_distribution")))
+}
+
+/// The clash model from its counts: `c(neither, events, trigger_a, trigger_b)`.
+#[extendr]
+fn clash_rust(counts: &[f64]) -> Result<Vec<f64>> {
+    let c = clash_from(counts)?;
+    Ok(vec![c.neither(), c.events(), c.trigger_a(), c.trigger_b()])
+}
+
+/// The clash model's per-event severity, or with `frequency` its joint
+/// annual loss.
+#[extendr]
+fn clash_aggregate_rust(
+    counts: &[f64],
+    frequency: Robj,
+    a: Robj,
+    b: Robj,
+    points_a: f64,
+    points_b: f64,
+) -> Result<List> {
+    let clash = clash_from(counts)?;
+    let (a, b) = (grid_arg(&a, "a")?, grid_arg(&b, "b")?);
+    if frequency.is_null() {
+        return joint_list(&clash.severity(&a, &b).map_err(to_r)?, None);
+    }
+    let n = AnyCount::from_robj(&frequency)?;
+    let points = [
+        whole(points_a, "points")? as usize,
+        whole(points_b, "points")? as usize,
+    ];
+    let (joint, report) = clash
+        .aggregate(n.as_counting(), &a, &b, points)
+        .map_err(to_r)?;
+    joint_list(&joint, Some(&report))
+}
+
 extendr_module! {
     mod aggregate;
     fn layer_loss_picks_rust;
     fn eventual_ruin_rust;
+    fn fft_bivariate_rust;
+    fn clash_rust;
+    fn clash_aggregate_rust;
     fn compound_moments_rust;
     fn approximation_parameters_rust;
     fn approximation_eval_rust;

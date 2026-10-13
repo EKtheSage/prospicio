@@ -77,6 +77,10 @@ reference:
       - aggregate.Approximation
       - aggregate.eventual_ruin
       - aggregate.Ruin
+      - aggregate.fft_bivariate
+      - aggregate.JointGrid
+      - aggregate.BivariateReport
+      - aggregate.Clash
       - aggregate.layer_loss_picks
       - aggregate.Picks
   - title: Reinsurance
