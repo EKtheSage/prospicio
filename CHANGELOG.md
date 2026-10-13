@@ -131,7 +131,7 @@ under "Unreleased" until then.
   (**breaking** for code that builds or matches it in full). Python
   `IndexClause`, `LargeLossExperience(..., fx=)` and `burning_cost(...,
   index=, ratios=)`; R `index_clause()` and the `fx`, `index` and `ratios`
-  arguments.
+  arguments (#225).
 
 ### Examples
 
