@@ -6,6 +6,8 @@
 //! The steps follow Clark's *Basics of Reinsurance Pricing* (CAS study
 //! note, 2014), section on per-risk experience rating:
 //!
+//! 0. Convert each loss to the pricing currency, at a stated rate or a rate
+//!    per loss ([`Experience::with_fx`]).
 //! 1. Develop each known loss to its ultimate value (IBNER), by a factor
 //!    per loss or a [`DevelopmentPattern`] at its age at the valuation
 //!    date, if the record is not developed by year instead
@@ -22,13 +24,18 @@
 //! 5. Divide by the year's on-level subject premium: the loss cost by
 //!    year, and in total the developed losses over the premium, summed.
 //!
+//! A treaty with an index (stability) clause moves its retention and limit
+//! with an index; [`Prepared::burning_cost_indexed`] applies each loss to
+//! the terms its own index ratio sets ([`IndexClause`]).
+//!
 //! Losses reported above a threshold in nominal terms leave the older
 //! years short of losses that trend above it. With a threshold `T`, the
 //! prepared record is complete above `T` times the largest trend factor,
 //! and losses trended below that are dropped, so every year is compared
 //! on the same basis ([`Prepared::complete_above`]). The test is on the
 //! reported amount trended, not the developed one: the record is complete
-//! for losses reported above the threshold, whatever they develop to.
+//! for losses reported above the threshold, whatever they develop to, and
+//! in the currency they were reported in.
 
 use prospicio_aggregate::Tower;
 use prospicio_core::{Error, Result};
@@ -59,6 +66,7 @@ pub struct Experience {
     losses: Vec<LargeLoss>,
     threshold: f64,
     valuation: Option<f64>,
+    fx: Vec<f64>,
 }
 
 impl Experience {
@@ -87,6 +95,7 @@ impl Experience {
             losses,
             threshold: 0.0,
             valuation: None,
+            fx: Vec::new(),
         })
     }
 
@@ -128,6 +137,36 @@ impl Experience {
     /// The valuation date, if set.
     pub fn valuation(&self) -> Option<f64> {
         self.valuation
+    }
+
+    /// Converts each loss to the pricing currency: amounts are multiplied
+    /// by the rate (units of the pricing currency per unit of the loss's),
+    /// before development and trend, so a trend `rate` is then the pricing
+    /// currency's. The threshold and [`Prepared::complete_above`] stay in
+    /// the currency the losses were reported in.
+    pub fn with_fx(mut self, fx: Fx) -> Result<Self> {
+        let rates = match fx {
+            Fx::Rate(r) => vec![r; self.losses.len()],
+            Fx::PerLoss(r) => {
+                if r.len() != self.losses.len() {
+                    return Err(Error::Data(format!(
+                        "{} exchange rates for {} losses",
+                        r.len(),
+                        self.losses.len()
+                    )));
+                }
+                r
+            }
+        };
+        if let Some(&bad) = rates.iter().find(|r| !(r.is_finite() && **r > 0.0)) {
+            return Err(Error::InvalidParameter {
+                name: "fx",
+                value: bad,
+                reason: "must be finite and positive",
+            });
+        }
+        self.fx = rates;
+        Ok(self)
     }
 
     /// The losses, in the order given.
@@ -244,16 +283,21 @@ impl Experience {
         let losses = self
             .losses
             .iter()
+            .enumerate()
             .zip(factors.iter().zip(&developments))
-            .map(|(l, (&factor, &development))| PreparedLoss {
-                id: l.id.clone(),
-                year: l.accident.floor() as i32,
-                accident: l.accident,
-                amount: l.amount,
-                development,
-                ultimate: l.amount * development,
-                factor,
-                trended: l.amount * development * factor,
+            .map(|((k, l), (&factor, &development))| {
+                let fx = self.fx.get(k).copied().unwrap_or(1.0);
+                PreparedLoss {
+                    id: l.id.clone(),
+                    year: l.accident.floor() as i32,
+                    accident: l.accident,
+                    amount: l.amount,
+                    fx,
+                    development,
+                    ultimate: l.amount * fx * development,
+                    factor,
+                    trended: l.amount * fx * development * factor,
+                }
             })
             .collect();
         Ok(Prepared {
@@ -261,6 +305,82 @@ impl Experience {
             complete_above,
             valuation: self.valuation,
         })
+    }
+}
+
+/// How losses are converted to the pricing currency, for
+/// [`Experience::with_fx`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum Fx {
+    /// One stated rate for every loss.
+    Rate(f64),
+    /// A rate per loss, in the record's order (historical rates).
+    PerLoss(Vec<f64>),
+}
+
+/// How an index clause moves a layer's retention and limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexKind {
+    /// Within the franchise nothing moves; beyond it, the terms move by the
+    /// full index ratio, up or down.
+    Full,
+    /// Severe inflation clause: the terms move only by the rise beyond the
+    /// franchise, `r / (1 + franchise)`, and never down.
+    Severe,
+}
+
+/// An index (stability) clause: the treaty's retention and limit move with
+/// an index, by the ratio `r` of the index at a loss's payment to the
+/// index at the treaty's base date, within a franchise.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IndexClause {
+    franchise: f64,
+    kind: IndexKind,
+}
+
+impl IndexClause {
+    /// A clause with a franchise, a fraction such as 0.1 for 10%.
+    pub fn new(franchise: f64, kind: IndexKind) -> Result<Self> {
+        if !(franchise.is_finite() && franchise >= 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "franchise",
+                value: franchise,
+                reason: "must be finite and non-negative",
+            });
+        }
+        Ok(Self { franchise, kind })
+    }
+
+    /// The franchise.
+    pub fn franchise(&self) -> f64 {
+        self.franchise
+    }
+
+    /// The kind of clause.
+    pub fn kind(&self) -> IndexKind {
+        self.kind
+    }
+
+    /// The factor the terms move by at index ratio `ratio`.
+    ///
+    /// ```
+    /// use prospicio_pricing::experience::{IndexClause, IndexKind};
+    ///
+    /// let full = IndexClause::new(0.1, IndexKind::Full).unwrap();
+    /// assert_eq!(full.adjustment(1.08), 1.0); // within the franchise
+    /// assert_eq!(full.adjustment(1.25), 1.25); // all of it beyond
+    /// let severe = IndexClause::new(0.1, IndexKind::Severe).unwrap();
+    /// assert!((severe.adjustment(1.21) - 1.1).abs() < 1e-15); // the excess
+    /// assert_eq!(severe.adjustment(0.8), 1.0);
+    /// ```
+    pub fn adjustment(&self, ratio: f64) -> f64 {
+        let f = self.franchise;
+        match self.kind {
+            IndexKind::Full if (ratio - 1.0).abs() <= f => 1.0,
+            IndexKind::Full => ratio,
+            IndexKind::Severe if ratio > 1.0 + f => ratio / (1.0 + f),
+            IndexKind::Severe => 1.0,
+        }
     }
 }
 
@@ -445,12 +565,14 @@ pub struct PreparedLoss {
     /// The accident year, the whole part of the accident date.
     pub year: i32,
     pub accident: f64,
-    /// The loss as reported.
+    /// The loss as reported, in its own currency.
     pub amount: f64,
+    /// The exchange rate to the pricing currency; 1 without conversion.
+    pub fx: f64,
     /// The development factor to ultimate applied (IBNER); 1 when the
     /// record is developed by year instead.
     pub development: f64,
-    /// `amount × development`.
+    /// `amount × fx × development`.
     pub ultimate: f64,
     /// The trend factor applied.
     pub factor: f64,
@@ -560,6 +682,77 @@ impl Prepared {
     /// assert!((b.loss_cost[0] - 350.0 / 2000.0).abs() < 1e-15);
     /// ```
     pub fn burning_cost(&self, towers: &[Tower], years: &[YearBasis]) -> Result<BurningCost> {
+        self.cost(towers, years, None)
+    }
+
+    /// [`burning_cost`](Self::burning_cost) under an index clause: each
+    /// loss meets the retention and limit moved by the clause's adjustment
+    /// at its own index ratio, `ratios[k]` for loss `k` in the record's
+    /// order (the index at its payment over the index at the treaty's base
+    /// date). With every term per occurrence, terms moved by `a` cede
+    /// `a × ceded(x / a)`, which is how each loss is applied.
+    ///
+    /// Annual terms (an aggregate deductible or limit, a corridor) span
+    /// losses with different ratios and are not indexed: a tower with them
+    /// is an error, as is a surplus treaty.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, Tower};
+    /// use prospicio_pricing::experience::{
+    ///     Experience, IndexClause, IndexKind, LargeLoss, Trend, YearBasis,
+    /// };
+    ///
+    /// let p = Experience::new(vec![LargeLoss { id: "a".into(), accident: 2020.5, amount: 700.0 }])
+    ///     .unwrap()
+    ///     .prepare(&Trend::Factors(vec![1.0]))
+    ///     .unwrap();
+    /// let tower = Tower::new(vec![Layer::xol("400 xs 100", 400.0, 100.0).unwrap()]).unwrap();
+    /// let year = [YearBasis { year: 2020, premium: 1000.0, development: 1.0 }];
+    /// let clause = IndexClause::new(0.1, IndexKind::Full).unwrap();
+    /// // Index up 25%: 500 xs 125, so the 700 loss cedes 500.
+    /// let b = p.burning_cost_indexed(&[tower], &year, &clause, &[1.25]).unwrap();
+    /// assert!((b.years[0].layer_loss[0] - 500.0).abs() < 1e-12);
+    /// ```
+    pub fn burning_cost_indexed(
+        &self,
+        towers: &[Tower],
+        years: &[YearBasis],
+        clause: &IndexClause,
+        ratios: &[f64],
+    ) -> Result<BurningCost> {
+        if ratios.len() != self.losses.len() {
+            return Err(Error::Data(format!(
+                "{} index ratios for {} losses",
+                ratios.len(),
+                self.losses.len()
+            )));
+        }
+        if let Some(&bad) = ratios.iter().find(|r| !(r.is_finite() && **r > 0.0)) {
+            return Err(Error::InvalidParameter {
+                name: "ratios",
+                value: bad,
+                reason: "must be finite and positive",
+            });
+        }
+        for tower in towers {
+            if tower.needs_sums_insured() || tower.layers.iter().any(|l| l.has_annual_terms()) {
+                return Err(Error::Data(
+                    "an index clause applies to per-occurrence covers; annual terms and \
+                     surplus treaties are not indexed"
+                        .into(),
+                ));
+            }
+        }
+        let adjustments: Vec<f64> = ratios.iter().map(|&r| clause.adjustment(r)).collect();
+        self.cost(towers, years, Some(&adjustments))
+    }
+
+    fn cost(
+        &self,
+        towers: &[Tower],
+        years: &[YearBasis],
+        adjustments: Option<&[f64]>,
+    ) -> Result<BurningCost> {
         if towers.len() != years.len() {
             return Err(Error::Data(format!(
                 "{} towers for {} years",
@@ -586,13 +779,29 @@ impl Prepared {
         }
         let mut rows = Vec::with_capacity(years.len());
         for (tower, basis) in towers.iter().zip(years) {
-            let losses: Vec<f64> = self
-                .losses
-                .iter()
-                .filter(|l| l.year == basis.year && l.amount * l.factor >= self.complete_above)
-                .map(|l| l.trended)
+            let kept: Vec<usize> = (0..self.losses.len())
+                .filter(|&k| {
+                    let l = &self.losses[k];
+                    l.year == basis.year && l.amount * l.factor >= self.complete_above
+                })
                 .collect();
-            let layer_loss = tower.ceded(&losses);
+            let losses: Vec<f64> = kept.iter().map(|&k| self.losses[k].trended).collect();
+            let layer_loss = match adjustments {
+                None => tower.ceded(&losses),
+                Some(a) => {
+                    let mut total = vec![0.0; layers];
+                    for &k in &kept {
+                        let r = a[k];
+                        for (t, c) in total
+                            .iter_mut()
+                            .zip(tower.ceded(&[self.losses[k].trended / r]))
+                        {
+                            *t += r * c;
+                        }
+                    }
+                    total
+                }
+            };
             let developed: Vec<f64> = layer_loss.iter().map(|c| c * basis.development).collect();
             let loss_cost = developed.iter().map(|d| d / basis.premium).collect();
             rows.push(YearCost {
@@ -846,5 +1055,121 @@ mod tests {
         // Age 1: halfway from 2.0 at 0.5 to 1.2 at 1.5.
         assert!((y.development - 1.6).abs() < 1e-15);
         assert!(YearBasis::from_count_pattern(2025, 500.0, &counts, 2024.5).is_err());
+    }
+
+    fn one_year(year: i32) -> [YearBasis; 1] {
+        [YearBasis {
+            year,
+            premium: 1000.0,
+            development: 1.0,
+        }]
+    }
+
+    #[test]
+    fn an_index_clause_moves_each_loss_terms_as_a_scaled_tower_would() {
+        let p = Experience::new(vec![
+            loss("a", 2020.2, 300.0),
+            loss("b", 2020.4, 700.0),
+            loss("c", 2020.6, 150.0),
+        ])
+        .unwrap()
+        .prepare(&Trend::Factors(vec![1.0; 3]))
+        .unwrap();
+        let tower = |a: f64| {
+            Tower::inuring(vec![
+                vec![Layer::quota_share("QS", 0.2).unwrap()],
+                vec![
+                    Layer::xol("400 xs 100", 400.0 * a, 100.0 * a).unwrap(),
+                    Layer::xol("500 xs 500", 500.0 * a, 500.0 * a).unwrap(),
+                ],
+            ])
+            .unwrap()
+        };
+        let full = IndexClause::new(0.1, IndexKind::Full).unwrap();
+        let ratios = [1.05, 1.3, 0.8];
+        let b = p
+            .burning_cost_indexed(&[tower(1.0)], &one_year(2020), &full, &ratios)
+            .unwrap();
+        // Each loss through the tower its own adjustment scales.
+        let mut want = vec![0.0; 3];
+        for (x, a) in [(300.0, 1.0), (700.0, 1.3), (150.0, 0.8)] {
+            for (w, c) in want.iter_mut().zip(tower(a).ceded(&[x])) {
+                *w += c;
+            }
+        }
+        for (got, want) in b.years[0].layer_loss.iter().zip(&want) {
+            assert!((got - want).abs() < 1e-9, "{got} vs {want}");
+        }
+        // Ratios of 1 are the plain burning cost.
+        let plain = p.burning_cost(&[tower(1.0)], &one_year(2020)).unwrap();
+        let unit = p
+            .burning_cost_indexed(&[tower(1.0)], &one_year(2020), &full, &[1.0; 3])
+            .unwrap();
+        assert_eq!(plain, unit);
+    }
+
+    #[test]
+    fn index_clause_kinds_and_errors() {
+        let severe = IndexClause::new(0.1, IndexKind::Severe).unwrap();
+        assert_eq!(severe.adjustment(1.1), 1.0);
+        assert!((severe.adjustment(1.32) - 1.2).abs() < 1e-15);
+        assert_eq!(severe.adjustment(0.5), 1.0);
+        let full = IndexClause::new(0.0, IndexKind::Full).unwrap();
+        assert_eq!(full.adjustment(0.9), 0.9);
+        assert!(IndexClause::new(-0.1, IndexKind::Full).is_err());
+
+        let p = Experience::new(vec![loss("a", 2020.5, 700.0)])
+            .unwrap()
+            .prepare(&Trend::Factors(vec![1.0]))
+            .unwrap();
+        let annual = Tower::new(vec![
+            Layer::xol("x", 400.0, 100.0)
+                .unwrap()
+                .aggregate_limit(800.0)
+                .unwrap(),
+        ])
+        .unwrap();
+        assert!(
+            p.burning_cost_indexed(&[annual], &one_year(2020), &full, &[1.0])
+                .is_err()
+        );
+        let plain = Tower::new(vec![Layer::xol("x", 400.0, 100.0).unwrap()]).unwrap();
+        assert!(
+            p.burning_cost_indexed(&[plain.clone()], &one_year(2020), &full, &[])
+                .is_err()
+        );
+        assert!(
+            p.burning_cost_indexed(&[plain], &one_year(2020), &full, &[0.0])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn exchange_rates_apply_before_the_layer_but_not_to_completeness() {
+        let e = Experience::new(vec![loss("a", 2020.5, 90.0), loss("b", 2020.5, 120.0)])
+            .unwrap()
+            .with_threshold(100.0)
+            .unwrap()
+            .with_fx(Fx::PerLoss(vec![2.0, 0.5]))
+            .unwrap();
+        let p = e.prepare(&Trend::Factors(vec![1.0, 1.0])).unwrap();
+        assert_eq!(p.losses()[0].fx, 2.0);
+        assert_eq!(p.losses()[0].trended, 180.0);
+        assert_eq!(p.losses()[1].trended, 60.0);
+        let tower = Tower::new(vec![Layer::xol("x", 1000.0, 50.0).unwrap()]).unwrap();
+        // "a" was reported below the threshold: out, though 180 converted.
+        let b = p.burning_cost(&[tower], &one_year(2020)).unwrap();
+        assert_eq!(b.years[0].losses, 1);
+        assert_eq!(b.years[0].layer_loss, vec![10.0]);
+
+        let stated = Experience::new(vec![loss("a", 2020.5, 90.0)])
+            .unwrap()
+            .with_fx(Fx::Rate(1.5))
+            .unwrap()
+            .prepare(&Trend::Factors(vec![1.0]))
+            .unwrap();
+        assert_eq!(stated.losses()[0].ultimate, 135.0);
+        assert!(e.clone().with_fx(Fx::PerLoss(vec![1.0])).is_err());
+        assert!(e.with_fx(Fx::Rate(0.0)).is_err());
     }
 }
