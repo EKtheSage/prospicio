@@ -28,4 +28,4 @@
   a `Wait` that is a distribution or discrete waits, possibly defective,
   with waits of zero arriving in clusters), on `aggregate`'s wait grid or
   a given one, matching `aggregate` 1.0.1's `years ... wait ...`
-  frequency. Python `Count.renewal`; R `renewal_count()`.
+  frequency. Python `Count.renewal`; R `renewal_count()` (#236).
