@@ -13,7 +13,7 @@ sources:
     resource: ../docs/design/aggregate.md
     title: docs/design/aggregate.md, the Next list (multi-year carry-forward is item 2)
   - id: issues
-    resource: https://github.com/EKtheSage/risk-rs/issues/190
+    resource: https://github.com/EKtheSage/prospicio/issues/190
     title: Issues 190 to 197, one per gap below
 ---
 
