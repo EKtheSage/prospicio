@@ -68,9 +68,13 @@ const MAX_ITER: usize = 200;
 /// positive definite (a non-concave region, see [`positive_definite`]),
 /// and halves the step until
 /// the log posterior rises. It stops when `max |delta| < 1e-12`, or below
-/// `1e-8` when a full step no longer raises it (the rounding floor). For a
-/// strictly concave posterior the ridge is never needed and the mode is
-/// unique.
+/// `1e-8` when a full step no longer raises it (the rounding floor). Where
+/// the gain a step promises is below the rounding of the log posterior, f
+/// cannot judge it: the full step is taken as it is, and Newton stops once
+/// such steps no longer halve `max |delta|`, the gradient's own rounding
+/// floor in a weakly curved direction (a tight prior beside the data, or a
+/// ridge that only a vague prior holds). For a strictly concave posterior
+/// the ridge is never needed and the mode is unique.
 pub(crate) fn mode<P: Posterior + ?Sized>(model: &P, start: Vec<f64>) -> Result<Vec<f64>> {
     let p = model.dim();
     let mut theta = start;
@@ -82,6 +86,7 @@ pub(crate) fn mode<P: Posterior + ?Sized>(model: &P, start: Vec<f64>) -> Result<
         ));
     }
     let mut trial_grad = vec![0.0; p];
+    let mut previous_size = f64::INFINITY;
     for _ in 0..MAX_ITER {
         let l = positive_definite(model.negative_hessian(&theta), p)?;
         let delta = cholesky_solve(&l, &grad);
@@ -89,6 +94,17 @@ pub(crate) fn mode<P: Posterior + ?Sized>(model: &P, start: Vec<f64>) -> Result<
         if size < 1e-12 {
             return Ok(theta);
         }
+        // Twice the gain the quadratic model expects of the full step. Below
+        // the rounding of f, comparing f cannot judge the step: take it on
+        // the gradient's word. Without this, a weakly curved direction next
+        // to a stiff one (a tight prior) creeps by random fractions of a
+        // step of about 1e-8 that f cannot see, and never converges.
+        let decrement: f64 = grad.iter().zip(&delta).map(|(g, d)| g * d).sum();
+        let unseen = decrement < 8.0 * f64::EPSILON * (1.0 + f.abs());
+        if unseen && size > 0.5 * previous_size {
+            return Ok(theta);
+        }
+        previous_size = size;
         let mut step = 1.0;
         loop {
             let trial: Vec<f64> = theta
@@ -97,7 +113,7 @@ pub(crate) fn mode<P: Posterior + ?Sized>(model: &P, start: Vec<f64>) -> Result<
                 .map(|(t, d)| t + step * d)
                 .collect();
             let f_trial = model.log_posterior(&trial, &mut trial_grad);
-            if f_trial.is_finite() && f_trial >= f {
+            if f_trial.is_finite() && (f_trial >= f || unseen) {
                 theta = trial;
                 f = f_trial;
                 std::mem::swap(&mut grad, &mut trial_grad);
