@@ -14,9 +14,16 @@ then joins them and sets and allocates capital. The notebook
 [`examples/reinsurance_pricing.ipynb`](../examples/reinsurance_pricing.ipynb)
 prices towers, aggregate limits, reinstatements, stop losses, variable
 premiums and commissions, and risk-adjusted premiums, each beside the
-numbers of Mildenhall's `aggregate`. The [guides](guides/README.md) explain
+numbers of Mildenhall's `aggregate`. The notebook
+[`examples/submission_evaluation.ipynb`](../examples/submission_evaluation.ipynb)
+evaluates a synthetic per-risk excess of loss submission end to end, from
+the broker's raw files to a decision on each layer, and compares its
+estimates with the generator's true parameters. The [guides](guides/README.md) explain
 the ideas in prose for actuaries, starting with
 [what a reinsurance price is](guides/reinsurance-price.md); CI runs their code.
+Next for the guides, waiting on the user: when to price with a distortion
+and when with a capital standard, when to rate with an exposure curve and
+when from experience, and which pricing method fits which scenario.
 
 ## Milestones
 
@@ -302,8 +309,9 @@ what it is aiming for by v1.0.
      entries in `[workspace.dependencies]`) and moves `CHANGELOG.md`'s
      "Unreleased" items into the new version's section. Nothing else goes
      in that PR.
-   - Each feature PR adds its line under "Unreleased" in `CHANGELOG.md`,
-     so the changelog always says which release a feature ships in.
+   - Each feature PR adds a fragment in `changes/changelog/`, which the
+     release PR folds into "Unreleased" in `CHANGELOG.md`, so the changelog
+     says which release a feature ships in.
    - Open PRs either merge before the release PR or wait for the next
      version; neither session changes versions or the release workflow
      outside that PR.

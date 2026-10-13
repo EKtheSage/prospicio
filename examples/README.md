@@ -18,6 +18,7 @@ page that does not render, shows up first in that Pages run.
 |---|---|---|
 | [`one_year_view.ipynb`](one_year_view.ipynb) | [On the site](https://ekthesage.github.io/prospicio/python/user-guide/one_year_view.html) | A small P&C insurer's year ahead: reserve risk (ODP bootstrap of GenIns), fleet motor premium risk (Poisson and gamma GLMs into a collective model), property per-risk (risk profile, surplus inuring to a per-risk XL with a reinstatement pro rata as to time), a risk-loaded XL price, then the three risks joined with a rank correlation and TVaR 99% allocated by Euler, gross and net of reinsurance |
 | [`reinsurance_pricing.ipynb`](reinsurance_pricing.ipynb) | [On the site](https://ekthesage.github.io/prospicio/python/user-guide/reinsurance_pricing.html) | Six reinsurance contracts priced on the FFT grid and compared with Mildenhall's `aggregate` (321 independent comparisons against its reference file, `aggregate` not needed): an occurrence tower, a two-layer program and a share, an aggregate limit with reinstatements, stop loss and aggregate deductible, retro and swing premium with profit and sliding-scale commission, and risk-adjusted premiums from distortions at a capital standard |
+| [`submission_evaluation.ipynb`](submission_evaluation.ipynb) | [On the site](https://ekthesage.github.io/prospicio/python/user-guide/submission_evaluation.html) | A reinsurance submission evaluated end to end, from raw files to a quote decision: a synthetic commercial property per-risk program (premium and rate changes, a large-loss listing, a triangle, a risk profile, treaty terms in `data/submission/`, written by `data/make_submission.py` with the answer key in `data/answer_key.json`). On-level premium and trend, chain ladder and Cape Cod, development and trend of large losses, a Pareto fit with truncation and censoring, experience and exposure rating blended by credibility, the program on the grid, risk metrics, technical premium against the broker's rates on line, sensitivity and parameter uncertainty, and the estimates against the generator's true parameters |
 
 For explanations in prose, with runnable code and checked numbers, see the
 [guides](../docs/guides/README.md); the first, [What a reinsurance price is](../docs/guides/reinsurance-price.md),
@@ -27,7 +28,7 @@ The guides are on the docs site too, in the same User Guide.
 ## Running a notebook
 
 To run one, clone the repository (the notebooks read their data from
-`validation/`) and install the released package with Jupyter and
+`validation/` and `examples/data/`) and install the released package with Jupyter and
 `matplotlib` for the charts:
 
 ```sh
@@ -47,7 +48,10 @@ and later on Windows, macOS and Linux, so no Rust toolchain is needed. Then
 open the notebook in Jupyter.
 
 To run a notebook against unreleased changes in this repository, use the
-uv project in `python/` (needs Rust). From the repository root:
+uv project in `python/` (needs Rust). `submission_evaluation.ipynb` needs
+this route until the release after 0.0.2, since it uses functions that
+0.0.2 does not have (`RateHistory`, `Period`, `occurrence_layer_statistics`
+and others). From the repository root:
 
 ```sh
 uv run --project python --group examples jupyter lab

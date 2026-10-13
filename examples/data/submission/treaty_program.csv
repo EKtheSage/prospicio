@@ -1,0 +1,11 @@
+item,value
+cedant,Northgate Mutual (synthetic)
+line_of_business,"commercial property, per risk excess of loss"
+currency,USD
+period_start,2026-01-01
+period_end,2026-12-31
+basis,losses occurring during the period
+estimated_subject_premium_income,179900000.0
+brokerage,0.1
+listing_threshold,500000.0
+valuation_date,2025-12-31
