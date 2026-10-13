@@ -248,6 +248,328 @@ class ArchimedeanCopula:
         """
 
 @final
+class BayesBf:
+    """
+    The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
+    (2012, Model 3.1): the over-dispersed Poisson model of a cumulative
+    triangle's incremental values ``X`` with mean ``mu[w] * gamma[d]``, an
+    informative gamma prior on each origin's row parameter ``mu[w]`` with
+    mean ``apriori * exposure[w]`` and coefficient of variation ``cv``, a
+    vague normal prior on each ``log gamma[d]`` (the pattern is not
+    normalised), and the
+    chain ladder's Pearson scale ``phi`` (``OdpBootstrapFit.scale``) plugged
+    in. The posterior is sampled with NUTS, and each draw projects the
+    future cells up to the oldest observed age (no tail) with the process
+    error of ``process``, as ``BayesOdp`` does.
+    
+    The prior's strength moves the reserve between two limits. With
+    ``cv=float("inf")`` (a flat prior on ``log mu[w]``) the model is the
+    Bayesian chain ladder, and the reserves agree with ``BayesOdp``'s within
+    Monte Carlo error. As ``cv`` falls to 0, ``mu[w]`` is fixed at the prior
+    ultimate ``m[w]`` and each origin's mean reserve tends to ``m[w]`` times
+    the sum of the future ``S[d] / M[d]`` (``S[d]`` the observed increments
+    of column ``d``, ``M[d]`` the prior ultimates of the origins observed
+    there): EVW's strong-prior limit, Mack's (2008) Bornhuetter–Ferguson
+    with the raw pattern. That equals the classical
+    ``BornhuetterFerguson`` reserve ``(1 - 1 / cdf) * m[w]`` only when the
+    prior ultimates are the chain ladder's.
+    
+    ``mu[w]`` is EVW's row parameter, not the origin's expected ultimate:
+    that is ``mu[w]`` times the sum of the ``gamma[d]``, which under a tight
+    prior is ``m[w]`` times the sum of ``S[d] / M[d]`` over all columns. On
+    EVW's triangle that sum is 0.885, so the implied ultimate loss ratio is
+    about 11.5% below ``apriori``.
+    
+    Every development column's observed increments must sum to more than
+    zero, and every origin's to more than ``-phi / cv**2``; negative cells
+    are allowed. One ``seed`` replays a fit exactly, whatever the number of
+    threads. Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS
+    below 100 per chain, any divergent transition) do not fail the fit:
+    ``fit`` raises one ``UserWarning`` listing them, and they stay in
+    ``BayesBfFit.diagnostics``.
+    
+    Parameters
+    ----------
+    apriori : float, default 1.0
+        Prior mean of each origin's ``mu[w]`` per unit of exposure;
+        positive and finite. It is the expected loss ratio only when the
+        pattern ``gamma`` sums to 1 (see above).
+    cv : float, default 0.1
+        Coefficient of variation of the gamma prior on each ``mu[w]`` (shape
+        ``1 / cv**2``, EVW's ``a``); positive, ``float("inf")`` for a flat
+        prior.
+    development_sd : float, default 10.0
+        Standard deviation of the normal prior on each ``log gamma[d]``,
+        centred on 0. With a flat ``cv``, a much vaguer prior (1,000, say)
+        leaves divergent transitions.
+    process : {"gamma", "none"}, default "gamma"
+        Process error on each simulated future increment: Gamma with mean
+        ``mu`` and variance ``phi * mu``, or none for parameter error only.
+    chains, tune, draws : int, default 4, 1000, 1000
+        NUTS chains, warm-up draws per chain and kept draws per chain.
+    n_sims : int, default 10000
+        Number of predictive simulations, independent of the number of
+        posterior draws; positive.
+    seed : int, default 0
+        Seed of the chains and of the simulations, from 0 to ``2**64 - 1``.
+    target_accept : float, default 0.95
+        Target mean acceptance rate of the step-size adaptation.
+    max_depth : int, default 10
+        Largest NUTS tree depth.
+    
+    Raises
+    ------
+    ValueError
+        If ``n_sims`` is zero or ``process`` is unknown.
+    OverflowError
+        If an integer setting is negative or too large.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import BayesBf, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     {
+    ...         "paid": [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ...         "premium": [200.0] * 4 + [220.0] * 3 + [240.0] * 2 + [260.0],
+    ...     },
+    ... )
+    >>> fit = BayesBf(apriori=0.85, cv=0.1, n_sims=2000, seed=1).fit(tri, "paid", "premium")
+    >>> fit.reserves.components()
+    [('2020',), ('2021',), ('2022',), ('2023',)]
+    >>> fit.prior_ultimate[3] == 0.85 * 260.0
+    True
+    >>> fit.parameter_names[:2]
+    ['alpha[1]', 'alpha[2]']
+    """
+    def __new__(cls, /, apriori: float = 1.0, cv: float = 0.1, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> BayesBf: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        Prior mean of each origin's ``mu[w]`` per unit of exposure.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of NUTS chains.
+        """
+    @property
+    def cv(self, /) -> float:
+        """
+        Coefficient of variation of each origin's prior; ``inf`` is flat.
+        """
+    @property
+    def development_sd(self, /) -> float:
+        """
+        Standard deviation of each development effect's prior.
+        """
+    @property
+    def draws(self, /) -> int:
+        """
+        Kept draws per chain.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> BayesBfFit:
+        """
+        Samples the posterior of one loss column of a single-segment
+        cumulative triangle, with each origin's exposure from another
+        column, and simulates its reserves. Every origin must be observed
+        from the first age up to its latest and there must be more observed
+        cells than chain-ladder parameters. Raises one ``UserWarning``
+        listing the failed diagnostics, if any.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure, as for ``BornhuetterFerguson``.
+        
+        Returns
+        -------
+        BayesBfFit
+        
+        Raises
+        ------
+        ValueError
+            As ``OdpBootstrap.fit``; if the triangle has several segments; if
+            an origin has no observed, finite, positive exposure; if
+            ``apriori``, ``cv`` or ``development_sd`` is invalid or a sampler
+            setting is; if a development column's increments do not sum to
+            more than zero; or if an origin's sum to ``-phi / cv**2`` or
+            less.
+        """
+    @property
+    def max_depth(self, /) -> int:
+        """
+        Largest NUTS tree depth.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of predictive simulations.
+        """
+    @property
+    def process(self, /) -> str:
+        """
+        Process error: ``"gamma"`` or ``"none"``.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        Seed of the chains and of the simulations.
+        """
+    @property
+    def target_accept(self, /) -> float:
+        """
+        Target mean acceptance rate.
+        """
+    @property
+    def tune(self, /) -> int:
+        """
+        Warm-up draws per chain.
+        """
+
+@final
+class BayesBfFit:
+    """
+    A fitted ``BayesBf``: the posterior of ``alpha[1..n]`` (``log mu[w]``)
+    and ``beta[1..m]`` (``log gamma[d]``), its MCMC diagnostics, and the
+    posterior predictive distribution of the reserves, laid out as
+    ``BayesOdpFit.reserves``. The frames' ``latest``, ``ultimate`` and
+    ``reserve`` are the volume-weighted chain ladder's (``chain_ladder``),
+    with each origin's ``exposure`` and ``prior_ultimate``; ``mean`` and
+    ``std_dev`` are the posterior predictive reserve's.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of the triangle, whose latest
+        values and Pearson scale the model uses.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladder's development factors, one row per age, as
+        ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
+        ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
+        failed threshold; empty when every threshold holds).
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws, one row per draw (chain by chain), one column per
+        parameter in the order of ``parameter_names``.
+        """
+    @property
+    def exposure(self, /) -> list[float]:
+        """
+        Exposure per origin: the exposure column's latest observed value.
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of the observed increments, as ``BayesOdpFit.loo``: the
+        pointwise term is the normalised over-dispersed Poisson density at
+        the cell's mean and ``scale``, so the result compares with
+        ``BayesOdp``'s on the same column.
+        
+        Returns
+        -------
+        Elpd
+        
+        Raises
+        ------
+        ValueError
+            If an observed increment is negative (the density does not
+            exist there).
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each reserve component.
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names: ``alpha[1]`` to ``alpha[n]``, ``beta[1]`` to
+        ``beta[m]``.
+        """
+    @property
+    def prior_ultimate(self, /) -> list[float]:
+        """
+        The prior mean of each origin's row parameter ``mu[w]``,
+        ``apriori * exposure`` (EVW's prior ultimate). The model's expected
+        ultimate is ``mu[w]`` times the sum of the ``gamma[d]``, not
+        ``mu[w]``.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of the reserve (the sum of
+        future incremental values) by origin: dimension ``"origin"``, one
+        component per origin, one row per simulation.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The plugged-in scale ``phi``, the chain ladder's Pearson scale.
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary, one row per parameter: ``parameter``, ``mean``,
+        ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and
+        ``ess_tail``, as ``BayesOdpFit.summary``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, the chain ladder's ``latest``,
+        ``ultimate`` and ``reserve``, the ``exposure`` and
+        ``prior_ultimate``, and the ``mean`` and ``std_dev`` of the
+        posterior predictive reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row: the chain ladder's totals, the total ``exposure`` and
+        ``prior_ultimate``, the ``scale``, and the ``mean`` and ``std_dev``
+        of the posterior predictive total reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+
+@final
 class BayesGlm:
     """
     A Bayesian GLM sampled with NUTS (nuts-rs, the Rust core of nutpie).
@@ -430,11 +752,28 @@ class BayesOdp:
         few divergent transitions.
     max_depth : int, default 10
         Largest NUTS tree depth.
+    dependence : {"independent", "rank_correlation", "synchronized"}, default "independent"
+        How the segments of a multi-segment triangle depend on each other
+        in ``fit_segments`` (``fit`` has one segment and does not use it):
+        each segment's own posterior and simulations, with seeds derived
+        from ``seed`` and the segment's position so that the segments share
+        no random numbers; or the segments' simulations reordered as whole
+        rows (Iman–Conover on the segment totals) to the Spearman matrix
+        ``spearman`` and then put in a random order, as
+        ``OdpBootstrap``'s. ``"synchronized"`` is accepted here, as the
+        bootstraps take it, but ``fit_segments`` raises: it resamples the
+        residuals of the same cells in every segment, and a posterior has no
+        residuals to share.
+    spearman : list of list of float, optional
+        With ``dependence="rank_correlation"`` only: Spearman's rho between
+        the segments' totals, as ``OdpBootstrap``'s.
     
     Raises
     ------
     ValueError
-        If ``n_sims`` is zero or ``process`` is unknown.
+        If ``n_sims`` is zero, ``process`` or ``dependence`` is unknown, or
+        ``spearman`` is missing for ``"rank_correlation"``, given for another
+        dependence or not square.
     OverflowError
         If an integer setting is negative or too large.
     
@@ -454,12 +793,18 @@ class BayesOdp:
     >>> fit.parameter_names[:2]
     ['c', 'a[2]']
     """
-    def __new__(cls, /, intercept_sd: float = 10.0, origin_sd: float = 10.0, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> BayesOdp: ...
+    def __new__(cls, /, intercept_sd: float = 10.0, origin_sd: float = 10.0, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> BayesOdp: ...
     def __repr__(self, /) -> str: ...
     @property
     def chains(self, /) -> int:
         """
         Number of NUTS chains.
+        """
+    @property
+    def dependence(self, /) -> str:
+        """
+        How segments depend on each other in ``fit_segments``:
+        ``"independent"``, ``"rank_correlation"`` or ``"synchronized"``.
         """
     @property
     def development_sd(self, /) -> float:
@@ -498,6 +843,55 @@ class BayesOdp:
             sampler setting is invalid; or if an origin's or a development
             column's increments do not sum to more than zero.
         """
+    def fit_segments(self, /, triangle: Triangle, column: str) -> BayesOdpFits:
+        """
+        Samples the posterior of one measure column in every segment of a
+        cumulative triangle, each segment with its own posterior (the same
+        model and settings, sampled independently), into one joint
+        distribution of the reserves, the segments depending on each other
+        as ``dependence`` says. Segment ``k`` (in index order) takes seeds
+        derived from ``seed`` and ``k`` for its chains and its simulations,
+        so independent segments share no random numbers, and a segment's
+        draws differ from ``fit`` of that segment alone. Raises one
+        ``UserWarning`` listing the failed diagnostics of every segment,
+        each message prefixed with its segment's label.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        column : str
+        
+        Returns
+        -------
+        BayesOdpFits
+        
+        Raises
+        ------
+        ValueError
+            As ``fit`` for any segment (the message names the segment); if
+            ``dependence`` is ``"synchronized"`` (before any sampling); or if
+            ``spearman`` does not fit the segments.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import BayesOdp, Triangle
+        >>> paid = [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]
+        >>> tri = Triangle.from_long(
+        ...     ([2020] * 4 + [2021] * 3 + [2022] * 2 + [2023]) * 2,
+        ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12] * 2,
+        ...     {"paid": paid + [2 * v for v in paid]},
+        ...     keys={"lob": ["Auto"] * 10 + ["Home"] * 10},
+        ... )
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     fits = BayesOdp(tune=300, draws=300, n_sims=1000).fit_segments(tri, "paid")
+        >>> fits.index, fits.reserves.dims
+        (['Auto', 'Home'], ['lob', 'origin'])
+        >>> fits.segment(lob="Home").scale > 0
+        True
+        """
     @property
     def intercept_sd(self, /) -> float:
         """
@@ -527,6 +921,12 @@ class BayesOdp:
     def seed(self, /) -> int:
         """
         Seed of the chains and of the simulations.
+        """
+    @property
+    def spearman(self, /) -> list[list[float]] |None:
+        """
+        The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+        otherwise.
         """
     @property
     def target_accept(self, /) -> float:
@@ -654,6 +1054,160 @@ class BayesOdpFit:
         One row: the chain ladder's totals, the ``scale``, and the ``mean``
         and ``std_dev`` of the posterior predictive total reserve. Needs
         pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+
+@final
+class BayesOdpFits:
+    """
+    ``BayesOdp.fit_segments``: each segment's own posterior and the joint
+    posterior predictive distribution of the reserves, laid out as
+    ``OdpBootstrapFit``.
+    
+    ``reserves`` has the triangle's keys and ``"origin"`` as dimensions, so
+    ``reserves.aggregate(["lob"])`` keeps the dependence between segments.
+    Per-origin lists run over the origins of each segment in turn, like the
+    rows of ``to_frame()`` and the components of ``reserves``. The
+    posterior of one segment (``scale``, ``diagnostics``,
+    ``parameter_names``, ``draws``, ``chains``, ``summary()`` and
+    ``loo()``) needs a single-segment fit: for several segments use
+    ``segment(...)``, ``totals_frame()`` (the scales) or
+    ``diagnostics_frame()``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of every segment, whose latest
+        values and Pearson scales the model uses.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains of a single-segment fit.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months of the first segment.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladders' development factors, one row per segment and
+        age, as ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics of a single-segment fit, as
+        ``BayesOdpFit.diagnostics``.
+        """
+    def diagnostics_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, then ``max_rhat``,
+        ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+        ``warnings`` (the segment's messages joined by ``"; "``, empty when
+        every threshold holds). Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws of a single-segment fit, as ``BayesOdpFit.draws``.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of a single-segment fit's observed increments, as
+        ``BayesOdpFit.loo``.
+        
+        Returns
+        -------
+        Elpd
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments, or an observed increment is
+            negative.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and reserve component.
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names of a single-segment fit, as
+        ``BayesOdpFit.parameter_names``.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of the reserve by segment
+        and origin: the triangle's keys and ``"origin"`` are its dimensions,
+        one component per segment and origin, one row per simulation.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The plugged-in scale ``phi`` of a single-segment fit.
+        """
+    def segment(self, /, **keys) -> BayesOdpFits:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint reserves
+        (same dimensions).
+        
+        Returns
+        -------
+        BayesOdpFits
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary of a single-segment fit, as
+        ``BayesOdpFit.summary``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``, the
+        chain ladder's ``latest``, ``ultimate`` and ``reserve``, and the
+        ``mean`` and ``std_dev`` of the posterior predictive reserve. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the chain ladder's totals,
+        the ``scale``, and the ``mean`` and ``std_dev`` of the segment's
+        posterior predictive total reserve. Needs pandas.
         
         Returns
         -------

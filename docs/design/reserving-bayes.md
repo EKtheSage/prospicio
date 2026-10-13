@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 built (#207); PR 4 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 is built on `claude/bayes-segments` (decisions 8 and 11: `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 is built on `claude/bayes-bf`, stacked on PR 2 (decision 9, at the user's request): `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -56,7 +56,7 @@ does not merge them by hand.
 | Model | Primary reference | Secondary |
 |---|---|---|
 | Bayesian ODP chain ladder | the same model in Stan, run with CmdStan 2.39.0 (decision 10) | England and Verrall (2002, BAJ 8(3)), (2006, AAS 1(2)); our `OdpBootstrap` and chain ladder on the same triangle |
-| Bayesian Bornhuetter–Ferguson | the same model in Stan | Verrall (2004, NAAJ); England, Verrall and Wüthrich (2012, AAS 6(2), 258-283) |
+| Bayesian Bornhuetter–Ferguson | the same model in Stan | England, Verrall and Wüthrich (2012, AAS 6(2), 258-283): Table 1 data, totals in Tables 2 and 3 (decision 9); Verrall (2004, NAAJ) |
 | CRC, CSR (later CAY, IPI) | Meyers' R/Stan code, `meyers-appendix.zip` (CAS), transcribed into current Stan syntax (no licence is stated, and the old array syntax no longer compiles) and run with CmdStan 2.39.0 | Meyers (2019), CAS Monograph 8, 2nd ed.: group 353 Commercial Auto, data in Tables 2.1-2.3, parameter summaries in Tables 5.1 and 7.1, totals in Tables 5.2 (CRC paid), 5.3 (CRC incurred) and 7.2 (CSR paid), elpd_loo in Tables 6.4 and 7.3 |
 | Diagnostics | `prospicio_bayes` (`rhat`, `ess_bulk`, `ess_tail`), already at parity with R `posterior` | |
 | Model comparison | `prospicio_bayes::elpd::loo`, already at parity with R `loo` 2.6.0 | Meyers' elpd_loo for CSR (49.76) and CRC (47.80), Tables 6.4 and 7.3; only between models of the same response (decision 5) |
@@ -70,6 +70,11 @@ reference if a paid-incurred model is taken up (not checked).
 Data:
 
 * `validation/data/genins.csv` and `validation/data/raa.csv`, as in v0.1;
+* new for PR 4: `validation/data/evw2012.csv`, England, Verrall and
+  Wüthrich's (2012) Table 1 (Wüthrich and Merz 2008, Tables 2.2-2.4): 10×10
+  incremental paid, cumulated, with their prior ultimates `m_i` as a
+  `prior` column, origins relabelled 2001 to 2010; and
+  `validation/data/genins_premium.csv` (already in the repo for Clark);
 * new for PR 3: `validation/data/clrd_comauto_353.csv`, Meyers' illustrative
   insurer, group 353 Commercial Auto, 1988-1997 at 12 to 120 months,
   columns `paid`, `incurred` and `premium` (net earned premium), the full
@@ -276,7 +281,13 @@ fitted increments (`U_w γ_d`, the ODP GLM's MLE) when all are positive, and
 from `(c0, 0, …)` otherwise; it solves `H δ = ∇f` by Cholesky, halves the
 step until `f` rises, and stops when `max |δ| < 1e-12` (or below `1e-8`
 when a full step no longer raises `f`, the rounding floor), failing after
-100 iterations. `H = R Rᵀ` with `R` lower triangular and `L = (Rᵀ)⁻¹`.
+200 iterations (this note said 100; the code has always had 200). PR 2
+adds a second rounding floor: a full step that lowers `f` by no more than
+`1e-12 |f|` stops too. CLRD's private passenger auto summed over
+companies needed it: its `b[10]` rests on one small cell against
+increments near `10⁷`, rounding kept its Newton step near `1e-6`, the
+halving reached a step that no longer moved `θ`, and the method ran out
+of iterations. GenIns and RAA draws are unchanged bit for bit. `H = R Rᵀ` with `R` lower triangular and `L = (Rᵀ)⁻¹`.
 Sanity tests, priors switched off by an internal flag: the mode's `μ` is
 the chain ladder's fitted increment to 1e-8 relative on RAA and GenIns,
 from `(c0, 0, …)`; the prior's shift of the mode falls as `1/sd²` (ratio of
@@ -323,7 +334,7 @@ the reserve of each origin as the sum of its future increments.
 Decided 2026-10-12 (failed diagnostics: open decision 4 (a)); built in PR 1
 with these changes from the sketch below, which is kept as proposed:
 
-* `fit_segments` and `BayesOdpFits` wait for PR 2. `BayesOdpFit` also has
+* `fit_segments` and `BayesOdpFits` came in PR 2 (decision 11). `BayesOdpFit` also has
   `summary()`, `loo()`, `to_long()`, `totals()` and `development_table()`
   itself (one segment), and keeps the observed cells privately for `loo()`.
 * **Seeds.** The chains and the simulations each use a seed derived from
@@ -612,6 +623,48 @@ pub struct MeyersFit {
 
 ### 8. The diagonal backtest
 
+Built in PR 2 (Rust, 2026-10-12) as proposed below, with these choices
+the proposal left open:
+
+* **Levels and scale.** `forecast` fits the model of decision 3 on the
+  train rows' increments, with an origin and a development effect for
+  each level the train rows have (renumbered), and `φ` the Pearson scale
+  of the train rows at the likelihood's mode on `N − p` degrees of
+  freedom. That mode is the ODP GLM's MLE, which is the chain ladder's
+  fit when the train rows form a triangle, so on a whole triangle `φ` is
+  `BayesOdpFit::scale` (a unit test, to 1e-8). A test row whose origin or
+  age has no train row is `Error::Bayes` (the backtest already leaves
+  such rows out for every model), as are too few train rows and decision
+  3's row and column check.
+* **Seeds and size.** The chains and the simulations take seeds derived
+  from the backtest's `seed` as `fit` does from `BayesOdp::seed`, and the
+  backtest's `n_sims` replaces `BayesOdp::n_sims`. The diagnostics are
+  not reported (the trait has no place for them).
+* **Outputs.** `mean` is each test cell's posterior mean of `exp(η)`; the
+  draws add `process` to a posterior draw; the log density is the log of
+  the mean over every posterior draw of the normalised density
+  (`Family::Poisson.log_density`), the log predictive density, as
+  `GlmCandidate` gives it with its parameter draws. The name is
+  `"bayes_odp"`; two settings of `BayesOdp` in one backtest share it (a
+  wrapper with a name is left for when it is needed).
+* **Results** (`validation/tests/reserving_bayes_segments.rs`, latest
+  three diagonals, tolerances at least 4 seed-to-seed sds over seeds 0 to
+  69, every row within at most 0.65 of its tolerance at each of them): on
+  the CLRD comauto and wkcomp lines `BayesOdp` and the ODP GLM agree (A/E
+  within 0.002 per split, CRPS within 3% and 5%, mean log density within
+  0.2). On GenIns the Bayesian means are about 1% higher (A/E lower by
+  0.007, 0.013 and 0.010 per split on average over seeds, and by 0.004 to
+  0.019 across seeds and splits: the posterior mean of `exp(η)` over the
+  young origins' wide posteriors against the GLM's MLE) and its mean log
+  density lower by 0.013 on average (sd 0.0044 over seeds, 0.0051 over
+  seeds 40 to 69 alone; the test allows 0.025 around 0.013). Both models
+  under-cover the CLRD lines' held-out cells alike (across seeds, 90%
+  intervals hold 0.69 to 0.73 of comauto's and 0.41 to 0.46 of wkcomp's),
+  a property of the ODP model on lines summed over companies, not of the
+  sampler.
+
+The proposal:
+
 Proposed (PR 2). `BayesOdp` implements `TriangleModel`
 (`backtest.rs:40`), whose doc already names "a Bayesian model": `forecast`
 fits on the train rows and returns `n_sims` joint posterior predictive
@@ -634,6 +687,9 @@ on cumulative cells for these models, is a later PR.
 
 ### 9. Informative priors: the Bayesian Bornhuetter–Ferguson
 
+Built in PR 4 (2026-10-12, in Rust, Python and R; "As built" below, with two corrections
+to the proposal); the proposal is kept as written:
+
 Proposed (PR 4). The BF form of England, Verrall and Wüthrich (2012) puts
 the prior on each origin's ultimate. In the log-linear form of decision 3
 that is a prior on `c + a_w` centred on `log(apriori × exposure ×
@@ -643,6 +699,111 @@ Bayesian ODP. The exact mapping, and whether to parameterise by ultimate
 (`x_w y_d` with `Σ y_d = 1`) instead, is settled in PR 4 against a Stan
 program of the paper's model. Exposure is a measure column, as in
 `reserving-v02.md` decision 1.
+
+**As built** (`crates/prospicio-reserving/src/bayes/bf.rs`):
+
+```rust
+pub struct BayesBf {
+    pub apriori: f64,          // 1.0, as BornhuetterFerguson
+    pub cv: f64,               // 0.1 (EVW's a = 100); f64::INFINITY is flat
+    pub development_sd: f64,   // 10
+    pub process: ProcessDistribution, // Gamma
+    pub sampler: Sampler,      // 4 chains, 1,000 warm-up, 1,000 draws, target 0.95
+    pub n_sims: usize,         // 10,000
+    pub seed: u64,
+}
+impl BayesBf { pub fn fit(&self, triangle: &Triangle, column: &str, exposure: &str) -> Result<BayesBfFit>; }
+pub struct BayesBfFit {
+    pub chain_ladder: ChainLadderFit,
+    pub scale: f64,                     // phi, as BayesOdp's
+    pub exposure: Vec<f64>,
+    pub prior_ultimate: Vec<f64>,       // apriori * exposure
+    pub posterior: PosteriorDraws,      // alpha[1..n], beta[1..m]
+    pub diagnostics: Diagnostics,
+    pub reserves: PredictiveDistribution, // dimension origin
+}
+// summary(), loo(), to_long(), totals(), development_table(); impl ReserveFit
+```
+
+* **The model is EVW's Model 3.1 on the log scale (correction 1).** The
+  sketch's prior on `c + a_w` cannot be a prior on the ultimate: under
+  the corner constraints `exp(c + a_w)` is the first increment, and the
+  ultimate is `exp(c + a_w) Σ exp(b_d)`, which also moves with the
+  pattern. EVW instead write the means `mu_w gamma_d` with an
+  unnormalised pattern and put the prior on `mu_w`. As built:
+  `eta_wd = alpha_w + beta_d`, the quasi likelihood and plug-in `phi` of
+  decision 3, `mu_w = exp(alpha_w) ~ Gamma(shape 1/cv², mean m_w)` with
+  `m_w = apriori × exposure_w` (the exposure as `BornhuetterFerguson`
+  reads it), and `beta_d ~ N(0, development_sd²)`, EVW's vague pattern
+  prior made proper. No corner constraint: the gamma prior, or with
+  `cv = ∞` the normal prior on `beta`, fixes the scale shared by `mu` and
+  `gamma`. Every term is concave, so the posterior has one mode. One
+  `cv` for all origins (EVW's `a_i ≡ a`); a vector is a later option.
+* **The tight limit is not the classical BF (correction 2).** As `cv →
+  0`, `mu_w → m_w` and the pattern's posterior is `gamma_d ~ Gamma(S_d /
+  phi, M_d / phi)` (EVW sec. 3.3; `S_d` the observed increments of column
+  `d`, `M_d` the prior ultimates of the origins observed there), so the
+  mean reserve tends to `m_w Σ S_d / M_d` over the future cells: Mack's
+  (2008) BF with the raw pattern, not `(1 − 1/cdf_w) m_w`, which takes the
+  chain ladder's pattern. EVW say so (their sec. 1.1): priors on the rows
+  reshape the pattern even under vague column priors. On their triangle
+  the limit is 6,644,047 and the classical BF 7,356,578. The two agree
+  when `m_w` are the chain ladder's ultimates (the chain ladder's column
+  equations are `gamma_d Σ mu_w = S_d`); a test checks that case. A BF
+  that keeps the chain ladder's pattern exactly (Verrall 2004) is a
+  different model, not built.
+* **`apriori` sets the row parameter, not the ultimate.** Because the
+  pattern is not normalised, `m_w = apriori × exposure_w` is the prior
+  mean of `mu_w`, EVW's row parameter (their "prior ultimate"), and the
+  model's expected ultimate is `mu_w Σ_d gamma_d`: under a tight prior
+  `m_w Σ_d S_d / M_d` over all columns. On EVW's triangle that sum is
+  0.885, so an `apriori` read as a loss ratio gives an implied ultimate
+  loss ratio about 11.5% lower. The method follows EVW; the docs of
+  `apriori` and `prior_ultimate` in Rust, Python and R say so, and the
+  names stay EVW's.
+* **Limits as tests** (unit tests on GenIns with premium): `cv = ∞` gives
+  `BayesOdp`'s reserves by origin and in total within `0.1 s` and 10%;
+  `cv = 0.001` (with `development_sd` 100 and no process error) gives the
+  closed-form limit's mean and sd by origin and in total within `0.1 s`
+  and 10%, and with `m_w` the chain ladder's ultimates the classical BF
+  reserve, to 1e-9 in the closed form and within `0.1 s` in the fit;
+  between them the total mean reserve moves monotonically with `cv`
+  (infinite, 0.5, 0.2, 0.05, 0.001).
+* **`development_sd`** defaults to 10, as `BayesOdp`'s. Against EVW's
+  flat pattern prior it lifts a one-cell last column with `S / phi` near 1
+  by about 6.5% (0.27% on EVW's total at `a = ∞`); at 100 by 3e-5. With
+  `cv = ∞` the direction `(alpha + k, beta − k)` is held only by this
+  prior, about `development_sd / √m` long: at 1,000 our sampler gave 195
+  to 247 divergent transitions in 4,000 (target acceptance 0.95 or 0.99),
+  at 100 or 10 none. The diagnostics report it.
+* **Sampling scale.** As `BayesOdp`, NUTS on a scale whitened at the mode
+  (decision 3), on `(u, beta)` with `u_w = alpha_w − log m_w`: centred on
+  the prior, `u` keeps full precision under a tight prior, where `alpha`
+  near 15 rounds steps to 2e-15. Newton starts at the strong-prior mode
+  (`u = 0`, the raw pattern). The mode finder (`laplace.rs`) now takes in
+  full a step whose promised gain is below the rounding of the log
+  posterior and stops once such steps stop halving; before, a tight prior
+  made it creep by about 2e-8 a step for 200 iterations. `BayesOdp`'s
+  modes on GenIns and RAA are bitwise unchanged.
+* **Errors.** `InvalidSetting` for `apriori` not finite and positive,
+  `cv` not positive (NaN included; infinity is allowed), `development_sd`
+  not finite and positive, `n_sims == 0`; `InvalidExposure` from the
+  exposure column; `Error::Bayes` for a development column whose
+  increments sum to zero or less (as `BayesOdp`) and for an origin whose
+  increments sum to `−phi / cv²` or less, where the gamma posterior of its
+  `mu` is improper (under `cv = ∞`, any non-positive sum, as `BayesOdp`):
+  an informative prior keeps a young origin with a zero or slightly
+  negative first cell, which `BayesOdp` refuses.
+* **Prediction and LOO** as `BayesOdp` (decisions 4 and 5): each future
+  cell's Gamma process error around `exp(alpha_w + beta_d)`, no tail; LOO
+  on the normalised ODP density, so it compares with `BayesOdp`'s on the
+  same triangle. No `dependence` field until segments (decision 11), as
+  `Meyers`.
+* **Runtime.** A default fit takes about 0.1 s in a release build and 1
+  to 2 s in a debug one; `validation/tests/reserving_bayes_bf.rs` takes
+  about 7.5 s in a debug build (five fits), the unit tests about 2.5 s.
+* **Bindings** (decision 13): Python `BayesBf` and R `bayes_bf()`, for
+  one segment, as `BayesOdp`'s.
 
 ### 10. Validation
 
@@ -776,7 +937,80 @@ GenIns and RAA, with the defaults (seed 0). As built:
   and sds from the draws: calling `summary()` (R-hat and ESS too) for each
   of the 76 cases took about a minute in a debug build.
 
+Done for PR 4 (2026-10-12). `validation/tests/reserving_bayes_bf.rs`
+checks 344 rows of `reserving_bayes_bf_stan.csv` (generator
+`validation/scripts/reserving_bayes_bf_stan.py`, model
+`validation/scripts/stan/bayes_bf.stan`, the PR 1 pipeline: seed
+20261012, 4 chains of 2,000 warm-up and 25,000 draws, dense metric,
+`adapt_delta` 0.99, started at the strong-prior mode; max R-hat 1.0002,
+no divergence): every parameter's mean and sd where `cv` is finite (under
+`cv = ∞` only `alpha + beta` is identified), each origin's and the total
+reserve's mean, sd and three percentiles, and `phi`. Four cases: GenIns
+with premium (`genins_premium.csv`), apriori 0.5, `cv` 0.2, a stated prior
+a little above its chain-ladder loss ratio (about 0.45); EVW's triangle at
+their `a = 100` (`cv` 0.1) with `development_sd` 10 and 100, and at their
+`a = 0` (`cv = ∞`) with 100. Our Monte Carlo error at the defaults over
+seeds 0 to 199, with `s` Stan's posterior sd: at most `0.021 s` on a mean,
+2.75% on an sd and `0.063 s` on a percentile, alike in all four cases (no
+heavy tail, unlike Meyers' one-cell youngest origin). Tolerances `0.1 s`,
+15% and `0.3 s`, each at least 4.7 times the largest spread; a first 10%
+on the sds was 3.6 times and was raised. Seeds 0 to 199 pass every row,
+using at most 0.69 of a tolerance (seed 0 at most 0.38); no fit in the
+sweep had a divergence or a warning. The sweep is the ignored test
+`seed_sweep` (release build, `BF_SEEDS` seeds; 200 seeds take about 2.5
+minutes).
+
+EVW's printed totals (their Gibbs runs of 1,000,000 draws, flat pattern
+prior; ours at `development_sd` 100, seed 0; Stan): `a = 100` theirs
+6,145,526 (MSEP^(1/2) 422,526), ours 6,146,087 (415,078), Stan 6,145,195
+(422,771); `a = 0` theirs 6,049,398 (430,160), ours 6,050,384 (426,478),
+Stan 6,051,957 (429,728); `a = ∞`, closed form, theirs 6,644,047
+(395,012), ours from the data 6,644,048 (395,010; their `phi` is rounded),
+a fit at `cv` 0.001 6,639,993 (399,035). Checked: means within 0.5% and
+MSEPs within 5% (our seed-to-seed sd over 200 seeds at most 0.10% and
+1.1%, largest errors 0.29% and 3.5%), the closed form within 2, and the
+classical BF on the same `m_i`, 7,356,578, as a fixed value.
+
 ### 11. Segments and dependence
+
+Built in PR 2 (Rust, 2026-10-12) as proposed below:
+
+* **API.** `BayesOdp::fit_segments(triangle, column) -> BayesOdpFits`
+  with `segments: SegmentFits<BayesOdpSegment>` (each segment's
+  `chain_ladder`, `scale`, `posterior`, `diagnostics`, `summary()` and
+  `loo()`, no reserves of its own) and the joint `reserves`, plus
+  `to_long`, `totals`, `development_table` and `segment(keys)`, as
+  `OdpBootstrapFits`. Segments are fitted one after another (each fit
+  already runs its chains in parallel); a failure names its segment.
+* **Seeds.** Segment `k` (in index order) uses tags `2 + 2k` (chains)
+  and `3 + 2k` (simulations) of decision 5, so segment 0's draws differ
+  from `fit` of that segment alone, as in the bootstraps.
+* **`RankCorrelation`** goes through the bootstraps' own
+  `SegmentDependence::reorder` with `BayesOdp::seed` (stream `n_sims` of
+  that seed, which no derived seed uses).
+* **`Synchronized`** is `Error::Bayes`, checked before any sampling.
+  So is a bad `RankCorrelation` matrix (not `S × S` for the triangle's
+  segments, not symmetric with a unit diagonal, an entry out of
+  `[-1, 1]`, or `2 sin(π ρ / 6)` not positive definite): it is
+  `Error::InvalidSetting` before the first segment samples, through the
+  same check the bootstraps run when they reorder (which now also reports
+  a matrix that is not positive definite as `InvalidSetting`).
+* **Provenance** of the joint reserves: the settings, `segments`,
+  `dependence`, and each segment's `c0` and `scale` as a list.
+* **`Meyers` has no `fit_segments`** in PR 2: this decision names only
+  `BayesOdp`, and `Meyers` has no `dependence` field (decision 7). The
+  same pattern fits it when a user needs Meyers over segments; that is a
+  later PR.
+* **Results** (`validation/tests/reserving_bayes_segments.rs`, seed sweep
+  over 0 to 69): twin lines (CLRD wkcomp under two names) under
+  `Independent` have a rank correlation of their totals with sd 0.010
+  over seeds, as `1/√n_sims` predicts for independent draws (largest
+  0.027); the test allows `4.5/√n_sims`, not the `3/√n_sims` proposed
+  below, which is about 3 such sds and would fail about one seed in 370.
+  `RankCorrelation` on comauto, ppauto and wkcomp reaches each target
+  within 0.009 (sd at most 0.0029; the test allows 0.015).
+
+The proposal:
 
 Proposed (PR 2). `fit_segments` fits each segment's own posterior (the
 same model, independently), and the output has the shape of
@@ -836,6 +1070,38 @@ the sketch below, which is kept as proposed:
   `segment(...)` wait for PR 2 with the Rust side. R's `segment()` takes a
   `bayes_odp_fit` as it takes any single-segment fit without keys: with no
   condition it returns the fit, and a condition on a key is an error.
+* **Segments (PR 2).** `fit` and `bayes_odp()` stay single-segment, so
+  their seeds and results do not change; segments have their own entry
+  point, as in Rust, because segment `k` draws on other derived seeds.
+  Python `BayesOdp(..., dependence="independent", spearman=None)` (the
+  two new arguments last) with `fit_segments(triangle, column)` returning
+  `BayesOdpFits`: `chain_ladder`, `keys`, `index`, `origins`,
+  `development`, the joint `reserves` (dimensions the keys and `origin`),
+  `to_frame()`, `totals_frame()`, `development_frame()`,
+  `diagnostics_frame()` (one row per segment) and `segment(**keys)`, and,
+  for a single-segment fit only (an error naming `segment(...)`
+  otherwise, as `OdpBootstrapFit.scale`), `scale`, `diagnostics`,
+  `parameter_names`, `draws`, `chains`, `summary()` and `loo()`. R
+  `bayes_odp_segments(triangle, column = NULL, ..., dependence =
+  c("independent", "rank_correlation", "synchronized"), spearman = NULL)`
+  with `bayes_odp()`'s arguments in the same order, returning a
+  `bayes_odp_fits` whose `diagnostics` is a data.frame (one row per
+  segment, the warnings joined by `"; "`) and whose `scale`, `summary`,
+  `draws` and `bayes_loo()` need one segment; `as.data.frame()`,
+  `totals_frame()`, `development_frame()` and `segment()` work as for the
+  bootstraps. `"synchronized"` is accepted by the constructor, as the
+  bootstraps take it, and is the Rust `Error::Bayes` at the fit. Failed
+  diagnostics raise one warning that prefixes each message with its
+  segment's label. The diagonal backtest has no binding in either
+  language, so `TriangleModel for BayesOdp` stays Rust-only. Tests:
+  `python/tests/test_reserving_bayes_segments.py` and
+  `R/prospicio/tests/test-reserving-bayes-segments.R` fit comauto and
+  wkcomp from `clrd_lines.csv` with the default chains (no warning, the
+  frames, one segment's scale equal to `fit`'s and its posterior close),
+  twin lines' rank correlation within `4.5/√n_sims` of 0 and a rank
+  correlation of 0.5 within 0.03 at 4,000 simulations, replay by seed,
+  a warning that names both segments on 2 × 10 kept draws, and the errors
+  (dependence settings, `"synchronized"`, a missing column).
 * **Arguments.** Python `BayesOdp(intercept_sd=10, origin_sd=10,
   development_sd=10, process="gamma", chains=4, tune=1000, draws=1000,
   n_sims=10000, seed=0, target_accept=0.95, max_depth=10)` and R
@@ -884,6 +1150,29 @@ the sketch below, which is kept as proposed:
   within 2 of Meyers' printed values, gamma within 0.01), replay an
   incurred fit by seed, warn on 2 × 10 kept draws, and check the errors
   (settings, a missing premium column, a zero cell, too few cells).
+* **`BayesBf` (PR 4)** follows it too, for one segment: Python
+  `BayesBf(apriori=1.0, cv=0.1, development_sd=10, process="gamma",
+  chains=4, tune=1000, draws=1000, n_sims=10000, seed=0,
+  target_accept=0.95, max_depth=10)` with `fit(triangle, column,
+  exposure)`, and R `bayes_bf(triangle, column, exposure, apriori = 1,
+  cv = 0.1, ...)` with the same arguments in the same order (`column` and
+  `exposure` are required, as in `bornhuetter_ferguson()`). A flat prior
+  is `cv=float("inf")` in Python and `cv = Inf` in R. The fit (`BayesBfFit`,
+  R `bayes_bf_fit`) has `BayesOdpFit`'s fields plus `exposure` and
+  `prior_ultimate`, which its long tables add too; the parameters are
+  `alpha[1..n]` and `beta[1..m]`. The warnings say `BayesBf:` and
+  `bayes_bf:`. Tests: `python/tests/test_reserving_bayes_bf.py` and
+  `R/prospicio/tests/test-reserving-bayes-bf.R` fit EVW's triangle with
+  the default chains (no warning, EVW's `phi`, the total within 1.5% of
+  EVW's printed 6,145,526, the summary, the frames and LOO), check the
+  two limits (a flat prior within 2% of `BayesOdp` and 1.5% of EVW's
+  6,049,398, cv 0.001 within 1.5% of EVW's closed form 6,644,047, the
+  cv 0.1 reserve between them), replay a fit by seed, warn on 2 × 10 kept
+  draws, and check the errors (settings, a missing column, an origin
+  whose increments sum to -5: refused under a flat prior, fitted under
+  an informative one, with no LOO). Over seeds 0 to 29 these means sat
+  within 0.7% of their targets with sds of 0.15% to 0.23%, so each
+  tolerance is at least 6 sds beyond the mean offset.
 * **Tests**: `python/tests/test_reserving_bayes.py` and
   `R/prospicio/tests/test-reserving-bayes.R` fit GenIns with the default
   chains (no warning, the Stan-matched scale, the reserves near the chain
@@ -951,7 +1240,7 @@ are settled.
    `φ` with a prior under the quasi likelihood; (c) a separate proper
    model (gamma or Tweedie increments) with sampled dispersion, later.
    *Recommended: (a) now, (c) if wanted*, decision 6; (b) is not a valid
-   posterior. Decided 2026-10-12: (a) for now.
+   posterior. Decided 2026-10-12: (a) for now. Confirmed 2026-10-13 by the user: (a), the plug-in, is kept.
 4. **Failed diagnostics.** (a) Return the fit with warnings (and raise
    them in Python and R); (b) return an error. *Recommended: (a)*, so a
    user can inspect a poor fit; the warnings name the parameter and the
@@ -965,6 +1254,13 @@ are settled.
    posterior by the next diagonal (PSIS, with `k̂` as the guard); (c) a
    Laplace update for the ODP model only; (d) MCMC refit per simulation.
    *Recommended: (a) now, then (b)* in its own PR after PR 3, decision 12.
+   Decided 2026-10-13 by the user: (b), PSIS reweighting, as the next
+   capability. Its weakness is a diagonal that moves the posterior far (a
+   young origin, an outlying diagonal): `k̂` above 0.7 flags it. A refit
+   per simulation (d) stays exact there but costs one NUTS run per
+   simulation (about 0.1 s each, so 1,000 s for 10,000 simulations on one
+   thread); a hybrid that refits only the flagged simulations is the
+   proposed fallback.
 7. **Meyers' data source.** Decided 2026-10-12 by the user:
    `EKtheSage/cas-schedule-p-data-model` (see Data above), which holds the
    full 10×10 squares that chainladder-python's `clrd` (upper triangles
@@ -974,11 +1270,21 @@ are settled.
    check against his appendix first; the group 353 checks do not need it.
 8. **Bayesian Bornhuetter–Ferguson.** (a) In scope as PR 4; (b) later.
    *Recommended: (a)*: it is the main thing priors buy an actuary, and it
-   reuses PR 1's model.
+   reuses PR 1's model. Built as (a) on 2026-10-12 at the user's request
+   (decision 9).
 9. **Compartmental reserving.** (a) A separate design note after PR 3;
    (b) part of this plan. *Recommended: (a)*: its identification needs
    informative priors and its ODE variants need numerical gradients,
    which deserve their own decisions.
+   Decided 2026-10-13 by the user: (a), and all three next models are
+   wanted, in this order of PRs: Meyers' CAY for incurred data; Meyers'
+   CRC and CSR with `fit_segments` and `TriangleModel` (for the
+   200-triangle calibration study); then the compartmental design note.
 10. **Bindings with each model.** (a) Rust, Python and R in the same PR,
     as `reserving-v02.md` decision 7; (b) Rust first, bindings after.
     *Recommended: (a)*.
+11. **Draws from other samplers.** Noted 2026-10-13 by the user for the
+    longer term, not planned: taking external draws (arviz
+    `InferenceData`, Stan CSV, nutpie traces) into our R-hat, ESS and LOO.
+    Today only our own NUTS draws (nuts-rs, the Rust core of nutpie) reach
+    them; `docs/design/models.md` and the roadmap are corrected to say so.
