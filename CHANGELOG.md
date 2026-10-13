@@ -50,6 +50,12 @@ under "Unreleased" until then.
   probability, and the Lundberg exponent, with the severity capped, in
   excess or stopped (`prospicio_aggregate::ruin`). Python
   `prospicio.aggregate.eventual_ruin`; R `eventual_ruin()`.
+- Layer loss picks, `aggregate`'s `Aggregate.picks`: a severity grid
+  reshaped so that its expected loss to each layer of a tower is a pick,
+  rescaling the survival function within each layer and keeping the tail
+  (`prospicio_aggregate::picks::layer_loss_picks`). Infeasible picks are
+  an error. Python `prospicio.aggregate.layer_loss_picks`; R
+  `layer_loss_picks()`.
 
 ### Reserving
 

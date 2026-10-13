@@ -70,6 +70,7 @@ reference:
       - occurrence_pml
       - compound_moments
       - eventual_ruin
+      - layer_loss_picks
       - events_from_years
       - event_sums_insured
       - event_times

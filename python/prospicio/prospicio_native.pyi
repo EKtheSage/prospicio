@@ -9245,6 +9245,30 @@ class Period:
         """
 
 @final
+class Picks:
+    """
+    A severity reshaped to layer loss picks, from ``layer_loss_picks``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def severity(self, /) -> Grid:
+        """
+        The adjusted severity, on the same grid.
+        """
+    @property
+    def straight_bottom(self, /) -> bool:
+        """
+        Whether the bottom layer took the straight-line shape.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        Each layer, bottom up, as columns: ``bottom``, ``top``, ``before``
+        and ``target`` (the expected loss per claim before and after),
+        ``weight`` (on the survival function) and ``above`` (the adjusted
+        chance of a loss above the layer).
+        """
+
+@final
 class PiecewisePareto:
     """
     Piecewise Pareto: alpha ``alpha[k]`` above threshold ``t[k]``, the
@@ -13741,6 +13765,43 @@ def ks_uniform(values: Sequence[float]) -> float:
     Returns
     -------
     float
+    """
+
+def layer_loss_picks(severity: Grid, attachments: Sequence[float], picks: Sequence[float], claims: float = 1.0) -> Picks:
+    """
+    Reshapes a severity so that its expected loss to each layer hits a
+    pick, as ``aggregate``'s ``Aggregate.picks``: in each layer the survival
+    function is rescaled about its value at the layer's top, keeping its
+    shape there; above the top attachment the severity is kept.
+    
+    Parameters
+    ----------
+    severity : Grid
+    attachments : list of float
+        Increasing grid points; the layers are 0 to the first, then between
+        consecutive attachments.
+    picks : list of float
+        The loss to each layer for ``claims`` expected ground-up claims.
+    claims : float, default 1.0
+    
+    Returns
+    -------
+    Picks
+    
+    Raises
+    ------
+    ValueError
+        If an attachment is not a grid point or the picks are infeasible (a
+        pick below what the layers above force through its layer).
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import layer_loss_picks
+    >>> from prospicio.distributions import Gamma, Grid
+    >>> sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.5), 1.0, 1 << 14)
+    >>> picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
+    >>> [round(10 * t, 6) for t in picked.to_dict()["target"]]
+    [480.0, 420.0, 60.0]
     """
 
 def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:

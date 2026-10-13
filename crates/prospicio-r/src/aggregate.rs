@@ -490,8 +490,39 @@ fn eventual_ruin_rust(
     ))
 }
 
+/// Layer loss picks: `list(severity, straight_bottom, layers)`.
+#[extendr]
+fn layer_loss_picks_rust(
+    severity: Robj,
+    attachments: &[f64],
+    picks: &[f64],
+    claims: f64,
+) -> Result<List> {
+    let sev = <&Grid>::try_from(&severity)
+        .map_err(|_| Error::Other("the severity must be a grid_distribution".into()))?;
+    let p = prospicio_aggregate::layer_loss_picks(&sev.inner, attachments, picks, claims)
+        .map_err(to_r)?;
+    let col = |f: fn(&prospicio_aggregate::PickedLayer) -> f64| -> Vec<f64> {
+        p.layers.iter().map(f).collect()
+    };
+    let layers = list!(
+        bottom = col(|x| x.bottom),
+        top = col(|x| x.top),
+        before = col(|x| x.before),
+        target = col(|x| x.target),
+        weight = col(|x| x.weight),
+        above = col(|x| x.above)
+    );
+    Ok(list!(
+        severity = Grid::wrap(p.severity.clone()),
+        straight_bottom = p.straight_bottom,
+        layers = layers
+    ))
+}
+
 extendr_module! {
     mod aggregate;
+    fn layer_loss_picks_rust;
     fn eventual_ruin_rust;
     fn compound_moments_rust;
     fn approximation_parameters_rust;

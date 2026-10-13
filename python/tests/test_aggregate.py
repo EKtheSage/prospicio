@@ -480,3 +480,22 @@ def test_eventual_ruin():
         eventual_ruin(sev, rho=0.1, cap=2.0, excess=1.0)
     with pytest.raises(ValueError):
         eventual_ruin(sev, rho=0.0)
+
+
+def test_layer_loss_picks():
+    from prospicio.aggregate import layer_loss_picks
+    from prospicio.distributions import Gamma, Grid
+
+    sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.5), 1.0, 1 << 14)
+    picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
+    assert not picked.straight_bottom
+    # aggregate 1.0.1's Aggregate.picks at loss 200 (picks_aggregate.csv).
+    assert picked.severity.probs[200] == pytest.approx(0.0008386073686922624, abs=1e-12)
+    layers = picked.to_dict()
+    assert layers["top"] == [100.0, 500.0, 1000.0]
+    assert layers["target"] == pytest.approx([48.0, 42.0, 6.0])
+    assert layer_loss_picks(sev, [100, 500, 1000], [700, 250, 50], claims=10).straight_bottom
+    with pytest.raises(ValueError):
+        layer_loss_picks(sev, [100.5], [10.0])
+    with pytest.raises(ValueError):
+        layer_loss_picks(sev, [100, 500], [480, 1], claims=10)

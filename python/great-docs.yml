@@ -73,6 +73,8 @@ reference:
       - aggregate.Approximation
       - aggregate.eventual_ruin
       - aggregate.Ruin
+      - aggregate.layer_loss_picks
+      - aggregate.Picks
   - title: Reinsurance
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:

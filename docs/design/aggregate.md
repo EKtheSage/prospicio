@@ -542,6 +542,33 @@ rate cancels.
   carried: the exact `ψ` is the deliverable. Renewal counts (Wiener–Hopf)
   stay parked.
 
+### Layer loss picks
+
+`aggregate`'s `Aggregate.picks`, as `prospicio_aggregate::picks::layer_loss_picks`:
+reshape a severity grid so that its expected loss to each layer
+`(a_{i−1}, aᵢ]` is a pick, keeping the tail above the top attachment.
+
+- In each layer the survival function is rescaled about its value at the
+  top, `S*(x) = ωᵢ + wᵢ (S(x) − S(aᵢ))`, worked from the top down with
+  `ω_k = S(a_k)`, `wᵢ = (tᵢ − ωᵢ yᵢ) / ∫ (S − S(aᵢ))` and
+  `ω_{i−1} = ωᵢ + wᵢ (S(a_{i−1}) − S(aᵢ))`; the layer integrals are the
+  grid's, `h Σ S_j` over the points in `[a_{i−1}, aᵢ)`, as `aggregate`'s.
+  The picks are per year for `claims` expected ground-up claims
+  (`aggregate` divides by its `n`).
+- Attachments must be grid points: a pick constrains an integral between
+  two boundaries (`aggregate`'s ruling of 2026-08-24).
+- A negative weight (a pick below what the layers above force through its
+  layer) is an error here; `aggregate` warns and returns negative
+  probabilities. So is a rescaled survival above 1 anywhere but the bottom
+  layer.
+- A bottom-layer pick whose rescaled survival passes 1 takes `aggregate`'s
+  fallback: `S* = 1` up to a point, then a straight line to `ω₁` at `a₁`.
+  `aggregate` rounds the continuous length `2(a₁ − t₁) / (1 − ω₁)` to the
+  grid and misses (704.90 for a pick of 700 on a step of 1); prospicio
+  solves the length on the grid, so the pick is met. It takes the line
+  whenever the cap binds; `aggregate` only when the capped layer misses
+  its pick by more than `1e-3`.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -639,6 +666,14 @@ relative (observed 1.5e-11: round-off over a slope of about 1e-6), `R` at
 `1e-10` relative. Unit tests check `ψ` against the exponential closed form
 `e^{−ρu / ((1 + ρ)μ)} / (1 + ρ)` and its `R`, and the FFT against Panjer.
 
+Layer loss picks are checked against `aggregate` 1.0.1's `Aggregate.picks`
+(`validation/scripts/aggregate_picks.py`, 406 values) on a gamma severity
+(mean 100, cv 1.5) on `2^14` points with layers to 100, 500 and 1,000:
+picks that rescale every layer, and picks whose bottom layer takes the
+straight line (compared above the bottom layer, where both agree). The
+adjusted probabilities match at `1e-12`, the layer losses at `1e-9`
+relative; the bottom layer's pick is met to `1e-9`.
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
@@ -652,7 +687,8 @@ relative (observed 1.5e-11: round-off over a slope of about 1e-6), `R` at
       and `priority_kappa`, on `natural::Portfolio`.)
    4. (Done: eventual ruin by Pollaczeck–Khinchine, `pollaczeck_khinchine`
       and `eventual_ruin`, in `prospicio_aggregate::ruin`.)
-   5. Layer loss picks (`Aggregate.picks`).
+   5. (Done: layer loss picks, `Aggregate.picks`, in
+      `prospicio_aggregate::picks`.)
    6. `Bounds` and `PricingBounds`, the rest of the 2022 pricing bounds.
    Small items to fold into these: a total-ceded grid for a stage with
    several layers (its price and statistics, `reins_stats_df`'s `Ceded`

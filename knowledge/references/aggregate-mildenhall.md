@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-13T00:27:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-13T00:45:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -37,6 +37,9 @@ sources:
   - id: ruin
     resource: ../validation/scripts/aggregate_ruin.py
     title: aggregate_ruin.py
+  - id: picks
+    resource: ../validation/scripts/aggregate_picks.py
+    title: aggregate_picks.py
 ---
 
 # Which source for what
@@ -258,9 +261,29 @@ sources:
   of the whole severity (not the capped one), and a 1,000-path simulated
   check of the same discretized model.[^ruin]
 
+# Layer loss picks
+
+* `Aggregate.picks(attachments, layer_loss_picks)` returns the adjusted
+  severity probabilities (`_picks_work`, with `debug=True` a namedtuple of
+  `layers`, `exact`, `density`, `audit`); the picks are annual, divided by
+  the aggregate's `n`. Attachments off the grid raise a `ValueError` naming
+  a compatible bucket.[^picks]
+* The adjusted survival is `min(1, ω + (S − S(a)) w)` per layer, bins
+  right-closed with 0 in the bottom one; the layer integrals are left sums
+  `bs Σ S` over `[a_{i−1}, aᵢ)`. Continuity at the attachments makes the
+  two conventions agree.[^picks]
+* When the cap at 1 makes the bottom layer miss its pick by more than
+  `1e-3` (per claim) it rebuilds the bottom layer as 1 then a straight line,
+  with the line's length rounded to the grid, and warns "Revised layer 1
+  achieved": 704.90 for a pick of 700 on a gamma (mean 100, cv 1.5) with
+  10 claims and a step of 1. A smaller miss is kept silently.[^picks]
+* Infeasible picks (a negative weight) only warn, and the returned
+  probabilities are negative.[^picks]
+
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
 [^reins]: aggregate_reinsurance.py
 [^natural]: aggregate_natural.py
 [^ruin]: aggregate_ruin.py
+[^picks]: aggregate_picks.py

@@ -204,6 +204,42 @@ eventual_ruin <- function(severity, rho = NULL, loss_ratio = NULL, p = numeric()
   )
 }
 
+#' Layer loss picks
+#'
+#' Reshapes a severity so that its expected loss to each layer hits a pick,
+#' as the Python package `aggregate`'s `Aggregate.picks`. The attachments
+#' cut the severity into layers, 0 to the first and then between
+#' consecutive ones; in each the survival function is rescaled about its
+#' value at the layer's top, `S*(x) = above + weight * (S(x) - S(top))`,
+#' keeping its shape there, and above the top attachment the severity is
+#' kept. A
+#' bottom-layer pick too large for that takes `S* = 1` up to a point and a
+#' straight line after, solved so the pick is met.
+#'
+#' @param severity A [grid_distribution].
+#' @param attachments Increasing grid points.
+#' @param picks The loss to each layer for `claims` expected ground-up
+#'   claims.
+#' @param claims The expected claim count the picks are for.
+#' @returns A list: `severity`, the adjusted [grid_distribution];
+#'   `straight_bottom`; and `layers`, a data frame with `bottom`, `top`,
+#'   `before` and `target` (the expected loss per claim before and after),
+#'   `weight` and `above` (the adjusted chance of a loss above the layer).
+#' @export
+#' @examples
+#' sev <- discretize(gamma_from_mean_cv(100, 1.5), step = 1, points = 2^14, method = "rounding")
+#' picked <- layer_loss_picks(sev, c(100, 500, 1000), c(480, 420, 60), claims = 10)
+#' picked$layers
+layer_loss_picks <- function(severity, attachments, picks, claims = 1) {
+  r <- rust_result(layer_loss_picks_rust(
+    severity@ptr, as.double(attachments), as.double(picks), as.double(claims)
+  ))
+  list(
+    severity = grid_distribution(ptr = r$severity), straight_bottom = r$straight_bottom,
+    layers = as.data.frame(r$layers)
+  )
+}
+
 #' Compound moments to third order and moment approximations
 #'
 #' `compound_moments()` is the mean, variance, third cumulant, cv and

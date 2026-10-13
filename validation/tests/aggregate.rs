@@ -642,3 +642,46 @@ fn eventual_ruin_matches_aggregate() {
         }
     });
 }
+
+#[test]
+fn layer_loss_picks_match_aggregate() {
+    use prospicio_aggregate::picks::layer_loss_picks;
+    use prospicio_prob::Gamma;
+    // validation/scripts/aggregate_picks.py: a gamma severity on 2^14
+    // points, 10 claims, layers to 100, 500 and 1,000.
+    let (sev, _) = Grid::rounding(&Gamma::from_mean_cv(100.0, 1.5).unwrap(), 1.0, 1 << 14).unwrap();
+    let attachments = [100.0, 500.0, 1000.0];
+    let cases = reference("picks_aggregate.csv");
+    check(&cases, |c| {
+        let picks: Vec<f64> = c
+            .get("params")
+            .strip_prefix("picks=")?
+            .split(':')
+            .map(|p| p.parse().ok())
+            .collect::<Option<_>>()?;
+        let picked = layer_loss_picks(&sev, &attachments, &picks, 10.0).ok()?;
+        assert_eq!(picked.straight_bottom, c.get("distribution") == "straight");
+        let arg = c.number("arg")?;
+        match c.get("quantity") {
+            "p" => picked.severity.probs().get(arg as usize).copied(),
+            "layer" => {
+                let g = &picked.severity;
+                let i = attachments.iter().position(|&a| a == arg)?;
+                let bottom = if i == 0 { 0.0 } else { attachments[i - 1] };
+                let lev = |a: f64| {
+                    (0..g.len())
+                        .map(|j| g.x(j).min(a) * g.probs()[j])
+                        .sum::<f64>()
+                };
+                Some(10.0 * (lev(arg) - lev(bottom)))
+            }
+            _ => None,
+        }
+    });
+    // The straight-line bottom layer meets its pick, where aggregate's
+    // rounded line reaches 704.90.
+    let picked = layer_loss_picks(&sev, &attachments, &[700.0, 250.0, 50.0], 10.0).unwrap();
+    let g = &picked.severity;
+    let lev100: f64 = (0..g.len()).map(|j| g.x(j).min(100.0) * g.probs()[j]).sum();
+    assert!((10.0 * lev100 - 700.0).abs() < 1e-9);
+}

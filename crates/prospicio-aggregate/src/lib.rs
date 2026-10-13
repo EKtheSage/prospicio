@@ -17,6 +17,7 @@ pub mod layer_statistics;
 pub mod moments;
 pub mod monte_carlo;
 pub mod panjer;
+pub mod picks;
 pub mod pml;
 pub mod reinsurance;
 pub mod ruin;
@@ -31,6 +32,7 @@ pub use layer_statistics::{LayerStatistics, occurrence_layer_statistics};
 pub use moments::{Approximation, ApproximationKind, CompoundMoments, compound_moments};
 pub use monte_carlo::{EventSet, simulate_events};
 pub use panjer::panjer;
+pub use picks::{PickedLayer, Picks, layer_loss_picks};
 pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{
     Basis, Commission, Corridor, Layer, LossSensitivePremium, ProfitCommission, Tower,
