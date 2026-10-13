@@ -3,7 +3,7 @@ model with its one-year view, the expected-loss methods, Clark's growth
 curves, and the ODP bootstrap with its simulated one-year view of the chain
 ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
 one-year views under Mack's process, and the Bayesian ODP chain ladder, the Bayesian
-Bornhuetter-Ferguson and Meyers' CRC and CSR models sampled with NUTS
+Bornhuetter-Ferguson and Meyers' CRC, CSR and CAY models sampled with NUTS
 (docs/design/triangle.md, docs/design/reserving-v02.md,
 docs/design/reserving-bayes.md)."""
 

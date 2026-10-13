@@ -15,8 +15,8 @@
 //! `validation/tests/reserving*.rs`.
 //!
 //! With the `bayes` feature, the `bayes` module adds the Bayesian chain
-//! ladder, `BayesOdp`, and Meyers' CRC and CSR models, `Meyers`, sampled with
-//! NUTS (`docs/design/reserving-bayes.md`).
+//! ladder, `BayesOdp`, and Meyers' CRC, CSR and CAY models, `Meyers`,
+//! sampled with NUTS (`docs/design/reserving-bayes.md`).
 //!
 //! ```
 //! use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};

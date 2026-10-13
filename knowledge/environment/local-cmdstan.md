@@ -52,3 +52,9 @@ sources:
   near 1, about `exp` overflow in its smoothing, which does not change the
   estimate. A rerun with the same seed reproduced every summary bit for
   bit.[^meyers]
+* Meyers' CAY (2026-10-13): `validation/scripts/reserving_meyers_cay_stan.py`
+  imports `reserving_meyers_stan.py` (the toolchain, the compile under
+  `target/stan/` and the data handling), so it runs from the repository
+  root with the same `uv` command; one case (incurred) takes a few
+  minutes, and three runs with the same seed reproduced every
+  summary.[^meyers]
