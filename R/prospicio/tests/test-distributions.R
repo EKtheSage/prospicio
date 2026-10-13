@@ -120,6 +120,15 @@ stopifnot(inherits(try(compound_distribution(pig, sev, 100, method = "panjer"), 
 # Named counts and tvar_threshold against aggregate 1.0.1.
 stopifnot(pmf(fixed_count(3), 3) == 1, abs(pmf(bernoulli_count(0.3), 1) - 0.3) < 1e-15,
           abs(pmf(geometric_count(3), 1) - 0.1875) < 1e-15)
+# Renewal counts: exponential waits are Poisson, waits of 0 or 1 arrive in
+# geometric clusters, a defective wait ends the process.
+n <- renewal_count(gamma_distribution(1, 0.5), 2)
+stopifnot(abs(pmf(n, 4) - dpois(4, 4)) < 1e-9)
+stopifnot(abs(pmf(renewal_count(list(c(0, 1), c(0.5, 0.5)), 1), 3) - 3 / 16) < 1e-12)
+stopifnot(abs(pmf(renewal_count(list(1, 0.9), 2), 0) - 0.1) < 1e-12)
+stopifnot(abs(pmf(renewal_count(gamma_distribution(2, 1), 5, step = 1 / 4096, points = 2^15), 0) -
+  6 * exp(-5)) < 1e-7)
+stopifnot(inherits(try(renewal_count(gamma_distribution(2, 1), 5, step = 0.01), silent = TRUE), "try-error"))
 g <- grid_distribution(1, c(0.4, 0.3, 0.2, 0.1))
 t <- tvar_threshold(g, 0.85)
 stopifnot(t < 0.85, abs(TVaR(g, t) - quantile(g, 0.85)) < 1e-12)

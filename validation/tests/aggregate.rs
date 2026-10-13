@@ -956,3 +956,56 @@ fn copula_coupled_lines_match_aggregate() {
         }
     });
 }
+
+#[test]
+fn renewal_counts_match_aggregate() {
+    use prospicio_aggregate::renewal::{RenewalCount, Wait, renewal_count};
+    use prospicio_prob::{Gamma, Mixture, Severity};
+    // validation/scripts/aggregate_renewal.py: the renewal cases of
+    // aggregate's own test suite, each on the wait grid aggregate picks.
+    let expon = Gamma::new(1.0, 1.0).unwrap();
+    let gamma = Gamma::new(2.0, 1.0).unwrap();
+    let parts: Vec<(f64, Box<dyn Severity + Send + Sync>)> = vec![
+        (0.5, Box::new(Gamma::new(1.0, 0.6).unwrap())),
+        (0.5, Box::new(Gamma::new(1.0, 0.4).unwrap())),
+    ];
+    let mixture = Mixture::new(parts).unwrap();
+    let mut counts: std::collections::HashMap<String, RenewalCount> = Default::default();
+    let cases = reference("renewal_count_aggregate.csv");
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !counts.contains_key(name) {
+            let wait = match name {
+                "expon" => Wait::Law(&expon),
+                "gamma" => Wait::Law(&gamma),
+                "mixture" => Wait::Law(&mixture),
+                "determin" => Wait::Atoms {
+                    values: &[1.0],
+                    probs: &[1.0],
+                },
+                "cluster" => Wait::Atoms {
+                    values: &[0.0, 1.0],
+                    probs: &[0.5, 0.5],
+                },
+                "defective" => Wait::Atoms {
+                    values: &[1.0, 2.0],
+                    probs: &[0.4, 0.5],
+                },
+                _ => return None,
+            };
+            let n = renewal_count(&wait, c.number("horizon")?, None).ok()?;
+            counts.insert(name.to_string(), n);
+        }
+        let n = &counts[name];
+        match c.get("quantity") {
+            "step" => Some(n.grid.step),
+            "points" => Some(n.grid.points as f64),
+            "closed" => Some(f64::from(u8::from(n.grid.closed))),
+            "p0" => Some(n.p0),
+            "defect" => Some(n.defect),
+            "kmax" => Some(n.kmax as f64),
+            "p" => Some(n.count.pmf(c.number("arg")? as u64)),
+            _ => None,
+        }
+    });
+}

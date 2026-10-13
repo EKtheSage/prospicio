@@ -3583,6 +3583,46 @@ class Count:
         -------
         int
         """
+    @staticmethod
+    def renewal(wait: Any, horizon: float, *, step: float |None = None, points: int |None = None, closed: bool = False) -> Count:
+        """
+        The number of claims by ``horizon`` when the waits between claims
+        are independent draws from ``wait``: a renewal (Sparre Andersen)
+        count, ``aggregate``'s ``years ... wait ...`` frequency. Exponential
+        waits give the Poisson.
+        
+        The wait is put on a grid and the count read off by FFT; waits of
+        zero arrive in clusters, and waits whose probabilities sum to less
+        than 1 end the process. The grid is ``aggregate``'s by default.
+        
+        Parameters
+        ----------
+        wait : distribution or tuple of (list of float, list of float)
+            The wait's distribution, or its values and their probabilities
+            (``aggregate``'s ``dwait``), which may sum to less than 1.
+        horizon : float
+            The period, in the wait's units.
+        step : float, optional
+            The wait grid's step; give it with ``points``.
+        points : int, optional
+            The wait grid's number of points.
+        closed : bool, default False
+            With ``step``: whether waits summing to exactly ``horizon``
+            count in full (waits on the grid's lattice), not half.
+        
+        Returns
+        -------
+        Count
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Count, Gamma
+        >>> n = Count.renewal(Gamma(2.0, 1.0), 5.0)
+        >>> round(n.pmf(0), 6)  # the first wait is beyond 5: 6 e^-5
+        0.040428
+        >>> round(Count.renewal(([1.0], [1.0]), 3.0).pmf(3), 12)  # waits of 1 by 3
+        1.0
+        """
     def sample(self, /, n: int, seed: int, stream: int = 0) -> list[int]:
         """
         ``n`` claim counts from stream ``stream`` of the generator keyed by

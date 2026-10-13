@@ -182,6 +182,81 @@ impl PyCount {
         })
     }
 
+    /// The number of claims by ``horizon`` when the waits between claims
+    /// are independent draws from ``wait``: a renewal (Sparre Andersen)
+    /// count, ``aggregate``'s ``years ... wait ...`` frequency. Exponential
+    /// waits give the Poisson.
+    ///
+    /// The wait is put on a grid and the count read off by FFT; waits of
+    /// zero arrive in clusters, and waits whose probabilities sum to less
+    /// than 1 end the process. The grid is ``aggregate``'s by default.
+    ///
+    /// Parameters
+    /// ----------
+    /// wait : distribution or tuple of (list of float, list of float)
+    ///     The wait's distribution, or its values and their probabilities
+    ///     (``aggregate``'s ``dwait``), which may sum to less than 1.
+    /// horizon : float
+    ///     The period, in the wait's units.
+    /// step : float, optional
+    ///     The wait grid's step; give it with ``points``.
+    /// points : int, optional
+    ///     The wait grid's number of points.
+    /// closed : bool, default False
+    ///     With ``step``: whether waits summing to exactly ``horizon``
+    ///     count in full (waits on the grid's lattice), not half.
+    ///
+    /// Returns
+    /// -------
+    /// Count
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Count, Gamma
+    /// >>> n = Count.renewal(Gamma(2.0, 1.0), 5.0)
+    /// >>> round(n.pmf(0), 6)  # the first wait is beyond 5: 6 e^-5
+    /// 0.040428
+    /// >>> round(Count.renewal(([1.0], [1.0]), 3.0).pmf(3), 12)  # waits of 1 by 3
+    /// 1.0
+    #[staticmethod]
+    #[pyo3(signature = (wait, horizon, *, step=None, points=None, closed=false))]
+    fn renewal(
+        wait: &Bound<'_, PyAny>,
+        horizon: f64,
+        step: Option<f64>,
+        points: Option<usize>,
+        closed: bool,
+    ) -> PyResult<Self> {
+        use prospicio_aggregate::renewal::{Wait, WaitGrid, renewal_count};
+        let grid = match (step, points) {
+            (None, None) => None,
+            (Some(step), Some(points)) => Some(WaitGrid {
+                step,
+                points,
+                closed,
+            }),
+            _ => {
+                return Err(PyValueError::new_err(
+                    "give both step and points, or neither",
+                ));
+            }
+        };
+        let n = if let Ok((values, probs)) = wait.extract::<(Vec<f64>, Vec<f64>)>() {
+            let w = Wait::Atoms {
+                values: &values,
+                probs: &probs,
+            };
+            renewal_count(&w, horizon, grid)
+        } else {
+            let d = crate::distributions::extract_dist(wait)?;
+            renewal_count(&Wait::Law(&d), horizon, grid)
+        }
+        .map_err(to_py)?;
+        Ok(Self {
+            inner: CountDist::Empirical(n.count),
+        })
+    }
+
     /// A fixed count, ``N = n``, ``aggregate``'s ``fixed``.
     ///
     /// Parameters
