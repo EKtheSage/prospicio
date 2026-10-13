@@ -900,34 +900,51 @@ print(f"{'fit':>13} {'mean A':>7} {'relativity C':>13} {'mean C, 90% range':>18}
 b = mle.coefficients
 print(f"{'GLM':>13} {math.exp(b[0]):7.2f} {math.exp(b[2]):13.2f} "
       f"{math.exp(mle_c - 1.645 * se_c):8.2f} to {math.exp(mle_c + 1.645 * se_c):5.2f}")
+print(f"{'truth':>13} {5.0:7.2f} {2.4:13.2f} {12.0:8.2f}")
+glm_width = math.exp(mle_c + 1.645 * se_c) - math.exp(mle_c - 1.645 * se_c)
+# A sampler's draws differ in the last digits from one platform to another, so
+# the Bayesian fits are read as checks rather than printed to two decimals.
 for prior_sd in (2.5, 0.5):
     bayes = BayesGlm("gamma", "log", prior_sd=prior_sd, chains=2, tune=300, draws=300, seed=1).fit(tdesign, tsizes)
     ok = all(row["rhat"] < 1.05 for row in bayes.summary()) and bayes.divergences == 0
     c_means = sorted(math.exp(d[0] + d[2]) for d in bayes.coefficient_draws)
     k = len(c_means) // 20
     pm = bayes.posterior_mean
-    print(f"{f'prior sd {prior_sd}':>13} {math.exp(pm[0]):7.2f} {math.exp(pm[2]):13.2f} "
-          f"{c_means[k]:8.2f} to {c_means[-k - 1]:5.2f}   chains fine: {ok}")
-print(f"{'truth':>13} {5.0:7.2f} {2.4:13.2f} {12.0:8.2f}")
+    mean_a, rel_c = math.exp(pm[0]), math.exp(pm[2])
+    narrower = c_means[-k - 1] - c_means[k] < glm_width
+    print(f"prior sd {prior_sd}: chains fine {ok}")
+    if prior_sd == 2.5:
+        print(f"  relativity C within 10% of the GLM's {math.exp(b[2]):.2f}: {abs(rel_c / math.exp(b[2]) - 1) < 0.10}")
+    else:
+        print(f"  mean A between 4.5 and 6 (GLM {math.exp(b[0]):.2f}, truth 5.00): {4.5 < mean_a < 6.0}")
+        print(f"  relativity C between 1.6 and 2.2 (GLM {math.exp(b[2]):.2f}, truth 2.40): {1.6 < rel_c < 2.2}")
+        print(f"  90% range of mean C narrower than the GLM's: {narrower}")
 ```
 
 ```text
 observed mean size by segment: [3.27, 8.7, 11.82]
           fit  mean A  relativity C  mean C, 90% range
           GLM    3.27          3.61     7.54 to 18.53
- prior sd 2.5    3.43          3.55     7.58 to 21.01   chains fine: True
- prior sd 0.5    5.20          1.94     6.85 to 15.64   chains fine: True
         truth    5.00          2.40    12.00
+prior sd 2.5: chains fine True
+  relativity C within 10% of the GLM's 3.61: True
+prior sd 0.5: chains fine True
+  mean A between 4.5 and 6 (GLM 3.27, truth 5.00): True
+  relativity C between 1.6 and 2.2 (GLM 3.61, truth 2.40): True
+  90% range of mean C narrower than the GLM's: True
 ```
 
 Segment A's 10 claims average 3.27 against a true 5, so the GLM puts the
 relativity of C at 3.61 against a true 2.40. The default prior (standard
-deviation 2.5) changes almost nothing. A prior standard deviation of 0.5, a
-belief that relativities are modest, pulls segment A's mean to 5.20 and the
-relativity of C to 1.94, and narrows the 90 percent range of segment C's mean
-from 7.54 to 18.53 (the GLM) to 6.85 to 15.64. A prior is an assumption: it
-helps here because the true relativities are modest, and it already pulls C's
-relativity below the true 2.40. Take `prior_sd` from a larger book or a market
+deviation 2.5) changes almost nothing: the relativity of C stays within 10% of
+the GLM's. A prior standard deviation of 0.5, a belief that relativities are
+modest, pulls segment A's mean from 3.27 to between 4.5 and 6, near the true 5,
+pulls the relativity of C to between 1.6 and 2.2, and narrows the 90 percent
+range of segment C's mean (7.54 to 18.53 for the GLM). A prior is an
+assumption: it helps here because the true relativities are modest, and it
+already pulls C's relativity below the true 2.40. The checks are printed rather
+than the posterior values because a sampler's draws differ in their last digits
+from one platform to another. Take `prior_sd` from a larger book or a market
 study, never from the answer you want.
 
 With a handful of losses above the threshold, the same idea applies to the tail:

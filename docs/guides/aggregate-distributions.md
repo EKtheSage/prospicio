@@ -196,10 +196,15 @@ A grid that is too short shows at once. The same book at the same step, on 128
 to 4096 points:
 
 ```python
+def tiny(x):
+    """Print a residual, or '<1e-10' when it is rounding noise that differs by platform."""
+    return f"{x:.1e}" if x >= 1e-10 else "<1e-10"
+
+
 for n in (128, 256, 512, 1024, 4096):
     g, disc = Grid.local_moment(sev, 0.0625, n)
     a, r = fft(freq, g, n)
-    print(f"{n:5d} points  tail_mass {r.tail_mass:.1e}  aliasing {r.aliasing_error:.1e}"
+    print(f"{n:5d} points  tail_mass {r.tail_mass:.1e}  aliasing {tiny(r.aliasing_error)}"
           f"  mean error {r.mean_error():+.1e}  grid mean {a.mean():.3f}")
 ```
 
@@ -208,7 +213,7 @@ for n in (128, 256, 512, 1024, 4096):
   256 points  tail_mass 4.6e-02  aliasing 1.3e-05  mean error -1.9e-01  grid mean 5.674
   512 points  tail_mass 4.8e-03  aliasing 1.1e-07  mean error -2.5e-02  grid mean 5.940
  1024 points  tail_mass 4.0e-04  aliasing 6.7e-10  mean error -2.3e-03  grid mean 5.991
- 4096 points  tail_mass 1.9e-06  aliasing 1.4e-14  mean error -1.1e-05  grid mean 6.000
+ 4096 points  tail_mass 1.9e-06  aliasing <1e-10  mean error -1.1e-05  grid mean 6.000
 ```
 
 At 128 points the grid reaches only 8, nearly a quarter of the probability lies
@@ -308,13 +313,13 @@ except ValueError as e:
     print(e)
 print(recommend_grid(freq, heavy, 12))
 heavy_annual, heavy_report, _ = fft_auto(freq, heavy, 12)
-print(f"tail mass {heavy_report.tail_mass:.1e}, aliasing {heavy_report.aliasing_error:.1e}")
+print(f"tail mass {heavy_report.tail_mass:.1e}, aliasing {tiny(heavy_report.aliasing_error)}")
 ```
 
 ```text
 invalid data: the severity's first three moments must be finite
 GridSize(step=1.0, points=4096, method="single_big_jump", tail_estimate=8.092194914091655e-6)
-tail mass 8.1e-06, aliasing 3.3e-12
+tail mass 8.1e-06, aliasing <1e-10
 ```
 
 A power-law tail never ends, so some mass is always beyond the grid. The report
@@ -350,14 +355,14 @@ mixed_annual, mixed_report, _ = fft_auto(mixed, sev, 12)
 print(f"count variance: Poisson {freq.variance():.1f}, mixed {mixed.variance():.1f}")
 for label, a in (("Poisson", annual), ("mixed Poisson", mixed_annual)):
     print(f"{label:14s} mean {a.mean():.3f}  99%: {a.quantile(0.99):6.2f}  99.5%: {a.quantile(0.995):6.2f}")
-print(f"tail mass {mixed_report.tail_mass:.1e}, aliasing {mixed_report.aliasing_error:.1e}")
+print(f"tail mass {mixed_report.tail_mass:.1e}, aliasing {tiny(mixed_report.aliasing_error)}")
 ```
 
 ```text
 count variance: Poisson 6.0, mixed 15.0
 Poisson        mean 6.000  99%:  25.81  99.5%:  31.56
 mixed Poisson  mean 6.000  99%:  28.56  99.5%:  34.44
-tail mass 1.9e-06, aliasing 1.2e-14
+tail mass 1.9e-06, aliasing <1e-10
 ```
 
 Same mean, and a 99.5% of 34.44 against 31.56. If your claim counts vary more
@@ -378,12 +383,12 @@ capped, on_points = g.map(lambda x: min(x, 10.0))
 limited, limited_report = fft(freq, capped, 4096)
 print(f"limited claim mean: grid {capped.mean():.4f}, exact {sev.lev(10.0):.4f}, on points {on_points}")
 print(f"annual mean {limited.mean():.4f}, 99.5% {limited.quantile(0.995):.2f},"
-      f" tail mass {limited_report.tail_mass:.1e}")
+      f" tail mass {tiny(limited_report.tail_mass)}")
 ```
 
 ```text
 limited claim mean: grid 0.9527, exact 0.9527, on points True
-annual mean 5.7162, 99.5% 21.81, tail mass 8.0e-15
+annual mean 5.7162, 99.5% 21.81, tail mass <1e-10
 ```
 
 The grid's limited mean equals the severity's limited expected value
@@ -404,13 +409,13 @@ g, _ = Grid.local_moment(sev, 0.0625, 4096)
 a_panjer, r_panjer = panjer(freq, g, 4096)
 a_fft, r_fft = fft(freq, g, 4096)
 gap = max(abs(x - y) for x, y in zip(a_panjer.probs, a_fft.probs))
-print(f"largest difference between Panjer and FFT: {gap:.1e}")
-print(f"aliasing error: Panjer {r_panjer.aliasing_error}, FFT {r_fft.aliasing_error:.1e}")
+print(f"largest difference between Panjer and FFT: {tiny(gap)}")
+print(f"aliasing error: Panjer {r_panjer.aliasing_error}, FFT {tiny(r_fft.aliasing_error)}")
 ```
 
 ```text
-largest difference between Panjer and FFT: 8.9e-16
-aliasing error: Panjer 0.0, FFT 1.4e-14
+largest difference between Panjer and FFT: <1e-10
+aliasing error: Panjer 0.0, FFT <1e-10
 ```
 
 **Use Panjer** as an independent check of an FFT result on a small problem.
