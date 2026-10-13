@@ -530,3 +530,39 @@ simulate_elt <- function(elt, n_years, seed = 0) {
                                                seed = as.double(seed)))))
   list(events = event_set(ptr = r$events), ids = r$ids)
 }
+
+#' Merge two event sets
+#'
+#' Both sets' losses in each year: a catastrophe event set with a
+#' non-catastrophe one, say. The sets need the same number of years. With
+#' times on both, each year's losses are merged in time order (`x`'s first on
+#' a tie); with times on neither, `x`'s losses come first. Sums insured are
+#' kept when both sets carry them.
+#'
+#' @param x,y [event_set] objects.
+#' @returns An [event_set].
+#' @export
+#' @examples
+#' cat <- event_set_from_long(1, 100, 2)
+#' other <- event_set_from_long(c(1, 2), c(3, 5), 2)
+#' events(merge_event_sets(cat, other), 1)
+merge_event_sets <- function(x, y) {
+  event_set(ptr = rust_result(x@ptr$merge(y@ptr)))
+}
+
+#' Hours clause
+#'
+#' Each year's losses grouped into occurrences: losses within `window_hours`
+#' of the first loss of a window are one occurrence, whose loss is their sum
+#' and whose time is the window's start; the next loss after the window opens
+#' the next one. A year is 8,760 hours. Windows open at each first loss in
+#' turn, not where they would recover most. Needs times; sums insured are not
+#' carried.
+#'
+#' @param x An [event_set] with times.
+#' @param window_hours Such as 72 for a windstorm, 168 for a flood.
+#' @returns An [event_set] of occurrences.
+#' @export
+hours_clause <- function(x, window_hours) {
+  event_set(ptr = rust_result(x@ptr$grouped(as.double(window_hours))))
+}
