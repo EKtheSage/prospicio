@@ -68,6 +68,8 @@ reference:
       - compound_distribution
       - recommend_grid
       - simulate_events
+      - event_set_from_long
+      - event_loss_table
       - occurrence_pml
       - compound_moments
       - eventual_ruin
