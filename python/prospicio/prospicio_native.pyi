@@ -11723,6 +11723,165 @@ class PurePremiumExperience:
         """
 
 @final
+class Quote:
+    """
+    A cover's quote: the premium the cedant pays, built up from a
+    risk-loaded price, with the ratios the market quotes.
+    
+    ``Quote.technical(price, ...)`` grosses the risk premium ``R`` (the
+    expected loss plus the margin for capital, from ``price``) up for
+    internal expenses ``e`` and brokerage ``b``, both fractions of the
+    premium, and a fixed expense ``f``: ``P = (R + f) / (1 - e - b)``.
+    ``quote.at(premium)`` reads a quoted premium the other way: the
+    reinsurer keeps ``P (1 - e - b) - f`` as its risk premium, and the margin
+    and return on capital follow with the same expected loss and assets.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.pricing import Quote, price
+    >>> from prospicio.risk import Distortion
+    >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.1)
+    >>> q = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=10.0)
+    >>> round(q.premium, 6), round(q.rate_on_line, 6), round(q.return_on_capital, 6)
+    (2.507837, 0.250784, 0.1)
+    >>> round(q.at(3.0).return_on_capital, 4)
+    0.4388
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def assets(self, /) -> float:
+        """
+        Assets backing the loss.
+        """
+    def at(self, /, premium: float) -> Quote:
+        """
+        The same cover at a quoted premium: what the quote leaves after the
+        loads is the risk premium.
+        
+        Parameters
+        ----------
+        premium : float
+        
+        Returns
+        -------
+        Quote
+        
+        Raises
+        ------
+        ValueError
+            If the risk premium the quote leaves reaches the assets.
+        """
+    @property
+    def brokerage(self, /) -> float:
+        """
+        Brokerage, an amount.
+        """
+    @property
+    def capital(self, /) -> float:
+        """
+        Capital, assets less the risk premium.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        Expected loss.
+        """
+    @property
+    def expenses(self, /) -> float:
+        """
+        Internal expenses, an amount.
+        """
+    @property
+    def limit(self, /) -> float |None:
+        """
+        The limit, or ``None``.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        Expected loss over the premium.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        Margin, risk premium less expected loss.
+        """
+    @property
+    def multiple(self, /) -> float:
+        """
+        Premium over expected loss.
+        """
+    @property
+    def net_premium(self, /) -> float:
+        """
+        The premium net of brokerage.
+        """
+    @property
+    def payback(self, /) -> float |None:
+        """
+        Limit over premium, or ``None`` without a limit.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The premium the cedant pays.
+        """
+    @property
+    def rate_on_line(self, /) -> float |None:
+        """
+        Premium over the limit, or ``None`` without a limit.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        Return on capital, margin over capital.
+        """
+    @property
+    def risk_premium(self, /) -> float:
+        """
+        The risk premium: what the reinsurer keeps for the loss and capital.
+        """
+    @staticmethod
+    def technical(price: Price, *, expenses: float = 0.0, brokerage: float = 0.0, fixed: float = 0.0, limit: float |None = None) -> Quote:
+        """
+        The technical premium of a risk-loaded price.
+        
+        Parameters
+        ----------
+        price : Price
+            The risk-loaded price, from ``price``; its premium is the risk
+            premium.
+        expenses : float, default 0.0
+            Internal expenses, a fraction of the premium.
+        brokerage : float, default 0.0
+            Brokerage, a fraction of the premium.
+        fixed : float, default 0.0
+            A fixed expense per contract, an amount.
+        limit : float, optional
+            The cover's limit at the placed share, for the rate on line;
+            omit it for a cover without one, such as a quota share.
+        
+        Returns
+        -------
+        Quote
+        
+        Raises
+        ------
+        ValueError
+            If a load is negative, ``expenses + brokerage`` reaches 1, or the
+            limit is not positive.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The build-up and ratios as a dict, for a table.
+        
+        Returns
+        -------
+        dict of str to float
+        """
+
+@final
 class RateHistory:
     """
     A history of rate changes from an initial level of 1, and the

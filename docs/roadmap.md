@@ -116,10 +116,12 @@ what it is aiming for by v1.0.
     alone against the book, the comonotonic allocation, and the expected
     reinstatement premium checked against `aggregate` (tier 2 complete);
     a tower on an annual loss grid and risk-loaded prices on a grid at any
-    capital standard (the Guides lane's #206 and #204).
+    capital standard (the Guides lane's #206 and #204); a cover's quote,
+    from risk premium to technical premium and back from a market quote
+    (#197).
 - **Next:**
   1. The Guides lane's issues for this lane, small first (the user's
-     choice, 2026-10-13): #197 quote assembly, #190 large-loss preparation
+     choice, 2026-10-13): #190 large-loss preparation
      for experience rating, #191 as-if history, #195 time value of money,
      #196 cat XL inputs. Then the large items parked from `aggregate`
      parity (`docs/design/aggregate.md`): the P&L ledger (once signed grids

@@ -1009,3 +1009,56 @@ classical_premium <- function(x, principle, loading, q = 2) {
 calibrate_classical <- function(x, principle, premium, q = 2) {
   rust_result(pricing_calibrate_classical(x@ptr, principle, as.double(premium), as.double(q)))
 }
+
+#' A cover's quote
+#'
+#' `technical_quote()` grosses a risk-loaded price up to the premium the
+#' cedant pays. The risk premium `R` (the expected loss plus the margin for
+#' capital, from [risk_loaded_price()]) is grossed up for internal expenses
+#' `e` and brokerage `b`, both fractions of the premium, and a fixed expense
+#' `f`: `P = (R + f) / (1 - e - b)`. `implied_quote()` reads a quoted
+#' premium the other way: the reinsurer keeps `P (1 - e - b) - f` as its
+#' risk premium, and the margin and return on capital follow with the same
+#' expected loss and assets.
+#'
+#' @param price A risk-loaded price, from [risk_loaded_price()].
+#' @param expenses Internal expenses, a fraction of the premium.
+#' @param brokerage Brokerage, a fraction of the premium.
+#' @param fixed A fixed expense per contract, an amount.
+#' @param limit The cover's limit at the placed share, for the rate on line;
+#'   `NULL` for a cover without one, such as a quota share.
+#' @param quote A quote from `technical_quote()`.
+#' @param premium A quoted premium.
+#' @returns A list with `expected_loss`, `margin`, `risk_premium`,
+#'   `expenses`, `brokerage` (amounts), `premium`, `net_premium` (net of
+#'   brokerage), `assets`, `capital`, `return_on_capital`, `loss_ratio`,
+#'   `multiple`, `rate_on_line` and `payback` (`NaN` without a limit), and
+#'   the inputs `implied_quote()` needs.
+#' @export
+#' @examples
+#' p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
+#'                        cost_of_capital = 0.1)
+#' q <- technical_quote(p, expenses = 0.03, brokerage = 0.10, limit = 10)
+#' q$premium
+#' q$rate_on_line
+#' implied_quote(q, 3)$return_on_capital
+technical_quote <- function(price, expenses = 0, brokerage = 0, fixed = 0, limit = NULL) {
+  loads <- list(expenses = as.double(expenses), brokerage = as.double(brokerage),
+                fixed = as.double(fixed), limit = if (is.null(limit)) NaN else as.double(limit))
+  q <- rust_result(pricing_quote(
+    price$expected_loss, price$premium, price$assets, loads$expenses, loads$brokerage,
+    loads$fixed, loads$limit, NaN
+  ))
+  c(q, list(loads = loads))
+}
+
+#' @rdname technical_quote
+#' @export
+implied_quote <- function(quote, premium) {
+  l <- quote$loads
+  q <- rust_result(pricing_quote(
+    quote$expected_loss, quote$risk_premium, quote$assets, l$expenses, l$brokerage, l$fixed,
+    l$limit, as.double(premium)
+  ))
+  c(q, list(loads = l))
+}

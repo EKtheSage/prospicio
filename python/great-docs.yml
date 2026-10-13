@@ -171,6 +171,7 @@ reference:
       - pricing.Portfolio
       - pricing.NaturalPrice
       - pricing.StandAlone
+      - pricing.Quote
       - pricing.Pentagon
       - pricing.classical_premium
       - pricing.calibrate_classical
