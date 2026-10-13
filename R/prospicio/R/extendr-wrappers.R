@@ -1288,6 +1288,10 @@ NaturalPortfolio$epd <- function(assets) .Call(wrap__NaturalPortfolio__epd, self
 
 NaturalPortfolio$assets_for_epd <- function(epd) .Call(wrap__NaturalPortfolio__assets_for_epd, self, epd)
 
+NaturalPortfolio$priority <- function(assets) .Call(wrap__NaturalPortfolio__priority, self, assets)
+
+NaturalPortfolio$priority_kappa <- function(i, assets) .Call(wrap__NaturalPortfolio__priority_kappa, self, i, assets)
+
 NaturalPortfolio$premium_bounds <- function(premium, assets) .Call(wrap__NaturalPortfolio__premium_bounds, self, premium, assets)
 
 #' @export

@@ -236,6 +236,28 @@ def test_natural_from_independent_and_predictive():
     assert from_pd.totals == [22, 28, 36, 40, 55, 65, 100]
 
 
+def test_priority_ladder():
+    from prospicio.distributions import Grid
+    from prospicio.pricing import Portfolio
+
+    # Pricing Insurance Risk's Discrete case; aggregate 1.0.1's
+    # priority_epd_df at assets 90.
+    x1 = Grid(1.0, [0.5] + [0.0] * 7 + [0.25, 0.0, 0.25])
+    x2 = Grid(1.0, [0.5, 0.25] + [0.0] * 88 + [0.25])
+    port = Portfolio.from_independent(["X1", "X2"], [x1, x2])
+    ladder = port.priority(assets=90)
+    assert ladder["unit"] == ["X1", "X2", "total"]
+    assert ladder["assets"] == 90
+    assert ladder["equal"][:2] == pytest.approx([4.396684, 21.728316], abs=1e-6)
+    assert ladder["junior_epd"][:2] == pytest.approx([0.25, 0.049451], abs=1e-6)
+    assert ladder["senior"][2] == pytest.approx(26.125)
+    junior, senior = port.priority_kappa("X1", assets=90)
+    k = port.totals.index(98.0)
+    assert (junior[k], senior[k]) == pytest.approx((8.0, 0.0), abs=1e-9)
+    with pytest.raises(ValueError):
+        port.priority_kappa("X3", assets=90)
+
+
 def test_premium_bounds_and_classical():
     from prospicio.distributions import Sampled
     from prospicio.pricing import Portfolio, calibrate_classical, classical_premium

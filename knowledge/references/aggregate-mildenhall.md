@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-12T18:30:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-12T23:58:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -31,6 +31,9 @@ sources:
   - id: reins
     resource: ../validation/scripts/aggregate_reinsurance.py
     title: aggregate_reinsurance.py
+  - id: natural
+    resource: ../validation/scripts/aggregate_natural.py
+    title: aggregate_natural.py
 ---
 
 # Which source for what
@@ -85,7 +88,7 @@ sources:
     `max(1 - cumsum(p), 0)`; a residue of `1e-16` there would add the
     CCoC mass times the maximum to the price.
   * 1.0.1 has no `epd` kind in `var_dict`; `priority_epd_df` gives EPD
-    by unit, and refuses a portfolio built from a sample.
+    by unit, and refuses a portfolio built from a sample (below).
 * `AllocationBounds(port, a=).bounds([P])` takes its BiTVaR knots from the
   cumulative probabilities of `X ∧ a`; a level inside the atom at `a`
   would price the total the same but split the linear allocation
@@ -216,7 +219,26 @@ sources:
   the top differ by as much. With `normalize=False`, prospicio's
   `Tower::on_grid` matches its densities at `1e-14`.[^reins]
 
+# The priority ladder
+
+* `Portfolio.priority_epd_df(assets=)` (or `p=`) and
+  `priority_kappa(unit, assets=)` need the independent combine of the
+  units: a portfolio from `create_from_sample` (InsCo) raises `ValueError`
+  ("the units' transforms do not reproduce density_df p_total"). So the
+  ladder is checked on `build`'s independent books, the Discrete case and
+  a three-unit one.[^natural]
+* The asset level is snapped to the nearest grid point
+  (`.attrs['assets']`); `mean` is the represented mean of the grid, not the
+  declared one; the `total` group repeats `E[X ∧ a]` under all three
+  rules.[^natural]
+* `priority_kappa` returns `(junior, senior, p_total)` on the whole grid,
+  `NaN` where `p_total` is below machine epsilon, and FFT noise of about
+  `5e-15` (including small negatives) where the exact value is 0.[^natural]
+* Senior and junior are two-tier readings (unit against the rest pooled);
+  1.0.1 has no ordered k-tier schedule.[^natural]
+
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
 [^reins]: aggregate_reinsurance.py
+[^natural]: aggregate_natural.py

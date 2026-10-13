@@ -774,6 +774,59 @@ epd_ratio <- function(port, assets) {
 #' @export
 assets_for_epd <- function(port, epd) rust_result(port@ptr$assets_for_epd(as.double(epd)))
 
+#' Priority ladder
+#'
+#' `priority_ladder()` is each unit's recovery from the assets `a` when it
+#' ranks ahead of the other units pooled (senior, `E[X_i ∧ a]`), pro rata
+#' (equal, `E[X_i min(1, a / X)]`), or behind them (junior,
+#' `E[min(X_i, (a - X_{-i})^+)]`), with its expected policyholder deficit
+#' ratio under each, as `aggregate`'s `priority_epd_df`. Each rule reads one
+#' unit against the rest pooled, so on three or more units only the equal
+#' recoveries add up to `E[X ∧ a]`. Exact under any dependence for a
+#' portfolio built from scenarios.
+#'
+#' `priority_kappa()` says where in the total the shortfall `(X - a)^+`
+#' falls when `unit` is junior: at each total `x`, the junior unit's
+#' expected part `E[min((X - a)^+, X_i) | X = x]` and the senior pool's,
+#' which add up to `(x - a)^+`.
+#'
+#' @inheritParams natural_price
+#' @param unit The junior unit's name.
+#' @returns `priority_ladder()`: a data frame with one row per unit and a
+#'   last `total` row: `unit`, `mean`, the recoveries `senior`, `equal`,
+#'   `junior`, and the EPD ratios `senior_epd`, `equal_epd`, `junior_epd`;
+#'   the assets in `attr(, "assets")`. `priority_kappa()`: a data frame with
+#'   `total`, `junior` and `senior`.
+#' @export
+#' @examples
+#' port <- capital_portfolio(cbind(A = c(15, 5, 26, 17), B = c(7, 20, 19, 48)))
+#' priority_ladder(port, assets = 50)
+#' priority_kappa(port, "A", assets = 50)
+priority_ladder <- function(port, assets = NULL, p = NULL) {
+  a <- portfolio_level(port, assets, p)
+  r <- rust_result(port@ptr$priority(a))
+  mean <- c(r$mean, sum(r$mean))
+  epd <- function(rec) ifelse(mean > 0, (mean - rec) / mean, 0)
+  senior <- c(r$senior, r$total)
+  equal <- c(r$equal, r$total)
+  junior <- c(r$junior, r$total)
+  out <- data.frame(
+    unit = c(port@units, "total"), mean = mean, senior = senior, equal = equal,
+    junior = junior, senior_epd = epd(senior), equal_epd = epd(equal), junior_epd = epd(junior)
+  )
+  attr(out, "assets") <- a
+  out
+}
+
+#' @rdname priority_ladder
+#' @export
+priority_kappa <- function(port, unit, assets = NULL, p = NULL) {
+  i <- match(unit, port@units)
+  if (is.na(i)) stop("no unit ", unit)
+  r <- rust_result(port@ptr$priority_kappa(as.double(i), portfolio_level(port, assets, p)))
+  data.frame(total = port@ptr$totals(), junior = r$junior, senior = r$senior)
+}
+
 #' Premium, margin and capital pentagon
 #'
 #' Loss `L`, margin `M`, premium `P`, capital `Q` and assets `a`, with

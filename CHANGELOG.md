@@ -36,6 +36,14 @@ under "Unreleased" until then.
   `reins_price_df` (`TowerGrids::price`). Python
   `prospicio.reinsurance.occurrence_layer_statistics`,
   `TowerGrids.price`; R `occurrence_layer_statistics()`, `tower_price()` (#187).
+- The senior and junior priority ladder for capital, `aggregate`'s
+  `priority_epd_df` and `priority_kappa`: each unit's recovery and EPD
+  ratio from the assets when it ranks ahead of the other units, pro rata
+  or behind them, and where the shortfall falls given the total
+  (`natural::Portfolio::priority`, `priority_kappa`); exact under any
+  dependence for a portfolio built from scenarios. Python
+  `Portfolio.priority`, `Portfolio.priority_kappa`; R `priority_ladder()`,
+  `priority_kappa()`.
 
 ### Reserving
 

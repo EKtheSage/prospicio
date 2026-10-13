@@ -9762,6 +9762,57 @@ class Portfolio:
         -------
         NaturalPrice
         """
+    def priority(self, /, assets: float |None = None, p: float |None = None) -> dict:
+        """
+        The priority ladder: each unit's recovery from the assets when it
+        ranks ahead of the other units pooled (senior), pro rata (equal), or
+        behind them (junior), as ``aggregate``'s ``priority_epd_df``. Each is
+        unit against the rest pooled, so on three or more units only the
+        equal recoveries add up to the total. Exact under any dependence for
+        a portfolio built from scenarios.
+        
+        Parameters
+        ----------
+        assets : float, optional
+            The largest total by default.
+        p : float, optional
+            The capital standard: assets at the total's lower ``p`` quantile.
+        
+        Returns
+        -------
+        dict
+            Columns, one row per unit and a last ``"total"`` row: ``unit``,
+            ``mean``, the recoveries ``senior``, ``equal`` and ``junior``, and
+            the EPD ratios ``senior_epd``, ``equal_epd`` and ``junior_epd``
+            (the total row is ``E[X ∧ a]`` under every rule); and ``assets``.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import Portfolio
+        >>> port = Portfolio(["A", "B"], [[15, 7], [5, 20], [26, 19], [17, 48]])
+        >>> ladder = port.priority(assets=50)
+        >>> round(ladder["senior"][0] + ladder["junior"][1], 9) == ladder["senior"][2]
+        True
+        """
+    def priority_kappa(self, /, unit: str, assets: float |None = None, p: float |None = None) -> tuple[list[float], list[float]]:
+        """
+        Where in the total the shortfall ``(X - a)+`` falls when ``unit`` is
+        junior to the rest pooled: at each of ``totals``, the junior unit's
+        expected part ``E[min((X - a)+, X_i) | X = x]`` and the senior
+        pool's, which add up to ``(x - a)+``. As ``aggregate``'s
+        ``priority_kappa``.
+        
+        Parameters
+        ----------
+        unit : str
+        assets : float, optional
+        p : float, optional
+        
+        Returns
+        -------
+        tuple of (list of float, list of float)
+            The junior and the senior parts.
+        """
     @property
     def probs(self, /) -> list[float]:
         """

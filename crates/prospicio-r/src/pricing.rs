@@ -754,6 +754,29 @@ impl NaturalPortfolio {
         self.inner.assets_for_epd(epd).map_err(to_r)
     }
 
+    /// `list(mean, senior, equal, junior, total)`: each unit's recovery
+    /// under each priority rule, and `E[X ∧ a]`.
+    fn priority(&self, assets: f64) -> Result<List> {
+        let l = self.inner.priority(assets).map_err(to_r)?;
+        Ok(list!(
+            mean = l.mean,
+            senior = l.senior,
+            equal = l.equal,
+            junior = l.junior,
+            total = l.total
+        ))
+    }
+
+    /// `list(junior, senior)` on the totals, for unit `i` (1-based).
+    fn priority_kappa(&self, i: f64, assets: f64) -> Result<List> {
+        let i = whole(i, "unit")? as usize;
+        if i == 0 {
+            return Err(Error::Other("no unit 0".into()));
+        }
+        let (junior, senior) = self.inner.priority_kappa(i - 1, assets).map_err(to_r)?;
+        Ok(list!(junior = junior, senior = senior))
+    }
+
     /// `list(lower, upper, lower_distortion, upper_distortion)`, one entry
     /// per unit in each.
     fn premium_bounds(&self, premium: f64, assets: f64) -> Result<List> {

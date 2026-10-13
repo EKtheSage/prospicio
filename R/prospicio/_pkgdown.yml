@@ -111,6 +111,7 @@ reference:
       - natural_price
       - calibrate_portfolio
       - bodoff_allocation
+      - priority_ladder
       - pentagon
       - premium_bounds
       - classical_premium

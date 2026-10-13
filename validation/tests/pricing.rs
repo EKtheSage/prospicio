@@ -252,6 +252,15 @@ fn natural_allocation_matches_aggregate() {
         ],
     )
     .unwrap();
+    let discrete3 = Portfolio::from_independent(
+        vec!["X1".into(), "X2".into(), "X3".into()],
+        &[
+            grid(&[(0, 0.5), (8, 0.25), (10, 0.25)]),
+            grid(&[(0, 0.5), (1, 0.25), (90, 0.25)]),
+            grid(&[(0, 0.4), (2, 0.3), (5, 0.2), (30, 0.1)]),
+        ],
+    )
+    .unwrap();
     let cases = reference("natural_aggregate.csv");
     check(&cases, |c| {
         let params: std::collections::HashMap<&str, &str> = c
@@ -263,9 +272,38 @@ fn natural_allocation_matches_aggregate() {
         let port = match *params.get("case")? {
             "insco" => &insco,
             "discrete" => &discrete,
+            "discrete3" => &discrete3,
             _ => return None,
         };
         match c.get("distribution") {
+            "priority" => {
+                use prospicio_pricing::natural::Rule;
+                let ladder = port.priority(assets).ok()?;
+                let (unit, rule) = c.get("quantity").split_once('.')?;
+                if unit == "total" {
+                    return Some(ladder.total);
+                }
+                let i = ladder.units.iter().position(|u| u == unit)?;
+                let rule = match rule {
+                    "senior" => Rule::Senior,
+                    "equal" => Rule::Equal,
+                    "junior" => Rule::Junior,
+                    _ => return None,
+                };
+                Some(ladder.recovery(rule)[i])
+            }
+            "priority_kappa" => {
+                let (unit, side) = c.get("quantity").split_once('.')?;
+                let i = port.units().iter().position(|u| u == unit)?;
+                let x: f64 = c.get("arg").parse().ok()?;
+                let k = port.totals().iter().position(|&t| t == x)?;
+                let (junior, senior) = port.priority_kappa(i, assets).ok()?;
+                Some(if side == "junior" {
+                    junior[k]
+                } else {
+                    senior[k]
+                })
+            }
             "price" => {
                 let param: f64 = params.get("param")?.parse().ok()?;
                 let g = match *params.get("family")? {
@@ -340,6 +378,82 @@ fn natural_allocation_matches_aggregate() {
             _ => None,
         }
     });
+}
+
+#[test]
+fn priority_ladder_identities() {
+    use prospicio_pricing::natural::{Portfolio, Rule};
+    // Three independent units (the discrete3 case of
+    // aggregate_natural.py), as grids and as their 36 joint scenarios.
+    let atoms: [&[(usize, f64)]; 3] = [
+        &[(0, 0.5), (8, 0.25), (10, 0.25)],
+        &[(0, 0.5), (1, 0.25), (90, 0.25)],
+        &[(0, 0.4), (2, 0.3), (5, 0.2), (30, 0.1)],
+    ];
+    let grids: Vec<_> = atoms
+        .iter()
+        .map(|a| {
+            let mut p = vec![0.0; a.iter().map(|x| x.0).max().unwrap() + 1];
+            a.iter().for_each(|&(x, q)| p[x] = q);
+            prospicio_prob::Grid::new(1.0, p).unwrap()
+        })
+        .collect();
+    let units: Vec<String> = vec!["X1".into(), "X2".into(), "X3".into()];
+    let (mut rows, mut probs) = (Vec::new(), Vec::new());
+    for &(x1, p1) in atoms[0] {
+        for &(x2, p2) in atoms[1] {
+            for &(x3, p3) in atoms[2] {
+                rows.push(vec![x1 as f64, x2 as f64, x3 as f64]);
+                probs.push(p1 * p2 * p3);
+            }
+        }
+    }
+    let independent = Portfolio::from_independent(units.clone(), &grids).unwrap();
+    let scenarios = Portfolio::from_rows(units.clone(), &rows, Some(&probs)).unwrap();
+    // Off the grid too: E[X ∧ t] is linear between grid points.
+    for a in [0.0, 7.5, 12.0, 40.0, 97.25, 130.0] {
+        let g = independent.priority(a).unwrap();
+        let r = scenarios.priority(a).unwrap();
+        for rule in [Rule::Senior, Rule::Equal, Rule::Junior] {
+            for (x, y) in g.recovery(rule).iter().zip(r.recovery(rule)) {
+                assert!((x - y).abs() < 1e-12, "a = {a}, {rule:?}: {x} vs {y}");
+            }
+        }
+        for i in 0..3 {
+            assert!(r.epd(Rule::Senior)[i] <= r.epd(Rule::Equal)[i] + 1e-15);
+            assert!(r.epd(Rule::Equal)[i] <= r.epd(Rule::Junior)[i] + 1e-15);
+        }
+        let equal: f64 = r.equal.iter().sum();
+        assert!((equal - r.total).abs() < 1e-12);
+        // The conditional ladder integrates to the junior shortfall.
+        for i in 0..3 {
+            for port in [&independent, &scenarios] {
+                let (junior, senior) = port.priority_kappa(i, a).unwrap();
+                let lost: f64 = junior.iter().zip(port.probs()).map(|(j, p)| j * p).sum();
+                assert!((lost - r.shortfall(Rule::Junior)[i]).abs() < 1e-12);
+                for ((j, s), x) in junior.iter().zip(&senior).zip(port.totals()) {
+                    assert!((j + s - (x - a).max(0.0)).abs() < 1e-12);
+                }
+            }
+        }
+    }
+    // Two units, dependent: senior one plus junior other is the pot.
+    let rows = [
+        [15.0, 7.0],
+        [5.0, 20.0],
+        [26.0, 19.0],
+        [17.0, 48.0],
+        [16.0, 84.0],
+    ];
+    let rows: Vec<Vec<f64>> = rows.iter().map(|r| r.to_vec()).collect();
+    let two = Portfolio::from_rows(vec!["A".into(), "B".into()], &rows, None).unwrap();
+    for a in [20.0, 45.0, 64.5, 100.0] {
+        let l = two.priority(a).unwrap();
+        assert!((l.senior[0] + l.junior[1] - l.total).abs() < 1e-12);
+        assert!((l.senior[1] + l.junior[0] - l.total).abs() < 1e-12);
+    }
+    assert!(two.priority(-1.0).is_err());
+    assert!(two.priority_kappa(2, 10.0).is_err());
 }
 
 /// Classical credibility against R's `actuar` 3.3.7

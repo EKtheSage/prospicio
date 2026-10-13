@@ -28,6 +28,11 @@
 //!   losses that reach it.
 //! - [`Portfolio::epd`]: the expected policyholder deficit ratio, in total
 //!   and by unit under equal priority.
+//! - [`Portfolio::priority`]: the priority ladder, each unit's recovery
+//!   when it ranks ahead of the others, pro rata or behind them, and
+//!   [`Portfolio::priority_kappa`], where the shortfall falls given the
+//!   total. These need more than `κ`: the portfolio keeps the scenarios or
+//!   grids it was built from.
 //! - [`Portfolio::calibrate`]: the distortion of a family that gives a
 //!   target premium, return or loss ratio.
 //!
@@ -224,6 +229,22 @@ pub struct Portfolio {
     kappa: Vec<f64>,
     /// `S_k = P(X > x_k)`, summed from the top, exactly 0 at the top.
     s: Vec<f64>,
+    /// What `κ` forgets and the priority ladder needs.
+    joint: Joint,
+}
+
+/// The units' joint law, kept for [`Portfolio::priority`]: the senior and
+/// junior recoveries are not functions of `κ`.
+#[derive(Debug, Clone, PartialEq)]
+enum Joint {
+    /// Unit losses scenario-major, and each scenario's probability.
+    Rows { losses: Vec<f64>, w: Vec<f64> },
+    /// Each unit's grid, and the density of the other units' total on the
+    /// same step.
+    Independent {
+        grids: Vec<Grid>,
+        others: Vec<Vec<f64>>,
+    },
 }
 
 impl Portfolio {
@@ -269,6 +290,7 @@ impl Portfolio {
             )));
         }
         let mut scen = Vec::with_capacity(n);
+        let (mut losses, mut kept) = (Vec::new(), Vec::new());
         for (row, &w) in rows.iter().zip(&w) {
             if row.len() != m {
                 return Err(Error::Data(format!("each scenario needs {m} unit losses")));
@@ -280,6 +302,8 @@ impl Portfolio {
             }
             if w > 0.0 {
                 scen.push((row.iter().sum::<f64>(), w, row.as_slice()));
+                losses.extend_from_slice(row);
+                kept.push(w);
             }
         }
         scen.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -300,7 +324,8 @@ impl Portfolio {
         for (k, &pk) in p.iter().enumerate() {
             kappa[k * m..(k + 1) * m].iter_mut().for_each(|v| *v /= pk);
         }
-        Ok(Self::build(units, x, p, kappa))
+        let joint = Joint::Rows { losses, w: kept };
+        Ok(Self::build(units, x, p, kappa, joint))
     }
 
     /// From a joint simulation: each component is a unit, named by its key
@@ -395,6 +420,7 @@ impl Portfolio {
         };
         let total = back(prefix[m].clone());
         let mut weighted = Vec::with_capacity(m);
+        let mut leave_out = Vec::with_capacity(m);
         for (i, g) in grids.iter().enumerate() {
             let mut xp = pad(&mut (0..g.len()).map(|j| g.x(j) * g.probs()[j]));
             transform(&mut xp);
@@ -404,6 +430,10 @@ impl Portfolio {
                 .map(|(a, b)| a * b)
                 .collect();
             weighted.push(back(xp.iter().zip(&others).map(|(a, b)| a * b).collect()));
+            let mut density = back(others);
+            density.truncate(span);
+            density.iter_mut().for_each(|v| *v = v.max(0.0));
+            leave_out.push(density);
         }
         ft.clear();
         let (mut x, mut p, mut kappa) = (Vec::new(), Vec::new(), Vec::new());
@@ -414,10 +444,14 @@ impl Portfolio {
                 kappa.extend(weighted.iter().map(|w| w[k] / total[k]));
             }
         }
-        Ok(Self::build(units, x, p, kappa))
+        let joint = Joint::Independent {
+            grids: grids.to_vec(),
+            others: leave_out,
+        };
+        Ok(Self::build(units, x, p, kappa, joint))
     }
 
-    fn build(units: Vec<String>, x: Vec<f64>, p: Vec<f64>, kappa: Vec<f64>) -> Self {
+    fn build(units: Vec<String>, x: Vec<f64>, p: Vec<f64>, kappa: Vec<f64>, joint: Joint) -> Self {
         let mut s = vec![0.0; x.len()];
         let mut above = 0.0;
         for k in (0..x.len()).rev() {
@@ -430,6 +464,7 @@ impl Portfolio {
             p,
             kappa,
             s,
+            joint,
         }
     }
 
@@ -580,6 +615,153 @@ impl Portfolio {
         Ok(prospicio_math::roots::bisect(0.0, max, |a| {
             self.epd(a).0 > epd
         }))
+    }
+
+    /// Each unit's recovery from assets `a` under each priority rule: the
+    /// priority ladder of `aggregate`'s `priority_epd_df`. The insurer pays
+    /// `X ∧ a` under every rule; the rules only split it.
+    ///
+    /// - Senior: unit `i` ranks ahead of the others pooled, and recovers
+    ///   `E[Xᵢ ∧ a]`.
+    /// - Equal: `E[Xᵢ min(1, a / X)]`, as in [`limited_expected`](Self::limited_expected).
+    /// - Junior: the others pooled rank ahead of unit `i`, which recovers
+    ///   `E[min(Xᵢ, (a - X₋ᵢ)⁺)]`.
+    ///
+    /// Each is a two-tier reading: unit `i` against the rest pooled. On a
+    /// book of three or more units the senior (or junior) recoveries are
+    /// different hypotheticals and do not add up to `E[X ∧ a]`; the equal
+    /// ones do. On two units, `senior₁ + junior₂ = E[X ∧ a]` exactly.
+    ///
+    /// From scenarios the ladder is exact under any dependence between the
+    /// units. From independent grids it is `E[Xᵢ ∧ a]` on unit `i`'s grid
+    /// and `Σ_y p₋ᵢ(y) E[Xᵢ ∧ (a - y)]` for the junior leg, with `p₋ᵢ` the
+    /// other units' total; `E[Xᵢ ∧ t]` is linear in `t` between grid points,
+    /// so `a` need not be one. `aggregate` needs the units independent.
+    ///
+    /// ```
+    /// use prospicio_pricing::natural::{Portfolio, Rule};
+    /// use prospicio_prob::Grid;
+    ///
+    /// // Pricing Insurance Risk's Discrete case: X1 0, 8 or 10 and X2 0, 1
+    /// // or 90, each with probabilities 1/2, 1/4, 1/4, independent.
+    /// let x1 = Grid::new(1.0, [vec![0.5], vec![0.0; 7], vec![0.25, 0.0, 0.25]].concat()).unwrap();
+    /// let mut p2 = vec![0.0; 91];
+    /// (p2[0], p2[1], p2[90]) = (0.5, 0.25, 0.25);
+    /// let x2 = Grid::new(1.0, p2).unwrap();
+    /// let port = Portfolio::from_independent(vec!["X1".into(), "X2".into()], &[x1, x2]).unwrap();
+    /// let ladder = port.priority(90.0).unwrap();
+    /// // Senior, X1 loses nothing; junior, it loses 1.125 of its 4.5.
+    /// assert!(ladder.epd(Rule::Senior)[0].abs() < 1e-12);
+    /// assert!((ladder.epd(Rule::Junior)[0] - 0.25).abs() < 1e-12);
+    /// ```
+    pub fn priority(&self, a: f64) -> Result<Priority> {
+        if !(a.is_finite() && a >= 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "assets",
+                value: a,
+                reason: "must be finite and non-negative",
+            });
+        }
+        let m = self.units.len();
+        let (total, equal) = self.limited_expected(a);
+        let (mut senior, mut junior) = (vec![0.0; m], vec![0.0; m]);
+        match &self.joint {
+            Joint::Rows { losses, w } => {
+                for (row, &w) in losses.chunks_exact(m).zip(w) {
+                    let sum: f64 = row.iter().sum();
+                    for (i, &xi) in row.iter().enumerate() {
+                        senior[i] += w * xi.min(a);
+                        junior[i] += w * xi.min((a - (sum - xi)).max(0.0));
+                    }
+                }
+            }
+            Joint::Independent { grids, others } => {
+                for (i, (g, other)) in grids.iter().zip(others).enumerate() {
+                    let lev = LimitedOnGrid::new(g);
+                    senior[i] = lev.at(a);
+                    let h = g.step();
+                    junior[i] = other
+                        .iter()
+                        .enumerate()
+                        .take_while(|&(k, _)| (k as f64) * h < a)
+                        .map(|(k, &p)| p * lev.at(a - k as f64 * h))
+                        .sum();
+                }
+            }
+        }
+        Ok(Priority {
+            units: self.units.clone(),
+            assets: a,
+            mean: self.expected(),
+            senior,
+            equal,
+            junior,
+            total,
+        })
+    }
+
+    /// Where in the total the shortfall `(X - a)⁺` falls when unit `i` is
+    /// junior to the rest pooled: at each total `x` in
+    /// [`totals`](Self::totals), the junior unit's expected part
+    /// `E[min((X - a)⁺, Xᵢ) | X = x]` and the senior pool's,
+    /// `E[((X - a)⁺ - Xᵢ)⁺ | X = x]`. They add up to `(x - a)⁺`: the junior
+    /// unit absorbs the default first, up to its own loss. `aggregate`'s
+    /// `priority_kappa`. From independent grids, two convolutions by FFT:
+    /// with `y` the others' total, `min(x - a, x - y)` is `x - a` when
+    /// `y <= a` and `x - y` otherwise.
+    pub fn priority_kappa(&self, i: usize, a: f64) -> Result<(Vec<f64>, Vec<f64>)> {
+        let m = self.units.len();
+        if i >= m {
+            return Err(Error::Data(format!("no unit {i}: the portfolio has {m}")));
+        }
+        if !(a.is_finite() && a >= 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "assets",
+                value: a,
+                reason: "must be finite and non-negative",
+            });
+        }
+        let n = self.x.len();
+        let mut junior = vec![0.0; n];
+        match &self.joint {
+            Joint::Rows { losses, w } => {
+                for (row, &w) in losses.chunks_exact(m).zip(w) {
+                    let sum: f64 = row.iter().sum();
+                    let k = self.x.partition_point(|&x| x < sum);
+                    junior[k] += w * (sum - a).max(0.0).min(row[i]);
+                }
+                for (j, p) in junior.iter_mut().zip(&self.p) {
+                    *j /= p;
+                }
+            }
+            Joint::Independent { grids, others } => {
+                let (g, other) = (&grids[i], &others[i]);
+                let h = g.step();
+                let below: Vec<f64> = other
+                    .iter()
+                    .enumerate()
+                    .map(|(k, &p)| if k as f64 * h <= a { p } else { 0.0 })
+                    .collect();
+                let above: Vec<f64> = other.iter().zip(&below).map(|(p, b)| p - b).collect();
+                let weighted: Vec<f64> = (0..g.len()).map(|j| g.x(j) * g.probs()[j]).collect();
+                let at_a = convolve(g.probs(), &below);
+                let past_a = convolve(&weighted, &above);
+                for (k, (&x, &p)) in self.x.iter().zip(&self.p).enumerate() {
+                    if x > a {
+                        let at = (x / h).round() as usize;
+                        let v = ((x - a) * at_a[at] + past_a[at]) / p;
+                        junior[k] = v.clamp(0.0, x - a);
+                    }
+                }
+            }
+        }
+        let senior = self
+            .x
+            .iter()
+            .zip(&junior)
+            .map(|(&x, &j)| ((x - a).max(0.0) - j).max(0.0))
+            .collect();
+        Ok((junior, senior))
     }
 
     /// The premium of `X ∧ a` under `g`, and its allocation to units; see
@@ -854,6 +1036,122 @@ impl Portfolio {
         };
         let capped: Vec<f64> = self.x.iter().map(|x| x.min(a)).collect();
         calibrate(family, &capped, &self.p, premium)
+    }
+}
+
+/// `E[X ∧ t]` of a grid at any `t`: exact, since it is linear in `t`
+/// between grid points.
+struct LimitedOnGrid {
+    step: f64,
+    /// `E[X ∧ jh]` for `j = 0..len`.
+    at_points: Vec<f64>,
+}
+
+impl LimitedOnGrid {
+    fn new(g: &Grid) -> Self {
+        let h = g.step();
+        let mut at_points = Vec::with_capacity(g.len());
+        // E[X ∧ jh] = E[X ∧ (j-1)h] + h P(X > (j-1)h).
+        let (mut lev, mut above) = (0.0, 1.0);
+        for &p in g.probs() {
+            at_points.push(lev);
+            above -= p;
+            lev += h * above.max(0.0);
+        }
+        Self { step: h, at_points }
+    }
+
+    fn at(&self, t: f64) -> f64 {
+        if t <= 0.0 {
+            return 0.0;
+        }
+        let last = self.at_points.len() - 1;
+        let pos = t / self.step;
+        if pos >= last as f64 {
+            return self.at_points[last];
+        }
+        let j = pos.floor() as usize;
+        let f = pos - j as f64;
+        self.at_points[j] + f * (self.at_points[j + 1] - self.at_points[j])
+    }
+}
+
+/// The linear convolution of `a` and `b` by FFT.
+fn convolve(a: &[f64], b: &[f64]) -> Vec<f64> {
+    let out = a.len() + b.len() - 1;
+    let len = out.next_power_of_two();
+    let mut planner = FftPlanner::<f64>::new();
+    let forward = planner.plan_fft_forward(len);
+    let pad = |v: &[f64]| {
+        let mut c: Vec<Complex64> = v.iter().map(|&x| Complex64::new(x, 0.0)).collect();
+        c.resize(len, Complex64::new(0.0, 0.0));
+        forward.process(&mut c);
+        c
+    };
+    let mut prod: Vec<Complex64> = pad(a).iter().zip(&pad(b)).map(|(x, y)| x * y).collect();
+    planner.plan_fft_inverse(len).process(&mut prod);
+    prod.iter().take(out).map(|c| c.re / len as f64).collect()
+}
+
+/// A priority rule for [`Priority`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rule {
+    /// The unit ranks ahead of the others pooled.
+    Senior,
+    /// Pro rata to the losses.
+    Equal,
+    /// The others pooled rank ahead of the unit.
+    Junior,
+}
+
+/// Each unit's recovery from the assets under each [`Rule`], from
+/// [`Portfolio::priority`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Priority {
+    /// Unit names.
+    pub units: Vec<String>,
+    /// The assets `a`.
+    pub assets: f64,
+    /// Each unit's expected loss, `E[Xᵢ]`.
+    pub mean: Vec<f64>,
+    /// `E[Xᵢ ∧ a]`.
+    pub senior: Vec<f64>,
+    /// `E[Xᵢ min(1, a / X)]`.
+    pub equal: Vec<f64>,
+    /// `E[min(Xᵢ, (a - X₋ᵢ)⁺)]`.
+    pub junior: Vec<f64>,
+    /// What the insurer pays under every rule, `E[X ∧ a]`.
+    pub total: f64,
+}
+
+impl Priority {
+    /// Each unit's recovery under `rule`.
+    pub fn recovery(&self, rule: Rule) -> &[f64] {
+        match rule {
+            Rule::Senior => &self.senior,
+            Rule::Equal => &self.equal,
+            Rule::Junior => &self.junior,
+        }
+    }
+
+    /// Each unit's shortfall under `rule`, `E[Xᵢ]` less its recovery.
+    pub fn shortfall(&self, rule: Rule) -> Vec<f64> {
+        self.mean
+            .iter()
+            .zip(self.recovery(rule))
+            .map(|(e, r)| e - r)
+            .collect()
+    }
+
+    /// Each unit's expected policyholder deficit ratio under `rule`, its
+    /// shortfall over `E[Xᵢ]` (0 for a unit with no expected loss). For
+    /// every unit, senior <= equal <= junior.
+    pub fn epd(&self, rule: Rule) -> Vec<f64> {
+        self.mean
+            .iter()
+            .zip(self.shortfall(rule))
+            .map(|(&e, s)| if e > 0.0 { s / e } else { 0.0 })
+            .collect()
     }
 }
 

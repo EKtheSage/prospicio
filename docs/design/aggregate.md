@@ -482,6 +482,36 @@ total-ceded grid (a small item below). `reins_price_df`'s capital columns
 (`Q`, `a`, `ROE`) come with an asset level; `pricing.rs`'s pentagon gives
 them for any grid.
 
+### Priority ladder
+
+`aggregate`'s `priority_epd_df` and `priority_kappa`, on
+`natural::Portfolio`: each unit's recovery from assets `a` when it ranks
+ahead of the other units pooled (senior, `E[Xᵢ ∧ a]`), pro rata (equal,
+`E[Xᵢ min(1, a / X)]`, the existing `limited_expected`) or behind them
+(junior, `E[min(Xᵢ, (a − X₋ᵢ)⁺)]`), and where in the total the shortfall
+falls when unit `i` is junior.
+
+- Neither the senior nor the junior leg is a function of `κ`, so
+  `Portfolio` now keeps the joint law it was built from: the scenarios
+  (rows and their probabilities) or the independent grids with each
+  unit's leave-one-out density `p₋ᵢ` (one more inverse FFT per unit in
+  `from_independent`).
+- From scenarios every leg is a sum over scenarios, exact under any
+  dependence; `aggregate` refuses anything but the independent combine of
+  its units. From grids the junior leg is `Σ_y p₋ᵢ(y) E[Xᵢ ∧ (a − y)]`,
+  one pass at one `a`; `E[Xᵢ ∧ t]` is linear between grid points, so `a`
+  need not be one (`aggregate` snaps it to the grid). The conditional
+  ladder is two FFT convolutions: with `y` the others' total,
+  `min(x − a, x − y)` is `x − a` when `y ≤ a` and `x − y` otherwise.
+- Both are two-tier readings, unit `i` against the rest pooled, as in
+  `aggregate`: on three or more units the senior (or junior) recoveries
+  are different hypotheticals and do not sum to `E[X ∧ a]`. The ordered
+  k-tier schedule `min(Xⱼ, (a − Σ_{i<j} Xᵢ)⁺)` is not provided.
+- The total row is `E[X ∧ a]` under every rule: at fixed assets
+  subordination only redistributes. EPD is monotone in rank, senior ≤
+  equal ≤ junior, for every unit; on two units
+  `senior₁ + junior₂ = E[X ∧ a]`.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -560,6 +590,15 @@ FFT round-off of `1e-16` in the far tail to the power 0.7 (`aggregate`'s
 own two ways of forming the survival differ by as much). The 50% layer is
 compared on its means and grid probabilities only (above).
 
+The priority ladder is checked against `aggregate` 1.0.1's
+`priority_epd_df` and `priority_kappa`
+(`validation/scripts/aggregate_natural.py`, 212 values) on the Discrete
+case of *Pricing Insurance Risk* and on a third independent unit added to
+it, at four asset levels each, at `1e-10` (recoveries) and `1e-9` (the
+conditional ladder). A test checks the identities above, and that the
+ladder from the 36 joint scenarios of the three-unit case equals the one
+from its grids at `1e-12`, at asset levels on and off the grid.
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
@@ -569,8 +608,8 @@ compared on its means and grid probabilities only (above).
       approximations.)
    2. (Done: per-occurrence layer statistics and pricing each view under
       a distortion; the grid towers checked against `aggregate` itself.)
-   3. A senior and junior priority ladder for capital (`priority_epd_df`,
-      `priority_kappa`); prospicio has equal priority only.
+   3. (Done: the senior and junior priority ladder, `priority_epd_df`
+      and `priority_kappa`, on `natural::Portfolio`.)
    4. Eventual ruin by Pollaczeck–Khinchine (`pollaczeck_khinchine`,
       `eventual_ruin`).
    5. Layer loss picks (`Aggregate.picks`).
