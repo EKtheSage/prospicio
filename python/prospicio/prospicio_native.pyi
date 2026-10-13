@@ -248,6 +248,41 @@ class ArchimedeanCopula:
         """
 
 @final
+class AsIf:
+    """
+    Each year's cessions under its own program and under the proposed one,
+    from ``PreparedLosses.as_if``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import LargeLossExperience
+    >>> from prospicio.reinsurance import Layer, Tower
+    >>> p = LargeLossExperience(["a"], [2019.5], [300.0]).prepare(factors=[1.2])
+    >>> then = Tower([Layer("150 xs 150", 150.0, 150.0)])
+    >>> now = Tower([Layer("200 xs 200", 200.0, 200.0)])
+    >>> a = p.as_if([then], [2019], now)
+    >>> a.to_dict()["historical"], [round(x, 6) for x in a.to_dict()["proposed"][0]]
+    ([[150.0]], [160.0])
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def proposed_layers(self, /) -> list[str]:
+        """
+        The proposed tower's layer names.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The years as columns: ``year``, ``reported_losses``,
+        ``trended_losses``, and per year the lists ``historical_layers``,
+        ``historical`` (one value per layer in force that year) and
+        ``proposed`` (one per proposed layer).
+        
+        Returns
+        -------
+        dict of str to list
+        """
+
+@final
 class BayesBf:
     """
     The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
@@ -11762,6 +11797,28 @@ class PreparedLosses:
     """
     def __len__(self, /) -> int: ...
     def __repr__(self, /) -> str: ...
+    def as_if(self, /, historical: Sequence[Tower], years: Sequence[int], proposed: Tower) -> AsIf:
+        """
+        Each year's losses under the program in force that year, next to the
+        year's trended losses under the proposed tower.
+        
+        The historical side takes every loss of the year as reported (in its
+        own currency, untrended and undeveloped), so it can be checked
+        against the cedant's recoveries; the proposed side is the as-if
+        layer loss of ``burning_cost`` before development by year. The
+        historical towers may differ in layers from year to year.
+        
+        Parameters
+        ----------
+        historical : list of Tower
+            The program in force in each of ``years``.
+        years : list of int
+        proposed : Tower
+        
+        Returns
+        -------
+        AsIf
+        """
     def burning_cost(self, /, towers: Any, years: Sequence[int], *, premium: Sequence[float], development: Any, index: IndexClause |None = None, ratios: Sequence[float] |None = None) -> BurningCost:
         """
         The as-if loss to each layer by accident year, developed and divided

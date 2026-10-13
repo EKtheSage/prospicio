@@ -540,3 +540,24 @@ def test_large_losses_in_another_currency():
     assert stated.to_dict()["ultimate"] == [135.0]
     with pytest.raises(ValueError):
         LargeLossExperience(["a"], [2020.5], [90.0], fx=[1.0, 2.0])
+
+
+def test_as_if_history_beside_the_proposed_tower():
+    from prospicio.pricing import LargeLossExperience
+    from prospicio.reinsurance import Layer, Tower
+
+    p = LargeLossExperience(
+        ["a", "b", "c"], [2019.3, 2019.7, 2020.5], [300.0, 80.0, 500.0], threshold=100.0
+    ).prepare(factors=[1.2, 1.2, 1.1])
+    then_2019 = Tower([Layer("150 xs 50", 150.0, 50.0)])
+    then_2020 = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("200 xs 100", 200.0, 100.0)]])
+    now = Tower([Layer("200 xs 200", 200.0, 200.0), Layer("600 xs 400", 600.0, 400.0)])
+    a = p.as_if([then_2019, then_2020], [2019, 2020], now)
+    d = a.to_dict()
+    assert a.proposed_layers == ["200 xs 200", "600 xs 400"]
+    assert d["reported_losses"] == [2, 1] and d["trended_losses"] == [1, 1]
+    assert d["historical"] == [[180.0], [250.0, 150.0]]
+    assert d["historical_layers"][1] == ["QS", "200 xs 100"]
+    assert d["proposed"][1] == pytest.approx([200.0, 150.0], rel=1e-14)
+    with pytest.raises(ValueError):
+        p.as_if([then_2019], [2019, 2020], now)

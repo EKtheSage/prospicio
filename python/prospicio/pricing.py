@@ -7,9 +7,10 @@ the current rate level by the parallelogram method (RateHistory) and trend
 (TrendFit, trend_factor) and the overall indication (LossRatioExperience,
 PurePremiumExperience, Provisions), and experience rating from large
 losses (LargeLossExperience, DevelopmentPattern, PreparedLosses, BurningCost,
-IndexClause)."""
+IndexClause, AsIf)."""
 
 from .prospicio_native import (
+    AsIf,
     BurningCost,
     CollectiveModel,
     DevelopmentPattern,
@@ -103,4 +104,5 @@ __all__ = [
     "BurningCost",
     "DevelopmentPattern",
     "IndexClause",
+    "AsIf",
 ]
