@@ -85,6 +85,18 @@ under "Unreleased" until then.
   posterior summary, the long tables, PSIS-LOO (`MeyersFit.loo()`, R's
   `bayes_loo()`), and failed diagnostics raised as a Python `UserWarning`
   or an R `warning()`.
+- The Bayesian Bornhuetter–Ferguson, `prospicio_reserving::bayes::BayesBf`,
+  behind the `bayes` feature: England, Verrall and Wüthrich's (2012) ODP
+  model with a gamma prior on each origin's expected ultimate (mean
+  `apriori` times exposure from a measure column, coefficient of variation
+  `cv`, flat when infinite) and a vague prior on the development pattern.
+  A flat prior gives the Bayesian chain ladder; a tight one EVW's
+  strong-prior limit, Mack's Bornhuetter–Ferguson with the raw pattern,
+  which is the classical one only when the prior ultimates are the chain
+  ladder's. Checked against the same model in Stan on GenIns with premium
+  and on EVW's triangle, now in `validation/data/evw2012.csv`, and against
+  their printed totals (`docs/design/reserving-bayes.md`, PR 4). The mode
+  finder of the Bayesian models no longer stalls under a tight prior.
 
 ### Pricing
 
