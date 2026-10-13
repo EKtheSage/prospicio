@@ -745,6 +745,22 @@ impl NaturalPortfolio {
         self.inner.bodoff(assets)
     }
 
+    /// Each unit alone at its own VaR, the book together, and their sum:
+    /// a pentagon table with rows for the units, "total" and "sum".
+    fn price_stand_alone(&self, distortion: Robj, p: f64) -> Result<List> {
+        let g = distortion_arg(&distortion, "distortion")?;
+        let s = self.inner.price_stand_alone(&g, p).map_err(to_r)?;
+        let rows: Vec<&Pentagon> = s.stand_alone.iter().chain([&s.total, &s.sum]).collect();
+        let mut units = s.units.clone();
+        units.extend(["total".into(), "sum".into()]);
+        Ok(pentagon_list(&rows, units))
+    }
+
+    /// Each unit's comonotonic allocation at each total, unit by unit.
+    fn comonotonic_kappa(&self) -> List {
+        List::from_values(self.inner.comonotonic_kappa())
+    }
+
     fn epd(&self, assets: f64) -> List {
         let (total, units) = self.inner.epd(assets);
         list!(total = total, units = units)
@@ -752,6 +768,29 @@ impl NaturalPortfolio {
 
     fn assets_for_epd(&self, epd: f64) -> Result<f64> {
         self.inner.assets_for_epd(epd).map_err(to_r)
+    }
+
+    /// `list(mean, senior, equal, junior, total)`: each unit's recovery
+    /// under each priority rule, and `E[X ∧ a]`.
+    fn priority(&self, assets: f64) -> Result<List> {
+        let l = self.inner.priority(assets).map_err(to_r)?;
+        Ok(list!(
+            mean = l.mean,
+            senior = l.senior,
+            equal = l.equal,
+            junior = l.junior,
+            total = l.total
+        ))
+    }
+
+    /// `list(junior, senior)` on the totals, for unit `i` (1-based).
+    fn priority_kappa(&self, i: f64, assets: f64) -> Result<List> {
+        let i = whole(i, "unit")? as usize;
+        if i == 0 {
+            return Err(Error::Other("no unit 0".into()));
+        }
+        let (junior, senior) = self.inner.priority_kappa(i - 1, assets).map_err(to_r)?;
+        Ok(list!(junior = junior, senior = senior))
     }
 
     /// `list(lower, upper, lower_distortion, upper_distortion)`, one entry
@@ -848,8 +887,44 @@ fn pricing_pentagon(names: Vec<String>, values: &[f64]) -> Result<List> {
     Ok(pentagon_list(&[&p], vec!["total".into()]))
 }
 
+/// Pricing bounds: `list(lower, upper, lower_distortion, upper_distortion)`,
+/// one entry per risk in each.
+#[extendr]
+fn pricing_bounds_rust(x: Robj, risks: List, premium: f64, assets: f64) -> Result<List> {
+    let (xv, xp) = crate::risk::discrete_of(&x)?;
+    let ys = risks
+        .iter()
+        .map(|(name, y)| {
+            let (yv, yp) = crate::risk::discrete_of(&y)?;
+            Ok((name.to_string(), yv, yp))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let pb =
+        prospicio_pricing::bounds::PricingBounds::new((&xv, &xp), &ys, assets).map_err(to_r)?;
+    let b = pb.bounds(premium).map_err(to_r)?;
+    let wrap = |d: &prospicio_prob::Distortion| Robj::from(RiskDistortion { inner: d.clone() });
+    Ok(list!(
+        lower = b.iter().map(|u| u.lower).collect::<Vec<f64>>(),
+        upper = b.iter().map(|u| u.upper).collect::<Vec<f64>>(),
+        lower_distortion = List::from_values(b.iter().map(|u| wrap(&u.lower_distortion))),
+        upper_distortion = List::from_values(b.iter().map(|u| wrap(&u.upper_distortion)))
+    ))
+}
+
+/// The distortion envelope: `list(lower, upper)` at each `s`.
+#[extendr]
+fn distortion_envelope_rust(x: Robj, premium: f64, s: &[f64], assets: f64) -> Result<List> {
+    let (xv, xp) = crate::risk::discrete_of(&x)?;
+    let env = prospicio_pricing::bounds::distortion_envelope((&xv, &xp), premium, assets, s)
+        .map_err(to_r)?;
+    let (lower, upper): (Vec<f64>, Vec<f64>) = env.into_iter().unzip();
+    Ok(list!(lower = lower, upper = upper))
+}
+
 extendr_module! {
     mod pricing;
+    fn pricing_bounds_rust;
+    fn distortion_envelope_rust;
     impl NaturalPortfolio;
     fn pricing_pentagon;
     fn pricing_classical_premium;

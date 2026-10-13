@@ -3,7 +3,7 @@
     python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
     agg/bin/python validation/scripts/aggregate_reinsurance.py
 
-Reinsurance on the grid against Mildenhall's `aggregate` 1.0.1, three books
+Reinsurance on the grid against Mildenhall's `aggregate` 1.0.1, four books
 on a step of 1 with 2^14 points and no renormalization
 (`bs=1, log2=14, normalize=False`):
 
@@ -13,7 +13,9 @@ on a step of 1 with 2^14 points and no renormalization
   of the occurrence layer (an inuring tower);
 - `S`: a negative binomial count (`mixed gamma 0.3`, prospicio's
   r = 1/0.09, β = 5 × 0.09), a gamma severity (mean 50, cv 1.5) limited to
-  1,000, ceding 50% of 400 xs 100 and 500 xs 500.
+  1,000, ceding 50% of 400 xs 100 and 500 xs 500;
+- `T`: Poisson 5 claims with book `S`'s severity, ceding 100 xs 100 and
+  200 xs 200 per occurrence and 300 xs 200 in aggregate on the net.
 
 The quantities:
 
@@ -28,7 +30,17 @@ The quantities:
   (`sev_*`) and the annual ceded loss (`agg_*`), each as mean, cv and skew;
   `gross` has its severity and annual moments;
 - `price:<view>:<L|P>`: `reins_price_df` under the proportional hazard
-  distortion with ρ = 0.7, each view priced on its own.
+  distortion with ρ = 0.7, each view priced on its own; a program with
+  several occurrence layers is priced on their total cession (`stage0`,
+  prospicio's `stage_ceded`);
+- `Ceded:<stat>`: `reins_stats_df`'s `Ceded` column, the total cession of
+  the occurrence layers (`occurrence_cession_statistics`): the chance of
+  reaching the lowest layer and of a loss in the year, the loss on line
+  over the placed limits, the ceded loss per ground-up claim and in the
+  year (only means and chances with a shared layer);
+- `agglayer:<stat>`: the `agg` block's `layer.1`, the aggregate cover on
+  the annual loss net of the occurrence layers
+  (`aggregate_layer_statistics`).
 
 Tolerances follow what each value is computed from:
 
@@ -46,6 +58,16 @@ Tolerances follow what each value is computed from:
   from the top differ by as much). `L` is a mean, `1e-9`.
 - the densities: `1e-13` absolute.
 
+The expected reinstatement premium (`reinstatement_premium`, books `RI2`
+and `RI10`): 500 xs 100 at a 20% rate on line (deposit 100) on the
+lognormal book at 2 and at 10 claims, with one reinstatement at 100% and
+with two at 100% and 50%. aggregate prices reinstatements only inside its
+P&L builders; the reference applies its own `ReinstatementTerms`
+(`contract_terms.py`, pro rata as to amount, not as to time) to its
+unlimited annual occurrence recovery, `reins_density_df`'s
+`p_agg_ceded_occ` on the book without the clause: `E[h(R)]`, at `1e-10`
+relative.
+
 A layer placed at a share below 1 (book `S`'s `layer.1`) is compared on its
 means and grid probabilities only: `aggregate` maps the shared losses onto
 the grid, which splits a ceded 0.5 between 0 and 1 and so lowers `pr_loss`
@@ -59,6 +81,7 @@ import warnings
 
 import aggregate
 from aggregate import Distortion, build
+from aggregate.contract_terms import ReinstatementTerms
 
 OUT = "validation/reference/reinsurance_aggregate.csv"
 SOURCE = f"aggregate {aggregate.__version__}"
@@ -86,12 +109,31 @@ BOOKS = [
         "agg S 5 claims 1000 xs 0 sev gamma 50 cv 1.5 "
         "occurrence net of 200 po 400 xs 100 and 500 xs 500 mixed gamma 0.3",
     ),
+    (
+        "T",
+        "lambda=5;severity=gamma;mean=50;cv=1.5;cap=1000;"
+        "occ=1:100:100+1:200:200;agg=300:200",
+        "agg T 5 claims 1000 xs 0 sev gamma 50 cv 1.5 "
+        "occurrence net of 100 xs 100 and 200 xs 200 poisson "
+        "aggregate ceded to 300 xs 200",
+    ),
 ]
 
 # (abs, rel) tolerances: read from the grid, or the FFT density's moments.
 GRID = (1e-14, 1e-12)
 FFT = {"mean": (0.0, 1e-9), "cv": (0.0, 1e-8), "skew": (0.0, 5e-7)}
 PRICE = {"L": (0.0, 1e-9), "P": (0.0, 2e-8)}
+# The total cession's per-claim moments: aggregate reads them off its ceded
+# severity density, 1.5e-11 (cv) and 2.6e-9 (skew) off the points' moments.
+CEDED_SEV = (0.0, 1e-8)
+# An aggregate cover is read off the annual FFT density: its chances carry
+# its round-off (3e-14 absolute), and a rare cover's shape more (skew 32:
+# 1.4e-6 relative).
+AGG_COVER = {"pr_attach": (1e-12, 0.0), "pr_detach": (1e-12, 0.0), "lol": FFT["mean"],
+             "mean": FFT["mean"], "cv": (0.0, 1e-7), "skew": (0.0, 1e-5)}
+# A stage with a shared layer: aggregate's smearing of the shared losses
+# and prospicio's differ in the far tail, 2e-8 relative in P.
+SHARED_STAGE_P = (0.0, 1e-7)
 # (key, quantity, tolerance, also for a share below 1)
 LAYER_STATS = [
     (("meta", "pr_attach"), "pr_attach", GRID, True),
@@ -124,6 +166,24 @@ def main():
                 for key, q, tol, any_share in LAYER_STATS:
                     if any_share or not shared:
                         add(f"{col}:{q}", "", stats.loc[key, col], tol)
+        if "Ceded" in stats.columns and sum(c.startswith("layer.") for c in stats.columns) > 1:
+            # The occurrence program's total cession; with a shared layer
+            # aggregate smears it onto the grid, so only means then.
+            shared = (stats.loc[("meta", "share")].dropna() < 1).any()
+            for key, q, tol, any_share in LAYER_STATS:
+                if q == "pr_detach" or key[0] == "freq":
+                    continue
+                if key == ("sev", "mean"):
+                    tol = (0.0, 1e-11)
+                elif key[0] == "sev":
+                    tol = CEDED_SEV
+                if not shared or key[1] in ("mean", "pr_attach", "lol"):
+                    add(f"Ceded:{q}", "", stats.loc[key, "Ceded"], tol)
+        if "agg" in a.reins_stats_df.columns.get_level_values(0):
+            agg = a.reins_stats_df["agg"]
+            for key, q, _, _ in LAYER_STATS:
+                if key[0] in ("meta", "agg") and q != "pr_loss":
+                    add(f"agglayer:{q}", "", agg.loc[key, "layer.1"], AGG_COVER[key[1]])
         for block in ("sev", "agg"):
             for m in ("mean", "cv", "skew"):
                 if block == "agg":
@@ -138,9 +198,13 @@ def main():
             views |= {"ceded occ": "ceded_occ", "ceded": "ceded"}
         elif name == "C":
             views["ceded"] = "ceded_occ"
+        else:
+            # Several occurrence layers: aggregate prices their total.
+            views["ceded"] = "stage0"
         for theirs, ours in views.items():
             for stat in ("L", "P"):
-                add(f"price:{ours}:{stat}", "", price.loc[theirs, stat], PRICE[stat])
+                tol = SHARED_STAGE_P if (ours, stat, name) == ("stage0", "P", "S") else PRICE[stat]
+                add(f"price:{ours}:{stat}", "", price.loc[theirs, stat], tol)
 
         if name == "R":
             df = a.reins_density_df
@@ -153,6 +217,19 @@ def main():
             for view, col in cols.items():
                 for x in DENSITY_POINTS:
                     add(f"density_{view}", x, df.loc[x, col], (1e-13, 0.0))
+
+    for lam in (2, 10):
+        a = build(f"agg RI{lam} {lam} claims 1000 xs 0 sev lognorm 100 cv 2 "
+                  "occurrence net of 500 xs 100 poisson", bs=1, log2=14, normalize=False)
+        rd = a.reins_density_df
+        x, p = rd.index.to_numpy(), rd["p_agg_ceded_occ"].to_numpy()
+        for rates in ((1.0,), (1.0, 0.5)):
+            terms = ReinstatementTerms(limit=500.0, rates=rates, deposit=100.0)
+            params = (f"lambda={lam};severity=lognormal;mean=100;cv=2;cap=1000;occ=1:500:100;"
+                      f"rol=0.2;rates={'+'.join(map(str, rates))}")
+            rows.append([f"RI{lam}", params, "reinstatement_premium", "",
+                         repr(float((p * terms.reinstatement_premium(x)).sum())), 0.0, 1e-10,
+                         SOURCE])
 
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")

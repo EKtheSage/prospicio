@@ -116,3 +116,10 @@ a <- compound_distribution(zm, sev, 100, method = "panjer")
 b <- compound_distribution(zm, sev, 100, method = "fft")
 stopifnot(max(abs(a@probs - b@probs)) < 1e-12)
 stopifnot(inherits(try(compound_distribution(pig, sev, 100, method = "panjer"), silent = TRUE), "try-error"))
+
+# Named counts and tvar_threshold against aggregate 1.0.1.
+stopifnot(pmf(fixed_count(3), 3) == 1, abs(pmf(bernoulli_count(0.3), 1) - 0.3) < 1e-15,
+          abs(pmf(geometric_count(3), 1) - 0.1875) < 1e-15)
+g <- grid_distribution(1, c(0.4, 0.3, 0.2, 0.1))
+t <- tvar_threshold(g, 0.85)
+stopifnot(t < 0.85, abs(TVaR(g, t) - quantile(g, 0.85)) < 1e-12)

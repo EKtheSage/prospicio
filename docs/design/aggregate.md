@@ -70,6 +70,12 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   statistics and prices by view" below). Python
   `prospicio.reinsurance.occurrence_layer_statistics` and
   `TowerGrids.price`, R `occurrence_layer_statistics()`, `tower_price()`.
+- `natural::Portfolio::{price_stand_alone, comonotonic_kappa}`: each unit
+  priced alone at its own VaR against the book priced together, and
+  Denuit et al.'s comonotonic allocation ("Stand-alone price and the
+  comonotonic allocation" below). Python `Portfolio.price_stand_alone`
+  (`StandAlone`) and `Portfolio.comonotonic_kappa`, R
+  `price_stand_alone()` and `comonotonic_allocation()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -476,11 +482,163 @@ the moments of its FFT density.
 `TowerGrids::price` prices each view on its own: `L` is the grid's mean,
 `P` its distorted expectation (`Grid::distortion`), `M = P − L`,
 `LR = L / P`. A concave distortion's prices are subadditive, so then the
-ceded and net premiums together are at least the gross. A stage with several layers has a price
-per layer; `aggregate` also prices their total cession, which needs a
-total-ceded grid (a small item below). `reins_price_df`'s capital columns
+ceded and net premiums together are at least the gross. A stage with
+several layers also has its total cession, `TowerGrids::stage_ceded`,
+which `aggregate` prices and reports as `Ceded`: without annual terms in
+the stage it is a function of each loss, `Σ share × recovery`, compounded
+once; with annual terms in a stage of several layers the layers' annual
+totals are dependent and their sum is not one compound, so it is `None`.
+`TowerPrice::stages` prices it.
+
+`occurrence_cession_statistics` gives the `Ceded` column: the chance a
+claim reaches the lowest layer and of a loss in the year, the loss on line
+over `Σ share × limit`, and the moments of the ceded loss per ground-up
+claim (every claim counted, as `aggregate`) and in the year, taken at the
+grid's points, so exact with a shared layer too (`aggregate` smears it).
+`aggregate_layer_statistics` gives an aggregate cover's (a stop loss on
+any annual grid, gross or a tower's net): `P(S > a)`, which is also the
+chance of a loss to it, `P(S ≥ a + l)`, the loss on line and the ceded
+moments. `reins_price_df`'s capital columns
 (`Q`, `a`, `ROE`) come with an asset level; `pricing.rs`'s pentagon gives
 them for any grid.
+
+### Priority ladder
+
+`aggregate`'s `priority_epd_df` and `priority_kappa`, on
+`natural::Portfolio`: each unit's recovery from assets `a` when it ranks
+ahead of the other units pooled (senior, `E[Xᵢ ∧ a]`), pro rata (equal,
+`E[Xᵢ min(1, a / X)]`, the existing `limited_expected`) or behind them
+(junior, `E[min(Xᵢ, (a − X₋ᵢ)⁺)]`), and where in the total the shortfall
+falls when unit `i` is junior.
+
+- Neither the senior nor the junior leg is a function of `κ`, so
+  `Portfolio` now keeps the joint law it was built from: the scenarios
+  (rows and their probabilities) or the independent grids with each
+  unit's leave-one-out density `p₋ᵢ` (one more inverse FFT per unit in
+  `from_independent`).
+- From scenarios every leg is a sum over scenarios, exact under any
+  dependence; `aggregate` refuses anything but the independent combine of
+  its units. From grids the junior leg is `Σ_y p₋ᵢ(y) E[Xᵢ ∧ (a − y)]`,
+  one pass at one `a`; `E[Xᵢ ∧ t]` is linear between grid points, so `a`
+  need not be one (`aggregate` snaps it to the grid). The conditional
+  ladder is two FFT convolutions: with `y` the others' total,
+  `min(x − a, x − y)` is `x − a` when `y ≤ a` and `x − y` otherwise.
+- Both are two-tier readings, unit `i` against the rest pooled, as in
+  `aggregate`: on three or more units the senior (or junior) recoveries
+  are different hypotheticals and do not sum to `E[X ∧ a]`. The ordered
+  k-tier schedule `min(Xⱼ, (a − Σ_{i<j} Xᵢ)⁺)` is not provided.
+- The total row is `E[X ∧ a]` under every rule: at fixed assets
+  subordination only redistributes. EPD is monotone in rank, senior ≤
+  equal ≤ junior, for every unit; on two units
+  `senior₁ + junior₂ = E[X ∧ a]`.
+
+### Eventual ruin
+
+`aggregate`'s `pollaczeck_khinchine` and `eventual_ruin`, in
+`prospicio_aggregate::ruin`. Poisson claims with severity `X` and a premium
+of `(1 + ρ)` times the expected loss: the maximal aggregate loss `L` is a
+compound geometric, `P(N = n) = (1 − q) qⁿ` with `q = 1 / (1 + ρ)`, of the
+equilibrium severity `S(x) / E[X]`, and `ψ(u) = P(L > u)`. The Poisson
+rate cancels.
+
+- On the severity's grid the equilibrium severity is `h S(jh) / E[X]` at
+  `jh` (with the grid's mean, so it sums to 1), as `aggregate`. The
+  geometric is the negative binomial with `r = 1`, `β = 1/ρ`, so the
+  compound is the existing `fft`
+  with its aliasing check; `aggregate` uses one FFT of twice the grid,
+  wrapped. `ψ` at the last point is the mass beyond the grid.
+- The grid puts ladder heights below `h` at 0, so `ψ(0)` is below the
+  continuous `1 / (1 + ρ)`; `ψ` is `O(h / E[X])` off the continuous
+  model (1% at `h = E[X] / 100` for exponential claims).
+- `SeverityPart` carries `aggregate`'s `cap` (`X | X ≤ c`), `excess`
+  (`X | X > c`, not shifted) and `stop_loss` (the mass above moved onto
+  the first point at or above `s`).
+- The capital for a ruin probability `p` is the smallest grid point with
+  `ψ(u) < p` (`find_u`, `kind='index'`) or linear between grid points
+  (`kind='interp'`). The Lundberg exponent solves
+  `M_X(R) = 1 + (1 + ρ) E[X] R` on the grid's severity below the overflow
+  guard `700 / max(x)`, else none.
+- `eventual_ruin`'s simulated check of the same discretized model is not
+  carried: the exact `ψ` is the deliverable. Renewal counts (Wiener–Hopf)
+  stay parked.
+
+### Layer loss picks
+
+`aggregate`'s `Aggregate.picks`, as `prospicio_aggregate::picks::layer_loss_picks`:
+reshape a severity grid so that its expected loss to each layer
+`(a_{i−1}, aᵢ]` is a pick, keeping the tail above the top attachment.
+
+- In each layer the survival function is rescaled about its value at the
+  top, `S*(x) = ωᵢ + wᵢ (S(x) − S(aᵢ))`, worked from the top down with
+  `ω_k = S(a_k)`, `wᵢ = (tᵢ − ωᵢ yᵢ) / ∫ (S − S(aᵢ))` and
+  `ω_{i−1} = ωᵢ + wᵢ (S(a_{i−1}) − S(aᵢ))`; the layer integrals are the
+  grid's, `h Σ S_j` over the points in `[a_{i−1}, aᵢ)`, as `aggregate`'s.
+  The picks are per year for `claims` expected ground-up claims
+  (`aggregate` divides by its `n`).
+- Attachments must be grid points: a pick constrains an integral between
+  two boundaries (`aggregate`'s ruling of 2026-08-24).
+- A negative weight (a pick below what the layers above force through its
+  layer) is an error here; `aggregate` warns and returns negative
+  probabilities. So is a rescaled survival above 1 anywhere but the bottom
+  layer.
+- A bottom-layer pick whose rescaled survival passes 1 takes `aggregate`'s
+  fallback: `S* = 1` up to a point, then a straight line to `ω₁` at `a₁`.
+  `aggregate` rounds the continuous length `2(a₁ − t₁) / (1 − ω₁)` to the
+  grid and misses (704.90 for a pick of 700 on a step of 1); prospicio
+  solves the length on the grid, so the pick is met. It takes the line
+  whenever the cap binds; `aggregate` only when the capped layer misses
+  its pick by more than `1e-3`.
+
+### Pricing bounds for other risks
+
+`aggregate`'s `PricingBounds` and `Bounds` (Mildenhall, IME 2022), in
+`prospicio_pricing::bounds`; the allocation bounds (`AllocationBounds`)
+were already `Portfolio::premium_bounds` (`docs/design/risk.md`).
+
+- The distortions pricing `X` at `P` have BiTVaRs as extreme points and
+  price any `Y` at `∫ TVaR_p(Y) μ(dp)`, so `Y`'s price range is the
+  vertical slice at `P` of the convex hull of `p ↦ (TVaR_p(X),
+  TVaR_p(Y))`. For discrete risks both coordinates are affine in
+  `1 / (1 − p)` between consecutive points of the union of the two sets of
+  cumulative probabilities, so the curve is a polyline and the hull
+  (monotone chain) exact. Each vertex's `TVaR` comes from tail masses and
+  tail means summed from the top, located by bisection: `O(n log n)`.
+- The curve ends at `p → 1`, `(max X, max Y)`: `TVaR_1` prices `X` at its
+  maximum. `aggregate` stops at the last breakpoint below 1 and keeps the
+  first vertex where `TVaR_p(X)` saturates, so where `X`'s top atom is
+  larger than `Y`'s its upper bound is too low (52 where 64 is attained,
+  for InsCo's X3 with both capped at 65 and `P = 65`). Where `TVaR_p(X)`
+  ties, the lower hull takes the lowest `Y` and the upper the highest.
+- `distortion_envelope`: `g(s)` of a BiTVaR is the price of a Bernoulli
+  risk with `P(1) = s`, since its `TVaR_p` is `min(1, s / (1 − p))`. So the
+  envelope of the distortions pricing `X` at `P` is that Bernoulli's price
+  range, exact at any `s`. `aggregate`'s `Bounds` searches 256 levels and
+  interpolates in `s`; it returns its lower envelope as a fitted concave
+  distortion, prospicio returns the values.
+- Not carried: the uniform reference (the Gini lens, `TVaR_p(U) = (1 +
+  p) / 2`), which is affine in `p`, not `1 / (1 − p)`, so the hull on the
+  breakpoints is not exact there; and `Bounds`' cloud and plots.
+
+### Stand-alone price and the comonotonic allocation
+
+`aggregate`'s `Portfolio.price_stand_alone` and
+`make_comonotonic_allocations`, on `natural::Portfolio`.
+
+- A unit alone holds assets at its own lower `p` quantile and is priced
+  as `Aggregate.price` prices it: `L = E[Xᵢ ∧ aᵢ]`, `P = ρ_g(Xᵢ ∧ aᵢ)`.
+  prospicio prices each unit's marginal as a one-unit portfolio, so the
+  convention is `Portfolio::price`'s. The book is priced at the VaR of its
+  total; `sum` adds the stand-alone loss, premium and assets, and the
+  ratios follow from those sums, as `aggregate`'s `complete_pentagon`. A
+  unit whose VaR is 0 has a zero pentagon.
+- The comonotonic allocation is Denuit, Dhaene, Ghossoub and Robert
+  (*IME* 120, 2025, Theorem 3.1), ported step for step from `aggregate`:
+  the result depends on the sweep order, the violators' order and how the
+  flattened mass is shared out (in proportion to the other units' rise),
+  so a "cleaner" rewrite would not reproduce it. It runs on the totals
+  with positive probability; `aggregate` runs on its whole grid, where
+  the zero-probability points (with `exeqa` 0) leave the values at the
+  others unchanged (to 3e-14), so they are not carried.
 
 ## Validation
 
@@ -548,17 +706,81 @@ of 1,000 (raw moments converted).
 Layer statistics and prices by view are checked against `aggregate`
 1.0.1's `reins_stats_df`, `reins_price_df` (proportional hazard, ρ = 0.7)
 and `reins_density_df` (`validation/scripts/aggregate_reinsurance.py`,
-131 values) on three books on a step of 1 with `2^14` points: a Poisson
+198 values) on four books on a step of 1 with `2^14` points: a Poisson
 with one occurrence layer, the same with an aggregate stop-loss inuring
-(an inuring tower), and a gamma-mixed Poisson with a gamma severity, a 50%
-layer and a second layer. The grid towers match `aggregate`'s densities
+(an inuring tower), a gamma-mixed Poisson with a gamma severity, a 50%
+layer and a second layer, and a Poisson with two occurrence layers and an
+aggregate cover on their net (the total cession's statistics and price,
+and the cover's statistics). The grid towers match `aggregate`'s densities
 point by point at `1e-13` absolute; statistics read from the severity grid
 match at `1e-12`; the annual moments, which `aggregate` takes from its FFT
 density, at `1e-9` (mean), `1e-8` (cv) and `5e-7` (skewness, observed
 1.3e-7 at a skew of 18); premiums at `2e-8`, because the distortion raises
 FFT round-off of `1e-16` in the far tail to the power 0.7 (`aggregate`'s
 own two ways of forming the survival differ by as much). The 50% layer is
-compared on its means and grid probabilities only (above).
+compared on its means and grid probabilities only (above), and so is the
+total cession with it (its price at `1e-7`). The total cession's per-claim
+cv and skewness, which `aggregate` reads off its ceded severity density,
+are 1.5e-11 and 2.6e-9 off the points' moments (`1e-8`); an aggregate
+cover's chances, read off the annual FFT density, carry its round-off
+(`1e-12` absolute) and a rare cover's shape more (cv `1e-7`, skewness
+`1e-5`, observed 1.4e-6 at a skew of 32).
+
+The priority ladder is checked against `aggregate` 1.0.1's
+`priority_epd_df` and `priority_kappa`
+(`validation/scripts/aggregate_natural.py`, 212 values) on the Discrete
+case of *Pricing Insurance Risk* and on a third independent unit added to
+it, at four asset levels each, at `1e-10` (recoveries) and `1e-9` (the
+conditional ladder). A test checks the identities above, and that the
+ladder from the 36 joint scenarios of the three-unit case equals the one
+from its grids at `1e-12`, at asset levels on and off the grid.
+
+Eventual ruin is checked against `aggregate` 1.0.1's
+`pollaczeck_khinchine` and its Lundberg exponent
+(`validation/scripts/aggregate_ruin.py`, 110 values): a gamma severity
+(mean 50, cv 1.5) on `2^16` points at ρ = 0.1 and 0.25, and capped,
+in excess and stopped at ρ = 0.1, and claims of 1, 2 or 3. `ψ` matches at
+`1e-12` absolute, the capital on the grid exactly, interpolated at `1e-10`
+relative (observed 1.5e-11: round-off over a slope of about 1e-6), `R` at
+`1e-10` relative. Unit tests check `ψ` against the exponential closed form
+`e^{−ρu / ((1 + ρ)μ)} / (1 + ρ)` and its `R`, and the FFT against Panjer.
+
+Layer loss picks are checked against `aggregate` 1.0.1's `Aggregate.picks`
+(`validation/scripts/aggregate_picks.py`, 406 values) on a gamma severity
+(mean 100, cv 1.5) on `2^14` points with layers to 100, 500 and 1,000:
+picks that rescale every layer, and picks whose bottom layer takes the
+straight line (compared above the bottom layer, where both agree). The
+adjusted probabilities match at `1e-12`, the layer losses at `1e-9`
+relative; the bottom layer's pick is met to `1e-9`.
+
+Pricing bounds are checked against `aggregate` 1.0.1
+(`validation/scripts/aggregate_bounds.py`, 80 values) with InsCo's total
+as `X`: `PricingBounds` for InsCo's X3 and a four-point risk, uncapped at
+six premiums and capped at 65 at five, at `1e-12` relative. Where
+`aggregate` drops the `p → 1` vertex (six rows, capped) the reference is a
+brute force over the BiTVaRs on the curve's vertices with `p = 1`, using
+`aggregate`'s TVaR. The envelope is checked against `PricingBounds` on
+Bernoulli risks at `1e-12`, and against `Bounds`' grid envelope as
+inequalities (outside it, within 0.05; it pokes out by up to 2.4e-4, from
+its root tolerance and interpolation). Unit tests reprice every bound's
+BiTVaR: it prices `X` at `P` and `Y` at the bound, to `1e-10`.
+
+The stand-alone price and the comonotonic allocation are checked against
+`aggregate` 1.0.1 (`validation/scripts/aggregate_natural.py`, 276 values)
+on the Discrete case and its three-unit extension: each unit's, the
+book's and the sum's `L`, `P` and `a` under the proportional hazard at 0.7
+and Wang at 0.3 at VaR levels 0.8, 0.9 and 0.95, and each unit's
+comonotonic allocation at every total, at `1e-10`. A doctest checks that
+the allocations add up to the total and do not fall.
+
+The expected reinstatement premium of a grid tower is checked against
+`aggregate`'s `ReinstatementTerms` (`contract_terms.py`) applied to its
+own unlimited annual occurrence recovery
+(`validation/scripts/aggregate_reinsurance.py`, 4 values): 500 xs 100 at
+a 20% rate on line on the lognormal book at 2 and 10 claims, with one
+reinstatement at 100% and with two at 100% and 50%, at `1e-10` relative.
+`aggregate` prices reinstatements only inside its P&L builders, pro rata
+as to amount; prospicio's pro rata as to time has no counterpart there.
 
 ## Next
 
@@ -569,18 +791,23 @@ compared on its means and grid probabilities only (above).
       approximations.)
    2. (Done: per-occurrence layer statistics and pricing each view under
       a distortion; the grid towers checked against `aggregate` itself.)
-   3. A senior and junior priority ladder for capital (`priority_epd_df`,
-      `priority_kappa`); prospicio has equal priority only.
-   4. Eventual ruin by Pollaczeck–Khinchine (`pollaczeck_khinchine`,
-      `eventual_ruin`).
-   5. Layer loss picks (`Aggregate.picks`).
-   6. `Bounds` and `PricingBounds`, the rest of the 2022 pricing bounds.
-   Small items to fold into these: a total-ceded grid for a stage with
-   several layers (its price and statistics, `reins_stats_df`'s `Ceded`
-   column), statistics of aggregate covers, `tvar_threshold`, a stand-alone price on
-   a grid portfolio, comonotonic allocation, named fixed, Bernoulli and
-   geometric counts, and a reinstatement premium check against `aggregate`.
-   Parked as large: the P&L ledger (`pnl`, which needs signed grids),
+   3. (Done: the senior and junior priority ladder, `priority_epd_df`
+      and `priority_kappa`, on `natural::Portfolio`.)
+   4. (Done: eventual ruin by Pollaczeck–Khinchine, `pollaczeck_khinchine`
+      and `eventual_ruin`, in `prospicio_aggregate::ruin`.)
+   5. (Done: layer loss picks, `Aggregate.picks`, in
+      `prospicio_aggregate::picks`.)
+   6. (Done: `Bounds` and `PricingBounds`, the rest of the 2022 pricing
+      bounds, in `prospicio_pricing::bounds`.)
+   (Done, tier 2 complete: the small items folded into these, the total
+   cession of a stage with several layers, its price and statistics,
+   `reins_stats_df`'s `Ceded` column, statistics of aggregate covers,
+   `tvar_threshold` and the named fixed, Bernoulli and geometric counts
+   (`distributions.md`), the stand-alone price on a grid portfolio, the
+   comonotonic allocation, and a reinstatement premium check against
+   `aggregate`.)
+   Parked as large, and the candidates for what comes next (the user's
+   choice): the P&L ledger (`pnl`, which needs signed grids),
    bivariate FFT aggregates and `clash`, renewal counts with Wiener–Hopf
    ruin.
 2. Deficit and credit carry-forward in profit commissions and sliding

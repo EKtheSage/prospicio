@@ -217,7 +217,9 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   knots (and `p*`, where `TVaR_p* = P`) across `p*`: no grid. As in
   `aggregate`, levels inside the atom at `a` are not knots; under the
   linear allocation, which uses `P(X > a)`, they would split units
-  differently though they price the total the same.
+  differently though they price the total the same. The price range of
+  another risk, and the envelope of the distortions, are
+  `prospicio_pricing::bounds` (`docs/design/aggregate.md`).
 - **Tied totals take the probability-weighted mean of the units.**
   `aggregate` takes the unweighted mean of tied scenarios, which differs
   when scenarios have unequal probabilities.

@@ -550,6 +550,21 @@ impl EmpiricalCount {
         })
     }
 
+    /// A fixed count, `N = n` with probability 1, `aggregate`'s `fixed`.
+    ///
+    /// ```
+    /// use prospicio_prob::Counting;
+    /// use prospicio_prob::count_families::EmpiricalCount;
+    ///
+    /// let n = EmpiricalCount::fixed(3);
+    /// assert_eq!((n.mean(), n.variance()), (3.0, 0.0));
+    /// ```
+    pub fn fixed(n: u64) -> Self {
+        let mut probs = vec![0.0; n as usize + 1];
+        probs[n as usize] = 1.0;
+        Self { probs }
+    }
+
     /// The probabilities.
     pub fn probs(&self) -> &[f64] {
         &self.probs
