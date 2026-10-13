@@ -7958,6 +7958,337 @@ class Mbbefd:
         """
 
 @final
+class Meyers:
+    """
+    Meyers' (2019, CAS Monograph 8) log-normal models of a cumulative
+    triangle ``C`` with premium ``P``, for origins ``w = 1..n`` and ages
+    ``d = 1..m``: ``log C[w, d]`` is normal with mean
+    ``log P[w] + logelr + alpha[w] + beta[d] g[w]`` (``alpha[1] = 0``,
+    ``beta[m] = 0``) and sd ``sigma[d]``, decreasing with age. ``g[w]`` is 1
+    for the correlated chain ladder without its correlation between origins
+    (``"crc"``) and ``(1 - gamma)^(w - 1)`` for the changing settlement rate
+    (``"csr"``). The priors are those of Meyers' Stan code: ``logelr``
+    normal with mean ``logelr_mean`` and sd ``logelr_sd``, ``alpha`` and
+    ``beta`` normal around 0, ``gamma`` normal around 0 with sd
+    ``gamma_sd``, and each step of ``sigma[d]^2`` uniform on
+    ``(1 - exp(-1e-5), 1)``.
+    
+    The ultimate is the value at the oldest age (no tail): each posterior
+    draw gives each open origin a log-normal ultimate; an origin observed at
+    the oldest age keeps its value. The reserve is the ultimate less the
+    latest value of the fitted column (an outstanding reserve on paid data,
+    IBNR on incurred data) and can be negative. Every observed cell must be
+    positive.
+    
+    One ``seed`` replays a fit exactly, whatever the number of threads: the
+    chains and the simulations each take a seed derived from it.
+    
+    Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
+    per chain, any divergent transition) do not fail the fit: ``fit``
+    raises one ``UserWarning`` listing them, and they stay in
+    ``MeyersFit.diagnostics``. With the defaults, all 120 fits of a seed
+    sweep on Meyers' group 353 data (paid and incurred, CRC and CSR, 30
+    seeds) passed every threshold.
+    
+    Parameters
+    ----------
+    model : {"crc", "csr"}, default "crc"
+        The correlated chain ladder without its correlation between origins,
+        or the changing settlement rate model.
+    logelr_mean : float, default -0.4
+        Mean of the normal prior on ``logelr``, the log expected loss ratio.
+    logelr_sd : float, default 3.162
+        Standard deviation of the normal prior on ``logelr`` (3.162 is
+        Meyers' rounding of ``sqrt(10)``).
+    origin_sd : float, default 3.162
+        Standard deviation of the normal prior on each origin effect
+        ``alpha[w]``, ``w >= 2``, centred on 0.
+    development_sd : float, default 3.162
+        Standard deviation of the normal prior on each development effect
+        ``beta[d]``, ``d < m``, centred on 0.
+    gamma_sd : float, default 0.05
+        Standard deviation of the normal prior on ``gamma``, centred on 0
+        (``"csr"`` only).
+    chains, tune, draws : int, default 4, 1000, 2000
+        NUTS chains, warm-up draws per chain and kept draws per chain; with
+        1,000 kept draws the late ``sigma[d]`` sometimes miss the R-hat
+        threshold.
+    n_sims : int, default 10000
+        Number of predictive simulations, independent of the number of
+        posterior draws; positive.
+    seed : int, default 0
+        Seed of the chains and of the simulations, from 0 to ``2**64 - 1``.
+    target_accept : float, default 0.95
+        Target mean acceptance rate of the step-size adaptation; at NUTS's
+        usual 0.8 the paid fits of group 353 leave divergent transitions.
+    max_depth : int, default 10
+        Largest NUTS tree depth.
+    
+    Raises
+    ------
+    ValueError
+        If ``n_sims`` is zero or ``model`` is unknown.
+    OverflowError
+        If an integer setting is negative or too large.
+    
+    Examples
+    --------
+    >>> import warnings
+    >>> from prospicio.reserving import Meyers, Triangle
+    >>> paid = [[952, 1529, 2813, 3647, 3724, 3832], [849, 1564, 2202, 2432, 2468],
+    ...         [983, 2211, 2830, 3832], [1657, 2685, 3169], [932, 1940], [1162]]
+    >>> premium = [5812, 4908, 5454, 5165, 5214, 5230]
+    >>> rows = [(1988 + w, 12 * (d + 1), float(v), float(premium[w]))
+    ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+    >>> origin, age, values, prem = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values, "premium": prem})
+    >>> with warnings.catch_warnings():
+    ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+    ...     fit = Meyers("csr", tune=300, draws=300, n_sims=2000, seed=1).fit(
+    ...         tri, "paid", "premium")
+    >>> fit.reserves.components()
+    [('1988',), ('1989',), ('1990',), ('1991',), ('1992',), ('1993',)]
+    >>> fit.parameter_names[0], fit.parameter_names[-1]
+    ('logelr', 'sigma[6]')
+    >>> fit.premium[:2]
+    [5812.0, 4908.0]
+    """
+    def __new__(cls, /, model: str = "crc", logelr_mean: float = ..., logelr_sd: float = 3.162, origin_sd: float = 3.162, development_sd: float = 3.162, gamma_sd: float = 0.05, chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> Meyers: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of NUTS chains.
+        """
+    @property
+    def development_sd(self, /) -> float:
+        """
+        Standard deviation of each development effect's prior.
+        """
+    @property
+    def draws(self, /) -> int:
+        """
+        Kept draws per chain.
+        """
+    def fit(self, /, triangle: Triangle, column: str, premium: str) -> MeyersFit:
+        """
+        Samples the posterior of one measure column of a single-segment
+        cumulative triangle, with each origin's premium from another column
+        (its latest value, as ``CapeCod`` reads exposure), and simulates the
+        ultimates and reserves. Every origin must be observed from the first
+        age up to its latest, every observed cell must be positive, and
+        there must be more observed cells than parameters. Raises one
+        ``UserWarning`` listing the failed diagnostics, if any.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        column : str
+            The losses: paid, or case incurred.
+        premium : str
+            The premium of each origin.
+        
+        Returns
+        -------
+        MeyersFit
+        
+        Raises
+        ------
+        ValueError
+            If a column is missing, the triangle has several segments or an
+            origin has a gap; if a premium is missing or not positive; if a
+            prior standard deviation is not positive and finite,
+            ``logelr_mean`` is not finite or a sampler setting is invalid; if
+            an observed cell is not positive; or if there are no more
+            observed cells than parameters.
+        """
+    @property
+    def gamma_sd(self, /) -> float:
+        """
+        Standard deviation of the prior on ``gamma`` (``"csr"`` only).
+        """
+    @property
+    def logelr_mean(self, /) -> float:
+        """
+        Mean of the prior on ``logelr``.
+        """
+    @property
+    def logelr_sd(self, /) -> float:
+        """
+        Standard deviation of the prior on ``logelr``.
+        """
+    @property
+    def max_depth(self, /) -> int:
+        """
+        Largest NUTS tree depth.
+        """
+    @property
+    def model(self, /) -> str:
+        """
+        The model: ``"crc"`` or ``"csr"``.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of predictive simulations.
+        """
+    @property
+    def origin_sd(self, /) -> float:
+        """
+        Standard deviation of each origin effect's prior.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        Seed of the chains and of the simulations.
+        """
+    @property
+    def target_accept(self, /) -> float:
+        """
+        Target mean acceptance rate.
+        """
+    @property
+    def tune(self, /) -> int:
+        """
+        Warm-up draws per chain.
+        """
+
+@final
+class MeyersFit:
+    """
+    A fitted ``Meyers``: the posterior of ``logelr``, ``alpha[2..n]``,
+    ``beta[1..m-1]``, ``gamma`` (``"csr"`` only) and ``sigma[1..m]``, its
+    MCMC diagnostics, and the posterior predictive distributions of the
+    ultimates and reserves by origin. The frames' ``latest``, ``ultimate``
+    and ``reserve`` are the volume-weighted chain ladder's
+    (``chain_ladder``); ``mean`` and ``std_dev`` are the posterior
+    predictive reserve's, and ``ultimate_mean`` and ``ultimate_std_dev``
+    the posterior predictive ultimate's.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of the fitted column, whose latest
+        values the reserves are measured from.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladder's development factors, one row per age, as
+        ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
+        ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
+        failed threshold; empty when every threshold holds).
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws, one row per draw (chain by chain), one column per
+        parameter in the order of ``parameter_names``.
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of the observed cells, with each cell's relative
+        efficiency from the chains, as ``BayesGlmFit.loo``. The pointwise
+        term is Meyers', the normal density of ``log C[w, d]``, so the
+        result is on the log scale and comparable only between ``"crc"``
+        and ``"csr"`` fits of the same column (Meyers 2019, Tables 6.4 and
+        7.3).
+        
+        Returns
+        -------
+        Elpd
+        """
+    @property
+    def model(self, /) -> str:
+        """
+        The model: ``"crc"`` or ``"csr"``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each component.
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names: ``logelr``, ``alpha[2]`` to ``alpha[n]``,
+        ``beta[1]`` to ``beta[m-1]``, ``gamma`` (``"csr"`` only) and
+        ``sigma[1]`` to ``sigma[m]``.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium of each origin.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        The ultimates less the latest values, simulation by simulation,
+        laid out as ``ultimates`` and as ``OdpBootstrapFit.reserves``.
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary, one row per parameter: ``parameter``, ``mean``,
+        ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and
+        ``ess_tail``, the fields of ``BayesGlmFit.summary``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, the chain ladder's ``latest``,
+        ``ultimate`` and ``reserve``, the ``premium``, the ``mean`` and
+        ``std_dev`` of the posterior predictive reserve, and the
+        ``ultimate_mean`` and ``ultimate_std_dev`` of the posterior
+        predictive ultimate. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row: the chain ladder's totals, the total ``premium``, the
+        ``mean`` and ``std_dev`` of the posterior predictive total reserve,
+        and the ``ultimate_mean`` and ``ultimate_std_dev`` of the total
+        ultimate. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of the ultimate (the value
+        at the oldest age) by origin: dimension ``"origin"``, one component
+        per origin, one row per simulation. An origin observed at the
+        oldest age keeps its value.
+        """
+
+@final
 class Mixture:
     """
     A finite mixture of severities: component ``i`` with probability

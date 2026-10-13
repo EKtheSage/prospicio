@@ -2,8 +2,8 @@
 model with its one-year view, the expected-loss methods, Clark's growth
 curves, and the ODP bootstrap with its simulated one-year view of the chain
 ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
-one-year views under Mack's process, and the Bayesian ODP chain ladder
-sampled with NUTS (docs/design/triangle.md, docs/design/reserving-v02.md,
+one-year views under Mack's process, and the Bayesian ODP chain ladder and
+Meyers' CRC and CSR models sampled with NUTS (docs/design/triangle.md, docs/design/reserving-v02.md,
 docs/design/reserving-bayes.md)."""
 
 from .prospicio_native import (
@@ -25,6 +25,8 @@ from .prospicio_native import (
     MackBootstrap,
     MackBootstrapFit,
     MackFit,
+    Meyers,
+    MeyersFit,
     OdpBootstrap,
     OdpBootstrapFit,
     OneYearFit,
@@ -57,6 +59,8 @@ __all__ = [
     "MackBootstrapFit",
     "BayesOdp",
     "BayesOdpFit",
+    "Meyers",
+    "MeyersFit",
     "OneYearFit",
     "TailConstant",
     "TailCurve",

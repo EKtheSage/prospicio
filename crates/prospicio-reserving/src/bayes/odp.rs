@@ -2,13 +2,13 @@
 //! (`docs/design/reserving-bayes.md`, decisions 3 to 6).
 
 use prospicio_bayes::elpd::Loo;
-use prospicio_bayes::nuts::{LogDensity, ParamSummary, PosteriorDraws, Sampler, sample};
+use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
 use prospicio_core::StreamRng;
-use prospicio_math::linalg::{cholesky, cholesky_solve, lower_solve};
 use prospicio_models::Family;
 use prospicio_prob::{InputHasher, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
+use super::laplace::{Posterior, Whitened, mode};
 use super::{Diagnostics, Stream, derive_seed};
 use crate::bootstrap::{
     ProcessDistribution, component_sums, hash_segment, prepare, process_draw, push_moments,
@@ -166,7 +166,7 @@ impl BayesOdp {
             start,
         } = self.prepare(&segment, true)?;
         let p = model.dim();
-        let mode = model.mode(start)?;
+        let mode = mode(&model, start)?;
         let whitened = Whitened::new(&model, &mode)?;
         let draws = sample(
             &whitened,
@@ -495,10 +495,6 @@ pub(crate) struct Model {
 }
 
 impl Model {
-    pub(crate) fn dim(&self) -> usize {
-        self.n_origins + self.n_dev - 1
-    }
-
     fn names(&self) -> Vec<String> {
         let mut names = vec!["c".to_string()];
         names.extend((2..=self.n_origins).map(|w| format!("a[{w}]")));
@@ -518,10 +514,17 @@ impl Model {
     pub(crate) fn eta(&self, theta: &[f64], w: usize, d: usize) -> f64 {
         self.params(w, d).iter().flatten().map(|&j| theta[j]).sum()
     }
+}
 
-    /// The log posterior at `theta` (up to a constant), its gradient
-    /// written into `grad`.
-    pub(crate) fn log_posterior(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
+/// The log posterior of decision 3. It is strictly concave, so [`mode`]
+/// finds its one mode with the analytic negative Hessian and never needs a
+/// ridge.
+impl Posterior for Model {
+    fn dim(&self) -> usize {
+        self.n_origins + self.n_dev - 1
+    }
+
+    fn log_posterior(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
         let mut f = 0.0;
         for j in 0..theta.len() {
             let r = theta[j] - self.prior_mean[j];
@@ -540,9 +543,8 @@ impl Model {
         f
     }
 
-    /// The negative Hessian of the log posterior at `theta`, `X' diag(mu /
-    /// phi) X + diag(1 / sd^2)`, dense and row-major.
-    pub(crate) fn negative_hessian(&self, theta: &[f64]) -> Vec<f64> {
+    /// `X' diag(mu / phi) X + diag(1 / sd^2)`, dense and row-major.
+    fn negative_hessian(&self, theta: &[f64]) -> Vec<f64> {
         let p = self.dim();
         let mut h = vec![0.0; p * p];
         for (j, &prec) in self.prior_precision.iter().enumerate() {
@@ -559,132 +561,15 @@ impl Model {
         }
         h
     }
-
-    /// The posterior mode by Newton's method with step halving, from
-    /// `start`. The log posterior is strictly concave, so the mode is
-    /// unique.
-    pub(crate) fn mode(&self, start: Vec<f64>) -> Result<Vec<f64>> {
-        let p = self.dim();
-        let mut theta = start;
-        let mut grad = vec![0.0; p];
-        let mut f = self.log_posterior(&theta, &mut grad);
-        if !f.is_finite() {
-            return Err(Error::Bayes(
-                "the log posterior is not finite at the start".into(),
-            ));
-        }
-        let mut trial_grad = vec![0.0; p];
-        for _ in 0..100 {
-            let l = cholesky(&self.negative_hessian(&theta), p).ok_or_else(|| {
-                Error::Bayes("the negative Hessian is not positive definite".into())
-            })?;
-            let delta = cholesky_solve(&l, &grad);
-            let size = delta.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
-            if size < 1e-12 {
-                return Ok(theta);
-            }
-            let mut step = 1.0;
-            loop {
-                let trial: Vec<f64> = theta
-                    .iter()
-                    .zip(&delta)
-                    .map(|(t, d)| t + step * d)
-                    .collect();
-                let f_trial = self.log_posterior(&trial, &mut trial_grad);
-                if f_trial.is_finite() && f_trial >= f {
-                    theta = trial;
-                    f = f_trial;
-                    std::mem::swap(&mut grad, &mut trial_grad);
-                    break;
-                }
-                // At the mode a full step changes f by less than rounding:
-                // stop there.
-                if size < 1e-8 {
-                    return Ok(theta);
-                }
-                step *= 0.5;
-                if step < 1e-10 {
-                    return Err(Error::Bayes(
-                        "Newton's method could not raise the log posterior".into(),
-                    ));
-                }
-            }
-        }
-        Err(Error::Bayes(
-            "Newton's method did not converge to the posterior mode in 100 iterations".into(),
-        ))
-    }
-}
-
-/// The log posterior on the whitened scale `z`, `theta = mode + L z` with
-/// `L L' = H^-1` for the negative Hessian `H` at the mode, so the
-/// posterior in `z` is close to a standard normal. The map is linear, so
-/// its Jacobian is a constant and left out; the gradient is `L' grad_theta`.
-pub(crate) struct Whitened<'a> {
-    model: &'a Model,
-    mode: &'a [f64],
-    /// `L`, `p x p` row-major (upper triangular).
-    l: Vec<f64>,
-}
-
-impl<'a> Whitened<'a> {
-    pub(crate) fn new(model: &'a Model, mode: &'a [f64]) -> Result<Self> {
-        let p = model.dim();
-        // H = R R' with R lower triangular; L = (R')^-1 = (R^-1)'.
-        let r = cholesky(&model.negative_hessian(mode), p).ok_or_else(|| {
-            Error::Bayes("the negative Hessian at the mode is not positive definite".into())
-        })?;
-        let mut l = vec![0.0; p * p];
-        let mut e = vec![0.0; p];
-        let mut column = vec![0.0; p];
-        for j in 0..p {
-            e.fill(0.0);
-            e[j] = 1.0;
-            lower_solve(&r, &e, &mut column);
-            // `column` is column j of R^-1, so row j of L.
-            l[j * p..(j + 1) * p].copy_from_slice(&column);
-        }
-        Ok(Self { model, mode, l })
-    }
-
-    /// `mode + L z`.
-    pub(crate) fn theta(&self, z: &[f64]) -> Vec<f64> {
-        let p = z.len();
-        (0..p)
-            .map(|i| {
-                self.mode[i]
-                    + self.l[i * p..(i + 1) * p]
-                        .iter()
-                        .zip(z)
-                        .map(|(a, b)| a * b)
-                        .sum::<f64>()
-            })
-            .collect()
-    }
-}
-
-impl LogDensity for Whitened<'_> {
-    fn dim(&self) -> usize {
-        self.model.dim()
-    }
-
-    fn log_density(&self, z: &[f64], gradient: &mut [f64]) -> Option<f64> {
-        let p = z.len();
-        let theta = self.theta(z);
-        let mut g = vec![0.0; p];
-        let f = self.model.log_posterior(&theta, &mut g);
-        for (j, out) in gradient.iter_mut().enumerate() {
-            *out = (0..p).map(|i| self.l[i * p + j] * g[i]).sum();
-        }
-        (f.is_finite() && gradient.iter().all(|v| v.is_finite())).then_some(f)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bayes::laplace::tests::assert_gradient;
     use crate::triangle::tests::{GENINS, annual, raa};
     use crate::{OdpBootstrap, triangle::Long};
+    use prospicio_bayes::nuts::LogDensity;
     use prospicio_core::Period;
     use prospicio_prob::Distribution;
 
@@ -711,26 +596,6 @@ mod tests {
             .unwrap()
     }
 
-    /// Central finite differences of `f` against `grad` at `x`.
-    fn assert_gradient(f: impl Fn(&[f64], &mut [f64]) -> f64, x: &[f64]) {
-        let mut grad = vec![0.0; x.len()];
-        f(x, &mut grad);
-        let mut scratch = vec![0.0; x.len()];
-        for j in 0..x.len() {
-            let h = 1e-5;
-            let mut up = x.to_vec();
-            up[j] += h;
-            let mut down = x.to_vec();
-            down[j] -= h;
-            let fd = (f(&up, &mut scratch) - f(&down, &mut scratch)) / (2.0 * h);
-            assert!(
-                (fd - grad[j]).abs() <= 1e-5 * (1.0 + grad[j].abs()),
-                "parameter {j}: finite difference {fd}, gradient {}",
-                grad[j]
-            );
-        }
-    }
-
     #[test]
     fn the_gradient_matches_a_finite_difference() {
         let Prepared { model, start, .. } = prepared(&raa(), &BayesOdp::default(), true);
@@ -741,7 +606,7 @@ mod tests {
             .map(|(j, v)| v + 0.01 * (j as f64 - 5.0))
             .collect();
         assert_gradient(|t, g| model.log_posterior(t, g), &x);
-        let mode = model.mode(start).unwrap();
+        let mode = mode(&model, start).unwrap();
         let whitened = Whitened::new(&model, &mode).unwrap();
         let z: Vec<f64> = (0..model.dim())
             .map(|j| 0.3 * ((j % 3) as f64 - 1.0))
@@ -758,7 +623,7 @@ mod tests {
             // From the prior's centre, not the chain ladder's start.
             let mut from = vec![0.0; model.dim()];
             from[0] = model.c0;
-            let mode = model.mode(from).unwrap();
+            let mode = mode(&model, from).unwrap();
             let (fit, _) = prepare(&segment, &segment.ages, Tail::default()).unwrap();
             for &(w, d, _) in &model.cells {
                 let mu = model.eta(&mode, w, d).exp();
@@ -783,8 +648,8 @@ mod tests {
             };
             let none = prepared(&triangle, &model, false);
             let with = prepared(&triangle, &model, true);
-            let a = none.model.mode(none.start).unwrap();
-            let b = with.model.mode(with.start).unwrap();
+            let a = mode(&none.model, none.start).unwrap();
+            let b = mode(&with.model, with.start).unwrap();
             a.iter()
                 .zip(&b)
                 .map(|(x, y)| (x - y).abs())

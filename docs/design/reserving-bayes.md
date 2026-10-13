@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 in progress** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 is built on `claude/bayes-odp`: the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -57,7 +57,7 @@ does not merge them by hand.
 |---|---|---|
 | Bayesian ODP chain ladder | the same model in Stan, run with CmdStan 2.39.0 (decision 10) | England and Verrall (2002, BAJ 8(3)), (2006, AAS 1(2)); our `OdpBootstrap` and chain ladder on the same triangle |
 | Bayesian Bornhuetter–Ferguson | the same model in Stan | Verrall (2004, NAAJ); England, Verrall and Wüthrich (2012, AAS 6(2), 258-283) |
-| CRC, CSR (later CAY, IPI) | Meyers' R/Stan code, `meyers-appendix.zip` (CAS), run with CmdStan 2.39.0 | Meyers (2019), CAS Monograph 8, 2nd ed.: group 353 Commercial Auto, data in Tables 2.1-2.3, parameter summaries in Tables 5.1 and 7.1, totals in Tables 5.2 (CRC paid), 5.3 (CRC incurred) and 7.2 (CSR paid), elpd_loo in Tables 6.4 and 7.3 |
+| CRC, CSR (later CAY, IPI) | Meyers' R/Stan code, `meyers-appendix.zip` (CAS), transcribed into current Stan syntax (no licence is stated, and the old array syntax no longer compiles) and run with CmdStan 2.39.0 | Meyers (2019), CAS Monograph 8, 2nd ed.: group 353 Commercial Auto, data in Tables 2.1-2.3, parameter summaries in Tables 5.1 and 7.1, totals in Tables 5.2 (CRC paid), 5.3 (CRC incurred) and 7.2 (CSR paid), elpd_loo in Tables 6.4 and 7.3 |
 | Diagnostics | `prospicio_bayes` (`rhat`, `ess_bulk`, `ess_tail`), already at parity with R `posterior` | |
 | Model comparison | `prospicio_bayes::elpd::loo`, already at parity with R `loo` 2.6.0 | Meyers' elpd_loo for CSR (49.76) and CRC (47.80), Tables 6.4 and 7.3; only between models of the same response (decision 5) |
 
@@ -84,7 +84,11 @@ Data:
   `incurred_loss - bulk_loss`, `premium` is `earned_prem_net`, all in USD
   thousands. The generator asserts the outcomes Meyers prints before
   writing (age-10 sums: paid 40,000, incurred 40,061; both checked
-  2026-10-12); a cell-by-cell check against Tables 2.1-2.3 is still to do.
+  2026-10-12) and every cell against Tables 2.1-2.3 as printed: all agree
+  but one misprint, Table 2.2's 2004 for 1995 at lag 6 (the data holds
+  4116; the row's "Source" year slipped into the cell). Built in PR 3 as
+  `validation/scripts/clrd_comauto_353.py` (DuckDB 1.5.6 under `uv`,
+  `gh release download`).
   The data is the NAIC Schedule P extract the CAS publishes for research
   (Meyers and Shi); the CSV header and the knowledge entry credit it. The
   repo's existing `clrd_*.csv` are industry sums and do not hold it.
@@ -454,7 +458,8 @@ a separate model, not a setting. Open decision 3.
 
 ### 7. Meyers' CRC and CSR (PR 3)
 
-Proposed. Cumulative values `C_wd` (paid or incurred) and premium `P_w`
+Built in PR 3 (2026-10-12; "As built" below); the sketch is kept as
+proposed. Cumulative values `C_wd` (paid or incurred) and premium `P_w`
 from a measure column, read as exposure is read in `reserving-v02.md`
 decision 1 (the latest cumulative value per origin; `InvalidExposure`
 for a missing or non-positive one).
@@ -504,6 +509,107 @@ falls as claims settle), not an identification one; CAY's recursion (`ρ` times 
 previous origin's residual) makes the likelihood depend on observed lagged
 cells and is why CAY waits for PR 5.
 
+**As built** (`crates/prospicio-reserving/src/bayes/meyers.rs`):
+
+```rust
+pub enum MeyersModel { Crc, Csr }              // default Crc
+pub struct Meyers {
+    pub model: MeyersModel,
+    pub logelr_mean: f64,     // -0.4
+    pub logelr_sd: f64,       // 3.162
+    pub origin_sd: f64,       // 3.162
+    pub development_sd: f64,  // 3.162
+    pub gamma_sd: f64,        // 0.05, CSR only
+    pub sampler: Sampler,     // 4 chains, 1,000 warm-up, 2,000 draws, target 0.95, depth 10
+    pub n_sims: usize,        // 10,000
+    pub seed: u64,
+}
+impl Meyers { pub fn fit(&self, triangle: &Triangle, column: &str, premium: &str) -> Result<MeyersFit>; }
+pub struct MeyersFit {
+    pub chain_ladder: ChainLadderFit,
+    pub premium: Vec<f64>,
+    pub posterior: PosteriorDraws,           // logelr, alpha[2..n], beta[1..m-1], gamma, sigma[1..m]
+    pub diagnostics: Diagnostics,
+    pub ultimates: PredictiveDistribution,   // dimension origin
+    pub reserves: PredictiveDistribution,    // ultimates less the latest values, draw by draw
+}
+// summary(), loo(), to_long(), totals(), development_table(); impl ReserveFit
+```
+
+* **Priors, read from the code.** The monograph's "10" is a standard
+  deviation of `sqrt(10)`, which the code rounds to 3.162 (the errata
+  confirm `sqrt(10)`); the defaults copy 3.162. Meyers' `a_ig ~
+  inv_gamma(1, 1)` is declared `<upper=100000>` and mapped by
+  `gamma_cdf(1 / a_ig | 1, 1) = 1 - exp(-1 / a_ig)`, which makes each step
+  `s_i` uniform on `(1 - exp(-1e-5), 1)`, not `(0, 1)`. We sample
+  `s_i = s0 + (1 - s0) logistic(u_i)` with the same floor `s0`; without it
+  the late σ on incurred data came out 10 to 20% below Stan's and the
+  sampler diverged. His step labels run in reverse of the monograph's
+  (`sig2[10]` takes `a_ig[10]`, `sig2[10 - i]` adds `a_ig[i]`); the steps
+  are iid, so the σ posterior is the same, and parity compares `sigma[d]`.
+* **Premium** is a measure column of the same triangle, read as `CapeCod`
+  reads exposure (`expected_loss::origin_exposure`: the latest value per
+  origin, `InvalidExposure` when missing or not positive).
+* **Errors.** `InvalidSetting` for a prior sd that is not finite and
+  positive, a non-finite `logelr_mean` and `n_sims == 0`; `Error::Bayes`
+  for a cell that is not positive (Meyers' code raises values below 1 to
+  1 silently; the message names the origin and age), for no more cells than
+  parameters, and from the sampler's scale; `MultipleSegments`, gaps and
+  unknown columns as for the other models.
+* **Sampling scale (a change from the sketch).** `BayesOdp` whitens at the
+  posterior mode. Here the joint mode is not a usable centre: on CRC paid
+  Newton creeps toward `sigma[10]` near 5e-4 (`u_10` near -15) against a
+  posterior mean of 0.020, along the funnel where the late σ and the late
+  residuals shrink together, and did not converge in 200 iterations. So
+  `Meyers` runs a pilot (the same chains, `tune` warm-up and `max(tune,
+  100)` kept draws) on a scale whitened at a least-squares start (the
+  negative Hessian there, by central differences of the analytic
+  gradient, with a ridge where it is not positive definite), then samples
+  on the scale of the pilot draws' mean and covariance, regularised as
+  Stan's dense metric (`n/(n + 5) S + 1e-3 (5/(n + 5)) I`). The pilot
+  takes stream `u64::MAX` of the chains' derived seed, so `seed` still
+  replays a fit exactly whatever the threads. The mode finder and the
+  whitening moved to `bayes/laplace.rs`, shared with `BayesOdp` (whose
+  numbers are unchanged).
+* **Defaults.** Target acceptance 0.95: at 0.8 the paid fits gave 1 to 56
+  divergent transitions in 8,000 draws at nearly every one of 30 seeds.
+  2,000 kept draws per chain, not 1,000: with 1,000 the late σ had an R-hat
+  above 1.01 (at most 1.016) in 5 of 120 fits (4 cases x 30 seeds); with
+  2,000 all 120 pass every threshold, with no divergence.
+* **Prediction.** Given a draw, each origin's ultimate is
+  `exp(log P_w + logelr + alpha_w + sigma_m z)` (`beta_m = 0`, so neither
+  β nor γ enters), and an origin observed at age `m` keeps its value, as
+  Meyers does; no `ceiling()` (his adds about +4.5 to the total). The
+  reserves are the same simulations less the latest values. Cells are
+  independent given the parameters, so no path is drawn; a path would
+  matter only for cash flows. No tail and no one-year view (decision 12);
+  no `dependence` field until segments (decision 11), so `Meyers` departs
+  from `BayesOdp`'s struct there. `Meyers` does not implement
+  `TriangleModel` (decision 8).
+* **`loo()`** is Meyers' pointwise `normal_lpdf(log C | mu, sigma_d)`,
+  comparable only between CRC and CSR fits of the same column, with
+  `r_eff` per cell from `ess_mean`. Pareto k reaches about 1 on group 353
+  (also in Stan), so elpd carries PSIS noise.
+* **Results on group 353** (total ultimate mean and sd; ours at the
+  defaults, seed 0; Stan of Meyers' code, 4 x 25,000 draws; Meyers'
+  printed):
+
+  | Case | Ours | Stan | Meyers |
+  |---|---|---|---|
+  | CRC paid | 40,119 (2,538) | 40,136 (2,497) | 40,121 (2,487), Table 5.2 |
+  | CRC incurred | 39,080 (1,541) | 39,132 (1,616) | 39,147 (1,642), Table 5.3 |
+  | CSR paid | 37,612 (2,487) | 37,537 (2,391) | 37,597 (2,401), Table 7.2 |
+  | CSR incurred | 38,168 (1,588) | 38,165 (1,567) | not printed |
+
+  elpd_loo ours 47.90, 71.42, 49.82, 71.12; Stan 48.04, 71.22, 49.56,
+  71.26; Meyers 47.80 (CRC paid), 70.97 (CRC incurred), 49.76 (CSR paid).
+  CSR paid `gamma` ours 0.0447 (sd 0.0286), Stan 0.0450 (0.0280), Meyers
+  0.0446 (0.0282); `logelr` ours -0.3954, Stan -0.3961, Meyers -0.3956.
+* **Runtime.** A default fit takes 0.3 s (CRC) to 0.5 s (CSR) in a
+  release build and 6 to 8 s in a debug one (the pilot is about 40% of
+  it); `validation/tests/reserving_meyers.rs` takes about 34 s in a debug
+  build, most of it the four default fits.
+
 ### 8. The diagonal backtest
 
 Proposed (PR 2). `BayesOdp` implements `TriangleModel`
@@ -547,8 +653,12 @@ Monte Carlo error is negligible.
 * **Reference programs**: `validation/scripts/stan/bayes_odp.stan`
   (decision 3's model with `target += (x .* eta - exp(eta)) / phi`, which
   accepts negative and non-integer increments where `poisson_log` would
-  not), and in PR 3 Meyers' `crc.stan` and `csr.stan` copied unchanged
-  from the CAS appendix (licence and attribution checked when copied).
+  not), and in PR 3 `validation/scripts/stan/meyers_crc.stan` and
+  `meyers_csr.stan`: Meyers' programs from the CAS appendix, transcribed
+  with provenance (no licence is stated, so not copied; the changes are
+  syntax only, `array[]` for the removed `real x[10]`, `gamma_cdf(y | 1,
+  1)`, the size 10 as data `n`, and generated quantities for σ and the
+  predictive ultimates without his `ceiling()`).
 * **Generator**: `validation/scripts/reserving_bayes_stan.py`, run with
   `uv run --no-project --python 3.14 --with cmdstanpy==1.3.0 --with
   pandas==3.0.6 --with numpy==2.5.4` (versions recorded in the CSV
@@ -595,6 +705,45 @@ Monte Carlo error is negligible.
   SEs within 5% of the published ones, `γ`'s mean within 0.1 sd. Looser
   than the Stan parity because the monograph's runs used other seeds and an
   older Stan; the CmdStan run of Meyers' own code is the tight check.
+  As built, each tolerance is at least 4 times the combined Monte Carlo
+  error of our defaults and of his single run: totals 1% (combined error
+  0.13%) as planned; total SEs 50% (our seed-to-seed error is at most
+  4.3%, but heavy-tailed through the 1997 reserve's log-normal on the
+  one-cell `alpha[10]`: 35% off at one seed in 200); `logelr` and `γ` means within 0.15 printed sd (combined
+  0.027 sd) and their sds within 15% (combined 3.4%); elpd_loo within 2
+  (each run's about 0.36, PSIS with Pareto k near 1). At 5% our CRC
+  incurred SE (1,541 against 1,642) failed though Stan's (1,616) is within
+  1.6% of Meyers'.
+
+Done for PR 3 (2026-10-12). `validation/tests/reserving_meyers.rs` checks
+464 rows of `reserving_meyers_stan.csv` (every parameter's mean and sd;
+each origin's and the total reserve's mean, sd and three percentiles,
+except the youngest origin's sd; the total ultimate's mean and sd;
+elpd_loo) for CRC and CSR on paid and
+incurred, and Meyers' 15 printed numbers. Generator
+`validation/scripts/reserving_meyers_stan.py` (cmdstanpy 1.3.0, pandas
+3.0.6, numpy 2.5.4, arviz 0.23.4 for PSIS-LOO), seed 20261012, 4 chains of
+2,000 warm-up and 25,000 draws, dense metric, `adapt_delta` 0.99,
+`max_treedepth` 12, Meyers' initial values; max R-hat 1.0004, no
+divergence; a rerun reproduced every value. Our Monte Carlo error at the
+defaults over seeds 0 to 199, with `s` Stan's posterior sd: at most
+`0.026 s` on a mean, 3.6% on a parameter sd, 2.6% on the reserve sd of
+origins 1989 to 1996, 4.3% on the total reserve's and total ultimate's
+sds, `0.063 s` on a percentile and 0.43 on elpd_loo. The 1997 reserve's
+sd is heavy-tailed: it rides on the one-cell `alpha[10]` through a
+log-normal, and its seed-to-seed sd (up to 7.5%) understates the tail. A
+first sizing from 20 seeds put it at 4.8% and set 20% (50% on CRC paid);
+a review's 60-seed sweep found two failures, and at 200 seeds it failed
+at 12 (CRC incurred +63% at seed 170). So the parity has no row for the
+youngest origin's reserve sd (its 5%, 50% and 95% percentiles check its
+spread), and the total sds, which inherit a milder tail (CRC incurred
++37% at seed 170), get 50%. Tolerances: means `0.15 s`, parameter sds
+15%, origin reserve sds 20%, total sds 50%, percentiles `0.35 s`,
+elpd_loo 2.0, each at least 4.2 times its family's largest spread. Seeds
+0 to 199 pass every row (Stan's and Meyers' printed), using at most 0.86
+of a tolerance (CRC incurred elpd_loo against Meyers' at seed 122); seed
+0 uses at most 0.41. The sweep is the ignored test `seed_sweep` (release
+build, `MEYERS_SEEDS` seeds; 200 seeds take about 7 minutes).
 * **Runtime**: a GenIns fit is expected to take well under a second; PR 1
   measures it and keeps the CI tests under a few seconds in total.
 
@@ -716,6 +865,25 @@ the sketch below, which is kept as proposed:
 * **Warnings.** A fit with failed diagnostics raises one Python
   `UserWarning` or one R `warning()` that lists every message, and is
   returned.
+* **`Meyers` (PR 3)** follows the same pattern, for one segment: Python
+  `Meyers(model="crc", logelr_mean=-0.4, logelr_sd=3.162, origin_sd=3.162,
+  development_sd=3.162, gamma_sd=0.05, chains=4, tune=1000, draws=2000,
+  n_sims=10000, seed=0, target_accept=0.95, max_depth=10)` with
+  `fit(triangle, column, premium)`, and R `meyers(triangle, column,
+  premium, model = c("crc", "csr"), ...)` with the same arguments in the
+  same order (`column` and `premium` are required, as in `cape_cod()`).
+  The fit (`MeyersFit`, R `meyers_fit`) has `BayesOdpFit`'s fields less
+  `scale`, plus `model`, `premium` and `ultimates` (a second
+  `PredictiveDistribution` by origin); its long tables add `premium`,
+  `ultimate_mean` and `ultimate_std_dev`. LOO is on Meyers' log scale, so
+  the documentation limits comparisons to CRC against CSR on one column.
+  The warnings say `Meyers:` and `meyers:`. Tests:
+  `python/tests/test_reserving_meyers.py` and
+  `R/prospicio/tests/test-reserving-meyers.R` fit group 353 paid with the
+  default chains for CRC and CSR (no warning; totals within 2% and elpd
+  within 2 of Meyers' printed values, gamma within 0.01), replay an
+  incurred fit by seed, warn on 2 × 10 kept draws, and check the errors
+  (settings, a missing premium column, a zero cell, too few cells).
 * **Tests**: `python/tests/test_reserving_bayes.py` and
   `R/prospicio/tests/test-reserving-bayes.R` fit GenIns with the default
   chains (no warning, the Stan-matched scale, the reserves near the chain
