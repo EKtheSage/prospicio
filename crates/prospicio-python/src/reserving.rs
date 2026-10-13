@@ -24,7 +24,9 @@ use pyo3::types::{
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
-use prospicio_reserving::bayes::{BayesBf, BayesBfFit, BayesOdpFits, BayesOdpSegment};
+use prospicio_reserving::bayes::{
+    BayesBf, BayesBfFit, BayesOdpFits, BayesOdpSegment, MeyersFits, MeyersSegment,
+};
 use prospicio_reserving::{BayesOdp, BayesOdpFit, Diagnostics, Meyers, MeyersFit, MeyersModel};
 
 use crate::distributions::PyPredictiveDistribution;
@@ -5671,23 +5673,7 @@ impl PyBayesOdp {
     ) -> PyResult<PyBayesOdpFits> {
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py.detach(|| model.fit_segments(tri, column)).map_err(err)?;
-        let segments = &inner.segments;
-        let warnings: Vec<String> = segments
-            .labels
-            .iter()
-            .zip(&segments.fits)
-            .flat_map(|(label, fit)| {
-                let prefix = if segments.key_names.is_empty() {
-                    String::new()
-                } else {
-                    format!("{label}: ")
-                };
-                fit.diagnostics
-                    .warnings
-                    .iter()
-                    .map(move |w| format!("{prefix}{w}"))
-            })
-            .collect();
+        let warnings = segment_warnings(&inner.segments, |s| &s.diagnostics);
         warn_diagnostics(py, "BayesOdp", &warnings)?;
         Ok(PyBayesOdpFits { inner })
     }
@@ -5929,6 +5915,73 @@ fn diagnostics_dict<'py>(py: Python<'py>, d: &Diagnostics) -> PyResult<Bound<'py
     Ok(out)
 }
 
+/// Every segment's failed diagnostics, each message prefixed with its
+/// segment's label when the triangle has keys.
+fn segment_warnings<T>(segments: &SegmentFits<T>, diag: fn(&T) -> &Diagnostics) -> Vec<String> {
+    segments
+        .labels
+        .iter()
+        .zip(&segments.fits)
+        .flat_map(|(label, fit)| {
+            let prefix = if segments.key_names.is_empty() {
+                String::new()
+            } else {
+                format!("{label}: ")
+            };
+            diag(fit)
+                .warnings
+                .iter()
+                .map(move |w| format!("{prefix}{w}"))
+        })
+        .collect()
+}
+
+/// One row per segment: the key columns, then ``max_rhat``,
+/// ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and ``warnings``
+/// (the segment's messages joined by ``"; "``).
+fn segment_diagnostics_frame<'py, T>(
+    py: Python<'py>,
+    segments: &SegmentFits<T>,
+    diag: fn(&T) -> &Diagnostics,
+) -> PyResult<Bound<'py, PyAny>> {
+    let out = PyDict::new(py);
+    for (k, name) in segments.key_names.iter().enumerate() {
+        let values: Vec<String> = segments
+            .labels
+            .iter()
+            .map(|l| l.parts().get(k).cloned().unwrap_or_default())
+            .collect();
+        out.set_item(name, values)?;
+    }
+    let col = |g: fn(&Diagnostics) -> f64| {
+        segments
+            .fits
+            .iter()
+            .map(|f| g(diag(f)))
+            .collect::<Vec<f64>>()
+    };
+    out.set_item("max_rhat", col(|d| d.max_rhat))?;
+    out.set_item("min_ess_bulk", col(|d| d.min_ess_bulk))?;
+    out.set_item("min_ess_tail", col(|d| d.min_ess_tail))?;
+    out.set_item(
+        "divergences",
+        segments
+            .fits
+            .iter()
+            .map(|f| diag(f).divergences)
+            .collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "warnings",
+        segments
+            .fits
+            .iter()
+            .map(|f| diag(f).warnings.join("; "))
+            .collect::<Vec<_>>(),
+    )?;
+    py.import("pandas")?.call_method1("DataFrame", (out,))
+}
+
 /// A posterior summary as a pandas DataFrame, as ``BayesOdpFit.summary``.
 fn summary_frame<'py>(py: Python<'py>, s: &[ParamSummary]) -> PyResult<Bound<'py, PyAny>> {
     let col = |g: fn(&ParamSummary) -> f64| s.iter().map(g).collect::<Vec<f64>>();
@@ -6097,43 +6150,7 @@ impl PyBayesOdpFits {
     /// -------
     /// pandas.DataFrame
     fn diagnostics_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let segments = &self.inner.segments;
-        let out = PyDict::new(py);
-        for (k, name) in segments.key_names.iter().enumerate() {
-            let values: Vec<String> = segments
-                .labels
-                .iter()
-                .map(|l| l.parts().get(k).cloned().unwrap_or_default())
-                .collect();
-            out.set_item(name, values)?;
-        }
-        let diag = |g: fn(&Diagnostics) -> f64| {
-            segments
-                .fits
-                .iter()
-                .map(|f| g(&f.diagnostics))
-                .collect::<Vec<f64>>()
-        };
-        out.set_item("max_rhat", diag(|d| d.max_rhat))?;
-        out.set_item("min_ess_bulk", diag(|d| d.min_ess_bulk))?;
-        out.set_item("min_ess_tail", diag(|d| d.min_ess_tail))?;
-        out.set_item(
-            "divergences",
-            segments
-                .fits
-                .iter()
-                .map(|f| f.diagnostics.divergences)
-                .collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "warnings",
-            segments
-                .fits
-                .iter()
-                .map(|f| f.diagnostics.warnings.join("; "))
-                .collect::<Vec<_>>(),
-        )?;
-        py.import("pandas")?.call_method1("DataFrame", (out,))
+        segment_diagnostics_frame(py, &self.inner.segments, |s| &s.diagnostics)
     }
 
     /// One row per segment and origin: the key columns, ``origin``, the
@@ -6790,11 +6807,27 @@ fn meyers_model(name: &str) -> PyResult<MeyersModel> {
 ///     usual 0.8 the paid fits of group 353 leave divergent transitions.
 /// max_depth : int, default 10
 ///     Largest NUTS tree depth.
+/// dependence : {"independent", "rank_correlation", "synchronized"}, default "independent"
+///     How the segments of a multi-segment triangle depend on each other
+///     in ``fit_segments`` (``fit`` has one segment and does not use it),
+///     as ``BayesOdp``'s: each segment's own posterior and simulations, with
+///     seeds derived from ``seed`` and the segment's position; or the
+///     segments' simulations reordered as whole rows (Iman–Conover on the
+///     segments' total reserves, each segment's ultimates moving with its
+///     reserves) to the Spearman matrix ``spearman`` and then put in a
+///     random order. ``"synchronized"`` is accepted here, as the bootstraps
+///     take it, but ``fit_segments`` raises: a posterior has no residuals to
+///     share.
+/// spearman : list of list of float, optional
+///     With ``dependence="rank_correlation"`` only: Spearman's rho between
+///     the segments' total reserves, as ``OdpBootstrap``'s.
 ///
 /// Raises
 /// ------
 /// ValueError
-///     If ``n_sims`` is zero or ``model`` is unknown.
+///     If ``n_sims`` is zero, ``model`` or ``dependence`` is unknown, or
+///     ``spearman`` is missing for ``"rank_correlation"``, given for another
+///     dependence or not square.
 /// OverflowError
 ///     If an integer setting is negative or too large.
 ///
@@ -6842,6 +6875,8 @@ impl PyMeyers {
         seed = 0,
         target_accept = 0.95,
         max_depth = 10,
+        dependence = "independent",
+        spearman = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -6859,6 +6894,8 @@ impl PyMeyers {
         seed: u64,
         target_accept: f64,
         max_depth: u64,
+        dependence: &str,
+        spearman: Option<Vec<Vec<f64>>>,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -6882,6 +6919,7 @@ impl PyMeyers {
                 },
                 n_sims,
                 seed,
+                dependence: segment_dependence(dependence, spearman)?,
             },
         })
     }
@@ -6970,6 +7008,20 @@ impl PyMeyers {
         self.inner.sampler.max_depth
     }
 
+    /// How segments depend on each other in ``fit_segments``:
+    /// ``"independent"``, ``"rank_correlation"`` or ``"synchronized"``.
+    #[getter]
+    fn dependence(&self) -> &'static str {
+        dependence_name(&self.inner.dependence)
+    }
+
+    /// The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+    /// otherwise.
+    #[getter]
+    fn spearman(&self) -> Option<Vec<Vec<f64>>> {
+        dependence_spearman(&self.inner.dependence)
+    }
+
     /// Samples the posterior of one measure column of a single-segment
     /// cumulative triangle, with each origin's premium from another column
     /// (its latest value, as ``CapeCod`` reads exposure), and simulates the
@@ -7010,18 +7062,77 @@ impl PyMeyers {
     ) -> PyResult<PyMeyersFit> {
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py.detach(|| model.fit(tri, column, premium)).map_err(err)?;
-        let warnings = &inner.diagnostics.warnings;
-        if !warnings.is_empty() {
-            let message = format!(
-                "Meyers: the MCMC diagnostics failed; check them before relying on the fit: {}",
-                warnings.join("; ")
-            );
-            let message = std::ffi::CString::new(message)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
-            let category = py.get_type::<pyo3::exceptions::PyUserWarning>();
-            PyErr::warn(py, category.as_any(), &message, 1)?;
-        }
+        warn_diagnostics(py, "Meyers", &inner.diagnostics.warnings)?;
         Ok(PyMeyersFit { inner })
+    }
+
+    /// Samples the posterior of one measure column in every segment of a
+    /// cumulative triangle, each segment with its own posterior (the same
+    /// model and settings, sampled independently) and its premium from its
+    /// own ``premium`` column as ``fit`` reads it, into one joint
+    /// distribution of the ultimates and one of the reserves, the segments
+    /// depending on each other as ``dependence`` says. Segment ``k`` (in
+    /// index order) takes seeds derived from ``seed`` and ``k`` for its
+    /// chains and its simulations, so independent segments share no random
+    /// numbers, and a segment's draws differ from ``fit`` of that segment
+    /// alone. Raises one ``UserWarning`` listing the failed diagnostics of
+    /// every segment, each message prefixed with its segment's label.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative, with any number of segments.
+    /// column : str
+    ///     The losses: paid, or case incurred.
+    /// premium : str
+    ///     The premium of each origin.
+    ///
+    /// Returns
+    /// -------
+    /// MeyersFits
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``fit`` for any segment (the message names the segment); if
+    ///     ``dependence`` is ``"synchronized"`` (before any sampling); or if
+    ///     ``spearman`` does not fit the segments.
+    ///
+    /// Examples
+    /// --------
+    /// >>> import warnings
+    /// >>> from prospicio.reserving import Meyers, Triangle
+    /// >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+    /// ...         [983, 2211, 2830], [1657, 2685], [932]]
+    /// >>> premium = [5812, 4908, 5454, 5165, 5214]
+    /// >>> rows = [(lob, 1988 + w, 12 * (d + 1), k * v, k * premium[w])
+    /// ...         for lob, k in [("Auto", 1.0), ("Home", 2.0)]
+    /// ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+    /// >>> lob, origin, age, values, prem = map(list, zip(*rows))
+    /// >>> tri = Triangle.from_long(
+    /// ...     origin, age, {"paid": values, "premium": prem}, keys={"lob": lob})
+    /// >>> with warnings.catch_warnings():
+    /// ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+    /// ...     fits = Meyers(tune=200, draws=200, n_sims=1000).fit_segments(
+    /// ...         tri, "paid", "premium")
+    /// >>> fits.index, fits.reserves.dims
+    /// (['Auto', 'Home'], ['lob', 'origin'])
+    /// >>> fits.segment(lob="Home").premium[:2]
+    /// [11624.0, 9816.0]
+    fn fit_segments(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        premium: &str,
+    ) -> PyResult<PyMeyersFits> {
+        let (model, tri) = (&self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| model.fit_segments(tri, column, premium))
+            .map_err(err)?;
+        let warnings = segment_warnings(&inner.segments, |s| &s.diagnostics);
+        warn_diagnostics(py, "Meyers", &warnings)?;
+        Ok(PyMeyersFits { inner })
     }
 
     fn __repr__(&self) -> String {
@@ -7029,7 +7140,7 @@ impl PyMeyers {
         format!(
             "Meyers(model={:?}, logelr_mean={:?}, logelr_sd={:?}, origin_sd={:?}, \
              development_sd={:?}, gamma_sd={:?}, rho_shape={:?}, chains={}, tune={}, \
-             draws={}, n_sims={}, seed={})",
+             draws={}, n_sims={}, seed={}{})",
             m.model.name(),
             m.logelr_mean,
             m.logelr_sd,
@@ -7042,6 +7153,7 @@ impl PyMeyers {
             s.draws,
             m.n_sims,
             m.seed,
+            dependence_repr(&m.dependence),
         )
     }
 }
@@ -7253,6 +7365,246 @@ impl PyMeyersFit {
             self.inner.posterior.n_draws(),
             self.inner.reserves.n_sims(),
             self.inner.diagnostics.warnings.len(),
+        )
+    }
+}
+
+/// ``Meyers.fit_segments``: each segment's own posterior and the joint
+/// posterior predictive distributions of the ultimates and the reserves,
+/// laid out as ``BayesOdpFits``.
+///
+/// ``ultimates`` and ``reserves`` have the triangle's keys and ``"origin"``
+/// as dimensions, so ``reserves.aggregate(["lob"])`` keeps the dependence
+/// between segments. Per-origin lists (``origins``, ``premium``) run over
+/// the origins of each segment in turn, like the rows of ``to_frame()``
+/// and the components of ``reserves``. The posterior of one segment
+/// (``diagnostics``, ``parameter_names``, ``draws``, ``chains``,
+/// ``summary()`` and ``loo()``) needs a single-segment fit: for several
+/// segments use ``segment(...)`` or ``diagnostics_frame()``.
+#[pyclass(name = "MeyersFits", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyMeyersFits {
+    inner: MeyersFits,
+}
+
+impl PyMeyersFits {
+    fn one(&self, field: &str, instead: &str) -> PyResult<&MeyersSegment> {
+        single(&self.inner.segments, field, instead)
+    }
+}
+
+#[pymethods]
+impl PyMeyersFits {
+    /// The model: ``"crc"``, ``"csr"`` or ``"cay"``.
+    #[getter]
+    fn model(&self) -> &'static str {
+        self.inner.segments.fits[0].model().name()
+    }
+
+    /// The volume-weighted chain ladder of every segment's fitted column,
+    /// whose latest values the reserves are measured from.
+    #[getter]
+    fn chain_ladder(&self) -> PyChainLadderFit {
+        PyChainLadderFit {
+            inner: self.inner.segments.map(|s| s.chain_ladder.clone()),
+        }
+    }
+
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.segments.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner.segments)
+    }
+
+    /// Origin period of each per-origin value and component.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        origin_labels(&self.inner.segments)
+    }
+
+    /// Development ages in months of the first segment.
+    #[getter]
+    fn development(&self) -> Vec<Lag> {
+        self.inner.segments.fits[0]
+            .chain_ladder
+            .development
+            .development
+            .clone()
+    }
+
+    /// The premium of each segment's origins, in the order of ``origins``.
+    #[getter]
+    fn premium(&self) -> Vec<f64> {
+        self.inner
+            .segments
+            .fits
+            .iter()
+            .flat_map(|s| s.premium.iter().copied())
+            .collect()
+    }
+
+    /// Joint posterior predictive distribution of the ultimate (the value
+    /// at the oldest age) by segment and origin: the triangle's keys and
+    /// ``"origin"`` are its dimensions, one component per segment and
+    /// origin, one row per simulation.
+    #[getter]
+    fn ultimates(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.ultimates.clone(),
+        }
+    }
+
+    /// The ultimates less the latest values, simulation by simulation,
+    /// laid out as ``ultimates``.
+    #[getter]
+    fn reserves(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    /// MCMC diagnostics of a single-segment fit, as
+    /// ``MeyersFit.diagnostics``.
+    #[getter]
+    fn diagnostics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        diagnostics_dict(
+            py,
+            &self.one("diagnostics", "diagnostics_frame()")?.diagnostics,
+        )
+    }
+
+    /// Parameter names of a single-segment fit, as
+    /// ``MeyersFit.parameter_names``.
+    #[getter]
+    fn parameter_names(&self) -> PyResult<Vec<String>> {
+        Ok(self.one("parameter_names", "")?.posterior.names().to_vec())
+    }
+
+    /// Posterior draws of a single-segment fit, as ``MeyersFit.draws``.
+    #[getter]
+    fn draws(&self) -> PyResult<Vec<Vec<f64>>> {
+        let posterior = &self.one("draws", "")?.posterior;
+        let p = posterior.dim().max(1);
+        Ok(posterior.values().chunks(p).map(<[f64]>::to_vec).collect())
+    }
+
+    /// Number of chains of a single-segment fit.
+    #[getter]
+    fn chains(&self) -> PyResult<usize> {
+        Ok(self.one("chains", "")?.posterior.chains())
+    }
+
+    /// Posterior summary of a single-segment fit, as
+    /// ``MeyersFit.summary``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let one = self.one("summary()", "")?;
+        let s = py.detach(|| one.summary()).map_err(err)?;
+        summary_frame(py, &s)
+    }
+
+    /// PSIS-LOO of a single-segment fit's observed cells on Meyers' log
+    /// scale, as ``MeyersFit.loo``.
+    ///
+    /// Returns
+    /// -------
+    /// Elpd
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the fit has several segments.
+    fn loo(&self, py: Python<'_>) -> PyResult<PyElpd> {
+        let one = self.one("loo()", "")?;
+        let l = py.detach(|| one.loo()).map_err(err)?;
+        Ok(PyElpd::from_loo(l))
+    }
+
+    /// One row per segment: the key columns, then ``max_rhat``,
+    /// ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+    /// ``warnings`` (the segment's messages joined by ``"; "``, empty when
+    /// every threshold holds). Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn diagnostics_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        segment_diagnostics_frame(py, &self.inner.segments, |s| &s.diagnostics)
+    }
+
+    /// One row per segment and origin: the key columns, ``origin``, the
+    /// chain ladder's ``latest``, ``ultimate`` and ``reserve``, the
+    /// ``premium``, the ``mean`` and ``std_dev`` of the posterior
+    /// predictive reserve, and the ``ultimate_mean`` and
+    /// ``ultimate_std_dev`` of the posterior predictive ultimate. Needs
+    /// pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row per segment: the key columns, the chain ladder's totals,
+    /// the total ``premium``, the ``mean`` and ``std_dev`` of the segment's
+    /// posterior predictive total reserve, and the ``ultimate_mean`` and
+    /// ``ultimate_std_dev`` of its total ultimate. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// The chain ladders' development factors, one row per segment and
+    /// age, as ``ChainLadderFit.development_frame``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.development_table())
+    }
+
+    /// The fit of one segment, chosen by key values as
+    /// ``ChainLadderFit.segment``, with its part of the joint ultimates and
+    /// reserves (same dimensions).
+    ///
+    /// Returns
+    /// -------
+    /// MeyersFits
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let keys = segment_keys(keys)?;
+        let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        Ok(Self {
+            inner: self.inner.segment(&keys).map_err(err)?,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        let segments = &self.inner.segments;
+        let warnings: usize = segments
+            .fits
+            .iter()
+            .map(|f| f.diagnostics.warnings.len())
+            .sum();
+        format!(
+            "MeyersFits(model={:?}, {}origins={}, n_sims={}, warnings={warnings})",
+            self.model(),
+            segments_prefix(segments),
+            self.origins().len(),
+            self.inner.reserves.n_sims(),
         )
     }
 }

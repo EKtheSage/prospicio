@@ -149,6 +149,23 @@ impl SegmentDependence {
             Self::Independent | Self::Synchronized => Ok(draws),
         }
     }
+
+    /// As [`reorder`](Self::reorder), with the components of segment `s`
+    /// given as `ranges[s]` instead of read from the fits, so that a
+    /// segment can move other components with its reserves (Meyers'
+    /// ultimates); its total is the sum over its range.
+    #[cfg(feature = "bayes")]
+    pub(crate) fn reorder_ranges(
+        &self,
+        draws: PredictiveDistribution,
+        ranges: &[Range<usize>],
+        seed: u64,
+    ) -> Result<PredictiveDistribution> {
+        match self {
+            Self::RankCorrelation { spearman } => rank_correlate(draws, ranges, spearman, seed),
+            Self::Independent | Self::Synchronized => Ok(draws),
+        }
+    }
 }
 
 /// The residuals a bootstrap model of one segment resamples, laid out to

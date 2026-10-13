@@ -73,6 +73,12 @@ the code change.
   `#'` doc lines (keep `#' @export`): the order is the
   `extendr_module!` order, impl by impl. The one known difference is
   the file's `ChainLadderFit$tail <-function()`, missing a space.
+* `cargo clippy -p prospicio-r` panics in extendr-api's build script
+  (`DEP_R_R_VERSION_MAJOR`: `NotPresent`) when the target directory
+  holds an `extendr-ffi` build from a run without R: setting `R_HOME`
+  afterwards does not rerun it. `cargo clean -p extendr-ffi`, then the
+  clippy run with `R_HOME` set and R's `bin/x64` on the path, fixes it
+  (Windows, 2026-10-13).
 * A topic that a new roxygen block adds and other blocks link to makes
   `cargo xtask r` print "Could not resolve link to topic" for those
   links on the run that creates it; the links in the written Rd files

@@ -110,6 +110,16 @@ pricing_burning_cost <- function(ids, accident, amount, threshold, rate, to, fac
 
 pricing_as_if <- function(ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed) .Call(wrap__pricing_as_if, ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed)
 
+aggregate_elt_values <- function(rate, mean, sd_independent, sd_correlated, exposure, x, p) .Call(wrap__aggregate_elt_values, rate, mean, sd_independent, sd_correlated, exposure, x, p)
+
+aggregate_elt_simulate <- function(rate, mean, sd_independent, sd_correlated, exposure, n_years, seed) .Call(wrap__aggregate_elt_simulate, rate, mean, sd_independent, sd_correlated, exposure, n_years, seed)
+
+pricing_payment_pattern <- function(times, values, from_development) .Call(wrap__pricing_payment_pattern, times, values, from_development)
+
+pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_pattern_values, times, shares, rate, t)
+
+pricing_price_over_payout <- function(expected_loss, premium, assets, times, shares, rate, coc) .Call(wrap__pricing_price_over_payout, expected_loss, premium, assets, times, shares, rate, coc)
+
 pricing_development_pattern <- function(ids, age, amount, ages) .Call(wrap__pricing_development_pattern, ids, age, amount, ages)
 
 pricing_pattern_at <- function(ages, factors, x) .Call(wrap__pricing_pattern_at, ages, factors, x)
@@ -191,6 +201,12 @@ EventSet <- new.env(parent = emptyenv())
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
+
+EventSet$from_long <- function(years, losses, n_years, seed) .Call(wrap__EventSet__from_long, years, losses, n_years, seed)
+
+EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
+
+EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)
 
 EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
 
@@ -1526,6 +1542,8 @@ Triangle$bayes_odp_segments <- function(column, intercept_sd, origin_sd, develop
 
 Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__meyers, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
+Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__meyers_segments, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
+
 Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman)
@@ -1860,6 +1878,44 @@ MeyersFit$segment <- function(keys, values) .Call(wrap__MeyersFit__segment, self
 
 #' @export
 `[[.MeyersFit` <- `$.MeyersFit`
+
+MeyersFits <- new.env(parent = emptyenv())
+
+MeyersFits$model <- function() .Call(wrap__MeyersFits__model, self)
+
+MeyersFits$chain_ladder <- function() .Call(wrap__MeyersFits__chain_ladder, self)
+
+MeyersFits$premium <- function() .Call(wrap__MeyersFits__premium, self)
+
+MeyersFits$ultimates <- function() .Call(wrap__MeyersFits__ultimates, self)
+
+MeyersFits$reserves <- function() .Call(wrap__MeyersFits__reserves, self)
+
+MeyersFits$diagnostics_table <- function() .Call(wrap__MeyersFits__diagnostics_table, self)
+
+MeyersFits$parameter_names <- function() .Call(wrap__MeyersFits__parameter_names, self)
+
+MeyersFits$draws <- function() .Call(wrap__MeyersFits__draws, self)
+
+MeyersFits$chains <- function() .Call(wrap__MeyersFits__chains, self)
+
+MeyersFits$summary <- function() .Call(wrap__MeyersFits__summary, self)
+
+MeyersFits$loo <- function() .Call(wrap__MeyersFits__loo, self)
+
+MeyersFits$long_table <- function() .Call(wrap__MeyersFits__long_table, self)
+
+MeyersFits$totals_table <- function() .Call(wrap__MeyersFits__totals_table, self)
+
+MeyersFits$development_table <- function() .Call(wrap__MeyersFits__development_table, self)
+
+MeyersFits$segment <- function(keys, values) .Call(wrap__MeyersFits__segment, self, keys, values)
+
+#' @export
+`$.MeyersFits` <- function (self, name) { func <- MeyersFits[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.MeyersFits` <- `$.MeyersFits`
 
 BayesBfFit <- new.env(parent = emptyenv())
 

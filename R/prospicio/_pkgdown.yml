@@ -68,6 +68,10 @@ reference:
       - compound_distribution
       - recommend_grid
       - simulate_events
+      - event_set_from_long
+      - event_loss_table
+      - merge_event_sets
+      - hours_clause
       - occurrence_pml
       - compound_moments
       - eventual_ruin
@@ -119,6 +123,8 @@ reference:
       - priority_ladder
       - price_stand_alone
       - technical_quote
+      - payment_pattern
+      - price_over_payout
       - trend_large_losses
       - burning_cost
       - development_pattern
@@ -226,6 +232,7 @@ reference:
       - bayes_bf_fit
       - bayes_odp_fits
       - meyers_fit
+      - meyers_fits
       - one_year_fit
       - clark_fit
       - fit_frames

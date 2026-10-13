@@ -22,7 +22,10 @@ use prospicio_reserving::{
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
-use prospicio_reserving::bayes::{BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment};
+use prospicio_reserving::bayes::{
+    BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment, MeyersFits as MeyersFitsInner,
+    MeyersSegment,
+};
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesOdp, BayesOdpFit as BayesOdpInner, Diagnostics,
     Meyers, MeyersFit as MeyersInner, MeyersModel,
@@ -937,41 +940,68 @@ impl Triangle {
         target_accept: f64,
         max_depth: f64,
     ) -> Result<MeyersFit> {
-        let model = match model {
-            "crc" => MeyersModel::Crc,
-            "csr" => MeyersModel::Csr,
-            "cay" => MeyersModel::Cay,
-            _ => {
-                return Err(Error::Other(format!(
-                    "model must be \"crc\", \"csr\" or \"cay\", got \"{model}\""
-                )));
-            }
-        };
-        let n_sims = whole(n_sims, "n_sims")? as usize;
-        if n_sims == 0 {
-            return Err(Error::Other("n_sims must be positive".into()));
-        }
-        let meyers = Meyers {
+        let meyers = meyers_settings(
             model,
-            logelr_mean,
-            logelr_sd,
-            origin_sd,
-            development_sd,
-            gamma_sd,
-            rho_shape,
-            sampler: BayesSampler {
-                chains: whole(chains, "chains")? as usize,
-                tune: whole(tune, "tune")? as usize,
-                draws: whole(draws, "draws")? as usize,
-                seed: 0,
-                target_accept,
-                max_depth: whole(max_depth, "max_depth")?,
-            },
-            n_sims,
-            seed: whole(seed, "seed")?,
-        };
+            [
+                logelr_mean,
+                logelr_sd,
+                origin_sd,
+                development_sd,
+                gamma_sd,
+                rho_shape,
+            ],
+            [chains, tune, draws, n_sims, seed, target_accept, max_depth],
+            SegmentDependence::Independent,
+        )?;
         let inner = meyers.fit(&self.inner, column, premium).map_err(to_r)?;
         Ok(MeyersFit { inner })
+    }
+
+    /// Meyers' model of every segment of a triangle column, with the
+    /// settings of `meyers`, each segment's own posterior, and the segments
+    /// depending on each other as `dependence` ("independent",
+    /// "rank_correlation" with the row-major `spearman` matrix, or
+    /// "synchronized", an error) says.
+    #[allow(clippy::too_many_arguments)]
+    fn meyers_segments(
+        &self,
+        column: &str,
+        premium: &str,
+        model: &str,
+        logelr_mean: f64,
+        logelr_sd: f64,
+        origin_sd: f64,
+        development_sd: f64,
+        gamma_sd: f64,
+        rho_shape: f64,
+        chains: f64,
+        tune: f64,
+        draws: f64,
+        n_sims: f64,
+        seed: f64,
+        target_accept: f64,
+        max_depth: f64,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
+    ) -> Result<MeyersFits> {
+        let dependence = segment_dependence(dependence, spearman)?;
+        let meyers = meyers_settings(
+            model,
+            [
+                logelr_mean,
+                logelr_sd,
+                origin_sd,
+                development_sd,
+                gamma_sd,
+                rho_shape,
+            ],
+            [chains, tune, draws, n_sims, seed, target_accept, max_depth],
+            dependence,
+        )?;
+        let inner = meyers
+            .fit_segments(&self.inner, column, premium)
+            .map_err(to_r)?;
+        Ok(MeyersFits { inner })
     }
 
     /// The Bayesian Bornhuetter-Ferguson of a single-segment triangle
@@ -2249,6 +2279,87 @@ impl BayesOdpFit {
     }
 }
 
+/// The `Meyers` of `meyers` and `meyers_segments`: `priors` are
+/// `logelr_mean`, `logelr_sd`, `origin_sd`, `development_sd`, `gamma_sd` and
+/// `rho_shape`; `run` is `chains`, `tune`, `draws`, `n_sims`, `seed`,
+/// `target_accept` and `max_depth`.
+fn meyers_settings(
+    model: &str,
+    priors: [f64; 6],
+    run: [f64; 7],
+    dependence: SegmentDependence,
+) -> Result<Meyers> {
+    let model = match model {
+        "crc" => MeyersModel::Crc,
+        "csr" => MeyersModel::Csr,
+        "cay" => MeyersModel::Cay,
+        _ => {
+            return Err(Error::Other(format!(
+                "model must be \"crc\", \"csr\" or \"cay\", got \"{model}\""
+            )));
+        }
+    };
+    let [
+        logelr_mean,
+        logelr_sd,
+        origin_sd,
+        development_sd,
+        gamma_sd,
+        rho_shape,
+    ] = priors;
+    let [chains, tune, draws, n_sims, seed, target_accept, max_depth] = run;
+    let n_sims = whole(n_sims, "n_sims")? as usize;
+    if n_sims == 0 {
+        return Err(Error::Other("n_sims must be positive".into()));
+    }
+    Ok(Meyers {
+        model,
+        logelr_mean,
+        logelr_sd,
+        origin_sd,
+        development_sd,
+        gamma_sd,
+        rho_shape,
+        sampler: BayesSampler {
+            chains: whole(chains, "chains")? as usize,
+            tune: whole(tune, "tune")? as usize,
+            draws: whole(draws, "draws")? as usize,
+            seed: 0,
+            target_accept,
+            max_depth: whole(max_depth, "max_depth")?,
+        },
+        n_sims,
+        seed: whole(seed, "seed")?,
+        dependence,
+    })
+}
+
+/// One row per segment: `list(table, warnings)`, `table` a fit table with
+/// the key columns of `totals` and `max_rhat`, `min_ess_bulk`,
+/// `min_ess_tail` and `divergences`, `warnings` each segment's messages
+/// joined by "; ".
+fn segment_diagnostics<T>(
+    segments: &SegmentFits<T>,
+    totals: FitTable,
+    diag: fn(&T) -> &Diagnostics,
+) -> List {
+    let fits = &segments.fits;
+    let col = |g: fn(&Diagnostics) -> f64| fits.iter().map(|f| g(diag(f))).collect::<Vec<f64>>();
+    let table = FitTable {
+        keys: totals.keys,
+        origin: None,
+        age: None,
+        values: vec![
+            ("max_rhat".into(), col(|d| d.max_rhat)),
+            ("min_ess_bulk".into(), col(|d| d.min_ess_bulk)),
+            ("min_ess_tail".into(), col(|d| d.min_ess_tail)),
+            ("divergences".into(), col(|d| d.divergences as f64)),
+        ],
+    };
+    let warnings: Vec<String> = fits.iter().map(|f| diag(f).warnings.join("; ")).collect();
+    list!(table = fit_table(table), warnings = warnings)
+}
+
 /// A posterior summary as a list of columns, as `bayes_glm_model@summary`.
 fn summary_list(s: &[ParamSummary]) -> List {
     let col = |g: fn(&ParamSummary) -> f64| s.iter().map(g).collect::<Vec<f64>>();
@@ -2298,31 +2409,12 @@ impl BayesOdpFits {
         }
     }
 
-    /// One row per segment: `list(table, warnings)`, `table` a fit table
-    /// with the key columns and `max_rhat`, `min_ess_bulk`, `min_ess_tail`
-    /// and `divergences`, `warnings` each segment's messages joined by
-    /// "; ".
+    /// One row per segment: `list(table, warnings)`, as
+    /// `segment_diagnostics`.
     fn diagnostics_table(&self) -> List {
-        let fits = &self.inner.segments.fits;
-        let col = |g: fn(&Diagnostics) -> f64| {
-            fits.iter().map(|f| g(&f.diagnostics)).collect::<Vec<f64>>()
-        };
-        let table = FitTable {
-            keys: self.inner.totals().keys,
-            origin: None,
-            age: None,
-            values: vec![
-                ("max_rhat".into(), col(|d| d.max_rhat)),
-                ("min_ess_bulk".into(), col(|d| d.min_ess_bulk)),
-                ("min_ess_tail".into(), col(|d| d.min_ess_tail)),
-                ("divergences".into(), col(|d| d.divergences as f64)),
-            ],
-        };
-        let warnings: Vec<String> = fits
-            .iter()
-            .map(|f| f.diagnostics.warnings.join("; "))
-            .collect();
-        list!(table = fit_table(table), warnings = warnings)
+        segment_diagnostics(&self.inner.segments, self.inner.totals(), |s| {
+            &s.diagnostics
+        })
     }
 
     fn parameter_names(&self) -> Result<Vec<String>> {
@@ -2618,6 +2710,115 @@ impl BayesBfFit {
     }
 }
 
+/// Meyers' model of every segment of a triangle column: each segment's
+/// posterior and the joint ultimates and reserves. The posterior of one
+/// segment needs a single-segment fit.
+#[extendr]
+pub(crate) struct MeyersFits {
+    inner: MeyersFitsInner,
+}
+
+impl MeyersFits {
+    fn one(&self, field: &str, instead: &str) -> Result<&MeyersSegment> {
+        single(&self.inner.segments, field, instead)
+    }
+}
+
+#[extendr]
+impl MeyersFits {
+    /// "crc", "csr" or "cay".
+    fn model(&self) -> &'static str {
+        self.inner.segments.fits[0].model().name()
+    }
+
+    /// The volume-weighted chain ladder of every segment.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self.inner.segments.map(|s| s.chain_ladder.clone()),
+        }
+    }
+
+    /// Each segment's premium by origin, in the order of the origins.
+    fn premium(&self) -> Vec<f64> {
+        self.inner
+            .segments
+            .fits
+            .iter()
+            .flat_map(|s| s.premium.iter().copied())
+            .collect()
+    }
+
+    fn ultimates(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.ultimates.clone(),
+        }
+    }
+
+    fn reserves(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    /// One row per segment: `list(table, warnings)`, as
+    /// `segment_diagnostics`.
+    fn diagnostics_table(&self) -> List {
+        segment_diagnostics(&self.inner.segments, self.inner.totals(), |s| {
+            &s.diagnostics
+        })
+    }
+
+    fn parameter_names(&self) -> Result<Vec<String>> {
+        Ok(self.one("draws", "")?.posterior.names().to_vec())
+    }
+
+    /// Posterior draws of a single-segment fit, row-major `n_draws x
+    /// n_parameters`, chain by chain.
+    fn draws(&self) -> Result<Vec<f64>> {
+        Ok(self.one("draws", "")?.posterior.values().to_vec())
+    }
+
+    fn chains(&self) -> Result<f64> {
+        Ok(self.one("draws", "")?.posterior.chains() as f64)
+    }
+
+    fn summary(&self) -> Result<List> {
+        let s = self.one("summary", "")?.summary().map_err(to_r)?;
+        Ok(summary_list(&s))
+    }
+
+    /// PSIS-LOO of a single-segment fit's observed cells on the log scale,
+    /// as `MeyersFit$loo()`.
+    fn loo(&self) -> Result<List> {
+        let l = self.one("bayes_loo()", "")?.loo().map_err(to_r)?;
+        let e = &l.estimate;
+        Ok(list!(
+            estimates = vec![e.elpd, e.se, e.p, e.ic],
+            pointwise = e.pointwise.clone(),
+            pareto_k = l.pareto_k,
+            k_threshold = l.k_threshold
+        ))
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
+        })
+    }
+}
+
 extendr_module! {
     mod reserving;
     impl Triangle;
@@ -2631,6 +2832,7 @@ extendr_module! {
     impl BayesOdpFit;
     impl BayesOdpFits;
     impl MeyersFit;
+    impl MeyersFits;
     impl BayesBfFit;
     impl MackBootstrapFit;
     impl OneYearFit;

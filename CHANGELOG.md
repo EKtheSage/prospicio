@@ -136,6 +136,25 @@ under "Unreleased" until then.
   force that year, beside the trended losses under the proposed tower, to
   reconcile with the cedant's recoveries (`Prepared::as_if`, `AsIf`).
   Python `PreparedLosses.as_if`; R `as_if_history()` (#226).
+- The time value of money in a price, `prospicio_pricing::payout`: payment
+  patterns (from shares or from factors to ultimate such as a paid chain
+  ladder's), discount factors, the share outstanding, and a one-period
+  price restated over the payout with capital held while losses are
+  outstanding (`price_over_payout`). Python `PaymentPattern`,
+  `price_over_payout`, `PayoutPrice`; R `payment_pattern()`,
+  `payment_pattern_from_development()`, `pattern_values()`,
+  `price_over_payout()` (#228).
+- Catastrophe model output: an event loss table with secondary uncertainty
+  (a beta on each event's exposure), its occurrence exceedance curve and
+  PMLs, and simulated years of events with each loss's event
+  (`prospicio_aggregate::cat::EventLossTable`), and a year loss table in
+  long form (`EventSet::from_long`). Python `EventLossTable`,
+  `EventSet.from_long`; R `event_loss_table()`, `elt_oep()`,
+  `elt_occurrence_pml()`, `simulate_elt()`, `event_set_from_long()` (#229).
+- Event sets merged year by year (a catastrophe set with a non-catastrophe
+  one, interleaved by time) and grouped into occurrences by an hours clause
+  (`EventSet::merge`, `EventSet::grouped`). Python `EventSet.merge`,
+  `EventSet.grouped`; R `merge_event_sets()`, `hours_clause()` (#231).
 
 ### Examples
 
@@ -152,6 +171,8 @@ under "Unreleased" until then.
 ### Guides
 
 - `docs/guides/reinsurance-price.md`, "What a reinsurance price is": the pricing pentagon, an excess of loss layer's technical premium and reinstatements, where a layer sits in a tower, a quota share's technical commission with a sliding scale and a profit commission, how price follows a risk profile, a contract alone and in a book, soft and hard markets, and what the model leaves out. CI runs its code and checks every printed number (`python/tests/test_guides.py`).
+
+- Six "when to use what" guides in `docs/guides/`: `choosing-a-method.md` (the map from a situation to the method and the calls), `risk-loads-and-distortions.md`, `experience-and-exposure-rating.md`, `aggregate-distributions.md`, `severity-and-frequency.md` and `reserving-methods.md`. CI runs their code and checks every printed number (`python/tests/test_guides.py`); `docs/guides/README.md` lists them.
 
 ### Reserving
 
@@ -241,6 +262,31 @@ under "Unreleased" until then.
   `Meyers("cay", rho_shape=2.0)` and in R
   `meyers(..., model = "cay", rho_shape = 2)`; `rho_shape` follows
   `gamma_sd` in both signatures.
+- Meyers' models (CRC, CSR and CAY) over segments and in the diagonal
+  backtest (`docs/design/reserving-bayes.md`, PR 6), in Rust:
+  `Meyers::fit_segments(triangle, column, premium)` fits each segment's
+  own posterior into a joint `MeyersFits` (ultimates and reserves, with
+  `to_long`, `totals`, `development_table` and `segment`), with
+  `Meyers::dependence`, a new field: `Independent` (each segment on its own
+  derived seeds) or `RankCorrelation` (Iman–Conover on the reserves, each
+  segment's ultimates moving with them); `Synchronized` and a bad matrix
+  fail before any sampling. `Meyers` implements `TriangleModel`
+  (`meyers_crc`, `meyers_csr`, `meyers_cay`): it rebuilds each origin's
+  cumulative values from the train increments, reads premium from the
+  frame's exposure, simulates each origin's path jointly (a test
+  increment is the difference of consecutive values on one path) and gives
+  the log-normal log predictive density of a held-out diagonal. It
+  reports no diagnostics; on group 353's small held-out triangles the
+  default target acceptance 0.95 sometimes fails to converge, and its
+  doc advises 0.99 there.
+  `validation/data/clrd_lines.csv` gains each line's net earned premium
+  (`validation/scripts/clrd_lines.py`). In Python,
+  `Meyers(..., dependence="independent", spearman=None)` and
+  `Meyers.fit_segments(triangle, column, premium)` returning `MeyersFits`
+  (joint `ultimates` and `reserves`, `premium`, the frames,
+  `diagnostics_frame()`, `segment(...)`); in R,
+  `meyers_segments(triangle, column, premium, ..., dependence, spearman)`
+  returns a `meyers_fits`. The diagonal backtest stays Rust-only.
 
 ### Pricing
 
