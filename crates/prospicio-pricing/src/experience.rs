@@ -24,6 +24,9 @@
 //! 5. Divide by the year's on-level subject premium: the loss cost by
 //!    year, and in total the developed losses over the premium, summed.
 //!
+//! [`Prepared::as_if`] restates the record under each year's own program
+//! next to the proposed one, to reconcile with the cedant's recoveries.
+//!
 //! A treaty with an index (stability) clause moves its retention and limit
 //! with an index; [`Prepared::burning_cost_indexed`] applies each loss to
 //! the terms its own index ratio sets ([`IndexClause`]).
@@ -685,6 +688,68 @@ impl Prepared {
         self.cost(towers, years, None)
     }
 
+    /// Each year's losses under the program in force that year,
+    /// `historical[k]` for `years[k]`, next to the year's trended losses
+    /// under the proposed tower. The historical side takes every loss of the
+    /// year as reported, so it can be checked against the cedant's
+    /// recoveries; the proposed side is the as-if layer loss of
+    /// [`burning_cost`](Self::burning_cost) before development by year.
+    /// The historical towers may differ in layers from year to year.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, Tower};
+    /// use prospicio_pricing::experience::{Experience, LargeLoss, Trend};
+    ///
+    /// let p = Experience::new(vec![LargeLoss { id: "a".into(), accident: 2019.5, amount: 300.0 }])
+    ///     .unwrap()
+    ///     .prepare(&Trend::Factors(vec![1.2]))
+    ///     .unwrap();
+    /// let then = Tower::new(vec![Layer::xol("150 xs 150", 150.0, 150.0).unwrap()]).unwrap();
+    /// let now = Tower::new(vec![Layer::xol("200 xs 200", 200.0, 200.0).unwrap()]).unwrap();
+    /// let a = p.as_if(&[then], &[2019], &now).unwrap();
+    /// assert_eq!(a.years[0].historical, vec![150.0]); // 300 as reported
+    /// assert!((a.years[0].proposed[0] - 160.0).abs() < 1e-12); // 360 trended
+    /// ```
+    pub fn as_if(&self, historical: &[Tower], years: &[i32], proposed: &Tower) -> Result<AsIf> {
+        if historical.len() != years.len() {
+            return Err(Error::Data(format!(
+                "{} historical towers for {} years",
+                historical.len(),
+                years.len()
+            )));
+        }
+        let rows = historical
+            .iter()
+            .zip(years)
+            .map(|(tower, &year)| {
+                let reported: Vec<f64> = self
+                    .losses
+                    .iter()
+                    .filter(|l| l.year == year)
+                    .map(|l| l.amount)
+                    .collect();
+                let trended: Vec<f64> = self
+                    .losses
+                    .iter()
+                    .filter(|l| l.year == year && l.amount * l.factor >= self.complete_above)
+                    .map(|l| l.trended)
+                    .collect();
+                AsIfYear {
+                    year,
+                    historical_layers: tower.layers.iter().map(|l| l.name.clone()).collect(),
+                    reported_losses: reported.len(),
+                    historical: tower.ceded(&reported),
+                    trended_losses: trended.len(),
+                    proposed: proposed.ceded(&trended),
+                }
+            })
+            .collect();
+        Ok(AsIf {
+            proposed_layers: proposed.layers.iter().map(|l| l.name.clone()).collect(),
+            years: rows,
+        })
+    }
+
     /// [`burning_cost`](Self::burning_cost) under an index clause: each
     /// loss meets the retention and limit moved by the clause's adjustment
     /// at its own index ratio, `ratios[k]` for loss `k` in the record's
@@ -843,6 +908,36 @@ pub struct YearCost {
     pub developed: Vec<f64>,
     /// `developed / premium`.
     pub loss_cost: Vec<f64>,
+}
+
+/// Each year's cessions under its own program and under the proposed one,
+/// from [`Prepared::as_if`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct AsIf {
+    /// The proposed tower's layer names.
+    pub proposed_layers: Vec<String>,
+    pub years: Vec<AsIfYear>,
+}
+
+/// One accident year of an [`AsIf`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct AsIfYear {
+    pub year: i32,
+    /// The names of the layers in force that year.
+    pub historical_layers: Vec<String>,
+    /// The number of the year's losses, all of them, as reported.
+    pub reported_losses: usize,
+    /// Each historical layer's cession of the year's losses as reported:
+    /// in their own currency, untrended and undeveloped, as the cedant
+    /// would have recovered them at the valuation date.
+    pub historical: Vec<f64>,
+    /// The number of the year's losses that reach the proposed tower: those
+    /// at or above [`Prepared::complete_above`].
+    pub trended_losses: usize,
+    /// Each proposed layer's cession of the year's trended (and developed,
+    /// converted) losses, before any development by year: the
+    /// [`YearCost::layer_loss`] of [`Prepared::burning_cost`].
+    pub proposed: Vec<f64>,
 }
 
 /// The burning cost by year and overall, from
@@ -1171,5 +1266,64 @@ mod tests {
         assert_eq!(stated.losses()[0].ultimate, 135.0);
         assert!(e.clone().with_fx(Fx::PerLoss(vec![1.0])).is_err());
         assert!(e.with_fx(Fx::Rate(0.0)).is_err());
+    }
+
+    #[test]
+    fn as_if_sets_each_year_s_program_beside_the_proposed_one() {
+        let p = Experience::new(vec![
+            loss("a", 2019.3, 300.0),
+            loss("b", 2019.7, 80.0),
+            loss("c", 2020.5, 500.0),
+        ])
+        .unwrap()
+        .with_threshold(100.0)
+        .unwrap()
+        .prepare(&Trend::Factors(vec![1.2, 1.2, 1.1]))
+        .unwrap();
+        let then_2019 = Tower::new(vec![Layer::xol("150 xs 50", 150.0, 50.0).unwrap()]).unwrap();
+        let then_2020 = Tower::inuring(vec![
+            vec![Layer::quota_share("QS", 0.5).unwrap()],
+            vec![Layer::xol("200 xs 100", 200.0, 100.0).unwrap()],
+        ])
+        .unwrap();
+        let now = Tower::new(vec![
+            Layer::xol("200 xs 200", 200.0, 200.0).unwrap(),
+            Layer::xol("600 xs 400", 600.0, 400.0).unwrap(),
+        ])
+        .unwrap();
+        let a = p
+            .as_if(&[then_2019, then_2020], &[2019, 2020], &now)
+            .unwrap();
+        assert_eq!(a.proposed_layers, vec!["200 xs 200", "600 xs 400"]);
+        let y = &a.years[0];
+        // As reported, with the 80 loss below the threshold still in.
+        assert_eq!((y.reported_losses, y.trended_losses), (2, 1));
+        assert_eq!(y.historical, vec![150.0 + 30.0]);
+        assert!((y.proposed[0] - 160.0).abs() < 1e-12);
+        let y = &a.years[1];
+        assert_eq!(y.historical_layers, vec!["QS", "200 xs 100"]);
+        assert_eq!(y.historical, vec![250.0, 150.0]);
+        assert!((y.proposed[0] - 200.0).abs() < 1e-12);
+        assert!((y.proposed[1] - 150.0).abs() < 1e-12);
+        // The proposed side is the burning cost's layer loss.
+        let b = p
+            .burning_cost(
+                &[now.clone(), now.clone()],
+                &[
+                    YearBasis {
+                        year: 2019,
+                        premium: 1.0,
+                        development: 1.0,
+                    },
+                    YearBasis {
+                        year: 2020,
+                        premium: 1.0,
+                        development: 1.0,
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(b.years[1].layer_loss, a.years[1].proposed);
+        assert!(p.as_if(&[], &[2019], &now).is_err());
     }
 }

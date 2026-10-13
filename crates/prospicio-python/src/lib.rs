@@ -51,7 +51,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::experience::{
-        PyBurningCost, PyDevelopmentPattern, PyIndexClause, PyLargeLossExperience, PyPreparedLosses,
+        PyAsIf, PyBurningCost, PyDevelopmentPattern, PyIndexClause, PyLargeLossExperience,
+        PyPreparedLosses,
     };
     #[pymodule_export]
     use super::models::{

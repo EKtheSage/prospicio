@@ -1294,3 +1294,48 @@ index_clause <- function(franchise, kind = c("full", "severe")) {
   }
   structure(list(franchise = franchise, kind = kind), class = "index_clause")
 }
+
+#' As-if history of large losses
+#'
+#' Each year's losses under the program in force that year, next to the
+#' year's trended losses under the proposed tower. The historical side takes
+#' every loss of the year as reported (in its own currency, untrended and
+#' undeveloped), so it can be checked against the cedant's recoveries; the
+#' proposed side is the as-if layer loss of [burning_cost()] before
+#' development by year. The historical towers may differ in layers from year
+#' to year.
+#'
+#' @param prepared Trended losses, from [trend_large_losses()].
+#' @param historical A list of [reinsurance_tower] objects, the program in
+#'   force in each of `years`.
+#' @param years The accident years.
+#' @param proposed The proposed [reinsurance_tower].
+#' @returns A list with `years`, a data frame (`year`, `reported_losses`,
+#'   `trended_losses`), `historical`, a list per year of each layer's
+#'   cession named by layer, and `proposed`, a year-by-layer matrix.
+#' @export
+#' @examples
+#' p <- trend_large_losses(data.frame(id = "a", accident = 2019.5, amount = 300),
+#'                         factors = 1.2)
+#' then <- reinsurance_tower(list(xol_layer("150 xs 150", 150, 150)))
+#' now <- reinsurance_tower(list(xol_layer("200 xs 200", 200, 200)))
+#' a <- as_if_history(p, list(then), 2019, now)
+#' a$historical
+#' a$proposed
+as_if_history <- function(prepared, historical, years, proposed) {
+  args <- c(prepared$args, list(
+    historical = lapply(historical, function(t) t@ptr), years = as.integer(years),
+    proposed = proposed@ptr
+  ))
+  r <- rust_result(do.call(pricing_as_if, args))
+  list(
+    years = data.frame(year = r$year, reported_losses = r$reported_losses,
+                       trended_losses = r$trended_losses),
+    historical = stats::setNames(
+      Map(function(v, n) stats::setNames(v, n), r$historical, r$historical_layers),
+      r$year
+    ),
+    proposed = matrix(r$proposed, nrow = length(r$year), ncol = length(r$proposed_layers),
+                      dimnames = list(r$year, r$proposed_layers))
+  )
+}
