@@ -20,4 +20,5 @@ stay in [docs/design](../docs/design/); concepts here link to them.
 * `generated.by` is `claude-code/cloud-session` for content the cloud session writes, `human:<id>` for people.
 * A fact confirmed by a parity or unit test that CI runs is `verified` by `process:ci`, at the time of the CI run that merged it.
 * Environment facts carry a `stale_after`: they describe a configuration that can change.
+* `log.md` is date-grouped, newest first. Pending entries live as fragments in `changes/knowledge/` (outside the bundle, format in `changes/README.md`) until `validation/scripts/fold_changes.py` folds them into `log.md`; a PR adds a fragment and does not edit `log.md`.
 * Every concept has `type`, `title`, `description` and `tags`; `validation/scripts/check_okf.py` checks conformance in CI.
