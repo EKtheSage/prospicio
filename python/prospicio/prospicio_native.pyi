@@ -1749,6 +1749,41 @@ class BuhlmannStraubFit:
         """
 
 @final
+class BurningCost:
+    """
+    The burning cost by accident year and overall, from
+    ``PreparedLosses.burning_cost``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def loss_cost(self, /) -> list[float]:
+        """
+        Each layer's developed losses over the premium, summed over the
+        years: the premium-weighted loss cost.
+        """
+    @property
+    def mean_loss_cost(self, /) -> list[float]:
+        """
+        Each layer's loss cost averaged over the years with equal weight.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The years as columns: ``year``, ``premium``, ``losses`` (the count
+        through the tower), ``development``, and per layer ``layer_loss``,
+        ``developed`` and ``loss_cost`` (a list per year, one value per
+        layer).
+        
+        Returns
+        -------
+        dict of str to list
+        """
+    @property
+    def years(self, /) -> list[int]:
+        """
+        The accident years.
+        """
+
+@final
 class Burr:
     """
     Burr (type XII) distribution with tail shape ``alpha``, power ``gamma``
@@ -6589,6 +6624,75 @@ class InverseGaussian:
         Returns
         -------
         float
+        """
+
+@final
+class LargeLossExperience:
+    """
+    A record of individual large losses, for experience rating.
+    
+    Trend each loss to the prospective period with ``prepare``, then apply
+    each year's treaty and develop the layer totals with
+    ``PreparedLosses.burning_cost``. The steps follow Clark's *Basics of
+    Reinsurance Pricing* (CAS study note).
+    
+    Parameters
+    ----------
+    ids : list of str
+        An identifier per loss.
+    accident : list of float
+        Each loss's accident date as a decimal year (see ``year_fraction``).
+    amount : list of float
+        Each loss's amount, incurred at the latest valuation.
+    threshold : float, default 0.0
+        The reporting threshold of the record, in nominal terms. With a
+        threshold, losses trended below it times the largest trend factor
+        are left out, so every year is complete on the same basis.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import LargeLossExperience
+    >>> from prospicio.reinsurance import Layer, Tower
+    >>> e = LargeLossExperience(["a", "b"], [1995.5, 1996.5], [150.0, 400.0])
+    >>> p = e.prepare(factors=[1.0, 1.0])
+    >>> tower = Tower([Layer("200x100", 200.0, 100.0)])
+    >>> b = p.burning_cost(tower, [1995, 1996], premium=[1000.0, 1000.0], development=[1.0, 1.5])
+    >>> b.to_dict()["developed"]
+    [[50.0], [300.0]]
+    >>> round(b.loss_cost[0], 4)
+    0.175
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, ids: Sequence[str], accident: Sequence[float], amount: Sequence[float], *, threshold: float = 0.0) -> LargeLossExperience: ...
+    def __repr__(self, /) -> str: ...
+    def prepare(self, /, *, rate: float |None = None, to: float |None = None, factors: Sequence[float] |None = None) -> PreparedLosses:
+        """
+        Trend every loss to the prospective period.
+        
+        Pass either an annual ``rate`` with the date ``to`` (the average
+        accident date of the prospective period, a decimal year), for factors
+        ``(1 + rate) ** (to - accident)``, or a factor per loss.
+        
+        Parameters
+        ----------
+        rate : float, optional
+        to : float, optional
+        factors : list of float, optional
+        
+        Returns
+        -------
+        PreparedLosses
+        
+        Raises
+        ------
+        TypeError
+            If neither or both of ``rate`` (with ``to``) and ``factors`` are
+            given.
+        """
+    @property
+    def threshold(self, /) -> float:
+        """
+        The reporting threshold.
         """
 
 @final
@@ -11468,6 +11572,53 @@ class PredictiveDistribution:
         Returns
         -------
         float
+        """
+
+@final
+class PreparedLosses:
+    """
+    Large losses trended to the prospective period, from
+    ``LargeLossExperience.prepare``.
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    def burning_cost(self, /, towers: Any, years: Sequence[int], *, premium: Sequence[float], development: Sequence[float]) -> BurningCost:
+        """
+        The as-if loss to each layer by accident year, developed and divided
+        by the premium.
+        
+        Parameters
+        ----------
+        towers : Tower or list of Tower
+            The treaty in force each year, or one tower for every year (to
+            price the prospective terms). Every tower needs the same number of
+            layers.
+        years : list of int
+            The accident years to cost; a loss belongs to the year of its
+            accident date.
+        premium : list of float
+            Each year's on-level subject premium.
+        development : list of float
+            Each year's excess development factor for the layer losses.
+        
+        Returns
+        -------
+        BurningCost
+        """
+    @property
+    def complete_above(self, /) -> float:
+        """
+        The trended size above which every year's record is complete: the
+        threshold times the largest trend factor.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The trended losses as columns: ``id``, ``year``, ``accident``,
+        ``amount``, ``factor`` and ``trended``.
+        
+        Returns
+        -------
+        dict of str to list
         """
 
 @final

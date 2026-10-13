@@ -269,7 +269,7 @@ impl XolLayer {
 /// Layers in inuring stages.
 #[extendr]
 pub(crate) struct ReinsuranceTower {
-    inner: Tower,
+    pub(crate) inner: Tower,
 }
 
 #[extendr]
