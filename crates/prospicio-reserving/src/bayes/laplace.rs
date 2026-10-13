@@ -1,5 +1,6 @@
 //! The whitened scales that the Bayesian reserving models sample on
-//! (`docs/design/reserving-bayes.md`, decisions 3 and 7, "Preconditioning").
+//! (`docs/design/reserving-bayes.md`, decision 3, "Preconditioning", and
+//! decision 7, "Sampling scale").
 //! The mass matrix of `prospicio-bayes` is diagonal, and the corner
 //! constraints make the log-linear parameters strongly correlated, so each
 //! model samples `z` with `theta = centre + L z` for a dense `L`:

@@ -231,7 +231,7 @@ impl Meyers {
         let p = model.dim();
         // The joint mode lies deep in the funnel of the late sigma_d, far
         // from the posterior's bulk, so the scale comes from a pilot run
-        // (decision 7, "Preconditioning"): whitened roughly at the start
+        // (decision 7, "Sampling scale"): whitened roughly at the start
         // point, then by the pilot draws' mean and covariance.
         let start = model.start();
         let rough = Whitened::regularised(&model, &start)?;
