@@ -315,3 +315,14 @@ beta <- event_loss_table(0.05, 500, 200, 50, 2000)
 stopifnot(abs(elt_oep(beta, elt_occurrence_pml(beta, 0.01))$oep - 0.01) < 1e-9)
 stopifnot(inherits(try(event_loss_table(0.1, 50, 60, 0, 100), silent = TRUE), "try-error"))
 stopifnot(identical(as.numeric(event_counts(event_set_from_long(c(2, 2), c(3, 4), 3))), c(0, 2, 0)))
+
+# Merging event sets and the hours clause (#196).
+ma <- event_set_from_long(1, 100, 2)
+mb <- event_set_from_long(c(1, 2), c(3, 5), 2)
+stopifnot(identical(events(merge_event_sets(ma, mb), 1), c(100, 3)),
+          identical(events(merge_event_sets(ma, mb), 2), 5))
+h <- 1 / 8760
+grouped <- hours_clause(event_set(ptr = prospicio:::EventSet$from_years(
+  list(c(1, 2, 4)), NULL, 0, list(c(0, 72 * h, 72.5 * h)))), 72)
+stopifnot(identical(events(grouped, 1), c(3, 4)),
+          inherits(try(hours_clause(ma, 72), silent = TRUE), "try-error"))

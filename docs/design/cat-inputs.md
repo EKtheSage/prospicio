@@ -1,7 +1,8 @@
 # Design note: catastrophe XL inputs
 
-Status: **In progress** (PR 1 of 2: event loss tables with secondary
-uncertainty, the OEP curve, simulated years, year loss tables) · Depends on:
+Status: **Implemented** (PR 1: event loss tables with secondary
+uncertainty, the OEP curve, simulated years, year loss tables; PR 2:
+merging event sets, the hours clause; clash stays parked) · Depends on:
 `EventSet`, towers · Lane: Aggregate · Issue: #196
 
 ## Goal
@@ -15,7 +16,7 @@ an ELT. Issue #196 also lists merging a cat event set with a non-cat one,
 an hours clause that groups per-risk losses into occurrences, and clash
 across lines.
 
-## What exists (PR 1)
+## What exists
 
 `prospicio_aggregate::cat`:
 
@@ -30,9 +31,15 @@ across lines.
 `EventSet::from_long(years, losses, n_years, seed)` reads a YLT in long
 form (one row per loss with its year), filling years with no loss.
 
-Bindings: Python `prospicio.aggregate.EventLossTable` and
-`EventSet.from_long`; R `event_loss_table()`, `elt_oep()`,
-`elt_occurrence_pml()`, `simulate_elt()` and `event_set_from_long()`.
+PR 2: `EventSet::merge(&other)` puts two sets' losses in each year
+together (a cat event set with a non-cat one), and `EventSet::grouped(
+window_hours)` groups each year's losses into occurrences by an hours
+clause.
+
+Bindings: Python `prospicio.aggregate.EventLossTable`,
+`EventSet.from_long`, `EventSet.merge` and `EventSet.grouped`; R
+`event_loss_table()`, `elt_oep()`, `elt_occurrence_pml()`, `simulate_elt()`,
+`event_set_from_long()`, `merge_event_sets()` and `hours_clause()`.
 
 ## Decisions
 
@@ -61,10 +68,25 @@ Bindings: Python `prospicio.aggregate.EventLossTable` and
    them.
 7. **No file reading in the crate** (the WASM scope): an ELT or YLT enters
    as columns, from a data frame in Python or R.
+8. **Merged years interleave by time**, when both sets carry times, so
+   annual terms are used up in the order the losses happened; without
+   times, the first set's losses come first. Times or sums insured on only
+   one set are an error rather than dropped.
+9. **The hours clause opens a window at each first loss in turn.** A
+   treaty lets the cedant place its windows where they recover most; that
+   choice depends on the layer, so the greedy windows are the plain
+   reading, and a user can group losses another way before building the
+   set. A year is 8,760 hours; a window includes a loss exactly
+   `window_hours` after its start. An occurrence's time is its window's
+   start, and sums insured are not carried, since it spans risks.
 
 ## Validation
 
 - Each row's beta has the row's mean and standard deviation (unit test).
+- Merging keeps every loss, orders by time (the first set first on a
+  tie), and refuses sets of different lengths or with times or sums
+  insured on one side only; grouping keeps each year's total and puts a
+  loss exactly at the window's end inside it (unit tests).
 - Simulated years against the analytic OEP, within four binomial standard
   errors, at the steps of a table without secondary uncertainty and at
   return periods 10, 50, 100 and 250 years of one with it; the mean count
@@ -75,7 +97,6 @@ Bindings: Python `prospicio.aggregate.EventLossTable` and
 
 ## Next
 
-- **PR 2:** merging a cat event set with a non-cat one year by year, and an
-  hours clause that groups per-risk losses with times into occurrences.
 - Clash across lines stays parked with the bivariate aggregates
-  (`docs/design/aggregate.md`); #196 closes when the user decides that.
+  (`docs/design/aggregate.md`); whether #196 closes without it is the
+  user's call.
