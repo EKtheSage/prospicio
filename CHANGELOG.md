@@ -72,6 +72,14 @@ under "Unreleased" until then.
   `tower_price()`'s `stage_<k>` rows, `occurrence_cession_statistics()`,
   `aggregate_layer_statistics()`.
 
+### Examples
+
+- `examples/reinsurance_pricing.ipynb` prices an occurrence tower, a
+  program and a share, an aggregate limit with reinstatements, stop loss and
+  aggregate deductible, retro, swing, profit commission and sliding scale,
+  and distortion premiums, and compares 343 results (321 independent
+  comparisons and 22 consistency checks) with Mildenhall's `aggregate` 1.0.1 (reference file `validation/reference/re_pricing_aggregate.csv`) (#186).
+
 ### Reserving
 
 - The one-year view of both bootstraps accepts a bootstrap tail, which
