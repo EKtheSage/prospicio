@@ -20,6 +20,10 @@ dist_to_json_rust <- function(dist) .Call(wrap__dist_to_json_rust, dist)
 
 dist_from_json_rust <- function(text) .Call(wrap__dist_from_json_rust, text)
 
+tvar_weighted_rust <- function(values, probs, p) .Call(wrap__tvar_weighted_rust, values, probs, p)
+
+tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
+
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
 
 reorder_groups_rust <- function(pd, dim, correlation, seed) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed)
@@ -39,6 +43,10 @@ compound_moments_rust <- function(frequency, severity) .Call(wrap__compound_mome
 approximation_parameters_rust <- function(moments, kind) .Call(wrap__approximation_parameters_rust, moments, kind)
 
 approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap__approximation_eval_rust, moments, kind, values, quantile)
+
+eventual_ruin_rust <- function(severity, rho, points, part, value, p) .Call(wrap__eventual_ruin_rust, severity, rho, points, part, value, p)
+
+layer_loss_picks_rust <- function(severity, attachments, picks, claims) .Call(wrap__layer_loss_picks_rust, severity, attachments, picks, claims)
 
 occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
 
@@ -100,6 +108,10 @@ pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_pri
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
+pricing_bounds_rust <- function(x, risks, premium, assets) .Call(wrap__pricing_bounds_rust, x, risks, premium, assets)
+
+distortion_envelope_rust <- function(x, premium, s, assets) .Call(wrap__distortion_envelope_rust, x, premium, s, assets)
+
 pricing_pentagon <- function(names, values) .Call(wrap__pricing_pentagon, names, values)
 
 pricing_classical_premium <- function(x, principle, loading, q) .Call(wrap__pricing_classical_premium, x, principle, loading, q)
@@ -135,6 +147,10 @@ indication_rust <- function(variable, profit, fixed_ratio, loss_ratio, pure_prem
 premium_based_expenses_rust <- function(ratio, fixed_share) .Call(wrap__premium_based_expenses_rust, ratio, fixed_share)
 
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
+
+occurrence_cession_statistics_rust <- function(frequency, severity, shares, limits, attachments) .Call(wrap__occurrence_cession_statistics_rust, frequency, severity, shares, limits, attachments)
+
+aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .Call(wrap__aggregate_layer_statistics_rust, annual, share, limit, attachment)
 
 occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
 
@@ -1236,6 +1252,12 @@ ClaimCount$compound_poisson <- function(rate, secondary) .Call(wrap__ClaimCount_
 
 ClaimCount$empirical <- function(probs) .Call(wrap__ClaimCount__empirical, probs)
 
+ClaimCount$fixed <- function(n) .Call(wrap__ClaimCount__fixed, n)
+
+ClaimCount$bernoulli <- function(p) .Call(wrap__ClaimCount__bernoulli, p)
+
+ClaimCount$geometric <- function(mean) .Call(wrap__ClaimCount__geometric, mean)
+
 ClaimCount$kind <- function() .Call(wrap__ClaimCount__kind, self)
 
 ClaimCount$pmf <- function(k) .Call(wrap__ClaimCount__pmf, self, k)
@@ -1284,9 +1306,17 @@ NaturalPortfolio$calibrate <- function(family, assets, target, value, r0) .Call(
 
 NaturalPortfolio$bodoff <- function(assets) .Call(wrap__NaturalPortfolio__bodoff, self, assets)
 
+NaturalPortfolio$price_stand_alone <- function(distortion, p) .Call(wrap__NaturalPortfolio__price_stand_alone, self, distortion, p)
+
+NaturalPortfolio$comonotonic_kappa <- function() .Call(wrap__NaturalPortfolio__comonotonic_kappa, self)
+
 NaturalPortfolio$epd <- function(assets) .Call(wrap__NaturalPortfolio__epd, self, assets)
 
 NaturalPortfolio$assets_for_epd <- function(epd) .Call(wrap__NaturalPortfolio__assets_for_epd, self, epd)
+
+NaturalPortfolio$priority <- function(assets) .Call(wrap__NaturalPortfolio__priority, self, assets)
+
+NaturalPortfolio$priority_kappa <- function(i, assets) .Call(wrap__NaturalPortfolio__priority_kappa, self, i, assets)
 
 NaturalPortfolio$premium_bounds <- function(premium, assets) .Call(wrap__NaturalPortfolio__premium_bounds, self, premium, assets)
 
@@ -1476,7 +1506,11 @@ Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std
 
 Triangle$bayes_odp <- function(column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_odp, self, column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
+Triangle$bayes_odp_segments <- function(column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__bayes_odp_segments, self, column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
+
 Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__meyers, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, chains, tune, draws, n_sims, seed, target_accept, max_depth)
+
+Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman)
 
@@ -1739,6 +1773,40 @@ BayesOdpFit$segment <- function(keys, values) .Call(wrap__BayesOdpFit__segment, 
 #' @export
 `[[.BayesOdpFit` <- `$.BayesOdpFit`
 
+BayesOdpFits <- new.env(parent = emptyenv())
+
+BayesOdpFits$chain_ladder <- function() .Call(wrap__BayesOdpFits__chain_ladder, self)
+
+BayesOdpFits$scale <- function() .Call(wrap__BayesOdpFits__scale, self)
+
+BayesOdpFits$reserves <- function() .Call(wrap__BayesOdpFits__reserves, self)
+
+BayesOdpFits$diagnostics_table <- function() .Call(wrap__BayesOdpFits__diagnostics_table, self)
+
+BayesOdpFits$parameter_names <- function() .Call(wrap__BayesOdpFits__parameter_names, self)
+
+BayesOdpFits$draws <- function() .Call(wrap__BayesOdpFits__draws, self)
+
+BayesOdpFits$chains <- function() .Call(wrap__BayesOdpFits__chains, self)
+
+BayesOdpFits$summary <- function() .Call(wrap__BayesOdpFits__summary, self)
+
+BayesOdpFits$loo <- function() .Call(wrap__BayesOdpFits__loo, self)
+
+BayesOdpFits$long_table <- function() .Call(wrap__BayesOdpFits__long_table, self)
+
+BayesOdpFits$totals_table <- function() .Call(wrap__BayesOdpFits__totals_table, self)
+
+BayesOdpFits$development_table <- function() .Call(wrap__BayesOdpFits__development_table, self)
+
+BayesOdpFits$segment <- function(keys, values) .Call(wrap__BayesOdpFits__segment, self, keys, values)
+
+#' @export
+`$.BayesOdpFits` <- function (self, name) { func <- BayesOdpFits[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesOdpFits` <- `$.BayesOdpFits`
+
 MeyersFit <- new.env(parent = emptyenv())
 
 MeyersFit$model <- function() .Call(wrap__MeyersFit__model, self)
@@ -1776,6 +1844,44 @@ MeyersFit$segment <- function(keys, values) .Call(wrap__MeyersFit__segment, self
 
 #' @export
 `[[.MeyersFit` <- `$.MeyersFit`
+
+BayesBfFit <- new.env(parent = emptyenv())
+
+BayesBfFit$chain_ladder <- function() .Call(wrap__BayesBfFit__chain_ladder, self)
+
+BayesBfFit$scale <- function() .Call(wrap__BayesBfFit__scale, self)
+
+BayesBfFit$exposure <- function() .Call(wrap__BayesBfFit__exposure, self)
+
+BayesBfFit$prior_ultimate <- function() .Call(wrap__BayesBfFit__prior_ultimate, self)
+
+BayesBfFit$reserves <- function() .Call(wrap__BayesBfFit__reserves, self)
+
+BayesBfFit$diagnostics <- function() .Call(wrap__BayesBfFit__diagnostics, self)
+
+BayesBfFit$parameter_names <- function() .Call(wrap__BayesBfFit__parameter_names, self)
+
+BayesBfFit$draws <- function() .Call(wrap__BayesBfFit__draws, self)
+
+BayesBfFit$chains <- function() .Call(wrap__BayesBfFit__chains, self)
+
+BayesBfFit$summary <- function() .Call(wrap__BayesBfFit__summary, self)
+
+BayesBfFit$loo <- function() .Call(wrap__BayesBfFit__loo, self)
+
+BayesBfFit$long_table <- function() .Call(wrap__BayesBfFit__long_table, self)
+
+BayesBfFit$totals_table <- function() .Call(wrap__BayesBfFit__totals_table, self)
+
+BayesBfFit$development_table <- function() .Call(wrap__BayesBfFit__development_table, self)
+
+BayesBfFit$segment <- function(keys, values) .Call(wrap__BayesBfFit__segment, self, keys, values)
+
+#' @export
+`$.BayesBfFit` <- function (self, name) { func <- BayesBfFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesBfFit` <- `$.BayesBfFit`
 
 MackBootstrapFit <- new.env(parent = emptyenv())
 

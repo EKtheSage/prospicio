@@ -128,6 +128,14 @@ conversion reports the error it introduces.
 - **A mixing's `cv` is that of the whole mixing variable** `Θ`, fixed part
   included, as in `aggregate`, so the variance is `λ + λ² cv²` whatever the
   shift.
+- **`aggregate`'s named counts are constructors on existing types**, not new
+  families: `EmpiricalCount::fixed(n)` (`fixed`; an integer `n`, where
+  `aggregate`'s pgf `zⁿ` is meaningless for a fraction),
+  `Binomial::bernoulli(p)` (`bernoulli`, mean `p < 1`) and
+  `NegativeBinomial::geometric(mean)` (`geometric`, on `0, 1, …`, so
+  `r = 1`, `β = mean`, `P(N = 0) = 1 / (1 + mean)`). The bindings expose
+  them as `Count.fixed`, `Count.bernoulli`, `Count.geometric` (Python) and
+  `fixed_count()`, `bernoulli_count()`, `geometric_count()` (R).
 
 ### Decisions for `Grid`
 
@@ -142,6 +150,15 @@ conversion reports the error it introduces.
   down, which breaks the upper bound; it returns if a use needs it, with
   the tail handled separately.
 - Grids start at 0 (open question 2).
+- **TVaR on a grid is the coherent one**, `(1/(1 − p)) ∫_p^1 VaR_u du`
+  (`Grid::tvar`, `risk::tvar_weighted`), as `aggregate`'s grid TVaR, which
+  returns the largest point once `p` reaches the last point's cumulative
+  start. `tvar_threshold(p)`, the level `t` with `TVaR(t) = VaR(p)` (the
+  lower VaR), is solved by bisection to the last bit, on a grid and on a
+  `natural::Portfolio`'s total. Where `aggregate`'s bisection cannot
+  bracket a root, prospicio answers: 0 when the VaR is at or below the
+  mean, 1 when it is the largest value (every `t` above the last start
+  qualifies, and scipy's bisection returns the endpoint).
 
 ### Decisions for `Severity`
 

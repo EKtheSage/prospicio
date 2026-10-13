@@ -159,6 +159,14 @@ g1 <- grid_distribution(1, replace(numeric(11), c(1, 9, 11), c(0.5, 0.25, 0.25))
 g2 <- grid_distribution(1, replace(numeric(91), c(1, 2, 91), c(0.5, 0.25, 0.25)))
 disc <- capital_portfolio(list(X1 = g1, X2 = g2))
 stopifnot(identical(disc@units, c("X1", "X2")), abs(sum(disc@expected) - 27.25) < 1e-12)
+# The priority ladder at assets 90, against aggregate 1.0.1's priority_epd_df.
+pl <- priority_ladder(disc, assets = 90)
+stopifnot(identical(pl$unit, c("X1", "X2", "total")), attr(pl, "assets") == 90)
+stopifnot(max(abs(pl$equal[1:2] - c(4.396684, 21.728316))) < 1e-6)
+stopifnot(max(abs(pl$junior_epd[1:2] - c(0.25, 0.049451))) < 1e-6, abs(pl$senior[3] - 26.125) < 1e-12)
+pk <- priority_kappa(disc, "X1", assets = 90)
+stopifnot(max(abs(unlist(pk[pk$total == 98, c("junior", "senior")]) - c(8, 0))) < 1e-9)
+stopifnot(inherits(try(priority_kappa(disc, "X3", assets = 90), silent = TRUE), "try-error"))
 # Pricing bounds and classical principles on InsCo, against aggregate 1.0.1.
 pb <- premium_bounds(insco, 53.565217391304344, assets = 100)
 stopifnot(max(abs(pb$lower - c(13.09782608695652, 17.465726050623715, 19.25473801560758))) < 1e-9)
@@ -167,3 +175,25 @@ stopifnot(S7::S7_inherits(pb$lower_distortion[[1]], distortion))
 xs <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
 stopifnot(abs(calibrate_classical(xs, "esscher", 53.565217391304344) - 0.012851355964986997) < 1e-9)
 stopifnot(abs(classical_premium(sampled(c(0, 10)), "standard_deviation", 0.2) - 6) < 1e-15)
+# Pricing bounds for another risk, against aggregate 1.0.1's PricingBounds.
+xb <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+yb <- sampled(c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64))
+pr <- pricing_bounds(xb, list(X3 = yb), 53.565217391304344)
+stopifnot(identical(pr$risk, "X3"), abs(pr$upper - 22.098038028339587) < 1e-9, pr$lower < pr$upper)
+stopifnot(S7::S7_inherits(pr$lower_distortion[[1]], distortion))
+# At P = max X (capped at 65) TVaR_1 gives max Y; aggregate says 52.
+stopifnot(abs(pricing_bounds(xb, list(X3 = yb), 65, assets = 65)$upper - 64) < 1e-12)
+env <- distortion_envelope(xb, 53.565217391304344, c(0.1, 0.5))
+stopifnot(max(abs(env$lower - c(0.1372282608695652, 0.5652173913043478))) < 1e-12)
+stopifnot(inherits(try(pricing_bounds(xb, list(yb), 50), silent = TRUE), "try-error"))
+
+# tvar_threshold on PIR's Discrete case, aggregate 1.0.1.
+stopifnot(abs(tvar_threshold(disc, 0.9) - 0.859375) < 1e-11)
+# Stand-alone prices and the comonotonic allocation, aggregate 1.0.1.
+sa <- price_stand_alone(disc, distortion("proportional_hazard", 0.7), p = 0.9)
+stopifnot(identical(sa$unit, c("X1", "X2", "total", "sum")),
+          all(abs(sa$premium[c(1, 3, 4)] - c(5.682435936634864, 39.27576430346102,
+                                              40.02270174816368)) < 1e-10))
+co <- comonotonic_allocation(disc)
+stopifnot(abs(co$X1[co$total == 8] - 6.607142857142858) < 1e-10,
+          max(abs(co$X1 + co$X2 - co$total)) < 1e-12)

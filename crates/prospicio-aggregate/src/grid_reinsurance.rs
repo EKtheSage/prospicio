@@ -26,6 +26,12 @@ pub struct TowerGrids {
     /// The compound calculation behind each layer: the annual recovery at
     /// 100%, before annual terms.
     pub ceded_reports: Vec<CompoundReport>,
+    /// Annual ceded loss of each stage, all its layers together at their
+    /// shares: the total cession `aggregate` prices and reports as `Ceded`.
+    /// `None` for a stage with several layers of which one has annual
+    /// terms: the layers' annual totals are then dependent, and their sum
+    /// is not one compound. A one-layer stage repeats its layer's grid.
+    pub stage_ceded: Vec<Option<Grid>>,
     /// Annual net loss, gross less every layer's ceded loss, when it is a
     /// function of a single compound total; `None` otherwise (see
     /// [`Tower::on_grid`]).
@@ -80,6 +86,9 @@ pub struct TowerPrice {
     pub gross: ViewPrice,
     /// One per layer, in tower order.
     pub ceded: Vec<ViewPrice>,
+    /// One per stage, the total cession; `None` where
+    /// [`TowerGrids::stage_ceded`] is.
+    pub stages: Vec<Option<ViewPrice>>,
     /// `None` when the tower has no net grid.
     pub net: Option<ViewPrice>,
 }
@@ -96,6 +105,11 @@ impl TowerGrids {
                 .ceded
                 .iter()
                 .map(|g| ViewPrice::of(g, distortion))
+                .collect(),
+            stages: self
+                .stage_ceded
+                .iter()
+                .map(|g| g.as_ref().map(|g| ViewPrice::of(g, distortion)))
                 .collect(),
             net: self.net.as_ref().map(|g| ViewPrice::of(g, distortion)),
         }
@@ -197,6 +211,7 @@ impl Tower {
         let mut premium = Vec::with_capacity(self.layers.len());
         let mut commission = Vec::with_capacity(self.layers.len());
         let mut profit = Vec::with_capacity(self.layers.len());
+        let mut stage_ceded = Vec::with_capacity(stages.len());
         for &(start, end) in &stages {
             for layer in &self.layers[start..end] {
                 let (recoveries, exact) = severity.map(|x| layer.recovery(seen(x, start)))?;
@@ -219,6 +234,21 @@ impl Tower {
                 ceded.push(layer_ceded);
                 ceded_reports.push(report);
             }
+            let layers = &self.layers[start..end];
+            stage_ceded.push(if layers.len() == 1 {
+                ceded.last().cloned()
+            } else if layers.iter().any(Layer::has_annual_terms) {
+                None
+            } else {
+                // Without annual terms the stage's cession is a function of
+                // each loss: compound it once.
+                let (recoveries, exact) = severity.map(|x| {
+                    let seen = seen(x, start);
+                    layers.iter().map(|l| l.share * l.recovery(seen)).sum()
+                })?;
+                on_points &= exact;
+                Some(fft(frequency, &recoveries, points)?.0)
+            });
         }
 
         let net = if !self.layers.iter().any(Layer::has_annual_terms) {
@@ -243,6 +273,7 @@ impl Tower {
             gross_report,
             ceded,
             ceded_reports,
+            stage_ceded,
             net,
             expected_reinstatement_premium: premiums,
             expected_premium: premium,
@@ -459,6 +490,45 @@ mod tests {
         let ceded: f64 = r.ceded.iter().map(|g| g.mean()).sum();
         assert!((r.gross.mean() - ceded - net.mean()).abs() < 1e-10);
         matches_simulation(&tower, &Poisson::new(3.0).unwrap());
+    }
+
+    #[test]
+    fn a_stage_with_several_layers_has_a_total_cession() {
+        let freq = Poisson::new(3.0).unwrap();
+        // 2 xs 2 and 4 xs 4 side by side are 6 xs 2.
+        let split = Tower::new(vec![
+            Layer::xol("2x2", 2.0, 2.0).unwrap(),
+            Layer::xol("4x4", 4.0, 4.0).unwrap(),
+        ])
+        .unwrap()
+        .on_grid(&freq, &severity(), 200)
+        .unwrap();
+        let whole = Tower::new(vec![Layer::xol("6x2", 6.0, 2.0).unwrap()])
+            .unwrap()
+            .on_grid(&freq, &severity(), 200)
+            .unwrap();
+        let total = split.stage_ceded[0].as_ref().unwrap();
+        for (a, b) in total.probs().iter().zip(whole.ceded[0].probs()) {
+            assert!((a - b).abs() < 1e-14);
+        }
+        assert_eq!(whole.stage_ceded[0].as_ref(), Some(&whole.ceded[0]));
+        let price = split.price(&Distortion::proportional_hazard(0.7).unwrap());
+        let stage = price.stages[0].unwrap();
+        assert!((stage.loss - price.ceded.iter().map(|c| c.loss).sum::<f64>()).abs() < 1e-12);
+        // Subadditive: the layers priced alone cost at least the stage.
+        assert!(price.ceded.iter().map(|c| c.premium).sum::<f64>() >= stage.premium - 1e-12);
+        // With annual terms in a stage of two the total is not one compound.
+        let terms = Tower::new(vec![
+            Layer::xol("2x2", 2.0, 2.0)
+                .unwrap()
+                .aggregate_limit(4.0)
+                .unwrap(),
+            Layer::xol("4x4", 4.0, 4.0).unwrap(),
+        ])
+        .unwrap()
+        .on_grid(&freq, &severity(), 200)
+        .unwrap();
+        assert!(terms.stage_ceded[0].is_none());
     }
 
     #[test]

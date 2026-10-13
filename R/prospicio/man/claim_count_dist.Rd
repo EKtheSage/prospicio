@@ -8,6 +8,9 @@
 \alias{mixed_poisson_count}
 \alias{compound_poisson_count}
 \alias{empirical_count}
+\alias{fixed_count}
+\alias{bernoulli_count}
+\alias{geometric_count}
 \title{More claim counts}
 \usage{
 claim_count_dist(ptr)
@@ -28,6 +31,12 @@ mixed_poisson_count(
 compound_poisson_count(rate, secondary)
 
 empirical_count(probs)
+
+fixed_count(n)
+
+bernoulli_count(p)
+
+geometric_count(mean)
 }
 \arguments{
 \item{ptr}{Internal.}
@@ -36,7 +45,8 @@ empirical_count(probs)
 
 \item{p0}{\code{P(N = 0)}, in \verb{[0, 1)}.}
 
-\item{p}{The logarithmic parameter, in \verb{(0, 1)}.}
+\item{p}{The logarithmic parameter, in \verb{(0, 1)}, or the Bernoulli
+probability, in \verb{[0, 1)}.}
 
 \item{mean, cv, shift}{See above.}
 
@@ -45,6 +55,8 @@ empirical_count(probs)
 \item{rate}{The Poisson rate of clusters.}
 
 \item{probs}{Probabilities of \verb{0, 1, ...}, summing to 1.}
+
+\item{n}{The fixed number of claims.}
 }
 \value{
 A \code{claim_count_dist}, which inherits from \link{distribution}: use
@@ -69,6 +81,10 @@ Variance \verb{mean + mean^2 cv^2}.
 \item \code{compound_poisson_count()}: a Poisson(\code{rate}) number of clusters of
 \code{secondary} claims (Poisson secondaries give the Neyman type A).
 \item \code{empirical_count()}: \code{P(N = k) = probs[k + 1]}.
+\item \code{fixed_count()}: \code{N = n}; \code{bernoulli_count()}: one claim with
+probability \code{p} in \verb{[0, 1)}; \code{geometric_count()}: \code{P(N = k) = q (1 - q)^k}
+on \verb{0, 1, ...} with \code{q = 1 / (1 + mean)}, a negative binomial with
+\code{r = 1} (\code{aggregate}'s \code{fixed}, \code{bernoulli} and \code{geometric}).
 }
 
 Every aggregation function takes them. Zero-modified and logarithmic

@@ -35,8 +35,9 @@ mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{
         PyApproximation, PyCompoundMoments, PyCompoundReport, PyEventSet, PyGridSize,
-        PyOccurrencePml, compound_moments, fft, fft_auto, occurrence_exceedance, occurrence_pml,
-        panjer, recommend_grid, round_bucket, simulate_events,
+        PyOccurrencePml, PyPicks, PyRuin, compound_moments, eventual_ruin, fft, fft_auto,
+        layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer, recommend_grid,
+        round_bucket, simulate_events,
     };
     #[pymodule_export]
     use super::counts::PyCount;
@@ -58,7 +59,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::natural::{
-        PyNaturalPrice, PyPentagon, PyPortfolio, calibrate_classical, classical_premium,
+        PyNaturalPrice, PyPentagon, PyPortfolio, PyPricingBounds, PyStandAlone,
+        calibrate_classical, classical_premium, distortion_envelope,
     };
     #[pymodule_export]
     use super::pareto::{
@@ -82,16 +84,18 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::reinsurance::{
-        PyLayer, PyLayerStatistics, PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice,
-        PyViewPrice, occurrence_layer_statistics,
+        PyAggregateLayerStatistics, PyCessionStatistics, PyLayer, PyLayerStatistics,
+        PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
+        aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
     };
     #[pymodule_export]
     use super::reserving::{
-        PyBayesOdp, PyBayesOdpFit, PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit,
-        PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit,
-        PyClarkLdf, PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit,
-        PyMackFit, PyMeyers, PyMeyersFit, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit,
-        PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle,
+        PyBayesBf, PyBayesBfFit, PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits, PyBenktander,
+        PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder, PyChainLadderFit,
+        PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf, PyExpectedLoss,
+        PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers,
+        PyMeyersFit, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant,
+        PyTailCurve, PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

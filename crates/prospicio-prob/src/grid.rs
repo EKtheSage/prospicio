@@ -251,6 +251,27 @@ impl Grid {
         d.apply_discrete(&values, &self.probs)
     }
 
+    /// Tail value at risk at `p`; see [`crate::risk::tvar_weighted`].
+    pub fn tvar(&self, p: f64) -> Result<f64> {
+        let values: Vec<f64> = (0..self.len()).map(|j| self.x(j)).collect();
+        crate::risk::tvar_weighted(&values, &self.probs, p)
+    }
+
+    /// The level whose tail value at risk is the value at risk at `p`,
+    /// `aggregate`'s `tvar_threshold`; see [`crate::risk::tvar_threshold`].
+    ///
+    /// ```
+    /// use prospicio_prob::{Distribution, Grid};
+    ///
+    /// let g = Grid::new(1.0, vec![0.4, 0.3, 0.2, 0.1]).unwrap();
+    /// let t = g.tvar_threshold(0.85).unwrap();
+    /// assert!((g.tvar(t).unwrap() - g.quantile(0.85).unwrap()).abs() < 1e-12);
+    /// ```
+    pub fn tvar_threshold(&self, p: f64) -> Result<f64> {
+        let values: Vec<f64> = (0..self.len()).map(|j| self.x(j)).collect();
+        crate::risk::tvar_threshold(&values, &self.probs, p)
+    }
+
     /// The distribution of `f(X)` on the same step, and whether it is
     /// exact.
     ///

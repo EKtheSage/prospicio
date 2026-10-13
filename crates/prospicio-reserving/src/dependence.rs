@@ -34,6 +34,7 @@
 use std::ops::Range;
 
 use prospicio_core::StreamRng;
+use prospicio_math::linalg::cholesky;
 use prospicio_prob::{KeyValue, PredictiveDistribution};
 
 use crate::bootstrap::components_of;
@@ -118,6 +119,18 @@ pub enum SegmentDependence {
 }
 
 impl SegmentDependence {
+    /// Checks the choice against `n_segments` segments before any
+    /// simulation: a [`RankCorrelation`](Self::RankCorrelation) matrix must
+    /// be `n_segments × n_segments`, symmetric with a unit diagonal, and
+    /// positive definite after the map to normal scores.
+    #[cfg_attr(not(feature = "bayes"), allow(dead_code))] // only the Bayesian fits call it
+    pub(crate) fn validate(&self, n_segments: usize) -> Result<()> {
+        match self {
+            Self::RankCorrelation { spearman } => normal_scores(spearman, n_segments).map(|_| ()),
+            Self::Independent | Self::Synchronized => Ok(()),
+        }
+    }
+
     /// `draws`, simulated for the segments of `fits` (components running
     /// over each segment's origins in turn), reordered to the rank
     /// correlation if that is the choice, and as they are otherwise; `seed`
@@ -218,16 +231,11 @@ pub(crate) fn synchronize<'a, B: Resample + 'a>(
     ))
 }
 
-/// `draws` with its segments' simulations reordered so that the segment
-/// totals have about the Spearman correlation `spearman`; `ranges[s]` are
-/// the components of segment `s`, and `seed` the bootstrap's.
-fn rank_correlate(
-    draws: PredictiveDistribution,
-    ranges: &[Range<usize>],
-    spearman: &[f64],
-    seed: u64,
-) -> Result<PredictiveDistribution> {
-    let s = ranges.len();
+/// The normal-score correlation `r = 2 sin(pi rho / 6)` of the Spearman
+/// matrix `spearman` over `s` segments, after checking that it is `s × s`,
+/// symmetric with a unit diagonal and entries in `[-1, 1]`, and that `r` is
+/// positive definite.
+fn normal_scores(spearman: &[f64], s: usize) -> Result<Vec<f64>> {
     if spearman.len() != s * s {
         return Err(Error::InvalidSetting {
             name: "spearman",
@@ -258,6 +266,26 @@ fn rank_correlate(
             normal[j * s + i] = r;
         }
     }
+    if cholesky(&normal, s).is_none() {
+        return Err(Error::InvalidSetting {
+            name: "spearman",
+            value: f64::NAN,
+            expected: "a matrix whose 2 sin(pi rho / 6) is positive definite",
+        });
+    }
+    Ok(normal)
+}
+
+/// `draws` with its segments' simulations reordered so that the segment
+/// totals have about the Spearman correlation `spearman`; `ranges[s]` are
+/// the components of segment `s`, and `seed` the bootstrap's.
+fn rank_correlate(
+    draws: PredictiveDistribution,
+    ranges: &[Range<usize>],
+    spearman: &[f64],
+    seed: u64,
+) -> Result<PredictiveDistribution> {
+    let normal = normal_scores(spearman, ranges.len())?;
     // One group per segment, whatever the triangle's keys.
     let keys = ranges
         .iter()
@@ -562,9 +590,25 @@ mod tests {
             spearman: vec![1.0, 0.9, -0.9, 0.9, 1.0, 0.9, -0.9, 0.9, 1.0],
         };
         assert!(matches!(
-            odp(bad).fit_segments(&three, "paid"),
-            Err(Error::Core(_))
+            bad.validate(3),
+            Err(Error::InvalidSetting { name: "spearman", expected, .. })
+                if expected.contains("positive definite")
         ));
+        assert!(matches!(
+            odp(bad).fit_segments(&three, "paid"),
+            Err(Error::InvalidSetting {
+                name: "spearman",
+                ..
+            })
+        ));
+        // `validate` checks the size against the segments, before any
+        // simulation (`BayesOdp::fit_segments` calls it first).
+        let two = SegmentDependence::RankCorrelation {
+            spearman: vec![1.0, 0.5, 0.5, 1.0],
+        };
+        assert!(two.validate(2).is_ok());
+        assert!(two.validate(3).is_err());
+        assert!(SegmentDependence::Independent.validate(3).is_ok());
     }
 
     #[test]
