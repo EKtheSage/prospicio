@@ -90,6 +90,57 @@ class Allocation:
         """
 
 @final
+class AnnualGrids:
+    """
+    A tower applied to an annual loss distribution, from
+    ``Tower.on_annual_grid``. Ceded grids are at the placed share and after
+    annual terms; a layer with share ``c`` has step ``c * h``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ceded(self, /) -> list[Grid]:
+        """
+        Annual ceded loss of each layer, in tower order.
+        """
+    @property
+    def expected_ceding_commission(self, /) -> list[float]:
+        """
+        Expected ceding commission (flat or sliding) of each layer.
+        """
+    @property
+    def expected_premium(self, /) -> list[float]:
+        """
+        Expected premium of each layer: the swing-rated premium's mean, or
+        else the fixed premium.
+        """
+    @property
+    def expected_profit_commission(self, /) -> list[float]:
+        """
+        Expected profit commission of each layer.
+        """
+    @property
+    def expected_reinstatement_premium(self, /) -> list[float]:
+        """
+        Expected reinstatement premium of each layer.
+        """
+    @property
+    def gross(self, /) -> Grid:
+        """
+        The annual loss given.
+        """
+    @property
+    def net(self, /) -> Grid:
+        """
+        Annual net loss.
+        """
+    @property
+    def on_points(self, /) -> bool:
+        """
+        Whether every ceded and net loss fell on a grid point. The
+        expectations are exact either way.
+        """
+
+@final
 class Approximation:
     """
     A distribution fitted to compound moments, from
@@ -3876,6 +3927,12 @@ class Distortion:
         -------
         Distortion
         """
+    @property
+    def family(self, /) -> str:
+        """
+        The family, as its constructor is named, for example
+        ``"proportional_hazard"`` or ``"capped_linear"``.
+        """
     def g(self, /, s: float) -> float:
         """
         The distortion ``g(s)`` of a survival probability ``s``.
@@ -3989,6 +4046,20 @@ class Distortion:
         Returns
         -------
         Distortion
+        """
+    @property
+    def parameters(self, /) -> dict[str, float]:
+        """
+        The scalar parameters by name, as the constructor takes them, for
+        example ``{"rho": 0.7}``; empty for weighted TVaR, mixtures, minimums
+        and convex envelopes, whose inputs are lists.
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> d = Distortion.proportional_hazard(0.7)
+        >>> d.family, d.parameters
+        ('proportional_hazard', {'rho': 0.7})
         """
     @staticmethod
     def proportional_hazard(rho: float) -> Distortion:
@@ -12699,6 +12770,41 @@ class Tower:
         """
         Layer names, in order.
         """
+    def on_annual_grid(self, /, annual: Grid) -> AnnualGrids:
+        """
+        The tower applied to an annual loss on a grid, each year's total
+        treated as one loss (as ``apply_aggregate`` does for draws): a quota
+        share or stop-loss on a loss-ratio or annual-loss distribution, with
+        its expected sliding-scale and profit commission. Inuring stages and
+        annual terms are all allowed, and the net always exists.
+        
+        Parameters
+        ----------
+        annual : Grid
+            The annual loss.
+        
+        Returns
+        -------
+        AnnualGrids
+        
+        Raises
+        ------
+        ValueError
+            For a surplus treaty or reinstatements pro rata as to time, which
+            need risks or event times.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> from prospicio.distributions import Grid
+        >>> probs = [0.0] * 81
+        >>> for k in (50, 60, 70, 80):
+        ...     probs[k] = 0.25
+        >>> qs = Layer.quota_share("QS", 0.4).with_deposit_premium(100.0).with_ceding_commission(0.3)
+        >>> r = Tower([qs]).on_annual_grid(Grid(1.0, probs))
+        >>> round(r.ceded[0].mean(), 12), round(r.expected_ceding_commission[0], 12)
+        (26.0, 12.0)
+        """
     def on_grid(self, /, frequency: Any, severity: Grid, points: int) -> TowerGrids:
         """
         Gross, ceded and net annual distributions on the grid, by FFT.
@@ -15628,8 +15734,10 @@ def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = Non
     
     Parameters
     ----------
-    losses : Sampled or PredictiveDistribution
-        Loss draws; for a ``PredictiveDistribution``, its total.
+    losses : Sampled, PredictiveDistribution or Grid
+        Loss draws (for a ``PredictiveDistribution``, its total), or a loss
+        distribution on a grid, such as a layer's exact annual loss from
+        ``Tower.on_grid``.
     assets : Distortion
         The measure that sets the assets, for example ``Distortion.tvar(0.99)``.
     cost_of_capital : float, optional
@@ -15655,6 +15763,10 @@ def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = Non
     >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
     >>> p.premium, p.capital
     (2.4, 1.6)
+    >>> from prospicio.distributions import Grid
+    >>> g = price(Grid(2.0, [0.5, 0.25, 0.0, 0.25]), Distortion.tvar(0.5), cost_of_capital=0.25)
+    >>> round(g.premium, 12)
+    2.4
     """
 
 def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PortfolioPrice:

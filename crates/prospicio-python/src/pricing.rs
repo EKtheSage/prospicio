@@ -11,7 +11,9 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::aggregate::{AnyCount, PyEventSet};
-use crate::distributions::{PyPredictiveDistribution, PySampled, extract_severity, key_to_py};
+use crate::distributions::{
+    PyGrid, PyPredictiveDistribution, PySampled, extract_severity, key_to_py,
+};
 use crate::pareto::PyPiecewisePareto;
 use crate::risk::PyDistortion;
 use crate::to_py;
@@ -678,8 +680,10 @@ impl PyPortfolioPrice {
 ///
 /// Parameters
 /// ----------
-/// losses : Sampled or PredictiveDistribution
-///     Loss draws; for a ``PredictiveDistribution``, its total.
+/// losses : Sampled, PredictiveDistribution or Grid
+///     Loss draws (for a ``PredictiveDistribution``, its total), or a loss
+///     distribution on a grid, such as a layer's exact annual loss from
+///     ``Tower.on_grid``.
 /// assets : Distortion
 ///     The measure that sets the assets, for example ``Distortion.tvar(0.99)``.
 /// cost_of_capital : float, optional
@@ -705,6 +709,10 @@ impl PyPortfolioPrice {
 /// >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
 /// >>> p.premium, p.capital
 /// (2.4, 1.6)
+/// >>> from prospicio.distributions import Grid
+/// >>> g = price(Grid(2.0, [0.5, 0.25, 0.0, 0.25]), Distortion.tvar(0.5), cost_of_capital=0.25)
+/// >>> round(g.premium, 12)
+/// 2.4
 #[pyfunction]
 #[pyo3(signature = (losses, assets, *, cost_of_capital = None, distortion = None))]
 pub(crate) fn price(
@@ -718,9 +726,11 @@ pub(crate) fn price(
         risk_load::price(&s.inner, &rule, &assets.inner)
     } else if let Ok(pd) = losses.extract::<PyRef<'_, PyPredictiveDistribution>>() {
         risk_load::price(pd.inner.total(), &rule, &assets.inner)
+    } else if let Ok(g) = losses.extract::<PyRef<'_, PyGrid>>() {
+        risk_load::price_grid(&g.inner, &rule, &assets.inner)
     } else {
         return Err(PyTypeError::new_err(
-            "losses must be a Sampled or a PredictiveDistribution",
+            "losses must be a Sampled, a PredictiveDistribution or a Grid",
         ));
     }
     .map_err(to_py)?;

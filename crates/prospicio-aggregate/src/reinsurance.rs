@@ -1053,7 +1053,12 @@ impl Tower {
     }
 
     /// Ceded loss and reinstatement premium of each layer for one year.
-    fn year(&self, losses: &[f64], si: Option<&[f64]>, times: Option<&[f64]>) -> Vec<(f64, f64)> {
+    pub(crate) fn year(
+        &self,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        times: Option<&[f64]>,
+    ) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let mut seen = losses.to_vec();
         let last_stage = self.stages.last().copied().unwrap_or(0);

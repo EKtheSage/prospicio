@@ -29,7 +29,11 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   and `Convex` (the concave hull of `(s, g)` points, for distortions read
   off cat bond or credit spreads). Methods `g`, `g_inv`, `g_dual` (the
   bid), `mass` (`g(0+)`), `weights(n)`, `apply_sorted`, `apply_discrete`,
-  `apply_discrete_dual`; `Empirical::distortion` and `Grid::distortion`.
+  `apply_discrete_dual`, `family()` (the constructor's name) and
+  `parameters()` (the scalar parameters by name, empty for the composite
+  families; #205); `Empirical::distortion` and `Grid::distortion`. Python
+  `Distortion.family` and `Distortion.parameters`, R `d@kind` and
+  `d@parameters`.
 - `distortion::calibrate(Family, values, probs, premium)`: the member of a
   one-parameter family (`Family::STANDARD` is CCoC, PH, Wang, dual and
   TVaR) whose price is the premium. Python `prospicio.risk.calibrate`, R

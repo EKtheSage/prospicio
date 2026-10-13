@@ -35,11 +35,15 @@ NULL
 #' @param r0 For `"capped_linear"`, `"capped_log_linear"`, `"lep"` and
 #'   `"linear_yield"`: the intercept, a minimum rate on line.
 #' @param ptr Internal.
-#' @returns A `distortion` object with `kind` and `param` properties. Use it
-#'   with [risk_measure()] and [allocate()].
+#' @returns A `distortion` object with `kind` and `param` properties, and
+#'   `parameters`, the scalar parameters by name as the constructor takes
+#'   them (for example `c(rho = 0.7)`, or `c(r0 = 0.1, slope = 2)`; empty for
+#'   weighted TVaR, mixtures, minimums and convex envelopes). Use it with
+#'   [risk_measure()] and [allocate()].
 #' @export
 #' @examples
 #' d <- distortion("wang", 0.5)
+#' d@parameters
 #' risk_measure(sampled(c(10, 20, 30, 40, 50)), d)
 #' distortion_g(distortion("dual_power", 2), 0.3)
 #' risk_measure(sampled(c(1, 2, 3, 4)), distortion("ccoc", 0.25)) # (2.5 + 0.25 * 4) / 1.25
@@ -49,7 +53,14 @@ distortion <- S7::new_class(
   properties = list(
     ptr = S7::new_S3_class("RiskDistortion"),
     kind = S7::new_property(S7::class_character, getter = function(self) self@ptr$kind()),
-    param = S7::new_property(S7::class_double, getter = function(self) self@ptr$param())
+    param = S7::new_property(S7::class_double, getter = function(self) self@ptr$param()),
+    parameters = S7::new_property(
+      S7::class_double,
+      getter = function(self) {
+        p <- self@ptr$parameters()
+        if (length(p) == 0) stats::setNames(numeric(), character()) else unlist(p)
+      }
+    )
   ),
   constructor = function(kind = c(
                            "tvar", "wang", "proportional_hazard", "dual_power", "exponential",

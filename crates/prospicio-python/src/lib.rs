@@ -84,7 +84,7 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::reinsurance::{
-        PyAggregateLayerStatistics, PyCessionStatistics, PyLayer, PyLayerStatistics,
+        PyAggregateLayerStatistics, PyAnnualGrids, PyCessionStatistics, PyLayer, PyLayerStatistics,
         PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
         aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
     };
