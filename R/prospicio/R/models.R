@@ -529,8 +529,9 @@ S7::method(print, bayes_glm_model) <- function(x, ...) {
 #' `pointwise` values feed [stacking_weights()].
 #'
 #' @param model A [bayes_glm_model], a [bayes_odp_fit] (or a single-segment
-#'   [bayes_odp_fits]) for the PSIS-LOO of its observed increments, or a
-#'   [meyers_fit] for that of its observed cells on the log scale.
+#'   [bayes_odp_fits]) or [bayes_bf_fit] for the PSIS-LOO of its observed
+#'   increments, or a [meyers_fit] for that of its observed cells on the log
+#'   scale.
 #' @returns As [elpd_loo()].
 #' @export
 #' @examples

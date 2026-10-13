@@ -1510,6 +1510,8 @@ Triangle$bayes_odp_segments <- function(column, intercept_sd, origin_sd, develop
 
 Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__meyers, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
+Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
+
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman)
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman)
@@ -1842,6 +1844,44 @@ MeyersFit$segment <- function(keys, values) .Call(wrap__MeyersFit__segment, self
 
 #' @export
 `[[.MeyersFit` <- `$.MeyersFit`
+
+BayesBfFit <- new.env(parent = emptyenv())
+
+BayesBfFit$chain_ladder <- function() .Call(wrap__BayesBfFit__chain_ladder, self)
+
+BayesBfFit$scale <- function() .Call(wrap__BayesBfFit__scale, self)
+
+BayesBfFit$exposure <- function() .Call(wrap__BayesBfFit__exposure, self)
+
+BayesBfFit$prior_ultimate <- function() .Call(wrap__BayesBfFit__prior_ultimate, self)
+
+BayesBfFit$reserves <- function() .Call(wrap__BayesBfFit__reserves, self)
+
+BayesBfFit$diagnostics <- function() .Call(wrap__BayesBfFit__diagnostics, self)
+
+BayesBfFit$parameter_names <- function() .Call(wrap__BayesBfFit__parameter_names, self)
+
+BayesBfFit$draws <- function() .Call(wrap__BayesBfFit__draws, self)
+
+BayesBfFit$chains <- function() .Call(wrap__BayesBfFit__chains, self)
+
+BayesBfFit$summary <- function() .Call(wrap__BayesBfFit__summary, self)
+
+BayesBfFit$loo <- function() .Call(wrap__BayesBfFit__loo, self)
+
+BayesBfFit$long_table <- function() .Call(wrap__BayesBfFit__long_table, self)
+
+BayesBfFit$totals_table <- function() .Call(wrap__BayesBfFit__totals_table, self)
+
+BayesBfFit$development_table <- function() .Call(wrap__BayesBfFit__development_table, self)
+
+BayesBfFit$segment <- function(keys, values) .Call(wrap__BayesBfFit__segment, self, keys, values)
+
+#' @export
+`$.BayesBfFit` <- function (self, name) { func <- BayesBfFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesBfFit` <- `$.BayesBfFit`
 
 MackBootstrapFit <- new.env(parent = emptyenv())
 
