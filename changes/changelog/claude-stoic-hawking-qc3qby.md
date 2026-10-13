@@ -22,4 +22,4 @@
   marginals (`JointGrid::from_copula`, with `bivariate::triggered` for a
   line an event hits with some probability), for `fft_bivariate`,
   matching `aggregate` 1.0.1's copula `bivariate`. Python
-  `JointGrid.from_copula`; R `copula_severity()`.
+  `JointGrid.from_copula`; R `copula_severity()` (#235).
