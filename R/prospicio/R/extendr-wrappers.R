@@ -110,6 +110,12 @@ pricing_burning_cost <- function(ids, accident, amount, threshold, rate, to, fac
 
 pricing_as_if <- function(ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed) .Call(wrap__pricing_as_if, ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed)
 
+pricing_payment_pattern <- function(times, values, from_development) .Call(wrap__pricing_payment_pattern, times, values, from_development)
+
+pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_pattern_values, times, shares, rate, t)
+
+pricing_price_over_payout <- function(expected_loss, premium, assets, times, shares, rate, coc) .Call(wrap__pricing_price_over_payout, expected_loss, premium, assets, times, shares, rate, coc)
+
 pricing_development_pattern <- function(ids, age, amount, ages) .Call(wrap__pricing_development_pattern, ids, age, amount, ages)
 
 pricing_pattern_at <- function(ages, factors, x) .Call(wrap__pricing_pattern_at, ages, factors, x)
