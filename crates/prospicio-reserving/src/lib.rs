@@ -15,7 +15,8 @@
 //! `validation/tests/reserving*.rs`.
 //!
 //! With the `bayes` feature, the `bayes` module adds the Bayesian chain
-//! ladder, `BayesOdp`, sampled with NUTS (`docs/design/reserving-bayes.md`).
+//! ladder, `BayesOdp`, and Meyers' CRC and CSR models, `Meyers`, sampled with
+//! NUTS (`docs/design/reserving-bayes.md`).
 //!
 //! ```
 //! use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
@@ -64,7 +65,7 @@ pub use backtest::{
     Backtest, CellForecast, GlmCandidate, METRICS, TriangleModel, diagonal_backtest,
 };
 #[cfg(feature = "bayes")]
-pub use bayes::{BayesOdp, BayesOdpFit, Diagnostics};
+pub use bayes::{BayesOdp, BayesOdpFit, Diagnostics, Meyers, MeyersFit, MeyersModel};
 pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
 };

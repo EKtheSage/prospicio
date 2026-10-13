@@ -9,6 +9,11 @@
 //! with the layout of [`OdpBootstrapFit::reserves`], so totals, quantiles,
 //! capital allocation and blending work on it unchanged.
 //!
+//! [`Meyers`] holds Meyers' (2019, CAS Monograph 8) log-normal models of
+//! cumulative values with premium, the correlated chain ladder (CRC) and the
+//! changing settlement rate model (CSR), with his priors. Its `ultimates`
+//! and `reserves` are a [`PredictiveDistribution`] by origin too.
+//!
 //! # Seeds
 //!
 //! One `seed` drives a fit, as in the bootstraps. The chains and the
@@ -17,13 +22,18 @@
 //! chains and tag 1 for the simulations (decision 5). Chain `c` then uses
 //! stream `c` of its seed and simulation `i` stream `i` of its seed, so no
 //! simulation shares a stream with a chain, and a fit replays exactly for
-//! a seed whatever the number of threads.
+//! a seed whatever the number of threads. [`Meyers`]' pilot run, which sets
+//! its sampling scale, takes stream `u64::MAX` of the chains' seed, which
+//! no chain reaches.
 //!
 //! [`PredictiveDistribution`]: prospicio_prob::PredictiveDistribution
 //! [`OdpBootstrapFit::reserves`]: crate::OdpBootstrapFit::reserves
 
+mod laplace;
+mod meyers;
 mod odp;
 
+pub use meyers::{Meyers, MeyersFit, MeyersModel};
 pub use odp::{BayesOdp, BayesOdpFit};
 
 use prospicio_bayes::nuts::ParamSummary;
@@ -131,6 +141,14 @@ impl Stream {
 /// reach.
 pub(crate) fn derive_seed(seed: u64, stream: Stream) -> u64 {
     StreamRng::new(seed, u64::MAX - stream.tag()).next_u64()
+}
+
+/// The seed of a pilot run that sets a model's sampling scale (for
+/// [`Meyers`]): the first value of stream `u64::MAX` of the chains' derived
+/// seed, a stream its chains (`0..chains`) do not reach, so it takes no tag
+/// of [`Stream`].
+pub(crate) fn pilot_seed(seed: u64) -> u64 {
+    StreamRng::new(derive_seed(seed, Stream::Chains), u64::MAX).next_u64()
 }
 
 #[cfg(test)]
