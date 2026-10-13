@@ -291,3 +291,11 @@ stopifnot(identical(tp$view, c("gross", "a", "b", "stage_1", "net")))
 stopifnot(abs(tp$premium[tp$view == "stage_1"] / 111.0007062267948 - 1) < 2e-8)
 cover <- aggregate_layer_statistics(two$net, limit = 300, attachment = 200)
 stopifnot(abs(cover$pr_attach - 0.3912338371214888) < 1e-12, abs(cover$aggregate[["mean"]] / 38.7761195844111 - 1) < 1e-9)
+
+# A quota share on an annual loss-ratio grid (#206).
+probs <- numeric(81)
+probs[c(51, 61, 71, 81)] <- 0.25
+qs <- with_ceding_commission(with_deposit_premium(quota_share("QS", 0.4), 100), 0.3)
+r <- tower_on_annual_grid(reinsurance_tower(list(qs)), grid_distribution(1, probs))
+stopifnot(abs(mean(r$ceded[["QS"]]) - 26) < 1e-12, abs(r$expected_ceding_commission[["QS"]] - 12) < 1e-12,
+          abs(mean(r$net) - 39) < 1e-12)

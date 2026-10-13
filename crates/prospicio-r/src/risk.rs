@@ -108,24 +108,7 @@ impl RiskDistortion {
     }
 
     fn kind(&self) -> &'static str {
-        match &self.inner {
-            Distortion::Tvar(_) => "tvar",
-            Distortion::Wang(_) => "wang",
-            Distortion::ProportionalHazard(_) => "proportional_hazard",
-            Distortion::DualPower(_) => "dual_power",
-            Distortion::Exponential(_) => "exponential",
-            Distortion::Ccoc(_) => "ccoc",
-            Distortion::BiTvar { .. } => "bitvar",
-            Distortion::WeightedTvar { .. } => "weighted_tvar",
-            Distortion::CappedLinear { .. } => "capped_linear",
-            Distortion::CappedLogLinear { .. } => "capped_log_linear",
-            Distortion::Lep { .. } => "lep",
-            Distortion::LinearYield { .. } => "linear_yield",
-            Distortion::Beta { .. } => "beta",
-            Distortion::Mixture(_) => "mixture",
-            Distortion::Minimum(_) => "minimum",
-            Distortion::Convex(_) => "convex",
-        }
+        self.inner.family()
     }
 
     /// The parameters: one for the one-parameter kinds (the slope, `b` or
@@ -150,6 +133,12 @@ impl RiskDistortion {
             Distortion::Minimum(_) => vec![],
             Distortion::Convex(knots) => knots.iter().map(|k| k.0).collect(),
         }
+    }
+
+    /// The scalar parameters by name, as the constructor takes them.
+    fn parameters(&self) -> List {
+        let (names, values): (Vec<&str>, Vec<f64>) = self.inner.parameters().into_iter().unzip();
+        List::from_names_and_values(names, values.into_iter().map(Robj::from)).unwrap_or_default()
     }
 
     /// The probability mass on the largest outcome, `g(0+)`.

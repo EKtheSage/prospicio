@@ -85,6 +85,7 @@ reference:
       - reinsurance.LossSensitivePremium
       - reinsurance.Tower
       - reinsurance.TowerGrids
+      - reinsurance.AnnualGrids
       - reinsurance.TowerPrice
       - reinsurance.ViewPrice
       - reinsurance.occurrence_layer_statistics
@@ -170,11 +171,18 @@ reference:
       - pricing.Portfolio
       - pricing.NaturalPrice
       - pricing.StandAlone
+      - pricing.Quote
       - pricing.Pentagon
       - pricing.classical_premium
       - pricing.calibrate_classical
       - pricing.PricingBounds
       - pricing.distortion_envelope
+  - title: Experience rating
+    desc: Experience rating from individual large losses, trended to the prospective period, the as-if loss to each layer by accident year, and the burning cost (Clark's study note).
+    contents:
+      - pricing.LargeLossExperience
+      - pricing.PreparedLosses
+      - pricing.BurningCost
   - title: Credibility
     desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model.
     contents:

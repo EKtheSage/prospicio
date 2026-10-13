@@ -20,7 +20,9 @@
 //! See `docs/design/pareto.md`.
 
 use prospicio_core::{Error, Result};
-use prospicio_prob::{ComponentKey, Distortion, Empirical, PredictiveDistribution};
+use prospicio_prob::{
+    ComponentKey, Distortion, Distribution, Empirical, Grid, PredictiveDistribution,
+};
 
 /// How the premium is set from the losses and the assets.
 #[derive(Debug, Clone, PartialEq)]
@@ -102,6 +104,29 @@ pub fn price<E: Empirical + ?Sized>(
     assets: &Distortion,
 ) -> Result<Price> {
     let p = price_unchecked(losses, rule, assets);
+    check_funded(p.premium, p.assets)?;
+    Ok(p)
+}
+
+/// Prices one cover from its loss distribution on a grid: the exact
+/// annual loss of a layer from `prospicio_aggregate::Tower::on_grid`, or
+/// any [`Grid`]. The same rule as [`price`]: assets `a = ρ(X)` from the
+/// capital standard `assets` (for example `Distortion::tvar(0.99)`), and
+/// the premium from `rule`.
+///
+/// ```
+/// use prospicio_prob::{Distortion, Grid};
+/// use prospicio_pricing::risk_load::{price_grid, PremiumRule};
+///
+/// // Ceded losses 0, 2 or 6 with probabilities 1/2, 1/4, 1/4.
+/// let ceded = Grid::new(2.0, vec![0.5, 0.25, 0.0, 0.25]).unwrap();
+/// let assets = Distortion::tvar(0.5).unwrap(); // a = 4
+/// let p = price_grid(&ceded, &PremiumRule::cost_of_capital(0.25).unwrap(), &assets).unwrap();
+/// assert!((p.premium - (2.0 + 0.25 * 4.0) / 1.25).abs() < 1e-12); // 2.4
+/// assert!((p.return_on_capital() - 0.25).abs() < 1e-12);
+/// ```
+pub fn price_grid(losses: &Grid, rule: &PremiumRule, assets: &Distortion) -> Result<Price> {
+    let p = priced(losses.mean(), |d| losses.distortion(d), rule, assets);
     check_funded(p.premium, p.assets)?;
     Ok(p)
 }
@@ -214,10 +239,20 @@ fn price_unchecked<E: Empirical + ?Sized>(
     rule: &PremiumRule,
     assets: &Distortion,
 ) -> Price {
-    let expected_loss = losses.mean();
-    let a = losses.distortion(assets);
+    priced(losses.mean(), |d| losses.distortion(d), rule, assets)
+}
+
+/// The price from the expected loss and a distortion risk measure of the
+/// losses.
+fn priced(
+    expected_loss: f64,
+    measure: impl Fn(&Distortion) -> f64,
+    rule: &PremiumRule,
+    assets: &Distortion,
+) -> Price {
+    let a = measure(assets);
     let premium = match rule {
-        PremiumRule::Distortion(g) => losses.distortion(g),
+        PremiumRule::Distortion(g) => measure(g),
         PremiumRule::CostOfCapital(r) => (expected_loss + r * a) / (1.0 + r),
     };
     Price {
@@ -252,6 +287,28 @@ mod tests {
             Provenance::new("test"),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_grid_prices_as_its_equally_likely_draws() {
+        // 0, 2 and 6 with probabilities 1/2, 1/4, 1/4 are the draws 0, 0, 2, 6.
+        let g = Grid::new(2.0, vec![0.5, 0.25, 0.0, 0.25]).unwrap();
+        let s = Sampled::new(vec![0.0, 0.0, 2.0, 6.0]).unwrap();
+        let assets = Distortion::tvar(0.6).unwrap();
+        for rule in [
+            PremiumRule::cost_of_capital(0.1).unwrap(),
+            PremiumRule::Distortion(Distortion::proportional_hazard(0.8).unwrap()),
+        ] {
+            let (a, b) = (
+                price_grid(&g, &rule, &assets).unwrap(),
+                price(&s, &rule, &assets).unwrap(),
+            );
+            assert!((a.premium - b.premium).abs() < 1e-12);
+            assert!((a.assets - b.assets).abs() < 1e-12);
+            assert!((a.expected_loss - b.expected_loss).abs() < 1e-12);
+        }
+        let too_rich = PremiumRule::Distortion(Distortion::tvar(0.9).unwrap());
+        assert!(price_grid(&g, &too_rich, &assets).is_err());
     }
 
     #[test]

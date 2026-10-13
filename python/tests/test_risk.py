@@ -211,3 +211,13 @@ def test_exponential_utility_and_systemic_measures():
     assert covar(pd, ("a",), 0.0, 0.5) == pd.total().var(0.5)
     with pytest.raises(ValueError):
         covar(pd, ("z",), 0.9, 0.5)
+
+
+def test_distortion_family_and_parameters():
+    from prospicio.risk import Distortion
+
+    d = Distortion.proportional_hazard(0.7)
+    assert (d.family, d.parameters) == ("proportional_hazard", {"rho": 0.7})
+    c = Distortion.capped_linear(0.1, 2.0)
+    assert c.family == "capped_linear" and c.parameters == {"r0": 0.1, "slope": 2.0}
+    assert Distortion.mixture([d, c], [0.5, 0.5]).parameters == {}
