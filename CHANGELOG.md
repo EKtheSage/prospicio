@@ -96,6 +96,14 @@ under "Unreleased" until then.
   aggregate deductible, retro, swing, profit commission and sliding scale,
   and distortion premiums, and compares 343 results (321 independent
   comparisons and 22 consistency checks) with Mildenhall's `aggregate` 1.0.1 (reference file `validation/reference/re_pricing_aggregate.csv`) (#186).
+- The notebooks in `examples/` are committed without outputs, and an
+  nbstripout git filter (`.gitattributes`; setup in `examples/README.md`)
+  keeps a local run out of commits; the docs site executes them and
+  publishes their results, with the guides, in the Python site's User Guide.
+
+### Guides
+
+- `docs/guides/reinsurance-price.md`, "What a reinsurance price is": the pricing pentagon, an excess of loss layer's technical premium and reinstatements, where a layer sits in a tower, a quota share's technical commission with a sliding scale and a profit commission, how price follows a risk profile, a contract alone and in a book, soft and hard markets, and what the model leaves out. CI runs its code and checks every printed number (`python/tests/test_guides.py`).
 
 ### Reserving
 
