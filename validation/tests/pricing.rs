@@ -1299,3 +1299,72 @@ mod indication {
         );
     }
 }
+
+#[test]
+fn pricing_bounds_match_aggregate() {
+    use prospicio_pricing::bounds::{PricingBounds, distortion_envelope};
+    // validation/scripts/aggregate_bounds.py: InsCo's total as X.
+    let xv = [22.0, 28.0, 36.0, 40.0, 55.0, 65.0, 100.0];
+    let xp = [0.1, 0.1, 0.1, 0.4, 0.1, 0.1, 0.1];
+    let ys = [
+        (
+            "X3".to_string(),
+            vec![0.0, 7.0, 8.0, 9.0, 10.0, 11.0, 40.0, 64.0],
+            vec![0.3, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+        ),
+        (
+            "Z".to_string(),
+            vec![0.0, 30.0, 60.0, 90.0],
+            vec![0.4, 0.3, 0.2, 0.1],
+        ),
+    ];
+    let uncapped = PricingBounds::new((&xv, &xp), &ys, f64::INFINITY).unwrap();
+    let capped = PricingBounds::new((&xv, &xp), &ys, 65.0).unwrap();
+    let cases = reference("bounds_aggregate.csv");
+    let (grid, exact): (Vec<_>, Vec<_>) = cases
+        .into_iter()
+        .partition(|c| c.get("distribution").starts_with("bounds_"));
+    check(&exact, |c| {
+        let arg = c.number("arg")?;
+        match c.get("distribution") {
+            "price" => {
+                let pb = if c.param("params", "a").is_finite() {
+                    &capped
+                } else {
+                    &uncapped
+                };
+                let (risk, side) = c.get("quantity").split_once('.')?;
+                let r = pb.bounds(arg).ok()?.into_iter().find(|r| r.risk == risk)?;
+                Some(if side == "lower" { r.lower } else { r.upper })
+            }
+            "envelope" => {
+                let premium = c.param("params", "premium");
+                let (lo, hi) =
+                    distortion_envelope((&xv, &xp), premium, f64::INFINITY, &[arg]).ok()?[0];
+                Some(if c.get("quantity") == "lower" { lo } else { hi })
+            }
+            _ => None,
+        }
+    });
+    // aggregate's Bounds searches a grid of levels, nearly a subset of the
+    // distortions: the exact envelope lies outside its envelope, close by.
+    // Its members price X at P to its root tolerance and its upper envelope
+    // interpolates linearly in s, so it may poke out by 2.4e-4 (at s = 0.1).
+    for c in &grid {
+        let s = c.number("arg").unwrap();
+        let theirs = c.number("expected").unwrap();
+        let premium = c.param("params", "premium");
+        let (lo, hi) = distortion_envelope((&xv, &xp), premium, f64::INFINITY, &[s]).unwrap()[0];
+        if c.get("distribution") == "bounds_min" {
+            assert!(
+                lo <= theirs + 1e-3 && theirs - lo < 0.05,
+                "s = {s}: {lo} vs {theirs}"
+            );
+        } else {
+            assert!(
+                hi >= theirs - 1e-3 && hi - theirs < 0.05,
+                "s = {s}: {hi} vs {theirs}"
+            );
+        }
+    }
+}

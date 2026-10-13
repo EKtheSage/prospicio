@@ -871,8 +871,44 @@ fn pricing_pentagon(names: Vec<String>, values: &[f64]) -> Result<List> {
     Ok(pentagon_list(&[&p], vec!["total".into()]))
 }
 
+/// Pricing bounds: `list(lower, upper, lower_distortion, upper_distortion)`,
+/// one entry per risk in each.
+#[extendr]
+fn pricing_bounds_rust(x: Robj, risks: List, premium: f64, assets: f64) -> Result<List> {
+    let (xv, xp) = crate::risk::discrete_of(&x)?;
+    let ys = risks
+        .iter()
+        .map(|(name, y)| {
+            let (yv, yp) = crate::risk::discrete_of(&y)?;
+            Ok((name.to_string(), yv, yp))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let pb =
+        prospicio_pricing::bounds::PricingBounds::new((&xv, &xp), &ys, assets).map_err(to_r)?;
+    let b = pb.bounds(premium).map_err(to_r)?;
+    let wrap = |d: &prospicio_prob::Distortion| Robj::from(RiskDistortion { inner: d.clone() });
+    Ok(list!(
+        lower = b.iter().map(|u| u.lower).collect::<Vec<f64>>(),
+        upper = b.iter().map(|u| u.upper).collect::<Vec<f64>>(),
+        lower_distortion = List::from_values(b.iter().map(|u| wrap(&u.lower_distortion))),
+        upper_distortion = List::from_values(b.iter().map(|u| wrap(&u.upper_distortion)))
+    ))
+}
+
+/// The distortion envelope: `list(lower, upper)` at each `s`.
+#[extendr]
+fn distortion_envelope_rust(x: Robj, premium: f64, s: &[f64], assets: f64) -> Result<List> {
+    let (xv, xp) = crate::risk::discrete_of(&x)?;
+    let env = prospicio_pricing::bounds::distortion_envelope((&xv, &xp), premium, assets, s)
+        .map_err(to_r)?;
+    let (lower, upper): (Vec<f64>, Vec<f64>) = env.into_iter().unzip();
+    Ok(list!(lower = lower, upper = upper))
+}
+
 extendr_module! {
     mod pricing;
+    fn pricing_bounds_rust;
+    fn distortion_envelope_rust;
     impl NaturalPortfolio;
     fn pricing_pentagon;
     fn pricing_classical_premium;

@@ -569,6 +569,36 @@ reshape a severity grid so that its expected loss to each layer
   whenever the cap binds; `aggregate` only when the capped layer misses
   its pick by more than `1e-3`.
 
+### Pricing bounds for other risks
+
+`aggregate`'s `PricingBounds` and `Bounds` (Mildenhall, IME 2022), in
+`prospicio_pricing::bounds`; the allocation bounds (`AllocationBounds`)
+were already `Portfolio::premium_bounds` (`docs/design/risk.md`).
+
+- The distortions pricing `X` at `P` have BiTVaRs as extreme points and
+  price any `Y` at `∫ TVaR_p(Y) μ(dp)`, so `Y`'s price range is the
+  vertical slice at `P` of the convex hull of `p ↦ (TVaR_p(X),
+  TVaR_p(Y))`. For discrete risks both coordinates are affine in
+  `1 / (1 − p)` between consecutive points of the union of the two sets of
+  cumulative probabilities, so the curve is a polyline and the hull
+  (monotone chain) exact. Each vertex's `TVaR` comes from tail masses and
+  tail means summed from the top, located by bisection: `O(n log n)`.
+- The curve ends at `p → 1`, `(max X, max Y)`: `TVaR_1` prices `X` at its
+  maximum. `aggregate` stops at the last breakpoint below 1 and keeps the
+  first vertex where `TVaR_p(X)` saturates, so where `X`'s top atom is
+  larger than `Y`'s its upper bound is too low (52 where 64 is attained,
+  for InsCo's X3 with both capped at 65 and `P = 65`). Where `TVaR_p(X)`
+  ties, the lower hull takes the lowest `Y` and the upper the highest.
+- `distortion_envelope`: `g(s)` of a BiTVaR is the price of a Bernoulli
+  risk with `P(1) = s`, since its `TVaR_p` is `min(1, s / (1 − p))`. So the
+  envelope of the distortions pricing `X` at `P` is that Bernoulli's price
+  range, exact at any `s`. `aggregate`'s `Bounds` searches 256 levels and
+  interpolates in `s`; it returns its lower envelope as a fitted concave
+  distortion, prospicio returns the values.
+- Not carried: the uniform reference (the Gini lens, `TVaR_p(U) = (1 +
+  p) / 2`), which is affine in `p`, not `1 / (1 − p)`, so the hull on the
+  breakpoints is not exact there; and `Bounds`' cloud and plots.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -674,6 +704,18 @@ straight line (compared above the bottom layer, where both agree). The
 adjusted probabilities match at `1e-12`, the layer losses at `1e-9`
 relative; the bottom layer's pick is met to `1e-9`.
 
+Pricing bounds are checked against `aggregate` 1.0.1
+(`validation/scripts/aggregate_bounds.py`, 80 values) with InsCo's total
+as `X`: `PricingBounds` for InsCo's X3 and a four-point risk, uncapped at
+six premiums and capped at 65 at five, at `1e-12` relative. Where
+`aggregate` drops the `p → 1` vertex (six rows, capped) the reference is a
+brute force over the BiTVaRs on the curve's vertices with `p = 1`, using
+`aggregate`'s TVaR. The envelope is checked against `PricingBounds` on
+Bernoulli risks at `1e-12`, and against `Bounds`' grid envelope as
+inequalities (outside it, within 0.05; it pokes out by up to 2.4e-4, from
+its root tolerance and interpolation). Unit tests reprice every bound's
+BiTVaR: it prices `X` at `P` and `Y` at the bound, to `1e-10`.
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
@@ -689,7 +731,8 @@ relative; the bottom layer's pick is met to `1e-9`.
       and `eventual_ruin`, in `prospicio_aggregate::ruin`.)
    5. (Done: layer loss picks, `Aggregate.picks`, in
       `prospicio_aggregate::picks`.)
-   6. `Bounds` and `PricingBounds`, the rest of the 2022 pricing bounds.
+   6. (Done: `Bounds` and `PricingBounds`, the rest of the 2022 pricing
+      bounds, in `prospicio_pricing::bounds`.)
    Small items to fold into these: a total-ceded grid for a stage with
    several layers (its price and statistics, `reins_stats_df`'s `Ceded`
    column), statistics of aggregate covers, `tvar_threshold`, a stand-alone price on

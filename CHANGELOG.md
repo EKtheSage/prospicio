@@ -56,6 +56,12 @@ under "Unreleased" until then.
   (`prospicio_aggregate::picks::layer_loss_picks`). Infeasible picks are
   an error. Python `prospicio.aggregate.layer_loss_picks`; R
   `layer_loss_picks()`.
+- Pricing bounds for other risks, `aggregate`'s `PricingBounds` and
+  `Bounds`: the range of a risk's price over every distortion that prices
+  a reference risk at a premium, with the BiTVaRs attaining it, and the
+  envelope of those distortions, both exact
+  (`prospicio_pricing::bounds`). Python `prospicio.pricing.PricingBounds`,
+  `distortion_envelope`; R `pricing_bounds()`, `distortion_envelope()`.
 
 ### Reserving
 

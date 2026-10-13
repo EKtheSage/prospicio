@@ -116,6 +116,7 @@ reference:
       - priority_ladder
       - pentagon
       - premium_bounds
+      - pricing_bounds
       - classical_premium
       - mbbefd
       - tabulated_curve

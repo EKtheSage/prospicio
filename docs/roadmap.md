@@ -102,10 +102,13 @@ what it is aiming for by v1.0.
     priced under a distortion, the grid towers checked against
     `aggregate` point by point; the senior and junior priority ladder
     for capital, exact under any dependence from scenarios; eventual ruin
-    by Pollaczeck–Khinchine; a severity reshaped to layer loss picks.
+    by Pollaczeck–Khinchine; a severity reshaped to layer loss picks;
+    pricing bounds for other risks and the envelope of the distortions.
 - **Next:**
-  1. The rest of `aggregate` parity tier 2 (the user's choice, 2026-10-12),
-     in the order listed in `docs/design/aggregate.md`: pricing bounds.
+  1. The small items of `aggregate` parity tier 2 (the user's choice,
+     2026-10-12), listed in `docs/design/aggregate.md`: the total cession of
+     a stage with several layers, statistics of aggregate covers, and the
+     rest.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

@@ -10314,6 +10314,57 @@ class Price:
         """
 
 @final
+class PricingBounds:
+    """
+    The range of other risks' prices over every distortion that prices a
+    reference risk ``X`` at a premium: ``aggregate``'s ``PricingBounds``,
+    exact. Prices are law-invariant, so only each risk's distribution
+    matters. The ends are attained by BiTVaRs, given with each bound.
+    
+    Parameters
+    ----------
+    x : Sampled, Grid or PredictiveDistribution
+        The reference risk (a predictive distribution's total).
+    risks : dict of str to Sampled, Grid or PredictiveDistribution
+        The risks to bound.
+    assets : float, optional
+        Cap every risk at the assets.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.pricing import PricingBounds
+    >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+    >>> y = Sampled([0, 0, 11, 0, 7, 8, 9, 10, 40, 64])
+    >>> pb = PricingBounds(x, {"X3": y})
+    >>> b = pb.bounds(53.565217391304344)[0]
+    >>> round(b["lower"], 6), round(b["upper"], 6)
+    (20.070992, 22.098038)
+    """
+    def __new__(cls, /, x: Any, risks: dict, assets: float |None = None) -> PricingBounds: ...
+    def __repr__(self, /) -> str: ...
+    def bounds(self, /, premium: float) -> list[dict]:
+        """
+        Each risk's lowest and highest price when ``X`` is priced at
+        ``premium``.
+        
+        Parameters
+        ----------
+        premium : float
+        
+        Returns
+        -------
+        list of dict
+            One per risk: ``risk``, ``lower``, ``upper``, and a Distortion
+            attaining each, ``lower_distortion`` and ``upper_distortion``.
+        """
+    @property
+    def premium_range(self, /) -> tuple[float, float]:
+        """
+        The premiums ``X`` can be priced at, ``(E[X], max X)``.
+        """
+
+@final
 class Provisions:
     """
     The provisions proportional to premium: variable expenses ``V`` and the
@@ -13355,6 +13406,27 @@ def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequ
     Returns
     -------
     float
+    """
+
+def distortion_envelope(x: Any, premium: float, s: Sequence[float], assets: float |None = None) -> tuple[list[float], list[float]]:
+    """
+    The smallest and largest ``g(s)`` at each ``s`` over every distortion
+    that prices ``x`` at ``premium``: ``aggregate``'s ``Bounds`` envelopes,
+    exact (each is the price range of a Bernoulli risk with ``P(1) = s``).
+    
+    Parameters
+    ----------
+    x : Sampled, Grid or PredictiveDistribution
+    premium : float
+    s : list of float
+        Levels in [0, 1].
+    assets : float, optional
+        Cap ``x`` at the assets.
+    
+    Returns
+    -------
+    tuple of (list of float, list of float)
+        The lower envelope (a concave distortion) and the upper.
     """
 
 def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:

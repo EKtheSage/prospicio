@@ -165,6 +165,8 @@ reference:
       - pricing.Pentagon
       - pricing.classical_premium
       - pricing.calibrate_classical
+      - pricing.PricingBounds
+      - pricing.distortion_envelope
   - title: Credibility
     desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model.
     contents:

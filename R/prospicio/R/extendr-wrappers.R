@@ -104,6 +104,10 @@ pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_pri
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
+pricing_bounds_rust <- function(x, risks, premium, assets) .Call(wrap__pricing_bounds_rust, x, risks, premium, assets)
+
+distortion_envelope_rust <- function(x, premium, s, assets) .Call(wrap__distortion_envelope_rust, x, premium, s, assets)
+
 pricing_pentagon <- function(names, values) .Call(wrap__pricing_pentagon, names, values)
 
 pricing_classical_premium <- function(x, principle, loading, q) .Call(wrap__pricing_classical_premium, x, principle, loading, q)

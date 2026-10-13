@@ -878,6 +878,53 @@ premium_bounds <- function(port, premium, assets = NULL, p = NULL) {
   out
 }
 
+#' Pricing bounds for other risks
+#'
+#' `pricing_bounds()` is the range of each risk's price over every
+#' distortion that prices the reference risk `x` at `premium`, as the Python
+#' package `aggregate`'s `PricingBounds`: the vertical slice at `premium` of
+#' the convex hull of the curve `(TVaR_p(x), TVaR_p(y))`, exact for discrete
+#' risks. Prices are law-invariant, so only each risk's distribution
+#' matters; for a unit's share of a portfolio's price use
+#' [premium_bounds()]. `distortion_envelope()` is the smallest and largest
+#' `g(s)` over those distortions (`aggregate`'s `Bounds` envelopes, exact):
+#' the price range of a Bernoulli risk with `P(1) = s`.
+#'
+#' @param x The reference risk: a [sampled], [grid_distribution] or
+#'   [predictive_distribution] (its total).
+#' @param risks A named list of risks to bound, of the same kinds.
+#' @param premium The price of `x`, between its mean and maximum.
+#' @param assets Cap every risk at the assets (`Inf` for none).
+#' @param s Levels in `[0, 1]`.
+#' @returns `pricing_bounds()`: a data frame with `risk`, `lower` and
+#'   `upper`, and list columns `lower_distortion` and `upper_distortion`
+#'   holding a [distortion] attaining each (it prices `x` at `premium`).
+#'   `distortion_envelope()`: a data frame with `s`, `lower` (a concave
+#'   distortion) and `upper`.
+#' @export
+#' @examples
+#' x <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+#' y <- sampled(c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64))
+#' pricing_bounds(x, list(X3 = y), 53.565)[, c("risk", "lower", "upper")]
+#' distortion_envelope(x, 53.565, c(0.1, 0.5, 0.9))
+pricing_bounds <- function(x, risks, premium, assets = Inf) {
+  if (is.null(names(risks)) || any(names(risks) == "")) stop("name every risk")
+  r <- rust_result(pricing_bounds_rust(
+    x@ptr, lapply(risks, function(y) y@ptr), as.double(premium), as.double(assets)
+  ))
+  out <- data.frame(risk = names(risks), lower = r$lower, upper = r$upper)
+  out$lower_distortion <- lapply(r$lower_distortion, function(d) distortion(ptr = d))
+  out$upper_distortion <- lapply(r$upper_distortion, function(d) distortion(ptr = d))
+  out
+}
+
+#' @rdname pricing_bounds
+#' @export
+distortion_envelope <- function(x, premium, s, assets = Inf) {
+  r <- rust_result(distortion_envelope_rust(x@ptr, as.double(premium), as.double(s), as.double(assets)))
+  data.frame(s = s, lower = r$lower, upper = r$upper)
+}
+
 #' Classical premium principles
 #'
 #' `classical_premium()` prices a distribution under a classical premium

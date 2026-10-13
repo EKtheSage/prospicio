@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-13T00:45:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-13T01:06:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -40,6 +40,9 @@ sources:
   - id: picks
     resource: ../validation/scripts/aggregate_picks.py
     title: aggregate_picks.py
+  - id: bounds
+    resource: ../validation/scripts/aggregate_bounds.py
+    title: aggregate_bounds.py
 ---
 
 # Which source for what
@@ -280,6 +283,25 @@ sources:
 * Infeasible picks (a negative weight) only warn, and the returned
   probabilities are negative.[^picks]
 
+# Pricing bounds
+
+* `aggregate.bounds.PricingBounds(x, ys, a=)` takes pmf Series (or
+  Aggregates, Portfolios); `.bounds(P)` is a frame on `(P, risk)` with
+  `lower`, `upper`, `width`; `.bitvars(P)` the attaining BiTVaRs. P must be
+  in `[E[X], max X]` of the capped X.[^bounds]
+* Its vertices are `p = 0` and the breakpoints below 1 (with tail at
+  least `s_floor = 1e-14`), deduplicated on "first vertex attaining each
+  `TVaR_p(X)`". So where X's top atom is larger than Y's, the `p → 1`
+  vertex `(max X, max Y)` is lost and the upper bound is too low: InsCo's
+  total and X3 capped at 65, at P = 65, give 52 where `TVaR_1` attains
+  64.[^bounds]
+* `Bounds(x, P)` searches 256 levels (refined near `p*`, found by brentq to
+  `xtol = 2^-17`) and an s-grid of 513; its `max_envelope` interpolates
+  linearly in s and can exceed the exact envelope by 2.4e-4 at a kink (s =
+  0.1 on InsCo).[^bounds]
+* `GridDistribution` lives in `aggregate._grid_distribution`, not the
+  package root.[^bounds]
+
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
@@ -287,3 +309,4 @@ sources:
 [^natural]: aggregate_natural.py
 [^ruin]: aggregate_ruin.py
 [^picks]: aggregate_picks.py
+[^bounds]: aggregate_bounds.py
