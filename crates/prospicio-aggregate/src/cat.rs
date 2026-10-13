@@ -143,7 +143,7 @@ impl EventLossTable {
                 // m/E and (σ/E)² must allow a beta: v < m(1 − m).
                 let (mu, v) = (m / e, (sd / e).powi(2));
                 let room = mu * (1.0 - mu);
-                if !(v < room) {
+                if v >= room {
                     return Err(row(&format!(
                         "no beta on [0, {e}] has mean {m} and standard deviation {sd}; \
                          the standard deviation must be below {}",
