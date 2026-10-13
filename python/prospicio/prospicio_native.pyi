@@ -9323,11 +9323,27 @@ class Meyers:
         usual 0.8 the paid fits of group 353 leave divergent transitions.
     max_depth : int, default 10
         Largest NUTS tree depth.
+    dependence : {"independent", "rank_correlation", "synchronized"}, default "independent"
+        How the segments of a multi-segment triangle depend on each other
+        in ``fit_segments`` (``fit`` has one segment and does not use it),
+        as ``BayesOdp``'s: each segment's own posterior and simulations, with
+        seeds derived from ``seed`` and the segment's position; or the
+        segments' simulations reordered as whole rows (Iman–Conover on the
+        segments' total reserves, each segment's ultimates moving with its
+        reserves) to the Spearman matrix ``spearman`` and then put in a
+        random order. ``"synchronized"`` is accepted here, as the bootstraps
+        take it, but ``fit_segments`` raises: a posterior has no residuals to
+        share.
+    spearman : list of list of float, optional
+        With ``dependence="rank_correlation"`` only: Spearman's rho between
+        the segments' total reserves, as ``OdpBootstrap``'s.
     
     Raises
     ------
     ValueError
-        If ``n_sims`` is zero or ``model`` is unknown.
+        If ``n_sims`` is zero, ``model`` or ``dependence`` is unknown, or
+        ``spearman`` is missing for ``"rank_correlation"``, given for another
+        dependence or not square.
     OverflowError
         If an integer setting is negative or too large.
     
@@ -9353,12 +9369,18 @@ class Meyers:
     >>> fit.premium[:2]
     [5812.0, 4908.0]
     """
-    def __new__(cls, /, model: str = "crc", logelr_mean: float = ..., logelr_sd: float = 3.162, origin_sd: float = 3.162, development_sd: float = 3.162, gamma_sd: float = 0.05, rho_shape: float = 2.0, chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> Meyers: ...
+    def __new__(cls, /, model: str = "crc", logelr_mean: float = ..., logelr_sd: float = 3.162, origin_sd: float = 3.162, development_sd: float = 3.162, gamma_sd: float = 0.05, rho_shape: float = 2.0, chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Meyers: ...
     def __repr__(self, /) -> str: ...
     @property
     def chains(self, /) -> int:
         """
         Number of NUTS chains.
+        """
+    @property
+    def dependence(self, /) -> str:
+        """
+        How segments depend on each other in ``fit_segments``:
+        ``"independent"``, ``"rank_correlation"`` or ``"synchronized"``.
         """
     @property
     def development_sd(self, /) -> float:
@@ -9404,6 +9426,62 @@ class Meyers:
             observed cells than parameters; or, under ``"cay"``, if a cell
             lacks the previous origin's cell at the same age.
         """
+    def fit_segments(self, /, triangle: Triangle, column: str, premium: str) -> MeyersFits:
+        """
+        Samples the posterior of one measure column in every segment of a
+        cumulative triangle, each segment with its own posterior (the same
+        model and settings, sampled independently) and its premium from its
+        own ``premium`` column as ``fit`` reads it, into one joint
+        distribution of the ultimates and one of the reserves, the segments
+        depending on each other as ``dependence`` says. Segment ``k`` (in
+        index order) takes seeds derived from ``seed`` and ``k`` for its
+        chains and its simulations, so independent segments share no random
+        numbers, and a segment's draws differ from ``fit`` of that segment
+        alone. Raises one ``UserWarning`` listing the failed diagnostics of
+        every segment, each message prefixed with its segment's label.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        column : str
+            The losses: paid, or case incurred.
+        premium : str
+            The premium of each origin.
+        
+        Returns
+        -------
+        MeyersFits
+        
+        Raises
+        ------
+        ValueError
+            As ``fit`` for any segment (the message names the segment); if
+            ``dependence`` is ``"synchronized"`` (before any sampling); or if
+            ``spearman`` does not fit the segments.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import Meyers, Triangle
+        >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+        ...         [983, 2211, 2830], [1657, 2685], [932]]
+        >>> premium = [5812, 4908, 5454, 5165, 5214]
+        >>> rows = [(lob, 1988 + w, 12 * (d + 1), k * v, k * premium[w])
+        ...         for lob, k in [("Auto", 1.0), ("Home", 2.0)]
+        ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+        >>> lob, origin, age, values, prem = map(list, zip(*rows))
+        >>> tri = Triangle.from_long(
+        ...     origin, age, {"paid": values, "premium": prem}, keys={"lob": lob})
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     fits = Meyers(tune=200, draws=200, n_sims=1000).fit_segments(
+        ...         tri, "paid", "premium")
+        >>> fits.index, fits.reserves.dims
+        (['Auto', 'Home'], ['lob', 'origin'])
+        >>> fits.segment(lob="Home").premium[:2]
+        [11624.0, 9816.0]
+        """
     @property
     def gamma_sd(self, /) -> float:
         """
@@ -9448,6 +9526,12 @@ class Meyers:
     def seed(self, /) -> int:
         """
         Seed of the chains and of the simulations.
+        """
+    @property
+    def spearman(self, /) -> list[list[float]] |None:
+        """
+        The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+        otherwise.
         """
     @property
     def target_accept(self, /) -> float:
@@ -9594,6 +9678,173 @@ class MeyersFit:
         at the oldest age) by origin: dimension ``"origin"``, one component
         per origin, one row per simulation. An origin observed at the
         oldest age keeps its value.
+        """
+
+@final
+class MeyersFits:
+    """
+    ``Meyers.fit_segments``: each segment's own posterior and the joint
+    posterior predictive distributions of the ultimates and the reserves,
+    laid out as ``BayesOdpFits``.
+    
+    ``ultimates`` and ``reserves`` have the triangle's keys and ``"origin"``
+    as dimensions, so ``reserves.aggregate(["lob"])`` keeps the dependence
+    between segments. Per-origin lists (``origins``, ``premium``) run over
+    the origins of each segment in turn, like the rows of ``to_frame()``
+    and the components of ``reserves``. The posterior of one segment
+    (``diagnostics``, ``parameter_names``, ``draws``, ``chains``,
+    ``summary()`` and ``loo()``) needs a single-segment fit: for several
+    segments use ``segment(...)`` or ``diagnostics_frame()``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of every segment's fitted column,
+        whose latest values the reserves are measured from.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains of a single-segment fit.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months of the first segment.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladders' development factors, one row per segment and
+        age, as ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics of a single-segment fit, as
+        ``MeyersFit.diagnostics``.
+        """
+    def diagnostics_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, then ``max_rhat``,
+        ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+        ``warnings`` (the segment's messages joined by ``"; "``, empty when
+        every threshold holds). Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws of a single-segment fit, as ``MeyersFit.draws``.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of a single-segment fit's observed cells on Meyers' log
+        scale, as ``MeyersFit.loo``.
+        
+        Returns
+        -------
+        Elpd
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments.
+        """
+    @property
+    def model(self, /) -> str:
+        """
+        The model: ``"crc"``, ``"csr"`` or ``"cay"``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and component.
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names of a single-segment fit, as
+        ``MeyersFit.parameter_names``.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium of each segment's origins, in the order of ``origins``.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        The ultimates less the latest values, simulation by simulation,
+        laid out as ``ultimates``.
+        """
+    def segment(self, /, **keys) -> MeyersFits:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint ultimates and
+        reserves (same dimensions).
+        
+        Returns
+        -------
+        MeyersFits
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary of a single-segment fit, as
+        ``MeyersFit.summary``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``, the
+        chain ladder's ``latest``, ``ultimate`` and ``reserve``, the
+        ``premium``, the ``mean`` and ``std_dev`` of the posterior
+        predictive reserve, and the ``ultimate_mean`` and
+        ``ultimate_std_dev`` of the posterior predictive ultimate. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the chain ladder's totals,
+        the total ``premium``, the ``mean`` and ``std_dev`` of the segment's
+        posterior predictive total reserve, and the ``ultimate_mean`` and
+        ``ultimate_std_dev`` of its total ultimate. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of the ultimate (the value
+        at the oldest age) by segment and origin: the triangle's keys and
+        ``"origin"`` are its dimensions, one component per segment and
+        origin, one row per simulation.
         """
 
 @final

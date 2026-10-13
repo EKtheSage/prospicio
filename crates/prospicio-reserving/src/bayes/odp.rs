@@ -796,7 +796,7 @@ impl TriangleModel for BayesOdp {
 
 /// `ln(mean(exp(v)))` without overflow; minus infinity when every value
 /// is.
-fn log_mean_exp(v: &[f64]) -> f64 {
+pub(super) fn log_mean_exp(v: &[f64]) -> f64 {
     let m = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     if m == f64::NEG_INFINITY {
         return m;

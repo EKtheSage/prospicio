@@ -160,5 +160,6 @@ mean(fit@reserves)
 quantile(fit@ultimates, 0.995)
 }
 \seealso{
-\code{\link[=bayes_odp]{bayes_odp()}}, \code{\link[=cape_cod]{cape_cod()}}, \code{\link[=bayes_loo]{bayes_loo()}}.
+\code{\link[=meyers_segments]{meyers_segments()}} for several segments, \code{\link[=bayes_odp]{bayes_odp()}}, \code{\link[=cape_cod]{cape_cod()}},
+\code{\link[=bayes_loo]{bayes_loo()}}.
 }

@@ -16,8 +16,8 @@ segment(fit, ...)
 \arguments{
 \item{fit}{A \link{chain_ladder_fit}, \link{mack_fit}, \link{expected_loss_fit},
 \link{cape_cod_fit}, \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit},
-\link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{meyers_fit}, \link{one_year_fit} or
-\link{clark_fit} (a \link{clark_fit} not for \code{development_frame()}).}
+\link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{meyers_fit}, \link{meyers_fits},
+\link{one_year_fit} or \link{clark_fit} (a \link{clark_fit} not for \code{development_frame()}).}
 
 \item{...}{Key conditions as \code{key = value}, one value each.}
 }
@@ -27,15 +27,16 @@ A data.frame, or for \code{segment()} a fit of the same class.
 \description{
 Tables of a \link{chain_ladder_fit}, \link{mack_fit}, \link{expected_loss_fit},
 \link{cape_cod_fit}, \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit},
-\link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{meyers_fit}, \link{one_year_fit} or
-\link{clark_fit} with the triangle's key columns by name. \code{as.data.frame(fit)} has one row per
+\link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{meyers_fit}, \link{meyers_fits},
+\link{one_year_fit} or \link{clark_fit} with the triangle's key columns by name. \code{as.data.frame(fit)} has one row per
 segment and origin: \code{origin}, \code{latest}, \code{ultimate} and \code{reserve} (the
 method's own), plus for Mack \code{process_risk}, \code{parameter_risk} and
 \code{standard_error}, for the expected-loss methods \code{exposure} and \code{apriori}
 (and Cape Cod's \code{trended_apriori}), for the bootstraps the \code{mean} and
 \code{std_dev} of the bootstrapped reserve (for \code{\link[=bayes_odp]{bayes_odp()}},
-\code{\link[=bayes_odp_segments]{bayes_odp_segments()}}, \code{\link[=bayes_bf]{bayes_bf()}} and \code{\link[=meyers]{meyers()}} of the posterior predictive reserve;
-\code{\link[=bayes_bf]{bayes_bf()}} adds the \code{exposure} and \code{prior_ultimate}, \code{\link[=meyers]{meyers()}} adds the \code{premium} and the
+\code{\link[=bayes_odp_segments]{bayes_odp_segments()}}, \code{\link[=bayes_bf]{bayes_bf()}}, \code{\link[=meyers]{meyers()}} and \code{\link[=meyers_segments]{meyers_segments()}} of the posterior
+predictive reserve; \code{\link[=bayes_bf]{bayes_bf()}} adds the \code{exposure} and \code{prior_ultimate}, \code{\link[=meyers]{meyers()}} and
+\code{\link[=meyers_segments]{meyers_segments()}} add the \code{premium} and the
 \code{ultimate_mean} and \code{ultimate_std_dev} of the predictive ultimate), and
 for Clark (Cape Cod)
 \code{exposure}, \code{expected_ultimate} and the three standard errors. The
@@ -57,7 +58,8 @@ for Clark its \code{omega}, \code{theta}, \code{scale} and, for Cape Cod, \code{
 \code{segment(fit, lob = "auto")} (compared as character). Keys not named may
 take any value, so a fit with one segment needs none; a choice that
 matches several segments is an error. For the bootstraps, the segment
-keeps its part of the joint \code{reserves}, and for the one-year view its
+keeps its part of the joint \code{reserves} (and \link{meyers_fits} of the joint
+\code{ultimates}), and for the one-year view its
 part of the joint \code{cdr}, with the same dimensions.
 
 These are Python's \code{to_frame()}, \code{totals_frame()},

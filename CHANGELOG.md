@@ -260,6 +260,31 @@ under "Unreleased" until then.
   `Meyers("cay", rho_shape=2.0)` and in R
   `meyers(..., model = "cay", rho_shape = 2)`; `rho_shape` follows
   `gamma_sd` in both signatures.
+- Meyers' models (CRC, CSR and CAY) over segments and in the diagonal
+  backtest (`docs/design/reserving-bayes.md`, PR 6), in Rust:
+  `Meyers::fit_segments(triangle, column, premium)` fits each segment's
+  own posterior into a joint `MeyersFits` (ultimates and reserves, with
+  `to_long`, `totals`, `development_table` and `segment`), with
+  `Meyers::dependence`, a new field: `Independent` (each segment on its own
+  derived seeds) or `RankCorrelation` (Iman–Conover on the reserves, each
+  segment's ultimates moving with them); `Synchronized` and a bad matrix
+  fail before any sampling. `Meyers` implements `TriangleModel`
+  (`meyers_crc`, `meyers_csr`, `meyers_cay`): it rebuilds each origin's
+  cumulative values from the train increments, reads premium from the
+  frame's exposure, simulates each origin's path jointly (a test
+  increment is the difference of consecutive values on one path) and gives
+  the log-normal log predictive density of a held-out diagonal. It
+  reports no diagnostics; on group 353's small held-out triangles the
+  default target acceptance 0.95 sometimes fails to converge, and its
+  doc advises 0.99 there.
+  `validation/data/clrd_lines.csv` gains each line's net earned premium
+  (`validation/scripts/clrd_lines.py`). In Python,
+  `Meyers(..., dependence="independent", spearman=None)` and
+  `Meyers.fit_segments(triangle, column, premium)` returning `MeyersFits`
+  (joint `ultimates` and `reserves`, `premium`, the frames,
+  `diagnostics_frame()`, `segment(...)`); in R,
+  `meyers_segments(triangle, column, premium, ..., dependence, spearman)`
+  returns a `meyers_fits`. The diagonal backtest stays Rust-only.
 
 ### Pricing
 

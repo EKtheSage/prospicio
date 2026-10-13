@@ -530,8 +530,8 @@ S7::method(print, bayes_glm_model) <- function(x, ...) {
 #'
 #' @param model A [bayes_glm_model], a [bayes_odp_fit] (or a single-segment
 #'   [bayes_odp_fits]) or [bayes_bf_fit] for the PSIS-LOO of its observed
-#'   increments, or a [meyers_fit] for that of its observed cells on the log
-#'   scale.
+#'   increments, or a [meyers_fit] (or a single-segment [meyers_fits]) for
+#'   that of its observed cells on the log scale.
 #' @returns As [elpd_loo()].
 #' @export
 #' @examples

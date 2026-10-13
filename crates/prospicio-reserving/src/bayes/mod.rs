@@ -10,9 +10,11 @@
 //! capital allocation and blending work on it unchanged.
 //!
 //! [`Meyers`] holds Meyers' (2019, CAS Monograph 8) log-normal models of
-//! cumulative values with premium, the correlated chain ladder (CRC) and the
-//! changing settlement rate model (CSR), with his priors. Its `ultimates`
-//! and `reserves` are a [`PredictiveDistribution`] by origin too.
+//! cumulative values with premium, the correlated chain ladder (CRC), the
+//! changing settlement rate model (CSR) and the correlated accident year
+//! model (CAY), with his priors. Its `ultimates` and `reserves` are a
+//! [`PredictiveDistribution`] by origin too. [`BayesOdp`] and [`Meyers`]
+//! both fit over segments and take part in the diagonal backtest.
 //!
 //! # Seeds
 //!
@@ -23,12 +25,13 @@
 //! stream `c` of its seed and simulation `i` stream `i` of its seed, so no
 //! simulation shares a stream with a chain, and a fit replays exactly for
 //! a seed whatever the number of threads. In
-//! [`BayesOdp::fit_segments`], segment `k` (in index order) takes tags
-//! `2 + 2k` (its chains) and `3 + 2k` (its simulations) instead, so every
-//! segment samples and simulates from its own streams and independent
-//! segments are independent (decision 11). [`Meyers`]' pilot run, which sets
-//! its sampling scale, takes stream `u64::MAX` of the chains' seed, which
-//! no chain reaches.
+//! [`BayesOdp::fit_segments`] and [`Meyers::fit_segments`], segment `k`
+//! (in index order) takes tags `2 + 2k` (its chains) and `3 + 2k` (its
+//! simulations) instead, so every segment samples and simulates from its
+//! own streams and independent segments are independent (decision 11).
+//! [`Meyers`]' pilot run, which sets its sampling scale, takes stream
+//! `u64::MAX` of its chains' seed (the segment's, over segments), which no
+//! chain reaches.
 //!
 //! [`PredictiveDistribution`]: prospicio_prob::PredictiveDistribution
 //! [`OdpBootstrapFit::reserves`]: crate::OdpBootstrapFit::reserves
@@ -39,7 +42,7 @@ mod meyers;
 mod odp;
 
 pub use bf::{BayesBf, BayesBfFit};
-pub use meyers::{Meyers, MeyersFit, MeyersModel};
+pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};
 pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};
 
 use prospicio_bayes::nuts::ParamSummary;
@@ -157,10 +160,10 @@ pub(crate) fn derive_seed(seed: u64, stream: Stream) -> u64 {
 
 /// The seed of a pilot run that sets a model's sampling scale (for
 /// [`Meyers`]): the first value of stream `u64::MAX` of the chains' derived
-/// seed, a stream its chains (`0..chains`) do not reach, so it takes no tag
-/// of [`Stream`].
-pub(crate) fn pilot_seed(seed: u64) -> u64 {
-    StreamRng::new(derive_seed(seed, Stream::Chains), u64::MAX).next_u64()
+/// seed `chains` (a fit's, or a segment's over segments), a stream its
+/// chains (`0..chains`) do not reach, so it takes no tag of [`Stream`].
+pub(crate) fn pilot_seed(chains: u64) -> u64 {
+    StreamRng::new(chains, u64::MAX).next_u64()
 }
 
 #[cfg(test)]

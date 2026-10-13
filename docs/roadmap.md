@@ -30,7 +30,7 @@ the ideas in prose for actuaries, starting with
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. Still to do: REML, tensor smooths |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` over segments and in the diagonal backtest, the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -205,11 +205,17 @@ what it is aiming for by v1.0.
     parity with his own `CAY.R` Stan code and his printed results on
     group 353 incurred, in Rust, Python (`Meyers("cay")`) and R
     (`meyers(model = "cay")`).
+  - Meyers' models over segments and in the diagonal backtest
+    (`reserving-bayes.md`, PR 6): `Meyers::fit_segments` with
+    independent or rank-correlated segments, and `TriangleModel for
+    Meyers`, which rebuilds cumulative values and premium from the
+    frame and simulates each origin's path jointly; `fit_segments` in
+    Python (`Meyers.fit_segments`) and R (`meyers_segments()`).
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
-  in the user's order (2026-10-13, open decision 9): Meyers' CRC and
-  CSR with `fit_segments` and `TriangleModel` (for the 200-triangle
-  calibration study); the compartmental design note;
+  in the user's order (2026-10-13, open decision 9): the compartmental
+  design note (the 200-triangle calibration study can now use
+  `TriangleModel for Meyers`);
   then the one-year view by PSIS reweighting (open decision 6).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
@@ -255,7 +261,9 @@ what it is aiming for by v1.0.
      `prospicio-reserving`'s `bayes` feature on this crate's NUTS
      (`docs/design/reserving-bayes.md`): the Bayesian ODP chain ladder
      (PR 1), Meyers' CRC and CSR (PR 3) and CAY (PR 5) are in, and the
-     Bayesian Bornhuetter–Ferguson (PR 4) too, with no change here;
+     Bayesian Bornhuetter–Ferguson (PR 4) too, and both `BayesOdp` and
+     `Meyers` over segments and in the backtest (PRs 2 and 6), with no
+     change here;
      compartmental reserving follows in a later note.
   2. Hierarchical credibility.
   3. Posterior predictive checks.
