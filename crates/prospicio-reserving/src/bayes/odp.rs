@@ -334,6 +334,8 @@ impl BayesOdp {
                     .into(),
             ));
         }
+        // A bad rank-correlation matrix fails here, before any sampling.
+        self.dependence.validate(triangle.index().len())?;
         let mut k = 0;
         let fitted = fit_each(triangle, column, |segment| {
             let fit = self.fit_segment(
@@ -1468,6 +1470,48 @@ mod tests {
             matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
             "{e}"
         );
+    }
+
+    #[test]
+    fn a_bad_rank_correlation_fails_before_sampling() {
+        // Each bad matrix fails at once: with a sampler this long, any
+        // sampling before the check would not finish.
+        let slow = BayesOdp {
+            sampler: Sampler {
+                tune: 1_000_000,
+                draws: 1_000_000,
+                ..Sampler::default()
+            },
+            ..BayesOdp::default()
+        };
+        let bad = [
+            // Three segments' matrix on two segments.
+            vec![1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0],
+            // Not a unit diagonal.
+            vec![0.9, 0.5, 0.5, 1.0],
+            // Not symmetric.
+            vec![1.0, 0.5, 0.4, 1.0],
+            // An entry out of [-1, 1]. (On two segments any valid matrix
+            // is positive definite; `dependence.rs` tests that check.)
+            vec![1.0, 1.5, 1.5, 1.0],
+        ];
+        for spearman in bad {
+            let model = BayesOdp {
+                dependence: SegmentDependence::RankCorrelation { spearman },
+                ..slow.clone()
+            };
+            let e = model.fit_segments(&twins(), "values").unwrap_err();
+            assert!(
+                matches!(
+                    &e,
+                    Error::InvalidSetting {
+                        name: "spearman",
+                        ..
+                    }
+                ),
+                "{e}"
+            );
+        }
     }
 
     #[test]

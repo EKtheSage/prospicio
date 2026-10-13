@@ -143,6 +143,10 @@ under "Unreleased" until then.
   `SegmentDependence::Independent` (each segment on its own derived
   seeds) or `RankCorrelation` (Iman–Conover, as in the bootstraps);
   `Synchronized` is an error, since a posterior has no residuals to share.
+  A bad `RankCorrelation` matrix (the wrong size for the segments, not
+  symmetric, or not positive definite after `2 sin(pi rho / 6)`) fails
+  before any sampling; the bootstraps now also report a matrix that is not
+  positive definite as `InvalidSetting`.
   `BayesOdp` implements `TriangleModel`, so `diagonal_backtest` scores it
   next to the ODP GLM, with log predictive densities for stacking. The
   posterior mode's Newton method now also stops at the rounding floor on

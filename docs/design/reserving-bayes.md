@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 is built on `claude/bayes-segments` (decisions 8 and 11: `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 is built on `claude/bayes-segments` (decisions 8 and 11: `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -643,16 +643,20 @@ the proposal left open:
   `"bayes_odp"`; two settings of `BayesOdp` in one backtest share it (a
   wrapper with a name is left for when it is needed).
 * **Results** (`validation/tests/reserving_bayes_segments.rs`, latest
-  three diagonals, tolerances 4 seed-to-seed sds over 40 seeds): on the
-  CLRD comauto and wkcomp lines `BayesOdp` and the ODP GLM agree (A/E
+  three diagonals, tolerances at least 4 seed-to-seed sds over seeds 0 to
+  69, every row within at most 0.65 of its tolerance at each of them): on
+  the CLRD comauto and wkcomp lines `BayesOdp` and the ODP GLM agree (A/E
   within 0.002 per split, CRPS within 3% and 5%, mean log density within
-  0.2). On GenIns the Bayesian means are about 1% higher (A/E 0.007 to
-  0.013 lower per split: the posterior mean of `exp(η)` over the young
-  origins' wide posteriors against the GLM's MLE) and its mean log density
-  0.014 lower. Both models under-cover the CLRD lines' held-out cells
-  alike (90% intervals hold 0.72 of comauto's and 0.43 to 0.46 of
-  wkcomp's), a property of the ODP model on lines summed over companies,
-  not of the sampler.
+  0.2). On GenIns the Bayesian means are about 1% higher (A/E lower by
+  0.007, 0.013 and 0.010 per split on average over seeds, and by 0.004 to
+  0.019 across seeds and splits: the posterior mean of `exp(η)` over the
+  young origins' wide posteriors against the GLM's MLE) and its mean log
+  density lower by 0.013 on average (sd 0.0044 over seeds, 0.0051 over
+  seeds 40 to 69 alone; the test allows 0.025 around 0.013). Both models
+  under-cover the CLRD lines' held-out cells alike (across seeds, 90%
+  intervals hold 0.69 to 0.73 of comauto's and 0.41 to 0.46 of wkcomp's),
+  a property of the ODP model on lines summed over companies, not of the
+  sampler.
 
 The proposal:
 
@@ -838,6 +842,12 @@ Built in PR 2 (Rust, 2026-10-12) as proposed below:
   `SegmentDependence::reorder` with `BayesOdp::seed` (stream `n_sims` of
   that seed, which no derived seed uses).
 * **`Synchronized`** is `Error::Bayes`, checked before any sampling.
+  So is a bad `RankCorrelation` matrix (not `S × S` for the triangle's
+  segments, not symmetric with a unit diagonal, an entry out of
+  `[-1, 1]`, or `2 sin(π ρ / 6)` not positive definite): it is
+  `Error::InvalidSetting` before the first segment samples, through the
+  same check the bootstraps run when they reorder (which now also reports
+  a matrix that is not positive definite as `InvalidSetting`).
 * **Provenance** of the joint reserves: the settings, `segments`,
   `dependence`, and each segment's `c0` and `scale` as a list.
 * **`Meyers` has no `fit_segments`** in PR 2: this decision names only
@@ -845,11 +855,11 @@ Built in PR 2 (Rust, 2026-10-12) as proposed below:
   same pattern fits it when a user needs Meyers over segments; that is a
   later PR.
 * **Results** (`validation/tests/reserving_bayes_segments.rs`, seed sweep
-  over 0 to 39): twin lines (CLRD wkcomp under two names) under
-  `Independent` have a rank correlation of their totals with sd 0.011
+  over 0 to 69): twin lines (CLRD wkcomp under two names) under
+  `Independent` have a rank correlation of their totals with sd 0.010
   over seeds, as `1/√n_sims` predicts for independent draws (largest
   0.027); the test allows `4.5/√n_sims`, not the `3/√n_sims` proposed
-  below, which is under 3 such sds and would fail about one seed in 300.
+  below, which is about 3 such sds and would fail about one seed in 370.
   `RankCorrelation` on comauto, ppauto and wkcomp reaches each target
   within 0.009 (sd at most 0.0029; the test allows 0.015).
 

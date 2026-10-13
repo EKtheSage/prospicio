@@ -5,30 +5,38 @@
 //! over companies) and GenIns.
 //!
 //! Every tolerance is at least 4 times the quantity's seed-to-seed sd over
-//! seeds 0 to 39 (the ignored `seed_sweep` test, a release build, about
-//! 4 minutes), and every row passes at each of those seeds, using at most
-//! 0.73 of its tolerance (before two CLRD tolerances were widened to reach
-//! 4 sd). All at the defaults (4 chains of 1,000 draws, 10,000
-//! simulations; the backtest's 4,000 draws).
+//! seeds 0 to 69, and every row passes at each of those seeds, using at
+//! most 0.65 of its tolerance. The sweep is the ignored `seed_sweep` test
+//! in a release build: `SWEEP_SEEDS=70 cargo test --release -p
+//! prospicio-validation --test reserving_bayes_segments -- --ignored
+//! seed_sweep --nocapture` (it defaults to 40 seeds from 0;
+//! `SWEEP_START` moves the first seed, for a check on fresh seeds). All at
+//! the defaults (4 chains of 1,000 draws, 10,000 simulations; the
+//! backtest's 4,000 draws).
 //!
 //! * `Independent`, twin lines (workers' compensation under two names):
 //!   the rank correlation of their totals is within `4.5/sqrt(n_sims)`
-//!   of 0 (sd 0.011, about `1/sqrt(n_sims)`, as for independent draws;
+//!   of 0 (sd 0.010, about `1/sqrt(n_sims)`, as for independent draws;
 //!   shared streams would give nearly 1), and their mean totals agree
-//!   within 0.5% (sd 0.10%).
+//!   within 0.5% (sd 0.11%).
 //! * `RankCorrelation` on comauto, ppauto and wkcomp, target Spearman
 //!   0.6, 0.3 and 0.4: each pair within 0.015 (sd at most 0.0029).
 //! * The diagonal backtest, latest three diagonals, `BayesOdp` next to
 //!   the ODP GLM. On the CLRD lines the two agree: actual over expected
 //!   within 0.002 per split (sd at most 0.00034), mean cell CRPS within
 //!   3% and total CRPS within 5%, coverage within 0.15 (one or two cells),
-//!   mean log density within 0.2 (sd 0.044 on wkcomp). On GenIns the
-//!   Bayesian means are about 1% higher (A/E about 0.010 lower per split,
-//!   the posterior mean of `exp(eta)` over the young origins' wide
+//!   mean log density within 0.2 (sd 0.043 on wkcomp). On GenIns the
+//!   Bayesian means are about 1% higher (A/E lower by 0.007, 0.013 and
+//!   0.010 per split on average, and by 0.004 to 0.019 across seeds and
+//!   splits: the posterior mean of `exp(eta)` over the young origins' wide
 //!   posteriors, where the GLM gives the MLE), and its mean log density
-//!   0.014 lower; the CRPS agree within 3% and 10%. Per-cell log densities
-//!   differ by up to 2 on single cells at some seeds (heavy-tailed), so
-//!   only their mean is checked.
+//!   lower by 0.013 on average (sd 0.0044 over seeds 0 to 69, 0.0051 over
+//!   40 to 69 alone; the tolerance is 0.025, 5 such sds); the CRPS agree
+//!   within 3% and 10%. Per-cell log densities differ by up to 2 on single
+//!   cells at some seeds (heavy-tailed), so only their mean is checked.
+//!   Each model's coverage is reported, not checked: the 90% intervals
+//!   hold 0.69 to 0.73 of comauto's held-out cells and 0.41 to 0.46 of
+//!   wkcomp's across seeds.
 
 use std::time::Instant;
 
@@ -133,6 +141,12 @@ impl Measured {
             target,
             tolerance,
         }
+    }
+
+    /// A quantity reported by the sweep but not checked (an infinite
+    /// tolerance).
+    fn info(name: impl Into<String>, value: f64) -> Self {
+        Self::new(name, value, 0.0, f64::INFINITY)
     }
 
     /// The share of the tolerance used.
@@ -271,6 +285,15 @@ fn backtest(name: &str, seed: u64) -> Vec<Measured> {
         0.0,
         tol.coverage_diff,
     ));
+    // Each model's own coverage, for the record (not checked).
+    out.push(Measured::info(
+        format!("{name}_coverage_odp"),
+        bt.mean(0, 1),
+    ));
+    out.push(Measured::info(
+        format!("{name}_coverage_bayes"),
+        bt.mean(1, 1),
+    ));
     let lpd: Vec<Vec<f64>> = bt.log_densities().iter().flatten().cloned().collect();
     assert_eq!(lpd.len(), 2, "both models give log densities");
     out.push(Measured::new(
@@ -303,7 +326,7 @@ const GENINS: BacktestTolerance = BacktestTolerance {
     crps_ratio: 0.03,
     total_crps_ratio: 0.10,
     coverage_diff: 0.1,
-    lpd_diff: (-0.014, 0.02),
+    lpd_diff: (-0.013, 0.025),
 };
 const CLRD: BacktestTolerance = BacktestTolerance {
     ae_diff: (0.0, 0.002),
@@ -333,11 +356,14 @@ fn backtest_next_to_the_odp_glm() {
 #[test]
 #[ignore = "a release-build seed sweep"]
 fn seed_sweep() {
-    let n: u64 = std::env::var("SWEEP_SEEDS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(30);
-    let runs: Vec<Vec<Measured>> = (0..n)
+    let env = |name: &str, default: u64| {
+        std::env::var(name)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(default)
+    };
+    let (start, n) = (env("SWEEP_START", 0), env("SWEEP_SEEDS", 40));
+    let runs: Vec<Vec<Measured>> = (start..start + n)
         .map(|seed| {
             let mut all = twins(seed);
             all.extend(ranked(seed));
@@ -365,5 +391,10 @@ fn seed_sweep() {
             m0.tolerance / sd
         );
     }
-    assert_eq!(failures, 0, "rows out of tolerance over {n} seeds");
+    assert_eq!(
+        failures,
+        0,
+        "rows out of tolerance over seeds {start} to {}",
+        start + n - 1
+    );
 }
