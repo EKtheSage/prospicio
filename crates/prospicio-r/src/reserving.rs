@@ -969,6 +969,7 @@ impl Triangle {
             },
             n_sims,
             seed: whole(seed, "seed")?,
+            ..Meyers::default()
         };
         let inner = meyers.fit(&self.inner, column, premium).map_err(to_r)?;
         Ok(MeyersFit { inner })

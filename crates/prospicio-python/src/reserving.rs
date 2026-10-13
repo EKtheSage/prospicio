@@ -6882,6 +6882,7 @@ impl PyMeyers {
                 },
                 n_sims,
                 seed,
+                ..Meyers::default()
             },
         })
     }

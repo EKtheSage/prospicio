@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built in Rust** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines; its Python and R bindings are its next stage. The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -43,7 +43,7 @@ together, as in `reserving-v02.md` decision 7.
 | 3 | `claude/bayes-meyers` | `Meyers` with `Crc` and `Csr` on cumulative values with premium (decision 7); Meyers' group 353 data; reference from Meyers' own Stan code | PR 1 |
 | 4 | `claude/bayes-bf` | informative priors on the origin parameters: the Bayesian Bornhuetter–Ferguson (decision 9) | PR 1 |
 | 5 | `claude/bayes-cay` | `MeyersModel::Cay` (decision 7, "CAY"), in Rust, Python and R | PR 3 |
-| 6 | next | Meyers' CRC and CSR with `fit_segments` and `TriangleModel` (open decision 9) | PR 3 |
+| 6 | `claude/bayes-meyers-segments` | Meyers' CRC, CSR and CAY with `fit_segments` and `TriangleModel` (open decision 9; decisions 8 and 11, "Meyers"), built in Rust; bindings next | PR 5 |
 | 7 | next | compartmental reserving, in its own design note (open decision 9) | |
 | 8 | next | the one-year view by PSIS reweighting (open decision 6) | PR 1 |
 | later | | the paid-incurred `Ipi` | PR 5 |
@@ -601,7 +601,8 @@ pub struct MeyersFit {
   matter only for cash flows. No tail and no one-year view (decision 12);
   no `dependence` field until segments (decision 11), so `Meyers` departs
   from `BayesOdp`'s struct there. `Meyers` does not implement
-  `TriangleModel` (decision 8).
+  `TriangleModel` (decision 8). (PR 6 adds both: decisions 8 and 11,
+  "Meyers"; in the backtest a path is drawn, since increments are.)
 * **`loo()`** is Meyers' pointwise `normal_lpdf(log C | mu, sigma_d)`,
   comparable only between CRC and CSR fits of the same column, with
   `r_eff` per cell from `ess_mean`. Pareto k reaches about 1 on group 353
@@ -764,6 +765,72 @@ the proposal left open:
   a property of the ODP model on lines summed over companies, not of the
   sampler.
 
+**Meyers** (built in PR 6, Rust, 2026-10-13). `Meyers` implements
+`TriangleModel` for CRC, CSR and CAY, named `meyers_crc`, `meyers_csr` and
+`meyers_cay`. The adapter the proposal below sketched, with one change:
+the log density is not `None` in the diagonal backtest.
+
+* **Cumulative values.** Each origin's train rows must run from the first
+  age without a gap, and their running sums are its cumulative values
+  (exact for integer cells), which must be positive. The train origins
+  must have no gap between them (CAY's previous origin is the one before).
+  The model's ages run from the first to the oldest train age, which takes
+  `beta_m = 0`, and the fit is `Meyers::fit` on those cells: on a whole
+  triangle with its premium as exposure, the backtest's draws of the next
+  cell of an origin closed one age short are the fit's reserve draws,
+  simulation by simulation (a unit test).
+* **Premium** is the frame's `exposure` column (`TriangleFrame::new`'s
+  exposure per origin). A frame built without exposure has 1 there; the
+  model fits, but Meyers' `logelr` prior is then far from the data, so the
+  doc asks for the premium.
+* **Paths.** A test row must be after its origin's latest train row, at an
+  age with train rows (`Error::Bayes` otherwise). Each simulation takes one
+  posterior draw and simulates each origin's cumulative value from the age
+  after its latest train row to its oldest test row; a test increment is
+  the difference of consecutive values on that path, the first from the
+  latest train value, so an origin's increments sum to its last value less
+  its latest train value (a unit test: the 1997 origin's nine future cells
+  sum to the fit's reserve, mean and sd). In CAY the paths run age by age
+  and, within an age, origin by origin, each mean taking `rho` times the
+  previous origin's residual, observed for a train cell and drawn
+  otherwise.
+* **Mean and log density.** The mean is the posterior mean of the
+  log-normal `E[C_wd]` less the latest train value (less `E[C_w,d-1]` past
+  a path's first age). In the diagonal backtest every test row follows its
+  origin's latest train row, so a test increment is `C_wd` less a known
+  value and its density is the log-normal density of `C_wd` at the
+  increment plus that value: the log density is the log of its mean over
+  every posterior draw, the log predictive density as for `BayesOdp`. In
+  CAY a previous origin's cell that is not a train cell is integrated out
+  (variance `(1 + rho^2) sigma_d^2`). Only when a test row is further out
+  (its increment a difference of two random log-normals, with no closed
+  density) is the log density `None`. A unit test checks the mean and the
+  log density against the fit's posterior, written out, to `1e-9`.
+* **Seeds and size** as for `BayesOdp`: the chains (with the pilot run)
+  and the simulations on seeds derived from the backtest's `seed`, the
+  backtest's `n_sims`, no diagnostics reported.
+* **Results** (`validation/tests/reserving_meyers_segments.rs`, latest
+  three diagonals, seeds 0 to 59, every checked row within its tolerance
+  of at least 4 seed-to-seed sds at each seed; none strays more than 4.1
+  sds from its mean). Meyers' models are not near the ODP models here, and
+  the test checks each against its own sweep mean. On group 353 they
+  forecast the held-out diagonals well above the outcomes: A/E 0.30 to
+  0.36 on the earliest split (seven train diagonals) and 0.65 to 0.90 on
+  the latest (CRC 0.66, CAY 0.65, CSR 0.90, the paid correction Meyers
+  finds for CSR), against the ODP GLM's 0.82 to 0.97. With diagonals held
+  out, the late `sigma_d` (whose steps have Meyers' `U(0, 1)` prior) and
+  the young origins' levels rest on few cells, and the mean of a
+  log-normal grows with both: on the seven-diagonal triangle `sigma[1]`
+  has posterior mean 0.73 and `alpha[7]` sd 0.83. Meyers' intervals cover
+  every held-out cell of group 353 and CLRD comauto and 0.92 to 1 of
+  wkcomp's, where the ODP models cover 0.41 to 0.46 of wkcomp's; so on
+  wkcomp Meyers' mean log density beats the GLM's by 0.54 to 0.60 a cell,
+  on comauto it trails by 0.36 to 0.46 and on group 353 paid by 1.28 to
+  1.39. On group 353 incurred (where the GLM's IRLS does not converge)
+  CSR's and CAY's log densities are within 0.07 of CRC's. This is the
+  diagonal view only; Meyers' own calibration test is of the ultimate,
+  from the whole upper triangle (the 200-triangle study, next).
+
 The proposal:
 
 Proposed (PR 2). `BayesOdp` implements `TriangleModel`
@@ -784,7 +851,8 @@ column, simulate each origin's whole cumulative path jointly (differences
 of independently drawn cumulative cells would inflate the variance and
 often be negative) and leave `log_density` as `None` (the density of a
 difference of lognormals has no closed form). That adapter, or a backtest
-on cumulative cells for these models, is a later PR.
+on cumulative cells for these models, is a later PR. (Built in PR 6,
+"Meyers" above, with a closed log density in the diagonal backtest.)
 
 ### 9. Informative priors: the Bayesian Bornhuetter–Ferguson
 
@@ -1149,6 +1217,44 @@ Built in PR 2 (Rust, 2026-10-12) as proposed below:
   `BayesOdp`, and `Meyers` has no `dependence` field (decision 7). The
   same pattern fits it when a user needs Meyers over segments; that is a
   later PR.
+
+**Meyers** (built in PR 6, Rust, 2026-10-13), the same pattern for CRC,
+CSR and CAY:
+
+* **API.** `Meyers` gains `dependence: SegmentDependence` (default
+  `Independent`; `fit` ignores it), and
+  `Meyers::fit_segments(triangle, column, premium) -> MeyersFits`, each
+  segment's premium from its own `premium` column as `fit` reads it.
+  `MeyersFits` holds `segments: SegmentFits<MeyersSegment>` (each
+  segment's `chain_ladder`, `premium`, `posterior`, `diagnostics`,
+  `model()`, `summary()` and `loo()`) and the joint `ultimates` and
+  `reserves` (dimensions the key names and `origin`), with `to_long`,
+  `totals` (both with `premium` and the ultimates' moments as
+  `ultimate_mean` and `ultimate_std_dev`), `development_table` and
+  `segment(keys)`.
+* **Seeds** as for `BayesOdp`: segment `k` takes tags `2 + 2k` and
+  `3 + 2k`; its pilot run (decision 7) takes stream `u64::MAX` of the
+  segment's chains seed, as `fit`'s takes that of its own, so `fit`'s
+  draws are unchanged bit for bit.
+* **`RankCorrelation`** reorders the reserves and the ultimates
+  together: each simulation's row holds every segment's reserves and then
+  its ultimates, and Iman–Conover ranks a segment by the total over both,
+  twice its total reserve plus its total latest value, which ranks the
+  simulations as the reserves alone do. Each row's ultimates less its
+  reserves stay the latest values exactly (a unit test).
+* **`Synchronized`** and a bad matrix fail before any sampling, after the
+  settings' own check, as for `BayesOdp`.
+* **Provenance** of both joint distributions: the settings, `segments`,
+  `dependence`, `posterior_draws`, each segment's total premium as a list,
+  and `output` (`ultimates` or `reserves`).
+* **Results** (`validation/tests/reserving_meyers_segments.rs`, seeds 0
+  to 59, defaults): twin lines (CLRD wkcomp under two names, now with net
+  earned premium, CRC) under `Independent` have a rank correlation of
+  their totals with sd 0.0083 over seeds (largest 0.022), about
+  `1/sqrt(n_sims)`, within the `4.5/sqrt(n_sims)` the test allows, and
+  mean totals within 0.47% (sd 0.15%). `RankCorrelation` (CSR) on
+  comauto, ppauto and wkcomp reaches each target within 0.0081 (sd at
+  most 0.0030; the test allows 0.0076 to 0.013, 4 sds).
 * **Results** (`validation/tests/reserving_bayes_segments.rs`, seed sweep
   over 0 to 69): twin lines (CLRD wkcomp under two names) under
   `Independent` have a rank correlation of their totals with sd 0.010
@@ -1428,6 +1534,9 @@ are settled.
    wanted, in this order of PRs: Meyers' CAY for incurred data; Meyers'
    CRC and CSR with `fit_segments` and `TriangleModel` (for the
    200-triangle calibration study); then the compartmental design note.
+   CAY is built as PR 5; the second, for CRC, CSR and CAY alike, is
+   built in Rust as PR 6 (decisions 8 and 11, "Meyers"), its bindings
+   next.
 10. **Bindings with each model.** (a) Rust, Python and R in the same PR,
     as `reserving-v02.md` decision 7; (b) Rust first, bindings after.
     *Recommended: (a)*.

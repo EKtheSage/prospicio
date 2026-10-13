@@ -1,21 +1,31 @@
 //! Meyers' correlated chain ladder (CRC), changing settlement rate (CSR) and
 //! correlated accident year (CAY) models on cumulative values with premium
-//! (`docs/design/reserving-bayes.md`, decision 7).
+//! (`docs/design/reserving-bayes.md`, decision 7), over segments (decision
+//! 11) and in the diagonal backtest (decision 8).
+
+use std::collections::BTreeMap;
 
 use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
-use prospicio_core::StreamRng;
+use prospicio_core::{Lag, Period, StreamRng};
 use prospicio_math::linalg::{cholesky, cholesky_solve};
 use prospicio_math::special::norm_quantile;
-use prospicio_prob::{InputHasher, PredictiveDistribution, Provenance};
+use prospicio_models::Column;
+use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use super::laplace::{Posterior, Whitened};
+use super::odp::log_mean_exp;
 use super::{Diagnostics, Stream, derive_seed, pilot_seed};
-use crate::bootstrap::{component_sums, hash_segment, push_moments, segment_sums};
+use crate::backtest::{CellForecast, TriangleModel};
+use crate::bootstrap::{
+    component_sums, hash_segment, origin_keys, pick_segment, push_moments, segment_sums,
+};
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
+use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
 use crate::expected_loss::origin_exposure;
-use crate::segments::{FitTable, ReserveFit, SegmentFits};
+use crate::frame::TriangleFrame;
+use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each_with_exposure};
 use crate::triangle::{Label, Segment, Triangle};
 
 /// Which of Meyers' models [`Meyers`] fits.
@@ -100,6 +110,11 @@ impl MeyersModel {
 /// needs, for each observed cell after the first origin, the previous
 /// origin's cell at the same age.
 ///
+/// [`fit_segments`](Self::fit_segments) fits every segment of a triangle
+/// into one joint distribution, and `Meyers` takes part in the diagonal
+/// backtest through [`TriangleModel`] (see there for how it reads the
+/// incremental cells).
+///
 /// ```
 /// use prospicio_reserving::bayes::{Meyers, MeyersModel};
 /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
@@ -177,6 +192,11 @@ pub struct Meyers {
     /// Seed of the chains and of the simulations, each through its own
     /// derived seed (module docs, "Seeds").
     pub seed: u64,
+    /// How segments depend on each other in a fit of several segments
+    /// ([`fit_segments`](Self::fit_segments), decision 11; `Synchronized` is
+    /// an error there); [`fit`](Self::fit) has one segment and does not
+    /// use it.
+    pub dependence: SegmentDependence,
 }
 
 impl Default for Meyers {
@@ -184,7 +204,8 @@ impl Default for Meyers {
     /// development effects `N(0, 3.162^2)`, `gamma ~ N(0, 0.05^2)`,
     /// `(1 - rho) / 2 ~ Beta(2, 2)`), four
     /// chains of 1,000 warm-up and 2,000 kept draws with target acceptance
-    /// 0.95, 10,000 simulations, seed 0. On Meyers' group 353 data, at
+    /// 0.95, 10,000 simulations, seed 0, independent segments. On Meyers'
+    /// group 353 data, at
     /// target acceptance 0.8 the paid fits gave 1 to 56 divergent
     /// transitions at nearly every one of 30 seeds (the late `sigma_d`,
     /// near 0.02, make a strongly curved posterior), and with 1,000 kept
@@ -206,6 +227,7 @@ impl Default for Meyers {
             },
             n_sims: 10_000,
             seed: 0,
+            dependence: SegmentDependence::Independent,
         }
     }
 }
@@ -239,6 +261,169 @@ pub struct MeyersFit {
     model: Model,
 }
 
+/// One segment of a [`MeyersFits`]: its chain ladder, premium, posterior
+/// and diagnostics, as in [`MeyersFit`]; its ultimates and reserves are
+/// its part of the joint distributions of [`MeyersFits`].
+#[derive(Debug, Clone)]
+pub struct MeyersSegment {
+    /// The volume-weighted chain ladder of the segment's fitted column.
+    pub chain_ladder: ChainLadderFit,
+    /// The premium of each origin, the latest value of the premium column.
+    pub premium: Vec<f64>,
+    /// Posterior draws, named as in [`MeyersFit::posterior`].
+    pub posterior: PosteriorDraws,
+    /// R-hat, ESS and divergences, with warnings for failed thresholds.
+    pub diagnostics: Diagnostics,
+    model: Model,
+}
+
+impl MeyersSegment {
+    /// The model that produced this fit, CRC, CSR or CAY.
+    pub fn model(&self) -> MeyersModel {
+        self.model.kind
+    }
+
+    /// Posterior summary of each parameter, as [`MeyersFit::summary`].
+    pub fn summary(&self) -> Result<Vec<ParamSummary>> {
+        Ok(self.posterior.summary()?)
+    }
+
+    /// PSIS-LOO of the segment's observed cells, as [`MeyersFit::loo`].
+    pub fn loo(&self) -> Result<Loo> {
+        loo(&self.model, &self.posterior)
+    }
+}
+
+impl ReserveFit for MeyersSegment {
+    fn chain_ladder(&self) -> &ChainLadderFit {
+        &self.chain_ladder
+    }
+
+    fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
+        vec![("premium", self.premium.clone())]
+    }
+
+    fn total_columns(&self) -> Vec<(&'static str, f64)> {
+        vec![("premium", self.premium.iter().sum())]
+    }
+}
+
+/// A [`Meyers`] fit of every segment of a triangle column
+/// ([`Meyers::fit_segments`]): each segment's own posterior, and the joint
+/// distributions of the ultimates and of the reserves, with the layout of
+/// [`OdpBootstrapFits`](crate::OdpBootstrapFits).
+///
+/// ```
+/// use prospicio_bayes::nuts::Sampler;
+/// use prospicio_reserving::bayes::Meyers;
+/// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+///
+/// // Five origins of cumulative paid with premium, and the same doubled.
+/// let paid: [&[f64]; 5] = [
+///     &[952.0, 1529.0, 2813.0, 3647.0, 3724.0],
+///     &[849.0, 1564.0, 2202.0, 2432.0],
+///     &[983.0, 2211.0, 2830.0],
+///     &[1657.0, 2685.0],
+///     &[932.0],
+/// ];
+/// let premium = [5812.0, 4908.0, 5454.0, 5165.0, 5214.0];
+/// let (mut lob, mut origin, mut age, mut values, mut prem) = (vec![], vec![], vec![], vec![], vec![]);
+/// for (line, scale) in [("Auto", 1.0), ("Home", 2.0)] {
+///     for (w, row) in paid.iter().enumerate() {
+///         for (d, &v) in row.iter().enumerate() {
+///             lob.push(line);
+///             origin.push(Month::january(1988 + w as i32));
+///             age.push(12 * (d as u32 + 1));
+///             values.push(v * scale);
+///             prem.push(premium[w] * scale);
+///         }
+///     }
+/// }
+/// let tri = Triangle::from_long(&Long {
+///     keys: &[("lob", &lob)],
+///     origin: &origin,
+///     development: DevelopmentColumn::Age(&age),
+///     values: &[("paid", &values), ("premium", &prem)],
+///     origin_grain: Grain::Year,
+///     development_grain: Grain::Year,
+///     cumulative: true,
+/// })?;
+/// let model = Meyers {
+///     sampler: Sampler { tune: 200, draws: 200, ..Meyers::default().sampler },
+///     n_sims: 1_000,
+///     ..Meyers::default()
+/// };
+/// let fits = model.fit_segments(&tri, "paid", "premium")?;
+/// assert_eq!(fits.reserves.dims(), ["lob", "origin"]);
+/// assert_eq!(fits.reserves.n_components(), 10);
+/// assert_eq!(fits.ultimates.n_components(), 10);
+/// assert_eq!(fits.segments.len(), 2);
+/// assert_eq!(fits.totals().n_rows(), 2);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone)]
+pub struct MeyersFits {
+    /// Each segment's chain ladder, premium, posterior and diagnostics.
+    pub segments: SegmentFits<MeyersSegment>,
+    /// Joint posterior predictive distribution of the ultimate by segment
+    /// and origin: the key names and `origin` are its dimensions, and its
+    /// components run over the origins of each segment in turn, like the
+    /// rows of [`to_long`](Self::to_long).
+    pub ultimates: PredictiveDistribution,
+    /// The ultimates less the latest values, simulation by simulation,
+    /// with the same layout.
+    pub reserves: PredictiveDistribution,
+}
+
+impl MeyersFits {
+    /// One row per segment × origin: the chain ladder's `latest`,
+    /// `ultimate` and `reserve`, the `premium`, the `mean` and `std_dev` of
+    /// the posterior predictive reserve, and the `ultimate_mean` and
+    /// `ultimate_std_dev` of the predictive ultimate.
+    pub fn to_long(&self) -> FitTable {
+        let mut table = self.segments.to_long();
+        push_moments(&mut table, "", &component_sums(&self.reserves));
+        push_moments(&mut table, "ultimate_", &component_sums(&self.ultimates));
+        table
+    }
+
+    /// One row per segment: the chain ladder's totals, the total
+    /// `premium`, the `mean` and `std_dev` of the segment's total reserve
+    /// and the `ultimate_mean` and `ultimate_std_dev` of its total
+    /// ultimate.
+    pub fn totals(&self) -> FitTable {
+        let mut table = self.segments.totals();
+        push_moments(
+            &mut table,
+            "",
+            &segment_sums(&self.segments, &self.reserves),
+        );
+        push_moments(
+            &mut table,
+            "ultimate_",
+            &segment_sums(&self.segments, &self.ultimates),
+        );
+        table
+    }
+
+    /// The chain ladders' development factors, one row per segment × age.
+    pub fn development_table(&self) -> FitTable {
+        self.segments.development_table()
+    }
+
+    /// The one segment chosen as in [`SegmentFits::position`], with its
+    /// part of the joint ultimates and reserves (same dimensions).
+    pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
+        let (segments, reserves) = pick_segment(&self.segments, &self.reserves, keys)?;
+        let (_, ultimates) = pick_segment(&self.segments, &self.ultimates, keys)?;
+        Ok(Self {
+            segments,
+            ultimates,
+            reserves,
+        })
+    }
+}
+
 impl Meyers {
     /// Fits `column` of a single-segment cumulative triangle with premium
     /// from its `premium` column (the latest value per origin, as
@@ -251,47 +436,200 @@ impl Meyers {
         self.validate()?;
         let segment = triangle.segment(column)?;
         let premium_segment = triangle.segment(premium)?;
-        let chain_ladder = ChainLadder::default().fit_segment(&segment, &segment.ages)?;
-        let premiums = origin_exposure(&segment, &premium_segment, premium)?;
-        let model = self.model_of(&segment, &chain_ladder, &premiums)?;
-        let p = model.dim();
-        // The joint mode lies deep in the funnel of the late sigma_d, far
-        // from the posterior's bulk, so the scale comes from a pilot run
-        // (decision 7, "Sampling scale"): whitened roughly at the start
-        // point, then by the pilot draws' mean and covariance.
-        let start = model.start();
-        let rough = Whitened::regularised(&model, &start)?;
-        let pilot = sample(
-            &rough,
-            &vec![0.0; p],
-            Sampler {
-                seed: pilot_seed(self.seed),
-                draws: self.sampler.tune.max(MIN_PILOT_DRAWS),
-                ..self.sampler
-            },
+        let (fit, ultimates, reserves) = self.fit_segment(
+            &segment,
+            &premium_segment,
+            column,
+            premium,
+            Stream::Chains,
+            Stream::Predictive,
         )?;
-        let pilot = pilot.transform(model.names(), |z| rough.theta(z))?;
-        let whitened = Whitened::from_draws(&model, &pilot)?;
-        let draws = sample(
-            &whitened,
-            &vec![0.0; p],
-            Sampler {
-                seed: derive_seed(self.seed, Stream::Chains),
-                ..self.sampler
-            },
-        )?;
-        let posterior = draws.transform(model.names(), |z| model.natural(&whitened.theta(z)))?;
-        let summary = posterior.summary()?;
-        let diagnostics = Diagnostics::new(
-            &summary,
-            posterior.chains(),
-            posterior.divergences().iter().sum(),
-        );
+        let MeyersSegment {
+            chain_ladder,
+            premium,
+            posterior,
+            diagnostics,
+            model,
+        } = fit;
+        Ok(MeyersFit {
+            chain_ladder,
+            premium,
+            posterior,
+            diagnostics,
+            ultimates,
+            reserves,
+            model,
+        })
+    }
+
+    /// Fits `column` in every segment of a cumulative triangle, with
+    /// premium from the same segment's `premium` column, each with its own
+    /// posterior (the same model and settings, sampled independently), into
+    /// joint distributions of the ultimates and the reserves, the segments
+    /// depending on each other as [`dependence`](Self::dependence) says
+    /// (decision 11), as in
+    /// [`BayesOdp::fit_segments`](super::BayesOdp::fit_segments):
+    ///
+    /// * [`Independent`](SegmentDependence::Independent): each segment's
+    ///   simulations as drawn. Segment `k` (in index order) takes its own
+    ///   derived seeds for its chains (and its pilot run) and its
+    ///   simulations (module docs, "Seeds"), so the segments share no
+    ///   random numbers; a segment's draws therefore differ from fitting it
+    ///   alone.
+    /// * [`RankCorrelation`](SegmentDependence::RankCorrelation): the
+    ///   segments' simulations reordered as whole rows by Iman–Conover on
+    ///   the segment totals of the reserves, exactly as in the bootstraps;
+    ///   each segment's ultimates move with its reserves, row by row.
+    /// * [`Synchronized`](SegmentDependence::Synchronized) is an
+    ///   [`Error::Bayes`]: it draws the residuals of the same positions in
+    ///   every segment, and a posterior has no residuals to share.
+    ///
+    /// A bad rank-correlation matrix fails before any sampling, and a
+    /// failure names its segment.
+    pub fn fit_segments(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        premium: &str,
+    ) -> Result<MeyersFits> {
+        self.validate()?;
+        if self.dependence == SegmentDependence::Synchronized {
+            return Err(Error::Bayes(
+                "Synchronized dependence draws the residuals of the same positions in every \
+                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
+                    .into(),
+            ));
+        }
+        self.dependence.validate(triangle.index().len())?;
+        let mut k = 0;
+        let fitted = fit_each_with_exposure(triangle, column, premium, |segment, prem| {
+            let fit = self.fit_segment(
+                segment,
+                prem,
+                column,
+                premium,
+                Stream::SegmentChains(k),
+                Stream::SegmentPredictive(k),
+            );
+            k += 1;
+            fit
+        })?;
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
         hasher.str(premium);
-        hash_segment(&mut hasher, &segment, &chain_ladder, &segment.ages);
+        let mut dims = fitted.key_names.clone();
+        dims.push("origin".into());
+        let mut components = Vec::new();
+        for ((label, (fit, _, _)), segment) in fitted.iter().zip(triangle.segments(column)?) {
+            hasher.str(&label.to_string());
+            hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
+            hasher.f64s(&fit.premium);
+            components.extend(origin_keys(label, &segment.origins));
+        }
+        let n = components.len();
+        // Each simulation's row holds every segment's reserves and then its
+        // ultimates, so the rank correlation moves both together: a
+        // segment's total over its range is twice its total reserve plus
+        // its total latest value, which ranks the simulations as the
+        // reserves do.
+        let mut ranges = Vec::with_capacity(fitted.len());
+        let mut start = 0;
+        for (fit, _, _) in &fitted.fits {
+            let m = fit.chain_ladder.origins.len();
+            ranges.push(start..start + 2 * m);
+            start += 2 * m;
+        }
+        let mut both = Vec::with_capacity(self.n_sims * 2 * n);
+        for i in 0..self.n_sims {
+            for (_, ultimates, reserves) in &fitted.fits {
+                let m = reserves.n_components();
+                both.extend_from_slice(&reserves.draw_matrix()[i * m..(i + 1) * m]);
+                both.extend_from_slice(&ultimates.draw_matrix()[i * m..(i + 1) * m]);
+            }
+        }
+        let list = |f: fn(&MeyersSegment) -> f64| {
+            format!(
+                "{:?}",
+                fitted.fits.iter().map(|(s, _, _)| f(s)).collect::<Vec<_>>()
+            )
+        };
+        let provenance = self
+            .provenance(column, premium, hasher)
+            .param("premium_total", list(|s| s.premium.iter().sum()))
+            .param("segments", fitted.len())
+            .param("dependence", format!("{:?}", self.dependence))
+            .param(
+                "posterior_draws",
+                fitted
+                    .fits
+                    .first()
+                    .map_or(0, |(s, _, _)| s.posterior.n_draws()),
+            );
+        let both = PredictiveDistribution::from_draws(
+            vec!["column".into()],
+            (0..2 * n).map(|j| vec![KeyValue::Int(j as i64)]).collect(),
+            both,
+            provenance,
+        )?;
+        let both = self.dependence.reorder_ranges(both, &ranges, self.seed)?;
+        let (mut reserve_draws, mut ultimate_draws) = (
+            Vec::with_capacity(self.n_sims * n),
+            Vec::with_capacity(self.n_sims * n),
+        );
+        for row in both.draw_matrix().chunks_exact(2 * n) {
+            for range in &ranges {
+                let half = range.start + range.len() / 2;
+                reserve_draws.extend_from_slice(&row[range.start..half]);
+                ultimate_draws.extend_from_slice(&row[half..range.end]);
+            }
+        }
+        let provenance = both.provenance().clone();
+        let reserves = PredictiveDistribution::from_draws(
+            dims.clone(),
+            components.clone(),
+            reserve_draws,
+            provenance.clone().param("output", "reserves"),
+        )?;
+        let ultimates = PredictiveDistribution::from_draws(
+            dims,
+            components,
+            ultimate_draws,
+            provenance.param("output", "ultimates"),
+        )?;
+        let segments = fitted.map(|(fit, _, _)| fit.clone());
+        Ok(MeyersFits {
+            segments,
+            ultimates,
+            reserves,
+        })
+    }
+
+    /// The posterior of one segment, its ultimates and its reserves by
+    /// origin, with the seeds of `chains` (and its pilot run) and
+    /// `predictive`.
+    fn fit_segment(
+        &self,
+        segment: &Segment,
+        premium_segment: &Segment,
+        column: &str,
+        premium: &str,
+        chains: Stream,
+        predictive: Stream,
+    ) -> Result<(
+        MeyersSegment,
+        PredictiveDistribution,
+        PredictiveDistribution,
+    )> {
+        let chain_ladder = ChainLadder::default().fit_segment(segment, &segment.ages)?;
+        let premiums = origin_exposure(segment, premium_segment, premium)?;
+        let model = self.model_of(segment, &chain_ladder, &premiums)?;
+        let (posterior, diagnostics) = self.sample(&model, derive_seed(self.seed, chains))?;
+
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        hasher.str(premium);
+        hash_segment(&mut hasher, segment, &chain_ladder, &segment.ages);
         hasher.f64s(&premiums);
         let provenance = self.provenance(column, premium, hasher);
         let nd = segment.n_dev;
@@ -306,8 +644,8 @@ impl Meyers {
             vec!["origin".into()],
             segment.origins.iter().map(|&o| vec![o.into()]).collect(),
             self.n_sims,
-            derive_seed(self.seed, Stream::Predictive),
-            provenance.clone().param("output", "ultimates"),
+            derive_seed(self.seed, predictive),
+            provenance.param("output", "ultimates"),
             |nat, rng: &mut StreamRng, row| {
                 model.draw_ultimates(nat, &premiums, &closed, latest, rng, row);
             },
@@ -331,15 +669,56 @@ impl Meyers {
             reserve_draws,
             provenance,
         )?;
-        Ok(MeyersFit {
-            chain_ladder,
-            premium: premiums,
-            posterior,
-            diagnostics,
+        Ok((
+            MeyersSegment {
+                chain_ladder,
+                premium: premiums,
+                posterior,
+                diagnostics,
+                model,
+            },
             ultimates,
             reserves,
-            model,
-        })
+        ))
+    }
+
+    /// NUTS on `model` with the chains' seed `chains`: the scale comes from
+    /// a pilot run (decision 7, "Sampling scale"), whitened roughly at the
+    /// start point, then by the pilot draws' mean and covariance, since the
+    /// joint mode lies deep in the funnel of the late `sigma_d`, far from
+    /// the posterior's bulk. The draws on the natural scale and their
+    /// diagnostics.
+    fn sample(&self, model: &Model, chains: u64) -> Result<(PosteriorDraws, Diagnostics)> {
+        let p = model.dim();
+        let start = model.start();
+        let rough = Whitened::regularised(model, &start)?;
+        let pilot = sample(
+            &rough,
+            &vec![0.0; p],
+            Sampler {
+                seed: pilot_seed(chains),
+                draws: self.sampler.tune.max(MIN_PILOT_DRAWS),
+                ..self.sampler
+            },
+        )?;
+        let pilot = pilot.transform(model.names(), |z| rough.theta(z))?;
+        let whitened = Whitened::from_draws(model, &pilot)?;
+        let draws = sample(
+            &whitened,
+            &vec![0.0; p],
+            Sampler {
+                seed: chains,
+                ..self.sampler
+            },
+        )?;
+        let posterior = draws.transform(model.names(), |z| model.natural(&whitened.theta(z)))?;
+        let summary = posterior.summary()?;
+        let diagnostics = Diagnostics::new(
+            &summary,
+            posterior.chains(),
+            posterior.divergences().iter().sum(),
+        );
+        Ok((posterior, diagnostics))
     }
 
     fn validate(&self) -> Result<()> {
@@ -388,35 +767,58 @@ impl Meyers {
         chain_ladder: &ChainLadderFit,
         premiums: &[f64],
     ) -> Result<Model> {
-        let mut cells = Vec::new();
+        let mut values = Vec::new();
         for (w, &last) in chain_ladder.latest_position.iter().enumerate() {
             for d in 0..=last {
                 let value = segment
                     .get(w, d)
                     .expect("the chain ladder checked the gaps");
-                if !(value.is_finite() && value > 0.0) {
-                    return Err(Error::Bayes(format!(
-                        "origin {} at development age {} months is {value}; the log-normal \
-                         model needs positive cumulative values",
-                        segment.origins[w], segment.ages[d]
-                    )));
-                }
-                cells.push(Cell {
-                    w,
-                    d,
-                    y: value.ln(),
-                    offset: premiums[w].ln(),
-                    prev: None,
-                });
+                values.push((w, d, value));
             }
+        }
+        self.model_from(
+            segment.n_origins,
+            segment.n_dev,
+            &values,
+            premiums,
+            &segment.origins,
+            &segment.ages,
+        )
+    }
+
+    /// The log posterior of the cumulative `values` `(w, d, C_wd)`, origin
+    /// by origin and age by age within an origin, with origins `origins`,
+    /// ages `ages` and each origin's premium.
+    fn model_from(
+        &self,
+        n_origins: usize,
+        n_dev: usize,
+        values: &[(usize, usize, f64)],
+        premiums: &[f64],
+        origins: &[Period],
+        ages: &[Lag],
+    ) -> Result<Model> {
+        let mut cells = Vec::with_capacity(values.len());
+        for &(w, d, value) in values {
+            if !(value.is_finite() && value > 0.0) {
+                return Err(Error::Bayes(format!(
+                    "origin {} at development age {} months is {value}; the log-normal \
+                     model needs positive cumulative values",
+                    origins[w], ages[d]
+                )));
+            }
+            cells.push(Cell {
+                w,
+                d,
+                y: value.ln(),
+                offset: premiums[w].ln(),
+                prev: None,
+            });
         }
         if self.model == MeyersModel::Cay {
             // Each cell's mean takes the previous origin's residual at the
             // same age; cells run origin by origin, so it comes first.
-            let mut at = vec![vec![None; segment.n_dev]; segment.n_origins];
-            for (i, c) in cells.iter().enumerate() {
-                at[c.w][c.d] = Some(i);
-            }
+            let at = cell_index(&cells, n_origins, n_dev);
             for c in &mut cells {
                 if c.w == 0 {
                     continue;
@@ -426,16 +828,16 @@ impl Meyers {
                     return Err(Error::Bayes(format!(
                         "origin {} is observed at development age {} months but origin {} is \
                          not; CAY needs the previous origin's cell at each age",
-                        segment.origins[c.w],
-                        segment.ages[c.d],
-                        segment.origins[c.w - 1]
+                        origins[c.w],
+                        ages[c.d],
+                        origins[c.w - 1]
                     )));
                 }
             }
         }
         let model = Model {
-            n_origins: segment.n_origins,
-            n_dev: segment.n_dev,
+            n_origins,
+            n_dev,
             kind: self.model,
             cells,
             logelr_mean: self.logelr_mean,
@@ -484,6 +886,310 @@ impl Meyers {
     }
 }
 
+/// The position in `cells` of each origin's cell at each age, if any.
+fn cell_index(cells: &[Cell], n_origins: usize, n_dev: usize) -> Vec<Vec<Option<usize>>> {
+    let mut at = vec![vec![None; n_dev]; n_origins];
+    for (i, c) in cells.iter().enumerate() {
+        at[c.w][c.d] = Some(i);
+    }
+    at
+}
+
+/// PSIS-LOO of `model`'s observed cells from `posterior` (see
+/// [`MeyersFit::loo`]).
+fn loo(model: &Model, posterior: &PosteriorDraws) -> Result<Loo> {
+    let n = model.cells.len();
+    let s = posterior.n_draws();
+    let mut ll = Vec::with_capacity(s * n);
+    let mut residuals = Vec::with_capacity(n);
+    for nat in posterior.values().chunks_exact(posterior.dim()) {
+        model.log_densities(nat, &mut residuals, &mut ll);
+    }
+    let chains = posterior.chains();
+    let per_chain = s / chains;
+    let r_eff: Vec<f64> = (0..n)
+        .map(|i| {
+            let by_chain: Vec<Vec<f64>> = (0..chains)
+                .map(|c| {
+                    (0..per_chain)
+                        .map(|k| ll[(c * per_chain + k) * n + i].exp())
+                        .collect()
+                })
+                .collect();
+            let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
+            let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
+            // A constant likelihood: as independent draws.
+            if ess.is_finite() && ess > 0.0 {
+                ess / s as f64
+            } else {
+                1.0
+            }
+        })
+        .collect();
+    Ok(prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?)
+}
+
+/// The train rows of a [`TriangleFrame`] rebuilt as Meyers' cumulative
+/// cells, and the test rows as increments of each origin's path.
+#[derive(Debug, Clone)]
+struct Rebuilt {
+    /// The frame's origin position of each model origin `w`.
+    origins: Vec<usize>,
+    /// Number of ages, the oldest train age plus one.
+    n_dev: usize,
+    /// Each origin's latest train age.
+    latest: Vec<usize>,
+    /// Each origin's cumulative value at its latest train age.
+    last_value: Vec<f64>,
+    /// Each origin's premium (the frame's `exposure`).
+    premiums: Vec<f64>,
+    /// The cumulative cells `(w, d, C_wd)`, origin by origin.
+    values: Vec<(usize, usize, f64)>,
+    /// `(w, d)` of each test row, in order.
+    test: Vec<(usize, usize)>,
+    /// Each origin's oldest test age, if it has a test row: its path runs
+    /// from its latest train age to there.
+    path_end: Vec<Option<usize>>,
+}
+
+impl Rebuilt {
+    fn new(cells: &TriangleFrame, train: &[usize], test: &[usize]) -> Result<Self> {
+        let response = cells.response();
+        let exposure = match cells.frame().column("exposure") {
+            Some(Column::Numeric(v)) => v,
+            _ => unreachable!("TriangleFrame::new builds a numeric exposure column"),
+        };
+        let mut by_origin: BTreeMap<usize, Vec<(usize, usize)>> = BTreeMap::new();
+        for &r in train {
+            by_origin
+                .entry(cells.origin_of(r))
+                .or_default()
+                .push((cells.development_of(r), r));
+        }
+        let origins: Vec<usize> = by_origin.keys().copied().collect();
+        let label = |o: usize| cells.origins()[o];
+        if let Some(gap) = origins.windows(2).find(|p| p[1] != p[0] + 1) {
+            return Err(Error::Bayes(format!(
+                "origin {} has no train row but origins {} and {} have; Meyers' models need \
+                 the train origins without a gap",
+                label(gap[0] + 1),
+                label(gap[0]),
+                label(gap[1])
+            )));
+        }
+        let (mut latest, mut last_value, mut premiums, mut values) =
+            (vec![], vec![], vec![], vec![]);
+        for (w, (&o, rows)) in by_origin.iter_mut().enumerate() {
+            rows.sort_unstable();
+            let mut cumulative = 0.0;
+            for (k, &(d, r)) in rows.iter().enumerate() {
+                if d != k {
+                    return Err(Error::Bayes(format!(
+                        "origin {} has no train row at development age {} months but has one \
+                         later; Meyers' models rebuild each origin's cumulative values from \
+                         its first age",
+                        label(o),
+                        cells.ages()[k]
+                    )));
+                }
+                cumulative += response[r];
+                values.push((w, d, cumulative));
+            }
+            latest.push(rows.len() - 1);
+            last_value.push(cumulative);
+            premiums.push(exposure[rows[0].1]);
+        }
+        let n_dev = latest.iter().max().map_or(0, |&l| l + 1);
+        let mut path_end = vec![None; origins.len()];
+        let test = test
+            .iter()
+            .map(|&r| {
+                let (o, d) = (cells.origin_of(r), cells.development_of(r));
+                let w = origins.binary_search(&o).map_err(|_| {
+                    Error::Bayes(format!("test row {r} has an origin without a train row"))
+                })?;
+                if d >= n_dev {
+                    return Err(Error::Bayes(format!(
+                        "test row {r} has an age without a train row"
+                    )));
+                }
+                if d <= latest[w] {
+                    return Err(Error::Bayes(format!(
+                        "test row {r} is not after its origin's latest train row; Meyers' \
+                         models forecast each origin's cumulative path past it"
+                    )));
+                }
+                let end: &mut Option<usize> = &mut path_end[w];
+                *end = Some(end.map_or(d, |e| e.max(d)));
+                Ok((w, d))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            origins,
+            n_dev,
+            latest,
+            last_value,
+            premiums,
+            values,
+            test,
+            path_end,
+        })
+    }
+
+    /// Whether origin `w`'s path holds age `d`.
+    fn in_path(&self, w: usize, d: usize) -> bool {
+        d > self.latest[w] && self.path_end[w].is_some_and(|e| d <= e)
+    }
+
+    /// The ages some path holds, in order.
+    fn path_ages(&self) -> Vec<usize> {
+        (0..self.n_dev)
+            .filter(|&d| (0..self.origins.len()).any(|w| self.in_path(w, d)))
+            .collect()
+    }
+}
+
+/// The diagonal backtest's view of a [`Meyers`] (decision 8). The frame's
+/// rows are increments, and Meyers models cumulative values with premium,
+/// so the model is fitted to the train rows rebuilt as cumulative cells:
+///
+/// * **Cumulative values.** Each origin's train rows must run from the
+///   first age without a gap (an [`Error::Bayes`] otherwise), and their
+///   running sums are its cumulative values, which must be positive. The
+///   train origins must have no gap between them either (CAY's previous
+///   origin is the one before). The model's ages are the first age to the
+///   oldest train age, which takes `beta_m = 0`.
+/// * **Premium** is the frame's `exposure` column (the origin's exposure,
+///   given to [`TriangleFrame::new`]). A frame built without exposure has
+///   1 there, which the model fits but which puts its `logelr` far from
+///   Meyers' prior on a loss ratio; give the premium.
+/// * **Test rows** must be after their origin's latest train row, at an
+///   age with train rows. Each origin's cumulative value is simulated
+///   along one path, from the age after its latest train row to its oldest
+///   test row, with one posterior draw per simulation; a test row's
+///   increment is the difference of consecutive values on that path (the
+///   first from the latest train value), so an origin's increments sum to
+///   its last simulated value less its latest train value. Given the
+///   parameters the values are independent log-normals (in CAY, a moving
+///   average down each age, the previous origin's residual observed for a
+///   train cell and drawn otherwise), so a simulated increment can be
+///   negative, as Meyers' reserves can.
+/// * **Mean** is each test row's posterior mean increment: the mean of
+///   the log-normal `E[C_wd]` less the latest train value (or less
+///   `E[C_w,d-1]` past the first age of the path), over every posterior
+///   draw.
+/// * **Log density.** When every test row follows its origin's latest
+///   train row (always so in [`diagonal_backtest`](crate::diagonal_backtest)),
+///   a test increment `y` is `C_wd` less a known value, so its density is
+///   the log-normal density of `C_wd` at `y` plus the latest train value,
+///   per unit of the response, and the log density is the log of its mean
+///   over every posterior draw (the log predictive density, as
+///   [`BayesOdp`](super::BayesOdp) gives it); minus infinity when that sum
+///   is not positive. In CAY a test row whose previous origin has no train
+///   cell at its age takes that origin's residual integrated out (variance
+///   `(1 + rho^2) sigma_d^2`). When some test row is further out, its
+///   increment is a difference of two random log-normals, with no closed
+///   density, and the log density is `None`.
+/// * **Seeds.** The chains (and the pilot run) and the simulations take
+///   seeds derived from the backtest's `seed` as [`Meyers::fit`] does from
+///   [`Meyers::seed`]; the backtest's `n_sims` replaces [`Meyers::n_sims`].
+///   The fit's diagnostics are not reported.
+///
+/// Its name in the backtest is `"meyers_crc"`, `"meyers_csr"` or
+/// `"meyers_cay"`.
+impl TriangleModel for Meyers {
+    fn name(&self) -> &str {
+        match self.model {
+            MeyersModel::Crc => "meyers_crc",
+            MeyersModel::Csr => "meyers_csr",
+            MeyersModel::Cay => "meyers_cay",
+        }
+    }
+
+    fn forecast(
+        &self,
+        cells: &TriangleFrame,
+        train: &[usize],
+        test: &[usize],
+        n_sims: usize,
+        seed: u64,
+    ) -> Result<CellForecast> {
+        self.validate()?;
+        let rebuilt = Rebuilt::new(cells, train, test)?;
+        let no = rebuilt.origins.len();
+        let origins: Vec<Period> = rebuilt
+            .origins
+            .iter()
+            .map(|&o| cells.origins()[o])
+            .collect();
+        let model = self.model_from(
+            no,
+            rebuilt.n_dev,
+            &rebuilt.values,
+            &rebuilt.premiums,
+            &origins,
+            cells.ages(),
+        )?;
+        let (posterior, _) = self.sample(&model, derive_seed(seed, Stream::Chains))?;
+        let at = cell_index(&model.cells, no, rebuilt.n_dev);
+        let ages = rebuilt.path_ages();
+
+        let n_draws = posterior.n_draws();
+        let response = cells.response();
+        let closed = rebuilt
+            .test
+            .iter()
+            .all(|&(w, d)| d == rebuilt.latest[w] + 1);
+        let mut mean = vec![0.0; test.len()];
+        let mut ln_f = vec![Vec::with_capacity(n_draws); test.len()];
+        let mut residuals = Vec::new();
+        for s in 0..n_draws {
+            let nat = posterior.draw(s);
+            model.cay_residuals(nat, &mut residuals);
+            let moments = |w: usize, d: usize| {
+                model.log_moments(nat, &residuals, &at, &rebuilt.premiums, w, d)
+            };
+            for (j, (&r, &(w, d))) in test.iter().zip(&rebuilt.test).enumerate() {
+                let (m, v) = moments(w, d);
+                let before = if d == rebuilt.latest[w] + 1 {
+                    rebuilt.last_value[w]
+                } else {
+                    let (m0, v0) = moments(w, d - 1);
+                    (m0 + 0.5 * v0).exp()
+                };
+                mean[j] += ((m + 0.5 * v).exp() - before) / n_draws as f64;
+                if closed {
+                    let c = response[r] + rebuilt.last_value[w];
+                    ln_f[j].push(if c > 0.0 && c.is_finite() {
+                        let z = c.ln() - m;
+                        -c.ln() - 0.5 * (std::f64::consts::TAU * v).ln() - 0.5 * z * z / v
+                    } else {
+                        f64::NEG_INFINITY
+                    });
+                }
+            }
+        }
+        let log_density = closed.then(|| ln_f.iter().map(|f| log_mean_exp(f)).collect());
+
+        let distribution = posterior.predictive(
+            vec!["row".into()],
+            test.iter().map(|&r| vec![(r as i64).into()]).collect(),
+            n_sims,
+            derive_seed(seed, Stream::Predictive),
+            self.provenance("backtest", "exposure", InputHasher::new())
+                .param("output", "test increments"),
+            |nat, rng: &mut StreamRng, row| {
+                model.draw_paths(nat, &rebuilt, &at, &ages, rng, row);
+            },
+        )?;
+        Ok(CellForecast {
+            mean,
+            distribution,
+            log_density,
+        })
+    }
+}
+
 impl MeyersFit {
     /// The model that produced this fit, CRC, CSR or CAY.
     pub fn model(&self) -> MeyersModel {
@@ -505,36 +1211,7 @@ impl MeyersFit {
     /// residual, so its term is conditional on that cell, as in Meyers'
     /// code.
     pub fn loo(&self) -> Result<Loo> {
-        let model = &self.model;
-        let n = model.cells.len();
-        let s = self.posterior.n_draws();
-        let mut ll = Vec::with_capacity(s * n);
-        let mut residuals = Vec::with_capacity(n);
-        for nat in self.posterior.values().chunks_exact(self.posterior.dim()) {
-            model.log_densities(nat, &mut residuals, &mut ll);
-        }
-        let chains = self.posterior.chains();
-        let per_chain = s / chains;
-        let r_eff: Vec<f64> = (0..n)
-            .map(|i| {
-                let by_chain: Vec<Vec<f64>> = (0..chains)
-                    .map(|c| {
-                        (0..per_chain)
-                            .map(|k| ll[(c * per_chain + k) * n + i].exp())
-                            .collect()
-                    })
-                    .collect();
-                let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
-                let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
-                // A constant likelihood: as independent draws.
-                if ess.is_finite() && ess > 0.0 {
-                    ess / s as f64
-                } else {
-                    1.0
-                }
-            })
-            .collect();
-        Ok(prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?)
+        loo(&self.model, &self.posterior)
     }
 
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
@@ -836,6 +1513,118 @@ impl Model {
                 residual = sigma_m * norm_quantile(rng.next_open01());
                 *ultimate = (mean + residual).exp();
             }
+        }
+    }
+
+    /// `mu_wd` without CAY's `rho` term at any origin and age, from a
+    /// natural-scale draw and each origin's premium.
+    fn mu_at(&self, nat: &[f64], premiums: &[f64], w: usize, d: usize) -> f64 {
+        let cell = Cell {
+            w,
+            d,
+            y: 0.0,
+            offset: premiums[w].ln(),
+            prev: None,
+        };
+        self.mu(nat, &cell)
+    }
+
+    /// CAY's residuals of the observed cells from a natural-scale draw, in
+    /// `residuals`; empty for CRC and CSR, which do not use them.
+    fn cay_residuals(&self, nat: &[f64], residuals: &mut Vec<f64>) {
+        if self.cay() {
+            self.residuals(nat, nat[self.after_beta()], residuals);
+        } else {
+            residuals.clear();
+        }
+    }
+
+    /// The mean and variance of `log C_wd` for a cell that is not observed,
+    /// given a natural-scale draw: `mu_wd` and `sigma_d^2`; in CAY, plus
+    /// `rho` times the previous origin's residual at age `d` when that cell
+    /// is observed (`at`, with `residuals` from
+    /// [`cay_residuals`](Self::cay_residuals)), and with that residual,
+    /// `N(0, sigma_d^2)`, integrated out when it is not, which makes the
+    /// variance `(1 + rho^2) sigma_d^2`.
+    fn log_moments(
+        &self,
+        nat: &[f64],
+        residuals: &[f64],
+        at: &[Vec<Option<usize>>],
+        premiums: &[f64],
+        w: usize,
+        d: usize,
+    ) -> (f64, f64) {
+        let sigma = nat[self.u0() + d];
+        let mut m = self.mu_at(nat, premiums, w, d);
+        let mut v = sigma * sigma;
+        if self.cay() && w > 0 {
+            let rho = nat[self.after_beta()];
+            match at[w - 1][d] {
+                Some(i) => m += rho * residuals[i],
+                None => v *= 1.0 + rho * rho,
+            }
+        }
+        (m, v)
+    }
+
+    /// One simulation of the test increments of `rebuilt` into `row`, given
+    /// a natural-scale draw: each origin's cumulative values along its path
+    /// (log-normal, independent given the draw in CRC and CSR), and each
+    /// test row's increment the difference of consecutive values on it, the
+    /// first from the latest train value. In CAY the ages of the paths run
+    /// in order and, within an age, the origins: each mean takes `rho`
+    /// times the previous origin's residual at that age, observed for a
+    /// train cell and drawn otherwise (also for a cell on no path, which
+    /// integrates it out). `at` indexes the model's cells and `ages` are
+    /// [`Rebuilt::path_ages`].
+    fn draw_paths(
+        &self,
+        nat: &[f64],
+        rebuilt: &Rebuilt,
+        at: &[Vec<Option<usize>>],
+        ages: &[usize],
+        rng: &mut StreamRng,
+        row: &mut [f64],
+    ) {
+        let cay = self.cay();
+        let rho = if cay { nat[self.after_beta()] } else { 0.0 };
+        let mut residuals = Vec::new();
+        self.cay_residuals(nat, &mut residuals);
+        let no = rebuilt.origins.len();
+        // Origin w's value at age d is path[w][d - latest[w] - 1].
+        let mut path: Vec<Vec<f64>> = (0..no)
+            .map(|w| vec![0.0; rebuilt.path_end[w].map_or(0, |e| e - rebuilt.latest[w])])
+            .collect();
+        for &d in ages {
+            let sigma = nat[self.u0() + d];
+            // The previous origin's residual at age d (0 before the first).
+            let mut previous = 0.0;
+            for (w, values) in path.iter_mut().enumerate() {
+                let on_path = rebuilt.in_path(w, d);
+                previous = match at[w][d] {
+                    Some(i) if cay => residuals[i],
+                    Some(_) => 0.0,
+                    None if on_path || cay => {
+                        let e = sigma * norm_quantile(rng.next_open01());
+                        if on_path {
+                            let mu = self.mu_at(nat, &rebuilt.premiums, w, d);
+                            values[d - rebuilt.latest[w] - 1] = (mu + rho * previous + e).exp();
+                        }
+                        e
+                    }
+                    None => 0.0,
+                };
+            }
+        }
+        for (x, &(w, d)) in row.iter_mut().zip(&rebuilt.test) {
+            let k = d - rebuilt.latest[w] - 1;
+            let before = if k == 0 {
+                rebuilt.last_value[w]
+            } else {
+                path[w][k - 1]
+            };
+            *x = path[w][k] - before;
         }
     }
 
@@ -1779,5 +2568,542 @@ mod tests {
             quick(MeyersModel::Crc, 0).fit(&two, "paid", "premium"),
             Err(Error::MultipleSegments(2))
         ));
+    }
+
+    /// Group 353's paid triangle twice, as lines `a` and `b` of a `lob`
+    /// key, with its premium.
+    fn twins() -> Triangle {
+        let (mut keys, mut origin, mut ages, mut paid, mut prem) =
+            (vec![], vec![], vec![], vec![], vec![]);
+        for line in ["a", "b"] {
+            for (w, row) in PAID.iter().enumerate() {
+                for (d, &v) in row.iter().enumerate().take(10 - w) {
+                    keys.push(line);
+                    origin.push(Month::january(1988 + w as i32));
+                    ages.push(12 * (d as crate::Lag + 1));
+                    paid.push(v);
+                    prem.push(PREMIUM[w]);
+                }
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[("lob", &keys)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("premium", &prem)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    /// Each line's total of `pd`, simulation by simulation.
+    fn line_totals(pd: &PredictiveDistribution) -> Vec<Vec<f64>> {
+        let by = pd.aggregate(&["lob"]).unwrap();
+        let n = by.n_components();
+        (0..n)
+            .map(|j| by.draw_matrix().chunks(n).map(|r| r[j]).collect())
+            .collect()
+    }
+
+    fn spearman(x: &[f64], y: &[f64]) -> f64 {
+        let ranks = |v: &[f64]| {
+            let mut idx: Vec<usize> = (0..v.len()).collect();
+            idx.sort_by(|&a, &b| v[a].total_cmp(&v[b]));
+            let mut r = vec![0.0; v.len()];
+            for (k, &i) in idx.iter().enumerate() {
+                r[i] = k as f64;
+            }
+            r
+        };
+        let (rx, ry) = (ranks(x), ranks(y));
+        let m = (x.len() as f64 - 1.0) / 2.0;
+        let sxy: f64 = rx.iter().zip(&ry).map(|(a, b)| (a - m) * (b - m)).sum();
+        let sxx: f64 = rx.iter().map(|a| (a - m).powi(2)).sum();
+        sxy / sxx
+    }
+
+    /// Every row's ultimates less its reserves are the latest values.
+    fn assert_ultimates_follow_reserves(fits: &MeyersFits) {
+        let latest: Vec<f64> = fits
+            .segments
+            .fits
+            .iter()
+            .flat_map(|s| s.chain_ladder.latest.clone())
+            .collect();
+        let n = latest.len();
+        for (u, r) in fits
+            .ultimates
+            .draw_matrix()
+            .chunks_exact(n)
+            .zip(fits.reserves.draw_matrix().chunks_exact(n))
+        {
+            for ((u, r), l) in u.iter().zip(r).zip(&latest) {
+                assert_eq!(*r, u - l);
+            }
+        }
+    }
+
+    #[test]
+    fn each_segment_has_its_own_seeds() {
+        let tri = twins();
+        let fits = quick(MeyersModel::Crc, 9)
+            .fit_segments(&tri, "paid", "premium")
+            .unwrap();
+        for pd in [&fits.reserves, &fits.ultimates] {
+            assert_eq!(pd.dims(), ["lob", "origin"]);
+            assert_eq!(pd.n_components(), 20);
+            assert_eq!(pd.n_sims(), 2_000);
+        }
+        assert_eq!(fits.segments.len(), 2);
+        let (a, b) = (&fits.segments.fits[0], &fits.segments.fits[1]);
+        assert_eq!(a.premium, PREMIUM);
+        assert_eq!(a.model(), MeyersModel::Crc);
+        assert_ne!(a.posterior.values(), b.posterior.values());
+        // Not the single-segment fit's seeds either.
+        let alone = quick(MeyersModel::Crc, 9)
+            .fit(&comauto(), "paid", "premium")
+            .unwrap();
+        assert_ne!(a.posterior.values(), alone.posterior.values());
+        assert_ultimates_follow_reserves(&fits);
+        // Shared streams would make the twins' totals almost perfectly
+        // rank correlated; their own make them independent.
+        let totals = line_totals(&fits.reserves);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!(r.abs() < 4.5 / 2_000f64.sqrt(), "rank correlation {r}");
+
+        let long = fits.to_long();
+        assert_eq!(long.n_rows(), 20);
+        for column in ["premium", "mean", "ultimate_mean", "ultimate_std_dev"] {
+            assert!(long.column(column).is_some(), "{column}");
+        }
+        let t = fits.totals();
+        assert_eq!(t.n_rows(), 2);
+        let premium: f64 = PREMIUM.iter().sum();
+        assert_eq!(t.column("premium").unwrap(), [premium, premium]);
+        let mean_b = totals[1].iter().sum::<f64>() / 2e3;
+        assert!((t.column("mean").unwrap()[1] / mean_b - 1.0).abs() < 1e-9);
+        assert_eq!(fits.development_table().n_rows(), 20);
+        let one = fits.segment(&[("lob", "b")]).unwrap();
+        assert_eq!(one.reserves.n_components(), 10);
+        assert_eq!(one.ultimates.n_components(), 10);
+        assert_eq!(one.segments.fits[0].posterior, b.posterior);
+        assert_eq!(b.summary().unwrap().len(), 29);
+        assert_eq!(b.loo().unwrap().pareto_k.len(), 55);
+
+        for (pd, output) in [(&fits.reserves, "reserves"), (&fits.ultimates, "ultimates")] {
+            let provenance = pd.provenance();
+            assert_eq!(provenance.model, "meyers_crc");
+            for (key, value) in [
+                ("segments", "2"),
+                ("output", output),
+                ("dependence", "Independent"),
+            ] {
+                assert!(
+                    provenance.parameters.contains(&(key.into(), value.into())),
+                    "{key} {value}: {:?}",
+                    provenance.parameters
+                );
+            }
+        }
+
+        let again = quick(MeyersModel::Crc, 9)
+            .fit_segments(&tri, "paid", "premium")
+            .unwrap();
+        assert_eq!(again.reserves.draw_matrix(), fits.reserves.draw_matrix());
+        assert_eq!(again.ultimates.draw_matrix(), fits.ultimates.draw_matrix());
+    }
+
+    #[test]
+    fn synchronized_segments_are_an_error() {
+        let model = Meyers {
+            dependence: SegmentDependence::Synchronized,
+            ..quick(MeyersModel::Csr, 0)
+        };
+        let e = model.fit_segments(&twins(), "paid", "premium").unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_bad_rank_correlation_fails_before_sampling() {
+        // With a sampler this long, any sampling before the check would
+        // not finish.
+        let slow = Meyers {
+            sampler: Sampler {
+                tune: 1_000_000,
+                draws: 1_000_000,
+                ..Sampler::default()
+            },
+            ..Meyers::default()
+        };
+        for spearman in [
+            vec![1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0],
+            vec![0.9, 0.5, 0.5, 1.0],
+            vec![1.0, 0.5, 0.4, 1.0],
+            vec![1.0, 1.5, 1.5, 1.0],
+        ] {
+            let model = Meyers {
+                dependence: SegmentDependence::RankCorrelation { spearman },
+                ..slow.clone()
+            };
+            let e = model.fit_segments(&twins(), "paid", "premium").unwrap_err();
+            assert!(
+                matches!(
+                    &e,
+                    Error::InvalidSetting {
+                        name: "spearman",
+                        ..
+                    }
+                ),
+                "{e}"
+            );
+        }
+        // A bad setting fails first too.
+        let e = Meyers {
+            n_sims: 0,
+            ..slow.clone()
+        }
+        .fit_segments(&twins(), "paid", "premium")
+        .unwrap_err();
+        assert!(
+            matches!(e, Error::InvalidSetting { name: "n_sims", .. }),
+            "{e}"
+        );
+        assert!(matches!(
+            slow.fit_segments(&twins(), "paid", "exposure"),
+            Err(Error::UnknownColumn(_))
+        ));
+    }
+
+    #[test]
+    fn rank_correlation_moves_reserves_and_ultimates_together() {
+        let tri = twins();
+        let independent = quick(MeyersModel::Cay, 10)
+            .fit_segments(&tri, "paid", "premium")
+            .unwrap();
+        let ranked = Meyers {
+            dependence: SegmentDependence::RankCorrelation {
+                spearman: vec![1.0, 0.8, 0.8, 1.0],
+            },
+            ..quick(MeyersModel::Cay, 10)
+        }
+        .fit_segments(&tri, "paid", "premium")
+        .unwrap();
+        // Each line keeps its own simulations, as whole rows.
+        let rows = |pd: &PredictiveDistribution, s: usize| {
+            let mut rows: Vec<Vec<f64>> = pd
+                .draw_matrix()
+                .chunks(20)
+                .map(|r| r[s * 10..(s + 1) * 10].to_vec())
+                .collect();
+            rows.sort_by(|x, y| {
+                x.iter()
+                    .zip(y)
+                    .map(|(a, b)| a.total_cmp(b))
+                    .find(|o| o.is_ne())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            rows
+        };
+        for s in 0..2 {
+            assert_eq!(rows(&independent.reserves, s), rows(&ranked.reserves, s));
+            assert_eq!(rows(&independent.ultimates, s), rows(&ranked.ultimates, s));
+        }
+        assert_ultimates_follow_reserves(&ranked);
+        let totals = line_totals(&ranked.reserves);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!((r - 0.8).abs() < 0.05, "rank correlation {r}");
+        assert!(
+            ranked
+                .reserves
+                .provenance()
+                .parameters
+                .iter()
+                .any(|(k, _)| k == "rank_correlation")
+        );
+    }
+
+    /// Group 353's paid cells as a frame, with its premium as exposure.
+    fn frame() -> TriangleFrame {
+        TriangleFrame::new(&comauto(), "paid", Some(&PREMIUM)).unwrap()
+    }
+
+    #[test]
+    fn the_backtest_model_is_the_fit_on_the_train_rows() {
+        // The latest diagonal held out: the train rows are the triangle of
+        // the first nine origins without it (row 10 w + d is origin w at
+        // age d).
+        let cells = frame();
+        let held: Vec<usize> = (1..9).map(|w| w * 10 + 9 - w).collect();
+        let train: Vec<usize> = cells
+            .observed()
+            .iter()
+            .copied()
+            .filter(|&r| r / 10 + r % 10 < 9)
+            .collect();
+        let short = triangle(&PAID[..9], &PREMIUM[..9]);
+        for kind in [MeyersModel::Crc, MeyersModel::Csr] {
+            let model = quick(kind, 12);
+            assert_eq!(
+                TriangleModel::name(&model),
+                format!("meyers_{}", kind.name())
+            );
+            let f = model.forecast(&cells, &train, &held, 2_000, 12).unwrap();
+            let fit = model.fit(&short, "paid", "premium").unwrap();
+            // The same posterior: each test row's mean and log density from
+            // the fit's draws, written out here.
+            let p = fit.posterior.dim();
+            let lpd = f.log_density.clone().unwrap();
+            for (j, w) in (1..9).enumerate() {
+                let d = 9 - w;
+                let (before, after) = (PAID[w][d - 1], PAID[w][d]);
+                let (mut mean, mut dens) = (0.0, 0.0);
+                let n = fit.posterior.n_draws() as f64;
+                for nat in fit.posterior.values().chunks_exact(p) {
+                    let beta = if d < 8 { nat[9 + d] } else { 0.0 };
+                    let g = if kind == MeyersModel::Csr {
+                        (1.0 - nat[17]).powi(w as i32)
+                    } else {
+                        1.0
+                    };
+                    let mu = PREMIUM[w].ln() + nat[0] + nat[w] + beta * g;
+                    let sigma = nat[p - 9 + d];
+                    mean += ((mu + 0.5 * sigma * sigma).exp() - before) / n;
+                    let z = (after.ln() - mu) / sigma;
+                    dens +=
+                        (-0.5 * z * z).exp() / (after * sigma * std::f64::consts::TAU.sqrt()) / n;
+                }
+                assert!(
+                    (f.mean[j] / mean - 1.0).abs() < 1e-9,
+                    "{kind:?} {w}: {} vs {mean}",
+                    f.mean[j]
+                );
+                assert!(
+                    (lpd[j] - dens.ln()).abs() < 1e-9,
+                    "{kind:?} {w}: {} vs {}",
+                    lpd[j],
+                    dens.ln()
+                );
+                // The draws' mean is the mean, up to Monte Carlo error.
+                let x: Vec<f64> = f
+                    .distribution
+                    .draw_matrix()
+                    .chunks_exact(8)
+                    .map(|r| r[j])
+                    .collect();
+                let m = x.iter().sum::<f64>() / x.len() as f64;
+                let sd = (x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / x.len() as f64).sqrt();
+                assert!(
+                    (m - mean).abs() < 5.0 * sd / (x.len() as f64).sqrt(),
+                    "{m} vs {mean}"
+                );
+            }
+            assert_eq!(f.distribution.n_components(), 8);
+            assert_eq!(f.distribution.n_sims(), 2_000);
+            let again = model.forecast(&cells, &train, &held, 2_000, 12).unwrap();
+            assert_eq!(
+                again.distribution.draw_matrix(),
+                f.distribution.draw_matrix()
+            );
+        }
+    }
+
+    #[test]
+    fn the_next_cell_simulates_as_the_fit() {
+        // On the whole triangle, origin 1989's cell at 120 months is its
+        // ultimate: the backtest's draws of its increment are the fit's
+        // reserve draws, simulation by simulation (integer cells, so the
+        // rebuilt cumulative values are exact).
+        let cells = frame();
+        let train = cells.observed().to_vec();
+        for kind in [MeyersModel::Crc, MeyersModel::Cay] {
+            let model = quick(kind, 13);
+            let f = model.forecast(&cells, &train, &[19], 1_000, 13).unwrap();
+            let fit = Meyers {
+                n_sims: 1_000,
+                ..model.clone()
+            }
+            .fit(&comauto(), "paid", "premium")
+            .unwrap();
+            let reserve: Vec<f64> = fit
+                .reserves
+                .draw_matrix()
+                .chunks_exact(10)
+                .map(|r| r[1])
+                .collect();
+            for (a, b) in f.distribution.draw_matrix().iter().zip(&reserve) {
+                assert!(
+                    (a - b).abs() <= 1e-9 * b.abs().max(1.0),
+                    "{kind:?}: {a} vs {b}"
+                );
+            }
+            // A future cell has no response, so no density there.
+            assert_eq!(f.log_density.unwrap(), [f64::NEG_INFINITY]);
+        }
+    }
+
+    #[test]
+    fn an_origin_path_telescopes() {
+        // Origin 1997's nine future cells, one path per simulation: the
+        // increments sum to its ultimate less its latest value, with the
+        // fit's reserve's mean and spread (independent cells would add up
+        // nine variances).
+        let cells = frame();
+        let train = cells.observed().to_vec();
+        let test: Vec<usize> = (91..100).collect();
+        let model = quick(MeyersModel::Crc, 14);
+        let f = model.forecast(&cells, &train, &test, 4_000, 14).unwrap();
+        assert!(f.log_density.is_none());
+        let sums: Vec<f64> = f
+            .distribution
+            .draw_matrix()
+            .chunks_exact(9)
+            .map(|r| r.iter().sum())
+            .collect();
+        let fit = Meyers {
+            n_sims: 4_000,
+            ..model.clone()
+        }
+        .fit(&comauto(), "paid", "premium")
+        .unwrap();
+        let reserve = fit
+            .reserves
+            .marginal(&vec![Period::year(1997).into()])
+            .unwrap();
+        let m = sums.iter().sum::<f64>() / sums.len() as f64;
+        let sd = (sums.iter().map(|v| (v - m).powi(2)).sum::<f64>() / sums.len() as f64).sqrt();
+        let se = reserve.std_dev() / (sums.len() as f64).sqrt();
+        assert!(
+            (m - reserve.mean()).abs() < 6.0 * se,
+            "{m} vs {}",
+            reserve.mean()
+        );
+        assert!(
+            (sd / reserve.std_dev() - 1.0).abs() < 0.1,
+            "{sd} vs {}",
+            reserve.std_dev()
+        );
+        // The analytic means telescope too.
+        let total: f64 = f.mean.iter().sum();
+        assert!((total / m - 1.0).abs() < 0.05, "{total} vs {m}");
+    }
+
+    #[test]
+    fn cay_paths_take_the_previous_origins_residual() {
+        // A fixed draw with a large sigma and rho; origins 1996 and 1997
+        // both on paths at 36 months, so 1997's mean takes 1996's drawn
+        // residual, while 1996's takes 1995's observed one. 1997's path
+        // runs from 24 months.
+        let cells = frame();
+        let train = cells.observed().to_vec();
+        let test = [82, 91, 92];
+        let rebuilt = Rebuilt::new(&cells, &train, &test).unwrap();
+        let model = prepared(MeyersModel::Cay);
+        let (k, rho, sigma) = (model.after_beta(), 0.7, 0.4);
+        let mut nat = model.natural(&model.start());
+        nat[k] = rho;
+        for s in &mut nat[model.u0()..] {
+            *s = sigma;
+        }
+        let at = cell_index(&model.cells, 10, 10);
+        let mut residuals = Vec::new();
+        model.cay_residuals(&nat, &mut residuals);
+        let (m8, v8) = model.log_moments(&nat, &residuals, &at, &PREMIUM, 8, 2);
+        let (m9, v9) = model.log_moments(&nat, &residuals, &at, &PREMIUM, 9, 2);
+        assert!((v8 - sigma * sigma).abs() < 1e-15);
+        assert!((v9 - (1.0 + rho * rho) * sigma * sigma).abs() < 1e-15);
+        let ages = rebuilt.path_ages();
+        assert_eq!(ages, [1, 2]);
+        let mut rng = StreamRng::new(3, 0);
+        let mut row = [0.0; 3];
+        let n = 100_000;
+        let (mut logs8, mut logs9) = (Vec::with_capacity(n), Vec::with_capacity(n));
+        for _ in 0..n {
+            model.draw_paths(&nat, &rebuilt, &at, &ages, &mut rng, &mut row);
+            logs8.push((row[0] + rebuilt.last_value[8]).ln());
+            logs9.push((row[1] + row[2] + rebuilt.last_value[9]).ln());
+        }
+        let mean = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
+        let var = |x: &[f64]| {
+            let m = mean(x);
+            x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / (x.len() - 1) as f64
+        };
+        for (logs, m, v) in [(&logs8, m8, v8), (&logs9, m9, v9)] {
+            assert!((mean(logs) - m).abs() < 5.0 * (v / n as f64).sqrt());
+            assert!((var(logs) / v - 1.0).abs() < 0.02, "{} vs {v}", var(logs));
+        }
+        // 1997's log value moves with 1996's residual: covariance
+        // rho sigma^2.
+        let (a, b) = (mean(&logs8), mean(&logs9));
+        let cov = logs8
+            .iter()
+            .zip(&logs9)
+            .map(|(x, y)| (x - a) * (y - b))
+            .sum::<f64>()
+            / (n - 1) as f64;
+        assert!((cov / (rho * sigma * sigma) - 1.0).abs() < 0.03, "{cov}");
+    }
+
+    #[test]
+    fn backtest_errors() {
+        let cells = frame();
+        let train = cells.observed().to_vec();
+        let model = quick(MeyersModel::Crc, 0);
+        // A test row at or before its origin's latest train row.
+        let e = model.forecast(&cells, &train, &[5], 100, 0).unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.contains("not after")),
+            "{e}"
+        );
+        // Origin 1988 without its 12-month row.
+        let gap: Vec<usize> = train.iter().copied().filter(|&r| r != 0).collect();
+        let e = model.forecast(&cells, &gap, &[19], 100, 0).unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m)
+                if m.starts_with("origin 1988 has no train row at development age 12")),
+            "{e}"
+        );
+        // Origin 1990 without train rows, between 1989 and 1991.
+        let gap: Vec<usize> = train.iter().copied().filter(|&r| r / 10 != 2).collect();
+        let e = model.forecast(&cells, &gap, &[19], 100, 0).unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.starts_with("origin 1990 has no train row")),
+            "{e}"
+        );
+        // The newest origin without its only cell.
+        let without: Vec<usize> = train.iter().copied().filter(|&r| r != 90).collect();
+        let e = model.forecast(&cells, &without, &[91], 100, 0).unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.contains("origin without a train row")),
+            "{e}"
+        );
+        // An age past the oldest train age.
+        let young: Vec<usize> = train.iter().copied().filter(|&r| r % 10 < 8).collect();
+        let e = model.forecast(&cells, &young, &[18], 100, 0).unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.contains("an age without a train row")),
+            "{e}"
+        );
+        // Settings are checked first.
+        let e = Meyers {
+            gamma_sd: 0.0,
+            ..model
+        }
+        .forecast(&cells, &train, &[19], 100, 0)
+        .unwrap_err();
+        assert!(
+            matches!(
+                e,
+                Error::InvalidSetting {
+                    name: "gamma_sd",
+                    ..
+                }
+            ),
+            "{e}"
+        );
     }
 }
