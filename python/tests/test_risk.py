@@ -221,3 +221,20 @@ def test_distortion_family_and_parameters():
     c = Distortion.capped_linear(0.1, 2.0)
     assert c.family == "capped_linear" and c.parameters == {"r0": 0.1, "slope": 2.0}
     assert Distortion.mixture([d, c], [0.5, 0.5]).parameters == {}
+
+
+def test_copula_cdfs():
+    import math
+
+    from prospicio.risk import ArchimedeanCopula, GaussianCopula, StudentTCopula
+
+    g = GaussianCopula([[1.0, 0.6], [0.6, 1.0]])
+    assert g.cdf([0.5, 0.5]) == pytest.approx(0.25 + math.asin(0.6) / (2 * math.pi), abs=1e-15)
+    assert g.cdf([0.3, 1.0]) == 0.3 and g.cdf([0.0, 0.7]) == 0.0
+    c = ArchimedeanCopula("gumbel", 2.0, 3)
+    want = math.exp(-sum((-math.log(u)) ** 2 for u in (0.4, 0.6, 0.7)) ** 0.5)
+    assert c.cdf([0.4, 0.6, 0.7]) == pytest.approx(want, rel=1e-14)
+    with pytest.raises(ValueError):
+        c.cdf([0.4, 0.6])
+    with pytest.raises(ValueError):
+        StudentTCopula([[1.0, 0.5], [0.5, 1.0]], 4.0).cdf([0.5, 0.5])

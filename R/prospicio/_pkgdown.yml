@@ -200,6 +200,7 @@ reference:
     contents:
       - copula
       - copula_sample
+      - copula_cdf
       - copula_simulate
       - iman_conover
   - title: Extreme value tails

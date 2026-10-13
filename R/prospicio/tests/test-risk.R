@@ -138,3 +138,12 @@ cat("prospicio R risk tests passed\n")
 # Distortion parameters by name (#205).
 stopifnot(identical(distortion("proportional_hazard", 0.7)@parameters, c(rho = 0.7)),
           identical(distortion("capped_linear", 2, r0 = 0.1)@parameters, c(r0 = 0.1, slope = 2)))
+
+# Copula distribution functions.
+gc <- gaussian_copula(matrix(c(1, 0.6, 0.6, 1), 2))
+stopifnot(abs(copula_cdf(gc, c(0.5, 0.5)) - (0.25 + asin(0.6) / (2 * pi))) < 1e-15)
+ac <- archimedean_copula("clayton", 2)
+stopifnot(max(abs(copula_cdf(ac, rbind(c(0.3, 0.6), c(1, 0.4))) -
+                  c((0.3^-2 + 0.6^-2 - 1)^-0.5, 0.4))) < 1e-14,
+          inherits(try(copula_cdf(t_copula(matrix(c(1, 0.5, 0.5, 1), 2), 4), c(0.5, 0.5)),
+                       silent = TRUE), "try-error"))

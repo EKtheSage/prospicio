@@ -2143,6 +2143,8 @@ RiskCopula$archimedean <- function(family, theta, dim) .Call(wrap__RiskCopula__a
 
 RiskCopula$dim <- function() .Call(wrap__RiskCopula__dim, self)
 
+RiskCopula$cdf <- function(u, n) .Call(wrap__RiskCopula__cdf, self, u, n)
+
 RiskCopula$description <- function() .Call(wrap__RiskCopula__description, self)
 
 RiskCopula$sample <- function(n, seed) .Call(wrap__RiskCopula__sample, self, n, seed)

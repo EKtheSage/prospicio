@@ -218,6 +218,33 @@ class ArchimedeanCopula:
     (3, 'clayton')
     """
     def __new__(cls, /, family: str, theta: float, dim: int) -> ArchimedeanCopula: ...
+    def cdf(self, /, u: Sequence[float]) -> float:
+        """
+        The copula's distribution function at the point ``u``, each
+        coordinate in ``[0, 1]``.
+        
+        Parameters
+        ----------
+        u : list of float
+            One value per dimension.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``u`` has the wrong length or a value outside ``[0, 1]``,
+            or the copula has no closed-form distribution function here.
+        
+        Examples
+        --------
+        >>> from prospicio.risk import ArchimedeanCopula
+        >>> c = ArchimedeanCopula("clayton", 2.0, 2)
+        >>> round(c.cdf([0.3, 0.6]), 12) == round((0.3**-2 + 0.6**-2 - 1) ** -0.5, 12)
+        True
+        """
     @property
     def dim(self, /) -> int:
         """
@@ -5574,6 +5601,32 @@ class GaussianCopula:
     (3, True)
     """
     def __new__(cls, /, correlation: Sequence[Sequence[float]]) -> GaussianCopula: ...
+    def cdf(self, /, u: Sequence[float]) -> float:
+        """
+        The copula's distribution function at the point ``u``, each
+        coordinate in ``[0, 1]``.
+        
+        Parameters
+        ----------
+        u : list of float
+            One value per dimension.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``u`` has the wrong length or a value outside ``[0, 1]``,
+            or the copula has no closed-form distribution function here.
+        
+        Examples
+        --------
+        >>> from prospicio.risk import GaussianCopula
+        >>> round(GaussianCopula([[1.0, 0.5], [0.5, 1.0]]).cdf([0.5, 0.5]), 12)
+        0.333333333333
+        """
     @property
     def dim(self, /) -> int:
         """
@@ -13379,6 +13432,28 @@ class StudentTCopula:
     2
     """
     def __new__(cls, /, correlation: Sequence[Sequence[float]], nu: float) -> StudentTCopula: ...
+    def cdf(self, /, u: Sequence[float]) -> float:
+        """
+        The copula's distribution function at the point ``u``, each
+        coordinate in ``[0, 1]``.
+        
+        Parameters
+        ----------
+        u : list of float
+            One value per dimension.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``u`` has the wrong length or a value outside ``[0, 1]``,
+            or the copula has no closed-form distribution function here.
+        
+        The t copula has none yet: this always raises ``ValueError``.
+        """
     @property
     def dim(self, /) -> int:
         """

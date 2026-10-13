@@ -53,6 +53,13 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   component's draws to a target correlation.
 - `ArchimedeanCopula` (Clayton, Gumbel, Frank, Joe), exchangeable in any
   dimension.
+- `Copula::cdf(&u)`, the copula's distribution function: the Archimedean
+  copulas' `ψ(Σ ψ⁻¹(u_j))` in any dimension (with
+  `ArchimedeanCopula::inverse_generator`), the Gaussian copula's
+  `Φ₂(Φ⁻¹u, Φ⁻¹v; ρ)` in two, and an error elsewhere (the t copula, a
+  Gaussian in more dimensions). `prospicio_math::special::
+  bivariate_norm_cdf` is Genz's BVND. Python `cdf` on the copula classes,
+  R `copula_cdf()`. The two-line aggregate's copula coupling builds on it.
 - `prospicio_prob::evt`: `Gpd` (generalized Pareto, with a maximum likelihood
   `Gpd::fit`, an optional location, and closed-form layer moments as a
   `Severity`; see `pareto.md`) and `PotTail`, a peaks-over-threshold tail fitted to the
@@ -228,6 +235,17 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `aggregate` takes the unweighted mean of tied scenarios, which differs
   when scenarios have unequal probabilities.
 
+- **A copula cdf is a trait method with a failing default.** Adding a
+  required method would break every implementation outside the crate;
+  the default says the copula has no closed form, and the families that
+  have one override it. Boundaries are exact: a coordinate at 0 gives 0,
+  coordinates at 1 drop out.
+- **The bivariate normal is Genz's BVND**, Drezner and Wesolowsky's method
+  with Gauss–Legendre on 6, 12 or 20 points as `|ρ|` grows past 0.3 and
+  0.75, and the series for `|ρ| ≥ 0.925`: about `1e-15` absolute. The
+  Gaussian copula in more than two dimensions needs Genz's quasi-Monte
+  Carlo method, which is not carried; nor is the bivariate t.
+
 ## Validation
 
 `validation/tests/distributions.rs` checks distortions against
@@ -315,6 +333,15 @@ shared, and Shapley over all 24 joining orders rather than the subset
 formula. Unit tests check that full allocations add up, that marginal
 allocations fall short, the two-component Shapley closed form, and that
 comonotonic lines have no diversification benefit.
+
+Copula cdfs are checked against `validation/reference/copula_mpmath.csv`
+(`validation/scripts/mpmath_copula.py`, 30 digits, 81 values): the
+bivariate normal by Plackett's identity at seven correlations from −0.95 to
+0.99 and the Gaussian copula at three, at `1e-14` absolute; the four
+Archimedean families at five points and one three-dimensional point, at
+`1e-13` relative. Unit tests check the edges (`ρ = ±1`, infinite
+arguments), symmetry, `Φ₂(x, y; ρ) + Φ₂(x, −y; −ρ) = Φ(x)`, the
+Fréchet–Hoeffding bounds and the errors.
 
 ## Next
 

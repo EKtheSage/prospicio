@@ -364,6 +364,26 @@ impl RiskCopula {
         self.inner.as_copula().dim() as f64
     }
 
+    /// The cdf at each row of `u`, an `n × dim` matrix in R's column-major
+    /// order.
+    fn cdf(&self, u: &[f64], n: f64) -> Result<Vec<f64>> {
+        let n = whole(n, "n")? as usize;
+        let c = self.inner.as_copula();
+        let d = c.dim();
+        if u.len() != n * d {
+            return Err(Error::Other(format!(
+                "{} values for {n} points in {d} dimensions",
+                u.len()
+            )));
+        }
+        (0..n)
+            .map(|i| {
+                let point: Vec<f64> = (0..d).map(|j| u[i + j * n]).collect();
+                c.cdf(&point).map_err(to_r)
+            })
+            .collect()
+    }
+
     fn description(&self) -> String {
         match &self.inner {
             AnyCopula::Gaussian(_) => "Gaussian".into(),
