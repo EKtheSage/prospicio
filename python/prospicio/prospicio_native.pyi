@@ -4792,6 +4792,33 @@ class EventSet:
         >>> e.counts(), e.sums_insured(2)
         ([2, 0, 1], [50.0])
         """
+    def grouped(self, /, window_hours: float) -> EventSet:
+        """
+        Each year's losses grouped into occurrences by an hours clause.
+        
+        Losses within ``window_hours`` of the first loss of a window are one
+        occurrence, whose loss is their sum and whose time is the window's
+        start; the next loss after the window opens the next one. A year is
+        8,760 hours. Windows open at each first loss in turn, not where they
+        would recover most. Needs times; sums insured are not carried.
+        
+        Parameters
+        ----------
+        window_hours : float
+            Such as 72 for a windstorm, 168 for a flood.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> h = 1 / 8760
+        >>> e = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 80 * h]])
+        >>> e.grouped(72.0).events(0)
+        [30.0, 5.0]
+        """
     @property
     def has_sums_insured(self, /) -> bool:
         """
@@ -4811,6 +4838,32 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+    def merge(self, /, other: EventSet) -> EventSet:
+        """
+        Both sets' losses in each year: a catastrophe event set with a
+        non-catastrophe one, say.
+        
+        The sets need the same number of years. With times on both, each
+        year's losses are merged in time order (this set's first on a tie);
+        with times on neither, this set's losses come first. Sums insured are
+        kept when both sets carry them.
+        
+        Parameters
+        ----------
+        other : EventSet
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> cat = EventSet.from_years([[100.0], []], times=[[0.5], []])
+        >>> other = EventSet.from_years([[3.0, 4.0], [5.0]], times=[[0.2, 0.7], [0.1]])
+        >>> cat.merge(other).events(0)
+        [3.0, 100.0, 4.0]
         """
     @property
     def n_sims(self, /) -> int:

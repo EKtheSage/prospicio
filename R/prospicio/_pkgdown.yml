@@ -70,6 +70,8 @@ reference:
       - simulate_events
       - event_set_from_long
       - event_loss_table
+      - merge_event_sets
+      - hours_clause
       - occurrence_pml
       - compound_moments
       - eventual_ruin

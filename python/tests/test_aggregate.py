@@ -569,3 +569,19 @@ def test_event_loss_table_against_its_oep():
         EventLossTable([0.1], [50.0], [60.0], [0.0], [100.0])
     long = EventSet.from_long([1, 1], [3.0, 4.0], 3)
     assert long.counts() == [0, 2, 0]
+
+
+def test_merge_event_sets_and_hours_clause():
+    from prospicio.aggregate import EventSet
+
+    h = 1 / 8760
+    cat = EventSet.from_years([[100.0], []], times=[[0.5], []])
+    other = EventSet.from_years([[3.0, 4.0], [5.0]], times=[[0.2, 0.7], [0.1]])
+    m = cat.merge(other)
+    assert m.events(0) == [3.0, 100.0, 4.0] and m.events(1) == [5.0]
+    with pytest.raises(ValueError):
+        cat.merge(EventSet.from_years([[1.0], []]))
+    e = EventSet.from_years([[1.0, 2.0, 4.0]], times=[[0.0, 72 * h, 72.5 * h]])
+    assert e.grouped(72.0).events(0) == [3.0, 4.0]
+    with pytest.raises(ValueError):
+        EventSet.from_years([[1.0]]).grouped(72.0)

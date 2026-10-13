@@ -277,6 +277,18 @@ impl EventSet {
         Ok(Self { inner })
     }
 
+    fn merge(&self, other: &EventSet) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.merge(&other.inner).map_err(to_r)?,
+        })
+    }
+
+    fn grouped(&self, window_hours: f64) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.grouped(window_hours).map_err(to_r)?,
+        })
+    }
+
     fn with_uniform_times(&self) -> Self {
         Self {
             inner: self.inner.clone().with_uniform_times(),

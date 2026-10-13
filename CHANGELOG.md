@@ -151,6 +151,10 @@ under "Unreleased" until then.
   long form (`EventSet::from_long`). Python `EventLossTable`,
   `EventSet.from_long`; R `event_loss_table()`, `elt_oep()`,
   `elt_occurrence_pml()`, `simulate_elt()`, `event_set_from_long()` (#229).
+- Event sets merged year by year (a catastrophe set with a non-catastrophe
+  one, interleaved by time) and grouped into occurrences by an hours clause
+  (`EventSet::merge`, `EventSet::grouped`). Python `EventSet.merge`,
+  `EventSet.grouped`; R `merge_event_sets()`, `hours_clause()` (#231).
 
 ### Examples
 

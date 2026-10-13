@@ -204,6 +204,10 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$from_long <- function(years, losses, n_years, seed) .Call(wrap__EventSet__from_long, years, losses, n_years, seed)
 
+EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
+
+EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)
+
 EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
 
 EventSet$with_seasonal_times <- function(weights) .Call(wrap__EventSet__with_seasonal_times, self, weights)

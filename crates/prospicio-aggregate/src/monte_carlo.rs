@@ -398,6 +398,156 @@ impl EventSet {
         self
     }
 
+    /// Both sets' losses in each year: a catastrophe event set with a
+    /// non-catastrophe one, say. The sets need the same number of years.
+    /// With times on both, each year's losses are merged in time order
+    /// (this set's first on a tie); with times on neither, this set's
+    /// losses come first. Sums insured are kept when both sets carry them.
+    /// The seed is this set's; the samplers are kept only when the two
+    /// agree.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// let cat = EventSet::from_years(vec![vec![100.0], vec![]], 1)
+    ///     .unwrap()
+    ///     .with_times(vec![0.5])
+    ///     .unwrap();
+    /// let other = EventSet::from_years(vec![vec![3.0, 4.0], vec![5.0]], 2)
+    ///     .unwrap()
+    ///     .with_times(vec![0.2, 0.7, 0.1])
+    ///     .unwrap();
+    /// let all = cat.merge(&other).unwrap();
+    /// assert_eq!(all.events(0), &[3.0, 100.0, 4.0]);
+    /// assert_eq!(all.times(0), Some(&[0.2, 0.5, 0.7][..]));
+    /// assert_eq!(all.events(1), &[5.0]);
+    /// ```
+    pub fn merge(&self, other: &EventSet) -> Result<Self> {
+        if self.n_sims() != other.n_sims() {
+            return Err(Error::Data(format!(
+                "{} years and {} years: merged sets need the same number",
+                self.n_sims(),
+                other.n_sims()
+            )));
+        }
+        if self.times.is_some() != other.times.is_some() {
+            return Err(Error::Data("give both sets times, or neither".into()));
+        }
+        if self.sums_insured.is_some() != other.sums_insured.is_some() {
+            return Err(Error::Data(
+                "give both sets sums insured, or neither".into(),
+            ));
+        }
+        let with_si = self.sums_insured.is_some();
+        let with_times = self.times.is_some();
+        let mut offsets = Vec::with_capacity(self.offsets.len());
+        offsets.push(0);
+        let mut losses = Vec::with_capacity(self.losses.len() + other.losses.len());
+        let mut sums = Vec::new();
+        let mut times = Vec::new();
+        for y in 0..self.n_sims() {
+            // (time, which set, index within the year)
+            let mut order: Vec<(f64, usize, usize)> = (0..self.events(y).len())
+                .map(|k| (self.times(y).map_or(0.0, |t| t[k]), 0, k))
+                .chain(
+                    (0..other.events(y).len())
+                        .map(|k| (other.times(y).map_or(0.0, |t| t[k]), 1, k)),
+                )
+                .collect();
+            if with_times {
+                order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            }
+            for (t, set, k) in order {
+                let src = if set == 0 { self } else { other };
+                losses.push(src.events(y)[k]);
+                if with_si {
+                    sums.push(src.sums_insured(y).expect("both carry sums insured")[k]);
+                }
+                if with_times {
+                    times.push(t);
+                }
+            }
+            offsets.push(losses.len());
+        }
+        Ok(Self {
+            offsets,
+            losses,
+            sums_insured: with_si.then_some(sums),
+            times: with_times.then_some(times),
+            seed: self.seed,
+            samplers: if self.samplers == other.samplers {
+                self.samplers.clone()
+            } else {
+                None
+            },
+        })
+    }
+
+    /// Each year's losses grouped into occurrences by an hours clause:
+    /// losses within `window_hours` of the first loss of a window are one
+    /// occurrence, whose loss is their sum and whose time is the window's
+    /// start; the next loss after the window opens the next one. A year is
+    /// 8,760 hours (times are fractions of the year). Needs times; sums
+    /// insured are not carried, since an occurrence spans risks.
+    ///
+    /// Windows open at each first loss in turn, rather than where they
+    /// would recover most, which a cedant may choose.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// let h = 1.0 / 8760.0; // an hour
+    /// let per_risk = EventSet::from_years(vec![vec![10.0, 20.0, 5.0, 7.0]], 0)
+    ///     .unwrap()
+    ///     .with_times(vec![0.5, 0.5 + 30.0 * h, 0.5 + 80.0 * h, 0.9])
+    ///     .unwrap();
+    /// let occ = per_risk.grouped(72.0).unwrap();
+    /// // 10 and 20 within 72 hours; 5 opens a new window, 7 another.
+    /// assert_eq!(occ.events(0), &[30.0, 5.0, 7.0]);
+    /// ```
+    pub fn grouped(&self, window_hours: f64) -> Result<Self> {
+        if !(window_hours.is_finite() && window_hours >= 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "window_hours",
+                value: window_hours,
+                reason: "must be finite and non-negative",
+            });
+        }
+        let Some(all_times) = self.times.as_deref() else {
+            return Err(Error::Data("an hours clause needs each loss's time".into()));
+        };
+        const HOURS: f64 = 8760.0;
+        let mut offsets = Vec::with_capacity(self.offsets.len());
+        offsets.push(0);
+        let mut losses = Vec::new();
+        let mut times = Vec::new();
+        for w in self.offsets.windows(2) {
+            let mut start: Option<f64> = None;
+            let year = w[0]..w[1];
+            for (&x, &t) in self.losses[year.clone()].iter().zip(&all_times[year]) {
+                match start {
+                    Some(s) if (t - s) * HOURS <= window_hours => {
+                        *losses.last_mut().expect("a window is open") += x;
+                    }
+                    _ => {
+                        start = Some(t);
+                        losses.push(x);
+                        times.push(t);
+                    }
+                }
+            }
+            offsets.push(losses.len());
+        }
+        Ok(Self {
+            offsets,
+            losses,
+            sums_insured: None,
+            times: Some(times),
+            seed: self.seed,
+            samplers: self.samplers.clone(),
+        })
+    }
+
     /// Whether the losses carry times.
     pub fn has_times(&self) -> bool {
         self.times.is_some()
@@ -677,5 +827,64 @@ mod tests {
     #[test]
     fn rejects_zero_sims() {
         assert!(simulate_events(&Poisson::new(1.0).unwrap(), &severity(), 0, 1).is_err());
+    }
+
+    #[test]
+    fn merging_keeps_every_loss_and_orders_by_time() {
+        let a = EventSet::from_years(vec![vec![1.0, 2.0], vec![3.0]], 5).unwrap();
+        let b = EventSet::from_years(vec![vec![10.0], vec![]], 6).unwrap();
+        let m = a.merge(&b).unwrap();
+        assert_eq!(m.events(0), &[1.0, 2.0, 10.0]);
+        assert_eq!(m.events(1), &[3.0]);
+        assert_eq!(m.seed(), 5);
+        assert!(!m.has_times());
+        let si_a = a.clone().with_sums_insured(vec![5.0, 5.0, 5.0]).unwrap();
+        let si_b = b.clone().with_sums_insured(vec![20.0]).unwrap();
+        assert_eq!(
+            si_a.merge(&si_b).unwrap().sums_insured(0),
+            Some(&[5.0, 5.0, 20.0][..])
+        );
+        assert!(si_a.merge(&b).is_err());
+        let timed = a.clone().with_times(vec![0.1, 0.2, 0.3]).unwrap();
+        assert!(timed.merge(&b).is_err());
+        let short = EventSet::from_years(vec![vec![1.0]], 0).unwrap();
+        assert!(a.merge(&short).is_err());
+        // A tie in time keeps this set's loss first.
+        let t_a = EventSet::from_years(vec![vec![1.0]], 0)
+            .unwrap()
+            .with_times(vec![0.5])
+            .unwrap();
+        let t_b = EventSet::from_years(vec![vec![2.0]], 0)
+            .unwrap()
+            .with_times(vec![0.5])
+            .unwrap();
+        assert_eq!(t_a.merge(&t_b).unwrap().events(0), &[1.0, 2.0]);
+        assert_eq!(t_b.merge(&t_a).unwrap().events(0), &[2.0, 1.0]);
+    }
+
+    #[test]
+    fn an_hours_clause_groups_within_the_window_and_keeps_totals() {
+        let h = 1.0 / 8760.0;
+        let e = EventSet::from_years(vec![vec![1.0, 2.0, 4.0], vec![], vec![8.0, 16.0]], 0)
+            .unwrap()
+            .with_times(vec![0.0, 72.0 * h, 72.5 * h, 0.3, 0.3])
+            .unwrap();
+        let g = e.grouped(72.0).unwrap();
+        // 72 hours after the first is still in its window; 72.5 is not.
+        assert_eq!(g.events(0), &[3.0, 4.0]);
+        assert_eq!(g.times(0), Some(&[0.0, 72.5 * h][..]));
+        assert!(g.events(1).is_empty());
+        assert_eq!(g.events(2), &[24.0]);
+        let total = |s: &EventSet| -> f64 { (0..s.n_sims()).flat_map(|y| s.events(y)).sum() };
+        assert_eq!(total(&g), total(&e));
+        // A zero window still groups losses at the same time.
+        assert_eq!(e.grouped(0.0).unwrap().events(2), &[24.0]);
+        assert!(
+            EventSet::from_years(vec![vec![1.0]], 0)
+                .unwrap()
+                .grouped(72.0)
+                .is_err()
+        );
+        assert!(e.grouped(-1.0).is_err());
     }
 }
