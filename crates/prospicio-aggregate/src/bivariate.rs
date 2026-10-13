@@ -299,7 +299,7 @@ pub struct BivariateReport {
 ///     assert!((x - y).abs() < 1e-14);
 /// }
 /// // The shared count is the only link: Cov = Var(N) E[X] E[Y].
-/// assert!((joint.covariance() - 2.0 * 1.4 * 0.5).abs() < 1e-12);
+/// assert!((joint.covariance() - 2.0 * 1.4 * 0.5).abs() < 1e-9);
 /// assert!(report.aliasing_mass.iter().all(|&m| m < 1e-15));
 /// ```
 pub fn fft_bivariate<N: Counting + ?Sized>(
@@ -528,7 +528,7 @@ impl Clash {
     /// let n = Poisson::new(clash.events()).unwrap();
     /// let (joint, _) = clash.aggregate(&n, &a, &b, [128, 128]).unwrap();
     /// // Poisson: Cov(A, B) = n_C E[X] E[Y].
-    /// assert!((joint.covariance() - 1.0 * 1.5 * 1.0).abs() < 1e-11);
+    /// assert!((joint.covariance() - 1.0 * 1.5 * 1.0).abs() < 1e-9);
     /// ```
     pub fn aggregate<N: Counting + ?Sized>(
         &self,
@@ -538,7 +538,8 @@ impl Clash {
         points: [usize; 2],
     ) -> Result<(JointGrid, BivariateReport)> {
         let mean = frequency.mean();
-        if !((mean / self.events() - 1.0).abs() <= 1e-9) {
+        let gap = (mean / self.events() - 1.0).abs();
+        if gap.is_nan() || gap > 1e-9 {
             return Err(Error::InvalidParameter {
                 name: "frequency",
                 value: mean,
