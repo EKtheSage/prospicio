@@ -128,7 +128,8 @@ what it is aiming for by v1.0.
     hours clause (#196, `docs/design/cat-inputs.md`).
 - **Next:**
   1. The Guides lane's issues for this lane are done but clash across
-     lines (#196). Then the large items parked from `aggregate` parity (`docs/design/aggregate.md`): the P&L ledger (once signed grids
+     lines (#196). Then the large items parked from `aggregate` parity
+     (`docs/design/aggregate.md`): the P&L ledger (once signed grids
      exist), bivariate FFT aggregates and `clash`, renewal counts with
      Wiener–Hopf ruin.
   2. Deficit and credit carry-forward in profit commissions and sliding
