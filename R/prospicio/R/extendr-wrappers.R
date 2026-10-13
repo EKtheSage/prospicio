@@ -108,6 +108,8 @@ pricing_trend_large_losses <- function(ids, accident, amount, threshold, rate, t
 
 pricing_burning_cost <- function(ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, towers, years, premium, development, index_franchise, index_kind, ratios) .Call(wrap__pricing_burning_cost, ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, towers, years, premium, development, index_franchise, index_kind, ratios)
 
+pricing_as_if <- function(ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed) .Call(wrap__pricing_as_if, ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed)
+
 pricing_development_pattern <- function(ids, age, amount, ages) .Call(wrap__pricing_development_pattern, ids, age, amount, ages)
 
 pricing_pattern_at <- function(ages, factors, x) .Call(wrap__pricing_pattern_at, ages, factors, x)
