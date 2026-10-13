@@ -162,3 +162,6 @@ expect_error_like(bayes_odp_segments(two, dependence = "rank_correlation", spear
                   "square numeric matrix")
 expect_error_like(bayes_odp_segments(two, n_sims = 0), "n_sims must be positive")
 expect_error_like(bayes_odp_segments(two, "missing"), "missing")
+
+cat("prospicio R Bayesian reserving segments tests passed
+")
