@@ -5,10 +5,13 @@ Mildenhall and Major (Portfolio, Pentagon) with pricing bounds
 (PricingBounds, distortion_envelope), and ratemaking: premium at
 the current rate level by the parallelogram method (RateHistory) and trend
 (TrendFit, trend_factor) and the overall indication (LossRatioExperience,
-PurePremiumExperience, Provisions)."""
+PurePremiumExperience, Provisions), and experience rating from large
+losses (LargeLossExperience, PreparedLosses, BurningCost)."""
 
 from .prospicio_native import (
+    BurningCost,
     CollectiveModel,
+    LargeLossExperience,
     LossRatioExperience,
     Mbbefd,
     NaturalPrice,
@@ -17,9 +20,11 @@ from .prospicio_native import (
     Portfolio,
     PortfolioPrice,
     Price,
+    PreparedLosses,
     PricingBounds,
     Provisions,
     PurePremiumExperience,
+    Quote,
     RateHistory,
     RateLevel,
     RiskProfile,
@@ -72,6 +77,7 @@ __all__ = [
     "Portfolio",
     "NaturalPrice",
     "StandAlone",
+    "Quote",
     "Pentagon",
     "classical_premium",
     "calibrate_classical",
@@ -89,4 +95,7 @@ __all__ = [
     "trended_present_rates",
     "PricingBounds",
     "distortion_envelope",
+    "LargeLossExperience",
+    "PreparedLosses",
+    "BurningCost",
 ]

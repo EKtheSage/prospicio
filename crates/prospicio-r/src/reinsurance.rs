@@ -269,7 +269,7 @@ impl XolLayer {
 /// Layers in inuring stages.
 #[extendr]
 pub(crate) struct ReinsuranceTower {
-    inner: Tower,
+    pub(crate) inner: Tower,
 }
 
 #[extendr]
@@ -359,6 +359,27 @@ impl ReinsuranceTower {
             stage_ceded = stage_ceded,
             stage_sizes = stage_sizes,
             net = net,
+            expected_reinstatement_premium = r.expected_reinstatement_premium,
+            expected_premium = r.expected_premium,
+            expected_ceding_commission = r.expected_ceding_commission,
+            expected_profit_commission = r.expected_profit_commission,
+            on_points = r.on_points
+        ))
+    }
+
+    /// The tower on an annual loss grid, each year's total as one loss:
+    /// `list(gross, ceded, net, expected_reinstatement_premium,
+    /// expected_premium, expected_ceding_commission,
+    /// expected_profit_commission, on_points)`.
+    fn on_annual_grid(&self, annual: Robj) -> Result<List> {
+        let annual = <&Grid>::try_from(&annual)
+            .map_err(|_| Error::Other("annual must be a grid_distribution".into()))?;
+        let r = self.inner.on_annual_grid(&annual.inner).map_err(to_r)?;
+        let ceded: Vec<Robj> = r.ceded.into_iter().map(|g| Grid::wrap(g).into()).collect();
+        Ok(list!(
+            gross = Grid::wrap(r.gross),
+            ceded = List::from_values(ceded),
+            net = Grid::wrap(r.net),
             expected_reinstatement_premium = r.expected_reinstatement_premium,
             expected_premium = r.expected_premium,
             expected_ceding_commission = r.expected_ceding_commission,

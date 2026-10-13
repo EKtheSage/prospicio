@@ -90,6 +90,57 @@ class Allocation:
         """
 
 @final
+class AnnualGrids:
+    """
+    A tower applied to an annual loss distribution, from
+    ``Tower.on_annual_grid``. Ceded grids are at the placed share and after
+    annual terms; a layer with share ``c`` has step ``c * h``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ceded(self, /) -> list[Grid]:
+        """
+        Annual ceded loss of each layer, in tower order.
+        """
+    @property
+    def expected_ceding_commission(self, /) -> list[float]:
+        """
+        Expected ceding commission (flat or sliding) of each layer.
+        """
+    @property
+    def expected_premium(self, /) -> list[float]:
+        """
+        Expected premium of each layer: the swing-rated premium's mean, or
+        else the fixed premium.
+        """
+    @property
+    def expected_profit_commission(self, /) -> list[float]:
+        """
+        Expected profit commission of each layer.
+        """
+    @property
+    def expected_reinstatement_premium(self, /) -> list[float]:
+        """
+        Expected reinstatement premium of each layer.
+        """
+    @property
+    def gross(self, /) -> Grid:
+        """
+        The annual loss given.
+        """
+    @property
+    def net(self, /) -> Grid:
+        """
+        Annual net loss.
+        """
+    @property
+    def on_points(self, /) -> bool:
+        """
+        Whether every ceded and net loss fell on a grid point. The
+        expectations are exact either way.
+        """
+
+@final
 class Approximation:
     """
     A distribution fitted to compound moments, from
@@ -1695,6 +1746,41 @@ class BuhlmannStraubFit:
     def within_variance(self, /) -> float:
         """
         The within-group variance ``s2``.
+        """
+
+@final
+class BurningCost:
+    """
+    The burning cost by accident year and overall, from
+    ``PreparedLosses.burning_cost``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def loss_cost(self, /) -> list[float]:
+        """
+        Each layer's developed losses over the premium, summed over the
+        years: the premium-weighted loss cost.
+        """
+    @property
+    def mean_loss_cost(self, /) -> list[float]:
+        """
+        Each layer's loss cost averaged over the years with equal weight.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The years as columns: ``year``, ``premium``, ``losses`` (the count
+        through the tower), ``development``, and per layer ``layer_loss``,
+        ``developed`` and ``loss_cost`` (a list per year, one value per
+        layer).
+        
+        Returns
+        -------
+        dict of str to list
+        """
+    @property
+    def years(self, /) -> list[int]:
+        """
+        The accident years.
         """
 
 @final
@@ -3876,6 +3962,12 @@ class Distortion:
         -------
         Distortion
         """
+    @property
+    def family(self, /) -> str:
+        """
+        The family, as its constructor is named, for example
+        ``"proportional_hazard"`` or ``"capped_linear"``.
+        """
     def g(self, /, s: float) -> float:
         """
         The distortion ``g(s)`` of a survival probability ``s``.
@@ -3989,6 +4081,20 @@ class Distortion:
         Returns
         -------
         Distortion
+        """
+    @property
+    def parameters(self, /) -> dict[str, float]:
+        """
+        The scalar parameters by name, as the constructor takes them, for
+        example ``{"rho": 0.7}``; empty for weighted TVaR, mixtures, minimums
+        and convex envelopes, whose inputs are lists.
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> d = Distortion.proportional_hazard(0.7)
+        >>> d.family, d.parameters
+        ('proportional_hazard', {'rho': 0.7})
         """
     @staticmethod
     def proportional_hazard(rho: float) -> Distortion:
@@ -6518,6 +6624,75 @@ class InverseGaussian:
         Returns
         -------
         float
+        """
+
+@final
+class LargeLossExperience:
+    """
+    A record of individual large losses, for experience rating.
+    
+    Trend each loss to the prospective period with ``prepare``, then apply
+    each year's treaty and develop the layer totals with
+    ``PreparedLosses.burning_cost``. The steps follow Clark's *Basics of
+    Reinsurance Pricing* (CAS study note).
+    
+    Parameters
+    ----------
+    ids : list of str
+        An identifier per loss.
+    accident : list of float
+        Each loss's accident date as a decimal year (see ``year_fraction``).
+    amount : list of float
+        Each loss's amount, incurred at the latest valuation.
+    threshold : float, default 0.0
+        The reporting threshold of the record, in nominal terms. With a
+        threshold, losses trended below it times the largest trend factor
+        are left out, so every year is complete on the same basis.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import LargeLossExperience
+    >>> from prospicio.reinsurance import Layer, Tower
+    >>> e = LargeLossExperience(["a", "b"], [1995.5, 1996.5], [150.0, 400.0])
+    >>> p = e.prepare(factors=[1.0, 1.0])
+    >>> tower = Tower([Layer("200x100", 200.0, 100.0)])
+    >>> b = p.burning_cost(tower, [1995, 1996], premium=[1000.0, 1000.0], development=[1.0, 1.5])
+    >>> b.to_dict()["developed"]
+    [[50.0], [300.0]]
+    >>> round(b.loss_cost[0], 4)
+    0.175
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, ids: Sequence[str], accident: Sequence[float], amount: Sequence[float], *, threshold: float = 0.0) -> LargeLossExperience: ...
+    def __repr__(self, /) -> str: ...
+    def prepare(self, /, *, rate: float |None = None, to: float |None = None, factors: Sequence[float] |None = None) -> PreparedLosses:
+        """
+        Trend every loss to the prospective period.
+        
+        Pass either an annual ``rate`` with the date ``to`` (the average
+        accident date of the prospective period, a decimal year), for factors
+        ``(1 + rate) ** (to - accident)``, or a factor per loss.
+        
+        Parameters
+        ----------
+        rate : float, optional
+        to : float, optional
+        factors : list of float, optional
+        
+        Returns
+        -------
+        PreparedLosses
+        
+        Raises
+        ------
+        TypeError
+            If neither or both of ``rate`` (with ``to``) and ``factors`` are
+            given.
+        """
+    @property
+    def threshold(self, /) -> float:
+        """
+        The reporting threshold.
         """
 
 @final
@@ -11422,6 +11597,53 @@ class PredictiveDistribution:
         """
 
 @final
+class PreparedLosses:
+    """
+    Large losses trended to the prospective period, from
+    ``LargeLossExperience.prepare``.
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    def burning_cost(self, /, towers: Any, years: Sequence[int], *, premium: Sequence[float], development: Sequence[float]) -> BurningCost:
+        """
+        The as-if loss to each layer by accident year, developed and divided
+        by the premium.
+        
+        Parameters
+        ----------
+        towers : Tower or list of Tower
+            The treaty in force each year, or one tower for every year (to
+            price the prospective terms). Every tower needs the same number of
+            layers.
+        years : list of int
+            The accident years to cost; a loss belongs to the year of its
+            accident date.
+        premium : list of float
+            Each year's on-level subject premium.
+        development : list of float
+            Each year's excess development factor for the layer losses.
+        
+        Returns
+        -------
+        BurningCost
+        """
+    @property
+    def complete_above(self, /) -> float:
+        """
+        The trended size above which every year's record is complete: the
+        threshold times the largest trend factor.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The trended losses as columns: ``id``, ``year``, ``accident``,
+        ``amount``, ``factor`` and ``trended``.
+        
+        Returns
+        -------
+        dict of str to list
+        """
+
+@final
 class Price:
     """
     The risk-loaded price of a cover, or of one component's share of a
@@ -11649,6 +11871,165 @@ class PurePremiumExperience:
     def pure_premium_by_year(self, /) -> list[float]:
         """
         Each year's projected pure premium.
+        """
+
+@final
+class Quote:
+    """
+    A cover's quote: the premium the cedant pays, built up from a
+    risk-loaded price, with the ratios the market quotes.
+    
+    ``Quote.technical(price, ...)`` grosses the risk premium ``R`` (the
+    expected loss plus the margin for capital, from ``price``) up for
+    internal expenses ``e`` and brokerage ``b``, both fractions of the
+    premium, and a fixed expense ``f``: ``P = (R + f) / (1 - e - b)``.
+    ``quote.at(premium)`` reads a quoted premium the other way: the
+    reinsurer keeps ``P (1 - e - b) - f`` as its risk premium, and the margin
+    and return on capital follow with the same expected loss and assets.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.pricing import Quote, price
+    >>> from prospicio.risk import Distortion
+    >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.1)
+    >>> q = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=10.0)
+    >>> round(q.premium, 6), round(q.rate_on_line, 6), round(q.return_on_capital, 6)
+    (2.507837, 0.250784, 0.1)
+    >>> round(q.at(3.0).return_on_capital, 4)
+    0.4388
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def assets(self, /) -> float:
+        """
+        Assets backing the loss.
+        """
+    def at(self, /, premium: float) -> Quote:
+        """
+        The same cover at a quoted premium: what the quote leaves after the
+        loads is the risk premium.
+        
+        Parameters
+        ----------
+        premium : float
+        
+        Returns
+        -------
+        Quote
+        
+        Raises
+        ------
+        ValueError
+            If the risk premium the quote leaves reaches the assets.
+        """
+    @property
+    def brokerage(self, /) -> float:
+        """
+        Brokerage, an amount.
+        """
+    @property
+    def capital(self, /) -> float:
+        """
+        Capital, assets less the risk premium.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        Expected loss.
+        """
+    @property
+    def expenses(self, /) -> float:
+        """
+        Internal expenses, an amount.
+        """
+    @property
+    def limit(self, /) -> float |None:
+        """
+        The limit, or ``None``.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        Expected loss over the premium.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        Margin, risk premium less expected loss.
+        """
+    @property
+    def multiple(self, /) -> float:
+        """
+        Premium over expected loss.
+        """
+    @property
+    def net_premium(self, /) -> float:
+        """
+        The premium net of brokerage.
+        """
+    @property
+    def payback(self, /) -> float |None:
+        """
+        Limit over premium, or ``None`` without a limit.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The premium the cedant pays.
+        """
+    @property
+    def rate_on_line(self, /) -> float |None:
+        """
+        Premium over the limit, or ``None`` without a limit.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        Return on capital, margin over capital.
+        """
+    @property
+    def risk_premium(self, /) -> float:
+        """
+        The risk premium: what the reinsurer keeps for the loss and capital.
+        """
+    @staticmethod
+    def technical(price: Price, *, expenses: float = 0.0, brokerage: float = 0.0, fixed: float = 0.0, limit: float |None = None) -> Quote:
+        """
+        The technical premium of a risk-loaded price.
+        
+        Parameters
+        ----------
+        price : Price
+            The risk-loaded price, from ``price``; its premium is the risk
+            premium.
+        expenses : float, default 0.0
+            Internal expenses, a fraction of the premium.
+        brokerage : float, default 0.0
+            Brokerage, a fraction of the premium.
+        fixed : float, default 0.0
+            A fixed expense per contract, an amount.
+        limit : float, optional
+            The cover's limit at the placed share, for the rate on line;
+            omit it for a cover without one, such as a quota share.
+        
+        Returns
+        -------
+        Quote
+        
+        Raises
+        ------
+        ValueError
+            If a load is negative, ``expenses + brokerage`` reaches 1, or the
+            limit is not positive.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The build-up and ratios as a dict, for a table.
+        
+        Returns
+        -------
+        dict of str to float
         """
 
 @final
@@ -12698,6 +13079,41 @@ class Tower:
     def layer_names(self, /) -> list[str]:
         """
         Layer names, in order.
+        """
+    def on_annual_grid(self, /, annual: Grid) -> AnnualGrids:
+        """
+        The tower applied to an annual loss on a grid, each year's total
+        treated as one loss (as ``apply_aggregate`` does for draws): a quota
+        share or stop-loss on a loss-ratio or annual-loss distribution, with
+        its expected sliding-scale and profit commission. Inuring stages and
+        annual terms are all allowed, and the net always exists.
+        
+        Parameters
+        ----------
+        annual : Grid
+            The annual loss.
+        
+        Returns
+        -------
+        AnnualGrids
+        
+        Raises
+        ------
+        ValueError
+            For a surplus treaty or reinstatements pro rata as to time, which
+            need risks or event times.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> from prospicio.distributions import Grid
+        >>> probs = [0.0] * 81
+        >>> for k in (50, 60, 70, 80):
+        ...     probs[k] = 0.25
+        >>> qs = Layer.quota_share("QS", 0.4).with_deposit_premium(100.0).with_ceding_commission(0.3)
+        >>> r = Tower([qs]).on_annual_grid(Grid(1.0, probs))
+        >>> round(r.ceded[0].mean(), 12), round(r.expected_ceding_commission[0], 12)
+        (26.0, 12.0)
         """
     def on_grid(self, /, frequency: Any, severity: Grid, points: int) -> TowerGrids:
         """
@@ -15628,8 +16044,10 @@ def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = Non
     
     Parameters
     ----------
-    losses : Sampled or PredictiveDistribution
-        Loss draws; for a ``PredictiveDistribution``, its total.
+    losses : Sampled, PredictiveDistribution or Grid
+        Loss draws (for a ``PredictiveDistribution``, its total), or a loss
+        distribution on a grid, such as a layer's exact annual loss from
+        ``Tower.on_grid``.
     assets : Distortion
         The measure that sets the assets, for example ``Distortion.tvar(0.99)``.
     cost_of_capital : float, optional
@@ -15655,6 +16073,10 @@ def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = Non
     >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
     >>> p.premium, p.capital
     (2.4, 1.6)
+    >>> from prospicio.distributions import Grid
+    >>> g = price(Grid(2.0, [0.5, 0.25, 0.0, 0.25]), Distortion.tvar(0.5), cost_of_capital=0.25)
+    >>> round(g.premium, 12)
+    2.4
     """
 
 def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PortfolioPrice:

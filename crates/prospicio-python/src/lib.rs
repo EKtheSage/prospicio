@@ -17,6 +17,7 @@ mod aggregate;
 mod counts;
 mod credibility;
 mod distributions;
+mod experience;
 mod models;
 mod natural;
 mod pareto;
@@ -49,6 +50,8 @@ mod prospicio_native {
         PyPredictiveDistribution, PySampled, from_json, to_json,
     };
     #[pymodule_export]
+    use super::experience::{PyBurningCost, PyLargeLossExperience, PyPreparedLosses};
+    #[pymodule_export]
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,
         PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyHierarchicalStacking,
@@ -71,10 +74,11 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::pricing::{
-        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyRiskProfile, PyTabulatedCurve,
-        PyTowerModel, alpha_between_frequencies, alpha_between_frequency_and_layer,
-        alpha_between_layers, fit_pml_curve, fit_references, ilf, loss_elimination_ratio,
-        match_tower, pareto_extrapolation, price, price_portfolio, severity_exposure_curve,
+        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,
+        PyTabulatedCurve, PyTowerModel, alpha_between_frequencies,
+        alpha_between_frequency_and_layer, alpha_between_layers, fit_pml_curve, fit_references,
+        ilf, loss_elimination_ratio, match_tower, pareto_extrapolation, price, price_portfolio,
+        severity_exposure_curve,
     };
     #[pymodule_export]
     use super::ratemaking::{
@@ -84,7 +88,7 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::reinsurance::{
-        PyAggregateLayerStatistics, PyCessionStatistics, PyLayer, PyLayerStatistics,
+        PyAggregateLayerStatistics, PyAnnualGrids, PyCessionStatistics, PyLayer, PyLayerStatistics,
         PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
         aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
     };

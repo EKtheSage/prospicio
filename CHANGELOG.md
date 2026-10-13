@@ -23,6 +23,10 @@ under "Unreleased" until then.
   `risk::{var_weighted, tvar_weighted, tvar_threshold}`. Python
   `Grid.tvar`, `Grid.tvar_threshold`, `Portfolio.tvar_threshold`; R
   `TVaR()` on a `grid_distribution` and `tvar_threshold()` (#202).
+- `Distortion::family()` and `Distortion::parameters()`: a distortion's
+  family and its scalar parameters by name (for example the `rho` that
+  `calibrate` returns). Python `Distortion.family`, `Distortion.parameters`;
+  R `d@parameters` (#210).
 
 ### Aggregate and reinsurance
 
@@ -88,6 +92,27 @@ under "Unreleased" until then.
   (`natural::Portfolio::comonotonic_kappa`). Python
   `Portfolio.price_stand_alone` (`StandAlone`), `Portfolio.comonotonic_kappa`;
   R `price_stand_alone()`, `comonotonic_allocation()` (#202).
+- A tower on an annual loss distribution, `Tower::on_annual_grid`
+  (`AnnualGrids`): a quota share or stop-loss on a loss-ratio grid, with its
+  expected sliding-scale and profit commission, each year's total treated
+  as one loss. Python `Tower.on_annual_grid`; R `tower_on_annual_grid()` (#210).
+- Risk-loaded prices on a grid at any capital standard,
+  `risk_load::price_grid`: Python `prospicio.pricing.price` and R
+  `risk_loaded_price()` take a grid, such as a layer's exact annual loss (#210).
+- A cover's quote, `prospicio_pricing::quote::Quote`: the technical
+  premium from a risk-loaded price grossed up for internal expenses,
+  brokerage and a fixed expense, with the rate on line, payback, multiple
+  and loss ratio, and `Quote::at` for what a quoted premium gives the
+  reinsurer (its return on capital). Python `prospicio.pricing.Quote`; R
+  `technical_quote()`, `implied_quote()` (#222).
+- Experience rating from individual large losses,
+  `prospicio_pricing::experience`: each loss trended to the prospective
+  period by a rate or a factor per loss, a reporting threshold carried to
+  the level at which every year is complete, each year's tower applied to
+  the year's trended losses, the layer totals developed and divided by the
+  premium (the burning cost), reproducing Clark's study note. Python
+  `LargeLossExperience`, `PreparedLosses`, `BurningCost`; R
+  `trend_large_losses()`, `burning_cost()` (#223).
 
 ### Examples
 

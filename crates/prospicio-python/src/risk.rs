@@ -434,6 +434,28 @@ impl PyDistortion {
         ))
     }
 
+    /// The family, as its constructor is named, for example
+    /// ``"proportional_hazard"`` or ``"capped_linear"``.
+    #[getter]
+    fn family(&self) -> &'static str {
+        self.inner.family()
+    }
+
+    /// The scalar parameters by name, as the constructor takes them, for
+    /// example ``{"rho": 0.7}``; empty for weighted TVaR, mixtures, minimums
+    /// and convex envelopes, whose inputs are lists.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import Distortion
+    /// >>> d = Distortion.proportional_hazard(0.7)
+    /// >>> d.family, d.parameters
+    /// ('proportional_hazard', {'rho': 0.7})
+    #[getter]
+    fn parameters(&self) -> std::collections::BTreeMap<&'static str, f64> {
+        self.inner.parameters().into_iter().collect()
+    }
+
     fn __repr__(&self) -> String {
         repr(&self.inner)
     }

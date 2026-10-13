@@ -301,6 +301,134 @@ impl Tower {
     }
 }
 
+/// A tower applied to an annual loss distribution, from
+/// [`Tower::on_annual_grid`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnnualGrids {
+    /// The annual loss given.
+    pub gross: Grid,
+    /// Annual ceded loss of each layer, in tower order, at the placed share
+    /// and after annual terms. A layer with share `c` has step `c h`.
+    pub ceded: Vec<Grid>,
+    /// Annual net loss, gross less every layer's ceded loss.
+    pub net: Grid,
+    /// Expected reinstatement premium of each layer.
+    pub expected_reinstatement_premium: Vec<f64>,
+    /// Expected premium of each layer: the swing-rated premium's mean, or
+    /// else the fixed premium.
+    pub expected_premium: Vec<f64>,
+    /// Expected ceding commission (flat or sliding) of each layer.
+    pub expected_ceding_commission: Vec<f64>,
+    /// Expected profit commission of each layer.
+    pub expected_profit_commission: Vec<f64>,
+    /// `true` when every ceded and net loss fell on a grid point; when
+    /// `false`, means are exact and shapes smeared by up to a step. The
+    /// expectations above are exact either way: they are taken at each
+    /// annual loss.
+    pub on_points: bool,
+}
+
+impl Tower {
+    /// The tower applied to an annual loss on a grid, each year's total
+    /// treated as one loss, as [`Tower::apply_aggregate`] does for draws:
+    /// a quota share or a stop-loss priced on a loss-ratio or annual-loss
+    /// distribution, with its sliding-scale or profit commission. Every
+    /// layer's terms are a function of the annual total, so inuring
+    /// stages and annual terms are all allowed, and the net exists.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, Tower};
+    /// use prospicio_prob::{Distribution, Grid};
+    ///
+    /// // A loss ratio of 50%, 60%, 70% or 80% on premium 100, equally likely.
+    /// let mut probs = vec![0.0; 81];
+    /// for k in [50, 60, 70, 80] {
+    ///     probs[k] = 0.25;
+    /// }
+    /// let annual = Grid::new(1.0, probs).unwrap();
+    /// // A 40% quota share with a 30% flat ceding commission on 40 of premium.
+    /// let qs = Layer::quota_share("QS", 0.4).unwrap()
+    ///     .deposit_premium(100.0).unwrap()
+    ///     .ceding_commission(0.3).unwrap();
+    /// let r = Tower::new(vec![qs]).unwrap().on_annual_grid(&annual).unwrap();
+    /// assert!((r.ceded[0].mean() - 26.0).abs() < 1e-12); // 0.4 × 65
+    /// assert!((r.expected_ceding_commission[0] - 12.0).abs() < 1e-12); // 0.3 × 40
+    /// assert!((r.net.mean() - 39.0).abs() < 1e-12);
+    /// ```
+    pub fn on_annual_grid(&self, annual: &Grid) -> Result<AnnualGrids> {
+        if let Some(l) = self.layers.iter().find(|l| l.needs_sums_insured()) {
+            return Err(Error::Data(format!(
+                "layer {:?} is a surplus treaty, which works risk by risk; an annual loss \
+                 has no sums insured",
+                l.name
+            )));
+        }
+        if let Some(l) = self.layers.iter().find(|l| l.needs_times()) {
+            return Err(Error::Data(format!(
+                "layer {:?} has reinstatements pro rata as to time; an annual loss has no \
+                 event times",
+                l.name
+            )));
+        }
+        let h = annual.step();
+        let m = self.layers.len();
+        // Each layer's (ceded, reinstatement premium) at every point.
+        let years: Vec<Vec<(f64, f64)>> = (0..annual.len())
+            .map(|k| self.year(&[k as f64 * h], None, None))
+            .collect();
+        let at = |x: f64| &years[((x / h).round() as usize).min(years.len() - 1)];
+        let mut on_points = true;
+        let mut ceded = Vec::with_capacity(m);
+        let (mut reinstatement, mut premium, mut commission, mut profit) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for (i, layer) in self.layers.iter().enumerate() {
+            // At 100%, then the share as the step, as `on_grid`.
+            let (full, exact) = annual.map(|x| {
+                let c = at(x)[i].0;
+                if layer.share > 0.0 {
+                    c / layer.share
+                } else {
+                    0.0
+                }
+            })?;
+            on_points &= exact;
+            ceded.push(Grid::new(layer.share * full.step(), full.probs().to_vec())?);
+            let mean = |f: &dyn Fn(f64) -> f64| -> f64 {
+                annual
+                    .probs()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| **p > 0.0)
+                    .map(|(k, p)| p * f(years[k][i].0))
+                    .sum()
+            };
+            reinstatement.push(
+                annual
+                    .probs()
+                    .iter()
+                    .zip(&years)
+                    .map(|(p, y)| p * y[i].1)
+                    .sum(),
+            );
+            premium.push(mean(&|c| layer.premium_for(c)));
+            commission.push(mean(&|c| layer.ceding_commission_for(c)));
+            profit.push(mean(&|c| layer.profit_commission_for(c)));
+        }
+        let (net, exact) = annual.map(|x| x - at(x).iter().map(|(c, _)| c).sum::<f64>())?;
+        on_points &= exact;
+        Ok(AnnualGrids {
+            gross: annual.clone(),
+            ceded,
+            net,
+            expected_reinstatement_premium: reinstatement,
+            expected_premium: premium,
+            expected_ceding_commission: commission,
+            expected_profit_commission: profit,
+            on_points,
+        })
+    }
+}
+
 /// `E[f(X)]` for `X` distributed as the grid: exact for the discretized
 /// problem, as the grids are.
 fn expectation(grid: &Grid, f: impl Fn(f64) -> f64) -> f64 {
@@ -348,6 +476,65 @@ mod tests {
     use super::*;
     use crate::simulate_events;
     use prospicio_prob::{Distribution, NegativeBinomial, Poisson, Severity};
+
+    /// The annual grid against `apply_aggregate` on the same years drawn
+    /// with their probabilities' weights: a quota share with a sliding
+    /// scale and a profit commission, and a stop-loss inuring to it.
+    #[test]
+    fn annual_grid_matches_apply_aggregate() {
+        use prospicio_prob::{Empirical, KeyValue, PredictiveDistribution, Provenance};
+        // Losses 40, 55, 70, 85, 120 with weights 3, 4, 3, 2, 1 of 13.
+        let (xs, ws) = ([40usize, 55, 70, 85, 120], [3usize, 4, 3, 2, 1]);
+        let mut probs = vec![0.0; 121];
+        let mut draws = Vec::new();
+        for (&x, &w) in xs.iter().zip(&ws) {
+            probs[x] = w as f64 / 13.0;
+            draws.extend(std::iter::repeat_n(x as f64, w));
+        }
+        let annual = Grid::new(1.0, probs).unwrap();
+        let qs = Layer::quota_share("QS", 0.5)
+            .unwrap()
+            .premium_rate(1.0, 200.0)
+            .unwrap()
+            .sliding_scale(vec![(0.45, 0.60), (0.25, 0.70), (0.19, 0.80)])
+            .unwrap();
+        let pc = Layer::quota_share("PC", 0.2)
+            .unwrap()
+            .premium_rate(1.0, 200.0)
+            .unwrap()
+            .profit_commission(0.25, 0.1)
+            .unwrap();
+        let sl = Layer::stop_loss("SL", 30.0, 20.0).unwrap();
+        let tower = Tower::inuring(vec![vec![qs, pc], vec![sl]]).unwrap();
+        let r = tower.on_annual_grid(&annual).unwrap();
+        let pd = PredictiveDistribution::from_draws(
+            vec!["line".into()],
+            vec![vec![KeyValue::from("all")]],
+            draws,
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let sims = tower.apply_aggregate(&pd).unwrap();
+        let mean = |kind: &str, layer: &str| {
+            let m = sims
+                .marginal(&vec![KeyValue::from(kind), KeyValue::from(layer)])
+                .unwrap();
+            m.draws().iter().sum::<f64>() / m.draws().len() as f64
+        };
+        for (i, name) in ["QS", "PC", "SL"].iter().enumerate() {
+            assert!(
+                (r.ceded[i].mean() - mean("ceded", name)).abs() < 1e-12,
+                "{name}"
+            );
+        }
+        assert!((r.net.mean() - mean("net", "retained")).abs() < 1e-12);
+        assert!((r.expected_ceding_commission[0] - mean("ceding_commission", "QS")).abs() < 1e-12);
+        assert!((r.expected_profit_commission[1] - mean("profit_commission", "PC")).abs() < 1e-12);
+        assert!(
+            (r.gross.mean() - r.ceded.iter().map(|g| g.mean()).sum::<f64>() - r.net.mean()).abs()
+                < 1e-12
+        );
+    }
 
     fn severity() -> Grid {
         // Losses 0..=11 on a unit step.
