@@ -104,9 +104,15 @@ claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_par
 
 pricing_severity_exposure_curve <- function(severity, mpl, x) .Call(wrap__pricing_severity_exposure_curve, severity, mpl, x)
 
-pricing_trend_large_losses <- function(ids, accident, amount, threshold, rate, to, factors) .Call(wrap__pricing_trend_large_losses, ids, accident, amount, threshold, rate, to, factors)
+pricing_trend_large_losses <- function(ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss) .Call(wrap__pricing_trend_large_losses, ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss)
 
-pricing_burning_cost <- function(ids, accident, amount, threshold, rate, to, factors, towers, years, premium, development) .Call(wrap__pricing_burning_cost, ids, accident, amount, threshold, rate, to, factors, towers, years, premium, development)
+pricing_burning_cost <- function(ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, towers, years, premium, development) .Call(wrap__pricing_burning_cost, ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, towers, years, premium, development)
+
+pricing_development_pattern <- function(ids, age, amount, ages) .Call(wrap__pricing_development_pattern, ids, age, amount, ages)
+
+pricing_pattern_at <- function(ages, factors, x) .Call(wrap__pricing_pattern_at, ages, factors, x)
+
+pricing_count_development <- function(ages, factors, years, valuation) .Call(wrap__pricing_count_development, ages, factors, years, valuation)
 
 pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium) .Call(wrap__pricing_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium)
 

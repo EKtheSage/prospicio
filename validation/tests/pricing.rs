@@ -1556,3 +1556,101 @@ mod clark_experience {
         assert!((ultimate / 16_112_389.0 - b.loss_cost[0]).abs() < 1e-15);
     }
 }
+
+// Per-claim development (IBNER) against the chain ladder: with every claim
+// valued at every age up to its latest, the pattern estimated claim by claim
+// is the volume-weighted chain ladder on the summed triangle, and each
+// year's developed claims sum to the chain ladder's ultimate.
+mod claim_development {
+    use prospicio_pricing::experience::{
+        ClaimValuation, Development, DevelopmentPattern, Experience, LargeLoss, Trend,
+    };
+    use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Month, Triangle};
+
+    const ORIGINS: [i32; 4] = [2018, 2019, 2020, 2021];
+    const VALUATION: i32 = 2022;
+
+    /// Claim `c` of origin `o` at age `k` (years): uneven growth by claim
+    /// and age so the links differ from a single claim's.
+    fn amount(o: usize, c: usize, k: usize) -> f64 {
+        let start = 100.0 * (1.0 + c as f64) + 37.0 * o as f64;
+        let growth = [1.0, 1.6 + 0.1 * c as f64, 1.9 + 0.05 * o as f64, 2.0];
+        start * growth[..k].iter().product::<f64>()
+    }
+
+    #[test]
+    fn per_claim_pattern_is_the_chain_ladder_on_the_summed_triangle() {
+        let mut history = Vec::new();
+        let mut losses = Vec::new();
+        let (mut origin, mut age, mut summed) = (Vec::new(), Vec::new(), Vec::new());
+        for (o, &year) in ORIGINS.iter().enumerate() {
+            let latest = (VALUATION - year) as usize;
+            for k in 1..=latest {
+                let mut total = 0.0;
+                for c in 0..3 {
+                    let a = amount(o, c, k);
+                    total += a;
+                    history.push(ClaimValuation {
+                        id: format!("{year}-{c}"),
+                        age: k as f64,
+                        amount: a,
+                    });
+                    if k == latest {
+                        losses.push(LargeLoss {
+                            id: format!("{year}-{c}"),
+                            accident: f64::from(year),
+                            amount: a,
+                        });
+                    }
+                }
+                origin.push(Month::january(year));
+                age.push(12 * k as u32);
+                summed.push(total);
+            }
+        }
+        let tri = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&age),
+            values: &[("incurred", &summed)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let cl = ChainLadder::default().fit(&tri, "incurred").unwrap();
+
+        let pattern = DevelopmentPattern::from_history(&history, &[1.0, 2.0, 3.0, 4.0]).unwrap();
+        assert_eq!(cl.ldf().len(), 3);
+        assert_eq!(cl.cdf.len(), 4);
+        for (ours, theirs) in pattern.age_to_age().iter().zip(cl.ldf()) {
+            assert!((ours - theirs).abs() < 1e-13, "{ours} vs {theirs}");
+        }
+        for (ours, theirs) in pattern.factors().iter().zip(&cl.cdf) {
+            assert!((ours - theirs).abs() < 1e-13, "{ours} vs {theirs}");
+        }
+
+        let p = Experience::new(losses)
+            .unwrap()
+            .with_valuation(f64::from(VALUATION))
+            .unwrap()
+            .prepare_developed(
+                &Trend::Factors(vec![1.0; 12]),
+                &Development::Pattern(pattern),
+            )
+            .unwrap();
+        for (o, &year) in ORIGINS.iter().enumerate() {
+            let ours: f64 = p
+                .losses()
+                .iter()
+                .filter(|l| l.year == year)
+                .map(|l| l.ultimate)
+                .sum();
+            let theirs = cl.ultimate[o];
+            assert!(
+                (ours - theirs).abs() < 1e-9 * theirs,
+                "{year}: {ours} vs {theirs}"
+            );
+        }
+    }
+}

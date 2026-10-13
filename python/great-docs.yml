@@ -181,6 +181,7 @@ reference:
     desc: Experience rating from individual large losses, trended to the prospective period, the as-if loss to each layer by accident year, and the burning cost (Clark's study note).
     contents:
       - pricing.LargeLossExperience
+      - pricing.DevelopmentPattern
       - pricing.PreparedLosses
       - pricing.BurningCost
   - title: Credibility

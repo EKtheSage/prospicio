@@ -17,7 +17,11 @@ needs the same number of layers.}
 
 \item{premium}{Each year's on-level subject premium.}
 
-\item{development}{Each year's excess development factor.}
+\item{development}{Each year's development factor for the layer losses:
+Clark's excess factor, or, when the losses were developed one by one in
+\code{\link[=trend_large_losses]{trend_large_losses()}}, the count IBNR factor only. A count
+\code{\link[=development_pattern]{development_pattern()}} is read at each year's average age at the
+record's valuation date.}
 }
 \value{
 A list with \code{years}, a data frame (\code{year}, \code{premium}, \code{losses}
