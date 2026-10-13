@@ -282,8 +282,9 @@ what it is aiming for by v1.0.
      entries in `[workspace.dependencies]`) and moves `CHANGELOG.md`'s
      "Unreleased" items into the new version's section. Nothing else goes
      in that PR.
-   - Each feature PR adds its line under "Unreleased" in `CHANGELOG.md`,
-     so the changelog always says which release a feature ships in.
+   - Each feature PR adds a fragment in `changes/changelog/`, which the
+     release PR folds into "Unreleased" in `CHANGELOG.md`, so the changelog
+     says which release a feature ships in.
    - Open PRs either merge before the release PR or wait for the next
      version; neither session changes versions or the release workflow
      outside that PR.

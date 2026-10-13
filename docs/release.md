@@ -62,9 +62,11 @@ Do these once, before the first release.
 ## Each release
 
 1. On `main`, set `workspace.package.version` and the `prospicio-*`
-   versions in `[workspace.dependencies]` to the new version, and move
-   `CHANGELOG.md`'s "Unreleased" items into a section for the new version
-   (breaking changes first, each item with its PR number), in a PR.
+   versions in `[workspace.dependencies]` to the new version, fold the
+   pending change fragments (`python3 validation/scripts/fold_changes.py`,
+   which empties `changes/` into `knowledge/log.md` and `CHANGELOG.md`),
+   and move `CHANGELOG.md`'s "Unreleased" items into a section for the new
+   version (breaking changes first, each item with its PR number), in a PR.
 2. After it merges, run the **Release** workflow by hand (*Actions →
    Release → Run workflow* on `main`). Without a tag it builds and tests
    every wheel, the sdist and the crates, and publishes nothing.
