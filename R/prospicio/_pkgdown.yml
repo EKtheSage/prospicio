@@ -219,6 +219,7 @@ reference:
       - bayes_bf_fit
       - bayes_odp_fits
       - meyers_fit
+      - meyers_fits
       - one_year_fit
       - clark_fit
       - fit_frames

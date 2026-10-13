@@ -200,7 +200,13 @@ under "Unreleased" until then.
   increment is the difference of consecutive values on one path) and gives
   the log-normal log predictive density of a held-out diagonal.
   `validation/data/clrd_lines.csv` gains each line's net earned premium
-  (`validation/scripts/clrd_lines.py`).
+  (`validation/scripts/clrd_lines.py`). In Python,
+  `Meyers(..., dependence="independent", spearman=None)` and
+  `Meyers.fit_segments(triangle, column, premium)` returning `MeyersFits`
+  (joint `ultimates` and `reserves`, `premium`, the frames,
+  `diagnostics_frame()`, `segment(...)`); in R,
+  `meyers_segments(triangle, column, premium, ..., dependence, spearman)`
+  returns a `meyers_fits`. The diagonal backtest stays Rust-only.
 
 ### Pricing
 

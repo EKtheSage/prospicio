@@ -14,7 +14,10 @@ sources:
     title: Meyers::fit_segments and TriangleModel for Meyers, with their unit tests
   - id: design
     resource: ../docs/design/reserving-bayes.md
-    title: Design note, Bayesian reserving (decisions 8 and 11, "Meyers")
+    title: Design note, Bayesian reserving (decisions 8, 11 and 13, "Meyers")
+  - id: pytest
+    resource: ../python/tests/test_reserving_meyers_segments.py
+    title: The Python binding tests of Meyers.fit_segments
 ---
 
 # Finding
@@ -66,5 +69,17 @@ seeds 0 to 59 in a release build (the ignored `seed_sweep` test with
 * Runtime: the four CI tests take about 81 s in a debug build (two
   backtests in parallel dominate); the twins about 11 s, the rank
   correlation about 20 s.[^test]
+* **Through the bindings** (Python `Meyers.fit_segments`, R
+  `meyers_segments()`, release build, 4,000 simulations): CLRD comauto
+  and wkcomp with paid and net earned premium pass every diagnostic at
+  the default chains at each of seeds 0 to 59 (CRC, no warning). A
+  segment of the joint fit against `fit` of that line alone, over those
+  seeds: `logelr`'s posterior mean differs by sd 0.0001 (largest 0.0003),
+  the mean total reserve by sd 0.18% (largest 0.58%), elpd_loo by sd 0.52
+  (largest 1.42, so a tolerance of 1, as for `BayesOdp`, would fail);
+  twin lines' mean totals differ by sd 0.19% and their Spearman
+  correlation has sd 0.0146, about `1/sqrt(4,000)`; a CSR rank
+  correlation of 0.5 lands within 0.0085 (sd 0.0036). A two-line fit takes
+  about 1 s and the nine Python tests about 8 s.[^pytest]
 
 Not yet run by CI.
