@@ -21,6 +21,7 @@ mod experience;
 mod models;
 mod natural;
 mod pareto;
+mod payout;
 mod pricing;
 mod ratemaking;
 mod reinsurance;
@@ -35,9 +36,9 @@ fn to_py(e: prospicio_core::Error) -> PyErr {
 mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{
-        PyApproximation, PyCompoundMoments, PyCompoundReport, PyEventSet, PyGridSize,
-        PyOccurrencePml, PyPicks, PyRuin, compound_moments, eventual_ruin, fft, fft_auto,
-        layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer, recommend_grid,
+        PyApproximation, PyCompoundMoments, PyCompoundReport, PyEventLossTable, PyEventSet,
+        PyGridSize, PyOccurrencePml, PyPicks, PyRuin, compound_moments, eventual_ruin, fft,
+        fft_auto, layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer, recommend_grid,
         round_bucket, simulate_events,
     };
     #[pymodule_export]
@@ -51,7 +52,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::experience::{
-        PyBurningCost, PyDevelopmentPattern, PyIndexClause, PyLargeLossExperience, PyPreparedLosses,
+        PyAsIf, PyBurningCost, PyDevelopmentPattern, PyIndexClause, PyLargeLossExperience,
+        PyPreparedLosses,
     };
     #[pymodule_export]
     use super::models::{
@@ -74,6 +76,8 @@ mod prospicio_native {
         PyPiecewisePareto, PyTruncated, PyTweedie, PyWeibull, claim_count,
         local_pareto_to_piecewise,
     };
+    #[pymodule_export]
+    use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
     #[pymodule_export]
     use super::pricing::{
         PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,
@@ -100,8 +104,8 @@ mod prospicio_native {
         PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder, PyChainLadderFit,
         PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf, PyExpectedLoss,
         PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers,
-        PyMeyersFit, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant,
-        PyTailCurve, PyTailLogLinear, PyTriangle,
+        PyMeyersFit, PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy,
+        PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

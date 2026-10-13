@@ -68,6 +68,7 @@ reference:
       - aggregate.CompoundReport
       - aggregate.simulate_events
       - aggregate.EventSet
+      - aggregate.EventLossTable
       - aggregate.occurrence_exceedance
       - aggregate.occurrence_pml
       - aggregate.OccurrencePml
@@ -177,6 +178,12 @@ reference:
       - pricing.calibrate_classical
       - pricing.PricingBounds
       - pricing.distortion_envelope
+  - title: Time value of money
+    desc: Payment patterns, the expected loss discounted to inception, and capital held over the payout so the cost of capital accrues over years.
+    contents:
+      - pricing.PaymentPattern
+      - pricing.price_over_payout
+      - pricing.PayoutPrice
   - title: Experience rating
     desc: Experience rating from individual large losses, trended to the prospective period, the as-if loss to each layer by accident year, and the burning cost (Clark's study note).
     contents:
@@ -185,6 +192,7 @@ reference:
       - pricing.PreparedLosses
       - pricing.BurningCost
       - pricing.IndexClause
+      - pricing.AsIf
   - title: Credibility
     desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model.
     contents:

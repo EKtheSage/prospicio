@@ -7,9 +7,11 @@ the current rate level by the parallelogram method (RateHistory) and trend
 (TrendFit, trend_factor) and the overall indication (LossRatioExperience,
 PurePremiumExperience, Provisions), and experience rating from large
 losses (LargeLossExperience, DevelopmentPattern, PreparedLosses, BurningCost,
-IndexClause)."""
+IndexClause, AsIf), and the time value of money (PaymentPattern,
+price_over_payout, PayoutPrice)."""
 
 from .prospicio_native import (
+    AsIf,
     BurningCost,
     CollectiveModel,
     DevelopmentPattern,
@@ -18,6 +20,8 @@ from .prospicio_native import (
     LossRatioExperience,
     Mbbefd,
     NaturalPrice,
+    PaymentPattern,
+    PayoutPrice,
     Pentagon,
     Period,
     Portfolio,
@@ -50,6 +54,7 @@ from .prospicio_native import (
     pareto_extrapolation,
     premium_based_expenses,
     price,
+    price_over_payout,
     price_portfolio,
     severity_exposure_curve,
     trend_factor,
@@ -103,4 +108,8 @@ __all__ = [
     "BurningCost",
     "DevelopmentPattern",
     "IndexClause",
+    "AsIf",
+    "PaymentPattern",
+    "PayoutPrice",
+    "price_over_payout",
 ]

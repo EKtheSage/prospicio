@@ -1654,3 +1654,27 @@ mod claim_development {
         }
     }
 }
+
+// A payment pattern from a paid chain ladder: the share paid by each age is
+// one over the factor to ultimate, so at each origin's latest age it is the
+// fit's latest over its ultimate.
+mod payment_pattern {
+    use prospicio_pricing::payout::PaymentPattern;
+    use prospicio_reserving::ChainLadder;
+    use prospicio_validation::triangle;
+
+    #[test]
+    fn a_paid_chain_ladder_pattern_reaches_latest_over_ultimate() {
+        let tri = triangle("genins");
+        let cl = ChainLadder::default().fit(&tri, "values").unwrap();
+        let ages: Vec<f64> = (1..=cl.cdf.len()).map(|k| k as f64).collect();
+        let pattern = PaymentPattern::from_development(&ages, &cl.cdf).unwrap();
+        assert!((pattern.shares().iter().sum::<f64>() - 1.0).abs() < 1e-15);
+        for (o, &k) in cl.latest_position.iter().enumerate() {
+            let paid: f64 = pattern.shares()[..=k].iter().sum();
+            let want = cl.latest[o] / cl.ultimate[o];
+            assert!((paid - want).abs() < 1e-12, "origin {o}: {paid} vs {want}");
+            assert!((pattern.outstanding(ages[k]) - (1.0 - want)).abs() < 1e-12);
+        }
+    }
+}

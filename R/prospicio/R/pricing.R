@@ -1294,3 +1294,131 @@ index_clause <- function(franchise, kind = c("full", "severe")) {
   }
   structure(list(franchise = franchise, kind = kind), class = "index_clause")
 }
+
+#' As-if history of large losses
+#'
+#' Each year's losses under the program in force that year, next to the
+#' year's trended losses under the proposed tower. The historical side takes
+#' every loss of the year as reported (in its own currency, untrended and
+#' undeveloped), so it can be checked against the cedant's recoveries; the
+#' proposed side is the as-if layer loss of [burning_cost()] before
+#' development by year. The historical towers may differ in layers from year
+#' to year.
+#'
+#' @param prepared Trended losses, from [trend_large_losses()].
+#' @param historical A list of [reinsurance_tower] objects, the program in
+#'   force in each of `years`.
+#' @param years The accident years.
+#' @param proposed The proposed [reinsurance_tower].
+#' @returns A list with `years`, a data frame (`year`, `reported_losses`,
+#'   `trended_losses`), `historical`, a list per year of each layer's
+#'   cession named by layer, and `proposed`, a year-by-layer matrix.
+#' @export
+#' @examples
+#' p <- trend_large_losses(data.frame(id = "a", accident = 2019.5, amount = 300),
+#'                         factors = 1.2)
+#' then <- reinsurance_tower(list(xol_layer("150 xs 150", 150, 150)))
+#' now <- reinsurance_tower(list(xol_layer("200 xs 200", 200, 200)))
+#' a <- as_if_history(p, list(then), 2019, now)
+#' a$historical
+#' a$proposed
+as_if_history <- function(prepared, historical, years, proposed) {
+  args <- c(prepared$args, list(
+    historical = lapply(historical, function(t) t@ptr), years = as.integer(years),
+    proposed = proposed@ptr
+  ))
+  r <- rust_result(do.call(pricing_as_if, args))
+  list(
+    years = data.frame(year = r$year, reported_losses = r$reported_losses,
+                       trended_losses = r$trended_losses),
+    historical = stats::setNames(
+      Map(function(v, n) stats::setNames(v, n), r$historical, r$historical_layers),
+      r$year
+    ),
+    proposed = matrix(r$proposed, nrow = length(r$year), ncol = length(r$proposed_layers),
+                      dimnames = list(r$year, r$proposed_layers))
+  )
+}
+
+#' Payment pattern
+#'
+#' The share of the ultimate loss paid at each time, in years from the
+#' treaty's inception. `payment_pattern_from_development()` takes
+#' development factors to ultimate by age, such as a paid chain ladder's
+#' `cdf`: the share paid by each age is one over its factor, and the last
+#' factor must be 1 (add any tail as a last age). Ages are read as times from
+#' inception; add a shift to `times` when losses start developing later.
+#'
+#' `pattern_values()` gives the discount factor at an annual effective
+#' `rate` (the present value of a unit of ultimate loss), the discounted
+#' capital years (capital held in each year in proportion to the share
+#' outstanding at its start, charged at the start of the year) and the share
+#' outstanding at times `t`. With a pattern that does not depend on the size
+#' of the loss, every simulated year's present value is its loss times the
+#' discount factor.
+#'
+#' @param times Non-negative, strictly increasing times, in years.
+#' @param shares The share paid at each time; they sum to 1.
+#' @param ages Development ages.
+#' @param factors Development factors to ultimate at each age.
+#' @param pattern A `payment_pattern`.
+#' @param rate Annual effective discount rate.
+#' @param t Times at which to read the share outstanding.
+#' @returns `payment_pattern()` and `payment_pattern_from_development()`: a
+#'   `payment_pattern`, a list with `times`, `shares` and `duration` (the
+#'   mean time to payment). `pattern_values()`: a list with
+#'   `discount_factor`, `capital_years` and `outstanding`.
+#' @export
+#' @examples
+#' p <- payment_pattern_from_development(c(1, 2, 3), c(4, 1.25, 1))
+#' p$shares
+#' pattern_values(p, rate = 0.05, t = 1)
+payment_pattern <- function(times, shares) {
+  r <- rust_result(pricing_payment_pattern(as.double(times), as.double(shares), FALSE))
+  structure(r, class = "payment_pattern")
+}
+
+#' @rdname payment_pattern
+#' @export
+payment_pattern_from_development <- function(ages, factors) {
+  r <- rust_result(pricing_payment_pattern(as.double(ages), as.double(factors), TRUE))
+  structure(r, class = "payment_pattern")
+}
+
+#' @rdname payment_pattern
+#' @export
+pattern_values <- function(pattern, rate = 0, t = double()) {
+  rust_result(pricing_pattern_values(pattern$times, pattern$shares, as.double(rate),
+                                     as.double(t)))
+}
+
+#' Price over a payout
+#'
+#' A one-period price restated over a payout. With a cost of capital `r`,
+#' the premium solves `P = E[X] d + r (a - P) A`: the loss discounted by the
+#' pattern's discount factor `d`, plus the cost of the initial capital held
+#' while losses are outstanding over the discounted capital years `A`. With a
+#' pricing distortion, the premium is discounted with the losses. Give the
+#' rule the price was made with. A pattern that pays everything within the
+#' first year, at a zero rate, gives back the one-period price.
+#'
+#' @param price A one-period price, from [risk_loaded_price()].
+#' @param pattern A [payment_pattern()].
+#' @param rate Annual effective discount rate.
+#' @param cost_of_capital The price's cost of capital; `NULL` for a price
+#'   made with a pricing distortion.
+#' @returns A list with `expected_loss`, `discounted_loss`, `premium`,
+#'   `assets`, `capital`, `margin` (over the discounted loss),
+#'   `discount_factor` and `capital_years`.
+#' @export
+#' @examples
+#' p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
+#'                        cost_of_capital = 0.25)
+#' slow <- payment_pattern(c(1, 2, 3), c(0.2, 0.3, 0.5))
+#' price_over_payout(p, slow, cost_of_capital = 0.25)$premium
+price_over_payout <- function(price, pattern, rate = 0, cost_of_capital = NULL) {
+  rust_result(pricing_price_over_payout(
+    price$expected_loss, price$premium, price$assets, pattern$times, pattern$shares,
+    as.double(rate), if (is.null(cost_of_capital)) NaN else as.double(cost_of_capital)
+  ))
+}

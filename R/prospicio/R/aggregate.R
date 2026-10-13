@@ -436,3 +436,133 @@ S7::method(print, event_set) <- function(x, ...) {
   cat(sprintf("<event_set> %d simulated years, seed %s\n", as.integer(x@n_sims), format(x@seed)))
   invisible(x)
 }
+
+#' Year loss table in long form
+#'
+#' Years of losses from a year loss table: one row per loss with its year,
+#' from 1 to `n_years`. Within a year the losses keep their order; years with
+#' no row are empty.
+#'
+#' @param years The year of each loss, from 1.
+#' @param losses The losses.
+#' @param n_years The number of simulated years, including those with no
+#'   loss.
+#' @param seed Recorded in results' provenance.
+#' @returns An [event_set].
+#' @export
+#' @examples
+#' ev <- event_set_from_long(c(3, 1, 3), c(5, 1, 7), 4)
+#' event_counts(ev)
+event_set_from_long <- function(years, losses, n_years, seed = 0) {
+  event_set(ptr = rust_result(EventSet$from_long(as.double(years), as.double(losses),
+                                                 as.double(n_years), as.double(seed))))
+}
+
+#' Event loss table
+#'
+#' A catastrophe model's event loss table with secondary uncertainty. Each
+#' row is an event with an annual rate, a mean loss, independent and
+#' correlated standard deviations, and an exposure, the most it can lose.
+#' Events occur as independent Poisson processes; an event's loss, given
+#' that it occurs, is a beta distribution on `[0, exposure]` with the row's
+#' mean and standard deviation `sd_independent + sd_correlated` (summed, as
+#' catastrophe models report them for one portfolio), or the mean exactly
+#' when that is 0. A row whose standard deviation no beta on its exposure can
+#' have is an error naming the row.
+#'
+#' `elt_oep()` gives the occurrence exceedance probability
+#' `1 - exp(-sum(rate * P(L > x)))` and the annual exceedance frequency;
+#' `elt_occurrence_pml()` the loss at an annual probability; `simulate_elt()`
+#' simulated years, each loss with the row of its event.
+#'
+#' @param rate,mean,sd_independent,sd_correlated,exposure The table's
+#'   columns, one value per event.
+#' @param elt An `event_loss_table`.
+#' @param x Losses.
+#' @param p Annual probabilities.
+#' @param n_years The number of years to simulate.
+#' @param seed Seed; year `i` draws from its own stream, so it replays alone.
+#' @returns `event_loss_table()`: an `event_loss_table`, a list with the
+#'   columns, `rate` (their sum, the mean number of events a year) and
+#'   `expected_annual_loss`. `elt_oep()`: a data frame with `x`,
+#'   `exceedance_frequency` and `oep`. `elt_occurrence_pml()`: the losses.
+#'   `simulate_elt()`: a list with `events`, an [event_set], and `ids`, a list
+#'   per year of each loss's event row.
+#' @export
+#' @examples
+#' elt <- event_loss_table(rate = c(0.01, 0.05), mean = c(800, 200),
+#'                         sd_independent = c(200, 0), sd_correlated = c(100, 0),
+#'                         exposure = c(2000, 500))
+#' elt$expected_annual_loss
+#' elt_oep(elt, c(150, 1000))
+#' elt_occurrence_pml(elt, 0.01)
+#' sim <- simulate_elt(elt, 1000, seed = 1)
+#' sim$events@n_sims
+event_loss_table <- function(rate, mean, sd_independent, sd_correlated, exposure) {
+  cols <- list(rate = as.double(rate), mean = as.double(mean),
+               sd_independent = as.double(sd_independent),
+               sd_correlated = as.double(sd_correlated), exposure = as.double(exposure))
+  v <- rust_result(do.call(aggregate_elt_values, c(cols, list(x = double(), p = double()))))
+  structure(list(columns = cols, rate = v$rate, expected_annual_loss = v$expected_annual_loss),
+            class = "event_loss_table")
+}
+
+#' @rdname event_loss_table
+#' @export
+elt_oep <- function(elt, x) {
+  v <- rust_result(do.call(aggregate_elt_values,
+                           c(elt$columns, list(x = as.double(x), p = double()))))
+  data.frame(x = as.double(x), exceedance_frequency = v$exceedance_frequency, oep = v$oep)
+}
+
+#' @rdname event_loss_table
+#' @export
+elt_occurrence_pml <- function(elt, p) {
+  rust_result(do.call(aggregate_elt_values,
+                      c(elt$columns, list(x = double(), p = as.double(p)))))$pml
+}
+
+#' @rdname event_loss_table
+#' @export
+simulate_elt <- function(elt, n_years, seed = 0) {
+  r <- rust_result(do.call(aggregate_elt_simulate,
+                           c(elt$columns, list(n_years = as.double(n_years),
+                                               seed = as.double(seed)))))
+  list(events = event_set(ptr = r$events), ids = r$ids)
+}
+
+#' Merge two event sets
+#'
+#' Both sets' losses in each year: a catastrophe event set with a
+#' non-catastrophe one, say. The sets need the same number of years. With
+#' times on both, each year's losses are merged in time order (`x`'s first on
+#' a tie); with times on neither, `x`'s losses come first. Sums insured are
+#' kept when both sets carry them.
+#'
+#' @param x,y [event_set] objects.
+#' @returns An [event_set].
+#' @export
+#' @examples
+#' cat <- event_set_from_long(1, 100, 2)
+#' other <- event_set_from_long(c(1, 2), c(3, 5), 2)
+#' events(merge_event_sets(cat, other), 1)
+merge_event_sets <- function(x, y) {
+  event_set(ptr = rust_result(x@ptr$merge(y@ptr)))
+}
+
+#' Hours clause
+#'
+#' Each year's losses grouped into occurrences: losses within `window_hours`
+#' of the first loss of a window are one occurrence, whose loss is their sum
+#' and whose time is the window's start; the next loss after the window opens
+#' the next one. A year is 8,760 hours. Windows open at each first loss in
+#' turn, not where they would recover most. Needs times; sums insured are not
+#' carried.
+#'
+#' @param x An [event_set] with times.
+#' @param window_hours Such as 72 for a windstorm, 168 for a flood.
+#' @returns An [event_set] of occurrences.
+#' @export
+hours_clause <- function(x, window_hours) {
+  event_set(ptr = rust_result(x@ptr$grouped(as.double(window_hours))))
+}

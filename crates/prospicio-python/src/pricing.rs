@@ -531,7 +531,7 @@ pub(crate) fn fit_references(
 
 /// The premium rule from the keyword arguments: exactly one of a cost of
 /// capital and a pricing distortion.
-fn premium_rule(
+pub(crate) fn premium_rule(
     cost_of_capital: Option<f64>,
     distortion: Option<PyRef<'_, PyDistortion>>,
 ) -> PyResult<PremiumRule> {
@@ -550,7 +550,7 @@ fn premium_rule(
 /// Returned by ``price`` and ``price_portfolio``.
 #[pyclass(name = "Price", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyPrice {
-    inner: Price,
+    pub(crate) inner: Price,
 }
 
 #[pymethods]

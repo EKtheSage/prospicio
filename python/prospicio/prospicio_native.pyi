@@ -248,6 +248,41 @@ class ArchimedeanCopula:
         """
 
 @final
+class AsIf:
+    """
+    Each year's cessions under its own program and under the proposed one,
+    from ``PreparedLosses.as_if``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import LargeLossExperience
+    >>> from prospicio.reinsurance import Layer, Tower
+    >>> p = LargeLossExperience(["a"], [2019.5], [300.0]).prepare(factors=[1.2])
+    >>> then = Tower([Layer("150 xs 150", 150.0, 150.0)])
+    >>> now = Tower([Layer("200 xs 200", 200.0, 200.0)])
+    >>> a = p.as_if([then], [2019], now)
+    >>> a.to_dict()["historical"], [round(x, 6) for x in a.to_dict()["proposed"][0]]
+    ([[150.0]], [160.0])
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def proposed_layers(self, /) -> list[str]:
+        """
+        The proposed tower's layer names.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        The years as columns: ``year``, ``reported_losses``,
+        ``trended_losses``, and per year the lists ``historical_layers``,
+        ``historical`` (one value per layer in force that year) and
+        ``proposed`` (one per proposed layer).
+        
+        Returns
+        -------
+        dict of str to list
+        """
+
+@final
 class BayesBf:
     """
     The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
@@ -4564,6 +4599,104 @@ class Elpd:
         """
 
 @final
+class EventLossTable:
+    """
+    A catastrophe model's event loss table with secondary uncertainty.
+    
+    Each row is an event with an annual rate, a mean loss, independent and
+    correlated standard deviations, and an exposure, the most it can lose.
+    Events occur as independent Poisson processes; an event's loss, given
+    that it occurs, is a beta distribution on ``[0, exposure]`` with the
+    row's mean and standard deviation ``sd_independent + sd_correlated``
+    (summed, as catastrophe models report them for one portfolio), or the
+    mean exactly when that is 0. A row whose standard deviation no beta on
+    its exposure can have is an error naming the row.
+    
+    Parameters
+    ----------
+    rate, mean, sd_independent, sd_correlated, exposure : list of float
+        One value per event, as the table's columns.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import EventLossTable
+    >>> elt = EventLossTable([0.01, 0.05], [800.0, 200.0], [200.0, 0.0], [100.0, 0.0], [2000.0, 500.0])
+    >>> round(elt.rate, 12), round(elt.expected_annual_loss, 12)
+    (0.06, 18.0)
+    >>> events, ids = elt.simulate(1000, seed=1)
+    >>> events.n_sims
+    1000
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, rate: Sequence[float], mean: Sequence[float], sd_independent: Sequence[float], sd_correlated: Sequence[float], exposure: Sequence[float]) -> EventLossTable: ...
+    def __repr__(self, /) -> str: ...
+    def exceedance_frequency(self, /, x: float) -> float:
+        """
+        The annual frequency of events losing more than ``x``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def expected_annual_loss(self, /) -> float:
+        """
+        The expected annual loss, the sum of rate times mean.
+        """
+    def occurrence_pml(self, /, p: float) -> float:
+        """
+        The occurrence PML at annual probability ``p``: the loss whose
+        occurrence exceedance probability is ``p``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def oep(self, /, x: float) -> float:
+        """
+        The occurrence exceedance probability at ``x``,
+        ``1 - exp(-exceedance_frequency(x))``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def rate(self, /) -> float:
+        """
+        The mean number of events a year, the rates' sum.
+        """
+    def simulate(self, /, n_years: int, seed: int = 0) -> tuple[EventSet, list[list[int]]]:
+        """
+        Simulated years of events, with each loss's event (row index).
+        
+        Year ``i`` draws from its own stream of the seed: a Poisson count,
+        then for each event the row by its rate and its loss, so any year
+        replays alone.
+        
+        Parameters
+        ----------
+        n_years : int
+        seed : int, default 0
+        
+        Returns
+        -------
+        tuple of (EventSet, list of list of int)
+        """
+
+@final
 class EventSet:
     """
     Simulated years of individual losses, for applying per-loss terms such
@@ -4600,6 +4733,34 @@ class EventSet:
             If ``sim`` is not a simulated year.
         """
     @staticmethod
+    def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0) -> EventSet:
+        """
+        Years of losses in long form, as a year loss table lists them: one
+        row per loss with its year, an index from 0 to ``n_years - 1``.
+        
+        Within a year the losses keep their order; years with no row are
+        empty.
+        
+        Parameters
+        ----------
+        years : list of int
+        losses : list of float
+        n_years : int
+            The number of simulated years, including those with no loss.
+        seed : int, default 0
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_long([2, 0, 2], [5.0, 1.0, 7.0], 4)
+        >>> e.counts(), e.events(2)
+        ([1, 0, 2, 0], [5.0, 7.0])
+        """
+    @staticmethod
     def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0, times: Sequence[Sequence[float]] |None = None) -> EventSet:
         """
         Years of losses from elsewhere (your own simulation, or a
@@ -4631,6 +4792,33 @@ class EventSet:
         >>> e.counts(), e.sums_insured(2)
         ([2, 0, 1], [50.0])
         """
+    def grouped(self, /, window_hours: float) -> EventSet:
+        """
+        Each year's losses grouped into occurrences by an hours clause.
+        
+        Losses within ``window_hours`` of the first loss of a window are one
+        occurrence, whose loss is their sum and whose time is the window's
+        start; the next loss after the window opens the next one. A year is
+        8,760 hours. Windows open at each first loss in turn, not where they
+        would recover most. Needs times; sums insured are not carried.
+        
+        Parameters
+        ----------
+        window_hours : float
+            Such as 72 for a windstorm, 168 for a flood.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> h = 1 / 8760
+        >>> e = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 80 * h]])
+        >>> e.grouped(72.0).events(0)
+        [30.0, 5.0]
+        """
     @property
     def has_sums_insured(self, /) -> bool:
         """
@@ -4650,6 +4838,32 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+    def merge(self, /, other: EventSet) -> EventSet:
+        """
+        Both sets' losses in each year: a catastrophe event set with a
+        non-catastrophe one, say.
+        
+        The sets need the same number of years. With times on both, each
+        year's losses are merged in time order (this set's first on a tie);
+        with times on neither, this set's losses come first. Sums insured are
+        kept when both sets carry them.
+        
+        Parameters
+        ----------
+        other : EventSet
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> cat = EventSet.from_years([[100.0], []], times=[[0.5], []])
+        >>> other = EventSet.from_years([[3.0, 4.0], [5.0]], times=[[0.2, 0.7], [0.1]])
+        >>> cat.merge(other).events(0)
+        [3.0, 100.0, 4.0]
         """
     @property
     def n_sims(self, /) -> int:
@@ -9109,11 +9323,27 @@ class Meyers:
         usual 0.8 the paid fits of group 353 leave divergent transitions.
     max_depth : int, default 10
         Largest NUTS tree depth.
+    dependence : {"independent", "rank_correlation", "synchronized"}, default "independent"
+        How the segments of a multi-segment triangle depend on each other
+        in ``fit_segments`` (``fit`` has one segment and does not use it),
+        as ``BayesOdp``'s: each segment's own posterior and simulations, with
+        seeds derived from ``seed`` and the segment's position; or the
+        segments' simulations reordered as whole rows (Iman–Conover on the
+        segments' total reserves, each segment's ultimates moving with its
+        reserves) to the Spearman matrix ``spearman`` and then put in a
+        random order. ``"synchronized"`` is accepted here, as the bootstraps
+        take it, but ``fit_segments`` raises: a posterior has no residuals to
+        share.
+    spearman : list of list of float, optional
+        With ``dependence="rank_correlation"`` only: Spearman's rho between
+        the segments' total reserves, as ``OdpBootstrap``'s.
     
     Raises
     ------
     ValueError
-        If ``n_sims`` is zero or ``model`` is unknown.
+        If ``n_sims`` is zero, ``model`` or ``dependence`` is unknown, or
+        ``spearman`` is missing for ``"rank_correlation"``, given for another
+        dependence or not square.
     OverflowError
         If an integer setting is negative or too large.
     
@@ -9139,12 +9369,18 @@ class Meyers:
     >>> fit.premium[:2]
     [5812.0, 4908.0]
     """
-    def __new__(cls, /, model: str = "crc", logelr_mean: float = ..., logelr_sd: float = 3.162, origin_sd: float = 3.162, development_sd: float = 3.162, gamma_sd: float = 0.05, rho_shape: float = 2.0, chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> Meyers: ...
+    def __new__(cls, /, model: str = "crc", logelr_mean: float = ..., logelr_sd: float = 3.162, origin_sd: float = 3.162, development_sd: float = 3.162, gamma_sd: float = 0.05, rho_shape: float = 2.0, chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Meyers: ...
     def __repr__(self, /) -> str: ...
     @property
     def chains(self, /) -> int:
         """
         Number of NUTS chains.
+        """
+    @property
+    def dependence(self, /) -> str:
+        """
+        How segments depend on each other in ``fit_segments``:
+        ``"independent"``, ``"rank_correlation"`` or ``"synchronized"``.
         """
     @property
     def development_sd(self, /) -> float:
@@ -9190,6 +9426,62 @@ class Meyers:
             observed cells than parameters; or, under ``"cay"``, if a cell
             lacks the previous origin's cell at the same age.
         """
+    def fit_segments(self, /, triangle: Triangle, column: str, premium: str) -> MeyersFits:
+        """
+        Samples the posterior of one measure column in every segment of a
+        cumulative triangle, each segment with its own posterior (the same
+        model and settings, sampled independently) and its premium from its
+        own ``premium`` column as ``fit`` reads it, into one joint
+        distribution of the ultimates and one of the reserves, the segments
+        depending on each other as ``dependence`` says. Segment ``k`` (in
+        index order) takes seeds derived from ``seed`` and ``k`` for its
+        chains and its simulations, so independent segments share no random
+        numbers, and a segment's draws differ from ``fit`` of that segment
+        alone. Raises one ``UserWarning`` listing the failed diagnostics of
+        every segment, each message prefixed with its segment's label.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        column : str
+            The losses: paid, or case incurred.
+        premium : str
+            The premium of each origin.
+        
+        Returns
+        -------
+        MeyersFits
+        
+        Raises
+        ------
+        ValueError
+            As ``fit`` for any segment (the message names the segment); if
+            ``dependence`` is ``"synchronized"`` (before any sampling); or if
+            ``spearman`` does not fit the segments.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import Meyers, Triangle
+        >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+        ...         [983, 2211, 2830], [1657, 2685], [932]]
+        >>> premium = [5812, 4908, 5454, 5165, 5214]
+        >>> rows = [(lob, 1988 + w, 12 * (d + 1), k * v, k * premium[w])
+        ...         for lob, k in [("Auto", 1.0), ("Home", 2.0)]
+        ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+        >>> lob, origin, age, values, prem = map(list, zip(*rows))
+        >>> tri = Triangle.from_long(
+        ...     origin, age, {"paid": values, "premium": prem}, keys={"lob": lob})
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     fits = Meyers(tune=200, draws=200, n_sims=1000).fit_segments(
+        ...         tri, "paid", "premium")
+        >>> fits.index, fits.reserves.dims
+        (['Auto', 'Home'], ['lob', 'origin'])
+        >>> fits.segment(lob="Home").premium[:2]
+        [11624.0, 9816.0]
+        """
     @property
     def gamma_sd(self, /) -> float:
         """
@@ -9234,6 +9526,12 @@ class Meyers:
     def seed(self, /) -> int:
         """
         Seed of the chains and of the simulations.
+        """
+    @property
+    def spearman(self, /) -> list[list[float]] |None:
+        """
+        The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+        otherwise.
         """
     @property
     def target_accept(self, /) -> float:
@@ -9380,6 +9678,173 @@ class MeyersFit:
         at the oldest age) by origin: dimension ``"origin"``, one component
         per origin, one row per simulation. An origin observed at the
         oldest age keeps its value.
+        """
+
+@final
+class MeyersFits:
+    """
+    ``Meyers.fit_segments``: each segment's own posterior and the joint
+    posterior predictive distributions of the ultimates and the reserves,
+    laid out as ``BayesOdpFits``.
+    
+    ``ultimates`` and ``reserves`` have the triangle's keys and ``"origin"``
+    as dimensions, so ``reserves.aggregate(["lob"])`` keeps the dependence
+    between segments. Per-origin lists (``origins``, ``premium``) run over
+    the origins of each segment in turn, like the rows of ``to_frame()``
+    and the components of ``reserves``. The posterior of one segment
+    (``diagnostics``, ``parameter_names``, ``draws``, ``chains``,
+    ``summary()`` and ``loo()``) needs a single-segment fit: for several
+    segments use ``segment(...)`` or ``diagnostics_frame()``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of every segment's fitted column,
+        whose latest values the reserves are measured from.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains of a single-segment fit.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months of the first segment.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladders' development factors, one row per segment and
+        age, as ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics of a single-segment fit, as
+        ``MeyersFit.diagnostics``.
+        """
+    def diagnostics_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, then ``max_rhat``,
+        ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+        ``warnings`` (the segment's messages joined by ``"; "``, empty when
+        every threshold holds). Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws of a single-segment fit, as ``MeyersFit.draws``.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of a single-segment fit's observed cells on Meyers' log
+        scale, as ``MeyersFit.loo``.
+        
+        Returns
+        -------
+        Elpd
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments.
+        """
+    @property
+    def model(self, /) -> str:
+        """
+        The model: ``"crc"``, ``"csr"`` or ``"cay"``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and component.
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names of a single-segment fit, as
+        ``MeyersFit.parameter_names``.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium of each segment's origins, in the order of ``origins``.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        The ultimates less the latest values, simulation by simulation,
+        laid out as ``ultimates``.
+        """
+    def segment(self, /, **keys) -> MeyersFits:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint ultimates and
+        reserves (same dimensions).
+        
+        Returns
+        -------
+        MeyersFits
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary of a single-segment fit, as
+        ``MeyersFit.summary``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``, the
+        chain ladder's ``latest``, ``ultimate`` and ``reserve``, the
+        ``premium``, the ``mean`` and ``std_dev`` of the posterior
+        predictive reserve, and the ``ultimate_mean`` and
+        ``ultimate_std_dev`` of the posterior predictive ultimate. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the chain ladder's totals,
+        the total ``premium``, the ``mean`` and ``std_dev`` of the segment's
+        posterior predictive total reserve, and the ``ultimate_mean`` and
+        ``ultimate_std_dev`` of its total ultimate. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of the ultimate (the value
+        at the oldest age) by segment and origin: the triangle's keys and
+        ``"origin"`` are its dimensions, one component per segment and
+        origin, one row per simulation.
         """
 
 @final
@@ -10506,6 +10971,167 @@ class Pareto:
         Returns
         -------
         float
+        """
+
+@final
+class PaymentPattern:
+    """
+    The share of the ultimate loss paid at each time, in years from the
+    treaty's inception.
+    
+    With a pattern that does not depend on the size of the loss, every
+    simulated year's present value is its loss times ``discount_factor``, so
+    a loss distribution is discounted by scaling it.
+    
+    Parameters
+    ----------
+    times : list of float
+        Non-negative, strictly increasing times, in years from inception.
+    shares : list of float
+        The share paid at each time; they sum to 1.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import PaymentPattern
+    >>> p = PaymentPattern.from_development([1.0, 2.0, 3.0], [4.0, 1.25, 1.0])
+    >>> [round(s, 12) for s in p.shares]
+    [0.25, 0.55, 0.2]
+    >>> round(p.duration, 12), round(p.discount_factor(0.05), 6)
+    (1.95, 0.909729)
+    """
+    def __new__(cls, /, times: Sequence[float], shares: Sequence[float]) -> PaymentPattern: ...
+    def __repr__(self, /) -> str: ...
+    def capital_years(self, /, rate: float) -> float:
+        """
+        The discounted capital years per unit of initial capital: capital
+        held in each year in proportion to the share outstanding at its
+        start, charged at the start of the year.
+        
+        Parameters
+        ----------
+        rate : float
+        
+        Returns
+        -------
+        float
+        """
+    def discount_factor(self, /, rate: float) -> float:
+        """
+        The present value at inception of a unit of ultimate loss, at an
+        annual effective ``rate``.
+        
+        Parameters
+        ----------
+        rate : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def duration(self, /) -> float:
+        """
+        The mean time to payment, undiscounted.
+        """
+    @staticmethod
+    def from_development(ages: Sequence[float], factors: Sequence[float]) -> PaymentPattern:
+        """
+        From development factors to ultimate by age, such as a paid chain
+        ladder's ``cdf``: the share paid by each age is one over its factor.
+        
+        The last factor must be 1 (add any tail as a last age). Ages are read
+        as times from inception; ``shifted`` moves the pattern when losses
+        start developing later.
+        
+        Parameters
+        ----------
+        ages : list of float
+        factors : list of float
+        
+        Returns
+        -------
+        PaymentPattern
+        """
+    def outstanding(self, /, t: float) -> float:
+        """
+        The share not yet paid at time ``t``.
+        
+        Parameters
+        ----------
+        t : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def shares(self, /) -> list[float]:
+        """
+        The share paid at each time.
+        """
+    def shifted(self, /, by: float) -> PaymentPattern:
+        """
+        The pattern ``by`` years later.
+        
+        Parameters
+        ----------
+        by : float
+        
+        Returns
+        -------
+        PaymentPattern
+        """
+    @property
+    def times(self, /) -> list[float]:
+        """
+        The times.
+        """
+
+@final
+class PayoutPrice:
+    """
+    A price restated over a payout, from ``price_over_payout``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def assets(self, /) -> float:
+        """
+        Assets, the one-year risk measure.
+        """
+    @property
+    def capital(self, /) -> float:
+        """
+        Initial capital, assets less premium.
+        """
+    @property
+    def capital_years(self, /) -> float:
+        """
+        The discounted capital years (1 for a distortion price).
+        """
+    @property
+    def discount_factor(self, /) -> float:
+        """
+        The losses' discount factor.
+        """
+    @property
+    def discounted_loss(self, /) -> float:
+        """
+        Expected loss discounted to inception.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        Expected loss, undiscounted.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        Margin over the discounted loss.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        Premium at inception.
         """
 
 @final
@@ -11762,6 +12388,28 @@ class PreparedLosses:
     """
     def __len__(self, /) -> int: ...
     def __repr__(self, /) -> str: ...
+    def as_if(self, /, historical: Sequence[Tower], years: Sequence[int], proposed: Tower) -> AsIf:
+        """
+        Each year's losses under the program in force that year, next to the
+        year's trended losses under the proposed tower.
+        
+        The historical side takes every loss of the year as reported (in its
+        own currency, untrended and undeveloped), so it can be checked
+        against the cedant's recoveries; the proposed side is the as-if
+        layer loss of ``burning_cost`` before development by year. The
+        historical towers may differ in layers from year to year.
+        
+        Parameters
+        ----------
+        historical : list of Tower
+            The program in force in each of ``years``.
+        years : list of int
+        proposed : Tower
+        
+        Returns
+        -------
+        AsIf
+        """
     def burning_cost(self, /, towers: Any, years: Sequence[int], *, premium: Sequence[float], development: Any, index: IndexClause |None = None, ratios: Sequence[float] |None = None) -> BurningCost:
         """
         The as-if loss to each layer by accident year, developed and divided
@@ -16253,6 +16901,44 @@ def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = Non
     >>> g = price(Grid(2.0, [0.5, 0.25, 0.0, 0.25]), Distortion.tvar(0.5), cost_of_capital=0.25)
     >>> round(g.premium, 12)
     2.4
+    """
+
+def price_over_payout(price: Price, pattern: PaymentPattern, *, rate: float = 0.0, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PayoutPrice:
+    """
+    A one-period price restated over a payout.
+    
+    With a cost of capital ``r``, the premium solves
+    ``P = E[X] d + r (a - P) A``: the loss discounted by the pattern's
+    ``discount_factor`` ``d``, plus the cost of the initial capital held while
+    losses are outstanding over ``A = capital_years``. With a pricing
+    distortion, the premium is discounted with the losses. Give the same rule
+    the price was made with. A pattern that pays everything within the first
+    year, at a zero rate, gives back the one-period price.
+    
+    Parameters
+    ----------
+    price : Price
+        The one-period price, from ``price``.
+    pattern : PaymentPattern
+    rate : float, default 0.0
+        Annual effective discount rate.
+    cost_of_capital : float, optional
+    distortion : Distortion, optional
+    
+    Returns
+    -------
+    PayoutPrice
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.pricing import PaymentPattern, price, price_over_payout
+    >>> from prospicio.risk import Distortion
+    >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
+    >>> slow = PaymentPattern([1.0, 2.0, 3.0], [0.2, 0.3, 0.5])
+    >>> q = price_over_payout(p, slow, rate=0.0, cost_of_capital=0.25)
+    >>> round(q.capital_years, 12), round(q.premium, 6)
+    (2.3, 2.730159)
     """
 
 def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PortfolioPrice:

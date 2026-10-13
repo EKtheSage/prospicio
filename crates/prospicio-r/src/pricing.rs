@@ -17,6 +17,7 @@ use prospicio_pricing::layer::XsLayer;
 use prospicio_pricing::natural::{
     Allocation, Pentagon, Portfolio as NaturalInner, Quantity, Target,
 };
+use prospicio_pricing::payout::{self, PaymentPattern};
 use prospicio_pricing::quote::{Loads, Quote};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
@@ -1045,6 +1046,149 @@ fn prepare_large_losses(
     .map_err(to_r)
 }
 
+fn tower_list(towers: List) -> Result<Vec<prospicio_aggregate::Tower>> {
+    towers
+        .values()
+        .map(|t| {
+            <&ReinsuranceTower>::try_from(&t)
+                .map(|t| t.inner.clone())
+                .map_err(|_| Error::Other("towers must be reinsurance_tower objects".into()))
+        })
+        .collect()
+}
+
+/// Each year's losses under its own program beside the proposed tower:
+/// `list(year, reported_losses, trended_losses, historical_layers,
+/// historical, proposed_layers, proposed)`, with `historical_layers` and
+/// `historical` a list per year and `proposed` year-by-layer, by column.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_as_if(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
+    fx: &[f64],
+    historical: List,
+    years: &[i32],
+    proposed: Robj,
+) -> Result<List> {
+    let p = prepare_large_losses(
+        ids,
+        accident,
+        amount,
+        threshold,
+        rate,
+        to,
+        factors,
+        valuation,
+        dev_ages,
+        dev_factors,
+        dev_per_loss,
+        fx,
+    )?;
+    let historical = tower_list(historical)?;
+    let proposed = <&ReinsuranceTower>::try_from(&proposed)
+        .map_err(|_| Error::Other("proposed must be a reinsurance_tower".into()))?;
+    let a = p.as_if(&historical, years, &proposed.inner).map_err(to_r)?;
+    let layers = a.proposed_layers.len();
+    let proposed: Vec<f64> = (0..layers)
+        .flat_map(|i| a.years.iter().map(move |r| r.proposed[i]))
+        .collect();
+    Ok(list!(
+        year = a.years.iter().map(|r| r.year).collect::<Vec<_>>(),
+        reported_losses = a
+            .years
+            .iter()
+            .map(|r| r.reported_losses as i32)
+            .collect::<Vec<_>>(),
+        trended_losses = a
+            .years
+            .iter()
+            .map(|r| r.trended_losses as i32)
+            .collect::<Vec<_>>(),
+        historical_layers = List::from_values(a.years.iter().map(|r| r.historical_layers.clone())),
+        historical = List::from_values(a.years.iter().map(|r| r.historical.clone())),
+        proposed_layers = a.proposed_layers.clone(),
+        proposed = proposed
+    ))
+}
+
+/// A payment pattern, checked: `list(times, shares, duration)`; from
+/// `(times, shares)`, or, with `from_development`, from ages and factors to
+/// ultimate.
+#[extendr]
+fn pricing_payment_pattern(times: &[f64], values: &[f64], from_development: bool) -> Result<List> {
+    let p = if from_development {
+        PaymentPattern::from_development(times, values)
+    } else {
+        PaymentPattern::new(times.to_vec(), values.to_vec())
+    }
+    .map_err(to_r)?;
+    Ok(list!(
+        times = p.times().to_vec(),
+        shares = p.shares().to_vec(),
+        duration = p.duration()
+    ))
+}
+
+/// A pattern's discount factor and capital years at `rate`, and the share
+/// outstanding at each of `t`.
+#[extendr]
+fn pricing_pattern_values(times: &[f64], shares: &[f64], rate: f64, t: &[f64]) -> Result<List> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    Ok(list!(
+        discount_factor = p.discount_factor(rate),
+        capital_years = p.capital_years(rate),
+        outstanding = t.iter().map(|&x| p.outstanding(x)).collect::<Vec<_>>()
+    ))
+}
+
+/// A one-period price restated over a payout: with a cost of capital
+/// `coc`, or, with `coc` NaN, a distortion price discounted with the losses.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_price_over_payout(
+    expected_loss: f64,
+    premium: f64,
+    assets: f64,
+    times: &[f64],
+    shares: &[f64],
+    rate: f64,
+    coc: f64,
+) -> Result<List> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    let price = Price {
+        expected_loss,
+        premium,
+        assets,
+    };
+    let rule = if coc.is_nan() {
+        // Any distortion: only the rule's kind matters here.
+        PremiumRule::Distortion(prospicio_prob::Distortion::tvar(0.5).map_err(to_r)?)
+    } else {
+        PremiumRule::cost_of_capital(coc).map_err(to_r)?
+    };
+    let q = payout::price_over_payout(&price, &rule, &p, rate).map_err(to_r)?;
+    Ok(list!(
+        expected_loss = q.expected_loss,
+        discounted_loss = q.discounted_loss,
+        premium = q.premium,
+        assets = q.assets,
+        capital = q.capital(),
+        margin = q.margin(),
+        discount_factor = q.discount_factor,
+        capital_years = q.capital_years
+    ))
+}
+
 /// A development pattern estimated from claim valuations:
 /// `list(ages, factors)`.
 #[extendr]
@@ -1195,14 +1339,7 @@ fn pricing_burning_cost(
             development.len()
         )));
     }
-    let towers = towers
-        .values()
-        .map(|t| {
-            <&ReinsuranceTower>::try_from(&t)
-                .map(|t| t.inner.clone())
-                .map_err(|_| Error::Other("towers must be reinsurance_tower objects".into()))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let towers = tower_list(towers)?;
     let basis: Vec<YearBasis> = years
         .iter()
         .zip(premium)
@@ -1253,6 +1390,10 @@ extendr_module! {
     fn pricing_trend_large_losses;
     fn pricing_burning_cost;
     fn pricing_development_pattern;
+    fn pricing_as_if;
+    fn pricing_payment_pattern;
+    fn pricing_pattern_values;
+    fn pricing_price_over_payout;
     fn pricing_pattern_at;
     fn pricing_count_development;
     fn pricing_quote;

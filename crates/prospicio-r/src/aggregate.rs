@@ -3,7 +3,9 @@
 
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
-use prospicio_aggregate::{CompoundMethod, CompoundReport, EventSet as EventSetInner};
+use prospicio_aggregate::{
+    CompoundMethod, CompoundReport, EventLossTable, EventSet as EventSetInner,
+};
 use prospicio_prob::Counting;
 
 use crate::distributions::{
@@ -251,6 +253,40 @@ impl EventSet {
                 .map_err(to_r)?;
         }
         Ok(Self { inner })
+    }
+
+    /// Years in long form: `years` from 1 to `n_years`, one per loss.
+    fn from_long(years: &[f64], losses: &[f64], n_years: f64, seed: f64) -> Result<Self> {
+        let years = years
+            .iter()
+            .map(|&y| {
+                let y = whole(y, "years")?;
+                if y == 0 {
+                    return Err(Error::Other("years run from 1".into()));
+                }
+                Ok(y as usize - 1)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let inner = EventSetInner::from_long(
+            &years,
+            losses,
+            whole(n_years, "n_years")? as usize,
+            whole(seed, "seed")?,
+        )
+        .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn merge(&self, other: &EventSet) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.merge(&other.inner).map_err(to_r)?,
+        })
+    }
+
+    fn grouped(&self, window_hours: f64) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.grouped(window_hours).map_err(to_r)?,
+        })
     }
 
     fn with_uniform_times(&self) -> Self {
@@ -520,6 +556,70 @@ fn layer_loss_picks_rust(
     ))
 }
 
+fn elt(
+    rate: &[f64],
+    mean: &[f64],
+    sd_independent: &[f64],
+    sd_correlated: &[f64],
+    exposure: &[f64],
+) -> Result<EventLossTable> {
+    EventLossTable::new(rate, mean, sd_independent, sd_correlated, exposure).map_err(to_r)
+}
+
+/// An event loss table's rate, expected annual loss, and at each of `x` its
+/// exceedance frequency and OEP, and at each of `p` its occurrence PML.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn aggregate_elt_values(
+    rate: &[f64],
+    mean: &[f64],
+    sd_independent: &[f64],
+    sd_correlated: &[f64],
+    exposure: &[f64],
+    x: &[f64],
+    p: &[f64],
+) -> Result<List> {
+    let t = elt(rate, mean, sd_independent, sd_correlated, exposure)?;
+    let pml = p
+        .iter()
+        .map(|&q| t.occurrence_pml(q).map_err(to_r))
+        .collect::<Result<Vec<f64>>>()?;
+    Ok(list!(
+        rate = t.rate(),
+        expected_annual_loss = t.expected_annual_loss(),
+        exceedance_frequency = x
+            .iter()
+            .map(|&v| t.exceedance_frequency(v))
+            .collect::<Vec<_>>(),
+        oep = x.iter().map(|&v| t.oep(v)).collect::<Vec<_>>(),
+        pml = pml
+    ))
+}
+
+/// Simulated years from an event loss table: `list(events, ids)`, with
+/// `ids` a list per year of each loss's event row, from 1.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn aggregate_elt_simulate(
+    rate: &[f64],
+    mean: &[f64],
+    sd_independent: &[f64],
+    sd_correlated: &[f64],
+    exposure: &[f64],
+    n_years: f64,
+    seed: f64,
+) -> Result<List> {
+    let t = elt(rate, mean, sd_independent, sd_correlated, exposure)?;
+    let (inner, ids) = t
+        .simulate(whole(n_years, "n_years")? as usize, whole(seed, "seed")?)
+        .map_err(to_r)?;
+    let ids = List::from_values(
+        ids.into_iter()
+            .map(|y| y.into_iter().map(|k| k as i32 + 1).collect::<Vec<i32>>()),
+    );
+    Ok(list!(events = EventSet { inner }, ids = ids))
+}
+
 extendr_module! {
     mod aggregate;
     fn layer_loss_picks_rust;
@@ -534,4 +634,6 @@ extendr_module! {
     fn occurrence_exceedance_rust;
     fn occurrence_pml_rust;
     impl EventSet;
+    fn aggregate_elt_values;
+    fn aggregate_elt_simulate;
 }

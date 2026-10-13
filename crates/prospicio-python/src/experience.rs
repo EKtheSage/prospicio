@@ -4,8 +4,8 @@
 
 use prospicio_aggregate::Tower;
 use prospicio_pricing::experience::{
-    BurningCost, ClaimValuation, Development, DevelopmentPattern, Experience, Fx, IndexClause,
-    IndexKind, LargeLoss, Prepared, Trend, YearBasis,
+    AsIf, BurningCost, ClaimValuation, Development, DevelopmentPattern, Experience, Fx,
+    IndexClause, IndexKind, LargeLoss, Prepared, Trend, YearBasis,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -320,6 +320,40 @@ impl PyPreparedLosses {
         })
     }
 
+    /// Each year's losses under the program in force that year, next to the
+    /// year's trended losses under the proposed tower.
+    ///
+    /// The historical side takes every loss of the year as reported (in its
+    /// own currency, untrended and undeveloped), so it can be checked
+    /// against the cedant's recoveries; the proposed side is the as-if
+    /// layer loss of ``burning_cost`` before development by year. The
+    /// historical towers may differ in layers from year to year.
+    ///
+    /// Parameters
+    /// ----------
+    /// historical : list of Tower
+    ///     The program in force in each of ``years``.
+    /// years : list of int
+    /// proposed : Tower
+    ///
+    /// Returns
+    /// -------
+    /// AsIf
+    fn as_if(
+        &self,
+        historical: Vec<PyRef<'_, PyTower>>,
+        years: Vec<i32>,
+        proposed: PyRef<'_, PyTower>,
+    ) -> PyResult<PyAsIf> {
+        let towers: Vec<Tower> = historical.iter().map(|t| t.inner.clone()).collect();
+        Ok(PyAsIf {
+            inner: self
+                .inner
+                .as_if(&towers, &years, &proposed.inner)
+                .map_err(to_py)?,
+        })
+    }
+
     /// The record's valuation date, or ``None``.
     #[getter]
     fn valuation(&self) -> Option<f64> {
@@ -369,6 +403,78 @@ impl PyPreparedLosses {
 #[pyclass(name = "BurningCost", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyBurningCost {
     inner: BurningCost,
+}
+
+/// Each year's cessions under its own program and under the proposed one,
+/// from ``PreparedLosses.as_if``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import LargeLossExperience
+/// >>> from prospicio.reinsurance import Layer, Tower
+/// >>> p = LargeLossExperience(["a"], [2019.5], [300.0]).prepare(factors=[1.2])
+/// >>> then = Tower([Layer("150 xs 150", 150.0, 150.0)])
+/// >>> now = Tower([Layer("200 xs 200", 200.0, 200.0)])
+/// >>> a = p.as_if([then], [2019], now)
+/// >>> a.to_dict()["historical"], [round(x, 6) for x in a.to_dict()["proposed"][0]]
+/// ([[150.0]], [160.0])
+#[pyclass(name = "AsIf", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyAsIf {
+    inner: AsIf,
+}
+
+#[pymethods]
+impl PyAsIf {
+    /// The proposed tower's layer names.
+    #[getter]
+    fn proposed_layers(&self) -> Vec<String> {
+        self.inner.proposed_layers.clone()
+    }
+
+    /// The years as columns: ``year``, ``reported_losses``,
+    /// ``trended_losses``, and per year the lists ``historical_layers``,
+    /// ``historical`` (one value per layer in force that year) and
+    /// ``proposed`` (one per proposed layer).
+    ///
+    /// Returns
+    /// -------
+    /// dict of str to list
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let y = &self.inner.years;
+        let d = PyDict::new(py);
+        d.set_item("year", y.iter().map(|r| r.year).collect::<Vec<_>>())?;
+        d.set_item(
+            "reported_losses",
+            y.iter().map(|r| r.reported_losses).collect::<Vec<_>>(),
+        )?;
+        d.set_item(
+            "trended_losses",
+            y.iter().map(|r| r.trended_losses).collect::<Vec<_>>(),
+        )?;
+        d.set_item(
+            "historical_layers",
+            y.iter()
+                .map(|r| r.historical_layers.clone())
+                .collect::<Vec<_>>(),
+        )?;
+        d.set_item(
+            "historical",
+            y.iter().map(|r| r.historical.clone()).collect::<Vec<_>>(),
+        )?;
+        d.set_item(
+            "proposed",
+            y.iter().map(|r| r.proposed.clone()).collect::<Vec<_>>(),
+        )?;
+        Ok(d)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AsIf(years={}, proposed_layers={:?})",
+            self.inner.years.len(),
+            self.inner.proposed_layers
+        )
+    }
 }
 
 #[pymethods]

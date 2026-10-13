@@ -748,3 +748,80 @@ fn layer_loss_picks_match_aggregate() {
     let lev100: f64 = (0..g.len()).map(|j| g.x(j).min(100.0) * g.probs()[j]).sum();
     assert!((10.0 * lev100 - 700.0).abs() < 1e-9);
 }
+
+// An event loss table's simulated years against its analytic occurrence
+// exceedance curve, `1 − exp(−Σ rate_i P(L_i > x))`, within four binomial
+// standard errors, and its counts and mean loss within four standard errors.
+mod event_loss_table {
+    use prospicio_aggregate::cat::EventLossTable;
+
+    const YEARS: usize = 200_000;
+
+    fn year_max(events: &prospicio_aggregate::EventSet, y: usize) -> f64 {
+        events.events(y).iter().copied().fold(0.0, f64::max)
+    }
+
+    fn check(elt: &EventLossTable, thresholds: &[f64], seed: u64) {
+        let (events, ids) = elt.simulate(YEARS, seed).unwrap();
+        let n = YEARS as f64;
+        for &x in thresholds {
+            let p = elt.oep(x);
+            let hit = (0..YEARS).filter(|&y| year_max(&events, y) > x).count() as f64 / n;
+            let se = (p * (1.0 - p) / n).sqrt();
+            assert!(
+                (hit - p).abs() < 4.0 * se,
+                "x = {x}: {hit} vs {p} (se {se})"
+            );
+        }
+        let counts: f64 = events.counts().iter().sum::<usize>() as f64 / n;
+        let lambda = elt.rate();
+        assert!(
+            (counts - lambda).abs() < 4.0 * (lambda / n).sqrt(),
+            "{counts} vs {lambda}"
+        );
+        assert_eq!(
+            ids.iter().map(Vec::len).collect::<Vec<_>>(),
+            events.counts()
+        );
+        let totals: Vec<f64> = (0..YEARS).map(|y| events.events(y).iter().sum()).collect();
+        let mean = totals.iter().sum::<f64>() / n;
+        let var = totals.iter().map(|t| (t - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        let eal = elt.expected_annual_loss();
+        assert!(
+            (mean - eal).abs() < 4.0 * (var / n).sqrt(),
+            "{mean} vs {eal}"
+        );
+    }
+
+    #[test]
+    fn points_without_secondary_uncertainty() {
+        let elt = EventLossTable::new(
+            &[0.01, 0.04, 0.2, 0.5],
+            &[10_000.0, 3000.0, 800.0, 100.0],
+            &[0.0; 4],
+            &[0.0; 4],
+            &[10_000.0, 3000.0, 800.0, 100.0],
+        )
+        .unwrap();
+        // Between the steps the curve is flat.
+        check(&elt, &[50.0, 500.0, 2000.0, 5000.0], 11);
+        assert!((elt.oep(5000.0) - (1.0 - (-0.01f64).exp())).abs() < 1e-15);
+    }
+
+    #[test]
+    fn betas_at_return_periods() {
+        let elt = EventLossTable::new(
+            &[0.005, 0.02, 0.1, 0.4],
+            &[20_000.0, 6000.0, 1500.0, 200.0],
+            &[6000.0, 2000.0, 600.0, 100.0],
+            &[2000.0, 1000.0, 200.0, 0.0],
+            &[60_000.0, 25_000.0, 8000.0, 2000.0],
+        )
+        .unwrap();
+        let at: Vec<f64> = [0.1, 0.02, 0.01, 0.004]
+            .iter()
+            .map(|&p| elt.occurrence_pml(p).unwrap())
+            .collect();
+        check(&elt, &at, 23);
+    }
+}

@@ -1,7 +1,8 @@
 # Design note: experience rating from large losses
 
 Status: **Implemented** (PR 1: trend, as-if layer loss, burning cost; PR 2:
-per-claim development and count IBNR; PR 3: index clause and FX) ·
+per-claim development and count IBNR; PR 3: index clause and FX; #191: as-if
+history) ·
 Depends on: `prospicio-aggregate` towers · Lane: Aggregate · Issue: #190
 
 ## Goal
@@ -63,6 +64,12 @@ validation reproduces.
   &clause, &ratios)`, with a ratio per loss of the index at its payment to
   the index at the treaty's base date.
 
+- #191, as-if history: `Prepared::as_if(&historical, &years, &proposed)`
+  sets each year's losses as reported under the program in force that
+  year (`historical[k]`, which may differ in layers from year to year)
+  beside the year's trended losses under the proposed tower (`AsIf`,
+  `AsIfYear`), to reconcile with the cedant's recoveries.
+
 Bindings: Python `prospicio.pricing.LargeLossExperience` (with
 `valuation=` and `fx=`), `IndexClause` (`burning_cost(..., index=,
 ratios=)`), `DevelopmentPattern`, `PreparedLosses` (`prepare(...,
@@ -71,7 +78,8 @@ development=)`), `BurningCost` (`burning_cost` takes a count pattern as
 `development`), `burning_cost()`, `development_pattern()`,
 `development_pattern_from_history()` and `pattern_factor()`, with `fx`
 in `trend_large_losses()` and `index_clause()` with `index` and `ratios`
-in `burning_cost()`.
+in `burning_cost()`; Python `PreparedLosses.as_if` (`AsIf`) and R
+`as_if_history()`.
 
 ## Decisions
 
@@ -135,8 +143,13 @@ in `burning_cost()`.
     pattern's average), as for trend and development factors. Clark
     prints no index clause example; the validation checks the clause
     against a tower built with the moved terms.
+13. **As-if history compares like with like on each side.** The historical
+    side takes every loss of the year as reported (its own currency,
+    untrended, undeveloped, threshold or not), because that is what the
+    cedant recovered and reports; the proposed side is exactly the
+    burning cost's layer loss before development by year. Reconciling
+    the historical side with the cedant's recoveries checks the record
+    before it is trended.
 
 ## Next
 
-- #191 (as-if history) builds a record from a premium and treaty history
-  as a constructor on top of this.
