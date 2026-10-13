@@ -22,7 +22,11 @@
 //! chains and tag 1 for the simulations (decision 5). Chain `c` then uses
 //! stream `c` of its seed and simulation `i` stream `i` of its seed, so no
 //! simulation shares a stream with a chain, and a fit replays exactly for
-//! a seed whatever the number of threads. [`Meyers`]' pilot run, which sets
+//! a seed whatever the number of threads. In
+//! [`BayesOdp::fit_segments`], segment `k` (in index order) takes tags
+//! `2 + 2k` (its chains) and `3 + 2k` (its simulations) instead, so every
+//! segment samples and simulates from its own streams and independent
+//! segments are independent (decision 11). [`Meyers`]' pilot run, which sets
 //! its sampling scale, takes stream `u64::MAX` of the chains' seed, which
 //! no chain reaches.
 //!
@@ -34,7 +38,7 @@ mod meyers;
 mod odp;
 
 pub use meyers::{Meyers, MeyersFit, MeyersModel};
-pub use odp::{BayesOdp, BayesOdpFit};
+pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};
 
 use prospicio_bayes::nuts::ParamSummary;
 use prospicio_core::StreamRng;
@@ -124,6 +128,10 @@ pub(crate) enum Stream {
     Chains,
     /// The posterior predictive simulations.
     Predictive,
+    /// The NUTS chains of segment `k` of a fit of several segments.
+    SegmentChains(usize),
+    /// The simulations of segment `k` of a fit of several segments.
+    SegmentPredictive(usize),
 }
 
 impl Stream {
@@ -131,6 +139,8 @@ impl Stream {
         match self {
             Self::Chains => 0,
             Self::Predictive => 1,
+            Self::SegmentChains(k) => 2 + 2 * k as u64,
+            Self::SegmentPredictive(k) => 3 + 2 * k as u64,
         }
     }
 }
@@ -212,5 +222,15 @@ mod tests {
         assert_eq!(a, derive_seed(0, Stream::Chains));
         assert_ne!(a, derive_seed(0, Stream::Predictive));
         assert_ne!(a, derive_seed(1, Stream::Chains));
+        let tags = [
+            Stream::Chains,
+            Stream::Predictive,
+            Stream::SegmentChains(0),
+            Stream::SegmentPredictive(0),
+            Stream::SegmentChains(1),
+            Stream::SegmentPredictive(1),
+        ]
+        .map(Stream::tag);
+        assert_eq!(tags, [0, 1, 2, 3, 4, 5]);
     }
 }
