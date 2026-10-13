@@ -16,13 +16,13 @@ under "Unreleased" until then.
 - `aggregate`'s named counts: `EmpiricalCount::fixed`,
   `Binomial::bernoulli` and `NegativeBinomial::geometric`; Python
   `Count.fixed`, `Count.bernoulli`, `Count.geometric`; R `fixed_count()`,
-  `bernoulli_count()`, `geometric_count()`.
+  `bernoulli_count()`, `geometric_count()` (#202).
 - TVaR of a grid and `tvar_threshold`, the level at which TVaR reaches the
   VaR at `p` (`aggregate`'s `tvar_threshold`): `Grid::tvar`,
   `Grid::tvar_threshold`, `natural::Portfolio::tvar_threshold`,
   `risk::{var_weighted, tvar_weighted, tvar_threshold}`. Python
   `Grid.tvar`, `Grid.tvar_threshold`, `Portfolio.tvar_threshold`; R
-  `TVaR()` on a `grid_distribution` and `tvar_threshold()`.
+  `TVaR()` on a `grid_distribution` and `tvar_threshold()` (#202).
 
 ### Aggregate and reinsurance
 
@@ -87,7 +87,7 @@ under "Unreleased" until then.
   comonotonic allocation, `make_comonotonic_allocations`
   (`natural::Portfolio::comonotonic_kappa`). Python
   `Portfolio.price_stand_alone` (`StandAlone`), `Portfolio.comonotonic_kappa`;
-  R `price_stand_alone()`, `comonotonic_allocation()`.
+  R `price_stand_alone()`, `comonotonic_allocation()` (#202).
 
 ### Examples
 
