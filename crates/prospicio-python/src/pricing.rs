@@ -5,6 +5,7 @@
 use prospicio_aggregate::CollectiveModel;
 use prospicio_pricing::exposure::{ExposureCurve, Mbbefd, SeverityCurve, TabulatedCurve};
 use prospicio_pricing::layer::XsLayer;
+use prospicio_pricing::quote::{Loads, Quote};
 use prospicio_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel};
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -1374,4 +1375,220 @@ pub(crate) fn severity_exposure_curve(
     let sev = extract_severity(severity)?;
     let curve = SeverityCurve::new(&sev, mpl).map_err(to_py)?;
     Ok(x.iter().map(|&v| curve.g(v)).collect())
+}
+
+/// A cover's quote: the premium the cedant pays, built up from a
+/// risk-loaded price, with the ratios the market quotes.
+///
+/// ``Quote.technical(price, ...)`` grosses the risk premium ``R`` (the
+/// expected loss plus the margin for capital, from ``price``) up for
+/// internal expenses ``e`` and brokerage ``b``, both fractions of the
+/// premium, and a fixed expense ``f``: ``P = (R + f) / (1 - e - b)``.
+/// ``quote.at(premium)`` reads a quoted premium the other way: the
+/// reinsurer keeps ``P (1 - e - b) - f`` as its risk premium, and the margin
+/// and return on capital follow with the same expected loss and assets.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Sampled
+/// >>> from prospicio.pricing import Quote, price
+/// >>> from prospicio.risk import Distortion
+/// >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.1)
+/// >>> q = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=10.0)
+/// >>> round(q.premium, 6), round(q.rate_on_line, 6), round(q.return_on_capital, 6)
+/// (2.507837, 0.250784, 0.1)
+/// >>> round(q.at(3.0).return_on_capital, 4)
+/// 0.4388
+#[pyclass(name = "Quote", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyQuote {
+    inner: Quote,
+}
+
+#[pymethods]
+impl PyQuote {
+    /// The technical premium of a risk-loaded price.
+    ///
+    /// Parameters
+    /// ----------
+    /// price : Price
+    ///     The risk-loaded price, from ``price``; its premium is the risk
+    ///     premium.
+    /// expenses : float, default 0.0
+    ///     Internal expenses, a fraction of the premium.
+    /// brokerage : float, default 0.0
+    ///     Brokerage, a fraction of the premium.
+    /// fixed : float, default 0.0
+    ///     A fixed expense per contract, an amount.
+    /// limit : float, optional
+    ///     The cover's limit at the placed share, for the rate on line;
+    ///     omit it for a cover without one, such as a quota share.
+    ///
+    /// Returns
+    /// -------
+    /// Quote
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a load is negative, ``expenses + brokerage`` reaches 1, or the
+    ///     limit is not positive.
+    #[staticmethod]
+    #[pyo3(signature = (price, *, expenses = 0.0, brokerage = 0.0, fixed = 0.0, limit = None))]
+    fn technical(
+        price: PyRef<'_, PyPrice>,
+        expenses: f64,
+        brokerage: f64,
+        fixed: f64,
+        limit: Option<f64>,
+    ) -> PyResult<Self> {
+        let loads = Loads::new(expenses, brokerage, fixed).map_err(to_py)?;
+        Ok(Self {
+            inner: Quote::technical(&price.inner, loads, limit).map_err(to_py)?,
+        })
+    }
+
+    /// The same cover at a quoted premium: what the quote leaves after the
+    /// loads is the risk premium.
+    ///
+    /// Parameters
+    /// ----------
+    /// premium : float
+    ///
+    /// Returns
+    /// -------
+    /// Quote
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the risk premium the quote leaves reaches the assets.
+    fn at(&self, premium: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.at(premium).map_err(to_py)?,
+        })
+    }
+
+    /// The premium the cedant pays.
+    #[getter]
+    fn premium(&self) -> f64 {
+        self.inner.premium
+    }
+
+    /// Expected loss.
+    #[getter]
+    fn expected_loss(&self) -> f64 {
+        self.inner.expected_loss
+    }
+
+    /// The risk premium: what the reinsurer keeps for the loss and capital.
+    #[getter]
+    fn risk_premium(&self) -> f64 {
+        self.inner.risk_premium
+    }
+
+    /// Assets backing the loss.
+    #[getter]
+    fn assets(&self) -> f64 {
+        self.inner.assets
+    }
+
+    /// Margin, risk premium less expected loss.
+    #[getter]
+    fn margin(&self) -> f64 {
+        self.inner.margin()
+    }
+
+    /// Capital, assets less the risk premium.
+    #[getter]
+    fn capital(&self) -> f64 {
+        self.inner.capital()
+    }
+
+    /// Return on capital, margin over capital.
+    #[getter]
+    fn return_on_capital(&self) -> f64 {
+        self.inner.return_on_capital()
+    }
+
+    /// Internal expenses, an amount.
+    #[getter]
+    fn expenses(&self) -> f64 {
+        self.inner.expenses()
+    }
+
+    /// Brokerage, an amount.
+    #[getter]
+    fn brokerage(&self) -> f64 {
+        self.inner.brokerage()
+    }
+
+    /// The premium net of brokerage.
+    #[getter]
+    fn net_premium(&self) -> f64 {
+        self.inner.net_premium()
+    }
+
+    /// Expected loss over the premium.
+    #[getter]
+    fn loss_ratio(&self) -> f64 {
+        self.inner.loss_ratio()
+    }
+
+    /// Premium over expected loss.
+    #[getter]
+    fn multiple(&self) -> f64 {
+        self.inner.multiple()
+    }
+
+    /// Premium over the limit, or ``None`` without a limit.
+    #[getter]
+    fn rate_on_line(&self) -> Option<f64> {
+        self.inner.rate_on_line()
+    }
+
+    /// Limit over premium, or ``None`` without a limit.
+    #[getter]
+    fn payback(&self) -> Option<f64> {
+        self.inner.payback()
+    }
+
+    /// The limit, or ``None``.
+    #[getter]
+    fn limit(&self) -> Option<f64> {
+        self.inner.limit
+    }
+
+    /// The build-up and ratios as a dict, for a table.
+    ///
+    /// Returns
+    /// -------
+    /// dict of str to float
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let q = &self.inner;
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("expected_loss", q.expected_loss)?;
+        d.set_item("margin", q.margin())?;
+        d.set_item("risk_premium", q.risk_premium)?;
+        d.set_item("expenses", q.expenses())?;
+        d.set_item("brokerage", q.brokerage())?;
+        d.set_item("premium", q.premium)?;
+        d.set_item("net_premium", q.net_premium())?;
+        d.set_item("assets", q.assets)?;
+        d.set_item("capital", q.capital())?;
+        d.set_item("return_on_capital", q.return_on_capital())?;
+        d.set_item("loss_ratio", q.loss_ratio())?;
+        d.set_item("multiple", q.multiple())?;
+        d.set_item("rate_on_line", q.rate_on_line())?;
+        d.set_item("payback", q.payback())?;
+        Ok(d)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Quote(premium={}, expected_loss={}, return_on_capital={})",
+            self.inner.premium,
+            self.inner.expected_loss,
+            self.inner.return_on_capital()
+        )
+    }
 }

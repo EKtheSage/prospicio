@@ -343,3 +343,27 @@ def test_price_on_a_grid_matches_its_draws():
         a, b = price(grid, assets, **kw), price(draws, assets, **kw)
         assert a.premium == pytest.approx(b.premium, abs=1e-12)
         assert a.assets == pytest.approx(b.assets, abs=1e-12)
+
+
+def test_quote_reproduces_the_reinsurance_price_guide():
+    """docs/guides/reinsurance-price.md, sections 2, 3 and 8 (#197)."""
+    from prospicio.distributions import Grid, Pareto, Poisson
+    from prospicio.pricing import Quote, price
+    from prospicio.reinsurance import Layer, Tower
+    from prospicio.risk import Distortion
+
+    severity, _ = Grid.rounding(Pareto(1.0, 1.8), 0.1, round(20.0 / 0.1) + 1)
+    mid = Layer("5x5", limit=5.0, attachment=5.0, reinstatements=1)
+    annual = Tower([mid]).on_grid(Poisson(4.0), severity, 2**14).ceded[0]
+    p = price(annual, Distortion.tvar(0.99), cost_of_capital=0.10)
+    assert round(p.premium, 3) == 1.240
+    q = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=5.0)
+    assert round(q.premium, 3) == 1.425
+    assert (round(q.rate_on_line, 3), round(q.multiple, 2), round(q.loss_ratio, 3)) == (0.285, 2.43, 0.411)
+    assert q.return_on_capital == pytest.approx(0.10, abs=1e-12)
+    assert q.premium * 0.87 == pytest.approx(p.premium, abs=1e-12)
+    # The soft and hard market quotes of section 8.
+    assert round(q.at(0.22 * 5.0).return_on_capital, 3) == 0.054
+    assert round(q.at(0.34 * 5.0).return_on_capital, 3) == 0.142
+    with pytest.raises(ValueError):
+        Quote.technical(p, expenses=0.5, brokerage=0.5)
