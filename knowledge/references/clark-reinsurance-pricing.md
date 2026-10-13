@@ -5,7 +5,7 @@ description: The CAS study note behind prospicio_pricing::experience; its per-ri
 resource: https://www.casact.org/sites/default/files/2021-03/8_Clark.pdf
 tags: [pricing, reinsurance, experience-rating, burning-cost, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-13T12:00:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-13T11:20:00Z }
 sources:
   - id: clark
     resource: https://www.casact.org/sites/default/files/2021-03/8_Clark.pdf
