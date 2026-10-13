@@ -15,6 +15,9 @@ sources:
   - id: laplace
     resource: ../crates/prospicio-reserving/src/bayes/laplace.rs
     title: The posterior mode's Newton method
+  - id: py
+    resource: ../python/tests/test_reserving_bayes_segments.py
+    title: The Python binding tests of fit_segments
   - id: design
     resource: ../docs/design/reserving-bayes.md
     title: Design note, Bayesian reserving (decisions 3, 8 and 11)
@@ -56,6 +59,12 @@ release build.[^test]
   halving shrank the step until it no longer moved `theta`. Stopping when a
   full step lowers `f` by no more than `1e-12 |f|` fixes it; GenIns and
   RAA draws are unchanged bit for bit.[^laplace]
+* **Through the bindings** (Python `BayesOdp.fit_segments`, R
+  `bayes_odp_segments()`), comauto and wkcomp at the default chains pass
+  every diagnostic at seed 5, twin wkcomp lines' totals stay within
+  `4.5/sqrt(n_sims)` of uncorrelated and a 0.5 Spearman target is met
+  within 0.03 at 4,000 simulations; the nine Python tests take about 5 s
+  with a release build.[^py]
 * Runtime: the seed sweep takes about 6.4 s a seed in a release build
   (two twin fits, three rank-correlated fits, three backtests of three
   splits); the three CI tests take about 32 s in a debug build.[^test]

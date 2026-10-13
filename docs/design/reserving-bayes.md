@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2's Rust side is built on `claude/bayes-segments` (decisions 8 and 11: `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest; its bindings follow on the same branch). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 is built on `claude/bayes-segments` (decisions 8 and 11: `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -913,6 +913,38 @@ the sketch below, which is kept as proposed:
   `segment(...)` wait for PR 2 with the Rust side. R's `segment()` takes a
   `bayes_odp_fit` as it takes any single-segment fit without keys: with no
   condition it returns the fit, and a condition on a key is an error.
+* **Segments (PR 2).** `fit` and `bayes_odp()` stay single-segment, so
+  their seeds and results do not change; segments have their own entry
+  point, as in Rust, because segment `k` draws on other derived seeds.
+  Python `BayesOdp(..., dependence="independent", spearman=None)` (the
+  two new arguments last) with `fit_segments(triangle, column)` returning
+  `BayesOdpFits`: `chain_ladder`, `keys`, `index`, `origins`,
+  `development`, the joint `reserves` (dimensions the keys and `origin`),
+  `to_frame()`, `totals_frame()`, `development_frame()`,
+  `diagnostics_frame()` (one row per segment) and `segment(**keys)`, and,
+  for a single-segment fit only (an error naming `segment(...)`
+  otherwise, as `OdpBootstrapFit.scale`), `scale`, `diagnostics`,
+  `parameter_names`, `draws`, `chains`, `summary()` and `loo()`. R
+  `bayes_odp_segments(triangle, column = NULL, ..., dependence =
+  c("independent", "rank_correlation", "synchronized"), spearman = NULL)`
+  with `bayes_odp()`'s arguments in the same order, returning a
+  `bayes_odp_fits` whose `diagnostics` is a data.frame (one row per
+  segment, the warnings joined by `"; "`) and whose `scale`, `summary`,
+  `draws` and `bayes_loo()` need one segment; `as.data.frame()`,
+  `totals_frame()`, `development_frame()` and `segment()` work as for the
+  bootstraps. `"synchronized"` is accepted by the constructor, as the
+  bootstraps take it, and is the Rust `Error::Bayes` at the fit. Failed
+  diagnostics raise one warning that prefixes each message with its
+  segment's label. The diagonal backtest has no binding in either
+  language, so `TriangleModel for BayesOdp` stays Rust-only. Tests:
+  `python/tests/test_reserving_bayes_segments.py` and
+  `R/prospicio/tests/test-reserving-bayes-segments.R` fit comauto and
+  wkcomp from `clrd_lines.csv` with the default chains (no warning, the
+  frames, one segment's scale equal to `fit`'s and its posterior close),
+  twin lines' rank correlation within `4.5/√n_sims` of 0 and a rank
+  correlation of 0.5 within 0.03 at 4,000 simulations, replay by seed,
+  a warning that names both segments on 2 × 10 kept draws, and the errors
+  (dependence settings, `"synchronized"`, a missing column).
 * **Arguments.** Python `BayesOdp(intercept_sd=10, origin_sd=10,
   development_sd=10, process="gamma", chains=4, tune=1000, draws=1000,
   n_sims=10000, seed=0, target_accept=0.95, max_depth=10)` and R

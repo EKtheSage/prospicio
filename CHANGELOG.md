@@ -94,7 +94,11 @@ under "Unreleased" until then.
   `BayesOdp` implements `TriangleModel`, so `diagonal_backtest` scores it
   next to the ODP GLM, with log predictive densities for stacking. The
   posterior mode's Newton method now also stops at the rounding floor on
-  very large values (a line summed over companies).
+  very large values (a line summed over companies). In Python,
+  `BayesOdp(dependence=..., spearman=...).fit_segments()` returns a
+  `BayesOdpFits` (joint reserves, frames, `diagnostics_frame()`,
+  `segment(...)`); in R, `bayes_odp_segments()` returns a
+  `bayes_odp_fits`.
 
 ### Pricing
 

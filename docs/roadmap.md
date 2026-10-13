@@ -171,11 +171,11 @@ what it is aiming for by v1.0.
     Python (`Meyers`) and R (`meyers()`).
   - `BayesOdp` over segments (`fit_segments`, independent or rank
     correlated) and in the diagonal backtest (`reserving-bayes.md`, PR 2;
-    Rust built, bindings to follow).
+    `fit_segments` in Python (`BayesOdp.fit_segments`) and R
+    (`bayes_odp_segments()`).
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
-  1. PR 2's Python and R bindings (`fit_segments`, `dependence`).
-  2. PR 4: the Bayesian Bornhuetter–Ferguson.
+  1. PR 4: the Bayesian Bornhuetter–Ferguson.
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
