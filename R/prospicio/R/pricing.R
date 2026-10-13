@@ -1092,7 +1092,11 @@ implied_quote <- function(quote, premium) {
 #'   [development_pattern()], read at each loss's age at `valuation`, or a
 #'   factor per loss. Then give [burning_cost()] only the count IBNR
 #'   factors, not an excess factor that already holds IBNER.
-#' @returns A list with `losses` (the input columns with `year`,
+#' @param fx Converts the losses to the pricing currency before development
+#'   and trend: one stated rate, or a rate per loss (units of the pricing
+#'   currency per unit of the loss's). The threshold stays in the reported
+#'   currency.
+#' @returns A list with `losses` (the input columns with `year`, `fx`,
 #'   `development`, `ultimate`, `factor` and `trended`), `complete_above`,
 #'   and the inputs [burning_cost()] needs.
 #' @export
@@ -1102,7 +1106,7 @@ implied_quote <- function(quote, premium) {
 #' p <- trend_large_losses(losses, rate = 0.05, to = 1998.5)
 #' p$losses$trended
 trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, threshold = 0,
-                               valuation = NULL, development = NULL) {
+                               valuation = NULL, development = NULL, fx = NULL) {
   if (is.null(factors) == (is.null(rate) || is.null(to))) {
     stop("pass rate and to, or factors, but not both", call. = FALSE)
   }
@@ -1119,12 +1123,13 @@ trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, t
       double()
     } else {
       as.double(development)
-    }
+    },
+    fx = if (is.null(fx)) double() else as.double(fx)
   )
   r <- rust_result(do.call(pricing_trend_large_losses, args))
   list(
     losses = data.frame(id = r$id, year = r$year, accident = r$accident, amount = r$amount,
-                        development = r$development, ultimate = r$ultimate,
+                        fx = r$fx, development = r$development, ultimate = r$ultimate,
                         factor = r$factor, trended = r$trended),
     complete_above = r$complete_above,
     args = args
@@ -1151,6 +1156,13 @@ trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, t
 #'   [trend_large_losses()], the count IBNR factor only. A count
 #'   [development_pattern()] is read at each year's average age at the
 #'   record's valuation date.
+#' @param index An [index_clause()] on the treaty: each loss meets the
+#'   retention and limit moved by the clause at its own ratio in `ratios`.
+#'   Towers with annual terms (an aggregate deductible or limit, a corridor)
+#'   or a surplus treaty are an error.
+#' @param ratios With `index`, each loss's index ratio, in the record's
+#'   order: the index at its payment over the index at the treaty's base
+#'   date.
 #' @returns A list with `years`, a data frame (`year`, `premium`, `losses`
 #'   (the count through the tower), `development`), the year-by-layer
 #'   matrices `layer_loss`, `developed` and `year_loss_cost`, and per layer
@@ -1165,7 +1177,11 @@ trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, t
 #'                   development = c(1, 1.5))
 #' b$developed
 #' b$loss_cost
-burning_cost <- function(prepared, towers, years, premium, development) {
+burning_cost <- function(prepared, towers, years, premium, development, index = NULL,
+                         ratios = NULL) {
+  if (is.null(index) != is.null(ratios)) {
+    stop("pass index and ratios together, or neither", call. = FALSE)
+  }
   if (S7::S7_inherits(towers, reinsurance_tower)) towers <- rep(list(towers), length(years))
   if (inherits(development, "development_pattern")) {
     development <- rust_result(pricing_count_development(
@@ -1174,7 +1190,10 @@ burning_cost <- function(prepared, towers, years, premium, development) {
   }
   args <- c(prepared$args, list(
     towers = lapply(towers, function(t) t@ptr), years = as.integer(years),
-    premium = as.double(premium), development = as.double(development)
+    premium = as.double(premium), development = as.double(development),
+    index_franchise = if (is.null(index)) NaN else index$franchise,
+    index_kind = if (is.null(index)) "full" else index$kind,
+    ratios = if (is.null(ratios)) double() else as.double(ratios)
   ))
   r <- rust_result(do.call(pricing_burning_cost, args))
   n <- length(r$year)
@@ -1244,4 +1263,34 @@ development_pattern_from_history <- function(valuations, ages) {
 #' @export
 pattern_factor <- function(pattern, age) {
   rust_result(pricing_pattern_at(pattern$ages, pattern$factors, as.double(age)))
+}
+
+#' Index clause
+#'
+#' An index (stability) clause: the treaty's retention and limit move with
+#' an index, by the ratio `r` of the index at a loss's payment to the index
+#' at the treaty's base date, within a franchise. With `kind = "full"`,
+#' nothing moves while `|r - 1|` is within the franchise, and beyond it the
+#' terms move by all of `r`, up or down. With `kind = "severe"` (a severe
+#' inflation clause), the terms move only by the rise beyond the franchise,
+#' the ratio over `1 + franchise`, and never down. Use it in [burning_cost()].
+#'
+#' @param franchise A fraction, such as 0.1 for 10%.
+#' @param kind `"full"` or `"severe"`.
+#' @returns An `index_clause`: a list with `franchise` and `kind`.
+#' @export
+#' @examples
+#' losses <- data.frame(id = "a", accident = 2020.5, amount = 700)
+#' p <- trend_large_losses(losses, factors = 1)
+#' tw <- reinsurance_tower(list(xol_layer("400 xs 100", 400, 100)))
+#' # Index up 25%: 500 xs 125, so the loss cedes 500.
+#' burning_cost(p, tw, 2020, premium = 1000, development = 1,
+#'              index = index_clause(0.1), ratios = 1.25)$layer_loss
+index_clause <- function(franchise, kind = c("full", "severe")) {
+  kind <- match.arg(kind)
+  franchise <- as.double(franchise)
+  if (!(is.finite(franchise) && franchise >= 0)) {
+    stop("franchise must be finite and non-negative", call. = FALSE)
+  }
+  structure(list(franchise = franchise, kind = kind), class = "index_clause")
 }

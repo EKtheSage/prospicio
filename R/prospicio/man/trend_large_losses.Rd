@@ -11,7 +11,8 @@ trend_large_losses(
   factors = NULL,
   threshold = 0,
   valuation = NULL,
-  development = NULL
+  development = NULL,
+  fx = NULL
 )
 }
 \arguments{
@@ -35,9 +36,14 @@ needed to develop by a \code{\link[=development_pattern]{development_pattern()}}
 \code{\link[=development_pattern]{development_pattern()}}, read at each loss's age at \code{valuation}, or a
 factor per loss. Then give \code{\link[=burning_cost]{burning_cost()}} only the count IBNR
 factors, not an excess factor that already holds IBNER.}
+
+\item{fx}{Converts the losses to the pricing currency before development
+and trend: one stated rate, or a rate per loss (units of the pricing
+currency per unit of the loss's). The threshold stays in the reported
+currency.}
 }
 \value{
-A list with \code{losses} (the input columns with \code{year},
+A list with \code{losses} (the input columns with \code{year}, \code{fx},
 \code{development}, \code{ultimate}, \code{factor} and \code{trended}), \code{complete_above},
 and the inputs \code{\link[=burning_cost]{burning_cost()}} needs.
 }

@@ -122,6 +122,7 @@ reference:
       - trend_large_losses
       - burning_cost
       - development_pattern
+      - index_clause
       - pentagon
       - premium_bounds
       - pricing_bounds

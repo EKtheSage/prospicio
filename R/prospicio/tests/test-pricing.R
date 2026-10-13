@@ -255,3 +255,24 @@ bd <- burning_cost(pd, reinsurance_tower(list(xol_layer("x", 1000, 100))), c(202
 stopifnot(identical(bd$years$losses, c(0L, 1L)), abs(bd$developed[2, 1] - 240) < 1e-12)
 stopifnot(abs(trend_large_losses(ll, factors = c(1, 1), development = c(1, 1.1))$losses$ultimate[2]
               - 165) < 1e-12)
+
+# An index clause moves each loss's terms; losses in another currency (#190).
+ip <- trend_large_losses(data.frame(id = c("a", "b"), accident = c(2020.2, 2020.6),
+                                    amount = c(700, 300)), factors = c(1, 1))
+itw <- reinsurance_tower(list(xol_layer("400 xs 100", 400, 100)))
+ib <- burning_cost(ip, itw, 2020, premium = 1000, development = 1,
+                   index = index_clause(0.1), ratios = c(1.25, 1.05))
+stopifnot(abs(ib$layer_loss[1, 1] - 700) < 1e-12,
+          identical(burning_cost(ip, itw, 2020, premium = 1000, development = 1,
+                                 index = index_clause(0.1, "severe"), ratios = c(1, 1))$loss_cost,
+                    burning_cost(ip, itw, 2020, premium = 1000, development = 1)$loss_cost))
+stopifnot(inherits(try(burning_cost(ip, itw, 2020, premium = 1000, development = 1,
+                                    index = index_clause(0.1)), silent = TRUE), "try-error"))
+annual <- reinsurance_tower(list(xol_layer("x", 400, 100, aggregate_limit = 800)))
+stopifnot(inherits(try(burning_cost(ip, annual, 2020, premium = 1000, development = 1,
+                                    index = index_clause(0.1), ratios = c(1, 1)), silent = TRUE),
+                   "try-error"))
+fxp <- trend_large_losses(data.frame(id = c("a", "b"), accident = c(2020.5, 2020.5),
+                                     amount = c(90, 120)), factors = c(1, 1), threshold = 100,
+                          fx = c(2, 0.5))
+stopifnot(identical(fxp$losses$trended, c(180, 60)), identical(fxp$losses$fx, c(2, 0.5)))
