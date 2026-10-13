@@ -7,8 +7,8 @@
 bayes_loo(model)
 }
 \arguments{
-\item{model}{A \link{bayes_glm_model}, a \link{bayes_odp_fit} for the PSIS-LOO of
-its observed increments, or a \link{meyers_fit} for that of its observed
+\item{model}{A \link{bayes_glm_model}, a \link{bayes_odp_fit} or \link{bayes_bf_fit} for
+the PSIS-LOO of its observed increments, or a \link{meyers_fit} for that of its observed
 cells on the log scale.}
 }
 \value{
