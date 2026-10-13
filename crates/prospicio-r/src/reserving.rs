@@ -913,9 +913,10 @@ impl Triangle {
     /// single-segment triangle column with the premium of each origin from
     /// the `premium` column: normal priors on `logelr` (mean `logelr_mean`,
     /// sd `logelr_sd`), the origin and development effects and `gamma`, a
-    /// beta prior with both shapes `rho_shape` on `(1 - rho) / 2`, NUTS with `chains`, `tune` and `draws` per chain, `target_accept`
-    /// and `max_depth`, and `n_sims` predictive simulations, all replayed
-    /// from `seed`.
+    /// beta prior with both shapes `rho_shape` on `(1 - rho) / 2`, NUTS with
+    /// `chains`, `tune` and `draws` per chain, `target_accept` and
+    /// `max_depth`, and `n_sims` predictive simulations, all replayed from
+    /// `seed`.
     #[allow(clippy::too_many_arguments)]
     fn meyers(
         &self,

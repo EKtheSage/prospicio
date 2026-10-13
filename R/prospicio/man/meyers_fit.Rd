@@ -100,7 +100,8 @@ normal around 0, \code{gamma} normal around 0 with sd \code{gamma_sd},
 The ultimate is the value at the oldest age (no tail): each posterior
 draw gives each open origin a log-normal ultimate; an origin observed at
 the oldest age keeps its value; under \code{"cay"} the ultimates are drawn
-origin by origin, each from the previous origin's simulated residual.
+origin by origin, each from the previous origin's residual at the oldest
+age, observed for a closed origin and simulated otherwise.
 The reserve is the ultimate less the latest value of the fitted column
 (an outstanding reserve on paid data, IBNR on incurred data) and can be
 negative. Every observed cell must be positive, and under \code{"cay"} every

@@ -1830,7 +1830,8 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #' The ultimate is the value at the oldest age (no tail): each posterior
 #' draw gives each open origin a log-normal ultimate; an origin observed at
 #' the oldest age keeps its value; under `"cay"` the ultimates are drawn
-#' origin by origin, each from the previous origin's simulated residual.
+#' origin by origin, each from the previous origin's residual at the oldest
+#' age, observed for a closed origin and simulated otherwise.
 #' The reserve is the ultimate less the latest value of the fitted column
 #' (an outstanding reserve on paid data, IBNR on incurred data) and can be
 #' negative. Every observed cell must be positive, and under `"cay"` every
@@ -1961,7 +1962,8 @@ meyers_fit <- S7::new_class(
 #' @export
 meyers <- function(triangle, column, premium, model = c("crc", "csr", "cay"),
                    logelr_mean = -0.4, logelr_sd = 3.162, origin_sd = 3.162,
-                   development_sd = 3.162, gamma_sd = 0.05, rho_shape = 2, chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
+                   development_sd = 3.162, gamma_sd = 0.05, rho_shape = 2,
+                   chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
                    target_accept = 0.95, max_depth = 10) {
   check_triangle(triangle)
   for (arg in c("column", "premium")) {
@@ -1975,7 +1977,8 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr", "cay"),
     column, premium, model, single_number(logelr_mean, "logelr_mean"),
     single_number(logelr_sd, "logelr_sd"), single_number(origin_sd, "origin_sd"),
     single_number(development_sd, "development_sd"), single_number(gamma_sd, "gamma_sd"),
-    single_number(rho_shape, "rho_shape"), single_number(chains, "chains"), single_number(tune, "tune"), single_number(draws, "draws"),
+    single_number(rho_shape, "rho_shape"), single_number(chains, "chains"),
+    single_number(tune, "tune"), single_number(draws, "draws"),
     single_number(n_sims, "n_sims"), single_number(seed, "seed"),
     single_number(target_accept, "target_accept"), single_number(max_depth, "max_depth")))
   fit <- meyers_fit(ptr = ptr)
