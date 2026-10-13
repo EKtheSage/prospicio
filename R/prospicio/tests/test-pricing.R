@@ -203,3 +203,12 @@ gp <- risk_loaded_price(grid_distribution(2, c(0.5, 0.25, 0, 0.25)), distortion(
                         cost_of_capital = 0.1)
 sp <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.6), cost_of_capital = 0.1)
 stopifnot(abs(gp$premium - sp$premium) < 1e-12, abs(gp$assets - sp$assets) < 1e-12)
+
+# A quote grosses the risk premium up, and a quoted premium reads back (#197).
+p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5), cost_of_capital = 0.1)
+q <- technical_quote(p, expenses = 0.03, brokerage = 0.10, limit = 10)
+stopifnot(abs(q$premium * 0.87 - p$premium) < 1e-12, abs(q$return_on_capital - 0.1) < 1e-12,
+          abs(q$rate_on_line - q$premium / 10) < 1e-15,
+          abs(implied_quote(q, q$premium)$risk_premium - p$premium) < 1e-12,
+          implied_quote(q, 3)$return_on_capital > 0.1,
+          is.nan(technical_quote(p)$rate_on_line))

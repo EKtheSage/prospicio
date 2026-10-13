@@ -36,6 +36,7 @@ pub mod exposure;
 pub mod layer;
 pub mod natural;
 pub mod profile;
+pub mod quote;
 pub mod ratemaking;
 pub mod risk_load;
 pub mod tower;

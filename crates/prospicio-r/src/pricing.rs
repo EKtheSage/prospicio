@@ -13,6 +13,7 @@ use prospicio_pricing::layer::XsLayer;
 use prospicio_pricing::natural::{
     Allocation, Pentagon, Portfolio as NaturalInner, Quantity, Target,
 };
+use prospicio_pricing::quote::{Loads, Quote};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
 
@@ -924,8 +925,53 @@ fn distortion_envelope_rust(x: Robj, premium: f64, s: &[f64], assets: f64) -> Re
     Ok(list!(lower = lower, upper = upper))
 }
 
+/// A quote: the technical premium of a risk-loaded price (`premium` NaN),
+/// or the same cover at a quoted `premium`. `limit` NaN for none.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_quote(
+    expected_loss: f64,
+    risk_premium: f64,
+    assets: f64,
+    expenses: f64,
+    brokerage: f64,
+    fixed: f64,
+    limit: f64,
+    premium: f64,
+) -> Result<List> {
+    let price = Price {
+        expected_loss,
+        premium: risk_premium,
+        assets,
+    };
+    let loads = Loads::new(expenses, brokerage, fixed).map_err(to_r)?;
+    let limit = (!limit.is_nan()).then_some(limit);
+    let mut q = Quote::technical(&price, loads, limit).map_err(to_r)?;
+    if !premium.is_nan() {
+        q = q.at(premium).map_err(to_r)?;
+    }
+    let na = |x: Option<f64>| x.unwrap_or(f64::NAN);
+    Ok(list!(
+        expected_loss = q.expected_loss,
+        margin = q.margin(),
+        risk_premium = q.risk_premium,
+        expenses = q.expenses(),
+        brokerage = q.brokerage(),
+        premium = q.premium,
+        net_premium = q.net_premium(),
+        assets = q.assets,
+        capital = q.capital(),
+        return_on_capital = q.return_on_capital(),
+        loss_ratio = q.loss_ratio(),
+        multiple = q.multiple(),
+        rate_on_line = na(q.rate_on_line()),
+        payback = na(q.payback())
+    ))
+}
+
 extendr_module! {
     mod pricing;
+    fn pricing_quote;
     fn pricing_bounds_rust;
     fn distortion_envelope_rust;
     impl NaturalPortfolio;

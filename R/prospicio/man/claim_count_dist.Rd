@@ -84,7 +84,7 @@ Variance \verb{mean + mean^2 cv^2}.
 \item \code{fixed_count()}: \code{N = n}; \code{bernoulli_count()}: one claim with
 probability \code{p} in \verb{[0, 1)}; \code{geometric_count()}: \code{P(N = k) = q (1 - q)^k}
 on \verb{0, 1, ...} with \code{q = 1 / (1 + mean)}, a negative binomial with
-\code{r = 1} (\code{aggregate}'s \code{fixed}, \code{bernoulli} and \code{geometric}).
+shape 1 (\code{aggregate}'s \code{fixed}, \code{bernoulli} and \code{geometric}).
 }
 
 Every aggregation function takes them. Zero-modified and logarithmic

@@ -735,7 +735,7 @@ blend_predictive <- function(models, weights, seed) {
 #' - `fixed_count()`: `N = n`; `bernoulli_count()`: one claim with
 #'   probability `p` in `[0, 1)`; `geometric_count()`: `P(N = k) = q (1 - q)^k`
 #'   on `0, 1, ...` with `q = 1 / (1 + mean)`, a negative binomial with
-#'   `r = 1` (`aggregate`'s `fixed`, `bernoulli` and `geometric`).
+#'   shape 1 (`aggregate`'s `fixed`, `bernoulli` and `geometric`).
 #'
 #' Every aggregation function takes them. Zero-modified and logarithmic
 #' counts work with Panjer's recursion; the others need `method = "fft"`.

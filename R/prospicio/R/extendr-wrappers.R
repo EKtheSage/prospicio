@@ -104,6 +104,8 @@ claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_par
 
 pricing_severity_exposure_curve <- function(severity, mpl, x) .Call(wrap__pricing_severity_exposure_curve, severity, mpl, x)
 
+pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium) .Call(wrap__pricing_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium)
+
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)

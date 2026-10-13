@@ -99,6 +99,12 @@ under "Unreleased" until then.
 - Risk-loaded prices on a grid at any capital standard,
   `risk_load::price_grid`: Python `prospicio.pricing.price` and R
   `risk_loaded_price()` take a grid, such as a layer's exact annual loss (#210).
+- A cover's quote, `prospicio_pricing::quote::Quote`: the technical
+  premium from a risk-loaded price grossed up for internal expenses,
+  brokerage and a fixed expense, with the rate on line, payback, multiple
+  and loss ratio, and `Quote::at` for what a quoted premium gives the
+  reinsurer (its return on capital). Python `prospicio.pricing.Quote`; R
+  `technical_quote()`, `implied_quote()` (#222).
 
 ### Examples
 
