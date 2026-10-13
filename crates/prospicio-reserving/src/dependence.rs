@@ -123,6 +123,7 @@ impl SegmentDependence {
     /// simulation: a [`RankCorrelation`](Self::RankCorrelation) matrix must
     /// be `n_segments × n_segments`, symmetric with a unit diagonal, and
     /// positive definite after the map to normal scores.
+    #[cfg_attr(not(feature = "bayes"), allow(dead_code))] // only the Bayesian fits call it
     pub(crate) fn validate(&self, n_segments: usize) -> Result<()> {
         match self {
             Self::RankCorrelation { spearman } => normal_scores(spearman, n_segments).map(|_| ()),
