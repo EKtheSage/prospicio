@@ -166,6 +166,7 @@ reference:
       - pricing.severity_exposure_curve
       - pricing.Portfolio
       - pricing.NaturalPrice
+      - pricing.StandAlone
       - pricing.Pentagon
       - pricing.classical_premium
       - pricing.calibrate_classical

@@ -696,6 +696,11 @@ fn counts_match_aggregate() {
             "neyman" => {
                 Box::new(CompoundPoisson::new(v("lambda"), Poisson::new(v("theta")).ok()?).ok()?)
             }
+            "fixed" => Box::new(prospicio_prob::count_families::EmpiricalCount::fixed(
+                v("n") as u64,
+            )),
+            "bernoulli" => Box::new(prospicio_prob::Binomial::bernoulli(v("p")).ok()?),
+            "geometric" => Box::new(prospicio_prob::NegativeBinomial::geometric(v("mean")).ok()?),
             _ => return None,
         };
         Some(n.pmf(k))

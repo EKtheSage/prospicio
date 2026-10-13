@@ -58,6 +58,16 @@ Tolerances follow what each value is computed from:
   from the top differ by as much). `L` is a mean, `1e-9`.
 - the densities: `1e-13` absolute.
 
+The expected reinstatement premium (`reinstatement_premium`, books `RI2`
+and `RI10`): 500 xs 100 at a 20% rate on line (deposit 100) on the
+lognormal book at 2 and at 10 claims, with one reinstatement at 100% and
+with two at 100% and 50%. aggregate prices reinstatements only inside its
+P&L builders; the reference applies its own `ReinstatementTerms`
+(`contract_terms.py`, pro rata as to amount, not as to time) to its
+unlimited annual occurrence recovery, `reins_density_df`'s
+`p_agg_ceded_occ` on the book without the clause: `E[h(R)]`, at `1e-10`
+relative.
+
 A layer placed at a share below 1 (book `S`'s `layer.1`) is compared on its
 means and grid probabilities only: `aggregate` maps the shared losses onto
 the grid, which splits a ceded 0.5 between 0 and 1 and so lowers `pr_loss`
@@ -71,6 +81,7 @@ import warnings
 
 import aggregate
 from aggregate import Distortion, build
+from aggregate.contract_terms import ReinstatementTerms
 
 OUT = "validation/reference/reinsurance_aggregate.csv"
 SOURCE = f"aggregate {aggregate.__version__}"
@@ -206,6 +217,19 @@ def main():
             for view, col in cols.items():
                 for x in DENSITY_POINTS:
                     add(f"density_{view}", x, df.loc[x, col], (1e-13, 0.0))
+
+    for lam in (2, 10):
+        a = build(f"agg RI{lam} {lam} claims 1000 xs 0 sev lognorm 100 cv 2 "
+                  "occurrence net of 500 xs 100 poisson", bs=1, log2=14, normalize=False)
+        rd = a.reins_density_df
+        x, p = rd.index.to_numpy(), rd["p_agg_ceded_occ"].to_numpy()
+        for rates in ((1.0,), (1.0, 0.5)):
+            terms = ReinstatementTerms(limit=500.0, rates=rates, deposit=100.0)
+            params = (f"lambda={lam};severity=lognormal;mean=100;cv=2;cap=1000;occ=1:500:100;"
+                      f"rol=0.2;rates={'+'.join(map(str, rates))}")
+            rows.append([f"RI{lam}", params, "reinstatement_premium", "",
+                         repr(float((p * terms.reinstatement_premium(x)).sum())), 0.0, 1e-10,
+                         SOURCE])
 
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")

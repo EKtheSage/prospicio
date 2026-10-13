@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-13T01:24:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-13T07:30:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -43,6 +43,9 @@ sources:
   - id: bounds
     resource: ../validation/scripts/aggregate_bounds.py
     title: aggregate_bounds.py
+  - id: counts
+    resource: ../validation/scripts/aggregate_counts.py
+    title: aggregate_counts.py
 ---
 
 # Which source for what
@@ -318,6 +321,43 @@ sources:
 * `GridDistribution` lives in `aggregate._grid_distribution`, not the
   package root.[^bounds]
 
+# TVaR thresholds and named counts
+
+* `tvar_threshold(p, kind)` (on `GridDistribution`, and `Portfolio`
+  through its total) bisects `TVaR(t) − VaR(p)` on `[0, 1]` with scipy's
+  `bisect` (`xtol = 2e-12`, so 0.859375 comes back as 0.859375000001819).
+  It raises when the VaR is at or below the mean (no sign change; at
+  `p = 0` it returns 0) and returns 1 when the VaR is the largest value,
+  where every `t` past the last value's cumulative start
+  qualifies.[^natural]
+* Its grid TVaR is the coherent `(1/(1 − p)) ∫_p^1 VaR_u du`, returning the
+  largest point once `p` reaches the last point's cumulative
+  start.[^natural]
+* `fixed` is `N = n` with pgf `zⁿ` (meaningless for a fractional `n`);
+  `bernoulli` reads the mean `n < 1` as the chance of one claim;
+  `geometric` is on `0, 1, …` with `P(N = 0) = 1 / (1 + n)`, a negative
+  binomial with `r = 1`.[^counts]
+
+# Stand-alone prices, the comonotonic allocation, reinstatements
+
+* `Portfolio.price_stand_alone(dist, p)` prices each unit with
+  `Aggregate.price(p, dist)`: assets at the unit's own `q(p)`, `L` and `P`
+  read from `density_df`'s `exa` and `exag` there; `total` comes from
+  `pricing_at`, and `sum` adds `L, M, P, Q` and re-derives the
+  ratios.[^natural]
+* `make_comonotonic_allocations` runs Denuit et al.'s (2025) algorithm on
+  every grid point up to `q(1)`, including points with zero probability,
+  where `exeqa_` is 0 and the result shows odd values (−2.15 for X1 at a
+  total of 7 in the three-unit Discrete case). Run on the positive-mass
+  totals only, the values there are the same to 3e-14.[^natural]
+* Reinstatement premiums are priced only inside the P&L builders
+  (`_pnl_builders.build_reinstatement_source`), from
+  `ReinstatementTerms` (pro rata as to amount, not as to time) on the
+  unlimited occurrence recovery; a DecL build without `pnl` leaves no
+  `reinstatement_terms` on the object, and `reins_stats_df` ignores the
+  clause. `E[h(R)]` on `reins_density_df`'s `p_agg_ceded_occ` gives the
+  expected reinstatement premium.[^reins]
+
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
@@ -326,3 +366,4 @@ sources:
 [^ruin]: aggregate_ruin.py
 [^picks]: aggregate_picks.py
 [^bounds]: aggregate_bounds.py
+[^counts]: aggregate_counts.py

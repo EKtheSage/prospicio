@@ -519,6 +519,24 @@ fn reinsurance_statistics_and_prices_match_aggregate() {
         };
 
         let q = c.get("quantity");
+        if q == "reinstatement_premium" {
+            // The deposit is the rate on line times the limit; each
+            // reinstatement is charged at its rate times the deposit.
+            let [_, limit, attach] = occ[0];
+            let rates: Vec<f64> = text("rates")?
+                .split('+')
+                .map(|r| r.parse().unwrap())
+                .collect();
+            let layer = Layer::xol("ri", limit, attach)
+                .ok()?
+                .paid_reinstatements(v("rol") * limit, rates)
+                .ok()?;
+            let grids = Tower::new(vec![layer])
+                .ok()?
+                .on_grid(&*n, &sev, 1 << 14)
+                .ok()?;
+            return Some(grids.expected_reinstatement_premium[0]);
+        }
         if let Some((col, stat)) = q.split_once(':') {
             if let Some(i) = col.strip_prefix("layer.") {
                 let [share, limit, attach] = occ[i.parse::<usize>().ok()? - 1];

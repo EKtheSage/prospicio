@@ -527,6 +527,13 @@ impl Portfolio {
         Ok(self.max())
     }
 
+    /// The level whose tail value at risk of the total is its value at risk
+    /// at `p`, `aggregate`'s `Portfolio.tvar_threshold(p, 'lower')`; see
+    /// [`prospicio_prob::risk::tvar_threshold`].
+    pub fn tvar_threshold(&self, p: f64) -> Result<f64> {
+        prospicio_prob::risk::tvar_threshold(&self.x, &self.p, p)
+    }
+
     /// The number of totals at or below `a`.
     fn count_at_or_below(&self, a: f64) -> usize {
         self.x.partition_point(|&x| x <= a)
@@ -697,6 +704,183 @@ impl Portfolio {
             equal,
             junior,
             total,
+        })
+    }
+
+    /// Each unit's comonotonic allocation, a non-decreasing function of the
+    /// total `f̃ᵢ(x)` at each of [`totals`](Self::totals), by Denuit et
+    /// al.'s convex-order improvement of the conditional mean risk sharing
+    /// `κᵢ` (Denuit, Dhaene, Ghossoub and Robert, "Comonotonicity and
+    /// Pareto optimality, with application to collaborative insurance",
+    /// *Insurance: Mathematics and Economics* 120, 2025, Theorem 3.1).
+    /// `aggregate`'s `make_comonotonic_allocations`, ported step for step:
+    /// sweeping up the totals, each unit whose allocation falls is
+    /// flattened back to the probability-weighted mean of the run it must
+    /// pool with, and what it gives up goes to the units that rose, in
+    /// proportion to their rise. The result depends on that order, so it
+    /// is kept. The allocations still add up to the total; each is
+    /// non-decreasing in it.
+    ///
+    /// ```
+    /// use prospicio_pricing::natural::Portfolio;
+    ///
+    /// // B's share falls as the total rises from 4 to 6.
+    /// let rows = [[0.0, 0.0], [1.0, 3.0], [6.0, 0.0], [7.0, 3.0]];
+    /// let rows: Vec<Vec<f64>> = rows.iter().map(|r| r.to_vec()).collect();
+    /// let port = Portfolio::from_rows(vec!["A".into(), "B".into()], &rows, None).unwrap();
+    /// let f = port.comonotonic_kappa();
+    /// for k in 0..port.totals().len() {
+    ///     assert!((f[0][k] + f[1][k] - port.totals()[k]).abs() < 1e-12);
+    ///     if k > 0 {
+    ///         assert!(f[0][k] >= f[0][k - 1] && f[1][k] >= f[1][k - 1]);
+    ///     }
+    /// }
+    /// ```
+    pub fn comonotonic_kappa(&self) -> Vec<Vec<f64>> {
+        let (n, m) = (self.x.len(), self.units.len());
+        let mut kt: Vec<Vec<f64>> = (0..m).map(|i| self.kappa(i)).collect();
+        let pdf = &self.p;
+        for k in 1..n {
+            let diffs: Vec<f64> = (0..m).map(|i| kt[i][k] - kt[i][k - 1]).collect();
+            let violators: Vec<usize> = (0..m).filter(|&i| diffs[i] < 0.0).collect();
+            if violators.is_empty() {
+                continue;
+            }
+            let rising: Vec<usize> = (0..m).filter(|&i| diffs[i] >= 0.0).collect();
+            for &i in &violators {
+                // Scan back for the run to pool with: the integral average
+                // must not lie below the value before it.
+                let mut p = k as isize - 1;
+                let mut mass = pdf[k];
+                let mut weighted = kt[i][k] * mass;
+                while p >= 0 && {
+                    let avg = if mass > 0.0 {
+                        weighted / mass
+                    } else {
+                        kt[i][k]
+                    };
+                    kt[i][p as usize] > avg
+                } {
+                    weighted += kt[i][p as usize] * pdf[p as usize];
+                    mass += pdf[p as usize];
+                    p -= 1;
+                }
+                let start = (p + 1) as usize;
+                let lambda = if mass > 0.0 {
+                    weighted / mass
+                } else {
+                    kt[i][k]
+                };
+                let delta: Vec<f64> = (start..=k).map(|j| kt[i][j] - lambda).collect();
+                kt[i][start..=k].fill(lambda);
+                if !rising.is_empty() {
+                    let total: f64 = rising.iter().map(|&j| diffs[j]).sum();
+                    for &j in &rising {
+                        let alpha = if total > 0.0 {
+                            diffs[j] / total
+                        } else {
+                            1.0 / rising.len() as f64
+                        };
+                        for (d, v) in delta.iter().zip(&mut kt[j][start..=k]) {
+                            *v += d * alpha;
+                        }
+                    }
+                }
+            }
+        }
+        kt
+    }
+
+    /// Each unit's loss distribution on its own: its distinct losses,
+    /// ascending, and their probabilities.
+    fn marginal(&self, i: usize) -> (Vec<f64>, Vec<f64>) {
+        let mut pts: Vec<(f64, f64)> = match &self.joint {
+            Joint::Rows { losses, w } => {
+                let m = self.units.len();
+                losses
+                    .chunks_exact(m)
+                    .map(|r| r[i])
+                    .zip(w.iter().copied())
+                    .collect()
+            }
+            Joint::Independent { grids, .. } => {
+                let g = &grids[i];
+                (0..g.len())
+                    .map(|j| (g.x(j), g.probs()[j]))
+                    .filter(|&(_, w)| w > 0.0)
+                    .collect()
+            }
+        };
+        pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let (mut x, mut w): (Vec<f64>, Vec<f64>) = (Vec::new(), Vec::new());
+        for (xi, wi) in pts {
+            if x.last() == Some(&xi) {
+                *w.last_mut().unwrap() += wi;
+            } else {
+                x.push(xi);
+                w.push(wi);
+            }
+        }
+        (x, w)
+    }
+
+    /// Each unit priced as if it were the whole book, against the book
+    /// priced together, `aggregate`'s `Portfolio.price_stand_alone`. A unit
+    /// alone holds assets at its own lower `p` quantile, `aᵢ = VaR_p(Xᵢ)`,
+    /// and its premium is `ρ_g(Xᵢ ∧ aᵢ)` with expected loss `E[Xᵢ ∧ aᵢ]`;
+    /// the book holds `a = VaR_p(X)` and is priced as
+    /// [`price`](Self::price) prices it. `sum` adds the stand-alone loss,
+    /// premium and assets; its excess over `total` is the diversification
+    /// benefit.
+    ///
+    /// ```
+    /// use prospicio_pricing::natural::Portfolio;
+    /// use prospicio_prob::Distortion;
+    ///
+    /// let rows = [[0.0, 0.0], [1.0, 4.0], [4.0, 1.0], [5.0, 5.0]];
+    /// let rows: Vec<Vec<f64>> = rows.iter().map(|r| r.to_vec()).collect();
+    /// let port = Portfolio::from_rows(vec!["a".into(), "b".into()], &rows, None).unwrap();
+    /// let s = port.price_stand_alone(&Distortion::proportional_hazard(0.5).unwrap(), 0.75).unwrap();
+    /// // Alone, each unit needs its own 75% VaR, 4; together the book needs 5.
+    /// assert_eq!((s.stand_alone[0].assets, s.stand_alone[1].assets), (4.0, 4.0));
+    /// assert_eq!(s.total.assets, 5.0);
+    /// assert!(s.sum.assets >= s.total.assets);
+    /// ```
+    pub fn price_stand_alone(&self, g: &Distortion, p: f64) -> Result<StandAlone> {
+        if !(p > 0.0 && p < 1.0) {
+            return Err(Error::InvalidParameter {
+                name: "p",
+                value: p,
+                reason: "must be in (0, 1)",
+            });
+        }
+        let at = |port: &Portfolio| -> Result<Pentagon> {
+            let a = port.assets(p)?;
+            if a > 0.0 {
+                Ok(port.price(g, a, Allocation::Linear)?.total)
+            } else {
+                Ok(Pentagon::new(0.0, 0.0, 0.0))
+            }
+        };
+        let stand_alone = (0..self.units.len())
+            .map(|i| {
+                let (x, w) = self.marginal(i);
+                let rows: Vec<Vec<f64>> = x.iter().map(|&v| vec![v]).collect();
+                at(&Portfolio::from_rows(
+                    vec![self.units[i].clone()],
+                    &rows,
+                    Some(&w),
+                )?)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let total = at(self)?;
+        let add = |f: fn(&Pentagon) -> f64| stand_alone.iter().map(f).sum::<f64>();
+        let sum = Pentagon::new(add(|t| t.loss), add(|t| t.premium), add(|t| t.assets));
+        Ok(StandAlone {
+            units: self.units.clone(),
+            stand_alone,
+            total,
+            sum,
         })
     }
 
@@ -1091,6 +1275,20 @@ fn convolve(a: &[f64], b: &[f64]) -> Vec<f64> {
     let mut prod: Vec<Complex64> = pad(a).iter().zip(&pad(b)).map(|(x, y)| x * y).collect();
     planner.plan_fft_inverse(len).process(&mut prod);
     prod.iter().take(out).map(|c| c.re / len as f64).collect()
+}
+
+/// Each unit priced alone, the book priced together and the sum of the
+/// parts, from [`Portfolio::price_stand_alone`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct StandAlone {
+    /// Unit names.
+    pub units: Vec<String>,
+    /// Each unit as if it were the whole book, at its own VaR.
+    pub stand_alone: Vec<Pentagon>,
+    /// The book, at the VaR of its total.
+    pub total: Pentagon,
+    /// The stand-alone loss, premium and assets added up.
+    pub sum: Pentagon,
 }
 
 /// A priority rule for [`Priority`].

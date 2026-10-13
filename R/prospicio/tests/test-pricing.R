@@ -186,3 +186,14 @@ stopifnot(abs(pricing_bounds(xb, list(X3 = yb), 65, assets = 65)$upper - 64) < 1
 env <- distortion_envelope(xb, 53.565217391304344, c(0.1, 0.5))
 stopifnot(max(abs(env$lower - c(0.1372282608695652, 0.5652173913043478))) < 1e-12)
 stopifnot(inherits(try(pricing_bounds(xb, list(yb), 50), silent = TRUE), "try-error"))
+
+# tvar_threshold on PIR's Discrete case, aggregate 1.0.1.
+stopifnot(abs(tvar_threshold(disc, 0.9) - 0.859375) < 1e-11)
+# Stand-alone prices and the comonotonic allocation, aggregate 1.0.1.
+sa <- price_stand_alone(disc, distortion("proportional_hazard", 0.7), p = 0.9)
+stopifnot(identical(sa$unit, c("X1", "X2", "total", "sum")),
+          all(abs(sa$premium[c(1, 3, 4)] - c(5.682435936634864, 39.27576430346102,
+                                              40.02270174816368)) < 1e-10))
+co <- comonotonic_allocation(disc)
+stopifnot(abs(co$X1[co$total == 8] - 6.607142857142858) < 1e-10,
+          max(abs(co$X1 + co$X2 - co$total)) < 1e-12)

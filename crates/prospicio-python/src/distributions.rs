@@ -999,6 +999,53 @@ impl PyGrid {
         self.inner.quantile(p).map_err(to_py)
     }
 
+    /// Tail value at risk at ``p``: the mean of the worst ``1 - p`` of the
+    /// distribution, the point at the VaR counted with its mass above
+    /// ``p``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``p`` is outside ``[0, 1]``.
+    fn tvar(&self, p: f64) -> PyResult<f64> {
+        self.inner.tvar(p).map_err(to_py)
+    }
+
+    /// The level ``t`` with ``TVaR(t) = VaR(p)`` (the lower VaR), as
+    /// ``aggregate``'s ``tvar_threshold``; ``t <= p``, and ``p = 0`` gives 0.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``p`` is outside ``[0, 1]``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Grid
+    /// >>> g = Grid(1.0, [0.4, 0.3, 0.2, 0.1])
+    /// >>> t = g.tvar_threshold(0.85)
+    /// >>> round(g.tvar(t), 12) == g.quantile(0.85)
+    /// True
+    fn tvar_threshold(&self, p: f64) -> PyResult<f64> {
+        self.inner.tvar_threshold(p).map_err(to_py)
+    }
+
     /// Limited expected value ``E[min(X, limit)]``, exact on the grid.
     ///
     /// Parameters

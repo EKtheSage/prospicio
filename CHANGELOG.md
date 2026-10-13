@@ -13,6 +13,16 @@ under "Unreleased" until then.
   no closed form, infinite where the moment diverges) and
   `Counting::third_moment()` with `Counting::third_cumulant()`, for
   compound moments to third order (#183).
+- `aggregate`'s named counts: `EmpiricalCount::fixed`,
+  `Binomial::bernoulli` and `NegativeBinomial::geometric`; Python
+  `Count.fixed`, `Count.bernoulli`, `Count.geometric`; R `fixed_count()`,
+  `bernoulli_count()`, `geometric_count()` (#202).
+- TVaR of a grid and `tvar_threshold`, the level at which TVaR reaches the
+  VaR at `p` (`aggregate`'s `tvar_threshold`): `Grid::tvar`,
+  `Grid::tvar_threshold`, `natural::Portfolio::tvar_threshold`,
+  `risk::{var_weighted, tvar_weighted, tvar_threshold}`. Python
+  `Grid.tvar`, `Grid.tvar_threshold`, `Portfolio.tvar_threshold`; R
+  `TVaR()` on a `grid_distribution` and `tvar_threshold()` (#202).
 
 ### Aggregate and reinsurance
 
@@ -71,6 +81,13 @@ under "Unreleased" until then.
   `aggregate_layer_statistics`; R `tower_on_grid()`'s `stage_ceded`,
   `tower_price()`'s `stage_<k>` rows, `occurrence_cession_statistics()`,
   `aggregate_layer_statistics()` (#201).
+- Each unit priced alone against the book priced together,
+  `aggregate`'s `Portfolio.price_stand_alone`
+  (`natural::Portfolio::price_stand_alone`), and Denuit et al.'s (2025)
+  comonotonic allocation, `make_comonotonic_allocations`
+  (`natural::Portfolio::comonotonic_kappa`). Python
+  `Portfolio.price_stand_alone` (`StandAlone`), `Portfolio.comonotonic_kappa`;
+  R `price_stand_alone()`, `comonotonic_allocation()` (#202).
 
 ### Examples
 
