@@ -84,8 +84,8 @@ what it is aiming for by v1.0.
   - `PredictiveDistribution`: join, reorder, blend, Arrow IPC; provenance
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
-  - Risk measures and distortions, copulas (Gaussian, t, Archimedean),
-    Iman–Conover, capital allocation (Euler, covariance, Shapley and
+  - Risk measures and distortions, copulas (Gaussian, t, Archimedean)
+    with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
 - **Next:**
   1. Nested Archimedean and vine copulas (`docs/design/risk.md`).
