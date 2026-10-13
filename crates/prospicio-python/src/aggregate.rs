@@ -1582,3 +1582,401 @@ impl PyEventLossTable {
         )
     }
 }
+
+/// A joint distribution of two losses on a grid, ``P(A = i * step_a, B = j
+/// * step_b)``: rows are line A and columns line B. The mass past the last
+/// row or column is carried on it.
+///
+/// Parameters
+/// ----------
+/// steps : tuple of (float, float)
+/// probs : list of list of float
+///     One row per point of A, one column per point of B, summing to 1.
+#[pyclass(name = "JointGrid", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyJointGrid {
+    inner: prospicio_aggregate::JointGrid,
+}
+
+#[pymethods]
+impl PyJointGrid {
+    #[new]
+    fn new(steps: (f64, f64), probs: Vec<Vec<f64>>) -> PyResult<Self> {
+        let cols = probs.first().map_or(0, Vec::len);
+        if probs.iter().any(|r| r.len() != cols) {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "every row of probs must have the same length",
+            ));
+        }
+        let shape = [probs.len(), cols];
+        let flat = probs.into_iter().flatten().collect();
+        let inner =
+            prospicio_aggregate::JointGrid::new([steps.0, steps.1], shape, flat).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The joint law of two independent losses.
+    ///
+    /// Parameters
+    /// ----------
+    /// a, b : Grid
+    ///
+    /// Returns
+    /// -------
+    /// JointGrid
+    #[staticmethod]
+    fn independent(a: PyRef<'_, PyGrid>, b: PyRef<'_, PyGrid>) -> Self {
+        Self {
+            inner: prospicio_aggregate::JointGrid::independent(&a.inner, &b.inner),
+        }
+    }
+
+    /// The step on each axis.
+    #[getter]
+    fn steps(&self) -> (f64, f64) {
+        let [a, b] = self.inner.steps();
+        (a, b)
+    }
+
+    /// The number of rows (line A) and columns (line B).
+    #[getter]
+    fn shape(&self) -> (usize, usize) {
+        let [a, b] = self.inner.shape();
+        (a, b)
+    }
+
+    /// The probabilities, one list per row.
+    #[getter]
+    fn probs(&self) -> Vec<Vec<f64>> {
+        let cols = self.inner.shape()[1];
+        self.inner
+            .probs()
+            .chunks(cols)
+            .map(<[f64]>::to_vec)
+            .collect()
+    }
+
+    /// ``P(A = i * step_a, B = j * step_b)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// i, j : int
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn prob(&self, i: usize, j: usize) -> PyResult<f64> {
+        let [rows, cols] = self.inner.shape();
+        if i >= rows || j >= cols {
+            return Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "cell ({i}, {j}) is outside a {rows} x {cols} grid"
+            )));
+        }
+        Ok(self.inner.prob(i, j))
+    }
+
+    /// The marginal distribution of line A (``axis=0``) or B (``axis=1``).
+    ///
+    /// Parameters
+    /// ----------
+    /// axis : int
+    ///
+    /// Returns
+    /// -------
+    /// Grid
+    fn marginal(&self, axis: usize) -> PyResult<PyGrid> {
+        Ok(PyGrid {
+            inner: self.inner.marginal(axis).map_err(to_py)?,
+        })
+    }
+
+    /// The distribution of the total ``A + B``: exact when the steps are
+    /// equal, otherwise on the larger step with each cell's mass split to
+    /// keep the mean.
+    ///
+    /// Returns
+    /// -------
+    /// Grid
+    fn total(&self) -> PyResult<PyGrid> {
+        Ok(PyGrid {
+            inner: self.inner.total().map_err(to_py)?,
+        })
+    }
+
+    /// The raw mixed moment ``E[A^p B^q]``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p, q : int
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn moment(&self, p: u32, q: u32) -> f64 {
+        self.inner.moment(p, q)
+    }
+
+    /// The mean of line A (``axis=0``) or B (``axis=1``).
+    fn mean(&self, axis: usize) -> PyResult<f64> {
+        check_axis(axis)?;
+        Ok(self.inner.mean(axis))
+    }
+
+    /// The variance of line A (``axis=0``) or B (``axis=1``).
+    fn variance(&self, axis: usize) -> PyResult<f64> {
+        check_axis(axis)?;
+        Ok(self.inner.variance(axis))
+    }
+
+    /// ``Cov(A, B)``.
+    fn covariance(&self) -> f64 {
+        self.inner.covariance()
+    }
+
+    /// Pearson's correlation of ``A`` and ``B``; NaN if either is constant.
+    fn correlation(&self) -> f64 {
+        self.inner.correlation()
+    }
+
+    fn __repr__(&self) -> String {
+        let [a, b] = self.inner.steps();
+        let [r, c] = self.inner.shape();
+        format!("JointGrid(steps=({a}, {b}), shape=({r}, {c}))")
+    }
+}
+
+fn check_axis(axis: usize) -> PyResult<()> {
+    if axis > 1 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "axis must be 0 or 1, not {axis}"
+        )));
+    }
+    Ok(())
+}
+
+/// What ``fft_bivariate`` produced and the error it introduced.
+#[pyclass(name = "BivariateReport", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyBivariateReport {
+    inner: prospicio_aggregate::BivariateReport,
+}
+
+#[pymethods]
+impl PyBivariateReport {
+    /// Points on each axis.
+    #[getter]
+    fn points(&self) -> (usize, usize) {
+        (self.inner.points[0], self.inner.points[1])
+    }
+
+    /// The mass past the last row and past the last column, carried on them.
+    #[getter]
+    fn tail_mass(&self) -> (f64, f64) {
+        (self.inner.tail_mass[0], self.inner.tail_mass[1])
+    }
+
+    /// On each axis, the mass past the end of the FFT buffer, which wraps
+    /// around; their sum bounds the probability misplaced. Request more
+    /// points when it is not negligible.
+    #[getter]
+    fn aliasing_mass(&self) -> (f64, f64) {
+        (self.inner.aliasing_mass[0], self.inner.aliasing_mass[1])
+    }
+
+    /// ``E[N] E[X]`` and ``E[N] E[Y]``: the means before truncation.
+    #[getter]
+    fn expected_means(&self) -> (f64, f64) {
+        (self.inner.expected_means[0], self.inner.expected_means[1])
+    }
+
+    /// The means of the result.
+    #[getter]
+    fn grid_means(&self) -> (f64, f64) {
+        (self.inner.grid_means[0], self.inner.grid_means[1])
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "BivariateReport(points={:?}, tail_mass={:?}, aliasing_mass={:?})",
+            self.inner.points, self.inner.tail_mass, self.inner.aliasing_mass
+        )
+    }
+}
+
+/// The joint annual loss to two lines hit by the same events, by a 2-D FFT:
+/// ``(A, B) = sum over N events of (X_k, Y_k)``, with ``severity`` the joint
+/// law of one event's pair of losses (mass at 0 on an axis is an event that
+/// misses that line).
+///
+/// Parameters
+/// ----------
+/// frequency : Poisson, NegativeBinomial, Binomial or Count
+///     The shared count of events.
+/// severity : JointGrid
+/// points : tuple of (int, int)
+///     Points on each axis of the result.
+///
+/// Returns
+/// -------
+/// tuple of (JointGrid, BivariateReport)
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import JointGrid, fft_bivariate
+/// >>> from prospicio.distributions import Grid, Poisson
+/// >>> a = Grid(1.0, [0.0, 0.6, 0.4])
+/// >>> b = Grid(1.0, [0.5, 0.5])
+/// >>> joint, report = fft_bivariate(Poisson(2.0), JointGrid.independent(a, b), (64, 64))
+/// >>> round(joint.covariance(), 9)  # Var(N) E[X] E[Y]
+/// 1.4
+#[pyfunction]
+pub(crate) fn fft_bivariate(
+    py: Python<'_>,
+    frequency: &Bound<'_, PyAny>,
+    severity: PyRef<'_, PyJointGrid>,
+    points: (usize, usize),
+) -> PyResult<(PyJointGrid, PyBivariateReport)> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = severity.inner.clone();
+    let (inner, report) = py
+        .detach(|| prospicio_aggregate::fft_bivariate(n.as_counting(), &sev, [points.0, points.1]))
+        .map_err(to_py)?;
+    Ok((PyJointGrid { inner }, PyBivariateReport { inner: report }))
+}
+
+/// Two lines hit by the same events, each line independently within an
+/// event: ``aggregate``'s ``clash``.
+///
+/// Given the expected events a year hitting line A only, line B only and
+/// both (the clash count), independence within an event fixes those hitting
+/// neither, ``only_a * only_b / both``. Each event hits A with probability
+/// ``trigger_a`` and B with ``trigger_b``; the dependence between the lines
+/// comes only from the shared count.
+///
+/// Parameters
+/// ----------
+/// only_a, only_b : float
+///     Expected events a year hitting one line only, non-negative.
+/// both : float
+///     Expected events a year hitting both lines, positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import Clash
+/// >>> from prospicio.distributions import Grid, Poisson
+/// >>> clash = Clash(2.0, 3.0, 1.0)
+/// >>> clash.events, clash.trigger_a
+/// (12.0, 0.25)
+/// >>> a = Grid(1.0, [0.0, 0.5, 0.5])
+/// >>> b = Grid(1.0, [0.0, 1.0])
+/// >>> joint, report = clash.aggregate(Poisson(clash.events), a, b, (128, 128))
+/// >>> round(joint.covariance(), 9)  # Poisson: both * E[X] * E[Y]
+/// 1.5
+#[pyclass(name = "Clash", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyClash {
+    inner: prospicio_aggregate::Clash,
+}
+
+#[pymethods]
+impl PyClash {
+    #[new]
+    fn new(only_a: f64, only_b: f64, both: f64) -> PyResult<Self> {
+        let inner = prospicio_aggregate::Clash::new(only_a, only_b, both).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Expected events a year hitting line A only.
+    #[getter]
+    fn only_a(&self) -> f64 {
+        self.inner.only_a()
+    }
+
+    /// Expected events a year hitting line B only.
+    #[getter]
+    fn only_b(&self) -> f64 {
+        self.inner.only_b()
+    }
+
+    /// Expected events a year hitting both lines: the clash count.
+    #[getter]
+    fn both(&self) -> f64 {
+        self.inner.both()
+    }
+
+    /// Expected events a year hitting neither line.
+    #[getter]
+    fn neither(&self) -> f64 {
+        self.inner.neither()
+    }
+
+    /// Expected events a year: the mean of the shared count.
+    #[getter]
+    fn events(&self) -> f64 {
+        self.inner.events()
+    }
+
+    /// The probability that an event hits line A.
+    #[getter]
+    fn trigger_a(&self) -> f64 {
+        self.inner.trigger_a()
+    }
+
+    /// The probability that an event hits line B.
+    #[getter]
+    fn trigger_b(&self) -> f64 {
+        self.inner.trigger_b()
+    }
+
+    /// The joint per-event severity: ``a`` with probability ``trigger_a``
+    /// on line A and ``b`` with ``trigger_b`` on line B, independently.
+    ///
+    /// Parameters
+    /// ----------
+    /// a, b : Grid
+    ///     The loss to each line given that the event hits it.
+    ///
+    /// Returns
+    /// -------
+    /// JointGrid
+    fn severity(&self, a: PyRef<'_, PyGrid>, b: PyRef<'_, PyGrid>) -> PyResult<PyJointGrid> {
+        Ok(PyJointGrid {
+            inner: self.inner.severity(&a.inner, &b.inner).map_err(to_py)?,
+        })
+    }
+
+    /// The joint annual loss to the two lines by ``fft_bivariate``.
+    ///
+    /// Parameters
+    /// ----------
+    /// frequency : Poisson, NegativeBinomial, Binomial or Count
+    ///     The shared count; its mean must be ``events``.
+    /// a, b : Grid
+    ///     The loss to each line given that the event hits it.
+    /// points : tuple of (int, int)
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (JointGrid, BivariateReport)
+    fn aggregate(
+        &self,
+        py: Python<'_>,
+        frequency: &Bound<'_, PyAny>,
+        a: PyRef<'_, PyGrid>,
+        b: PyRef<'_, PyGrid>,
+        points: (usize, usize),
+    ) -> PyResult<(PyJointGrid, PyBivariateReport)> {
+        let n = AnyCount::extract(frequency)?;
+        let (a, b, clash) = (a.inner.clone(), b.inner.clone(), self.inner);
+        let (inner, report) = py
+            .detach(|| clash.aggregate(n.as_counting(), &a, &b, [points.0, points.1]))
+            .map_err(to_py)?;
+        Ok((PyJointGrid { inner }, PyBivariateReport { inner: report }))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Clash(only_a={}, only_b={}, both={})",
+            self.inner.only_a(),
+            self.inner.only_b(),
+            self.inner.both()
+        )
+    }
+}
