@@ -10544,6 +10544,167 @@ class Pareto:
         """
 
 @final
+class PaymentPattern:
+    """
+    The share of the ultimate loss paid at each time, in years from the
+    treaty's inception.
+    
+    With a pattern that does not depend on the size of the loss, every
+    simulated year's present value is its loss times ``discount_factor``, so
+    a loss distribution is discounted by scaling it.
+    
+    Parameters
+    ----------
+    times : list of float
+        Non-negative, strictly increasing times, in years from inception.
+    shares : list of float
+        The share paid at each time; they sum to 1.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import PaymentPattern
+    >>> p = PaymentPattern.from_development([1.0, 2.0, 3.0], [4.0, 1.25, 1.0])
+    >>> [round(s, 12) for s in p.shares]
+    [0.25, 0.55, 0.2]
+    >>> round(p.duration, 12), round(p.discount_factor(0.05), 6)
+    (1.95, 0.909729)
+    """
+    def __new__(cls, /, times: Sequence[float], shares: Sequence[float]) -> PaymentPattern: ...
+    def __repr__(self, /) -> str: ...
+    def capital_years(self, /, rate: float) -> float:
+        """
+        The discounted capital years per unit of initial capital: capital
+        held in each year in proportion to the share outstanding at its
+        start, charged at the start of the year.
+        
+        Parameters
+        ----------
+        rate : float
+        
+        Returns
+        -------
+        float
+        """
+    def discount_factor(self, /, rate: float) -> float:
+        """
+        The present value at inception of a unit of ultimate loss, at an
+        annual effective ``rate``.
+        
+        Parameters
+        ----------
+        rate : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def duration(self, /) -> float:
+        """
+        The mean time to payment, undiscounted.
+        """
+    @staticmethod
+    def from_development(ages: Sequence[float], factors: Sequence[float]) -> PaymentPattern:
+        """
+        From development factors to ultimate by age, such as a paid chain
+        ladder's ``cdf``: the share paid by each age is one over its factor.
+        
+        The last factor must be 1 (add any tail as a last age). Ages are read
+        as times from inception; ``shifted`` moves the pattern when losses
+        start developing later.
+        
+        Parameters
+        ----------
+        ages : list of float
+        factors : list of float
+        
+        Returns
+        -------
+        PaymentPattern
+        """
+    def outstanding(self, /, t: float) -> float:
+        """
+        The share not yet paid at time ``t``.
+        
+        Parameters
+        ----------
+        t : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def shares(self, /) -> list[float]:
+        """
+        The share paid at each time.
+        """
+    def shifted(self, /, by: float) -> PaymentPattern:
+        """
+        The pattern ``by`` years later.
+        
+        Parameters
+        ----------
+        by : float
+        
+        Returns
+        -------
+        PaymentPattern
+        """
+    @property
+    def times(self, /) -> list[float]:
+        """
+        The times.
+        """
+
+@final
+class PayoutPrice:
+    """
+    A price restated over a payout, from ``price_over_payout``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def assets(self, /) -> float:
+        """
+        Assets, the one-year risk measure.
+        """
+    @property
+    def capital(self, /) -> float:
+        """
+        Initial capital, assets less premium.
+        """
+    @property
+    def capital_years(self, /) -> float:
+        """
+        The discounted capital years (1 for a distortion price).
+        """
+    @property
+    def discount_factor(self, /) -> float:
+        """
+        The losses' discount factor.
+        """
+    @property
+    def discounted_loss(self, /) -> float:
+        """
+        Expected loss discounted to inception.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        Expected loss, undiscounted.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        Margin over the discounted loss.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        Premium at inception.
+        """
+
+@final
 class Pentagon:
     """
     Loss, margin, premium, capital and assets, with ``P = L + M`` and
@@ -16310,6 +16471,44 @@ def price(losses: Any, assets: Distortion, *, cost_of_capital: float |None = Non
     >>> g = price(Grid(2.0, [0.5, 0.25, 0.0, 0.25]), Distortion.tvar(0.5), cost_of_capital=0.25)
     >>> round(g.premium, 12)
     2.4
+    """
+
+def price_over_payout(price: Price, pattern: PaymentPattern, *, rate: float = 0.0, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PayoutPrice:
+    """
+    A one-period price restated over a payout.
+    
+    With a cost of capital ``r``, the premium solves
+    ``P = E[X] d + r (a - P) A``: the loss discounted by the pattern's
+    ``discount_factor`` ``d``, plus the cost of the initial capital held while
+    losses are outstanding over ``A = capital_years``. With a pricing
+    distortion, the premium is discounted with the losses. Give the same rule
+    the price was made with. A pattern that pays everything within the first
+    year, at a zero rate, gives back the one-period price.
+    
+    Parameters
+    ----------
+    price : Price
+        The one-period price, from ``price``.
+    pattern : PaymentPattern
+    rate : float, default 0.0
+        Annual effective discount rate.
+    cost_of_capital : float, optional
+    distortion : Distortion, optional
+    
+    Returns
+    -------
+    PayoutPrice
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.pricing import PaymentPattern, price, price_over_payout
+    >>> from prospicio.risk import Distortion
+    >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
+    >>> slow = PaymentPattern([1.0, 2.0, 3.0], [0.2, 0.3, 0.5])
+    >>> q = price_over_payout(p, slow, rate=0.0, cost_of_capital=0.25)
+    >>> round(q.capital_years, 12), round(q.premium, 6)
+    (2.3, 2.730159)
     """
 
 def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> PortfolioPrice:

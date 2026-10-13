@@ -289,3 +289,19 @@ stopifnot(identical(ai$years$reported_losses, c(2L, 1L)),
           identical(unname(ai$historical[["2019"]]), 180),
           identical(ai$historical[["2020"]], c(QS = 250, `200 xs 100` = 150)),
           max(abs(ai$proposed["2020", ] - c(200, 150))) < 1e-12)
+
+# Payment patterns and a price over the payout (#195).
+pp <- payment_pattern(c(1, 2, 3, 4), rep(0.25, 4))
+v <- 1 / 1.05
+pv <- pattern_values(pp, rate = 0.05, t = 1)
+stopifnot(abs(pv$discount_factor - (1 - v^4) / 0.05 / 4) < 1e-14, pv$outstanding == 0.75,
+          abs(pv$capital_years - (1 + 0.75 * v + 0.5 * v^2 + 0.25 * v^3)) < 1e-14,
+          pp$duration == 2.5)
+p1 <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5), cost_of_capital = 0.25)
+same <- price_over_payout(p1, payment_pattern(0.5, 1), cost_of_capital = 0.25)
+slow <- price_over_payout(p1, pp, rate = 0.05, cost_of_capital = 0.25)
+stopifnot(abs(same$premium - p1$premium) < 1e-14,
+          abs(slow$premium - (slow$discounted_loss + 0.25 * slow$capital * slow$capital_years))
+          < 1e-12,
+          inherits(try(payment_pattern_from_development(c(1, 2), c(2, 1.1)), silent = TRUE),
+                   "try-error"))

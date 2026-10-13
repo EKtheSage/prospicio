@@ -21,6 +21,7 @@ mod experience;
 mod models;
 mod natural;
 mod pareto;
+mod payout;
 mod pricing;
 mod ratemaking;
 mod reinsurance;
@@ -75,6 +76,8 @@ mod prospicio_native {
         PyPiecewisePareto, PyTruncated, PyTweedie, PyWeibull, claim_count,
         local_pareto_to_piecewise,
     };
+    #[pymodule_export]
+    use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
     #[pymodule_export]
     use super::pricing::{
         PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,
