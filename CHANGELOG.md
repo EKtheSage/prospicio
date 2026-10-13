@@ -137,6 +137,24 @@ under "Unreleased" until then.
   posterior summary, the long tables, PSIS-LOO (`MeyersFit.loo()`, R's
   `bayes_loo()`), and failed diagnostics raised as a Python `UserWarning`
   or an R `warning()`.
+- `BayesOdp` over segments and in the diagonal backtest
+  (`docs/design/reserving-bayes.md`, PR 2): `BayesOdp::fit_segments`
+  fits each segment's own posterior into a joint `BayesOdpFits`, with
+  `SegmentDependence::Independent` (each segment on its own derived
+  seeds) or `RankCorrelation` (Iman–Conover, as in the bootstraps);
+  `Synchronized` is an error, since a posterior has no residuals to share.
+  A bad `RankCorrelation` matrix (the wrong size for the segments, not
+  symmetric, or not positive definite after `2 sin(pi rho / 6)`) fails
+  before any sampling; the bootstraps now also report a matrix that is not
+  positive definite as `InvalidSetting`.
+  `BayesOdp` implements `TriangleModel`, so `diagonal_backtest` scores it
+  next to the ODP GLM, with log predictive densities for stacking. The
+  posterior mode's Newton method now also stops at the rounding floor on
+  very large values (a line summed over companies). In Python,
+  `BayesOdp(dependence=..., spearman=...).fit_segments()` returns a
+  `BayesOdpFits` (joint reserves, frames, `diagnostics_frame()`,
+  `segment(...)`); in R, `bayes_odp_segments()` returns a
+  `bayes_odp_fits`.
 
 ### Pricing
 

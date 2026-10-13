@@ -7,9 +7,9 @@
 bayes_loo(model)
 }
 \arguments{
-\item{model}{A \link{bayes_glm_model}, a \link{bayes_odp_fit} for the PSIS-LOO of
-its observed increments, or a \link{meyers_fit} for that of its observed
-cells on the log scale.}
+\item{model}{A \link{bayes_glm_model}, a \link{bayes_odp_fit} (or a single-segment
+\link{bayes_odp_fits}) for the PSIS-LOO of its observed increments, or a
+\link{meyers_fit} for that of its observed cells on the log scale.}
 }
 \value{
 As \code{\link[=elpd_loo]{elpd_loo()}}.
