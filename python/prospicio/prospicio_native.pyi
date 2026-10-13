@@ -6322,6 +6322,58 @@ class HierarchicalStacking:
         """
 
 @final
+class IndexClause:
+    """
+    An index (stability) clause: the treaty's retention and limit move with
+    an index, by the ratio ``r`` of the index at a loss's payment to the
+    index at the treaty's base date, within a franchise.
+    
+    With ``kind="full"``, nothing moves while ``|r - 1|`` is within the
+    franchise, and beyond it the terms move by all of ``r``, up or down.
+    With ``kind="severe"`` (a severe inflation clause), the terms move only
+    by the rise beyond the franchise, ``r / (1 + franchise)``, and never
+    down.
+    
+    Parameters
+    ----------
+    franchise : float
+        A fraction, such as 0.1 for 10%.
+    kind : {"full", "severe"}, default "full"
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import IndexClause
+    >>> IndexClause(0.1).adjustment(1.25)
+    1.25
+    >>> round(IndexClause(0.1, kind="severe").adjustment(1.21), 12)
+    1.1
+    """
+    def __new__(cls, /, franchise: float, kind: str = "full") -> IndexClause: ...
+    def __repr__(self, /) -> str: ...
+    def adjustment(self, /, ratio: float) -> float:
+        """
+        The factor the terms move by at index ratio ``ratio``.
+        
+        Parameters
+        ----------
+        ratio : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def franchise(self, /) -> float:
+        """
+        The franchise.
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        ``"full"`` or ``"severe"``.
+        """
+
+@final
 class InverseGamma:
     """
     Inverse gamma distribution with shape ``alpha`` and scale ``theta``:
@@ -6738,6 +6790,11 @@ class LargeLossExperience:
     valuation : float, optional
         The date the amounts were valued at, a decimal year; needed to
         develop the losses by a ``DevelopmentPattern`` at their ages.
+    fx : float or list of float, optional
+        Converts the losses to the pricing currency before development and
+        trend: a stated rate, or a rate per loss (units of the pricing
+        currency per unit of the loss's). The threshold stays in the
+        reported currency.
     
     Examples
     --------
@@ -6753,7 +6810,7 @@ class LargeLossExperience:
     0.175
     """
     def __len__(self, /) -> int: ...
-    def __new__(cls, /, ids: Sequence[str], accident: Sequence[float], amount: Sequence[float], *, threshold: float = 0.0, valuation: float |None = None) -> LargeLossExperience: ...
+    def __new__(cls, /, ids: Sequence[str], accident: Sequence[float], amount: Sequence[float], *, threshold: float = 0.0, valuation: float |None = None, fx: Any |None = None) -> LargeLossExperience: ...
     def __repr__(self, /) -> str: ...
     def prepare(self, /, *, rate: float |None = None, to: float |None = None, factors: Sequence[float] |None = None, development: Any |None = None) -> PreparedLosses:
         """
@@ -11705,7 +11762,7 @@ class PreparedLosses:
     """
     def __len__(self, /) -> int: ...
     def __repr__(self, /) -> str: ...
-    def burning_cost(self, /, towers: Any, years: Sequence[int], *, premium: Sequence[float], development: Any) -> BurningCost:
+    def burning_cost(self, /, towers: Any, years: Sequence[int], *, premium: Sequence[float], development: Any, index: IndexClause |None = None, ratios: Sequence[float] |None = None) -> BurningCost:
         """
         The as-if loss to each layer by accident year, developed and divided
         by the premium.
@@ -11727,6 +11784,14 @@ class PreparedLosses:
             ``prepare``, the count IBNR factor only. A count
             ``DevelopmentPattern`` is read at each year's average age at the
             record's valuation date.
+        index : IndexClause, optional
+            An index clause on the treaty: each loss meets the retention and
+            limit moved by the clause at its own ratio in ``ratios``. Towers
+            with annual terms (an aggregate deductible or limit, a corridor)
+            or a surplus treaty are an error.
+        ratios : list of float, optional
+            With ``index``, each loss's index ratio, in the record's order:
+            the index at its payment over the index at the treaty's base date.
         
         Returns
         -------
@@ -11741,7 +11806,7 @@ class PreparedLosses:
     def to_dict(self, /) -> dict:
         """
         The trended losses as columns: ``id``, ``year``, ``accident``,
-        ``amount``, ``development``, ``ultimate``, ``factor`` and
+        ``amount``, ``fx``, ``development``, ``ultimate``, ``factor`` and
         ``trended``.
         
         Returns

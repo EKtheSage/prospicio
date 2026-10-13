@@ -4,8 +4,8 @@
 
 use prospicio_aggregate::Tower;
 use prospicio_pricing::experience::{
-    BurningCost, ClaimValuation, Development, DevelopmentPattern, Experience, LargeLoss, Prepared,
-    Trend, YearBasis,
+    BurningCost, ClaimValuation, Development, DevelopmentPattern, Experience, Fx, IndexClause,
+    IndexKind, LargeLoss, Prepared, Trend, YearBasis,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -36,6 +36,11 @@ use crate::to_py;
 /// valuation : float, optional
 ///     The date the amounts were valued at, a decimal year; needed to
 ///     develop the losses by a ``DevelopmentPattern`` at their ages.
+/// fx : float or list of float, optional
+///     Converts the losses to the pricing currency before development and
+///     trend: a stated rate, or a rate per loss (units of the pricing
+///     currency per unit of the loss's). The threshold stays in the
+///     reported currency.
 ///
 /// Examples
 /// --------
@@ -57,13 +62,14 @@ pub(crate) struct PyLargeLossExperience {
 #[pymethods]
 impl PyLargeLossExperience {
     #[new]
-    #[pyo3(signature = (ids, accident, amount, *, threshold = 0.0, valuation = None))]
+    #[pyo3(signature = (ids, accident, amount, *, threshold = 0.0, valuation = None, fx = None))]
     fn new(
         ids: Vec<String>,
         accident: Vec<f64>,
         amount: Vec<f64>,
         threshold: f64,
         valuation: Option<f64>,
+        fx: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         if ids.len() != accident.len() || ids.len() != amount.len() {
             return Err(PyValueError::new_err(format!(
@@ -88,6 +94,17 @@ impl PyLargeLossExperience {
             .map_err(to_py)?;
         if let Some(v) = valuation {
             inner = inner.with_valuation(v).map_err(to_py)?;
+        }
+        if let Some(fx) = fx {
+            let fx =
+                if let Ok(r) = fx.extract::<f64>() {
+                    Fx::Rate(r)
+                } else {
+                    Fx::PerLoss(fx.extract::<Vec<f64>>().map_err(|_| {
+                        PyTypeError::new_err("fx must be a float or a list of floats")
+                    })?)
+                };
+            inner = inner.with_fx(fx).map_err(to_py)?;
         }
         Ok(Self { inner })
     }
@@ -217,17 +234,28 @@ impl PyPreparedLosses {
     ///     ``prepare``, the count IBNR factor only. A count
     ///     ``DevelopmentPattern`` is read at each year's average age at the
     ///     record's valuation date.
+    /// index : IndexClause, optional
+    ///     An index clause on the treaty: each loss meets the retention and
+    ///     limit moved by the clause at its own ratio in ``ratios``. Towers
+    ///     with annual terms (an aggregate deductible or limit, a corridor)
+    ///     or a surplus treaty are an error.
+    /// ratios : list of float, optional
+    ///     With ``index``, each loss's index ratio, in the record's order:
+    ///     the index at its payment over the index at the treaty's base date.
     ///
     /// Returns
     /// -------
     /// BurningCost
-    #[pyo3(signature = (towers, years, *, premium, development))]
+    #[pyo3(signature = (towers, years, *, premium, development, index = None, ratios = None))]
+    #[allow(clippy::too_many_arguments)]
     fn burning_cost(
         &self,
         towers: &Bound<'_, PyAny>,
         years: Vec<i32>,
         premium: Vec<f64>,
         development: &Bound<'_, PyAny>,
+        index: Option<PyRef<'_, PyIndexClause>>,
+        ratios: Option<Vec<f64>>,
     ) -> PyResult<PyBurningCost> {
         let development: Vec<f64> = if let Ok(p) = development.cast::<PyDevelopmentPattern>() {
             let valuation = self.inner.valuation().ok_or_else(|| {
@@ -275,8 +303,20 @@ impl PyPreparedLosses {
                 development,
             })
             .collect();
+        let inner = match (index, ratios) {
+            (None, None) => self.inner.burning_cost(&towers, &basis),
+            (Some(clause), Some(ratios)) => {
+                self.inner
+                    .burning_cost_indexed(&towers, &basis, &clause.inner, &ratios)
+            }
+            _ => {
+                return Err(PyTypeError::new_err(
+                    "pass index and ratios together, or neither",
+                ));
+            }
+        };
         Ok(PyBurningCost {
-            inner: self.inner.burning_cost(&towers, &basis).map_err(to_py)?,
+            inner: inner.map_err(to_py)?,
         })
     }
 
@@ -287,7 +327,7 @@ impl PyPreparedLosses {
     }
 
     /// The trended losses as columns: ``id``, ``year``, ``accident``,
-    /// ``amount``, ``development``, ``ultimate``, ``factor`` and
+    /// ``amount``, ``fx``, ``development``, ``ultimate``, ``factor`` and
     /// ``trended``.
     ///
     /// Returns
@@ -300,6 +340,7 @@ impl PyPreparedLosses {
         d.set_item("year", l.iter().map(|x| x.year).collect::<Vec<_>>())?;
         d.set_item("accident", l.iter().map(|x| x.accident).collect::<Vec<_>>())?;
         d.set_item("amount", l.iter().map(|x| x.amount).collect::<Vec<_>>())?;
+        d.set_item("fx", l.iter().map(|x| x.fx).collect::<Vec<_>>())?;
         d.set_item(
             "development",
             l.iter().map(|x| x.development).collect::<Vec<_>>(),
@@ -519,6 +560,90 @@ impl PyDevelopmentPattern {
             "DevelopmentPattern(ages={:?}, factors={:?})",
             self.inner.ages(),
             self.inner.factors()
+        )
+    }
+}
+
+/// An index (stability) clause: the treaty's retention and limit move with
+/// an index, by the ratio ``r`` of the index at a loss's payment to the
+/// index at the treaty's base date, within a franchise.
+///
+/// With ``kind="full"``, nothing moves while ``|r - 1|`` is within the
+/// franchise, and beyond it the terms move by all of ``r``, up or down.
+/// With ``kind="severe"`` (a severe inflation clause), the terms move only
+/// by the rise beyond the franchise, ``r / (1 + franchise)``, and never
+/// down.
+///
+/// Parameters
+/// ----------
+/// franchise : float
+///     A fraction, such as 0.1 for 10%.
+/// kind : {"full", "severe"}, default "full"
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import IndexClause
+/// >>> IndexClause(0.1).adjustment(1.25)
+/// 1.25
+/// >>> round(IndexClause(0.1, kind="severe").adjustment(1.21), 12)
+/// 1.1
+#[pyclass(name = "IndexClause", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyIndexClause {
+    inner: IndexClause,
+}
+
+#[pymethods]
+impl PyIndexClause {
+    #[new]
+    #[pyo3(signature = (franchise, kind = "full"))]
+    fn new(franchise: f64, kind: &str) -> PyResult<Self> {
+        let kind = match kind {
+            "full" => IndexKind::Full,
+            "severe" => IndexKind::Severe,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "kind must be \"full\" or \"severe\", not {other:?}"
+                )));
+            }
+        };
+        Ok(Self {
+            inner: IndexClause::new(franchise, kind).map_err(to_py)?,
+        })
+    }
+
+    /// The franchise.
+    #[getter]
+    fn franchise(&self) -> f64 {
+        self.inner.franchise()
+    }
+
+    /// ``"full"`` or ``"severe"``.
+    #[getter]
+    fn kind(&self) -> &'static str {
+        match self.inner.kind() {
+            IndexKind::Full => "full",
+            IndexKind::Severe => "severe",
+        }
+    }
+
+    /// The factor the terms move by at index ratio ``ratio``.
+    ///
+    /// Parameters
+    /// ----------
+    /// ratio : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn adjustment(&self, ratio: f64) -> f64 {
+        self.inner.adjustment(ratio)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "IndexClause(franchise={}, kind={:?})",
+            self.inner.franchise(),
+            self.kind()
         )
     }
 }
