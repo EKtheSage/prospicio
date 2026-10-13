@@ -299,3 +299,19 @@ qs <- with_ceding_commission(with_deposit_premium(quota_share("QS", 0.4), 100), 
 r <- tower_on_annual_grid(reinsurance_tower(list(qs)), grid_distribution(1, probs))
 stopifnot(abs(mean(r$ceded[["QS"]]) - 26) < 1e-12, abs(r$expected_ceding_commission[["QS"]] - 12) < 1e-12,
           abs(mean(r$net) - 39) < 1e-12)
+
+# An event loss table against its analytic OEP (#196).
+elt <- event_loss_table(rate = c(0.01, 0.04, 0.2), mean = c(10000, 3000, 800),
+                        sd_independent = c(0, 0, 0), sd_correlated = c(0, 0, 0),
+                        exposure = c(10000, 3000, 800))
+stopifnot(abs(elt_oep(elt, 5000)$oep - (1 - exp(-0.01))) < 1e-14,
+          abs(elt_oep(elt, 500)$exceedance_frequency - 0.25) < 1e-14)
+sim <- simulate_elt(elt, 20000, seed = 3)
+hit <- mean(vapply(seq_len(20000), function(y) max(c(0, events(sim$events, y))) > 2000, NA))
+p2 <- elt_oep(elt, 2000)$oep
+stopifnot(abs(hit - p2) < 4 * sqrt(p2 * (1 - p2) / 20000),
+          identical(lengths(sim$ids), as.integer(event_counts(sim$events))))
+beta <- event_loss_table(0.05, 500, 200, 50, 2000)
+stopifnot(abs(elt_oep(beta, elt_occurrence_pml(beta, 0.01))$oep - 0.01) < 1e-9)
+stopifnot(inherits(try(event_loss_table(0.1, 50, 60, 0, 100), silent = TRUE), "try-error"))
+stopifnot(identical(as.numeric(event_counts(event_set_from_long(c(2, 2), c(3, 4), 3))), c(0, 2, 0)))

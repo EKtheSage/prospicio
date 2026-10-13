@@ -546,3 +546,26 @@ def test_quota_share_on_an_annual_grid():
     expected = sum(0.25 * qs.ceding_commission_for(0.5 * k) for k in (50, 60, 70, 80))
     assert r.expected_ceding_commission[0] == pytest.approx(expected, abs=1e-12)
     assert r.ceded[0].mean() + r.net.mean() == pytest.approx(65.0, abs=1e-12)
+
+
+def test_event_loss_table_against_its_oep():
+    from prospicio.aggregate import EventLossTable, EventSet
+
+    elt = EventLossTable(
+        [0.01, 0.04, 0.2], [10_000.0, 3000.0, 800.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0],
+        [10_000.0, 3000.0, 800.0],
+    )
+    assert elt.oep(5000.0) == pytest.approx(1 - math.exp(-0.01), rel=1e-14)
+    assert elt.exceedance_frequency(500.0) == pytest.approx(0.25, rel=1e-14)
+    n = 50_000
+    events, ids = elt.simulate(n, seed=3)
+    hit = sum(1 for y in range(n) if max(events.events(y), default=0.0) > 2000.0) / n
+    p = elt.oep(2000.0)
+    assert abs(hit - p) < 4 * math.sqrt(p * (1 - p) / n)
+    assert [len(i) for i in ids] == events.counts()
+    beta = EventLossTable([0.05], [500.0], [200.0], [50.0], [2000.0])
+    assert beta.oep(beta.occurrence_pml(0.01)) == pytest.approx(0.01, abs=1e-9)
+    with pytest.raises(ValueError, match="row 0"):
+        EventLossTable([0.1], [50.0], [60.0], [0.0], [100.0])
+    long = EventSet.from_long([1, 1], [3.0, 4.0], 3)
+    assert long.counts() == [0, 2, 0]

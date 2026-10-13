@@ -9,6 +9,7 @@
 //! This crate holds no numerics of its own beyond the aggregation
 //! algorithms: distributions, grids and risk measures come from `prospicio-prob`.
 
+pub mod cat;
 pub mod collective;
 pub mod compound;
 pub mod fft;
@@ -24,6 +25,7 @@ pub mod ruin;
 pub mod serial;
 pub mod sizing;
 
+pub use cat::EventLossTable;
 pub use collective::CollectiveModel;
 pub use compound::{CompoundMethod, CompoundReport};
 pub use fft::fft;

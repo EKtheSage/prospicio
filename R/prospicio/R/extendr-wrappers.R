@@ -110,6 +110,10 @@ pricing_burning_cost <- function(ids, accident, amount, threshold, rate, to, fac
 
 pricing_as_if <- function(ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed) .Call(wrap__pricing_as_if, ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed)
 
+aggregate_elt_values <- function(rate, mean, sd_independent, sd_correlated, exposure, x, p) .Call(wrap__aggregate_elt_values, rate, mean, sd_independent, sd_correlated, exposure, x, p)
+
+aggregate_elt_simulate <- function(rate, mean, sd_independent, sd_correlated, exposure, n_years, seed) .Call(wrap__aggregate_elt_simulate, rate, mean, sd_independent, sd_correlated, exposure, n_years, seed)
+
 pricing_payment_pattern <- function(times, values, from_development) .Call(wrap__pricing_payment_pattern, times, values, from_development)
 
 pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_pattern_values, times, shares, rate, t)
@@ -197,6 +201,8 @@ EventSet <- new.env(parent = emptyenv())
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
+
+EventSet$from_long <- function(years, losses, n_years, seed) .Call(wrap__EventSet__from_long, years, losses, n_years, seed)
 
 EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
 
