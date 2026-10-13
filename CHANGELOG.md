@@ -80,7 +80,11 @@ under "Unreleased" until then.
   against Meyers' own Stan code (transcribed, CmdStan 2.39.0) and his
   printed results on his group 353 Commercial Auto data, now in
   `validation/data/clrd_comauto_353.csv` (`docs/design/reserving-bayes.md`,
-  PR 3).
+  PR 3). In Python as `prospicio.reserving.Meyers` and in R as `meyers()`,
+  for a single-segment triangle, with the ultimates and reserves, the
+  posterior summary, the long tables, PSIS-LOO (`MeyersFit.loo()`, R's
+  `bayes_loo()`), and failed diagnostics raised as a Python `UserWarning`
+  or an R `warning()`.
 
 ### Pricing
 

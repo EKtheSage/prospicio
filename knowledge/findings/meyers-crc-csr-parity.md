@@ -15,6 +15,9 @@ sources:
   - id: csv
     resource: ../validation/reference/reserving_meyers_stan.csv
     title: Stan summaries and Meyers' printed numbers
+  - id: bindings
+    resource: ../python/tests/test_reserving_meyers.py
+    title: The Python binding tests (R's are R/prospicio/tests/test-reserving-meyers.R)
   - id: design
     resource: ../docs/design/reserving-bayes.md
     title: Design note, Bayesian reserving (decisions 7 and 10)
@@ -70,3 +73,8 @@ sources:
 * Runtime: a default fit takes 0.3 s (CRC) to 0.5 s (CSR) in a release
   build and 6 to 8 s in a debug one; the validation test file about 34 s
   in a debug build.[^test]
+* Through the Python and R bindings (release builds), the default CRC and
+  CSR fits of group 353 paid at seed 0 with 2,000 simulations pass every
+  diagnostic, land within 0.2% of Meyers' printed totals (CRC 40,043, CSR
+  37,588 against 40,121 and 37,597) and within 0.1 of
+  his elpd, and the seven Python tests take about 8 s in all.[^bindings]

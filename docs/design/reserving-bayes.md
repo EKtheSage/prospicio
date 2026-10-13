@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 in progress** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is in progress on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data and his transcribed Stan code as the reference are built; the Python and R bindings (decision 13) are next. The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -854,6 +854,25 @@ the sketch below, which is kept as proposed:
 * **Warnings.** A fit with failed diagnostics raises one Python
   `UserWarning` or one R `warning()` that lists every message, and is
   returned.
+* **`Meyers` (PR 3)** follows the same pattern, for one segment: Python
+  `Meyers(model="crc", logelr_mean=-0.4, logelr_sd=3.162, origin_sd=3.162,
+  development_sd=3.162, gamma_sd=0.05, chains=4, tune=1000, draws=2000,
+  n_sims=10000, seed=0, target_accept=0.95, max_depth=10)` with
+  `fit(triangle, column, premium)`, and R `meyers(triangle, column,
+  premium, model = c("crc", "csr"), ...)` with the same arguments in the
+  same order (`column` and `premium` are required, as in `cape_cod()`).
+  The fit (`MeyersFit`, R `meyers_fit`) has `BayesOdpFit`'s fields less
+  `scale`, plus `model`, `premium` and `ultimates` (a second
+  `PredictiveDistribution` by origin); its long tables add `premium`,
+  `ultimate_mean` and `ultimate_std_dev`. LOO is on Meyers' log scale, so
+  the documentation limits comparisons to CRC against CSR on one column.
+  The warnings say `Meyers:` and `meyers:`. Tests:
+  `python/tests/test_reserving_meyers.py` and
+  `R/prospicio/tests/test-reserving-meyers.R` fit group 353 paid with the
+  default chains for CRC and CSR (no warning; totals within 2% and elpd
+  within 2 of Meyers' printed values, gamma within 0.01), replay an
+  incurred fit by seed, warn on 2 × 10 kept draws, and check the errors
+  (settings, a missing premium column, a zero cell, too few cells).
 * **Tests**: `python/tests/test_reserving_bayes.py` and
   `R/prospicio/tests/test-reserving-bayes.R` fit GenIns with the default
   chains (no warning, the Stan-matched scale, the reserves near the chain

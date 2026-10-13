@@ -1676,6 +1676,170 @@ bayes_odp <- function(triangle, column = NULL, intercept_sd = 10, origin_sd = 10
   fit
 }
 
+#' Meyers' CRC and CSR models
+#'
+#' Meyers' (2019, CAS Monograph 8) log-normal models of a cumulative
+#' triangle `C` with premium `P`, for origins `w = 1..n` and ages
+#' `d = 1..m`: `log C[w, d]` is normal with mean
+#' `log P[w] + logelr + alpha[w] + beta[d] g[w]` (`alpha[1] = 0`,
+#' `beta[m] = 0`) and sd `sigma[d]`, decreasing with age. `g[w]` is 1 for
+#' the correlated chain ladder without its correlation between origins
+#' (`"crc"`) and `(1 - gamma)^(w - 1)` for the changing settlement rate
+#' (`"csr"`). The priors are those of Meyers' Stan code: `logelr` normal
+#' with mean `logelr_mean` and sd `logelr_sd`, `alpha` and `beta` normal
+#' around 0, `gamma` normal around 0 with sd `gamma_sd`, and each step of
+#' `sigma[d]^2` uniform on `(1 - exp(-1e-5), 1)`.
+#'
+#' The ultimate is the value at the oldest age (no tail): each posterior
+#' draw gives each open origin a log-normal ultimate; an origin observed at
+#' the oldest age keeps its value. The reserve is the ultimate less the
+#' latest value of the fitted column (an outstanding reserve on paid data,
+#' IBNR on incurred data) and can be negative. Every observed cell must be
+#' positive. One `seed` replays a fit exactly, whatever the number of
+#' threads: the chains and the simulations each take a seed derived from
+#' it.
+#'
+#' Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
+#' per chain, any divergent transition) do not fail the fit: `meyers()`
+#' raises one [warning()] listing them, and they stay in the fit's
+#' `diagnostics`. With the defaults, all 120 fits of a seed sweep on
+#' Meyers' group 353 data (paid and incurred, CRC and CSR, 30 seeds) passed
+#' every threshold.
+#'
+#' Properties of the fit: `model` (`"crc"` or `"csr"`), `chain_ladder`
+#' (the volume-weighted [chain_ladder_fit] the reserves are measured from),
+#' `origins`, `development`, `premium` (each origin's), `ultimates` and
+#' `reserves` ([predictive_distribution]s with dimension `origin`, one
+#' component per origin, laid out as [odp_bootstrap()]'s reserves),
+#' `diagnostics` (a list of `max_rhat`, `min_ess_bulk`, `min_ess_tail`,
+#' `divergences` and `warnings`), `summary` (the posterior summary as
+#' `bayes_glm_model`'s; also `summary(fit)`) and `draws` (a matrix of the
+#' posterior draws of `logelr`, `alpha[2]`, ..., `beta[1]`, ..., `gamma`
+#' (CSR only), `sigma[1]`, ..., one row per draw, chain by chain).
+#' [bayes_loo()] gives the PSIS-LOO of the observed cells with Meyers'
+#' pointwise term, the normal density of `log C[w, d]`, so compare it only
+#' between CRC and CSR fits of the same column (Meyers 2019, Tables 6.4 and
+#' 7.3). `as.data.frame()`, [totals_frame()], [development_frame()] and
+#' [segment()] work as for [bayes_odp()], with the `premium`, the `mean` and
+#' `std_dev` of the posterior predictive reserve and the `ultimate_mean` and
+#' `ultimate_std_dev` of the posterior predictive ultimate.
+#'
+#' Errors: if a column is missing, the triangle has several segments or an
+#' origin has a gap; if a premium is missing or not positive; if a prior
+#' standard deviation is not positive and finite, `logelr_mean` is not
+#' finite or a sampler setting is invalid; if an observed cell is not
+#' positive; or if there are no more observed cells than parameters.
+#'
+#' @param triangle A cumulative [triangle] with one segment, every origin
+#'   observed from the first age up to its latest.
+#' @param column Name of the column to fit: paid, or case incurred.
+#' @param premium Name of the column with each origin's premium (its latest
+#'   value, as [cape_cod()] reads exposure).
+#' @param model `"crc"`, the correlated chain ladder without its
+#'   correlation between origins, or `"csr"`, the changing settlement rate
+#'   model.
+#' @param logelr_mean,logelr_sd Mean and standard deviation of the normal
+#'   prior on `logelr`, the log expected loss ratio (3.162 is Meyers'
+#'   rounding of `sqrt(10)`).
+#' @param origin_sd Standard deviation of the normal prior on each origin
+#'   effect `alpha[w]`, `w >= 2`.
+#' @param development_sd Standard deviation of the normal prior on each
+#'   development effect `beta[d]`, `d < m`.
+#' @param gamma_sd Standard deviation of the normal prior on `gamma`
+#'   (`"csr"` only).
+#' @param chains,tune,draws NUTS chains, warm-up draws per chain and kept
+#'   draws per chain; with 1,000 kept draws the late `sigma[d]` sometimes
+#'   miss the R-hat threshold.
+#' @param n_sims Number of predictive simulations, independent of the number
+#'   of posterior draws; positive.
+#' @param seed Seed of the chains and of the simulations, a non-negative
+#'   whole number.
+#' @param target_accept Target mean acceptance rate of the step-size
+#'   adaptation; at NUTS's usual 0.8 the paid fits of group 353 leave
+#'   divergent transitions.
+#' @param max_depth Largest NUTS tree depth.
+#' @param ptr A `MeyersFit` pointer; used internally.
+#' @returns A `meyers_fit` object.
+#' @seealso [bayes_odp()], [cape_cod()], [bayes_loo()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(1988:1993, 6:1),
+#'                    age = unlist(lapply(6:1, function(k) 12 * seq_len(k))),
+#'                    paid = c(952, 1529, 2813, 3647, 3724, 3832, 849, 1564, 2202, 2432,
+#'                             2468, 983, 2211, 2830, 3832, 1657, 2685, 3169, 932, 1940, 1162),
+#'                    premium = rep(c(5812, 4908, 5454, 5165, 5214, 5230), 6:1))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' # Short chains may miss a diagnostic threshold.
+#' fit <- suppressWarnings(meyers(tri, "paid", "premium", model = "csr", tune = 300,
+#'                                draws = 300, n_sims = 2000, seed = 1))
+#' head(fit@summary)
+#' mean(fit@reserves)
+#' quantile(fit@ultimates, 0.995)
+meyers_fit <- S7::new_class(
+  "meyers_fit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("MeyersFit"),
+    model = S7::new_property(S7::class_character, getter = function(self) self@ptr$model()),
+    chain_ladder = chain_ladder_fit,
+    origins = S7::new_property(S7::class_character, getter = function(self) {
+      self@chain_ladder@origins
+    }),
+    development = S7::new_property(S7::class_integer, getter = function(self) {
+      self@chain_ladder@development
+    }),
+    premium = S7::new_property(S7::class_double, getter = function(self) self@ptr$premium()),
+    ultimates = predictive_distribution,
+    reserves = predictive_distribution,
+    diagnostics = S7::new_property(S7::class_list, getter = function(self) {
+      self@ptr$diagnostics()
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$parameter_names()
+      matrix(self@ptr$draws(), ncol = length(nm), byrow = TRUE, dimnames = list(NULL, nm))
+    })
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
+                   ultimates = predictive_distribution(ptr = ptr$ultimates()),
+                   reserves = predictive_distribution(ptr = ptr$reserves()))
+  }
+)
+
+#' @rdname meyers_fit
+#' @export
+meyers <- function(triangle, column, premium, model = c("crc", "csr"), logelr_mean = -0.4,
+                   logelr_sd = 3.162, origin_sd = 3.162, development_sd = 3.162, gamma_sd = 0.05,
+                   chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
+                   target_accept = 0.95, max_depth = 10) {
+  check_triangle(triangle)
+  for (arg in c("column", "premium")) {
+    value <- get(arg)
+    if (!is.character(value) || length(value) != 1 || is.na(value)) {
+      stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
+    }
+  }
+  model <- match.arg(model)
+  ptr <- rust_result(triangle@ptr$meyers(
+    column, premium, model, single_number(logelr_mean, "logelr_mean"),
+    single_number(logelr_sd, "logelr_sd"), single_number(origin_sd, "origin_sd"),
+    single_number(development_sd, "development_sd"), single_number(gamma_sd, "gamma_sd"),
+    single_number(chains, "chains"), single_number(tune, "tune"), single_number(draws, "draws"),
+    single_number(n_sims, "n_sims"), single_number(seed, "seed"),
+    single_number(target_accept, "target_accept"), single_number(max_depth, "max_depth")))
+  fit <- meyers_fit(ptr = ptr)
+  failed <- fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("meyers: the MCMC diagnostics failed; check them before relying on the fit: ",
+            paste(failed, collapse = "; "), call. = FALSE)
+  }
+  fit
+}
+
 #' Bootstrap of Mack's model
 #'
 #' The lifetime view of reserve risk under Mack's model, bootstrapped as
@@ -2324,10 +2488,11 @@ growth <- function(fit, age) {
 
 check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
-                  mack_bootstrap_fit, bayes_odp_fit, one_year_fit, clark_fit)
+                  mack_bootstrap_fit, bayes_odp_fit, meyers_fit, one_year_fit, clark_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
-         "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, one_year_fit or clark_fit",
+         "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, meyers_fit, one_year_fit or ",
+         "clark_fit",
          call. = FALSE)
   }
 }
@@ -2336,14 +2501,16 @@ check_fit <- function(fit) {
 #'
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #' [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
-#' [bayes_odp_fit], [one_year_fit] or [clark_fit] with
+#' [bayes_odp_fit], [meyers_fit], [one_year_fit] or [clark_fit] with
 #' the triangle's key columns by name. `as.data.frame(fit)` has one row per
 #' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
 #' method's own), plus for Mack `process_risk`, `parameter_risk` and
 #' `standard_error`, for the expected-loss methods `exposure` and `apriori`
 #' (and Cape Cod's `trended_apriori`), for the bootstraps the `mean` and
-#' `std_dev` of the bootstrapped reserve (for [bayes_odp()] of the posterior
-#' predictive reserve), and for Clark (Cape Cod)
+#' `std_dev` of the bootstrapped reserve (for [bayes_odp()] and [meyers()] of
+#' the posterior predictive reserve; [meyers()] adds the `premium` and the
+#' `ultimate_mean` and `ultimate_std_dev` of the predictive ultimate), and
+#' for Clark (Cape Cod)
 #' `exposure`, `expected_ultimate` and the three standard errors. The
 #' one-year view names them `opening_ultimate` and `opening_reserve` and
 #' adds the `cdr_mean` and `cdr_std_dev` of the claims development result.
@@ -2370,7 +2537,7 @@ check_fit <- function(fit) {
 #'
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
-#'   [bayes_odp_fit], [one_year_fit] or [clark_fit] (not for
+#'   [bayes_odp_fit], [meyers_fit], [one_year_fit] or [clark_fit] (not for
 #'   `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
@@ -2429,6 +2596,8 @@ S7::method(as.data.frame, odp_bootstrap_fit) <- function(x, ...) fit_table_frame
 S7::method(as.data.frame, mack_bootstrap_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, bayes_odp_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(summary, bayes_odp_fit) <- function(object, ...) object@summary
+S7::method(as.data.frame, meyers_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(summary, meyers_fit) <- function(object, ...) object@summary
 S7::method(as.data.frame, one_year_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(as.data.frame, clark_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 
@@ -2471,6 +2640,27 @@ S7::method(print, bayes_odp_fit) <- function(x, ...) {
               format(d$min_ess_tail, digits = 4), as.integer(d$divergences),
               if (length(d$warnings)) sprintf(", %d warnings", length(d$warnings)) else ""))
   cat(sprintf("total reserve: chain ladder %s, posterior mean %s, sd %s\n",
+              format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
+              format(sqrt(variance(r)), digits = 10)))
+  invisible(x)
+}
+S7::method(print, meyers_fit) <- function(x, ...) {
+  r <- x@reserves
+  d <- x@diagnostics
+  cat(sprintf("<meyers_fit> %s, %d draws in %d chains, %d simulations
+", toupper(x@model),
+              nrow(x@draws), as.integer(x@ptr$chains()), as.integer(r@n_sims)))
+  cat(sprintf("diagnostics: max R-hat %s, min bulk ESS %s, min tail ESS %s, %d divergences%s
+",
+              format(d$max_rhat, digits = 4), format(d$min_ess_bulk, digits = 4),
+              format(d$min_ess_tail, digits = 4), as.integer(d$divergences),
+              if (length(d$warnings)) sprintf(", %d warnings", length(d$warnings)) else ""))
+  cat(sprintf("total ultimate: posterior mean %s, sd %s
+",
+              format(mean(x@ultimates), digits = 10),
+              format(sqrt(variance(x@ultimates)), digits = 10)))
+  cat(sprintf("total reserve: chain ladder %s, posterior mean %s, sd %s
+",
               format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
               format(sqrt(variance(r)), digits = 10)))
   invisible(x)

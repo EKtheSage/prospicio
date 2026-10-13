@@ -528,8 +528,9 @@ S7::method(print, bayes_glm_model) <- function(x, ...) {
 #' observation's relative efficiency estimated from the chains. Its
 #' `pointwise` values feed [stacking_weights()].
 #'
-#' @param model A [bayes_glm_model], or a [bayes_odp_fit] for the PSIS-LOO
-#'   of its observed increments.
+#' @param model A [bayes_glm_model], a [bayes_odp_fit] for the PSIS-LOO of
+#'   its observed increments, or a [meyers_fit] for that of its observed
+#'   cells on the log scale.
 #' @returns As [elpd_loo()].
 #' @export
 #' @examples
