@@ -144,6 +144,13 @@ under "Unreleased" until then.
   `price_over_payout`, `PayoutPrice`; R `payment_pattern()`,
   `payment_pattern_from_development()`, `pattern_values()`,
   `price_over_payout()` (#228).
+- Catastrophe model output: an event loss table with secondary uncertainty
+  (a beta on each event's exposure), its occurrence exceedance curve and
+  PMLs, and simulated years of events with each loss's event
+  (`prospicio_aggregate::cat::EventLossTable`), and a year loss table in
+  long form (`EventSet::from_long`). Python `EventLossTable`,
+  `EventSet.from_long`; R `event_loss_table()`, `elt_oep()`,
+  `elt_occurrence_pml()`, `simulate_elt()`, `event_set_from_long()` (#229).
 
 ### Examples
 

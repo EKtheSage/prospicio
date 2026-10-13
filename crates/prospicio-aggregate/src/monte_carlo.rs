@@ -154,6 +154,36 @@ impl EventSet {
         })
     }
 
+    /// Years of losses in long form, as a year loss table lists them: one
+    /// row per loss with its year, an index in `0..n_years`. Within a year
+    /// the losses keep their order; years with no row are empty.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_long(&[2, 0, 2], &[5.0, 1.0, 7.0], 4, 0).unwrap();
+    /// assert_eq!(events.events(0), &[1.0]);
+    /// assert!(events.events(1).is_empty());
+    /// assert_eq!(events.events(2), &[5.0, 7.0]);
+    /// ```
+    pub fn from_long(years: &[usize], losses: &[f64], n_years: usize, seed: u64) -> Result<Self> {
+        if years.len() != losses.len() {
+            return Err(Error::Data(format!(
+                "{} years for {} losses",
+                years.len(),
+                losses.len()
+            )));
+        }
+        let mut grouped = vec![Vec::new(); n_years];
+        for (&y, &x) in years.iter().zip(losses) {
+            let year = grouped
+                .get_mut(y)
+                .ok_or_else(|| Error::Data(format!("year {y} is not below n_years = {n_years}")))?;
+            year.push(x);
+        }
+        Self::from_years(grouped, seed)
+    }
+
     /// The same events, recorded as drawn with `samplers`
     /// ([`Provenance::samplers`]): [`current_samplers`] for years this
     /// build simulated, as a risk profile's simulation does, or `None` when
