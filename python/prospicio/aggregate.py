@@ -2,16 +2,21 @@
 events, the occurrence exceedance (OEP) curve, compound moments to third
 order with the approximations fitted to them, eventual ruin by the
 Pollaczeck–Khinchine formula, a severity reshaped to layer loss picks, and a catastrophe model's
-event loss table with secondary uncertainty (EventLossTable). Layers and towers are in
+event loss table with secondary uncertainty (EventLossTable), and two lines hit by
+the same events: their joint loss by a 2-D FFT (fft_bivariate, JointGrid) and the
+clash model (Clash). Layers and towers are in
 ``prospicio.reinsurance``."""
 
 from .prospicio_native import (
     Approximation,
+    BivariateReport,
+    Clash,
     CompoundMoments,
     CompoundReport,
     EventLossTable,
     EventSet,
     GridSize,
+    JointGrid,
     OccurrencePml,
     Picks,
     Ruin,
@@ -19,6 +24,7 @@ from .prospicio_native import (
     eventual_ruin,
     fft,
     fft_auto,
+    fft_bivariate,
     layer_loss_picks,
     occurrence_exceedance,
     occurrence_pml,
@@ -49,4 +55,8 @@ __all__ = [
     "Ruin",
     "layer_loss_picks",
     "Picks",
+    "fft_bivariate",
+    "JointGrid",
+    "BivariateReport",
+    "Clash",
 ]

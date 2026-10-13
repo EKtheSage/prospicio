@@ -1680,6 +1680,40 @@ class Binomial:
         """
 
 @final
+class BivariateReport:
+    """
+    What ``fft_bivariate`` produced and the error it introduced.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aliasing_mass(self, /) -> tuple[float, float]:
+        """
+        On each axis, the mass past the end of the FFT buffer, which wraps
+        around; their sum bounds the probability misplaced. Request more
+        points when it is not negligible.
+        """
+    @property
+    def expected_means(self, /) -> tuple[float, float]:
+        """
+        ``E[N] E[X]`` and ``E[N] E[Y]``: the means before truncation.
+        """
+    @property
+    def grid_means(self, /) -> tuple[float, float]:
+        """
+        The means of the result.
+        """
+    @property
+    def points(self, /) -> tuple[int, int]:
+        """
+        Points on each axis.
+        """
+    @property
+    def tail_mass(self, /) -> tuple[float, float]:
+        """
+        The mass past the last row and past the last column, carried on them.
+        """
+
+@final
 class BornhuetterFerguson:
     """
     The Bornhuetter–Ferguson method: each origin's latest value plus the
@@ -2999,6 +3033,106 @@ class ClarkLdf:
     def max_age(self, /) -> float |None:
         """
         Age in months at which development stops; ``None`` for infinity.
+        """
+
+@final
+class Clash:
+    """
+    Two lines hit by the same events, each line independently within an
+    event: ``aggregate``'s ``clash``.
+    
+    Given the expected events a year hitting line A only, line B only and
+    both (the clash count), independence within an event fixes those hitting
+    neither, ``only_a * only_b / both``. Each event hits A with probability
+    ``trigger_a`` and B with ``trigger_b``; the dependence between the lines
+    comes only from the shared count.
+    
+    Parameters
+    ----------
+    only_a, only_b : float
+        Expected events a year hitting one line only, non-negative.
+    both : float
+        Expected events a year hitting both lines, positive.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Clash
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> clash = Clash(2.0, 3.0, 1.0)
+    >>> clash.events, clash.trigger_a
+    (12.0, 0.25)
+    >>> a = Grid(1.0, [0.0, 0.5, 0.5])
+    >>> b = Grid(1.0, [0.0, 1.0])
+    >>> joint, report = clash.aggregate(Poisson(clash.events), a, b, (128, 128))
+    >>> round(joint.covariance(), 9)  # Poisson: both * E[X] * E[Y]
+    1.5
+    """
+    def __new__(cls, /, only_a: float, only_b: float, both: float) -> Clash: ...
+    def __repr__(self, /) -> str: ...
+    def aggregate(self, /, frequency: Any, a: Grid, b: Grid, points: tuple[int, int]) -> tuple[JointGrid, BivariateReport]:
+        """
+        The joint annual loss to the two lines by ``fft_bivariate``.
+        
+        Parameters
+        ----------
+        frequency : Poisson, NegativeBinomial, Binomial or Count
+            The shared count; its mean must be ``events``.
+        a, b : Grid
+            The loss to each line given that the event hits it.
+        points : tuple of (int, int)
+        
+        Returns
+        -------
+        tuple of (JointGrid, BivariateReport)
+        """
+    @property
+    def both(self, /) -> float:
+        """
+        Expected events a year hitting both lines: the clash count.
+        """
+    @property
+    def events(self, /) -> float:
+        """
+        Expected events a year: the mean of the shared count.
+        """
+    @property
+    def neither(self, /) -> float:
+        """
+        Expected events a year hitting neither line.
+        """
+    @property
+    def only_a(self, /) -> float:
+        """
+        Expected events a year hitting line A only.
+        """
+    @property
+    def only_b(self, /) -> float:
+        """
+        Expected events a year hitting line B only.
+        """
+    def severity(self, /, a: Grid, b: Grid) -> JointGrid:
+        """
+        The joint per-event severity: ``a`` with probability ``trigger_a``
+        on line A and ``b`` with ``trigger_b`` on line B, independently.
+        
+        Parameters
+        ----------
+        a, b : Grid
+            The loss to each line given that the event hits it.
+        
+        Returns
+        -------
+        JointGrid
+        """
+    @property
+    def trigger_a(self, /) -> float:
+        """
+        The probability that an event hits line A.
+        """
+    @property
+    def trigger_b(self, /) -> float:
+        """
+        The probability that an event hits line B.
         """
 
 @final
@@ -7030,6 +7164,112 @@ class InverseGaussian:
         Returns
         -------
         float
+        """
+
+@final
+class JointGrid:
+    """
+    A joint distribution of two losses on a grid, ``P(A = i * step_a, B = j
+    * step_b)``: rows are line A and columns line B. The mass past the last
+    row or column is carried on it.
+    
+    Parameters
+    ----------
+    steps : tuple of (float, float)
+    probs : list of list of float
+        One row per point of A, one column per point of B, summing to 1.
+    """
+    def __new__(cls, /, steps: tuple[float, float], probs: Sequence[Sequence[float]]) -> JointGrid: ...
+    def __repr__(self, /) -> str: ...
+    def correlation(self, /) -> float:
+        """
+        Pearson's correlation of ``A`` and ``B``; NaN if either is constant.
+        """
+    def covariance(self, /) -> float:
+        """
+        ``Cov(A, B)``.
+        """
+    @staticmethod
+    def independent(a: Grid, b: Grid) -> JointGrid:
+        """
+        The joint law of two independent losses.
+        
+        Parameters
+        ----------
+        a, b : Grid
+        
+        Returns
+        -------
+        JointGrid
+        """
+    def marginal(self, /, axis: int) -> Grid:
+        """
+        The marginal distribution of line A (``axis=0``) or B (``axis=1``).
+        
+        Parameters
+        ----------
+        axis : int
+        
+        Returns
+        -------
+        Grid
+        """
+    def mean(self, /, axis: int) -> float:
+        """
+        The mean of line A (``axis=0``) or B (``axis=1``).
+        """
+    def moment(self, /, p: int, q: int) -> float:
+        """
+        The raw mixed moment ``E[A^p B^q]``.
+        
+        Parameters
+        ----------
+        p, q : int
+        
+        Returns
+        -------
+        float
+        """
+    def prob(self, /, i: int, j: int) -> float:
+        """
+        ``P(A = i * step_a, B = j * step_b)``.
+        
+        Parameters
+        ----------
+        i, j : int
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def probs(self, /) -> list[list[float]]:
+        """
+        The probabilities, one list per row.
+        """
+    @property
+    def shape(self, /) -> tuple[int, int]:
+        """
+        The number of rows (line A) and columns (line B).
+        """
+    @property
+    def steps(self, /) -> tuple[float, float]:
+        """
+        The step on each axis.
+        """
+    def total(self, /) -> Grid:
+        """
+        The distribution of the total ``A + B``: exact when the steps are
+        equal, otherwise on the larger step with each cell's mass split to
+        keep the mean.
+        
+        Returns
+        -------
+        Grid
+        """
+    def variance(self, /, axis: int) -> float:
+        """
+        The variance of line A (``axis=0``) or B (``axis=1``).
         """
 
 @final
@@ -16185,6 +16425,36 @@ def fft_auto(frequency: Any, severity: Any, log2: int = 16, p: float = ..., p_st
     >>> agg, report, size = fft_auto(Poisson(5.0), Lognormal.from_mean_cv(100.0, 1.0))
     >>> round(agg.mean()), report.aliasing_error < 1e-12
     (500, True)
+    """
+
+def fft_bivariate(frequency: Any, severity: JointGrid, points: tuple[int, int]) -> tuple[JointGrid, BivariateReport]:
+    """
+    The joint annual loss to two lines hit by the same events, by a 2-D FFT:
+    ``(A, B) = sum over N events of (X_k, Y_k)``, with ``severity`` the joint
+    law of one event's pair of losses (mass at 0 on an axis is an event that
+    misses that line).
+    
+    Parameters
+    ----------
+    frequency : Poisson, NegativeBinomial, Binomial or Count
+        The shared count of events.
+    severity : JointGrid
+    points : tuple of (int, int)
+        Points on each axis of the result.
+    
+    Returns
+    -------
+    tuple of (JointGrid, BivariateReport)
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import JointGrid, fft_bivariate
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> a = Grid(1.0, [0.0, 0.6, 0.4])
+    >>> b = Grid(1.0, [0.5, 0.5])
+    >>> joint, report = fft_bivariate(Poisson(2.0), JointGrid.independent(a, b), (64, 64))
+    >>> round(joint.covariance(), 9)  # Var(N) E[X] E[Y]
+    1.4
     """
 
 def fit_pml_curve(return_periods: Sequence[float], amounts: Sequence[float], tail_alpha: float = 2.0, truncation: float |None = None) -> TowerModel:

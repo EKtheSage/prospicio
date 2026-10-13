@@ -97,6 +97,6 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
 
 ## Next
 
-- Clash across lines stays parked with the bivariate aggregates
-  (`docs/design/aggregate.md`); whether #196 closes without it is the
-  user's call.
+- Clash across lines is done in `prospicio_aggregate::bivariate`
+  (`docs/design/aggregate.md`, "Two lines and clash"); #196 closed without
+  it.

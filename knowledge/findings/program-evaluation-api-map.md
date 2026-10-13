@@ -1,10 +1,10 @@
 ---
 type: Finding
 title: Evaluating a reinsurance submission with prospicio, what the API covers
-description: Each step of evaluating an incoming reinsurance program (on-level and trend, development, experience rating, exposure rating, blending, loss model, treaty terms, risk metrics, pricing, portfolio impact, sensitivity, monitoring) mapped onto the Python API of main on 2026-10-12, with what ran, the caveats met and the gaps (issues 190 to 197).
+description: Each step of evaluating an incoming reinsurance program (on-level and trend, development, experience rating, exposure rating, blending, loss model, treaty terms, risk metrics, pricing, portfolio impact, sensitivity, monitoring) mapped onto the Python API of main on 2026-10-12, updated 2026-10-13, with what ran, the caveats met and the gaps (issues 190 to 197, most now closed).
 tags: [reinsurance, pricing, python, api, experience-rating, exposure-rating, gaps]
 status: stable
-generated: { by: claude-code/local-session, at: 2026-10-12T18:00:00Z }
+generated: { by: claude-code/local-session, at: 2026-10-13T18:00:00Z }
 sources:
   - id: stub
     resource: ../python/prospicio/prospicio_native.pyi
@@ -14,7 +14,16 @@ sources:
     title: docs/design/aggregate.md, the Next list (multi-year carry-forward is item 2)
   - id: issues
     resource: https://github.com/EKtheSage/prospicio/issues/190
-    title: Issues 190 to 197, one per gap below
+    title: Issues 190 to 197, one per gap below, and 204 to 206
+  - id: experience-design
+    resource: ../docs/design/experience-rating.md
+    title: docs/design/experience-rating.md, large-loss preparation and the burning cost (#190, #191)
+  - id: time-value-design
+    resource: ../docs/design/time-value.md
+    title: docs/design/time-value.md, payment patterns and the price over the payout (#195)
+  - id: cat-inputs-design
+    resource: ../docs/design/cat-inputs.md
+    title: docs/design/cat-inputs.md, event loss tables, year loss tables, merging and the hours clause (#196; clash parked)
   - id: notebook
     resource: ../examples/submission_evaluation.ipynb
     title: submission_evaluation.ipynb, the steps run end to end (2026-10-13)
@@ -30,10 +39,19 @@ carries `verified`. Only the API behaviour matters; the numbers came from
 made-up data. Status: **verified** (a snippet ran), **partial** (the
 pieces exist, the assembly is by hand), **gap** (nothing in the API).
 
+Update 2026-10-13: issues 190, 191, 195, 196 (except clash across lines),
+197, 204, 205 and 206 are closed (PRs 223 to 226, 228, 229, 231, 222 and
+210). The sections below keep the first-pass findings and say where each
+is now closed. The new calls were run on main at 2168d76 in a scratch
+build, not by CI.
+
 Two conventions to know first. Several names that look like methods are
 properties, so `grids.net`, `pd.dims`, `pd.components`,
 `layer.needs_sums_insured`, `pareto.alpha` and `glm_fit.coefficients` are
-used without parentheses (calling them raises `TypeError`). Dates are
+used without parentheses (calling them raises `TypeError`); so are the
+newer `BurningCost.loss_cost`, `PreparedLosses.complete_above`, every
+`Quote` field, `Distortion.family` and `.parameters`, while
+`EventSet.counts()` and `DevelopmentPattern.at(age)` are methods. Dates are
 year fractions (`year_fraction(y, m, d)` converts a calendar date).
 
 # The steps
@@ -87,21 +105,57 @@ year fractions (`year_fraction(y, m, d)` converts a calendar date).
 
 ## 3. Large-loss experience rating
 
-* Trend each loss: `trend_factor(rate, years)` in a Python loop, with
-  IBNER factors, index or stability clauses, FX and franchises supplied
-  by hand. No feature. Gap (#190).
-* As-if burning cost per layer and year: a loop of
-  `Layer(name, limit, attachment, share, aggregate_deductible,
-  aggregate_limit, reinstatements, premium, reinstatement_rates,
-  pro_rata_time).ceded(losses)`, `Tower.ceded(losses)` or
-  `.ceded_by_event(losses)`. Partial: annual terms are applied (4m, 2m
-  and 4m recoveries with a 1m AAD and an 8m annual limit gave 8m), but
-  there is no loss-record or experience-table object and no
-  reconciliation of claims, triangle and premium. Gap (#190).
-* As-if under past structures (changed retentions and limits, a prior
-  quota share inuring, a changed policy-limit mix): `Tower.inuring` and
-  `Layer.ceded` apply the current structure only. Gap (#191).
-* Count IBNR for late-reported large claims is not modelled (#190).
+* The loss record: `LargeLossExperience(ids, accident, amount, *,
+  threshold, valuation, fx)` (accident dates as year fractions, `fx` one
+  rate or one per loss), then `.prepare(rate=..., to=...)`, where `to` is
+  the average accident date of the prospective period, or
+  `.prepare(factors=...)`, with `development=` a `DevelopmentPattern` (read
+  at each loss's age at the valuation) or a factor per loss for IBNER.
+  It returns `PreparedLosses`: `.complete_above` (the threshold times the
+  largest trend factor, the level above which every year is complete;
+  losses whose trended amount falls below it are left out) and
+  `.to_dict()` (columns id, year, accident, amount, fx, development,
+  ultimate, factor, trended). Closed (#190, PRs 223 to 225). This replaces
+  the first pass's loop of `trend_factor(rate, years)` with IBNER and FX
+  by hand.
+* The burning cost: `PreparedLosses.burning_cost(towers, years, *,
+  premium, development, index=None, ratios=None) -> BurningCost`, one
+  tower or one per year applied to the trended losses, the layer totals
+  developed (a factor per year, or a `DevelopmentPattern` read at each
+  year's average age) and divided by the on-level premium. `development`
+  is Clark's excess factor per year or, when `prepare` already developed
+  each loss (IBNER), the count IBNR factor only; an excess factor that
+  holds IBNER after IBNER in `prepare` counts it twice.
+  `.loss_cost` is premium weighted per layer, `.mean_loss_cost` weights
+  the years equally, `.to_dict()` gives each year's row. Annual terms on
+  the layers still apply (`Layer.ceded` gave 8m from 4m, 2m and 4m
+  recoveries with a 1m AAD and an 8m annual limit). An index clause is
+  `IndexClause(franchise, kind="full" | "severe")` with a ratio per loss,
+  on per-occurrence terms only (annual terms raise). Closed (#190, PRs 223
+  to 225). Reconciling the claims with the triangle and the premium is
+  still by hand; `examples/submission_evaluation.ipynb` does it in its
+  section 1 checks.
+* Development patterns: `DevelopmentPattern(ages, factors)` takes factors
+  to ultimate (`.at(age)`, `.age_to_age`) at ages in years from the
+  accident date (not the months of a `Triangle`), and
+  `DevelopmentPattern.from_history(ids, age, amount, *, ages)` estimates
+  one from each claim's valuations (the volume-weighted chain ladder on
+  claims valued at both ages; no selection threshold, see "Development
+  from the listing" below). Count IBNR is a pattern built from a
+  `ChainLadder` fit on a claim-count triangle, passed as
+  `burning_cost(development=pattern)`: an accident year's average age at
+  12 months is half a year, so the cdf at 12, 24 and later months goes at
+  ages 0.5, 1.5 and so on. Closed (#190, PR 224).
+* As-if under past structures: `PreparedLosses.as_if(historical, years,
+  proposed) -> AsIf` applies the program in force each year to that
+  year's losses as reported (untrended, undeveloped, in the reported
+  currency) and puts the result beside the trended losses under the
+  proposed tower, to reconcile with the cedant's reported recoveries
+  (`.to_dict()`: year,
+  reported_losses, trended_losses, historical_layers, historical,
+  proposed). Closed (#191, PR 226). A changed policy-limit mix is not
+  restated (#191 closed without it; #213 covers the severity under a mix
+  of policy limits).
 
 ## 4. Severity and frequency fitting
 
@@ -110,6 +164,7 @@ year fractions (`year_fraction(y, m, d)` converts a calendar date).
   `PiecewisePareto.fit(...)`, `GeneralizedPareto.fit_riegel(...)`.
   Verified, with left truncation per loss and right censoring at a
   policy limit (alpha 1.85 uncensored, 1.757 with two censored losses).
+  No standard error and no severity under a mix of policy limits (#213).
 * `Gpd.fit(exceedances)`, `PotTail.fit`, `mean_excess(draws, thresholds)`
   and `hill(draws, ks)`. Verified; exceedances only, no truncation or
   censoring. `LogAffinePareto` has no fit, and
@@ -177,6 +232,22 @@ year fractions (`year_fraction(y, m, d)` converts a calendar date).
   `.with_seasonal_times(weights)`, `EventSet.from_years(years,
   sums_insured, seed, times)` (a user's year loss table enters here),
   `.totals()` and `.maxima()` for the AEP and OEP. Verified.
+* Cat model inputs: `EventLossTable(rate, mean, sd_independent,
+  sd_correlated, exposure)` (secondary uncertainty a beta on
+  [0, exposure] per row, whose sd is `sd_independent + sd_correlated`,
+  added rather than combined in quadrature, with no correlation modelled
+  across events; a mean and sd no such beta can have raise an error naming
+  the row) with `.expected_annual_loss`, the exact
+  `.exceedance_frequency(x)`, `.oep(x)` and `.occurrence_pml(p)`, and
+  `.simulate(n_years, seed) -> (EventSet, row ids)` ready for any
+  `Tower`. A year loss table in long form is `EventSet.from_long(years,
+  losses, n_years, seed)`; `EventSet.merge(other)` joins a cat set with a
+  non-cat set year by year (interleaved by time when both carry times);
+  `EventSet.grouped(window_hours)` groups losses into occurrences by an
+  hours clause (times are fractions of a year of 8760 hours). Note that
+  `counts()`, `events(i)` and `times(i)` are methods. Closed (#196, PRs
+  229 and 231), except clash across lines, which is not built (parked in
+  `docs/design/cat-inputs.md` and `docs/roadmap.md`).
 * `compound_moments(frequency, severity)` and `.approximate` need three
   finite moments and fail on a Pareto with alpha 1.6 or a matched tower
   with alpha below 3 ("the severity's first three moments must be
@@ -211,6 +282,19 @@ year fractions (`year_fraction(y, m, d)` converts a calendar date).
   stage. On one example the reinstatement premium was 369k exact as to
   amount against 188k simulated as to time, so the two bases differ by
   about 2x.
+* On an annual loss grid: `Tower.on_annual_grid(annual) -> AnnualGrids`
+  applies the tower to an annual loss already on a grid (a loss ratio
+  times premium, a book total), each year's total as one loss: a quota
+  share with a sliding scale or profit commission, or a stop loss, on a
+  loss-ratio grid, with no claim count. It has `.ceded` (a list of `Grid`,
+  one per layer at the placed share, so a layer with share c is on step c
+  times h), `.gross` and `.net` (one `Grid` each),
+  `.expected_premium`, `.expected_ceding_commission`,
+  `.expected_profit_commission`, `.expected_reinstatement_premium` (one
+  per layer) and `.on_points`. It replaces a loop over the grid with
+  `Layer.ceding_commission_for` and `.profit_commission_for`; not for
+  per-occurrence layers with a severity (use `on_grid`). Closed (#206, PR
+  210).
 
 ## 9. Risk metrics
 
@@ -227,25 +311,54 @@ year fractions (`year_fraction(y, m, d)` converts a calendar date).
 
 ## 10. Pricing and the quote
 
-* `price(losses, assets, *, cost_of_capital=None, distortion=None) ->
-  Price` (`.premium`, `.capital`, `.assets`, `.loss_ratio`,
-  `.return_on_capital`, `.margin`), `Distortion.tvar | wang | ccoc |
+* `price(losses: Sampled | PredictiveDistribution | Grid, assets, *,
+  cost_of_capital=None, distortion=None) -> Price` (`.premium`,
+  `.expected_loss`, `.capital`, `.assets`, `.loss_ratio`,
+  `.return_on_capital`, `.margin`), with the assets a distortion risk
+  measure of the loss (for example `Distortion.tvar(0.99)`). A `Grid` is
+  accepted since PR 210 (#204), which replaces
+  `Pentagon.solve(loss=g.mean(), assets=TAIL.measure(g),
+  return_on_capital=r)` for a grid. Also `Distortion.tvar | wang | ccoc |
   proportional_hazard | dual_power`, `calibrate(family, dist, premium,
   assets, r0)`, `TowerGrids.price(distortion) -> TowerPrice`,
   `Portfolio.from_independent(units, grids)` and `.from_predictive(pd)`
   with `.calibrate` and `.price(distortion, assets, p, allocation)`.
-  Verified.
-* Expenses: `Layer.premium_for`, `.ceding_commission_for`,
-  `.profit_commission_for`, `TowerGrids.expected_premium`,
-  `premium_based_expenses`, `Provisions(variable, profit)`. Partial:
-  brokerage and the assembly from loss cost to a gross and net quote are
-  hand arithmetic. Gap (#197).
-* Comparing with the cedant's price: `with_rate_on_line` or
-  `with_premium_rate`, then `price` or `calibrate(family, dist, premium)`
-  gives the implied distortion or return. Partial: no quote-against-
-  indication exhibit (#197).
-* Time value of money: no payment pattern, discounting or investment
-  income. (`Pentagon.discount` is something else.) Gap (#195).
+  Verified. A calibrated distortion's `.family` and `.parameters` (both
+  properties; `parameters` is empty for weighted TVaR, mixtures, minimums
+  and envelopes) read it back without parsing `repr()` (#205, PR 210).
+* The quote: `Quote.technical(price, *, expenses=0.0, brokerage=0.0,
+  fixed=0.0, limit=None)` grosses the risk premium up, premium = (risk
+  premium + fixed) / (1 - expenses - brokerage), and reports
+  `.rate_on_line` and `.payback` (with a limit), `.multiple`,
+  `.loss_ratio`, `.return_on_capital`, `.net_premium` and `.to_dict()`.
+  Closed (#197, PR 222). Superseded first-pass text: "brokerage and the
+  assembly from loss cost to a gross and net quote are hand arithmetic".
+  `Layer.premium_for`, `.ceding_commission_for`, `.profit_commission_for`,
+  `TowerGrids.expected_premium`, `premium_based_expenses` and
+  `Provisions(variable, profit)` remain for the terms.
+* Comparing with the cedant's price: `Quote.at(premium)` keeps the loss
+  and the assets and gives the return at the quoted premium
+  (`.return_on_capital`), and `.risk_premium` (what is left after the
+  loads) is the premium to give `calibrate(family, dist, premium)` for the
+  implied distortion. Closed (#197, PR 222). Superseded first-pass text:
+  "no quote-against-indication exhibit".
+* Time value of money: `PaymentPattern(times, shares)` or
+  `PaymentPattern.from_development(ages, factors)` (factors to ultimate,
+  for example a paid chain ladder's; the last factor must be 1), with
+  `.duration`, `.discount_factor(rate)` and `.capital_years(rate)`, and
+  `price_over_payout(price, pattern, *, rate=0.0, cost_of_capital=None,
+  distortion=None) -> PayoutPrice` restates a one-period `Price` over the
+  payout (give the same rule the `Price` was made with), with `.premium`,
+  `.expected_loss`, `.discounted_loss`, `.discount_factor`,
+  `.capital_years`, `.margin`, `.capital` and `.assets`. With a pricing
+  distortion the premium is discounted with the losses, and a pattern
+  that pays everything within the first year at a zero rate gives back the
+  one-period price. Investment
+  income is the discounting of the losses, and the cost of capital is a
+  spread over the discount rate (`docs/design/time-value.md`, decision 5).
+  Closed (#195, PR 228). Superseded first-pass text: "no payment pattern,
+  discounting or investment income". (`Pentagon.discount` is something
+  else.)
 
 ## 11. Portfolio impact
 
@@ -284,15 +397,20 @@ year fractions (`year_fraction(y, m, d)` converts a calendar date).
 
 # Gaps
 
-Each has a GitHub issue.
+Each has a GitHub issue. Closed ones keep their first-pass text and say
+what closed them.
 
-* **#190 Large-loss preparation.** Trend by date, IBNER and large-loss
-  development, indexation or stability clauses, FX, franchises, count
-  IBNR, and a loss-record or as-if burning-cost object with
-  reconciliation of claims, triangle and premium. This feeds every
-  excess price and is the step hurt most.
-* **#191 As-if under past structures.** Re-stating history under past
-  retentions, limits and inuring quota shares.
+* **#190 Large-loss preparation. Closed** (PRs 223 to 225). Trend by date,
+  IBNER and large-loss development, indexation or stability clauses, FX,
+  franchises, count IBNR, and a loss-record or as-if burning-cost object.
+  Now `LargeLossExperience`, `PreparedLosses`, `BurningCost`,
+  `DevelopmentPattern` and `IndexClause` (section 3). Reconciling claims,
+  triangle and premium stays by hand.
+* **#191 As-if under past structures. Closed** (PR 226). Re-stating
+  history under past retentions, limits and inuring quota shares: now
+  `PreparedLosses.as_if` (section 3). A changed policy-limit mix is not
+  restated (#191 closed without it; #213 covers the severity under a limit
+  mix).
 * **#192 Excess-layer development.** Excess LDFs from a ground-up
   triangle plus a severity curve, benchmark blending, a Pareto-informed
   BF prior.
@@ -302,16 +420,32 @@ Each has a GitHub issue.
 * **#194 Severity fitting beyond Pareto.** Truncation and censoring for
   lognormal, gamma, Burr and Weibull, plus goodness of fit and threshold
   selection for large losses.
-* **#195 Time value of money.** Payment patterns, discounting,
-  investment income in the price.
-* **#196 Cat XL inputs.** Event sets from a cat model, secondary
-  uncertainty, the hours clause, merging a cat set with a non-cat one,
-  and clash across lines (parked as large). Multi-year carry-forward for
-  profit commissions and sliding scales is already planned in
-  `docs/design/aggregate.md` (Next, item 2).
-* **#197 Quote assembly and comparison with the cedant's price.**
-  Loss cost to gross and net premium (brokerage, commission, margin) and
-  a quote-against-indication exhibit.
+* **#195 Time value of money. Closed** (PR 228). Payment patterns,
+  discounting, investment income in the price: now `PaymentPattern` and
+  `price_over_payout` (section 10).
+* **#196 Cat XL inputs. Closed except clash** (PRs 229 and 231). Event
+  sets from a cat model, secondary uncertainty, the hours clause and
+  merging a cat set with a non-cat one are `EventLossTable`,
+  `EventSet.from_long`, `.merge` and `.grouped` (section 7). Clash across
+  lines is not built: it stays parked (`docs/design/cat-inputs.md`, Next,
+  and `docs/roadmap.md`). Multi-year carry-forward for profit commissions
+  and sliding scales is already planned in `docs/design/aggregate.md`
+  (Next, item 2).
+* **#197 Quote assembly and comparison with the cedant's price. Closed**
+  (PR 222). Loss cost to gross and net premium (brokerage, commission,
+  margin) and a quote-against-indication exhibit: now `Quote.technical`
+  and `Quote.at` (section 10).
+* **#204, #205, #206. Closed** (PR 210). `price` on a `Grid` at a chosen
+  capital standard (#204), a distortion's `.family` and `.parameters`
+  (#205), and `Tower.on_annual_grid` for a tower on an annual loss grid
+  (#206).
+
+Issues opened after the first pass: #211 (tower matching should warn on
+implausible fits, the caveat in section 6), #212 (exposure rating
+helpers: a tabulated curve from a severity, calibrating the Swiss Re c,
+the CV of a layer loss, and `RiskProfile` pitfalls), #213 (severity under
+a mix of policy limits, and a standard error from `Pareto.fit`) and #214
+(small consistency items, some of the "Smaller things" bullet below).
 
 Smaller items already on the roadmap or not worth an issue: log-log
 interpolation for tabulated exposure curves, a skewness method on a
@@ -331,14 +465,15 @@ test asserts only the looser facts noted.
 * **Policy limits.** A claim over a threshold is cut at its own risk's sum
   insured, so the severity of a book is a mixture of Pareto distributions cut
   at different limits. There is no object for it; the notebook averages one
-  `Grid.rounding(Pareto(t, alpha), step, n)` per claim limit. Not in issues
-  190 to 197, and no issue yet; nor is a fit of an exposure curve to data or a
-  credibility function made for layer losses.
+  `Grid.rounding(Pareto(t, alpha), step, n)` per claim limit (issue #213).
+  Nor is there a fit of an exposure curve to data (calibrating the Swiss Re
+  c to experience is issue #212); no issue covers a credibility function
+  made for layer losses.
 * **Truncation matters.** `Pareto.fit` with the per-claim `reporting_thresholds`
   gave alpha 1.720 on 100 developed, trended claims (true 1.6); without them
   1.242, with the censored flags also dropped 1.255 (the test asserts alpha
   within two standard errors of 1.6 and at least 0.2 above the fit without
-  the thresholds). It returns no standard error (no issue yet), so alpha over
+  the thresholds). It returns no standard error (issue #213), so alpha over
   the square root of the uncensored claims stands in.
 * **Development from the listing is selected on the outcome.** A listing of
   claims whose latest incurred is over a threshold leaves out claims that were
@@ -346,17 +481,24 @@ test asserts only the looser facts noted.
   every listed claim upward. Measuring each step only on claims over a higher
   threshold at the earlier valuation (750,000 against a 500,000 listing) avoids
   most of it; here the factors moved by under one point (1.044 to 1.035 at the
-  second step).
+  second step). `DevelopmentPattern.from_history` measures every listed claim
+  (1.044 at the second step) and has no selection threshold, so it does not
+  correct for this; the notebook keeps its thresholded helper.
 * **Counts.** A `Triangle` of claim counts by report year developed with
   `ChainLadder` gives the factor for claims not yet reported (1.24 on the
   latest year), and an intercept-only Poisson `Glm` with a log offset gives the
   frequency level and a Pearson dispersion; a `year` term tests a trend in the
-  adjusted counts.
+  adjusted counts. The count pattern, as
+  `DevelopmentPattern([0.5 + k for k in range(len(cdf))], cdf)` from the
+  `ChainLadder` fit, can be passed as `burning_cost(development=pattern)`,
+  which reproduced the notebook's factors (1.0172, 1.0404 and 1.2385 for 2023
+  to 2025, with the record built with `valuation=2026.0`).
 * **`fit_references` error text.** `fit_references([(5.0, 5.0, 3.0)],
   [(5.0, 0.2)])` raises `ValueError: invalid parameter references = NaN: are
   inconsistent: ...`; the message prints `NaN` where the references should be.
   The inconsistent case (a layer loss above limit times frequency) is
-  correctly refused. With layers only, as the notebook calls it, the matching
+  correctly refused (the NaN message and warnings on implausible fits are
+  issue #211). With layers only, as the notebook calls it, the matching
   returned a model for every one of 200 parameter draws and derived the
   claim count over the lowest attachment itself (0.60 a year against the
   experience model's 0.49); the pieces' alphas still run from 0.83 to 6.62.
@@ -365,10 +507,13 @@ test asserts only the looser facts noted.
   99% TVaR was 18.66m against 15.86m and its technical rate on line 10.8%
   against 9.4%; the two lower layers moved by under half a point.
 * **Smaller things.** `RiskProfile` refuses `lower=0` for a band (`lower`
-  must be positive; use the smallest sum insured). `year_fraction(2016, 12, 31)`
+  must be positive; use the smallest sum insured; issue #212).
+  `year_fraction(2016, 12, 31)`
   is 2017.0 (the grid puts the last day at the next year's start), so take an
   accident year from the date's own year, not from its fraction.
-  `LimitedFluctuation` has no `p` or `k` attributes to read back.
+  `LimitedFluctuation` has no `p` or `k` attributes to read back (issue
+  #214 holds this, the `year_fraction` point and the Cape Cod price level
+  below).
   `CapeCod(trend).fit(...).trended_apriori` is at the price level of the
   valuation date (the end of the last origin year), one year earlier than the
   middle of the treaty year the notebook trends to. The notebook pools the
@@ -381,12 +526,15 @@ test asserts only the looser facts noted.
   with the clustering of claims (47.5% at a count dispersion of 3; the
   Pearson estimate from ten counts was 0.80 against a true 1.97), and by under
   two points with the tail alpha, the frequency, the trend, the loss ratio, the
-  analysis threshold or a tripled credibility: gaps #190 and #194 matter less
-  to the price here than the exposure curve, which the library cannot fit.
+  analysis threshold or a tripled credibility: the gap #194 matters less to the
+  price here than the exposure curve, which the library cannot fit (#212);
+  #190 is closed.
   The limited-fluctuation standard measures a burning cost's volatility, so
   it is a conservative weight for a fitted experience model.
 * **Stand-alone capital against one price of risk.** At a 99% TVaR stand-alone
   standard the 20m xs 20m layer's technical premium (2.19m) was 2.3 times the
   premium under one proportional hazard distortion calibrated to the working
   layer (0.94m), because its TVaR (18.66m) is nearly its limit. Quote
-  assembly at a capital standard is by hand (issues #197, #204).
+  assembly at a capital standard is now `price(grid, TAIL,
+  cost_of_capital=r)` then `Quote.technical` (issues #197 and #204, closed);
+  the notebook uses them.

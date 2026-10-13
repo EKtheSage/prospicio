@@ -70,6 +70,20 @@ price. Getting them there is most of the work, and a fit cannot repair it.
 - **Trend** each loss to the contract year, and move the large-loss threshold
   with the trend: a threshold of 1 today was about 1 / (1 + trend)^years in an
   old year, so a fixed threshold drops old losses that would be large now.
+
+  prospicio does these two steps for you:
+  `LargeLossExperience(...).prepare(rate=, to=, development=)` converts each
+  loss to the pricing currency (with `fx=` on `LargeLossExperience`), develops
+  it to ultimate with a `DevelopmentPattern` (or a list of factors) and trends
+  it from its accident date to the contract period.
+  `PreparedLosses.complete_above` is the moved threshold (the reporting
+  threshold times the largest trend factor). It is compared with each loss's
+  reported amount trended, before development and conversion; losses below it
+  are left out of the burning cost. For the counts, a `DevelopmentPattern`
+  built from a claim-count chain ladder gives each year's IBNR factor, read at
+  the year's mid-point: `pattern.at(valuation - (year + 0.5))`. See
+  [`experience-and-exposure-rating.md`](experience-and-exposure-rating.md),
+  section 2.
 - **On-level** the counts to the current exposure before reading their mean and
   dispersion (section 3.1).
 - For working layers, keep the **empirical** distribution (the claims
@@ -970,7 +984,13 @@ your belief.
 - A tail more flexible than the data supports is not more accurate. Compare it
   with the single Pareto at the layers you price.
 - Develop and trend the large losses before the tail fit. An open claim at its
-  current estimate understates the tail.
+  current estimate understates the tail. `LargeLossExperience.prepare` does
+  both. For the tail fit, keep the losses the burning cost keeps: those whose
+  `amount` times `factor` (in `to_dict()`) is at least
+  `PreparedLosses.complete_above`. Then fit their `trended` values.
+  Development and conversion change a loss's size but not whether the record
+  is complete for it. With one FX rate, the threshold in the pricing currency
+  is `complete_above` times the rate.
 
 ## What prospicio does not do yet
 

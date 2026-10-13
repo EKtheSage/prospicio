@@ -23,7 +23,7 @@ distribution; this guide adds the load for risk on top of them.
 |---|---|---|---|
 | A first number for a screen, nothing else known | A load on expected loss | `classical_premium("expected_value", x, t)` | Cheap, but blind to the tail. Fine only to compare covers of one shape |
 | A stable, roughly symmetric result (a large quota share) where the load should follow volatility | Standard deviation or variance principle | `classical_premium("standard_deviation", x, t)`, `calibrate_classical` | Price rises with spread. Needs a finite variance, and layer prices do not add up (section 3) |
-| "We need 10% on capital" | Constant cost of capital (CCoC) | `Pentagon.solve(..., assets=a)` or `price_portfolio(..., cost_of_capital=r)` for capital on a TVaR or EPD standard; `Distortion.ccoc(r)` for capital equal to the maximum loss | Every unit of capital earns the same return, the easiest rule to explain. Say which capital the 10% is on (section 4) |
+| "We need 10% on capital" | Constant cost of capital (CCoC) | `price(x, Distortion.tvar(p), cost_of_capital=r)`, `Pentagon.solve(..., assets=a)` or `price_portfolio(..., cost_of_capital=r)` for capital on a TVaR or EPD standard; `Distortion.ccoc(r)` for capital equal to the maximum loss | Every unit of capital earns the same return, the easiest rule to explain. Say which capital the 10% is on (section 4) |
 | One quote or target, price the rest of a program consistently | One-parameter distortion (proportional hazard, Wang) calibrated to it | `calibrate("ph", x, premium)`, then `d.measure(y)` or `TowerGrids.price(d)` | Prices add up across layers, one number to defend |
 | Remote layers (catastrophe) with a minimum rate on line | A distortion with a floor: LEP, capped linear, linear yield, CCoC | `calibrate("lep", x, premium, r0=0.03)` | A family without a floor prices a 1-in-1,000 layer at a fraction of a percent |
 | Quotes on several layers | Fit two parameters, or take the concave hull of the quotes | `calibrate(..., r0=...)` with a search on `r0`, `Distortion.convex(points)` | One parameter cannot match both ends of a program |
@@ -64,7 +64,7 @@ import math
 
 from prospicio.aggregate import fft
 from prospicio.distributions import Grid, Lognormal, Pareto, Poisson, PredictiveDistribution
-from prospicio.pricing import Pentagon, Portfolio, calibrate_classical, classical_premium, price_portfolio
+from prospicio.pricing import Pentagon, Portfolio, calibrate_classical, classical_premium, price, price_portfolio
 from prospicio.reinsurance import Layer, Tower
 from prospicio.risk import Distortion, GaussianCopula, calibrate, capital
 
@@ -105,17 +105,25 @@ question is what each method then charges the other two.
 ```python
 mid = annual["5x5"]
 RETURN = 0.10
-target = Pentagon.solve(loss=mid.mean(), assets=TAIL.measure(mid), return_on_capital=RETURN)
-print(f"5x5 target: risk premium {target.premium:.3f} = loss {target.loss:.3f} + margin {target.margin:.3f}, "
+target = price(mid, TAIL, cost_of_capital=RETURN)
+print(f"5x5 target: risk premium {target.premium:.3f} = loss {target.expected_loss:.3f} + margin {target.margin:.3f}, "
       f"capital {target.capital:.3f}, loss ratio {target.loss_ratio:.1%}")
+same = Pentagon.solve(loss=mid.mean(), assets=TAIL.measure(mid), return_on_capital=RETURN)
+print(f"the same pentagon from three of its sides: {math.isclose(same.premium, target.premium)}")
 ```
 
 ```text
 5x5 target: risk premium 1.240 = loss 0.586 + margin 0.654, capital 6.538, loss ratio 47.3%
+the same pentagon from three of its sides: True
 ```
 
-`Pentagon.solve` takes any three independent quantities by keyword; the others
-are properties (`target.premium`, not `target.premium()`).
+`price(losses, assets, cost_of_capital=r)` takes the capital standard as a
+distortion (here the 99% TVaR) and charges the premium (E[X] + r a) / (1 + r),
+so that the margin is r times the capital. It is the pentagon solved from the
+loss, the assets and the return: `Pentagon.solve` takes any three independent
+quantities by keyword, which section 5 needs when the assets are a VaR or an
+EPD target rather than a distortion. On both, the results are properties
+(`target.premium`, not `target.premium()`).
 
 ## 3. A simple load, or a premium principle
 
@@ -276,8 +284,9 @@ fitted = {name: calibrate(family, mid, target.premium) for name, family in FAMIL
 
 
 def label(d, places=3):
-    """A distortion's name and parameters, rounded, read from its repr (no accessor yet: issue #205)."""
-    return re.sub(r"\d+\.\d+", lambda m: f"{float(m.group()):.{places}f}", repr(d).removeprefix("Distortion."))
+    """A distortion's family and parameters, rounded (a floor r0 first, as the constructor takes it)."""
+    values = [d.parameters[k] for k in sorted(d.parameters, key=lambda k: k != "r0")]
+    return f"{d.family}(" + ", ".join(f"{v:.{places}f}" for v in values) + ")"
 
 
 ODDS = (2, 10, 50, 100, 1000)
@@ -307,6 +316,8 @@ others fall to zero.
 
 Now price all three layers with each distortion, as a multiple of expected loss,
 and show the return that price earns on each layer's own 99% TVaR capital.
+`price(x, assets, distortion=d)` gives the premium `d.measure(x)` and the return
+it earns on the capital standard you choose, here `TAIL`.
 (`tower_grids.price(d)` prices every layer of a tower in one call and agrees with
 `d.measure(g)`; the code checks it.)
 
@@ -316,10 +327,9 @@ for name, d in fitted.items():
         assert abs(p.premium - d.measure(g)) < 1e-9
 print(f"{'':>12}" + "".join(f"{n:>8}" for n in NAMES) + "   return on 99% TVaR capital")
 for name, d in fitted.items():
-    prices = {n: d.measure(g) for n, g in annual.items()}
-    returns = {n: (prices[n] - annual[n].mean()) / (TAIL.measure(annual[n]) - prices[n]) for n in NAMES}
-    print(f"{name:>12}" + "".join(f"{prices[n] / annual[n].mean():8.2f}" for n in NAMES) + "   "
-          + "  ".join(f"{returns[n]:6.1%}" for n in NAMES))
+    priced = {n: price(g, TAIL, distortion=d) for n, g in annual.items()}
+    print(f"{name:>12}" + "".join(f"{priced[n].premium / priced[n].expected_loss:8.2f}" for n in NAMES) + "   "
+          + "  ".join(f"{priced[n].return_on_capital:6.1%}" for n in NAMES))
 ```
 
 ```text
@@ -716,10 +726,13 @@ test how much each moves the price.
 - The **allocation method**, which changes the return by line, not the total.
 - Pricing **stand-alone** or **in the book**: the stand-alone price is the
   reference, the in-book price is what this reinsurer can accept.
-- **Time value**: the risk premium here is on undiscounted loss, and the return
-  on capital is before investment income. Discounting long-tail payments, and
-  netting investment income from the cost of capital, are separate steps that
-  prospicio does not take for you yet (issue #195).
+- **Time value**: the risk premium here is on undiscounted loss, with the
+  capital held for one year. `PaymentPattern` and
+  `price_over_payout(price, pattern, rate=..., cost_of_capital=...)` (or
+  `distortion=...`, the rule the price was made with) restate it over the
+  payout. There the cost of capital is a spread over the discount rate, because
+  discounting the losses is the investment income, and the capital runs off with
+  the share of the loss still outstanding.
 - **Model and parameter uncertainty**: a load for not knowing the distribution
   is a different thing from a load for its spread. Build it into the loss model
   (a heavier tail, a mixed parameter) or load it separately, and say which.
@@ -731,19 +744,21 @@ capital from `price_portfolio`, `Portfolio.price` and `capital` (except
 
 ## 9. Pitfalls in one place
 
-- **Properties and methods.** On a `Distortion`, `mass` is a property, while
-  `g(s)`, `g_inv`, `g_dual`, `measure(x)` and `weights(n)` are methods. On a
-  `Pentagon`, `loss`, `margin`, `premium`, `capital`, `assets`, `loss_ratio` and
-  `return_on_capital` are properties. On an `Allocation` and a `PortfolioPrice`,
-  `allocated`, `standalone` and `total` are properties, while
-  `diversification_benefit()` and `diversification()` are methods. On a
+- **Properties and methods.** On a `Distortion`, `mass`, `family` and
+  `parameters` are properties, while `g(s)`, `g_inv`, `g_dual`, `measure(x)` and
+  `weights(n)` are methods. On a `Pentagon`, `loss`, `margin`, `premium`,
+  `capital`, `assets`, `loss_ratio` and `return_on_capital` are properties; a
+  `Price` has the same, with the loss named `expected_loss`. On an `Allocation`
+  and a `PortfolioPrice`, `allocated`, `standalone` and `total` are properties,
+  while `diversification_benefit()` and `diversification()` are methods. On a
   `Portfolio`, `totals`, `probs` and `units` are properties, while `assets(p)`,
   `epd(a)` and `bodoff(...)` are methods.
 - **Price the annual loss of the cover**, after reinstatements and the annual
   limit, not a single loss. Pricing per occurrence and summing double counts the
   load.
 - **Risk premium, not technical premium.** Expenses and brokerage are grossed up
-  afterwards (see [the price guide](reinsurance-price.md)).
+  afterwards with `Quote.technical(price, expenses=, brokerage=, limit=)` (see
+  [the price guide](reinsurance-price.md)).
 - **Few draws, noisy tail.** A 99% TVaR from 20,000 draws rests on 200 of them.
   Use a grid and `fft` where you can, or more draws and a fixed seed.
 

@@ -825,3 +825,58 @@ mod event_loss_table {
         check(&elt, &at, 23);
     }
 }
+
+#[test]
+fn clash_matches_aggregate() {
+    use prospicio_aggregate::bivariate::{Clash, JointGrid};
+    use prospicio_prob::{Distribution, Gamma, Lognormal};
+    use std::collections::HashMap;
+    // validation/scripts/aggregate_clash.py: A only 2, B only 3, both 1;
+    // gamma and lognormal losses; a Poisson or negative binomial count.
+    let clash = Clash::new(2.0, 3.0, 1.0).unwrap();
+    let mut fits: HashMap<String, (JointGrid, Grid)> = HashMap::new();
+    let cases = reference("clash_aggregate.csv");
+    check(&cases, |c| {
+        let key = format!("{};{}", c.get("distribution"), c.get("params"));
+        if !fits.contains_key(&key) {
+            let n: Box<dyn Counting> = match c.get("distribution") {
+                "poisson" => Box::new(Poisson::new(clash.events()).ok()?),
+                "mixed" => Box::new(NegativeBinomial::from_mean_variance(12.0, 48.0).ok()?),
+                _ => return None,
+            };
+            let points = ["points_a", "points_b"].map(|p| c.param("params", p) as usize);
+            let (a, _) = Grid::rounding(
+                &Gamma::from_mean_cv(10.0, 1.5).unwrap(),
+                c.param("params", "step_a"),
+                points[0],
+            )
+            .ok()?;
+            let (b, _) = Grid::rounding(
+                &Lognormal::from_mean_cv(5.0, 0.5).unwrap(),
+                c.param("params", "step_b"),
+                points[1],
+            )
+            .ok()?;
+            let (joint, _) = clash.aggregate(n.as_ref(), &a, &b, points).ok()?;
+            let total = joint.total().ok()?;
+            fits.insert(key.clone(), (joint, total));
+        }
+        let (joint, total) = &fits[&key];
+        let at = |col: &str| c.number(col).map(|x| x as usize);
+        match c.get("quantity") {
+            "density" => Some(joint.prob(at("arg")?, at("arg2")?)),
+            "marginal_a" => Some(joint.marginal(0).ok()?.probs()[at("arg")?]),
+            "marginal_b" => Some(joint.marginal(1).ok()?.probs()[at("arg")?]),
+            "total" => Some(total.probs()[at("arg")?]),
+            "mean_a" => Some(joint.mean(0)),
+            "mean_b" => Some(joint.mean(1)),
+            "var_a" => Some(joint.variance(0)),
+            "var_b" => Some(joint.variance(1)),
+            "moment_ab" => Some(joint.moment(1, 1)),
+            "correlation" => Some(joint.correlation()),
+            "total_mean" => Some(total.mean()),
+            "total_step" => Some(total.step()),
+            _ => None,
+        }
+    });
+}

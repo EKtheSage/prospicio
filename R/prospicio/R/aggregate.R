@@ -204,6 +204,109 @@ eventual_ruin <- function(severity, rho = NULL, loss_ratio = NULL, p = numeric()
   )
 }
 
+#' Two lines hit by the same events, and clash
+#'
+#' `fft_bivariate()` gives the joint annual loss `(A, B)` of two lines hit by
+#' one count of events: each event gives a pair of losses from the joint
+#' per-event `severity` (a matrix, rows for line A at `0, step_a, ...`,
+#' columns for line B), and mass at 0 on a line is an event that misses it.
+#' The joint law is the compound FFT with two-dimensional transforms.
+#'
+#' `clash_model()` is the clash model of the Python package `aggregate`
+#' (`clash`): the expected events a year hitting line A only, line B only
+#' and both (the clash count). Independence within an event fixes those
+#' hitting neither, `only_a * only_b / both`, so there are `events` in all,
+#' each hitting A with probability `trigger_a` and B with `trigger_b`. The
+#' dependence between the lines comes only from the shared count: with a
+#' Poisson count `Cov(A, B) = both * E[X] * E[Y]`. `clash_severity()` is its
+#' per-event severity and `clash_aggregate()` its joint annual loss, with a
+#' count whose mean is `events`.
+#'
+#' @param frequency The shared count of events: a [poisson_count],
+#'   [negative_binomial_count], [binomial_count] or claim count.
+#' @param severity A matrix of probabilities summing to 1.
+#' @param steps The step on line A and on line B.
+#' @param points Points on each line of the result.
+#' @param only_a,only_b Expected events a year hitting one line only.
+#' @param both Expected events a year hitting both lines, positive.
+#' @param clash A `clash_model()`.
+#' @param a,b [grid_distribution]s: the loss to each line given that the
+#'   event hits it.
+#' @returns `fft_bivariate()`, `clash_aggregate()` and `clash_severity()`: a
+#'   list with `density` (the joint probabilities as a matrix; mass past the
+#'   last row or column is carried on it), `steps`, `marginal_a`,
+#'   `marginal_b` and `total` ([grid_distribution]s; the total is exact
+#'   when the steps are equal, else on the larger step keeping the mean),
+#'   `means`, `variances`, `covariance`, `correlation`, and, but for
+#'   `clash_severity()`, `report`: `tail_mass` and `aliasing_mass` on each
+#'   line (the mass that wrapped around the FFT buffer; request more points
+#'   when it is not negligible), `expected_means` and `grid_means`.
+#'   `clash_model()`: a list of class `clash_model` with the three counts,
+#'   `neither`, `events`, `trigger_a` and `trigger_b`.
+#' @export
+#' @examples
+#' clash <- clash_model(only_a = 2, only_b = 3, both = 1)
+#' clash$events
+#' a <- grid_distribution(1, c(0, 0.5, 0.5))
+#' b <- grid_distribution(1, c(0, 1))
+#' joint <- clash_aggregate(clash, poisson_count(clash$events), a, b, points = c(128, 128))
+#' joint$covariance # both * E[X] * E[Y] = 1.5
+#' joint$correlation
+#' mean(joint$total)
+fft_bivariate <- function(frequency, severity, steps = c(1, 1), points) {
+  severity <- as.matrix(severity)
+  points <- rep_len(as.double(points), 2)
+  r <- rust_result(fft_bivariate_rust(
+    frequency@ptr, as.double(t(severity)), nrow(severity), ncol(severity),
+    as.double(steps[1]), as.double(steps[2]), points[1], points[2]
+  ))
+  joint_result(r)
+}
+
+#' @rdname fft_bivariate
+#' @export
+clash_model <- function(only_a, only_b, both) {
+  counts <- as.double(c(only_a, only_b, both))
+  r <- rust_result(clash_rust(counts))
+  structure(
+    list(only_a = counts[1], only_b = counts[2], both = counts[3], neither = r[1],
+         events = r[2], trigger_a = r[3], trigger_b = r[4]),
+    class = "clash_model"
+  )
+}
+
+#' @rdname fft_bivariate
+#' @export
+clash_severity <- function(clash, a, b) {
+  joint_result(rust_result(clash_aggregate_rust(clash_counts(clash), NULL, a@ptr, b@ptr, 0, 0)))
+}
+
+#' @rdname fft_bivariate
+#' @export
+clash_aggregate <- function(clash, frequency, a, b, points) {
+  points <- rep_len(as.double(points), 2)
+  joint_result(rust_result(clash_aggregate_rust(
+    clash_counts(clash), frequency@ptr, a@ptr, b@ptr, points[1], points[2]
+  )))
+}
+
+clash_counts <- function(clash) {
+  if (!inherits(clash, "clash_model")) stop("clash must be a clash_model()")
+  c(clash$only_a, clash$only_b, clash$both)
+}
+
+joint_result <- function(r) {
+  out <- list(
+    density = matrix(r$probs, nrow = r$rows, ncol = r$cols, byrow = TRUE), steps = r$steps,
+    marginal_a = grid_distribution(ptr = r$marginal_a),
+    marginal_b = grid_distribution(ptr = r$marginal_b),
+    total = grid_distribution(ptr = r$total), means = r$means, variances = r$variances,
+    covariance = r$covariance, correlation = r$correlation
+  )
+  if (!is.null(r$report)) out$report <- r$report
+  out
+}
+
 #' Layer loss picks
 #'
 #' Reshapes a severity so that its expected loss to each layer hits a pick,

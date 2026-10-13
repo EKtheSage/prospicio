@@ -76,6 +76,12 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   comonotonic allocation" below). Python `Portfolio.price_stand_alone`
   (`StandAlone`) and `Portfolio.comonotonic_kappa`, R
   `price_stand_alone()` and `comonotonic_allocation()`.
+- `prospicio_aggregate::bivariate::{fft_bivariate, JointGrid, Clash}`:
+  the joint annual loss of two lines hit by the same events, by a 2-D
+  compound FFT, and `aggregate`'s clash model ("Two lines and clash"
+  below). Python `fft_bivariate`, `JointGrid`, `Clash`; R
+  `fft_bivariate()`, `clash_model()`, `clash_severity()`,
+  `clash_aggregate()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -649,6 +655,53 @@ were already `Portfolio::premium_bounds` (`docs/design/risk.md`).
   the zero-probability points (with `exeqa` 0) leave the values at the
   others unchanged (to 3e-14), so they are not carried.
 
+### Two lines and clash
+
+`aggregate`'s `BivariateAggregate` with independent coupling and its
+`clash` statement, in `prospicio_aggregate::bivariate`. Each of `N` shared
+events gives a pair of losses `(X, Y)` from a joint per-event severity
+`S` (a `JointGrid`: a step on each axis, rows for line A); mass at 0 on an
+axis is an event that misses that line. The pgf acts elementwise on a
+transform, so `(A, B)` is `iFFT2(P_N(FFT2 S))`, and each marginal is the
+1-D compound of `N` with that axis's per-event marginal.
+
+- `Clash::new(only_a, only_b, both)` takes `aggregate`'s three expected
+  counts; independence within an event fixes `neither = only_a only_b /
+  both`, so `n = only_a + only_b + both + neither`,
+  `p_A = (only_a + both) / n`, `p_B = (only_b + both) / n`. The per-event
+  severity is the outer product of `(1 − p_A) δ_0 + p_A f_A` and the same
+  for B. `Clash::aggregate` checks that the count's mean is `n`. With a
+  Poisson count, `Cov(A, B) = both · E[X] E[Y]` (since
+  `(only_a + both)(only_b + both) = both · n`).
+- The 2-D transform is rustfft's 1-D transform on the rows, a transpose
+  and the columns: no threads, so the WASM build is unchanged. The buffer
+  on each axis is the power of two at least twice the points (as `fft`);
+  `aggregate` doubles its own axis length (`padding=1`).
+- Like `fft`, the mass past the last row or column is carried on it, so
+  the result sums to 1 and its marginals equal `fft`'s; `aggregate`
+  truncates and reports a `deficit`. What the probabilities lack of 1
+  (round-off, a severity summing to 1 within `1e-9`) stays missing: on the
+  far corner it moved the second moments by `4e-9`.
+- The FFT's round-off is kept signed until the output is folded, then
+  negatives are set to 0: clamping each buffer cell first biased each
+  marginal by up to `1e-11`. `aggregate` zeroes every cell below `1e-15`,
+  which drops real tail mass (about `1e-11` on the parity grids, `3e-9`
+  on the second moments).
+- Aliasing: wrapping on one axis does not move the other, so the wrapped
+  mass on each axis is that of its marginal, measured by the 1-D compound
+  on a buffer twice as long (`aliasing_mass`); their sum bounds the total
+  misplaced probability. A 2-D aliasing check at twice the buffer would
+  cost four times the memory.
+- The total `A + B` is exact on the anti-diagonals when the steps are
+  equal, else each cell is split between the two points of the larger
+  step around its total, keeping the mean (`aggregate`'s
+  `JointBandsMixin.total`).
+- Not carried in this PR: copula coupling of the per-event severity (needs
+  a copula cdf on `prospicio-prob`'s `Copula`), signed and `pnl` axes,
+  the `netceded` joint of one aggregate's ceded and net, the disk-backed
+  (massive) path, and sizing the axes automatically from a total budget
+  (points are given per axis).
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -791,6 +844,16 @@ reinstatement at 100% and with two at 100% and 50%, at `1e-10` relative.
 `aggregate` prices reinstatements only inside its P&L builders, pro rata
 as to amount; prospicio's pro rata as to time has no counterpart there.
 
+Clash is checked against `aggregate` 1.0.1's `clash`
+(`validation/scripts/aggregate_clash.py`, 152 values): 2 events a year
+hitting A only, 3 B only and 1 both, gamma and lognormal losses, a
+Poisson and a gamma-mixed (negative binomial) count, on steps 1 and 0.5
+and on step 1 for both. The joint density, each marginal and the total
+at `1e-12`, means, variances, `E[AB]` and the correlation at `1e-9`
+relative (observed `4e-11`), with `aggregate`'s `1e-15` clip turned off.
+Unit tests check each marginal against the 1-D `fft` within the reported
+aliasing mass, and the covariance against `Var(N) E[X] E[Y]` at `1e-10`.
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
@@ -815,9 +878,11 @@ as to amount; prospicio's pro rata as to time has no counterpart there.
    (`distributions.md`), the stand-alone price on a grid portfolio, the
    comonotonic allocation, and a reinstatement premium check against
    `aggregate`.)
-   Parked as large, and the candidates for what comes next (the user's
-   choice): the P&L ledger (`pnl`, which needs signed grids),
-   bivariate FFT aggregates and `clash`, renewal counts with Wiener–Hopf
-   ruin.
+   Parked as large, and the candidates for what comes next: (done:
+   bivariate FFT aggregates and `clash`, with independent coupling; see
+   "Two lines and clash"); then copula coupling of the two lines (a
+   copula cdf on `prospicio-prob`'s `Copula` first, in its own PR), renewal
+   counts with Wiener–Hopf ruin, and the P&L ledger (`pnl`, which needs
+   signed grids).
 2. Deficit and credit carry-forward in profit commissions and sliding
    scales, once multi-year simulation exists.

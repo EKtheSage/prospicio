@@ -1,0 +1,806 @@
+# Design note: compartmental reserving (Gesmann and Morris)
+
+Status: **Decided** (2026-10-13; nothing built; the user settled the open
+decisions at the end, all as recommended, with decision 1 widened: see
+there) · Lane:
+Reserving, with the Models lane for `prospicio-bayes` · Depends on:
+`reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
+9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
+diagnostics), `predictive-distribution.md`, `reserving-v02.md` (exposure,
+dependence between segments), `docs/roadmap.md` (v0.7 row)
+
+## Goal
+
+A hierarchical compartmental reserving model in `prospicio-reserving`,
+behind the `bayes` feature, that fits paid and outstanding losses jointly
+from one set of interpretable parameters and gives the same output as the
+other Bayesian models: a joint `PredictiveDistribution` of reserves by
+origin, with parameter and process error, sampled with NUTS. What it adds
+over `BayesOdp`, `BayesBf` and `Meyers`:
+
+* **paid and outstanding in one model.** Claims flow from exposure (EX)
+  into outstanding (OS) as they are reported and from outstanding into
+  paid (PD) as they settle. The fit uses both columns at once, so the
+  paid projection and the case reserve tell one consistent story instead
+  of two separate chain ladders;
+* **parameters an actuary can read and set a prior on**: a reported loss
+  ratio `RLR`, a reserve robustness factor `RRF` (paid over reported, so
+  the ultimate loss ratio is `RLR × RRF`), a reporting rate `k_er` and a
+  payment rate `k_p`. A prior on any of them is a statement about the
+  business, not about an abstract development factor;
+* **pooling across accident years**: `RLR` and `RRF` vary by origin as
+  correlated random effects, so immature origins borrow strength from
+  mature ones.
+
+The models are Gesmann and Morris (2020), building on Morris (2016). They
+are named after pharmacokinetic compartment models, and the papers fit
+them with brms and Stan.
+
+Out of scope here, kept for later PRs or notes: the multistage exposure
+with a gamma-pdf source (Gesmann and Morris 2020, Eq. 4), a reporting rate
+that grows with development time (Morris 2016, sec. 4.1.1; Gesmann's
+PK/PD post), market-cycle multipliers (Gesmann and Morris' model 3), AR(1)
+residuals and calendar-year shocks (Morris 2016, sec. 4.2), hierarchies
+across companies (Zhang, Dukic and Guszcza 2012) and joint models across
+lines.
+
+## Pull requests
+
+Each PR holds one capability and lands in Rust, Python and R together, as
+in `reserving-v02.md` decision 7 and `reserving-bayes.md` open decision 10.
+
+| PR | Branch | Holds | Base |
+|---|---|---|---|
+| 0 | `compartmental-design` | this note; a pointer from `reserving-bayes.md` open decision 9 | `main` |
+| A | `claude/bayes-dual` | the `Scalar` trait and the in-house dual type (decision 4); a generic density beside each existing one, with oracle tests against the hand-written gradients; the chunked-pass cost measurement that `reserving-bayes.md` decision 15 still owes. No new model, no binding change | `main`, after the Meyers segments branch merges (it changes `meyers.rs` by about 1,500 lines) |
+| B | `claude/bayes-compartmental` | `Compartmental` with one OS compartment and Gesmann and Morris' model 1 likelihood (decisions 1 to 3, 5 to 7); company 337's data; the Stan reference; Python and R bindings | PR A |
+| C | `claude/bayes-compartmental-lognormal` | model 2's likelihood (log-normal on outstanding and incremental paid loss ratios) and its development-year random effects (decision 2) | PR B |
+| D | `claude/bayes-compartmental-two-os` | the two-OS model (fast and slow settlement), the generic RK4 solver as its oracle (decision 3) | PR B |
+| E | `claude/bayes-compartmental-segments` | `Compartmental::fit_segments` with `SegmentDependence`, and `TriangleModel` for the diagonal backtest (decision 8) | PR B, and the Meyers segments branch merged |
+| later | | multistage exposure on the RK4 solver; market cycles; AR(1) residuals (open decision 8) | PR D |
+
+PRs B to E touch the same binding files as the other Bayesian models
+(`crates/prospicio-python/src/reserving.rs`,
+`crates/prospicio-r/src/reserving.rs`, `R/prospicio/R/reserving.R`,
+`python/prospicio/reserving.py`) and the generated stub, `NAMESPACE` and
+`man/`. Whichever merges second merges `main` and regenerates them; it
+does not merge them by hand.
+
+## References
+
+| What | Primary reference | Secondary |
+|---|---|---|
+| One-OS model, model 1 (Gaussian on amounts) | Gesmann and Morris (2020), "Hierarchical Compartmental Reserving Models", CAS Research Paper: Eq. 1 and 2, sec. 5.2.1, brms code in sec. 7.2.2 (R, with the closed form as Stan function snippets), reconstructed as the Stan program brms generates and run with CmdStan 2.39.0 | its printed posterior (`m1fit`, sec. 7.2.2; decision 7) |
+| Model 2 (log-normal on loss ratios, incremental paid) | the same paper, sec. 3.3 and 5.2, brms code in sec. 7.2.3, reconstructed the same way | its printed posterior (`m2fit`, sec. 7.2.3; decision 7) |
+| Two-OS model | the same paper, Eq. 3 (closed form) and sec. 2.3 | our RK4 solve of the ODE system |
+| An earlier fit of company 337 | Gesmann's blog post "Hierarchical compartmental reserving models" (8 January 2018): nls, nlme and brms fits of company 337 | not a check (decision 7 says why) |
+| Background | Morris (2016), "Hierarchical Compartmental Models for Loss Reserving", CAS E-Forum Summer 2016 (nlme, OpenBUGS) | the CAS blog "Unboxing hierarchical compartmental reserving models" (2022); IFoA GIRO "Introducing compartmental reserving" |
+| Diagnostics and model comparison | `prospicio_bayes` (`rhat`, `ess_bulk`, `ess_tail`, `elpd::loo`), already at parity with R `posterior` and `loo` | |
+
+No package in R `ChainLadder` or chainladder-python fits these models, so,
+as in `reserving-bayes.md` decision 10, the reference is the same model
+written in Stan. The paper prints brms R code with Stan function
+snippets, not Stan programs, fitted with brms 2.10.0 on rstan 2.19.2 (sec.
+7.3 is only the session information). So the reference reconstructs, with
+provenance and without brms installed, the Stan program brms would
+generate from that code (no licence is stated, so nothing is copied). The
+reconstruction must reproduce these brms conventions: the nonlinear
+parameters `o` with `normal(0, 1)` priors and no intercept centring
+(`nl = TRUE`); the group sds as half Student-t (class `sd`, bounded at 0)
+on the `o` scale; group effects non-centred, `r = (diag(sd) L z)'` with
+`z ~ std_normal()` and `L ~ lkj_corr_cholesky(1)`, correlated only within
+an `|ID|` term (model 1: `oRLR` and `oRRF` by accident year; model 2 adds
+uncorrelated accident-year effects on `oker` and `okp` and uncorrelated
+development-year effects on all four); one sd prior per `nlpar` shared by
+its groups; and `sigma ~ 0 + deltaf` on the log link, so the `sigma` priors
+are priors on `log σ` (class `b`, unbounded). brms, rstan, cmdstanr and the
+`raw` package are not installed locally (open decision 6).
+
+Data (new in PR B): `validation/data/clrd_wkcomp_337.csv`, the papers'
+illustrative company, NAIC company 337 workers' compensation, accident
+years 1988 to 1997, ages 1 to 10, the full 10×10 square, from the same
+source `reserving-bayes.md` chose for group 353
+([EKtheSage/cas-schedule-p-data-model](https://github.com/EKtheSage/cas-schedule-p-data-model),
+table `mart_reserving_model_training`, release pinned and its sha256
+checked against the release's `manifest.json`). The generator
+`validation/scripts/clrd_wkcomp_337.py` follows
+`validation/scripts/clrd_comauto_353.py` with `company_code = '337'` and
+`line_of_business = 'workers_compensation'`. Columns, USD thousands:
+
+| Column | Mart source | Note |
+|---|---|---|
+| `paid` | `cum_paid_loss` | |
+| `incurred` | `incurred_loss` | includes bulk and IBNR |
+| `case_incurred` | `incurred_loss - bulk_loss` | Meyers' convention, as in `clrd_comauto_353.csv` |
+| `premium` | `earned_prem_direct` | the papers' premium |
+| `premium_net` | `earned_prem_net` | Meyers' convention |
+
+The two outstanding definitions differ. Morris (2016) prints, for 1988 at
+age 1, premium 104, OS 53 and paid 10 (USD millions), and the mart gives
+`incurred_loss - cum_paid_loss` = 53,121 and `earned_prem_direct` =
+104,437 there (queried locally with DuckDB, 2026-10-13). So the papers'
+OS includes bulk and IBNR, and their premium is direct, unlike Meyers'
+case incurred and net premium. The generator asserts that cell (paid
+9,558, incurred 62,679, bulk 24,619, case reserve 28,502, direct premium
+104,437) and Morris' printed table row by row before writing. The repo's
+`clrd_wkcomp.csv` and `clrd_lines.csv` have no outstanding column and
+cannot be used.
+
+## Decisions
+
+### 1. Which model ships first
+
+Decided 2026-10-13 by the user: model 1 first, then model 2, then the
+two-OS model, **with the API flexible from PR B on**. The user asked that
+the likelihood and the response be settings, not separate models: the
+likelihood (normal, log-normal, and later others such as gamma), the
+response scale (amounts, or loss ratios to premium), the paid response
+(cumulative or incremental), and the pair fitted (paid with outstanding,
+or paid with incurred, or one alone). PR B builds model 1 as one point of
+that grid, with the settings in place and the other values returning
+`Error::Bayes` ("not yet") until their PR adds them; PR C fills in the
+log-normal, loss ratios and incremental paid. Each value that ships gets
+its own Stan reference.
+
+The analysis that led here, as proposed: Four candidates:
+
+| Candidate | Reference | Solver | Sampler difficulty |
+|---|---|---|---|
+| Gesmann and Morris one-OS, model 1: Gaussian on OS and cumulative PD amounts, origin effects on `RLR` and `RRF` | printed priors, brms code and posterior (sec. 7.2.2); company 337 in the mart | closed form (Eq. 2) | moderate: 27 parameters on the paper's training triangle; the data pull the rates far from their tight priors (decision 2) |
+| Gesmann and Morris one-OS, model 2: log-normal on OS and incremental paid loss ratios, origin and development effects on every parameter | printed priors, brms code (sec. 7.2.3) and printed posterior | closed form | harder: 87 parameters on the paper's training triangle (decision 2), funnels, and the paper's text and code disagree on two priors |
+| Gesmann and Morris two-OS | the closed form (Eq. 3); no printed fit we can rerun | closed form, but the authors prefer a numerical solver | harder: a cascade of two OS compartments whose symmetries PR D derives |
+| Morris (2016): nlme and OpenBUGS, AR(1) residuals, a 1996 shock | printed estimates only; OpenBUGS is not available | closed form | harder: AR(1) and the shock are model-specific |
+
+**Ship model 1 first (PR B), then model 2's likelihood (PR C), then the
+two-OS model (PR D).** Model 1 is the smallest model with the paper's own
+priors and code, it needs no ODE solver, and every later variant reuses
+its density, its predictive step and its data. It has a known flaw
+(sec. 5.3.1 of the paper: a Gaussian on amounts predicts negative OS and
+negative paid increments), which is why model 2 follows directly; model 1
+first keeps PR B to one new likelihood and the parity check to the paper's
+simplest program. Choosing model 2 first is open decision 1 (b).
+
+### 2. The model, its priors and identification
+
+Proposed. For origin `i` with premium `Π_i`, development time `t` in
+years (ages 1 to 10, as the papers), and rates `k_er` (reporting) and
+`k_p` (payment):
+
+```text
+dEX/dt = −k_er EX                       EX(0) = Π_i
+dOS/dt =  k_er RLR_i EX − k_p OS        OS(0) = 0
+dPD/dt =  k_p RRF_i OS                  PD(0) = 0
+```
+
+Closed form (Gesmann and Morris, Eq. 2), written with one kernel `g` that
+removes the singularity at `k_er = k_p`:
+
+```text
+Δ    = k_er − k_p
+g(t) = (e^{−k_p t} − e^{−k_er t}) / Δ = t e^{−k_p t} · (−expm1(−Δ t)) / (Δ t)
+OS(t) = Π_i RLR_i k_er g(t)
+PD(t) = Π_i RLR_i RRF_i [ (1 − e^{−k_p t}) − k_p g(t) ]
+```
+
+The second line is exact for every `Δ`, and `(−expm1(−x))/x` takes a
+series branch for `|x| < 1e-5` (`1 − x/2 + x²/6`), so the density and its
+dual gradient are finite and smooth through `k_er = k_p`, where
+`g(t) = t e^{−k t}`. The PD form follows from the paper's by
+`k_er (1 − e^{−k_p t}) − k_p (1 − e^{−k_er t}) = Δ (1 − e^{−k_p t}) −
+k_p Δ g(t)`. The ultimate loss ratio is `PD(∞)/Π_i = RLR_i RRF_i`, and OS
+peaks at `log(k_p/k_er)/(k_p − k_er)`, the inflection of paid.
+
+**Hierarchy** (model 1, as the paper's code): the rates are shared, `RLR`
+and `RRF` vary by origin with correlated effects on the standardised `o`
+scale, which the preset's multipliers then scale.
+
+```text
+o_RLR,i = b_RLR + u_i1,   RLR_i = 0.7 e^{0.2 o_RLR,i}
+o_RRF,i = b_RRF + u_i2,   RRF_i = 0.8 e^{0.1 o_RRF,i}
+u_i = diag(τ) L z_i,   z_i ~ N(0, I₂),   L L' = Ω,   Ω = [[1, ρ], [ρ, 1]]
+b ~ N(0, 1) for each of b_RLR, b_RRF, b_ker, b_kp
+```
+
+So `log RLR_i = log 0.7 + 0.2 (b_RLR + u_i1)`, and `τ₁`, `τ₂` are sds on
+the `o` scale: an effect sd of `τ₁` on `o` is `0.2 τ₁` on `log RLR` and
+`0.1 τ₂` on `log RRF`. The paper's printed `sd(oRLR)` 0.64 and `sd(oRRF)`
+0.74 are on this scale. The paper's text (sec. 5.2.1) writes the effect
+differently, `RLR[i] ~ μ_RLR + u_RLR` with `u` multivariate normal and the
+`StudentT(10, 0, 0.2)⁺` sd on that `u`; the code wins for parity, as for
+model 2's σ (below), and `knowledge/` records both disagreements
+(decision 10).
+
+**Sampler scale.** Every positive parameter is non-centred log-normal,
+`θ = m e^{s o}` with `o ~ N(0, 1)`, as the paper (Stan's default inits in
+(−2, 2) break positive parameters on their natural scale). The sampler
+sees `b_ker`, `b_kp`, `b_RLR`, `b_RRF`, `log τ₁`, `log τ₂`, `atanh ρ`, the
+`z_i` of each origin with an observed cell, and `log σ_OS`, `log σ_PD`,
+with the log Jacobians of the `τ` and `ρ` maps (the σ priors are on
+`log σ` already, so `log σ` needs none). On the paper's training triangle
+(9 origins with data, below) that is 4 + 2 + 1 + 18 + 2 = 27 parameters,
+close to Meyers' CRC (29).
+
+**Model 2's size** (PR C): accident-year effects on all four `o` (9 levels
+each; `oRLR` and `oRRF` correlated, `oker` and `okp` not) and
+development-year effects on all four (9 levels each, uncorrelated): 72
+`z`, 8 sds, 1 correlation, 4 intercepts and 2 `log σ`, 87 parameters (95
+with 10 levels of each). PR A benchmarks at that size (decision 4).
+
+**Origins and development years with no observed cell.** The paper's
+training triangle (calendar years before 1997) has no cell for accident
+year 1997, and brms reports 9 accident-year levels and 90 observations; in
+model 2 development year 10 has no training cell either (9 levels). Their
+effects are not identified by the data. Decision: such an origin (or, in
+model 2, development year) has no `z` in the sampler; in the predictive
+step each draw gives it a new effect from the population, `z ~ N(0, I)`
+scaled by that draw's `τ` and `L`, so its reserve and its predicted cells
+(1997 at age 1 in the test diagonal) carry the hierarchy's uncertainty.
+brms leaves this to `sample_new_levels`, whose default reuses a randomly
+chosen existing level's effect per draw; the Stan reference instead does
+exactly our rule in generated quantities, so the two sides match. The fit
+accepts an origin with no observed cell as long as it has a positive
+premium and at least one origin has data (unlike `Meyers::fit`, which
+requires every origin from the first age), and reports which origins and
+development years were drawn from the population.
+
+**Likelihood, model 1** (the paper's sec. 3.1 and code 7.2.2): normal on
+the observed OS amounts and cumulative PD amounts, each type with its own
+σ: `y_OS,it ~ N(OS_i(t), σ_OS²)`, `y_PD,it ~ N(PD_i(t), σ_PD²)`.
+
+**Likelihood, model 2** (PR C): log-normal on the OS loss ratio and the
+incremental paid loss ratio, `log(y/Π_i) ~ N(log(μ/Π_i), σ_type²)` with
+`μ` the OS level or `PD(t) − PD(t − 1)` (cumulative `PD(1)` at age 1), and
+random effects by origin and by development year on every parameter. So
+each cell `(i, t)` has its own `(k_er, k_p, RLR, RRF)`, and, as the paper's
+`claimsprocess` does, the increment evaluates the closed form twice with
+that cell's parameters, `PD(t; θ_it) − PD(t − 1; θ_it)`. It is not a
+difference of one per-origin curve at consecutive ages, nor `PD(t − 1)`
+at development year `t − 1`'s parameters; both give a different
+likelihood. The predictive step uses the same rule. A non-positive observed
+increment or OS has no log; PR C returns `Error::Bayes` naming the cell,
+as `BayesOdp` does for a non-positive row sum.
+
+**Default priors.** The paper's case study, model 1 (sec. 5.2.1, code
+7.2.2), as the preset `CompartmentalPriors::gesmann_morris()`:
+
+| Parameter | Prior | Origin effect sd prior (on `o`) |
+|---|---|---|
+| `k_er` | `3 e^{0.1 o}` | none |
+| `k_p` | `1 e^{0.1 o}` | none |
+| `RLR` | `0.7 e^{0.2 o}` | `τ₁ ~ student_t(10, 0, 0.2)`, half |
+| `RRF` | `0.8 e^{0.1 o}` | `τ₂ ~ student_t(10, 0, 0.1)`, half |
+| `ρ` | `LKJ(1)`, uniform on (−1, 1) for two effects | |
+| `log σ_OS`, `log σ_PD` | `student_t(1, 0, 1000)` (Cauchy) on `log σ`, unbounded | |
+
+The σ prior is brms' class `b` prior on `sigma ~ 0 + deltaf` with the log
+link, so it is a Cauchy(0, 1000) on `log σ`, effectively flat, and not a
+half-Cauchy on σ; the text (sec. 5.2.1) says the same, `log(σ[δ]) ~
+StudentT(1, 0, 1000)`. It adds no Jacobian. The printed posterior is `log
+σ_OS` 8.25 and `log σ_PD` 6.66 (σ about 3,800 and 780 in the data's
+units, USD thousands). Model 2's preset (PR C) takes the code's values, sd
+priors 0.3 on `o_ker` and `o_kp`, 0.7 on `o_RLR`, 0.5 on `o_RRF`, and
+`log σ ~ N(log 0.2, 0.2)`; the text says a median of 0.1, so the code wins
+for parity and `knowledge/` records the disagreement. Whether a fit may
+run on defaults at all is open decision 2: `reserving-bayes.md` decision 1
+said these priors are not ones "a library default should choose".
+
+Each positive parameter's prior is a `PositivePrior::LogNormal { median,
+sd }` (the paper's form, `median e^{sd o}`). There is no gamma variant: its
+only use was the blog's priors, whose check decision 7 drops, and it would
+need a gamma quantile function with its dual derivative in `Scalar`. A
+gamma or other prior can be added later as its own small change if a user
+needs one.
+
+**Identification.** Four facts, the first derived for this note, checked
+numerically at the paper's example values (`k_er` 1.7, `k_p` 0.5, `RLR`
+0.8, `RRF` 0.95; OS and PD agree to rounding at ages 1, 2, 5 and 10,
+2026-10-13) and tested in PR B:
+
+* **The OS and PD means are exactly invariant under a swap.** The map
+  `(k_er, k_p, RLR_i, RRF_i) → (k_p, k_er, RLR_i k_er/k_p, RRF_i k_p/k_er)`
+  leaves `OS_i(t)` and `PD_i(t)` unchanged for every `t` and every `i`:
+  `g` is symmetric in the two rates, `RLR_i k_er` is kept, and so is
+  `RLR_i RRF_i`. So even with both OS and paid observed the likelihood has
+  two modes; the sources' remark that "OS breaks the symmetry" holds only
+  with `RLR` and `RRF` fixed. What separates the modes is the prior, but
+  not because the posterior sits near the prior's centre. On company 337
+  the paper's model 1 posterior has `o_ker` −5.40 and `o_kp` −8.49 (so
+  `k_er` about 1.75 and `k_p` about 0.43 against prior medians 3 and 1),
+  5.4 and 8.5 prior sds from the centre, and `o_RLR` 1.44 and `o_RRF`
+  −1.36 about 1.4 sd off: the data overrule the preset, and the fit is a
+  prior-data conflict, not a prior-identified fit. The swap is still
+  excluded, by the joint penalty at the posterior: the swapped point needs
+  `o_ker` about −19.4 and `o_kp` about 5.6, about 150 nats more prior
+  penalty on the rates alone (`(19.4² + 5.6² − 5.4² − 8.49²)/2`), plus the
+  shifts `RLR_i k_er/k_p` and `RRF_i k_p/k_er` impose on `o_RLR` (about +7)
+  and `o_RRF` (about −14). A unit test checks the invariance to 1e-12 at
+  random points.
+* **From paid alone only the product `RLR × RRF` is identified**, and the
+  rates swap with no penalty, so a paid-only fit needs both an ordering
+  and a prior on the expected loss ratio. PR B requires the outstanding
+  column.
+* **The swap's fixed point `k_er = k_p` is a removable singularity**,
+  handled by the kernel `g` above.
+* **Hierarchical shrinkage** pulls young origins' `RLR_i` to the mean
+  (the paper's reason for model 3's cycle indices); `τ₁`'s prior controls
+  how hard.
+
+How to guard the swap by default is open decision 4: keep the paper's
+independent priors and warn when a draw's population rates have `k_er ≤
+k_p`, or sample an ordered pair `k_er = k_p + e^δ`. In model 1 the rates
+are shared, so the guard is on them. In model 2 the rates vary by cell,
+and a cell with `k_er ≤ k_p` is not a swap of the whole model (each cell
+is invariant on its own), so the guard applies to the population
+intercepts (`e^{0.1 b}` times the medians), and the fit reports, as a
+diagnostic and not a warning, the share of draws and cells with
+`k_er ≤ k_p`. Under the paper's priors the warning is expected never to
+fire (above), and the two give the same posterior within Monte Carlo
+error; they differ only when a user widens the rate priors.
+
+### 3. The ODE strategy
+
+Proposed. **Closed form wherever one exists**, a generic fixed-step solver
+otherwise, and an ODE crate only for a stiff system:
+
+* **One OS** (models 1 and 2): the closed form of decision 2. No solver.
+* **Two OS** (PR D): Gesmann and Morris' Eq. 3, a cascade, not two
+  parallel compartments: `OS₁` fills at `k_er RLR EX` and drains at
+  `k_p1 + k_p2`, its `k_p1` share paid and its `k_p2` share moved into
+  `OS₂`, which pays at `k_p2`; `dPD/dt = RRF (k_p1 OS₁ + k_p2 OS₂)`. Its
+  closed form has three exponents, `k_er`, `k_p1 + k_p2` and `k_p2`, with
+  denominators that vanish when two of them coincide (`k_er = k_p1 +
+  k_p2`, `k_er = k_p2`) and at `k_p1 = 0`. The authors prefer numerical
+  solvers "to reduce algebraic computation and minimize risk of error";
+  the cancellation near those coincidences is our own observation. PR D
+  writes the closed form, like `g`, in `expm1` kernels with series
+  branches, re-derives its symmetries (the one-OS swap does not carry over
+  as is) with a unit test of each, and tests it against the RK4 solve
+  below to 1e-8 relative at every observed age, over a grid that includes
+  the coinciding rates.
+* **Anything else** (multistage gamma-pdf exposure, Eq. 4; a reporting
+  rate that grows with time): a generic classical RK4 in
+  `crates/prospicio-reserving/src/bayes/ode.rs`, generic over `Scalar`
+  (decision 4), so the gradient comes from duals through the solver, as in
+  the benchmark of `reserving-bayes.md` decision 15 (9e-10 against the
+  closed form at 1.6 to 2.2 times a plain solve).
+  * **Fixed steps, fixed per fit.** The number of steps per year is
+    chosen once from the prior (`n = max(200, ⌈40 k_max⌉)` with `k_max`
+    the 99.9th prior percentile of the fastest rate) and does not change
+    with the parameters, so the density is a smooth function of them.
+    Gesmann's PK/PD post reports `integrate_ode_rk45` at about 9 hours a
+    chain and 235 divergences, and says he does not know why the
+    integrator was slow; that adaptive step control makes the density a
+    non-smooth function of the parameters, and so hurts NUTS, is our
+    inference, not his.
+  * **Accuracy target**: cumulative PD and OS within 1e-8 relative of the
+    closed form at every observed age, over the prior's central 99.8%, on
+    the one-OS and two-OS models. RK4's local error is of order `(k h)⁵`
+    and its global relative error grows roughly as `k t (k h)⁴ / 120`, so
+    it depends on the horizon (10 years) and on the slow rate, through the
+    late-age OS, and not only on the fastest rate. Measured (2026-10-13,
+    classical RK4 on the one-OS model, worst relative error of OS and PD
+    over ages 1 to 10): the earlier rule `n = max(100, ⌈20 k_max⌉)` gave
+    6.5e-9 at the 99.9th prior percentile rates (4.09, 1.36) but 1.28e-8
+    at (10, 3) with `n` = 200, missing the target; the rule above gives
+    4.0e-10 and 8.0e-10 there, and 3.1e-11 at the paper's posterior rates
+    (1.75, 0.43). PR D tests the target over the prior's grid and adjusts
+    the constant if a point misses.
+  * **Observed ages fall on steps** (integer years times `n`), so no
+    interpolation is needed.
+  * **A singular source** (the gamma-pdf exposure has `t^{d_r − 1}`,
+    singular at 0 when `d_r < 1`) is kept regular as the paper's code
+    keeps it, `d_r = 1 + 0.1 e^{0.5 o} > 1`.
+* **`diffsol` behind its own feature** only if a model needs `k h` above
+  RK4's stability limit (about 2.8) at a practical step count, that is,
+  rates that differ by orders of magnitude. None of the planned models
+  does.
+
+### 4. Gradients: the `Scalar` trait and the dual type (PR A)
+
+Proposed, following `reserving-bayes.md` decision 15 (decided). PR A adds,
+with no new model:
+
+* **`crates/prospicio-reserving/src/bayes/scalar.rs`**: `pub(crate) trait
+  Scalar`, implemented for `f64` and the dual type: `Copy`, the four
+  arithmetic operators with `Self` and with `f64`, `from_f64`, `value`,
+  and the elementary functions the densities need (`exp`, `expm1`, `ln`,
+  `ln_1p`, `sqrt`, `powf`, `tanh`, `lgamma` where a prior needs it, and
+  the normal log cdf for `Meyers`' `gamma_cdf`-style terms if used). The
+  trait is crate-private until a second crate needs it; moving it to
+  `prospicio-bayes` would be a small shared PR of its own.
+* **`crates/prospicio-reserving/src/bayes/dual.rs`**: a forward-mode
+  `Dual<const N: usize>` (value and `N` tangents, about 130 lines as in
+  the benchmark) and a `gradient` driver that, for a runtime parameter
+  count `p`, runs `⌈p / N⌉` chunked passes, each seeding `N` tangents.
+  `N` is fixed in the crate (the measurement below picks 8, 16 or 32).
+* **The existing densities stay as they are.** `Posterior::log_posterior`
+  in `odp.rs`, `bf.rs` and `meyers.rs` computes the value and the gradient
+  in one pass, and it stays the fast path, unchanged, so the sampler makes
+  no extra pass and the parity suites run as before. Beside it, each of
+  `BayesOdp`, `BayesBf` and `Meyers` (CRC, CSR, CAY) gets a test-only
+  generic `log_density<S: Scalar>` (`#[cfg(test)]`), used only by the
+  oracle tests. The value is then written twice for these three models;
+  the oracle test catches any drift between the two, which is the point
+  of it, and the new models (PR B onward) have only the generic density.
+  The generic value need match the existing one only to 1e-12 relative,
+  not bit for bit, so it need not copy each function's accumulation order.
+  PR A starts after the Meyers segments branch
+  (`claude/bayes-meyers-segments`, which changes `meyers.rs` by about
+  1,500 lines) merges, so the two do not conflict.
+* **Oracle tests.** For each of those densities, the chunked dual
+  gradient matches the hand-written gradient, and the generic value the
+  hand-written value, to 1e-12 relative at 20 random points per model
+  (drawn from the posterior's scale, not only the mode); each elementary
+  function's dual derivative matches its analytic derivative, including
+  the series branches; and the one-compartment closed form's dual
+  gradient matches central differences to 1e-7. The hand-written
+  gradients are the oracle because each already passes a
+  finite-difference test and a Stan parity suite.
+* **The measurement decision 15 owes**: time per value and gradient
+  (release, median) of the chunked dual at `N` = 4, 8, 16 and 32 against
+  the fixed-size dual and the hand-written gradient, at `p` = 27 (the
+  one-OS model on the paper's training triangle), `p` = 29 (Meyers' CRC)
+  and `p` = 90 (model 2's 87 parameters, decision 2). Recorded in
+  `knowledge/findings/autodiff-benchmark.md`. Acceptance: a gradient at
+  `p` = 29 within 10 times the hand-written one; otherwise PR B writes the
+  one-OS gradient by hand (the closed form makes that practical) and keeps
+  duals for the oracle and the RK4 models. The `p` = 90 time sizes model
+  2's cost for PR C, which applies the same rule.
+
+Laplace Hessians stay central differences of the exact gradient
+(`bayes/laplace.rs`, `Posterior::negative_hessian`), as decided.
+
+### 5. The fit: whitening, pilot run and predictive
+
+Proposed. The fit follows `Meyers::fit` (`meyers.rs`), which already
+handles hierarchical and funnel geometry:
+
+1. a start point from the data, not the prior centre: a nonlinear
+   least-squares fit of the population curve (shared `k_er`, `k_p`, `RLR`,
+   `RRF`, no origin effects) mapped to the four `b`; `z` and `atanh ρ` at
+   0; `log τ` at the prior median; `log σ` at the log of each type's
+   residual sd from that fit. On company 337 the posterior sits 5 to 9
+   prior sds from `o = 0` on the rates (decision 2), and the flat prior on
+   `log σ` has no useful median (`log σ = 0` is 7 to 8 units of `log σ`
+   from the posterior's 8.25 and 6.66), so a prior-centred start would leave the
+   pilot run far to travel. If the least-squares fit fails, the start
+   falls back to `o = 0`;
+2. a regularised Laplace whitening (`Whitened::regularised`) at that
+   point, a pilot NUTS run, then `Whitened::from_draws`;
+3. the main run, with `LogDensity` returning `None` on a non-finite value
+   (an overflowing exponential, a solver failure), which `prospicio-bayes`
+   counts as a divergence;
+4. the predictive: for each draw, the mean OS and PD at each future cell
+   of the square, plus process error from the likelihood (normal on
+   amounts in model 1; log-normal increments in model 2), giving a joint
+   `PredictiveDistribution` of each origin's reserve. An origin or
+   development year with no observed cell gets a new effect per draw from
+   the population (decision 2).
+
+A test fits company 337 from the default start and checks convergence (no
+divergence, every R-hat below 1.01), and a second test does the same from
+`o = 0`, so the fallback start is known to work.
+
+Defaults: 4 chains, 1,000 tuning and 1,000 kept draws each,
+`target_accept = 0.99` (the paper's `adapt_delta`) and `max_depth = 10`
+(`Sampler::default()`, which `Meyers` also keeps, with `target_accept`
+0.95). The paper's `max_treedepth` 15 is used for the Stan reference only.
+The seed sweep (decision 7) counts draws that hit the maximum depth, and
+PR B raises the default if more than 1% do; a deeper tree is a setting.
+`n_sims = 10_000`, `seed = 0`. Seeds as
+`reserving-bayes.md` decision 5: derived streams for the chains, the pilot
+(`pilot_seed`) and the simulations, exact replay whatever the thread
+count.
+
+**The reserve** is future paid to the last age of the square (age 10 for
+company 337), as `Meyers` and the paper's validation; the model's own
+ultimate `Π_i RLR_i RRF_i` is reported alongside as a mean, without
+process error past the square. A reserve to ultimate is open decision 5.
+
+### 6. The API
+
+Decided 2026-10-13 (the shape; names may change in PR B):
+
+```rust
+#[cfg(feature = "bayes")]
+pub mod bayes {
+    pub enum Outstanding<'a> {
+        Column(&'a str),        // an outstanding column
+        FromIncurred(&'a str),  // incurred minus paid
+    }
+
+    pub enum CompartmentalLikelihood { Normal, LogNormal }   // model 1, model 2 (PR C)
+
+    // Decision 1 (the user, 2026-10-13): the response is a setting too.
+    pub enum Scale { Amount, LossRatio }                     // PR B: Amount; PR C: LossRatio
+    pub enum PaidResponse { Cumulative, Incremental }        // PR B: Cumulative; PR C: Incremental
+    pub enum Fitted { PaidAndOutstanding, PaidAndIncurred, PaidOnly, IncurredOnly }
+    // PR B ships PaidAndOutstanding; the others return Error::Bayes until added.
+
+    pub struct CompartmentalPriors {
+        pub k_er: PositivePrior, pub k_p: PositivePrior,
+        pub rlr: PositivePrior,  pub rrf: PositivePrior,
+        pub rlr_effect_sd: HalfPrior, pub rrf_effect_sd: HalfPrior, // τ, on the o scale
+        pub lkj_eta: f64,
+        pub log_sigma: [RealPrior; 2],   // OS, PD; on log σ (Student-t or normal)
+    }
+
+    pub struct Compartmental {
+        pub priors: CompartmentalPriors,     // open decision 2
+        pub likelihood: CompartmentalLikelihood,
+        pub rate_order: RateOrder,           // open decision 4
+        pub sampler: prospicio_bayes::Sampler,
+        pub n_sims: usize,
+        pub seed: u64,
+    }
+
+    impl Compartmental {
+        pub fn fit(&self, triangle: &Triangle, paid: &str,
+                   outstanding: Outstanding<'_>, premium: &str)
+                   -> Result<CompartmentalFit>;
+        pub fn prior_predictive(&self, triangle: &Triangle, premium: &str,
+                                n_sims: usize) -> Result<CompartmentalPaths>;
+    }
+}
+```
+
+* **Inputs.** One triangle holding the paid column, the outstanding (or
+  incurred) column and premium by origin, read through `origin_exposure`
+  as `Meyers::fit` reads it. Whether OS includes bulk and IBNR is the
+  user's choice of column; the docs show both on company 337 and say which
+  the papers use.
+* **`CompartmentalFit`**: `posterior` (`PosteriorDraws` on the natural
+  scale: `k_er`, `k_p`, `RLR`, `RRF`, the σs and every origin's `RLR_i`
+  and `RRF_i`; and, on the scale the paper prints so they compare with
+  it, the intercepts `b_RLR`, `b_RRF`, `b_ker`, `b_kp`, the effect sds
+  `tau_RLR` and `tau_RRF` on the `o` scale, `rho`, and `log_sigma_os`,
+  `log_sigma_pd`), `diagnostics` (`bayes::Diagnostics`, thresholds
+  as before, warnings not errors, as `reserving-bayes.md` open decision
+  4), `summary()`, `loo()` (pointwise over both the OS and the paid
+  cells, with the elpd also split by type), `reserves` (the joint
+  `PredictiveDistribution` by origin, paid), `paid` and `outstanding`
+  (predictive means and quantiles for each future cell, as long frames),
+  `ultimate_loss_ratio` by origin, `to_long()`, `totals()`.
+* **`prior_predictive`** draws OS and paid paths from the priors alone,
+  so a user can check a prior set before fitting, as the paper does in
+  sec. 3.4 to test identifiability.
+* **Errors.** A missing column or premium, a non-positive premium, and a
+  triangle with no outstanding cell, and a triangle where no origin has an
+  observed cell, are `Error::Bayes` naming the origin or column; an origin
+  with no observed cell is accepted and drawn from the population
+  (decision 2); bad prior settings are `InvalidSetting`.
+* **Segments and the backtest** wait for PR E (decision 8).
+
+### 7. Validation
+
+Proposed, on the pattern of `reserving-bayes.md` decision 10.
+
+* **Reference programs**: `validation/scripts/stan/compartmental_gm1.stan`
+  (PR B) and `compartmental_gm2.stan` (PR C), the paper's models 1 and 2
+  reconstructed as the Stan program brms generates from its code (sec.
+  7.2.2 and 7.2.3), reproducing the brms conventions listed under
+  References (the `o` scale, half Student-t sds, `|ID|` correlation,
+  non-centring, priors on `log σ`), with provenance in the header. Its
+  generated quantities draw the effects of an origin or development year
+  with no observed cell from the population, as decision 2. PR D adds
+  `compartmental_two_os.stan` with `ode_rk45` in place of
+  `integrate_ode_rk45`.
+* **Generator**: `validation/scripts/reserving_compartmental_stan.py`
+  under `uv` with cmdstanpy 1.3.0 against CmdStan 2.39.0 (from PowerShell
+  or cmd, with RTools' make; `knowledge/environment/local-cmdstan.md`).
+  Fixed seed, 4 chains of 2,000 warm-up and 25,000 draws,
+  `adapt_delta` 0.99, `max_treedepth` 15. It fails on any R-hat above
+  1.005 or any divergence, and writes the CmdStan version, the `.stan`
+  file's SHA-256 and the seed into `source`.
+* **Training data as the paper**: calendar years up to 1996 (sec. 5.1,
+  code 7.2.1, `cal_year < max(accident_year)`), 90 observations over 9
+  accident years with data, so the 1997 diagonal is the test set and the
+  full square the validation. Accident year 1997 has no training cell
+  (decision 2). PR B builds that triangle from the square by dropping
+  the 1997 diagonal (the backtest's own helper if it exposes one; a
+  training CSV from the generator otherwise).
+* **Reference CSV**: `validation/reference/reserving_compartmental_stan.csv`
+  in the usual format. Rows: mean and sd of every natural-scale
+  parameter, including `RLR_i` and `RRF_i` for each of the 9 origins with
+  data, and of the `o`-scale quantities the paper prints (decision 6);
+  each origin's (1997's from its population draw)
+  and the total reserve's mean, sd and 5th, 50th and 95th percentiles;
+  the 1997 diagonal's predictive means; elpd_loo. CI reads the committed
+  CSV and never runs Stan.
+* **Tolerances** from a seed sweep, as PR 3 of `reserving-bayes.md`: our
+  defaults over seeds 0 to 199; each tolerance at least 4 times the
+  seed-to-seed sd of its row (and of the combined errors where a printed
+  number is the target). A row whose seed-to-seed error is heavy-tailed
+  (the youngest origin's reserve sd was one for `Meyers`) is dropped and
+  checked through its percentiles, and the note says so. Because the
+  data pull the rates 5 to 9 prior sds from the preset (decision 2), the
+  rate rows are expected to be sensitive to the tight rate priors: a small
+  mismatch in how the reference encodes them moves the posterior more than
+  in a prior-dominated fit. PR B therefore also checks the reference
+  against the printed `m1fit` (below) before it trusts any rate row.
+* **Printed numbers, looser** (Monte Carlo targets, brms 2.10.0 on rstan
+  2.19.2, so never bit-exact), each mean within 0.15 printed sd and each
+  sd within 15%:
+  * model 1 (PR B), `m1fit` in sec. 7.2.2: intercepts `oRLR` 1.44 (sd
+    0.26), `oRRF` −1.36 (0.42), `oker` −5.40 (0.81), `okp` −8.49 (0.36);
+    group sds `sd(oRLR)` 0.64 (0.15), `sd(oRRF)` 0.74 (0.22); their
+    correlation 0.54 (0.26); `log σ_OS` 8.25 (0.16), `log σ_PD` 6.66
+    (0.20);
+  * model 2 (PR C), `m2fit` in sec. 7.2.3: intercepts `oRLR` 1.54 (0.44),
+    `oRRF` −1.45 (0.69), `oker` −1.31 (1.08), `okp` −5.07 (1.75); its
+    accident-year sds (`oRLR` 0.69, `oRRF` 0.73, `oker` 0.26, `okp` 2.23)
+    and correlation (0.37), and its development-year sds (0.35, 1.11,
+    0.27, 0.45). The sds with a posterior that piles up near 0 (lower 95%
+    bound 0.01 to 0.04) are checked through the seed sweep's spread, not
+    the 15% rule, and the note will say which.
+
+  The blog's brms fit is not a check, and cannot be one: it trains on
+  calendar years up to 1997 (110 observations, 10 levels, not 90 and 9);
+  it normalises every amount by the oldest accident year's premium, not
+  each origin's; its origin effects are additive on the natural scale
+  (`RLR ~ 1 + (1 | accident_year)`) and uncorrelated; its priors are gamma
+  on `RLR`, `RRF`, `k_er` and `k_p` directly; and its σs (about 0.034 and
+  0.006) are on that normalised scale. None of this can be expressed with
+  `CompartmentalPriors`. The final reserve (mean 123 against an actual
+  130, USD millions) is model 3's and is recorded, not checked.
+* **Sanity tests** (unit, no reference): the swap invariance and the
+  equal-rate limit (decision 2); the closed form against RK4 (decision 3);
+  the dual gradient against central differences; exact replay for a seed
+  and in a one-thread pool; the posterior mean ultimate loss ratio on
+  company 337 against the chain ladder's on incurred (a report, not a
+  bound, since the models differ).
+
+### 8. Segments and the backtest (PR E)
+
+Proposed. `Compartmental::fit_segments(triangle, paid, outstanding,
+premium)` with `SegmentDependence` (independent or rank-correlated;
+`Synchronized` is `Error::Bayes`) and per-segment seeds, as `BayesOdp`'s
+decision 11, and `TriangleModel for Compartmental` in the diagonal
+backtest. Both follow the Meyers segments branch
+(`claude/bayes-meyers-segments`, not merged), which solves the same
+problem for a model that needs premium and a second column; PR E starts
+after it merges. Python and R get `fit_segments` in PR E; the backtest
+stays Rust-only, as for `BayesOdp`.
+
+### 9. Bindings
+
+Proposed, in the same PR as each model (`reserving-bayes.md` open
+decision 10 (a)):
+
+* **Python**: `Compartmental(priors, likelihood="normal", chains=4,
+  tune=1000, draws=1000, n_sims=10000, seed=0, target_accept=0.99,
+  max_depth=10)` with `fit(triangle, paid, premium, outstanding=None,
+  incurred=None)` (exactly one of the last two), returning a fit with
+  `posterior`, `diagnostics`, `summary()`, `loo()`, `reserves`,
+  `to_frame()`, `totals_frame()`, `paid_frame()` and `outstanding_frame()`;
+  priors as `CompartmentalPriors(...)` with
+  `CompartmentalPriors.gesmann_morris()`, and `prior_predictive(...)`.
+* **R**: `compartmental(triangle, paid, premium, outstanding = NULL,
+  incurred = NULL, priors = compartmental_priors_gm(), likelihood =
+  c("normal", "lognormal"), ...)` with the same sampler arguments in the
+  same order, returning a `compartmental_fit` with `as.data.frame()`,
+  `totals_frame()`, `summary()` and `bayes_loo()`, and
+  `compartmental_prior_predictive()`.
+* Failed diagnostics raise one warning in each language, as the other
+  Bayesian fits. Tests: `python/tests/test_reserving_compartmental.py` and
+  `R/prospicio/tests/test-reserving-compartmental.R` fit company 337 with
+  the default chains (no warning, the frames, totals close to the Rust
+  values), replay by seed, and the errors. Docs regenerated with
+  `cargo xtask docs`.
+
+### 10. Docs and knowledge
+
+Proposed. Each PR updates in itself: the Reserving row of AGENTS.md, the
+v0.7 row and the Reserving section of `docs/roadmap.md`,
+`docs/architecture.md` if a roadmap row changes, `CHANGELOG.md`, and this
+note's status. `knowledge/` gains: company 337's data and its agreement
+with Morris' printed table, with both OS definitions (datasets, PR B); the
+swap invariance of the one-OS means and the stable kernel `g` (findings,
+`verified` once PR B's test runs in CI); the paper's text and code
+disagreements, on model 2's σ prior (text: median 0.1; code: 0.2) and on
+the origin hierarchy of both models (text: an additive effect `RLR[i] =
+μ_RLR + u` with the sd prior on `u`; code: an effect on the standardised
+`o` scale, `RLR_i = 0.7 e^{0.2 o_i}`, with the sd prior on `o`), and the
+reconstruction notes for its brms code (references); the chunked-dual
+measurement (PR A, in the existing autodiff finding). A user guide page on company 337 (paid and OS
+fitted jointly, the prior predictive check) comes with PR C, once both
+likelihoods exist.
+
+## Risks
+
+* **Prior-data conflict.** On company 337 the data already overrule the
+  preset: the paper's model 1 posterior puts `k_er` at about 1.75 and
+  `k_p` at about 0.43, 5.4 and 8.5 prior sds from medians 3 and 1, so the
+  preset's own rationale (sec. 5.2.1: `k_p` between 0.85 and 1.2 with
+  about 95% probability) does not describe the fitted result. The
+  posterior is a compromise between tight rate priors and data that
+  disagree with them, so it is sensitive to those priors, and on another
+  book the preset may be further off while the fit still looks healthy.
+  The mitigation is open decision 2 (priors are an explicit choice), the
+  prior predictive check, and a docs example that compares prior and
+  posterior on company 337 and shows the conflict.
+* **Sampler geometry.** Funnels in the origin effects (worse in model 2,
+  with development effects too), a posterior far from the prior centre,
+  and the swap (excluded by about 150 nats at the posterior, decision 2).
+  The data-based start (decision 5), the non-centred effects, the pilot
+  whitening and `target_accept` 0.99 are the mitigation, and a test checks
+  convergence from both the default start and `o = 0`; a reference run
+  with divergences at `adapt_delta` 0.99 would mean tightening, and the
+  note would record it.
+* **The reference is a reconstruction.** A brms convention missed in
+  reconstructing its generated program (those listed under References: no
+  intercept centring under `nl = TRUE`, the `sd` priors' truncation, the
+  `|ID|` correlation, the priors on `log σ`) shifts both sides together
+  and hides from the parity test; the printed posteriors in decision 7
+  are the guard. If they disagree beyond the looser tolerance, open
+  decision 6 (b) is the fallback.
+* **Model misfit.** The papers state the limits: a non-steady exposure is
+  absorbed into `k_er`; cohorts are assumed homogeneous, so large-claim
+  books fit poorly; short histories are not credible. A change in case
+  reserve strength (company 337 in 1996 and 1997) makes incurred data
+  misleading. The docs say so and the backtest of PR E measures it.
+* **Dual cost.** If PR A's measurement fails its target, PR B's gradient
+  is written by hand (decision 4), which adds a finite-difference test
+  but no risk to the result.
+
+## Open decisions for the user
+
+Decided 2026-10-13 by the user: every item as recommended ((a) for 1, 2,
+3, 5, 6, 7 and 8; (c) for 4), with item 1 widened so that the likelihood,
+the response scale, cumulative or incremental paid and the pair fitted
+are settings from PR B on (decision 1).
+
+1. **First model.** (a) Gesmann and Morris' model 1 (Gaussian, origin
+   effects on `RLR` and `RRF`) in PR B, then model 2 in PR C, then the
+   two-OS model in PR D; (b) model 2 first, the paper's preferred
+   likelihood; (c) Morris (2016) with AR(1) residuals. *Recommended: (a)*,
+   decision 1: the smallest model with the paper's own code and priors,
+   no solver, and everything later builds on it. Choose (b) if a model
+   that cannot predict negative OS matters for the first release.
+2. **Default priors.** (a) Priors are a required argument, with the
+   paper's case study as a named preset (`gesmann_morris()`) and the docs
+   showing a prior predictive check; (b) the preset as a silent default;
+   (c) data-centred defaults (`RLR × RRF` at the chain ladder's incurred
+   ultimate loss ratio), documented as using the data twice.
+   *Recommended: (a)*: the rates and ratios are line-specific, and
+   `reserving-bayes.md` decision 1 already judged that a library should
+   not choose them silently; on company 337 the data already pull the
+   rates 5 to 9 prior sds from the preset (decision 2). Parity tests use
+   the preset.
+3. **Data and the OS definition.** (a) Company 337 workers' compensation
+   from the CAS data model mart (the source decided for group 353), with
+   both OS definitions and both premiums in the CSV; parity on the papers'
+   OS (with bulk and IBNR) and direct premium; (b) the `raw` R package's
+   `wkcomp` (not installed; a download). *Recommended: (a)*: same source,
+   pinned release and checks as group 353, and Morris' printed table
+   agrees with it.
+4. **Guarding the rate swap.** (a) The paper's independent rate priors,
+   with a warning when a draw's population rates have `k_er ≤ k_p` (in
+   model 2, the population intercepts; the share of cells with `k_er ≤
+   k_p` is reported as a diagnostic); (b) an ordered pair `k_er = k_p +
+   e^δ` on the population rates by default; (c) (a) by default with (b)
+   as a `rate_order` setting. *Recommended: (c)*: (a) keeps the parity
+   with the paper exact, the warning is expected never to fire under its
+   priors (the swap costs about 150 nats at the paper's posterior), and
+   (b) is there for a user who widens them.
+5. **Reserve horizon.** (a) Future paid to the last age of the square,
+   with the model's ultimate reported as a mean; (b) also a reserve to
+   ultimate with process error past the square. *Recommended: (a) now*,
+   as `Meyers` and the paper's validation; (b) on request.
+6. **Reference route.** (a) The paper's brms code reconstructed as the
+   Stan program brms generates (the conventions listed under References)
+   and run with CmdStan 2.39.0 under cmdstanpy, as Meyers' code was;
+   (b) install brms and cmdstanr in R 4.5.3 to run the published code as
+   is (package downloads, needs the user's approval); (c) printed numbers
+   only. *Recommended: (a)*, with the printed posteriors as a looser
+   check, and (b) only if the reconstruction misses them.
+7. **Gradients for the closed-form models.** (a) Chunked duals
+   (`reserving-bayes.md` decision 15), with a hand-written gradient only if
+   PR A's measurement misses its target; (b) hand-written from the start,
+   duals as the oracle. *Recommended: (a)*: one generic density per new
+   model is the point of decision 15, and the closed form keeps (b) cheap if
+   needed.
+8. **Extensions.** (a) Multistage exposure, market cycles, AR(1) residuals
+   and calendar shocks each as a later PR on request; (b) plan them now.
+   *Recommended: (a)*: none has a reference we can rerun yet, and each is
+   a model of its own.

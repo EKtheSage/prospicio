@@ -1615,7 +1615,8 @@ are settled.
    200-triangle calibration study); then the compartmental design note.
    CAY is built as PR 5; the second, for CRC, CSR and CAY alike, is
    built as PR 6 (decisions 8 and 11, "Meyers"), with `fit_segments`
-   in Python and R.
+   in Python and R. The third is
+   `docs/design/reserving-compartmental.md` (decided 2026-10-13).
 10. **Bindings with each model.** (a) Rust, Python and R in the same PR,
     as `reserving-v02.md` decision 7; (b) Rust first, bindings after.
     *Recommended: (a)*.
