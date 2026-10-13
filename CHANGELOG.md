@@ -150,7 +150,7 @@ under "Unreleased" until then.
   (`prospicio_aggregate::cat::EventLossTable`), and a year loss table in
   long form (`EventSet::from_long`). Python `EventLossTable`,
   `EventSet.from_long`; R `event_loss_table()`, `elt_oep()`,
-  `elt_occurrence_pml()`, `simulate_elt()`, `event_set_from_long()`.
+  `elt_occurrence_pml()`, `simulate_elt()`, `event_set_from_long()` (#229).
 
 ### Examples
 
