@@ -521,6 +521,173 @@ fn gamma_inc_factor(a: f64, x: f64) -> f64 {
     a * log1pmx + 0.5 * (a / (2.0 * PI)).ln() - stirling_remainder
 }
 
+/// Gauss–Legendre nodes (negative half) and weights on `[-1, 1]` for 6, 12
+/// and 20 points, as in Genz's BVND.
+const GL6: ([f64; 3], [f64; 3]) = (
+    [
+        -0.932_469_514_203_152_2,
+        -0.661_209_386_466_264_5,
+        -0.238_619_186_083_197,
+    ],
+    [
+        0.171_324_492_379_170_5,
+        0.360_761_573_048_138_4,
+        0.467_913_934_572_690_4,
+    ],
+);
+const GL12: ([f64; 6], [f64; 6]) = (
+    [
+        -0.981_560_634_246_719_1,
+        -0.904_117_256_370_475,
+        -0.769_902_674_194_305,
+        -0.587_317_954_286_617_1,
+        -0.367_831_498_998_180_2,
+        -0.125_233_408_511_469_2,
+    ],
+    [
+        0.047_175_336_386_511_77,
+        0.106_939_325_995_318_3,
+        0.160_078_328_543_346_4,
+        0.203_167_426_723_065_9,
+        0.233_492_536_538_354_7,
+        0.249_147_045_813_402_9,
+    ],
+);
+const GL20: ([f64; 10], [f64; 10]) = (
+    [
+        -0.993_128_599_185_094_9,
+        -0.963_971_927_277_913_8,
+        -0.912_234_428_251_326,
+        -0.839_116_971_822_218_8,
+        -0.746_331_906_460_150_8,
+        -0.636_053_680_726_515,
+        -0.510_867_001_950_827_1,
+        -0.373_706_088_715_419_6,
+        -0.227_785_851_141_645_1,
+        -0.076_526_521_133_497_33,
+    ],
+    [
+        0.017_614_007_139_152_12,
+        0.040_601_429_800_386_94,
+        0.062_672_048_334_109_06,
+        0.083_276_741_576_704_75,
+        0.101_930_119_817_240_4,
+        0.118_194_531_961_518_4,
+        0.131_688_638_449_176_6,
+        0.142_096_109_318_382_1,
+        0.149_172_986_472_603_7,
+        0.152_753_387_130_725_9,
+    ],
+);
+
+/// The standard bivariate normal distribution function
+/// `Φ₂(x, y; ρ) = P(X ≤ x, Y ≤ y)` for standard normals with correlation
+/// `ρ` in `[-1, 1]`, by Genz's BVND (Drezner and Wesolowsky's method,
+/// Gauss–Legendre on 6, 12 or 20 points as `|ρ|` grows): about `1e-15`
+/// absolute.
+///
+/// ```
+/// use prospicio_math::special::{bivariate_norm_cdf, norm_cdf};
+///
+/// // Independent at ρ = 0; P(X ≤ 0, Y ≤ 0) = 1/4 + asin(ρ) / (2π).
+/// assert!((bivariate_norm_cdf(0.5, -1.0, 0.0) - norm_cdf(0.5) * norm_cdf(-1.0)).abs() < 1e-15);
+/// let rho: f64 = 0.6;
+/// let want = 0.25 + rho.asin() / (2.0 * std::f64::consts::PI);
+/// assert!((bivariate_norm_cdf(0.0, 0.0, rho) - want).abs() < 1e-15);
+/// ```
+pub fn bivariate_norm_cdf(x: f64, y: f64, rho: f64) -> f64 {
+    if x.is_nan() || y.is_nan() || rho.is_nan() {
+        return f64::NAN;
+    }
+    if x == f64::NEG_INFINITY || y == f64::NEG_INFINITY {
+        return 0.0;
+    }
+    if x == f64::INFINITY {
+        return norm_cdf(y);
+    }
+    if y == f64::INFINITY {
+        return norm_cdf(x);
+    }
+    bvn_upper(-x, -y, rho.clamp(-1.0, 1.0))
+}
+
+/// `P(X > h, Y > k)` for standard normals with correlation `r` (Genz's
+/// BVNU).
+fn bvn_upper(h: f64, k: f64, r: f64) -> f64 {
+    let (nodes, weights): (&[f64], &[f64]) = if r.abs() < 0.3 {
+        (&GL6.0, &GL6.1)
+    } else if r.abs() < 0.75 {
+        (&GL12.0, &GL12.1)
+    } else {
+        (&GL20.0, &GL20.1)
+    };
+    let two_pi = 2.0 * PI;
+    let mut hk = h * k;
+    let mut bvn = 0.0;
+    if r.abs() < 0.925 {
+        let hs = (h * h + k * k) / 2.0;
+        let asr = r.asin();
+        for (&x, &w) in nodes.iter().zip(weights) {
+            for side in [-1.0, 1.0] {
+                let sn = (asr * (side * x + 1.0) / 2.0).sin();
+                bvn += w * ((sn * hk - hs) / (1.0 - sn * sn)).exp();
+            }
+        }
+        return bvn * asr / (2.0 * two_pi) + norm_cdf(-h) * norm_cdf(-k);
+    }
+    let mut k = k;
+    if r < 0.0 {
+        k = -k;
+        hk = -hk;
+    }
+    if r.abs() < 1.0 {
+        let a2 = (1.0 - r) * (1.0 + r);
+        let mut a = a2.sqrt();
+        let bs = (h - k) * (h - k);
+        let c = (4.0 - hk) / 8.0;
+        let d = (12.0 - hk) / 16.0;
+        let asr = -(bs / a2 + hk) / 2.0;
+        if asr > -100.0 {
+            bvn = a
+                * asr.exp()
+                * (1.0 - c * (bs - a2) * (1.0 - d * bs / 5.0) / 3.0 + c * d * a2 * a2 / 5.0);
+        }
+        if hk > -100.0 {
+            let b = bs.sqrt();
+            bvn -= (-hk / 2.0).exp()
+                * two_pi.sqrt()
+                * norm_cdf(-b / a)
+                * b
+                * (1.0 - c * bs * (1.0 - d * bs / 5.0) / 3.0);
+        }
+        a /= 2.0;
+        for (&x, &w) in nodes.iter().zip(weights) {
+            for side in [-1.0, 1.0] {
+                let xs = (a * (side * x + 1.0)).powi(2);
+                let rs = (1.0 - xs).sqrt();
+                let asr = -(bs / xs + hk) / 2.0;
+                if asr > -100.0 {
+                    bvn += a
+                        * w
+                        * asr.exp()
+                        * ((-hk * (1.0 - rs) / (2.0 * (1.0 + rs))).exp() / rs
+                            - (1.0 + c * xs * (1.0 + d * xs)));
+                }
+            }
+        }
+        bvn = -bvn / two_pi;
+    }
+    if r > 0.0 {
+        bvn + norm_cdf(-h.max(k))
+    } else {
+        let mut v = -bvn;
+        if k > h {
+            v += norm_cdf(k) - norm_cdf(h);
+        }
+        v.max(0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,5 +836,24 @@ mod tests {
         let below = norm_cdf(-10.0) / norm_pdf(10.0);
         assert!((mills_ratio(10.0) / below - 1.0).abs() < 1e-13);
         assert!((mills_ratio(0.0) - (PI / 2.0).sqrt()).abs() < 1e-15);
+    }
+    #[test]
+    fn bivariate_normal_edges_and_symmetry() {
+        let (x, y) = (0.7, -0.4);
+        // ρ = 1: P(X ≤ min(x, y)); ρ = −1: P(−y ≤ X ≤ x) or 0.
+        assert!((bivariate_norm_cdf(x, y, 1.0) - norm_cdf(y)).abs() < 1e-15);
+        assert!((bivariate_norm_cdf(x, y, -1.0) - (norm_cdf(x) - norm_cdf(-y))).abs() < 1e-15);
+        assert_eq!(bivariate_norm_cdf(-1.0, 0.5, -1.0), 0.0);
+        assert_eq!(bivariate_norm_cdf(f64::NEG_INFINITY, y, 0.3), 0.0);
+        assert_eq!(bivariate_norm_cdf(f64::INFINITY, y, 0.3), norm_cdf(y));
+        assert!(bivariate_norm_cdf(f64::NAN, y, 0.3).is_nan());
+        for r in [-0.99, -0.6, -0.2, 0.0, 0.4, 0.8, 0.95, 0.999] {
+            let c = bivariate_norm_cdf(x, y, r);
+            assert!((c - bivariate_norm_cdf(y, x, r)).abs() < 1e-15, "{r}");
+            // P(X ≤ x, Y ≤ y) + P(X ≤ x, Y > y) = Φ(x), with −Y.
+            let rest = bivariate_norm_cdf(x, -y, -r);
+            assert!((c + rest - norm_cdf(x)).abs() < 1e-14, "{r}");
+            assert!((0.0..=1.0).contains(&c));
+        }
     }
 }

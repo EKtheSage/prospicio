@@ -392,6 +392,26 @@ archimedean_copula <- function(family = c("clayton", "gumbel", "frank", "joe"), 
   copula(rust_result(RiskCopula$archimedean(family, as.double(theta), as.double(dim))))
 }
 
+#' Copula distribution function
+#'
+#' `C(u) = P(U_1 <= u_1, ..., U_d <= u_d)` at each point: the Gaussian
+#' copula's in two dimensions (the bivariate normal cdf by Genz's method,
+#' about `1e-15`), the Archimedean copulas' in any. The t copula has none
+#' yet and is an error.
+#'
+#' @param copula A [copula].
+#' @param u A point (a vector of `copula@dimension` values in `[0, 1]`) or a
+#'   matrix with one point per row.
+#' @returns The distribution function at each point.
+#' @export
+#' @examples
+#' copula_cdf(gaussian_copula(matrix(c(1, 0.5, 0.5, 1), 2)), c(0.5, 0.5))
+#' copula_cdf(archimedean_copula("gumbel", 2), rbind(c(0.2, 0.3), c(0.9, 0.9)))
+copula_cdf <- function(copula, u) {
+  u <- if (is.matrix(u)) u else matrix(u, nrow = 1)
+  rust_result(copula@ptr$cdf(as.double(u), as.double(nrow(u))))
+}
+
 #' Draw uniforms from a copula
 #'
 #' Row `i` uses stream `i - 1` of `seed`, so any row replays alone.

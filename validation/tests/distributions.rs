@@ -817,3 +817,39 @@ fn third_moments_diverge_combine_and_forward() {
     assert!((mixed.third_cumulant() / nb.third_cumulant() - 1.0).abs() < 1e-9);
     assert_eq!(boxed.third_cumulant(), 2.0);
 }
+
+/// The bivariate normal cdf and the copulas' cdfs against mpmath at 30
+/// digits: the bivariate normal and the Gaussian copula at `1e-14`
+/// absolute, the Archimedean copulas at `1e-13` relative, one of them in
+/// three dimensions.
+#[test]
+fn copula_cdfs_match_mpmath() {
+    use prospicio_math::special::bivariate_norm_cdf;
+    use prospicio_prob::copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula};
+
+    let cases = reference("copula_mpmath.csv");
+    check(&cases, |case| {
+        let u = case.number("arg").unwrap();
+        let v = case.number("arg2").unwrap();
+        let family = match case.get("distribution") {
+            "bvn" => return Some(bivariate_norm_cdf(u, v, case.param("params", "rho"))),
+            "gaussian" => {
+                let rho = case.param("params", "rho");
+                let c = GaussianCopula::new(&[1.0, rho, rho, 1.0], 2).unwrap();
+                return Some(c.cdf(&[u, v]).unwrap());
+            }
+            "clayton" => Archimedean::Clayton,
+            "gumbel" => Archimedean::Gumbel,
+            "frank" => Archimedean::Frank,
+            "joe" => Archimedean::Joe,
+            _ => return None,
+        };
+        let theta = case.param("params", "theta");
+        let mut point = vec![u, v];
+        if case.get("params").contains("w=") {
+            point.push(case.param("params", "w"));
+        }
+        let c = ArchimedeanCopula::new(family, theta, point.len()).unwrap();
+        Some(c.cdf(&point).unwrap())
+    });
+}

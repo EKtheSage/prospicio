@@ -7,7 +7,9 @@
 
 use prospicio_core::{Error, Result, StreamRng};
 use prospicio_math::linalg::{cholesky, lower_mul, lower_solve};
-use prospicio_math::special::{ln_gamma, norm_cdf, norm_quantile, student_t_cdf};
+use prospicio_math::special::{
+    bivariate_norm_cdf, ln_gamma, norm_cdf, norm_quantile, student_t_cdf,
+};
 
 use crate::distribution::Distribution;
 use crate::gamma::standard_gamma;
@@ -22,6 +24,41 @@ pub trait Copula: Sync {
     /// Fills `u` (length [`dim`](Self::dim)) with one draw of uniforms in
     /// `(0, 1)`.
     fn sample(&self, rng: &mut StreamRng, u: &mut [f64]);
+
+    /// The copula's distribution function `C(u) = P(U_1 ≤ u_1, …, U_d ≤ u_d)`
+    /// at `u` in `[0, 1]^d`. A copula without a closed-form cdf returns an
+    /// error; the default does.
+    fn cdf(&self, u: &[f64]) -> Result<f64> {
+        let _ = u;
+        Err(Error::Data(
+            "this copula has no closed-form distribution function".into(),
+        ))
+    }
+}
+
+/// Checks `u` for [`Copula::cdf`]: its length, values in `[0, 1]`. Returns
+/// `Some(c)` at the boundary, where `C` is known exactly (0 if any
+/// coordinate is 0), and otherwise the coordinates below 1, since a
+/// coordinate at 1 does not constrain.
+fn cdf_arguments(u: &[f64], dim: usize) -> Result<std::result::Result<f64, Vec<f64>>> {
+    if u.len() != dim {
+        return Err(Error::Data(format!(
+            "{} arguments for a {dim}-dimensional copula",
+            u.len()
+        )));
+    }
+    if let Some(&bad) = u.iter().find(|x| !(0.0..=1.0).contains(*x)) {
+        return Err(invalid("u", bad, "must be in [0, 1]"));
+    }
+    if u.contains(&0.0) {
+        return Ok(Ok(0.0));
+    }
+    let inner: Vec<f64> = u.iter().copied().filter(|&x| x < 1.0).collect();
+    match inner.len() {
+        0 => Ok(Ok(1.0)),
+        1 => Ok(Ok(inner[0])),
+        _ => Ok(Err(inner)),
+    }
 }
 
 /// The Gaussian copula with correlation matrix `R`.
@@ -71,6 +108,37 @@ impl Copula for GaussianCopula {
         correlated_normals(&self.chol, rng, u);
         for x in u.iter_mut() {
             *x = open01(norm_cdf(*x));
+        }
+    }
+
+    /// `Φ₂(Φ⁻¹(u), Φ⁻¹(v); ρ)` in two dimensions (Genz's BVND, about
+    /// `1e-15`); an error in more.
+    ///
+    /// ```
+    /// use prospicio_prob::copula::{Copula, GaussianCopula};
+    ///
+    /// let c = GaussianCopula::new(&[1.0, 0.5, 0.5, 1.0], 2).unwrap();
+    /// // P(U ≤ ½, V ≤ ½) = 1/4 + asin(ρ) / (2π) = 1/3 at ρ = ½.
+    /// assert!((c.cdf(&[0.5, 0.5]).unwrap() - 1.0 / 3.0).abs() < 1e-15);
+    /// assert_eq!(c.cdf(&[0.3, 1.0]).unwrap(), 0.3);
+    /// ```
+    fn cdf(&self, u: &[f64]) -> Result<f64> {
+        if self.dim != 2 {
+            return Err(Error::Data(
+                "the Gaussian copula's distribution function is available in two dimensions".into(),
+            ));
+        }
+        match cdf_arguments(u, 2)? {
+            Ok(c) => Ok(c),
+            Err(v) => {
+                // L = [[1, 0], [ρ, √(1 − ρ²)]], row-major.
+                let rho = self.chol[2];
+                Ok(bivariate_norm_cdf(
+                    norm_quantile(v[0]),
+                    norm_quantile(v[1]),
+                    rho,
+                ))
+            }
         }
     }
 }
@@ -196,6 +264,29 @@ impl ArchimedeanCopula {
         self.theta
     }
 
+    /// The inverse of the generator, `ψ⁻¹(u)` for `u` in `(0, 1]`.
+    ///
+    /// ```
+    /// use prospicio_prob::copula::{Archimedean, ArchimedeanCopula};
+    ///
+    /// for family in [Archimedean::Clayton, Archimedean::Gumbel, Archimedean::Frank, Archimedean::Joe] {
+    ///     let c = ArchimedeanCopula::new(family, 2.0, 2).unwrap();
+    ///     let t = c.inverse_generator(0.3);
+    ///     assert!((c.generator(t) - 0.3).abs() < 1e-14);
+    /// }
+    /// ```
+    pub fn inverse_generator(&self, u: f64) -> f64 {
+        let th = self.theta;
+        match self.family {
+            Archimedean::Clayton => u.powf(-th) - 1.0,
+            Archimedean::Gumbel => (-u.ln()).powf(th),
+            // -ln((1 − e^-θu) / (1 − e^-θ)).
+            Archimedean::Frank => -((-th * u).exp_m1() / (-th).exp_m1()).ln(),
+            // -ln(1 − (1 − u)^θ).
+            Archimedean::Joe => -(-(th * (-u).ln_1p()).exp()).ln_1p(),
+        }
+    }
+
     /// The generator `ψ(t)` for `t >= 0`.
     pub fn generator(&self, t: f64) -> f64 {
         let th = self.theta;
@@ -230,6 +321,26 @@ impl Copula for ArchimedeanCopula {
         for x in u.iter_mut() {
             let e = -rng.next_open01().ln();
             *x = open01(self.generator(e / v));
+        }
+    }
+
+    /// `ψ(Σ ψ⁻¹(u_j))`, in any dimension.
+    ///
+    /// ```
+    /// use prospicio_prob::copula::{Archimedean, ArchimedeanCopula, Copula};
+    ///
+    /// // Clayton: (u^-θ + v^-θ − 1)^(-1/θ).
+    /// let c = ArchimedeanCopula::new(Archimedean::Clayton, 2.0, 2).unwrap();
+    /// let want = (0.3f64.powi(-2) + 0.6f64.powi(-2) - 1.0).powf(-0.5);
+    /// assert!((c.cdf(&[0.3, 0.6]).unwrap() - want).abs() < 1e-15);
+    /// ```
+    fn cdf(&self, u: &[f64]) -> Result<f64> {
+        match cdf_arguments(u, self.dim)? {
+            Ok(c) => Ok(c),
+            Err(v) => {
+                let t: f64 = v.iter().map(|&x| self.inverse_generator(x)).sum();
+                Ok(self.generator(t))
+            }
         }
     }
 }
@@ -948,5 +1059,32 @@ mod tests {
         let g = ArchimedeanCopula::new(Gumbel, 2.0, 2).unwrap();
         assert_eq!(g.generator(0.0), 1.0);
         assert!(g.generator(1e6) < 1e-300);
+    }
+
+    #[test]
+    fn copula_cdfs_meet_their_bounds_and_refuse_bad_input() {
+        let g = GaussianCopula::new(&[1.0, 0.4, 0.4, 1.0], 2).unwrap();
+        let a = ArchimedeanCopula::new(Archimedean::Gumbel, 1.7, 3).unwrap();
+        for c in [&g as &dyn Copula, &a as &dyn Copula] {
+            let d = c.dim();
+            let mut u = vec![0.6; d];
+            // Fréchet–Hoeffding: max(Σu − d + 1, 0) ≤ C ≤ min u.
+            let v = c.cdf(&u).unwrap();
+            assert!(v <= 0.6 && v >= (0.6 * d as f64 - d as f64 + 1.0).max(0.0));
+            u[0] = 0.0;
+            assert_eq!(c.cdf(&u).unwrap(), 0.0);
+            u.iter_mut().for_each(|x| *x = 1.0);
+            u[d - 1] = 0.25;
+            assert_eq!(c.cdf(&u).unwrap(), 0.25);
+            assert!(c.cdf(&vec![0.5; d + 1]).is_err());
+            u[0] = 1.5;
+            assert!(c.cdf(&u).is_err());
+        }
+        // Increasing in each argument.
+        assert!(g.cdf(&[0.3, 0.5]).unwrap() < g.cdf(&[0.31, 0.5]).unwrap());
+        let three = GaussianCopula::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], 3).unwrap();
+        assert!(three.cdf(&[0.5, 0.5, 0.5]).is_err());
+        let t = StudentTCopula::new(&[1.0, 0.4, 0.4, 1.0], 2, 4.0).unwrap();
+        assert!(t.cdf(&[0.5, 0.5]).is_err());
     }
 }

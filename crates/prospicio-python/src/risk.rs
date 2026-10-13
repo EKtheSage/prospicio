@@ -1044,6 +1044,33 @@ impl PyGaussianCopula {
         self.inner.dim()
     }
 
+    /// The copula's distribution function at the point ``u``, each
+    /// coordinate in ``[0, 1]``.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    ///     One value per dimension.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``u`` has the wrong length or a value outside ``[0, 1]``,
+    ///     or the copula has no closed-form distribution function here.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import GaussianCopula
+    /// >>> round(GaussianCopula([[1.0, 0.5], [0.5, 1.0]]).cdf([0.5, 0.5]), 12)
+    /// 0.333333333333
+    fn cdf(&self, u: Vec<f64>) -> PyResult<f64> {
+        self.inner.cdf(&u).map_err(to_py)
+    }
+
     /// ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
     ///
     /// Parameters
@@ -1099,6 +1126,29 @@ impl PyStudentTCopula {
     #[getter]
     fn dim(&self) -> usize {
         self.inner.dim()
+    }
+
+    /// The copula's distribution function at the point ``u``, each
+    /// coordinate in ``[0, 1]``.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    ///     One value per dimension.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``u`` has the wrong length or a value outside ``[0, 1]``,
+    ///     or the copula has no closed-form distribution function here.
+    ///
+    /// The t copula has none yet: this always raises ``ValueError``.
+    fn cdf(&self, u: Vec<f64>) -> PyResult<f64> {
+        self.inner.cdf(&u).map_err(to_py)
     }
 
     /// Degrees of freedom.
@@ -1172,6 +1222,34 @@ impl PyArchimedeanCopula {
     #[getter]
     fn dim(&self) -> usize {
         self.inner.dim()
+    }
+
+    /// The copula's distribution function at the point ``u``, each
+    /// coordinate in ``[0, 1]``.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    ///     One value per dimension.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``u`` has the wrong length or a value outside ``[0, 1]``,
+    ///     or the copula has no closed-form distribution function here.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import ArchimedeanCopula
+    /// >>> c = ArchimedeanCopula("clayton", 2.0, 2)
+    /// >>> round(c.cdf([0.3, 0.6]), 12) == round((0.3**-2 + 0.6**-2 - 1) ** -0.5, 12)
+    /// True
+    fn cdf(&self, u: Vec<f64>) -> PyResult<f64> {
+        self.inner.cdf(&u).map_err(to_py)
     }
 
     /// Family name.

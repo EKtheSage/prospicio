@@ -1,3 +1,12 @@
+### Distributions and probability
+
+- A copula's distribution function, `Copula::cdf`: the Archimedean
+  copulas' in any dimension (with `ArchimedeanCopula::inverse_generator`)
+  and the Gaussian copula's in two, from a new bivariate normal cdf
+  (`prospicio_math::special::bivariate_norm_cdf`, Genz's BVND, about
+  `1e-15`); an error for the t copula. Python `cdf` on the copula classes;
+  R `copula_cdf()` (#234).
+
 ### Aggregate and reinsurance
 
 - Two lines hit by the same events: their joint annual loss by a 2-D
