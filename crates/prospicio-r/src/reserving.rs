@@ -965,6 +965,8 @@ impl Triangle {
             },
             n_sims,
             seed: whole(seed, "seed")?,
+            // CAY's prior is not exposed yet (the bindings stage).
+            ..Meyers::default()
         };
         let inner = meyers.fit(&self.inner, column, premium).map_err(to_r)?;
         Ok(MeyersFit { inner })

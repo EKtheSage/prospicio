@@ -6864,6 +6864,8 @@ impl PyMeyers {
                 },
                 n_sims,
                 seed,
+                // CAY's prior is not exposed yet (the bindings stage).
+                ..Meyers::default()
             },
         })
     }
