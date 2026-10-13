@@ -113,6 +113,16 @@ under "Unreleased" until then.
   premium (the burning cost), reproducing Clark's study note. Python
   `LargeLossExperience`, `PreparedLosses`, `BurningCost`; R
   `trend_large_losses()`, `burning_cost()` (#223).
+- Experience rating: each known large loss developed to ultimate (IBNER)
+  by a `DevelopmentPattern` at its age at the valuation date or by a factor
+  per loss, a pattern estimated from each claim's valuations (the chain
+  ladder on the claims seen at both ages), and each year's count IBNR
+  factor from a count pattern (`YearBasis::from_count_pattern`).
+  `PreparedLoss` gains `development` and `ultimate`, and its `trended` is
+  the developed amount trended (**breaking** for code that builds or
+  matches `PreparedLoss` in full). Python `DevelopmentPattern` and
+  `prepare(..., development=)`; R `development_pattern()`,
+  `development_pattern_from_history()`, `pattern_factor()`.
 
 ### Examples
 
