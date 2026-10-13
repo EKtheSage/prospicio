@@ -104,7 +104,7 @@ under "Unreleased" until then.
   brokerage and a fixed expense, with the rate on line, payback, multiple
   and loss ratio, and `Quote::at` for what a quoted premium gives the
   reinsurer (its return on capital). Python `prospicio.pricing.Quote`; R
-  `technical_quote()`, `implied_quote()`.
+  `technical_quote()`, `implied_quote()` (#222).
 
 ### Examples
 
