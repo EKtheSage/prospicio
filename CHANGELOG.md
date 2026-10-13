@@ -154,7 +154,7 @@ under "Unreleased" until then.
 - Event sets merged year by year (a catastrophe set with a non-catastrophe
   one, interleaved by time) and grouped into occurrences by an hours clause
   (`EventSet::merge`, `EventSet::grouped`). Python `EventSet.merge`,
-  `EventSet.grouped`; R `merge_event_sets()`, `hours_clause()`.
+  `EventSet.grouped`; R `merge_event_sets()`, `hours_clause()` (#231).
 
 ### Examples
 
