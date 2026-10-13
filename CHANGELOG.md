@@ -26,7 +26,7 @@ under "Unreleased" until then.
 - `Distortion::family()` and `Distortion::parameters()`: a distortion's
   family and its scalar parameters by name (for example the `rho` that
   `calibrate` returns). Python `Distortion.family`, `Distortion.parameters`;
-  R `d@parameters`.
+  R `d@parameters` (#210).
 
 ### Aggregate and reinsurance
 
@@ -95,10 +95,10 @@ under "Unreleased" until then.
 - A tower on an annual loss distribution, `Tower::on_annual_grid`
   (`AnnualGrids`): a quota share or stop-loss on a loss-ratio grid, with its
   expected sliding-scale and profit commission, each year's total treated
-  as one loss. Python `Tower.on_annual_grid`; R `tower_on_annual_grid()`.
+  as one loss. Python `Tower.on_annual_grid`; R `tower_on_annual_grid()` (#210).
 - Risk-loaded prices on a grid at any capital standard,
   `risk_load::price_grid`: Python `prospicio.pricing.price` and R
-  `risk_loaded_price()` take a grid, such as a layer's exact annual loss.
+  `risk_loaded_price()` take a grid, such as a layer's exact annual loss (#210).
 
 ### Examples
 
