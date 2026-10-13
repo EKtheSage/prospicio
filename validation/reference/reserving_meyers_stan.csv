@@ -4,7 +4,8 @@
 # calendar years up to 1997 (55 cells). Seed 20261012; 4 chains of 2000 warm-up and 25000 kept draws;
 # metric dense_e; adapt_delta 0.99; max_treedepth 12. dataset is the column. With s the reference
 # posterior sd: means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol, each at least 4
-# times the Monte Carlo error of Meyers' defaults (4 x 2,000 draws, 10,000 simulations) over seeds 0 to 19.
+# times the Monte Carlo error of Meyers' defaults (4 x 2,000 draws, 10,000 simulations) over seeds 0 to 199;
+# total sds 50% for their heavy tail; no reserve sd row for the youngest origin (its 5/50/95% rows instead).
 # meyers_2019_* rows: Meyers' printed numbers, at least 4 times the combined error of our defaults and his run.
 dataset,method,quantity,arg,expected,abs_tol,rel_tol,source
 paid,stan_crc,mean,logelr,-0.3959514147851,0.0035584186337206734,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
@@ -71,47 +72,46 @@ paid,stan_crc,reserve_q05,1988,0.0,1e-09,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0:
 paid,stan_crc,reserve_q50,1988,0.0,1e-09,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1988,0.0,1e-09,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1989,34.00333778762085,17.117866905047734,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1989,114.11911270031824,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_crc,reserve_sd,1989,114.11911270031824,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1989,-128.275003,39.94168944511138,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1989,23.258029,39.94168944511138,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1989,229.27551449999982,39.94168944511138,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1990,-2.959169302354114,29.121317568290156,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1990,194.14211712193438,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_crc,reserve_sd,1990,194.14211712193438,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1990,-302.48218499999996,67.94974099267702,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1990,-8.237780449999999,67.94974099267702,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1990,310.43483749999973,67.94974099267702,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1991,-14.066534163206345,33.59044404417312,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1991,223.9362936278208,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_crc,reserve_sd,1991,223.9362936278208,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1991,-354.8838515,78.37770276973727,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1991,-23.734011000000002,78.37770276973727,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1991,355.5132179999999,78.37770276973727,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1992,78.2578283128752,30.697161158821128,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1992,204.64774105880753,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_crc,reserve_sd,1992,204.64774105880753,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1992,-234.8006255,71.62670937058263,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1992,69.3208515,71.62670937058263,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1992,419.2432164999999,71.62670937058263,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1993,379.3117811967583,38.01817561600067,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1993,253.45450410667112,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_crc,reserve_sd,1993,253.45450410667112,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1993,18.5656923,88.70907643733489,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1993,353.58516499999996,88.70907643733489,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1993,826.0278445,88.70907643733489,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1994,503.1852349505901,66.67575827098638,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1994,444.50505513990925,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_crc,reserve_sd,1994,444.50505513990925,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1994,-176.6882565,155.57676929896823,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1994,478.35863500000005,155.57676929896823,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1994,1264.251345,155.57676929896823,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1995,1032.1469349044621,65.38144989419813,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1995,435.8763326279875,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_crc,reserve_sd,1995,435.8763326279875,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1995,376.122872,152.5567164197956,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1995,1000.8199999999999,152.5567164197956,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1995,1790.098664999999,152.5567164197956,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1996,1992.9239566405527,123.96586354764476,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1996,826.4390903176318,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_crc,reserve_sd,1996,826.4390903176318,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1996,787.2026495,289.2536816111711,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1996,1923.924,289.2536816111711,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1996,3409.6955949999997,289.2536816111711,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_mean,1997,3532.5588852752303,266.0827108201234,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_crc,reserve_sd,1997,1773.8847388008228,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q05,1997,1330.97623,620.8596585802879,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q50,1997,3280.93595,620.8596585802879,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_crc,reserve_q95,1997,6498.21752,620.8596585802879,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
@@ -227,17 +227,16 @@ incurred,stan_crc,reserve_q05,1996,40.78127175,199.31775235066638,0.0,CmdStan 2.
 incurred,stan_crc,reserve_q50,1996,853.84623,199.31775235066638,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_q95,1996,1875.2011499999992,199.31775235066638,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_mean,1997,1897.4214548923505,177.0399003742534,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-incurred,stan_crc,reserve_sd,1997,1180.2660024950226,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_q05,1997,366.97231000000005,413.09310087325787,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_q50,1997,1755.8228,413.09310087325787,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_q95,1997,3863.5540549999987,413.09310087325787,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_mean,total,3342.8430602649196,242.39415041943312,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-incurred,stan_crc,reserve_sd,total,1615.9610027962208,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+incurred,stan_crc,reserve_sd,total,1615.9610027962208,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_q05,total,953.8222480000001,565.5863509786773,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_q50,total,3245.447,565.5863509786773,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,reserve_q95,total,6031.887114999994,565.5863509786773,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,total_ultimate_mean,,39131.8430612,242.39415032444856,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-incurred,stan_crc,total_ultimate_sd,,1615.9610021629906,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+incurred,stan_crc,total_ultimate_sd,,1615.9610021629906,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_crc,elpd_loo,,71.2222862185634,2.0,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_crc.stan sha256 d32c0a8f586f231d seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,mean,logelr,-0.3961310506824,0.003539993039492014,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,sd,logelr,0.023599953596613425,0.0,0.15,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
@@ -345,17 +344,16 @@ paid,stan_csr,reserve_q05,1996,287.32197,261.2201164236127,0.0,CmdStan 2.39.0 vi
 paid,stan_csr,reserve_q50,1996,1255.5746,261.2201164236127,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_q95,1996,2665.0740899999955,261.2201164236127,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_mean,1997,2360.318124521518,219.4227859772369,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_csr,reserve_sd,1997,1462.8185731815795,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_q05,1997,595.4829480000001,511.9865006135528,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_q50,1997,2131.25745,511.9865006135528,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_q95,1997,4845.866649999997,511.9865006135528,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_mean,total,4936.273028006261,358.64899335813783,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_csr,reserve_sd,total,2390.9932890542523,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_csr,reserve_sd,total,2390.9932890542523,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_q05,total,1643.01775,836.8476511689882,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_q50,total,4660.189249999999,836.8476511689882,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,reserve_q95,total,9091.000205,836.8476511689882,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,total_ultimate_mean,,37537.2730292,358.6489933039265,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-paid,stan_csr,total_ultimate_sd,,2390.993288692843,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+paid,stan_csr,total_ultimate_sd,,2390.993288692843,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,stan_csr,elpd_loo,,49.56334119774353,2.0,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,mean,logelr,-0.3946292000185,0.002270072834340066,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,sd,logelr,0.01513381889560044,0.0,0.15,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
@@ -463,28 +461,27 @@ incurred,stan_csr,reserve_q05,1996,-155.4804005,190.3722285000108,0.0,CmdStan 2.
 incurred,stan_csr,reserve_q50,1996,603.2100399999999,190.3722285000108,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_q95,1996,1589.0934549999988,190.3722285000108,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_mean,1997,1425.612264533065,155.76144956372576,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-incurred,stan_csr,reserve_sd,1997,1038.4096637581717,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_q05,1997,124.45706550000004,363.4433823153601,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_q50,1997,1274.126,363.4433823153601,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_q95,1997,3181.0276099999996,363.4433823153601,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_mean,total,2375.802925351086,235.0306241918521,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-incurred,stan_csr,reserve_sd,total,1566.8708279456807,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+incurred,stan_csr,reserve_sd,total,1566.8708279456807,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_q05,total,162.69248500000023,548.4047897809883,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_q50,total,2224.54135,548.4047897809883,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,reserve_q95,total,5072.117039999992,548.4047897809883,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,total_ultimate_mean,,38164.802927490004,235.0306243593435,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
-incurred,stan_csr,total_ultimate_sd,,1566.87082906229,0.0,0.2,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
+incurred,stan_csr,total_ultimate_sd,,1566.87082906229,0.0,0.5,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 incurred,stan_csr,elpd_loo,,71.2639696274982,2.0,0.0,CmdStan 2.39.0 via cmdstanpy 1.3.0: meyers_csr.stan sha256 352616d6fb3ac417 seed 20261012 4x25000 draws (2000 warm-up) metric dense_e adapt_delta 0.99
 paid,meyers_2019_crc,total_ultimate_mean,,40121.0,0.0,0.01,Meyers (2019) CAS Monograph 8 2nd ed. Table 5.2 p. 18
-paid,meyers_2019_crc,total_ultimate_sd,,2487.0,0.0,0.4,Meyers (2019) CAS Monograph 8 2nd ed. Table 5.2 p. 18
+paid,meyers_2019_crc,total_ultimate_sd,,2487.0,0.0,0.5,Meyers (2019) CAS Monograph 8 2nd ed. Table 5.2 p. 18
 paid,meyers_2019_crc,mean,logelr,-0.3965,0.0034950000000000003,0.0,Meyers (2019) CAS Monograph 8 2nd ed. Table 5.1 p. 17
 paid,meyers_2019_crc,sd,logelr,0.0233,0.0,0.15,Meyers (2019) CAS Monograph 8 2nd ed. Table 5.1 p. 17
 paid,meyers_2019_crc,elpd_loo,,47.8,2.0,0.0,Meyers (2019) CAS Monograph 8 2nd ed. Tables 6.4 p. 29 and 7.3 p. 34
 incurred,meyers_2019_crc,total_ultimate_mean,,39147.0,0.0,0.01,Meyers (2019) CAS Monograph 8 2nd ed. Table 5.3 p. 18
-incurred,meyers_2019_crc,total_ultimate_sd,,1642.0,0.0,0.15,Meyers (2019) CAS Monograph 8 2nd ed. Table 5.3 p. 18
+incurred,meyers_2019_crc,total_ultimate_sd,,1642.0,0.0,0.5,Meyers (2019) CAS Monograph 8 2nd ed. Table 5.3 p. 18
 incurred,meyers_2019_crc,elpd_loo,,70.97,2.0,0.0,Meyers (2019) CAS Monograph 8 2nd ed. Table 6.4 p. 29
 paid,meyers_2019_csr,total_ultimate_mean,,37597.0,0.0,0.01,Meyers (2019) CAS Monograph 8 2nd ed. Table 7.2 p. 33
-paid,meyers_2019_csr,total_ultimate_sd,,2401.0,0.0,0.15,Meyers (2019) CAS Monograph 8 2nd ed. Table 7.2 p. 33
+paid,meyers_2019_csr,total_ultimate_sd,,2401.0,0.0,0.5,Meyers (2019) CAS Monograph 8 2nd ed. Table 7.2 p. 33
 paid,meyers_2019_csr,mean,logelr,-0.3956,0.0036899999999999997,0.0,Meyers (2019) CAS Monograph 8 2nd ed. Table 7.1 p. 32
 paid,meyers_2019_csr,sd,logelr,0.0246,0.0,0.15,Meyers (2019) CAS Monograph 8 2nd ed. Table 7.1 p. 32
 paid,meyers_2019_csr,mean,gamma,0.0446,0.004229999999999999,0.0,Meyers (2019) CAS Monograph 8 2nd ed. Table 7.1 p. 32

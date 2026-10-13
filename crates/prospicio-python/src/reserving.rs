@@ -6095,10 +6095,7 @@ impl PyMeyers {
             let category = py.get_type::<pyo3::exceptions::PyUserWarning>();
             PyErr::warn(py, category.as_any(), &message, 1)?;
         }
-        Ok(PyMeyersFit {
-            inner,
-            model: self.inner.model,
-        })
+        Ok(PyMeyersFit { inner })
     }
 
     fn __repr__(&self) -> String {
@@ -6133,7 +6130,6 @@ impl PyMeyers {
 #[pyclass(name = "MeyersFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyMeyersFit {
     inner: MeyersFit,
-    model: MeyersModel,
 }
 
 #[pymethods]
@@ -6141,7 +6137,7 @@ impl PyMeyersFit {
     /// The model: ``"crc"`` or ``"csr"``.
     #[getter]
     fn model(&self) -> &'static str {
-        self.model.name()
+        self.inner.model().name()
     }
 
     /// The volume-weighted chain ladder of the fitted column, whose latest
@@ -6323,7 +6319,7 @@ impl PyMeyersFit {
     fn __repr__(&self) -> String {
         format!(
             "MeyersFit(model={:?}, origins={}, draws={}, n_sims={}, warnings={})",
-            self.model.name(),
+            self.inner.model().name(),
             self.inner.chain_ladder.origins.len(),
             self.inner.posterior.n_draws(),
             self.inner.reserves.n_sims(),

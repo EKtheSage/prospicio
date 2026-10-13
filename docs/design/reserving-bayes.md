@@ -707,32 +707,43 @@ Monte Carlo error is negligible.
   older Stan; the CmdStan run of Meyers' own code is the tight check.
   As built, each tolerance is at least 4 times the combined Monte Carlo
   error of our defaults and of his single run: totals 1% (combined error
-  0.13%) as planned; total SEs 15% (each run's error about 2.7%), 40% on
-  CRC paid (about 7%: its 1997 reserve's log-normal tail on the one-cell
-  `alpha[10]`); `logelr` and `γ` means within 0.15 printed sd (combined
+  0.13%) as planned; total SEs 50% (our seed-to-seed error is at most
+  4.3%, but heavy-tailed through the 1997 reserve's log-normal on the
+  one-cell `alpha[10]`: 35% off at one seed in 200); `logelr` and `γ` means within 0.15 printed sd (combined
   0.027 sd) and their sds within 15% (combined 3.4%); elpd_loo within 2
   (each run's about 0.36, PSIS with Pareto k near 1). At 5% our CRC
   incurred SE (1,541 against 1,642) failed though Stan's (1,616) is within
   1.6% of Meyers'.
 
 Done for PR 3 (2026-10-12). `validation/tests/reserving_meyers.rs` checks
-468 rows of `reserving_meyers_stan.csv` (every parameter's mean and sd;
-each origin's and the total reserve's mean, sd and three percentiles; the
-total ultimate's mean and sd; elpd_loo) for CRC and CSR on paid and
+464 rows of `reserving_meyers_stan.csv` (every parameter's mean and sd;
+each origin's and the total reserve's mean, sd and three percentiles,
+except the youngest origin's sd; the total ultimate's mean and sd;
+elpd_loo) for CRC and CSR on paid and
 incurred, and Meyers' 15 printed numbers. Generator
 `validation/scripts/reserving_meyers_stan.py` (cmdstanpy 1.3.0, pandas
 3.0.6, numpy 2.5.4, arviz 0.23.4 for PSIS-LOO), seed 20261012, 4 chains of
 2,000 warm-up and 25,000 draws, dense metric, `adapt_delta` 0.99,
 `max_treedepth` 12, Meyers' initial values; max R-hat 1.0004, no
 divergence; a rerun reproduced every value. Our Monte Carlo error at the
-defaults over seeds 0 to 19, with `s` Stan's posterior sd: at most
-`0.034 s` on a mean, 3.8% on a parameter sd, 4.8% on a reserve sd (12.2%
-on CRC paid's 1997 reserve, where one seed in 30 gave +47%), `0.083 s` on
-a percentile and 0.44 on elpd_loo. Tolerances: means `0.15 s`, parameter
-sds 15%, reserve sds 20% (CRC paid 50%), percentiles `0.35 s`, elpd_loo
-2.0. Seeds 0 to 29 pass every row, using at most 0.94 of a tolerance (CRC
-paid's 1997 reserve sd at seed 12); seed 0 uses at most 0.44. The sweep is
-the ignored test `seed_sweep` (release build, `MEYERS_SEEDS` seeds).
+defaults over seeds 0 to 199, with `s` Stan's posterior sd: at most
+`0.026 s` on a mean, 3.6% on a parameter sd, 2.6% on the reserve sd of
+origins 1989 to 1996, 4.3% on the total reserve's and total ultimate's
+sds, `0.063 s` on a percentile and 0.43 on elpd_loo. The 1997 reserve's
+sd is heavy-tailed: it rides on the one-cell `alpha[10]` through a
+log-normal, and its seed-to-seed sd (up to 7.5%) understates the tail. A
+first sizing from 20 seeds put it at 4.8% and set 20% (50% on CRC paid);
+a review's 60-seed sweep found two failures, and at 200 seeds it failed
+at 12 (CRC incurred +63% at seed 170). So the parity has no row for the
+youngest origin's reserve sd (its 5%, 50% and 95% percentiles check its
+spread), and the total sds, which inherit a milder tail (CRC incurred
++37% at seed 170), get 50%. Tolerances: means `0.15 s`, parameter sds
+15%, origin reserve sds 20%, total sds 50%, percentiles `0.35 s`,
+elpd_loo 2.0, each at least 4.2 times its family's largest spread. Seeds
+0 to 199 pass every row (Stan's and Meyers' printed), using at most 0.86
+of a tolerance (CRC incurred elpd_loo against Meyers' at seed 122); seed
+0 uses at most 0.41. The sweep is the ignored test `seed_sweep` (release
+build, `MEYERS_SEEDS` seeds; 200 seeds take about 7 minutes).
 * **Runtime**: a GenIns fit is expected to take well under a second; PR 1
   measures it and keeps the CI tests under a few seconds in total.
 

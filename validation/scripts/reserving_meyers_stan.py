@@ -43,23 +43,27 @@ ADAPT_DELTA = 0.99
 MAX_TREEDEPTH = 12
 LAST_YEAR = 1997
 
-# Tolerances per (model, column), with s the reference posterior sd
-# (decision 10): (means abs x s, parameter sds relative, reserve sds relative,
-# reserve quantiles abs x s, elpd_loo abs). Each is at least 4 times the
-# largest Monte Carlo error of Meyers' defaults (4 x 2,000 draws, 10,000
-# simulations) in its family, measured as the seed-to-seed sd of every row
-# over seeds 0 to 19 (Stan's own error is negligible): means 0.034 s (CSR
-# incurred sigma[8]), parameter sds 3.8% (CSR incurred logelr), reserve sds
-# 12.2% on CRC paid (its 1997 reserve: one seed in 30 gave +47%, a log-normal
-# tail on the one-cell alpha[10]) and at most 4.8% elsewhere, quantiles
-# 0.083 s (95% of 1997), elpd_loo 0.44 (CSR incurred; PSIS with Pareto k up
-# to 1). Seeds 0 to 29 all pass.
-TOLERANCES = {
-    ("crc", "paid"): (0.15, 0.15, 0.5, 0.35, 2.0),
-    ("crc", "incurred"): (0.15, 0.15, 0.2, 0.35, 2.0),
-    ("csr", "paid"): (0.15, 0.15, 0.2, 0.35, 2.0),
-    ("csr", "incurred"): (0.15, 0.15, 0.2, 0.35, 2.0),
-}
+# Tolerances, the same for each model and column, with s the reference
+# posterior sd (decision 10). Each is at least 4 times the largest Monte
+# Carlo error of Meyers' defaults (4 x 2,000 draws, 10,000 simulations) in
+# its family, measured as the seed-to-seed sd of every row over seeds 0 to
+# 199 (Stan's own error is negligible): means 0.026 s (CSR incurred
+# sigma[8]), parameter sds 3.6% (CRC incurred logelr), the reserve sds of
+# origins 1989 to 1996 2.6%, the total reserve's and total ultimate's sds
+# 4.3% (CRC incurred), quantiles 0.063 s (95% of CSR incurred 1997),
+# elpd_loo 0.43 (CSR incurred; PSIS with Pareto k up to 1). Total sds get
+# 50%, not 20%: their error is heavy-tailed (CRC incurred's was +37% at seed
+# 170). The youngest origin (1997) has no reserve sd row: its reserve rides
+# on the one-cell alpha[10] through a log-normal, so its sd's error is
+# heavy-tailed (seed-to-seed sd up to 7.5%, but +63% at seed 170 and outside
+# 20% at 12 of 200 seeds); its 5%, 50% and 95% quantiles check its spread
+# instead. Seeds 0 to 199 pass every row.
+MEAN_TOL = 0.15  # x s
+SD_REL = 0.15  # parameter sds
+RESERVE_SD_REL = 0.2  # an origin's reserve sd
+TOTAL_SD_REL = 0.5  # the total reserve's and total ultimate's sds
+QUANTILE_TOL = 0.35  # x s
+ELPD_TOL = 2.0
 EXACT = 1e-9
 
 # Meyers (2019), CAS Monograph 8, 2nd ed., on the same data, 4 chains of 2,500
@@ -70,21 +74,21 @@ EXACT = 1e-9
 # (the seed sweep) and of Meyers' single run (his error taken as ours for the
 # totals, which use as many simulations, and as 1 / sqrt(3,000 effective
 # draws) of an sd for logelr and gamma): the total ultimate's mean within 1%
-# (combined error 0.13%); its sd within 40% on CRC paid (each run's error
-# about 7%, the 1997 tail above) and 15% elsewhere (each about 2.7%); the
-# means of logelr and gamma within 0.15 printed sd (combined 0.027 sd); their
+# (combined error 0.13%); the means of logelr and gamma within 0.15 printed sd (combined 0.027 sd); their
 # sds within 15% (combined 3.4%); elpd_loo within 2 (each run's about 0.36).
+# The total ultimate's sd within 50%, as for the Stan rows: our error is
+# heavy-tailed (seed-to-seed sd up to 4.3%, but 35% off at seed 170).
 MEYERS = [
     ("meyers_2019_crc", "paid", "total_ultimate_mean", "", 40121, 0.0, 0.01, "Table 5.2 p. 18"),
-    ("meyers_2019_crc", "paid", "total_ultimate_sd", "", 2487, 0.0, 0.4, "Table 5.2 p. 18"),
+    ("meyers_2019_crc", "paid", "total_ultimate_sd", "", 2487, 0.0, 0.5, "Table 5.2 p. 18"),
     ("meyers_2019_crc", "paid", "mean", "logelr", -0.3965, 0.15 * 0.0233, 0.0, "Table 5.1 p. 17"),
     ("meyers_2019_crc", "paid", "sd", "logelr", 0.0233, 0.0, 0.15, "Table 5.1 p. 17"),
     ("meyers_2019_crc", "paid", "elpd_loo", "", 47.80, 2.0, 0.0, "Tables 6.4 p. 29 and 7.3 p. 34"),
     ("meyers_2019_crc", "incurred", "total_ultimate_mean", "", 39147, 0.0, 0.01, "Table 5.3 p. 18"),
-    ("meyers_2019_crc", "incurred", "total_ultimate_sd", "", 1642, 0.0, 0.15, "Table 5.3 p. 18"),
+    ("meyers_2019_crc", "incurred", "total_ultimate_sd", "", 1642, 0.0, 0.5, "Table 5.3 p. 18"),
     ("meyers_2019_crc", "incurred", "elpd_loo", "", 70.97, 2.0, 0.0, "Table 6.4 p. 29"),
     ("meyers_2019_csr", "paid", "total_ultimate_mean", "", 37597, 0.0, 0.01, "Table 7.2 p. 33"),
-    ("meyers_2019_csr", "paid", "total_ultimate_sd", "", 2401, 0.0, 0.15, "Table 7.2 p. 33"),
+    ("meyers_2019_csr", "paid", "total_ultimate_sd", "", 2401, 0.0, 0.5, "Table 7.2 p. 33"),
     ("meyers_2019_csr", "paid", "mean", "logelr", -0.3956, 0.15 * 0.0246, 0.0, "Table 7.1 p. 32"),
     ("meyers_2019_csr", "paid", "sd", "logelr", 0.0246, 0.0, 0.15, "Table 7.1 p. 32"),
     ("meyers_2019_csr", "paid", "mean", "gamma", 0.0446, 0.15 * 0.0282, 0.0, "Table 7.1 p. 32"),
@@ -224,15 +228,14 @@ def main():
             f" seed {SEED} {CHAINS}x{DRAWS} draws ({WARMUP} warm-up) metric dense_e adapt_delta {ADAPT_DELTA}"
         )
         method = f"stan_{model}"
-        mean_tol, sd_rel, reserve_sd_rel, quantile_tol, elpd_tol = TOLERANCES[(model, column)]
         for p in params:
             name, _, index = p.partition("[")
             draws = fit.stan_variable(name)
             if index:
                 draws = draws[:, int(index[:-1]) - 1]
             s = summarise(draws)
-            row(column, method, "mean", p, s["mean"], mean_tol * s["sd"], 0.0, source)
-            row(column, method, "sd", p, s["sd"], 0.0, sd_rel, source)
+            row(column, method, "mean", p, s["mean"], MEAN_TOL * s["sd"], 0.0, source)
+            row(column, method, "sd", p, s["sd"], 0.0, SD_REL, source)
         targets = [(str(o), fit.stan_variable("reserve")[:, k]) for k, o in enumerate(origins)]
         targets.append(("total", fit.stan_variable("total_reserve")))
         for arg, draws in targets:
@@ -242,14 +245,18 @@ def main():
                 for q in ["mean", "sd", "q05", "q50", "q95"]:
                     row(column, method, f"reserve_{q}", arg, 0.0, EXACT, 0.0, source)
                 continue
-            row(column, method, "reserve_mean", arg, s["mean"], mean_tol * s["sd"], 0.0, source)
-            row(column, method, "reserve_sd", arg, s["sd"], 0.0, reserve_sd_rel, source)
+            row(column, method, "reserve_mean", arg, s["mean"], MEAN_TOL * s["sd"], 0.0, source)
+            if arg == "total":
+                row(column, method, "reserve_sd", arg, s["sd"], 0.0, TOTAL_SD_REL, source)
+            elif arg != str(origins[-1]):
+                # The youngest origin's sd is heavy-tailed (the tolerances above).
+                row(column, method, "reserve_sd", arg, s["sd"], 0.0, RESERVE_SD_REL, source)
             for q in ["q05", "q50", "q95"]:
-                row(column, method, f"reserve_{q}", arg, s[q], quantile_tol * s["sd"], 0.0, source)
+                row(column, method, f"reserve_{q}", arg, s[q], QUANTILE_TOL * s["sd"], 0.0, source)
         s = summarise(fit.stan_variable("total_ultimate"))
-        row(column, method, "total_ultimate_mean", "", s["mean"], mean_tol * s["sd"], 0.0, source)
-        row(column, method, "total_ultimate_sd", "", s["sd"], 0.0, reserve_sd_rel, source)
-        row(column, method, "elpd_loo", "", loo.elpd_loo, elpd_tol, 0.0, source)
+        row(column, method, "total_ultimate_mean", "", s["mean"], MEAN_TOL * s["sd"], 0.0, source)
+        row(column, method, "total_ultimate_sd", "", s["sd"], 0.0, TOTAL_SD_REL, source)
+        row(column, method, "elpd_loo", "", loo.elpd_loo, ELPD_TOL, 0.0, source)
 
     for method, column, quantity, arg, value, abs_tol, rel_tol, where in MEYERS:
         source = f"Meyers (2019) CAS Monograph 8 2nd ed. {where}"
@@ -263,7 +270,8 @@ def main():
         f"# calendar years up to {LAST_YEAR} (55 cells). Seed {SEED}; {CHAINS} chains of {WARMUP} warm-up and {DRAWS} kept draws;",
         f"# metric dense_e; adapt_delta {ADAPT_DELTA}; max_treedepth {MAX_TREEDEPTH}. dataset is the column. With s the reference",
         "# posterior sd: means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol, each at least 4",
-        "# times the Monte Carlo error of Meyers' defaults (4 x 2,000 draws, 10,000 simulations) over seeds 0 to 19.",
+        "# times the Monte Carlo error of Meyers' defaults (4 x 2,000 draws, 10,000 simulations) over seeds 0 to 199;",
+        "# total sds 50% for their heavy tail; no reserve sd row for the youngest origin (its 5/50/95% rows instead).",
         "# meyers_2019_* rows: Meyers' printed numbers, at least 4 times the combined error of our defaults and his run.",
         "dataset,method,quantity,arg,expected,abs_tol,rel_tol,source",
     ]

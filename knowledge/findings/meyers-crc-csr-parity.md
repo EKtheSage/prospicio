@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Meyers' CRC and CSR against his Stan code and his printed results
-description: Meyers (prospicio's CRC and CSR) matches Meyers' own Stan programs on group 353 paid and incurred at every one of 30 seeds, within tolerances of 4 times its own Monte Carlo error, and his printed totals within 0.3%; the match needs his 1e-5 floor on each variance step, and sampling needs a pilot-run scale, since the joint mode sits deep in the funnel of the late sigmas.
+description: Meyers (prospicio's CRC and CSR) matches Meyers' own Stan programs on group 353 paid and incurred at every one of 200 seeds, within tolerances of at least 4 times its own Monte Carlo error, and his printed totals within 0.3%; the match needs his 1e-5 floor on each variance step, and sampling needs a pilot-run scale, since the joint mode sits deep in the funnel of the late sigmas.
 tags: [bayes, reserving, meyers, crc, csr, stan, clrd, validation]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-12T17:30:00-07:00 }
@@ -40,19 +40,26 @@ sources:
   71.26; Meyers 47.80, 70.97, 49.76. CSR paid `gamma`: ours 0.0447 (sd
   0.0286), Stan 0.0450 (0.0280), Meyers 0.0446 (0.0282).
 * Monte Carlo error of the defaults (4 chains of 2,000 draws, 10,000
-  simulations), the seed-to-seed sd over seeds 0 to 19 with `s` Stan's
-  posterior sd: at most `0.034 s` on a mean (CSR incurred `sigma[8]`),
-  3.8% on a parameter sd, 4.8% on a reserve sd except CRC paid's 12.2%,
-  `0.083 s` on a reserve percentile and 0.44 on elpd_loo. CRC paid's 1997
-  reserve rides on the one-cell `alpha[10]` (posterior sd 0.33) through a
-  log-normal, and one seed in 30 gave its sd +47%. The Stan-parity
-  tolerances are `0.15 s`, 15%, 20% (CRC paid 50%), `0.35 s` and 2.0;
-  seeds 0 to 29 pass every row, using at most 0.94 of a tolerance (that
-  seed), seed 0 at most 0.44.[^test][^design]
+  simulations), the seed-to-seed sd over seeds 0 to 199 with `s` Stan's
+  posterior sd: at most `0.026 s` on a mean (CSR incurred `sigma[8]`),
+  3.6% on a parameter sd, 2.6% on the reserve sd of origins 1989 to 1996,
+  4.3% on the total reserve's sd, `0.063 s` on a reserve percentile and
+  0.43 on elpd_loo. The sd of 1997's reserve is heavy-tailed: that reserve
+  rides on the one-cell `alpha[10]` (posterior sd 0.33) through a
+  log-normal, so its seed-to-seed sd (up to 7.5%) understates the tail.
+  At 20% it failed at 12 of 200 seeds (CRC incurred +63% at seed 170, CSR
+  paid +23% at seed 38); the totals inherit a milder tail (CRC incurred
+  +37% at seed 170). A 20-seed sweep had put the spread at 4.8% and missed
+  this. So the parity drops 1997's reserve sd row (its 5%, 50% and 95%
+  percentiles check its spread) and gives the total sds 50%. The
+  tolerances are `0.15 s` on means, 15% on parameter sds, 20% on origin
+  reserve sds, 50% on total sds, `0.35 s` on percentiles and 2.0 on
+  elpd_loo; seeds 0 to 199 pass every row, using at most 0.86 of a
+  tolerance, seed 0 at most 0.41.[^test][^design]
 * Meyers' printed numbers sit within each run's Monte Carlo error of the
   Stan rerun (totals within 0.16%, sds within 1.6%), so his runs and the
   transcription agree. Their tolerances add his run's error to ours:
-  totals 1%, total sds 15% (40% on CRC paid), `logelr` and `gamma` means
+  totals 1%, total sds 50% (the same heavy tail), `logelr` and `gamma` means
   0.15 printed sd and sds 15%, elpd 2.[^csv]
 * The floor matters: Meyers' `a_ig < 1e5` makes each variance step
   `U(1 - exp(-1e-5), 1)`, not `U(0, 1)`. Without the floor the late

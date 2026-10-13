@@ -435,6 +435,15 @@ impl Meyers {
 }
 
 impl MeyersFit {
+    /// The model that produced this fit, CRC or CSR.
+    pub fn model(&self) -> MeyersModel {
+        if self.model.csr {
+            MeyersModel::Csr
+        } else {
+            MeyersModel::Crc
+        }
+    }
+
     /// Posterior summary of each parameter: mean, sd, 5/50/95%
     /// quantiles, R-hat, bulk and tail ESS.
     pub fn summary(&self) -> Result<Vec<ParamSummary>> {
@@ -1186,6 +1195,7 @@ mod tests {
             .fit(&comauto(), "paid", "premium")
             .unwrap();
         assert_eq!(fit.posterior.names()[19], "gamma");
+        assert_eq!(fit.model(), MeyersModel::Csr);
         for (pd, output) in [(&fit.ultimates, "ultimates"), (&fit.reserves, "reserves")] {
             let provenance = pd.provenance();
             assert_eq!(provenance.model, "meyers_csr");

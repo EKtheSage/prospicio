@@ -919,7 +919,7 @@ impl Triangle {
             seed: whole(seed, "seed")?,
         };
         let inner = meyers.fit(&self.inner, column, premium).map_err(to_r)?;
-        Ok(MeyersFit { inner, model })
+        Ok(MeyersFit { inner })
     }
 
     /// The lifetime view under Mack's bootstrap: each origin's reserve
@@ -2153,14 +2153,13 @@ impl BayesOdpFit {
 #[extendr]
 pub(crate) struct MeyersFit {
     inner: MeyersInner,
-    model: MeyersModel,
 }
 
 #[extendr]
 impl MeyersFit {
     /// "crc" or "csr".
     fn model(&self) -> &'static str {
-        self.model.name()
+        self.inner.model().name()
     }
 
     /// The volume-weighted chain ladder the reserves are measured from.
@@ -2268,7 +2267,6 @@ impl MeyersFit {
         pick(&one, keys, values)?;
         Ok(Self {
             inner: self.inner.clone(),
-            model: self.model,
         })
     }
 }

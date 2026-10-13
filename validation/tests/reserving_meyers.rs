@@ -7,11 +7,14 @@
 //!   `scripts/reserving_meyers_stan.py` (Meyers' programs transcribed into
 //!   current syntax, CmdStan 2.39.0, 4 chains of 25,000 draws, dense
 //!   metric), rows `stan_crc` and `stan_csr`, paid and incurred. Our side
-//!   runs the defaults (4 chains of 1,000 draws, target acceptance 0.95,
-//!   10,000 simulations, seed 0). Each tolerance is at least 4 times our
-//!   Monte Carlo error, measured per row as the seed-to-seed sd over seeds 0
-//!   to 19 (the `seed_sweep` test below, ignored in CI); the measured
-//!   spreads are in the script and the design note.
+//!   runs the defaults (4 chains of 1,000 warm-up and 2,000 kept draws,
+//!   target acceptance 0.95, 10,000 simulations, seed 0). Each tolerance
+//!   is at least 4 times our Monte Carlo error, measured per row as the
+//!   seed-to-seed sd over seeds 0 to 199 (the `seed_sweep` test below,
+//!   ignored in CI), and every row passes at each of those seeds; the
+//!   measured spreads are in the script and the design note. The 1997
+//!   reserve's sd has no row: its error is heavy-tailed, so its
+//!   percentiles check its spread.
 //! * Meyers' printed numbers (rows `meyers_2019_crc` and `meyers_2019_csr`:
 //!   the total ultimate and its sd, `logelr`, `gamma` and elpd_loo, from
 //!   Tables 5.1 to 7.3): a looser second check.
