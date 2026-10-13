@@ -18,6 +18,7 @@
 //! `docs/design/aggregate.md`.
 
 use prospicio_core::{Error, Result};
+use prospicio_prob::copula::Copula;
 use prospicio_prob::{Counting, Grid};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex64;
@@ -112,6 +113,91 @@ impl JointGrid {
             shape: [a.len(), b.len()],
             probs,
         }
+    }
+
+    /// The joint per-event severity of two losses with per-event marginals
+    /// `a` (rows) and `b` (columns), coupled by a two-dimensional `copula`:
+    /// the copula's rectangle probabilities over the marginals' cdfs,
+    /// `S[i, j] = C(F_A(i), F_B(j)) − C(F_A(i − 1), F_B(j))
+    /// − C(F_A(i), F_B(j − 1)) + C(F_A(i − 1), F_B(j − 1))`, as `aggregate`'s
+    /// copula `bivariate`. The marginals come back exactly, for any copula,
+    /// since `C(u, 1) = u`; mass at 0 on an axis (see [`triggered`]) is an
+    /// event that misses that line. A difference of nearly equal cdf values
+    /// can come out a little below 0 (round-off, to about `1e-15`); it is
+    /// kept, as `aggregate` keeps it, because setting it to 0 adds mass to
+    /// every row and column and moves the second moments by `1e-9`
+    /// relative. The compound's [`fft_bivariate`] sets its result's
+    /// round-off to 0.
+    ///
+    /// Fails unless the copula is two-dimensional and has a distribution
+    /// function ([`Copula::cdf`]).
+    ///
+    /// ```
+    /// use prospicio_aggregate::bivariate::JointGrid;
+    /// use prospicio_prob::Grid;
+    /// use prospicio_prob::copula::{Archimedean, ArchimedeanCopula};
+    ///
+    /// let a = Grid::new(1.0, vec![0.25, 0.5, 0.25]).unwrap();
+    /// let b = Grid::new(1.0, vec![0.5, 0.5]).unwrap();
+    /// let gumbel = ArchimedeanCopula::new(Archimedean::Gumbel, 2.0, 2).unwrap();
+    /// let joint = JointGrid::from_copula(&a, &b, &gumbel).unwrap();
+    /// let m = joint.marginal(0).unwrap();
+    /// assert!((m.probs()[1] - 0.5).abs() < 1e-15);
+    /// assert!(joint.correlation() > 0.0);
+    /// ```
+    pub fn from_copula(a: &Grid, b: &Grid, copula: &dyn Copula) -> Result<Self> {
+        if copula.dim() != 2 {
+            return Err(Error::InvalidParameter {
+                name: "copula",
+                value: copula.dim() as f64,
+                reason: "must be two-dimensional",
+            });
+        }
+        let cumulative = |g: &Grid| -> Vec<f64> {
+            let mut total = 0.0;
+            std::iter::once(0.0)
+                .chain(g.probs().iter().map(|p| {
+                    total += p;
+                    total.min(1.0)
+                }))
+                .collect()
+        };
+        let (fa, fb) = (cumulative(a), cumulative(b));
+        // The last point of each axis reaches 1 exactly, so C(u, 1) = u
+        // keeps the marginals.
+        let (na, nb) = (fa.len(), fb.len());
+        let mut c = vec![0.0; na * nb];
+        for i in 1..na {
+            let u = if i == na - 1 { 1.0 } else { fa[i] };
+            for j in 1..nb {
+                let v = if j == nb - 1 { 1.0 } else { fb[j] };
+                c[i * nb + j] = copula.cdf(&[u, v])?;
+            }
+        }
+        let mut probs = Vec::with_capacity((na - 1) * (nb - 1));
+        for i in 1..na {
+            for j in 1..nb {
+                let mass = c[i * nb + j] - c[(i - 1) * nb + j] - c[i * nb + j - 1]
+                    + c[(i - 1) * nb + j - 1];
+                if mass < -1e-12 {
+                    return Err(Error::Data(format!(
+                        "the copula's rectangle probability at ({}, {}) is {mass}",
+                        i - 1,
+                        j - 1
+                    )));
+                }
+                probs.push(mass);
+            }
+        }
+        // Only round-off is below 0, so the checks of `new` apply to the
+        // grid with it set to 0; the signed values are kept.
+        let checked: Vec<f64> = probs.iter().map(|p| p.max(0.0)).collect();
+        Self::new([a.step(), b.step()], [na - 1, nb - 1], checked)?;
+        Ok(Self {
+            steps: [a.step(), b.step()],
+            shape: [na - 1, nb - 1],
+            probs,
+        })
     }
 
     /// The step on each axis.
@@ -551,6 +637,28 @@ impl Clash {
     }
 }
 
+/// `(1 − p) δ_0 + p g`: a loss from `g` with probability `p`, else
+/// nothing. The per-event marginal of a line an event hits with probability
+/// `p`, for [`JointGrid::from_copula`].
+///
+/// ```
+/// use prospicio_aggregate::bivariate::triggered;
+/// use prospicio_prob::Grid;
+///
+/// let g = triggered(&Grid::new(1.0, vec![0.0, 1.0]).unwrap(), 0.25).unwrap();
+/// assert_eq!(g.probs(), &[0.75, 0.25]);
+/// ```
+pub fn triggered(g: &Grid, p: f64) -> Result<Grid> {
+    if !(0.0..=1.0).contains(&p) {
+        return Err(Error::InvalidParameter {
+            name: "p",
+            value: p,
+            reason: "must be in [0, 1]",
+        });
+    }
+    thin(g, p)
+}
+
 /// `(1 - p) δ_0 + p g`: a loss of `g` with probability `p`, else nothing.
 fn thin(g: &Grid, p: f64) -> Result<Grid> {
     let mut probs: Vec<f64> = g.probs().iter().map(|q| p * q).collect();
@@ -669,5 +777,44 @@ mod tests {
         assert!(fft_bivariate(&wrong, &sev, [0, 8]).is_err());
         assert!(JointGrid::new([1.0, 1.0], [2, 2], vec![0.5, 0.5]).is_err());
         assert!(sev.marginal(2).is_err());
+    }
+
+    #[test]
+    fn a_copula_keeps_the_marginals_and_independence_is_the_product() {
+        use prospicio_prob::copula::{
+            Archimedean, ArchimedeanCopula, GaussianCopula, StudentTCopula,
+        };
+        let a = triggered(&Grid::new(1.0, vec![0.1, 0.3, 0.4, 0.2]).unwrap(), 0.5).unwrap();
+        let b = Grid::new(2.0, vec![0.2, 0.5, 0.3]).unwrap();
+        for copula in [
+            Box::new(ArchimedeanCopula::new(Archimedean::Clayton, 3.0, 2).unwrap())
+                as Box<dyn Copula>,
+            Box::new(ArchimedeanCopula::new(Archimedean::Frank, 5.0, 2).unwrap()),
+            Box::new(GaussianCopula::new(&[1.0, -0.6, -0.6, 1.0], 2).unwrap()),
+        ] {
+            let joint = JointGrid::from_copula(&a, &b, copula.as_ref()).unwrap();
+            for (axis, g) in [(0, &a), (1, &b)] {
+                for (got, want) in joint.marginal(axis).unwrap().probs().iter().zip(g.probs()) {
+                    assert!((got - want).abs() < 1e-15, "{axis}: {got} vs {want}");
+                }
+            }
+        }
+        // A Gaussian at rho 0 is the independent product.
+        let zero = GaussianCopula::new(&[1.0, 0.0, 0.0, 1.0], 2).unwrap();
+        let joint = JointGrid::from_copula(&a, &b, &zero).unwrap();
+        let product = JointGrid::independent(&a, &b);
+        for (got, want) in joint.probs().iter().zip(product.probs()) {
+            assert!((got - want).abs() < 1e-15);
+        }
+        // Positive dependence raises the covariance; negative lowers it.
+        let up = ArchimedeanCopula::new(Archimedean::Gumbel, 3.0, 2).unwrap();
+        let down = GaussianCopula::new(&[1.0, -0.6, -0.6, 1.0], 2).unwrap();
+        assert!(JointGrid::from_copula(&a, &b, &up).unwrap().covariance() > 0.0);
+        assert!(JointGrid::from_copula(&a, &b, &down).unwrap().covariance() < 0.0);
+        let three = ArchimedeanCopula::new(Archimedean::Gumbel, 3.0, 3).unwrap();
+        assert!(JointGrid::from_copula(&a, &b, &three).is_err());
+        let t = StudentTCopula::new(&[1.0, 0.5, 0.5, 1.0], 2, 4.0).unwrap();
+        assert!(JointGrid::from_copula(&a, &b, &t).is_err());
+        assert!(triggered(&b, 1.5).is_err());
     }
 }

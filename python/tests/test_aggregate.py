@@ -617,3 +617,23 @@ def test_merge_event_sets_and_hours_clause():
     assert e.grouped(72.0).events(0) == [3.0, 4.0]
     with pytest.raises(ValueError):
         EventSet.from_years([[1.0]]).grouped(72.0)
+
+
+def test_copula_coupled_lines():
+    from prospicio.aggregate import JointGrid, fft_bivariate
+    from prospicio.risk import ArchimedeanCopula, GaussianCopula, StudentTCopula
+
+    a = Grid(1.0, [0.1, 0.3, 0.4, 0.2])
+    b = Grid(2.0, [0.2, 0.5, 0.3])
+    s = JointGrid.from_copula(a, b, ArchimedeanCopula("clayton", 3.0, 2), trigger_a=0.5)
+    # The marginals come back: A is triggered half the time.
+    ma = s.marginal(0).probs
+    assert ma[0] == pytest.approx(0.5 + 0.5 * 0.1, abs=1e-15)
+    assert s.marginal(1).probs == pytest.approx(b.probs, abs=1e-15)
+    assert s.correlation() > 0
+    zero = JointGrid.from_copula(a, b, GaussianCopula([[1.0, 0.0], [0.0, 1.0]]))
+    assert zero.probs[2][1] == pytest.approx(0.4 * 0.5, abs=1e-15)
+    joint, _ = fft_bivariate(Poisson(3.0), s, (64, 64))
+    assert joint.correlation() > 0
+    with pytest.raises(ValueError):
+        JointGrid.from_copula(a, b, StudentTCopula([[1.0, 0.5], [0.5, 1.0]], 4.0))

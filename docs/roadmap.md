@@ -133,12 +133,12 @@ what it is aiming for by v1.0.
     `docs/design/time-value.md`); catastrophe event loss tables with
     secondary uncertainty, year loss tables, merged event sets and the
     hours clause (#196, `docs/design/cat-inputs.md`); two lines hit by the
-    same events, by a 2-D compound FFT, and `aggregate`'s clash model.
+    same events, by a 2-D compound FFT, `aggregate`'s clash model, and
+    the two lines' losses in an event coupled by a copula.
 - **Next:**
   1. The large items parked from `aggregate` parity
-     (`docs/design/aggregate.md`): copula coupling of two lines (after a
-     copula cdf in `prospicio-prob`), renewal counts with Wiener–Hopf
-     ruin, and the P&L ledger (once signed grids exist).
+     (`docs/design/aggregate.md`): renewal counts with Wiener–Hopf ruin,
+     and the P&L ledger (once signed grids exist).
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

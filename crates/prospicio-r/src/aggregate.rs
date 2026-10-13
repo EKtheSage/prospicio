@@ -728,8 +728,29 @@ fn clash_aggregate_rust(
     joint_list(&joint, Some(&report))
 }
 
+/// The per-event severity of two losses coupled by a copula, each line hit
+/// with its trigger probability.
+#[extendr]
+fn copula_severity_rust(
+    a: Robj,
+    b: Robj,
+    copula: Robj,
+    trigger_a: f64,
+    trigger_b: f64,
+) -> Result<List> {
+    use prospicio_aggregate::bivariate::{JointGrid, triggered};
+    let (a, b) = (grid_arg(&a, "a")?, grid_arg(&b, "b")?);
+    let copula = <&crate::risk::RiskCopula>::try_from(&copula)
+        .map_err(|_| Error::Other("copula must be a copula".into()))?;
+    let a = triggered(&a, trigger_a).map_err(to_r)?;
+    let b = triggered(&b, trigger_b).map_err(to_r)?;
+    let joint = JointGrid::from_copula(&a, &b, copula.inner.as_copula()).map_err(to_r)?;
+    joint_list(&joint, None)
+}
+
 extendr_module! {
     mod aggregate;
+    fn copula_severity_rust;
     fn layer_loss_picks_rust;
     fn eventual_ruin_rust;
     fn fft_bivariate_rust;

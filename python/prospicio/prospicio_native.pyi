@@ -7190,6 +7190,42 @@ class JointGrid:
         ``Cov(A, B)``.
         """
     @staticmethod
+    def from_copula(a: Grid, b: Grid, copula: Any, *, trigger_a: float = 1.0, trigger_b: float = 1.0) -> JointGrid:
+        """
+        The joint per-event severity of two losses coupled by a copula.
+        
+        Each line is hit with its ``trigger`` probability and then loses
+        from its grid (``a`` for line A, the rows; ``b`` for B), so mass at 0
+        is an event that misses the line; the two per-event marginals are
+        joined by the copula's rectangle probabilities over their cdfs, as
+        ``aggregate``'s copula ``bivariate``. The marginals come back
+        exactly. Give the result to ``fft_bivariate``.
+        
+        Parameters
+        ----------
+        a, b : Grid
+            The loss to each line given that the event hits it.
+        copula : GaussianCopula or ArchimedeanCopula
+            Two-dimensional, with a distribution function.
+        trigger_a, trigger_b : float, default 1.0
+            The probability that an event hits each line.
+        
+        Returns
+        -------
+        JointGrid
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import JointGrid
+        >>> from prospicio.distributions import Grid
+        >>> from prospicio.risk import ArchimedeanCopula
+        >>> a = Grid(1.0, [0.25, 0.5, 0.25])
+        >>> b = Grid(1.0, [0.5, 0.5])
+        >>> s = JointGrid.from_copula(a, b, ArchimedeanCopula("gumbel", 2.0, 2), trigger_a=0.5)
+        >>> s.correlation() > 0
+        True
+        """
+    @staticmethod
     def independent(a: Grid, b: Grid) -> JointGrid:
         """
         The joint law of two independent losses.

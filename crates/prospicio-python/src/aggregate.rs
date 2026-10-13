@@ -1630,6 +1630,56 @@ impl PyJointGrid {
         }
     }
 
+    /// The joint per-event severity of two losses coupled by a copula.
+    ///
+    /// Each line is hit with its ``trigger`` probability and then loses
+    /// from its grid (``a`` for line A, the rows; ``b`` for B), so mass at 0
+    /// is an event that misses the line; the two per-event marginals are
+    /// joined by the copula's rectangle probabilities over their cdfs, as
+    /// ``aggregate``'s copula ``bivariate``. The marginals come back
+    /// exactly. Give the result to ``fft_bivariate``.
+    ///
+    /// Parameters
+    /// ----------
+    /// a, b : Grid
+    ///     The loss to each line given that the event hits it.
+    /// copula : GaussianCopula or ArchimedeanCopula
+    ///     Two-dimensional, with a distribution function.
+    /// trigger_a, trigger_b : float, default 1.0
+    ///     The probability that an event hits each line.
+    ///
+    /// Returns
+    /// -------
+    /// JointGrid
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import JointGrid
+    /// >>> from prospicio.distributions import Grid
+    /// >>> from prospicio.risk import ArchimedeanCopula
+    /// >>> a = Grid(1.0, [0.25, 0.5, 0.25])
+    /// >>> b = Grid(1.0, [0.5, 0.5])
+    /// >>> s = JointGrid.from_copula(a, b, ArchimedeanCopula("gumbel", 2.0, 2), trigger_a=0.5)
+    /// >>> s.correlation() > 0
+    /// True
+    #[staticmethod]
+    #[pyo3(signature = (a, b, copula, *, trigger_a = 1.0, trigger_b = 1.0))]
+    fn from_copula(
+        a: PyRef<'_, PyGrid>,
+        b: PyRef<'_, PyGrid>,
+        copula: &Bound<'_, PyAny>,
+        trigger_a: f64,
+        trigger_b: f64,
+    ) -> PyResult<Self> {
+        use prospicio_aggregate::bivariate::{JointGrid, triggered};
+        let copula = crate::risk::AnyCopula::extract(copula)?;
+        let a = triggered(&a.inner, trigger_a).map_err(to_py)?;
+        let b = triggered(&b.inner, trigger_b).map_err(to_py)?;
+        Ok(Self {
+            inner: JointGrid::from_copula(&a, &b, copula.as_copula()).map_err(to_py)?,
+        })
+    }
+
     /// The step on each axis.
     #[getter]
     fn steps(&self) -> (f64, f64) {
