@@ -1428,7 +1428,8 @@ mod clark_experience {
     }
 
     /// (accident date, untrended, factor, trended, loss in layer), as printed.
-    const LOSSES: [((i32, u32, u32), f64, f64, f64, f64); 14] = [
+    type Printed = ((i32, u32, u32), f64, f64, f64, f64);
+    const LOSSES: [Printed; 14] = [
         ((1988, 9, 20), 240_946.0, 1.411, 339_975.0, 239_975.0),
         ((1988, 10, 11), 821_499.0, 1.408, 1_156_671.0, 400_000.0),
         ((1989, 3, 15), 158_129.0, 1.385, 219_009.0, 119_009.0),
