@@ -2,8 +2,10 @@ name: Docs site
 
 # Publishes the docs site (Python, R and Rust API docs, built by
 # `cargo xtask docs` into target/docs-site) to GitHub Pages on each merge to
-# main that can change it, and on demand. Pages' source must be set to
-# "GitHub Actions" in the repository's settings.
+# main that can change it, and on demand. The Python site's user guide holds
+# the guides in docs/guides and the notebooks in examples/, which the build
+# executes: the notebooks are committed without outputs. Pages' source must
+# be set to "GitHub Actions" in the repository's settings.
 on:
   push:
     branches: [main]
@@ -12,6 +14,8 @@ on:
       - "python/**"
       - "R/**"
       - "xtask/**"
+      - "examples/**"
+      - "docs/guides/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/pages.yml"

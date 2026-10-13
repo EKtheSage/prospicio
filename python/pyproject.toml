@@ -32,6 +32,7 @@ Repository = "https://github.com/EKtheSage/prospicio"
 [dependency-groups]
 dev = [
     "maturin>=1.7,<2",
+    "nbstripout",
     "pandas",
     "pytest",
     "scipy",
@@ -46,9 +47,12 @@ docs = [
 ]
 # Jupyter and charts for the notebooks in examples/:
 # `uv run --project python --group examples jupyter lab` from the repository root.
+# nbstripout is the git filter that keeps notebook outputs out of commits
+# (.gitattributes; setup in examples/README.md).
 examples = [
     "jupyter",
     "matplotlib",
+    "nbstripout",
 ]
 
 [tool.maturin]
