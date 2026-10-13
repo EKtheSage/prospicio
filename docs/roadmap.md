@@ -169,10 +169,12 @@ what it is aiming for by v1.0.
     cumulative values with premium, his priors, at parity with his own
     Stan code and his printed results on group 353 Commercial Auto, in
     Python (`Meyers`) and R (`meyers()`).
+  - `BayesOdp` over segments (`fit_segments`, independent or rank
+    correlated) and in the diagonal backtest (`reserving-bayes.md`, PR 2;
+    Rust built, bindings to follow).
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
-  1. PR 2: `BayesOdp::fit_segments` with `SegmentDependence`, and
-     `BayesOdp` in the diagonal backtest.
+  1. PR 2's Python and R bindings (`fit_segments`, `dependence`).
   2. PR 4: the Bayesian Bornhuetter–Ferguson.
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for

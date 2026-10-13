@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2's Rust side is built on `claude/bayes-segments` (decisions 8 and 11: `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest; its bindings follow on the same branch). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -276,7 +276,13 @@ fitted increments (`U_w γ_d`, the ODP GLM's MLE) when all are positive, and
 from `(c0, 0, …)` otherwise; it solves `H δ = ∇f` by Cholesky, halves the
 step until `f` rises, and stops when `max |δ| < 1e-12` (or below `1e-8`
 when a full step no longer raises `f`, the rounding floor), failing after
-100 iterations. `H = R Rᵀ` with `R` lower triangular and `L = (Rᵀ)⁻¹`.
+200 iterations (this note said 100; the code has always had 200). PR 2
+adds a second rounding floor: a full step that lowers `f` by no more than
+`1e-12 |f|` stops too. CLRD's private passenger auto summed over
+companies needed it: its `b[10]` rests on one small cell against
+increments near `10⁷`, rounding kept its Newton step near `1e-6`, the
+halving reached a step that no longer moved `θ`, and the method ran out
+of iterations. GenIns and RAA draws are unchanged bit for bit. `H = R Rᵀ` with `R` lower triangular and `L = (Rᵀ)⁻¹`.
 Sanity tests, priors switched off by an internal flag: the mode's `μ` is
 the chain ladder's fitted increment to 1e-8 relative on RAA and GenIns,
 from `(c0, 0, …)`; the prior's shift of the mode falls as `1/sd²` (ratio of
@@ -323,7 +329,7 @@ the reserve of each origin as the sum of its future increments.
 Decided 2026-10-12 (failed diagnostics: open decision 4 (a)); built in PR 1
 with these changes from the sketch below, which is kept as proposed:
 
-* `fit_segments` and `BayesOdpFits` wait for PR 2. `BayesOdpFit` also has
+* `fit_segments` and `BayesOdpFits` came in PR 2 (decision 11). `BayesOdpFit` also has
   `summary()`, `loo()`, `to_long()`, `totals()` and `development_table()`
   itself (one segment), and keeps the observed cells privately for `loo()`.
 * **Seeds.** The chains and the simulations each use a seed derived from
@@ -612,6 +618,44 @@ pub struct MeyersFit {
 
 ### 8. The diagonal backtest
 
+Built in PR 2 (Rust, 2026-10-12) as proposed below, with these choices
+the proposal left open:
+
+* **Levels and scale.** `forecast` fits the model of decision 3 on the
+  train rows' increments, with an origin and a development effect for
+  each level the train rows have (renumbered), and `φ` the Pearson scale
+  of the train rows at the likelihood's mode on `N − p` degrees of
+  freedom. That mode is the ODP GLM's MLE, which is the chain ladder's
+  fit when the train rows form a triangle, so on a whole triangle `φ` is
+  `BayesOdpFit::scale` (a unit test, to 1e-8). A test row whose origin or
+  age has no train row is `Error::Bayes` (the backtest already leaves
+  such rows out for every model), as are too few train rows and decision
+  3's row and column check.
+* **Seeds and size.** The chains and the simulations take seeds derived
+  from the backtest's `seed` as `fit` does from `BayesOdp::seed`, and the
+  backtest's `n_sims` replaces `BayesOdp::n_sims`. The diagnostics are
+  not reported (the trait has no place for them).
+* **Outputs.** `mean` is each test cell's posterior mean of `exp(η)`; the
+  draws add `process` to a posterior draw; the log density is the log of
+  the mean over every posterior draw of the normalised density
+  (`Family::Poisson.log_density`), the log predictive density, as
+  `GlmCandidate` gives it with its parameter draws. The name is
+  `"bayes_odp"`; two settings of `BayesOdp` in one backtest share it (a
+  wrapper with a name is left for when it is needed).
+* **Results** (`validation/tests/reserving_bayes_segments.rs`, latest
+  three diagonals, tolerances 4 seed-to-seed sds over 40 seeds): on the
+  CLRD comauto and wkcomp lines `BayesOdp` and the ODP GLM agree (A/E
+  within 0.002 per split, CRPS within 3% and 5%, mean log density within
+  0.2). On GenIns the Bayesian means are about 1% higher (A/E 0.007 to
+  0.013 lower per split: the posterior mean of `exp(η)` over the young
+  origins' wide posteriors against the GLM's MLE) and its mean log density
+  0.014 lower. Both models under-cover the CLRD lines' held-out cells
+  alike (90% intervals hold 0.72 of comauto's and 0.43 to 0.46 of
+  wkcomp's), a property of the ODP model on lines summed over companies,
+  not of the sampler.
+
+The proposal:
+
 Proposed (PR 2). `BayesOdp` implements `TriangleModel`
 (`backtest.rs:40`), whose doc already names "a Bayesian model": `forecast`
 fits on the train rows and returns `n_sims` joint posterior predictive
@@ -777,6 +821,39 @@ GenIns and RAA, with the defaults (seed 0). As built:
   of the 76 cases took about a minute in a debug build.
 
 ### 11. Segments and dependence
+
+Built in PR 2 (Rust, 2026-10-12) as proposed below:
+
+* **API.** `BayesOdp::fit_segments(triangle, column) -> BayesOdpFits`
+  with `segments: SegmentFits<BayesOdpSegment>` (each segment's
+  `chain_ladder`, `scale`, `posterior`, `diagnostics`, `summary()` and
+  `loo()`, no reserves of its own) and the joint `reserves`, plus
+  `to_long`, `totals`, `development_table` and `segment(keys)`, as
+  `OdpBootstrapFits`. Segments are fitted one after another (each fit
+  already runs its chains in parallel); a failure names its segment.
+* **Seeds.** Segment `k` (in index order) uses tags `2 + 2k` (chains)
+  and `3 + 2k` (simulations) of decision 5, so segment 0's draws differ
+  from `fit` of that segment alone, as in the bootstraps.
+* **`RankCorrelation`** goes through the bootstraps' own
+  `SegmentDependence::reorder` with `BayesOdp::seed` (stream `n_sims` of
+  that seed, which no derived seed uses).
+* **`Synchronized`** is `Error::Bayes`, checked before any sampling.
+* **Provenance** of the joint reserves: the settings, `segments`,
+  `dependence`, and each segment's `c0` and `scale` as a list.
+* **`Meyers` has no `fit_segments`** in PR 2: this decision names only
+  `BayesOdp`, and `Meyers` has no `dependence` field (decision 7). The
+  same pattern fits it when a user needs Meyers over segments; that is a
+  later PR.
+* **Results** (`validation/tests/reserving_bayes_segments.rs`, seed sweep
+  over 0 to 39): twin lines (CLRD wkcomp under two names) under
+  `Independent` have a rank correlation of their totals with sd 0.011
+  over seeds, as `1/√n_sims` predicts for independent draws (largest
+  0.027); the test allows `4.5/√n_sims`, not the `3/√n_sims` proposed
+  below, which is under 3 such sds and would fail about one seed in 300.
+  `RankCorrelation` on comauto, ppauto and wkcomp reaches each target
+  within 0.009 (sd at most 0.0029; the test allows 0.015).
+
+The proposal:
 
 Proposed (PR 2). `fit_segments` fits each segment's own posterior (the
 same model, independently), and the output has the shape of
