@@ -1045,6 +1045,81 @@ fn prepare_large_losses(
     .map_err(to_r)
 }
 
+fn tower_list(towers: List) -> Result<Vec<prospicio_aggregate::Tower>> {
+    towers
+        .values()
+        .map(|t| {
+            <&ReinsuranceTower>::try_from(&t)
+                .map(|t| t.inner.clone())
+                .map_err(|_| Error::Other("towers must be reinsurance_tower objects".into()))
+        })
+        .collect()
+}
+
+/// Each year's losses under its own program beside the proposed tower:
+/// `list(year, reported_losses, trended_losses, historical_layers,
+/// historical, proposed_layers, proposed)`, with `historical_layers` and
+/// `historical` a list per year and `proposed` year-by-layer, by column.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_as_if(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
+    fx: &[f64],
+    historical: List,
+    years: &[i32],
+    proposed: Robj,
+) -> Result<List> {
+    let p = prepare_large_losses(
+        ids,
+        accident,
+        amount,
+        threshold,
+        rate,
+        to,
+        factors,
+        valuation,
+        dev_ages,
+        dev_factors,
+        dev_per_loss,
+        fx,
+    )?;
+    let historical = tower_list(historical)?;
+    let proposed = <&ReinsuranceTower>::try_from(&proposed)
+        .map_err(|_| Error::Other("proposed must be a reinsurance_tower".into()))?;
+    let a = p.as_if(&historical, years, &proposed.inner).map_err(to_r)?;
+    let layers = a.proposed_layers.len();
+    let proposed: Vec<f64> = (0..layers)
+        .flat_map(|i| a.years.iter().map(move |r| r.proposed[i]))
+        .collect();
+    Ok(list!(
+        year = a.years.iter().map(|r| r.year).collect::<Vec<_>>(),
+        reported_losses = a
+            .years
+            .iter()
+            .map(|r| r.reported_losses as i32)
+            .collect::<Vec<_>>(),
+        trended_losses = a
+            .years
+            .iter()
+            .map(|r| r.trended_losses as i32)
+            .collect::<Vec<_>>(),
+        historical_layers = List::from_values(a.years.iter().map(|r| r.historical_layers.clone())),
+        historical = List::from_values(a.years.iter().map(|r| r.historical.clone())),
+        proposed_layers = a.proposed_layers.clone(),
+        proposed = proposed
+    ))
+}
+
 /// A development pattern estimated from claim valuations:
 /// `list(ages, factors)`.
 #[extendr]
@@ -1195,14 +1270,7 @@ fn pricing_burning_cost(
             development.len()
         )));
     }
-    let towers = towers
-        .values()
-        .map(|t| {
-            <&ReinsuranceTower>::try_from(&t)
-                .map(|t| t.inner.clone())
-                .map_err(|_| Error::Other("towers must be reinsurance_tower objects".into()))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let towers = tower_list(towers)?;
     let basis: Vec<YearBasis> = years
         .iter()
         .zip(premium)
@@ -1253,6 +1321,7 @@ extendr_module! {
     fn pricing_trend_large_losses;
     fn pricing_burning_cost;
     fn pricing_development_pattern;
+    fn pricing_as_if;
     fn pricing_pattern_at;
     fn pricing_count_development;
     fn pricing_quote;

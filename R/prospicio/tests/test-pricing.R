@@ -276,3 +276,16 @@ fxp <- trend_large_losses(data.frame(id = c("a", "b"), accident = c(2020.5, 2020
                                      amount = c(90, 120)), factors = c(1, 1), threshold = 100,
                           fx = c(2, 0.5))
 stopifnot(identical(fxp$losses$trended, c(180, 60)), identical(fxp$losses$fx, c(2, 0.5)))
+
+# As-if history beside the proposed tower (#191).
+ap <- trend_large_losses(data.frame(id = c("a", "b", "c"), accident = c(2019.3, 2019.7, 2020.5),
+                                    amount = c(300, 80, 500)), factors = c(1.2, 1.2, 1.1),
+                         threshold = 100)
+then20 <- inuring_tower(list(list(quota_share("QS", 0.5)), list(xol_layer("200 xs 100", 200, 100))))
+now <- reinsurance_tower(list(xol_layer("200 xs 200", 200, 200), xol_layer("600 xs 400", 600, 400)))
+ai <- as_if_history(ap, list(reinsurance_tower(list(xol_layer("150 xs 50", 150, 50))), then20),
+                    c(2019, 2020), now)
+stopifnot(identical(ai$years$reported_losses, c(2L, 1L)),
+          identical(unname(ai$historical[["2019"]]), 180),
+          identical(ai$historical[["2020"]], c(QS = 250, `200 xs 100` = 150)),
+          max(abs(ai$proposed["2020", ] - c(200, 150))) < 1e-12)

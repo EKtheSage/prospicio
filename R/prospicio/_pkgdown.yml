@@ -123,6 +123,7 @@ reference:
       - burning_cost
       - development_pattern
       - index_clause
+      - as_if_history
       - pentagon
       - premium_bounds
       - pricing_bounds
