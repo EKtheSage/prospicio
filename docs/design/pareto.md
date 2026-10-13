@@ -494,8 +494,10 @@ Pareto's `SeverityCurve`. Python `TabulatedCurve`, `rate_quantile` on
 both; R `tabulated_curve()`, `rate_quantile()`. These feed the risk-profile
 simulator (`aggregate.md`), one curve per sum-insured band.
 
-Done in `risk_load`: `price(losses, rule, assets)` on any `Empirical`
-and `price_portfolio(pd, rule, assets)` on a `PredictiveDistribution`,
+Done in `risk_load`: `price(losses, rule, assets)` on any `Empirical`,
+`price_grid(grid, rule, assets)` on a loss distribution on a grid (a
+layer's exact annual loss from `Tower::on_grid`, at any capital standard;
+#204), and `price_portfolio(pd, rule, assets)` on a `PredictiveDistribution`,
 with `PremiumRule::{Distortion, CostOfCapital}`. This is where simulated
 results meet pricing: a ceded result from `Tower::apply` or
 `apply_aggregate`, a reserve bootstrap, or a blended model's draws.

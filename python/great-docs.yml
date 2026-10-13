@@ -82,6 +82,7 @@ reference:
       - reinsurance.LossSensitivePremium
       - reinsurance.Tower
       - reinsurance.TowerGrids
+      - reinsurance.AnnualGrids
       - reinsurance.TowerPrice
       - reinsurance.ViewPrice
       - reinsurance.occurrence_layer_statistics

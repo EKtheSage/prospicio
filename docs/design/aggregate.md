@@ -329,6 +329,15 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   net of earlier stages. Otherwise net depends jointly on several totals
   and is `None`. Joint results across layers come from `Tower::apply` on
   simulated events.
+- **An annual loss on a grid takes any tower (#206).**
+  `Tower::on_annual_grid(annual)` treats each year's total as one loss, as
+  `apply_aggregate` does for draws: a quota share or a stop-loss on a
+  loss-ratio or annual-loss distribution. Every layer's terms are then a
+  function of the annual total, so inuring stages and annual terms are
+  all allowed and the net always exists (`AnnualGrids`). The expected
+  premium, reinstatement premium and commissions are taken at each annual
+  loss, so exact for the grid; the ceded and net grids are mapped as in
+  `on_grid`. A test checks it against `apply_aggregate` on the same years.
 - **Annual terms may not inure on the grid.** A layer with annual terms
   in an earlier stage takes a share of each event that depends on event
   order, which a compound distribution does not have. `on_grid` rejects

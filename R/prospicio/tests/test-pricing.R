@@ -197,3 +197,9 @@ stopifnot(identical(sa$unit, c("X1", "X2", "total", "sum")),
 co <- comonotonic_allocation(disc)
 stopifnot(abs(co$X1[co$total == 8] - 6.607142857142858) < 1e-10,
           max(abs(co$X1 + co$X2 - co$total)) < 1e-12)
+
+# A loss distribution on a grid prices as its equally likely draws (#204).
+gp <- risk_loaded_price(grid_distribution(2, c(0.5, 0.25, 0, 0.25)), distortion("tvar", 0.6),
+                        cost_of_capital = 0.1)
+sp <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.6), cost_of_capital = 0.1)
+stopifnot(abs(gp$premium - sp$premium) < 1e-12, abs(gp$assets - sp$assets) < 1e-12)

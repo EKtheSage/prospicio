@@ -27,7 +27,7 @@ pub mod sizing;
 pub use collective::CollectiveModel;
 pub use compound::{CompoundMethod, CompoundReport};
 pub use fft::fft;
-pub use grid_reinsurance::{TowerGrids, TowerPrice, ViewPrice};
+pub use grid_reinsurance::{AnnualGrids, TowerGrids, TowerPrice, ViewPrice};
 pub use layer_statistics::{
     AggregateLayerStatistics, CessionStatistics, LayerStatistics, aggregate_layer_statistics,
     occurrence_cession_statistics, occurrence_layer_statistics,

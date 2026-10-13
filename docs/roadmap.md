@@ -112,12 +112,17 @@ what it is aiming for by v1.0.
     the total cession of a stage with several layers, priced, and
     statistics of total cessions and aggregate covers; each unit priced
     alone against the book, the comonotonic allocation, and the expected
-    reinstatement premium checked against `aggregate` (tier 2 complete).
+    reinstatement premium checked against `aggregate` (tier 2 complete);
+    a tower on an annual loss grid and risk-loaded prices on a grid at any
+    capital standard (the Guides lane's #206 and #204).
 - **Next:**
-  1. Open, waiting on the user. Candidates, the large items parked from
-     `aggregate` parity (`docs/design/aggregate.md`): the P&L ledger (once
-     signed grids exist), bivariate FFT aggregates and `clash`, renewal
-     counts with Wiener–Hopf ruin.
+  1. The Guides lane's issues for this lane, small first (the user's
+     choice, 2026-10-13): #197 quote assembly, #190 large-loss preparation
+     for experience rating, #191 as-if history, #195 time value of money,
+     #196 cat XL inputs. Then the large items parked from `aggregate`
+     parity (`docs/design/aggregate.md`): the P&L ledger (once signed grids
+     exist), bivariate FFT aggregates and `clash`, renewal counts with
+     Wiener–Hopf ruin.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

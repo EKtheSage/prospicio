@@ -302,6 +302,8 @@ ReinsuranceTower$ceded <- function(losses) .Call(wrap__ReinsuranceTower__ceded, 
 
 ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__ReinsuranceTower__on_grid, self, frequency, severity, points)
 
+ReinsuranceTower$on_annual_grid <- function(annual) .Call(wrap__ReinsuranceTower__on_annual_grid, self, annual)
+
 ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
@@ -1960,6 +1962,8 @@ RiskDistortion$calibrate <- function(family, x, premium, assets, r0) .Call(wrap_
 RiskDistortion$kind <- function() .Call(wrap__RiskDistortion__kind, self)
 
 RiskDistortion$param <- function() .Call(wrap__RiskDistortion__param, self)
+
+RiskDistortion$parameters <- function() .Call(wrap__RiskDistortion__parameters, self)
 
 RiskDistortion$mass <- function() .Call(wrap__RiskDistortion__mass, self)
 

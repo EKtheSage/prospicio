@@ -556,7 +556,8 @@ fn price_list(p: &Price) -> List {
     )
 }
 
-/// Risk-loaded price of a sampled or a predictive distribution's total.
+/// Risk-loaded price of a sampled, a predictive distribution's total or a
+/// grid distribution.
 #[extendr]
 fn pricing_price(losses: Robj, assets: Robj, rate: Option<f64>, pricing: Robj) -> Result<List> {
     let rule = premium_rule(rate, &pricing)?;
@@ -565,9 +566,11 @@ fn pricing_price(losses: Robj, assets: Robj, rate: Option<f64>, pricing: Robj) -
         risk_load::price(&s.inner, &rule, &assets)
     } else if let Ok(pd) = <&PredictiveDistribution>::try_from(&losses) {
         risk_load::price(pd.inner.total(), &rule, &assets)
+    } else if let Ok(g) = <&Grid>::try_from(&losses) {
+        risk_load::price_grid(&g.inner, &rule, &assets)
     } else {
         return Err(Error::Other(
-            "losses must be a sampled or a predictive_distribution".into(),
+            "losses must be a sampled, a predictive_distribution or a grid_distribution".into(),
         ));
     }
     .map_err(to_r)?;

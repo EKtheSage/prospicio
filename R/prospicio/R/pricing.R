@@ -286,7 +286,9 @@ alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, fre
 
 #' Risk-loaded prices from simulated losses
 #'
-#' `risk_loaded_price()` prices one cover from its loss draws;
+#' `risk_loaded_price()` prices one cover from its loss draws, or from its
+#' loss distribution on a grid (a layer's exact annual loss from
+#' [tower_on_grid()]);
 #' `price_portfolio()` prices a portfolio and allocates the price to its
 #' components. The assets backing the loss are the distortion risk measure
 #' `assets` of it. The premium is either the pricing distortion
@@ -299,7 +301,8 @@ alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, fre
 #' priced below its standalone price, and with a cost of capital every
 #' component earns the rate on its allocated capital.
 #'
-#' @param x A [sampled] or a [predictive_distribution] (its total) for
+#' @param x A [sampled], a [predictive_distribution] (its total) or a
+#'   [grid_distribution] for
 #'   `risk_loaded_price()`; a [predictive_distribution] whose components add
 #'   up to the portfolio (segments or covers, not gross, ceded and net side
 #'   by side) for `price_portfolio()`.
@@ -319,6 +322,9 @@ alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, fre
 #' @name risk_loaded_price
 #' @examples
 #' risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
+#'                   cost_of_capital = 0.25)$premium
+#' # The same on a grid: 0, 2 or 6 with probabilities 1/2, 1/4, 1/4.
+#' risk_loaded_price(grid_distribution(2, c(0.5, 0.25, 0, 0.25)), distortion("tvar", 0.5),
 #'                   cost_of_capital = 0.25)$premium
 #' pd <- predictive_distribution(
 #'   matrix(c(0, 1, 4, 8, 2, 1, 0, 0), ncol = 2),

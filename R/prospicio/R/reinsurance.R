@@ -618,6 +618,46 @@ tower_on_grid <- function(tower, frequency, severity, points) {
   )
 }
 
+#' A tower on an annual loss distribution
+#'
+#' Applies a tower to an annual loss on a grid, each year's total treated as
+#' one loss (as [apply_tower()] does for a predictive distribution's
+#' total): a quota share or a stop-loss priced on a loss-ratio or
+#' annual-loss distribution, with its expected sliding-scale or profit
+#' commission. Every layer's terms are a function of the annual total, so
+#' inuring stages and annual terms are all allowed, and the net always
+#' exists. The expectations are exact for the grid; the ceded and net grids
+#' are exact when their losses fall on grid points (`on_points`).
+#'
+#' @param tower A [reinsurance_tower] or [inuring_tower].
+#' @param annual A [grid_distribution] of the annual loss.
+#' @returns A list as [tower_on_grid()]'s, without `stage_ceded`: `gross`,
+#'   `ceded` (named), `net`, `expected_reinstatement_premium`,
+#'   `expected_premium`, `expected_ceding_commission`,
+#'   `expected_profit_commission` (each named) and `on_points`.
+#' @export
+#' @examples
+#' probs <- numeric(81)
+#' probs[c(51, 61, 71, 81)] <- 0.25 # loss ratios 50% to 80% on 100
+#' qs <- with_ceding_commission(with_deposit_premium(quota_share("QS", 0.4), 100), 0.3)
+#' r <- tower_on_annual_grid(reinsurance_tower(list(qs)), grid_distribution(1, probs))
+#' mean(r$ceded[["QS"]])
+#' r$expected_ceding_commission
+tower_on_annual_grid <- function(tower, annual) {
+  r <- rust_result(tower@ptr$on_annual_grid(annual@ptr))
+  names <- tower@layer_names
+  list(
+    gross = grid_distribution(ptr = r$gross),
+    ceded = stats::setNames(lapply(r$ceded, function(p) grid_distribution(ptr = p)), names),
+    net = grid_distribution(ptr = r$net),
+    expected_reinstatement_premium = stats::setNames(r$expected_reinstatement_premium, names),
+    expected_premium = stats::setNames(r$expected_premium, names),
+    expected_ceding_commission = stats::setNames(r$expected_ceding_commission, names),
+    expected_profit_commission = stats::setNames(r$expected_profit_commission, names),
+    on_points = r$on_points
+  )
+}
+
 #' Price each view of a tower on the grid
 #'
 #' Prices the gross, every layer's cession and the net of [tower_on_grid()]

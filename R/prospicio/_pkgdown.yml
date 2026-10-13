@@ -101,6 +101,7 @@ reference:
       - tower_ceded
       - apply_tower
       - tower_on_grid
+      - tower_on_annual_grid
       - tower_price
       - occurrence_layer_statistics
       - occurrence_cession_statistics

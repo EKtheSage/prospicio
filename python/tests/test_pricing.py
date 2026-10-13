@@ -328,3 +328,18 @@ def test_stand_alone_and_comonotonic_allocation():
     assert co["X1"][totals.index(8.0)] == pytest.approx(6.607142857142858, abs=1e-10)
     for k, x in enumerate(totals):
         assert co["X1"][k] + co["X2"][k] == pytest.approx(x, abs=1e-12)
+
+
+def test_price_on_a_grid_matches_its_draws():
+    from prospicio.distributions import Grid, Sampled
+    from prospicio.pricing import price
+    from prospicio.risk import Distortion
+
+    # 0, 2 and 6 with probabilities 1/2, 1/4, 1/4 are the draws 0, 0, 2, 6 (#204).
+    grid = Grid(2.0, [0.5, 0.25, 0.0, 0.25])
+    draws = Sampled([0.0, 0.0, 2.0, 6.0])
+    assets = Distortion.tvar(0.6)
+    for kw in ({"cost_of_capital": 0.1}, {"distortion": Distortion.proportional_hazard(0.8)}):
+        a, b = price(grid, assets, **kw), price(draws, assets, **kw)
+        assert a.premium == pytest.approx(b.premium, abs=1e-12)
+        assert a.assets == pytest.approx(b.assets, abs=1e-12)
