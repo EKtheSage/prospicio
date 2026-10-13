@@ -96,6 +96,10 @@ under "Unreleased" until then.
   aggregate deductible, retro, swing, profit commission and sliding scale,
   and distortion premiums, and compares 343 results (321 independent
   comparisons and 22 consistency checks) with Mildenhall's `aggregate` 1.0.1 (reference file `validation/reference/re_pricing_aggregate.csv`) (#186).
+- The notebooks in `examples/` are committed without outputs, and an
+  nbstripout git filter (`.gitattributes`; setup in `examples/README.md`)
+  keeps a local run out of commits; the docs site executes them and
+  publishes their results, with the guides, in the Python site's User Guide.
 
 ### Guides
 

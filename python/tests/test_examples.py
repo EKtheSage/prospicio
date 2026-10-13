@@ -7,6 +7,7 @@ cells tagged ``plot`` are skipped, so CI needs no plotting library.
 import csv
 import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
 def run_notebook(path):
-    cells = json.loads(path.read_text())["cells"]
+    cells = json.loads(path.read_text(encoding="utf-8"))["cells"]
     ns = {}
     for cell in cells:
         if cell["cell_type"] != "code" or "plot" in cell["metadata"].get("tags", []):
@@ -64,9 +65,30 @@ def test_reinsurance_pricing(monkeypatch, capsys):
     assert ns["severity"].lev(5000.0) * 10 == pytest.approx(ref["tower_gross", "gross_mean_exact"], rel=1e-12)
 
 
-def test_notebooks_are_saved_with_outputs():
-    for path in EXAMPLES.glob("*.ipynb"):
-        cells = json.loads(path.read_text())["cells"]
-        shows = [c for c in cells if c["cell_type"] == "code"
-                 and ("print(" in "".join(c["source"]) or "plt.show" in "".join(c["source"]))]
-        assert shows and all(c["outputs"] for c in shows), f"{path.name} is saved without results"
+def staged(path):
+    """The notebook as git stores it: the index copy, after the nbstripout
+    filter, so a local run that left outputs in the working tree does not fail
+    this check. Falls back to the file outside a git checkout."""
+    try:
+        out = subprocess.run(
+            ["git", "show", f":{path.relative_to(EXAMPLES.parent).as_posix()}"],
+            cwd=EXAMPLES.parent, capture_output=True, check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        out = path.read_bytes()
+    return json.loads(out.decode("utf-8"))
+
+
+def test_notebooks_are_committed_without_outputs():
+    # Results are published on the docs site, which executes the notebooks
+    # (`cargo xtask docs`). The repository keeps code only, so re-running a
+    # notebook changes nothing git tracks (the nbstripout filter, .gitattributes).
+    paths = sorted(EXAMPLES.glob("*.ipynb"))
+    assert paths
+    for path in paths:
+        nb = staged(path)
+        code = [c for c in nb["cells"] if c["cell_type"] == "code"]
+        assert code, path.name
+        assert all(c["outputs"] == [] for c in code), f"{path.name} is committed with outputs"
+        assert all(c["execution_count"] is None for c in code), f"{path.name} has execution counts"
+        assert "version" not in nb["metadata"].get("language_info", {}), path.name
