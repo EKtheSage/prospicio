@@ -969,7 +969,30 @@ net. The one-year capital of the same reserve is 326 (section 7). Neither
 figure includes discounting or unallocated loss adjustment expenses, which an
 IFRS 17 measure or a cover's price would add. The LPT cedes all 1,541 on average, so its
 price starts from that mean and adds a load for the risk and a discount for the
-time to pay out; neither is in this example.
+time to pay out. Neither is in this example, but both are in the library, in
+`prospicio.pricing`. `price(ceded, Distortion.tvar(0.995), cost_of_capital=...)`
+on the LPT's ceded marginal (`Distortion` is in `prospicio.risk`) gives a
+one-period price, and
+`price_over_payout(that_price, pattern, rate=..., cost_of_capital=...)` restates
+it over a payment pattern. It discounts the losses and charges the cost of
+capital, a spread over the discount rate, on the capital that runs off with the
+share of the loss still outstanding. Give it the same cost of capital or
+distortion the one-period price was made with.
+
+The pattern of a reserve already on the books is its run-off from the valuation
+date, not a new origin's pattern from inception. Build it from the paid chain
+ladder: for each calendar year `j` after the valuation, add up every origin's
+expected payment, `ultimate x (1 / cdf(k + j) - 1 / cdf(k + j - 1))` where
+`cdf(k)` belongs to the origin's current age, and divide by the total reserve.
+Pass times `1, 2, ...` (years after the valuation) and those shares to
+`PaymentPattern(times, shares)`. By contrast,
+`PaymentPattern.from_development([age / 12 for age in tri.development], cl.cdf)`
+gives the pattern of a new accident year from its start (the last factor must
+be 1), which suits a prospective cover rather than the booked reserve.
+[`reinsurance-price.md`](reinsurance-price.md) works an example on a layer, and
+the time value bullet in
+[`risk-loads-and-distortions.md`](risk-loads-and-distortions.md) explains the
+restatement.
 
 To price the cover, load the expected loss for the risk the reinsurer takes:
 the guide [`risk-loads-and-distortions.md`](risk-loads-and-distortions.md)

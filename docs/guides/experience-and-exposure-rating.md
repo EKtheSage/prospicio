@@ -18,7 +18,8 @@ indication) is in section 1 of [`choosing-a-method.md`](choosing-a-method.md).
 The layers here are plain per-risk or per-loss layers with no reinstatements, annual aggregate limit or
 aggregate deductible, and no clash cover (several risks hit by one event). Those terms change the expected loss
 and are in [`reinsurance-price.md`](reinsurance-price.md) and
-[`aggregate-distributions.md`](aggregate-distributions.md); `Layer.ceded` takes them for a burning cost.
+[`aggregate-distributions.md`](aggregate-distributions.md); the towers given to `PreparedLosses.burning_cost`
+take them for a burning cost (without an index clause).
 
 Money is in millions of a synthetic currency. Every number in the text is printed by the code in the guide,
 which is run and checked in CI.
@@ -27,7 +28,7 @@ which is run and checked in CI.
 
 | Situation | Method | prospicio call | Why |
 |---|---|---|---|
-| A working layer (many losses pierce it), several years of as-if large losses | Burning cost (a rate on on-level subject premium when the book's size changed), or a Pareto fitted to the losses | `Layer.ceded`, `RateHistory`, `Pareto.fit`, `CollectiveModel.layer_mean` | The cedant's own losses are the best evidence when there are enough |
+| A working layer (many losses pierce it), several years of as-if large losses | Burning cost (a rate on on-level subject premium when the book's size changed), or a Pareto fitted to the losses | `LargeLossExperience`, `PreparedLosses.burning_cost`, `RateHistory`, `Pareto.fit`, `CollectiveModel.layer_mean` | The cedant's own losses are the best evidence when there are enough |
 | A higher layer, pierced by few or no losses | Exposure rating | `RiskProfile.expected_layer_loss` | Experience is silent; the profile and a curve are not |
 | Property per risk, profile by sum insured | MBBEFD (Swiss Re) curves | `Mbbefd.swiss_re(c)`, `RiskProfile` | One parameter `c` sets how losses spread over the sum insured |
 | A published or in-house curve held as a table | Tabulated curve | `TabulatedCurve` | Same use as MBBEFD, from the table you hold |
@@ -47,7 +48,8 @@ which is run and checked in CI.
 - **Large loss**: a claim above the **reporting threshold** (here 1), listed individually by the cedant.
 - **As-if**: a historical loss restated to the prospective year: trended to the future price level, developed to
   ultimate, and measured against the contract being priced (its retention and limit, with any indexation). This
-  guide starts from as-if losses. Producing them is not yet in prospicio (section 8).
+  guide starts from as-if losses; `LargeLossExperience` and `PreparedLosses` produce them (section 2, Preparing
+  raw losses): currency, development (IBNER) and trend in `prepare`, the index clause in `burning_cost`.
 - **Burning cost**: the average annual loss a layer would have paid on the as-if history, the layer's pure
   premium from experience.
 - **Pierce**: a loss pierces a layer when it exceeds the attachment. The losses that pierce a layer are the only
@@ -77,11 +79,11 @@ import math
 from prospicio.credibility import LimitedFluctuation, buhlmann_straub
 from prospicio.distributions import Lognormal, Pareto, Poisson
 from prospicio.pricing import (
-    CollectiveModel, Mbbefd, RiskProfile, TabulatedCurve, alpha_between_layers,
-    credibility_weighted, fit_pml_curve, fit_references, ilf, loss_elimination_ratio,
-    match_tower, pareto_extrapolation, severity_exposure_curve, trend_factor,
+    CollectiveModel, DevelopmentPattern, IndexClause, LargeLossExperience, Mbbefd, RiskProfile,
+    TabulatedCurve, alpha_between_layers, credibility_weighted, fit_pml_curve, fit_references, ilf,
+    loss_elimination_ratio, match_tower, pareto_extrapolation, severity_exposure_curve, trend_factor,
 )
-from prospicio.reinsurance import Layer
+from prospicio.reinsurance import Layer, Tower
 
 HISTORY = {
     2016: [1.35, 1.39, 1.03, 1.03], 2017: [1.37, 1.53, 2.03, 1.04, 1.66, 1.22],
@@ -103,11 +105,16 @@ between 1 and 2, `5 xs 5` the part between 5 and 10.
 
 ```python
 LAYERS = [(1.0, 1.0), (2.0, 2.0), (5.0, 5.0), (10.0, 10.0)]   # (limit, attachment)
+ids = [f"{year}-{i}" for year, losses in HISTORY.items() for i in range(len(losses))]
+accident = [year + 0.5 for year, losses in HISTORY.items() for _ in losses]
+experience = LargeLossExperience(ids, accident, LOSSES, threshold=1.0)
+prepared = experience.prepare(rate=0.0, to=2026.5)   # already as-if, so no trend
 
 
 def burning_cost(limit, attachment):
-    layer = Layer("xl", limit, attachment)
-    return sum(layer.ceded(year) for year in HISTORY.values()) / YEARS
+    tower = Tower([Layer("xl", limit, attachment)])
+    cost = prepared.burning_cost(tower, list(HISTORY), premium=[1.0] * YEARS, development=[1.0] * YEARS)
+    return cost.mean_loss_cost[0]
 
 
 def pierced(attachment):
@@ -125,9 +132,14 @@ for limit, att in LAYERS:
 10 xs 10: losses above  0, burning cost 0.000
 ```
 
-`Layer.ceded` takes the losses of one year and returns what the layer pays on them, so the sum over the years
-divided by the number of years is the burning cost. It is exact for the history, which is its limit: no loss
-reached 10 xs 10, so its burning cost is zero, and zero is not a price.
+`LargeLossExperience(ids, accident, amount, threshold=...)` is the cedant's list of large losses: an identifier,
+an accident date as a decimal year (mid-year here) and an amount for each. `prepare` restates them to the
+prospective period; the rate is 0 because this history is already as-if (the next subsection prepares raw
+losses). `burning_cost(tower, years, premium=..., development=...)` applies the tower to each year's losses,
+develops each year's layer total by its factor and divides by its premium. With a premium of 1.0 and a factor of
+1.0 for every year, `mean_loss_cost` (one entry per layer of the tower) is the average annual layer loss, the
+burning cost. It is exact for the history, which is its limit: no loss reached 10 xs 10, so its burning cost is
+zero, and zero is not a price.
 
 The fitted form uses the same losses to estimate a frequency and an alpha.
 
@@ -166,28 +178,152 @@ possible loss. [`severity-and-frequency.md`](severity-and-frequency.md) covers t
 
 **Use it when** the layer is pierced by enough losses for the burning cost to be stable (section 5 turns that
 into a number), the portfolio is stable or restated to today's, and the as-if work is done: trend, development
-of open claims, indexation of retention and limit.
+of open claims, indexation of retention and limit. `PreparedLosses` does those steps (the next subsection), from
+the rate, pattern and clause you give it.
 
 **Do not rely on it when** the layer has had few or no hits (use the fitted model for a frequency and an alpha
 from the lower layers, never as the sole price), the book has changed (past losses then describe another
 portfolio), or the losses are not as-if (a burning cost on untrended, undeveloped losses is biased low, and
-prospicio will not warn you).
+prospicio will not warn you: `prepare(rate=0.0, to=...)` with no development is accepted, as it is above, and
+only you know whether the losses were already as-if).
 
-**Data needed**: individual losses above a reporting threshold, by year, on the prospective basis, and the
-cedant's subject premium (or another exposure base) for each year. The threshold `t` is a modelling choice, and
+**Data needed**: individual losses above a reporting threshold, each with its accident date, its amount at a
+stated valuation date and its currency (or already on the prospective basis, as here), and the cedant's subject
+premium (or another exposure base) for each year. Raw losses also need a trend rate, a development pattern for
+known claims, count IBNR factors and, for an index clause, the index ratios (the next subsection). The threshold `t` is a modelling choice, and
 the Pareto must fit above it. If sources report from different thresholds or policy limits capped some losses,
 say so (section 7). Three steps of the as-if work are easy to miss:
 
 - **Exposure volume.** The per-year average above assumes the book was the same size every year, as this
-  synthetic one was. When it was not, quote the burning cost as a rate: the total as-if layer loss over the total
-  subject premium of the same years, each year's premium brought to today's rate level (`RateHistory`, section 1
-  of [`choosing-a-method.md`](choosing-a-method.md)), and multiply the rate by the prospective subject premium.
-  Summing before dividing weights each year by its premium.
+  synthetic one was. When it was not, quote the burning cost as a rate on subject premium: pass each year's
+  premium brought to today's rate level (`RateHistory`, section 1 of
+  [`choosing-a-method.md`](choosing-a-method.md)) as `premium=` to `burning_cost`. Its `loss_cost` is the sum of
+  the developed layer losses over the sum of the premiums, which weights each year by its premium, and
+  `mean_loss_cost` is the average of the yearly rates beside it. Multiply the rate by the prospective subject
+  premium.
 - **The threshold after trend.** Trend raises losses across the threshold: a loss just under 1 at its own date
-  may be over 1 at today's cost. Ask for losses from a lower threshold (1 divided by the largest trend factor),
-  trend them, and only then keep those above 1, or the frequency above 1 is understated.
+  may be over 1 at today's cost, and it is missing from the list. Pass the reporting threshold as `threshold=` to
+  `LargeLossExperience`. `prepared.complete_above` is then the threshold times the largest trend factor: the
+  size above which every year is complete, in the currency the losses were reported in and before development.
+  Each loss's reported amount times its own trend factor is compared with it (not its as-if amount, which also
+  holds the exchange rate and IBNER), and losses below it are left out of the burning cost, so every year counts
+  the same losses. A layer should attach comfortably above `complete_above` converted to the pricing currency
+  (times `fx`, and allowing for development); if it does not, ask the cedant for losses from a lower threshold.
 - **Legal cost (ALAE).** State whether it is in the loss (and so erodes the layer), shared pro rata with the
   indemnity, or excluded, and use the same basis for the loss ratio of the exposure rating.
+
+### Preparing raw losses
+
+A cedant's listing is rarely as-if. Here is a small one: six losses reported above 1 in a currency worth 1.1 of
+the pricing currency, valued at the start of 2026, for a treaty whose average accident date is mid-2026. The
+known claims still develop, so the first step estimates that development (IBNER) from older claims valued at
+several ages.
+
+```python
+# Older large claims valued at ages 0.5 to 3.5 years, to estimate the development of known claims (IBNER)
+dev_ids = ["p1"] * 4 + ["p2"] * 4 + ["p3"] * 3 + ["p4"] * 3 + ["p5"] * 2
+dev_age = [0.5, 1.5, 2.5, 3.5] * 2 + [0.5, 1.5, 2.5] * 2 + [0.5, 1.5]
+dev_amount = [1.0, 1.3, 1.4, 1.4, 2.0, 2.4, 2.6, 2.7, 1.5, 1.8, 1.9, 0.8, 1.0, 1.1, 1.2, 1.5]
+ibner = DevelopmentPattern.from_history(dev_ids, dev_age, dev_amount, ages=[0.5, 1.5, 2.5, 3.5])
+print("IBNER to ultimate at ages", ibner.ages, ":", ", ".join(f"{f:.3f}" for f in ibner.factors))
+
+raw = LargeLossExperience(
+    ["r1", "r2", "r3", "r4", "r5", "r6"],
+    [2022.3, 2022.8, 2023.4, 2024.1, 2024.6, 2025.2],
+    [2.10, 1.05, 3.40, 1.02, 2.60, 1.30],
+    threshold=1.0, valuation=2026.0, fx=1.1,
+)
+prepared_raw = raw.prepare(rate=0.05, to=2026.5, development=ibner)
+print(f"complete above {prepared_raw.complete_above:.3f}")
+table = prepared_raw.to_dict()
+for row in zip(table["id"], table["year"], table["amount"], table["development"], table["factor"], table["trended"]):
+    print("{} {}: reported {:.2f}, development {:.3f}, trend {:.3f}, as-if {:.3f}".format(*row))
+```
+
+```text
+IBNER to ultimate at ages [0.5, 1.5, 2.5, 3.5] : 1.359, 1.104, 1.025, 1.000
+complete above 1.227
+r1 2022: reported 2.10, development 1.000, trend 1.227, as-if 2.835
+r2 2022: reported 1.05, development 1.007, trend 1.198, as-if 1.394
+r3 2023: reported 3.40, development 1.023, trend 1.163, as-if 4.449
+r4 2024: reported 1.02, development 1.072, trend 1.124, as-if 1.353
+r5 2024: reported 2.60, development 1.129, trend 1.097, as-if 3.544
+r6 2025: reported 1.30, development 1.282, trend 1.065, as-if 1.954
+```
+
+`DevelopmentPattern.from_history(ids, age, amount, ages=...)` is a volume-weighted chain ladder on the claims:
+the factor from one age to the next is the sum of the later amounts over the sum of the earlier ones, over the
+claims valued at both with a positive earlier amount, and the result is a factor to ultimate at each age (1.359
+at half a year, 1.000 at three and a half). A claim first seen later is IBNR, not IBNER, and stays out. It makes
+no correction for how the listing was selected: a list cut at the reporting threshold on the latest incurred
+lacks the small claims that later grew, which biases the factors, so the pattern is yours to judge
+(`docs/design/experience-rating.md`, decision 8). `DevelopmentPattern(ages, factors)` takes a pattern you
+selected instead.
+
+`prepare(rate=0.05, to=2026.5, development=ibner)` converts each loss at `fx`, develops it by the pattern read
+at its age at the valuation date (interpolated between ages, held at the ends), and trends it by 5% a year from
+its accident date to `to`. The as-if amount is the product: r1's 2.10 times 1.1 times 1.000 times 1.227 is
+2.835. Instead of a rate you can give a trend factor per loss (`factors=`), and instead of a pattern a
+development factor per loss. `complete_above` is the threshold times the largest trend factor, 1.227, in the
+reported currency. The test uses the reported amount, not the as-if one: r4's as-if 1.353 is above 1.227, but its
+reported 1.02 times its trend factor of 1.124 falls below it, so r4 is left out of the burning cost: a loss of
+the same trended size from the oldest year would have been under the threshold at its own date, and not listed.
+
+Then apply the treaty by year. Each loss is already developed, so the development by year is the count IBNR
+factor only (claims not yet reported), not an excess factor that already holds IBNER. A count
+`DevelopmentPattern`, for example from a `ChainLadder` on a triangle of claim counts, is read at each year's
+average age instead of a list.
+
+```python
+XL = Tower([Layer("2 xs 2", 2.0, 2.0)])
+RAW_YEARS = [2022, 2023, 2024, 2025]
+ON_LEVEL = [9.0, 9.5, 10.0, 10.5]          # subject premium at today's rate level
+COUNT_IBNR = [1.0, 1.0, 1.02, 1.10]
+plain = prepared_raw.burning_cost(XL, RAW_YEARS, premium=ON_LEVEL, development=COUNT_IBNR)
+indexed = prepared_raw.burning_cost(XL, RAW_YEARS, premium=ON_LEVEL, development=COUNT_IBNR,
+                                    index=IndexClause(0.10, kind="severe"),
+                                    ratios=[1.08, 1.04, 1.15, 1.04, 1.12, 1.06])
+p, q = plain.to_dict(), indexed.to_dict()
+for year, n, a, b in zip(p["year"], p["losses"], p["developed"], q["developed"]):
+    print(f"{year}: losses {n}, developed layer loss {a[0]:.3f}, with the index clause {b[0]:.3f}")
+print(f"rate on premium {plain.loss_cost[0]:.4f}, with the index clause {indexed.loss_cost[0]:.4f}")
+print(f"on a prospective premium of 11: {11 * plain.loss_cost[0]:.3f}, {11 * indexed.loss_cost[0]:.3f}")
+history = prepared_raw.as_if([Tower([Layer("1.5 xs 1.5", 1.5, 1.5)])] * 2 + [XL] * 2, RAW_YEARS, XL)
+h = history.to_dict()
+for year, layers, n, was, now in zip(h["year"], h["historical_layers"], h["reported_losses"], h["historical"], h["proposed"]):
+    print(f"{year}: {n} reported, under {layers[0]} {was[0]:.3f}; as-if under 2 xs 2 {now[0]:.3f}")
+```
+
+```text
+2022: losses 2, developed layer loss 0.835, with the index clause 0.835
+2023: losses 1, developed layer loss 2.000, with the index clause 2.091
+2024: losses 1, developed layer loss 1.574, with the index clause 1.537
+2025: losses 1, developed layer loss 0.000, with the index clause 0.000
+rate on premium 0.1131, with the index clause 0.1145
+on a prospective premium of 11: 1.244, 1.259
+2022: 2 reported, under 1.5 xs 1.5 0.600; as-if under 2 xs 2 0.835
+2023: 1 reported, under 1.5 xs 1.5 1.500; as-if under 2 xs 2 2.000
+2024: 2 reported, under 2 xs 2 0.600; as-if under 2 xs 2 1.544
+2025: 1 reported, under 2 xs 2 0.000; as-if under 2 xs 2 0.000
+```
+
+The 2024 layer loss, 1.574, is r5's 1.544 in the layer times the count factor 1.02. The rate on premium is the
+sum of the developed layer losses over the sum of the premiums, 0.1131, so a prospective subject premium of 11
+gives 1.244.
+
+`IndexClause(franchise, kind)` moves the retention and limit of each loss by its index ratio, the index at the
+loss's expected payment over the index at the treaty's base date, often its inception (larger claims settle later, so their ratios
+are higher). A severe inflation clause (`kind="severe"`) moves the terms only by the rise beyond the franchise,
+and never down; `kind="full"` moves them by the whole ratio, up or down, once the franchise is passed. The clause cuts the
+2024 layer loss (1.537 against 1.574) but raises 2023's (2.091 against 2.000): r3 exhausts the layer, and the
+clause raises the limit with the retention. It takes only per-occurrence terms; with an index clause, a tower with
+an annual aggregate limit or deductible, or limited reinstatements, is an error.
+
+`as_if(historical, years, proposed)` sets two views of each year side by side. The historical side runs every
+loss as reported (two in 2024, r4 included; in its own currency, untrended and undeveloped) through the program
+in force that year, here 1.5 xs 1.5 until 2023: 0.600 and 1.500 are what the cedant should have recovered, a
+check on the listing against its reported recoveries before anything is trended. The proposed side is the as-if
+layer loss before development by year (1.544 in 2024 against 1.574 developed), without the index clause.
 
 ## 3. Exposure rating: property
 
@@ -713,26 +849,20 @@ maximum likelihood alpha has a standard error of about `alpha / sqrt(n)`, 0.480 
 
 ## 8. What prospicio does not do yet
 
-This guide starts from as-if losses because preparing them is not in the library. The gaps are filed for the
-lanes that own the code:
+Preparing as-if losses is in the library (section 2): `LargeLossExperience` and `PreparedLosses` for currency,
+development of known claims, trend and the completeness cut, `PreparedLosses.burning_cost` for the layer loss by
+year with count IBNR and an `IndexClause`, `PreparedLosses.as_if` for the history under past program structures,
+and `DevelopmentPattern` for the patterns. The gaps left are filed for the lanes that own the code:
 
-- **#190, prepare individual large losses**: trend each loss from its accident date, develop known large losses
-  to ultimate (IBNER) and large-loss counts for late reports, apply an indexation or stability clause, convert
-  currencies, and give the as-if layer loss by year. Today you write the loop, as `burning_cost` above does,
-  around `trend_factor` and `Layer.ceded`.
-- **#191, as-if history under past program structures**: restate each past year under its own actual structure
-  (retentions, limits, inuring quota shares) next to the proposed one, so the history can be reconciled with the
-  cedant's reported recoveries.
 - **#192, excess-layer loss development**: excess development factors from a ground-up triangle and a severity
   curve, credibility blending of a layer's own development with benchmark patterns, and a Bornhuetter–Ferguson
   prior from the Pareto layer share. Until then, development of layer losses is unstable with many zero cells.
 
 Smaller awkward spots met while writing this guide: no helper turns a severity into a `TabulatedCurve` (section
-4 builds the grid by hand); nothing calibrates `c` to experience (section 3 scans by hand); the `cv` of the loss
-to a layer per claim is computed by hand from the layer moments (section 5); the burning cost as a rate on
-on-level subject premium is a loop you write (section 2); no benchmark alphas or curves by line ship with the
-library (section 7); and `fit_references` and `match_tower` accept references that give jagged alphas without a
-warning.
+4 builds the grid by hand), nothing calibrates `c` to experience (section 3 scans by hand), and the `cv` of the
+loss to a layer per claim is computed by hand from the layer moments (section 5), all three filed as #212;
+`fit_references` and `match_tower` accept references that give jagged alphas without a warning (#211); and no
+benchmark alphas or curves by line ship with the library (section 7).
 
 ## See also
 

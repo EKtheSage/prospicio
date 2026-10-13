@@ -26,9 +26,11 @@ below is printed by the code next to it, and CI re-runs the code.
 | A count that is not Poisson, negative binomial or binomial | FFT | `fft` with a `Count` | Panjer needs the recursion's count families |
 | Heavy tail with infinite variance | FFT, grid sized by one big claim | `fft_auto` | Moments are undefined; the sizing does not need them |
 | What an excess layer, quota share, stop loss, reinstatements or a corridor pay | FFT on the tower | `Tower.on_grid` | Exact, no sampling error |
+| A quota share or stop loss (with its commissions) on an annual loss already on a grid, such as a loss ratio times premium | The tower on the annual grid | `Tower.on_annual_grid` | Each year's total is one loss; no claim count needed, expected commissions exact |
 | Reinstatement premium pro rata as to time, a surplus treaty, annual terms that inure to a later layer | Simulation | `Tower.apply` on an `EventSet` | They need event order, dates or sums insured; a compound grid has none |
 | Several layers or lines together (joint distribution, dependence) | Simulation | `Tower.apply`, `PredictiveDistribution` | A grid is one marginal distribution |
-| Your own events (a catastrophe model's event loss table) | Simulation | `EventSet.from_years` | The events are the model |
+| A catastrophe model's event loss table | Simulation | `events, rows = EventLossTable(...).simulate(n_years, seed)` | Returns the years and each loss's row in the table; draws each event's loss from its secondary uncertainty; exact OEP and PML from `EventLossTable.oep` and `EventLossTable.occurrence_pml` |
+| Your own simulated years (a year loss table), a non-cat set beside a cat set, an hours clause | Simulation | `EventSet.from_long` or `EventSet.from_years`; `EventSet.merge`; `EventSet.grouped(window_hours)` | The events are the model. `merge` needs the same number of years in both sets; `grouped` needs loss times (fractions of a year) and drops sums insured |
 | The largest single loss of the year (occurrence PML) | Closed form | `occurrence_pml`, `occurrence_exceedance` | For per-occurrence covers the annual total is the wrong curve |
 | How often a layer is hit, its loss on line, its count and severity moments | Closed form | `occurrence_layer_statistics` | One call |
 
@@ -480,7 +482,8 @@ mean 5.960 (exact 6), 99.5% quantile 30.57 (FFT 31.56)
 
 **Use simulation** when the answer depends on the order, timing or identity of
 losses, or on several results at once (section 7), or when no grid can hold the
-problem (an event loss table, a severity that is only simulated losses).
+problem (a catastrophe model's event loss table, which `EventLossTable` turns
+into simulated years, or a severity that is only simulated losses).
 
 **Do not use it** for a tail quantile of a single book when FFT applies: the
 error is large and shrinks slowly.
@@ -539,7 +542,13 @@ True 5
 
 `CollectiveModel(freq, sev).simulate(n, seed)` gives the same years from the
 pricing object, `RiskProfile.simulate` draws from a property risk profile
-(section 7.2), and `EventSet.from_years` loads years from elsewhere.
+(section 7.2), `EventLossTable.simulate` draws years from a catastrophe model's
+event loss table (it returns the years with each loss's row in the table), and
+`EventSet.from_years` (a list of losses per year) or `EventSet.from_long` (one
+row per loss with its year, as a year loss table comes) loads years from
+elsewhere. A year loss table lists only the years with a loss, so give
+`from_long` the `n_years` you simulated, counting the years with no loss;
+otherwise every frequency and loss cost comes out too high.
 
 ## 7. What each treaty pays
 
@@ -783,7 +792,7 @@ severity, 0.1557 on the grid): the answer to a cedant's "how often will it hit?"
 
 | Job | Use | Notes |
 |---|---|---|
-| Layer pricing (expected loss, loss on line, a risk load) | `CollectiveModel.layer_mean`, `occurrence_layer_statistics`, `Tower.on_grid` | Closed form or FFT. Use `local_moment` so means are right. A distortion price needs the grid (`TowerGrids.price`) |
+| Layer pricing (expected loss, loss on line, a risk load) | `CollectiveModel.layer_mean`, `occurrence_layer_statistics`, `Tower.on_grid` | Closed form or FFT. Use `local_moment` so means are right. A distortion price needs the grid (`TowerGrids.price(distortion)` for each layer's stand-alone price, or `price(grid, Distortion.tvar(p), cost_of_capital=r)` for any grid at a chosen capital standard; see [What a reinsurance price is](reinsurance-price.md)) |
 | Capital on one book (99% or 99.5% VaR or TVaR) | `fft_auto`, then the halving check | The grid is exact where simulation is noisy in the tail. Report `tail_mass` and `aliasing_error` |
 | Capital with dependence between lines or across treaties | Simulation, `PredictiveDistribution`, a copula | Needs joint draws ([Choosing a method](choosing-a-method.md#8-capital-risk-measures-and-allocation)). Fix the seed, use many years, report the standard error (section 6.1) |
 | Reporting a result others must reproduce | FFT, with its report stored beside it | Deterministic. If you simulate, record the seed and `n_sims` |

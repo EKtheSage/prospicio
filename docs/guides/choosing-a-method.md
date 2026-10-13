@@ -22,11 +22,11 @@ limit first: `Layer("4x6", 4.0, 6.0)`, `expected_layer_loss(4.0, 6.0)`.
 |---|---|---|---|---|
 | Primary rates, overall rate indication | Loss ratio or pure premium method, with on-level premium, trend, development and credibility; class relativities from a GLM before that | `RateHistory`, `LossRatioExperience`, `PurePremiumExperience`, `Provisions`, `LimitedFluctuation`; `prospicio.models.Glm` for relativities | Standard ratemaking; premium and losses are brought to the same rate level and cost level | [Experience and exposure rating](experience-and-exposure-rating.md) |
 | Per-risk property excess of loss, you have sums insured | Exposure rating with a curve | `RiskProfile.expected_layer_loss`, `Mbbefd` | Large losses are too few to rate a layer, and the profile of limits is known | [Experience and exposure rating](experience-and-exposure-rating.md) |
-| Per-risk property or casualty excess of loss, you have large losses | Experience rating: fit a severity above a threshold, apply it to the layer | `Pareto.fit`, `CollectiveModel.layer_mean` | The cedant's own history is the best evidence of its tail, when there is enough of it | [Severity and frequency](severity-and-frequency.md) |
+| Per-risk property or casualty excess of loss, you have large losses | Experience rating: prepare the losses, then fit a severity above a threshold and apply it to the layer, or burn the layer | `LargeLossExperience`, `.prepare`, `PreparedLosses.burning_cost`; `Pareto.fit`, `CollectiveModel.layer_mean` | The cedant's own history is the best evidence of its tail, when there is enough of it; the losses are first trended to the treaty period and developed to ultimate | [Experience and exposure rating](experience-and-exposure-rating.md), [Severity and frequency](severity-and-frequency.md) |
 | Casualty excess of loss, you have a profile of policy limits and premium | Exposure rating with increased limit factors: each limit's premium times an expected loss ratio, split into the layer by ILFs | `ilf` in a loop over the limits (there is no casualty profile class) | Excess losses are too few, and the limits written are known | This guide, section 3 |
 | Casualty excess of loss, a price for one layer, wanted for another | Increased limit factors and Pareto extrapolation; or match a tower | `ilf`, `pareto_extrapolation`, `match_tower` | Layers above the data are priced from the layers you can see | [Experience and exposure rating](experience-and-exposure-rating.md) |
-| Catastrophe excess of loss | Take the cat model's output: a year loss table, or return period points | `EventSet.from_years`, `fit_pml_curve`, `Tower.apply` | The model supplies frequency and severity; you apply the terms and price the risk | [What a reinsurance price is](reinsurance-price.md) |
-| Quota share, surplus | Technical commission from the loss ratio distribution, centred on the cedant's indicated loss ratio (first row) | `Layer.quota_share`, `Layer.surplus`, `with_sliding_scale`, `Tower.on_grid` | The price is the commission; the whole loss ratio is at risk, not only large losses | [What a reinsurance price is](reinsurance-price.md) |
+| Catastrophe excess of loss | Take the cat model's output: an event loss table, a year loss table, or return period points | `EventLossTable` (events with secondary uncertainty), `EventSet.from_years`, `EventSet.from_long`, `EventSet.grouped`, `fit_pml_curve`, `Tower.apply` | The model supplies frequency and severity; you apply the terms and price the risk | [What a reinsurance price is](reinsurance-price.md) |
+| Quota share, surplus | Technical commission from the loss ratio distribution, centred on the cedant's indicated loss ratio (first row) | `Layer.quota_share`, `Layer.surplus`, `with_sliding_scale`, `Tower.on_grid`; `Tower.on_annual_grid` on a loss-ratio grid; `price(grid, Distortion.tvar(0.99), cost_of_capital=r)` for the margin | The price is the commission; the whole loss ratio is at risk, not only large losses | [What a reinsurance price is](reinsurance-price.md) |
 | Aggregate stop loss, adverse development or loss portfolio cover | Distribution of the aggregate, then the cover on it; for reserves, a reserve bootstrap | `Layer.stop_loss`, `Tower.on_grid`; `OdpBootstrap` or `MackBootstrap`, then `Tower.apply_aggregate` | The cover pays on the year's total, so you need the total's distribution, not one loss | [Aggregate distributions](aggregate-distributions.md) |
 | Reserve and its uncertainty, lifetime or one year | Chain ladder, Mack, Bornhuetter-Ferguson; bootstraps for a distribution | `Triangle`, `ChainLadder`, `Mack`, `OdpBootstrap`, `MackBootstrap` | Triangles carry development; bootstraps give a distribution you can combine | [Reserving methods](reserving-methods.md) |
 | Capital, risk measures, allocation | Distortion risk measures; Euler allocation | `Distortion`, `capital`, `allocate` | One coherent family prices and allocates | [Risk loads and distortions](risk-loads-and-distortions.md) |
@@ -151,8 +151,10 @@ and credibility moves it towards the complement.
   a risks-attaching treaty, check that the period type (`Period.calendar` or
   `Period.policy`) fits.
 - The experience classes are primary ratemaking tools. They have no notion of a
-  layer or a treaty year, and large losses are not trended individually (issue
-  #190).
+  layer or a treaty year. To trend, develop and convert individual large losses,
+  use `LargeLossExperience(ids, accident, amount, threshold=, valuation=, fx=)`
+  and its `.prepare(rate=, to=, development=)` (see
+  [Experience and exposure rating](experience-and-exposure-rating.md)).
 
 **Goes deeper.** [Experience and exposure rating](experience-and-exposure-rating.md)
 for the pure premium method and credibility; `docs/design/ratemaking.md` for the
@@ -249,9 +251,19 @@ common. Treat the blend as an illustration of the steps, not a rule.
   the MPL in `sums_insured` when you have it. A first-loss scale from a primary
   rating manual is a different curve on a different base; do not mix the two.
 - Large losses must be prepared before you fit: trended to the treaty year,
-  developed for open claims, indexed if the policies carry inflation clauses,
-  converted to one currency. prospicio does not do this yet (issue #190), nor
-  restate losses under past retentions and limits (issue #191).
+  developed for open claims, indexed if the treaty carries an inflation clause,
+  converted to one currency. `LargeLossExperience` does each step: trend by date
+  at a rate (or a factor per loss), development of known losses by a
+  `DevelopmentPattern` (or a factor per loss), an `fx` rate, and an
+  `IndexClause` passed to `burning_cost(index=, ratios=)`. Once `prepare` has
+  developed the known losses, give `burning_cost(..., development=)` only the
+  count IBNR (a factor per year or a `DevelopmentPattern`), not an excess
+  factor that already holds IBNER, or it is counted twice. With a reporting
+  threshold, losses below `complete_above()` (the threshold times the largest
+  trend factor) are left out, so every year is complete on the same basis.
+  To restate history
+  under each year's own program beside the proposed one, use
+  `PreparedLosses.as_if(historical_towers, years, proposed)`.
 - `Pareto.fit` takes a threshold, optional per-loss reporting thresholds, flags
   for losses capped by a policy limit (`censored`) and a `truncation`. Other
   families have no truncation or censoring in the fit (issue #194).
@@ -326,13 +338,15 @@ matched tower: 0.58 losses a year above 1, alphas [1.86, 1.73, 2.39, 2.2]
 The policies limited at 0.5 put nothing in the layer; the higher limits put a
 small share of their loss there (0.084 and 0.129), and the profile's layer loss
 of 1.934 is the sum of premium times loss ratio times share. Check
-it against a burning cost on developed, trended large losses (section 2's steps)
-before you trust either.
+it against a burning cost on developed, trended large losses
+(`PreparedLosses.burning_cost`, section 2's steps) before you trust either.
 
 **Pitfalls.**
 
 - Prepare losses before fitting or burning: trend them to the treaty period and
-  develop open claims (issue #190; excess development is issue #192). Decide how
+  develop open claims one by one with `LargeLossExperience.prepare(rate=, to=,
+  development=)`. Development of the excess layer itself (excess LDFs, benchmark
+  blending) is not in the library (issue #192). Decide how
   allocated loss adjustment expense (ALAE) enters the layer, pro rata with the
   loss or added to it within the limit, and treat the losses and the severity
   curve the same way.
@@ -341,8 +355,8 @@ before you trust either.
   per layer.
 - `match_tower` and `fit_references` refuse inputs that cannot come from a
   decreasing, convex excess loss function (rates on line that rise up the tower,
-  say), but they do not judge whether the alphas they find are plausible. Print
-  `tower.severity.alpha` and inspect it.
+  say), but they do not judge whether the alphas they find are plausible (issue
+  #211). Print `tower.severity.alpha` and inspect it.
 - `compound_moments` raises an error when you ask for the moments of a severity
   without three finite moments (a Pareto with alpha below 3), so its normal or
   gamma `approximate` is out of reach there. Use the grid or simulation for
@@ -351,8 +365,14 @@ before you trust either.
   limits (ECO and XPL), clash between policies on one occurrence, and the
   difference between claims-made and occurrence triggers. Each changes which
   losses reach the layer; agree them with the wording before you rate.
-- Time value of money, which matters for long tails, is not in the price (issue
-  #195).
+- The prices in this section are one-period prices. For a long tail, restate a
+  price over its payout with a `PaymentPattern` (for next year's accident year,
+  `PaymentPattern.from_development(ages_in_years, paid_cdf)`) and
+  `price_over_payout(price, pattern, rate=, cost_of_capital=)`. That has two
+  effects: discounting lowers the loss (`discount_factor` below 1), and holding
+  capital until the last payment raises the capital charge (`capital_years`
+  above 1). With a cost of capital the second usually wins for a long tail, so
+  the payout premium is often above the one-period one.
 
 **Goes deeper.** [Experience and exposure rating](experience-and-exposure-rating.md),
 [Severity and frequency](severity-and-frequency.md).
@@ -372,9 +392,10 @@ and reinstatement terms, and perhaps a few historical events.
 
 | You have | Use | Call |
 |---|---|---|
-| A year loss table | Load it as events, apply the terms | `EventSet.from_years(years, sums_insured, seed, times)`, then `Tower.apply` |
+| An event loss table (rate, mean, standard deviations and exposure per event) | Simulate years from it, or read its OEP and PML | `EventLossTable(rate, mean, sd_independent, sd_correlated, exposure)`; `.simulate(n_years, seed)` gives `(EventSet, event ids)`; `.oep(x)`, `.occurrence_pml(p)` |
+| A year loss table | Load it as events, apply the terms | `EventSet.from_years(years, sums_insured, seed, times)`, or `EventSet.from_long(years, losses, n_years)` for one row per loss (years are indices from 0, and `n_years` is the full simulation count, including the years with no loss); then `Tower.apply` |
 | Return period points | Fit a frequency and a severity to them, then use the grid or simulation | `fit_pml_curve(return_periods, amounts, tail_alpha, truncation)` |
-| Neither, only an exposure estimate | You need the model; the library does not build a hazard model | see issue #196 |
+| None of these, only an exposure estimate | You need the model; the library does not build a hazard model | none |
 
 ```python
 import math
@@ -427,8 +448,14 @@ times (`EventSet.with_uniform_times`, `with_seasonal_times`).
   when the vendor's events cluster. Prefer the year loss table, which carries
   the vendor's own multi-event years (its AEP), and keep the OEP fit as a
   fallback.
-- Event tables with secondary uncertainty, an hours clause and clash are not
-  supported (issue #196). A year loss table is the entry point.
+- An event loss table's secondary uncertainty is a beta on [0, exposure] for
+  each event, with the row's mean and standard deviation (`EventLossTable`).
+  `EventSet.grouped(window_hours)` groups losses into occurrences under an hours
+  clause; it needs each loss's time (`from_years(..., times=)`,
+  `with_uniform_times` or `with_seasonal_times`), as a fraction of a year, with
+  the window in hours (a year is 8,760 hours). `EventSet.merge` adds a non-cat set year by year. Clash
+  across lines (one event hitting several lines) is not supported; it is parked in
+  `docs/design/cat-inputs.md`.
 
 **Goes deeper.** [Aggregate distributions](aggregate-distributions.md) for the
 grid and simulation, [What a reinsurance price is](reinsurance-price.md) for
@@ -458,8 +485,8 @@ year-to-year variation of those loss ratios.
 
 | Situation | Method | Call |
 |---|---|---|
-| Quota share price | Technical commission: 1 less the expected ceded loss ratio, expenses, brokerage and margin | `Tower.on_grid` for the ceded grid, `Pentagon.solve` for the margin |
-| Sliding scale or profit commission | Expected commission over the loss ratio distribution | `with_sliding_scale`, `with_profit_commission`, `TowerGrids.expected_ceding_commission` |
+| Quota share price | Technical commission: 1 less the expected ceded loss ratio, expenses, brokerage and margin | `Tower.on_grid` for the ceded grid (or `Tower.on_annual_grid` on a loss-ratio grid), `price(grid, Distortion.tvar(0.99), cost_of_capital=r)` for the margin |
+| Sliding scale or profit commission | Expected commission over the loss ratio distribution | `with_sliding_scale`, `with_profit_commission`, `TowerGrids.expected_ceding_commission` or `AnnualGrids.expected_ceding_commission` |
 | Surplus | Simulated events with sums insured | `Layer.surplus`, `RiskProfile.simulate`, `Tower.apply` |
 | Surplus inuring to a per-risk excess of loss | Stages in order | `Tower.inuring([[surplus], [xl]])` |
 
@@ -470,7 +497,7 @@ stands for a section 1 selection.
 
 ```python
 from prospicio.distributions import Grid, Lognormal, NegativeBinomial
-from prospicio.pricing import Pentagon
+from prospicio.pricing import price
 from prospicio.reinsurance import Layer, Tower
 from prospicio.risk import Distortion
 
@@ -487,16 +514,18 @@ qs_premium, qs_commission = book.expected_premium[0], book.expected_ceding_commi
 print(f"book loss ratio {book.gross.mean() / SUBJECT:.1%}, spread (sd) {book.gross.variance() ** 0.5 / SUBJECT:.1%} of premium")
 print(f"QS: ceded premium {qs_premium:.1f}, ceded loss {qs_loss:.2f}, "
       f"expected commission {qs_commission:.2f} ({qs_commission / qs_premium:.1%})")
+annual = Tower([qs]).on_annual_grid(book.gross)      # the same terms on the year's total alone, no claim count
+print(f"QS on the annual total grid: expected commission {annual.expected_ceding_commission[0]:.2f}")
 
 tvar99 = Distortion.tvar(0.99)
 EXPENSES, BROKERAGE = 0.02, 0.015
 # Flat commission: the reinsurer pays the ceded loss plus a fixed commission, so only the loss is at risk.
-flat = Pentagon.solve(loss=qs_loss, assets=tvar99.measure(book.ceded[0]), return_on_capital=0.10)
+flat = price(book.ceded[0], tvar99, cost_of_capital=0.10)    # assets at 99% TVaR, 10% on capital
 technical = 1 - qs_loss / qs_premium - EXPENSES - BROKERAGE - flat.margin / qs_premium
 print(f"flat: tail above the mean {flat.assets - qs_loss:.2f}, capital {flat.capital:.2f}; technical commission {technical:.1%}")
 # Sliding scale: the reinsurer pays the ceded loss plus a commission that falls as the loss rises.
 outgo, _ = book.ceded[0].map(lambda loss: loss + qs.ceding_commission_for(loss))
-scale = Pentagon.solve(loss=outgo.mean(), assets=tvar99.measure(outgo), return_on_capital=0.10)
+scale = price(outgo, tvar99, cost_of_capital=0.10)
 available = qs_premium * (1 - EXPENSES - BROKERAGE) - outgo.mean()
 print(f"scale: tail above the mean {scale.assets - outgo.mean():.2f}, capital {scale.capital:.2f}; "
       f"margin needed {scale.margin:.2f}, margin in the terms {available:.2f}")
@@ -505,9 +534,17 @@ print(f"scale: tail above the mean {scale.assets - outgo.mean():.2f}, capital {s
 ```text
 book loss ratio 60.0%, spread (sd) 7.0% of premium
 QS: ceded premium 30.0, ceded loss 18.00, expected commission 9.64 (32.1%)
+QS on the annual total grid: expected commission 9.64
 flat: tail above the mean 6.71, capital 6.10; technical commission 34.5%
 scale: tail above the mean 4.57, capital 4.16; margin needed 0.42, margin in the terms 1.32
 ```
+
+The second line puts the same quota share on the year's total alone, which is
+all you have when the cedant gives a loss ratio distribution with no claim count
+behind it: `Tower.on_annual_grid` treats each year's total as one loss, and the
+expected commission is the same 9.64, because the quota share's terms depend
+only on that total. `price` then sets the assets at 99% TVaR of each grid and
+charges 10% on the capital, the assets above the premium.
 
 The two contracts need separate sums. With a flat commission only the ceded
 loss is at risk, and a 10% return on its capital allows a commission of 34.5%.
@@ -557,12 +594,15 @@ share; a per-risk excess of loss on the retained part is a second stage
   both need it to form a loss ratio. A sliding scale cannot combine with swing
   rating or paid reinstatements, and a profit commission has no deficit
   carry-forward.
-- A quota share with only an annual loss ratio distribution (no claim count
-  behind it) has no `on_grid` route, so you loop over the grid with
-  `ceding_commission_for` (issue #206).
-- `price` takes simulated losses only (`Sampled` or `PredictiveDistribution`),
-  not a grid, so a grid layer at a chosen capital standard needs the hand
-  arithmetic above (issue #204).
+- A quota share or stop loss on an annual loss ratio grid (no claim count
+  behind it) goes through `Tower.on_annual_grid(grid)`: it gives the ceded grid
+  (`.ceded`), `expected_ceding_commission` and `expected_profit_commission`
+  exactly. It is not for per-occurrence layers with a severity; use `on_grid`
+  for those.
+- `price(losses, assets, cost_of_capital=r)` takes a grid, simulated losses
+  (`Sampled`) or a `PredictiveDistribution`. Its `assets` argument is a
+  distortion risk measure (here 99% TVaR), and the result's `.margin`,
+  `.capital` and `.assets` are the pieces used above.
 
 **Goes deeper.** [What a reinsurance price is](reinsurance-price.md), section 5.
 
@@ -592,7 +632,7 @@ flat quota share.
 
 ```python
 sl_grid = book.ceded[1]
-sl_price = Pentagon.solve(loss=sl_loss, assets=Distortion.tvar(0.99).measure(sl_grid), return_on_capital=0.10)
+sl_price = price(sl_grid, Distortion.tvar(0.99), cost_of_capital=0.10)
 print(f"stop loss 20 xs 70: expected loss {sl_loss:.3f}, chance of any recovery {1 - sl_grid.cdf(0.0):.1%}")
 print(f"at 99% TVaR assets and 10% on capital: premium {sl_price.premium:.2f} "
       f"(rate on line {sl_price.premium / 20.0:.1%}), capital {sl_price.capital:.2f}")
@@ -624,9 +664,24 @@ below.
   calendar-year inflation shock and no change in claims handling, which are
   what usually drive an ADC. Treat its answer as a floor, and show the layer
   under a second method or tail (section 7 does).
-- Time value matters a great deal for an ADC or LPT, and is not in the price
-  (issue #195). The payments are undiscounted, so a price built on them
-  overstates the present value of the recoveries, by more the longer the tail.
+- Time value matters a great deal for an ADC or LPT. The prices here are
+  one-period prices. `price_over_payout(price(...), pattern, rate=,
+  cost_of_capital=)` restates one over its payout, with two effects:
+  discounting lowers the loss (`discount_factor` below 1), and holding capital
+  until the last payment raises the capital charge (`capital_years` above 1).
+  For a long tail at a cost of capital the second usually wins, so the payout
+  premium is often above the one-period one.
+- The pattern for a reserve cover is the reserve's calendar-year run-off from
+  the valuation date, not one accident year's development. From the paid chain
+  ladder (section 7's `cl`), origin i with its latest age at index k_i pays
+  `ult_i / cdf[j] - ult_i / cdf[j - 1]` at calendar time j - k_i for each later
+  age index j; sum these over origins by calendar time and pass the times and
+  the shares of the total to `PaymentPattern(times, shares)`. A layer that
+  attaches above the mean reserve pays later still, so treat that pattern's
+  duration as a lower bound for the layer. Keep
+  `PaymentPattern.from_development(ages_in_years, paid_cdf)` (with `.shifted`)
+  for a cover on a coming accident year, such as a casualty excess of loss or a
+  stop loss on next year's book.
 - `Layer.with_rate_on_line` needs a finite per-loss limit, which a stop loss
   does not have (its limit is annual), so it is refused there; set a stop loss's
   premium with `with_deposit_premium` or `with_premium_rate`.
@@ -801,8 +856,9 @@ diversification benefit.
 - `Tower.apply` returns a `PredictiveDistribution` with every kind (gross, ceded,
   net, premiums, commissions). Its total adds them all, which double counts
   silently (issue #193). Pull out one component by hand, as below.
-- `Distortion` has no accessor for its parameter after `calibrate`, other than its
-  `repr` (issue #205).
+- After `calibrate`, read a distortion's family and parameters with `d.family`
+  and `d.parameters` (properties), for example `d.parameters["rho"]` for a
+  proportional hazard.
 
 The double count, and the way round it:
 
@@ -891,29 +947,32 @@ contract; a cedant sees only the price.
   figures depend on the existing book: the same contract is cheaper in a book it
   diversifies.
 - What the calls give is a risk-loaded price (loss plus margin on allocated
-  capital). Brokerage, expenses, the comparison with the cedant's price and the
-  assembly of a quote are hand arithmetic (issue #197).
+  capital). `Quote.technical(price, expenses=, brokerage=, fixed=, limit=)`
+  grosses a risk-loaded `Price` (from `price`) up to the premium the cedant
+  pays, and gives the rate on line, payback, multiple and loss ratio;
+  `Quote.at(premium)` gives the reinsurer's return at the broker's quoted
+  premium. `Quote.technical` takes a standalone `Price` from `price(...)`, not a unit of
+  `Portfolio.price`'s allocation, which it refuses. For a contract priced inside
+  the book, gross up the allocated premium by hand, (premium + fixed) / (1 -
+  expenses - brokerage), or price the contract standalone with `price` first.
 
 **Goes deeper.** [Risk loads and distortions](risk-loads-and-distortions.md),
 [What a reinsurance price is](reinsurance-price.md), section 7.
 
 ## What the library does not do yet
 
-The honest list. Each is a filed issue.
+The honest list. Each is a filed issue, except clash, which is parked in a
+design note.
 
 | Gap | Effect on this map | Issue |
 |---|---|---|
-| Preparing large losses: trend by date, IBNER, indexation or stability clauses, currency | Experience rating inputs are prepared by hand | #190 |
-| As-if history under past retentions, limits and inuring quota shares | Past layer losses cannot be restated to the current structure | #191 |
 | Development of excess layers (excess LDFs, benchmark blending) | Layer development is a chain ladder on layer losses, or judgement | #192 |
 | Select one component of a `Tower.apply` result | Joining a ceded total into a book is by hand, and a naive join double counts | #193 |
 | Severity fitting with truncation and censoring beyond the Pareto family | Lognormal, Burr and Weibull fits have no censoring | #194 |
-| Time value of money (payment patterns, discounting) | Prices are undiscounted, which matters for casualty, ADC and LPT | #195 |
-| Cat inputs (event tables with secondary uncertainty, hours clause, clash) | Cat work starts from a year loss table or OEP points | #196 |
-| Quote assembly and comparison with the cedant's price | Brokerage, expenses and the quote are arithmetic you write | #197 |
-| Price a layer on a grid at a chosen capital standard | `price` takes simulated losses only | #204 |
-| `Distortion` parameter accessor | A calibrated parameter can only be read from `repr` | #205 |
-| Quota share terms on a loss-ratio grid | Expected commissions need a loop over the grid | #206 |
+| Tower matching that warns on implausible fits | `match_tower` and `fit_references` accept any alphas that fit; inspect them yourself | #211 |
+| Exposure rating helpers: a curve from a severity, calibrating Swiss Re c, the CV of a layer loss | Each is a few lines you write | #212 |
+| Severity under a mix of policy limits, and standard errors from `Pareto.fit` | A severity for losses capped at different policy limits, and a standard error for the fitted alpha, are worked by hand | #213 |
+| Clash across lines (several lines hit by one event) | Cat work and per-risk work treat lines separately | none (parked, `docs/design/cat-inputs.md`) |
 
 ## See also
 
