@@ -501,3 +501,42 @@ def test_large_losses_developed_one_by_one_with_a_count_pattern():
         LargeLossExperience(["a"], [2020.5], [1.0]).prepare(factors=[1.0], development=ibner)
     with pytest.raises(TypeError):
         e.prepare(factors=[1.0, 1.0], development="no")
+
+
+def test_index_clause_moves_each_loss_terms():
+    from prospicio.pricing import IndexClause, LargeLossExperience
+    from prospicio.reinsurance import Layer, Tower
+
+    p = LargeLossExperience(["a", "b"], [2020.2, 2020.6], [700.0, 300.0]).prepare(
+        factors=[1.0, 1.0]
+    )
+    tower = Tower([Layer("400 xs 100", 400.0, 100.0)])
+    kw = dict(premium=[1e3], development=[1.0])
+    # 700 under 500 xs 125 cedes 500; 300 within the franchise cedes 200.
+    b = p.burning_cost(tower, [2020], index=IndexClause(0.1), ratios=[1.25, 1.05], **kw)
+    assert b.to_dict()["layer_loss"][0][0] == pytest.approx(700.0, rel=1e-14)
+    plain = p.burning_cost(tower, [2020], **kw)
+    unit = p.burning_cost(tower, [2020], index=IndexClause(0.1), ratios=[1.0, 1.0], **kw)
+    assert plain.loss_cost == unit.loss_cost
+    severe = IndexClause(0.1, kind="severe")
+    assert severe.kind == "severe" and severe.adjustment(0.7) == 1.0
+    with pytest.raises(TypeError):
+        p.burning_cost(tower, [2020], index=IndexClause(0.1), **kw)
+    with pytest.raises(ValueError):
+        IndexClause(0.1, kind="partial")
+    annual = Tower([Layer("x", 400.0, 100.0, aggregate_limit=800.0)])
+    with pytest.raises(ValueError):
+        p.burning_cost(annual, [2020], index=IndexClause(0.1), ratios=[1.0, 1.0], **kw)
+
+
+def test_large_losses_in_another_currency():
+    from prospicio.pricing import LargeLossExperience
+
+    e = LargeLossExperience(["a", "b"], [2020.5, 2020.5], [90.0, 120.0], threshold=100.0, fx=[2.0, 0.5])
+    d = e.prepare(factors=[1.0, 1.0]).to_dict()
+    assert d["fx"] == [2.0, 0.5]
+    assert d["trended"] == [180.0, 60.0]
+    stated = LargeLossExperience(["a"], [2020.5], [90.0], fx=1.5).prepare(factors=[1.0])
+    assert stated.to_dict()["ultimate"] == [135.0]
+    with pytest.raises(ValueError):
+        LargeLossExperience(["a"], [2020.5], [90.0], fx=[1.0, 2.0])

@@ -7,8 +7,8 @@ use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
 use prospicio_pricing::classical::{self, Kind, Principle};
 use prospicio_pricing::experience::{
-    ClaimValuation, Development, DevelopmentPattern, Experience, LargeLoss, Prepared, Trend,
-    YearBasis,
+    ClaimValuation, Development, DevelopmentPattern, Experience, Fx, IndexClause, IndexKind,
+    LargeLoss, Prepared, Trend, YearBasis,
 };
 use prospicio_pricing::exposure::{
     ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve,
@@ -977,7 +977,9 @@ fn pricing_quote(
 /// Large losses developed and trended to the prospective period: by `rate`
 /// to `to`, or, with `rate` NaN, by `factors`; developed by the pattern
 /// `(dev_ages, dev_factors)` at each loss's age at `valuation` (NaN for
-/// none), or by `dev_per_loss`, or not at all when both are empty.
+/// none), or by `dev_per_loss`, or not at all when both are empty;
+/// converted by `fx` first (empty for none, one stated rate, or one per
+/// loss).
 #[allow(clippy::too_many_arguments)]
 fn prepare_large_losses(
     ids: Vec<String>,
@@ -991,6 +993,7 @@ fn prepare_large_losses(
     dev_ages: &[f64],
     dev_factors: &[f64],
     dev_per_loss: &[f64],
+    fx: &[f64],
 ) -> Result<Prepared> {
     if ids.len() != accident.len() || ids.len() != amount.len() {
         return Err(Error::Other(format!(
@@ -1020,6 +1023,11 @@ fn prepare_large_losses(
         .map_err(to_r)?;
     if !valuation.is_nan() {
         e = e.with_valuation(valuation).map_err(to_r)?;
+    }
+    match fx {
+        [] => {}
+        [r] => e = e.with_fx(Fx::Rate(*r)).map_err(to_r)?,
+        r => e = e.with_fx(Fx::PerLoss(r.to_vec())).map_err(to_r)?,
     }
     let development = if !dev_ages.is_empty() {
         Some(Development::Pattern(
@@ -1109,6 +1117,7 @@ fn pricing_trend_large_losses(
     dev_ages: &[f64],
     dev_factors: &[f64],
     dev_per_loss: &[f64],
+    fx: &[f64],
 ) -> Result<List> {
     let p = prepare_large_losses(
         ids,
@@ -1122,6 +1131,7 @@ fn pricing_trend_large_losses(
         dev_ages,
         dev_factors,
         dev_per_loss,
+        fx,
     )?;
     let l = p.losses();
     Ok(list!(
@@ -1129,6 +1139,7 @@ fn pricing_trend_large_losses(
         year = l.iter().map(|x| x.year).collect::<Vec<_>>(),
         accident = l.iter().map(|x| x.accident).collect::<Vec<_>>(),
         amount = l.iter().map(|x| x.amount).collect::<Vec<_>>(),
+        fx = l.iter().map(|x| x.fx).collect::<Vec<_>>(),
         development = l.iter().map(|x| x.development).collect::<Vec<_>>(),
         ultimate = l.iter().map(|x| x.ultimate).collect::<Vec<_>>(),
         factor = l.iter().map(|x| x.factor).collect::<Vec<_>>(),
@@ -1153,10 +1164,14 @@ fn pricing_burning_cost(
     dev_ages: &[f64],
     dev_factors: &[f64],
     dev_per_loss: &[f64],
+    fx: &[f64],
     towers: List,
     years: &[i32],
     premium: &[f64],
     development: &[f64],
+    index_franchise: f64,
+    index_kind: &str,
+    ratios: &[f64],
 ) -> Result<List> {
     let p = prepare_large_losses(
         ids,
@@ -1170,6 +1185,7 @@ fn pricing_burning_cost(
         dev_ages,
         dev_factors,
         dev_per_loss,
+        fx,
     )?;
     if premium.len() != years.len() || development.len() != years.len() {
         return Err(Error::Other(format!(
@@ -1197,7 +1213,22 @@ fn pricing_burning_cost(
             development,
         })
         .collect();
-    let b = p.burning_cost(&towers, &basis).map_err(to_r)?;
+    let b = if index_franchise.is_nan() {
+        p.burning_cost(&towers, &basis)
+    } else {
+        let kind = match index_kind {
+            "full" => IndexKind::Full,
+            "severe" => IndexKind::Severe,
+            other => {
+                return Err(Error::Other(format!(
+                    "kind must be \"full\" or \"severe\", not {other:?}"
+                )));
+            }
+        };
+        let clause = IndexClause::new(index_franchise, kind).map_err(to_r)?;
+        p.burning_cost_indexed(&towers, &basis, &clause, ratios)
+    }
+    .map_err(to_r)?;
     let by_layer = |f: &dyn Fn(&prospicio_pricing::experience::YearCost) -> &Vec<f64>| {
         let layers = b.loss_cost.len();
         (0..layers)

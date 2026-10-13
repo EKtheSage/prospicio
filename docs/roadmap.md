@@ -119,12 +119,11 @@ what it is aiming for by v1.0.
     capital standard (the Guides lane's #206 and #204); a cover's quote,
     from risk premium to technical premium and back from a market quote
     (#197); experience rating from large losses, trend to the burning
-    cost, with each claim developed to ultimate and count IBNR (#190,
-    PRs 1 and 2 of 3, `docs/design/experience-rating.md`).
+    cost, with each claim developed to ultimate, count IBNR, FX and an
+    index clause (#190, `docs/design/experience-rating.md`).
 - **Next:**
   1. The Guides lane's issues for this lane, small first (the user's
-     choice, 2026-10-13): #190 PR 3 (indexation clause and FX), #191
-     as-if history, #195 time value of money,
+     choice, 2026-10-13): #191 as-if history, #195 time value of money,
      #196 cat XL inputs. Then the large items parked from `aggregate`
      parity (`docs/design/aggregate.md`): the P&L ledger (once signed grids
      exist), bivariate FFT aggregates and `clash`, renewal counts with

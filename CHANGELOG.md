@@ -123,6 +123,15 @@ under "Unreleased" until then.
   matches `PreparedLoss` in full). Python `DevelopmentPattern` and
   `prepare(..., development=)`; R `development_pattern()`,
   `development_pattern_from_history()`, `pattern_factor()` (#224).
+- Experience rating: losses converted to the pricing currency at a stated
+  rate or a rate per loss (`Experience::with_fx`), and an index
+  (stability) clause on the treaty, full or severe inflation, with a
+  franchise (`IndexClause`, `Prepared::burning_cost_indexed`), for covers
+  whose terms are all per occurrence. `PreparedLoss` gains `fx`
+  (**breaking** for code that builds or matches it in full). Python
+  `IndexClause`, `LargeLossExperience(..., fx=)` and `burning_cost(...,
+  index=, ratios=)`; R `index_clause()` and the `fx`, `index` and `ratios`
+  arguments (#225).
 
 ### Examples
 
