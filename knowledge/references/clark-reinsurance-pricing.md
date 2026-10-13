@@ -6,6 +6,7 @@ resource: https://www.casact.org/sites/default/files/2021-03/8_Clark.pdf
 tags: [pricing, reinsurance, experience-rating, burning-cost, parity]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-13T11:20:00Z }
+verified: { by: process:ci, at: 2026-10-13T17:31:26Z }
 sources:
   - id: clark
     resource: https://www.casact.org/sites/default/files/2021-03/8_Clark.pdf
@@ -13,6 +14,9 @@ sources:
   - id: tests
     resource: ../validation/tests/pricing.rs
     title: The experience rating parity tests (module clark_experience)
+  - id: dev
+    resource: ../validation/tests/pricing.rs
+    title: Per-claim development against the chain ladder (module claim_development)
 ---
 
 # What it is
@@ -41,5 +45,18 @@ total loss cost of 12.4%. It is the reference for
   summed over the years (1,991,789 over 16,112,389), not the mean of the
   yearly loss costs.[^tests]
 
+# What it does not print
+
+Per-claim development (IBNER) and a count IBNR load appear only in prose:
+in the workers compensation section, projecting each claimant into the
+layer means "a smaller development factor would then be needed to include
+only 'true IBNR' claims". There is no exhibit to reproduce, so
+`DevelopmentPattern::from_history` is checked instead against the chain
+ladder: with every claim valued at every age up to its latest, pooling the
+claims seen at both ages gives the volume-weighted chain ladder factors of
+the summed triangle, and each year's developed claims sum to its chain
+ladder ultimate (to 1e-13 on the factors).[^clark][^dev]
+
 [^clark]: Clark, Basics of Reinsurance Pricing.
 [^tests]: `validation/tests/pricing.rs`, module `clark_experience`.
+[^dev]: `validation/tests/pricing.rs`, module `claim_development`.

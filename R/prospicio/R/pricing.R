@@ -1066,9 +1066,10 @@ implied_quote <- function(quote, premium) {
 #' Large losses trended to the prospective period
 #'
 #' The first step of experience rating from individual large losses
-#' (Clark, *Basics of Reinsurance Pricing*): trend each loss from its
-#' accident date to the prospective period, by an annual `rate` to the date
-#' `to` (`(1 + rate)^(to - accident)`) or by a factor per loss. Cost the
+#' (Clark, *Basics of Reinsurance Pricing*): develop each known loss to
+#' ultimate (IBNER), if asked, and trend it from its accident date to the
+#' prospective period, by an annual `rate` to the date `to`
+#' (`(1 + rate)^(to - accident)`) or by a factor per loss. Cost the
 #' trended losses with [burning_cost()].
 #'
 #' A record reported above a threshold in nominal terms leaves the older
@@ -1085,16 +1086,23 @@ implied_quote <- function(quote, premium) {
 #'   date of the prospective period.
 #' @param factors A trend factor per loss, instead of `rate` and `to`.
 #' @param threshold The reporting threshold of the record.
-#' @returns A list with `losses` (the input columns with `year`, `factor`
-#'   and `trended`), `complete_above`, and the inputs [burning_cost()]
-#'   needs.
+#' @param valuation The date the amounts were valued at, a decimal year;
+#'   needed to develop by a [development_pattern()].
+#' @param development Develops each known loss to ultimate: a
+#'   [development_pattern()], read at each loss's age at `valuation`, or a
+#'   factor per loss. Then give [burning_cost()] only the count IBNR
+#'   factors, not an excess factor that already holds IBNER.
+#' @returns A list with `losses` (the input columns with `year`,
+#'   `development`, `ultimate`, `factor` and `trended`), `complete_above`,
+#'   and the inputs [burning_cost()] needs.
 #' @export
 #' @examples
 #' losses <- data.frame(id = c("a", "b"), accident = c(1995.5, 1996.5),
 #'                      amount = c(150, 400))
 #' p <- trend_large_losses(losses, rate = 0.05, to = 1998.5)
 #' p$losses$trended
-trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, threshold = 0) {
+trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, threshold = 0,
+                               valuation = NULL, development = NULL) {
   if (is.null(factors) == (is.null(rate) || is.null(to))) {
     stop("pass rate and to, or factors, but not both", call. = FALSE)
   }
@@ -1103,11 +1111,20 @@ trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, t
     amount = as.double(losses$amount), threshold = as.double(threshold),
     rate = if (is.null(rate)) NaN else as.double(rate),
     to = if (is.null(to)) NaN else as.double(to),
-    factors = if (is.null(factors)) double() else as.double(factors)
+    factors = if (is.null(factors)) double() else as.double(factors),
+    valuation = if (is.null(valuation)) NaN else as.double(valuation),
+    dev_ages = if (inherits(development, "development_pattern")) development$ages else double(),
+    dev_factors = if (inherits(development, "development_pattern")) development$factors else double(),
+    dev_per_loss = if (is.null(development) || inherits(development, "development_pattern")) {
+      double()
+    } else {
+      as.double(development)
+    }
   )
   r <- rust_result(do.call(pricing_trend_large_losses, args))
   list(
     losses = data.frame(id = r$id, year = r$year, accident = r$accident, amount = r$amount,
+                        development = r$development, ultimate = r$ultimate,
                         factor = r$factor, trended = r$trended),
     complete_above = r$complete_above,
     args = args
@@ -1129,7 +1146,11 @@ trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, t
 #'   needs the same number of layers.
 #' @param years The accident years to cost.
 #' @param premium Each year's on-level subject premium.
-#' @param development Each year's excess development factor.
+#' @param development Each year's development factor for the layer losses:
+#'   Clark's excess factor, or, when the losses were developed one by one in
+#'   [trend_large_losses()], the count IBNR factor only. A count
+#'   [development_pattern()] is read at each year's average age at the
+#'   record's valuation date.
 #' @returns A list with `years`, a data frame (`year`, `premium`, `losses`
 #'   (the count through the tower), `development`), the year-by-layer
 #'   matrices `layer_loss`, `developed` and `year_loss_cost`, and per layer
@@ -1146,6 +1167,11 @@ trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, t
 #' b$loss_cost
 burning_cost <- function(prepared, towers, years, premium, development) {
   if (S7::S7_inherits(towers, reinsurance_tower)) towers <- rep(list(towers), length(years))
+  if (inherits(development, "development_pattern")) {
+    development <- rust_result(pricing_count_development(
+      development$ages, development$factors, as.integer(years), prepared$args$valuation
+    ))
+  }
   args <- c(prepared$args, list(
     towers = lapply(towers, function(t) t@ptr), years = as.integer(years),
     premium = as.double(premium), development = as.double(development)
@@ -1163,4 +1189,59 @@ burning_cost <- function(prepared, towers, years, premium, development) {
     loss_cost = r$loss_cost,
     mean_loss_cost = r$mean_loss_cost
   )
+}
+
+#' Development pattern
+#'
+#' Development factors to ultimate by age, for developing each known large
+#' loss to ultimate (IBNER) in [trend_large_losses()] or as a count pattern
+#' for the claims not yet reported in [burning_cost()]. The factor at an
+#' age interpolates linearly between the given ages, takes the first factor
+#' at younger ages and the last at older ones ([pattern_factor()]).
+#'
+#' `development_pattern_from_history()` estimates one from each claim's
+#' valuations: the age-to-age factor from `ages[k]` to `ages[k + 1]` is the
+#' sum of the amounts at the later age over the sum at the earlier, over the
+#' claims valued at both with a positive earlier amount (a claim first seen
+#' later is IBNR, not IBNER). The factor at the last age is 1. With every
+#' claim valued at every age up to its latest, this is the volume-weighted
+#' chain ladder on the summed triangle.
+#'
+#' @param ages Strictly increasing ages, in years since the accident date.
+#' @param factors The factor to ultimate at each age.
+#' @param valuations A data frame with columns `id`, `age` and `amount`, one
+#'   row per valuation of a claim; ages not in `ages` are ignored.
+#' @returns A `development_pattern`: a list with `ages` and `factors`.
+#' @export
+#' @examples
+#' p <- development_pattern_from_history(
+#'   data.frame(id = c("a", "a", "b", "b"), age = c(1, 2, 1, 2),
+#'              amount = c(100, 150, 50, 50)),
+#'   ages = c(1, 2)
+#' )
+#' p$factors
+#' pattern_factor(p, 1.5)
+development_pattern <- function(ages, factors) {
+  ages <- as.double(ages)
+  factors <- as.double(factors)
+  rust_result(pricing_pattern_at(ages, factors, double()))
+  structure(list(ages = ages, factors = factors), class = "development_pattern")
+}
+
+#' @rdname development_pattern
+#' @export
+development_pattern_from_history <- function(valuations, ages) {
+  r <- rust_result(pricing_development_pattern(
+    as.character(valuations$id), as.double(valuations$age), as.double(valuations$amount),
+    as.double(ages)
+  ))
+  structure(list(ages = r$ages, factors = r$factors), class = "development_pattern")
+}
+
+#' @rdname development_pattern
+#' @param pattern A `development_pattern`.
+#' @param age Ages at which to read the factor to ultimate.
+#' @export
+pattern_factor <- function(pattern, age) {
+  rust_result(pricing_pattern_at(pattern$ages, pattern$factors, as.double(age)))
 }

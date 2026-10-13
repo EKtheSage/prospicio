@@ -456,3 +456,48 @@ def test_large_loss_threshold_and_errors():
         p.burning_cost(tower, [2020], premium=[1.0, 2.0], development=[1.0])
     with pytest.raises(ValueError):
         LargeLossExperience(["a"], [2020.0, 2021.0], [1.0])
+
+
+def test_development_pattern_from_history_pairs_claims_seen_at_both_ages():
+    from prospicio.pricing import DevelopmentPattern
+
+    p = DevelopmentPattern.from_history(
+        ["a", "a", "a", "b", "b", "c", "c"],
+        [1.0, 2.0, 3.0, 1.0, 2.0, 2.0, 3.0],
+        [100.0, 180.0, 200.0, 100.0, 120.0, 500.0, 550.0],
+        ages=[1.0, 2.0, 3.0],
+    )
+    # "c" was reported at age 2: it is left out of the first link.
+    assert p.age_to_age == pytest.approx([300 / 200, 750 / 680], rel=1e-14)
+    assert p.factors[-1] == 1.0
+    assert p.at(0.5) == p.factors[0]
+    assert p.at(2.5) == pytest.approx((p.factors[1] + 1.0) / 2, rel=1e-14)
+    with pytest.raises(ValueError):
+        DevelopmentPattern([2.0, 1.0], [1.0, 1.0])
+
+
+def test_large_losses_developed_one_by_one_with_a_count_pattern():
+    from prospicio.pricing import DevelopmentPattern, LargeLossExperience
+    from prospicio.reinsurance import Layer, Tower
+
+    e = LargeLossExperience(
+        ["a", "b"], [2020.5, 2022.5], [90.0, 150.0], threshold=100.0, valuation=2024.5
+    )
+    ibner = DevelopmentPattern([2.0, 4.0], [2.0, 1.5])
+    p = e.prepare(factors=[1.0, 1.0], development=ibner)
+    d = p.to_dict()
+    assert d["development"] == [1.5, 2.0]
+    assert d["ultimate"] == [135.0, 300.0]
+    assert p.valuation == 2024.5
+    tower = Tower([Layer("x", 1000.0, 100.0)])
+    counts = DevelopmentPattern([1.0, 3.0], [1.4, 1.0])
+    b = p.burning_cost(tower, [2020, 2022], premium=[1e3, 1e3], development=counts)
+    # "a" develops above the threshold but was reported below it: out.
+    assert b.to_dict()["losses"] == [0, 1]
+    # 2022 is age 2 at mid-year: the count factor halfway, 1.2.
+    assert b.to_dict()["developed"][1][0] == pytest.approx(200.0 * 1.2, rel=1e-14)
+    assert e.prepare(factors=[1.0, 1.0], development=[1.0, 1.1]).to_dict()["ultimate"][1] == pytest.approx(165.0)
+    with pytest.raises(ValueError):
+        LargeLossExperience(["a"], [2020.5], [1.0]).prepare(factors=[1.0], development=ibner)
+    with pytest.raises(TypeError):
+        e.prepare(factors=[1.0, 1.0], development="no")

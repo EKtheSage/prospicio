@@ -6,7 +6,10 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
 use prospicio_pricing::classical::{self, Kind, Principle};
-use prospicio_pricing::experience::{Experience, LargeLoss, Prepared, Trend, YearBasis};
+use prospicio_pricing::experience::{
+    ClaimValuation, Development, DevelopmentPattern, Experience, LargeLoss, Prepared, Trend,
+    YearBasis,
+};
 use prospicio_pricing::exposure::{
     ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve,
 };
@@ -971,8 +974,11 @@ fn pricing_quote(
     ))
 }
 
-/// Large losses trended to the prospective period: by `rate` to `to`, or,
-/// with `rate` NaN, by `factors`.
+/// Large losses developed and trended to the prospective period: by `rate`
+/// to `to`, or, with `rate` NaN, by `factors`; developed by the pattern
+/// `(dev_ages, dev_factors)` at each loss's age at `valuation` (NaN for
+/// none), or by `dev_per_loss`, or not at all when both are empty.
+#[allow(clippy::too_many_arguments)]
 fn prepare_large_losses(
     ids: Vec<String>,
     accident: &[f64],
@@ -981,6 +987,10 @@ fn prepare_large_losses(
     rate: f64,
     to: f64,
     factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
 ) -> Result<Prepared> {
     if ids.len() != accident.len() || ids.len() != amount.len() {
         return Err(Error::Other(format!(
@@ -1005,14 +1015,88 @@ fn prepare_large_losses(
     } else {
         Trend::Rate { rate, to }
     };
-    Experience::new(losses)
+    let mut e = Experience::new(losses)
         .and_then(|e| e.with_threshold(threshold))
-        .and_then(|e| e.prepare(&trend))
-        .map_err(to_r)
+        .map_err(to_r)?;
+    if !valuation.is_nan() {
+        e = e.with_valuation(valuation).map_err(to_r)?;
+    }
+    let development = if !dev_ages.is_empty() {
+        Some(Development::Pattern(
+            DevelopmentPattern::new(dev_ages.to_vec(), dev_factors.to_vec()).map_err(to_r)?,
+        ))
+    } else if !dev_per_loss.is_empty() {
+        Some(Development::Factors(dev_per_loss.to_vec()))
+    } else {
+        None
+    };
+    match development {
+        Some(d) => e.prepare_developed(&trend, &d),
+        None => e.prepare(&trend),
+    }
+    .map_err(to_r)
+}
+
+/// A development pattern estimated from claim valuations:
+/// `list(ages, factors)`.
+#[extendr]
+fn pricing_development_pattern(
+    ids: Vec<String>,
+    age: &[f64],
+    amount: &[f64],
+    ages: &[f64],
+) -> Result<List> {
+    if ids.len() != age.len() || ids.len() != amount.len() {
+        return Err(Error::Other(format!(
+            "{} ids, {} ages and {} amounts",
+            ids.len(),
+            age.len(),
+            amount.len()
+        )));
+    }
+    let valuations: Vec<ClaimValuation> = ids
+        .into_iter()
+        .zip(age)
+        .zip(amount)
+        .map(|((id, &age), &amount)| ClaimValuation { id, age, amount })
+        .collect();
+    let p = DevelopmentPattern::from_history(&valuations, ages).map_err(to_r)?;
+    Ok(list!(
+        ages = p.ages().to_vec(),
+        factors = p.factors().to_vec()
+    ))
+}
+
+/// A pattern's factors to ultimate at each of `x`.
+#[extendr]
+fn pricing_pattern_at(ages: &[f64], factors: &[f64], x: &[f64]) -> Result<Vec<f64>> {
+    let p = DevelopmentPattern::new(ages.to_vec(), factors.to_vec()).map_err(to_r)?;
+    Ok(x.iter().map(|&a| p.at(a)).collect())
+}
+
+/// Each year's count IBNR factor: the count pattern at the year's average
+/// age at `valuation`.
+#[extendr]
+fn pricing_count_development(
+    ages: &[f64],
+    factors: &[f64],
+    years: &[i32],
+    valuation: f64,
+) -> Result<Vec<f64>> {
+    let p = DevelopmentPattern::new(ages.to_vec(), factors.to_vec()).map_err(to_r)?;
+    years
+        .iter()
+        .map(|&y| {
+            YearBasis::from_count_pattern(y, 1.0, &p, valuation)
+                .map(|b| b.development)
+                .map_err(to_r)
+        })
+        .collect()
 }
 
 /// The trended losses as columns, and `complete_above`.
 #[extendr]
+#[allow(clippy::too_many_arguments)]
 fn pricing_trend_large_losses(
     ids: Vec<String>,
     accident: &[f64],
@@ -1021,14 +1105,32 @@ fn pricing_trend_large_losses(
     rate: f64,
     to: f64,
     factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
 ) -> Result<List> {
-    let p = prepare_large_losses(ids, accident, amount, threshold, rate, to, factors)?;
+    let p = prepare_large_losses(
+        ids,
+        accident,
+        amount,
+        threshold,
+        rate,
+        to,
+        factors,
+        valuation,
+        dev_ages,
+        dev_factors,
+        dev_per_loss,
+    )?;
     let l = p.losses();
     Ok(list!(
         id = l.iter().map(|x| x.id.clone()).collect::<Vec<_>>(),
         year = l.iter().map(|x| x.year).collect::<Vec<_>>(),
         accident = l.iter().map(|x| x.accident).collect::<Vec<_>>(),
         amount = l.iter().map(|x| x.amount).collect::<Vec<_>>(),
+        development = l.iter().map(|x| x.development).collect::<Vec<_>>(),
+        ultimate = l.iter().map(|x| x.ultimate).collect::<Vec<_>>(),
         factor = l.iter().map(|x| x.factor).collect::<Vec<_>>(),
         trended = l.iter().map(|x| x.trended).collect::<Vec<_>>(),
         complete_above = p.complete_above()
@@ -1047,12 +1149,28 @@ fn pricing_burning_cost(
     rate: f64,
     to: f64,
     factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
     towers: List,
     years: &[i32],
     premium: &[f64],
     development: &[f64],
 ) -> Result<List> {
-    let p = prepare_large_losses(ids, accident, amount, threshold, rate, to, factors)?;
+    let p = prepare_large_losses(
+        ids,
+        accident,
+        amount,
+        threshold,
+        rate,
+        to,
+        factors,
+        valuation,
+        dev_ages,
+        dev_factors,
+        dev_per_loss,
+    )?;
     if premium.len() != years.len() || development.len() != years.len() {
         return Err(Error::Other(format!(
             "{} years, {} premiums and {} development factors",
@@ -1103,6 +1221,9 @@ extendr_module! {
     mod pricing;
     fn pricing_trend_large_losses;
     fn pricing_burning_cost;
+    fn pricing_development_pattern;
+    fn pricing_pattern_at;
+    fn pricing_count_development;
     fn pricing_quote;
     fn pricing_bounds_rust;
     fn distortion_envelope_rust;
