@@ -279,7 +279,7 @@ pub struct BivariateReport {
 /// `severity` is the joint law of one event's pair of losses; mass at 0 on
 /// an axis is an event that misses that line. The FFT buffer on each axis is
 /// the power of two at least twice the larger of the points and the
-/// severity's length (as [`fft`](crate::fft)); mass beyond it wraps around,
+/// severity's length (as [`fft`](crate::fft())); mass beyond it wraps around,
 /// and [`BivariateReport::aliasing_mass`] measures how much. Each marginal of
 /// the result is the one-dimensional compound of `N` with that axis's
 /// per-event marginal, and the cost is `O(L_A L_B log(L_A L_B))`.
