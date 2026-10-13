@@ -3758,6 +3758,93 @@ class Design:
         """
 
 @final
+class DevelopmentPattern:
+    """
+    Development factors to ultimate by age.
+    
+    ``at(age)`` interpolates linearly in age between the given ages, takes
+    the first factor at younger ages and the last at older ones. Use one to
+    develop each known large loss to ultimate (IBNER) in
+    ``LargeLossExperience.prepare``, or as a count pattern for the claims not
+    yet reported in ``PreparedLosses.burning_cost``.
+    
+    Parameters
+    ----------
+    ages : list of float
+        Strictly increasing ages, in years since the accident date.
+    factors : list of float
+        The factor to ultimate at each age.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import DevelopmentPattern
+    >>> p = DevelopmentPattern.from_history(
+    ...     ["a", "a", "b", "b"], [1.0, 2.0, 1.0, 2.0], [100.0, 150.0, 50.0, 50.0], ages=[1.0, 2.0]
+    ... )
+    >>> [round(f, 4) for f in p.factors]
+    [1.3333, 1.0]
+    >>> round(p.at(1.5), 4)
+    1.1667
+    """
+    def __new__(cls, /, ages: Sequence[float], factors: Sequence[float]) -> DevelopmentPattern: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def age_to_age(self, /) -> list[float]:
+        """
+        The age-to-age factors.
+        """
+    @property
+    def ages(self, /) -> list[float]:
+        """
+        The ages.
+        """
+    def at(self, /, age: float) -> float:
+        """
+        The factor to ultimate at ``age``.
+        
+        Parameters
+        ----------
+        age : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def factors(self, /) -> list[float]:
+        """
+        The factors to ultimate at each age.
+        """
+    @staticmethod
+    def from_history(ids: Sequence[str], age: Sequence[float], amount: Sequence[float], *, ages: Sequence[float]) -> DevelopmentPattern:
+        """
+        Estimated from each claim's valuations.
+        
+        The age-to-age factor from ``ages[k]`` to ``ages[k + 1]`` is the sum
+        of the amounts at the later age over the sum at the earlier, over the
+        claims valued at both with a positive earlier amount (a claim first
+        seen later is IBNR, not IBNER). The factor at the last age is 1. With
+        every claim valued at every age up to its latest, this is the
+        volume-weighted chain ladder on the summed triangle.
+        
+        Parameters
+        ----------
+        ids : list of str
+            The claim of each valuation.
+        age : list of float
+            The claim's age at each valuation, in years; valuations at an age
+            not in ``ages`` are ignored.
+        amount : list of float
+            The claim's amount at each valuation.
+        ages : list of float
+            The ages of the pattern.
+        
+        Returns
+        -------
+        DevelopmentPattern
+        """
+
+@final
 class DiscretizationReport:
     """
     How a distribution was discretized, and the error that introduced.
@@ -6631,10 +6718,10 @@ class LargeLossExperience:
     """
     A record of individual large losses, for experience rating.
     
-    Trend each loss to the prospective period with ``prepare``, then apply
-    each year's treaty and develop the layer totals with
-    ``PreparedLosses.burning_cost``. The steps follow Clark's *Basics of
-    Reinsurance Pricing* (CAS study note).
+    Develop each known loss to ultimate (optional) and trend it to the
+    prospective period with ``prepare``, then apply each year's treaty and
+    develop the layer totals with ``PreparedLosses.burning_cost``. The steps
+    follow Clark's *Basics of Reinsurance Pricing* (CAS study note).
     
     Parameters
     ----------
@@ -6648,6 +6735,9 @@ class LargeLossExperience:
         The reporting threshold of the record, in nominal terms. With a
         threshold, losses trended below it times the largest trend factor
         are left out, so every year is complete on the same basis.
+    valuation : float, optional
+        The date the amounts were valued at, a decimal year; needed to
+        develop the losses by a ``DevelopmentPattern`` at their ages.
     
     Examples
     --------
@@ -6663,11 +6753,12 @@ class LargeLossExperience:
     0.175
     """
     def __len__(self, /) -> int: ...
-    def __new__(cls, /, ids: Sequence[str], accident: Sequence[float], amount: Sequence[float], *, threshold: float = 0.0) -> LargeLossExperience: ...
+    def __new__(cls, /, ids: Sequence[str], accident: Sequence[float], amount: Sequence[float], *, threshold: float = 0.0, valuation: float |None = None) -> LargeLossExperience: ...
     def __repr__(self, /) -> str: ...
-    def prepare(self, /, *, rate: float |None = None, to: float |None = None, factors: Sequence[float] |None = None) -> PreparedLosses:
+    def prepare(self, /, *, rate: float |None = None, to: float |None = None, factors: Sequence[float] |None = None, development: Any |None = None) -> PreparedLosses:
         """
-        Trend every loss to the prospective period.
+        Develop every loss to ultimate, if asked, and trend it to the
+        prospective period.
         
         Pass either an annual ``rate`` with the date ``to`` (the average
         accident date of the prospective period, a decimal year), for factors
@@ -6678,6 +6769,11 @@ class LargeLossExperience:
         rate : float, optional
         to : float, optional
         factors : list of float, optional
+        development : DevelopmentPattern or list of float, optional
+            Develops each known loss to ultimate (IBNER): a pattern, read at
+            each loss's age at the valuation date, or a factor per loss.
+            Then give ``burning_cost`` only the count IBNR factors, not an
+            excess development factor that already holds IBNER.
         
         Returns
         -------
@@ -6693,6 +6789,11 @@ class LargeLossExperience:
     def threshold(self, /) -> float:
         """
         The reporting threshold.
+        """
+    @property
+    def valuation(self, /) -> float |None:
+        """
+        The valuation date, or ``None``.
         """
 
 @final
@@ -11604,7 +11705,7 @@ class PreparedLosses:
     """
     def __len__(self, /) -> int: ...
     def __repr__(self, /) -> str: ...
-    def burning_cost(self, /, towers: Any, years: Sequence[int], *, premium: Sequence[float], development: Sequence[float]) -> BurningCost:
+    def burning_cost(self, /, towers: Any, years: Sequence[int], *, premium: Sequence[float], development: Any) -> BurningCost:
         """
         The as-if loss to each layer by accident year, developed and divided
         by the premium.
@@ -11620,8 +11721,12 @@ class PreparedLosses:
             accident date.
         premium : list of float
             Each year's on-level subject premium.
-        development : list of float
-            Each year's excess development factor for the layer losses.
+        development : list of float or DevelopmentPattern
+            Each year's development factor for the layer losses: Clark's
+            excess factor, or, when the losses were developed one by one in
+            ``prepare``, the count IBNR factor only. A count
+            ``DevelopmentPattern`` is read at each year's average age at the
+            record's valuation date.
         
         Returns
         -------
@@ -11636,11 +11741,17 @@ class PreparedLosses:
     def to_dict(self, /) -> dict:
         """
         The trended losses as columns: ``id``, ``year``, ``accident``,
-        ``amount``, ``factor`` and ``trended``.
+        ``amount``, ``development``, ``ultimate``, ``factor`` and
+        ``trended``.
         
         Returns
         -------
         dict of str to list
+        """
+    @property
+    def valuation(self, /) -> float |None:
+        """
+        The record's valuation date, or ``None``.
         """
 
 @final
