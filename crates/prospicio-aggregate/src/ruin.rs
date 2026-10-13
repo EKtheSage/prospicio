@@ -16,7 +16,7 @@
 //! On a grid with step `h` the equilibrium severity is `h S(jh) / E[X]` at
 //! `jh`, with `S(jh) = P(X > jh)` and `E[X]` the grid's mean, so it sums
 //! to 1. The geometric is a negative binomial with `r = 1` and `β = 1/ρ`,
-//! compounded by [`fft`](crate::fft) with its aliasing check.
+//! compounded by [`fft`](crate::fft()) with its aliasing check.
 
 use prospicio_core::{Error, Result};
 use prospicio_prob::{Grid, NegativeBinomial};
