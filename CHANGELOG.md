@@ -13,6 +13,16 @@ under "Unreleased" until then.
   no closed form, infinite where the moment diverges) and
   `Counting::third_moment()` with `Counting::third_cumulant()`, for
   compound moments to third order (#183).
+- `aggregate`'s named counts: `EmpiricalCount::fixed`,
+  `Binomial::bernoulli` and `NegativeBinomial::geometric`; Python
+  `Count.fixed`, `Count.bernoulli`, `Count.geometric`; R `fixed_count()`,
+  `bernoulli_count()`, `geometric_count()` (#202).
+- TVaR of a grid and `tvar_threshold`, the level at which TVaR reaches the
+  VaR at `p` (`aggregate`'s `tvar_threshold`): `Grid::tvar`,
+  `Grid::tvar_threshold`, `natural::Portfolio::tvar_threshold`,
+  `risk::{var_weighted, tvar_weighted, tvar_threshold}`. Python
+  `Grid.tvar`, `Grid.tvar_threshold`, `Portfolio.tvar_threshold`; R
+  `TVaR()` on a `grid_distribution` and `tvar_threshold()` (#202).
 
 ### Aggregate and reinsurance
 
@@ -36,6 +46,48 @@ under "Unreleased" until then.
   `reins_price_df` (`TowerGrids::price`). Python
   `prospicio.reinsurance.occurrence_layer_statistics`,
   `TowerGrids.price`; R `occurrence_layer_statistics()`, `tower_price()` (#187).
+- The senior and junior priority ladder for capital, `aggregate`'s
+  `priority_epd_df` and `priority_kappa`: each unit's recovery and EPD
+  ratio from the assets when it ranks ahead of the other units, pro rata
+  or behind them, and where the shortfall falls given the total
+  (`natural::Portfolio::priority`, `priority_kappa`); exact under any
+  dependence for a portfolio built from scenarios. Python
+  `Portfolio.priority`, `Portfolio.priority_kappa`; R `priority_ladder()`,
+  `priority_kappa()` (#201).
+- Eventual ruin of the classical surplus process by the
+  Pollaczeck–Khinchine formula, `aggregate`'s `pollaczeck_khinchine` and
+  `eventual_ruin`: `ψ(u)` on the severity's grid, the capital for a ruin
+  probability, and the Lundberg exponent, with the severity capped, in
+  excess or stopped (`prospicio_aggregate::ruin`). Python
+  `prospicio.aggregate.eventual_ruin`; R `eventual_ruin()` (#201).
+- Layer loss picks, `aggregate`'s `Aggregate.picks`: a severity grid
+  reshaped so that its expected loss to each layer of a tower is a pick,
+  rescaling the survival function within each layer and keeping the tail
+  (`prospicio_aggregate::picks::layer_loss_picks`). Infeasible picks are
+  an error. Python `prospicio.aggregate.layer_loss_picks`; R
+  `layer_loss_picks()` (#201).
+- Pricing bounds for other risks, `aggregate`'s `PricingBounds` and
+  `Bounds`: the range of a risk's price over every distortion that prices
+  a reference risk at a premium, with the BiTVaRs attaining it, and the
+  envelope of those distortions, both exact
+  (`prospicio_pricing::bounds`). Python `prospicio.pricing.PricingBounds`,
+  `distortion_envelope`; R `pricing_bounds()`, `distortion_envelope()` (#201).
+- The total cession of a stage with several layers on the grid,
+  `TowerGrids::stage_ceded`, priced in `TowerPrice::stages`; its statistics
+  (`aggregate`'s `Ceded` column), `occurrence_cession_statistics`; and an
+  aggregate cover's statistics on any annual grid,
+  `aggregate_layer_statistics`. Python `TowerGrids.stage_ceded`,
+  `TowerPrice.stages`, `prospicio.reinsurance.occurrence_cession_statistics`,
+  `aggregate_layer_statistics`; R `tower_on_grid()`'s `stage_ceded`,
+  `tower_price()`'s `stage_<k>` rows, `occurrence_cession_statistics()`,
+  `aggregate_layer_statistics()` (#201).
+- Each unit priced alone against the book priced together,
+  `aggregate`'s `Portfolio.price_stand_alone`
+  (`natural::Portfolio::price_stand_alone`), and Denuit et al.'s (2025)
+  comonotonic allocation, `make_comonotonic_allocations`
+  (`natural::Portfolio::comonotonic_kappa`). Python
+  `Portfolio.price_stand_alone` (`StandAlone`), `Portfolio.comonotonic_kappa`;
+  R `price_stand_alone()`, `comonotonic_allocation()` (#202).
 
 ### Examples
 

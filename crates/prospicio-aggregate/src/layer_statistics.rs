@@ -14,6 +14,11 @@
 //! - the layer severity given a loss to the layer;
 //! - the annual ceded loss at the share ([`crate::moments`]), and the loss
 //!   on line, its mean over the placed limit `share × l`.
+//!
+//! [`occurrence_cession_statistics`] gives the same for the total cession
+//! of several layers (`aggregate`'s `Ceded` column), and
+//! [`aggregate_layer_statistics`] for an aggregate cover, a layer of the
+//! annual total such as a stop loss.
 
 use prospicio_core::{Error, Result};
 use prospicio_prob::{Counting, Distribution, Grid, Severity};
@@ -88,27 +93,7 @@ pub fn occurrence_layer_statistics<N: Counting + ?Sized>(
     limit: f64,
     attachment: f64,
 ) -> Result<LayerStatistics> {
-    if !(share > 0.0 && share <= 1.0) {
-        return Err(Error::InvalidParameter {
-            name: "share",
-            value: share,
-            reason: "must be in (0, 1]",
-        });
-    }
-    if limit.is_nan() || limit <= 0.0 {
-        return Err(Error::InvalidParameter {
-            name: "limit",
-            value: limit,
-            reason: "must be positive",
-        });
-    }
-    if !(attachment.is_finite() && attachment >= 0.0) {
-        return Err(Error::InvalidParameter {
-            name: "attachment",
-            value: attachment,
-            reason: "must be finite and not negative",
-        });
-    }
+    check_layer(share, limit, attachment)?;
     // Grid points are multiples of the step: compare within a sliver of
     // it, so a boundary on a point is not missed to rounding.
     let eps = 1e-9 * severity.step();
@@ -173,6 +158,208 @@ pub fn occurrence_layer_statistics<N: Counting + ?Sized>(
         },
         count,
         severity: severity_given_loss,
+        aggregate,
+    })
+}
+
+/// `Σ x_jᵏ p_j` of `f(x)` over a grid's points, for `k = 1, 2, 3`: exact for
+/// the grid, with no mapping onto it.
+fn raw_moments(grid: &Grid, f: impl Fn(f64) -> f64) -> (f64, f64, f64) {
+    grid.probs()
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| **p > 0.0)
+        .fold((0.0, 0.0, 0.0), |(a, b, c), (j, &p)| {
+            let y = f(grid.x(j));
+            (a + p * y, b + p * y * y, c + p * y * y * y)
+        })
+}
+
+/// A compound sum's cumulants from the count's and the severity's raw
+/// moments.
+fn compound_from_raw<N: Counting + ?Sized>(
+    frequency: &N,
+    (m1, m2, m3): (f64, f64, f64),
+) -> CompoundMoments {
+    let x = from_raw(m1, m2, m3);
+    let (n1, vn, k3n) = (
+        frequency.mean(),
+        frequency.variance(),
+        frequency.third_cumulant(),
+    );
+    CompoundMoments {
+        mean: n1 * m1,
+        variance: n1 * x.variance + vn * m1 * m1,
+        third_cumulant: n1 * x.third_cumulant + 3.0 * vn * m1 * x.variance + k3n * m1 * m1 * m1,
+    }
+}
+
+fn check_layer(share: f64, limit: f64, attachment: f64) -> Result<()> {
+    if !(share > 0.0 && share <= 1.0) {
+        return Err(Error::InvalidParameter {
+            name: "share",
+            value: share,
+            reason: "must be in (0, 1]",
+        });
+    }
+    if limit.is_nan() || limit <= 0.0 {
+        return Err(Error::InvalidParameter {
+            name: "limit",
+            value: limit,
+            reason: "must be positive",
+        });
+    }
+    if !(attachment.is_finite() && attachment >= 0.0) {
+        return Err(Error::InvalidParameter {
+            name: "attachment",
+            value: attachment,
+            reason: "must be finite and not negative",
+        });
+    }
+    Ok(())
+}
+
+/// The total cession of several per-occurrence layers; see
+/// [`occurrence_cession_statistics`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CessionStatistics {
+    /// `P(X > a)` at the lowest attachment, per claim.
+    pub pr_attach: f64,
+    /// The chance of a loss to the cession in the year.
+    pub pr_loss: f64,
+    /// The annual ceded mean over the placed limits, `Σ share × limit`; 0
+    /// when a layer is unlimited.
+    pub loss_on_line: f64,
+    /// The ceded loss of a claim, every claim counted (as `aggregate`, with
+    /// the ground-up claim count).
+    pub severity: CompoundMoments,
+    /// The annual ceded loss.
+    pub aggregate: CompoundMoments,
+}
+
+/// The statistics of the total cession of the per-occurrence layers
+/// `(share, limit, attachment)`, side by side on `severity`'s grid with
+/// `frequency` claims a year: `aggregate`'s `Ceded` column of
+/// `reins_stats_df`. A claim cedes `Σ share × min(max(x − a, 0), l)`; its
+/// moments are taken at the grid's points, so they are exact for the grid
+/// (no splitting of shared losses).
+///
+/// ```
+/// use prospicio_aggregate::layer_statistics::occurrence_cession_statistics;
+/// use prospicio_prob::{Grid, Poisson};
+///
+/// let sev = Grid::new(1.0, vec![0.0, 0.4, 0.3, 0.2, 0.1]).unwrap();
+/// let n = Poisson::new(3.0).unwrap();
+/// // 1 xs 1 and 2 xs 2: together all of each claim above 1.
+/// let c = occurrence_cession_statistics(&n, &sev, &[(1.0, 1.0, 1.0), (1.0, 2.0, 2.0)]).unwrap();
+/// assert!((c.severity.mean - (0.3 * 1.0 + 0.2 * 2.0 + 0.1 * 3.0)).abs() < 1e-15);
+/// assert!((c.aggregate.mean - 3.0).abs() < 1e-12);
+/// ```
+pub fn occurrence_cession_statistics<N: Counting + ?Sized>(
+    frequency: &N,
+    severity: &Grid,
+    layers: &[(f64, f64, f64)],
+) -> Result<CessionStatistics> {
+    if layers.is_empty() {
+        return Err(Error::Data("give at least one layer".into()));
+    }
+    for &(share, limit, attachment) in layers {
+        check_layer(share, limit, attachment)?;
+    }
+    let lowest = layers.iter().map(|l| l.2).fold(f64::INFINITY, f64::min);
+    let eps = 1e-9 * severity.step();
+    let pr_attach: f64 = severity
+        .probs()
+        .iter()
+        .enumerate()
+        .filter(|&(j, _)| severity.x(j) > lowest + eps)
+        .map(|(_, p)| p)
+        .sum();
+    let ceded = |x: f64| -> f64 {
+        layers
+            .iter()
+            .map(|&(share, limit, a)| share * (x - a).clamp(0.0, limit))
+            .sum()
+    };
+    let raw = raw_moments(severity, ceded);
+    let aggregate = compound_from_raw(frequency, raw);
+    let placed: f64 = layers.iter().map(|l| l.0 * l.1).sum();
+    Ok(CessionStatistics {
+        pr_attach,
+        pr_loss: occurrence_exceedance(frequency, severity, lowest),
+        loss_on_line: if placed.is_finite() {
+            aggregate.mean / placed
+        } else {
+            0.0
+        },
+        severity: from_raw(raw.0, raw.1, raw.2),
+        aggregate,
+    })
+}
+
+/// An aggregate cover's statistics; see [`aggregate_layer_statistics`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AggregateLayerStatistics {
+    pub share: f64,
+    pub limit: f64,
+    pub attachment: f64,
+    /// `P(S > a)`: the chance the year reaches the cover (and so of a loss
+    /// to it).
+    pub pr_attach: f64,
+    /// `P(S ≥ a + l)`; 0 for an unlimited cover.
+    pub pr_detach: f64,
+    /// The ceded mean over `share × limit`; 0 for an unlimited cover.
+    pub loss_on_line: f64,
+    /// The annual ceded loss, at the share.
+    pub aggregate: CompoundMoments,
+}
+
+/// The statistics of `share × limit xs attachment` on the annual total `S`
+/// (`annual`, for instance a compound grid or the net of earlier layers):
+/// an aggregate cover such as a stop loss, as `aggregate`'s
+/// `reins_stats_df` for its `agg` layers. Moments are taken at the grid's
+/// points, exact for the grid.
+///
+/// ```
+/// use prospicio_aggregate::layer_statistics::aggregate_layer_statistics;
+/// use prospicio_prob::Grid;
+///
+/// let annual = Grid::new(1.0, vec![0.2, 0.3, 0.3, 0.2]).unwrap();
+/// let s = aggregate_layer_statistics(&annual, 1.0, 1.0, 1.0).unwrap();
+/// assert!((s.pr_attach - 0.5).abs() < 1e-15 && (s.pr_detach - 0.5).abs() < 1e-15);
+/// assert!((s.aggregate.mean - 0.5).abs() < 1e-15);
+/// ```
+pub fn aggregate_layer_statistics(
+    annual: &Grid,
+    share: f64,
+    limit: f64,
+    attachment: f64,
+) -> Result<AggregateLayerStatistics> {
+    check_layer(share, limit, attachment)?;
+    let eps = 1e-9 * annual.step();
+    let (mut pr_attach, mut pr_detach) = (0.0, 0.0);
+    for (j, &p) in annual.probs().iter().enumerate() {
+        let x = annual.x(j);
+        if x > attachment + eps {
+            pr_attach += p;
+        }
+        if x >= attachment + limit - eps {
+            pr_detach += p;
+        }
+    }
+    let (m1, m2, m3) = raw_moments(annual, |x| share * (x - attachment).clamp(0.0, limit));
+    let aggregate = from_raw(m1, m2, m3);
+    Ok(AggregateLayerStatistics {
+        share,
+        limit,
+        attachment,
+        pr_attach,
+        pr_detach,
+        loss_on_line: if limit.is_finite() {
+            aggregate.mean / (share * limit)
+        } else {
+            0.0
+        },
         aggregate,
     })
 }

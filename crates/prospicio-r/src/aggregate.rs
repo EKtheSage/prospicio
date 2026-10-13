@@ -444,8 +444,86 @@ fn approximation_eval_rust(
         .collect()
 }
 
+/// Eventual ruin by Pollaczeck–Khinchine: `part` is "all", "cap",
+/// "excess" or "stop_loss" with its `value`; `points` 0 for the
+/// severity's. Capitals at each `p`, NA where the grid does not reach.
+#[extendr]
+fn eventual_ruin_rust(
+    severity: Robj,
+    rho: f64,
+    points: f64,
+    part: &str,
+    value: f64,
+    p: &[f64],
+) -> Result<List> {
+    use prospicio_aggregate::SeverityPart;
+    let sev = <&Grid>::try_from(&severity)
+        .map_err(|_| Error::Other("the severity must be a grid_distribution".into()))?;
+    let part = match part {
+        "all" => SeverityPart::All,
+        "cap" => SeverityPart::AtMost(value),
+        "excess" => SeverityPart::Above(value),
+        "stop_loss" => SeverityPart::StopLoss(value),
+        other => return Err(Error::Other(format!("unknown severity part {other:?}"))),
+    };
+    let points = match whole(points, "points")? as usize {
+        0 => sev.inner.len(),
+        n => n,
+    };
+    let ruin =
+        prospicio_aggregate::pollaczeck_khinchine(&sev.inner, rho, points, part).map_err(to_r)?;
+    let h = ruin.step();
+    let na = |v: Option<f64>| v.unwrap_or(f64::NAN);
+    Ok(list!(
+        u = (0..ruin.psi().len())
+            .map(|j| j as f64 * h)
+            .collect::<Vec<f64>>(),
+        psi = ruin.psi().to_vec(),
+        capital = p.iter().map(|&p| na(ruin.capital(p))).collect::<Vec<f64>>(),
+        capital_interpolated = p
+            .iter()
+            .map(|&p| na(ruin.capital_interpolated(p)))
+            .collect::<Vec<f64>>(),
+        lundberg_exponent = na(ruin.lundberg_exponent()),
+        severity_mean = ruin.severity_mean(),
+        aliasing_error = ruin.report().aliasing_error
+    ))
+}
+
+/// Layer loss picks: `list(severity, straight_bottom, layers)`.
+#[extendr]
+fn layer_loss_picks_rust(
+    severity: Robj,
+    attachments: &[f64],
+    picks: &[f64],
+    claims: f64,
+) -> Result<List> {
+    let sev = <&Grid>::try_from(&severity)
+        .map_err(|_| Error::Other("the severity must be a grid_distribution".into()))?;
+    let p = prospicio_aggregate::layer_loss_picks(&sev.inner, attachments, picks, claims)
+        .map_err(to_r)?;
+    let col = |f: fn(&prospicio_aggregate::PickedLayer) -> f64| -> Vec<f64> {
+        p.layers.iter().map(f).collect()
+    };
+    let layers = list!(
+        bottom = col(|x| x.bottom),
+        top = col(|x| x.top),
+        before = col(|x| x.before),
+        target = col(|x| x.target),
+        weight = col(|x| x.weight),
+        above = col(|x| x.above)
+    );
+    Ok(list!(
+        severity = Grid::wrap(p.severity.clone()),
+        straight_bottom = p.straight_bottom,
+        layers = layers
+    ))
+}
+
 extendr_module! {
     mod aggregate;
+    fn layer_loss_picks_rust;
+    fn eventual_ruin_rust;
     fn compound_moments_rust;
     fn approximation_parameters_rust;
     fn approximation_eval_rust;

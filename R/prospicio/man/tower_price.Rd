@@ -13,8 +13,9 @@ tower_price(grids, distortion)
 }
 \value{
 A data frame with columns \code{view} (\code{"gross"}, each layer's name,
-\code{"net"} when the tower has a net grid), \code{loss}, \code{premium}, \code{margin} and
-\code{loss_ratio}.
+\code{"stage_<k>"} for the total cession of each stage with several layers
+that has one, \code{"net"} when the tower has a net grid), \code{loss},
+\code{premium}, \code{margin} and \code{loss_ratio}.
 }
 \description{
 Prices the gross, every layer's cession and the net of \code{\link[=tower_on_grid]{tower_on_grid()}}

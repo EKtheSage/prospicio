@@ -1089,6 +1089,18 @@ impl PyTowerGrids {
             .collect()
     }
 
+    /// Annual ceded loss of each stage, its layers together: the total
+    /// cession ``aggregate`` reports as ``Ceded``. ``None`` for a stage of
+    /// several layers one of which has annual terms.
+    #[getter]
+    fn stage_ceded(&self) -> Vec<Option<PyGrid>> {
+        self.inner
+            .stage_ceded
+            .iter()
+            .map(|g| g.clone().map(|inner| PyGrid { inner }))
+            .collect()
+    }
+
     /// Annual net loss, or ``None`` when it is not a single compound total.
     #[getter]
     fn net(&self) -> Option<PyGrid> {
@@ -1232,6 +1244,16 @@ impl PyTowerPrice {
             .ceded
             .iter()
             .map(|&inner| PyViewPrice { inner })
+            .collect()
+    }
+
+    /// Each stage's total cession, ``None`` where ``stage_ceded`` is.
+    #[getter]
+    fn stages(&self) -> Vec<Option<PyViewPrice>> {
+        self.inner
+            .stages
+            .iter()
+            .map(|v| v.map(|inner| PyViewPrice { inner }))
             .collect()
     }
 
@@ -1394,4 +1416,202 @@ pub(crate) fn occurrence_layer_statistics(
     )
     .map_err(to_py)?;
     Ok(PyLayerStatistics { inner })
+}
+
+/// The total cession of several per-occurrence layers, from
+/// ``occurrence_cession_statistics``.
+#[pyclass(name = "CessionStatistics", module = "prospicio.reinsurance", frozen)]
+pub(crate) struct PyCessionStatistics {
+    inner: prospicio_aggregate::CessionStatistics,
+}
+
+#[pymethods]
+impl PyCessionStatistics {
+    /// ``P(X > a)`` at the lowest attachment, per claim.
+    #[getter]
+    fn pr_attach(&self) -> f64 {
+        self.inner.pr_attach
+    }
+
+    /// The chance of a loss to the cession in the year.
+    #[getter]
+    fn pr_loss(&self) -> f64 {
+        self.inner.pr_loss
+    }
+
+    /// The annual ceded mean over the placed limits; 0 when one is
+    /// unlimited.
+    #[getter]
+    fn loss_on_line(&self) -> f64 {
+        self.inner.loss_on_line
+    }
+
+    /// The ceded loss of a claim, every claim counted.
+    #[getter]
+    fn severity(&self) -> PyCompoundMoments {
+        PyCompoundMoments {
+            inner: self.inner.severity,
+        }
+    }
+
+    /// The annual ceded loss.
+    #[getter]
+    fn aggregate(&self) -> PyCompoundMoments {
+        PyCompoundMoments {
+            inner: self.inner.aggregate,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CessionStatistics(pr_loss={}, loss_on_line={})",
+            self.inner.pr_loss, self.inner.loss_on_line
+        )
+    }
+}
+
+/// The statistics of the total cession of several per-occurrence layers
+/// side by side, as ``aggregate``'s ``Ceded`` column of
+/// ``reins_stats_df``: a claim cedes the sum of ``share * min(max(x - a,
+/// 0), limit)`` over the layers. Moments are exact for the grid.
+///
+/// Parameters
+/// ----------
+/// frequency : Poisson, NegativeBinomial or Binomial
+/// severity : Grid
+/// layers : list of (share, limit, attachment)
+///
+/// Returns
+/// -------
+/// CessionStatistics
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import occurrence_cession_statistics
+/// >>> from prospicio.distributions import Grid, Poisson
+/// >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+/// >>> c = occurrence_cession_statistics(Poisson(3.0), sev, [(1.0, 1.0, 1.0), (1.0, 2.0, 2.0)])
+/// >>> round(c.aggregate.mean, 12)
+/// 3.0
+#[pyfunction]
+pub(crate) fn occurrence_cession_statistics(
+    frequency: &Bound<'_, PyAny>,
+    severity: PyRef<'_, PyGrid>,
+    layers: Vec<(f64, f64, f64)>,
+) -> PyResult<PyCessionStatistics> {
+    let n = AnyCount::extract(frequency)?;
+    let inner = prospicio_aggregate::occurrence_cession_statistics(
+        n.as_counting(),
+        &severity.inner,
+        &layers,
+    )
+    .map_err(to_py)?;
+    Ok(PyCessionStatistics { inner })
+}
+
+/// An aggregate cover's statistics, from ``aggregate_layer_statistics``.
+#[pyclass(
+    name = "AggregateLayerStatistics",
+    module = "prospicio.reinsurance",
+    frozen
+)]
+pub(crate) struct PyAggregateLayerStatistics {
+    inner: prospicio_aggregate::AggregateLayerStatistics,
+}
+
+#[pymethods]
+impl PyAggregateLayerStatistics {
+    /// The placed share.
+    #[getter]
+    fn share(&self) -> f64 {
+        self.inner.share
+    }
+
+    /// The aggregate limit.
+    #[getter]
+    fn limit(&self) -> f64 {
+        self.inner.limit
+    }
+
+    /// The aggregate retention.
+    #[getter]
+    fn attachment(&self) -> f64 {
+        self.inner.attachment
+    }
+
+    /// ``P(S > attachment)``: the chance of a loss to the cover.
+    #[getter]
+    fn pr_attach(&self) -> f64 {
+        self.inner.pr_attach
+    }
+
+    /// ``P(S >= attachment + limit)``; 0 for an unlimited cover.
+    #[getter]
+    fn pr_detach(&self) -> f64 {
+        self.inner.pr_detach
+    }
+
+    /// The ceded mean over ``share * limit``; 0 for an unlimited cover.
+    #[getter]
+    fn loss_on_line(&self) -> f64 {
+        self.inner.loss_on_line
+    }
+
+    /// The annual ceded loss, at the share.
+    #[getter]
+    fn aggregate(&self) -> PyCompoundMoments {
+        PyCompoundMoments {
+            inner: self.inner.aggregate,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AggregateLayerStatistics({} x {} xs {}, pr_attach={}, loss_on_line={})",
+            self.inner.share,
+            self.inner.limit,
+            self.inner.attachment,
+            self.inner.pr_attach,
+            self.inner.loss_on_line
+        )
+    }
+}
+
+/// The statistics of ``share`` of ``limit`` xs ``attachment`` on an annual
+/// total, an aggregate cover such as a stop loss, as ``aggregate``'s
+/// ``reins_stats_df`` for its ``agg`` layers: the chances of reaching and
+/// exhausting the cover, the loss on line and the ceded loss's first three
+/// cumulants, exact for the grid.
+///
+/// Parameters
+/// ----------
+/// annual : Grid
+///     The annual total the cover sees: a compound grid, or a tower's net.
+/// share : float
+/// limit : float
+///     May be ``inf``.
+/// attachment : float
+///
+/// Returns
+/// -------
+/// AggregateLayerStatistics
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import aggregate_layer_statistics
+/// >>> from prospicio.distributions import Grid
+/// >>> s = aggregate_layer_statistics(Grid(1.0, [0.2, 0.3, 0.3, 0.2]), 1.0, 1.0, 1.0)
+/// >>> round(s.pr_attach, 12), round(s.aggregate.mean, 12)
+/// (0.5, 0.5)
+#[pyfunction]
+pub(crate) fn aggregate_layer_statistics(
+    annual: PyRef<'_, PyGrid>,
+    share: f64,
+    limit: f64,
+    attachment: f64,
+) -> PyResult<PyAggregateLayerStatistics> {
+    let inner =
+        prospicio_aggregate::aggregate_layer_statistics(&annual.inner, share, limit, attachment)
+            .map_err(to_py)?;
+    Ok(PyAggregateLayerStatistics { inner })
 }
