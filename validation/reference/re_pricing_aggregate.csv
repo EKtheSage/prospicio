@@ -1,0 +1,545 @@
+example,quantity,value,note
+tower_gross,bs,4.0,bucket size
+tower_gross,log2,16.0,"grid has 2**log2 buckets, first at 0"
+tower_gross,claim_count_mean,10.0,"Poisson, ground-up claims per year"
+tower_gross,sev_mean_exact,95.05754711937212,"exact E[min(X,5000)] per claim"
+tower_gross,gross_mean_exact,950.5754711937211,n * exact limited severity mean
+tower_gross,gross_mean,950.1608147497722,"annual aggregate, grid moments"
+tower_gross,gross_sd,1016.6156402239891,"annual aggregate, grid moments"
+tower_gross,gross_cv,1.0699406084134484,"annual aggregate, grid moments"
+tower_gross,gross_skew,2.8645309901090887,"annual aggregate, grid moments"
+tower_gross,gross_skew_central,2.8645301884829455,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_gross,gross_density_deficit,4.807265696626928e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_gross,gross_q0.5,632.0,"annual aggregate, grid moments"
+tower_gross,gross_q0.9,2024.0,"annual aggregate, grid moments"
+tower_gross,gross_q0.99,5440.0,"annual aggregate, grid moments"
+tower_gross,gross_q0.999,7412.0,"annual aggregate, grid moments"
+tower_gross,gross_mean_grid_est_m,950.1608147497722,"Aggregate.est_m, the grid mean"
+tower_gross,gross_q0.5_aggregate_q,632.0,Aggregate.q on its own density (ceded=gross here)
+tower_gross,gross_q0.9_aggregate_q,2024.0,Aggregate.q on its own density (ceded=gross here)
+tower_gross,gross_q0.99_aggregate_q,5440.0,Aggregate.q on its own density (ceded=gross here)
+tower_gross,gross_q0.999_aggregate_q,7412.0,Aggregate.q on its own density (ceded=gross here)
+tower_gross,sev_mean_grid,95.01608147386192,mean of the discretized severity
+tower_gross,layer_250x0_ceded_mean,544.1697078954364,annual ceded aggregate of this layer alone
+tower_gross,layer_250x0_ceded_sd,292.74940829885685,annual ceded aggregate of this layer alone
+tower_gross,layer_250x0_ceded_cv,0.5379744665153419,annual ceded aggregate of this layer alone
+tower_gross,layer_250x0_ceded_skew,0.7109672045941295,annual ceded aggregate of this layer alone
+tower_gross,layer_250x0_ceded_skew_central,0.7109645934657898,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_gross,layer_250x0_ceded_density_deficit,3.6637359812630166e-15,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_gross,layer_250x0_ceded_q0.5,508.0,annual ceded aggregate of this layer alone
+tower_gross,layer_250x0_ceded_q0.9,940.0,annual ceded aggregate of this layer alone
+tower_gross,layer_250x0_ceded_q0.99,1364.0,annual ceded aggregate of this layer alone
+tower_gross,layer_250x0_ceded_q0.999,1716.0,annual ceded aggregate of this layer alone
+tower_gross,layer_250x0_ceded_mean_exact,544.5887283308837,"n * (LEV(att+lim) - LEV(att)), exact"
+tower_gross,layer_250x0_pr_attach_exact,1.0,"P(X > attachment), per claim, exact"
+tower_gross,layer_250x0_expected_count,10.0,exact expected claims exceeding the attachment
+tower_gross,layer_250x0_loss_on_line,2.1766788315779038,grid mean ceded / limit
+tower_gross,layer_250x0_tower_agg_mean,544.1697078941368,reins_stats_df occ layer.k agg mean (tower build)
+tower_gross,layer_250x0_tower_agg_cv,0.5379744654477846,reins_stats_df occ layer.k agg cv
+tower_gross,layer_250x0_pr_attach_grid,0.8970270612283889,"reins_stats_df, grid probability"
+tower_gross,layer_250x0_pr_detach_grid,0.0792484907081469,"reins_stats_df, P(X >= att+lim)"
+tower_gross,layer_250x0_cond_sev_mean,60.66368913656984,mean layer loss given the claim reaches the layer (conditional)
+tower_gross,layer_250x250_ceded_mean,133.05295396690184,annual ceded aggregate of this layer alone
+tower_gross,layer_250x250_ceded_sd,170.23839767591852,annual ceded aggregate of this layer alone
+tower_gross,layer_250x250_ceded_cv,1.2794785279120289,annual ceded aggregate of this layer alone
+tower_gross,layer_250x250_ceded_skew,1.3742555306292397,annual ceded aggregate of this layer alone
+tower_gross,layer_250x250_ceded_skew_central,1.3742361282673667,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_gross,layer_250x250_ceded_density_deficit,5.329070518200751e-15,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_gross,layer_250x250_ceded_q0.5,36.0,annual ceded aggregate of this layer alone
+tower_gross,layer_250x250_ceded_q0.9,356.0,annual ceded aggregate of this layer alone
+tower_gross,layer_250x250_ceded_q0.99,692.0,annual ceded aggregate of this layer alone
+tower_gross,layer_250x250_ceded_q0.999,952.0,annual ceded aggregate of this layer alone
+tower_gross,layer_250x250_ceded_mean_exact,133.0480032919673,"n * (LEV(att+lim) - LEV(att)), exact"
+tower_gross,layer_250x250_pr_attach_exact,0.07924849070814699,"P(X > attachment), per claim, exact"
+tower_gross,layer_250x250_expected_count,0.7924849070814699,exact expected claims exceeding the attachment
+tower_gross,layer_250x250_loss_on_line,0.5322118158620194,grid mean ceded / limit
+tower_gross,layer_250x250_tower_agg_mean,133.05295396585893,reins_stats_df occ layer.k agg mean (tower build)
+tower_gross,layer_250x250_tower_agg_cv,1.2794785217862041,reins_stats_df occ layer.k agg cv
+tower_gross,layer_250x250_pr_attach_grid,0.0792484907081469,"reins_stats_df, grid probability"
+tower_gross,layer_250x250_pr_detach_grid,0.03657169043748806,"reins_stats_df, P(X >= att+lim)"
+tower_gross,layer_250x250_cond_sev_mean,167.89336020987585,mean layer loss given the claim reaches the layer (conditional)
+tower_gross,layer_500x500_ceded_mean,114.81139455084575,annual ceded aggregate of this layer alone
+tower_gross,layer_500x500_ceded_sd,220.9093379870234,annual ceded aggregate of this layer alone
+tower_gross,layer_500x500_ceded_cv,1.924106390757154,annual ceded aggregate of this layer alone
+tower_gross,layer_500x500_ceded_skew,2.092635490719666,annual ceded aggregate of this layer alone
+tower_gross,layer_500x500_ceded_skew_central,2.0926308711099937,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_gross,layer_500x500_ceded_density_deficit,2.7755575615628914e-15,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_gross,layer_500x500_ceded_q0.5,0.0,annual ceded aggregate of this layer alone
+tower_gross,layer_500x500_ceded_q0.9,500.0,annual ceded aggregate of this layer alone
+tower_gross,layer_500x500_ceded_q0.99,1000.0,annual ceded aggregate of this layer alone
+tower_gross,layer_500x500_ceded_q0.999,1324.0,annual ceded aggregate of this layer alone
+tower_gross,layer_500x500_ceded_mean_exact,114.81184645516109,"n * (LEV(att+lim) - LEV(att)), exact"
+tower_gross,layer_500x500_pr_attach_exact,0.036394178522067056,"P(X > attachment), per claim, exact"
+tower_gross,layer_500x500_expected_count,0.36394178522067056,exact expected claims exceeding the attachment
+tower_gross,layer_500x500_loss_on_line,0.2296227891002363,grid mean ceded / limit
+tower_gross,layer_500x500_tower_agg_mean,114.81139454896054,reins_stats_df occ layer.k agg mean (tower build)
+tower_gross,layer_500x500_tower_agg_cv,1.9241063807076133,reins_stats_df occ layer.k agg cv
+tower_gross,layer_500x500_pr_attach_grid,0.03621807680299909,"reins_stats_df, grid probability"
+tower_gross,layer_500x500_pr_detach_grid,0.014738150539997283,"reins_stats_df, P(X >= att+lim)"
+tower_gross,layer_500x500_cond_sev_mean,317.0002514894533,mean layer loss given the claim reaches the layer (conditional)
+tower_gross,layer_1000x1000_ceded_mean,87.0917547790872,annual ceded aggregate of this layer alone
+tower_gross,layer_1000x1000_ceded_sd,268.6319418595131,annual ceded aggregate of this layer alone
+tower_gross,layer_1000x1000_ceded_cv,3.084470424794082,annual ceded aggregate of this layer alone
+tower_gross,layer_1000x1000_ceded_skew,3.3987032708521716,annual ceded aggregate of this layer alone
+tower_gross,layer_1000x1000_ceded_skew_central,3.3986889167767633,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_gross,layer_1000x1000_ceded_density_deficit,1.554312234475219e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_gross,layer_1000x1000_ceded_q0.5,0.0,annual ceded aggregate of this layer alone
+tower_gross,layer_1000x1000_ceded_q0.9,264.0,annual ceded aggregate of this layer alone
+tower_gross,layer_1000x1000_ceded_q0.99,1000.0,annual ceded aggregate of this layer alone
+tower_gross,layer_1000x1000_ceded_q0.999,2000.0,annual ceded aggregate of this layer alone
+tower_gross,layer_1000x1000_ceded_mean_exact,87.09186455508487,"n * (LEV(att+lim) - LEV(att)), exact"
+tower_gross,layer_1000x1000_pr_attach_exact,0.014696828462711364,"P(X > attachment), per claim, exact"
+tower_gross,layer_1000x1000_expected_count,0.14696828462711364,exact expected claims exceeding the attachment
+tower_gross,layer_1000x1000_loss_on_line,0.0870917547750126,grid mean ceded / limit
+tower_gross,layer_1000x1000_tower_agg_mean,87.09175477550652,reins_stats_df occ layer.k agg mean (tower build)
+tower_gross,layer_1000x1000_tower_agg_cv,3.0844704044011544,reins_stats_df occ layer.k agg cv
+tower_gross,layer_1000x1000_pr_attach_grid,0.014655688356874974,"reins_stats_df, grid probability"
+tower_gross,layer_1000x1000_pr_detach_grid,0.005209219077301911,"reins_stats_df, P(X >= att+lim)"
+tower_gross,layer_1000x1000_cond_sev_mean,594.2522292668069,mean layer loss given the claim reaches the layer (conditional)
+tower_gross,layer_3000x2000_ceded_mean,71.03500356498911,annual ceded aggregate of this layer alone
+tower_gross,layer_3000x2000_ceded_sd,397.7498239946482,annual ceded aggregate of this layer alone
+tower_gross,layer_3000x2000_ceded_cv,5.599349673161506,annual ceded aggregate of this layer alone
+tower_gross,layer_3000x2000_ceded_skew,6.535322097802995,annual ceded aggregate of this layer alone
+tower_gross,layer_3000x2000_ceded_skew_central,6.535308833032932,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_gross,layer_3000x2000_ceded_density_deficit,4.707345624410664e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_gross,layer_3000x2000_ceded_q0.5,0.0,annual ceded aggregate of this layer alone
+tower_gross,layer_3000x2000_ceded_q0.9,0.0,annual ceded aggregate of this layer alone
+tower_gross,layer_3000x2000_ceded_q0.99,3000.0,annual ceded aggregate of this layer alone
+tower_gross,layer_3000x2000_ceded_q0.999,3000.0,annual ceded aggregate of this layer alone
+tower_gross,layer_3000x2000_ceded_mean_exact,71.0350285606242,"n * (LEV(att+lim) - LEV(att)), exact"
+tower_gross,layer_3000x2000_pr_attach_exact,0.005200912234448296,"P(X > attachment), per claim, exact"
+tower_gross,layer_3000x2000_expected_count,0.05200912234448296,exact expected claims exceeding the attachment
+tower_gross,layer_3000x2000_loss_on_line,0.02367833451754969,grid mean ceded / limit
+tower_gross,layer_3000x2000_tower_agg_mean,71.03500355513356,reins_stats_df occ layer.k agg mean (tower build)
+tower_gross,layer_3000x2000_tower_agg_cv,5.599349625442248,reins_stats_df occ layer.k agg cv
+tower_gross,layer_3000x2000_pr_attach_grid,0.005192625465490237,"reins_stats_df, grid probability"
+tower_gross,layer_3000x2000_pr_detach_grid,0.0010717632274309706,"reins_stats_df, P(X >= att+lim)"
+tower_gross,layer_3000x2000_cond_sev_mean,1367.9978274077223,mean layer loss given the claim reaches the layer (conditional)
+tower_gross,tower_ceded_total_mean,950.1608147497722,whole tower ceded (equals gross: tower covers 0 to 5000)
+tower_gross,tower_ceded_total_sd,1016.6156402239891,whole tower ceded (equals gross: tower covers 0 to 5000)
+tower_gross,tower_ceded_total_cv,1.0699406084134484,whole tower ceded (equals gross: tower covers 0 to 5000)
+tower_gross,tower_ceded_total_skew,2.8645309901090887,whole tower ceded (equals gross: tower covers 0 to 5000)
+tower_gross,tower_ceded_total_skew_central,2.8645301884829455,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_gross,tower_ceded_total_density_deficit,4.807265696626928e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_gross,tower_ceded_total_q0.5,632.0,whole tower ceded (equals gross: tower covers 0 to 5000)
+tower_gross,tower_ceded_total_q0.9,2024.0,whole tower ceded (equals gross: tower covers 0 to 5000)
+tower_gross,tower_ceded_total_q0.99,5440.0,whole tower ceded (equals gross: tower covers 0 to 5000)
+tower_gross,tower_ceded_total_q0.999,7412.0,whole tower ceded (equals gross: tower covers 0 to 5000)
+tower_program,bs,4.0,bucket size
+tower_program,log2,16.0,"grid has 2**log2 buckets, first at 0"
+tower_program,gross_mean,950.1608147497722,annual aggregate before the program
+tower_program,gross_sd,1016.6156402239891,annual aggregate before the program
+tower_program,gross_cv,1.0699406084134484,annual aggregate before the program
+tower_program,gross_skew,2.8645309901090887,annual aggregate before the program
+tower_program,gross_skew_central,2.8645301884829455,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_program,gross_density_deficit,4.807265696626928e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_program,gross_q0.5,632.0,annual aggregate before the program
+tower_program,gross_q0.9,2024.0,annual aggregate before the program
+tower_program,gross_q0.99,5440.0,annual aggregate before the program
+tower_program,gross_q0.999,7412.0,annual aggregate before the program
+tower_program,ceded_mean,201.90314932856936,annual aggregate ceded to 500x500 + 1000x1000
+tower_program,ceded_sd,456.13135194487796,annual aggregate ceded to 500x500 + 1000x1000
+tower_program,ceded_cv,2.2591591734044103,annual aggregate ceded to 500x500 + 1000x1000
+tower_program,ceded_skew,2.7608644186845726,annual aggregate ceded to 500x500 + 1000x1000
+tower_program,ceded_skew_central,2.760861913784562,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_program,ceded_density_deficit,1.3322676295501878e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_program,ceded_q0.5,0.0,annual aggregate ceded to 500x500 + 1000x1000
+tower_program,ceded_q0.9,816.0,annual aggregate ceded to 500x500 + 1000x1000
+tower_program,ceded_q0.99,1824.0,annual aggregate ceded to 500x500 + 1000x1000
+tower_program,ceded_q0.999,3000.0,annual aggregate ceded to 500x500 + 1000x1000
+tower_program,net_mean,748.257665422908,annual aggregate retained
+tower_program,net_sd,640.6585596877549,annual aggregate retained
+tower_program,net_cv,0.8562004631461555,annual aggregate retained
+tower_program,net_skew,2.940131706716848,annual aggregate retained
+tower_program,net_skew_central,2.9401290437467225,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_program,net_density_deficit,3.963496197911809e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_program,net_q0.5,616.0,annual aggregate retained
+tower_program,net_q0.9,1360.0,annual aggregate retained
+tower_program,net_q0.99,3836.0,annual aggregate retained
+tower_program,net_q0.999,4948.0,annual aggregate retained
+tower_program,gross_mean_exact,950.5754711937211,
+tower_program,ceded_mean_exact,201.90371101024596,n * sum of layer exact LEV differences
+tower_program,net_mean_exact,748.6717601834752,
+tower_program,net_sev_mean,74.82576654136345,"net severity per claim, grid"
+tower_program,ceded_sev_mean_unconditional,20.190371101024596,exact ceded severity per ground-up claim
+tower_program,net_est_m,748.257665422908,Aggregate.est_m of the net view (the object's own density)
+tower_program,layer_500x500_ceded_mean,114.81139455084575,
+tower_program,layer_500x500_ceded_sd,220.9093379870234,
+tower_program,layer_500x500_ceded_cv,1.924106390757154,
+tower_program,layer_500x500_ceded_skew,2.092635490719666,
+tower_program,layer_500x500_ceded_skew_central,2.0926308711099937,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_program,layer_500x500_ceded_density_deficit,2.7755575615628914e-15,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_program,layer_500x500_ceded_q0.5,0.0,
+tower_program,layer_500x500_ceded_q0.9,500.0,
+tower_program,layer_500x500_ceded_q0.99,1000.0,
+tower_program,layer_500x500_ceded_q0.999,1324.0,
+tower_program,layer_1000x1000_ceded_mean,87.0917547790872,
+tower_program,layer_1000x1000_ceded_sd,268.6319418595131,
+tower_program,layer_1000x1000_ceded_cv,3.084470424794082,
+tower_program,layer_1000x1000_ceded_skew,3.3987032708521716,
+tower_program,layer_1000x1000_ceded_skew_central,3.3986889167767633,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_program,layer_1000x1000_ceded_density_deficit,1.554312234475219e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_program,layer_1000x1000_ceded_q0.5,0.0,
+tower_program,layer_1000x1000_ceded_q0.9,264.0,
+tower_program,layer_1000x1000_ceded_q0.99,1000.0,
+tower_program,layer_1000x1000_ceded_q0.999,2000.0,
+tower_program,share80_1000x1000_ceded_mean,69.67340382299915,80% share of 1000 xs 1000; share ceded losses land off-grid and are re-bucketed linearly
+tower_program,share80_1000x1000_ceded_sd,214.9061192757463,80% share of 1000 xs 1000; share ceded losses land off-grid and are re-bucketed linearly
+tower_program,share80_1000x1000_ceded_cv,3.084478545381558,80% share of 1000 xs 1000; share ceded losses land off-grid and are re-bucketed linearly
+tower_program,share80_1000x1000_ceded_skew,3.398704252868637,80% share of 1000 xs 1000; share ceded losses land off-grid and are re-bucketed linearly
+tower_program,share80_1000x1000_ceded_skew_central,3.3986838017416217,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+tower_program,share80_1000x1000_ceded_density_deficit,1.1324274851176597e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+tower_program,share80_1000x1000_ceded_q0.5,0.0,80% share of 1000 xs 1000; share ceded losses land off-grid and are re-bucketed linearly
+tower_program,share80_1000x1000_ceded_q0.9,212.0,80% share of 1000 xs 1000; share ceded losses land off-grid and are re-bucketed linearly
+tower_program,share80_1000x1000_ceded_q0.99,800.0,80% share of 1000 xs 1000; share ceded losses land off-grid and are re-bucketed linearly
+tower_program,share80_1000x1000_ceded_q0.999,1600.0,80% share of 1000 xs 1000; share ceded losses land off-grid and are re-bucketed linearly
+tower_program,share80_1000x1000_ceded_mean_exact,69.6734916440679,
+tower_program,layer_500x500_program_agg_mean,114.81139454896054,
+tower_program,layer_500x500_program_agg_cv,1.9241063807076133,
+tower_program,layer_1000x1000_program_agg_mean,87.09175477550652,
+tower_program,layer_1000x1000_program_agg_cv,3.0844704044011544,
+agg_limit_reinst,bs,0.125,bucket size
+agg_limit_reinst,log2,16.0,"grid has 2**log2 buckets, first at 0"
+agg_limit_reinst,claim_count_mean,2.8948528507973292,"expected claims per year, all three classes"
+agg_limit_reinst,class1_expected_count,0.7370107416691215,BN2: expected claims of class 1
+agg_limit_reinst,class2_expected_count,0.9236208503054143,BN2: expected claims of class 2
+agg_limit_reinst,class3_expected_count,1.2342212588227934,BN2: expected claims of class 3
+agg_limit_reinst,gross_mean_exact,899.9999999999999,stats_df mixed (theoretical) mean
+agg_limit_reinst,gross_cv_exact,0.7696937988544645,stats_df mixed (theoretical) cv
+agg_limit_reinst,gross_mean,899.9999924161247,"layer 700 xs 300 of the single-parameter Pareto, all three classes"
+agg_limit_reinst,gross_sd,692.7244199303005,"layer 700 xs 300 of the single-parameter Pareto, all three classes"
+agg_limit_reinst,gross_cv,0.7696938064084027,"layer 700 xs 300 of the single-parameter Pareto, all three classes"
+agg_limit_reinst,gross_skew,0.9020688890034504,"layer 700 xs 300 of the single-parameter Pareto, all three classes"
+agg_limit_reinst,gross_skew_central,0.9020683346458149,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+agg_limit_reinst,gross_density_deficit,5.650845347204836e-10,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+agg_limit_reinst,gross_q0.5,785.75,"layer 700 xs 300 of the single-parameter Pareto, all three classes"
+agg_limit_reinst,gross_q0.9,1843.0,"layer 700 xs 300 of the single-parameter Pareto, all three classes"
+agg_limit_reinst,gross_q0.99,2917.125,"layer 700 xs 300 of the single-parameter Pareto, all three classes"
+agg_limit_reinst,gross_q0.999,3816.25,"layer 700 xs 300 of the single-parameter Pareto, all three classes"
+agg_limit_reinst,gross_mean_grid_est_m,899.9999924161247,
+agg_limit_reinst,agglimit2800_ceded_mean,894.68068104393,recovery under a 2800 annual aggregate limit
+agg_limit_reinst,agglimit2800_ceded_sd,674.9458413306265,recovery under a 2800 annual aggregate limit
+agg_limit_reinst,agglimit2800_ceded_cv,0.7543985867036798,recovery under a 2800 annual aggregate limit
+agg_limit_reinst,agglimit2800_ceded_skew,0.7214292379967734,recovery under a 2800 annual aggregate limit
+agg_limit_reinst,agglimit2800_ceded_skew_central,0.7214286158909755,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+agg_limit_reinst,agglimit2800_ceded_density_deficit,5.650845347204836e-10,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+agg_limit_reinst,agglimit2800_ceded_q0.5,785.75,recovery under a 2800 annual aggregate limit
+agg_limit_reinst,agglimit2800_ceded_q0.9,1843.0,recovery under a 2800 annual aggregate limit
+agg_limit_reinst,agglimit2800_ceded_q0.99,2800.0,recovery under a 2800 annual aggregate limit
+agg_limit_reinst,agglimit2800_ceded_q0.999,2800.0,recovery under a 2800 annual aggregate limit
+agg_limit_reinst,agglimit2800_ceded_est_m,894.68068104393,
+agg_limit_reinst,agglimit2800_pr_hit,0.01370060057503681,"P(aggregate loss >= 2800), exhausts the limit"
+agg_limit_reinst,agglimit2800_mean_loss_beyond,5.319311372194745,"E[(X - 2800)+], the loss above the aggregate limit"
+agg_limit_reinst,reinstA_deposit,1200.0,"rates (1.0, 1.0, 1.0), limit 700, rate on line deposit/limit"
+agg_limit_reinst,reinstA_rates_sum,3.0,
+agg_limit_reinst,reinstA_premium_mean,1495.569261596848,"E[h(R)], expected reinstatement premium (currency)"
+agg_limit_reinst,reinstA_premium_sd,1069.9439429853826,
+agg_limit_reinst,reinstA_total_premium_mean,2695.5692615968483,deposit + E[h(R)]
+agg_limit_reinst,reinstA_recovery_mean,894.6806764147573,"E[min(R, 2800)] (equals the aggregate limit cession)"
+agg_limit_reinst,reinstA_max_premium,3600.0,
+agg_limit_reinst,reinstA_pr_any_reinstatement,0.9435139220104926,P(R > 0)
+agg_limit_reinst,reinstB_deposit,1200.0,"rates (0.0, 0.5, 1.0), limit 700, rate on line deposit/limit"
+agg_limit_reinst,reinstB_rates_sum,1.5,
+agg_limit_reinst,reinstB_premium_mean,371.5810236046506,"E[h(R)], expected reinstatement premium (currency)"
+agg_limit_reinst,reinstB_premium_sd,547.706218815917,
+agg_limit_reinst,reinstB_total_premium_mean,1571.5810236046507,deposit + E[h(R)]
+agg_limit_reinst,reinstB_recovery_mean,894.6806764147573,"E[min(R, 2800)] (equals the aggregate limit cession)"
+agg_limit_reinst,reinstB_max_premium,1800.0,
+agg_limit_reinst,reinstB_pr_any_reinstatement,0.9435139220104926,P(R > 0)
+stop_loss,bs,4.0,bucket size
+stop_loss,log2,16.0,"grid has 2**log2 buckets, first at 0"
+stop_loss,gross_mean,950.1608147497722,
+stop_loss,gross_sd,1016.6156402239891,
+stop_loss,gross_cv,1.0699406084134484,
+stop_loss,gross_skew,2.8645309901090887,
+stop_loss,gross_skew_central,2.8645301884829455,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss,gross_density_deficit,4.807265696626928e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss,gross_q0.5,632.0,
+stop_loss,gross_q0.9,2024.0,
+stop_loss,gross_q0.99,5440.0,
+stop_loss,gross_q0.999,7412.0,
+stop_loss,asl_250x750_ceded_mean,89.8060043731142,ceded annual aggregate stop loss layer
+stop_loss,asl_250x750_ceded_sd,114.59500763474091,ceded annual aggregate stop loss layer
+stop_loss,asl_250x750_ceded_cv,1.2760283506060086,ceded annual aggregate stop loss layer
+stop_loss,asl_250x750_ceded_skew,0.5895211323683499,ceded annual aggregate stop loss layer
+stop_loss,asl_250x750_ceded_skew_central,0.5894733551595045,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss,asl_250x750_ceded_density_deficit,3.9968028886505635e-15,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss,asl_250x750_ceded_q0.5,0.0,ceded annual aggregate stop loss layer
+stop_loss,asl_250x750_ceded_q0.9,252.0,ceded annual aggregate stop loss layer
+stop_loss,asl_250x750_ceded_q0.99,252.0,ceded annual aggregate stop loss layer
+stop_loss,asl_250x750_ceded_q0.999,252.0,ceded annual aggregate stop loss layer
+stop_loss,asl_250x750_pr_attach,0.4237867445684525,"P(gross > attachment), grid"
+stop_loss,asl_250x750_pr_exhaust,0.30365424696911425,"P(gross >= att+limit), grid"
+stop_loss,asl_250x750_loss_on_line,0.359224017488266,
+stop_loss,asl_1500x1000_ceded_mean,220.25489746293763,ceded annual aggregate stop loss layer
+stop_loss,asl_1500x1000_ceded_sd,447.6055946222345,ceded annual aggregate stop loss layer
+stop_loss,asl_1500x1000_ceded_cv,2.0322163083685947,ceded annual aggregate stop loss layer
+stop_loss,asl_1500x1000_ceded_skew,2.022367191328515,ceded annual aggregate stop loss layer
+stop_loss,asl_1500x1000_ceded_skew_central,2.022366992155848,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss,asl_1500x1000_ceded_density_deficit,9.992007221626409e-16,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss,asl_1500x1000_ceded_q0.5,0.0,ceded annual aggregate stop loss layer
+stop_loss,asl_1500x1000_ceded_q0.9,1024.0,ceded annual aggregate stop loss layer
+stop_loss,asl_1500x1000_ceded_q0.99,1500.0,ceded annual aggregate stop loss layer
+stop_loss,asl_1500x1000_ceded_q0.999,1500.0,ceded annual aggregate stop loss layer
+stop_loss,asl_1500x1000_pr_attach,0.30208795890857404,"P(gross > attachment), grid"
+stop_loss,asl_1500x1000_pr_exhaust,0.06724043838590871,"P(gross >= att+limit), grid"
+stop_loss,asl_1500x1000_loss_on_line,0.14683659830845047,
+stop_loss,asl_both_ceded_mean,310.0609018349177,250 xs 750 plus 1500 xs 1000 together
+stop_loss,asl_both_ceded_sd,532.9632332318174,250 xs 750 plus 1500 xs 1000 together
+stop_loss,asl_both_ceded_cv,1.718898545665642,250 xs 750 plus 1500 xs 1000 together
+stop_loss,asl_both_ceded_skew,1.7405735568344973,250 xs 750 plus 1500 xs 1000 together
+stop_loss,asl_both_ceded_skew_central,1.7405734782697084,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss,asl_both_ceded_density_deficit,6.661338147750939e-16,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss,asl_both_ceded_q0.5,0.0,250 xs 750 plus 1500 xs 1000 together
+stop_loss,asl_both_ceded_q0.9,1272.0,250 xs 750 plus 1500 xs 1000 together
+stop_loss,asl_both_ceded_q0.99,1752.0,250 xs 750 plus 1500 xs 1000 together
+stop_loss,asl_both_ceded_q0.999,1752.0,250 xs 750 plus 1500 xs 1000 together
+stop_loss,asl_both_net_mean,640.099912915051,gross net of both stop-loss layers
+stop_loss,asl_both_net_sd,582.7531502410548,gross net of both stop-loss layers
+stop_loss,asl_both_net_cv,0.9104096696204255,gross net of both stop-loss layers
+stop_loss,asl_both_net_skew,4.80691286885818,gross net of both stop-loss layers
+stop_loss,asl_both_net_skew_central,4.806908614573126,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss,asl_both_net_density_deficit,4.785061236134425e-14,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss,asl_both_net_q0.5,632.0,gross net of both stop-loss layers
+stop_loss,asl_both_net_q0.9,752.0,gross net of both stop-loss layers
+stop_loss,asl_both_net_q0.99,3692.0,gross net of both stop-loss layers
+stop_loss,asl_both_net_q0.999,5664.0,gross net of both stop-loss layers
+stop_loss,asl_50pct_1500x1000_ceded_mean,110.12744873151246,50% part of 1500 xs 1000
+stop_loss,asl_50pct_1500x1000_ceded_sd,223.80445063227506,50% part of 1500 xs 1000
+stop_loss,asl_50pct_1500x1000_ceded_cv,2.0322313211659324,50% part of 1500 xs 1000
+stop_loss,asl_50pct_1500x1000_ceded_skew,2.022387326135707,50% part of 1500 xs 1000
+stop_loss,asl_50pct_1500x1000_ceded_skew_central,2.0223862597852458,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss,asl_50pct_1500x1000_ceded_density_deficit,6.661338147750939e-16,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss,asl_50pct_1500x1000_ceded_q0.5,0.0,50% part of 1500 xs 1000
+stop_loss,asl_50pct_1500x1000_ceded_q0.9,512.0,50% part of 1500 xs 1000
+stop_loss,asl_50pct_1500x1000_ceded_q0.99,752.0,50% part of 1500 xs 1000
+stop_loss,asl_50pct_1500x1000_ceded_q0.999,752.0,50% part of 1500 xs 1000
+stop_loss,aad_mix_cv,0.08357551150546018,gamma mixing cv: ((1.036-1)/5.154)**.5
+stop_loss_aad,bs,0.0625,bucket size
+stop_loss_aad,log2,16.0,"grid has 2**log2 buckets, first at 0"
+stop_loss_aad,gross_mean,449.9999770476516,"subject 160 xs 40 layer, two classes, shared mixing"
+stop_loss_aad,gross_sd,237.82386785658667,"subject 160 xs 40 layer, two classes, shared mixing"
+stop_loss_aad,gross_cv,0.5284975110818793,"subject 160 xs 40 layer, two classes, shared mixing"
+stop_loss_aad,gross_skew,0.6244110109254493,"subject 160 xs 40 layer, two classes, shared mixing"
+stop_loss_aad,gross_skew_central,0.6244110100877265,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss_aad,gross_density_deficit,2.5146551507759796e-13,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss_aad,gross_q0.5,424.1875,"subject 160 xs 40 layer, two classes, shared mixing"
+stop_loss_aad,gross_q0.9,769.0,"subject 160 xs 40 layer, two classes, shared mixing"
+stop_loss_aad,gross_q0.99,1103.625,"subject 160 xs 40 layer, two classes, shared mixing"
+stop_loss_aad,gross_q0.999,1376.8125,"subject 160 xs 40 layer, two classes, shared mixing"
+stop_loss_aad,gross_mean_exact,450.00000000000006,
+stop_loss_aad,gross_cv_exact,0.528497475535639,
+stop_loss_aad,claim_count_mean,6.496587932821201,
+stop_loss_aad,class1_expected_count,5.154079987452123,BN1: expected claims of class 1
+stop_loss_aad,class2_expected_count,1.3425079453690778,BN1: expected claims of class 2
+stop_loss_aad,after_aad_mean,142.7589668494419,loss to the reinsurer after a 360 aggregate deductible
+stop_loss_aad,after_aad_sd,183.77960799749994,loss to the reinsurer after a 360 aggregate deductible
+stop_loss_aad,after_aad_cv,1.2873419586408166,loss to the reinsurer after a 360 aggregate deductible
+stop_loss_aad,after_aad_skew,1.5338444933200164,loss to the reinsurer after a 360 aggregate deductible
+stop_loss_aad,after_aad_skew_central,1.5338444911006435,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss_aad,after_aad_density_deficit,2.5157653738006047e-13,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss_aad,after_aad_q0.5,64.1875,loss to the reinsurer after a 360 aggregate deductible
+stop_loss_aad,after_aad_q0.9,409.0,loss to the reinsurer after a 360 aggregate deductible
+stop_loss_aad,after_aad_q0.99,743.625,loss to the reinsurer after a 360 aggregate deductible
+stop_loss_aad,after_aad_q0.999,1016.8125,loss to the reinsurer after a 360 aggregate deductible
+stop_loss_aad,aad_insurance_charge,0.3172421647353213,ratio of means after/before the deductible
+stop_loss_aad,aad_value,307.2410101982097,"expected loss absorbed by the deductible: E[min(X,360)]"
+stop_loss_aad,aad_value_by_hand,307.2410101982102,"E[min(X,360)] from the density"
+stop_loss_aad,poisson_gross_mean,449.9999770476743,
+stop_loss_aad,poisson_after_aad_mean,141.79947782424864,
+stop_loss_aad,poisson_after_aad_sd,181.42092140272266,
+stop_loss_aad,poisson_after_aad_cv,1.2794188256996422,
+stop_loss_aad,poisson_after_aad_skew,1.5152812643334512,
+stop_loss_aad,poisson_after_aad_skew_central,1.5152812620959788,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+stop_loss_aad,poisson_after_aad_density_deficit,2.4302782009044677e-13,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+stop_loss_aad,poisson_after_aad_q0.5,65.125,
+stop_loss_aad,poisson_after_aad_q0.9,404.8125,
+stop_loss_aad,poisson_after_aad_q0.99,732.5,
+stop_loss_aad,poisson_after_aad_q0.999,998.8125,
+variable_retro,bs,0.0625,bucket size
+variable_retro,log2,16.0,"grid has 2**log2 buckets, first at 0"
+variable_retro,ceded_loss_mean,449.9999770476743,"annual loss to 160 xs 40, Poisson"
+variable_retro,ceded_loss_sd,234.8313370840171,"annual loss to 160 xs 40, Poisson"
+variable_retro,ceded_loss_cv,0.5218474423591768,"annual loss to 160 xs 40, Poisson"
+variable_retro,ceded_loss_skew,0.6077464460238812,"annual loss to 160 xs 40, Poisson"
+variable_retro,ceded_loss_skew_central,0.6077464451812019,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+variable_retro,ceded_loss_density_deficit,2.4280577548552174e-13,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+variable_retro,ceded_loss_q0.5,425.125,"annual loss to 160 xs 40, Poisson"
+variable_retro,ceded_loss_q0.9,764.8125,"annual loss to 160 xs 40, Poisson"
+variable_retro,ceded_loss_q0.99,1092.5,"annual loss to 160 xs 40, Poisson"
+variable_retro,ceded_loss_q0.999,1358.8125,"annual loss to 160 xs 40, Poisson"
+variable_retro,class1_expected_count,5.154079987452123,"BN4 (same classes as BN1, Poisson): expected claims of class 1"
+variable_retro,class2_expected_count,1.3425079453690778,"BN4 (same classes as BN1, Poisson): expected claims of class 2"
+variable_retro,subject_premium,12000.0,
+variable_retro,lcf,1.3333333333333333,loss conversion factor 100/75
+variable_retro,min_premium,360.0,
+variable_retro,max_premium,1200.0,
+variable_retro,retro_premium_mean,624.5097300152074,"E[min(max, max(min, lcf * L))]"
+variable_retro,retro_rate_mean,0.05204247750126729,docs: erp / subject premium
+variable_retro,retro_premium_mean_via_terms,624.5097300152074,"RetroTerms(basic=0, lcm=lcf, minimum, maximum)"
+variable_retro,pr_min_binds,0.23965083389555802,
+variable_retro,pr_max_binds,0.041823745337974,
+variable_swing,basic,300.0,
+variable_swing,lcm,1.25,
+variable_swing,minimum,360.0,
+variable_swing,maximum,1200.0,
+variable_swing,share100_premium_mean,838.3193624435943,"swing premium clip(300+1.25 L, 360, 1200), share 1"
+variable_swing,share40_premium_mean,335.32774497743765,"ceded loss at the 40% placed share is 0.4 L; basic, min and max scale by 0.4, lcm does not"
+variable_swing,share40_basic_scaled,120.0,
+variable_swing,share40_minimum_scaled,144.0,
+variable_swing,share40_maximum_scaled,480.0,
+variable_swing,share100_pr_min_binds,0.018438216820916283,
+variable_swing,share100_pr_max_binds,0.12990623569576187,
+variable_pc,bs,0.25,
+variable_pc,log2,16.0,
+variable_pc,three_year_loss_mean,2699.9999107881476,"three independent years of the 700 xs 300 layer, Poisson, 100% share"
+variable_pc,three_year_loss_sd,1194.8616680543362,"three independent years of the 700 xs 300 layer, Poisson, 100% share"
+variable_pc,three_year_loss_cv,0.4425413731608414,"three independent years of the 700 xs 300 layer, Poisson, 100% share"
+variable_pc,three_year_loss_skew,0.5162046890620068,"three independent years of the 700 xs 300 layer, Poisson, 100% share"
+variable_pc,three_year_loss_skew_central,0.5162046886702245,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+variable_pc,three_year_loss_density_deficit,2.8821389719269064e-13,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+variable_pc,three_year_loss_q0.5,2595.5,"three independent years of the 700 xs 300 layer, Poisson, 100% share"
+variable_pc,three_year_loss_q0.9,4292.5,"three independent years of the 700 xs 300 layer, Poisson, 100% share"
+variable_pc,three_year_loss_q0.99,5900.25,"three independent years of the 700 xs 300 layer, Poisson, 100% share"
+variable_pc,three_year_loss_q0.999,7195.0,"three independent years of the 700 xs 300 layer, Poisson, 100% share"
+variable_pc,class1_expected_count,0.7370107416691215,"BN2 Poisson, one year: expected claims of class 1"
+variable_pc,class2_expected_count,0.9236208503054143,"BN2 Poisson, one year: expected claims of class 2"
+variable_pc,class3_expected_count,1.2342212588227934,"BN2 Poisson, one year: expected claims of class 3"
+variable_pc,one_year_mean,899.9999702639933,"single year, bs chosen by aggregate for Re:BN2p"
+variable_pc,subject_premium,18000.0,
+variable_pc,ceded_premium,4500.0,treaty rate 25% of subject premium
+variable_pc,coinsurance,0.2,reinsurer takes 80% of the layer
+variable_pc,ceded_lr_mean,0.47999998413927575,
+variable_pc,pc_rate_mean,0.08238332374217368,"docs: E[0.25 * max(0, 1 - 0.2 - LR)], per unit of ceded premium"
+variable_pc,pc_amount_mean,370.72495683978156,
+variable_pc,pc_rate_mean_via_terms,0.08238332374217368,"ProfitCommissionTerms(share=.25, allowance=.2).phi(LR)"
+variable_pc,pc_at_expected_lr,0.08000000396518107,Jensen: pc at the expected LR (0.08)
+variable_pc,pr_pc_positive,0.9227559555960738,
+variable_slide,bs,0.5,bucket size
+variable_slide,log2,16.0,"grid has 2**log2 buckets, first at 0"
+variable_slide,ceded_loss_mean,2499.9987540181114,"900 xs 100 layer on 25000 subject premium, gamma-mixed Poisson cv 0.095"
+variable_slide,ceded_loss_sd,1212.899733752495,"900 xs 100 layer on 25000 subject premium, gamma-mixed Poisson cv 0.095"
+variable_slide,ceded_loss_cv,0.48516013530129465,"900 xs 100 layer on 25000 subject premium, gamma-mixed Poisson cv 0.095"
+variable_slide,ceded_loss_skew,0.6485685090616728,"900 xs 100 layer on 25000 subject premium, gamma-mixed Poisson cv 0.095"
+variable_slide,ceded_loss_skew_central,0.6485685066374622,"central-moment skewness of the density, without xsden_to_meancvskew's deficit convention"
+variable_slide,ceded_loss_density_deficit,1.63202784619898e-13,"1 - sum(density), placed at xs[-1] + bs by xsden_to_meancvskew"
+variable_slide,ceded_loss_q0.5,2367.0,"900 xs 100 layer on 25000 subject premium, gamma-mixed Poisson cv 0.095"
+variable_slide,ceded_loss_q0.9,4128.5,"900 xs 100 layer on 25000 subject premium, gamma-mixed Poisson cv 0.095"
+variable_slide,ceded_loss_q0.99,5855.0,"900 xs 100 layer on 25000 subject premium, gamma-mixed Poisson cv 0.095"
+variable_slide,ceded_loss_q0.999,7272.5,"900 xs 100 layer on 25000 subject premium, gamma-mixed Poisson cv 0.095"
+variable_slide,claim_count_mean,11.494352029788542,
+variable_slide,gross_mean_exact,2500.0,
+variable_slide,gross_cv_exact,0.4851598634611758,
+variable_slide,ceded_premium,5000.0,25000 subject premium * 20% rate
+variable_slide,slide_commission_rate_mean,0.30342085424092174,"E[phi(LR)], anchors 40% at 35, 25% at 55, 20% at 65"
+variable_slide,slide_commission_amount_mean,1517.1042712046087,
+variable_slide,ceded_lr_mean,0.49999975080255277,
+variable_slide,slide_commission_at_expected_lr,0.28750018689808543,phi at E[LR] (Jensen)
+variable_slide,pr_lr_below_35,0.2950799878195448,
+variable_slide,pr_lr_above_65,0.24854466284242546,
+variable_slide,slide_commission_rate_mean_by_hand,0.30342085424092174,0.4 - 0.75 (.2 xs .35) - 0.5 (.1 xs .55): the slopes the docs' text states (0.75:1 and 0.5:1)
+variable_slide,slide_commission_rate_mean_docs_code,0.35742741838700975,"what the docs' make_ceder_netter([(0.25,.2,.35),(0.5,.1,.55)]) computes; slope 0.25 not 0.75, a docs inconsistency, NOT the stated terms"
+risk_pricing_gross,bs,4.0,bucket size
+risk_pricing_gross,log2,16.0,"grid has 2**log2 buckets, first at 0"
+risk_pricing_gross,coc,0.1,target cost of capital (P - L) / Q
+risk_pricing_gross,capital_p,0.99,"VaR probability fixing assets, a = q(p) (lower)"
+risk_pricing_gross,cal_F(a),0.9900149508208651,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,cal_L,941.8838990935803,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,cal_M,408.9196455369472,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,cal_P,1350.8035446305275,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,cal_Q,4089.1964553694725,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,cal_a,5440.0,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,cal_LR,0.6972767452658742,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,cal_PQ,0.33033471474739357,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,cal_ROE,0.09999999999999999,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_gross,param_ccoc,0.09999999999999999,r; calibrated so the premium equals P
+risk_pricing_gross,error_ccoc,0.0,aggregate's Newton premium error
+risk_pricing_gross,gini_p_ccoc,0.0909090909090909,
+risk_pricing_gross,param_ph,0.6986699156114922,a; calibrated so the premium equals P
+risk_pricing_gross,error_ph,4.547473508864641e-13,aggregate's Newton premium error
+risk_pricing_gross,gini_p_ph,0.17739178260541227,
+risk_pricing_gross,param_wang,0.42028567150038837,lam; calibrated so the premium equals P
+risk_pricing_gross,error_wang,8.481038094032556e-11,aggregate's Newton premium error
+risk_pricing_gross,gini_p_wang,0.23367613796250097,
+risk_pricing_gross,param_dual,1.892345120547235,b; calibrated so the premium equals P
+risk_pricing_gross,error_dual,-3.183231456205249e-11,aggregate's Newton premium error
+risk_pricing_gross,gini_p_dual,0.30851958647950084,
+risk_pricing_gross,param_tvar,0.3814116040565398,p; calibrated so the premium equals P
+risk_pricing_gross,error_tvar,4.282073859940283e-06,aggregate's Newton premium error
+risk_pricing_gross,gini_p_tvar,0.3814116040565398,
+risk_pricing_gross,price_ask_ccoc,1350.8035446303338,"Distortion.price(ser, a=5440.0); equals calibration P"
+risk_pricing_gross,price_bid_ccoc,856.2580900848792,"bid price, dual distortion"
+risk_pricing_gross,price_el_ccoc,941.8838990933671,"E[min(X,a)]"
+risk_pricing_gross,price_ask_ph,1350.8035446301521,"Distortion.price(ser, a=5440.0); equals calibration P"
+risk_pricing_gross,price_bid_ph,752.7138310694704,"bid price, dual distortion"
+risk_pricing_gross,price_el_ph,941.8838990933671,"E[min(X,a)]"
+risk_pricing_gross,price_ask_wang,1350.80354463023,"Distortion.price(ser, a=5440.0); equals calibration P"
+risk_pricing_gross,price_bid_wang,645.9928712488004,"bid price, dual distortion"
+risk_pricing_gross,price_el_wang,941.8838990933671,"E[min(X,a)]"
+risk_pricing_gross,price_ask_dual,1350.80354463013,"Distortion.price(ser, a=5440.0); equals calibration P"
+risk_pricing_gross,price_bid_dual,516.3539636194728,"bid price, dual distortion"
+risk_pricing_gross,price_el_dual,941.8838990933671,"E[min(X,a)]"
+risk_pricing_gross,price_ask_tvar,1350.8035489122628,"Distortion.price(ser, a=5440.0); equals calibration P"
+risk_pricing_gross,price_bid_tvar,417.075665194933,"bid price, dual distortion"
+risk_pricing_gross,price_el_tvar,941.8838990933671,"E[min(X,a)]"
+risk_pricing_gross,fixed_price_ask_ph0.7,1348.2879785151072,"fixed parameter, assets 5440.0"
+risk_pricing_gross,fixed_price_ask_wang0.4,1328.1938912439505,"fixed parameter, assets 5440.0"
+risk_pricing_gross,fixed_price_ask_dual1.8,1315.2517309983052,"fixed parameter, assets 5440.0"
+risk_pricing_gross,fixed_price_ask_tvar0.3,1244.5975485951408,"fixed parameter, assets 5440.0"
+risk_pricing_gross,fixed_price_ask_ccoc0.1,1350.8035446303338,"fixed parameter, assets 5440.0"
+risk_pricing_gross,unlimited_price_ask_ph,1400.8785664001614,assets = infinity (all outcomes)
+risk_pricing_gross,unlimited_price_ask_wang,1378.2249624739652,assets = infinity (all outcomes)
+risk_pricing_gross,unlimited_price_ask_dual,1366.4343877905417,assets = infinity (all outcomes)
+risk_pricing_gross,unlimited_price_ask_tvar,1364.1838769273313,assets = infinity (all outcomes)
+risk_pricing_ceded,bs,4.0,bucket size
+risk_pricing_ceded,log2,16.0,"grid has 2**log2 buckets, first at 0"
+risk_pricing_ceded,coc,0.1,target cost of capital (P - L) / Q
+risk_pricing_ceded,capital_p,0.99,"VaR probability fixing assets, a = q(p) (lower)"
+risk_pricing_ceded,cal_F(a),0.9900373165151535,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,cal_L,196.41719614061904,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,cal_M,147.96207307812554,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,cal_P,344.3792692187446,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,cal_Q,1479.6207307812554,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,cal_a,1824.0,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,cal_LR,0.5703513936428554,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,cal_PQ,0.23274834020263335,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,cal_ROE,0.1,"calibration_df: L=E[min(X,a)], M=P-L, Q=a-P"
+risk_pricing_ceded,param_ccoc,0.1,r; calibrated so the premium equals P
+risk_pricing_ceded,error_ccoc,0.0,aggregate's Newton premium error
+risk_pricing_ceded,gini_p_ccoc,0.09090909090909091,
+risk_pricing_ceded,param_ph,0.7251714554892859,a; calibrated so the premium equals P
+risk_pricing_ceded,error_ph,6.757462074347131e-07,aggregate's Newton premium error
+risk_pricing_ceded,gini_p_ph,0.15930506132375605,
+risk_pricing_ceded,param_wang,0.3881875722002715,lam; calibrated so the premium equals P
+risk_pricing_ceded,error_wang,2.5698909666971304e-10,aggregate's Newton premium error
+risk_pricing_ceded,gini_p_wang,0.21629196223383396,
+risk_pricing_ceded,param_dual,1.8856081937871283,b; calibrated so the premium equals P
+risk_pricing_ceded,error_dual,-1.7053025658242404e-13,aggregate's Newton premium error
+risk_pricing_ceded,gini_p_dual,0.30690521176571756,
+risk_pricing_ceded,param_tvar,0.42964860694403634,p; calibrated so the premium equals P
+risk_pricing_ceded,error_tvar,3.543663069649483e-07,aggregate's Newton premium error
+risk_pricing_ceded,gini_p_tvar,0.42964860694403634,
+risk_pricing_ceded,price_ask_ccoc,344.37926921872304,"Distortion.price(ser, a=1824.0); equals calibration P"
+risk_pricing_ceded,price_bid_ccoc,178.56108740054123,"bid price, dual distortion"
+risk_pricing_ceded,price_el_ccoc,196.4171961405953,"E[min(X,a)]"
+risk_pricing_ceded,price_ask_ph,344.3792698944542,"Distortion.price(ser, a=1824.0); equals calibration P"
+risk_pricing_ceded,price_bid_ph,145.8018511836414,"bid price, dual distortion"
+risk_pricing_ceded,price_el_ph,196.4171961405953,"E[min(X,a)]"
+risk_pricing_ceded,price_ask_wang,344.379269218963,"Distortion.price(ser, a=1824.0); equals calibration P"
+risk_pricing_ceded,price_bid_wang,100.47926529940013,"bid price, dual distortion"
+risk_pricing_ceded,price_el_wang,196.4171961405953,"E[min(X,a)]"
+risk_pricing_ceded,price_ask_dual,344.3792692187037,"Distortion.price(ser, a=1824.0); equals calibration P"
+risk_pricing_ceded,price_bid_dual,37.70270459091341,"bid price, dual distortion"
+risk_pricing_ceded,price_el_dual,196.4171961405953,"E[min(X,a)]"
+risk_pricing_ceded,price_ask_tvar,344.37926957306945,"Distortion.price(ser, a=1824.0); equals calibration P"
+risk_pricing_ceded,price_bid_tvar,0.0,"bid price, dual distortion"
+risk_pricing_ceded,price_el_tvar,196.4171961405953,"E[min(X,a)]"
+risk_pricing_ceded,fixed_price_ask_ph0.7,363.11082758344696,"fixed parameter, assets 1824.0"
+risk_pricing_ceded,fixed_price_ask_wang0.4,349.7401741349952,"fixed parameter, assets 1824.0"
+risk_pricing_ceded,fixed_price_ask_dual1.8,331.0103385305165,"fixed parameter, assets 1824.0"
+risk_pricing_ceded,fixed_price_ask_tvar0.3,280.59599448656473,"fixed parameter, assets 1824.0"
+risk_pricing_ceded,fixed_price_ask_ccoc0.1,344.37926921872304,"fixed parameter, assets 1824.0"
+risk_pricing_ceded,unlimited_price_ask_ph,369.8525908811636,assets = infinity (all outcomes)
+risk_pricing_ceded,unlimited_price_ask_wang,360.4498605153899,assets = infinity (all outcomes)
+risk_pricing_ceded,unlimited_price_ask_dual,354.69921011273846,assets = infinity (all outcomes)
+risk_pricing_ceded,unlimited_price_ask_tvar,353.9978192097515,assets = infinity (all outcomes)
