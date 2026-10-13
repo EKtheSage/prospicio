@@ -1,5 +1,9 @@
 # Bundle history
 
+## 2026-10-13
+
+* **Note**: from writing the six method-selection guides in `docs/guides/` (branch guides/method-selection): the guides taught nothing new for the bundle. Their code and printed numbers are run by `python/tests/test_guides.py`; no API behaviour turned up that the bundle or the design notes did not already record, and the gaps they found are filed as issues for the owning lanes.
+
 ## 2026-10-12
 
 * **Note**: from writing `docs/guides/reinsurance-price.md` (branch guides/reinsurance-price): the guide taught nothing new for the bundle. Its numbers (a 5x5 layer's loss on line, the 99% TVaR pentagon, `TowerGrids.price(Distortion.ccoc(r))` equal to (expected loss + r times the annual limit) / (1 + r), a calibrated proportional hazard distortion across three layers, the quota share commission, a neutral sliding scale and profit commission) are checked by `python/tests/test_guides.py`, not recorded as concepts.
