@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-13T01:06:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-13T01:24:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -282,6 +282,22 @@ sources:
   10 claims and a step of 1. A smaller miss is kept silently.[^picks]
 * Infeasible picks (a negative weight) only warn, and the returned
   probabilities are negative.[^picks]
+
+# Total cession and aggregate covers
+
+* With several occurrence layers `reins_price_df`'s `ceded` row and
+  `reins_stats_df`'s `Ceded` column are their total cession. The `Ceded`
+  column's `freq` is the ground-up count and its `sev` the ceded loss per
+  ground-up claim (zeros included); `pr_attach` and `pr_loss` are at the
+  lowest attachment, `lol` is over the summed limits. Its per-claim cv and
+  skewness come off the ceded severity density, 1.5e-11 and 2.6e-9 off the
+  points' moments.[^reins]
+* An aggregate cover's statistics are the `agg` block's `layer.1`:
+  `pr_attach = pr_loss = P(S > a)`, `pr_detach = P(S ≥ a + l)`, read off
+  the annual FFT density (3e-14 absolute round-off; a rare cover's skew of
+  32 is 1.4e-6 off the grid's exact moments). In DecL, `occurrence net
+  of` puts the aggregate cover on the occurrence net, `occurrence ceded to`
+  on the occurrence cession.[^reins]
 
 # Pricing bounds
 

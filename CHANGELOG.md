@@ -62,6 +62,15 @@ under "Unreleased" until then.
   envelope of those distortions, both exact
   (`prospicio_pricing::bounds`). Python `prospicio.pricing.PricingBounds`,
   `distortion_envelope`; R `pricing_bounds()`, `distortion_envelope()`.
+- The total cession of a stage with several layers on the grid,
+  `TowerGrids::stage_ceded`, priced in `TowerPrice::stages`; its statistics
+  (`aggregate`'s `Ceded` column), `occurrence_cession_statistics`; and an
+  aggregate cover's statistics on any annual grid,
+  `aggregate_layer_statistics`. Python `TowerGrids.stage_ceded`,
+  `TowerPrice.stages`, `prospicio.reinsurance.occurrence_cession_statistics`,
+  `aggregate_layer_statistics`; R `tower_on_grid()`'s `stage_ceded`,
+  `tower_price()`'s `stage_<k>` rows, `occurrence_cession_statistics()`,
+  `aggregate_layer_statistics()`.
 
 ### Reserving
 

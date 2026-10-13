@@ -86,6 +86,10 @@ reference:
       - reinsurance.ViewPrice
       - reinsurance.occurrence_layer_statistics
       - reinsurance.LayerStatistics
+      - reinsurance.occurrence_cession_statistics
+      - reinsurance.CessionStatistics
+      - reinsurance.aggregate_layer_statistics
+      - reinsurance.AggregateLayerStatistics
   - title: Models
     desc: Terms and design matrices, GLMs and GAMs, metrics, resampling and MCMC diagnostics.
     contents:

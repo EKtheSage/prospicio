@@ -3,6 +3,48 @@ from datetime import date
 from typing import Any, final
 
 @final
+class AggregateLayerStatistics:
+    """
+    An aggregate cover's statistics, from ``aggregate_layer_statistics``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aggregate(self, /) -> CompoundMoments:
+        """
+        The annual ceded loss, at the share.
+        """
+    @property
+    def attachment(self, /) -> float:
+        """
+        The aggregate retention.
+        """
+    @property
+    def limit(self, /) -> float:
+        """
+        The aggregate limit.
+        """
+    @property
+    def loss_on_line(self, /) -> float:
+        """
+        The ceded mean over ``share * limit``; 0 for an unlimited cover.
+        """
+    @property
+    def pr_attach(self, /) -> float:
+        """
+        ``P(S > attachment)``: the chance of a loss to the cover.
+        """
+    @property
+    def pr_detach(self, /) -> float:
+        """
+        ``P(S >= attachment + limit)``; 0 for an unlimited cover.
+        """
+    @property
+    def share(self, /) -> float:
+        """
+        The placed share.
+        """
+
+@final
 class Allocation:
     """
     Capital allocation of a distortion risk measure, from ``capital``.
@@ -1526,6 +1568,40 @@ class CapeCodFit:
     def ultimate(self, /) -> list[float]:
         """
         Cape Cod ultimate per origin.
+        """
+
+@final
+class CessionStatistics:
+    """
+    The total cession of several per-occurrence layers, from
+    ``occurrence_cession_statistics``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aggregate(self, /) -> CompoundMoments:
+        """
+        The annual ceded loss.
+        """
+    @property
+    def loss_on_line(self, /) -> float:
+        """
+        The annual ceded mean over the placed limits; 0 when one is
+        unlimited.
+        """
+    @property
+    def pr_attach(self, /) -> float:
+        """
+        ``P(X > a)`` at the lowest attachment, per claim.
+        """
+    @property
+    def pr_loss(self, /) -> float:
+        """
+        The chance of a loss to the cession in the year.
+        """
+    @property
+    def severity(self, /) -> CompoundMoments:
+        """
+        The ceded loss of a claim, every claim counted.
         """
 
 @final
@@ -11662,6 +11738,13 @@ class TowerGrids:
         >>> round(p.ceded[0].loss, 12), p.ceded[0].premium > p.ceded[0].loss
         (1.2, True)
         """
+    @property
+    def stage_ceded(self, /) -> list[Grid |None]:
+        """
+        Annual ceded loss of each stage, its layers together: the total
+        cession ``aggregate`` reports as ``Ceded``. ``None`` for a stage of
+        several layers one of which has annual terms.
+        """
 
 @final
 class TowerModel:
@@ -11726,6 +11809,11 @@ class TowerPrice:
     def net(self, /) -> ViewPrice |None:
         """
         The net, or ``None`` when the tower has no net grid.
+        """
+    @property
+    def stages(self, /) -> list[ViewPrice |None]:
+        """
+        Each stage's total cession, ``None`` where ``stage_ceded`` is.
         """
 
 @final
@@ -13000,6 +13088,36 @@ def actual_vs_expected(periods: Sequence[int |str], family: str, y: Sequence[flo
     (2.0, 2.0)
     """
 
+def aggregate_layer_statistics(annual: Grid, share: float, limit: float, attachment: float) -> AggregateLayerStatistics:
+    """
+    The statistics of ``share`` of ``limit`` xs ``attachment`` on an annual
+    total, an aggregate cover such as a stop loss, as ``aggregate``'s
+    ``reins_stats_df`` for its ``agg`` layers: the chances of reaching and
+    exhausting the cover, the loss on line and the ceded loss's first three
+    cumulants, exact for the grid.
+    
+    Parameters
+    ----------
+    annual : Grid
+        The annual total the cover sees: a compound grid, or a tower's net.
+    share : float
+    limit : float
+        May be ``inf``.
+    attachment : float
+    
+    Returns
+    -------
+    AggregateLayerStatistics
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import aggregate_layer_statistics
+    >>> from prospicio.distributions import Grid
+    >>> s = aggregate_layer_statistics(Grid(1.0, [0.2, 0.3, 0.3, 0.2]), 1.0, 1.0, 1.0)
+    >>> round(s.pr_attach, 12), round(s.aggregate.mean, 12)
+    (0.5, 0.5)
+    """
+
 def allocate(pd: PredictiveDistribution, distortion: Distortion) -> list[float]:
     """
     Allocates a distortion risk measure of the total to the components.
@@ -14094,6 +14212,33 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     >>> from prospicio.risk import mean_excess
     >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
     [(2.0, 1.5, 2)]
+    """
+
+def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequence[tuple[float, float, float]]) -> CessionStatistics:
+    """
+    The statistics of the total cession of several per-occurrence layers
+    side by side, as ``aggregate``'s ``Ceded`` column of
+    ``reins_stats_df``: a claim cedes the sum of ``share * min(max(x - a,
+    0), limit)`` over the layers. Moments are exact for the grid.
+    
+    Parameters
+    ----------
+    frequency : Poisson, NegativeBinomial or Binomial
+    severity : Grid
+    layers : list of (share, limit, attachment)
+    
+    Returns
+    -------
+    CessionStatistics
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import occurrence_cession_statistics
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    >>> c = occurrence_cession_statistics(Poisson(3.0), sev, [(1.0, 1.0, 1.0), (1.0, 2.0, 2.0)])
+    >>> round(c.aggregate.mean, 12)
+    3.0
     """
 
 def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:

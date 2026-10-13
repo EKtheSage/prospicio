@@ -469,7 +469,8 @@ fn compound_moments_and_approximations_match_aggregate() {
 #[test]
 fn reinsurance_statistics_and_prices_match_aggregate() {
     use prospicio_aggregate::{
-        CompoundMoments, Layer, Tower, compound_moments, occurrence_layer_statistics,
+        CompoundMoments, Layer, Tower, aggregate_layer_statistics, compound_moments,
+        occurrence_cession_statistics, occurrence_layer_statistics,
     };
     use prospicio_prob::{Distortion, Distribution, Gamma, Lognormal, Severity};
 
@@ -533,6 +534,49 @@ fn reinsurance_statistics_and_prices_match_aggregate() {
                     _ => None,
                 };
             }
+            if col == "Ceded" {
+                let layers: Vec<(f64, f64, f64)> = occ.iter().map(|l| (l[0], l[1], l[2])).collect();
+                let s = occurrence_cession_statistics(&*n, &sev, &layers).ok()?;
+                return match stat.split_once('_') {
+                    Some(("pr", "attach")) => Some(s.pr_attach),
+                    Some(("pr", "loss")) => Some(s.pr_loss),
+                    Some(("sev", m)) => pick(&s.severity, m),
+                    Some(("agg", m)) => pick(&s.aggregate, m),
+                    _ if stat == "lol" => Some(s.loss_on_line),
+                    _ => None,
+                };
+            }
+            if col == "agglayer" {
+                // The cover sees the annual loss net of the occurrence layers.
+                let (limit, retention) = text("agg")?.split_once(':')?;
+                let layers = occ
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &[share, limit, attach])| {
+                        Layer::xol(format!("occ{i}"), limit, attach).and_then(|l| l.share(share))
+                    })
+                    .collect::<prospicio_core::Result<Vec<_>>>()
+                    .ok()?;
+                let subject = Tower::new(layers)
+                    .ok()?
+                    .on_grid(&*n, &sev, 1 << 14)
+                    .ok()?
+                    .net?;
+                let s = aggregate_layer_statistics(
+                    &subject,
+                    1.0,
+                    limit.parse().ok()?,
+                    retention.parse().ok()?,
+                )
+                .ok()?;
+                return match stat.split_once('_') {
+                    Some(("pr", "attach")) => Some(s.pr_attach),
+                    Some(("pr", "detach")) => Some(s.pr_detach),
+                    Some(("agg", m)) => pick(&s.aggregate, m),
+                    _ if stat == "lol" => Some(s.loss_on_line),
+                    _ => None,
+                };
+            }
             if col == "gross" {
                 let (block, m) = stat.split_once('_')?;
                 let moments = if block == "agg" {
@@ -575,10 +619,11 @@ fn reinsurance_statistics_and_prices_match_aggregate() {
             towers.insert(params.to_string(), grids);
         }
         let grids = &towers[params];
+        // The occurrence stage's total cession, and the aggregate cover.
         let view = |name: &str| match name {
             "gross" => Some(&grids.gross),
-            "ceded_occ" => grids.ceded.first(),
-            "ceded" => grids.ceded.get(1),
+            "ceded_occ" | "stage0" => grids.stage_ceded[0].as_ref(),
+            "ceded" => grids.ceded.last(),
             "net" => grids.net.as_ref(),
             _ => None,
         };

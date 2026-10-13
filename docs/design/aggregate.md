@@ -476,9 +476,23 @@ the moments of its FFT density.
 `TowerGrids::price` prices each view on its own: `L` is the grid's mean,
 `P` its distorted expectation (`Grid::distortion`), `M = P − L`,
 `LR = L / P`. A concave distortion's prices are subadditive, so then the
-ceded and net premiums together are at least the gross. A stage with several layers has a price
-per layer; `aggregate` also prices their total cession, which needs a
-total-ceded grid (a small item below). `reins_price_df`'s capital columns
+ceded and net premiums together are at least the gross. A stage with
+several layers also has its total cession, `TowerGrids::stage_ceded`,
+which `aggregate` prices and reports as `Ceded`: without annual terms in
+the stage it is a function of each loss, `Σ share × recovery`, compounded
+once; with annual terms in a stage of several layers the layers' annual
+totals are dependent and their sum is not one compound, so it is `None`.
+`TowerPrice::stages` prices it.
+
+`occurrence_cession_statistics` gives the `Ceded` column: the chance a
+claim reaches the lowest layer and of a loss in the year, the loss on line
+over `Σ share × limit`, and the moments of the ceded loss per ground-up
+claim (every claim counted, as `aggregate`) and in the year, taken at the
+grid's points, so exact with a shared layer too (`aggregate` smears it).
+`aggregate_layer_statistics` gives an aggregate cover's (a stop loss on
+any annual grid, gross or a tower's net): `P(S > a)`, which is also the
+chance of a loss to it, `P(S ≥ a + l)`, the loss on line and the ceded
+moments. `reins_price_df`'s capital columns
 (`Q`, `a`, `ROE`) come with an asset level; `pricing.rs`'s pentagon gives
 them for any grid.
 
@@ -665,17 +679,25 @@ of 1,000 (raw moments converted).
 Layer statistics and prices by view are checked against `aggregate`
 1.0.1's `reins_stats_df`, `reins_price_df` (proportional hazard, ρ = 0.7)
 and `reins_density_df` (`validation/scripts/aggregate_reinsurance.py`,
-131 values) on three books on a step of 1 with `2^14` points: a Poisson
+198 values) on four books on a step of 1 with `2^14` points: a Poisson
 with one occurrence layer, the same with an aggregate stop-loss inuring
-(an inuring tower), and a gamma-mixed Poisson with a gamma severity, a 50%
-layer and a second layer. The grid towers match `aggregate`'s densities
+(an inuring tower), a gamma-mixed Poisson with a gamma severity, a 50%
+layer and a second layer, and a Poisson with two occurrence layers and an
+aggregate cover on their net (the total cession's statistics and price,
+and the cover's statistics). The grid towers match `aggregate`'s densities
 point by point at `1e-13` absolute; statistics read from the severity grid
 match at `1e-12`; the annual moments, which `aggregate` takes from its FFT
 density, at `1e-9` (mean), `1e-8` (cv) and `5e-7` (skewness, observed
 1.3e-7 at a skew of 18); premiums at `2e-8`, because the distortion raises
 FFT round-off of `1e-16` in the far tail to the power 0.7 (`aggregate`'s
 own two ways of forming the survival differ by as much). The 50% layer is
-compared on its means and grid probabilities only (above).
+compared on its means and grid probabilities only (above), and so is the
+total cession with it (its price at `1e-7`). The total cession's per-claim
+cv and skewness, which `aggregate` reads off its ceded severity density,
+are 1.5e-11 and 2.6e-9 off the points' moments (`1e-8`); an aggregate
+cover's chances, read off the annual FFT density, carry its round-off
+(`1e-12` absolute) and a rare cover's shape more (cv `1e-7`, skewness
+`1e-5`, observed 1.4e-6 at a skew of 32).
 
 The priority ladder is checked against `aggregate` 1.0.1's
 `priority_epd_df` and `priority_kappa`
@@ -733,11 +755,12 @@ BiTVaR: it prices `X` at `P` and `Y` at the bound, to `1e-10`.
       `prospicio_aggregate::picks`.)
    6. (Done: `Bounds` and `PricingBounds`, the rest of the 2022 pricing
       bounds, in `prospicio_pricing::bounds`.)
-   Small items to fold into these: a total-ceded grid for a stage with
-   several layers (its price and statistics, `reins_stats_df`'s `Ceded`
-   column), statistics of aggregate covers, `tvar_threshold`, a stand-alone price on
-   a grid portfolio, comonotonic allocation, named fixed, Bernoulli and
-   geometric counts, and a reinstatement premium check against `aggregate`.
+   Small items to fold into these (done: the total cession of a stage with
+   several layers, its price and statistics, `reins_stats_df`'s `Ceded`
+   column, and statistics of aggregate covers): `tvar_threshold`, a
+   stand-alone price on a grid portfolio, comonotonic allocation, named
+   fixed, Bernoulli and geometric counts, and a reinstatement premium check
+   against `aggregate`.
    Parked as large: the P&L ledger (`pnl`, which needs signed grids),
    bivariate FFT aggregates and `clash`, renewal counts with Wiener–Hopf
    ruin.

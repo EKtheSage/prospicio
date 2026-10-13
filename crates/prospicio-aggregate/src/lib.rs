@@ -28,7 +28,10 @@ pub use collective::CollectiveModel;
 pub use compound::{CompoundMethod, CompoundReport};
 pub use fft::fft;
 pub use grid_reinsurance::{TowerGrids, TowerPrice, ViewPrice};
-pub use layer_statistics::{LayerStatistics, occurrence_layer_statistics};
+pub use layer_statistics::{
+    AggregateLayerStatistics, CessionStatistics, LayerStatistics, aggregate_layer_statistics,
+    occurrence_cession_statistics, occurrence_layer_statistics,
+};
 pub use moments::{Approximation, ApproximationKind, CompoundMoments, compound_moments};
 pub use monte_carlo::{EventSet, simulate_events};
 pub use panjer::panjer;

@@ -102,6 +102,7 @@ reference:
       - tower_on_grid
       - tower_price
       - occurrence_layer_statistics
+      - occurrence_cession_statistics
   - title: Pricing
     contents:
       - collective_model
