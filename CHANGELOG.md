@@ -181,8 +181,10 @@ under "Unreleased" until then.
   origin by origin down the oldest age. Checked on group 353 incurred
   against Meyers' own `CAY.R` Stan code (transcribed, CmdStan 2.39.0),
   including the correlation of neighbouring origins' reserves, and against
-  his printed results (`docs/design/reserving-bayes.md`, PR 5). Rust only
-  for now; the Python and R bindings follow.
+  his printed results (`docs/design/reserving-bayes.md`, PR 5). In Python
+  `Meyers("cay", rho_shape=2.0)` and in R
+  `meyers(..., model = "cay", rho_shape = 2)`; `rho_shape` follows
+  `gamma_sd` in both signatures.
 
 ### Pricing
 

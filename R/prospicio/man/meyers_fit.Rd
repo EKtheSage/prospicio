@@ -3,7 +3,7 @@
 \name{meyers_fit}
 \alias{meyers_fit}
 \alias{meyers}
-\title{Meyers' CRC and CSR models}
+\title{Meyers' CRC, CSR and CAY models}
 \usage{
 meyers_fit(ptr)
 
@@ -11,12 +11,13 @@ meyers(
   triangle,
   column,
   premium,
-  model = c("crc", "csr"),
+  model = c("crc", "csr", "cay"),
   logelr_mean = -0.4,
   logelr_sd = 3.162,
   origin_sd = 3.162,
   development_sd = 3.162,
   gamma_sd = 0.05,
+  rho_shape = 2,
   chains = 4,
   tune = 1000,
   draws = 2000,
@@ -38,8 +39,8 @@ observed from the first age up to its latest.}
 value, as \code{\link[=cape_cod]{cape_cod()}} reads exposure).}
 
 \item{model}{\code{"crc"}, the correlated chain ladder without its
-correlation between origins, or \code{"csr"}, the changing settlement rate
-model.}
+correlation between origins, \code{"csr"}, the changing settlement rate
+model, or \code{"cay"}, the correlated accident year model.}
 
 \item{logelr_mean, logelr_sd}{Mean and standard deviation of the normal
 prior on \code{logelr}, the log expected loss ratio (3.162 is Meyers'
@@ -53,6 +54,10 @@ development effect \code{beta[d]}, \code{d < m}.}
 
 \item{gamma_sd}{Standard deviation of the normal prior on \code{gamma}
 (\code{"csr"} only).}
+
+\item{rho_shape}{Both shapes of the beta prior on \code{(1 - rho) / 2}
+(\code{"cay"} only); Meyers' 2 makes the prior density of \code{rho}
+proportional to \code{1 - rho^2}.}
 
 \item{chains, tune, draws}{NUTS chains, warm-up draws per chain and kept
 draws per chain; with 1,000 kept draws the late \code{sigma[d]} sometimes
@@ -81,18 +86,26 @@ triangle \code{C} with premium \code{P}, for origins \verb{w = 1..n} and ages
 \code{beta[m] = 0}) and sd \code{sigma[d]}, decreasing with age. \code{g[w]} is 1 for
 the correlated chain ladder without its correlation between origins
 (\code{"crc"}) and \code{(1 - gamma)^(w - 1)} for the changing settlement rate
-(\code{"csr"}). The priors are those of Meyers' Stan code: \code{logelr} normal
-with mean \code{logelr_mean} and sd \code{logelr_sd}, \code{alpha} and \code{beta} normal
-around 0, \code{gamma} normal around 0 with sd \code{gamma_sd}, and each step of
+(\code{"csr"}). The correlated accident year model (\code{"cay"}) keeps
+\code{g[w] = 1} and adds \code{rho} times the previous origin's residual at the
+same age, \verb{log C[w - 1, d]} less its mean, to the mean of every origin
+after the first, so neighbouring origins are correlated; Meyers fits it
+to incurred data. The priors are those of Meyers' Stan code: \code{logelr}
+normal with mean \code{logelr_mean} and sd \code{logelr_sd}, \code{alpha} and \code{beta}
+normal around 0, \code{gamma} normal around 0 with sd \code{gamma_sd},
+\code{(1 - rho) / 2} beta with both shapes \code{rho_shape}, and each step of
 \code{sigma[d]^2} uniform on \verb{(1 - exp(-1e-5), 1)}.
 }
 \details{
 The ultimate is the value at the oldest age (no tail): each posterior
 draw gives each open origin a log-normal ultimate; an origin observed at
-the oldest age keeps its value. The reserve is the ultimate less the
-latest value of the fitted column (an outstanding reserve on paid data,
-IBNR on incurred data) and can be negative. Every observed cell must be
-positive. One \code{seed} replays a fit exactly, whatever the number of
+the oldest age keeps its value; under \code{"cay"} the ultimates are drawn
+origin by origin, each from the previous origin's simulated residual.
+The reserve is the ultimate less the latest value of the fitted column
+(an outstanding reserve on paid data, IBNR on incurred data) and can be
+negative. Every observed cell must be positive, and under \code{"cay"} every
+observed cell after the first origin needs the previous origin's cell at
+the same age. One \code{seed} replays a fit exactly, whatever the number of
 threads: the chains and the simulations each take a seed derived from
 it.
 
@@ -101,9 +114,10 @@ per chain, any divergent transition) do not fail the fit: \code{meyers()}
 raises one \code{\link[=warning]{warning()}} listing them, and they stay in the fit's
 \code{diagnostics}. With the defaults, all 120 fits of a seed sweep on
 Meyers' group 353 data (paid and incurred, CRC and CSR, 30 seeds) passed
-every threshold.
+every threshold, and CAY on incurred passed at 199 of 200 seeds (one
+divergent transition in 8,000 draws at the other).
 
-Properties of the fit: \code{model} (\code{"crc"} or \code{"csr"}), \code{chain_ladder}
+Properties of the fit: \code{model} (\code{"crc"}, \code{"csr"} or \code{"cay"}), \code{chain_ladder}
 (the volume-weighted \link{chain_ladder_fit} the reserves are measured from),
 \code{origins}, \code{development}, \code{premium} (each origin's), \code{ultimates} and
 \code{reserves} (\link{predictive_distribution}s with dimension \code{origin}, one
@@ -112,20 +126,23 @@ component per origin, laid out as \code{\link[=odp_bootstrap]{odp_bootstrap()}}'
 \code{divergences} and \code{warnings}), \code{summary} (the posterior summary as
 \code{bayes_glm_model}'s; also \code{summary(fit)}) and \code{draws} (a matrix of the
 posterior draws of \code{logelr}, \code{alpha[2]}, ..., \code{beta[1]}, ..., \code{gamma}
-(CSR only), \code{sigma[1]}, ..., one row per draw, chain by chain).
-\code{\link[=bayes_loo]{bayes_loo()}} gives the PSIS-LOO of the observed cells with Meyers'
-pointwise term, the normal density of \verb{log C[w, d]}, so compare it only
-between CRC and CSR fits of the same column (Meyers 2019, Tables 6.4 and
-7.3). \code{as.data.frame()}, \code{\link[=totals_frame]{totals_frame()}}, \code{\link[=development_frame]{development_frame()}} and
+(CSR only) or \code{rho} (CAY only), \code{sigma[1]}, ..., one row per draw, chain
+by chain). \code{\link[=bayes_loo]{bayes_loo()}} gives the PSIS-LOO of the observed cells with
+Meyers' pointwise term, the normal density of \verb{log C[w, d]} (under CAY
+conditional on the previous origin's cell, as in Meyers' code), so
+compare it only between CRC, CSR and CAY fits of the same column (Meyers
+2019, Tables 6.4, 7.3 and 8.3). \code{as.data.frame()}, \code{\link[=totals_frame]{totals_frame()}}, \code{\link[=development_frame]{development_frame()}} and
 \code{\link[=segment]{segment()}} work as for \code{\link[=bayes_odp]{bayes_odp()}}, with the \code{premium}, the \code{mean} and
 \code{std_dev} of the posterior predictive reserve and the \code{ultimate_mean} and
 \code{ultimate_std_dev} of the posterior predictive ultimate.
 
 Errors: if a column is missing, the triangle has several segments or an
 origin has a gap; if a premium is missing or not positive; if a prior
-standard deviation is not positive and finite, \code{logelr_mean} is not
-finite or a sampler setting is invalid; if an observed cell is not
-positive; or if there are no more observed cells than parameters.
+standard deviation or \code{rho_shape} is not positive and finite,
+\code{logelr_mean} is not finite or a sampler setting is invalid; if an
+observed cell is not positive; if there are no more observed cells than
+parameters; or, under \code{"cay"}, if a cell lacks the previous origin's
+cell at the same age.
 }
 \examples{
 long <- data.frame(year = rep(1988:1993, 6:1),

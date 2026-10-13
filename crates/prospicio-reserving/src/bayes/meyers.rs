@@ -149,7 +149,7 @@ impl MeyersModel {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Meyers {
-    /// CRC or CSR.
+    /// CRC, CSR or CAY.
     pub model: MeyersModel,
     /// Mean of the normal prior on `logelr`, the log expected loss ratio.
     pub logelr_mean: f64,

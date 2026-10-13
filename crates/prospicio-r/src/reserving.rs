@@ -909,11 +909,11 @@ impl Triangle {
         Ok(BayesOdpFits { inner })
     }
 
-    /// Meyers' CRC or CSR model (`model`, "crc" or "csr") of a
+    /// Meyers' CRC, CSR or CAY model (`model`, "crc", "csr" or "cay") of a
     /// single-segment triangle column with the premium of each origin from
     /// the `premium` column: normal priors on `logelr` (mean `logelr_mean`,
-    /// sd `logelr_sd`), the origin and development effects and `gamma`,
-    /// NUTS with `chains`, `tune` and `draws` per chain, `target_accept`
+    /// sd `logelr_sd`), the origin and development effects and `gamma`, a
+    /// beta prior with both shapes `rho_shape` on `(1 - rho) / 2`, NUTS with `chains`, `tune` and `draws` per chain, `target_accept`
     /// and `max_depth`, and `n_sims` predictive simulations, all replayed
     /// from `seed`.
     #[allow(clippy::too_many_arguments)]
@@ -927,6 +927,7 @@ impl Triangle {
         origin_sd: f64,
         development_sd: f64,
         gamma_sd: f64,
+        rho_shape: f64,
         chains: f64,
         tune: f64,
         draws: f64,
@@ -938,9 +939,10 @@ impl Triangle {
         let model = match model {
             "crc" => MeyersModel::Crc,
             "csr" => MeyersModel::Csr,
+            "cay" => MeyersModel::Cay,
             _ => {
                 return Err(Error::Other(format!(
-                    "model must be \"crc\" or \"csr\", got \"{model}\""
+                    "model must be \"crc\", \"csr\" or \"cay\", got \"{model}\""
                 )));
             }
         };
@@ -955,6 +957,7 @@ impl Triangle {
             origin_sd,
             development_sd,
             gamma_sd,
+            rho_shape,
             sampler: BayesSampler {
                 chains: whole(chains, "chains")? as usize,
                 tune: whole(tune, "tune")? as usize,
@@ -965,8 +968,6 @@ impl Triangle {
             },
             n_sims,
             seed: whole(seed, "seed")?,
-            // CAY's prior is not exposed yet (the bindings stage).
-            ..Meyers::default()
         };
         let inner = meyers.fit(&self.inner, column, premium).map_err(to_r)?;
         Ok(MeyersFit { inner })
@@ -2374,7 +2375,7 @@ impl BayesOdpFits {
     }
 }
 
-/// Meyers' CRC or CSR model of a single-segment triangle column.
+/// Meyers' CRC, CSR or CAY model of a single-segment triangle column.
 #[extendr]
 pub(crate) struct MeyersFit {
     inner: MeyersInner,
@@ -2382,7 +2383,7 @@ pub(crate) struct MeyersFit {
 
 #[extendr]
 impl MeyersFit {
-    /// "crc" or "csr".
+    /// "crc", "csr" or "cay".
     fn model(&self) -> &'static str {
         self.inner.model().name()
     }

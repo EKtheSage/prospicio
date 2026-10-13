@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built in Rust** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built in Rust on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, and his printed results; its bindings are the next stage. The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -42,7 +42,7 @@ together, as in `reserving-v02.md` decision 7.
 | 2 | `claude/bayes-segments` | `BayesOdp::fit_segments` with `SegmentDependence` and per-segment seeds (decision 11); `TriangleModel` for `BayesOdp` in the diagonal backtest (decision 8) | PR 1 |
 | 3 | `claude/bayes-meyers` | `Meyers` with `Crc` and `Csr` on cumulative values with premium (decision 7); Meyers' group 353 data; reference from Meyers' own Stan code | PR 1 |
 | 4 | `claude/bayes-bf` | informative priors on the origin parameters: the Bayesian Bornhuetter–Ferguson (decision 9) | PR 1 |
-| 5 | `claude/bayes-cay` | `MeyersModel::Cay` (decision 7, "CAY"), Rust first, then its bindings | PR 3 |
+| 5 | `claude/bayes-cay` | `MeyersModel::Cay` (decision 7, "CAY"), in Rust, Python and R | PR 3 |
 | 6 | next | Meyers' CRC and CSR with `fit_segments` and `TriangleModel` (open decision 9) | PR 3 |
 | 7 | next | compartmental reserving, in its own design note (open decision 9) | |
 | 8 | next | the one-year view by PSIS reweighting (open decision 6) | PR 1 |
@@ -626,8 +626,8 @@ pub struct MeyersFit {
   it); `validation/tests/reserving_meyers.rs` takes about 34 s in a debug
   build, most of it the four default fits.
 
-**CAY** (PR 5, built in Rust on `claude/bayes-cay`, 2026-10-13; the
-bindings are the next stage). The model is Meyers' correlated accident
+**CAY** (PR 5, built on `claude/bayes-cay`, 2026-10-13, in Rust, Python
+and R). The model is Meyers' correlated accident
 year model (2019, sec. 8, "The Correlated Accident Year Model"), read from
 his `CAY.R` in the CAS appendix (lines 160-211 hold the Stan program,
 lines 317-328 the prediction) and checked against the monograph's
@@ -661,8 +661,8 @@ incurred, in IPI (sec. 9), which stays later.
   slot of the posterior names, and one new prior field,
   `Meyers::rho_shape` (default 2, Meyers' `Beta(2, 2)`; both shapes of a
   symmetric beta on `(1 - rho) / 2`), used only by CAY as `gamma_sd` is
-  only by CSR. The Python and R bindings fill it from the default until
-  the bindings stage exposes it.
+  only by CSR. The bindings follow: `model="cay"` and `rho_shape` next
+  to `gamma_sd` (below).
 * **Sampling.** `rho = tanh(v)` with its log Jacobian, so the prior on
   `(1 - rho) / 2` is exactly `Beta(a, a)`: `a (log logistic(2v) + log
   logistic(-2v))` in `v`. The gradient is hand-written: the residuals run
@@ -706,6 +706,21 @@ incurred, in IPI (sec. 9), which stays later.
 * **Runtime.** A default CAY fit takes 0.5 s in a release build, as CSR;
   `validation/tests/reserving_meyers_cay.rs` takes about 7 s in a debug
   build, most of it the one default fit.
+* **Bindings** (decision 13): no new type. Python `Meyers(model="cay",
+  ..., gamma_sd=0.05, rho_shape=2.0, chains=4, ...)` and R
+  `meyers(triangle, column, premium, model = c("crc", "csr", "cay"), ...,
+  gamma_sd = 0.05, rho_shape = 2, chains = 4, ...)`: `rho_shape` sits
+  after `gamma_sd`, so positional calls past `gamma_sd` change (none in
+  the repo's docs or tests). `MeyersFit` and `meyers_fit` are unchanged;
+  `model` reads `"cay"` and `rho` takes `gamma`'s slot in
+  `parameter_names`, the draws and the summary. Tests in
+  `python/tests/test_reserving_meyers.py` and
+  `R/prospicio/tests/test-reserving-meyers.R`: a default fit on group 353
+  incurred with no warning, `rho` in slot 20 (1-based) and inside
+  (-1, 1), the provenance (`meyers_cay` with `rho_shape`, no
+  `gamma_sd`), Meyers' printed `rho` (within 0.05), `logelr` (0.01),
+  total ultimate (2%) and elpd_loo (2.5), the missing previous-origin
+  cell error (CRC takes the same triangle) and an invalid `rho_shape`.
 
 ### 8. The diagonal backtest
 

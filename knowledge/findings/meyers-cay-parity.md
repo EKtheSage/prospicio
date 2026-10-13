@@ -24,6 +24,12 @@ sources:
   - id: design
     resource: ../docs/design/reserving-bayes.md
     title: Design note, Bayesian reserving (decisions 7 and 10, PR 5)
+  - id: pytest
+    resource: ../python/tests/test_reserving_meyers.py
+    title: Python binding tests, Meyers("cay")
+  - id: rtest
+    resource: ../R/prospicio/tests/test-reserving-meyers.R
+    title: R binding tests, meyers(model = "cay")
 ---
 
 # Finding
@@ -65,6 +71,12 @@ sources:
   scale of CRC and CSR) passed every diagnostic at 199 of 200 seeds; seed
   73 had one divergent transition in 8,000 draws. The largest R-hat was
   1.0073. A default fit takes 0.5 s in a release build.[^test]
+* Python `Meyers("cay")` and R `meyers(model = "cay")` sample the same
+  chains as Rust at the same seed (the chains' seed does not depend on
+  `n_sims`), so at seed 0 with 2,000 simulations their `rho`, `logelr`
+  and elpd_loo are the Rust values above, and their tests check Meyers'
+  printed `rho`, `logelr`, total and elpd_loo at the default chains
+  with no diagnostics warning.[^pytest][^rtest]
 * The Stan transcription itself agrees with Meyers' printed run within its
   Monte Carlo error (total 0.13% apart, p_loo 15.72 against 15.64): max
   R-hat 1.0002, no divergence, Pareto k up to 0.92.[^script]
