@@ -15,6 +15,9 @@ sources:
   - id: issues
     resource: https://github.com/EKtheSage/prospicio/issues/190
     title: Issues 190 to 197, one per gap below
+  - id: notebook
+    resource: ../examples/submission_evaluation.ipynb
+    title: submission_evaluation.ipynb, the steps run end to end (2026-10-13)
 ---
 
 # What was checked
@@ -315,3 +318,75 @@ interpolation for tabulated exposure curves, a skewness method on a
 `Grid`, an over-dispersion test, a combined frequency and severity trend
 object, grid-path statistics of aggregate covers, and a pro rata as to
 time on the grid (simulation is the only route today).
+
+# Run end to end (2026-10-13)
+
+`examples/submission_evaluation.ipynb` ran every step above on a synthetic
+submission ([the data](/datasets/synthetic-submission.md)); the run added
+these, none of them in the first two passes. `test_submission_evaluation`
+(`python/tests/test_examples.py`) runs the notebook on every PR, with fewer
+simulations; the numbers below are from a local run at the default, and the
+test asserts only the looser facts noted.
+
+* **Policy limits.** A claim over a threshold is cut at its own risk's sum
+  insured, so the severity of a book is a mixture of Pareto distributions cut
+  at different limits. There is no object for it; the notebook averages one
+  `Grid.rounding(Pareto(t, alpha), step, n)` per claim limit. Not in issues
+  190 to 197, and no issue yet; nor is a fit of an exposure curve to data or a
+  credibility function made for layer losses.
+* **Truncation matters.** `Pareto.fit` with the per-claim `reporting_thresholds`
+  gave alpha 1.720 on 100 developed, trended claims (true 1.6); without them
+  1.242, with the censored flags also dropped 1.255 (the test asserts alpha
+  within two standard errors of 1.6 and at least 0.2 above the fit without
+  the thresholds). It returns no standard error (no issue yet), so alpha over
+  the square root of the uncensored claims stands in.
+* **Development from the listing is selected on the outcome.** A listing of
+  claims whose latest incurred is over a threshold leaves out claims that were
+  large early and fell below it, which biases age-to-age factors measured on
+  every listed claim upward. Measuring each step only on claims over a higher
+  threshold at the earlier valuation (750,000 against a 500,000 listing) avoids
+  most of it; here the factors moved by under one point (1.044 to 1.035 at the
+  second step).
+* **Counts.** A `Triangle` of claim counts by report year developed with
+  `ChainLadder` gives the factor for claims not yet reported (1.24 on the
+  latest year), and an intercept-only Poisson `Glm` with a log offset gives the
+  frequency level and a Pearson dispersion; a `year` term tests a trend in the
+  adjusted counts.
+* **`fit_references` error text.** `fit_references([(5.0, 5.0, 3.0)],
+  [(5.0, 0.2)])` raises `ValueError: invalid parameter references = NaN: are
+  inconsistent: ...`; the message prints `NaN` where the references should be.
+  The inconsistent case (a layer loss above limit times frequency) is
+  correctly refused. With layers only, as the notebook calls it, the matching
+  returned a model for every one of 200 parameter draws and derived the
+  claim count over the lowest attachment itself (0.60 a year against the
+  experience model's 0.49); the pieces' alphas still run from 0.83 to 6.62.
+  Only the layer means are pinned: against a smooth shape (the experience
+  severity with its frequency scaled to each layer's loss) the top layer's
+  99% TVaR was 18.66m against 15.86m and its technical rate on line 10.8%
+  against 9.4%; the two lower layers moved by under half a point.
+* **Smaller things.** `RiskProfile` refuses `lower=0` for a band (`lower`
+  must be positive; use the smallest sum insured). `year_fraction(2016, 12, 31)`
+  is 2017.0 (the grid puts the last day at the next year's start), so take an
+  accident year from the date's own year, not from its fraction.
+  `LimitedFluctuation` has no `p` or `k` attributes to read back.
+  `CapeCod(trend).fit(...).trended_apriori` is at the price level of the
+  valuation date (the end of the last origin year), one year earlier than the
+  middle of the treaty year the notebook trends to. The notebook pools the
+  Cape Cod ultimates trended to the treaty year instead, which is the same
+  ratio (Cape Cod's estimate is the pooled ratio of its trended ultimates).
+* **Where the price comes from.** With ten years and a few claims over the
+  attachments, the credibility of the experience was 0.16, 0.07 and 0.03 for
+  three layers, so the technical rate on line moved most with the Swiss Re
+  curve parameter (47.1% at c=2, 35.1% at c=4, 41.1% at c=3 for 5m xs 5m) and
+  with the clustering of claims (47.5% at a count dispersion of 3; the
+  Pearson estimate from ten counts was 0.80 against a true 1.97), and by under
+  two points with the tail alpha, the frequency, the trend, the loss ratio, the
+  analysis threshold or a tripled credibility: gaps #190 and #194 matter less
+  to the price here than the exposure curve, which the library cannot fit.
+  The limited-fluctuation standard measures a burning cost's volatility, so
+  it is a conservative weight for a fitted experience model.
+* **Stand-alone capital against one price of risk.** At a 99% TVaR stand-alone
+  standard the 20m xs 20m layer's technical premium (2.19m) was 2.3 times the
+  premium under one proportional hazard distortion calibrated to the working
+  layer (0.94m), because its TVaR (18.66m) is nearly its limit. Quote
+  assembly at a capital standard is by hand (issues #197, #204).

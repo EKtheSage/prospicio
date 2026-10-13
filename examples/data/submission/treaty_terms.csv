@@ -1,0 +1,4 @@
+layer,limit,attachment,reinstatements,reinstatement_rate,quoted_rate_on_line
+5m xs 5m,5000000,5000000,2,1.0,0.43
+10m xs 10m,10000000,10000000,1,1.0,0.15
+20m xs 20m,20000000,20000000,1,1.0,0.06

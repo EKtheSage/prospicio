@@ -1,0 +1,10 @@
+effective_date,average_rate_change,applies_to
+2017-04-01,0.03,policies written on or after the date
+2018-07-01,0.05,policies written on or after the date
+2019-07-01,0.08,policies written on or after the date
+2020-07-01,0.09,policies written on or after the date
+2021-10-01,0.06,policies written on or after the date
+2022-07-01,-0.02,policies written on or after the date
+2023-01-01,0.03,policies written on or after the date
+2024-07-01,0.02,policies written on or after the date
+2025-04-01,0.01,policies written on or after the date
