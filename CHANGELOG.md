@@ -143,7 +143,7 @@ under "Unreleased" until then.
   outstanding (`price_over_payout`). Python `PaymentPattern`,
   `price_over_payout`, `PayoutPrice`; R `payment_pattern()`,
   `payment_pattern_from_development()`, `pattern_values()`,
-  `price_over_payout()`.
+  `price_over_payout()` (#228).
 
 ### Examples
 
