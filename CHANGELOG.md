@@ -173,6 +173,18 @@ under "Unreleased" until then.
   `BayesOdpFits` (joint reserves, frames, `diagnostics_frame()`,
   `segment(...)`); in R, `bayes_odp_segments()` returns a
   `bayes_odp_fits`.
+- Meyers' correlated accident year model (CAY), `MeyersModel::Cay`: CRC
+  with `rho` times the previous origin's residual at the same age added to
+  each mean (a moving average of order 1 down each age's column, so
+  neighbouring origins correlate), Meyers' `Beta(2, 2)` prior on
+  `(1 - rho) / 2` (`Meyers::rho_shape`, default 2), and ultimates drawn
+  origin by origin down the oldest age. Checked on group 353 incurred
+  against Meyers' own `CAY.R` Stan code (transcribed, CmdStan 2.39.0),
+  including the correlation of neighbouring origins' reserves, and against
+  his printed results (`docs/design/reserving-bayes.md`, PR 5). In Python
+  `Meyers("cay", rho_shape=2.0)` and in R
+  `meyers(..., model = "cay", rho_shape = 2)`; `rho_shape` follows
+  `gamma_sd` in both signatures.
 
 ### Pricing
 
