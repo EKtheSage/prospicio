@@ -122,7 +122,7 @@ under "Unreleased" until then.
   the developed amount trended (**breaking** for code that builds or
   matches `PreparedLoss` in full). Python `DevelopmentPattern` and
   `prepare(..., development=)`; R `development_pattern()`,
-  `development_pattern_from_history()`, `pattern_factor()`.
+  `development_pattern_from_history()`, `pattern_factor()` (#224).
 
 ### Examples
 
