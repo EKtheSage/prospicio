@@ -73,7 +73,11 @@ pub fn fft<N: Counting + ?Sized>(
 }
 
 /// The compound pmf on a circular buffer of `len` points.
-fn compound_buffer<N: Counting + ?Sized>(frequency: &N, severity: &[f64], len: usize) -> Vec<f64> {
+pub(crate) fn compound_buffer<N: Counting + ?Sized>(
+    frequency: &N,
+    severity: &[f64],
+    len: usize,
+) -> Vec<f64> {
     let mut planner = FftPlanner::<f64>::new();
     let mut buffer = vec![Complex64::new(0.0, 0.0); len];
     // A severity longer than the buffer wraps around, like the aggregate.

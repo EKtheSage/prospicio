@@ -76,6 +76,7 @@ reference:
       - compound_moments
       - eventual_ruin
       - layer_loss_picks
+      - fft_bivariate
       - events_from_years
       - event_sums_insured
       - event_times

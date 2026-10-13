@@ -482,6 +482,38 @@ def test_eventual_ruin():
         eventual_ruin(sev, rho=0.0)
 
 
+def test_clash():
+    from prospicio.aggregate import Clash, JointGrid, fft_bivariate
+    from prospicio.distributions import Grid, NegativeBinomial, Poisson
+
+    # aggregate 1.0.1: clash C 2 3 1 claims dsev [1 2] [.5 .5] dsev [1] poisson,
+    # bs 1 and log2 (7, 7) on each axis.
+    clash = Clash(2.0, 3.0, 1.0)
+    assert (clash.neither, clash.events) == (6.0, 12.0)
+    assert clash.trigger_b == pytest.approx(1 / 3)
+    a = Grid(1.0, [0.0, 0.5, 0.5])
+    b = Grid(1.0, [0.0, 1.0])
+    joint, report = clash.aggregate(Poisson(clash.events), a, b, (128, 128))
+    assert joint.shape == (128, 128) and joint.steps == (1.0, 1.0)
+    assert joint.prob(3, 2) == pytest.approx(0.02323830165624712, abs=1e-12)
+    assert joint.probs[0][0] == pytest.approx(0.0024787521766663594, abs=1e-12)
+    assert joint.correlation() == pytest.approx(0.2738612787524785, rel=1e-9)
+    assert joint.total().probs[5] == pytest.approx(0.08374051103504515, abs=1e-12)
+    assert max(report.aliasing_mass) < 1e-14
+    assert joint.marginal(0).mean() == pytest.approx(report.expected_means[0])
+    # The same through the general entry point.
+    same, _ = fft_bivariate(Poisson(12.0), clash.severity(a, b), (128, 128))
+    assert same.covariance() == pytest.approx(joint.covariance(), rel=1e-12)
+    with pytest.raises(ValueError):
+        clash.aggregate(NegativeBinomial(1.0, 1.0), a, b, (8, 8))
+    with pytest.raises(ValueError):
+        Clash(1.0, 1.0, 0.0)
+    with pytest.raises(ValueError):
+        JointGrid((1.0, 1.0), [[0.5, 0.5], [0.5]])
+    with pytest.raises(IndexError):
+        joint.prob(128, 0)
+
+
 def test_layer_loss_picks():
     from prospicio.aggregate import layer_loss_picks
     from prospicio.distributions import Gamma, Grid

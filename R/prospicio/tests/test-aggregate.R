@@ -271,6 +271,23 @@ stopifnot(max(abs(same$psi$psi - ruin$psi$psi)) < 1e-14)
 stopifnot(abs(eventual_ruin(sev3, rho = 0.1, cap = 2)$severity_mean - 1.1 / 0.8) < 1e-12)
 stopifnot(inherits(try(eventual_ruin(sev3, rho = 0.1, cap = 2, excess = 1), silent = TRUE), "try-error"))
 stopifnot(inherits(try(eventual_ruin(sev3, rho = 0), silent = TRUE), "try-error"))
+# Clash against aggregate 1.0.1: clash C 2 3 1 claims dsev [1 2] [.5 .5]
+# dsev [1] poisson, bs 1 and log2 (7, 7).
+clash <- clash_model(2, 3, 1)
+stopifnot(clash$neither == 6, clash$events == 12, clash$trigger_a == 0.25)
+ca <- grid_distribution(1, c(0, 0.5, 0.5))
+cb <- grid_distribution(1, c(0, 1))
+joint <- clash_aggregate(clash, poisson_count(12), ca, cb, points = c(128, 128))
+stopifnot(identical(dim(joint$density), c(128L, 128L)))
+stopifnot(abs(joint$density[4, 3] - 0.02323830165624712) < 1e-12)
+stopifnot(abs(joint$correlation / 0.2738612787524785 - 1) < 1e-9)
+stopifnot(abs(joint$total@probs[6] - 0.08374051103504515) < 1e-12)
+stopifnot(max(joint$report$aliasing_mass) < 1e-14, abs(joint$covariance - 1.5) < 1e-9)
+sev2 <- clash_severity(clash, ca, cb)$density
+same <- fft_bivariate(poisson_count(12), sev2, steps = c(1, 1), points = 128)
+stopifnot(abs(same$covariance - joint$covariance) < 1e-12)
+stopifnot(inherits(try(clash_model(1, 1, 0), silent = TRUE), "try-error"))
+stopifnot(inherits(try(clash_aggregate(clash, poisson_count(2), ca, cb, 8), silent = TRUE), "try-error"))
 # Layer loss picks against aggregate 1.0.1's Aggregate.picks.
 gsev <- discretize(gamma_from_mean_cv(100, 1.5), step = 1, points = 2^14, method = "rounding")
 picked <- layer_loss_picks(gsev, c(100, 500, 1000), c(480, 420, 60), claims = 10)
