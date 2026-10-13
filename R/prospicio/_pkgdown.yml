@@ -218,6 +218,8 @@ reference:
       - odp_bootstrap_fit
       - mack_bootstrap_fit
       - bayes_odp_fit
+      - bayes_bf_fit
+      - bayes_odp_fits
       - meyers_fit
       - one_year_fit
       - clark_fit
