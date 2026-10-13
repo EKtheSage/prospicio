@@ -1457,6 +1457,8 @@ are settled.
    wanted, in this order of PRs: Meyers' CAY for incurred data; Meyers'
    CRC and CSR with `fit_segments` and `TriangleModel` (for the
    200-triangle calibration study); then the compartmental design note.
+   That note is `docs/design/reserving-compartmental.md` (proposed
+   2026-10-13).
 10. **Bindings with each model.** (a) Rust, Python and R in the same PR,
     as `reserving-v02.md` decision 7; (b) Rust first, bindings after.
     *Recommended: (a)*.
