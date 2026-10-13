@@ -184,6 +184,7 @@ reference:
       - pricing.DevelopmentPattern
       - pricing.PreparedLosses
       - pricing.BurningCost
+      - pricing.IndexClause
   - title: Credibility
     desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model.
     contents:
