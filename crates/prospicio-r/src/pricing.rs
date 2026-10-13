@@ -17,6 +17,7 @@ use prospicio_pricing::layer::XsLayer;
 use prospicio_pricing::natural::{
     Allocation, Pentagon, Portfolio as NaturalInner, Quantity, Target,
 };
+use prospicio_pricing::payout::{self, PaymentPattern};
 use prospicio_pricing::quote::{Loads, Quote};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
@@ -1120,6 +1121,74 @@ fn pricing_as_if(
     ))
 }
 
+/// A payment pattern, checked: `list(times, shares, duration)`; from
+/// `(times, shares)`, or, with `from_development`, from ages and factors to
+/// ultimate.
+#[extendr]
+fn pricing_payment_pattern(times: &[f64], values: &[f64], from_development: bool) -> Result<List> {
+    let p = if from_development {
+        PaymentPattern::from_development(times, values)
+    } else {
+        PaymentPattern::new(times.to_vec(), values.to_vec())
+    }
+    .map_err(to_r)?;
+    Ok(list!(
+        times = p.times().to_vec(),
+        shares = p.shares().to_vec(),
+        duration = p.duration()
+    ))
+}
+
+/// A pattern's discount factor and capital years at `rate`, and the share
+/// outstanding at each of `t`.
+#[extendr]
+fn pricing_pattern_values(times: &[f64], shares: &[f64], rate: f64, t: &[f64]) -> Result<List> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    Ok(list!(
+        discount_factor = p.discount_factor(rate),
+        capital_years = p.capital_years(rate),
+        outstanding = t.iter().map(|&x| p.outstanding(x)).collect::<Vec<_>>()
+    ))
+}
+
+/// A one-period price restated over a payout: with a cost of capital
+/// `coc`, or, with `coc` NaN, a distortion price discounted with the losses.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_price_over_payout(
+    expected_loss: f64,
+    premium: f64,
+    assets: f64,
+    times: &[f64],
+    shares: &[f64],
+    rate: f64,
+    coc: f64,
+) -> Result<List> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    let price = Price {
+        expected_loss,
+        premium,
+        assets,
+    };
+    let rule = if coc.is_nan() {
+        // Any distortion: only the rule's kind matters here.
+        PremiumRule::Distortion(prospicio_prob::Distortion::tvar(0.5).map_err(to_r)?)
+    } else {
+        PremiumRule::cost_of_capital(coc).map_err(to_r)?
+    };
+    let q = payout::price_over_payout(&price, &rule, &p, rate).map_err(to_r)?;
+    Ok(list!(
+        expected_loss = q.expected_loss,
+        discounted_loss = q.discounted_loss,
+        premium = q.premium,
+        assets = q.assets,
+        capital = q.capital(),
+        margin = q.margin(),
+        discount_factor = q.discount_factor,
+        capital_years = q.capital_years
+    ))
+}
+
 /// A development pattern estimated from claim valuations:
 /// `list(ages, factors)`.
 #[extendr]
@@ -1322,6 +1391,9 @@ extendr_module! {
     fn pricing_burning_cost;
     fn pricing_development_pattern;
     fn pricing_as_if;
+    fn pricing_payment_pattern;
+    fn pricing_pattern_values;
+    fn pricing_price_over_payout;
     fn pricing_pattern_at;
     fn pricing_count_development;
     fn pricing_quote;
