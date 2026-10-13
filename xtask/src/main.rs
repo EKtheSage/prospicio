@@ -149,6 +149,8 @@ fn stage_user_guide(uv: &dyn Fn() -> Command) -> Result {
     }
     for (notebook, s) in notebooks.iter().zip(&stems) {
         // nbconvert runs the kernel in the notebook's directory, as Jupyter does.
+        // Its default limit of 30 s per cell could stop a heavy cell on a slow
+        // runner; 600 s still stops a hung kernel before the job's timeout.
         run(uv()
             .args([
                 "run",
@@ -157,6 +159,7 @@ fn stage_user_guide(uv: &dyn Fn() -> Command) -> Result {
                 "--to",
                 "markdown",
                 "--execute",
+                "--ExecutePreprocessor.timeout=600",
             ])
             .arg("--output-dir")
             .arg(&stage)

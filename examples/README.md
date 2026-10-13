@@ -8,7 +8,11 @@ printed numbers, tables and charts) are on the
 notebook in full each time it is built and publishes it in the Python
 site's User Guide, under "Worked examples". CI also runs each notebook's
 code with fewer simulations (`python/tests/test_examples.py`), so a change
-that breaks one fails its pull request.
+that breaks one fails its pull request. The full run and the site build
+happen only after a merge to `main` (`.github/workflows/pages.yml`): a pull
+request that touches only `examples/` or `docs/guides/` does not build the
+site, so a notebook that fails only with the full simulation counts, or a
+page that does not render, shows up first in that Pages run.
 
 | Example | Results | What it shows |
 |---|---|---|

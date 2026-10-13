@@ -58,7 +58,8 @@ all worktrees) was not touched.
   `target/user-guide` (`stage_user_guide`): each `docs/guides/*.md` but
   `README.md` as `1-<name>.md` under the sidebar section "Guides", and each
   `examples/*.ipynb` executed by `jupyter nbconvert --to markdown --execute`
-  as `2-<name>.md`, with its charts in `<name>_files/`, under "Worked
+  (with `--ExecutePreprocessor.timeout=600`, since nbconvert's default stops
+  a cell after 30 s) as `2-<name>.md`, with its charts in `<name>_files/`, under "Worked
   examples". The first `#` heading becomes the page's front matter `title`,
   and a guide's link `../../examples/<name>.ipynb` becomes `<name>.md`.[^xtask]
 * `python/great-docs.yml` sets `user_guide: ../target/user-guide`. great-docs
