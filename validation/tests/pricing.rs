@@ -1402,3 +1402,157 @@ fn pricing_bounds_match_aggregate() {
         }
     }
 }
+
+// Experience rating against Clark, *Basics of Reinsurance Pricing* (CAS
+// study note, 2014), the per-risk example of section A.4.a: 400,000 xs
+// 100,000 effective 1/1/97, losses trended at 4% to 7/1/97. The note's
+// trend factors use actual days over 365.25; it rounds each factor to
+// three decimals and each amount to the dollar before the next step
+// (`knowledge/references/clark-reinsurance-pricing.md`).
+
+mod clark_experience {
+    use prospicio_aggregate::{Layer, Tower};
+    use prospicio_pricing::experience::{Experience, LargeLoss, Trend, YearBasis};
+
+    /// Days from 1/1/1900 by the proleptic Gregorian calendar.
+    fn days(y: i32, m: u32, d: u32) -> i64 {
+        let (y, m) = if m <= 2 { (y - 1, m + 12) } else { (y, m) };
+        let (y, m, d) = (i64::from(y), i64::from(m), i64::from(d));
+        365 * y + y / 4 - y / 100 + y / 400 + (153 * (m - 3) + 2) / 5 + d
+    }
+
+    /// The accident date as a decimal year on the note's basis: actual days
+    /// to 7/1/1997 over 365.25.
+    fn decimal(y: i32, m: u32, d: u32) -> f64 {
+        1997.5 - (days(1997, 7, 1) - days(y, m, d)) as f64 / 365.25
+    }
+
+    /// (accident date, untrended, factor, trended, loss in layer), as printed.
+    type Printed = ((i32, u32, u32), f64, f64, f64, f64);
+    const LOSSES: [Printed; 14] = [
+        ((1988, 9, 20), 240_946.0, 1.411, 339_975.0, 239_975.0),
+        ((1988, 10, 11), 821_499.0, 1.408, 1_156_671.0, 400_000.0),
+        ((1989, 3, 15), 158_129.0, 1.385, 219_009.0, 119_009.0),
+        ((1990, 6, 21), 114_051.0, 1.317, 150_205.0, 50_205.0),
+        ((1990, 10, 24), 78_043.0, 1.300, 101_456.0, 1_456.0),
+        ((1991, 1, 10), 162_533.0, 1.289, 209_505.0, 109_505.0),
+        ((1992, 2, 23), 324_298.0, 1.234, 400_184.0, 300_184.0),
+        ((1992, 4, 30), 100_549.0, 1.225, 123_173.0, 23_173.0),
+        ((1992, 9, 22), 75_476.0, 1.206, 91_024.0, 0.0),
+        ((1993, 1, 1), 171_885.0, 1.193, 205_059.0, 105_059.0),
+        ((1993, 5, 18), 94_218.0, 1.175, 110_706.0, 10_706.0),
+        ((1993, 8, 1), 170_297.0, 1.166, 198_566.0, 98_566.0),
+        ((1994, 8, 15), 87_133.0, 1.119, 97_502.0, 0.0),
+        ((1995, 7, 12), 771_249.0, 1.080, 832_949.0, 400_000.0),
+    ];
+
+    /// (year, on-level premium, trended in layer, LDF, ultimate in layer,
+    /// loss cost), as printed.
+    const YEARS: [(i32, f64, f64, f64, f64, f64); 8] = [
+        (1988, 1_422_554.0, 639_975.0, 1.000, 639_975.0, 0.450),
+        (1989, 1_823_103.0, 119_009.0, 1.000, 119_009.0, 0.065),
+        (1990, 2_054_034.0, 51_661.0, 1.000, 51_661.0, 0.025),
+        (1991, 2_147_147.0, 109_505.0, 1.000, 109_505.0, 0.051),
+        (1992, 2_151_541.0, 323_357.0, 1.010, 326_591.0, 0.152),
+        (1993, 2_159_198.0, 214_331.0, 1.050, 225_048.0, 0.104),
+        (1994, 2_167_158.0, 0.0, 1.150, 0.0, 0.000),
+        (1995, 2_187_654.0, 400_000.0, 1.300, 520_000.0, 0.238),
+    ];
+
+    fn experience() -> Experience {
+        Experience::new(
+            LOSSES
+                .iter()
+                .enumerate()
+                .map(|(i, &((y, m, d), amount, ..))| LargeLoss {
+                    id: format!("{}", i + 1),
+                    accident: decimal(y, m, d),
+                    amount,
+                })
+                .collect(),
+        )
+        .unwrap()
+    }
+
+    fn treaty() -> Tower {
+        Tower::new(vec![
+            Layer::xol("400 xs 100", 400_000.0, 100_000.0).unwrap(),
+        ])
+        .unwrap()
+    }
+
+    /// The trend factors at 4% to 7/1/97, to the note's three decimals.
+    #[test]
+    fn trend_factors_match_the_note() {
+        let p = experience()
+            .prepare(&Trend::Rate {
+                rate: 0.04,
+                to: 1997.5,
+            })
+            .unwrap();
+        for (l, &(_, _, factor, ..)) in p.losses().iter().zip(&LOSSES) {
+            assert!(
+                (l.factor - factor).abs() <= 0.0005 + 1e-12,
+                "{} vs {factor}",
+                l.factor
+            );
+        }
+    }
+
+    /// From the printed factors: each trended loss and its loss in the
+    /// layer to the dollar, the layer losses by year, developed, and the
+    /// loss costs to the printed 0.1%.
+    #[test]
+    fn burning_cost_matches_the_note() {
+        let factors = LOSSES.iter().map(|l| l.2).collect();
+        let p = experience().prepare(&Trend::Factors(factors)).unwrap();
+        let layer = treaty();
+        for (l, &(_, _, _, trended, in_layer)) in p.losses().iter().zip(&LOSSES) {
+            assert!(
+                (l.trended - trended).abs() <= 0.5,
+                "{} vs {trended}",
+                l.trended
+            );
+            // The note takes the layer from the rounded trended loss.
+            assert!((layer.ceded(&[trended])[0] - in_layer).abs() < 1e-9);
+        }
+        let years: Vec<YearBasis> = YEARS
+            .iter()
+            .map(|&(year, premium, _, development, ..)| YearBasis {
+                year,
+                premium,
+                development,
+            })
+            .collect();
+        let towers = vec![treaty(); years.len()];
+        let b = p.burning_cost(&towers, &years).unwrap();
+        for (row, &(year, _, in_layer, _, ultimate, cost)) in b.years.iter().zip(&YEARS) {
+            assert_eq!(row.year, year);
+            // At most three losses a year, each half a dollar from the note's.
+            assert!(
+                (row.layer_loss[0] - in_layer).abs() <= 1.5,
+                "{year}: {:?}",
+                row.layer_loss
+            );
+            assert!(
+                (row.developed[0] - ultimate).abs() <= 2.0,
+                "{year}: {:?}",
+                row.developed
+            );
+            assert!(
+                (row.loss_cost[0] - cost).abs() <= 0.0005 + 1e-12,
+                "{year}: {:?}",
+                row.loss_cost
+            );
+        }
+        let ultimate: f64 = b.years.iter().map(|r| r.developed[0]).sum();
+        assert!((ultimate - 1_991_789.0).abs() <= 6.0, "{ultimate}");
+        // The note's total is the developed losses over the premium, summed.
+        assert!(
+            (b.loss_cost[0] - 0.124).abs() <= 0.0005,
+            "{:?}",
+            b.loss_cost
+        );
+        assert!((ultimate / 16_112_389.0 - b.loss_cost[0]).abs() < 1e-15);
+    }
+}

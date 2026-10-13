@@ -17,6 +17,7 @@ mod aggregate;
 mod counts;
 mod credibility;
 mod distributions;
+mod experience;
 mod models;
 mod natural;
 mod pareto;
@@ -48,6 +49,8 @@ mod prospicio_native {
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
         PyPredictiveDistribution, PySampled, from_json, to_json,
     };
+    #[pymodule_export]
+    use super::experience::{PyBurningCost, PyLargeLossExperience, PyPreparedLosses};
     #[pymodule_export]
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,

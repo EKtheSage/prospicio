@@ -801,7 +801,7 @@ impl PyLossSensitivePremium {
 /// ['gross', 'ceded', 'net']
 #[pyclass(name = "Tower", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyTower {
-    inner: Tower,
+    pub(crate) inner: Tower,
 }
 
 #[pymethods]

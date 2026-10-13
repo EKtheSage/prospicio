@@ -6,6 +6,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
 use prospicio_pricing::classical::{self, Kind, Principle};
+use prospicio_pricing::experience::{Experience, LargeLoss, Prepared, Trend, YearBasis};
 use prospicio_pricing::exposure::{
     ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve,
 };
@@ -20,6 +21,7 @@ use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInne
 use crate::aggregate::{AnyCount, EventSet};
 use crate::distributions::{Grid, PredictiveDistribution, Sampled, severity_from_robj};
 use crate::pareto::PiecewisePareto;
+use crate::reinsurance::ReinsuranceTower;
 use crate::risk::RiskDistortion;
 use crate::{to_r, whole};
 
@@ -969,8 +971,138 @@ fn pricing_quote(
     ))
 }
 
+/// Large losses trended to the prospective period: by `rate` to `to`, or,
+/// with `rate` NaN, by `factors`.
+fn prepare_large_losses(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+) -> Result<Prepared> {
+    if ids.len() != accident.len() || ids.len() != amount.len() {
+        return Err(Error::Other(format!(
+            "{} ids, {} accident dates and {} amounts",
+            ids.len(),
+            accident.len(),
+            amount.len()
+        )));
+    }
+    let losses = ids
+        .into_iter()
+        .zip(accident)
+        .zip(amount)
+        .map(|((id, &accident), &amount)| LargeLoss {
+            id,
+            accident,
+            amount,
+        })
+        .collect();
+    let trend = if rate.is_nan() {
+        Trend::Factors(factors.to_vec())
+    } else {
+        Trend::Rate { rate, to }
+    };
+    Experience::new(losses)
+        .and_then(|e| e.with_threshold(threshold))
+        .and_then(|e| e.prepare(&trend))
+        .map_err(to_r)
+}
+
+/// The trended losses as columns, and `complete_above`.
+#[extendr]
+fn pricing_trend_large_losses(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+) -> Result<List> {
+    let p = prepare_large_losses(ids, accident, amount, threshold, rate, to, factors)?;
+    let l = p.losses();
+    Ok(list!(
+        id = l.iter().map(|x| x.id.clone()).collect::<Vec<_>>(),
+        year = l.iter().map(|x| x.year).collect::<Vec<_>>(),
+        accident = l.iter().map(|x| x.accident).collect::<Vec<_>>(),
+        amount = l.iter().map(|x| x.amount).collect::<Vec<_>>(),
+        factor = l.iter().map(|x| x.factor).collect::<Vec<_>>(),
+        trended = l.iter().map(|x| x.trended).collect::<Vec<_>>(),
+        complete_above = p.complete_above()
+    ))
+}
+
+/// The burning cost of trended losses: by year (`layer_loss`, `developed`
+/// and `loss_cost` as year-by-layer matrices, filled by column) and overall.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_burning_cost(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+    towers: List,
+    years: &[i32],
+    premium: &[f64],
+    development: &[f64],
+) -> Result<List> {
+    let p = prepare_large_losses(ids, accident, amount, threshold, rate, to, factors)?;
+    if premium.len() != years.len() || development.len() != years.len() {
+        return Err(Error::Other(format!(
+            "{} years, {} premiums and {} development factors",
+            years.len(),
+            premium.len(),
+            development.len()
+        )));
+    }
+    let towers = towers
+        .values()
+        .map(|t| {
+            <&ReinsuranceTower>::try_from(&t)
+                .map(|t| t.inner.clone())
+                .map_err(|_| Error::Other("towers must be reinsurance_tower objects".into()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let basis: Vec<YearBasis> = years
+        .iter()
+        .zip(premium)
+        .zip(development)
+        .map(|((&year, &premium), &development)| YearBasis {
+            year,
+            premium,
+            development,
+        })
+        .collect();
+    let b = p.burning_cost(&towers, &basis).map_err(to_r)?;
+    let by_layer = |f: &dyn Fn(&prospicio_pricing::experience::YearCost) -> &Vec<f64>| {
+        let layers = b.loss_cost.len();
+        (0..layers)
+            .flat_map(|i| b.years.iter().map(move |r| f(r)[i]))
+            .collect::<Vec<f64>>()
+    };
+    Ok(list!(
+        year = b.years.iter().map(|r| r.year).collect::<Vec<_>>(),
+        premium = b.years.iter().map(|r| r.premium).collect::<Vec<_>>(),
+        losses = b.years.iter().map(|r| r.losses as i32).collect::<Vec<_>>(),
+        development = b.years.iter().map(|r| r.development).collect::<Vec<_>>(),
+        layer_loss = by_layer(&|r| &r.layer_loss),
+        developed = by_layer(&|r| &r.developed),
+        year_loss_cost = by_layer(&|r| &r.loss_cost),
+        loss_cost = b.loss_cost.clone(),
+        mean_loss_cost = b.mean_loss_cost.clone()
+    ))
+}
+
 extendr_module! {
     mod pricing;
+    fn pricing_trend_large_losses;
+    fn pricing_burning_cost;
     fn pricing_quote;
     fn pricing_bounds_rust;
     fn distortion_envelope_rust;

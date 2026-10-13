@@ -1062,3 +1062,105 @@ implied_quote <- function(quote, premium) {
   ))
   c(q, list(loads = l))
 }
+
+#' Large losses trended to the prospective period
+#'
+#' The first step of experience rating from individual large losses
+#' (Clark, *Basics of Reinsurance Pricing*): trend each loss from its
+#' accident date to the prospective period, by an annual `rate` to the date
+#' `to` (`(1 + rate)^(to - accident)`) or by a factor per loss. Cost the
+#' trended losses with [burning_cost()].
+#'
+#' A record reported above a threshold in nominal terms leaves the older
+#' years short of losses that trend above it: with a `threshold`, losses
+#' trended below the threshold times the largest factor (`complete_above`)
+#' are left out of the burning cost, so every year is complete on the same
+#' basis.
+#'
+#' @param losses A data frame with columns `id`, `accident` (a decimal
+#'   year, see [year_fraction()]) and `amount` (incurred at the latest
+#'   valuation).
+#' @param rate An annual severity trend, with `to`.
+#' @param to The date to trend to, a decimal year: the average accident
+#'   date of the prospective period.
+#' @param factors A trend factor per loss, instead of `rate` and `to`.
+#' @param threshold The reporting threshold of the record.
+#' @returns A list with `losses` (the input columns with `year`, `factor`
+#'   and `trended`), `complete_above`, and the inputs [burning_cost()]
+#'   needs.
+#' @export
+#' @examples
+#' losses <- data.frame(id = c("a", "b"), accident = c(1995.5, 1996.5),
+#'                      amount = c(150, 400))
+#' p <- trend_large_losses(losses, rate = 0.05, to = 1998.5)
+#' p$losses$trended
+trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, threshold = 0) {
+  if (is.null(factors) == (is.null(rate) || is.null(to))) {
+    stop("pass rate and to, or factors, but not both", call. = FALSE)
+  }
+  args <- list(
+    ids = as.character(losses$id), accident = as.double(losses$accident),
+    amount = as.double(losses$amount), threshold = as.double(threshold),
+    rate = if (is.null(rate)) NaN else as.double(rate),
+    to = if (is.null(to)) NaN else as.double(to),
+    factors = if (is.null(factors)) double() else as.double(factors)
+  )
+  r <- rust_result(do.call(pricing_trend_large_losses, args))
+  list(
+    losses = data.frame(id = r$id, year = r$year, accident = r$accident, amount = r$amount,
+                        factor = r$factor, trended = r$trended),
+    complete_above = r$complete_above,
+    args = args
+  )
+}
+
+#' Burning cost of large losses
+#'
+#' Apply each year's treaty to the year's trended losses (a loss belongs to
+#' the year of its accident date), with any annual terms, develop each
+#' year's layer total with an excess development factor, and divide by the
+#' year's on-level premium. The overall loss cost is the developed losses
+#' over the premium, summed over the years (Clark's convention);
+#' `mean_loss_cost` weights the years equally.
+#'
+#' @param prepared Trended losses, from [trend_large_losses()].
+#' @param towers The [reinsurance_tower] in force each year, as a list, or
+#'   one tower for every year (to price the prospective terms). Every tower
+#'   needs the same number of layers.
+#' @param years The accident years to cost.
+#' @param premium Each year's on-level subject premium.
+#' @param development Each year's excess development factor.
+#' @returns A list with `years`, a data frame (`year`, `premium`, `losses`
+#'   (the count through the tower), `development`), the year-by-layer
+#'   matrices `layer_loss`, `developed` and `year_loss_cost`, and per layer
+#'   `loss_cost` and `mean_loss_cost`.
+#' @export
+#' @examples
+#' losses <- data.frame(id = c("a", "b"), accident = c(1995.5, 1996.5),
+#'                      amount = c(150, 400))
+#' p <- trend_large_losses(losses, factors = c(1, 1))
+#' tw <- reinsurance_tower(list(xol_layer("200x100", 200, 100)))
+#' b <- burning_cost(p, tw, c(1995, 1996), premium = c(1000, 1000),
+#'                   development = c(1, 1.5))
+#' b$developed
+#' b$loss_cost
+burning_cost <- function(prepared, towers, years, premium, development) {
+  if (S7::S7_inherits(towers, reinsurance_tower)) towers <- rep(list(towers), length(years))
+  args <- c(prepared$args, list(
+    towers = lapply(towers, function(t) t@ptr), years = as.integer(years),
+    premium = as.double(premium), development = as.double(development)
+  ))
+  r <- rust_result(do.call(pricing_burning_cost, args))
+  n <- length(r$year)
+  layers <- length(r$loss_cost)
+  m <- function(x) matrix(x, nrow = n, ncol = layers, dimnames = list(r$year, NULL))
+  list(
+    years = data.frame(year = r$year, premium = r$premium, losses = r$losses,
+                       development = r$development),
+    layer_loss = m(r$layer_loss),
+    developed = m(r$developed),
+    year_loss_cost = m(r$year_loss_cost),
+    loss_cost = r$loss_cost,
+    mean_loss_cost = r$mean_loss_cost
+  )
+}

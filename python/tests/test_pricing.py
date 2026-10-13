@@ -367,3 +367,92 @@ def test_quote_reproduces_the_reinsurance_price_guide():
     assert round(q.at(0.34 * 5.0).return_on_capital, 3) == 0.142
     with pytest.raises(ValueError):
         Quote.technical(p, expenses=0.5, brokerage=0.5)
+
+
+# Clark, Basics of Reinsurance Pricing (CAS study note), per-risk experience
+# rating: (accident date, untrended loss, printed trend factor).
+_CLARK_LOSSES = [
+    ((1988, 9, 20), 240_946.0, 1.411),
+    ((1988, 10, 11), 821_499.0, 1.408),
+    ((1989, 3, 15), 158_129.0, 1.385),
+    ((1990, 6, 21), 114_051.0, 1.317),
+    ((1990, 10, 24), 78_043.0, 1.300),
+    ((1991, 1, 10), 162_533.0, 1.289),
+    ((1992, 2, 23), 324_298.0, 1.234),
+    ((1992, 4, 30), 100_549.0, 1.225),
+    ((1992, 9, 22), 75_476.0, 1.206),
+    ((1993, 1, 1), 171_885.0, 1.193),
+    ((1993, 5, 18), 94_218.0, 1.175),
+    ((1993, 8, 1), 170_297.0, 1.166),
+    ((1994, 8, 15), 87_133.0, 1.119),
+    ((1995, 7, 12), 771_249.0, 1.080),
+]
+# (year, on-level premium, excess development factor, printed loss cost)
+_CLARK_YEARS = [
+    (1988, 1_422_554.0, 1.000, 0.450),
+    (1989, 1_823_103.0, 1.000, 0.065),
+    (1990, 2_054_034.0, 1.000, 0.025),
+    (1991, 2_147_147.0, 1.000, 0.051),
+    (1992, 2_151_541.0, 1.010, 0.152),
+    (1993, 2_159_198.0, 1.050, 0.104),
+    (1994, 2_167_158.0, 1.150, 0.000),
+    (1995, 2_187_654.0, 1.300, 0.238),
+]
+
+
+def _clark_experience():
+    import datetime
+
+    from prospicio.pricing import LargeLossExperience
+
+    end = datetime.date(1997, 7, 1)
+    accident = [
+        1997.5 - (end - datetime.date(*d)).days / 365.25 for d, _, _ in _CLARK_LOSSES
+    ]
+    return LargeLossExperience(
+        [str(i + 1) for i in range(len(_CLARK_LOSSES))],
+        accident,
+        [a for _, a, _ in _CLARK_LOSSES],
+    )
+
+
+def test_large_loss_trend_reproduces_clark():
+    p = _clark_experience().prepare(rate=0.04, to=1997.5)
+    for f, (_, _, printed) in zip(p.to_dict()["factor"], _CLARK_LOSSES):
+        assert abs(f - printed) <= 0.0005 + 1e-12
+
+
+def test_burning_cost_reproduces_clark():
+    from prospicio.reinsurance import Layer, Tower
+
+    p = _clark_experience().prepare(factors=[f for _, _, f in _CLARK_LOSSES])
+    tower = Tower([Layer("400 xs 100", 400_000.0, 100_000.0)])
+    b = p.burning_cost(
+        tower,
+        [y for y, *_ in _CLARK_YEARS],
+        premium=[pr for _, pr, _, _ in _CLARK_YEARS],
+        development=[d for _, _, d, _ in _CLARK_YEARS],
+    )
+    assert b.years == [y for y, *_ in _CLARK_YEARS]
+    for cost, (_, _, _, printed) in zip(b.to_dict()["loss_cost"], _CLARK_YEARS):
+        assert abs(cost[0] - printed) <= 0.0005 + 1e-12
+    assert abs(b.loss_cost[0] - 0.124) <= 0.0005
+
+
+def test_large_loss_threshold_and_errors():
+    from prospicio.pricing import LargeLossExperience
+    from prospicio.reinsurance import Layer, Tower
+
+    e = LargeLossExperience(["a", "b"], [2020.5, 2022.5], [100.0, 300.0], threshold=100.0)
+    p = e.prepare(rate=0.10, to=2024.5)
+    # complete above 100 x 1.1^4 = 146.41: the first loss trends to 146.41, kept
+    assert abs(p.complete_above - 146.41) < 1e-9
+    tower = Tower([Layer("200x100", 200.0, 100.0)])
+    b = p.burning_cost([tower, tower], [2020, 2022], premium=[1e3, 1e3], development=[1.0, 1.0])
+    assert b.to_dict()["losses"] == [1, 1]
+    with pytest.raises(TypeError):
+        e.prepare(rate=0.1)
+    with pytest.raises(ValueError):
+        p.burning_cost(tower, [2020], premium=[1.0, 2.0], development=[1.0])
+    with pytest.raises(ValueError):
+        LargeLossExperience(["a"], [2020.0, 2021.0], [1.0])
