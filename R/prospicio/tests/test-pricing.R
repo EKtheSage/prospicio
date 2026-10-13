@@ -237,3 +237,21 @@ stopifnot(all(abs(bc$year_loss_cost[, 1] -
                   c(0.450, 0.065, 0.025, 0.051, 0.152, 0.104, 0, 0.238)) <= 0.0005 + 1e-12),
           abs(bc$loss_cost - 0.124) <= 0.0005,
           identical(bc$years$year, 1988:1995))
+
+# Losses developed one by one (IBNER) and a count pattern for the rest (#190).
+dp <- development_pattern_from_history(
+  data.frame(id = c("a", "a", "a", "b", "b", "c", "c"), age = c(1, 2, 3, 1, 2, 2, 3),
+             amount = c(100, 180, 200, 100, 120, 500, 550)),
+  ages = c(1, 2, 3)
+)
+stopifnot(abs(dp$factors[1] - 300 / 200 * 750 / 680) < 1e-14, dp$factors[3] == 1,
+          abs(pattern_factor(dp, 2.5) - (dp$factors[2] + 1) / 2) < 1e-14)
+ll <- data.frame(id = c("a", "b"), accident = c(2020.5, 2022.5), amount = c(90, 150))
+pd <- trend_large_losses(ll, factors = c(1, 1), threshold = 100, valuation = 2024.5,
+                         development = development_pattern(c(2, 4), c(2, 1.5)))
+stopifnot(identical(pd$losses$ultimate, c(135, 300)))
+bd <- burning_cost(pd, reinsurance_tower(list(xol_layer("x", 1000, 100))), c(2020, 2022),
+                   premium = c(1000, 1000), development = development_pattern(c(1, 3), c(1.4, 1)))
+stopifnot(identical(bd$years$losses, c(0L, 1L)), abs(bd$developed[2, 1] - 240) < 1e-12)
+stopifnot(abs(trend_large_losses(ll, factors = c(1, 1), development = c(1, 1.1))$losses$ultimate[2]
+              - 165) < 1e-12)

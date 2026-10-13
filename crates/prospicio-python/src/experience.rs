@@ -4,7 +4,8 @@
 
 use prospicio_aggregate::Tower;
 use prospicio_pricing::experience::{
-    BurningCost, Experience, LargeLoss, Prepared, Trend, YearBasis,
+    BurningCost, ClaimValuation, Development, DevelopmentPattern, Experience, LargeLoss, Prepared,
+    Trend, YearBasis,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -15,10 +16,10 @@ use crate::to_py;
 
 /// A record of individual large losses, for experience rating.
 ///
-/// Trend each loss to the prospective period with ``prepare``, then apply
-/// each year's treaty and develop the layer totals with
-/// ``PreparedLosses.burning_cost``. The steps follow Clark's *Basics of
-/// Reinsurance Pricing* (CAS study note).
+/// Develop each known loss to ultimate (optional) and trend it to the
+/// prospective period with ``prepare``, then apply each year's treaty and
+/// develop the layer totals with ``PreparedLosses.burning_cost``. The steps
+/// follow Clark's *Basics of Reinsurance Pricing* (CAS study note).
 ///
 /// Parameters
 /// ----------
@@ -32,6 +33,9 @@ use crate::to_py;
 ///     The reporting threshold of the record, in nominal terms. With a
 ///     threshold, losses trended below it times the largest trend factor
 ///     are left out, so every year is complete on the same basis.
+/// valuation : float, optional
+///     The date the amounts were valued at, a decimal year; needed to
+///     develop the losses by a ``DevelopmentPattern`` at their ages.
 ///
 /// Examples
 /// --------
@@ -53,12 +57,13 @@ pub(crate) struct PyLargeLossExperience {
 #[pymethods]
 impl PyLargeLossExperience {
     #[new]
-    #[pyo3(signature = (ids, accident, amount, *, threshold = 0.0))]
+    #[pyo3(signature = (ids, accident, amount, *, threshold = 0.0, valuation = None))]
     fn new(
         ids: Vec<String>,
         accident: Vec<f64>,
         amount: Vec<f64>,
         threshold: f64,
+        valuation: Option<f64>,
     ) -> PyResult<Self> {
         if ids.len() != accident.len() || ids.len() != amount.len() {
             return Err(PyValueError::new_err(format!(
@@ -78,9 +83,12 @@ impl PyLargeLossExperience {
                 amount,
             })
             .collect();
-        let inner = Experience::new(losses)
+        let mut inner = Experience::new(losses)
             .and_then(|e| e.with_threshold(threshold))
             .map_err(to_py)?;
+        if let Some(v) = valuation {
+            inner = inner.with_valuation(v).map_err(to_py)?;
+        }
         Ok(Self { inner })
     }
 
@@ -90,7 +98,14 @@ impl PyLargeLossExperience {
         self.inner.threshold()
     }
 
-    /// Trend every loss to the prospective period.
+    /// The valuation date, or ``None``.
+    #[getter]
+    fn valuation(&self) -> Option<f64> {
+        self.inner.valuation()
+    }
+
+    /// Develop every loss to ultimate, if asked, and trend it to the
+    /// prospective period.
     ///
     /// Pass either an annual ``rate`` with the date ``to`` (the average
     /// accident date of the prospective period, a decimal year), for factors
@@ -101,6 +116,11 @@ impl PyLargeLossExperience {
     /// rate : float, optional
     /// to : float, optional
     /// factors : list of float, optional
+    /// development : DevelopmentPattern or list of float, optional
+    ///     Develops each known loss to ultimate (IBNER): a pattern, read at
+    ///     each loss's age at the valuation date, or a factor per loss.
+    ///     Then give ``burning_cost`` only the count IBNR factors, not an
+    ///     excess development factor that already holds IBNER.
     ///
     /// Returns
     /// -------
@@ -111,12 +131,13 @@ impl PyLargeLossExperience {
     /// TypeError
     ///     If neither or both of ``rate`` (with ``to``) and ``factors`` are
     ///     given.
-    #[pyo3(signature = (*, rate = None, to = None, factors = None))]
+    #[pyo3(signature = (*, rate = None, to = None, factors = None, development = None))]
     fn prepare(
         &self,
         rate: Option<f64>,
         to: Option<f64>,
         factors: Option<Vec<f64>>,
+        development: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyPreparedLosses> {
         let trend = match (rate, to, factors) {
             (Some(rate), Some(to), None) => Trend::Rate { rate, to },
@@ -127,8 +148,23 @@ impl PyLargeLossExperience {
                 ));
             }
         };
+        let inner = match development {
+            None => self.inner.prepare(&trend),
+            Some(d) => {
+                let development = if let Ok(p) = d.cast::<PyDevelopmentPattern>() {
+                    Development::Pattern(p.get().inner.clone())
+                } else {
+                    Development::Factors(d.extract::<Vec<f64>>().map_err(|_| {
+                        PyTypeError::new_err(
+                            "development must be a DevelopmentPattern or a list of floats",
+                        )
+                    })?)
+                };
+                self.inner.prepare_developed(&trend, &development)
+            }
+        };
         Ok(PyPreparedLosses {
-            inner: self.inner.prepare(&trend).map_err(to_py)?,
+            inner: inner.map_err(to_py)?,
         })
     }
 
@@ -175,8 +211,12 @@ impl PyPreparedLosses {
     ///     accident date.
     /// premium : list of float
     ///     Each year's on-level subject premium.
-    /// development : list of float
-    ///     Each year's excess development factor for the layer losses.
+    /// development : list of float or DevelopmentPattern
+    ///     Each year's development factor for the layer losses: Clark's
+    ///     excess factor, or, when the losses were developed one by one in
+    ///     ``prepare``, the count IBNR factor only. A count
+    ///     ``DevelopmentPattern`` is read at each year's average age at the
+    ///     record's valuation date.
     ///
     /// Returns
     /// -------
@@ -187,8 +227,26 @@ impl PyPreparedLosses {
         towers: &Bound<'_, PyAny>,
         years: Vec<i32>,
         premium: Vec<f64>,
-        development: Vec<f64>,
+        development: &Bound<'_, PyAny>,
     ) -> PyResult<PyBurningCost> {
+        let development: Vec<f64> = if let Ok(p) = development.cast::<PyDevelopmentPattern>() {
+            let valuation = self.inner.valuation().ok_or_else(|| {
+                PyValueError::new_err("a count pattern needs the record's valuation date")
+            })?;
+            years
+                .iter()
+                .zip(&premium)
+                .map(|(&y, &pr)| {
+                    YearBasis::from_count_pattern(y, pr, &p.get().inner, valuation)
+                        .map(|b| b.development)
+                        .map_err(to_py)
+                })
+                .collect::<PyResult<_>>()?
+        } else {
+            development.extract().map_err(|_| {
+                PyTypeError::new_err("development must be a list of floats or a DevelopmentPattern")
+            })?
+        };
         if premium.len() != years.len() || development.len() != years.len() {
             return Err(PyValueError::new_err(format!(
                 "{} years, {} premiums and {} development factors",
@@ -222,8 +280,15 @@ impl PyPreparedLosses {
         })
     }
 
+    /// The record's valuation date, or ``None``.
+    #[getter]
+    fn valuation(&self) -> Option<f64> {
+        self.inner.valuation()
+    }
+
     /// The trended losses as columns: ``id``, ``year``, ``accident``,
-    /// ``amount``, ``factor`` and ``trended``.
+    /// ``amount``, ``development``, ``ultimate``, ``factor`` and
+    /// ``trended``.
     ///
     /// Returns
     /// -------
@@ -235,6 +300,11 @@ impl PyPreparedLosses {
         d.set_item("year", l.iter().map(|x| x.year).collect::<Vec<_>>())?;
         d.set_item("accident", l.iter().map(|x| x.accident).collect::<Vec<_>>())?;
         d.set_item("amount", l.iter().map(|x| x.amount).collect::<Vec<_>>())?;
+        d.set_item(
+            "development",
+            l.iter().map(|x| x.development).collect::<Vec<_>>(),
+        )?;
+        d.set_item("ultimate", l.iter().map(|x| x.ultimate).collect::<Vec<_>>())?;
         d.set_item("factor", l.iter().map(|x| x.factor).collect::<Vec<_>>())?;
         d.set_item("trended", l.iter().map(|x| x.trended).collect::<Vec<_>>())?;
         Ok(d)
@@ -319,6 +389,136 @@ impl PyBurningCost {
             "BurningCost(years={}, loss_cost={:?})",
             self.inner.years.len(),
             self.inner.loss_cost
+        )
+    }
+}
+
+/// Development factors to ultimate by age.
+///
+/// ``at(age)`` interpolates linearly in age between the given ages, takes
+/// the first factor at younger ages and the last at older ones. Use one to
+/// develop each known large loss to ultimate (IBNER) in
+/// ``LargeLossExperience.prepare``, or as a count pattern for the claims not
+/// yet reported in ``PreparedLosses.burning_cost``.
+///
+/// Parameters
+/// ----------
+/// ages : list of float
+///     Strictly increasing ages, in years since the accident date.
+/// factors : list of float
+///     The factor to ultimate at each age.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import DevelopmentPattern
+/// >>> p = DevelopmentPattern.from_history(
+/// ...     ["a", "a", "b", "b"], [1.0, 2.0, 1.0, 2.0], [100.0, 150.0, 50.0, 50.0], ages=[1.0, 2.0]
+/// ... )
+/// >>> [round(f, 4) for f in p.factors]
+/// [1.3333, 1.0]
+/// >>> round(p.at(1.5), 4)
+/// 1.1667
+#[pyclass(name = "DevelopmentPattern", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyDevelopmentPattern {
+    inner: DevelopmentPattern,
+}
+
+#[pymethods]
+impl PyDevelopmentPattern {
+    #[new]
+    fn new(ages: Vec<f64>, factors: Vec<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: DevelopmentPattern::new(ages, factors).map_err(to_py)?,
+        })
+    }
+
+    /// Estimated from each claim's valuations.
+    ///
+    /// The age-to-age factor from ``ages[k]`` to ``ages[k + 1]`` is the sum
+    /// of the amounts at the later age over the sum at the earlier, over the
+    /// claims valued at both with a positive earlier amount (a claim first
+    /// seen later is IBNR, not IBNER). The factor at the last age is 1. With
+    /// every claim valued at every age up to its latest, this is the
+    /// volume-weighted chain ladder on the summed triangle.
+    ///
+    /// Parameters
+    /// ----------
+    /// ids : list of str
+    ///     The claim of each valuation.
+    /// age : list of float
+    ///     The claim's age at each valuation, in years; valuations at an age
+    ///     not in ``ages`` are ignored.
+    /// amount : list of float
+    ///     The claim's amount at each valuation.
+    /// ages : list of float
+    ///     The ages of the pattern.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPattern
+    #[staticmethod]
+    #[pyo3(signature = (ids, age, amount, *, ages))]
+    fn from_history(
+        ids: Vec<String>,
+        age: Vec<f64>,
+        amount: Vec<f64>,
+        ages: Vec<f64>,
+    ) -> PyResult<Self> {
+        if ids.len() != age.len() || ids.len() != amount.len() {
+            return Err(PyValueError::new_err(format!(
+                "{} ids, {} ages and {} amounts",
+                ids.len(),
+                age.len(),
+                amount.len()
+            )));
+        }
+        let valuations: Vec<ClaimValuation> = ids
+            .into_iter()
+            .zip(age)
+            .zip(amount)
+            .map(|((id, age), amount)| ClaimValuation { id, age, amount })
+            .collect();
+        Ok(Self {
+            inner: DevelopmentPattern::from_history(&valuations, &ages).map_err(to_py)?,
+        })
+    }
+
+    /// The ages.
+    #[getter]
+    fn ages(&self) -> Vec<f64> {
+        self.inner.ages().to_vec()
+    }
+
+    /// The factors to ultimate at each age.
+    #[getter]
+    fn factors(&self) -> Vec<f64> {
+        self.inner.factors().to_vec()
+    }
+
+    /// The age-to-age factors.
+    #[getter]
+    fn age_to_age(&self) -> Vec<f64> {
+        self.inner.age_to_age()
+    }
+
+    /// The factor to ultimate at ``age``.
+    ///
+    /// Parameters
+    /// ----------
+    /// age : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn at(&self, age: f64) -> f64 {
+        self.inner.at(age)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "DevelopmentPattern(ages={:?}, factors={:?})",
+            self.inner.ages(),
+            self.inner.factors()
         )
     }
 }

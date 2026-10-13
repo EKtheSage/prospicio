@@ -6,20 +6,29 @@
 //! The steps follow Clark's *Basics of Reinsurance Pricing* (CAS study
 //! note, 2014), section on per-risk experience rating:
 //!
-//! 1. Trend each loss from its accident date to the average accident date
+//! 1. Develop each known loss to its ultimate value (IBNER), by a factor
+//!    per loss or a [`DevelopmentPattern`] at its age at the valuation
+//!    date, if the record is not developed by year instead
+//!    ([`Experience::prepare_developed`]).
+//! 2. Trend each loss from its accident date to the average accident date
 //!    of the prospective period ([`Experience::prepare`]); dates are
 //!    decimal years, as in [`ratemaking`](crate::ratemaking).
-//! 2. Apply each year's treaty to the trended losses of that year
+//! 3. Apply each year's treaty to the trended losses of that year
 //!    ([`Prepared::burning_cost`]), with any annual terms.
-//! 3. Develop each year's layer total with an excess development factor.
-//! 4. Divide by the year's on-level subject premium: the loss cost by
+//! 4. Develop each year's layer total: with Clark's excess development
+//!    factor, or, when the losses were developed one by one, with a factor
+//!    for the claims not yet reported (count IBNR,
+//!    [`YearBasis::from_count_pattern`]).
+//! 5. Divide by the year's on-level subject premium: the loss cost by
 //!    year, and in total the developed losses over the premium, summed.
 //!
 //! Losses reported above a threshold in nominal terms leave the older
 //! years short of losses that trend above it. With a threshold `T`, the
 //! prepared record is complete above `T` times the largest trend factor,
 //! and losses trended below that are dropped, so every year is compared
-//! on the same basis ([`Prepared::complete_above`]).
+//! on the same basis ([`Prepared::complete_above`]). The test is on the
+//! reported amount trended, not the developed one: the record is complete
+//! for losses reported above the threshold, whatever they develop to.
 
 use prospicio_aggregate::Tower;
 use prospicio_core::{Error, Result};
@@ -49,6 +58,7 @@ pub enum Trend {
 pub struct Experience {
     losses: Vec<LargeLoss>,
     threshold: f64,
+    valuation: Option<f64>,
 }
 
 impl Experience {
@@ -76,6 +86,7 @@ impl Experience {
         Ok(Self {
             losses,
             threshold: 0.0,
+            valuation: None,
         })
     }
 
@@ -91,6 +102,32 @@ impl Experience {
         }
         self.threshold = threshold;
         Ok(self)
+    }
+
+    /// The date the amounts were valued at, a decimal year; a loss's age
+    /// for a [`DevelopmentPattern`] is the valuation date less its accident
+    /// date.
+    pub fn with_valuation(mut self, valuation: f64) -> Result<Self> {
+        if !valuation.is_finite() {
+            return Err(Error::InvalidParameter {
+                name: "valuation",
+                value: valuation,
+                reason: "must be finite",
+            });
+        }
+        if let Some(l) = self.losses.iter().find(|l| l.accident > valuation) {
+            return Err(Error::Data(format!(
+                "loss {} has an accident date after the valuation date",
+                l.id
+            )));
+        }
+        self.valuation = Some(valuation);
+        Ok(self)
+    }
+
+    /// The valuation date, if set.
+    pub fn valuation(&self) -> Option<f64> {
+        self.valuation
     }
 
     /// The losses, in the order given.
@@ -118,6 +155,59 @@ impl Experience {
     /// assert_eq!(p.losses()[1].year, 1996);
     /// ```
     pub fn prepare(&self, trend: &Trend) -> Result<Prepared> {
+        self.prepare_developed(trend, &Development::Factors(vec![1.0; self.losses.len()]))
+    }
+
+    /// Each loss developed to ultimate (IBNER), then trended to the
+    /// prospective period.
+    ///
+    /// ```
+    /// use prospicio_pricing::experience::{
+    ///     Development, DevelopmentPattern, Experience, LargeLoss, Trend,
+    /// };
+    ///
+    /// let losses = vec![
+    ///     LargeLoss { id: "a".into(), accident: 2020.5, amount: 200.0 },
+    ///     LargeLoss { id: "b".into(), accident: 2022.5, amount: 300.0 },
+    /// ];
+    /// // To ultimate: 1.5 at age 2, 1.1 at age 4 (ages in years).
+    /// let pattern = DevelopmentPattern::new(vec![2.0, 4.0], vec![1.5, 1.1]).unwrap();
+    /// let p = Experience::new(losses).unwrap()
+    ///     .with_valuation(2024.5).unwrap()
+    ///     .prepare_developed(&Trend::Factors(vec![1.0, 1.0]), &Development::Pattern(pattern))
+    ///     .unwrap();
+    /// assert!((p.losses()[0].ultimate - 220.0).abs() < 1e-12); // age 4
+    /// assert!((p.losses()[1].ultimate - 450.0).abs() < 1e-12); // age 2
+    /// ```
+    pub fn prepare_developed(&self, trend: &Trend, development: &Development) -> Result<Prepared> {
+        let developments: Vec<f64> = match development {
+            Development::Factors(f) => {
+                if f.len() != self.losses.len() {
+                    return Err(Error::Data(format!(
+                        "{} development factors for {} losses",
+                        f.len(),
+                        self.losses.len()
+                    )));
+                }
+                if let Some(&bad) = f.iter().find(|x| !(x.is_finite() && **x > 0.0)) {
+                    return Err(Error::InvalidParameter {
+                        name: "development",
+                        value: bad,
+                        reason: "must be finite and positive",
+                    });
+                }
+                f.clone()
+            }
+            Development::Pattern(pattern) => {
+                let valuation = self.valuation.ok_or_else(|| {
+                    Error::Data("development by age needs a valuation date".into())
+                })?;
+                self.losses
+                    .iter()
+                    .map(|l| pattern.at(valuation - l.accident))
+                    .collect()
+            }
+        };
         let factors: Vec<f64> = match trend {
             Trend::Rate { rate, to } => {
                 if !(rate.is_finite() && *rate > -1.0 && to.is_finite()) {
@@ -154,20 +244,197 @@ impl Experience {
         let losses = self
             .losses
             .iter()
-            .zip(&factors)
-            .map(|(l, &factor)| PreparedLoss {
+            .zip(factors.iter().zip(&developments))
+            .map(|(l, (&factor, &development))| PreparedLoss {
                 id: l.id.clone(),
                 year: l.accident.floor() as i32,
                 accident: l.accident,
                 amount: l.amount,
+                development,
+                ultimate: l.amount * development,
                 factor,
-                trended: l.amount * factor,
+                trended: l.amount * development * factor,
             })
             .collect();
         Ok(Prepared {
             losses,
             complete_above,
+            valuation: self.valuation,
         })
+    }
+}
+
+/// How known losses are developed to ultimate (IBNER), for
+/// [`Experience::prepare_developed`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum Development {
+    /// A factor to ultimate per loss, in the record's order.
+    Factors(Vec<f64>),
+    /// Factors to ultimate by age, each loss at its age at the valuation
+    /// date ([`Experience::with_valuation`]).
+    Pattern(DevelopmentPattern),
+}
+
+/// Development factors to ultimate by age, in years since the accident
+/// date (or in any unit, used consistently).
+///
+/// [`at`](Self::at) interpolates linearly in age between the given ages,
+/// takes the first factor at younger ages and the last at older ones; give
+/// a pattern that starts at the youngest age in the record and ends where
+/// development stops (a last factor of 1, or a tail).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DevelopmentPattern {
+    ages: Vec<f64>,
+    factors: Vec<f64>,
+}
+
+/// One valuation of one claim: its amount at an age, for
+/// [`DevelopmentPattern::from_history`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClaimValuation {
+    pub id: String,
+    pub age: f64,
+    pub amount: f64,
+}
+
+impl DevelopmentPattern {
+    /// From strictly increasing finite ages and finite positive factors to
+    /// ultimate at each.
+    pub fn new(ages: Vec<f64>, factors: Vec<f64>) -> Result<Self> {
+        if ages.is_empty() || ages.len() != factors.len() {
+            return Err(Error::Data(format!(
+                "{} ages and {} factors; a pattern needs at least one of each, as many ages as factors",
+                ages.len(),
+                factors.len()
+            )));
+        }
+        if ages.iter().any(|a| !a.is_finite()) || ages.windows(2).any(|w| w[1] <= w[0]) {
+            return Err(Error::Data(
+                "ages must be finite and strictly increasing".into(),
+            ));
+        }
+        if let Some(&bad) = factors.iter().find(|f| !(f.is_finite() && **f > 0.0)) {
+            return Err(Error::InvalidParameter {
+                name: "factors",
+                value: bad,
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(Self { ages, factors })
+    }
+
+    /// Estimated from each claim's valuations at the given ages: the
+    /// age-to-age factor from `ages[k]` to `ages[k + 1]` is the sum of the
+    /// amounts at `ages[k + 1]` over the sum at `ages[k]`, over the claims
+    /// valued at both with a positive amount at `ages[k]` (a claim first
+    /// seen later was not yet reported, which is IBNR, not IBNER). The
+    /// factors to ultimate are their products, 1 at the last age (no
+    /// tail). With every claim valued at every age up to its latest, this
+    /// is the volume-weighted chain ladder on the summed triangle.
+    ///
+    /// Valuations at an age not in `ages` are ignored.
+    ///
+    /// ```
+    /// use prospicio_pricing::experience::{ClaimValuation, DevelopmentPattern};
+    ///
+    /// let v = |id: &str, age: f64, amount: f64| ClaimValuation { id: id.into(), age, amount };
+    /// let history = [v("a", 1.0, 100.0), v("a", 2.0, 150.0), v("b", 1.0, 50.0), v("b", 2.0, 50.0)];
+    /// let p = DevelopmentPattern::from_history(&history, &[1.0, 2.0]).unwrap();
+    /// assert!((p.factors()[0] - 200.0 / 150.0).abs() < 1e-15);
+    /// assert_eq!(p.factors()[1], 1.0);
+    /// ```
+    pub fn from_history(valuations: &[ClaimValuation], ages: &[f64]) -> Result<Self> {
+        use std::collections::HashMap;
+        if ages.len() < 2 {
+            return Err(Error::Data(
+                "estimating a pattern needs at least two ages".into(),
+            ));
+        }
+        if ages.iter().any(|a| !a.is_finite()) || ages.windows(2).any(|w| w[1] <= w[0]) {
+            return Err(Error::Data(
+                "ages must be finite and strictly increasing".into(),
+            ));
+        }
+        let slot = |age: f64| {
+            ages.iter()
+                .position(|&a| (a - age).abs() <= 1e-9 * a.abs().max(1.0))
+        };
+        let mut by_claim: HashMap<&str, Vec<Option<f64>>> = HashMap::new();
+        for v in valuations {
+            if !(v.amount.is_finite() && v.amount >= 0.0) {
+                return Err(Error::InvalidParameter {
+                    name: "amount",
+                    value: v.amount,
+                    reason: "must be finite and non-negative",
+                });
+            }
+            let Some(k) = slot(v.age) else { continue };
+            let row = by_claim
+                .entry(v.id.as_str())
+                .or_insert_with(|| vec![None; ages.len()]);
+            if row[k].is_some() {
+                return Err(Error::Data(format!(
+                    "claim {} is valued twice at age {}",
+                    v.id, ages[k]
+                )));
+            }
+            row[k] = Some(v.amount);
+        }
+        let mut links = Vec::with_capacity(ages.len() - 1);
+        for k in 0..ages.len() - 1 {
+            let (mut from, mut to) = (0.0, 0.0);
+            for row in by_claim.values() {
+                if let (Some(a), Some(b)) = (row[k], row[k + 1])
+                    && a > 0.0
+                {
+                    from += a;
+                    to += b;
+                }
+            }
+            if from <= 0.0 {
+                return Err(Error::Data(format!(
+                    "no claim is valued at both ages {} and {}",
+                    ages[k],
+                    ages[k + 1]
+                )));
+            }
+            links.push(to / from);
+        }
+        let mut factors = vec![1.0; ages.len()];
+        for k in (0..links.len()).rev() {
+            factors[k] = factors[k + 1] * links[k];
+        }
+        Self::new(ages.to_vec(), factors)
+    }
+
+    /// The ages.
+    pub fn ages(&self) -> &[f64] {
+        &self.ages
+    }
+
+    /// The factors to ultimate at each age.
+    pub fn factors(&self) -> &[f64] {
+        &self.factors
+    }
+
+    /// The age-to-age factors, one fewer than the ages.
+    pub fn age_to_age(&self) -> Vec<f64> {
+        self.factors.windows(2).map(|w| w[0] / w[1]).collect()
+    }
+
+    /// The factor to ultimate at `age`: linear between the given ages, the
+    /// first factor before the first age and the last after the last.
+    pub fn at(&self, age: f64) -> f64 {
+        let (a, f) = (&self.ages, &self.factors);
+        if age <= a[0] {
+            return f[0];
+        }
+        if age >= a[a.len() - 1] {
+            return f[f.len() - 1];
+        }
+        let k = a.partition_point(|&x| x <= age) - 1;
+        let w = (age - a[k]) / (a[k + 1] - a[k]);
+        f[k] + w * (f[k + 1] - f[k])
     }
 }
 
@@ -180,9 +447,14 @@ pub struct PreparedLoss {
     pub accident: f64,
     /// The loss as reported.
     pub amount: f64,
+    /// The development factor to ultimate applied (IBNER); 1 when the
+    /// record is developed by year instead.
+    pub development: f64,
+    /// `amount × development`.
+    pub ultimate: f64,
     /// The trend factor applied.
     pub factor: f64,
-    /// `amount × factor`.
+    /// `ultimate × factor`.
     pub trended: f64,
 }
 
@@ -191,6 +463,7 @@ pub struct PreparedLoss {
 pub struct Prepared {
     losses: Vec<PreparedLoss>,
     complete_above: f64,
+    valuation: Option<f64>,
 }
 
 /// An accident year's exposure base and excess development factor, for
@@ -200,8 +473,44 @@ pub struct YearBasis {
     pub year: i32,
     /// On-level subject premium (or another exposure base).
     pub premium: f64,
-    /// The excess development factor for the year's layer losses.
+    /// The development factor for the year's layer losses: Clark's excess
+    /// development factor when the losses were not developed one by one,
+    /// or, after [`Development`] per loss, only the factor for claims not
+    /// yet reported (count IBNR), so that known claims' development is not
+    /// counted twice.
     pub development: f64,
+}
+
+impl YearBasis {
+    /// A year whose development factor is a count pattern's factor at the
+    /// year's average age, `valuation − (year + ½)`: the factor for the
+    /// claims not yet reported, after each known claim was developed.
+    ///
+    /// ```
+    /// use prospicio_pricing::experience::{DevelopmentPattern, YearBasis};
+    ///
+    /// let counts = DevelopmentPattern::new(vec![1.0, 3.0], vec![1.4, 1.0]).unwrap();
+    /// let y = YearBasis::from_count_pattern(2022, 1000.0, &counts, 2024.5).unwrap();
+    /// assert!((y.development - 1.2).abs() < 1e-12); // age 2, halfway
+    /// ```
+    pub fn from_count_pattern(
+        year: i32,
+        premium: f64,
+        counts: &DevelopmentPattern,
+        valuation: f64,
+    ) -> Result<Self> {
+        let age = valuation - (f64::from(year) + 0.5);
+        if !(age.is_finite() && age >= 0.0) {
+            return Err(Error::Data(format!(
+                "year {year} is after the valuation date {valuation}"
+            )));
+        }
+        Ok(Self {
+            year,
+            premium,
+            development: counts.at(age),
+        })
+    }
 }
 
 impl Prepared {
@@ -210,9 +519,15 @@ impl Prepared {
         &self.losses
     }
 
+    /// The valuation date of the record, if it had one.
+    pub fn valuation(&self) -> Option<f64> {
+        self.valuation
+    }
+
     /// The trended size above which every year's record is complete: the
     /// reporting threshold times the largest trend factor. Losses trended
-    /// below it are left out of [`burning_cost`](Self::burning_cost).
+    /// below it, as reported, are left out of
+    /// [`burning_cost`](Self::burning_cost).
     pub fn complete_above(&self) -> f64 {
         self.complete_above
     }
@@ -274,7 +589,7 @@ impl Prepared {
             let losses: Vec<f64> = self
                 .losses
                 .iter()
-                .filter(|l| l.year == basis.year && l.trended >= self.complete_above)
+                .filter(|l| l.year == basis.year && l.amount * l.factor >= self.complete_above)
                 .map(|l| l.trended)
                 .collect();
             let layer_loss = tower.ceded(&losses);
@@ -414,5 +729,122 @@ mod tests {
         assert!((b.loss_cost[0] - 0.55).abs() < 1e-15);
         assert!((b.mean_loss_cost[0] - 0.55).abs() < 1e-15);
         assert!(p.burning_cost(&[], &years).is_err());
+    }
+
+    fn valued(id: &str, age: f64, amount: f64) -> ClaimValuation {
+        ClaimValuation {
+            id: id.into(),
+            age,
+            amount,
+        }
+    }
+
+    #[test]
+    fn a_pattern_interpolates_in_age_and_holds_at_the_ends() {
+        let p = DevelopmentPattern::new(vec![1.0, 2.0, 4.0], vec![2.0, 1.5, 1.0]).unwrap();
+        assert_eq!(p.at(0.25), 2.0);
+        assert_eq!(p.at(1.0), 2.0);
+        assert!((p.at(1.5) - 1.75).abs() < 1e-15);
+        assert!((p.at(3.0) - 1.25).abs() < 1e-15);
+        assert_eq!(p.at(9.0), 1.0);
+        assert_eq!(p.age_to_age(), vec![2.0 / 1.5, 1.5]);
+        assert!(DevelopmentPattern::new(vec![2.0, 1.0], vec![1.0, 1.0]).is_err());
+        assert!(DevelopmentPattern::new(vec![1.0], vec![0.0]).is_err());
+        assert!(DevelopmentPattern::new(vec![], vec![]).is_err());
+    }
+
+    #[test]
+    fn history_pairs_only_claims_seen_at_both_ages() {
+        let history = [
+            valued("a", 1.0, 100.0),
+            valued("a", 2.0, 180.0),
+            valued("a", 3.0, 200.0),
+            valued("b", 1.0, 100.0),
+            valued("b", 2.0, 120.0),
+            // Reported at age 2: IBNR, left out of the first link.
+            valued("c", 2.0, 500.0),
+            valued("c", 3.0, 550.0),
+            // A valuation off the grid is ignored.
+            valued("a", 2.5, 1e9),
+        ];
+        let p = DevelopmentPattern::from_history(&history, &[1.0, 2.0, 3.0]).unwrap();
+        let first = 300.0 / 200.0;
+        let second = 750.0 / 680.0;
+        assert!((p.age_to_age()[0] - first).abs() < 1e-14);
+        assert!((p.age_to_age()[1] - second).abs() < 1e-14);
+        assert!((p.factors()[0] - first * second).abs() < 1e-14);
+        assert_eq!(p.factors()[2], 1.0);
+
+        let twice = [
+            valued("a", 1.0, 1.0),
+            valued("a", 1.0, 2.0),
+            valued("a", 2.0, 2.0),
+        ];
+        assert!(DevelopmentPattern::from_history(&twice, &[1.0, 2.0]).is_err());
+        let unpaired = [valued("a", 1.0, 1.0), valued("b", 2.0, 2.0)];
+        assert!(DevelopmentPattern::from_history(&unpaired, &[1.0, 2.0]).is_err());
+        assert!(DevelopmentPattern::from_history(&history, &[1.0]).is_err());
+    }
+
+    #[test]
+    fn developed_losses_reach_the_layer_but_completeness_stays_on_reported() {
+        let e = Experience::new(vec![loss("a", 2020.5, 90.0), loss("b", 2022.5, 150.0)])
+            .unwrap()
+            .with_threshold(100.0)
+            .unwrap()
+            .with_valuation(2024.5)
+            .unwrap();
+        let pattern = DevelopmentPattern::new(vec![2.0, 4.0], vec![2.0, 1.5]).unwrap();
+        let p = e
+            .prepare_developed(
+                &Trend::Factors(vec![1.0, 1.0]),
+                &Development::Pattern(pattern),
+            )
+            .unwrap();
+        assert_eq!(p.valuation(), Some(2024.5));
+        assert_eq!(p.losses()[0].development, 1.5);
+        assert_eq!(p.losses()[0].trended, 135.0);
+        assert_eq!(p.losses()[1].ultimate, 300.0);
+        // "a" develops above the threshold but was reported below it: out.
+        let tower = Tower::new(vec![Layer::xol("x", 1000.0, 100.0).unwrap()]).unwrap();
+        let years = [
+            YearBasis {
+                year: 2020,
+                premium: 1000.0,
+                development: 1.0,
+            },
+            YearBasis {
+                year: 2022,
+                premium: 1000.0,
+                development: 1.0,
+            },
+        ];
+        let b = p.burning_cost(&[tower.clone(), tower], &years).unwrap();
+        assert_eq!(b.years[0].losses, 0);
+        assert_eq!(b.years[1].layer_loss, vec![200.0]);
+
+        let no_date = Experience::new(vec![loss("a", 2020.5, 90.0)]).unwrap();
+        let pattern = DevelopmentPattern::new(vec![1.0], vec![1.0]).unwrap();
+        assert!(
+            no_date
+                .prepare_developed(&Trend::Factors(vec![1.0]), &Development::Pattern(pattern))
+                .is_err()
+        );
+        assert!(
+            no_date
+                .prepare_developed(&Trend::Factors(vec![1.0]), &Development::Factors(vec![]))
+                .is_err()
+        );
+        assert!(no_date.clone().with_valuation(2019.0).is_err());
+    }
+
+    #[test]
+    fn a_count_pattern_gives_the_year_its_ibnr_factor() {
+        let counts = DevelopmentPattern::new(vec![0.5, 1.5, 2.5], vec![2.0, 1.2, 1.0]).unwrap();
+        let y = YearBasis::from_count_pattern(2023, 500.0, &counts, 2024.5).unwrap();
+        assert_eq!((y.year, y.premium), (2023, 500.0));
+        // Age 1: halfway from 2.0 at 0.5 to 1.2 at 1.5.
+        assert!((y.development - 1.6).abs() < 1e-15);
+        assert!(YearBasis::from_count_pattern(2025, 500.0, &counts, 2024.5).is_err());
     }
 }
