@@ -4,7 +4,9 @@
 //! never lag the code they describe (docs/architecture.md, "Documentation"):
 //!
 //! - `python`: build the extension and its type stubs, run the tests, render
-//!   the great-docs site.
+//!   the great-docs site, whose user guide holds the guides in docs/guides and
+//!   the notebooks in examples/, executed (the notebooks are committed without
+//!   outputs, so the site is where their results are published).
 //! - `r`: regenerate `man/` and `NAMESPACE` with roxygen2, install the
 //!   package, run the tests, render the pkgdown site.
 //! - `rust`: rustdoc for the pure-Rust crates, warnings denied.
@@ -26,6 +28,7 @@ usage: cargo xtask <task> [--check]
 
 tasks:
   python   build the Python extension and stubs, test, render its docs
+           (with the guides and the executed notebooks)
   r        install the R package, regenerate man/ and NAMESPACE, test, render its docs
   rust     build rustdoc for the pure-Rust crates
   docs     all of the above, collected into target/docs-site
@@ -85,7 +88,8 @@ fn python(check: bool) -> Result {
         cmd
     };
     step("python: sync the environment");
-    run(uv().args(["sync", "--group", "docs"]))?;
+    // `examples`: Jupyter, to execute the notebooks for the user guide.
+    run(uv().args(["sync", "--group", "docs", "--group", "examples"]))?;
     step("python: build the extension and regenerate its type stubs");
     run(uv().args([
         "run",
@@ -97,14 +101,132 @@ fn python(check: bool) -> Result {
     ]))?;
     step("python: test");
     run(uv().args(["run", "pytest", "tests"]))?;
+    step("python: stage the user guide (the guides, and the notebooks executed)");
+    stage_user_guide(&uv)?;
     step("python: render the docs site");
+    // UTF-8 mode: great-docs writes _quarto.yml in the locale's encoding,
+    // which on Windows cannot hold the reference titles' non-ASCII letters.
     run(uv()
         .args(["run", "great-docs", "build"])
-        .env("PYTHONIOENCODING", "utf-8"))?;
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1"))?;
     if check {
         unchanged(PYTHON_GENERATED)?;
     }
     Ok(())
+}
+
+/// Where the Python site's user guide is staged; `user_guide` in
+/// python/great-docs.yml points here.
+const USER_GUIDE: &str = "target/user-guide";
+
+/// Stages the Python site's user guide: each guide in docs/guides under
+/// "Guides", then each notebook in examples/, executed and exported to
+/// Markdown with its outputs and charts, under "Worked examples". The
+/// notebooks are committed without outputs (.gitattributes), so this is where
+/// their results are published. A numeric prefix orders the pages, and
+/// great-docs strips it from their URLs: `user-guide/<name>.html`.
+fn stage_user_guide(uv: &dyn Fn() -> Command) -> Result {
+    let root = root();
+    let stage = root.join(USER_GUIDE);
+    if stage.exists() {
+        fs::remove_dir_all(&stage).map_err(|e| format!("clearing {}: {e}", stage.display()))?;
+    }
+    fs::create_dir_all(&stage).map_err(|e| format!("creating {}: {e}", stage.display()))?;
+    let notebooks = files(&root.join("examples"), "ipynb")?;
+    let stems: Vec<String> = notebooks.iter().map(|p| file_stem(p)).collect();
+    for guide in files(&root.join("docs/guides"), "md")? {
+        let name = file_stem(&guide);
+        if name == "README" {
+            continue;
+        }
+        // A guide links to a notebook on GitHub; on the site, to its page.
+        let mut text = read(&guide)?;
+        for s in &stems {
+            text = text.replace(&format!("](../../examples/{s}.ipynb"), &format!("]({s}.md"));
+        }
+        write(&stage.join(format!("1-{name}.md")), &page(&text, "Guides"))?;
+    }
+    for (notebook, s) in notebooks.iter().zip(&stems) {
+        // nbconvert runs the kernel in the notebook's directory, as Jupyter does.
+        // Its default limit of 30 s per cell could stop a heavy cell on a slow
+        // runner; 600 s still stops a hung kernel before the job's timeout.
+        run(uv()
+            .args([
+                "run",
+                "jupyter",
+                "nbconvert",
+                "--to",
+                "markdown",
+                "--execute",
+                "--ExecutePreprocessor.timeout=600",
+            ])
+            .arg("--output-dir")
+            .arg(&stage)
+            .args(["--output", s])
+            .arg(notebook))?;
+        let exported = stage.join(format!("{s}.md"));
+        let text = read(&exported)?.replace("](../docs/guides/", "](");
+        write(
+            &stage.join(format!("2-{s}.md")),
+            &page(&text, "Worked examples"),
+        )?;
+        fs::remove_file(&exported).map_err(|e| format!("removing {}: {e}", exported.display()))?;
+    }
+    Ok(())
+}
+
+/// A user guide page: the first `# ` heading outside a code block becomes the
+/// title in front matter, and `section` groups the page in the sidebar.
+fn page(text: &str, section: &str) -> String {
+    let mut title = None;
+    let mut fenced = false;
+    let mut body = String::with_capacity(text.len());
+    for line in text.lines() {
+        if line.starts_with("```") {
+            fenced = !fenced;
+        }
+        if title.is_none() && !fenced {
+            if let Some(heading) = line.strip_prefix("# ") {
+                title = Some(heading.trim().to_owned());
+                continue;
+            }
+        }
+        body.push_str(line);
+        body.push('\n');
+    }
+    let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+    let title = title.map_or(String::new(), |t| format!("title: {}\n", quote(&t)));
+    format!(
+        "---\n{title}guide-section: {}\n---\n\n{}",
+        quote(section),
+        body.trim_start()
+    )
+}
+
+/// The files in `dir` with extension `ext`, sorted by name.
+fn files(dir: &Path, ext: &str) -> Result<Vec<PathBuf>> {
+    let mut out: Vec<PathBuf> = fs::read_dir(dir)
+        .map_err(|e| format!("reading {}: {e}", dir.display()))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.is_file() && p.extension() == Some(OsStr::new(ext)))
+        .collect();
+    out.sort();
+    Ok(out)
+}
+
+fn file_stem(path: &Path) -> String {
+    path.file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+fn read(path: &Path) -> Result<String> {
+    fs::read_to_string(path).map_err(|e| format!("reading {}: {e}", path.display()))
+}
+
+fn write(path: &Path, text: &str) -> Result {
+    fs::write(path, text).map_err(|e| format!("writing {}: {e}", path.display()))
 }
 
 fn r(check: bool) -> Result {
@@ -186,7 +308,17 @@ fn docs(check: bool) -> Result {
         copy_dir(&root.join(from), &site.join(to))
             .map_err(|e| format!("copying {from} into the site: {e}"))?;
     }
-    fs::write(site.join("index.html"), INDEX)
+    // The user guide's first page, its URL without the ordering prefix.
+    let guide = files(&root.join(USER_GUIDE), "md")?
+        .first()
+        .map(|p| file_stem(p))
+        .map(|s| {
+            s.split_once('-')
+                .map_or(s.clone(), |(_, name)| name.to_owned())
+        })
+        .ok_or("the user guide is empty")?;
+    let index = INDEX.replace("{guide}", &format!("python/user-guide/{guide}.html"));
+    fs::write(site.join("index.html"), index)
         .map_err(|e| format!("writing the site index: {e}"))?;
     println!("docs: open {}", site.join("index.html").display());
     Ok(())
@@ -204,6 +336,7 @@ const INDEX: &str = r#"<!doctype html>
 <p>Actuarial modeling on a Rust core. One kernel, documented for each front end.</p>
 <ul>
   <li><a href="python/index.html">Python</a> (great-docs)</li>
+  <li><a href="{guide}">Guides and worked examples</a> (the Python site's User Guide, with the notebooks' results)</li>
   <li><a href="r/index.html">R</a> (pkgdown)</li>
   <li><a href="rust/prospicio_prob/index.html">Rust crates</a> (rustdoc)</li>
 </ul>

@@ -6,6 +6,10 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
 use prospicio_pricing::classical::{self, Kind, Principle};
+use prospicio_pricing::experience::{
+    ClaimValuation, Development, DevelopmentPattern, Experience, Fx, IndexClause, IndexKind,
+    LargeLoss, Prepared, Trend, YearBasis,
+};
 use prospicio_pricing::exposure::{
     ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve,
 };
@@ -13,12 +17,14 @@ use prospicio_pricing::layer::XsLayer;
 use prospicio_pricing::natural::{
     Allocation, Pentagon, Portfolio as NaturalInner, Quantity, Target,
 };
+use prospicio_pricing::quote::{Loads, Quote};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
 
 use crate::aggregate::{AnyCount, EventSet};
 use crate::distributions::{Grid, PredictiveDistribution, Sampled, severity_from_robj};
 use crate::pareto::PiecewisePareto;
+use crate::reinsurance::ReinsuranceTower;
 use crate::risk::RiskDistortion;
 use crate::{to_r, whole};
 
@@ -556,7 +562,8 @@ fn price_list(p: &Price) -> List {
     )
 }
 
-/// Risk-loaded price of a sampled or a predictive distribution's total.
+/// Risk-loaded price of a sampled, a predictive distribution's total or a
+/// grid distribution.
 #[extendr]
 fn pricing_price(losses: Robj, assets: Robj, rate: Option<f64>, pricing: Robj) -> Result<List> {
     let rule = premium_rule(rate, &pricing)?;
@@ -565,9 +572,11 @@ fn pricing_price(losses: Robj, assets: Robj, rate: Option<f64>, pricing: Robj) -
         risk_load::price(&s.inner, &rule, &assets)
     } else if let Ok(pd) = <&PredictiveDistribution>::try_from(&losses) {
         risk_load::price(pd.inner.total(), &rule, &assets)
+    } else if let Ok(g) = <&Grid>::try_from(&losses) {
+        risk_load::price_grid(&g.inner, &rule, &assets)
     } else {
         return Err(Error::Other(
-            "losses must be a sampled or a predictive_distribution".into(),
+            "losses must be a sampled, a predictive_distribution or a grid_distribution".into(),
         ));
     }
     .map_err(to_r)?;
@@ -921,8 +930,401 @@ fn distortion_envelope_rust(x: Robj, premium: f64, s: &[f64], assets: f64) -> Re
     Ok(list!(lower = lower, upper = upper))
 }
 
+/// A quote: the technical premium of a risk-loaded price (`premium` NaN),
+/// or the same cover at a quoted `premium`. `limit` NaN for none.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_quote(
+    expected_loss: f64,
+    risk_premium: f64,
+    assets: f64,
+    expenses: f64,
+    brokerage: f64,
+    fixed: f64,
+    limit: f64,
+    premium: f64,
+) -> Result<List> {
+    let price = Price {
+        expected_loss,
+        premium: risk_premium,
+        assets,
+    };
+    let loads = Loads::new(expenses, brokerage, fixed).map_err(to_r)?;
+    let limit = (!limit.is_nan()).then_some(limit);
+    let mut q = Quote::technical(&price, loads, limit).map_err(to_r)?;
+    if !premium.is_nan() {
+        q = q.at(premium).map_err(to_r)?;
+    }
+    let na = |x: Option<f64>| x.unwrap_or(f64::NAN);
+    Ok(list!(
+        expected_loss = q.expected_loss,
+        margin = q.margin(),
+        risk_premium = q.risk_premium,
+        expenses = q.expenses(),
+        brokerage = q.brokerage(),
+        premium = q.premium,
+        net_premium = q.net_premium(),
+        assets = q.assets,
+        capital = q.capital(),
+        return_on_capital = q.return_on_capital(),
+        loss_ratio = q.loss_ratio(),
+        multiple = q.multiple(),
+        rate_on_line = na(q.rate_on_line()),
+        payback = na(q.payback())
+    ))
+}
+
+/// Large losses developed and trended to the prospective period: by `rate`
+/// to `to`, or, with `rate` NaN, by `factors`; developed by the pattern
+/// `(dev_ages, dev_factors)` at each loss's age at `valuation` (NaN for
+/// none), or by `dev_per_loss`, or not at all when both are empty;
+/// converted by `fx` first (empty for none, one stated rate, or one per
+/// loss).
+#[allow(clippy::too_many_arguments)]
+fn prepare_large_losses(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
+    fx: &[f64],
+) -> Result<Prepared> {
+    if ids.len() != accident.len() || ids.len() != amount.len() {
+        return Err(Error::Other(format!(
+            "{} ids, {} accident dates and {} amounts",
+            ids.len(),
+            accident.len(),
+            amount.len()
+        )));
+    }
+    let losses = ids
+        .into_iter()
+        .zip(accident)
+        .zip(amount)
+        .map(|((id, &accident), &amount)| LargeLoss {
+            id,
+            accident,
+            amount,
+        })
+        .collect();
+    let trend = if rate.is_nan() {
+        Trend::Factors(factors.to_vec())
+    } else {
+        Trend::Rate { rate, to }
+    };
+    let mut e = Experience::new(losses)
+        .and_then(|e| e.with_threshold(threshold))
+        .map_err(to_r)?;
+    if !valuation.is_nan() {
+        e = e.with_valuation(valuation).map_err(to_r)?;
+    }
+    match fx {
+        [] => {}
+        [r] => e = e.with_fx(Fx::Rate(*r)).map_err(to_r)?,
+        r => e = e.with_fx(Fx::PerLoss(r.to_vec())).map_err(to_r)?,
+    }
+    let development = if !dev_ages.is_empty() {
+        Some(Development::Pattern(
+            DevelopmentPattern::new(dev_ages.to_vec(), dev_factors.to_vec()).map_err(to_r)?,
+        ))
+    } else if !dev_per_loss.is_empty() {
+        Some(Development::Factors(dev_per_loss.to_vec()))
+    } else {
+        None
+    };
+    match development {
+        Some(d) => e.prepare_developed(&trend, &d),
+        None => e.prepare(&trend),
+    }
+    .map_err(to_r)
+}
+
+fn tower_list(towers: List) -> Result<Vec<prospicio_aggregate::Tower>> {
+    towers
+        .values()
+        .map(|t| {
+            <&ReinsuranceTower>::try_from(&t)
+                .map(|t| t.inner.clone())
+                .map_err(|_| Error::Other("towers must be reinsurance_tower objects".into()))
+        })
+        .collect()
+}
+
+/// Each year's losses under its own program beside the proposed tower:
+/// `list(year, reported_losses, trended_losses, historical_layers,
+/// historical, proposed_layers, proposed)`, with `historical_layers` and
+/// `historical` a list per year and `proposed` year-by-layer, by column.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_as_if(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
+    fx: &[f64],
+    historical: List,
+    years: &[i32],
+    proposed: Robj,
+) -> Result<List> {
+    let p = prepare_large_losses(
+        ids,
+        accident,
+        amount,
+        threshold,
+        rate,
+        to,
+        factors,
+        valuation,
+        dev_ages,
+        dev_factors,
+        dev_per_loss,
+        fx,
+    )?;
+    let historical = tower_list(historical)?;
+    let proposed = <&ReinsuranceTower>::try_from(&proposed)
+        .map_err(|_| Error::Other("proposed must be a reinsurance_tower".into()))?;
+    let a = p.as_if(&historical, years, &proposed.inner).map_err(to_r)?;
+    let layers = a.proposed_layers.len();
+    let proposed: Vec<f64> = (0..layers)
+        .flat_map(|i| a.years.iter().map(move |r| r.proposed[i]))
+        .collect();
+    Ok(list!(
+        year = a.years.iter().map(|r| r.year).collect::<Vec<_>>(),
+        reported_losses = a
+            .years
+            .iter()
+            .map(|r| r.reported_losses as i32)
+            .collect::<Vec<_>>(),
+        trended_losses = a
+            .years
+            .iter()
+            .map(|r| r.trended_losses as i32)
+            .collect::<Vec<_>>(),
+        historical_layers = List::from_values(a.years.iter().map(|r| r.historical_layers.clone())),
+        historical = List::from_values(a.years.iter().map(|r| r.historical.clone())),
+        proposed_layers = a.proposed_layers.clone(),
+        proposed = proposed
+    ))
+}
+
+/// A development pattern estimated from claim valuations:
+/// `list(ages, factors)`.
+#[extendr]
+fn pricing_development_pattern(
+    ids: Vec<String>,
+    age: &[f64],
+    amount: &[f64],
+    ages: &[f64],
+) -> Result<List> {
+    if ids.len() != age.len() || ids.len() != amount.len() {
+        return Err(Error::Other(format!(
+            "{} ids, {} ages and {} amounts",
+            ids.len(),
+            age.len(),
+            amount.len()
+        )));
+    }
+    let valuations: Vec<ClaimValuation> = ids
+        .into_iter()
+        .zip(age)
+        .zip(amount)
+        .map(|((id, &age), &amount)| ClaimValuation { id, age, amount })
+        .collect();
+    let p = DevelopmentPattern::from_history(&valuations, ages).map_err(to_r)?;
+    Ok(list!(
+        ages = p.ages().to_vec(),
+        factors = p.factors().to_vec()
+    ))
+}
+
+/// A pattern's factors to ultimate at each of `x`.
+#[extendr]
+fn pricing_pattern_at(ages: &[f64], factors: &[f64], x: &[f64]) -> Result<Vec<f64>> {
+    let p = DevelopmentPattern::new(ages.to_vec(), factors.to_vec()).map_err(to_r)?;
+    Ok(x.iter().map(|&a| p.at(a)).collect())
+}
+
+/// Each year's count IBNR factor: the count pattern at the year's average
+/// age at `valuation`.
+#[extendr]
+fn pricing_count_development(
+    ages: &[f64],
+    factors: &[f64],
+    years: &[i32],
+    valuation: f64,
+) -> Result<Vec<f64>> {
+    let p = DevelopmentPattern::new(ages.to_vec(), factors.to_vec()).map_err(to_r)?;
+    years
+        .iter()
+        .map(|&y| {
+            YearBasis::from_count_pattern(y, 1.0, &p, valuation)
+                .map(|b| b.development)
+                .map_err(to_r)
+        })
+        .collect()
+}
+
+/// The trended losses as columns, and `complete_above`.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_trend_large_losses(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
+    fx: &[f64],
+) -> Result<List> {
+    let p = prepare_large_losses(
+        ids,
+        accident,
+        amount,
+        threshold,
+        rate,
+        to,
+        factors,
+        valuation,
+        dev_ages,
+        dev_factors,
+        dev_per_loss,
+        fx,
+    )?;
+    let l = p.losses();
+    Ok(list!(
+        id = l.iter().map(|x| x.id.clone()).collect::<Vec<_>>(),
+        year = l.iter().map(|x| x.year).collect::<Vec<_>>(),
+        accident = l.iter().map(|x| x.accident).collect::<Vec<_>>(),
+        amount = l.iter().map(|x| x.amount).collect::<Vec<_>>(),
+        fx = l.iter().map(|x| x.fx).collect::<Vec<_>>(),
+        development = l.iter().map(|x| x.development).collect::<Vec<_>>(),
+        ultimate = l.iter().map(|x| x.ultimate).collect::<Vec<_>>(),
+        factor = l.iter().map(|x| x.factor).collect::<Vec<_>>(),
+        trended = l.iter().map(|x| x.trended).collect::<Vec<_>>(),
+        complete_above = p.complete_above()
+    ))
+}
+
+/// The burning cost of trended losses: by year (`layer_loss`, `developed`
+/// and `loss_cost` as year-by-layer matrices, filled by column) and overall.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_burning_cost(
+    ids: Vec<String>,
+    accident: &[f64],
+    amount: &[f64],
+    threshold: f64,
+    rate: f64,
+    to: f64,
+    factors: &[f64],
+    valuation: f64,
+    dev_ages: &[f64],
+    dev_factors: &[f64],
+    dev_per_loss: &[f64],
+    fx: &[f64],
+    towers: List,
+    years: &[i32],
+    premium: &[f64],
+    development: &[f64],
+    index_franchise: f64,
+    index_kind: &str,
+    ratios: &[f64],
+) -> Result<List> {
+    let p = prepare_large_losses(
+        ids,
+        accident,
+        amount,
+        threshold,
+        rate,
+        to,
+        factors,
+        valuation,
+        dev_ages,
+        dev_factors,
+        dev_per_loss,
+        fx,
+    )?;
+    if premium.len() != years.len() || development.len() != years.len() {
+        return Err(Error::Other(format!(
+            "{} years, {} premiums and {} development factors",
+            years.len(),
+            premium.len(),
+            development.len()
+        )));
+    }
+    let towers = tower_list(towers)?;
+    let basis: Vec<YearBasis> = years
+        .iter()
+        .zip(premium)
+        .zip(development)
+        .map(|((&year, &premium), &development)| YearBasis {
+            year,
+            premium,
+            development,
+        })
+        .collect();
+    let b = if index_franchise.is_nan() {
+        p.burning_cost(&towers, &basis)
+    } else {
+        let kind = match index_kind {
+            "full" => IndexKind::Full,
+            "severe" => IndexKind::Severe,
+            other => {
+                return Err(Error::Other(format!(
+                    "kind must be \"full\" or \"severe\", not {other:?}"
+                )));
+            }
+        };
+        let clause = IndexClause::new(index_franchise, kind).map_err(to_r)?;
+        p.burning_cost_indexed(&towers, &basis, &clause, ratios)
+    }
+    .map_err(to_r)?;
+    let by_layer = |f: &dyn Fn(&prospicio_pricing::experience::YearCost) -> &Vec<f64>| {
+        let layers = b.loss_cost.len();
+        (0..layers)
+            .flat_map(|i| b.years.iter().map(move |r| f(r)[i]))
+            .collect::<Vec<f64>>()
+    };
+    Ok(list!(
+        year = b.years.iter().map(|r| r.year).collect::<Vec<_>>(),
+        premium = b.years.iter().map(|r| r.premium).collect::<Vec<_>>(),
+        losses = b.years.iter().map(|r| r.losses as i32).collect::<Vec<_>>(),
+        development = b.years.iter().map(|r| r.development).collect::<Vec<_>>(),
+        layer_loss = by_layer(&|r| &r.layer_loss),
+        developed = by_layer(&|r| &r.developed),
+        year_loss_cost = by_layer(&|r| &r.loss_cost),
+        loss_cost = b.loss_cost.clone(),
+        mean_loss_cost = b.mean_loss_cost.clone()
+    ))
+}
+
 extendr_module! {
     mod pricing;
+    fn pricing_trend_large_losses;
+    fn pricing_burning_cost;
+    fn pricing_development_pattern;
+    fn pricing_as_if;
+    fn pricing_pattern_at;
+    fn pricing_count_development;
+    fn pricing_quote;
     fn pricing_bounds_rust;
     fn distortion_envelope_rust;
     impl NaturalPortfolio;

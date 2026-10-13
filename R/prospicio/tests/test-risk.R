@@ -134,3 +134,7 @@ stopifnot(covar(spd, list(lob = "a"), 0.75, 0.5) == 5)
 stopifnot(inherits(try(covar(spd, list(lob = "z"), 0.75, 0.5), silent = TRUE), "try-error"))
 
 cat("prospicio R risk tests passed\n")
+
+# Distortion parameters by name (#205).
+stopifnot(identical(distortion("proportional_hazard", 0.7)@parameters, c(rho = 0.7)),
+          identical(distortion("capped_linear", 2, r0 = 0.1)@parameters, c(r0 = 0.1, slope = 2)))

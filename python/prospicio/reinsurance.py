@@ -3,6 +3,7 @@ towers of them, applied to simulated losses or exactly on the grid."""
 
 from .prospicio_native import (
     AggregateLayerStatistics,
+    AnnualGrids,
     CessionStatistics,
     Layer,
     LayerStatistics,
@@ -21,6 +22,7 @@ __all__ = [
     "LossSensitivePremium",
     "Tower",
     "TowerGrids",
+    "AnnualGrids",
     "TowerPrice",
     "ViewPrice",
     "occurrence_layer_statistics",

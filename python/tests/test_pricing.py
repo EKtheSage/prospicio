@@ -328,3 +328,236 @@ def test_stand_alone_and_comonotonic_allocation():
     assert co["X1"][totals.index(8.0)] == pytest.approx(6.607142857142858, abs=1e-10)
     for k, x in enumerate(totals):
         assert co["X1"][k] + co["X2"][k] == pytest.approx(x, abs=1e-12)
+
+
+def test_price_on_a_grid_matches_its_draws():
+    from prospicio.distributions import Grid, Sampled
+    from prospicio.pricing import price
+    from prospicio.risk import Distortion
+
+    # 0, 2 and 6 with probabilities 1/2, 1/4, 1/4 are the draws 0, 0, 2, 6 (#204).
+    grid = Grid(2.0, [0.5, 0.25, 0.0, 0.25])
+    draws = Sampled([0.0, 0.0, 2.0, 6.0])
+    assets = Distortion.tvar(0.6)
+    for kw in ({"cost_of_capital": 0.1}, {"distortion": Distortion.proportional_hazard(0.8)}):
+        a, b = price(grid, assets, **kw), price(draws, assets, **kw)
+        assert a.premium == pytest.approx(b.premium, abs=1e-12)
+        assert a.assets == pytest.approx(b.assets, abs=1e-12)
+
+
+def test_quote_reproduces_the_reinsurance_price_guide():
+    """docs/guides/reinsurance-price.md, sections 2, 3 and 8 (#197)."""
+    from prospicio.distributions import Grid, Pareto, Poisson
+    from prospicio.pricing import Quote, price
+    from prospicio.reinsurance import Layer, Tower
+    from prospicio.risk import Distortion
+
+    severity, _ = Grid.rounding(Pareto(1.0, 1.8), 0.1, round(20.0 / 0.1) + 1)
+    mid = Layer("5x5", limit=5.0, attachment=5.0, reinstatements=1)
+    annual = Tower([mid]).on_grid(Poisson(4.0), severity, 2**14).ceded[0]
+    p = price(annual, Distortion.tvar(0.99), cost_of_capital=0.10)
+    assert round(p.premium, 3) == 1.240
+    q = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=5.0)
+    assert round(q.premium, 3) == 1.425
+    assert (round(q.rate_on_line, 3), round(q.multiple, 2), round(q.loss_ratio, 3)) == (0.285, 2.43, 0.411)
+    assert q.return_on_capital == pytest.approx(0.10, abs=1e-12)
+    assert q.premium * 0.87 == pytest.approx(p.premium, abs=1e-12)
+    # The soft and hard market quotes of section 8.
+    assert round(q.at(0.22 * 5.0).return_on_capital, 3) == 0.054
+    assert round(q.at(0.34 * 5.0).return_on_capital, 3) == 0.142
+    with pytest.raises(ValueError):
+        Quote.technical(p, expenses=0.5, brokerage=0.5)
+
+
+# Clark, Basics of Reinsurance Pricing (CAS study note), per-risk experience
+# rating: (accident date, untrended loss, printed trend factor).
+_CLARK_LOSSES = [
+    ((1988, 9, 20), 240_946.0, 1.411),
+    ((1988, 10, 11), 821_499.0, 1.408),
+    ((1989, 3, 15), 158_129.0, 1.385),
+    ((1990, 6, 21), 114_051.0, 1.317),
+    ((1990, 10, 24), 78_043.0, 1.300),
+    ((1991, 1, 10), 162_533.0, 1.289),
+    ((1992, 2, 23), 324_298.0, 1.234),
+    ((1992, 4, 30), 100_549.0, 1.225),
+    ((1992, 9, 22), 75_476.0, 1.206),
+    ((1993, 1, 1), 171_885.0, 1.193),
+    ((1993, 5, 18), 94_218.0, 1.175),
+    ((1993, 8, 1), 170_297.0, 1.166),
+    ((1994, 8, 15), 87_133.0, 1.119),
+    ((1995, 7, 12), 771_249.0, 1.080),
+]
+# (year, on-level premium, excess development factor, printed loss cost)
+_CLARK_YEARS = [
+    (1988, 1_422_554.0, 1.000, 0.450),
+    (1989, 1_823_103.0, 1.000, 0.065),
+    (1990, 2_054_034.0, 1.000, 0.025),
+    (1991, 2_147_147.0, 1.000, 0.051),
+    (1992, 2_151_541.0, 1.010, 0.152),
+    (1993, 2_159_198.0, 1.050, 0.104),
+    (1994, 2_167_158.0, 1.150, 0.000),
+    (1995, 2_187_654.0, 1.300, 0.238),
+]
+
+
+def _clark_experience():
+    import datetime
+
+    from prospicio.pricing import LargeLossExperience
+
+    end = datetime.date(1997, 7, 1)
+    accident = [
+        1997.5 - (end - datetime.date(*d)).days / 365.25 for d, _, _ in _CLARK_LOSSES
+    ]
+    return LargeLossExperience(
+        [str(i + 1) for i in range(len(_CLARK_LOSSES))],
+        accident,
+        [a for _, a, _ in _CLARK_LOSSES],
+    )
+
+
+def test_large_loss_trend_reproduces_clark():
+    p = _clark_experience().prepare(rate=0.04, to=1997.5)
+    for f, (_, _, printed) in zip(p.to_dict()["factor"], _CLARK_LOSSES):
+        assert abs(f - printed) <= 0.0005 + 1e-12
+
+
+def test_burning_cost_reproduces_clark():
+    from prospicio.reinsurance import Layer, Tower
+
+    p = _clark_experience().prepare(factors=[f for _, _, f in _CLARK_LOSSES])
+    tower = Tower([Layer("400 xs 100", 400_000.0, 100_000.0)])
+    b = p.burning_cost(
+        tower,
+        [y for y, *_ in _CLARK_YEARS],
+        premium=[pr for _, pr, _, _ in _CLARK_YEARS],
+        development=[d for _, _, d, _ in _CLARK_YEARS],
+    )
+    assert b.years == [y for y, *_ in _CLARK_YEARS]
+    for cost, (_, _, _, printed) in zip(b.to_dict()["loss_cost"], _CLARK_YEARS):
+        assert abs(cost[0] - printed) <= 0.0005 + 1e-12
+    assert abs(b.loss_cost[0] - 0.124) <= 0.0005
+
+
+def test_large_loss_threshold_and_errors():
+    from prospicio.pricing import LargeLossExperience
+    from prospicio.reinsurance import Layer, Tower
+
+    e = LargeLossExperience(["a", "b"], [2020.5, 2022.5], [100.0, 300.0], threshold=100.0)
+    p = e.prepare(rate=0.10, to=2024.5)
+    # complete above 100 x 1.1^4 = 146.41: the first loss trends to 146.41, kept
+    assert abs(p.complete_above - 146.41) < 1e-9
+    tower = Tower([Layer("200x100", 200.0, 100.0)])
+    b = p.burning_cost([tower, tower], [2020, 2022], premium=[1e3, 1e3], development=[1.0, 1.0])
+    assert b.to_dict()["losses"] == [1, 1]
+    with pytest.raises(TypeError):
+        e.prepare(rate=0.1)
+    with pytest.raises(ValueError):
+        p.burning_cost(tower, [2020], premium=[1.0, 2.0], development=[1.0])
+    with pytest.raises(ValueError):
+        LargeLossExperience(["a"], [2020.0, 2021.0], [1.0])
+
+
+def test_development_pattern_from_history_pairs_claims_seen_at_both_ages():
+    from prospicio.pricing import DevelopmentPattern
+
+    p = DevelopmentPattern.from_history(
+        ["a", "a", "a", "b", "b", "c", "c"],
+        [1.0, 2.0, 3.0, 1.0, 2.0, 2.0, 3.0],
+        [100.0, 180.0, 200.0, 100.0, 120.0, 500.0, 550.0],
+        ages=[1.0, 2.0, 3.0],
+    )
+    # "c" was reported at age 2: it is left out of the first link.
+    assert p.age_to_age == pytest.approx([300 / 200, 750 / 680], rel=1e-14)
+    assert p.factors[-1] == 1.0
+    assert p.at(0.5) == p.factors[0]
+    assert p.at(2.5) == pytest.approx((p.factors[1] + 1.0) / 2, rel=1e-14)
+    with pytest.raises(ValueError):
+        DevelopmentPattern([2.0, 1.0], [1.0, 1.0])
+
+
+def test_large_losses_developed_one_by_one_with_a_count_pattern():
+    from prospicio.pricing import DevelopmentPattern, LargeLossExperience
+    from prospicio.reinsurance import Layer, Tower
+
+    e = LargeLossExperience(
+        ["a", "b"], [2020.5, 2022.5], [90.0, 150.0], threshold=100.0, valuation=2024.5
+    )
+    ibner = DevelopmentPattern([2.0, 4.0], [2.0, 1.5])
+    p = e.prepare(factors=[1.0, 1.0], development=ibner)
+    d = p.to_dict()
+    assert d["development"] == [1.5, 2.0]
+    assert d["ultimate"] == [135.0, 300.0]
+    assert p.valuation == 2024.5
+    tower = Tower([Layer("x", 1000.0, 100.0)])
+    counts = DevelopmentPattern([1.0, 3.0], [1.4, 1.0])
+    b = p.burning_cost(tower, [2020, 2022], premium=[1e3, 1e3], development=counts)
+    # "a" develops above the threshold but was reported below it: out.
+    assert b.to_dict()["losses"] == [0, 1]
+    # 2022 is age 2 at mid-year: the count factor halfway, 1.2.
+    assert b.to_dict()["developed"][1][0] == pytest.approx(200.0 * 1.2, rel=1e-14)
+    assert e.prepare(factors=[1.0, 1.0], development=[1.0, 1.1]).to_dict()["ultimate"][1] == pytest.approx(165.0)
+    with pytest.raises(ValueError):
+        LargeLossExperience(["a"], [2020.5], [1.0]).prepare(factors=[1.0], development=ibner)
+    with pytest.raises(TypeError):
+        e.prepare(factors=[1.0, 1.0], development="no")
+
+
+def test_index_clause_moves_each_loss_terms():
+    from prospicio.pricing import IndexClause, LargeLossExperience
+    from prospicio.reinsurance import Layer, Tower
+
+    p = LargeLossExperience(["a", "b"], [2020.2, 2020.6], [700.0, 300.0]).prepare(
+        factors=[1.0, 1.0]
+    )
+    tower = Tower([Layer("400 xs 100", 400.0, 100.0)])
+    kw = dict(premium=[1e3], development=[1.0])
+    # 700 under 500 xs 125 cedes 500; 300 within the franchise cedes 200.
+    b = p.burning_cost(tower, [2020], index=IndexClause(0.1), ratios=[1.25, 1.05], **kw)
+    assert b.to_dict()["layer_loss"][0][0] == pytest.approx(700.0, rel=1e-14)
+    plain = p.burning_cost(tower, [2020], **kw)
+    unit = p.burning_cost(tower, [2020], index=IndexClause(0.1), ratios=[1.0, 1.0], **kw)
+    assert plain.loss_cost == unit.loss_cost
+    severe = IndexClause(0.1, kind="severe")
+    assert severe.kind == "severe" and severe.adjustment(0.7) == 1.0
+    with pytest.raises(TypeError):
+        p.burning_cost(tower, [2020], index=IndexClause(0.1), **kw)
+    with pytest.raises(ValueError):
+        IndexClause(0.1, kind="partial")
+    annual = Tower([Layer("x", 400.0, 100.0, aggregate_limit=800.0)])
+    with pytest.raises(ValueError):
+        p.burning_cost(annual, [2020], index=IndexClause(0.1), ratios=[1.0, 1.0], **kw)
+
+
+def test_large_losses_in_another_currency():
+    from prospicio.pricing import LargeLossExperience
+
+    e = LargeLossExperience(["a", "b"], [2020.5, 2020.5], [90.0, 120.0], threshold=100.0, fx=[2.0, 0.5])
+    d = e.prepare(factors=[1.0, 1.0]).to_dict()
+    assert d["fx"] == [2.0, 0.5]
+    assert d["trended"] == [180.0, 60.0]
+    stated = LargeLossExperience(["a"], [2020.5], [90.0], fx=1.5).prepare(factors=[1.0])
+    assert stated.to_dict()["ultimate"] == [135.0]
+    with pytest.raises(ValueError):
+        LargeLossExperience(["a"], [2020.5], [90.0], fx=[1.0, 2.0])
+
+
+def test_as_if_history_beside_the_proposed_tower():
+    from prospicio.pricing import LargeLossExperience
+    from prospicio.reinsurance import Layer, Tower
+
+    p = LargeLossExperience(
+        ["a", "b", "c"], [2019.3, 2019.7, 2020.5], [300.0, 80.0, 500.0], threshold=100.0
+    ).prepare(factors=[1.2, 1.2, 1.1])
+    then_2019 = Tower([Layer("150 xs 50", 150.0, 50.0)])
+    then_2020 = Tower.inuring([[Layer.quota_share("QS", 0.5)], [Layer("200 xs 100", 200.0, 100.0)]])
+    now = Tower([Layer("200 xs 200", 200.0, 200.0), Layer("600 xs 400", 600.0, 400.0)])
+    a = p.as_if([then_2019, then_2020], [2019, 2020], now)
+    d = a.to_dict()
+    assert a.proposed_layers == ["200 xs 200", "600 xs 400"]
+    assert d["reported_losses"] == [2, 1] and d["trended_losses"] == [1, 1]
+    assert d["historical"] == [[180.0], [250.0, 150.0]]
+    assert d["historical_layers"][1] == ["QS", "200 xs 100"]
+    assert d["proposed"][1] == pytest.approx([200.0, 150.0], rel=1e-14)
+    with pytest.raises(ValueError):
+        p.as_if([then_2019], [2019, 2020], now)

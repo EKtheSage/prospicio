@@ -2,8 +2,8 @@
 //! (layers and towers, applied to simulated losses or on the grid).
 
 use prospicio_aggregate::{
-    Commission, Layer, LayerStatistics, LossSensitivePremium, Tower, TowerGrids, TowerPrice,
-    ViewPrice,
+    AnnualGrids, Commission, Layer, LayerStatistics, LossSensitivePremium, Tower, TowerGrids,
+    TowerPrice, ViewPrice,
 };
 use pyo3::prelude::*;
 
@@ -801,7 +801,7 @@ impl PyLossSensitivePremium {
 /// ['gross', 'ceded', 'net']
 #[pyclass(name = "Tower", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyTower {
-    inner: Tower,
+    pub(crate) inner: Tower,
 }
 
 #[pymethods]
@@ -1033,6 +1033,44 @@ impl PyTower {
             .detach(|| tower.on_grid(n.as_counting(), &sev, points))
             .map_err(to_py)?;
         Ok(PyTowerGrids { inner })
+    }
+
+    /// The tower applied to an annual loss on a grid, each year's total
+    /// treated as one loss (as ``apply_aggregate`` does for draws): a quota
+    /// share or stop-loss on a loss-ratio or annual-loss distribution, with
+    /// its expected sliding-scale and profit commission. Inuring stages and
+    /// annual terms are all allowed, and the net always exists.
+    ///
+    /// Parameters
+    /// ----------
+    /// annual : Grid
+    ///     The annual loss.
+    ///
+    /// Returns
+    /// -------
+    /// AnnualGrids
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For a surplus treaty or reinstatements pro rata as to time, which
+    ///     need risks or event times.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> from prospicio.distributions import Grid
+    /// >>> probs = [0.0] * 81
+    /// >>> for k in (50, 60, 70, 80):
+    /// ...     probs[k] = 0.25
+    /// >>> qs = Layer.quota_share("QS", 0.4).with_deposit_premium(100.0).with_ceding_commission(0.3)
+    /// >>> r = Tower([qs]).on_annual_grid(Grid(1.0, probs))
+    /// >>> round(r.ceded[0].mean(), 12), round(r.expected_ceding_commission[0], 12)
+    /// (26.0, 12.0)
+    fn on_annual_grid(&self, annual: PyRef<'_, PyGrid>) -> PyResult<PyAnnualGrids> {
+        Ok(PyAnnualGrids {
+            inner: self.inner.on_annual_grid(&annual.inner).map_err(to_py)?,
+        })
     }
 
     fn __repr__(&self) -> String {
@@ -1614,4 +1652,81 @@ pub(crate) fn aggregate_layer_statistics(
         prospicio_aggregate::aggregate_layer_statistics(&annual.inner, share, limit, attachment)
             .map_err(to_py)?;
     Ok(PyAggregateLayerStatistics { inner })
+}
+
+/// A tower applied to an annual loss distribution, from
+/// ``Tower.on_annual_grid``. Ceded grids are at the placed share and after
+/// annual terms; a layer with share ``c`` has step ``c * h``.
+#[pyclass(name = "AnnualGrids", module = "prospicio.reinsurance", frozen)]
+pub(crate) struct PyAnnualGrids {
+    inner: AnnualGrids,
+}
+
+#[pymethods]
+impl PyAnnualGrids {
+    /// The annual loss given.
+    #[getter]
+    fn gross(&self) -> PyGrid {
+        PyGrid {
+            inner: self.inner.gross.clone(),
+        }
+    }
+
+    /// Annual ceded loss of each layer, in tower order.
+    #[getter]
+    fn ceded(&self) -> Vec<PyGrid> {
+        self.inner
+            .ceded
+            .iter()
+            .map(|g| PyGrid { inner: g.clone() })
+            .collect()
+    }
+
+    /// Annual net loss.
+    #[getter]
+    fn net(&self) -> PyGrid {
+        PyGrid {
+            inner: self.inner.net.clone(),
+        }
+    }
+
+    /// Expected reinstatement premium of each layer.
+    #[getter]
+    fn expected_reinstatement_premium(&self) -> Vec<f64> {
+        self.inner.expected_reinstatement_premium.clone()
+    }
+
+    /// Expected premium of each layer: the swing-rated premium's mean, or
+    /// else the fixed premium.
+    #[getter]
+    fn expected_premium(&self) -> Vec<f64> {
+        self.inner.expected_premium.clone()
+    }
+
+    /// Expected ceding commission (flat or sliding) of each layer.
+    #[getter]
+    fn expected_ceding_commission(&self) -> Vec<f64> {
+        self.inner.expected_ceding_commission.clone()
+    }
+
+    /// Expected profit commission of each layer.
+    #[getter]
+    fn expected_profit_commission(&self) -> Vec<f64> {
+        self.inner.expected_profit_commission.clone()
+    }
+
+    /// Whether every ceded and net loss fell on a grid point. The
+    /// expectations are exact either way.
+    #[getter]
+    fn on_points(&self) -> bool {
+        self.inner.on_points
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AnnualGrids(layers={}, on_points={})",
+            self.inner.ceded.len(),
+            self.inner.on_points
+        )
+    }
 }

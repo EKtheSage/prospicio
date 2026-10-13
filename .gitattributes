@@ -2,3 +2,9 @@
 # with LF too keeps `git status` clean after a build under core.autocrlf.
 python/prospicio/prospicio_native.pyi text eol=lf
 *.arrow binary
+
+# Jupyter notebooks are committed without outputs. The nbstripout filter strips
+# outputs and execution counts when a notebook is staged, so running one locally
+# leaves nothing for git to commit. One-time setup per clone: examples/README.md.
+*.ipynb filter=nbstripout
+*.ipynb diff=ipynb

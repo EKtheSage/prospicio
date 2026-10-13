@@ -14,7 +14,9 @@ then joins them and sets and allocates capital. The notebook
 [`examples/reinsurance_pricing.ipynb`](../examples/reinsurance_pricing.ipynb)
 prices towers, aggregate limits, reinstatements, stop losses, variable
 premiums and commissions, and risk-adjusted premiums, each beside the
-numbers of Mildenhall's `aggregate`.
+numbers of Mildenhall's `aggregate`. The [guides](guides/README.md) explain
+the ideas in prose for actuaries, starting with
+[what a reinsurance price is](guides/reinsurance-price.md); CI runs their code.
 
 ## Milestones
 
@@ -112,12 +114,21 @@ what it is aiming for by v1.0.
     the total cession of a stage with several layers, priced, and
     statistics of total cessions and aggregate covers; each unit priced
     alone against the book, the comonotonic allocation, and the expected
-    reinstatement premium checked against `aggregate` (tier 2 complete).
+    reinstatement premium checked against `aggregate` (tier 2 complete);
+    a tower on an annual loss grid and risk-loaded prices on a grid at any
+    capital standard (the Guides lane's #206 and #204); a cover's quote,
+    from risk premium to technical premium and back from a market quote
+    (#197); experience rating from large losses, trend to the burning
+    cost, with each claim developed to ultimate, count IBNR, FX and an
+    index clause (#190, `docs/design/experience-rating.md`), and as-if
+    history under each year's program (#191).
 - **Next:**
-  1. Open, waiting on the user. Candidates, the large items parked from
-     `aggregate` parity (`docs/design/aggregate.md`): the P&L ledger (once
-     signed grids exist), bivariate FFT aggregates and `clash`, renewal
-     counts with Wiener–Hopf ruin.
+  1. The Guides lane's issues for this lane, small first (the user's
+     choice, 2026-10-13): #195 time value of money,
+     #196 cat XL inputs. Then the large items parked from `aggregate`
+     parity (`docs/design/aggregate.md`): the P&L ledger (once signed grids
+     exist), bivariate FFT aggregates and `clash`, renewal counts with
+     Wiener–Hopf ruin.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

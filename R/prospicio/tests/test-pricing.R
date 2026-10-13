@@ -197,3 +197,95 @@ stopifnot(identical(sa$unit, c("X1", "X2", "total", "sum")),
 co <- comonotonic_allocation(disc)
 stopifnot(abs(co$X1[co$total == 8] - 6.607142857142858) < 1e-10,
           max(abs(co$X1 + co$X2 - co$total)) < 1e-12)
+
+# A loss distribution on a grid prices as its equally likely draws (#204).
+gp <- risk_loaded_price(grid_distribution(2, c(0.5, 0.25, 0, 0.25)), distortion("tvar", 0.6),
+                        cost_of_capital = 0.1)
+sp <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.6), cost_of_capital = 0.1)
+stopifnot(abs(gp$premium - sp$premium) < 1e-12, abs(gp$assets - sp$assets) < 1e-12)
+
+# A quote grosses the risk premium up, and a quoted premium reads back (#197).
+p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5), cost_of_capital = 0.1)
+q <- technical_quote(p, expenses = 0.03, brokerage = 0.10, limit = 10)
+stopifnot(abs(q$premium * 0.87 - p$premium) < 1e-12, abs(q$return_on_capital - 0.1) < 1e-12,
+          abs(q$rate_on_line - q$premium / 10) < 1e-15,
+          abs(implied_quote(q, q$premium)$risk_premium - p$premium) < 1e-12,
+          implied_quote(q, 3)$return_on_capital > 0.1,
+          is.nan(technical_quote(p)$rate_on_line))
+
+# Experience rating from large losses reproduces Clark's study note (#190).
+clark <- data.frame(
+  id = as.character(1:14),
+  date = as.Date(c("1988-09-20", "1988-10-11", "1989-03-15", "1990-06-21", "1990-10-24",
+                   "1991-01-10", "1992-02-23", "1992-04-30", "1992-09-22", "1993-01-01",
+                   "1993-05-18", "1993-08-01", "1994-08-15", "1995-07-12")),
+  amount = c(240946, 821499, 158129, 114051, 78043, 162533, 324298, 100549, 75476, 171885,
+             94218, 170297, 87133, 771249),
+  factor = c(1.411, 1.408, 1.385, 1.317, 1.300, 1.289, 1.234, 1.225, 1.206, 1.193, 1.175,
+             1.166, 1.119, 1.080)
+)
+clark$accident <- 1997.5 - as.numeric(as.Date("1997-07-01") - clark$date) / 365.25
+tr <- trend_large_losses(clark, rate = 0.04, to = 1997.5)
+stopifnot(all(abs(tr$losses$factor - clark$factor) <= 0.0005 + 1e-12))
+pr <- trend_large_losses(clark, factors = clark$factor)
+tw <- reinsurance_tower(list(xol_layer("400 xs 100", 4e5, 1e5)))
+bc <- burning_cost(pr, tw, 1988:1995,
+                   premium = c(1422554, 1823103, 2054034, 2147147, 2151541, 2159198, 2167158,
+                               2187654),
+                   development = c(1, 1, 1, 1, 1.01, 1.05, 1.15, 1.3))
+stopifnot(all(abs(bc$year_loss_cost[, 1] -
+                  c(0.450, 0.065, 0.025, 0.051, 0.152, 0.104, 0, 0.238)) <= 0.0005 + 1e-12),
+          abs(bc$loss_cost - 0.124) <= 0.0005,
+          identical(bc$years$year, 1988:1995))
+
+# Losses developed one by one (IBNER) and a count pattern for the rest (#190).
+dp <- development_pattern_from_history(
+  data.frame(id = c("a", "a", "a", "b", "b", "c", "c"), age = c(1, 2, 3, 1, 2, 2, 3),
+             amount = c(100, 180, 200, 100, 120, 500, 550)),
+  ages = c(1, 2, 3)
+)
+stopifnot(abs(dp$factors[1] - 300 / 200 * 750 / 680) < 1e-14, dp$factors[3] == 1,
+          abs(pattern_factor(dp, 2.5) - (dp$factors[2] + 1) / 2) < 1e-14)
+ll <- data.frame(id = c("a", "b"), accident = c(2020.5, 2022.5), amount = c(90, 150))
+pd <- trend_large_losses(ll, factors = c(1, 1), threshold = 100, valuation = 2024.5,
+                         development = development_pattern(c(2, 4), c(2, 1.5)))
+stopifnot(identical(pd$losses$ultimate, c(135, 300)))
+bd <- burning_cost(pd, reinsurance_tower(list(xol_layer("x", 1000, 100))), c(2020, 2022),
+                   premium = c(1000, 1000), development = development_pattern(c(1, 3), c(1.4, 1)))
+stopifnot(identical(bd$years$losses, c(0L, 1L)), abs(bd$developed[2, 1] - 240) < 1e-12)
+stopifnot(abs(trend_large_losses(ll, factors = c(1, 1), development = c(1, 1.1))$losses$ultimate[2]
+              - 165) < 1e-12)
+
+# An index clause moves each loss's terms; losses in another currency (#190).
+ip <- trend_large_losses(data.frame(id = c("a", "b"), accident = c(2020.2, 2020.6),
+                                    amount = c(700, 300)), factors = c(1, 1))
+itw <- reinsurance_tower(list(xol_layer("400 xs 100", 400, 100)))
+ib <- burning_cost(ip, itw, 2020, premium = 1000, development = 1,
+                   index = index_clause(0.1), ratios = c(1.25, 1.05))
+stopifnot(abs(ib$layer_loss[1, 1] - 700) < 1e-12,
+          identical(burning_cost(ip, itw, 2020, premium = 1000, development = 1,
+                                 index = index_clause(0.1, "severe"), ratios = c(1, 1))$loss_cost,
+                    burning_cost(ip, itw, 2020, premium = 1000, development = 1)$loss_cost))
+stopifnot(inherits(try(burning_cost(ip, itw, 2020, premium = 1000, development = 1,
+                                    index = index_clause(0.1)), silent = TRUE), "try-error"))
+annual <- reinsurance_tower(list(xol_layer("x", 400, 100, aggregate_limit = 800)))
+stopifnot(inherits(try(burning_cost(ip, annual, 2020, premium = 1000, development = 1,
+                                    index = index_clause(0.1), ratios = c(1, 1)), silent = TRUE),
+                   "try-error"))
+fxp <- trend_large_losses(data.frame(id = c("a", "b"), accident = c(2020.5, 2020.5),
+                                     amount = c(90, 120)), factors = c(1, 1), threshold = 100,
+                          fx = c(2, 0.5))
+stopifnot(identical(fxp$losses$trended, c(180, 60)), identical(fxp$losses$fx, c(2, 0.5)))
+
+# As-if history beside the proposed tower (#191).
+ap <- trend_large_losses(data.frame(id = c("a", "b", "c"), accident = c(2019.3, 2019.7, 2020.5),
+                                    amount = c(300, 80, 500)), factors = c(1.2, 1.2, 1.1),
+                         threshold = 100)
+then20 <- inuring_tower(list(list(quota_share("QS", 0.5)), list(xol_layer("200 xs 100", 200, 100))))
+now <- reinsurance_tower(list(xol_layer("200 xs 200", 200, 200), xol_layer("600 xs 400", 600, 400)))
+ai <- as_if_history(ap, list(reinsurance_tower(list(xol_layer("150 xs 50", 150, 50))), then20),
+                    c(2019, 2020), now)
+stopifnot(identical(ai$years$reported_losses, c(2L, 1L)),
+          identical(unname(ai$historical[["2019"]]), 180),
+          identical(ai$historical[["2020"]], c(QS = 250, `200 xs 100` = 150)),
+          max(abs(ai$proposed["2020", ] - c(200, 150))) < 1e-12)

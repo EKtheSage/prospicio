@@ -23,6 +23,10 @@ under "Unreleased" until then.
   `risk::{var_weighted, tvar_weighted, tvar_threshold}`. Python
   `Grid.tvar`, `Grid.tvar_threshold`, `Portfolio.tvar_threshold`; R
   `TVaR()` on a `grid_distribution` and `tvar_threshold()` (#202).
+- `Distortion::family()` and `Distortion::parameters()`: a distortion's
+  family and its scalar parameters by name (for example the `rho` that
+  `calibrate` returns). Python `Distortion.family`, `Distortion.parameters`;
+  R `d@parameters` (#210).
 
 ### Aggregate and reinsurance
 
@@ -88,6 +92,50 @@ under "Unreleased" until then.
   (`natural::Portfolio::comonotonic_kappa`). Python
   `Portfolio.price_stand_alone` (`StandAlone`), `Portfolio.comonotonic_kappa`;
   R `price_stand_alone()`, `comonotonic_allocation()` (#202).
+- A tower on an annual loss distribution, `Tower::on_annual_grid`
+  (`AnnualGrids`): a quota share or stop-loss on a loss-ratio grid, with its
+  expected sliding-scale and profit commission, each year's total treated
+  as one loss. Python `Tower.on_annual_grid`; R `tower_on_annual_grid()` (#210).
+- Risk-loaded prices on a grid at any capital standard,
+  `risk_load::price_grid`: Python `prospicio.pricing.price` and R
+  `risk_loaded_price()` take a grid, such as a layer's exact annual loss (#210).
+- A cover's quote, `prospicio_pricing::quote::Quote`: the technical
+  premium from a risk-loaded price grossed up for internal expenses,
+  brokerage and a fixed expense, with the rate on line, payback, multiple
+  and loss ratio, and `Quote::at` for what a quoted premium gives the
+  reinsurer (its return on capital). Python `prospicio.pricing.Quote`; R
+  `technical_quote()`, `implied_quote()` (#222).
+- Experience rating from individual large losses,
+  `prospicio_pricing::experience`: each loss trended to the prospective
+  period by a rate or a factor per loss, a reporting threshold carried to
+  the level at which every year is complete, each year's tower applied to
+  the year's trended losses, the layer totals developed and divided by the
+  premium (the burning cost), reproducing Clark's study note. Python
+  `LargeLossExperience`, `PreparedLosses`, `BurningCost`; R
+  `trend_large_losses()`, `burning_cost()` (#223).
+- Experience rating: each known large loss developed to ultimate (IBNER)
+  by a `DevelopmentPattern` at its age at the valuation date or by a factor
+  per loss, a pattern estimated from each claim's valuations (the chain
+  ladder on the claims seen at both ages), and each year's count IBNR
+  factor from a count pattern (`YearBasis::from_count_pattern`).
+  `PreparedLoss` gains `development` and `ultimate`, and its `trended` is
+  the developed amount trended (**breaking** for code that builds or
+  matches `PreparedLoss` in full). Python `DevelopmentPattern` and
+  `prepare(..., development=)`; R `development_pattern()`,
+  `development_pattern_from_history()`, `pattern_factor()` (#224).
+- Experience rating: losses converted to the pricing currency at a stated
+  rate or a rate per loss (`Experience::with_fx`), and an index
+  (stability) clause on the treaty, full or severe inflation, with a
+  franchise (`IndexClause`, `Prepared::burning_cost_indexed`), for covers
+  whose terms are all per occurrence. `PreparedLoss` gains `fx`
+  (**breaking** for code that builds or matches it in full). Python
+  `IndexClause`, `LargeLossExperience(..., fx=)` and `burning_cost(...,
+  index=, ratios=)`; R `index_clause()` and the `fx`, `index` and `ratios`
+  arguments (#225).
+- As-if history: each year's large losses as reported under the program in
+  force that year, beside the trended losses under the proposed tower, to
+  reconcile with the cedant's recoveries (`Prepared::as_if`, `AsIf`).
+  Python `PreparedLosses.as_if`; R `as_if_history()` (#226).
 
 ### Examples
 
@@ -96,6 +144,14 @@ under "Unreleased" until then.
   aggregate deductible, retro, swing, profit commission and sliding scale,
   and distortion premiums, and compares 343 results (321 independent
   comparisons and 22 consistency checks) with Mildenhall's `aggregate` 1.0.1 (reference file `validation/reference/re_pricing_aggregate.csv`) (#186).
+- The notebooks in `examples/` are committed without outputs, and an
+  nbstripout git filter (`.gitattributes`; setup in `examples/README.md`)
+  keeps a local run out of commits; the docs site executes them and
+  publishes their results, with the guides, in the Python site's User Guide.
+
+### Guides
+
+- `docs/guides/reinsurance-price.md`, "What a reinsurance price is": the pricing pentagon, an excess of loss layer's technical premium and reinstatements, where a layer sits in a tower, a quota share's technical commission with a sliding scale and a profit commission, how price follows a risk profile, a contract alone and in a book, soft and hard markets, and what the model leaves out. CI runs its code and checks every printed number (`python/tests/test_guides.py`).
 
 ### Reserving
 

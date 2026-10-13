@@ -528,3 +528,21 @@ def test_stage_cession_and_aggregate_cover_statistics():
     assert s.pr_attach == pytest.approx(0.3912338371214888, abs=1e-12)
     assert s.aggregate.mean == pytest.approx(38.7761195844111, rel=1e-9)
     assert s.loss_on_line == pytest.approx(s.aggregate.mean / 300.0)
+
+
+def test_quota_share_on_an_annual_grid():
+    from prospicio.reinsurance import Layer, Tower
+
+    # Loss ratios 50% to 80% on a premium of 100, equally likely (#206).
+    probs = [0.0] * 81
+    for k in (50, 60, 70, 80):
+        probs[k] = 0.25
+    qs = (
+        Layer.quota_share("QS", 0.5)
+        .with_premium_rate(1.0, 200.0)
+        .with_sliding_scale([(0.45, 0.60), (0.25, 0.70), (0.19, 0.80)])
+    )
+    r = Tower([qs]).on_annual_grid(Grid(1.0, probs))
+    expected = sum(0.25 * qs.ceding_commission_for(0.5 * k) for k in (50, 60, 70, 80))
+    assert r.expected_ceding_commission[0] == pytest.approx(expected, abs=1e-12)
+    assert r.ceded[0].mean() + r.net.mean() == pytest.approx(65.0, abs=1e-12)

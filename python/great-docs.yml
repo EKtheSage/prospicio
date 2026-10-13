@@ -12,6 +12,9 @@ changelog:
   enabled: false
 site:
   html-math-method: katex
+# The guides (docs/guides) and the notebooks (examples/), executed, staged by
+# `cargo xtask python`, which writes this directory before the build.
+user_guide: ../target/user-guide
 reference:
   - title: Distributions
     desc: Parametric, discretized and sampled representations.
@@ -82,6 +85,7 @@ reference:
       - reinsurance.LossSensitivePremium
       - reinsurance.Tower
       - reinsurance.TowerGrids
+      - reinsurance.AnnualGrids
       - reinsurance.TowerPrice
       - reinsurance.ViewPrice
       - reinsurance.occurrence_layer_statistics
@@ -167,11 +171,21 @@ reference:
       - pricing.Portfolio
       - pricing.NaturalPrice
       - pricing.StandAlone
+      - pricing.Quote
       - pricing.Pentagon
       - pricing.classical_premium
       - pricing.calibrate_classical
       - pricing.PricingBounds
       - pricing.distortion_envelope
+  - title: Experience rating
+    desc: Experience rating from individual large losses, trended to the prospective period, the as-if loss to each layer by accident year, and the burning cost (Clark's study note).
+    contents:
+      - pricing.LargeLossExperience
+      - pricing.DevelopmentPattern
+      - pricing.PreparedLosses
+      - pricing.BurningCost
+      - pricing.IndexClause
+      - pricing.AsIf
   - title: Credibility
     desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model.
     contents:
