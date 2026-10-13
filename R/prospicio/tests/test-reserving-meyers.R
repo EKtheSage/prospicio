@@ -1,9 +1,9 @@
 suppressMessages(library(prospicio))
 
-# meyers(), Meyers' CRC and CSR models (docs/design/reserving-bayes.md,
+# meyers(), Meyers' CRC, CSR and CAY models (docs/design/reserving-bayes.md,
 # decision 7). The parity with Meyers' own Stan code and his printed numbers
-# is validation/tests/reserving_meyers.rs; these tests check the binding on
-# his group 353 Commercial Auto data.
+# is validation/tests/reserving_meyers.rs and reserving_meyers_cay.rs; these
+# tests check the binding on his group 353 Commercial Auto data.
 
 near <- function(a, b, rel) {
   if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
@@ -113,6 +113,36 @@ stopifnot(
 )
 near(mean(csr@ultimates), 37597, 0.02)
 
+# CAY on incurred: rho sits in gamma's slot. Meyers (2019, Tables 8.1 to
+# 8.3): rho 0.1709, logelr -0.3945, total ultimate 39,193, elpd_loo 68.65;
+# ours at seed 0: 0.1686, -0.3947, 39,178 (10,000 simulations), 69.05.
+run <- with_warnings(meyers(tri, "incurred", "premium", model = "cay", n_sims = 2000))
+cay <- run$value
+s <- summary(cay)
+stopifnot(
+  length(run$warnings) == 0,
+  cay@model == "cay",
+  ncol(cay@draws) == 30, colnames(cay@draws)[20] == "rho", colnames(cay@draws)[21] == "sigma[1]",
+  !("gamma" %in% colnames(cay@draws)),
+  all(abs(cay@draws[, "rho"]) < 1),
+  abs(s$mean[s$parameter == "rho"] - 0.1709) < 0.05,
+  abs(s$mean[s$parameter == "logelr"] + 0.3945) < 0.01,
+  abs(bayes_loo(cay)$estimates[["elpd"]] - 68.65) < 2.5,
+  nrow(as.data.frame(cay)) == 10
+)
+near(mean(cay@ultimates), 39193, 0.02)
+invisible(capture.output(print(cay)))
+
+# CAY needs the previous origin's cell at each age: 1992 stops at 36
+# months while 1993 runs to 60. CRC takes the same triangle.
+ragged <- long[!(long$origin == 1992 & long$development > 36), ]
+ragged <- triangle(ragged, "origin", "development", c("paid", "premium"))
+expect_error_like(meyers(ragged, "paid", "premium", model = "cay", chains = 1, tune = 50,
+                         draws = 20, n_sims = 100),
+                  "origin 1993 is observed at development age 48 months but origin 1992 is not")
+invisible(suppressWarnings(meyers(ragged, "paid", "premium", chains = 1, tune = 50, draws = 20,
+                                  n_sims = 100)))
+
 # One seed replays the fit; another changes it.
 quick <- function(seed) {
   suppressWarnings(meyers(tri, "incurred", "premium", chains = 2, tune = 200, draws = 200,
@@ -141,10 +171,13 @@ stopifnot(
 
 # Errors.
 expect_error_like(meyers(tri, "paid", "premium", n_sims = 0), "n_sims must be positive")
-expect_error_like(meyers(tri, "paid", "premium", model = "cay"), "should be one of")
+expect_error_like(meyers(tri, "paid", "premium", model = "cit"), "should be one of")
 expect_error_like(meyers(tri, "paid", "premium", seed = -1),
                   "seed must be a non-negative whole number")
 expect_error_like(meyers(tri, "paid", "premium", gamma_sd = 0, n_sims = 100), "gamma_sd")
+expect_error_like(meyers(tri, "incurred", "premium", model = "cay", rho_shape = 0, n_sims = 100),
+                  "rho_shape")
+expect_error_like(meyers(tri, "paid", "premium", rho_shape = NA), "rho_shape")
 expect_error_like(meyers(tri, "paid", "missing", n_sims = 100), "missing")
 expect_error_like(meyers(tri, "paid", 1), "premium must be the name of a column")
 small <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022), age = c(12, 24, 36, 12, 24, 12),
