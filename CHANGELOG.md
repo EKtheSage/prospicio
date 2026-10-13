@@ -172,6 +172,8 @@ under "Unreleased" until then.
 
 - `docs/guides/reinsurance-price.md`, "What a reinsurance price is": the pricing pentagon, an excess of loss layer's technical premium and reinstatements, where a layer sits in a tower, a quota share's technical commission with a sliding scale and a profit commission, how price follows a risk profile, a contract alone and in a book, soft and hard markets, and what the model leaves out. CI runs its code and checks every printed number (`python/tests/test_guides.py`).
 
+- Six "when to use what" guides in `docs/guides/`: `choosing-a-method.md` (the map from a situation to the method and the calls), `risk-loads-and-distortions.md`, `experience-and-exposure-rating.md`, `aggregate-distributions.md`, `severity-and-frequency.md` and `reserving-methods.md`. CI runs their code and checks every printed number (`python/tests/test_guides.py`); `docs/guides/README.md` lists them.
+
 ### Reserving
 
 - The one-year view of both bootstraps accepts a bootstrap tail, which
