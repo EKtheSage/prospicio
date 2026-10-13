@@ -7,4 +7,4 @@
   `aggregate`'s `clash` model, given by the expected events hitting line
   A only, line B only and both (`Clash`), matching `aggregate` 1.0.1.
   Python `fft_bivariate`, `JointGrid`, `Clash`; R `fft_bivariate()`,
-  `clash_model()`, `clash_severity()`, `clash_aggregate()`.
+  `clash_model()`, `clash_severity()`, `clash_aggregate()` (#233).
