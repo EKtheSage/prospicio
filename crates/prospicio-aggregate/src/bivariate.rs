@@ -338,9 +338,10 @@ pub fn fft_bivariate<N: Counting + ?Sized>(
     for a in 0..2 {
         tail_mass[a] = (points[a]..len[a])
             .map(|k| full_marginal_at(&full, len, a, k))
-            .sum::<f64>();
+            .sum::<f64>()
+            .max(0.0);
         let long = crate::fft::compound_buffer(frequency, marginals[a].probs(), 2 * len[a]);
-        aliasing_mass[a] = long[len[a]..].iter().sum::<f64>();
+        aliasing_mass[a] = long[len[a]..].iter().sum::<f64>().max(0.0);
     }
     let report = BivariateReport {
         points,
