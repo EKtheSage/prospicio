@@ -1361,6 +1361,35 @@ agreement with Tables 2.1-2.3 (datasets), and whether the Bayesian ODP and
 the ODP bootstrap agree on GenIns and by how much (findings), with
 `verified` once a CI test confirms each.
 
+### 15. Gradients: an in-house dual type, num-dual as the fallback
+
+Decided 2026-10-13 by the user. Each new Bayesian model writes its log
+density once, generic over a small `Scalar` trait, and gets its gradient
+from an in-house forward-mode dual type in `bayes/` (no dependency, about
+130 lines). `num-dual` is the fallback behind the same trait (it needs Rust
+1.89 at 0.15, or 0.13 for 1.87). The hand-written gradients of `BayesOdp`,
+`Meyers` and `BayesBf` stay as the fast path, and each gains a test against
+the dual gradient. Laplace Hessians stay as central differences of the
+exact gradient.
+
+Why, from a benchmark of Meyers' CRC (29 parameters, 55 cells, release
+build; `knowledge/findings/autodiff-benchmark.md`): every option matched the
+hand-written gradient to about 1e-15, but per gradient the in-house dual
+took 2.5 µs (4 to 5 times the hand-written 0.57 µs), `num-dual` 7 to 17 µs
+at a fixed size and 50 µs at a runtime size, candle about 55 µs and Burn
+about 100 µs. Burn and candle add over 110 crates each (candle compiles C
+through `onig_sys`), and Burn 0.21's `sigmoid` drops to f32 on an f64
+backend. tch needs libtorch, which CRAN cannot vendor, and
+`std::autodiff` is nightly only. A generic RK4 solver differentiated with
+duals matched a closed-form one-compartment model to 9e-10, so the
+compartmental models need no ODE crate unless they turn out stiff
+(`diffsol` then, behind its own feature).
+
+Still to measure before the first model uses it: the cost of chunked passes
+when the parameter count is known only at run time. Revisit with reverse
+mode (Burn, `ad_trait`, or `std::autodiff` once stable) for hierarchical
+models with thousands of parameters.
+
 ## Open decisions for the user
 
 Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a),
