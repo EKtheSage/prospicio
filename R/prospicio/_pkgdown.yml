@@ -69,6 +69,8 @@ reference:
       - simulate_events
       - occurrence_pml
       - compound_moments
+      - eventual_ruin
+      - layer_loss_picks
       - events_from_years
       - event_sums_insured
       - event_times
@@ -100,6 +102,7 @@ reference:
       - tower_on_grid
       - tower_price
       - occurrence_layer_statistics
+      - occurrence_cession_statistics
   - title: Pricing
     contents:
       - collective_model
@@ -111,8 +114,10 @@ reference:
       - natural_price
       - calibrate_portfolio
       - bodoff_allocation
+      - priority_ladder
       - pentagon
       - premium_bounds
+      - pricing_bounds
       - classical_premium
       - mbbefd
       - tabulated_curve

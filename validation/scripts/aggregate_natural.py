@@ -26,7 +26,17 @@ assets 100, and at 47 with assets 65 (`distribution` `bounds`, quantity
 53.565: the loading of each (`distribution` `classical`). aggregate's
 Fischer principle reads a power it never sets; the script sets it to 2.
 
-Rows: `distribution` is `price`, `bodoff`, `bounds` or `classical`; `params` names the
+The priority ladder (`Portfolio.priority_epd_df`, `priority_kappa`) on
+the Discrete case and on a third independent unit added to it, X3 0, 2, 5
+or 30 with probabilities 0.4, 0.3, 0.2, 0.1 (`case=discrete3`): each
+unit's recovery under the senior, equal and junior rules at several asset
+levels (`distribution` `priority`, quantity `X1.junior`), and the junior
+unit's and senior pool's expected shortfall given the total
+(`priority_kappa`, quantity `X1.junior`, `arg` the total). aggregate
+needs independent units, so InsCo has no ladder here.
+
+Rows: `distribution` is `price`, `bodoff`, `bounds`, `classical`,
+`priority` or `priority_kappa`; `params` names the
 distortion, allocation and assets; `quantity` is the unit and the column
 (`X1.P`); `expected` is aggregate's value. aggregate computes on a grid
 with bucket 1, which holds every total, so the only differences are the
@@ -98,6 +108,28 @@ def main():
         tol = "1e-12" if method in ("Expected Value", "Variance", "Standard Deviation") else "1e-7"
         rows.append(["classical", "case=insco;assets=100;premium=53.565217391304344", method,
                      "", "", repr(float(value)), "0.0", tol, SOURCE])
+    discrete3 = build("port Discrete3 agg X1 1 claim dsev [0 8 10] [1/2 1/4 1/4] fixed "
+                      "agg X2 1 claim dsev [0 1 90] [1/2 1/4 1/4] fixed "
+                      "agg X3 1 claim dsev [0 2 5 30] [.4 .3 .2 .1] fixed", bs=1, log2=8)
+    for case, port, levels in [("discrete", discrete, [100, 90, 11, 9]),
+                                ("discrete3", discrete3, [130, 100, 40, 12])]:
+        units = list(port.unit_names)
+        for a in levels:
+            df = port.priority_epd_df(assets=a)
+            for u in units + ["total"]:
+                for rule in ["senior", "equal", "junior"]:
+                    rows.append(["priority", f"case={case};assets={a}", f"{u}.{rule}", "", "",
+                                 repr(float(df.loc[(u, rule), "recovery"])), "1e-10", "0.0",
+                                 SOURCE])
+        for unit in units:
+            for a in levels[1:3]:
+                junior, senior, p_total = port.priority_kappa(unit, assets=a)
+                for x in range(len(p_total)):
+                    if p_total[x] > 1e-12 and x > a:
+                        for side, v in [("junior", junior[x]), ("senior", senior[x])]:
+                            rows.append(["priority_kappa", f"case={case};assets={a}",
+                                         f"{unit}.{side}", str(x), "", repr(float(v)), "1e-9",
+                                         "0.0", SOURCE])
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "arg2", "expected",

@@ -40,6 +40,10 @@ approximation_parameters_rust <- function(moments, kind) .Call(wrap__approximati
 
 approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap__approximation_eval_rust, moments, kind, values, quantile)
 
+eventual_ruin_rust <- function(severity, rho, points, part, value, p) .Call(wrap__eventual_ruin_rust, severity, rho, points, part, value, p)
+
+layer_loss_picks_rust <- function(severity, attachments, picks, claims) .Call(wrap__layer_loss_picks_rust, severity, attachments, picks, claims)
+
 occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
 
 occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
@@ -100,6 +104,10 @@ pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_pri
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
+pricing_bounds_rust <- function(x, risks, premium, assets) .Call(wrap__pricing_bounds_rust, x, risks, premium, assets)
+
+distortion_envelope_rust <- function(x, premium, s, assets) .Call(wrap__distortion_envelope_rust, x, premium, s, assets)
+
 pricing_pentagon <- function(names, values) .Call(wrap__pricing_pentagon, names, values)
 
 pricing_classical_premium <- function(x, principle, loading, q) .Call(wrap__pricing_classical_premium, x, principle, loading, q)
@@ -135,6 +143,10 @@ indication_rust <- function(variable, profit, fixed_ratio, loss_ratio, pure_prem
 premium_based_expenses_rust <- function(ratio, fixed_share) .Call(wrap__premium_based_expenses_rust, ratio, fixed_share)
 
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
+
+occurrence_cession_statistics_rust <- function(frequency, severity, shares, limits, attachments) .Call(wrap__occurrence_cession_statistics_rust, frequency, severity, shares, limits, attachments)
+
+aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .Call(wrap__aggregate_layer_statistics_rust, annual, share, limit, attachment)
 
 occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
 
@@ -1287,6 +1299,10 @@ NaturalPortfolio$bodoff <- function(assets) .Call(wrap__NaturalPortfolio__bodoff
 NaturalPortfolio$epd <- function(assets) .Call(wrap__NaturalPortfolio__epd, self, assets)
 
 NaturalPortfolio$assets_for_epd <- function(epd) .Call(wrap__NaturalPortfolio__assets_for_epd, self, epd)
+
+NaturalPortfolio$priority <- function(assets) .Call(wrap__NaturalPortfolio__priority, self, assets)
+
+NaturalPortfolio$priority_kappa <- function(i, assets) .Call(wrap__NaturalPortfolio__priority_kappa, self, i, assets)
 
 NaturalPortfolio$premium_bounds <- function(premium, assets) .Call(wrap__NaturalPortfolio__premium_bounds, self, premium, assets)
 

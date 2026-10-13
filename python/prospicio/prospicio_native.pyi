@@ -3,6 +3,48 @@ from datetime import date
 from typing import Any, final
 
 @final
+class AggregateLayerStatistics:
+    """
+    An aggregate cover's statistics, from ``aggregate_layer_statistics``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aggregate(self, /) -> CompoundMoments:
+        """
+        The annual ceded loss, at the share.
+        """
+    @property
+    def attachment(self, /) -> float:
+        """
+        The aggregate retention.
+        """
+    @property
+    def limit(self, /) -> float:
+        """
+        The aggregate limit.
+        """
+    @property
+    def loss_on_line(self, /) -> float:
+        """
+        The ceded mean over ``share * limit``; 0 for an unlimited cover.
+        """
+    @property
+    def pr_attach(self, /) -> float:
+        """
+        ``P(S > attachment)``: the chance of a loss to the cover.
+        """
+    @property
+    def pr_detach(self, /) -> float:
+        """
+        ``P(S >= attachment + limit)``; 0 for an unlimited cover.
+        """
+    @property
+    def share(self, /) -> float:
+        """
+        The placed share.
+        """
+
+@final
 class Allocation:
     """
     Capital allocation of a distortion risk measure, from ``capital``.
@@ -1526,6 +1568,40 @@ class CapeCodFit:
     def ultimate(self, /) -> list[float]:
         """
         Cape Cod ultimate per origin.
+        """
+
+@final
+class CessionStatistics:
+    """
+    The total cession of several per-occurrence layers, from
+    ``occurrence_cession_statistics``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aggregate(self, /) -> CompoundMoments:
+        """
+        The annual ceded loss.
+        """
+    @property
+    def loss_on_line(self, /) -> float:
+        """
+        The annual ceded mean over the placed limits; 0 when one is
+        unlimited.
+        """
+    @property
+    def pr_attach(self, /) -> float:
+        """
+        ``P(X > a)`` at the lowest attachment, per claim.
+        """
+    @property
+    def pr_loss(self, /) -> float:
+        """
+        The chance of a loss to the cession in the year.
+        """
+    @property
+    def severity(self, /) -> CompoundMoments:
+        """
+        The ceded loss of a claim, every claim counted.
         """
 
 @final
@@ -9576,6 +9652,30 @@ class Period:
         """
 
 @final
+class Picks:
+    """
+    A severity reshaped to layer loss picks, from ``layer_loss_picks``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def severity(self, /) -> Grid:
+        """
+        The adjusted severity, on the same grid.
+        """
+    @property
+    def straight_bottom(self, /) -> bool:
+        """
+        Whether the bottom layer took the straight-line shape.
+        """
+    def to_dict(self, /) -> dict:
+        """
+        Each layer, bottom up, as columns: ``bottom``, ``top``, ``before``
+        and ``target`` (the expected loss per claim before and after),
+        ``weight`` (on the survival function) and ``above`` (the adjusted
+        chance of a loss above the layer).
+        """
+
+@final
 class PiecewisePareto:
     """
     Piecewise Pareto: alpha ``alpha[k]`` above threshold ``t[k]``, the
@@ -10093,6 +10193,57 @@ class Portfolio:
         -------
         NaturalPrice
         """
+    def priority(self, /, assets: float |None = None, p: float |None = None) -> dict:
+        """
+        The priority ladder: each unit's recovery from the assets when it
+        ranks ahead of the other units pooled (senior), pro rata (equal), or
+        behind them (junior), as ``aggregate``'s ``priority_epd_df``. Each is
+        unit against the rest pooled, so on three or more units only the
+        equal recoveries add up to the total. Exact under any dependence for
+        a portfolio built from scenarios.
+        
+        Parameters
+        ----------
+        assets : float, optional
+            The largest total by default.
+        p : float, optional
+            The capital standard: assets at the total's lower ``p`` quantile.
+        
+        Returns
+        -------
+        dict
+            Columns, one row per unit and a last ``"total"`` row: ``unit``,
+            ``mean``, the recoveries ``senior``, ``equal`` and ``junior``, and
+            the EPD ratios ``senior_epd``, ``equal_epd`` and ``junior_epd``
+            (the total row is ``E[X ∧ a]`` under every rule); and ``assets``.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import Portfolio
+        >>> port = Portfolio(["A", "B"], [[15, 7], [5, 20], [26, 19], [17, 48]])
+        >>> ladder = port.priority(assets=50)
+        >>> round(ladder["senior"][0] + ladder["junior"][1], 9) == ladder["senior"][2]
+        True
+        """
+    def priority_kappa(self, /, unit: str, assets: float |None = None, p: float |None = None) -> tuple[list[float], list[float]]:
+        """
+        Where in the total the shortfall ``(X - a)+`` falls when ``unit`` is
+        junior to the rest pooled: at each of ``totals``, the junior unit's
+        expected part ``E[min((X - a)+, X_i) | X = x]`` and the senior
+        pool's, which add up to ``(x - a)+``. As ``aggregate``'s
+        ``priority_kappa``.
+        
+        Parameters
+        ----------
+        unit : str
+        assets : float, optional
+        p : float, optional
+        
+        Returns
+        -------
+        tuple of (list of float, list of float)
+            The junior and the senior parts.
+        """
     @property
     def probs(self, /) -> list[float]:
         """
@@ -10570,6 +10721,57 @@ class Price:
         """
 
 @final
+class PricingBounds:
+    """
+    The range of other risks' prices over every distortion that prices a
+    reference risk ``X`` at a premium: ``aggregate``'s ``PricingBounds``,
+    exact. Prices are law-invariant, so only each risk's distribution
+    matters. The ends are attained by BiTVaRs, given with each bound.
+    
+    Parameters
+    ----------
+    x : Sampled, Grid or PredictiveDistribution
+        The reference risk (a predictive distribution's total).
+    risks : dict of str to Sampled, Grid or PredictiveDistribution
+        The risks to bound.
+    assets : float, optional
+        Cap every risk at the assets.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.pricing import PricingBounds
+    >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+    >>> y = Sampled([0, 0, 11, 0, 7, 8, 9, 10, 40, 64])
+    >>> pb = PricingBounds(x, {"X3": y})
+    >>> b = pb.bounds(53.565217391304344)[0]
+    >>> round(b["lower"], 6), round(b["upper"], 6)
+    (20.070992, 22.098038)
+    """
+    def __new__(cls, /, x: Any, risks: dict, assets: float |None = None) -> PricingBounds: ...
+    def __repr__(self, /) -> str: ...
+    def bounds(self, /, premium: float) -> list[dict]:
+        """
+        Each risk's lowest and highest price when ``X`` is priced at
+        ``premium``.
+        
+        Parameters
+        ----------
+        premium : float
+        
+        Returns
+        -------
+        list of dict
+            One per risk: ``risk``, ``lower``, ``upper``, and a Distortion
+            attaining each, ``lower_distortion`` and ``upper_distortion``.
+        """
+    @property
+    def premium_range(self, /) -> tuple[float, float]:
+        """
+        The premiums ``X`` can be priced at, ``(E[X], max X)``.
+        """
+
+@final
 class Provisions:
     """
     The provisions proportional to premium: variable expenses ``V`` and the
@@ -10933,6 +11135,77 @@ class RiskProfile:
         Returns
         -------
         EventSet
+        """
+
+@final
+class Ruin:
+    """
+    The probability of eventual ruin at each initial surplus on the grid, by
+    the Pollaczeck–Khinchine formula, from ``eventual_ruin``.
+    """
+    def __repr__(self, /) -> str: ...
+    def capital(self, /, p: float, interpolate: bool = False) -> float |None:
+        """
+        The initial surplus for ruin probability ``p``: the smallest grid
+        point with ``psi(u) < p``, or linear between grid points.
+        
+        Parameters
+        ----------
+        p : float
+        interpolate : bool, default False
+        
+        Returns
+        -------
+        float or None
+            None when the grid does not reach it.
+        """
+    @property
+    def equilibrium(self, /) -> Grid:
+        """
+        The equilibrium (integrated tail) severity.
+        """
+    @property
+    def lundberg_exponent(self, /) -> float |None:
+        """
+        The Lundberg exponent ``R`` with ``psi(u) <= exp(-R u)``, or None
+        when the grid's severity has no root below ``700 / max(x)``.
+        """
+    @property
+    def psi(self, /) -> list[float]:
+        """
+        ``psi(u)`` at each grid point; the last is the mass beyond the grid.
+        """
+    def psi_at(self, /, u: float) -> float:
+        """
+        ``psi(u)`` at any initial surplus (constant between grid points).
+        
+        Parameters
+        ----------
+        u : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def report(self, /) -> CompoundReport:
+        """
+        The compound FFT's report; read ``aliasing_error``.
+        """
+    @property
+    def rho(self, /) -> float:
+        """
+        The margin ``rho``; the loss ratio is ``1 / (1 + rho)``.
+        """
+    @property
+    def severity_mean(self, /) -> float:
+        """
+        The severity's mean on the grid, after any cap, excess or stop loss.
+        """
+    @property
+    def u(self, /) -> list[float]:
+        """
+        The initial surplus at each grid point.
         """
 
 @final
@@ -11796,6 +12069,13 @@ class TowerGrids:
         >>> round(p.ceded[0].loss, 12), p.ceded[0].premium > p.ceded[0].loss
         (1.2, True)
         """
+    @property
+    def stage_ceded(self, /) -> list[Grid |None]:
+        """
+        Annual ceded loss of each stage, its layers together: the total
+        cession ``aggregate`` reports as ``Ceded``. ``None`` for a stage of
+        several layers one of which has annual terms.
+        """
 
 @final
 class TowerModel:
@@ -11860,6 +12140,11 @@ class TowerPrice:
     def net(self, /) -> ViewPrice |None:
         """
         The net, or ``None`` when the tower has no net grid.
+        """
+    @property
+    def stages(self, /) -> list[ViewPrice |None]:
+        """
+        Each stage's total cession, ``None`` where ``stage_ceded`` is.
         """
 
 @final
@@ -13134,6 +13419,36 @@ def actual_vs_expected(periods: Sequence[int |str], family: str, y: Sequence[flo
     (2.0, 2.0)
     """
 
+def aggregate_layer_statistics(annual: Grid, share: float, limit: float, attachment: float) -> AggregateLayerStatistics:
+    """
+    The statistics of ``share`` of ``limit`` xs ``attachment`` on an annual
+    total, an aggregate cover such as a stop loss, as ``aggregate``'s
+    ``reins_stats_df`` for its ``agg`` layers: the chances of reaching and
+    exhausting the cover, the loss on line and the ceded loss's first three
+    cumulants, exact for the grid.
+    
+    Parameters
+    ----------
+    annual : Grid
+        The annual total the cover sees: a compound grid, or a tower's net.
+    share : float
+    limit : float
+        May be ``inf``.
+    attachment : float
+    
+    Returns
+    -------
+    AggregateLayerStatistics
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import aggregate_layer_statistics
+    >>> from prospicio.distributions import Grid
+    >>> s = aggregate_layer_statistics(Grid(1.0, [0.2, 0.3, 0.3, 0.2]), 1.0, 1.0, 1.0)
+    >>> round(s.pr_attach, 12), round(s.aggregate.mean, 12)
+    (0.5, 0.5)
+    """
+
 def allocate(pd: PredictiveDistribution, distortion: Distortion) -> list[float]:
     """
     Allocates a distortion risk measure of the total to the components.
@@ -13542,6 +13857,27 @@ def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequ
     float
     """
 
+def distortion_envelope(x: Any, premium: float, s: Sequence[float], assets: float |None = None) -> tuple[list[float], list[float]]:
+    """
+    The smallest and largest ``g(s)`` at each ``s`` over every distortion
+    that prices ``x`` at ``premium``: ``aggregate``'s ``Bounds`` envelopes,
+    exact (each is the price range of a Bernoulli risk with ``P(1) = s``).
+    
+    Parameters
+    ----------
+    x : Sampled, Grid or PredictiveDistribution
+    premium : float
+    s : list of float
+        Levels in [0, 1].
+    assets : float, optional
+        Cap ``x`` at the assets.
+    
+    Returns
+    -------
+    tuple of (list of float, list of float)
+        The lower envelope (a concave distortion) and the upper.
+    """
+
 def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:
     """
     Leave-one-out cross-validation by Pareto-smoothed importance sampling
@@ -13656,6 +13992,46 @@ def esscher_allocation(pd: PredictiveDistribution, h: float) -> list[float]:
     ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
     >>> esscher_allocation(pd, 0.0)
     [2.5, 3.5]
+    """
+
+def eventual_ruin(severity: Grid, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None, cap: float |None = None, excess: float |None = None, stop_loss: float |None = None) -> Ruin:
+    """
+    The probability of eventual ruin of the classical surplus process by
+    the Pollaczeck–Khinchine formula, as ``aggregate``'s
+    ``pollaczeck_khinchine`` and ``eventual_ruin``: Poisson claims with this
+    severity and a premium at ``1 + rho`` times the expected loss. The
+    Poisson rate cancels. The maximal aggregate loss is a compound geometric
+    of the equilibrium severity, by FFT.
+    
+    Parameters
+    ----------
+    severity : Grid
+    rho : float, optional
+        The margin to loss, positive. Or give ``loss_ratio``.
+    loss_ratio : float, optional
+        ``1 / (1 + rho)``, in (0, 1).
+    points : int, optional
+        Grid points for ``psi``; the severity's by default.
+    cap : float, optional
+        Use ``X | X <= cap``.
+    excess : float, optional
+        Use ``X | X > excess`` (not shifted).
+    stop_loss : float, optional
+        Use ``X`` with the mass above ``stop_loss`` moved onto it.
+    
+    Returns
+    -------
+    Ruin
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import eventual_ruin
+    >>> from prospicio.distributions import Gamma, Grid
+    >>> sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.0), 1.0, 1 << 14)
+    >>> ruin = eventual_ruin(sev, rho=0.2)
+    >>> # Exponential claims: exp(-u / 600) / 1.2 = 0.157; the step costs 1%.
+    >>> round(ruin.psi_at(1000.0), 3)
+    0.156
     """
 
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
@@ -13912,6 +14288,43 @@ def ks_uniform(values: Sequence[float]) -> float:
     float
     """
 
+def layer_loss_picks(severity: Grid, attachments: Sequence[float], picks: Sequence[float], claims: float = 1.0) -> Picks:
+    """
+    Reshapes a severity so that its expected loss to each layer hits a
+    pick, as ``aggregate``'s ``Aggregate.picks``: in each layer the survival
+    function is rescaled about its value at the layer's top, keeping its
+    shape there; above the top attachment the severity is kept.
+    
+    Parameters
+    ----------
+    severity : Grid
+    attachments : list of float
+        Increasing grid points; the layers are 0 to the first, then between
+        consecutive attachments.
+    picks : list of float
+        The loss to each layer for ``claims`` expected ground-up claims.
+    claims : float, default 1.0
+    
+    Returns
+    -------
+    Picks
+    
+    Raises
+    ------
+    ValueError
+        If an attachment is not a grid point or the picks are infeasible (a
+        pick below what the layers above force through its layer).
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import layer_loss_picks
+    >>> from prospicio.distributions import Gamma, Grid
+    >>> sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.5), 1.0, 1 << 14)
+    >>> picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
+    >>> [round(10 * t, 6) for t in picked.to_dict()["target"]]
+    [480.0, 420.0, 60.0]
+    """
+
 def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
     """
     Lift table: rows sorted by predicted rate, cut into bands of about
@@ -14130,6 +14543,33 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     >>> from prospicio.risk import mean_excess
     >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
     [(2.0, 1.5, 2)]
+    """
+
+def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequence[tuple[float, float, float]]) -> CessionStatistics:
+    """
+    The statistics of the total cession of several per-occurrence layers
+    side by side, as ``aggregate``'s ``Ceded`` column of
+    ``reins_stats_df``: a claim cedes the sum of ``share * min(max(x - a,
+    0), limit)`` over the layers. Moments are exact for the grid.
+    
+    Parameters
+    ----------
+    frequency : Poisson, NegativeBinomial or Binomial
+    severity : Grid
+    layers : list of (share, limit, attachment)
+    
+    Returns
+    -------
+    CessionStatistics
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import occurrence_cession_statistics
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    >>> c = occurrence_cession_statistics(Poisson(3.0), sev, [(1.0, 1.0, 1.0), (1.0, 2.0, 2.0)])
+    >>> round(c.aggregate.mean, 12)
+    3.0
     """
 
 def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:

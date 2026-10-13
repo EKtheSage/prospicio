@@ -469,7 +469,8 @@ fn compound_moments_and_approximations_match_aggregate() {
 #[test]
 fn reinsurance_statistics_and_prices_match_aggregate() {
     use prospicio_aggregate::{
-        CompoundMoments, Layer, Tower, compound_moments, occurrence_layer_statistics,
+        CompoundMoments, Layer, Tower, aggregate_layer_statistics, compound_moments,
+        occurrence_cession_statistics, occurrence_layer_statistics,
     };
     use prospicio_prob::{Distortion, Distribution, Gamma, Lognormal, Severity};
 
@@ -533,6 +534,49 @@ fn reinsurance_statistics_and_prices_match_aggregate() {
                     _ => None,
                 };
             }
+            if col == "Ceded" {
+                let layers: Vec<(f64, f64, f64)> = occ.iter().map(|l| (l[0], l[1], l[2])).collect();
+                let s = occurrence_cession_statistics(&*n, &sev, &layers).ok()?;
+                return match stat.split_once('_') {
+                    Some(("pr", "attach")) => Some(s.pr_attach),
+                    Some(("pr", "loss")) => Some(s.pr_loss),
+                    Some(("sev", m)) => pick(&s.severity, m),
+                    Some(("agg", m)) => pick(&s.aggregate, m),
+                    _ if stat == "lol" => Some(s.loss_on_line),
+                    _ => None,
+                };
+            }
+            if col == "agglayer" {
+                // The cover sees the annual loss net of the occurrence layers.
+                let (limit, retention) = text("agg")?.split_once(':')?;
+                let layers = occ
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &[share, limit, attach])| {
+                        Layer::xol(format!("occ{i}"), limit, attach).and_then(|l| l.share(share))
+                    })
+                    .collect::<prospicio_core::Result<Vec<_>>>()
+                    .ok()?;
+                let subject = Tower::new(layers)
+                    .ok()?
+                    .on_grid(&*n, &sev, 1 << 14)
+                    .ok()?
+                    .net?;
+                let s = aggregate_layer_statistics(
+                    &subject,
+                    1.0,
+                    limit.parse().ok()?,
+                    retention.parse().ok()?,
+                )
+                .ok()?;
+                return match stat.split_once('_') {
+                    Some(("pr", "attach")) => Some(s.pr_attach),
+                    Some(("pr", "detach")) => Some(s.pr_detach),
+                    Some(("agg", m)) => pick(&s.aggregate, m),
+                    _ if stat == "lol" => Some(s.loss_on_line),
+                    _ => None,
+                };
+            }
             if col == "gross" {
                 let (block, m) = stat.split_once('_')?;
                 let moments = if block == "agg" {
@@ -575,10 +619,11 @@ fn reinsurance_statistics_and_prices_match_aggregate() {
             towers.insert(params.to_string(), grids);
         }
         let grids = &towers[params];
+        // The occurrence stage's total cession, and the aggregate cover.
         let view = |name: &str| match name {
             "gross" => Some(&grids.gross),
-            "ceded_occ" => grids.ceded.first(),
-            "ceded" => grids.ceded.get(1),
+            "ceded_occ" | "stage0" => grids.stage_ceded[0].as_ref(),
+            "ceded" => grids.ceded.last(),
             "net" => grids.net.as_ref(),
             _ => None,
         };
@@ -595,4 +640,93 @@ fn reinsurance_statistics_and_prices_match_aggregate() {
         let x = c.number("arg")? as usize;
         Some(view(name)?.probs().get(x).copied().unwrap_or(0.0))
     });
+}
+
+#[test]
+fn eventual_ruin_matches_aggregate() {
+    use prospicio_aggregate::ruin::{SeverityPart, pollaczeck_khinchine};
+    use prospicio_prob::Gamma;
+    // validation/scripts/aggregate_ruin.py: a gamma severity on 2^16 points
+    // and claims of 1, 2 or 3 on 2^10, both on a step of 1.
+    let (gamma, _) =
+        Grid::rounding(&Gamma::from_mean_cv(50.0, 1.5).unwrap(), 1.0, 1 << 16).unwrap();
+    let mut small = vec![0.0; 1 << 10];
+    small[1..4].copy_from_slice(&[0.5, 0.3, 0.2]);
+    let small = Grid::new(1.0, small).unwrap();
+    let cases = reference("ruin_aggregate.csv");
+    check(&cases, |c| {
+        let params: std::collections::HashMap<&str, f64> = c
+            .get("params")
+            .split(';')
+            .filter_map(|kv| kv.split_once('='))
+            .filter_map(|(k, v)| Some((k, v.parse().ok()?)))
+            .collect();
+        let sev = match c.get("distribution") {
+            "G" => &gamma,
+            "D" => &small,
+            _ => return None,
+        };
+        let part = if let Some(&v) = params.get("cap") {
+            SeverityPart::AtMost(v)
+        } else if let Some(&v) = params.get("excess") {
+            SeverityPart::Above(v)
+        } else if let Some(&v) = params.get("stop_loss") {
+            SeverityPart::StopLoss(v)
+        } else {
+            SeverityPart::All
+        };
+        let ruin = pollaczeck_khinchine(sev, *params.get("rho")?, sev.len(), part).ok()?;
+        let arg = c.number("arg")?;
+        match c.get("quantity") {
+            "mean" => Some(ruin.severity_mean()),
+            "psi" => Some(ruin.psi_at(arg)),
+            "u_index" => ruin.capital(arg),
+            "u_interp" => ruin.capital_interpolated(arg),
+            "lundberg" => ruin.lundberg_exponent(),
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn layer_loss_picks_match_aggregate() {
+    use prospicio_aggregate::picks::layer_loss_picks;
+    use prospicio_prob::Gamma;
+    // validation/scripts/aggregate_picks.py: a gamma severity on 2^14
+    // points, 10 claims, layers to 100, 500 and 1,000.
+    let (sev, _) = Grid::rounding(&Gamma::from_mean_cv(100.0, 1.5).unwrap(), 1.0, 1 << 14).unwrap();
+    let attachments = [100.0, 500.0, 1000.0];
+    let cases = reference("picks_aggregate.csv");
+    check(&cases, |c| {
+        let picks: Vec<f64> = c
+            .get("params")
+            .strip_prefix("picks=")?
+            .split(':')
+            .map(|p| p.parse().ok())
+            .collect::<Option<_>>()?;
+        let picked = layer_loss_picks(&sev, &attachments, &picks, 10.0).ok()?;
+        assert_eq!(picked.straight_bottom, c.get("distribution") == "straight");
+        let arg = c.number("arg")?;
+        match c.get("quantity") {
+            "p" => picked.severity.probs().get(arg as usize).copied(),
+            "layer" => {
+                let g = &picked.severity;
+                let i = attachments.iter().position(|&a| a == arg)?;
+                let bottom = if i == 0 { 0.0 } else { attachments[i - 1] };
+                let lev = |a: f64| {
+                    (0..g.len())
+                        .map(|j| g.x(j).min(a) * g.probs()[j])
+                        .sum::<f64>()
+                };
+                Some(10.0 * (lev(arg) - lev(bottom)))
+            }
+            _ => None,
+        }
+    });
+    // The straight-line bottom layer meets its pick, where aggregate's
+    // rounded line reaches 704.90.
+    let picked = layer_loss_picks(&sev, &attachments, &[700.0, 250.0, 50.0], 10.0).unwrap();
+    let g = &picked.severity;
+    let lev100: f64 = (0..g.len()).map(|j| g.x(j).min(100.0) * g.probs()[j]).sum();
+    assert!((10.0 * lev100 - 700.0).abs() < 1e-9);
 }

@@ -71,6 +71,10 @@ reference:
       - aggregate.compound_moments
       - aggregate.CompoundMoments
       - aggregate.Approximation
+      - aggregate.eventual_ruin
+      - aggregate.Ruin
+      - aggregate.layer_loss_picks
+      - aggregate.Picks
   - title: Reinsurance
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:
@@ -82,6 +86,10 @@ reference:
       - reinsurance.ViewPrice
       - reinsurance.occurrence_layer_statistics
       - reinsurance.LayerStatistics
+      - reinsurance.occurrence_cession_statistics
+      - reinsurance.CessionStatistics
+      - reinsurance.aggregate_layer_statistics
+      - reinsurance.AggregateLayerStatistics
   - title: Models
     desc: Terms and design matrices, GLMs and GAMs, metrics, resampling and MCMC diagnostics.
     contents:
@@ -161,6 +169,8 @@ reference:
       - pricing.Pentagon
       - pricing.classical_premium
       - pricing.calibrate_classical
+      - pricing.PricingBounds
+      - pricing.distortion_envelope
   - title: Credibility
     desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model.
     contents:

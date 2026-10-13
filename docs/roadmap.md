@@ -104,11 +104,17 @@ what it is aiming for by v1.0.
     moment approximations (normal, gamma, lognormal, shifted gamma and
     lognormal); per-occurrence layer statistics and each view of a tower
     priced under a distortion, the grid towers checked against
-    `aggregate` point by point.
+    `aggregate` point by point; the senior and junior priority ladder
+    for capital, exact under any dependence from scenarios; eventual ruin
+    by Pollaczeck–Khinchine; a severity reshaped to layer loss picks;
+    pricing bounds for other risks and the envelope of the distortions;
+    the total cession of a stage with several layers, priced, and
+    statistics of total cessions and aggregate covers.
 - **Next:**
-  1. The rest of `aggregate` parity tier 2 (the user's choice, 2026-10-12),
-     in the order listed in `docs/design/aggregate.md`: a priority ladder, eventual ruin, layer
-     loss picks, pricing bounds.
+  1. The rest of the small items of `aggregate` parity tier 2 (the user's
+     choice, 2026-10-12), listed in `docs/design/aggregate.md`:
+     `tvar_threshold`, a stand-alone price on a grid portfolio,
+     comonotonic allocation, named counts, a reinstatement premium check.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

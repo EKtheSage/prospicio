@@ -2,7 +2,9 @@
 //! portfolio held as the conditional expectations of its units given the
 //! total, over `prospicio_pricing::natural`.
 
-use prospicio_pricing::natural::{Allocation, NaturalPrice, Pentagon, Portfolio, Quantity, Target};
+use prospicio_pricing::natural::{
+    Allocation, NaturalPrice, Pentagon, Portfolio, Quantity, Rule, Target,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -539,6 +541,100 @@ impl PyPortfolio {
             .collect()
     }
 
+    /// The priority ladder: each unit's recovery from the assets when it
+    /// ranks ahead of the other units pooled (senior), pro rata (equal), or
+    /// behind them (junior), as ``aggregate``'s ``priority_epd_df``. Each is
+    /// unit against the rest pooled, so on three or more units only the
+    /// equal recoveries add up to the total. Exact under any dependence for
+    /// a portfolio built from scenarios.
+    ///
+    /// Parameters
+    /// ----------
+    /// assets : float, optional
+    ///     The largest total by default.
+    /// p : float, optional
+    ///     The capital standard: assets at the total's lower ``p`` quantile.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     Columns, one row per unit and a last ``"total"`` row: ``unit``,
+    ///     ``mean``, the recoveries ``senior``, ``equal`` and ``junior``, and
+    ///     the EPD ratios ``senior_epd``, ``equal_epd`` and ``junior_epd``
+    ///     (the total row is ``E[X ∧ a]`` under every rule); and ``assets``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import Portfolio
+    /// >>> port = Portfolio(["A", "B"], [[15, 7], [5, 20], [26, 19], [17, 48]])
+    /// >>> ladder = port.priority(assets=50)
+    /// >>> round(ladder["senior"][0] + ladder["junior"][1], 9) == ladder["senior"][2]
+    /// True
+    #[pyo3(signature = (assets=None, p=None))]
+    fn priority<'py>(
+        &self,
+        py: Python<'py>,
+        assets: Option<f64>,
+        p: Option<f64>,
+    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let l = self.inner.priority(self.level(assets, p)?).map_err(to_py)?;
+        let mean_total: f64 = l.mean.iter().sum();
+        let ratio = |e: f64, r: f64| if e > 0.0 { (e - r) / e } else { 0.0 };
+        let with_total = |v: Vec<f64>, t: f64| v.into_iter().chain([t]).collect::<Vec<f64>>();
+        let d = pyo3::types::PyDict::new(py);
+        let mut units = l.units.clone();
+        units.push("total".into());
+        d.set_item("unit", units)?;
+        d.set_item("mean", with_total(l.mean.clone(), mean_total))?;
+        for (name, rule) in [
+            ("senior", Rule::Senior),
+            ("equal", Rule::Equal),
+            ("junior", Rule::Junior),
+        ] {
+            d.set_item(name, with_total(l.recovery(rule).to_vec(), l.total))?;
+            d.set_item(
+                format!("{name}_epd"),
+                with_total(l.epd(rule), ratio(mean_total, l.total)),
+            )?;
+        }
+        d.set_item("assets", l.assets)?;
+        Ok(d)
+    }
+
+    /// Where in the total the shortfall ``(X - a)+`` falls when ``unit`` is
+    /// junior to the rest pooled: at each of ``totals``, the junior unit's
+    /// expected part ``E[min((X - a)+, X_i) | X = x]`` and the senior
+    /// pool's, which add up to ``(x - a)+``. As ``aggregate``'s
+    /// ``priority_kappa``.
+    ///
+    /// Parameters
+    /// ----------
+    /// unit : str
+    /// assets : float, optional
+    /// p : float, optional
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (list of float, list of float)
+    ///     The junior and the senior parts.
+    #[pyo3(signature = (unit, assets=None, p=None))]
+    fn priority_kappa(
+        &self,
+        unit: &str,
+        assets: Option<f64>,
+        p: Option<f64>,
+    ) -> PyResult<(Vec<f64>, Vec<f64>)> {
+        let i = self
+            .inner
+            .units()
+            .iter()
+            .position(|u| u == unit)
+            .ok_or_else(|| PyValueError::new_err(format!("no unit {unit:?}")))?;
+        self.inner
+            .priority_kappa(i, self.level(assets, p)?)
+            .map_err(to_py)
+    }
+
     /// The smallest assets whose total EPD ratio is at most ``epd``.
     ///
     /// Parameters
@@ -675,4 +771,150 @@ pub(crate) fn calibrate_classical(
     let (x, p) = discrete_of(dist, None)?;
     let p = classical::calibrate(kind(principle, q)?, &x, &p, premium).map_err(to_py)?;
     Ok(loading_of(p))
+}
+
+/// The range of other risks' prices over every distortion that prices a
+/// reference risk ``X`` at a premium: ``aggregate``'s ``PricingBounds``,
+/// exact. Prices are law-invariant, so only each risk's distribution
+/// matters. The ends are attained by BiTVaRs, given with each bound.
+///
+/// Parameters
+/// ----------
+/// x : Sampled, Grid or PredictiveDistribution
+///     The reference risk (a predictive distribution's total).
+/// risks : dict of str to Sampled, Grid or PredictiveDistribution
+///     The risks to bound.
+/// assets : float, optional
+///     Cap every risk at the assets.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Sampled
+/// >>> from prospicio.pricing import PricingBounds
+/// >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+/// >>> y = Sampled([0, 0, 11, 0, 7, 8, 9, 10, 40, 64])
+/// >>> pb = PricingBounds(x, {"X3": y})
+/// >>> b = pb.bounds(53.565217391304344)[0]
+/// >>> round(b["lower"], 6), round(b["upper"], 6)
+/// (20.070992, 22.098038)
+#[pyclass(name = "PricingBounds", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyPricingBounds {
+    inner: prospicio_pricing::bounds::PricingBounds,
+}
+
+#[pymethods]
+impl PyPricingBounds {
+    #[new]
+    #[pyo3(signature = (x, risks, assets=None))]
+    fn new(
+        x: &Bound<'_, PyAny>,
+        risks: &Bound<'_, pyo3::types::PyDict>,
+        assets: Option<f64>,
+    ) -> PyResult<Self> {
+        let (xv, xp) = discrete_of(x, None)?;
+        let ys = risks
+            .iter()
+            .map(|(k, v)| {
+                let (yv, yp) = discrete_of(&v, None)?;
+                Ok((k.extract::<String>()?, yv, yp))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let inner = prospicio_pricing::bounds::PricingBounds::new(
+            (&xv, &xp),
+            &ys,
+            assets.unwrap_or(f64::INFINITY),
+        )
+        .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The premiums ``X`` can be priced at, ``(E[X], max X)``.
+    #[getter]
+    fn premium_range(&self) -> (f64, f64) {
+        self.inner.premium_range()
+    }
+
+    /// Each risk's lowest and highest price when ``X`` is priced at
+    /// ``premium``.
+    ///
+    /// Parameters
+    /// ----------
+    /// premium : float
+    ///
+    /// Returns
+    /// -------
+    /// list of dict
+    ///     One per risk: ``risk``, ``lower``, ``upper``, and a Distortion
+    ///     attaining each, ``lower_distortion`` and ``upper_distortion``.
+    fn bounds<'py>(
+        &self,
+        py: Python<'py>,
+        premium: f64,
+    ) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        self.inner
+            .bounds(premium)
+            .map_err(to_py)?
+            .into_iter()
+            .map(|r| {
+                let d = pyo3::types::PyDict::new(py);
+                d.set_item("risk", r.risk)?;
+                d.set_item("lower", r.lower)?;
+                d.set_item("upper", r.upper)?;
+                d.set_item(
+                    "lower_distortion",
+                    PyDistortion {
+                        inner: r.lower_distortion,
+                    },
+                )?;
+                d.set_item(
+                    "upper_distortion",
+                    PyDistortion {
+                        inner: r.upper_distortion,
+                    },
+                )?;
+                Ok(d)
+            })
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        let (lo, hi) = self.inner.premium_range();
+        format!("PricingBounds(premium_range=({lo}, {hi}))")
+    }
+}
+
+/// The smallest and largest ``g(s)`` at each ``s`` over every distortion
+/// that prices ``x`` at ``premium``: ``aggregate``'s ``Bounds`` envelopes,
+/// exact (each is the price range of a Bernoulli risk with ``P(1) = s``).
+///
+/// Parameters
+/// ----------
+/// x : Sampled, Grid or PredictiveDistribution
+/// premium : float
+/// s : list of float
+///     Levels in [0, 1].
+/// assets : float, optional
+///     Cap ``x`` at the assets.
+///
+/// Returns
+/// -------
+/// tuple of (list of float, list of float)
+///     The lower envelope (a concave distortion) and the upper.
+#[pyfunction]
+#[pyo3(signature = (x, premium, s, assets=None))]
+pub(crate) fn distortion_envelope(
+    x: &Bound<'_, PyAny>,
+    premium: f64,
+    s: Vec<f64>,
+    assets: Option<f64>,
+) -> PyResult<(Vec<f64>, Vec<f64>)> {
+    let (xv, xp) = discrete_of(x, None)?;
+    let env = prospicio_pricing::bounds::distortion_envelope(
+        (&xv, &xp),
+        premium,
+        assets.unwrap_or(f64::INFINITY),
+        &s,
+    )
+    .map_err(to_py)?;
+    Ok(env.into_iter().unzip())
 }
