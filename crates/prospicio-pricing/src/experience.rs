@@ -1135,7 +1135,7 @@ mod tests {
         );
         let plain = Tower::new(vec![Layer::xol("x", 400.0, 100.0).unwrap()]).unwrap();
         assert!(
-            p.burning_cost_indexed(&[plain.clone()], &one_year(2020), &full, &[])
+            p.burning_cost_indexed(std::slice::from_ref(&plain), &one_year(2020), &full, &[])
                 .is_err()
         );
         assert!(
