@@ -366,6 +366,64 @@ impl Distortion {
         }
     }
 
+    /// The family, as its constructor is named: `"tvar"`, `"wang"`,
+    /// `"proportional_hazard"`, `"dual_power"`, `"exponential"`, `"ccoc"`,
+    /// `"bitvar"`, `"weighted_tvar"`, `"capped_linear"`,
+    /// `"capped_log_linear"`, `"lep"`, `"linear_yield"`, `"beta"`,
+    /// `"mixture"`, `"minimum"` or `"convex"`.
+    ///
+    /// ```
+    /// use prospicio_prob::Distortion;
+    ///
+    /// let d = Distortion::proportional_hazard(0.7).unwrap();
+    /// assert_eq!(d.family(), "proportional_hazard");
+    /// assert_eq!(d.parameters(), vec![("rho", 0.7)]);
+    /// ```
+    pub fn family(&self) -> &'static str {
+        match self {
+            Self::Tvar(_) => "tvar",
+            Self::Wang(_) => "wang",
+            Self::ProportionalHazard(_) => "proportional_hazard",
+            Self::DualPower(_) => "dual_power",
+            Self::Exponential(_) => "exponential",
+            Self::Ccoc(_) => "ccoc",
+            Self::BiTvar { .. } => "bitvar",
+            Self::WeightedTvar { .. } => "weighted_tvar",
+            Self::CappedLinear { .. } => "capped_linear",
+            Self::CappedLogLinear { .. } => "capped_log_linear",
+            Self::Lep { .. } => "lep",
+            Self::LinearYield { .. } => "linear_yield",
+            Self::Beta { .. } => "beta",
+            Self::Mixture(_) => "mixture",
+            Self::Minimum(_) => "minimum",
+            Self::Convex(_) => "convex",
+        }
+    }
+
+    /// The scalar parameters by name, as the constructor takes them: for
+    /// example `[("rho", 0.7)]` for the proportional hazard, `[("r0", …),
+    /// ("slope", …)]` for the capped linear. Empty for the composite
+    /// families (weighted TVaR, mixture, minimum, convex), whose inputs are
+    /// lists.
+    pub fn parameters(&self) -> Vec<(&'static str, f64)> {
+        match *self {
+            Self::Tvar(p) => vec![("p", p)],
+            Self::Wang(l) => vec![("lambda", l)],
+            Self::ProportionalHazard(r) => vec![("rho", r)],
+            Self::DualPower(b) => vec![("beta", b)],
+            Self::Exponential(k) => vec![("k", k)],
+            Self::Ccoc(r) => vec![("r", r)],
+            Self::BiTvar { p0, p1, w } => vec![("p0", p0), ("p1", p1), ("w", w)],
+            Self::CappedLinear { r0, slope } => vec![("r0", r0), ("slope", slope)],
+            Self::CappedLogLinear { r0, b } => vec![("r0", r0), ("b", b)],
+            Self::Lep { r0, r } | Self::LinearYield { r0, r } => vec![("r0", r0), ("r", r)],
+            Self::Beta { a, b } => vec![("a", a), ("b", b)],
+            Self::WeightedTvar { .. } | Self::Mixture(_) | Self::Minimum(_) | Self::Convex(_) => {
+                vec![]
+            }
+        }
+    }
+
     /// The probability mass the distortion puts on the largest outcome:
     /// `g(0+)`, the limit of `g(s)` as `s` falls to 0. Zero except for
     /// `Ccoc`, and for `CappedLinear`, `Lep` and `LinearYield` with

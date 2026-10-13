@@ -494,8 +494,10 @@ Pareto's `SeverityCurve`. Python `TabulatedCurve`, `rate_quantile` on
 both; R `tabulated_curve()`, `rate_quantile()`. These feed the risk-profile
 simulator (`aggregate.md`), one curve per sum-insured band.
 
-Done in `risk_load`: `price(losses, rule, assets)` on any `Empirical`
-and `price_portfolio(pd, rule, assets)` on a `PredictiveDistribution`,
+Done in `risk_load`: `price(losses, rule, assets)` on any `Empirical`,
+`price_grid(grid, rule, assets)` on a loss distribution on a grid (a
+layer's exact annual loss from `Tower::on_grid`, at any capital standard;
+#204), and `price_portfolio(pd, rule, assets)` on a `PredictiveDistribution`,
 with `PremiumRule::{Distortion, CostOfCapital}`. This is where simulated
 results meet pricing: a ceded result from `Tower::apply` or
 `apply_aggregate`, a reserve bootstrap, or a blended model's draws.
@@ -520,6 +522,38 @@ Decisions:
 
 Bindings: Python `price`, `price_portfolio`, `Price`, `PortfolioPrice`;
 R `risk_loaded_price()` and `price_portfolio()`.
+
+The quote (#197), in `prospicio_pricing::quote`: the exhibit an
+underwriter builds from a risk-loaded price, as the Guides lane's
+`docs/guides/reinsurance-price.md` builds it by hand. Decisions:
+
+- **It sits on `Price`, not beside it.** The risk premium `R` is a
+  `Price`'s premium (expected loss plus the margin for capital, from any
+  rule and capital standard). `Quote::technical(&price, Loads, limit)`
+  grosses it up: internal expenses `e` and brokerage `b` are fractions of
+  the premium and a fixed expense `f` an amount, so `P = (R + f) / (1 − e
+  − b)`.
+- **Every ratio is on the premium charged.** Rate on line `P / limit`
+  (the limit at the placed share, `None` for a quota share) and payback,
+  multiple `P / E[X]`, loss ratio `E[X] / P`; `net_premium` is net of
+  brokerage, what the reinsurer receives.
+- **A quoted premium reads back the whole exhibit.** `Quote::at(P)` keeps
+  the expected loss, assets and loads and takes `P (1 − e − b) − f` as
+  the risk premium, so the margin, capital and return on capital at a
+  market quote follow. A quote that leaves no capital is an error, as the
+  funding check.
+- **Not yet:** reinstatement and swing premium and commissions on the
+  premium side (brokerage on reinstatement premium), tax, and the quote of
+  a whole tower at once; a tower's layers are quoted one by one from
+  `TowerGrids::ceded` and `price_grid`.
+
+Validated by identities (zero loads give the risk premium; the loads net
+back to it; at the technical premium the return is the rate asked for;
+a higher quote returns more) and by the guide's worked example in
+`python/tests/test_pricing.py`: risk premium 1.240, technical premium
+1.425, rate on line 28.5%, multiple 2.43, loss ratio 41.1%, and returns
+of 5.4% and 14.2% at the soft and hard market quotes. Python `Quote`, R
+`technical_quote()` and `implied_quote()`.
 
 `Layer`, `Tower` and `TowerGrids` (contract terms and their grid
 results) are in the user-facing `reinsurance` namespace that

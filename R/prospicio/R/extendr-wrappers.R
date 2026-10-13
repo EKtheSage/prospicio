@@ -104,6 +104,12 @@ claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_par
 
 pricing_severity_exposure_curve <- function(severity, mpl, x) .Call(wrap__pricing_severity_exposure_curve, severity, mpl, x)
 
+pricing_trend_large_losses <- function(ids, accident, amount, threshold, rate, to, factors) .Call(wrap__pricing_trend_large_losses, ids, accident, amount, threshold, rate, to, factors)
+
+pricing_burning_cost <- function(ids, accident, amount, threshold, rate, to, factors, towers, years, premium, development) .Call(wrap__pricing_burning_cost, ids, accident, amount, threshold, rate, to, factors, towers, years, premium, development)
+
+pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium) .Call(wrap__pricing_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium)
+
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
@@ -301,6 +307,8 @@ ReinsuranceTower$stages <- function() .Call(wrap__ReinsuranceTower__stages, self
 ReinsuranceTower$ceded <- function(losses) .Call(wrap__ReinsuranceTower__ceded, self, losses)
 
 ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__ReinsuranceTower__on_grid, self, frequency, severity, points)
+
+ReinsuranceTower$on_annual_grid <- function(annual) .Call(wrap__ReinsuranceTower__on_annual_grid, self, annual)
 
 ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
 
@@ -2036,6 +2044,8 @@ RiskDistortion$calibrate <- function(family, x, premium, assets, r0) .Call(wrap_
 RiskDistortion$kind <- function() .Call(wrap__RiskDistortion__kind, self)
 
 RiskDistortion$param <- function() .Call(wrap__RiskDistortion__param, self)
+
+RiskDistortion$parameters <- function() .Call(wrap__RiskDistortion__parameters, self)
 
 RiskDistortion$mass <- function() .Call(wrap__RiskDistortion__mass, self)
 

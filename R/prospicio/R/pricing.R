@@ -286,7 +286,9 @@ alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, fre
 
 #' Risk-loaded prices from simulated losses
 #'
-#' `risk_loaded_price()` prices one cover from its loss draws;
+#' `risk_loaded_price()` prices one cover from its loss draws, or from its
+#' loss distribution on a grid (a layer's exact annual loss from
+#' [tower_on_grid()]);
 #' `price_portfolio()` prices a portfolio and allocates the price to its
 #' components. The assets backing the loss are the distortion risk measure
 #' `assets` of it. The premium is either the pricing distortion
@@ -299,7 +301,8 @@ alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, fre
 #' priced below its standalone price, and with a cost of capital every
 #' component earns the rate on its allocated capital.
 #'
-#' @param x A [sampled] or a [predictive_distribution] (its total) for
+#' @param x A [sampled], a [predictive_distribution] (its total) or a
+#'   [grid_distribution] for
 #'   `risk_loaded_price()`; a [predictive_distribution] whose components add
 #'   up to the portfolio (segments or covers, not gross, ceded and net side
 #'   by side) for `price_portfolio()`.
@@ -319,6 +322,9 @@ alpha_between_frequencies <- function(threshold_1, frequency_1, threshold_2, fre
 #' @name risk_loaded_price
 #' @examples
 #' risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
+#'                   cost_of_capital = 0.25)$premium
+#' # The same on a grid: 0, 2 or 6 with probabilities 1/2, 1/4, 1/4.
+#' risk_loaded_price(grid_distribution(2, c(0.5, 0.25, 0, 0.25)), distortion("tvar", 0.5),
 #'                   cost_of_capital = 0.25)$premium
 #' pd <- predictive_distribution(
 #'   matrix(c(0, 1, 4, 8, 2, 1, 0, 0), ncol = 2),
@@ -1002,4 +1008,159 @@ classical_premium <- function(x, principle, loading, q = 2) {
 #' @export
 calibrate_classical <- function(x, principle, premium, q = 2) {
   rust_result(pricing_calibrate_classical(x@ptr, principle, as.double(premium), as.double(q)))
+}
+
+#' A cover's quote
+#'
+#' `technical_quote()` grosses a risk-loaded price up to the premium the
+#' cedant pays. The risk premium `R` (the expected loss plus the margin for
+#' capital, from [risk_loaded_price()]) is grossed up for internal expenses
+#' `e` and brokerage `b`, both fractions of the premium, and a fixed expense
+#' `f`: `P = (R + f) / (1 - e - b)`. `implied_quote()` reads a quoted
+#' premium the other way: the reinsurer keeps `P (1 - e - b) - f` as its
+#' risk premium, and the margin and return on capital follow with the same
+#' expected loss and assets.
+#'
+#' @param price A risk-loaded price, from [risk_loaded_price()].
+#' @param expenses Internal expenses, a fraction of the premium.
+#' @param brokerage Brokerage, a fraction of the premium.
+#' @param fixed A fixed expense per contract, an amount.
+#' @param limit The cover's limit at the placed share, for the rate on line;
+#'   `NULL` for a cover without one, such as a quota share.
+#' @param quote A quote from `technical_quote()`.
+#' @param premium A quoted premium.
+#' @returns A list with `expected_loss`, `margin`, `risk_premium`,
+#'   `expenses`, `brokerage` (amounts), `premium`, `net_premium` (net of
+#'   brokerage), `assets`, `capital`, `return_on_capital`, `loss_ratio`,
+#'   `multiple`, `rate_on_line` and `payback` (`NaN` without a limit), and
+#'   the inputs `implied_quote()` needs.
+#' @export
+#' @examples
+#' p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
+#'                        cost_of_capital = 0.1)
+#' q <- technical_quote(p, expenses = 0.03, brokerage = 0.10, limit = 10)
+#' q$premium
+#' q$rate_on_line
+#' implied_quote(q, 3)$return_on_capital
+technical_quote <- function(price, expenses = 0, brokerage = 0, fixed = 0, limit = NULL) {
+  loads <- list(expenses = as.double(expenses), brokerage = as.double(brokerage),
+                fixed = as.double(fixed), limit = if (is.null(limit)) NaN else as.double(limit))
+  q <- rust_result(pricing_quote(
+    price$expected_loss, price$premium, price$assets, loads$expenses, loads$brokerage,
+    loads$fixed, loads$limit, NaN
+  ))
+  c(q, list(loads = loads))
+}
+
+#' @rdname technical_quote
+#' @export
+implied_quote <- function(quote, premium) {
+  l <- quote$loads
+  q <- rust_result(pricing_quote(
+    quote$expected_loss, quote$risk_premium, quote$assets, l$expenses, l$brokerage, l$fixed,
+    l$limit, as.double(premium)
+  ))
+  c(q, list(loads = l))
+}
+
+#' Large losses trended to the prospective period
+#'
+#' The first step of experience rating from individual large losses
+#' (Clark, *Basics of Reinsurance Pricing*): trend each loss from its
+#' accident date to the prospective period, by an annual `rate` to the date
+#' `to` (`(1 + rate)^(to - accident)`) or by a factor per loss. Cost the
+#' trended losses with [burning_cost()].
+#'
+#' A record reported above a threshold in nominal terms leaves the older
+#' years short of losses that trend above it: with a `threshold`, losses
+#' trended below the threshold times the largest factor (`complete_above`)
+#' are left out of the burning cost, so every year is complete on the same
+#' basis.
+#'
+#' @param losses A data frame with columns `id`, `accident` (a decimal
+#'   year, see [year_fraction()]) and `amount` (incurred at the latest
+#'   valuation).
+#' @param rate An annual severity trend, with `to`.
+#' @param to The date to trend to, a decimal year: the average accident
+#'   date of the prospective period.
+#' @param factors A trend factor per loss, instead of `rate` and `to`.
+#' @param threshold The reporting threshold of the record.
+#' @returns A list with `losses` (the input columns with `year`, `factor`
+#'   and `trended`), `complete_above`, and the inputs [burning_cost()]
+#'   needs.
+#' @export
+#' @examples
+#' losses <- data.frame(id = c("a", "b"), accident = c(1995.5, 1996.5),
+#'                      amount = c(150, 400))
+#' p <- trend_large_losses(losses, rate = 0.05, to = 1998.5)
+#' p$losses$trended
+trend_large_losses <- function(losses, rate = NULL, to = NULL, factors = NULL, threshold = 0) {
+  if (is.null(factors) == (is.null(rate) || is.null(to))) {
+    stop("pass rate and to, or factors, but not both", call. = FALSE)
+  }
+  args <- list(
+    ids = as.character(losses$id), accident = as.double(losses$accident),
+    amount = as.double(losses$amount), threshold = as.double(threshold),
+    rate = if (is.null(rate)) NaN else as.double(rate),
+    to = if (is.null(to)) NaN else as.double(to),
+    factors = if (is.null(factors)) double() else as.double(factors)
+  )
+  r <- rust_result(do.call(pricing_trend_large_losses, args))
+  list(
+    losses = data.frame(id = r$id, year = r$year, accident = r$accident, amount = r$amount,
+                        factor = r$factor, trended = r$trended),
+    complete_above = r$complete_above,
+    args = args
+  )
+}
+
+#' Burning cost of large losses
+#'
+#' Apply each year's treaty to the year's trended losses (a loss belongs to
+#' the year of its accident date), with any annual terms, develop each
+#' year's layer total with an excess development factor, and divide by the
+#' year's on-level premium. The overall loss cost is the developed losses
+#' over the premium, summed over the years (Clark's convention);
+#' `mean_loss_cost` weights the years equally.
+#'
+#' @param prepared Trended losses, from [trend_large_losses()].
+#' @param towers The [reinsurance_tower] in force each year, as a list, or
+#'   one tower for every year (to price the prospective terms). Every tower
+#'   needs the same number of layers.
+#' @param years The accident years to cost.
+#' @param premium Each year's on-level subject premium.
+#' @param development Each year's excess development factor.
+#' @returns A list with `years`, a data frame (`year`, `premium`, `losses`
+#'   (the count through the tower), `development`), the year-by-layer
+#'   matrices `layer_loss`, `developed` and `year_loss_cost`, and per layer
+#'   `loss_cost` and `mean_loss_cost`.
+#' @export
+#' @examples
+#' losses <- data.frame(id = c("a", "b"), accident = c(1995.5, 1996.5),
+#'                      amount = c(150, 400))
+#' p <- trend_large_losses(losses, factors = c(1, 1))
+#' tw <- reinsurance_tower(list(xol_layer("200x100", 200, 100)))
+#' b <- burning_cost(p, tw, c(1995, 1996), premium = c(1000, 1000),
+#'                   development = c(1, 1.5))
+#' b$developed
+#' b$loss_cost
+burning_cost <- function(prepared, towers, years, premium, development) {
+  if (S7::S7_inherits(towers, reinsurance_tower)) towers <- rep(list(towers), length(years))
+  args <- c(prepared$args, list(
+    towers = lapply(towers, function(t) t@ptr), years = as.integer(years),
+    premium = as.double(premium), development = as.double(development)
+  ))
+  r <- rust_result(do.call(pricing_burning_cost, args))
+  n <- length(r$year)
+  layers <- length(r$loss_cost)
+  m <- function(x) matrix(x, nrow = n, ncol = layers, dimnames = list(r$year, NULL))
+  list(
+    years = data.frame(year = r$year, premium = r$premium, losses = r$losses,
+                       development = r$development),
+    layer_loss = m(r$layer_loss),
+    developed = m(r$developed),
+    year_loss_cost = m(r$year_loss_cost),
+    loss_cost = r$loss_cost,
+    mean_loss_cost = r$mean_loss_cost
+  )
 }
