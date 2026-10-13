@@ -4,7 +4,15 @@
 \alias{burning_cost}
 \title{Burning cost of large losses}
 \usage{
-burning_cost(prepared, towers, years, premium, development)
+burning_cost(
+  prepared,
+  towers,
+  years,
+  premium,
+  development,
+  index = NULL,
+  ratios = NULL
+)
 }
 \arguments{
 \item{prepared}{Trended losses, from \code{\link[=trend_large_losses]{trend_large_losses()}}.}
@@ -22,6 +30,15 @@ Clark's excess factor, or, when the losses were developed one by one in
 \code{\link[=trend_large_losses]{trend_large_losses()}}, the count IBNR factor only. A count
 \code{\link[=development_pattern]{development_pattern()}} is read at each year's average age at the
 record's valuation date.}
+
+\item{index}{An \code{\link[=index_clause]{index_clause()}} on the treaty: each loss meets the
+retention and limit moved by the clause at its own ratio in \code{ratios}.
+Towers with annual terms (an aggregate deductible or limit, a corridor)
+or a surplus treaty are an error.}
+
+\item{ratios}{With \code{index}, each loss's index ratio, in the record's
+order: the index at its payment over the index at the treaty's base
+date.}
 }
 \value{
 A list with \code{years}, a data frame (\code{year}, \code{premium}, \code{losses}

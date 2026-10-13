@@ -2,6 +2,7 @@
 
 ## 2026-10-13
 
+* **Update**: [Clark's Basics of Reinsurance Pricing](/references/clark-reinsurance-pricing.md), from adding FX and an index clause to `prospicio_pricing::experience` (#190, PR 3; branch claude/stoic-hawking-qc3qby): the note prints no index clause example either; the clause is checked against a tower built with the moved terms.
 * **Update**: [Clark's Basics of Reinsurance Pricing](/references/clark-reinsurance-pricing.md), from adding per-claim development and count IBNR to `prospicio_pricing::experience` (#190, PR 2; branch claude/stoic-hawking-qc3qby): the note prints no exhibit for IBNER, so the per-claim pattern is checked against the chain ladder on the summed triangle; verified by CI on PR 1's parity tests (#223).
 * **Addition**: [Clark's Basics of Reinsurance Pricing](/references/clark-reinsurance-pricing.md), from adding large-loss experience rating to `prospicio_pricing::experience` (#190, PR 1; branch claude/stoic-hawking-qc3qby): the actual/365.25 day count that reproduces the printed trend factors, the rounding to three decimals and to the dollar, development by year and the total as a ratio of sums. Not yet run by CI.
 * **Creation**: [Automatic differentiation for small Bayesian reserving models, benchmarked](/findings/autodiff-benchmark.md), from the autodiff evaluation behind decision 15 of `docs/design/reserving-bayes.md` (the user chose the in-house dual type, num-dual as fallback). Not run by CI.
