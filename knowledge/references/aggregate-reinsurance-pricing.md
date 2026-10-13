@@ -6,6 +6,7 @@ resource: https://github.com/mynl/aggregate/blob/v0.22.0/docs/2_user_guides/2_x_
 tags: [reinsurance, pricing, aggregate, parity, fft, contract-terms, distortions]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-12T16:00:00Z }
+verified: { by: process:ci, at: 2026-10-12T23:54:56Z }
 sources:
   - id: docs
     resource: https://github.com/mynl/aggregate/blob/v0.22.0/docs/2_user_guides/2_x_re_pricing.rst
