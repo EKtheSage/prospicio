@@ -46,6 +46,9 @@ sources:
   - id: counts
     resource: ../validation/scripts/aggregate_counts.py
     title: aggregate_counts.py
+  - id: clash
+    resource: ../validation/scripts/aggregate_clash.py
+    title: aggregate_clash.py
 ---
 
 # Which source for what
@@ -358,6 +361,26 @@ sources:
   clause. `E[h(R)]` on `reins_density_df`'s `p_agg_ceded_occ` gives the
   expected reinstatement premium.[^reins]
 
+# Clash and the bivariate aggregate
+
+* `clash NAME na nb nc claims <layers sev A> <layers sev B> [freq]` builds a
+  `aggregate.bivariate.BivariateAggregate` (no frequency clause: Poisson;
+  `mixed gamma c` gives a negative binomial with mixing cv `c`). Its
+  `clash` attribute holds `na, nb, nc, n0, pa, pb`; `update(bs=(h_A, h_B),
+  log2=(l_A, l_B))` pins each axis (a scalar `log2` is a total budget split
+  by measured support), with `padding=1` doubling each axis for the FFT.
+  `density` is the truncated joint (row for A), `marginals` the two sums,
+  `total` a `GridDistribution` property (`x`, `p`), `moments(k)` the raw
+  mixed moments, `corr` a property.[^clash]
+* `update_work` zeroes cells below `1e-15` (`_clip_density_fuzz`); patch
+  `aggregate.bivariate._clip_density_fuzz` to a no-op for targets that
+  keep the tail mass (see the finding on clash parity).[^clash]
+* Copula coupling (`bivariate` with a `Copula`: independent, normal,
+  Gumbel, Clayton, FGM, shuffles) builds the per-event joint as the
+  discrete-Sklar rectangle mass `Copula.rectangle_pmf(G1, G2)`; `pnl`
+  axes are rejected there.[^clash]
+
+[^clash]: aggregate_clash.py
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
