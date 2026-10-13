@@ -2,6 +2,7 @@
 
 ## 2026-10-12
 
+* **Update**: [The Bayesian Bornhuetter–Ferguson against Stan, EVW (2012) and its limits](/findings/bayes-bf-parity.md), from adding `BayesBf`'s Python and R bindings (branch claude/bayes-bf, `docs/design/reserving-bayes.md` PR 4): over seeds 0 to 29 the binding-level totals on EVW's triangle sit within 0.7% of EVW's printed values and of `BayesOdp`'s, with sds of 0.15% to 0.23%, so the binding tests hold 1.5% (2% against `BayesOdp`). Not yet run by CI.
 * **Creation**: [The Bayesian Bornhuetter–Ferguson against Stan, EVW (2012) and its limits](/findings/bayes-bf-parity.md), from building `prospicio_reserving::bayes::BayesBf` (branch claude/bayes-bf, `docs/design/reserving-bayes.md` PR 4): Stan parity at 200 of 200 seeds with tolerances at least 4.7 times the measured spread, the flat and tight limits, the mode finder's fix for a tight prior, and the divergences of a flat prior beside `development_sd` 1,000.
 * **Creation**: [England, Verrall and Wüthrich (2012), the Bayesian ODP and the Bornhuetter–Ferguson](/references/evw-2012-bayesian-bf.md), the paper behind `BayesBf` (branch claude/bayes-bf): its strong-prior limit is Mack's raw-pattern BF, not the classical BF; its Table 1 triangle is `validation/data/evw2012.csv`, and its printed totals at `a = 0`, 100 and infinity are reproduced.
 

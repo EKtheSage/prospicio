@@ -96,7 +96,11 @@ under "Unreleased" until then.
   ladder's. Checked against the same model in Stan on GenIns with premium
   and on EVW's triangle, now in `validation/data/evw2012.csv`, and against
   their printed totals (`docs/design/reserving-bayes.md`, PR 4). The mode
-  finder of the Bayesian models no longer stalls under a tight prior.
+  finder of the Bayesian models no longer stalls under a tight prior. In
+  Python (`prospicio.reserving.BayesBf`, `fit(triangle, column, exposure)`)
+  and R (`bayes_bf()`), for one segment, with the fit's `exposure` and
+  `prior_ultimate`, the posterior summary, the long tables, PSIS-LOO and
+  failed diagnostics raised as a Python `UserWarning` or an R `warning()`.
 
 ### Pricing
 

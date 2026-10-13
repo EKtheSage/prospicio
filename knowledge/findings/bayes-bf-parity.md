@@ -18,6 +18,9 @@ sources:
   - id: script
     resource: ../validation/scripts/reserving_bayes_bf_stan.py
     title: The Stan reference generator
+  - id: py
+    resource: ../python/tests/test_reserving_bayes_bf.py
+    title: The Python binding tests
   - id: design
     resource: ../docs/design/reserving-bayes.md
     title: Design note, Bayesian reserving (decisions 9 and 10)
@@ -63,3 +66,12 @@ sources:
   acceptance 0.95 and 0.99 alike; at 100 or 10 none, and none at any
   finite cv tried (1, 0.1). The diagnostics report it; the EVW
   comparisons therefore use `development_sd` 100.[^test]
+* Through the bindings (release build), with 2,000 simulations and the
+  default chains on EVW's triangle, over seeds 0 to 29: the cv 0.1 total
+  mean sits +0.26% above EVW's printed 6,145,526 (sd 0.15%, the default
+  `development_sd` 10's bias); a flat prior with `development_sd` 100
+  -0.03% from EVW's 6,049,398 (sd 0.17%) and -0.27% from `BayesOdp`'s
+  (sd 0.23%); cv 0.001 +0.27% from EVW's closed form 6,644,047 (sd
+  0.16%); every seed within 0.7% of its target. The Python and R tests
+  hold 1.5% (2% against `BayesOdp`). The eight Python tests take about
+  5 s.[^py]

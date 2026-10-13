@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 built; PR 4 built in Rust** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 4 is built in Rust on `claude/bayes-bf` (decision 9, at the user's request): `BayesBf`, EVW's triangle, the Stan reference; its bindings come next in the same PR. The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 built; PR 4 built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 is built on `claude/bayes-meyers` (decision 7): `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 4 is built on `claude/bayes-bf` (decision 9, at the user's request): `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -639,7 +639,7 @@ on cumulative cells for these models, is a later PR.
 
 ### 9. Informative priors: the Bayesian Bornhuetter–Ferguson
 
-Built in Rust in PR 4 (2026-10-12; "As built" below, with two corrections
+Built in PR 4 (2026-10-12, in Rust, Python and R; "As built" below, with two corrections
 to the proposal); the proposal is kept as written:
 
 Proposed (PR 4). The BF form of England, Verrall and Wüthrich (2012) puts
@@ -745,7 +745,8 @@ pub struct BayesBfFit {
 * **Runtime.** A default fit takes about 0.1 s in a release build and 1
   to 2 s in a debug one; `validation/tests/reserving_bayes_bf.rs` takes
   about 7.5 s in a debug build (five fits), the unit tests about 2.5 s.
-* **Bindings** (decision 13) are the next stage of this PR.
+* **Bindings** (decision 13): Python `BayesBf` and R `bayes_bf()`, for
+  one segment, as `BayesOdp`'s.
 
 ### 10. Validation
 
@@ -1021,6 +1022,29 @@ the sketch below, which is kept as proposed:
   within 2 of Meyers' printed values, gamma within 0.01), replay an
   incurred fit by seed, warn on 2 × 10 kept draws, and check the errors
   (settings, a missing premium column, a zero cell, too few cells).
+* **`BayesBf` (PR 4)** follows it too, for one segment: Python
+  `BayesBf(apriori=1.0, cv=0.1, development_sd=10, process="gamma",
+  chains=4, tune=1000, draws=1000, n_sims=10000, seed=0,
+  target_accept=0.95, max_depth=10)` with `fit(triangle, column,
+  exposure)`, and R `bayes_bf(triangle, column, exposure, apriori = 1,
+  cv = 0.1, ...)` with the same arguments in the same order (`column` and
+  `exposure` are required, as in `bornhuetter_ferguson()`). A flat prior
+  is `cv=float("inf")` in Python and `cv = Inf` in R. The fit (`BayesBfFit`,
+  R `bayes_bf_fit`) has `BayesOdpFit`'s fields plus `exposure` and
+  `prior_ultimate`, which its long tables add too; the parameters are
+  `alpha[1..n]` and `beta[1..m]`. The warnings say `BayesBf:` and
+  `bayes_bf:`. Tests: `python/tests/test_reserving_bayes_bf.py` and
+  `R/prospicio/tests/test-reserving-bayes-bf.R` fit EVW's triangle with
+  the default chains (no warning, EVW's `phi`, the total within 1.5% of
+  EVW's printed 6,145,526, the summary, the frames and LOO), check the
+  two limits (a flat prior within 2% of `BayesOdp` and 1.5% of EVW's
+  6,049,398, cv 0.001 within 1.5% of EVW's closed form 6,644,047, the
+  cv 0.1 reserve between them), replay a fit by seed, warn on 2 × 10 kept
+  draws, and check the errors (settings, a missing column, an origin
+  whose increments sum to -5: refused under a flat prior, fitted under
+  an informative one, with no LOO). Over seeds 0 to 29 these means sat
+  within 0.7% of their targets with sds of 0.15% to 0.23%, so each
+  tolerance is at least 6 sds beyond the mean offset.
 * **Tests**: `python/tests/test_reserving_bayes.py` and
   `R/prospicio/tests/test-reserving-bayes.R` fit GenIns with the default
   chains (no warning, the Stan-matched scale, the reserves near the chain
