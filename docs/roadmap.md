@@ -14,7 +14,9 @@ then joins them and sets and allocates capital. The notebook
 [`examples/reinsurance_pricing.ipynb`](../examples/reinsurance_pricing.ipynb)
 prices towers, aggregate limits, reinstatements, stop losses, variable
 premiums and commissions, and risk-adjusted premiums, each beside the
-numbers of Mildenhall's `aggregate`.
+numbers of Mildenhall's `aggregate`. The [guides](guides/README.md) explain
+the ideas in prose for actuaries, starting with
+[what a reinsurance price is](guides/reinsurance-price.md); CI runs their code.
 
 ## Milestones
 
@@ -28,7 +30,7 @@ numbers of Mildenhall's `aggregate`.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. Still to do: REML, tensor smooths |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC and CSR (`Meyers`, Rust, Python and R), `BayesOdp` over segments and in the diagonal backtest, the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` over segments and in the diagonal backtest, the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -191,10 +193,17 @@ what it is aiming for by v1.0.
     PR 4): England, Verrall and Wüthrich's gamma priors on the origins'
     row parameters, at parity with the same model in Stan and with
     their printed totals, in Python (`BayesBf`) and R (`bayes_bf()`).
+  - Meyers' CAY, `MeyersModel::Cay` (`reserving-bayes.md`, PR 5): CRC
+    with the previous origin's residual at the same age in each mean, at
+    parity with his own `CAY.R` Stan code and his printed results on
+    group 353 incurred, in Rust, Python (`Meyers("cay")`) and R
+    (`meyers(model = "cay")`).
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
-  Open, waiting on the user: the four PRs of `reserving-bayes.md` are
-  done; what comes next is its open decisions.
+  in the user's order (2026-10-13, open decision 9): Meyers' CRC and
+  CSR with `fit_segments` and `TriangleModel` (for the 200-triangle
+  calibration study); the compartmental design note;
+  then the one-year view by PSIS reweighting (open decision 6).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
@@ -238,8 +247,8 @@ what it is aiming for by v1.0.
   1. Bayesian reserving, with the Reserving lane, which builds it in
      `prospicio-reserving`'s `bayes` feature on this crate's NUTS
      (`docs/design/reserving-bayes.md`): the Bayesian ODP chain ladder
-     (PR 1) and Meyers' CRC and CSR (PR 3) are in, and the Bayesian
-     Bornhuetter–Ferguson (PR 4) too, with no change here;
+     (PR 1), Meyers' CRC and CSR (PR 3) and CAY (PR 5) are in, and the
+     Bayesian Bornhuetter–Ferguson (PR 4) too, with no change here;
      compartmental reserving follows in a later note.
   2. Hierarchical credibility.
   3. Posterior predictive checks.
