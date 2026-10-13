@@ -1,7 +1,7 @@
 # Design note: experience rating from large losses
 
-Status: **In progress** (PRs 1 and 2 of 3: trend, as-if layer loss, burning cost;
-per-claim development and count IBNR) ·
+Status: **Implemented** (PR 1: trend, as-if layer loss, burning cost; PR 2:
+per-claim development and count IBNR; PR 3: index clause and FX) ·
 Depends on: `prospicio-aggregate` towers · Lane: Aggregate · Issue: #190
 
 ## Goal
@@ -17,7 +17,7 @@ The reference is Clark's *Basics of Reinsurance Pricing* (CAS study note,
 2014), the section on per-risk experience rating, whose worked example the
 validation reproduces.
 
-## What exists (PRs 1 and 2)
+## What exists
 
 `prospicio_pricing::experience`:
 
@@ -55,12 +55,23 @@ validation reproduces.
   valuation)` sets a year's development factor from a count pattern at the
   year's average age, `valuation − (year + ½)`.
 
+- PR 3, FX: `Experience::with_fx(Fx::Rate(r) | Fx::PerLoss(rates))`
+  converts each loss to the pricing currency before development and
+  trend; `PreparedLoss` gains `fx`.
+- PR 3, index clause: `IndexClause::new(franchise, IndexKind::Full |
+  IndexKind::Severe)` and `Prepared::burning_cost_indexed(&towers, &years,
+  &clause, &ratios)`, with a ratio per loss of the index at its payment to
+  the index at the treaty's base date.
+
 Bindings: Python `prospicio.pricing.LargeLossExperience` (with
-`valuation=`), `DevelopmentPattern`, `PreparedLosses` (`prepare(...,
+`valuation=` and `fx=`), `IndexClause` (`burning_cost(..., index=,
+ratios=)`), `DevelopmentPattern`, `PreparedLosses` (`prepare(...,
 development=)`), `BurningCost` (`burning_cost` takes a count pattern as
 `development`); R `trend_large_losses()` (with `valuation` and
 `development`), `burning_cost()`, `development_pattern()`,
-`development_pattern_from_history()` and `pattern_factor()`.
+`development_pattern_from_history()` and `pattern_factor()`, with `fx`
+in `trend_large_losses()` and `index_clause()` with `index` and `ratios`
+in `burning_cost()`.
 
 ## Decisions
 
@@ -102,11 +113,30 @@ development=)`), `BurningCost` (`burning_cost` takes a count pattern as
    claims that grow are missing); the pattern is the user's to choose.
 9. **A count pattern is read at the year's mid-point**, `valuation − (year
    + ½)`, the average accident date of a year written evenly.
+10. **FX first, completeness in the reported currency.** Amounts are
+    converted before development and trend, so a trend `rate` is the
+    pricing currency's. With a rate per loss there is no single
+    `complete_above` in the pricing currency, so the threshold test stays
+    in the currency each loss was reported in.
+11. **The index clause covers per-occurrence terms, exactly.** With every
+    term per occurrence (attachment, limit, share, inuring stages), terms
+    moved by `a` cede `a × ceded(x / a)`, so each loss goes through the
+    tower at its own adjustment with no approximation. Annual terms (an
+    aggregate deductible or limit, a corridor, and so limited
+    reinstatements) span losses with different ratios; rather than reset
+    them per loss, a tower with them is an error. A surplus treaty is too.
+    A treaty that indexes its annual terms as well is left for when one is
+    needed.
+12. **Franchise rules.** `Full`: nothing moves while `|r − 1|` is within
+    the franchise; beyond it the terms move by all of `r`, up or down.
+    `Severe` (a severe inflation clause): the terms move only by the rise
+    beyond the franchise, `r / (1 + f)`, and never down. The caller gives
+    each loss's ratio, from an index and its payment date (or a payment
+    pattern's average), as for trend and development factors. Clark
+    prints no index clause example; the validation checks the clause
+    against a tower built with the moved terms.
 
 ## Next
 
-- **PR 3:** an indexation (stability) clause that moves the retention and
-  limit with an index, with the franchise variant; FX conversion at a
-  stated or historical rate.
 - #191 (as-if history) builds a record from a premium and treaty history
   as a constructor on top of this.

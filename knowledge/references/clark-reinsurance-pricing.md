@@ -57,6 +57,10 @@ claims seen at both ages gives the volume-weighted chain ladder factors of
 the summed triangle, and each year's developed claims sum to its chain
 ladder ultimate (to 1e-13 on the factors).[^clark][^dev]
 
+Nor does it print an index (stability) clause or currency conversion; the
+index clause is checked against a tower whose retention and limit are
+moved by hand.[^clark]
+
 [^clark]: Clark, Basics of Reinsurance Pricing.
 [^tests]: `validation/tests/pricing.rs`, module `clark_experience`.
 [^dev]: `validation/tests/pricing.rs`, module `claim_development`.
