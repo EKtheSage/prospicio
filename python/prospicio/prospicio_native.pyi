@@ -160,9 +160,10 @@ class BayesBf:
     The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
     (2012, Model 3.1): the over-dispersed Poisson model of a cumulative
     triangle's incremental values ``X`` with mean ``mu[w] * gamma[d]``, an
-    informative gamma prior on each origin's ``mu[w]`` (its expected
-    ultimate) with mean ``apriori * exposure[w]`` and coefficient of
-    variation ``cv``, a vague normal prior on each ``log gamma[d]``, and the
+    informative gamma prior on each origin's row parameter ``mu[w]`` with
+    mean ``apriori * exposure[w]`` and coefficient of variation ``cv``, a
+    vague normal prior on each ``log gamma[d]`` (the pattern is not
+    normalised), and the
     chain ladder's Pearson scale ``phi`` (``OdpBootstrapFit.scale``) plugged
     in. The posterior is sampled with NUTS, and each draw projects the
     future cells up to the oldest observed age (no tail) with the process
@@ -180,6 +181,12 @@ class BayesBf:
     ``BornhuetterFerguson`` reserve ``(1 - 1 / cdf) * m[w]`` only when the
     prior ultimates are the chain ladder's.
     
+    ``mu[w]`` is EVW's row parameter, not the origin's expected ultimate:
+    that is ``mu[w]`` times the sum of the ``gamma[d]``, which under a tight
+    prior is ``m[w]`` times the sum of ``S[d] / M[d]`` over all columns. On
+    EVW's triangle that sum is 0.885, so the implied ultimate loss ratio is
+    about 11.5% below ``apriori``.
+    
     Every development column's observed increments must sum to more than
     zero, and every origin's to more than ``-phi / cv**2``; negative cells
     are allowed. One ``seed`` replays a fit exactly, whatever the number of
@@ -191,8 +198,9 @@ class BayesBf:
     Parameters
     ----------
     apriori : float, default 1.0
-        Expected loss ratio: the prior mean of each origin's ``mu[w]`` is
-        ``apriori`` times its exposure; positive and finite.
+        Prior mean of each origin's ``mu[w]`` per unit of exposure;
+        positive and finite. It is the expected loss ratio only when the
+        pattern ``gamma`` sums to 1 (see above).
     cv : float, default 0.1
         Coefficient of variation of the gamma prior on each ``mu[w]`` (shape
         ``1 / cv**2``, EVW's ``a``); positive, ``float("inf")`` for a flat
@@ -247,7 +255,7 @@ class BayesBf:
     @property
     def apriori(self, /) -> float:
         """
-        Expected loss ratio of the prior.
+        Prior mean of each origin's ``mu[w]`` per unit of exposure.
         """
     @property
     def chains(self, /) -> int:
@@ -419,7 +427,10 @@ class BayesBfFit:
     @property
     def prior_ultimate(self, /) -> list[float]:
         """
-        The prior mean of each origin's ``mu[w]``, ``apriori * exposure``.
+        The prior mean of each origin's row parameter ``mu[w]``,
+        ``apriori * exposure`` (EVW's prior ultimate). The model's expected
+        ultimate is ``mu[w]`` times the sum of the ``gamma[d]``, not
+        ``mu[w]``.
         """
     @property
     def reserves(self, /) -> PredictiveDistribution:

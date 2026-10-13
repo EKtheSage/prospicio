@@ -1845,9 +1845,10 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr"), logelr_me
 #' The Bayesian Bornhuetter-Ferguson of England, Verrall and Wuthrich (2012,
 #' Model 3.1): the over-dispersed Poisson model of a cumulative triangle's
 #' incremental values with mean `mu[w] * gamma[d]`, an informative gamma
-#' prior on each origin's `mu[w]` (its expected ultimate) with mean
-#' `apriori` times the origin's exposure and coefficient of variation `cv`,
-#' a vague normal prior on each `log gamma[d]`, and the chain ladder's
+#' prior on each origin's row parameter `mu[w]` with mean `apriori` times
+#' the origin's exposure and coefficient of variation `cv`, a vague normal
+#' prior on each `log gamma[d]` (the pattern is not normalised), and the
+#' chain ladder's
 #' Pearson scale `phi` (the `scale` of [odp_bootstrap()]) plugged in. The
 #' posterior is sampled with NUTS, and each draw projects the future cells
 #' up to the oldest observed age (no tail) with the process error of
@@ -1865,6 +1866,12 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr"), logelr_me
 #' `(1 - 1 / cdf) * m[w]` only when the prior ultimates are the chain
 #' ladder's.
 #'
+#' `mu[w]` is EVW's row parameter, not the origin's expected ultimate: that
+#' is `mu[w]` times the sum of the `gamma[d]`, which under a tight prior is
+#' `m[w]` times the sum of `S[d] / M[d]` over all columns. On EVW's
+#' triangle that sum is 0.885, so the implied ultimate loss ratio is about
+#' 11.5% below `apriori`.
+#'
 #' Every development column's observed increments must sum to more than
 #' zero, and every origin's to more than `-phi / cv^2`; negative cells are
 #' allowed. One `seed` replays a fit exactly, whatever the number of
@@ -1875,7 +1882,8 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr"), logelr_me
 #'
 #' Properties of the fit: as [bayes_odp_fit]'s (`chain_ladder`, `origins`,
 #' `development`, `scale`, `reserves`, `diagnostics`, `summary`, `draws`),
-#' with `exposure` and `prior_ultimate` (`apriori * exposure`) per origin;
+#' with `exposure` and `prior_ultimate` (`apriori * exposure`, the prior
+#' mean of `mu[w]`, not of the expected ultimate) per origin;
 #' the posterior draws are of `alpha[1]`, ..., `alpha[n]` (`log mu[w]`)
 #' and `beta[1]`, ..., `beta[m]` (`log gamma[d]`). [bayes_loo()] gives the
 #' PSIS-LOO of the observed increments, comparable with [bayes_odp()]'s on
@@ -1894,8 +1902,9 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr"), logelr_me
 #' @param column Name of the loss column to fit.
 #' @param exposure Name of the exposure column; each origin's latest
 #'   observed value is its exposure, as for [bornhuetter_ferguson()].
-#' @param apriori Expected loss ratio: the prior mean of each origin's
-#'   `mu[w]` is `apriori` times its exposure.
+#' @param apriori Prior mean of each origin's `mu[w]` per unit of
+#'   exposure. It is the expected loss ratio only when the pattern `gamma`
+#'   sums to 1 (Details).
 #' @param cv Coefficient of variation of the gamma prior on each `mu[w]`
 #'   (shape `1 / cv^2`, EVW's `a`); `Inf` for a flat prior.
 #' @param development_sd Standard deviation of the normal prior on each

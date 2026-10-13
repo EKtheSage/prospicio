@@ -43,6 +43,13 @@ sources:
   statistically optimal.[^paper] The two coincide when `m_i` are the chain
   ladder's ultimates, since the chain ladder's column equations are
   `gamma_j sum mu_i = S_j`.
+* Their `m_i` is the prior mean of the row parameter `mu_i`, not of the
+  expected ultimate `mu_i sum_j gamma_j`: the pattern is unnormalised, and
+  under a strong prior its sum is `sum_j S_j / M_j` over all columns, 0.885
+  on their Table 1 triangle (computed from `validation/data/evw2012.csv`).
+  A prior "ultimate" built as a loss ratio times premium therefore implies
+  an ultimate about 11.5% lower there; `BayesBf`'s `apriori` inherits
+  this.[^paper]
 * The MAP of the gamma parametrisation differs from the posterior mean
   (their Remarks 2.3 and the univariate example of sec. 5.1): the mode
   is not invariant under reparametrisation, so they report MMSE

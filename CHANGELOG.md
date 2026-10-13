@@ -87,9 +87,11 @@ under "Unreleased" until then.
   or an R `warning()`.
 - The Bayesian Bornhuetter–Ferguson, `prospicio_reserving::bayes::BayesBf`,
   behind the `bayes` feature: England, Verrall and Wüthrich's (2012) ODP
-  model with a gamma prior on each origin's expected ultimate (mean
-  `apriori` times exposure from a measure column, coefficient of variation
-  `cv`, flat when infinite) and a vague prior on the development pattern.
+  model with a gamma prior on each origin's row parameter (mean `apriori`
+  times exposure from a measure column, coefficient of variation `cv`,
+  flat when infinite) and a vague prior on the unnormalised development
+  pattern, so the expected ultimate is the row parameter times the
+  pattern's sum and `apriori` is a loss ratio only when that sum is 1.
   A flat prior gives the Bayesian chain ladder; a tight one EVW's
   strong-prior limit, Mack's Bornhuetter–Ferguson with the raw pattern,
   which is the classical one only when the prior ultimates are the chain

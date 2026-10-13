@@ -171,7 +171,7 @@ what it is aiming for by v1.0.
     Python (`Meyers`) and R (`meyers()`).
   - The Bayesian Bornhuetter–Ferguson, `BayesBf` (`reserving-bayes.md`,
     PR 4): England, Verrall and Wüthrich's gamma priors on the origins'
-    expected ultimates, at parity with the same model in Stan and with
+    row parameters, at parity with the same model in Stan and with
     their printed totals, in Python (`BayesBf`) and R (`bayes_bf()`).
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:

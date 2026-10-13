@@ -926,8 +926,9 @@ impl Triangle {
     /// The Bayesian Bornhuetter-Ferguson of a single-segment triangle
     /// column with each origin's exposure from the `exposure` column: a
     /// gamma prior with mean `apriori` times the exposure and coefficient
-    /// of variation `cv` (infinite for a flat prior) on each origin's
-    /// expected ultimate, a normal prior with sd `development_sd` on each
+    /// of variation `cv` (infinite for a flat prior) on each origin's row
+    /// parameter (its expected ultimate divided by the sum of the
+    /// unnormalised pattern), a normal prior with sd `development_sd` on each
     /// log development effect, `process` error ("gamma" or "none"), NUTS
     /// with `chains`, `tune` and `draws` per chain, `target_accept` and
     /// `max_depth`, and `n_sims` predictive simulations, all replayed from

@@ -704,6 +704,15 @@ pub struct BayesBfFit {
   equations are `gamma_d Σ mu_w = S_d`); a test checks that case. A BF
   that keeps the chain ladder's pattern exactly (Verrall 2004) is a
   different model, not built.
+* **`apriori` sets the row parameter, not the ultimate.** Because the
+  pattern is not normalised, `m_w = apriori × exposure_w` is the prior
+  mean of `mu_w`, EVW's row parameter (their "prior ultimate"), and the
+  model's expected ultimate is `mu_w Σ_d gamma_d`: under a tight prior
+  `m_w Σ_d S_d / M_d` over all columns. On EVW's triangle that sum is
+  0.885, so an `apriori` read as a loss ratio gives an implied ultimate
+  loss ratio about 11.5% lower. The method follows EVW; the docs of
+  `apriori` and `prior_ultimate` in Rust, Python and R say so, and the
+  names stay EVW's.
 * **Limits as tests** (unit tests on GenIns with premium): `cv = ∞` gives
   `BayesOdp`'s reserves by origin and in total within `0.1 s` and 10%;
   `cv = 0.001` (with `development_sd` 100 and no process error) gives the

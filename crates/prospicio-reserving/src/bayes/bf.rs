@@ -35,12 +35,17 @@ use crate::triangle::{Label, Segment, Triangle};
 /// ```
 ///
 /// with `phi` the chain ladder's Pearson scale, plugged in as in
-/// [`BayesOdp`](super::BayesOdp). The prior on each origin's `mu_w`, its
-/// expected ultimate, has mean `apriori` times the origin's exposure (the
+/// [`BayesOdp`](super::BayesOdp). The prior on each origin's row parameter
+/// `mu_w` has mean `m_w`, `apriori` times the origin's exposure (the
 /// latest value of the exposure column, as for
-/// [`BornhuetterFerguson`](crate::BornhuetterFerguson)) and coefficient of
+/// [`BornhuetterFerguson`](crate::BornhuetterFerguson)), and coefficient of
 /// variation `cv`; the development pattern `gamma_d` is not normalised and
-/// has a vague prior. The log posterior is strictly concave; NUTS samples
+/// has a vague prior. So `mu_w` is EVW's row parameter, not the origin's
+/// expected ultimate: that is `mu_w` times the sum of the `gamma_d`, which
+/// under a tight prior is `m_w` times the sum of `S_d / M_d` over all
+/// columns (below). On EVW's triangle that sum is 0.885, so the implied
+/// ultimate loss ratio is about 11.5% below `apriori`; `apriori` is the
+/// classical method's loss ratio only when the sum is 1. The log posterior is strictly concave; NUTS samples
 /// it on a scale whitened at the mode, as for `BayesOdp`.
 ///
 /// The prior's strength moves the reserve between two limits:
@@ -101,8 +106,10 @@ use crate::triangle::{Label, Segment, Triangle};
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct BayesBf {
-    /// Expected loss ratio: the prior mean of each origin's `mu_w` is
-    /// `apriori` times its exposure.
+    /// Prior mean of each origin's row parameter `mu_w` per unit of
+    /// exposure. It is the expected loss ratio only when the development
+    /// pattern sums to 1 (type docs): the model's expected ultimate is
+    /// `mu_w` times the sum of the `gamma_d`.
     pub apriori: f64,
     /// Coefficient of variation of the gamma prior on each `mu_w`, so its
     /// shape is `1 / cv^2` (EVW's `a_i`). `f64::INFINITY` is a flat prior
@@ -159,7 +166,9 @@ pub struct BayesBfFit {
     pub scale: f64,
     /// Exposure per origin: the exposure column's latest observed value.
     pub exposure: Vec<f64>,
-    /// The prior mean of each origin's `mu_w`, `apriori * exposure`.
+    /// The prior mean `m_w` of each origin's row parameter `mu_w`,
+    /// `apriori * exposure` (EVW's prior ultimate). The model's expected
+    /// ultimate is `mu_w` times the sum of the `gamma_d`, not `mu_w`.
     pub prior_ultimate: Vec<f64>,
     /// Posterior draws of `alpha[1]..alpha[n]` and `beta[1]..beta[m]`, by
     /// chain.

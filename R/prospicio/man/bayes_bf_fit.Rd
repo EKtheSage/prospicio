@@ -35,8 +35,9 @@ observed from the first age up to its latest.}
 \item{exposure}{Name of the exposure column; each origin's latest
 observed value is its exposure, as for \code{\link[=bornhuetter_ferguson]{bornhuetter_ferguson()}}.}
 
-\item{apriori}{Expected loss ratio: the prior mean of each origin's
-\code{mu[w]} is \code{apriori} times its exposure.}
+\item{apriori}{Prior mean of each origin's \code{mu[w]} per unit of
+exposure. It is the expected loss ratio only when the pattern \code{gamma}
+sums to 1 (Details).}
 
 \item{cv}{Coefficient of variation of the gamma prior on each \code{mu[w]}
 (shape \code{1 / cv^2}, EVW's \code{a}); \code{Inf} for a flat prior.}
@@ -70,9 +71,10 @@ A \code{bayes_bf_fit} object.
 The Bayesian Bornhuetter-Ferguson of England, Verrall and Wuthrich (2012,
 Model 3.1): the over-dispersed Poisson model of a cumulative triangle's
 incremental values with mean \code{mu[w] * gamma[d]}, an informative gamma
-prior on each origin's \code{mu[w]} (its expected ultimate) with mean
-\code{apriori} times the origin's exposure and coefficient of variation \code{cv},
-a vague normal prior on each \verb{log gamma[d]}, and the chain ladder's
+prior on each origin's row parameter \code{mu[w]} with mean \code{apriori} times
+the origin's exposure and coefficient of variation \code{cv}, a vague normal
+prior on each \verb{log gamma[d]} (the pattern is not normalised), and the
+chain ladder's
 Pearson scale \code{phi} (the \code{scale} of \code{\link[=odp_bootstrap]{odp_bootstrap()}}) plugged in. The
 posterior is sampled with NUTS, and each draw projects the future cells
 up to the oldest observed age (no tail) with the process error of
@@ -91,6 +93,12 @@ pattern. That equals the classical \code{\link[=bornhuetter_ferguson]{bornhuette
 \code{(1 - 1 / cdf) * m[w]} only when the prior ultimates are the chain
 ladder's.
 
+\code{mu[w]} is EVW's row parameter, not the origin's expected ultimate: that
+is \code{mu[w]} times the sum of the \code{gamma[d]}, which under a tight prior is
+\code{m[w]} times the sum of \code{S[d] / M[d]} over all columns. On EVW's
+triangle that sum is 0.885, so the implied ultimate loss ratio is about
+11.5\% below \code{apriori}.
+
 Every development column's observed increments must sum to more than
 zero, and every origin's to more than \code{-phi / cv^2}; negative cells are
 allowed. One \code{seed} replays a fit exactly, whatever the number of
@@ -101,7 +109,8 @@ fit's \code{diagnostics}.
 
 Properties of the fit: as \link{bayes_odp_fit}'s (\code{chain_ladder}, \code{origins},
 \code{development}, \code{scale}, \code{reserves}, \code{diagnostics}, \code{summary}, \code{draws}),
-with \code{exposure} and \code{prior_ultimate} (\code{apriori * exposure}) per origin;
+with \code{exposure} and \code{prior_ultimate} (\code{apriori * exposure}, the prior
+mean of \code{mu[w]}, not of the expected ultimate) per origin;
 the posterior draws are of \code{alpha[1]}, ..., \code{alpha[n]} (\verb{log mu[w]})
 and \code{beta[1]}, ..., \code{beta[m]} (\verb{log gamma[d]}). \code{\link[=bayes_loo]{bayes_loo()}} gives the
 PSIS-LOO of the observed increments, comparable with \code{\link[=bayes_odp]{bayes_odp()}}'s on
