@@ -112,7 +112,7 @@ under "Unreleased" until then.
   the year's trended losses, the layer totals developed and divided by the
   premium (the burning cost), reproducing Clark's study note. Python
   `LargeLossExperience`, `PreparedLosses`, `BurningCost`; R
-  `trend_large_losses()`, `burning_cost()`.
+  `trend_large_losses()`, `burning_cost()` (#223).
 
 ### Examples
 
