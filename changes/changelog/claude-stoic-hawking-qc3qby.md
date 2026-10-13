@@ -17,3 +17,9 @@
   A only, line B only and both (`Clash`), matching `aggregate` 1.0.1.
   Python `fft_bivariate`, `JointGrid`, `Clash`; R `fft_bivariate()`,
   `clash_model()`, `clash_severity()`, `clash_aggregate()` (#233).
+- Two lines whose losses in an event are coupled by a copula: the joint
+  per-event severity as the copula's rectangle probabilities over the two
+  marginals (`JointGrid::from_copula`, with `bivariate::triggered` for a
+  line an event hits with some probability), for `fft_bivariate`,
+  matching `aggregate` 1.0.1's copula `bivariate`. Python
+  `JointGrid.from_copula`; R `copula_severity()` (#235).

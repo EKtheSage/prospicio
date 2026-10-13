@@ -696,8 +696,21 @@ transform, so `(A, B)` is `iFFT2(P_N(FFT2 S))`, and each marginal is the
   equal, else each cell is split between the two points of the larger
   step around its total, keeping the mean (`aggregate`'s
   `JointBandsMixin.total`).
-- Not carried in this PR: copula coupling of the per-event severity (needs
-  a copula cdf on `prospicio-prob`'s `Copula`), signed and `pnl` axes,
+- Copula coupling (`JointGrid::from_copula(a, b, &copula)`, with
+  `bivariate::triggered(g, p)` for a line an event hits with probability
+  `p`): the per-event severity is the copula's rectangle probabilities over
+  the two per-event marginals' cdfs, `S[i, j] = C(F_A(i), F_B(j)) −
+  C(F_A(i − 1), F_B(j)) − C(F_A(i), F_B(j − 1)) + C(F_A(i − 1), F_B(j − 1))`,
+  as `aggregate`'s copula `bivariate`. Any two-dimensional `Copula` with a
+  distribution function (`Copula::cdf`: Gaussian, Clayton, Gumbel, Frank,
+  Joe). `C(u, 1) = u` keeps the marginals exact; the last point of each
+  axis is read at exactly 1. A difference of nearly equal cdf values can
+  come out a little below 0 (round-off, to about `1e-15`): it is kept, as
+  `aggregate` keeps it, since setting it to 0 added mass to every row and
+  column and moved the second moments by 2e-9 to 7e-9 relative; a cell
+  below `−1e-12` is an error. Python `JointGrid.from_copula`, R
+  `copula_severity()`.
+- Not carried: signed and `pnl` axes,
   the `netceded` joint of one aggregate's ceded and net, the disk-backed
   (massive) path, and sizing the axes automatically from a total budget
   (points are given per axis).
@@ -854,6 +867,20 @@ relative (observed `4e-11`), with `aggregate`'s `1e-15` clip turned off.
 Unit tests check each marginal against the 1-D `fft` within the reported
 aliasing mass, and the covariance against `Var(N) E[X] E[Y]` at `1e-10`.
 
+Copula coupling is checked against `aggregate` 1.0.1's copula
+`bivariate` (`validation/scripts/aggregate_bivariate_copula.py`, 216
+values): line A hit with probability 1/4 and losing the clash case's
+gamma, B with 1/3 and its lognormal, coupled by a Gumbel and a Clayton
+copula with Kendall's tau 0.4 and a Gaussian with rho 0.5, each under a
+Poisson and a gamma-mixed count with mean 12, on steps 1 and 0.5. The
+same quantities and tolerances as clash pass. `aggregate`'s Gaussian
+evaluates scipy's bivariate normal cdf, which is exact in two dimensions:
+replacing it with a `1e-13` one moves the density by `2e-17`. Unit tests
+check that every copula keeps both marginals to `1e-15`, that a Gaussian
+at rho 0 is the independent product, the sign of the covariance under
+positive and negative dependence, and the errors (a three-dimensional
+copula, the t copula, a trigger outside `[0, 1]`).
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
@@ -879,10 +906,8 @@ aliasing mass, and the covariance against `Var(N) E[X] E[Y]` at `1e-10`.
    comonotonic allocation, and a reinstatement premium check against
    `aggregate`.)
    Parked as large, and the candidates for what comes next: (done:
-   bivariate FFT aggregates and `clash`, with independent coupling; see
-   "Two lines and clash"); then copula coupling of the two lines (a
-   copula cdf on `prospicio-prob`'s `Copula` first, in its own PR), renewal
-   counts with Wiener–Hopf ruin, and the P&L ledger (`pnl`, which needs
-   signed grids).
+   bivariate FFT aggregates, `clash`, and copula coupling of the two lines;
+   see "Two lines and clash"); then renewal counts with Wiener–Hopf ruin,
+   and the P&L ledger (`pnl`, which needs signed grids).
 2. Deficit and credit carry-forward in profit commissions and sliding
    scales, once multi-year simulation exists.

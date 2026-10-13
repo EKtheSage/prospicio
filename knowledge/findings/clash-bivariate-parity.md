@@ -51,6 +51,17 @@ sources:
   1,024-point buffer of step 0.25 where the Poisson wrapped nothing
   measurable.[^bivariate]
 
+* With a copula, the per-event severity is the copula's rectangle
+  probabilities over the two marginals' cdfs (`aggregate`'s
+  `Copula.rectangle_pmf`). Its differences of nearly equal cdf values come
+  out a little below 0 by round-off (about `1e-15`); `aggregate` keeps
+  them signed. Setting them to 0 adds mass to every row and column and
+  moved the variances and `E[AB]` by 2e-9 to 7e-9 relative on the parity
+  grids, past the `1e-9` tolerance, so prospicio keeps them signed too.
+  `aggregate`'s Gaussian copula evaluates scipy's
+  `multivariate_normal.cdf`, which is exact in two dimensions (TVPACK):
+  a `1e-13` replacement moved the density by `2e-17`.[^bivariate]
+
 [^aggregate]: aggregate/bivariate.py, solve_clash_model, and parser.py, _clash_spec
 [^bivariate]: crates/prospicio-aggregate/src/bivariate.rs, tests
 [^script]: validation/scripts/aggregate_clash.py

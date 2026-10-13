@@ -343,3 +343,16 @@ grouped <- hours_clause(event_set(ptr = prospicio:::EventSet$from_years(
   list(c(1, 2, 4)), NULL, 0, list(c(0, 72 * h, 72.5 * h)))), 72)
 stopifnot(identical(events(grouped, 1), c(3, 4)),
           inherits(try(hours_clause(ma, 72), silent = TRUE), "try-error"))
+
+# Two lines coupled by a copula.
+ca <- grid_distribution(1, c(0.1, 0.3, 0.4, 0.2))
+cb <- grid_distribution(2, c(0.2, 0.5, 0.3))
+cs <- copula_severity(ca, cb, archimedean_copula("clayton", 3), trigger_a = 0.5)
+stopifnot(abs(cs$density[1, 1] + sum(cs$density[1, -1]) - (0.5 + 0.05)) < 1e-15,
+          max(abs(colSums(cs$density) - c(0.2, 0.5, 0.3))) < 1e-15, cs$correlation > 0)
+cz <- copula_severity(ca, cb, gaussian_copula(diag(2)))
+stopifnot(abs(cz$density[3, 2] - 0.4 * 0.5) < 1e-15)
+cj <- fft_bivariate(poisson_count(3), cs$density, cs$steps, points = 64)
+stopifnot(cj$correlation > 0,
+          inherits(try(copula_severity(ca, cb, t_copula(matrix(c(1, 0.5, 0.5, 1), 2), 4)),
+                       silent = TRUE), "try-error"))

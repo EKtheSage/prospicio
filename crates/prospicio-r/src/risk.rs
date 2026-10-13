@@ -303,14 +303,14 @@ fn esscher_allocation_rust(pd: Robj, h: f64) -> Result<Vec<f64>> {
         .map_err(to_r)
 }
 
-enum AnyCopula {
+pub(crate) enum AnyCopula {
     Gaussian(GaussianCopula),
     StudentT(StudentTCopula),
     Archimedean(ArchimedeanCopula),
 }
 
 impl AnyCopula {
-    fn as_copula(&self) -> &dyn Copula {
+    pub(crate) fn as_copula(&self) -> &dyn Copula {
         match self {
             Self::Gaussian(c) => c,
             Self::StudentT(c) => c,
@@ -322,7 +322,7 @@ impl AnyCopula {
 /// A copula.
 #[extendr]
 pub(crate) struct RiskCopula {
-    inner: AnyCopula,
+    pub(crate) inner: AnyCopula,
 }
 
 #[extendr]

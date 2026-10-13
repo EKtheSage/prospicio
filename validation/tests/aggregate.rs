@@ -880,3 +880,79 @@ fn clash_matches_aggregate() {
         }
     });
 }
+
+/// Two lines whose losses in an event are coupled by a copula, against
+/// `aggregate` 1.0.1's copula `bivariate` (`validation/scripts/
+/// aggregate_bivariate_copula.py`): Gumbel and Clayton with Kendall's tau
+/// 0.4 and a Gaussian with rho 0.5, each under a Poisson and a gamma-mixed
+/// count, with the triggered gamma and lognormal of the clash case.
+#[test]
+fn copula_coupled_lines_match_aggregate() {
+    use prospicio_aggregate::bivariate::{JointGrid, fft_bivariate, triggered};
+    use prospicio_prob::copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula};
+    use prospicio_prob::{Gamma, Lognormal};
+    use std::collections::HashMap;
+
+    let mut fits: HashMap<String, (JointGrid, Grid)> = HashMap::new();
+    // The per-event severity depends on the copula only; the two counts
+    // share it.
+    let mut severities: HashMap<String, JointGrid> = HashMap::new();
+    let cases = reference("bivariate_copula_aggregate.csv");
+    check(&cases, |c| {
+        let key = c.get("params").to_string();
+        if !fits.contains_key(&key) {
+            let param = c.param("params", "param");
+            let copula: Box<dyn Copula> = match c.get("distribution") {
+                "gumbel" => Box::new(
+                    ArchimedeanCopula::new(Archimedean::Gumbel, 1.0 / (1.0 - param), 2).ok()?,
+                ),
+                "clayton" => Box::new(
+                    ArchimedeanCopula::new(Archimedean::Clayton, 2.0 * param / (1.0 - param), 2)
+                        .ok()?,
+                ),
+                "normal" => Box::new(GaussianCopula::new(&[1.0, param, param, 1.0], 2).ok()?),
+                _ => return None,
+            };
+            let n: Box<dyn Counting> = if c.get("params").contains("count=poisson") {
+                Box::new(Poisson::new(12.0).ok()?)
+            } else {
+                Box::new(NegativeBinomial::from_mean_variance(12.0, 48.0).ok()?)
+            };
+            let points = [2048, 1024];
+            let name = c.get("distribution").to_string();
+            if !severities.contains_key(&name) {
+                let (a, _) =
+                    Grid::rounding(&Gamma::from_mean_cv(10.0, 1.5).unwrap(), 1.0, points[0])
+                        .ok()?;
+                let (b, _) =
+                    Grid::rounding(&Lognormal::from_mean_cv(5.0, 0.5).unwrap(), 0.5, points[1])
+                        .ok()?;
+                let severity = JointGrid::from_copula(
+                    &triggered(&a, 0.25).ok()?,
+                    &triggered(&b, 1.0 / 3.0).ok()?,
+                    copula.as_ref(),
+                )
+                .ok()?;
+                severities.insert(name.clone(), severity);
+            }
+            let (joint, _) = fft_bivariate(n.as_ref(), &severities[&name], points).ok()?;
+            let total = joint.total().ok()?;
+            fits.insert(key.clone(), (joint, total));
+        }
+        let (joint, total) = &fits[&key];
+        let at = |col: &str| c.number(col).map(|x| x as usize);
+        match c.get("quantity") {
+            "density" => Some(joint.prob(at("arg")?, at("arg2")?)),
+            "marginal_a" => Some(joint.marginal(0).ok()?.probs()[at("arg")?]),
+            "marginal_b" => Some(joint.marginal(1).ok()?.probs()[at("arg")?]),
+            "total" => Some(total.probs()[at("arg")?]),
+            "mean_a" => Some(joint.mean(0)),
+            "mean_b" => Some(joint.mean(1)),
+            "var_a" => Some(joint.variance(0)),
+            "var_b" => Some(joint.variance(1)),
+            "moment_ab" => Some(joint.moment(1, 1)),
+            "correlation" => Some(joint.correlation()),
+            _ => None,
+        }
+    });
+}

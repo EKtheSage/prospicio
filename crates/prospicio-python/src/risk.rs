@@ -953,14 +953,14 @@ pub(crate) fn capital(
 }
 
 /// One of the copula classes, as a Rust copula.
-enum AnyCopula {
+pub(crate) enum AnyCopula {
     Gaussian(GaussianCopula),
     StudentT(StudentTCopula),
     Archimedean(ArchimedeanCopula),
 }
 
 impl AnyCopula {
-    fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+    pub(crate) fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(c) = obj.extract::<PyRef<'_, PyGaussianCopula>>() {
             return Ok(Self::Gaussian(c.inner.clone()));
         }
@@ -975,7 +975,7 @@ impl AnyCopula {
         ))
     }
 
-    fn as_copula(&self) -> &dyn Copula {
+    pub(crate) fn as_copula(&self) -> &dyn Copula {
         match self {
             Self::Gaussian(c) => c,
             Self::StudentT(c) => c,

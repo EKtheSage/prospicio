@@ -290,6 +290,36 @@ clash_aggregate <- function(clash, frequency, a, b, points) {
   )))
 }
 
+#' Per-event severity of two lines coupled by a copula
+#'
+#' The joint per-event severity of two losses: each line is hit with its
+#' trigger probability and then loses from its grid (`a` for line A, the
+#' rows; `b` for B), so mass at 0 is an event that misses the line; the two
+#' per-event marginals are joined by the copula's rectangle probabilities
+#' over their cdfs, as the Python package `aggregate`'s copula `bivariate`.
+#' The marginals come back exactly. Give its `density` and `steps` to
+#' [fft_bivariate()] for the joint annual loss.
+#'
+#' @param a,b [grid_distribution]s: the loss to each line given that the
+#'   event hits it.
+#' @param copula A two-dimensional [gaussian_copula()] or
+#'   [archimedean_copula()].
+#' @param trigger_a,trigger_b The probability that an event hits each line.
+#' @returns A list as [fft_bivariate()] returns, without `report`.
+#' @export
+#' @examples
+#' a <- grid_distribution(1, c(0.25, 0.5, 0.25))
+#' b <- grid_distribution(1, c(0.5, 0.5))
+#' s <- copula_severity(a, b, archimedean_copula("gumbel", 2), trigger_a = 0.5)
+#' s$correlation
+#' joint <- fft_bivariate(poisson_count(3), s$density, s$steps, points = 64)
+#' joint$correlation
+copula_severity <- function(a, b, copula, trigger_a = 1, trigger_b = 1) {
+  joint_result(rust_result(copula_severity_rust(
+    a@ptr, b@ptr, copula@ptr, as.double(trigger_a), as.double(trigger_b)
+  )))
+}
+
 clash_counts <- function(clash) {
   if (!inherits(clash, "clash_model")) stop("clash must be a clash_model()")
   c(clash$only_a, clash$only_b, clash$both)
