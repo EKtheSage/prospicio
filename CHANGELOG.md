@@ -105,6 +105,21 @@ under "Unreleased" until then.
   single-segment triangle, with the posterior summary, the long tables,
   PSIS-LOO (`BayesOdpFit.loo()`, R's `bayes_loo()`), and failed
   diagnostics raised as a Python `UserWarning` or an R `warning()`.
+- Meyers' correlated chain ladder (CRC) and changing settlement rate (CSR)
+  models, `prospicio_reserving::bayes::Meyers` with `MeyersModel::{Crc,
+  Csr}`, behind the `bayes` feature: log-normal cumulative values with
+  premium from a measure column, his priors and his floor on each variance
+  step, sampled with NUTS on a dense scale from a pilot run. Ultimates and
+  reserves are `PredictiveDistribution`s by origin; the fit carries the
+  model (`MeyersFit::model()`), posterior draws, diagnostics and PSIS-LOO
+  on Meyers' log scale. Checked against Meyers' own Stan code
+  (transcribed, CmdStan 2.39.0) and his printed results on his group 353 Commercial Auto data, now in
+  `validation/data/clrd_comauto_353.csv` (`docs/design/reserving-bayes.md`,
+  PR 3). In Python as `prospicio.reserving.Meyers` and in R as `meyers()`,
+  for a single-segment triangle, with the ultimates and reserves, the
+  posterior summary, the long tables, PSIS-LOO (`MeyersFit.loo()`, R's
+  `bayes_loo()`), and failed diagnostics raised as a Python `UserWarning`
+  or an R `warning()`.
 
 ### Pricing
 

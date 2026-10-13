@@ -1492,6 +1492,8 @@ Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std
 
 Triangle$bayes_odp <- function(column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_odp, self, column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
+Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__meyers, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, chains, tune, draws, n_sims, seed, target_accept, max_depth)
+
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman)
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman)
@@ -1752,6 +1754,44 @@ BayesOdpFit$segment <- function(keys, values) .Call(wrap__BayesOdpFit__segment, 
 
 #' @export
 `[[.BayesOdpFit` <- `$.BayesOdpFit`
+
+MeyersFit <- new.env(parent = emptyenv())
+
+MeyersFit$model <- function() .Call(wrap__MeyersFit__model, self)
+
+MeyersFit$chain_ladder <- function() .Call(wrap__MeyersFit__chain_ladder, self)
+
+MeyersFit$premium <- function() .Call(wrap__MeyersFit__premium, self)
+
+MeyersFit$ultimates <- function() .Call(wrap__MeyersFit__ultimates, self)
+
+MeyersFit$reserves <- function() .Call(wrap__MeyersFit__reserves, self)
+
+MeyersFit$diagnostics <- function() .Call(wrap__MeyersFit__diagnostics, self)
+
+MeyersFit$parameter_names <- function() .Call(wrap__MeyersFit__parameter_names, self)
+
+MeyersFit$draws <- function() .Call(wrap__MeyersFit__draws, self)
+
+MeyersFit$chains <- function() .Call(wrap__MeyersFit__chains, self)
+
+MeyersFit$summary <- function() .Call(wrap__MeyersFit__summary, self)
+
+MeyersFit$loo <- function() .Call(wrap__MeyersFit__loo, self)
+
+MeyersFit$long_table <- function() .Call(wrap__MeyersFit__long_table, self)
+
+MeyersFit$totals_table <- function() .Call(wrap__MeyersFit__totals_table, self)
+
+MeyersFit$development_table <- function() .Call(wrap__MeyersFit__development_table, self)
+
+MeyersFit$segment <- function(keys, values) .Call(wrap__MeyersFit__segment, self, keys, values)
+
+#' @export
+`$.MeyersFit` <- function (self, name) { func <- MeyersFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.MeyersFit` <- `$.MeyersFit`
 
 MackBootstrapFit <- new.env(parent = emptyenv())
 

@@ -1,7 +1,7 @@
 ---
 type: Environment Fact
 title: CmdStan on the local Windows machine
-description: CmdStan 2.39.0 is built at ~/.cmdstan and compiles models with RTools 4.5's make and g++, from PowerShell or cmd only; cmdstanpy 1.3.0 under uv needs MAKE set because it looks for mingw32-make.
+description: CmdStan 2.39.0 is built at ~/.cmdstan and compiles models with RTools 4.5's make and g++, from PowerShell or cmd only; cmdstanpy 1.3.0 under uv needs MAKE set because it looks for mingw32-make; the Meyers reference also needs arviz 0.23.4 for PSIS-LOO.
 tags: [environment, stan, cmdstan, windows, bayes, validation]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-12T00:00:00Z }
@@ -13,6 +13,9 @@ sources:
   - id: design
     resource: ../docs/design/reserving-bayes.md
     title: Design note, Bayesian reserving (decision 10)
+  - id: meyers
+    resource: ../validation/scripts/reserving_meyers_stan.py
+    title: The Stan reference generator for Meyers (CRC and CSR)
 ---
 
 # Facts (2026-10-12)
@@ -40,3 +43,12 @@ sources:
 * The full reference (GenIns and RAA, 4 chains of 2,000 warm-up and 25,000
   draws each, dense metric) takes about 60 s once the model is
   compiled.[^design]
+* Meyers' CRC and CSR (2026-10-12): both programs compile in about 55 s
+  each; the four cases (paid and incurred, 4 x 25,000 draws, dense metric,
+  `adapt_delta` 0.99) take about 5 minutes in all, about half of it
+  arviz 0.23.4's PSIS-LOO on 100,000 draws x 55 cells. arviz resolves
+  under Python 3.14 with cmdstanpy 1.3.0, pandas 3.0.6 and numpy 2.5.4
+  (`--with arviz==0.23.4`); it warns that it is pre-1.0 and, with Pareto k
+  near 1, about `exp` overflow in its smoothing, which does not change the
+  estimate. A rerun with the same seed reproduced every summary bit for
+  bit.[^meyers]

@@ -93,8 +93,8 @@ mod prospicio_native {
         PyBayesOdp, PyBayesOdpFit, PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit,
         PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit,
         PyClarkLdf, PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit,
-        PyMackFit, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant,
-        PyTailCurve, PyTailLogLinear, PyTriangle,
+        PyMackFit, PyMeyers, PyMeyersFit, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit,
+        PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{
