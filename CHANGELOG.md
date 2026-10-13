@@ -136,6 +136,14 @@ under "Unreleased" until then.
   force that year, beside the trended losses under the proposed tower, to
   reconcile with the cedant's recoveries (`Prepared::as_if`, `AsIf`).
   Python `PreparedLosses.as_if`; R `as_if_history()` (#226).
+- The time value of money in a price, `prospicio_pricing::payout`: payment
+  patterns (from shares or from factors to ultimate such as a paid chain
+  ladder's), discount factors, the share outstanding, and a one-period
+  price restated over the payout with capital held while losses are
+  outstanding (`price_over_payout`). Python `PaymentPattern`,
+  `price_over_payout`, `PayoutPrice`; R `payment_pattern()`,
+  `payment_pattern_from_development()`, `pattern_values()`,
+  `price_over_payout()`.
 
 ### Examples
 

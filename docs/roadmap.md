@@ -121,11 +121,12 @@ what it is aiming for by v1.0.
     (#197); experience rating from large losses, trend to the burning
     cost, with each claim developed to ultimate, count IBNR, FX and an
     index clause (#190, `docs/design/experience-rating.md`), and as-if
-    history under each year's program (#191).
+    history under each year's program (#191); the time value of money in
+    a price, with capital held over the payout (#195,
+    `docs/design/time-value.md`).
 - **Next:**
   1. The Guides lane's issues for this lane, small first (the user's
-     choice, 2026-10-13): #195 time value of money,
-     #196 cat XL inputs. Then the large items parked from `aggregate`
+     choice, 2026-10-13): #196 cat XL inputs. Then the large items parked from `aggregate`
      parity (`docs/design/aggregate.md`): the P&L ledger (once signed grids
      exist), bivariate FFT aggregates and `clash`, renewal counts with
      Wiener–Hopf ruin.
