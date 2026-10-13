@@ -105,6 +105,14 @@ under "Unreleased" until then.
   and loss ratio, and `Quote::at` for what a quoted premium gives the
   reinsurer (its return on capital). Python `prospicio.pricing.Quote`; R
   `technical_quote()`, `implied_quote()`.
+- Experience rating from individual large losses,
+  `prospicio_pricing::experience`: each loss trended to the prospective
+  period by a rate or a factor per loss, a reporting threshold carried to
+  the level at which every year is complete, each year's tower applied to
+  the year's trended losses, the layer totals developed and divided by the
+  premium (the burning cost), reproducing Clark's study note. Python
+  `LargeLossExperience`, `PreparedLosses`, `BurningCost`; R
+  `trend_large_losses()`, `burning_cost()`.
 
 ### Examples
 
