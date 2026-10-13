@@ -87,11 +87,10 @@ chosen to show the mechanics, not to match any market.
 
 ```python
 import math
-import re
 
 from prospicio.aggregate import fft
 from prospicio.distributions import Grid, Lognormal, NegativeBinomial, Pareto, Poisson, PredictiveDistribution
-from prospicio.pricing import Pentagon, price_portfolio
+from prospicio.pricing import PaymentPattern, Pentagon, Quote, price, price_over_payout, price_portfolio
 from prospicio.reinsurance import Layer, Tower, occurrence_layer_statistics
 from prospicio.risk import Distortion, GaussianCopula, calibrate
 
@@ -252,6 +251,13 @@ print(f"risk premium      {risk_premium:7.3f}")
 print(f"technical premium {technical:7.3f}   (expenses and brokerage take {EXPENSES + BROKERAGE:.0%})")
 print(f"rate on line {technical / mid.limit:.1%} (payback {mid.limit / technical:.1f} years), "
       f"multiple {technical / expected_loss:.2f}, loss ratio {expected_loss / technical:.1%}")
+
+# The same build-up from the library: the 99% TVaR price, then the quote with its loads.
+tvar_price = price(annual, TAIL, cost_of_capital=RETURN)
+technical_quote = Quote.technical(tvar_price, expenses=EXPENSES, brokerage=BROKERAGE, limit=mid.limit)
+print(f"Quote.technical {technical_quote.premium:.3f}, rate on line {technical_quote.rate_on_line:.1%}, "
+      f"payback {technical_quote.payback:.1f}, multiple {technical_quote.multiple:.2f}, "
+      f"loss ratio {technical_quote.loss_ratio:.1%}")
 ```
 
 ```text
@@ -260,6 +266,7 @@ cost of capital     0.654   (10% of capital 6.538)
 risk premium        1.240
 technical premium   1.425   (expenses and brokerage take 13%)
 rate on line 28.5% (payback 3.5 years), multiple 2.43, loss ratio 41.1%
+Quote.technical 1.425, rate on line 28.5%, payback 3.5, multiple 2.43, loss ratio 41.1%
 ```
 
 Three ratios describe a layer's price, and brokers quote all of them:
@@ -273,23 +280,33 @@ Three ratios describe a layer's price, and brokers quote all of them:
   receives for this layer, the inverse of the multiple. It is not the cedant's
   book loss ratio of 60.9%.
 
-The same build-up is in the library. A distortion with a constant cost of
-capital (`Distortion.ccoc`) prices a loss as (expected loss + r × assets)
-divided by (1 + r), and `TowerGrids.price` applies it to every layer of a tower.
-That call takes the most the layer can pay in a year as its assets, which for
-this layer is the annual limit of 10, a different capital standard from the 99%
-TVaR above. The arithmetic and the call agree:
+The last line is the library doing the same thing. `price(annual, TAIL,
+cost_of_capital=RETURN)` holds the 99% TVaR of the annual loss as assets and
+charges a 10% return on the capital, which is the risk premium of section 2.
+`Quote.technical` grosses that risk premium up for expenses and brokerage
+(shares of the premium, as above) and reports the ratios the market quotes.
+Later sections keep `gross_up`, the by-hand form of the same step, where one
+division reads more clearly than a quote.
+
+The capital standard is a choice the call makes explicit. A distortion with a
+constant cost of capital (`Distortion.ccoc`) prices a loss as (expected loss +
+r × assets) divided by (1 + r), and `TowerGrids.price` applies it to every layer
+of a tower. That call takes the most the layer can pay in a year as its assets,
+which for this layer is the annual limit of 10, a different capital standard
+from the 99% TVaR above. `price` takes the 99% TVaR standard directly. The
+full-limit arithmetic agrees with `TowerGrids.price`, and `price` agrees with
+the pentagon of section 2:
 
 ```python
 by_hand = (expected_loss + RETURN * mid.aggregate_limit) / (1 + RETURN)
 by_call = mid_grids.price(Distortion.ccoc(RETURN)).ceded[0]
 print(f"full-limit capital: by hand {by_hand:.4f}, TowerGrids.price {by_call.premium:.4f}")
-print(f"99% TVaR capital:   by hand {risk_premium:.4f}, Pentagon {pentagon.premium:.4f}")
+print(f"99% TVaR capital:   Pentagon {pentagon.premium:.4f}, price {tvar_price.premium:.4f}")
 ```
 
 ```text
 full-limit capital: by hand 1.4421, TowerGrids.price 1.4421
-99% TVaR capital:   by hand 1.2401, Pentagon 1.2401
+99% TVaR capital:   Pentagon 1.2401, price 1.2401
 ```
 
 The choice of capital standard is a pricing decision, not a detail. A full-limit
@@ -346,7 +363,7 @@ the deposit again:
 net_deposit = deposit
 for _ in range(20):   # the reinstatement premium depends on the deposit, so iterate
     net_loss, _ = annual.map(lambda x: x - KEEP * RATE * net_deposit * min(x, 5.0) / 5.0)
-    net = Pentagon.solve(loss=net_loss.mean(), assets=TAIL.measure(net_loss), return_on_capital=RETURN)
+    net = price(net_loss, TAIL, cost_of_capital=RETURN)
     net_deposit = net.premium / KEEP
 net_total = net_deposit * (1 + RATE * used_limit)
 print(f"capital against the net loss {net.capital:.3f} (against the gross loss {capital:.3f})")
@@ -380,39 +397,26 @@ reproduces a given premium on one layer; here, the 5x5 risk premium found
 above. That one parameter then prices the other two layers with no further
 choice.
 
-<details>
-<summary>Helper: read the parameter of a distortion</summary>
-
-```python
-def parameter(distortion):
-    """The one number that names a distortion, such as 0.69 in proportional_hazard(0.69).
-
-    The library has no accessor for it yet, so this relies on the repr's format.
-    """
-    return float(re.search(r"\(([-0-9.e]+)\)", repr(distortion)).group(1))
-```
-
-</details>
-
 ```python
 LAYERS = [Layer("2x3", limit=2.0, attachment=3.0, reinstatements=1), mid,
           Layer("10x10", limit=10.0, attachment=10.0, reinstatements=1)]
 tower_grids = Tower(LAYERS).on_grid(frequency, severity, POINTS)
 price_of_risk = calibrate("ph", tower_grids.ceded[1], pentagon.premium)
-print(f"proportional hazard parameter {parameter(price_of_risk):.3f}: a 1% chance is weighted as "
+print(f"proportional hazard parameter {price_of_risk.parameters['rho']:.3f}: a 1% chance is weighted as "
       f"{price_of_risk.g(0.01):.1%}, a 10% chance as {price_of_risk.g(0.10):.1%}")
 
 
 def layer_table(layers, grids, distortion):
     print(f"{'layer':>6} {'exp loss':>9} {'assets/EL':>10} {'price':>6} {'multiple':>9} {'ROL':>6} "
           f"{'return':>7} {'at 10%':>7}")
-    for layer, grid, p in zip(layers, grids.ceded, grids.price(distortion).ceded):
-        a = TAIL.measure(grid)
-        on_capital = (p.premium - p.loss) / (a - p.premium)        # return on 99% TVaR capital
-        at_target = gross_up((p.loss + RETURN * a) / (1 + RETURN))  # price at exactly 10% on that capital
-        print(f"{layer.name:>6} {p.loss:9.3f} {a / p.loss:10.1f} {gross_up(p.premium):6.3f} "
-              f"{gross_up(p.premium) / p.loss:9.2f} {gross_up(p.premium) / layer.limit:6.1%} "
-              f"{on_capital:7.1%} {at_target / p.loss:7.2f}")
+    for layer, grid in zip(layers, grids.ceded):
+        own = price(grid, TAIL, distortion=distortion)   # premium by the distortion, assets at 99% TVaR
+        quoted = Quote.technical(own, expenses=EXPENSES, brokerage=BROKERAGE, limit=layer.limit)
+        at_target = Quote.technical(price(grid, TAIL, cost_of_capital=RETURN),   # exactly 10% on that capital
+                                    expenses=EXPENSES, brokerage=BROKERAGE)
+        print(f"{layer.name:>6} {own.expected_loss:9.3f} {own.assets / own.expected_loss:10.1f} "
+              f"{quoted.premium:6.3f} {quoted.multiple:9.2f} {quoted.rate_on_line:6.1%} "
+              f"{own.return_on_capital:7.1%} {at_target.multiple:7.2f}")
 
 
 layer_table(LAYERS, tower_grids, price_of_risk)
@@ -432,7 +436,10 @@ of expected loss, how much money stands behind each unit of pure cost. The
 expenses and brokerage), and the multiple and rate on line are on that price,
 so the 5x5 row matches section 3. **Return** is the margin over the 99% TVaR
 capital the price implies, and **at 10%** is the multiple a rule charging
-exactly 10% on each layer's own capital would give.
+exactly 10% on each layer's own capital would give. In the code, `price` with a
+`distortion` prices the layer by the distortion and holds its 99% TVaR as
+assets, so its `return_on_capital` is the return column; `price` with a
+`cost_of_capital` is the 10% rule.
 
 The multiple rises from the working layer to the top layer, although the
 pricing rule is the same. The reason is the capital behind each unit of
@@ -478,14 +485,14 @@ ceded loss, and a 10% return on the capital.
 
 ```python
 def add_independent(a, b):
-    """The total of two independent losses on grids with the same step, as (value, probability) pairs."""
+    """The total of two independent losses on grids with the same step, as a grid."""
     total = [0.0] * (len(a.probs) + len(b.probs))
     bs = [(j, q) for j, q in enumerate(b.probs) if q > 1e-16]
     for i, p in enumerate(a.probs):
         if p > 1e-16:
             for j, q in bs:
                 total[i + j] += p * q
-    return [(k * a.step, p) for k, p in enumerate(total) if p > 1e-16]
+    return Grid(a.step, total)
 
 
 def expect(f):
@@ -512,16 +519,18 @@ ATTRITIONAL_CV = 0.10
 ceded_premium = CESSION * SUBJECT_PREMIUM
 
 attritional, _ = Grid.local_moment(Lognormal.from_mean_cv(ATTRITIONAL, ATTRITIONAL_CV), STEP, 600)
-book = add_independent(attritional, gross)    # the whole book's annual loss
-loss_ratio = expect(lambda x: x) / SUBJECT_PREMIUM
-ceded_loss = CESSION * expect(lambda x: x)
-ceded_assets = tail_mean([(CESSION * x, p) for x, p in book])
-qs_pentagon = Pentagon.solve(loss=ceded_loss, assets=ceded_assets, return_on_capital=RETURN)
-margin = qs_pentagon.margin / ceded_premium
+book_grid = add_independent(attritional, gross)    # the whole book's annual loss
+book = [(k * STEP, p) for k, p in enumerate(book_grid.probs) if p > 1e-16]   # as (value, probability)
+loss_ratio = book_grid.mean() / SUBJECT_PREMIUM
+
+qs = Layer.quota_share("QS", CESSION).with_premium_rate(1.0, SUBJECT_PREMIUM)
+qs_ceded = Tower([qs]).on_annual_grid(book_grid).ceded[0]   # the ceded share of each year's total
+qs_price = price(qs_ceded, TAIL, cost_of_capital=RETURN)
+margin = qs_price.margin / ceded_premium
 QS_EXPENSES, QS_BROKERAGE = 0.02, 0.015
 technical_commission = 1 - loss_ratio - QS_EXPENSES - QS_BROKERAGE - margin
 print(f"ceded premium {ceded_premium:.1f}, expected loss ratio {loss_ratio:.1%}")
-print(f"margin {margin:.1%} of premium (capital {qs_pentagon.capital:.2f}, {RETURN:.0%} return)")
+print(f"margin {margin:.1%} of premium (capital {qs_price.capital:.2f}, {RETURN:.0%} return)")
 print(f"technical commission = 1 - {loss_ratio:.1%} - {QS_EXPENSES:.1%} - {QS_BROKERAGE:.1%} "
       f"- {margin:.1%} = {technical_commission:.1%}")
 ```
@@ -536,8 +545,8 @@ Any commission above that costs the reinsurer margin; any commission below it
 hands margin to the cedant. It is also the number a cedant can test against its
 own acquisition cost to see whether the reinsurance is a good deal. For a
 long-tail line, the ceding commission also depends heavily on the investment
-income the reinsurer earns before claims are paid, which this example leaves
-out (section 10).
+income the reinsurer earns before claims are paid, which this one-year example
+leaves out (section 10 restates a price over a payout).
 
 ### Sliding scales and profit commissions
 
@@ -557,12 +566,19 @@ the loss-ratio volatility (not the mean) moves back to the cedant.
 
 Start by setting the scale and the profit share so that the **expected**
 commission over the loss-ratio distribution equals the technical commission.
-The library gives a contract's commission for any outcome, so the expectation
-is a sum over the distribution:
+`Tower.on_annual_grid` applies the contract to each year's total on the grid
+and gives the expected commissions exactly. The reinsurer's result in each
+outcome, for its spread and its worst years, comes from the contract's
+commission for that outcome (`ceding_commission_for`, `profit_commission_for`):
 
 ```python
-qs = Layer.quota_share("QS", CESSION).with_premium_rate(1.0, SUBJECT_PREMIUM)
 costs = (QS_EXPENSES + QS_BROKERAGE) * ceded_premium
+
+
+def expected_commissions(layer):
+    """Expected ceding and profit commission of a quota share over the book's annual loss."""
+    terms = Tower([layer]).on_annual_grid(book_grid)
+    return terms.expected_ceding_commission[0], terms.expected_profit_commission[0]
 
 
 def underwriting_result(layer, with_profit_commission=False):
@@ -588,8 +604,7 @@ flat = qs.with_ceding_commission(technical_commission)
 sd_flat = describe("flat", underwriting_result(flat))
 
 shape = [(0.37, 0.55), (0.26, 0.75)]   # (commission, loss ratio) points of the scale, before the shift
-shift = technical_commission - expect(
-    lambda x: qs.with_sliding_scale(shape).ceding_commission_for(CESSION * x)) / ceded_premium
+shift = technical_commission - expected_commissions(qs.with_sliding_scale(shape))[0] / ceded_premium
 anchors = [(c + shift, lr) for c, lr in shape]    # moved so the expected commission is the technical one
 slide = qs.with_sliding_scale(anchors)
 sd_slide = describe("sliding scale", underwriting_result(slide))
@@ -603,7 +618,7 @@ commission = technical_commission
 for _ in range(30):
     allowance = commission + QS_EXPENSES + QS_BROKERAGE + margin
     pc_layer = qs.with_ceding_commission(commission).with_profit_commission(0.25, allowance)
-    expected_pc = expect(lambda x: pc_layer.profit_commission_for(CESSION * x)) / ceded_premium
+    expected_pc = expected_commissions(pc_layer)[1] / ceded_premium
     commission = technical_commission - expected_pc
 sd_pc = describe("profit comm.", underwriting_result(pc_layer, with_profit_commission=True))
 print(f"  flat commission {commission:.1%} plus 25% of profit after an allowance of {allowance:.1%} "
@@ -649,7 +664,10 @@ practice a reinsurer builds it in two ways and blends them:
 - **Experience rating**: take the cedant's large-loss history, trend each loss
   to the treaty year, develop it to ultimate, and fit a frequency above a
   threshold and a severity tail. This is the step that uses the cedant's loss
-  triangles and the trend work a primary actuary already knows.
+  triangles and the trend work a primary actuary already knows. The library's
+  `LargeLossExperience` converts, develops and trends each loss and applies the
+  layers to it (the guide [experience and exposure rating](experience-and-exposure-rating.md)
+  works through it).
 - **Exposure rating**: take the cedant's **risk profile** (its policies grouped
   by sum insured or limit, with the premium in each band). An **exposure curve**
   says what share of each band's expected loss falls above each attachment, so
@@ -720,7 +738,7 @@ for name, (count, alpha) in profiles.items():
         cells = [f"{change(loss, l0)}{change(price, p0)}" for (loss, price), (l0, p0) in zip(row, base)]
     print(f"{name:>16}" + "".join(cells))
 print(f"1.05 raised to alpha 1.8: {1.05 ** 1.8:.3f}; 1.25 raised to the hazard parameter: "
-      f"{1.25 ** parameter(price_of_risk):.3f}")
+      f"{1.25 ** price_of_risk.parameters['rho']:.3f}")
 ```
 
 ```text
@@ -843,7 +861,9 @@ rates on line: a soft market quote of 22% and a hard market quote of 34%, for
 the layer with a free reinstatement as priced above. Assume the reinsurer's
 model of the expected loss has not moved, so the difference is all price of
 risk. The quote is what the cedant pays, so the reinsurer's risk premium is the
-quote less expenses and brokerage. We read off what each quote implies: the
+quote less expenses and brokerage. `Quote.at` restates the technical quote of
+section 3 at a quoted premium: the same expected loss and assets, with the risk
+premium what is left after the loads. We read off what each quote implies: the
 return on capital the reinsurer is getting, and the proportional hazard
 parameter that reproduces the quote on this layer and prices the other layers
 consistently with it.
@@ -853,15 +873,16 @@ QUOTES = {"soft": 0.22, "hard": 0.34}   # rate on line for the 5x5 layer
 
 market = {}
 for name, rol in QUOTES.items():
-    risk = rol * mid.limit * KEEP
-    implied = Pentagon.solve(loss=expected_loss, assets=assets, premium=risk)
-    distortion = calibrate("ph", annual, risk)
+    offered = technical_quote.at(rol * mid.limit)   # same loss and assets, at the quoted premium
+    distortion = calibrate("ph", annual, offered.risk_premium)
     market[name] = distortion
     multiples = [gross_up(p.premium) / p.loss for p in tower_grids.price(distortion).ceded]
-    print(f"{name}: quote {rol * mid.limit:.2f} (multiple {rol * mid.limit / expected_loss:.2f}), "
-          f"return on capital {implied.return_on_capital:.1%}, hazard parameter {parameter(distortion):.3f}")
+    print(f"{name}: quote {offered.premium:.2f} (multiple {offered.multiple:.2f}), "
+          f"return on capital {offered.return_on_capital:.1%}, "
+          f"hazard parameter {distortion.parameters['rho']:.3f}")
     print(f"      multiples by layer {', '.join(f'{m:.2f}' for m in multiples)}")
-print(f"technical premium {technical:.2f} (rate on line {technical / mid.limit:.1%}) at a {RETURN:.0%} return")
+print(f"technical premium {technical_quote.premium:.2f} (rate on line {technical_quote.rate_on_line:.1%}) "
+      f"at a {RETURN:.0%} return")
 ```
 
 ```text
@@ -926,8 +947,10 @@ What moves the price of risk?
 - **interest rates**: higher rates raise the return investors require on
   capital, which pushes prices up, but also raise what the reinsurer earns on
   premium and reserves until claims are paid, which allows a lower underwriting
-  margin. For long-tail lines the second effect is usually the larger. This
-  guide's model has no investment income, so it cannot show either;
+  margin. Which effect is larger depends on the payout and on the return
+  asked over the rate. This guide's one-year model has no investment income;
+  section 10 restates the price over a payout, with investment income as the
+  discounting of losses and capital held for longer;
 - **retrocession cost**: when the reinsurers' own reinsurance costs more, they
   pass it on.
 
@@ -987,25 +1010,86 @@ The example is deliberately small. Each of these would move a real price, and
 the direction is given:
 
 - **Development**: reported excess losses grow to ultimate slowly; ignoring it
-  understates expected loss, more so on higher layers.
+  understates expected loss, more so on higher layers. This example's loss
+  model has none. For experience rating, the library develops each known
+  large loss to ultimate with `LargeLossExperience.prepare(development=...)`
+  and allows for late-reported claims with a count development pattern
+  (`DevelopmentPattern`) passed to `burning_cost(development=...)`; see the
+  [experience and exposure rating guide](experience-and-exposure-rating.md).
 - **Loss adjustment expenses**: adding claim expenses to the loss raises what
   the layer pays.
 - **Payout, discounting and investment income**: the guide is undiscounted and
   prices one year of capital. For a long-tail line such as liability, the
   reinsurer holds capital and reserves for the whole payout (often many years),
   which raises the cost of capital, and earns investment income on them, which
-  lowers the margin needed. Liability layers usually carry lower multiples than
-  this property example shows.
+  lowers the price. The example below restates a one-year price over a payout;
+  there, with a constant return on capital held through the payout, the price
+  over the payout is higher. Market prices for liability layers reflect more than
+  this (interest rates and spreads, capital released as claims settle), so do
+  not read the example as a statement about liability multiples.
 - **Parameter uncertainty**: alpha and the frequency are estimated, not known;
   allowing for that fattens the tail and raises the price.
 - **Data and credibility loads**: a thin or unreliable submission gets a load.
 - **Clash and catastrophe aggregation**: several of the cedant's risks hit by
   one event add up under the occurrence definition; ignoring it understates the
-  tail.
+  tail. For catastrophe covers the library takes a cat model's event loss table
+  (`EventLossTable`) and groups losses into occurrences by an hours clause
+  (`EventSet.grouped`).
 - **Credit risk**: funds withheld by the cedant, collateral and the reinsurer's
   own credit standing change what each side will accept.
 - **Expenses and tax**: fixed costs per contract and tax both raise the price
-  of small contracts above a percentage loading.
+  of small contracts above a percentage loading. `Quote.technical` takes a
+  `fixed` cost per contract beside the percentages.
+
+### Pricing over the payout
+
+`price_over_payout` restates a one-year price over a **payment pattern** (the
+share of the ultimate loss paid in each year). The losses are discounted at the
+given rate, which is how investment income enters, and the capital is held
+while losses are outstanding, so it is charged for more than one year. The cost
+of capital is then a return over the discount rate. Give it the same rule the
+one-year price was made with: here the 99% TVaR price of section 3 at a 10%
+cost of capital. Suppose the 5x5 layer paid 40% of its losses in the first
+year, then 30%, 20% and 10%, and money earns 3%:
+
+```python
+payout = PaymentPattern([1.0, 2.0, 3.0, 4.0], [0.4, 0.3, 0.2, 0.1])   # years from inception, shares
+over_payout = price_over_payout(tvar_price, payout, rate=0.03, cost_of_capital=RETURN)
+print(f"discount factor {over_payout.discount_factor:.4f}, capital years {over_payout.capital_years:.4f}")
+print(f"discounted loss {over_payout.discounted_loss:.4f}, margin {over_payout.margin:.4f}, "
+      f"capital {over_payout.capital:.4f}")
+print(f"risk premium {over_payout.premium:.4f} over the payout, {tvar_price.premium:.4f} for one year")
+
+# The same payout with other rates: no discounting, and 10% as the total return (7% over 3%).
+undiscounted = price_over_payout(tvar_price, payout, rate=0.0, cost_of_capital=RETURN)
+total_10 = price_over_payout(tvar_price, payout, rate=0.03, cost_of_capital=RETURN - 0.03)
+print(f"at a zero rate {undiscounted.premium:.4f}; at 7% over 3% {total_10.premium:.4f}")
+```
+
+```text
+discount factor 0.9430, capital years 1.9568
+discounted loss 0.5529, margin 1.1824, capital 6.0423
+risk premium 1.7353 over the payout, 1.2401 for one year
+at a zero rate 1.7849; at 7% over 3% 1.4233
+```
+
+Discounting takes the expected loss from 0.586 to 0.5529: that is the
+investment income. But the capital is now held while losses are outstanding:
+the initial capital of 6.0423 runs off with the outstanding losses, the
+equivalent of 1.9568 discounted years of it. The margin (10% a year on that
+capital over those years) is 1.1824, against 0.654 for one year, and the risk
+premium rises from 1.2401 to 1.7353.
+
+Three things changed at once: capital is held for longer, losses are
+discounted, and keeping 10% as the return over a 3% rate means investors earn
+13% in total, against 10% at the zero rate of section 3. Taken apart: at a
+zero rate the price over the payout is 1.7849, so discounting by itself lowers
+it only to 1.7353. If 10% is meant as the total return, the return over the
+rate is 7% and the price is 1.4233, still above 1.2401. With these assumptions
+the cost of holding capital longer outweighs the investment income. The payout here is assumed for illustration;
+for a real layer, the payout pattern (for example from a paid chain ladder,
+with `PaymentPattern.from_development`), the discount rate and the return over
+it decide which effect wins.
 
 ## 11. Glossary and further reading
 
@@ -1015,17 +1099,21 @@ in a year. **Assets**: premium plus capital. **Attachment**: the loss size above
 which an excess of loss layer pays. **Attritional losses**: the frequent small
 losses below the large-loss threshold. **Capital**: the reinsurer's own money
 held behind a contract. **Cedant**: the insurer that buys reinsurance. **Ceding
-commission**: what the reinsurer pays the cedant on a quota share. **Cost of
-capital**: the return the reinsurer asks on its capital. **Deposit premium**:
-the premium paid at inception, before any reinstatement premium.
-**Distortion**: a reweighting of probabilities that prices a loss by its tail.
+commission**: what the reinsurer pays the cedant on a quota share. **Capital years**: how long the capital is held over a payout, in discounted
+years, with the capital running off as losses are paid. **Cost of capital**:
+the return the reinsurer asks on its capital (over a payout, a return over the
+discount rate). **Deposit premium**:
+the premium paid at inception, before any reinstatement premium. **Discount
+factor**: the present value of one unit of ultimate loss paid on the payment
+pattern. **Distortion**: a reweighting of probabilities that prices a loss by its tail.
 **Exhaustion**: a loss that uses up a layer's whole limit. **Hard market**:
 prices up and cover scarcer for the same risk. **Layer**: the slice of each
 loss one contract pays, written limit x attachment. **Loss on line**: expected
 loss divided by limit. **Multiple**: premium divided by expected loss.
 **Natural allocation**: a split of a portfolio's capital and price among its
 parts that adds up exactly. **Payback**: limit divided by premium, the inverse
-of the rate on line. **Pentagon**: loss, premium, margin, capital and assets,
+of the rate on line. **Payment pattern**: the share of the ultimate loss paid in
+each year. **Pentagon**: loss, premium, margin, capital and assets,
 linked by two identities. **Price of risk**: the loading the market puts on
 risk, as a return on capital or a distortion parameter. **Profit commission**:
 a share of the reinsurer's profit returned to the cedant. **Program**: all the
