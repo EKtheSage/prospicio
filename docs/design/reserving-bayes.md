@@ -1240,7 +1240,7 @@ are settled.
    `φ` with a prior under the quasi likelihood; (c) a separate proper
    model (gamma or Tweedie increments) with sampled dispersion, later.
    *Recommended: (a) now, (c) if wanted*, decision 6; (b) is not a valid
-   posterior. Decided 2026-10-12: (a) for now.
+   posterior. Decided 2026-10-12: (a) for now. Confirmed 2026-10-13 by the user: (a), the plug-in, is kept.
 4. **Failed diagnostics.** (a) Return the fit with warnings (and raise
    them in Python and R); (b) return an error. *Recommended: (a)*, so a
    user can inspect a poor fit; the warnings name the parameter and the
@@ -1254,6 +1254,13 @@ are settled.
    posterior by the next diagonal (PSIS, with `k̂` as the guard); (c) a
    Laplace update for the ODP model only; (d) MCMC refit per simulation.
    *Recommended: (a) now, then (b)* in its own PR after PR 3, decision 12.
+   Decided 2026-10-13 by the user: (b), PSIS reweighting, as the next
+   capability. Its weakness is a diagonal that moves the posterior far (a
+   young origin, an outlying diagonal): `k̂` above 0.7 flags it. A refit
+   per simulation (d) stays exact there but costs one NUTS run per
+   simulation (about 0.1 s each, so 1,000 s for 10,000 simulations on one
+   thread); a hybrid that refits only the flagged simulations is the
+   proposed fallback.
 7. **Meyers' data source.** Decided 2026-10-12 by the user:
    `EKtheSage/cas-schedule-p-data-model` (see Data above), which holds the
    full 10×10 squares that chainladder-python's `clrd` (upper triangles
@@ -1269,6 +1276,15 @@ are settled.
    (b) part of this plan. *Recommended: (a)*: its identification needs
    informative priors and its ODE variants need numerical gradients,
    which deserve their own decisions.
+   Decided 2026-10-13 by the user: (a), and all three next models are
+   wanted, in this order of PRs: Meyers' CAY for incurred data; Meyers'
+   CRC and CSR with `fit_segments` and `TriangleModel` (for the
+   200-triangle calibration study); then the compartmental design note.
 10. **Bindings with each model.** (a) Rust, Python and R in the same PR,
     as `reserving-v02.md` decision 7; (b) Rust first, bindings after.
     *Recommended: (a)*.
+11. **Draws from other samplers.** Noted 2026-10-13 by the user for the
+    longer term, not planned: taking external draws (arviz
+    `InferenceData`, Stan CSV, nutpie traces) into our R-hat, ESS and LOO.
+    Today only our own NUTS draws (nuts-rs, the Rust core of nutpie) reach
+    them; `docs/design/models.md` and the roadmap are corrected to say so.
