@@ -1,9 +1,9 @@
 ---
 type: Reference Implementation
-title: Meyers' CRC and CSR code (CAS Monograph 8) and its Stan transcription
-description: Meyers' R scripts CRC.R and CSR.R hold his Stan programs as strings; they carry no licence and no longer compile on CmdStan 2.39, so validation/scripts/stan/meyers_{crc,csr}.stan transcribe them. The code differs from the monograph's description in ways that matter for parity (prior sd 3.162, a floor of 1e-5 on each variance step, reversed sigma labels, pmax and ceiling, elpd on the log scale).
+title: Meyers' CRC, CSR and CAY code (CAS Monograph 8) and its Stan transcription
+description: Meyers' R scripts CRC.R, CSR.R and CAY.R hold his Stan programs as strings; they carry no licence and no longer compile on CmdStan 2.39, so validation/scripts/stan/meyers_{crc,csr,cay}.stan transcribe them. The code differs from the monograph's description in ways that matter for parity (prior sd 3.162, a floor of 1e-5 on each variance step, reversed sigma labels, pmax and ceiling, elpd on the log scale).
 resource: ../validation/scripts/stan/meyers_crc.stan
-tags: [bayes, reserving, meyers, crc, csr, stan, validation, reference]
+tags: [bayes, reserving, meyers, crc, csr, cay, stan, validation, reference]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-12T17:30:00-07:00 }
 sources:
@@ -22,6 +22,12 @@ sources:
   - id: script
     resource: ../validation/scripts/reserving_meyers_stan.py
     title: The reference generator
+  - id: cay
+    resource: ../validation/scripts/stan/meyers_cay.stan
+    title: The CAY transcription, run by validation/scripts/reserving_meyers_cay_stan.py
+  - id: caycsv
+    resource: ../validation/reference/reserving_meyers_cay_stan.csv
+    title: The committed CAY reference summaries and Meyers' printed numbers
   - id: csv
     resource: ../validation/reference/reserving_meyers_stan.csv
     title: The committed reference summaries and Meyers' printed numbers
@@ -81,6 +87,45 @@ sources:
 * His runs: `iter = 5000` (2,500 warm-up), 4 chains, `adapt_delta =
   .9999`, `max_treedepth = 50`, seed 12345, thinning doubled until R-hat
   is below 1.05.[^zip]
+
+# CAY (`Appendix/CAY.R`, added 2026-10-13)
+
+* The zip holds `CAY.R` (sha256 `ec04de319667a031...`) beside `CRC.R` and
+  `CSR.R`, with the Stan program as the string `CAYModel_stan` (lines
+  160-211) and the prediction in R (lines 317-328); also `IPI.R`,
+  `SCC.R`, `ODP.R`, `Mack.R` and the risk-margin scripts, not yet
+  used.[^zip]
+* The model is CRC plus `rho (logloss[i - 1] - mu[i - 1]) * wne1[i]` in
+  each mean, with the cells sorted by age, then origin
+  (`data.out[order(d, w)]`), so cell `i - 1` is the previous origin at the
+  same age and `wne1 = 0` for the first origin. `mu[i - 1]` holds its own
+  `rho` term, so `log C` is a moving average of order 1 down each age's
+  column, as the monograph's eq. 8.3 (John Major's proposition) says:
+  correlation `rho / (1 + rho^2)` between neighbouring origins, 0
+  further.[^zip][^monograph]
+* `r_rho ~ beta(2, 2)` on `(0, 1)` and `rho = -2 r_rho + 1`; the other
+  priors, the variance ladder and its `1e-5` floor are CRC's. No `gamma`.
+  `init.CAY` draws `logelr` from `U(-0.75, -0.25)` (`init.CRC` uses
+  `-0.5` as the upper end) and `r_rho` from `U(0, 1)`.[^zip]
+* The prediction runs down age 10 origin by origin: `mu.wd10[, 1] =
+  log(Premium[1]) + logelr`, the oldest origin observed, and for `w >= 2`
+  `mu.wd10[, w] = log(Premium[w]) + logelr + alpha[, w] + rho
+  (log(at.wd10[, w - 1]) - mu.wd10[, w - 1])` with `at.wd10[, w]` its
+  `ceiling()`ed log-normal draw, so the next origin's residual is taken
+  from the rounded value.[^zip]
+* The transcription (`meyers_cay.stan`) changes only what the CRC one does,
+  and declares `rho` a plain real instead of `real<lower=-1, upper=1>`
+  (the bound only checks, since `r_rho` in `(0, 1)` keeps `rho` inside).
+  Its CmdStan 2.39.0 run (seed 20261013, 4 x 25,000 draws, dense metric,
+  `adapt_delta` 0.99) gives total 39,142 (sd 1,862), `rho` 0.1729 (sd
+  0.2069), elpd_loo 68.47 (p_loo 15.72), max R-hat 1.0002, no
+  divergence.[^cay][^caycsv]
+* Printed (Tables 8.1 and 8.2, p. 39; Table 8.3, p. 41; checked against
+  the rendered PDF pages, whose text layer scrambles Table 8.1's columns):
+  `logelr` -0.3945 (sd 0.0150), `rho` 0.1709 (sd 0.2071), total ultimate
+  39,193 (SE 1,859; outcome 40,061 at the 73.24th percentile), elpd_loo
+  68.65, p_loo 15.64, against CRC incurred's 70.97. The 2026 errata have
+  nothing on section 8.[^monograph][^errata]
 
 # Printed numbers on group 353 (checked against the PDF)
 

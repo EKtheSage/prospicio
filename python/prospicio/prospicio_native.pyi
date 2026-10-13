@@ -8881,18 +8881,26 @@ class Meyers:
     ``beta[m] = 0``) and sd ``sigma[d]``, decreasing with age. ``g[w]`` is 1
     for the correlated chain ladder without its correlation between origins
     (``"crc"``) and ``(1 - gamma)^(w - 1)`` for the changing settlement rate
-    (``"csr"``). The priors are those of Meyers' Stan code: ``logelr``
-    normal with mean ``logelr_mean`` and sd ``logelr_sd``, ``alpha`` and
-    ``beta`` normal around 0, ``gamma`` normal around 0 with sd
-    ``gamma_sd``, and each step of ``sigma[d]^2`` uniform on
-    ``(1 - exp(-1e-5), 1)``.
+    (``"csr"``). The correlated accident year model (``"cay"``) keeps
+    ``g[w] = 1`` and adds ``rho`` times the previous origin's residual at
+    the same age, ``log C[w - 1, d]`` less its mean, to the mean of every
+    origin after the first, so neighbouring origins are correlated; Meyers
+    fits it to incurred data. The priors are those of Meyers' Stan code:
+    ``logelr`` normal with mean ``logelr_mean`` and sd ``logelr_sd``,
+    ``alpha`` and ``beta`` normal around 0, ``gamma`` normal around 0 with
+    sd ``gamma_sd``, ``(1 - rho) / 2`` beta with both shapes ``rho_shape``,
+    and each step of ``sigma[d]^2`` uniform on ``(1 - exp(-1e-5), 1)``.
     
     The ultimate is the value at the oldest age (no tail): each posterior
     draw gives each open origin a log-normal ultimate; an origin observed at
-    the oldest age keeps its value. The reserve is the ultimate less the
-    latest value of the fitted column (an outstanding reserve on paid data,
-    IBNR on incurred data) and can be negative. Every observed cell must be
-    positive.
+    the oldest age keeps its value; under ``"cay"`` the ultimates are drawn
+    origin by origin, each from the previous origin's residual at the oldest
+    age, observed for a closed origin and simulated otherwise.
+    The reserve is the ultimate less the latest value of the fitted column
+    (an outstanding reserve on paid data, IBNR on incurred data) and can be
+    negative. Every observed cell must be positive, and under ``"cay"``
+    every observed cell after the first origin needs the previous origin's
+    cell at the same age.
     
     One ``seed`` replays a fit exactly, whatever the number of threads: the
     chains and the simulations each take a seed derived from it.
@@ -8902,13 +8910,15 @@ class Meyers:
     raises one ``UserWarning`` listing them, and they stay in
     ``MeyersFit.diagnostics``. With the defaults, all 120 fits of a seed
     sweep on Meyers' group 353 data (paid and incurred, CRC and CSR, 30
-    seeds) passed every threshold.
+    seeds) passed every threshold, and CAY on incurred passed at 199 of 200
+    seeds (one divergent transition in 8,000 draws at the other).
     
     Parameters
     ----------
-    model : {"crc", "csr"}, default "crc"
+    model : {"crc", "csr", "cay"}, default "crc"
         The correlated chain ladder without its correlation between origins,
-        or the changing settlement rate model.
+        the changing settlement rate model, or the correlated accident year
+        model.
     logelr_mean : float, default -0.4
         Mean of the normal prior on ``logelr``, the log expected loss ratio.
     logelr_sd : float, default 3.162
@@ -8923,6 +8933,10 @@ class Meyers:
     gamma_sd : float, default 0.05
         Standard deviation of the normal prior on ``gamma``, centred on 0
         (``"csr"`` only).
+    rho_shape : float, default 2.0
+        Both shapes of the beta prior on ``(1 - rho) / 2`` (``"cay"``
+        only); Meyers' 2 makes the prior density of ``rho`` proportional to
+        ``1 - rho^2``.
     chains, tune, draws : int, default 4, 1000, 2000
         NUTS chains, warm-up draws per chain and kept draws per chain; with
         1,000 kept draws the late ``sigma[d]`` sometimes miss the R-hat
@@ -8967,7 +8981,7 @@ class Meyers:
     >>> fit.premium[:2]
     [5812.0, 4908.0]
     """
-    def __new__(cls, /, model: str = "crc", logelr_mean: float = ..., logelr_sd: float = 3.162, origin_sd: float = 3.162, development_sd: float = 3.162, gamma_sd: float = 0.05, chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> Meyers: ...
+    def __new__(cls, /, model: str = "crc", logelr_mean: float = ..., logelr_sd: float = 3.162, origin_sd: float = 3.162, development_sd: float = 3.162, gamma_sd: float = 0.05, rho_shape: float = 2.0, chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> Meyers: ...
     def __repr__(self, /) -> str: ...
     @property
     def chains(self, /) -> int:
@@ -9012,10 +9026,11 @@ class Meyers:
         ValueError
             If a column is missing, the triangle has several segments or an
             origin has a gap; if a premium is missing or not positive; if a
-            prior standard deviation is not positive and finite,
-            ``logelr_mean`` is not finite or a sampler setting is invalid; if
-            an observed cell is not positive; or if there are no more
-            observed cells than parameters.
+            prior standard deviation or ``rho_shape`` is not positive and
+            finite, ``logelr_mean`` is not finite or a sampler setting is
+            invalid; if an observed cell is not positive; if there are no more
+            observed cells than parameters; or, under ``"cay"``, if a cell
+            lacks the previous origin's cell at the same age.
         """
     @property
     def gamma_sd(self, /) -> float:
@@ -9040,7 +9055,7 @@ class Meyers:
     @property
     def model(self, /) -> str:
         """
-        The model: ``"crc"`` or ``"csr"``.
+        The model: ``"crc"``, ``"csr"`` or ``"cay"``.
         """
     @property
     def n_sims(self, /) -> int:
@@ -9051,6 +9066,11 @@ class Meyers:
     def origin_sd(self, /) -> float:
         """
         Standard deviation of each origin effect's prior.
+        """
+    @property
+    def rho_shape(self, /) -> float:
+        """
+        Both shapes of the beta prior on ``(1 - rho) / 2`` (``"cay"`` only).
         """
     @property
     def seed(self, /) -> int:
@@ -9072,7 +9092,8 @@ class Meyers:
 class MeyersFit:
     """
     A fitted ``Meyers``: the posterior of ``logelr``, ``alpha[2..n]``,
-    ``beta[1..m-1]``, ``gamma`` (``"csr"`` only) and ``sigma[1..m]``, its
+    ``beta[1..m-1]``, ``gamma`` (``"csr"`` only) or ``rho`` (``"cay"``
+    only), and ``sigma[1..m]``, its
     MCMC diagnostics, and the posterior predictive distributions of the
     ultimates and reserves by origin. The frames' ``latest``, ``ultimate``
     and ``reserve`` are the volume-weighted chain ladder's
@@ -9124,9 +9145,10 @@ class MeyersFit:
         PSIS-LOO of the observed cells, with each cell's relative
         efficiency from the chains, as ``BayesGlmFit.loo``. The pointwise
         term is Meyers', the normal density of ``log C[w, d]``, so the
-        result is on the log scale and comparable only between ``"crc"``
-        and ``"csr"`` fits of the same column (Meyers 2019, Tables 6.4 and
-        7.3).
+        result is on the log scale and comparable only between ``"crc"``,
+        ``"csr"`` and ``"cay"`` fits of the same column (Meyers 2019,
+        Tables 6.4, 7.3 and 8.3). Under ``"cay"`` each cell's density is
+        conditional on the previous origin's cell, as in Meyers' code.
         
         Returns
         -------
@@ -9135,7 +9157,7 @@ class MeyersFit:
     @property
     def model(self, /) -> str:
         """
-        The model: ``"crc"`` or ``"csr"``.
+        The model: ``"crc"``, ``"csr"`` or ``"cay"``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -9146,8 +9168,8 @@ class MeyersFit:
     def parameter_names(self, /) -> list[str]:
         """
         Parameter names: ``logelr``, ``alpha[2]`` to ``alpha[n]``,
-        ``beta[1]`` to ``beta[m-1]``, ``gamma`` (``"csr"`` only) and
-        ``sigma[1]`` to ``sigma[m]``.
+        ``beta[1]`` to ``beta[m-1]``, ``gamma`` (``"csr"`` only) or ``rho``
+        (``"cay"`` only), and ``sigma[1]`` to ``sigma[m]``.
         """
     @property
     def premium(self, /) -> list[float]:
