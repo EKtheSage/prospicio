@@ -561,3 +561,32 @@ def test_as_if_history_beside_the_proposed_tower():
     assert d["proposed"][1] == pytest.approx([200.0, 150.0], rel=1e-14)
     with pytest.raises(ValueError):
         p.as_if([then_2019], [2019, 2020], now)
+
+
+def test_payment_pattern_and_price_over_payout():
+    from prospicio.distributions import Sampled
+    from prospicio.pricing import PaymentPattern, price, price_over_payout
+    from prospicio.risk import Distortion
+
+    p = PaymentPattern([1.0, 2.0, 3.0, 4.0], [0.25] * 4)
+    v = 1 / 1.05
+    assert p.discount_factor(0.05) == pytest.approx((1 - v**4) / 0.05 / 4, rel=1e-14)
+    assert p.outstanding(1.0) == 0.75 and p.duration == 2.5
+    assert p.capital_years(0.05) == pytest.approx(1 + 0.75 * v + 0.5 * v**2 + 0.25 * v**3, rel=1e-14)
+    assert p.shifted(0.5).times == [1.5, 2.5, 3.5, 4.5]
+
+    one = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.25)
+    now = PaymentPattern([0.5], [1.0])
+    same = price_over_payout(one, now, cost_of_capital=0.25)
+    assert same.premium == pytest.approx(one.premium, rel=1e-14)
+    slow = price_over_payout(one, p, rate=0.05, cost_of_capital=0.25)
+    assert slow.premium == pytest.approx(
+        slow.discounted_loss + 0.25 * slow.capital * slow.capital_years, rel=1e-12
+    )
+    d = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), distortion=Distortion.proportional_hazard(0.8))
+    dd = price_over_payout(d, p, rate=0.05, distortion=Distortion.proportional_hazard(0.8))
+    assert dd.premium == pytest.approx(d.premium * p.discount_factor(0.05), rel=1e-14)
+    with pytest.raises(ValueError):
+        price_over_payout(one, p)
+    with pytest.raises(ValueError):
+        PaymentPattern.from_development([1.0, 2.0], [2.0, 1.1])
