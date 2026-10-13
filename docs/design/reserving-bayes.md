@@ -808,12 +808,28 @@ the log density is not `None` in the diagonal backtest.
   log density against the fit's posterior, written out, to `1e-9`.
 * **Seeds and size** as for `BayesOdp`: the chains (with the pilot run)
   and the simulations on seeds derived from the backtest's `seed`, the
-  backtest's `n_sims`, no diagnostics reported.
+  backtest's `n_sims`, no diagnostics reported. So a failed fit is
+  silent, and on small held-out triangles the sampler settings matter:
+  on group 353's 28- and 36-cell training triangles the default target
+  acceptance 0.95 gave a fit with R-hat above 1.05 at 20 of 220 seeds
+  (up to 1.18 and 978 divergences), and those fits made the scores'
+  largest outliers (up to 9 seed-to-seed sds). At 0.99 such a fit comes
+  at 4 of 300 seeds (R-hat up to 1.36 at seed 317). The test uses 0.99
+  on group 353 (CLRD's summed lines need no change), and its seed sweep
+  refits each split's training triangle with `Meyers::fit` on the
+  backtest's seed (the same chains) to find failed fits and count their
+  rows instead of checking them. Use a higher target acceptance than the
+  fit's when a backtest holds out a small triangle's diagonals; reporting
+  the fits' diagnostics through `CellForecast` is left open.
 * **Results** (`validation/tests/reserving_meyers_segments.rs`, latest
-  three diagonals, seeds 0 to 59, every checked row within its tolerance
-  of at least 4 seed-to-seed sds at each seed; none strays more than 4.1
-  sds from its mean). Meyers' models are not near the ODP models here, and
-  the test checks each against its own sweep mean. On group 353 they
+  three diagonals; each checked row's target is its mean over seeds 0 to
+  119 and its tolerance at least 6 seed-to-seed sds, as the rows' tails
+  are a little heavier than normal, and every row passes at the fresh
+  seeds 200 to 379; with every fit converged the largest distance over
+  seeds 0 to 119 and 200 to 379 is 5.3 sds. On incurred each model's
+  own CRPS and log density are checked, not ratios to CRC's, which moved
+  with CRC's chains). Meyers' models are not near the ODP models here,
+  and the test checks each against its own sweep mean. On group 353 they
   forecast the held-out diagonals well above the outcomes: A/E 0.30 to
   0.36 on the earliest split (seven train diagonals) and 0.65 to 0.90 on
   the latest (CRC 0.66, CAY 0.65, CSR 0.90, the paid correction Meyers

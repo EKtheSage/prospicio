@@ -1093,7 +1093,12 @@ impl Rebuilt {
 /// * **Seeds.** The chains (and the pilot run) and the simulations take
 ///   seeds derived from the backtest's `seed` as [`Meyers::fit`] does from
 ///   [`Meyers::seed`]; the backtest's `n_sims` replaces [`Meyers::n_sims`].
-///   The fit's diagnostics are not reported.
+///   The fit's diagnostics are not reported, so a fit that fails is
+///   silent. A held-out triangle is smaller than the whole: on Meyers'
+///   group 353 the default target acceptance 0.95 failed (R-hat above
+///   1.05) in 21 of 3,960 backtest fits on its 28- to 45-cell training
+///   triangles, and 0.99 in 4 of 5,400; raise [`Meyers::sampler`]'s
+///   `target_accept` for small triangles.
 ///
 /// Its name in the backtest is `"meyers_crc"`, `"meyers_csr"` or
 /// `"meyers_cay"`.

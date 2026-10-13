@@ -198,7 +198,10 @@ under "Unreleased" until then.
   cumulative values from the train increments, reads premium from the
   frame's exposure, simulates each origin's path jointly (a test
   increment is the difference of consecutive values on one path) and gives
-  the log-normal log predictive density of a held-out diagonal.
+  the log-normal log predictive density of a held-out diagonal. It
+  reports no diagnostics; on group 353's small held-out triangles the
+  default target acceptance 0.95 sometimes fails to converge, and its
+  doc advises 0.99 there.
   `validation/data/clrd_lines.csv` gains each line's net earned premium
   (`validation/scripts/clrd_lines.py`). In Python,
   `Meyers(..., dependence="independent", spearman=None)` and
