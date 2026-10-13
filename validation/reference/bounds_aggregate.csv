@@ -1,0 +1,81 @@
+distribution,params,quantity,arg,arg2,expected,abs_tol,rel_tol,source
+price,a=inf,X3.lower,46.6,,14.9,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.upper,46.6,,14.9,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.lower,46.6,,30.000000000000007,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.upper,46.6,,30.000000000000007,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.lower,50.0,,17.07291666666667,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.upper,50.0,,18.413649025069635,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.lower,50.0,,33.82022471910114,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.upper,50.0,,36.754966887417226,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.lower,53.565217391304344,,20.070991847826086,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.upper,53.565217391304344,,22.09803802833958,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.lower,53.565217391304344,,37.82608695652176,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.upper,53.565217391304344,,43.83818024762453,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.lower,70.0,,35.25390624999999,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.upper,70.0,,39.08217270194984,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.lower,70.0,,56.29213483146074,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.upper,70.0,,66.00000000000003,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.lower,90.0,,54.375,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.upper,90.0,,57.14285714285713,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.lower,90.0,,78.76404494382034,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.upper,90.0,,82.50000000000011,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.lower,100.0,,64.0,0.0,1e-12,aggregate 1.0.1
+price,a=inf,X3.upper,100.0,,64.0,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.lower,100.0,,90.00000000000016,0.0,1e-12,aggregate 1.0.1
+price,a=inf,Z.upper,100.0,,90.00000000000016,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.lower,44.8,,16.10047393364929,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.upper,44.8,,18.711415525114145,0.0,1e-12,"BiTVaRs on the curve's vertices with p = 1, by aggregate 1.0.1's TVaR (PricingBounds gives 17.779908675799078)"
+price,a=65.0,Z.lower,44.8,,29.71563981042655,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,Z.upper,44.8,,31.530172413793103,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.lower,47.0,,18.031847133757964,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.upper,47.0,,23.643835616438352,0.0,1e-12,"BiTVaRs on the curve's vertices with p = 1, by aggregate 1.0.1's TVaR (PricingBounds gives 21.506849315068486)"
+price,a=65.0,Z.lower,47.0,,33.09659090909093,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,Z.upper,47.0,,36.74568965517242,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.lower,50.0,,21.958456973293764,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.upper,50.0,,30.36986301369863,0.0,1e-12,"BiTVaRs on the curve's vertices with p = 1, by aggregate 1.0.1's TVaR (PricingBounds gives 26.589041095890405)"
+price,a=65.0,Z.lower,50.0,,37.997159090909115,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,Z.upper,50.0,,43.857758620689665,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.lower,60.0,,35.9940652818991,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.upper,60.0,,52.789954337899545,0.0,1e-12,"BiTVaRs on the curve's vertices with p = 1, by aggregate 1.0.1's TVaR (PricingBounds gives 43.52968036529679)"
+price,a=65.0,Z.lower,60.0,,54.332386363636424,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,Z.upper,60.0,,59.230769230769255,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.lower,65.0,,51.99999999999998,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,X3.upper,65.0,,64.0,0.0,1e-12,"BiTVaRs on the curve's vertices with p = 1, by aggregate 1.0.1's TVaR (PricingBounds gives 51.99999999999998)"
+price,a=65.0,Z.lower,65.0,,62.50000000000008,0.0,1e-12,aggregate 1.0.1
+price,a=65.0,Z.upper,65.0,,65.0,0.0,1e-12,"BiTVaRs on the curve's vertices with p = 1, by aggregate 1.0.1's TVaR (PricingBounds gives 62.50000000000008)"
+envelope,premium=53.565217391304344,lower,0.1,,0.1372282608695652,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,upper,0.1,,0.217391304347826,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,lower,0.15,,0.20584239130434775,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,upper,0.15,,0.2918634532573967,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,lower,0.2,,0.2744565217391304,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,upper,0.2,,0.3552137580234951,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,lower,0.3,,0.3890160183066361,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,upper,0.3,,0.4823810040117098,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,lower,0.5,,0.5652173913043478,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,upper,0.5,,0.7598961713173261,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,lower,0.7,,0.7391304347826086,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,upper,0.7,,0.9718765152739611,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,lower,0.9,,0.9130434782608696,1e-12,0.0,aggregate 1.0.1
+envelope,premium=53.565217391304344,upper,0.9,,1.0,1e-12,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.1,,0.1418929029048284,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.1,,0.21763004488915313,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.15,,0.20815634758955534,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.15,,0.29103342636605456,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.2,,0.2743830628094377,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.2,,0.35502008924641826,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.3,,0.3890785742584796,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.3,,0.4822946553821245,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.5,,0.565217391304345,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.5,,0.7598961713173261,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.7,,0.7391304347826071,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.7,,0.9716775397044104,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.9,,0.9130434782608692,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.9,,1.0,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.05,,0.07562945822010142,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.05,,0.17391304347826078,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.4,,0.478260869565214,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.4,,0.6268521169487927,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.6,,0.652173913043476,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.6,,0.8761539934878374,0.0,0.0,aggregate 1.0.1
+bounds_min,premium=53.565217391304344,lower,0.8,,0.8260869565217381,0.0,0.0,aggregate 1.0.1
+bounds_max,premium=53.565217391304344,upper,0.8,,1.0,0.0,0.0,aggregate 1.0.1

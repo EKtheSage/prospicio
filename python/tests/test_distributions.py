@@ -306,3 +306,19 @@ def test_added_severities_and_splicing():
         assert to_json(back) == text
         assert back.mean() == d.mean()
     assert json.loads(to_json(t))["inner"]["family"] == "gamma"
+
+
+def test_named_counts_and_tvar_threshold():
+    from prospicio.distributions import Count, Grid
+
+    # aggregate 1.0.1's fixed, bernoulli and geometric (aggregate_counts.py)
+    assert Count.fixed(3).pmf(3) == 1.0
+    assert Count.bernoulli(0.3).pmf(1) == pytest.approx(0.3, abs=1e-15)
+    assert Count.geometric(3.0).pmf(1) == pytest.approx(0.1875, abs=1e-15)
+    with pytest.raises(ValueError):
+        Count.geometric(0.0)
+    g = Grid(1.0, [0.4, 0.3, 0.2, 0.1])
+    t = g.tvar_threshold(0.85)
+    assert t < 0.85
+    assert g.tvar(t) == pytest.approx(g.quantile(0.85), abs=1e-12)
+    assert g.tvar(0.0) == pytest.approx(g.mean(), abs=1e-15)

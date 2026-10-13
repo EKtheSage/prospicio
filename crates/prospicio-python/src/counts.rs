@@ -182,6 +182,81 @@ impl PyCount {
         })
     }
 
+    /// A fixed count, ``N = n``, ``aggregate``'s ``fixed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    ///
+    /// Returns
+    /// -------
+    /// Count
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Count
+    /// >>> n = Count.fixed(3)
+    /// >>> n.mean(), n.variance()
+    /// (3.0, 0.0)
+    #[staticmethod]
+    fn fixed(n: u64) -> Self {
+        Self {
+            inner: CountDist::Empirical(EmpiricalCount::fixed(n)),
+        }
+    }
+
+    /// A Bernoulli count, one claim with probability ``p`` in ``[0, 1)``,
+    /// ``aggregate``'s ``bernoulli``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// Count
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``p`` is outside ``[0, 1)``.
+    #[staticmethod]
+    fn bernoulli(p: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: CountDist::Binomial(prospicio_prob::Binomial::bernoulli(p).map_err(to_py)?),
+        })
+    }
+
+    /// A geometric count on ``0, 1, ...`` with this mean, a negative
+    /// binomial with ``r = 1``, ``aggregate``'s ``geometric``.
+    ///
+    /// Parameters
+    /// ----------
+    /// mean : float
+    ///
+    /// Returns
+    /// -------
+    /// Count
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``mean`` is not finite and positive.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Count
+    /// >>> round(Count.geometric(3.0).pmf(0), 12)
+    /// 0.25
+    #[staticmethod]
+    fn geometric(mean: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: CountDist::NegativeBinomial(
+                prospicio_prob::NegativeBinomial::geometric(mean).map_err(to_py)?,
+            ),
+        })
+    }
+
     /// ``P(N = k)``.
     ///
     /// Parameters

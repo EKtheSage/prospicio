@@ -318,7 +318,8 @@ impl ReinsuranceTower {
     /// Gross, ceded and net annual distributions on the grid, by FFT:
     /// `list(gross, ceded, net, expected_reinstatement_premium,
     /// expected_premium, expected_ceding_commission,
-    /// expected_profit_commission, on_points)`,
+    /// expected_profit_commission, on_points)`, with `stage_ceded` one
+    /// grid (or NULL) per stage,
     /// with `net` NULL when it is not one compound total.
     fn on_grid(&self, frequency: Robj, severity: Robj, points: f64) -> Result<List> {
         let n = AnyCount::from_robj(&frequency)?;
@@ -339,9 +340,24 @@ impl ReinsuranceTower {
             Some(g) => Grid::wrap(g).into(),
             None => ().into(),
         };
+        let mut stage_sizes: Vec<f64> = Vec::new();
+        for (i, &s) in self.inner.stages.iter().enumerate() {
+            if i == 0 || s != self.inner.stages[i - 1] {
+                stage_sizes.push(0.0);
+            }
+            *stage_sizes.last_mut().expect("pushed above") += 1.0;
+        }
+        let stage_ceded = List::from_values(r.stage_ceded.into_iter().map(|g| -> Robj {
+            match g {
+                Some(g) => Grid::wrap(g).into(),
+                None => ().into(),
+            }
+        }));
         Ok(list!(
             gross = Grid::with_report(r.gross, compound_list(&r.gross_report)),
             ceded = List::from_values(ceded),
+            stage_ceded = stage_ceded,
+            stage_sizes = stage_sizes,
             net = net,
             expected_reinstatement_premium = r.expected_reinstatement_premium,
             expected_premium = r.expected_premium,
@@ -450,8 +466,65 @@ fn occurrence_layer_statistics_rust(
     ))
 }
 
+/// `list(pr_attach, pr_loss, loss_on_line, severity, aggregate)` of the
+/// layers' total cession.
+#[extendr]
+fn occurrence_cession_statistics_rust(
+    frequency: Robj,
+    severity: Robj,
+    shares: &[f64],
+    limits: &[f64],
+    attachments: &[f64],
+) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = <&Grid>::try_from(&severity)
+        .map_err(|_| Error::Other("severity must be a grid_distribution".into()))?;
+    if shares.len() != limits.len() || limits.len() != attachments.len() {
+        return Err(Error::Other(
+            "give one share, limit and attachment per layer".into(),
+        ));
+    }
+    let layers: Vec<(f64, f64, f64)> = (0..limits.len())
+        .map(|i| (shares[i], limits[i], attachments[i]))
+        .collect();
+    let s =
+        prospicio_aggregate::occurrence_cession_statistics(n.as_counting(), &sev.inner, &layers)
+            .map_err(to_r)?;
+    Ok(list!(
+        pr_attach = s.pr_attach,
+        pr_loss = s.pr_loss,
+        loss_on_line = s.loss_on_line,
+        severity = moments_vec(&s.severity),
+        aggregate = moments_vec(&s.aggregate)
+    ))
+}
+
+/// `list(pr_attach, pr_detach, loss_on_line, aggregate)` of an aggregate
+/// cover on the annual grid.
+#[extendr]
+fn aggregate_layer_statistics_rust(
+    annual: Robj,
+    share: f64,
+    limit: f64,
+    attachment: f64,
+) -> Result<List> {
+    let annual = <&Grid>::try_from(&annual)
+        .map_err(|_| Error::Other("annual must be a grid_distribution".into()))?;
+    let s =
+        prospicio_aggregate::aggregate_layer_statistics(&annual.inner, share, limit, attachment)
+            .map_err(to_r)?;
+    Ok(list!(
+        pr_attach = s.pr_attach,
+        pr_detach = s.pr_detach,
+        loss_on_line = s.loss_on_line,
+        aggregate = moments_vec(&s.aggregate)
+    ))
+}
+
 extendr_module! {
     mod reinsurance;
+    fn occurrence_cession_statistics_rust;
+    fn aggregate_layer_statistics_rust;
     fn retro_premium_rust;
     fn occurrence_layer_statistics_rust;
     impl XolLayer;

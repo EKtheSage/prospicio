@@ -774,6 +774,98 @@ epd_ratio <- function(port, assets) {
 #' @export
 assets_for_epd <- function(port, epd) rust_result(port@ptr$assets_for_epd(as.double(epd)))
 
+#' Priority ladder
+#'
+#' `priority_ladder()` is each unit's recovery from the assets `a` when it
+#' ranks ahead of the other units pooled (senior, `E[X_i ∧ a]`), pro rata
+#' (equal, `E[X_i min(1, a / X)]`), or behind them (junior,
+#' `E[min(X_i, (a - X_{-i})^+)]`), with its expected policyholder deficit
+#' ratio under each, as `aggregate`'s `priority_epd_df`. Each rule reads one
+#' unit against the rest pooled, so on three or more units only the equal
+#' recoveries add up to `E[X ∧ a]`. Exact under any dependence for a
+#' portfolio built from scenarios.
+#'
+#' `priority_kappa()` says where in the total the shortfall `(X - a)^+`
+#' falls when `unit` is junior: at each total `x`, the junior unit's
+#' expected part `E[min((X - a)^+, X_i) | X = x]` and the senior pool's,
+#' which add up to `(x - a)^+`.
+#'
+#' @inheritParams natural_price
+#' @param unit The junior unit's name.
+#' @returns `priority_ladder()`: a data frame with one row per unit and a
+#'   last `total` row: `unit`, `mean`, the recoveries `senior`, `equal`,
+#'   `junior`, and the EPD ratios `senior_epd`, `equal_epd`, `junior_epd`;
+#'   the assets in `attr(, "assets")`. `priority_kappa()`: a data frame with
+#'   `total`, `junior` and `senior`.
+#' @export
+#' @examples
+#' port <- capital_portfolio(cbind(A = c(15, 5, 26, 17), B = c(7, 20, 19, 48)))
+#' priority_ladder(port, assets = 50)
+#' priority_kappa(port, "A", assets = 50)
+priority_ladder <- function(port, assets = NULL, p = NULL) {
+  a <- portfolio_level(port, assets, p)
+  r <- rust_result(port@ptr$priority(a))
+  mean <- c(r$mean, sum(r$mean))
+  epd <- function(rec) ifelse(mean > 0, (mean - rec) / mean, 0)
+  senior <- c(r$senior, r$total)
+  equal <- c(r$equal, r$total)
+  junior <- c(r$junior, r$total)
+  out <- data.frame(
+    unit = c(port@units, "total"), mean = mean, senior = senior, equal = equal,
+    junior = junior, senior_epd = epd(senior), equal_epd = epd(equal), junior_epd = epd(junior)
+  )
+  attr(out, "assets") <- a
+  out
+}
+
+#' @rdname priority_ladder
+#' @export
+priority_kappa <- function(port, unit, assets = NULL, p = NULL) {
+  i <- match(unit, port@units)
+  if (is.na(i)) stop("no unit ", unit)
+  r <- rust_result(port@ptr$priority_kappa(as.double(i), portfolio_level(port, assets, p)))
+  data.frame(total = port@ptr$totals(), junior = r$junior, senior = r$senior)
+}
+
+#' Each unit priced alone, and the comonotonic allocation
+#'
+#' `price_stand_alone()` prices each unit as if it were the whole book, at
+#' its own lower `p` quantile (`L = E[X_i ∧ a_i]`, `P = ρ_g(X_i ∧ a_i)`),
+#' against the book priced together at the VaR of its total, as
+#' `aggregate`'s `Portfolio.price_stand_alone`; the `sum` row adds the
+#' stand-alone loss, premium and assets, and its excess over `total` is the
+#' diversification benefit.
+#'
+#' `comonotonic_allocation()` is Denuit et al.'s (2025) convex-order
+#' improvement of the conditional mean risk sharing `E[X_i | X]`: each
+#' unit's allocation as a non-decreasing function of the total, still adding
+#' up to it (`aggregate`'s `make_comonotonic_allocations`).
+#'
+#' @inheritParams natural_price
+#' @param p The VaR capital standard, in `(0, 1)`.
+#' @returns `price_stand_alone()`: a data frame as [natural_price()] with
+#'   rows for the units, `total` and `sum`. `comonotonic_allocation()`: a
+#'   data frame with the `total` and one column per unit.
+#' @export
+#' @examples
+#' port <- capital_portfolio(cbind(a = c(0, 1, 4, 5), b = c(0, 4, 1, 5)))
+#' price_stand_alone(port, distortion("proportional_hazard", 0.5), p = 0.75)
+#' comonotonic_allocation(capital_portfolio(cbind(A = c(0, 1, 6, 7), B = c(0, 3, 0, 3))))
+price_stand_alone <- function(port, distortion, p) {
+  as.data.frame(rust_result(port@ptr$price_stand_alone(distortion@ptr, as.double(p))))
+}
+
+#' @rdname price_stand_alone
+#' @export
+comonotonic_allocation <- function(port) {
+  k <- stats::setNames(port@ptr$comonotonic_kappa(), port@units)
+  data.frame(total = port@totals, k, check.names = FALSE)
+}
+
+S7::method(tvar_threshold, capital_portfolio) <- function(x, p, ...) {
+  rust_result(tvar_threshold_rust(x@ptr$totals(), x@ptr$probs(), as.double(p)), s7_call())
+}
+
 #' Premium, margin and capital pentagon
 #'
 #' Loss `L`, margin `M`, premium `P`, capital `Q` and assets `a`, with
@@ -823,6 +915,53 @@ premium_bounds <- function(port, premium, assets = NULL, p = NULL) {
   out$lower_distortion <- lapply(r$lower_distortion, function(d) distortion(ptr = d))
   out$upper_distortion <- lapply(r$upper_distortion, function(d) distortion(ptr = d))
   out
+}
+
+#' Pricing bounds for other risks
+#'
+#' `pricing_bounds()` is the range of each risk's price over every
+#' distortion that prices the reference risk `x` at `premium`, as the Python
+#' package `aggregate`'s `PricingBounds`: the vertical slice at `premium` of
+#' the convex hull of the curve `(TVaR_p(x), TVaR_p(y))`, exact for discrete
+#' risks. Prices are law-invariant, so only each risk's distribution
+#' matters; for a unit's share of a portfolio's price use
+#' [premium_bounds()]. `distortion_envelope()` is the smallest and largest
+#' `g(s)` over those distortions (`aggregate`'s `Bounds` envelopes, exact):
+#' the price range of a Bernoulli risk with `P(1) = s`.
+#'
+#' @param x The reference risk: a [sampled], [grid_distribution] or
+#'   [predictive_distribution] (its total).
+#' @param risks A named list of risks to bound, of the same kinds.
+#' @param premium The price of `x`, between its mean and maximum.
+#' @param assets Cap every risk at the assets (`Inf` for none).
+#' @param s Levels in `[0, 1]`.
+#' @returns `pricing_bounds()`: a data frame with `risk`, `lower` and
+#'   `upper`, and list columns `lower_distortion` and `upper_distortion`
+#'   holding a [distortion] attaining each (it prices `x` at `premium`).
+#'   `distortion_envelope()`: a data frame with `s`, `lower` (a concave
+#'   distortion) and `upper`.
+#' @export
+#' @examples
+#' x <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+#' y <- sampled(c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64))
+#' pricing_bounds(x, list(X3 = y), 53.565)[, c("risk", "lower", "upper")]
+#' distortion_envelope(x, 53.565, c(0.1, 0.5, 0.9))
+pricing_bounds <- function(x, risks, premium, assets = Inf) {
+  if (is.null(names(risks)) || any(names(risks) == "")) stop("name every risk")
+  r <- rust_result(pricing_bounds_rust(
+    x@ptr, lapply(risks, function(y) y@ptr), as.double(premium), as.double(assets)
+  ))
+  out <- data.frame(risk = names(risks), lower = r$lower, upper = r$upper)
+  out$lower_distortion <- lapply(r$lower_distortion, function(d) distortion(ptr = d))
+  out$upper_distortion <- lapply(r$upper_distortion, function(d) distortion(ptr = d))
+  out
+}
+
+#' @rdname pricing_bounds
+#' @export
+distortion_envelope <- function(x, premium, s, assets = Inf) {
+  r <- rust_result(distortion_envelope_rust(x@ptr, as.double(premium), as.double(s), as.double(assets)))
+  data.frame(s = s, lower = r$lower, upper = r$upper)
 }
 
 #' Classical premium principles

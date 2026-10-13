@@ -1,5 +1,6 @@
 # Findings
 
+* [Evaluating a reinsurance submission with prospicio, what the API covers](program-evaluation-api-map.md) - Each step from on-level premium to monitoring mapped onto the Python API of main: what ran, caveats (ages in months, on_grid refuses pro_rata_time, silent wild alphas from match_tower, a Tower.apply join double counts 18.68m against 10.09m) and the gaps, issues 190 to 197.
 * [Third raw moments, closed forms against mpmath](third-moments.md) - Severity and Counting third moments match mpmath at 30 digits to 1e-10; mpmath's nsum fails on a Poisson mean of 1,000; the mixed Poisson's pmf carries about 2e-12 into its moment.
 * [Normal draws bias the log-link mean](odp-normal-draws-bias.md) - Drawing beta from N(beta_hat, Sigma) and exponentiating raises each mean by exp(x'Sigma x / 2); MeanPreserving draws remove it exactly.
 * [Negative increments in the ODP](odp-negative-increments.md) - A quasi-likelihood ODP needs only V(mu) = mu and mu > 0; negative responses are fitted with a quasi-deviance that is not a distance.

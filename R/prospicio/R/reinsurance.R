@@ -586,7 +586,10 @@ S7::method(print, reinsurance_tower) <- function(x, ...) {
 #' @returns A list with `gross` (a [grid_distribution] whose `report`
 #'   describes the compound calculation), `ceded` (a named list of
 #'   [grid_distribution]s at the placed share; a share `c` gives step
-#'   `c * step`), `net` (a [grid_distribution] or `NULL`),
+#'   `c * step`), `stage_ceded` (one [grid_distribution] per stage, its
+#'   layers' total cession, or `NULL` for a stage of several layers one of
+#'   which has annual terms) with `stage_sizes` (the layers in each), `net`
+#'   (a [grid_distribution] or `NULL`),
 #'   `expected_reinstatement_premium` (named, 0 without paid reinstatements),
 #'   `expected_premium` (the swing-rated premium's mean, or else the fixed
 #'   premium), `expected_ceding_commission`, `expected_profit_commission`
@@ -604,6 +607,8 @@ tower_on_grid <- function(tower, frequency, severity, points) {
   list(
     gross = grid_distribution(ptr = r$gross),
     ceded = stats::setNames(lapply(r$ceded, function(p) grid_distribution(ptr = p)), names),
+    stage_ceded = lapply(r$stage_ceded, function(p) if (is.null(p)) NULL else grid_distribution(ptr = p)),
+    stage_sizes = r$stage_sizes,
     net = if (is.null(r$net)) NULL else grid_distribution(ptr = r$net),
     expected_reinstatement_premium = stats::setNames(r$expected_reinstatement_premium, names),
     expected_premium = stats::setNames(r$expected_premium, names),
@@ -625,8 +630,9 @@ tower_on_grid <- function(tower, frequency, severity, points) {
 #' @param grids The result of [tower_on_grid()].
 #' @param distortion A [distortion].
 #' @returns A data frame with columns `view` (`"gross"`, each layer's name,
-#'   `"net"` when the tower has a net grid), `loss`, `premium`, `margin` and
-#'   `loss_ratio`.
+#'   `"stage_<k>"` for the total cession of each stage with several layers
+#'   that has one, `"net"` when the tower has a net grid), `loss`,
+#'   `premium`, `margin` and `loss_ratio`.
 #' @export
 #' @examples
 #' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))
@@ -634,7 +640,11 @@ tower_on_grid <- function(tower, frequency, severity, points) {
 #' r <- tower_on_grid(tw, poisson_count(3), sev, points = 200)
 #' tower_price(r, distortion("proportional_hazard", 0.7))
 tower_price <- function(grids, distortion) {
-  views <- c(list(gross = grids$gross), grids$ceded,
+  # A one-layer stage's total is its layer, already a view.
+  stages <- grids$stage_ceded
+  keep <- which(grids$stage_sizes > 1 & !vapply(stages, is.null, logical(1)))
+  totals <- if (length(keep)) stats::setNames(stages[keep], paste0("stage_", keep)) else list()
+  views <- c(list(gross = grids$gross), grids$ceded, totals,
              if (!is.null(grids$net)) list(net = grids$net))
   loss <- vapply(views, mean, numeric(1))
   premium <- vapply(views, function(g) risk_measure(g, distortion), numeric(1))
@@ -675,5 +685,57 @@ occurrence_layer_statistics <- function(frequency, severity, limit, attachment, 
   ))
   names <- c("mean", "variance", "third_cumulant", "cv", "skew")
   for (k in c("count", "severity", "aggregate")) r[[k]] <- stats::setNames(r[[k]], names)
+  r
+}
+
+#' Statistics of a total cession and of an aggregate cover
+#'
+#' `occurrence_cession_statistics()` is the total cession of several
+#' per-occurrence layers side by side, as the Python package `aggregate`'s
+#' `Ceded` column of `reins_stats_df`: a claim cedes the sum of
+#' `share * min(max(x - attachment, 0), limit)` over the layers. It gives the
+#' chance a claim reaches the lowest layer and of a loss in the year, the
+#' loss on line over the placed limits, and the moments of the ceded loss
+#' per ground-up claim and in the year, exact for the grid.
+#' `aggregate_layer_statistics()` is a layer of an annual total, an
+#' aggregate cover such as a stop loss: the chances of reaching
+#' (`P(S > attachment)`, also the chance of a loss to it) and exhausting it
+#' (`P(S >= attachment + limit)`), the loss on line and the moments of the
+#' ceded loss.
+#'
+#' @inheritParams occurrence_layer_statistics
+#' @param limits,attachments,shares One per layer; `shares` is recycled.
+#' @param annual A [grid_distribution] of the annual total the cover sees,
+#'   such as `tower_on_grid()`'s `gross` or `net`.
+#' @param limit,attachment,share The aggregate cover.
+#' @returns `occurrence_cession_statistics()`: a list with `pr_attach`,
+#'   `pr_loss`, `loss_on_line`, `severity` and `aggregate`.
+#'   `aggregate_layer_statistics()`: a list with `pr_attach`, `pr_detach`,
+#'   `loss_on_line` and `aggregate`. Moments are named vectors as
+#'   [compound_moments()].
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))
+#' occurrence_cession_statistics(poisson_count(3), sev, limits = c(1, 2), attachments = c(1, 2))
+#' annual <- tower_on_grid(reinsurance_tower(list(xol_layer("2x2", 2, 2))),
+#'                         poisson_count(3), sev, points = 200)$gross
+#' aggregate_layer_statistics(annual, limit = 5, attachment = 6)
+occurrence_cession_statistics <- function(frequency, severity, limits, attachments, shares = 1) {
+  shares <- rep_len(as.double(shares), length(limits))
+  r <- rust_result(occurrence_cession_statistics_rust(
+    frequency@ptr, severity@ptr, shares, as.double(limits), as.double(attachments)
+  ))
+  names <- c("mean", "variance", "third_cumulant", "cv", "skew")
+  for (k in c("severity", "aggregate")) r[[k]] <- stats::setNames(r[[k]], names)
+  r
+}
+
+#' @rdname occurrence_cession_statistics
+#' @export
+aggregate_layer_statistics <- function(annual, limit, attachment, share = 1) {
+  r <- rust_result(aggregate_layer_statistics_rust(
+    annual@ptr, as.double(share), as.double(limit), as.double(attachment)
+  ))
+  r$aggregate <- stats::setNames(r$aggregate, c("mean", "variance", "third_cumulant", "cv", "skew"))
   r
 }

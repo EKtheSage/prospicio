@@ -236,6 +236,28 @@ def test_natural_from_independent_and_predictive():
     assert from_pd.totals == [22, 28, 36, 40, 55, 65, 100]
 
 
+def test_priority_ladder():
+    from prospicio.distributions import Grid
+    from prospicio.pricing import Portfolio
+
+    # Pricing Insurance Risk's Discrete case; aggregate 1.0.1's
+    # priority_epd_df at assets 90.
+    x1 = Grid(1.0, [0.5] + [0.0] * 7 + [0.25, 0.0, 0.25])
+    x2 = Grid(1.0, [0.5, 0.25] + [0.0] * 88 + [0.25])
+    port = Portfolio.from_independent(["X1", "X2"], [x1, x2])
+    ladder = port.priority(assets=90)
+    assert ladder["unit"] == ["X1", "X2", "total"]
+    assert ladder["assets"] == 90
+    assert ladder["equal"][:2] == pytest.approx([4.396684, 21.728316], abs=1e-6)
+    assert ladder["junior_epd"][:2] == pytest.approx([0.25, 0.049451], abs=1e-6)
+    assert ladder["senior"][2] == pytest.approx(26.125)
+    junior, senior = port.priority_kappa("X1", assets=90)
+    k = port.totals.index(98.0)
+    assert (junior[k], senior[k]) == pytest.approx((8.0, 0.0), abs=1e-9)
+    with pytest.raises(ValueError):
+        port.priority_kappa("X3", assets=90)
+
+
 def test_premium_bounds_and_classical():
     from prospicio.distributions import Sampled
     from prospicio.pricing import Portfolio, calibrate_classical, classical_premium
@@ -249,3 +271,60 @@ def test_premium_bounds_and_classical():
     assert classical_premium("standard_deviation", Sampled([0.0, 10.0]), 0.2) == 6.0
     with pytest.raises(ValueError):
         classical_premium("nope", x, 0.1)
+
+
+def test_pricing_bounds_and_envelope():
+    from prospicio.distributions import Sampled
+    from prospicio.pricing import PricingBounds, distortion_envelope
+
+    x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+    y = Sampled([0, 0, 11, 0, 7, 8, 9, 10, 40, 64])
+    pb = PricingBounds(x, {"X3": y}, assets=65)
+    assert pb.premium_range == pytest.approx((43.1, 65.0))
+    # At P = max X only TVaRs at 0.8 or above price X; TVaR_1 gives max Y
+    # (aggregate 1.0.1's PricingBounds misses it and says 52).
+    b = pb.bounds(65.0)[0]
+    assert b["risk"] == "X3" and b["upper"] == pytest.approx(64.0)
+    g = b["upper_distortion"]
+    capped = Sampled([min(v, 65) for v in [22, 28, 36, 40, 40, 40, 40, 55, 65, 100]])
+    assert g.measure(y) == pytest.approx(64.0) and g.measure(capped) == pytest.approx(65.0)
+    with pytest.raises(ValueError):
+        pb.bounds(30.0)
+    lower, upper = distortion_envelope(x, 53.565217391304344, [0.1, 0.5])
+    # aggregate 1.0.1's PricingBounds against Bernoulli risks.
+    assert lower == pytest.approx([0.1372282608695652, 0.5652173913043478], abs=1e-12)
+    assert upper[0] == pytest.approx(0.217391304347826, abs=1e-12)
+
+
+def test_tvar_threshold_on_a_portfolio():
+    from prospicio.pricing import Portfolio
+
+    # aggregate 1.0.1, Portfolio.tvar_threshold(0.9, 'lower') on PIR's Discrete case
+    x1, x2, w = [0, 8, 10], [0, 1, 90], [0.5, 0.25, 0.25]
+    rows = [[a, b] for a in x1 for b in x2]
+    probs = [p * q for p in w for q in w]
+    port = Portfolio(["X1", "X2"], rows, probs)
+    assert port.tvar_threshold(0.9) == pytest.approx(0.859375, abs=1e-11)
+
+
+def test_stand_alone_and_comonotonic_allocation():
+    from prospicio.pricing import Portfolio
+    from prospicio.risk import Distortion
+
+    # aggregate 1.0.1 on PIR's Discrete case (aggregate_natural.py)
+    x1, x2, w = [0, 8, 10], [0, 1, 90], [0.5, 0.25, 0.25]
+    rows = [[a, b] for a in x1 for b in x2]
+    probs = [p * q for p in w for q in w]
+    port = Portfolio(["X1", "X2"], rows, probs)
+    s = port.price_stand_alone(Distortion.proportional_hazard(0.7), 0.9)
+    assert s.stand_alone[0].premium == pytest.approx(5.682435936634864, abs=1e-10)
+    assert s.total.premium == pytest.approx(39.27576430346102, abs=1e-10)
+    assert s.sum.premium == pytest.approx(40.02270174816368, abs=1e-10)
+    assert s.to_dict()["unit"] == ["X1", "X2", "total", "sum"]
+    with pytest.raises(ValueError):
+        port.price_stand_alone(Distortion.proportional_hazard(0.7), 1.0)
+    co = port.comonotonic_kappa()
+    totals = port.totals
+    assert co["X1"][totals.index(8.0)] == pytest.approx(6.607142857142858, abs=1e-10)
+    for k, x in enumerate(totals):
+        assert co["X1"][k] + co["X2"][k] == pytest.approx(x, abs=1e-12)

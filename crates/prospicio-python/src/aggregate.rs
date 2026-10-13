@@ -1075,3 +1075,287 @@ pub(crate) fn compound_moments(
     let inner = prospicio_aggregate::compound_moments(n.as_counting(), &sev).map_err(to_py)?;
     Ok(PyCompoundMoments { inner })
 }
+
+/// The probability of eventual ruin at each initial surplus on the grid, by
+/// the Pollaczeck–Khinchine formula, from ``eventual_ruin``.
+#[pyclass(name = "Ruin", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyRuin {
+    inner: prospicio_aggregate::Ruin,
+}
+
+#[pymethods]
+impl PyRuin {
+    /// The margin ``rho``; the loss ratio is ``1 / (1 + rho)``.
+    #[getter]
+    fn rho(&self) -> f64 {
+        self.inner.rho()
+    }
+
+    /// The initial surplus at each grid point.
+    #[getter]
+    fn u(&self) -> Vec<f64> {
+        let h = self.inner.step();
+        (0..self.inner.psi().len()).map(|j| j as f64 * h).collect()
+    }
+
+    /// ``psi(u)`` at each grid point; the last is the mass beyond the grid.
+    #[getter]
+    fn psi(&self) -> Vec<f64> {
+        self.inner.psi().to_vec()
+    }
+
+    /// ``psi(u)`` at any initial surplus (constant between grid points).
+    ///
+    /// Parameters
+    /// ----------
+    /// u : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn psi_at(&self, u: f64) -> f64 {
+        self.inner.psi_at(u)
+    }
+
+    /// The initial surplus for ruin probability ``p``: the smallest grid
+    /// point with ``psi(u) < p``, or linear between grid points.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    /// interpolate : bool, default False
+    ///
+    /// Returns
+    /// -------
+    /// float or None
+    ///     None when the grid does not reach it.
+    #[pyo3(signature = (p, interpolate=false))]
+    fn capital(&self, p: f64, interpolate: bool) -> Option<f64> {
+        if interpolate {
+            self.inner.capital_interpolated(p)
+        } else {
+            self.inner.capital(p)
+        }
+    }
+
+    /// The Lundberg exponent ``R`` with ``psi(u) <= exp(-R u)``, or None
+    /// when the grid's severity has no root below ``700 / max(x)``.
+    #[getter]
+    fn lundberg_exponent(&self) -> Option<f64> {
+        self.inner.lundberg_exponent()
+    }
+
+    /// The severity's mean on the grid, after any cap, excess or stop loss.
+    #[getter]
+    fn severity_mean(&self) -> f64 {
+        self.inner.severity_mean()
+    }
+
+    /// The equilibrium (integrated tail) severity.
+    #[getter]
+    fn equilibrium(&self) -> PyGrid {
+        PyGrid {
+            inner: self.inner.equilibrium().clone(),
+        }
+    }
+
+    /// The compound FFT's report; read ``aliasing_error``.
+    #[getter]
+    fn report(&self) -> PyCompoundReport {
+        PyCompoundReport {
+            inner: self.inner.report().clone(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Ruin(rho={}, psi(0)={:.6}, points={})",
+            self.inner.rho(),
+            self.inner.psi()[0],
+            self.inner.psi().len()
+        )
+    }
+}
+
+/// The probability of eventual ruin of the classical surplus process by
+/// the Pollaczeck–Khinchine formula, as ``aggregate``'s
+/// ``pollaczeck_khinchine`` and ``eventual_ruin``: Poisson claims with this
+/// severity and a premium at ``1 + rho`` times the expected loss. The
+/// Poisson rate cancels. The maximal aggregate loss is a compound geometric
+/// of the equilibrium severity, by FFT.
+///
+/// Parameters
+/// ----------
+/// severity : Grid
+/// rho : float, optional
+///     The margin to loss, positive. Or give ``loss_ratio``.
+/// loss_ratio : float, optional
+///     ``1 / (1 + rho)``, in (0, 1).
+/// points : int, optional
+///     Grid points for ``psi``; the severity's by default.
+/// cap : float, optional
+///     Use ``X | X <= cap``.
+/// excess : float, optional
+///     Use ``X | X > excess`` (not shifted).
+/// stop_loss : float, optional
+///     Use ``X`` with the mass above ``stop_loss`` moved onto it.
+///
+/// Returns
+/// -------
+/// Ruin
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import eventual_ruin
+/// >>> from prospicio.distributions import Gamma, Grid
+/// >>> sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.0), 1.0, 1 << 14)
+/// >>> ruin = eventual_ruin(sev, rho=0.2)
+/// >>> # Exponential claims: exp(-u / 600) / 1.2 = 0.157; the step costs 1%.
+/// >>> round(ruin.psi_at(1000.0), 3)
+/// 0.156
+#[pyfunction]
+#[pyo3(signature = (severity, rho=None, *, loss_ratio=None, points=None, cap=None, excess=None,
+                    stop_loss=None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn eventual_ruin(
+    severity: PyRef<'_, PyGrid>,
+    rho: Option<f64>,
+    loss_ratio: Option<f64>,
+    points: Option<usize>,
+    cap: Option<f64>,
+    excess: Option<f64>,
+    stop_loss: Option<f64>,
+) -> PyResult<PyRuin> {
+    use prospicio_aggregate::SeverityPart;
+    use pyo3::exceptions::PyValueError;
+    let rho = match (rho, loss_ratio) {
+        (Some(r), None) => r,
+        (None, Some(lr)) if lr > 0.0 && lr < 1.0 => 1.0 / lr - 1.0,
+        (None, Some(lr)) => {
+            return Err(PyValueError::new_err(format!(
+                "the loss ratio must be in (0, 1), not {lr}"
+            )));
+        }
+        _ => {
+            return Err(PyValueError::new_err(
+                "give exactly one of rho and loss_ratio",
+            ));
+        }
+    };
+    let part = match (cap, excess, stop_loss) {
+        (None, None, None) => SeverityPart::All,
+        (Some(c), None, None) => SeverityPart::AtMost(c),
+        (None, Some(c), None) => SeverityPart::Above(c),
+        (None, None, Some(s)) => SeverityPart::StopLoss(s),
+        _ => {
+            return Err(PyValueError::new_err(
+                "give at most one of cap, excess and stop_loss",
+            ));
+        }
+    };
+    let points = points.unwrap_or(severity.inner.len());
+    let inner = prospicio_aggregate::pollaczeck_khinchine(&severity.inner, rho, points, part)
+        .map_err(to_py)?;
+    Ok(PyRuin { inner })
+}
+
+/// A severity reshaped to layer loss picks, from ``layer_loss_picks``.
+#[pyclass(name = "Picks", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyPicks {
+    inner: prospicio_aggregate::Picks,
+}
+
+#[pymethods]
+impl PyPicks {
+    /// The adjusted severity, on the same grid.
+    #[getter]
+    fn severity(&self) -> PyGrid {
+        PyGrid {
+            inner: self.inner.severity.clone(),
+        }
+    }
+
+    /// Whether the bottom layer took the straight-line shape.
+    #[getter]
+    fn straight_bottom(&self) -> bool {
+        self.inner.straight_bottom
+    }
+
+    /// Each layer, bottom up, as columns: ``bottom``, ``top``, ``before``
+    /// and ``target`` (the expected loss per claim before and after),
+    /// ``weight`` (on the survival function) and ``above`` (the adjusted
+    /// chance of a loss above the layer).
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let l = &self.inner.layers;
+        let col = |f: fn(&prospicio_aggregate::PickedLayer) -> f64| -> Vec<f64> {
+            l.iter().map(f).collect()
+        };
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("bottom", col(|x| x.bottom))?;
+        d.set_item("top", col(|x| x.top))?;
+        d.set_item("before", col(|x| x.before))?;
+        d.set_item("target", col(|x| x.target))?;
+        d.set_item("weight", col(|x| x.weight))?;
+        d.set_item("above", col(|x| x.above))?;
+        Ok(d)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Picks(layers={}, straight_bottom={})",
+            self.inner.layers.len(),
+            if self.inner.straight_bottom {
+                "True"
+            } else {
+                "False"
+            }
+        )
+    }
+}
+
+/// Reshapes a severity so that its expected loss to each layer hits a
+/// pick, as ``aggregate``'s ``Aggregate.picks``: in each layer the survival
+/// function is rescaled about its value at the layer's top, keeping its
+/// shape there; above the top attachment the severity is kept.
+///
+/// Parameters
+/// ----------
+/// severity : Grid
+/// attachments : list of float
+///     Increasing grid points; the layers are 0 to the first, then between
+///     consecutive attachments.
+/// picks : list of float
+///     The loss to each layer for ``claims`` expected ground-up claims.
+/// claims : float, default 1.0
+///
+/// Returns
+/// -------
+/// Picks
+///
+/// Raises
+/// ------
+/// ValueError
+///     If an attachment is not a grid point or the picks are infeasible (a
+///     pick below what the layers above force through its layer).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import layer_loss_picks
+/// >>> from prospicio.distributions import Gamma, Grid
+/// >>> sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.5), 1.0, 1 << 14)
+/// >>> picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
+/// >>> [round(10 * t, 6) for t in picked.to_dict()["target"]]
+/// [480.0, 420.0, 60.0]
+#[pyfunction]
+#[pyo3(signature = (severity, attachments, picks, claims=1.0))]
+pub(crate) fn layer_loss_picks(
+    severity: PyRef<'_, PyGrid>,
+    attachments: Vec<f64>,
+    picks: Vec<f64>,
+    claims: f64,
+) -> PyResult<PyPicks> {
+    let inner =
+        prospicio_aggregate::layer_loss_picks(&severity.inner, &attachments, &picks, claims)
+            .map_err(to_py)?;
+    Ok(PyPicks { inner })
+}

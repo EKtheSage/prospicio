@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-12T18:30:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-13T07:30:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -31,6 +31,21 @@ sources:
   - id: reins
     resource: ../validation/scripts/aggregate_reinsurance.py
     title: aggregate_reinsurance.py
+  - id: natural
+    resource: ../validation/scripts/aggregate_natural.py
+    title: aggregate_natural.py
+  - id: ruin
+    resource: ../validation/scripts/aggregate_ruin.py
+    title: aggregate_ruin.py
+  - id: picks
+    resource: ../validation/scripts/aggregate_picks.py
+    title: aggregate_picks.py
+  - id: bounds
+    resource: ../validation/scripts/aggregate_bounds.py
+    title: aggregate_bounds.py
+  - id: counts
+    resource: ../validation/scripts/aggregate_counts.py
+    title: aggregate_counts.py
 ---
 
 # Which source for what
@@ -85,7 +100,7 @@ sources:
     `max(1 - cumsum(p), 0)`; a residue of `1e-16` there would add the
     CCoC mass times the maximum to the price.
   * 1.0.1 has no `epd` kind in `var_dict`; `priority_epd_df` gives EPD
-    by unit, and refuses a portfolio built from a sample.
+    by unit, and refuses a portfolio built from a sample (below).
 * `AllocationBounds(port, a=).bounds([P])` takes its BiTVaR knots from the
   cumulative probabilities of `X ∧ a`; a level inside the atom at `a`
   would price the total the same but split the linear allocation
@@ -216,7 +231,139 @@ sources:
   the top differ by as much. With `normalize=False`, prospicio's
   `Tower::on_grid` matches its densities at `1e-14`.[^reins]
 
+# The priority ladder
+
+* `Portfolio.priority_epd_df(assets=)` (or `p=`) and
+  `priority_kappa(unit, assets=)` need the independent combine of the
+  units: a portfolio from `create_from_sample` (InsCo) raises `ValueError`
+  ("the units' transforms do not reproduce density_df p_total"). So the
+  ladder is checked on `build`'s independent books, the Discrete case and
+  a three-unit one.[^natural]
+* The asset level is snapped to the nearest grid point
+  (`.attrs['assets']`); `mean` is the represented mean of the grid, not the
+  declared one; the `total` group repeats `E[X ∧ a]` under all three
+  rules.[^natural]
+* `priority_kappa` returns `(junior, senior, p_total)` on the whole grid,
+  `NaN` where `p_total` is below machine epsilon, and FFT noise of about
+  `5e-15` (including small negatives) where the exact value is 0.[^natural]
+* Senior and junior are two-tier readings (unit against the rest pooled);
+  1.0.1 has no ordered k-tier schedule.[^natural]
+
+# Eventual ruin
+
+* `Aggregate.pollaczeck_khinchine(rho, cap=, excess=, stop_loss=,
+  kind=)` returns `(ruin, find_u, mean, density)`: `ruin` a Series of
+  `ψ(u)` on the severity grid's index, `density` the equilibrium severity
+  `bs S(x) / mean` with `S` strictly above `x`. It needs a Poisson
+  frequency; the rate cancels.[^ruin]
+* `ψ` is one FFT of twice the grid with wrapping; on the books checked
+  (2^16 points) it agrees with a compound FFT at four and eight times the
+  grid to `1e-12`, so the wrap is negligible there.[^ruin]
+* `find_u(p)` with `kind='index'` is the smallest grid point with
+  `ψ < p` (strict); `kind='interp'` interpolates linearly between the
+  bracketing points.[^ruin]
+* `eventual_ruin` reports the Lundberg exponent from the private
+  `_lundberg_exponent(p_sev, xs, rho)`, by brentq on `(1e-12, 700 / max x)`
+  of the whole severity (not the capped one), and a 1,000-path simulated
+  check of the same discretized model.[^ruin]
+
+# Layer loss picks
+
+* `Aggregate.picks(attachments, layer_loss_picks)` returns the adjusted
+  severity probabilities (`_picks_work`, with `debug=True` a namedtuple of
+  `layers`, `exact`, `density`, `audit`); the picks are annual, divided by
+  the aggregate's `n`. Attachments off the grid raise a `ValueError` naming
+  a compatible bucket.[^picks]
+* The adjusted survival is `min(1, ω + (S − S(a)) w)` per layer, bins
+  right-closed with 0 in the bottom one; the layer integrals are left sums
+  `bs Σ S` over `[a_{i−1}, aᵢ)`. Continuity at the attachments makes the
+  two conventions agree.[^picks]
+* When the cap at 1 makes the bottom layer miss its pick by more than
+  `1e-3` (per claim) it rebuilds the bottom layer as 1 then a straight line,
+  with the line's length rounded to the grid, and warns "Revised layer 1
+  achieved": 704.90 for a pick of 700 on a gamma (mean 100, cv 1.5) with
+  10 claims and a step of 1. A smaller miss is kept silently.[^picks]
+* Infeasible picks (a negative weight) only warn, and the returned
+  probabilities are negative.[^picks]
+
+# Total cession and aggregate covers
+
+* With several occurrence layers `reins_price_df`'s `ceded` row and
+  `reins_stats_df`'s `Ceded` column are their total cession. The `Ceded`
+  column's `freq` is the ground-up count and its `sev` the ceded loss per
+  ground-up claim (zeros included); `pr_attach` and `pr_loss` are at the
+  lowest attachment, `lol` is over the summed limits. Its per-claim cv and
+  skewness come off the ceded severity density, 1.5e-11 and 2.6e-9 off the
+  points' moments.[^reins]
+* An aggregate cover's statistics are the `agg` block's `layer.1`:
+  `pr_attach = pr_loss = P(S > a)`, `pr_detach = P(S ≥ a + l)`, read off
+  the annual FFT density (3e-14 absolute round-off; a rare cover's skew of
+  32 is 1.4e-6 off the grid's exact moments). In DecL, `occurrence net
+  of` puts the aggregate cover on the occurrence net, `occurrence ceded to`
+  on the occurrence cession.[^reins]
+
+# Pricing bounds
+
+* `aggregate.bounds.PricingBounds(x, ys, a=)` takes pmf Series (or
+  Aggregates, Portfolios); `.bounds(P)` is a frame on `(P, risk)` with
+  `lower`, `upper`, `width`; `.bitvars(P)` the attaining BiTVaRs. P must be
+  in `[E[X], max X]` of the capped X.[^bounds]
+* Its vertices are `p = 0` and the breakpoints below 1 (with tail at
+  least `s_floor = 1e-14`), deduplicated on "first vertex attaining each
+  `TVaR_p(X)`". So where X's top atom is larger than Y's, the `p → 1`
+  vertex `(max X, max Y)` is lost and the upper bound is too low: InsCo's
+  total and X3 capped at 65, at P = 65, give 52 where `TVaR_1` attains
+  64.[^bounds]
+* `Bounds(x, P)` searches 256 levels (refined near `p*`, found by brentq to
+  `xtol = 2^-17`) and an s-grid of 513; its `max_envelope` interpolates
+  linearly in s and can exceed the exact envelope by 2.4e-4 at a kink (s =
+  0.1 on InsCo).[^bounds]
+* `GridDistribution` lives in `aggregate._grid_distribution`, not the
+  package root.[^bounds]
+
+# TVaR thresholds and named counts
+
+* `tvar_threshold(p, kind)` (on `GridDistribution`, and `Portfolio`
+  through its total) bisects `TVaR(t) − VaR(p)` on `[0, 1]` with scipy's
+  `bisect` (`xtol = 2e-12`, so 0.859375 comes back as 0.859375000001819).
+  It raises when the VaR is at or below the mean (no sign change; at
+  `p = 0` it returns 0) and returns 1 when the VaR is the largest value,
+  where every `t` past the last value's cumulative start
+  qualifies.[^natural]
+* Its grid TVaR is the coherent `(1/(1 − p)) ∫_p^1 VaR_u du`, returning the
+  largest point once `p` reaches the last point's cumulative
+  start.[^natural]
+* `fixed` is `N = n` with pgf `zⁿ` (meaningless for a fractional `n`);
+  `bernoulli` reads the mean `n < 1` as the chance of one claim;
+  `geometric` is on `0, 1, …` with `P(N = 0) = 1 / (1 + n)`, a negative
+  binomial with `r = 1`.[^counts]
+
+# Stand-alone prices, the comonotonic allocation, reinstatements
+
+* `Portfolio.price_stand_alone(dist, p)` prices each unit with
+  `Aggregate.price(p, dist)`: assets at the unit's own `q(p)`, `L` and `P`
+  read from `density_df`'s `exa` and `exag` there; `total` comes from
+  `pricing_at`, and `sum` adds `L, M, P, Q` and re-derives the
+  ratios.[^natural]
+* `make_comonotonic_allocations` runs Denuit et al.'s (2025) algorithm on
+  every grid point up to `q(1)`, including points with zero probability,
+  where `exeqa_` is 0 and the result shows odd values (−2.15 for X1 at a
+  total of 7 in the three-unit Discrete case). Run on the positive-mass
+  totals only, the values there are the same to 3e-14.[^natural]
+* Reinstatement premiums are priced only inside the P&L builders
+  (`_pnl_builders.build_reinstatement_source`), from
+  `ReinstatementTerms` (pro rata as to amount, not as to time) on the
+  unlimited occurrence recovery; a DecL build without `pnl` leaves no
+  `reinstatement_terms` on the object, and `reins_stats_df` ignores the
+  clause. `E[h(R)]` on `reins_density_df`'s `p_agg_ceded_occ` gives the
+  expected reinstatement premium.[^reins]
+
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
 [^reins]: aggregate_reinsurance.py
+[^natural]: aggregate_natural.py
+[^ruin]: aggregate_ruin.py
+[^picks]: aggregate_picks.py
+[^bounds]: aggregate_bounds.py
+[^counts]: aggregate_counts.py
