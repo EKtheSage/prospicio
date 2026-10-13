@@ -29,3 +29,9 @@
   with waits of zero arriving in clusters), on `aggregate`'s wait grid or
   a given one, matching `aggregate` 1.0.1's `years ... wait ...`
   frequency. Python `Count.renewal`; R `renewal_count()` (#236).
+- Eventual ruin for renewal claims: `ψ(u)` when the waits between claims
+  follow any law and the premium comes in at `(1 + ρ)` times the expected
+  loss rate, by the cepstral Wiener–Hopf factorization of the claim walk
+  (`prospicio_aggregate::ruin::wiener_hopf`, returning `RenewalRuin`),
+  matching `aggregate` 1.0.1's `wiener_hopf`. Python `wiener_hopf`; R
+  `wiener_hopf()`.

@@ -526,6 +526,38 @@ fn eventual_ruin_rust(
     ))
 }
 
+/// Eventual ruin for renewal claims by Wiener–Hopf: `list(u, psi, maximum,
+/// capital, capital_interpolated, premium_rate, severity_mean, mean_step)`.
+/// `points` 0 for the severity's.
+#[extendr]
+fn wiener_hopf_rust(severity: Robj, wait: Robj, rho: f64, points: f64, p: &[f64]) -> Result<List> {
+    let sev = <&Grid>::try_from(&severity)
+        .map_err(|_| Error::Other("the severity must be a grid_distribution".into()))?;
+    let wait = crate::distributions::dist_from_robj(&wait)?;
+    let points = match whole(points, "points")? as usize {
+        0 => sev.inner.len(),
+        n => n,
+    };
+    let ruin = prospicio_aggregate::wiener_hopf(&sev.inner, &wait, rho, points).map_err(to_r)?;
+    let h = ruin.step();
+    let na = |v: Option<f64>| v.unwrap_or(f64::NAN);
+    Ok(list!(
+        u = (0..ruin.psi().len())
+            .map(|j| j as f64 * h)
+            .collect::<Vec<f64>>(),
+        psi = ruin.psi().to_vec(),
+        maximum = ruin.maximum().to_vec(),
+        capital = p.iter().map(|&p| na(ruin.capital(p))).collect::<Vec<f64>>(),
+        capital_interpolated = p
+            .iter()
+            .map(|&p| na(ruin.capital_interpolated(p)))
+            .collect::<Vec<f64>>(),
+        premium_rate = ruin.premium_rate(),
+        severity_mean = ruin.severity_mean(),
+        mean_step = ruin.mean_step()
+    ))
+}
+
 /// Layer loss picks: `list(severity, straight_bottom, layers)`.
 #[extendr]
 fn layer_loss_picks_rust(
@@ -753,6 +785,7 @@ extendr_module! {
     fn copula_severity_rust;
     fn layer_loss_picks_rust;
     fn eventual_ruin_rust;
+    fn wiener_hopf_rust;
     fn fft_bivariate_rust;
     fn clash_rust;
     fn clash_aggregate_rust;

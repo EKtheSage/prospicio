@@ -1009,3 +1009,65 @@ fn renewal_counts_match_aggregate() {
         }
     });
 }
+
+#[test]
+fn wiener_hopf_ruin_matches_aggregate() {
+    use prospicio_aggregate::ruin::{RenewalRuin, wiener_hopf};
+    use prospicio_prob::{Distribution, Gamma, Lognormal, Mixture, Severity};
+    // validation/scripts/aggregate_wiener_hopf.py: severities on a step of
+    // 1/32 over 2^16 points, discretized by rounding as aggregate does it:
+    // survival differences, the mass past the last cell dropped and the
+    // rest rescaled (Grid::rounding puts it on the last point, 1e-9 of the
+    // lognormal's mean).
+    let h = 1.0 / 32.0;
+    let points = 1 << 16;
+    let rounding = |d: &dyn Distribution| {
+        let mut upper = 1.0;
+        let mut p: Vec<f64> = (0..points)
+            .map(|j| {
+                let next = d.survival((j as f64 + 0.5) * h);
+                let v = upper - next;
+                upper = next;
+                v
+            })
+            .collect();
+        let total: f64 = p.iter().sum();
+        p.iter_mut().for_each(|v| *v /= total);
+        Grid::new(h, p).unwrap()
+    };
+    let light = rounding(&Gamma::from_mean_cv(10.0, 0.3).unwrap());
+    let heavy = rounding(&Lognormal::from_mean_cv(10.0, 1.0).unwrap());
+    let expon = Gamma::new(1.0, 1.0).unwrap();
+    let gamma = Gamma::new(2.0, 1.0).unwrap();
+    let parts: Vec<(f64, Box<dyn Severity + Send + Sync>)> = vec![
+        (0.5, Box::new(Gamma::new(1.0, 0.6).unwrap())),
+        (0.5, Box::new(Gamma::new(1.0, 0.4).unwrap())),
+    ];
+    let mixture = Mixture::new(parts).unwrap();
+    let half = Gamma::new(0.5, 2.0).unwrap();
+    let mut fits: std::collections::HashMap<String, RenewalRuin> = Default::default();
+    let cases = reference("wiener_hopf_aggregate.csv");
+    check(&cases, |c| {
+        let key = format!("{} {}", c.get("case"), c.get("rho"));
+        if !fits.contains_key(&key) {
+            let (sev, wait): (&Grid, &dyn Distribution) = match c.get("case") {
+                "expon" => (&light, &expon),
+                "gamma" => (&light, &gamma),
+                "mixture" => (&light, &mixture),
+                "heavy" => (&heavy, &half),
+                _ => return None,
+            };
+            let ruin = wiener_hopf(sev, wait, c.number("rho")?, points).ok()?;
+            fits.insert(key.clone(), ruin);
+        }
+        let ruin = &fits[&key];
+        let arg = c.number("arg");
+        match c.get("quantity") {
+            "mean" => Some(ruin.severity_mean()),
+            "psi" => Some(ruin.psi_at(arg?)),
+            "u_index" => ruin.capital(arg?),
+            "max_pmf" => Some(ruin.maximum()[arg? as usize]),
+            _ => None,
+        }
+    });
+}

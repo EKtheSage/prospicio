@@ -86,6 +86,9 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   number of claims by a horizon when the waits between claims follow any
   law, `aggregate`'s renewal frequency ("Renewal counts" below). Python
   `Count.renewal`, R `renewal_count()`.
+- `prospicio_aggregate::ruin::{wiener_hopf, RenewalRuin}`: eventual ruin
+  for renewal claims, `aggregate`'s `wiener_hopf` ("Eventual ruin for
+  renewal claims" below). Python `wiener_hopf`, R `wiener_hopf()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -578,8 +581,8 @@ rate cancels.
   `M_X(R) = 1 + (1 + ρ) E[X] R` on the grid's severity below the overflow
   guard `700 / max(x)`, else none.
 - `eventual_ruin`'s simulated check of the same discretized model is not
-  carried: the exact `ψ` is the deliverable. Ruin for renewal claims
-  (Wiener–Hopf) comes next, on the renewal counts below.
+  carried: the exact `ψ` is the deliverable. Ruin for renewal claims is
+  "Eventual ruin for renewal claims" below.
 
 ### Renewal counts
 
@@ -625,6 +628,39 @@ Sparre Andersen process; exponential waits give the Poisson).
   wait covers the conditional splice.
 - Python `Count.renewal(wait, horizon, *, step, points, closed)`, with
   `wait` a distribution or `(values, probs)`; R `renewal_count()`.
+
+### Eventual ruin for renewal claims
+
+`aggregate`'s `wiener_hopf`, in `prospicio_aggregate::ruin`:
+`wiener_hopf(&severity, &wait, rho, points)` returns a `RenewalRuin`
+(`ψ`, the all-time maximum's probabilities, the capital lookups of `Ruin`,
+the premium rate and the grid's mean step). The waits between claims
+follow any law; the premium comes in at `c = (1 + ρ) E[X] / E[W]`, so `ρ`
+keeps its Pollaczeck–Khinchine meaning, and exponential waits give
+`pollaczeck_khinchine` up to the grid.
+
+- Ruin happens only at a claim, so `ψ(u) = P(M > u)` for the all-time
+  maximum `M` of the walk with steps `Y = X − cW` (finite when `E[Y] < 0`,
+  checked on the grid). Outside the Poisson case `M`'s ladder heights have
+  no closed form; they come from the Wiener–Hopf factorization
+  `1 − φ_Y = (1 − χ₊)(1 − χ₋)` by its cepstrum: the coefficients of
+  `log(1 − χ₊)` sit on the strictly positive lags and those of
+  `log(1 − χ₋)` on the rest, so the split is a cut (Spitzer's identity).
+  The zero of `1 − φ_Y` at `z = 1` is divided out as `1 − z⁻¹` (a minus
+  factor) with the value `−E[Y]` there, which leaves the phase with no
+  winding, unwrapped as `numpy.unwrap`. Four FFTs on a circle of
+  `2 · points`.
+- `cW` is put on the severity's grid by rounding (survival differences on
+  steps of `h / c`), its mass past the grid dropped; `E[Y]` is the grid's
+  own, which absorbs that drop. The severity rides its grid as given (in
+  `aggregate`, its rounding pmf rescaled to 1).
+- `ψ` at the last point is the diagnostic (`aggregate` warns above
+  `1e-6`): heavy tails need more `points`, which must be at least the
+  severity's.
+- Not carried: the defective wait (`aggregate` refuses it too) and the
+  simulated paths of `ruin_example`.
+- Python `wiener_hopf(severity, wait, rho, *, loss_ratio, points)`
+  returning `RenewalRuin`; R `wiener_hopf()`.
 
 ### Layer loss picks
 
@@ -881,6 +917,17 @@ prospicio within 5e-11; 42 more rows check prospicio against the exact
 values at `1e-9`: the Poisson for exponential waits, and `P(N = 0) =
 P(W > T)` for the others.
 
+Eventual ruin for renewal claims is checked against `aggregate` 1.0.1's
+`wiener_hopf` (`validation/scripts/aggregate_wiener_hopf.py`, 96 values):
+a gamma severity (mean 10, cv 0.3) with exponential, gamma (shape 2) and
+mixed exponential waits, and a lognormal (mean 10, cv 1) with gamma waits
+of shape 0.5, on a step of 1/32 over `2^16` points, at ρ = 0.1 and 0.3.
+The severities are put on the grid as `aggregate` does (the tail past the
+grid dropped and the rest rescaled, not piled on the last point). `ψ` and
+the maximum's probability at 0 match at `1e-10` (observed 3e-12), the
+capital on the grid exactly, the severity's mean at `1e-12` relative. A
+unit test checks exponential waits against `pollaczeck_khinchine`.
+
 Layer loss picks are checked against `aggregate` 1.0.1's `Aggregate.picks`
 (`validation/scripts/aggregate_picks.py`, 406 values) on a gamma severity
 (mean 100, cv 1.5) on `2^14` points with layers to 100, 500 and 1,000:
@@ -969,8 +1016,7 @@ copula, the t copula, a trigger outside `[0, 1]`).
    Parked as large, and the candidates for what comes next: (done:
    bivariate FFT aggregates, `clash`, and copula coupling of the two lines;
    see "Two lines and clash"; renewal counts, see "Renewal counts");
-   then eventual ruin for renewal claims by Wiener–Hopf (`wiener_hopf`,
-   the cepstral factorization of the claim walk), and the P&L ledger
-   (`pnl`, which needs signed grids).
+   eventual ruin for renewal claims, see "Eventual ruin for renewal
+   claims"); then the P&L ledger (`pnl`, which needs signed grids).
 2. Deficit and credit carry-forward in profit commissions and sliding
    scales, once multi-year simulation exists.

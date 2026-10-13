@@ -37,10 +37,10 @@ mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{
         PyApproximation, PyBivariateReport, PyClash, PyCompoundMoments, PyCompoundReport,
-        PyEventLossTable, PyEventSet, PyGridSize, PyJointGrid, PyOccurrencePml, PyPicks, PyRuin,
-        compound_moments, eventual_ruin, fft, fft_auto, fft_bivariate, layer_loss_picks,
-        occurrence_exceedance, occurrence_pml, panjer, recommend_grid, round_bucket,
-        simulate_events,
+        PyEventLossTable, PyEventSet, PyGridSize, PyJointGrid, PyOccurrencePml, PyPicks,
+        PyRenewalRuin, PyRuin, compound_moments, eventual_ruin, fft, fft_auto, fft_bivariate,
+        layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer, recommend_grid,
+        round_bucket, simulate_events, wiener_hopf,
     };
     #[pymodule_export]
     use super::counts::PyCount;
