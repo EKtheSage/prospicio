@@ -22,8 +22,10 @@ use prospicio_reserving::{
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
+use prospicio_reserving::bayes::{BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment};
 use prospicio_reserving::{
-    BayesOdp, BayesOdpFit as BayesOdpInner, Meyers, MeyersFit as MeyersInner, MeyersModel,
+    BayesOdp, BayesOdpFit as BayesOdpInner, Diagnostics, Meyers, MeyersFit as MeyersInner,
+    MeyersModel,
 };
 
 use crate::distributions::PredictiveDistribution;
@@ -859,6 +861,52 @@ impl Triangle {
         };
         let inner = model.fit(&self.inner, column).map_err(to_r)?;
         Ok(BayesOdpFit { inner })
+    }
+
+    /// The Bayesian ODP chain ladder of every segment of a triangle column,
+    /// with the settings of `bayes_odp`, each segment's own posterior, and
+    /// the segments depending on each other as `dependence`
+    /// ("independent", "rank_correlation" with the row-major `spearman`
+    /// matrix, or "synchronized", an error) says.
+    #[allow(clippy::too_many_arguments)]
+    fn bayes_odp_segments(
+        &self,
+        column: &str,
+        intercept_sd: f64,
+        origin_sd: f64,
+        development_sd: f64,
+        process: &str,
+        chains: f64,
+        tune: f64,
+        draws: f64,
+        n_sims: f64,
+        seed: f64,
+        target_accept: f64,
+        max_depth: f64,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
+    ) -> Result<BayesOdpFits> {
+        let dependence = segment_dependence(dependence, spearman)?;
+        let boot = bootstrap(n_sims, seed, process, SegmentDependence::Independent)?;
+        let model = BayesOdp {
+            intercept_sd,
+            origin_sd,
+            development_sd,
+            process: boot.process,
+            sampler: BayesSampler {
+                chains: whole(chains, "chains")? as usize,
+                tune: whole(tune, "tune")? as usize,
+                draws: whole(draws, "draws")? as usize,
+                seed: 0,
+                target_accept,
+                max_depth: whole(max_depth, "max_depth")?,
+            },
+            n_sims: boot.n_sims,
+            seed: boot.seed,
+            dependence,
+        };
+        let inner = model.fit_segments(&self.inner, column).map_err(to_r)?;
+        Ok(BayesOdpFits { inner })
     }
 
     /// Meyers' CRC or CSR model (`model`, "crc" or "csr") of a
@@ -2149,6 +2197,133 @@ impl BayesOdpFit {
     }
 }
 
+/// A posterior summary as a list of columns, as `bayes_glm_model@summary`.
+fn summary_list(s: &[ParamSummary]) -> List {
+    let col = |g: fn(&ParamSummary) -> f64| s.iter().map(g).collect::<Vec<f64>>();
+    list!(
+        parameter = s.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+        mean = col(|p| p.mean),
+        sd = col(|p| p.sd),
+        q05 = col(|p| p.q05),
+        q50 = col(|p| p.q50),
+        q95 = col(|p| p.q95),
+        rhat = col(|p| p.rhat),
+        ess_bulk = col(|p| p.ess_bulk),
+        ess_tail = col(|p| p.ess_tail)
+    )
+}
+
+/// The Bayesian ODP chain ladder of every segment of a triangle column:
+/// each segment's posterior and the joint reserves. The posterior of one
+/// segment needs a single-segment fit.
+#[extendr]
+pub(crate) struct BayesOdpFits {
+    inner: BayesOdpFitsInner,
+}
+
+impl BayesOdpFits {
+    fn one(&self, field: &str, instead: &str) -> Result<&BayesOdpSegment> {
+        single(&self.inner.segments, field, instead)
+    }
+}
+
+#[extendr]
+impl BayesOdpFits {
+    /// The volume-weighted chain ladder of every segment.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self.inner.segments.map(|s| s.chain_ladder.clone()),
+        }
+    }
+
+    fn scale(&self) -> Result<f64> {
+        Ok(self.one("scale", "totals_frame()")?.scale)
+    }
+
+    fn reserves(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    /// One row per segment: `list(table, warnings)`, `table` a fit table
+    /// with the key columns and `max_rhat`, `min_ess_bulk`, `min_ess_tail`
+    /// and `divergences`, `warnings` each segment's messages joined by
+    /// "; ".
+    fn diagnostics_table(&self) -> List {
+        let fits = &self.inner.segments.fits;
+        let col = |g: fn(&Diagnostics) -> f64| {
+            fits.iter().map(|f| g(&f.diagnostics)).collect::<Vec<f64>>()
+        };
+        let table = FitTable {
+            keys: self.inner.totals().keys,
+            origin: None,
+            age: None,
+            values: vec![
+                ("max_rhat".into(), col(|d| d.max_rhat)),
+                ("min_ess_bulk".into(), col(|d| d.min_ess_bulk)),
+                ("min_ess_tail".into(), col(|d| d.min_ess_tail)),
+                ("divergences".into(), col(|d| d.divergences as f64)),
+            ],
+        };
+        let warnings: Vec<String> = fits
+            .iter()
+            .map(|f| f.diagnostics.warnings.join("; "))
+            .collect();
+        list!(table = fit_table(table), warnings = warnings)
+    }
+
+    fn parameter_names(&self) -> Result<Vec<String>> {
+        Ok(self.one("draws", "")?.posterior.names().to_vec())
+    }
+
+    /// Posterior draws of a single-segment fit, row-major `n_draws x
+    /// n_parameters`, chain by chain.
+    fn draws(&self) -> Result<Vec<f64>> {
+        Ok(self.one("draws", "")?.posterior.values().to_vec())
+    }
+
+    fn chains(&self) -> Result<f64> {
+        Ok(self.one("draws", "")?.posterior.chains() as f64)
+    }
+
+    fn summary(&self) -> Result<List> {
+        let s = self.one("summary", "")?.summary().map_err(to_r)?;
+        Ok(summary_list(&s))
+    }
+
+    /// PSIS-LOO of a single-segment fit's observed increments, as
+    /// `BayesOdpFit$loo()`.
+    fn loo(&self) -> Result<List> {
+        let l = self.one("bayes_loo()", "")?.loo().map_err(to_r)?;
+        let e = &l.estimate;
+        Ok(list!(
+            estimates = vec![e.elpd, e.se, e.p, e.ic],
+            pointwise = e.pointwise.clone(),
+            pareto_k = l.pareto_k,
+            k_threshold = l.k_threshold
+        ))
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
+        })
+    }
+}
+
 /// Meyers' CRC or CSR model of a single-segment triangle column.
 #[extendr]
 pub(crate) struct MeyersFit {
@@ -2282,6 +2457,7 @@ extendr_module! {
     impl ClaimsDevelopmentResult;
     impl OdpBootstrapFit;
     impl BayesOdpFit;
+    impl BayesOdpFits;
     impl MeyersFit;
     impl MackBootstrapFit;
     impl OneYearFit;

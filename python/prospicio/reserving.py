@@ -9,6 +9,7 @@ docs/design/reserving-bayes.md)."""
 from .prospicio_native import (
     BayesOdp,
     BayesOdpFit,
+    BayesOdpFits,
     Benktander,
     BornhuetterFerguson,
     CapeCod,
@@ -59,6 +60,7 @@ __all__ = [
     "MackBootstrapFit",
     "BayesOdp",
     "BayesOdpFit",
+    "BayesOdpFits",
     "Meyers",
     "MeyersFit",
     "OneYearFit",
