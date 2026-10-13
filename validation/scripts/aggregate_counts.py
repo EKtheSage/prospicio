@@ -17,7 +17,9 @@ P(N = k) for k = 0..39. `params` gives the count in prospicio's terms:
   coefficient of variation `cv` (of the whole mixing variable) and fixed
   part `shift` (`mixed gamma`, `delaporte`, `ig`, `sig`);
 - `neyman`: Poisson(`lambda`) clusters of Poisson(`theta`) claims
-  (`neymana theta`, mean `lambda theta`).
+  (`neymana theta`, mean `lambda theta`);
+- `fixed`, `bernoulli`, `geometric`: `n` claims; one claim with
+  probability `p`; geometric on 0, 1, ... with mean `mean`.
 
 aggregate computes these by FFT on a grid of 1024 points with bucket 1,
 which holds all the mass: tolerance `1e-12` absolute.
@@ -50,6 +52,9 @@ def main():
         ("mixed", "lambda=10.0;mixing=ig;cv=0.5;shift=0.0", "agg A 10 claims dsev [1] mixed ig 0.5"),
         ("mixed", "lambda=10.0;mixing=ig;cv=0.5;shift=0.3", "agg A 10 claims dsev [1] mixed sig 0.5 0.3"),
         ("neyman", "lambda=2.0;theta=3.0", "agg A 6 claims dsev [1] neymana 3"),
+        ("fixed", "n=3", "agg A 3 claims dsev [1] fixed"),
+        ("bernoulli", "p=0.3", "agg A 0.3 claims dsev [1] bernoulli"),
+        ("geometric", "mean=3.0", "agg A 3 claims dsev [1] geometric"),
     ]
     rows = []
     for name, params, program in cases:

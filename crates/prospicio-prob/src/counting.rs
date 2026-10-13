@@ -264,6 +264,25 @@ impl NegativeBinomial {
         Ok(Self { r, beta })
     }
 
+    /// The geometric count on `0, 1, …` with this mean, `P(N = k) =
+    /// p (1 - p)^k` with `p = 1 / (1 + mean)`: a negative binomial with
+    /// `r = 1` and `β = mean`, `aggregate`'s `geometric`.
+    ///
+    /// ```
+    /// use prospicio_prob::{Counting, NegativeBinomial};
+    ///
+    /// let n = NegativeBinomial::geometric(3.0).unwrap();
+    /// assert!((n.pmf(0) - 0.25).abs() < 1e-15);
+    /// assert!((n.variance() - 12.0).abs() < 1e-12);
+    /// ```
+    pub fn geometric(mean: f64) -> Result<Self> {
+        Self::new(1.0, mean).map_err(|_| Error::InvalidParameter {
+            name: "mean",
+            value: mean,
+            reason: "must be finite and positive",
+        })
+    }
+
     /// The negative binomial with this mean and variance; the variance
     /// must exceed the mean (over-dispersion).
     pub fn from_mean_variance(mean: f64, variance: f64) -> Result<Self> {
@@ -380,6 +399,20 @@ impl Binomial {
             });
         }
         Ok(Self { n, p })
+    }
+
+    /// One trial: a claim with probability `p` in `[0, 1)`, `aggregate`'s
+    /// `bernoulli` (whose mean is `p`).
+    ///
+    /// ```
+    /// use prospicio_prob::{Binomial, Counting};
+    ///
+    /// let n = Binomial::bernoulli(0.3).unwrap();
+    /// assert_eq!(n.pmf(1), 0.3);
+    /// assert_eq!(n.pmf(2), 0.0);
+    /// ```
+    pub fn bernoulli(p: f64) -> Result<Self> {
+        Self::new(1, p)
     }
 
     /// Number of trials.

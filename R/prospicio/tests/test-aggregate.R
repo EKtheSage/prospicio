@@ -260,3 +260,34 @@ stopifnot(identical(p$view, c("gross", "occ", "net")),
           abs(p$premium / c(297.443189953534, 139.358753189474, 164.315772212950) - 1) < 2e-8)
 stopifnot(inherits(try(occurrence_layer_statistics(poisson_count(2), sev, 500, 100, share = 0),
                        silent = TRUE), "try-error"))
+# Eventual ruin: claims of 1, 2 or 3 at rho 0.1, against aggregate 1.0.1.
+sev3 <- grid_distribution(1, c(0, 0.5, 0.3, 0.2, numeric(1020)))
+ruin <- eventual_ruin(sev3, rho = 0.1, p = c(0.1, 1e-300))
+stopifnot(abs(ruin$psi$psi[ruin$psi$u == 10] - 0.15362022867039649) < 1e-12)
+stopifnot(abs(ruin$severity_mean - 1.7) < 1e-12, ruin$lundberg_exponent > 0, ruin$aliasing_error < 1e-12)
+stopifnot(!is.na(ruin$capital[1]), is.na(ruin$capital[2]), ruin$capital_interpolated[1] <= ruin$capital[1])
+same <- eventual_ruin(sev3, loss_ratio = 1 / 1.1)
+stopifnot(max(abs(same$psi$psi - ruin$psi$psi)) < 1e-14)
+stopifnot(abs(eventual_ruin(sev3, rho = 0.1, cap = 2)$severity_mean - 1.1 / 0.8) < 1e-12)
+stopifnot(inherits(try(eventual_ruin(sev3, rho = 0.1, cap = 2, excess = 1), silent = TRUE), "try-error"))
+stopifnot(inherits(try(eventual_ruin(sev3, rho = 0), silent = TRUE), "try-error"))
+# Layer loss picks against aggregate 1.0.1's Aggregate.picks.
+gsev <- discretize(gamma_from_mean_cv(100, 1.5), step = 1, points = 2^14, method = "rounding")
+picked <- layer_loss_picks(gsev, c(100, 500, 1000), c(480, 420, 60), claims = 10)
+stopifnot(!picked$straight_bottom, abs(picked$severity@probs[201] - 0.0008386073686922624) < 1e-12)
+stopifnot(max(abs(10 * picked$layers$target - c(480, 420, 60))) < 1e-12)
+stopifnot(layer_loss_picks(gsev, c(100, 500, 1000), c(700, 250, 50), claims = 10)$straight_bottom)
+stopifnot(inherits(try(layer_loss_picks(gsev, 100.5, 10), silent = TRUE), "try-error"))
+# Total cession of a stage and an aggregate cover, against aggregate 1.0.1
+# (book T of validation/scripts/aggregate_reinsurance.py).
+gt <- discretize(gamma_from_mean_cv(50, 1.5), step = 1, points = 1001, method = "rounding")
+ct <- occurrence_cession_statistics(poisson_count(5), gt, limits = c(100, 200), attachments = c(100, 200))
+stopifnot(abs(ct$aggregate[["mean"]] / 67.33279562141576 - 1) < 1e-9)
+two <- tower_on_grid(reinsurance_tower(list(xol_layer("a", 100, 100), xol_layer("b", 200, 200))),
+                     poisson_count(5), gt, points = 2^14)
+stopifnot(identical(two$stage_sizes, 2), abs(mean(two$stage_ceded[[1]]) / 67.33279562141576 - 1) < 1e-9)
+tp <- tower_price(two, distortion("proportional_hazard", 0.7))
+stopifnot(identical(tp$view, c("gross", "a", "b", "stage_1", "net")))
+stopifnot(abs(tp$premium[tp$view == "stage_1"] / 111.0007062267948 - 1) < 2e-8)
+cover <- aggregate_layer_statistics(two$net, limit = 300, attachment = 200)
+stopifnot(abs(cover$pr_attach - 0.3912338371214888) < 1e-12, abs(cover$aggregate[["mean"]] / 38.7761195844111 - 1) < 1e-9)

@@ -425,6 +425,33 @@ VaR <- S7::new_generic("VaR", "dist", function(dist, p, ...) S7::S7_dispatch())
 #' @export
 TVaR <- S7::new_generic("TVaR", "dist", function(dist, p, ...) S7::S7_dispatch())
 
+#' Level at which TVaR reaches VaR
+#'
+#' The level `t` with `TVaR(t) = VaR(p)`, the lower VaR, as `aggregate`'s
+#' `tvar_threshold`. TVaR rises continuously from the mean at `t = 0`, so
+#' `t <= p`; `p = 0` gives 0.
+#'
+#' @param x A [grid_distribution] or a [capital_portfolio] (its total).
+#' @param p Probabilities in `[0, 1]`.
+#' @param ... Unused; for methods.
+#' @returns A numeric vector of levels.
+#' @export
+#' @examples
+#' g <- grid_distribution(1, c(0.4, 0.3, 0.2, 0.1))
+#' t <- tvar_threshold(g, 0.85)
+#' TVaR(g, t) # quantile(g, 0.85)
+tvar_threshold <- S7::new_generic("tvar_threshold", "x", function(x, p, ...) S7::S7_dispatch())
+
+S7::method(TVaR, grid_distribution) <- function(dist, p, ...) {
+  rust_result(tvar_weighted_rust(grid_points(dist), dist@probs, as.double(p)), s7_call())
+}
+
+S7::method(tvar_threshold, grid_distribution) <- function(x, p, ...) {
+  rust_result(tvar_threshold_rust(grid_points(x), x@probs, as.double(p)), s7_call())
+}
+
+grid_points <- function(g) (seq_along(g@probs) - 1) * g@step
+
 #' Distribution of equally weighted draws
 #'
 #' Every method describes the draws themselves: [variance()] divides by `n`
@@ -705,13 +732,19 @@ blend_predictive <- function(models, weights, seed) {
 #' - `compound_poisson_count()`: a Poisson(`rate`) number of clusters of
 #'   `secondary` claims (Poisson secondaries give the Neyman type A).
 #' - `empirical_count()`: `P(N = k) = probs[k + 1]`.
+#' - `fixed_count()`: `N = n`; `bernoulli_count()`: one claim with
+#'   probability `p` in `[0, 1)`; `geometric_count()`: `P(N = k) = q (1 - q)^k`
+#'   on `0, 1, ...` with `q = 1 / (1 + mean)`, a negative binomial with
+#'   `r = 1` (`aggregate`'s `fixed`, `bernoulli` and `geometric`).
 #'
 #' Every aggregation function takes them. Zero-modified and logarithmic
 #' counts work with Panjer's recursion; the others need `method = "fft"`.
 #'
 #' @param base,secondary A claim count.
 #' @param p0 `P(N = 0)`, in `[0, 1)`.
-#' @param p The logarithmic parameter, in `(0, 1)`.
+#' @param p The logarithmic parameter, in `(0, 1)`, or the Bernoulli
+#'   probability, in `[0, 1)`.
+#' @param n The fixed number of claims.
 #' @param mean,cv,shift See above.
 #' @param mixing `"gamma"` or `"inverse_gaussian"`.
 #' @param rate The Poisson rate of clusters.
@@ -787,3 +820,15 @@ compound_poisson_count <- function(rate, secondary) {
 #' @rdname claim_count_dist
 #' @export
 empirical_count <- function(probs) claim_count_dist(rust_result(ClaimCount$empirical(as.double(probs))))
+
+#' @rdname claim_count_dist
+#' @export
+fixed_count <- function(n) claim_count_dist(rust_result(ClaimCount$fixed(as.double(n))))
+
+#' @rdname claim_count_dist
+#' @export
+bernoulli_count <- function(p) claim_count_dist(rust_result(ClaimCount$bernoulli(as.double(p))))
+
+#' @rdname claim_count_dist
+#' @export
+geometric_count <- function(mean) claim_count_dist(rust_result(ClaimCount$geometric(as.double(mean))))

@@ -1,5 +1,6 @@
 //! The Bayesian over-dispersed Poisson chain ladder
-//! (`docs/design/reserving-bayes.md`, decisions 3 to 6).
+//! (`docs/design/reserving-bayes.md`, decisions 3 to 6), its segments
+//! (decision 11) and its place in the diagonal backtest (decision 8).
 
 use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
@@ -10,14 +11,16 @@ use rayon::prelude::*;
 
 use super::laplace::{Posterior, Whitened, mode};
 use super::{Diagnostics, Stream, derive_seed};
+use crate::backtest::{CellForecast, TriangleModel};
 use crate::bootstrap::{
-    ProcessDistribution, component_sums, hash_segment, prepare, process_draw, push_moments,
-    segment_sums,
+    ProcessDistribution, component_sums, hash_segment, origin_keys, pick_segment, prepare,
+    process_draw, push_moments, segment_sums,
 };
 use crate::chain_ladder::ChainLadderFit;
 use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
-use crate::segments::{FitTable, ReserveFit, SegmentFits};
+use crate::frame::TriangleFrame;
+use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
 
@@ -100,7 +103,8 @@ pub struct BayesOdp {
     /// derived seed (module docs, "Seeds").
     pub seed: u64,
     /// How segments depend on each other in a fit of several segments
-    /// (decision 11, to come); [`fit`](Self::fit) has one segment and does
+    /// ([`fit_segments`](Self::fit_segments), decision 11; `Synchronized` is
+    /// an error there); [`fit`](Self::fit) has one segment and does
     /// not use it.
     pub dependence: SegmentDependence,
 }
@@ -150,6 +154,128 @@ pub struct BayesOdpFit {
     model: Model,
 }
 
+/// One segment of a [`BayesOdpFits`]: the posterior of the segment's own
+/// [`BayesOdp`] model. Its reserves are in the joint
+/// [`BayesOdpFits::reserves`].
+#[derive(Debug, Clone)]
+pub struct BayesOdpSegment {
+    /// The segment's volume-weighted chain ladder, as in
+    /// [`BayesOdpFit::chain_ladder`].
+    pub chain_ladder: ChainLadderFit,
+    /// The segment's plugged-in scale `phi`.
+    pub scale: f64,
+    /// Posterior draws of the segment's `c`, `a[2]..a[n]` and `b[2]..b[m]`.
+    pub posterior: PosteriorDraws,
+    /// R-hat, ESS and divergences of the segment's chains.
+    pub diagnostics: Diagnostics,
+    /// The model, for [`loo`](Self::loo).
+    model: Model,
+}
+
+impl BayesOdpSegment {
+    /// Posterior summary of each parameter, as [`BayesOdpFit::summary`].
+    pub fn summary(&self) -> Result<Vec<ParamSummary>> {
+        Ok(self.posterior.summary()?)
+    }
+
+    /// PSIS-LOO of the segment's observed increments, as
+    /// [`BayesOdpFit::loo`].
+    pub fn loo(&self) -> Result<Loo> {
+        loo(&self.model, &self.posterior, &self.chain_ladder)
+    }
+}
+
+impl ReserveFit for BayesOdpSegment {
+    fn chain_ladder(&self) -> &ChainLadderFit {
+        &self.chain_ladder
+    }
+
+    fn total_columns(&self) -> Vec<(&'static str, f64)> {
+        vec![("scale", self.scale)]
+    }
+}
+
+/// A [`BayesOdp`] fit of every segment of a triangle column
+/// ([`BayesOdp::fit_segments`]): each segment's own posterior, and the
+/// joint distribution of the reserves, with the layout of
+/// [`OdpBootstrapFits`](crate::OdpBootstrapFits).
+///
+/// ```
+/// use prospicio_bayes::nuts::Sampler;
+/// use prospicio_reserving::bayes::BayesOdp;
+/// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+///
+/// let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
+/// let ages = [12, 24, 36, 48, 12, 24, 36, 12, 24, 12];
+/// let paid = [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0];
+/// let tri = Triangle::from_long(&Long {
+///     keys: &[("lob", &[["Auto"; 10], ["Home"; 10]].concat())],
+///     origin: &[origin, origin].concat(),
+///     development: DevelopmentColumn::Age(&[ages, ages].concat()),
+///     values: &[("paid", &[paid, paid.map(|v| v * 2.0)].concat())],
+///     origin_grain: Grain::Year,
+///     development_grain: Grain::Year,
+///     cumulative: true,
+/// })?;
+/// let model = BayesOdp {
+///     sampler: Sampler { tune: 300, draws: 300, ..Sampler::default() },
+///     n_sims: 1_000,
+///     ..BayesOdp::default()
+/// };
+/// let fits = model.fit_segments(&tri, "paid")?;
+/// assert_eq!(fits.reserves.dims(), ["lob", "origin"]);
+/// assert_eq!(fits.reserves.n_components(), 8);
+/// assert_eq!(fits.segments.len(), 2);
+/// assert_eq!(fits.totals().n_rows(), 2);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone)]
+pub struct BayesOdpFits {
+    /// Each segment's chain ladder, scale, posterior and diagnostics.
+    pub segments: SegmentFits<BayesOdpSegment>,
+    /// Joint posterior predictive distribution of the reserve by segment
+    /// and origin: the key names and `origin` are its dimensions, and its
+    /// components run over the origins of each segment in turn, like the
+    /// rows of [`to_long`](Self::to_long).
+    pub reserves: PredictiveDistribution,
+}
+
+impl BayesOdpFits {
+    /// One row per segment × origin: the chain ladder's `latest`,
+    /// `ultimate` and `reserve`, and the `mean` and `std_dev` of the
+    /// posterior predictive reserve.
+    pub fn to_long(&self) -> FitTable {
+        let mut table = self.segments.to_long();
+        push_moments(&mut table, "", &component_sums(&self.reserves));
+        table
+    }
+
+    /// One row per segment: the chain ladder's totals, the `scale`, and the
+    /// `mean` and `std_dev` of the segment's posterior predictive total
+    /// reserve.
+    pub fn totals(&self) -> FitTable {
+        let mut table = self.segments.totals();
+        push_moments(
+            &mut table,
+            "",
+            &segment_sums(&self.segments, &self.reserves),
+        );
+        table
+    }
+
+    /// The chain ladders' development factors, one row per segment × age.
+    pub fn development_table(&self) -> FitTable {
+        self.segments.development_table()
+    }
+
+    /// The one segment chosen as in [`SegmentFits::position`], with its
+    /// part of the joint reserves (same dimensions).
+    pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
+        let (segments, reserves) = pick_segment(&self.segments, &self.reserves, keys)?;
+        Ok(Self { segments, reserves })
+    }
+}
+
 impl BayesOdp {
     /// Fits `column` of a single-segment cumulative triangle. Every origin
     /// must be observed from the first age to its latest, there must be
@@ -160,19 +286,178 @@ impl BayesOdp {
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<BayesOdpFit> {
         self.validate()?;
         let segment = triangle.segment(column)?;
+        let (fit, reserves) =
+            self.fit_segment(&segment, column, Stream::Chains, Stream::Predictive)?;
+        let BayesOdpSegment {
+            chain_ladder,
+            scale,
+            posterior,
+            diagnostics,
+            model,
+        } = fit;
+        Ok(BayesOdpFit {
+            chain_ladder,
+            scale,
+            posterior,
+            diagnostics,
+            reserves,
+            model,
+        })
+    }
+
+    /// Fits `column` in every segment of a cumulative triangle, each with
+    /// its own posterior (the same model and settings, sampled
+    /// independently), into one joint distribution of the reserves, the
+    /// segments depending on each other as
+    /// [`dependence`](Self::dependence) says (decision 11):
+    ///
+    /// * [`Independent`](SegmentDependence::Independent): each segment's
+    ///   simulations as drawn. Segment `k` (in index order) takes its own
+    ///   derived seeds for its chains and its simulations (module docs,
+    ///   "Seeds"), so the segments share no random numbers; a segment's
+    ///   draws therefore differ from fitting it alone.
+    /// * [`RankCorrelation`](SegmentDependence::RankCorrelation): the
+    ///   segments' simulations reordered as whole rows by Iman–Conover on
+    ///   the segment totals, exactly as in the bootstraps, so row `i` is no
+    ///   longer simulation `i`.
+    /// * [`Synchronized`](SegmentDependence::Synchronized) is an
+    ///   [`Error::Bayes`]: it draws the residuals of the same positions in
+    ///   every segment, and a posterior has no residuals to share.
+    ///
+    /// A failure names its segment.
+    pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<BayesOdpFits> {
+        self.validate()?;
+        if self.dependence == SegmentDependence::Synchronized {
+            return Err(Error::Bayes(
+                "Synchronized dependence draws the residuals of the same positions in every \
+                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
+                    .into(),
+            ));
+        }
+        // A bad rank-correlation matrix fails here, before any sampling.
+        self.dependence.validate(triangle.index().len())?;
+        let mut k = 0;
+        let fitted = fit_each(triangle, column, |segment| {
+            let fit = self.fit_segment(
+                segment,
+                column,
+                Stream::SegmentChains(k),
+                Stream::SegmentPredictive(k),
+            );
+            k += 1;
+            fit
+        })?;
+
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        let mut dims = fitted.key_names.clone();
+        dims.push("origin".into());
+        let mut components = Vec::new();
+        for ((label, (fit, _)), segment) in fitted.iter().zip(triangle.segments(column)?) {
+            hasher.str(&label.to_string());
+            hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
+            components.extend(origin_keys(label, &segment.origins));
+        }
+        let n = components.len();
+        let mut draws = Vec::with_capacity(self.n_sims * n);
+        for i in 0..self.n_sims {
+            for (_, reserves) in &fitted.fits {
+                let m = reserves.n_components();
+                draws.extend_from_slice(&reserves.draw_matrix()[i * m..(i + 1) * m]);
+            }
+        }
+        let list = |f: fn(&BayesOdpSegment) -> f64| {
+            format!(
+                "{:?}",
+                fitted.fits.iter().map(|(s, _)| f(s)).collect::<Vec<_>>()
+            )
+        };
+        let provenance = self
+            .base_provenance(column)
+            .param("c0", list(|s| s.model.c0))
+            .param("scale", list(|s| s.scale))
+            .param("segments", fitted.len())
+            .param("dependence", format!("{:?}", self.dependence))
+            .param(
+                "posterior_draws",
+                fitted
+                    .fits
+                    .first()
+                    .map_or(0, |(s, _)| s.posterior.n_draws()),
+            )
+            .input_hash(hasher.finish());
+        let reserves = PredictiveDistribution::from_draws(dims, components, draws, provenance)?;
+        let segments = fitted.map(|(fit, _)| fit.clone());
+        let reserves = self.dependence.reorder(reserves, &segments, self.seed)?;
+        Ok(BayesOdpFits { segments, reserves })
+    }
+
+    /// The posterior of one segment and its reserves by origin, with the
+    /// seeds of `chains` and `predictive`.
+    fn fit_segment(
+        &self,
+        segment: &Segment,
+        column: &str,
+        chains: Stream,
+        predictive: Stream,
+    ) -> Result<(BayesOdpSegment, PredictiveDistribution)> {
         let Prepared {
             chain_ladder,
             model,
             start,
-        } = self.prepare(&segment, true)?;
+        } = self.prepare(segment, true)?;
+        let (posterior, diagnostics) =
+            self.sample(&model, start, derive_seed(self.seed, chains))?;
+
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        hash_segment(&mut hasher, segment, &chain_ladder, &segment.ages);
+        let latest = &chain_ladder.latest_position;
+        let nd = segment.n_dev;
+        let (process, phi) = (self.process, model.phi);
+        let reserves = posterior.predictive(
+            vec!["origin".into()],
+            segment.origins.iter().map(|&o| vec![o.into()]).collect(),
+            self.n_sims,
+            derive_seed(self.seed, predictive),
+            self.provenance(column, &model, hasher),
+            |theta, rng: &mut StreamRng, row| {
+                for (w, reserve) in row.iter_mut().enumerate() {
+                    *reserve = (latest[w] + 1..nd)
+                        .map(|d| process_draw(process, phi, model.eta(theta, w, d).exp(), rng))
+                        .sum();
+                }
+            },
+        )?;
+        Ok((
+            BayesOdpSegment {
+                chain_ladder,
+                scale: model.phi,
+                posterior,
+                diagnostics,
+                model,
+            },
+            reserves,
+        ))
+    }
+
+    /// NUTS on `model` whitened at its mode (found from `start`), with
+    /// the chains' `seed`; the draws on the natural scale and their
+    /// diagnostics.
+    fn sample(
+        &self,
+        model: &Model,
+        start: Vec<f64>,
+        seed: u64,
+    ) -> Result<(PosteriorDraws, Diagnostics)> {
         let p = model.dim();
-        let mode = mode(&model, start)?;
-        let whitened = Whitened::new(&model, &mode)?;
+        let mode = mode(model, start)?;
+        let whitened = Whitened::new(model, &mode)?;
         let draws = sample(
             &whitened,
             &vec![0.0; p],
             Sampler {
-                seed: derive_seed(self.seed, Stream::Chains),
+                seed,
                 ..self.sampler
             },
         )?;
@@ -183,35 +468,7 @@ impl BayesOdp {
             posterior.chains(),
             posterior.divergences().iter().sum(),
         );
-
-        let mut hasher = InputHasher::new();
-        hasher.str(column);
-        hash_segment(&mut hasher, &segment, &chain_ladder, &segment.ages);
-        let latest = &chain_ladder.latest_position;
-        let nd = segment.n_dev;
-        let (process, phi) = (self.process, model.phi);
-        let reserves = posterior.predictive(
-            vec!["origin".into()],
-            segment.origins.iter().map(|&o| vec![o.into()]).collect(),
-            self.n_sims,
-            derive_seed(self.seed, Stream::Predictive),
-            self.provenance(column, &model, hasher),
-            |theta, rng: &mut StreamRng, row| {
-                for (w, reserve) in row.iter_mut().enumerate() {
-                    *reserve = (latest[w] + 1..nd)
-                        .map(|d| process_draw(process, phi, model.eta(theta, w, d).exp(), rng))
-                        .sum();
-                }
-            },
-        )?;
-        Ok(BayesOdpFit {
-            scale: model.phi,
-            chain_ladder,
-            posterior,
-            diagnostics,
-            reserves,
-            model,
-        })
+        Ok((posterior, diagnostics))
     }
 
     fn validate(&self) -> Result<()> {
@@ -254,23 +511,76 @@ impl BayesOdp {
                 previous = cum;
             }
         }
-        for w in 0..no {
-            let sum: f64 = cells.iter().filter(|c| c.0 == w).map(|c| c.2).sum();
-            if sum.is_nan() || sum <= 0.0 {
-                return Err(Error::Bayes(format!(
-                    "origin {}: the observed increments sum to {sum}, so no log-linear mean \
-                     exists",
-                    segment.origins[w]
-                )));
+        let model = self.model(
+            no,
+            nd,
+            cells,
+            fit.scale,
+            priors,
+            |w| format!("origin {}", segment.origins[w]),
+            |d| format!("development age {} months", segment.ages[d]),
+        )?;
+        // The chain ladder's fitted increments are U_w g_d, the ODP GLM's
+        // MLE: their logs give the log-linear parameters when all are
+        // positive. Otherwise start from the prior's centre.
+        let fitted = &fit.fitted;
+        let start = if model
+            .cells
+            .iter()
+            .all(|&(w, d, _)| fitted[w * nd + d] > 0.0)
+        {
+            let p = model.dim();
+            let ln = |w: usize, d: usize| fitted[w * nd + d].ln();
+            let mut start = vec![ln(0, 0); p];
+            for (w, s) in start.iter_mut().enumerate().take(no).skip(1) {
+                *s = ln(w, 0) - ln(0, 0);
             }
+            for d in 1..nd {
+                let w = (0..no).find(|&w| latest[w] >= d).expect("checked above");
+                start[no - 1 + d] = ln(w, d) - ln(w, 0);
+            }
+            start
+        } else {
+            model.prior_mean.clone()
+        };
+        Ok(Prepared {
+            chain_ladder: fit.chain_ladder,
+            model,
+            start,
+        })
+    }
+
+    /// The model of decision 3 on `cells` (origin, development, increment)
+    /// with `n_origins` origins and `n_dev` ages, each observed at least
+    /// once, and the scale `phi`. Every origin's and age's increments must
+    /// sum to more than zero ([`Error::Bayes`], naming it by `origin` or
+    /// `age`). Without `priors`, the likelihood alone.
+    #[allow(clippy::too_many_arguments)]
+    fn model(
+        &self,
+        n_origins: usize,
+        n_dev: usize,
+        cells: Vec<(usize, usize, f64)>,
+        phi: f64,
+        priors: bool,
+        origin: impl Fn(usize) -> String,
+        age: impl Fn(usize) -> String,
+    ) -> Result<Model> {
+        let (no, nd) = (n_origins, n_dev);
+        let (mut by_origin, mut by_age) = (vec![0.0; no], vec![0.0; nd]);
+        for &(w, d, x) in &cells {
+            by_origin[w] += x;
+            by_age[d] += x;
         }
-        for d in 0..nd {
-            let sum: f64 = cells.iter().filter(|c| c.1 == d).map(|c| c.2).sum();
-            if sum.is_nan() || sum <= 0.0 {
+        let bad = |sum: &f64| sum.is_nan() || *sum <= 0.0;
+        for (name, sums) in [
+            (&origin as &dyn Fn(usize) -> String, &by_origin),
+            (&age, &by_age),
+        ] {
+            if let Some((i, sum)) = sums.iter().enumerate().find(|(_, s)| bad(s)) {
                 return Err(Error::Bayes(format!(
-                    "development age {} months: the observed increments sum to {sum}, so no \
-                     log-linear mean exists",
-                    segment.ages[d]
+                    "{}: the observed increments sum to {sum}, so no log-linear mean exists",
+                    name(i)
                 )));
             }
         }
@@ -285,47 +595,24 @@ impl BayesOdp {
             prior_precision[1..no].fill(self.origin_sd.powi(-2));
             prior_precision[no..].fill(self.development_sd.powi(-2));
         }
-        // The chain ladder's fitted increments are U_w g_d, the ODP GLM's
-        // MLE: their logs give the log-linear parameters when all are
-        // positive. Otherwise start from the prior's centre.
-        let fitted = &fit.fitted;
-        let start = if cells.iter().all(|&(w, d, _)| fitted[w * nd + d] > 0.0) {
-            let ln = |w: usize, d: usize| fitted[w * nd + d].ln();
-            let mut start = vec![ln(0, 0); p];
-            for (w, s) in start.iter_mut().enumerate().take(no).skip(1) {
-                *s = ln(w, 0) - ln(0, 0);
-            }
-            for d in 1..nd {
-                let w = (0..no).find(|&w| latest[w] >= d).expect("checked above");
-                start[no - 1 + d] = ln(w, d) - ln(w, 0);
-            }
-            start
-        } else {
-            prior_mean.clone()
-        };
-        Ok(Prepared {
-            chain_ladder: fit.chain_ladder,
-            model: Model {
-                n_origins: no,
-                n_dev: nd,
-                cells,
-                phi: fit.scale,
-                c0,
-                prior_mean,
-                prior_precision,
-            },
-            start,
+        Ok(Model {
+            n_origins: no,
+            n_dev: nd,
+            cells,
+            phi,
+            c0,
+            prior_mean,
+            prior_precision,
         })
     }
 
-    fn provenance(&self, column: &str, model: &Model, hasher: InputHasher) -> Provenance {
+    /// The provenance of every fit: the method and the settings.
+    fn base_provenance(&self, column: &str) -> Provenance {
         let s = &self.sampler;
         Provenance::new("bayes_odp")
             .param("intercept_sd", self.intercept_sd)
             .param("origin_sd", self.origin_sd)
             .param("development_sd", self.development_sd)
-            .param("c0", model.c0)
-            .param("scale", model.phi)
             .param("process", format!("{:?}", self.process))
             .param("chains", s.chains)
             .param("tune", s.tune)
@@ -336,6 +623,12 @@ impl BayesOdp {
             .param("seed", self.seed)
             .param("column", column)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
+    }
+
+    fn provenance(&self, column: &str, model: &Model, hasher: InputHasher) -> Provenance {
+        self.base_provenance(column)
+            .param("c0", model.c0)
+            .param("scale", model.phi)
             .input_hash(hasher.finish())
     }
 }
@@ -345,6 +638,170 @@ pub(crate) struct Prepared {
     pub(crate) chain_ladder: ChainLadderFit,
     pub(crate) model: Model,
     pub(crate) start: Vec<f64>,
+}
+
+/// The diagonal backtest's view of a [`BayesOdp`] (decision 8): the model
+/// fitted on the train rows' increments, with origin and development
+/// effects for the levels the train rows have, forecasting the test rows.
+///
+/// * The scale `phi` is the Pearson scale of the train rows at the
+///   likelihood's mode (the ODP GLM's MLE, which is the chain ladder's
+///   fit when the train rows form a triangle), on `N - p` degrees of
+///   freedom, as [`BayesOdp::fit`] and the quasi-Poisson GLM have it.
+/// * Every train row is fitted, negative increments included
+///   ([`fit_rows`](TriangleModel::fit_rows) is the default), but each
+///   origin's and age's train increments must sum to more than zero
+///   ([`Error::Bayes`]).
+/// * The chains and the simulations take seeds derived from the
+///   backtest's `seed` as [`BayesOdp::fit`] does from [`BayesOdp::seed`];
+///   the backtest's `n_sims` replaces [`BayesOdp::n_sims`]. The fit's
+///   diagnostics are not reported.
+/// * `mean` is each test cell's posterior mean `E[exp(eta)]`, the
+///   distribution adds [`BayesOdp::process`] to a posterior draw, and the
+///   log density is the log of the mean, over every posterior draw, of
+///   the over-dispersed Poisson's normalised density
+///   ([`Family::log_density`] at `mu` and `phi`, decision 5): the log
+///   predictive density, as [`GlmCandidate`](crate::GlmCandidate) gives
+///   it. A negative test increment has density zero there (log density
+///   minus infinity), for the GLM too.
+///
+/// Its name in the backtest is `"bayes_odp"`.
+impl TriangleModel for BayesOdp {
+    fn name(&self) -> &str {
+        "bayes_odp"
+    }
+
+    fn forecast(
+        &self,
+        cells: &TriangleFrame,
+        train: &[usize],
+        test: &[usize],
+        n_sims: usize,
+        seed: u64,
+    ) -> Result<CellForecast> {
+        self.validate()?;
+        // The levels the train rows have, renumbered from 0.
+        let levels = |of: &dyn Fn(usize) -> usize| {
+            let mut levels: Vec<usize> = train.iter().map(|&r| of(r)).collect();
+            levels.sort_unstable();
+            levels.dedup();
+            levels
+        };
+        let origins = levels(&|r| cells.origin_of(r));
+        let ages = levels(&|r| cells.development_of(r));
+        let position = |levels: &[usize], level: usize| levels.binary_search(&level).ok();
+        let response = cells.response();
+        let train_cells: Vec<(usize, usize, f64)> = train
+            .iter()
+            .map(|&r| {
+                (
+                    position(&origins, cells.origin_of(r)).expect("a train level"),
+                    position(&ages, cells.development_of(r)).expect("a train level"),
+                    response[r],
+                )
+            })
+            .collect();
+        let test_cells = test
+            .iter()
+            .map(|&r| {
+                match (
+                    position(&origins, cells.origin_of(r)),
+                    position(&ages, cells.development_of(r)),
+                ) {
+                    (Some(w), Some(d)) => Ok((w, d)),
+                    _ => Err(Error::Bayes(format!(
+                        "test row {r} has an origin or age without a train row"
+                    ))),
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let (no, nd) = (origins.len(), ages.len());
+        let p = no + nd - 1;
+        if train_cells.len() <= p {
+            return Err(Error::Bayes(format!(
+                "{} train rows for {p} parameters: the scale needs more rows than parameters",
+                train_cells.len()
+            )));
+        }
+        let origin = |w: usize| format!("origin {}", cells.origins()[origins[w]]);
+        let age = |d: usize| format!("development age {} months", cells.ages()[ages[d]]);
+
+        // The scale: Pearson's at the likelihood's mode, which does not
+        // depend on phi.
+        let likelihood = self.model(no, nd, train_cells.clone(), 1.0, false, origin, age)?;
+        let mle = mode(&likelihood, likelihood.prior_mean.clone())?;
+        let pearson: f64 = train_cells
+            .iter()
+            .map(|&(w, d, x)| {
+                let mu = likelihood.eta(&mle, w, d).exp();
+                (x - mu).powi(2) / mu
+            })
+            .sum();
+        let phi = pearson / (train_cells.len() - p) as f64;
+        if !(phi.is_finite() && phi > 0.0) {
+            return Err(Error::Bayes(format!(
+                "the train rows' Pearson scale is {phi}, not a positive number"
+            )));
+        }
+        let model = self.model(no, nd, train_cells, phi, true, origin, age)?;
+        let (posterior, _) = self.sample(&model, mle, derive_seed(seed, Stream::Chains))?;
+
+        let n_draws = posterior.n_draws();
+        let mean: Vec<f64> = test_cells
+            .iter()
+            .map(|&(w, d)| {
+                (0..n_draws)
+                    .map(|s| model.eta(posterior.draw(s), w, d).exp())
+                    .sum::<f64>()
+                    / n_draws as f64
+            })
+            .collect();
+        let process = self.process;
+        let distribution = posterior.predictive(
+            vec!["row".into()],
+            test.iter().map(|&r| vec![(r as i64).into()]).collect(),
+            n_sims,
+            derive_seed(seed, Stream::Predictive),
+            self.base_provenance("backtest")
+                .param("scale", phi)
+                .param("c0", model.c0),
+            |theta, rng: &mut StreamRng, row| {
+                for (x, &(w, d)) in row.iter_mut().zip(&test_cells) {
+                    *x = process_draw(process, phi, model.eta(theta, w, d).exp(), rng);
+                }
+            },
+        )?;
+        // Each density integrates the continuous Poisson's normalising
+        // constant, so the test cells run in parallel.
+        let log_density = test_cells
+            .par_iter()
+            .zip(test.par_iter())
+            .map(|(&(w, d), &r)| {
+                let ln_f = (0..n_draws)
+                    .map(|s| {
+                        let mu = model.eta(posterior.draw(s), w, d).exp();
+                        Family::Poisson.log_density(response[r], mu, phi, 1.0)
+                    })
+                    .collect::<prospicio_core::Result<Vec<f64>>>()?;
+                Ok(log_mean_exp(&ln_f))
+            })
+            .collect::<Result<Vec<f64>>>()?;
+        Ok(CellForecast {
+            mean,
+            distribution,
+            log_density: Some(log_density),
+        })
+    }
+}
+
+/// `ln(mean(exp(v)))` without overflow; minus infinity when every value
+/// is.
+fn log_mean_exp(v: &[f64]) -> f64 {
+    let m = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if m == f64::NEG_INFINITY {
+        return m;
+    }
+    m + (v.iter().map(|x| (x - m).exp()).sum::<f64>() / v.len() as f64).ln()
 }
 
 impl BayesOdpFit {
@@ -363,59 +820,8 @@ impl BayesOdpFit {
     /// incremental response. A triangle with a negative increment has no
     /// such density and is an error.
     pub fn loo(&self) -> Result<Loo> {
-        let model = &self.model;
-        if let Some(&(w, d, x)) = model.cells.iter().find(|c| c.2 < 0.0) {
-            return Err(Error::Bayes(format!(
-                "loo needs non-negative increments, and origin {} at development age {} \
-                 months is {x}",
-                self.chain_ladder.origins[w], self.chain_ladder.development.development[d]
-            )));
-        }
-        let n = model.cells.len();
-        let s = self.posterior.n_draws();
-        // Each term integrates the continuous Poisson's normalising
-        // constant, so the draws run in parallel; the result does not
-        // depend on the threads.
-        let rows: Vec<Vec<f64>> = self
-            .posterior
-            .values()
-            .par_chunks_exact(self.posterior.dim())
-            .map(|theta| {
-                model
-                    .cells
-                    .iter()
-                    .map(|&(w, d, x)| {
-                        let mu = model.eta(theta, w, d).exp();
-                        Family::Poisson.log_density(x, mu, model.phi, 1.0)
-                    })
-                    .collect::<prospicio_core::Result<Vec<f64>>>()
-            })
-            .collect::<prospicio_core::Result<_>>()?;
-        let ll = rows.concat();
-        let chains = self.posterior.chains();
-        let per_chain = s / chains;
-        let r_eff: Vec<f64> = (0..n)
-            .map(|i| {
-                let by_chain: Vec<Vec<f64>> = (0..chains)
-                    .map(|c| {
-                        (0..per_chain)
-                            .map(|k| ll[(c * per_chain + k) * n + i].exp())
-                            .collect()
-                    })
-                    .collect();
-                let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
-                let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
-                // A constant likelihood: as independent draws.
-                if ess.is_finite() && ess > 0.0 {
-                    ess / s as f64
-                } else {
-                    1.0
-                }
-            })
-            .collect();
-        Ok(prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?)
+        loo(&self.model, &self.posterior, &self.chain_ladder)
     }
-
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
     /// `reserve`, and the `mean` and `std_dev` of the posterior predictive
     /// reserve.
@@ -561,6 +967,59 @@ impl Posterior for Model {
         }
         h
     }
+}
+
+/// PSIS-LOO of `model`'s observed increments under `posterior` ([`BayesOdpFit::loo`]).
+fn loo(model: &Model, posterior: &PosteriorDraws, chain_ladder: &ChainLadderFit) -> Result<Loo> {
+    if let Some(&(w, d, x)) = model.cells.iter().find(|c| c.2 < 0.0) {
+        return Err(Error::Bayes(format!(
+            "loo needs non-negative increments, and origin {} at development age {} \
+             months is {x}",
+            chain_ladder.origins[w], chain_ladder.development.development[d]
+        )));
+    }
+    let n = model.cells.len();
+    let s = posterior.n_draws();
+    // Each term integrates the continuous Poisson's normalising
+    // constant, so the draws run in parallel; the result does not
+    // depend on the threads.
+    let rows: Vec<Vec<f64>> = posterior
+        .values()
+        .par_chunks_exact(posterior.dim())
+        .map(|theta| {
+            model
+                .cells
+                .iter()
+                .map(|&(w, d, x)| {
+                    let mu = model.eta(theta, w, d).exp();
+                    Family::Poisson.log_density(x, mu, model.phi, 1.0)
+                })
+                .collect::<prospicio_core::Result<Vec<f64>>>()
+        })
+        .collect::<prospicio_core::Result<_>>()?;
+    let ll = rows.concat();
+    let chains = posterior.chains();
+    let per_chain = s / chains;
+    let r_eff: Vec<f64> = (0..n)
+        .map(|i| {
+            let by_chain: Vec<Vec<f64>> = (0..chains)
+                .map(|c| {
+                    (0..per_chain)
+                        .map(|k| ll[(c * per_chain + k) * n + i].exp())
+                        .collect()
+                })
+                .collect();
+            let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
+            let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
+            // A constant likelihood: as independent draws.
+            if ess.is_finite() && ess > 0.0 {
+                ess / s as f64
+            } else {
+                1.0
+            }
+        })
+        .collect();
+    Ok(prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?)
 }
 
 #[cfg(test)]
@@ -903,5 +1362,255 @@ mod tests {
         let loo = short.fit(&genins(), "values").unwrap().loo().unwrap();
         assert_eq!(loo.pareto_k.len(), 55);
         assert!(loo.estimate.elpd.is_finite());
+    }
+
+    /// GenIns twice, as lines `a` and `b` of a `lob` key.
+    fn twins() -> Triangle {
+        let (mut keys, mut origin, mut ages, mut values) = (vec![], vec![], vec![], vec![]);
+        for line in ["a", "b"] {
+            for (k, row) in GENINS.iter().enumerate() {
+                for (d, &v) in row.iter().enumerate() {
+                    keys.push(line);
+                    origin.push(crate::Month::january(2001 + k as i32));
+                    ages.push(12 * (d as u32 + 1));
+                    values.push(v);
+                }
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[("lob", &keys)],
+            origin: &origin,
+            development: crate::DevelopmentColumn::Age(&ages),
+            values: &[("values", &values)],
+            origin_grain: crate::Grain::Year,
+            development_grain: crate::Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    /// Each line's total reserve, simulation by simulation.
+    fn line_totals(reserves: &PredictiveDistribution) -> Vec<Vec<f64>> {
+        let by = reserves.aggregate(&["lob"]).unwrap();
+        let n = by.n_components();
+        (0..n)
+            .map(|j| by.draw_matrix().chunks(n).map(|r| r[j]).collect())
+            .collect()
+    }
+
+    fn spearman(x: &[f64], y: &[f64]) -> f64 {
+        let ranks = |v: &[f64]| {
+            let mut idx: Vec<usize> = (0..v.len()).collect();
+            idx.sort_by(|&a, &b| v[a].total_cmp(&v[b]));
+            let mut r = vec![0.0; v.len()];
+            for (k, &i) in idx.iter().enumerate() {
+                r[i] = k as f64;
+            }
+            r
+        };
+        let (rx, ry) = (ranks(x), ranks(y));
+        let m = (x.len() as f64 - 1.0) / 2.0;
+        let sxy: f64 = rx.iter().zip(&ry).map(|(a, b)| (a - m) * (b - m)).sum();
+        let sxx: f64 = rx.iter().map(|a| (a - m).powi(2)).sum();
+        sxy / sxx
+    }
+
+    #[test]
+    fn each_segment_has_its_own_seeds() {
+        let tri = twins();
+        let fits = quick(9).fit_segments(&tri, "values").unwrap();
+        assert_eq!(fits.reserves.dims(), ["lob", "origin"]);
+        assert_eq!(fits.reserves.n_components(), 20);
+        assert_eq!(fits.segments.len(), 2);
+        let (a, b) = (&fits.segments.fits[0], &fits.segments.fits[1]);
+        // The same data, so the same scale, but their own chains.
+        assert_eq!(a.scale, b.scale);
+        assert_ne!(a.posterior.values(), b.posterior.values());
+        // Not the single-segment fit's seeds either.
+        let alone = quick(9).fit(&genins(), "values").unwrap();
+        assert_ne!(a.posterior.values(), alone.posterior.values());
+        // Shared streams would make the twins' totals almost perfectly
+        // rank correlated; their own make them independent.
+        let totals = line_totals(&fits.reserves);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!(r.abs() < 3.0 / 2_000f64.sqrt(), "rank correlation {r}");
+
+        assert_eq!(fits.to_long().n_rows(), 20);
+        let t = fits.totals();
+        assert_eq!(t.n_rows(), 2);
+        assert_eq!(t.column("scale").unwrap(), [a.scale, b.scale]);
+        let mean_b = totals[1].iter().sum::<f64>() / 2e3;
+        assert!((t.column("mean").unwrap()[1] / mean_b - 1.0).abs() < 1e-9);
+        assert_eq!(fits.development_table().n_rows(), 20);
+        let one = fits.segment(&[("lob", "b")]).unwrap();
+        assert_eq!(one.reserves.n_components(), 10);
+        assert_eq!(one.segments.fits[0].posterior, b.posterior);
+        assert_eq!(b.summary().unwrap().len(), 19);
+
+        let provenance = fits.reserves.provenance();
+        assert_eq!(provenance.model, "bayes_odp");
+        assert!(
+            provenance
+                .parameters
+                .contains(&("segments".into(), "2".into()))
+        );
+
+        let again = quick(9).fit_segments(&tri, "values").unwrap();
+        assert_eq!(again.reserves.draw_matrix(), fits.reserves.draw_matrix());
+    }
+
+    #[test]
+    fn synchronized_segments_are_an_error() {
+        let model = BayesOdp {
+            dependence: SegmentDependence::Synchronized,
+            ..quick(0)
+        };
+        let e = model.fit_segments(&twins(), "values").unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_bad_rank_correlation_fails_before_sampling() {
+        // Each bad matrix fails at once: with a sampler this long, any
+        // sampling before the check would not finish.
+        let slow = BayesOdp {
+            sampler: Sampler {
+                tune: 1_000_000,
+                draws: 1_000_000,
+                ..Sampler::default()
+            },
+            ..BayesOdp::default()
+        };
+        let bad = [
+            // Three segments' matrix on two segments.
+            vec![1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0],
+            // Not a unit diagonal.
+            vec![0.9, 0.5, 0.5, 1.0],
+            // Not symmetric.
+            vec![1.0, 0.5, 0.4, 1.0],
+            // An entry out of [-1, 1]. (On two segments any valid matrix
+            // is positive definite; `dependence.rs` tests that check.)
+            vec![1.0, 1.5, 1.5, 1.0],
+        ];
+        for spearman in bad {
+            let model = BayesOdp {
+                dependence: SegmentDependence::RankCorrelation { spearman },
+                ..slow.clone()
+            };
+            let e = model.fit_segments(&twins(), "values").unwrap_err();
+            assert!(
+                matches!(
+                    &e,
+                    Error::InvalidSetting {
+                        name: "spearman",
+                        ..
+                    }
+                ),
+                "{e}"
+            );
+        }
+    }
+
+    #[test]
+    fn rank_correlation_reorders_whole_simulations() {
+        let tri = twins();
+        let independent = quick(10).fit_segments(&tri, "values").unwrap();
+        let ranked = BayesOdp {
+            dependence: SegmentDependence::RankCorrelation {
+                spearman: vec![1.0, 0.8, 0.8, 1.0],
+            },
+            ..quick(10)
+        }
+        .fit_segments(&tri, "values")
+        .unwrap();
+        // Each line keeps its own simulations, as whole rows.
+        let rows = |pd: &PredictiveDistribution, s: usize| {
+            let mut rows: Vec<Vec<f64>> = pd
+                .draw_matrix()
+                .chunks(20)
+                .map(|r| r[s * 10..(s + 1) * 10].to_vec())
+                .collect();
+            rows.sort_by(|x, y| {
+                x.iter()
+                    .zip(y)
+                    .map(|(a, b)| a.total_cmp(b))
+                    .find(|o| o.is_ne())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            rows
+        };
+        for s in 0..2 {
+            assert_eq!(rows(&independent.reserves, s), rows(&ranked.reserves, s));
+        }
+        let totals = line_totals(&ranked.reserves);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!((r - 0.8).abs() < 0.05, "rank correlation {r}");
+    }
+
+    #[test]
+    fn the_backtest_model_is_the_fit_on_the_train_rows() {
+        let tri = genins();
+        let cells = TriangleFrame::new(&tri, "values", None).unwrap();
+        let train = cells.observed().to_vec();
+        // In-sample cells of the oldest origin, at 12 and 24 months.
+        let test = [0, 1];
+        let model = quick(11);
+        assert_eq!(TriangleModel::name(&model), "bayes_odp");
+        let f = model.forecast(&cells, &train, &test, 500, 3).unwrap();
+        let fit = model.fit(&tri, "values").unwrap();
+        // The scale is the chain ladder's: the Pearson scale at the MLE.
+        let scale: f64 = f
+            .distribution
+            .provenance()
+            .parameters
+            .iter()
+            .find(|(k, _)| k == "scale")
+            .unwrap()
+            .1
+            .parse()
+            .unwrap();
+        assert!(
+            (scale / fit.scale - 1.0).abs() < 1e-8,
+            "{scale} vs {}",
+            fit.scale
+        );
+        // The posterior mean of a well-determined cell is near the chain
+        // ladder's fitted increment.
+        let segment = tri.segment("values").unwrap();
+        let (cl, _) = prepare(&segment, &segment.ages, Tail::default()).unwrap();
+        for (j, &r) in test.iter().enumerate() {
+            let fitted = cl.fitted[r];
+            assert!(
+                (f.mean[j] / fitted - 1.0).abs() < 0.05,
+                "{} vs {fitted}",
+                f.mean[j]
+            );
+        }
+        assert_eq!(f.distribution.n_components(), 2);
+        assert_eq!(f.distribution.n_sims(), 500);
+        let lpd = f.log_density.unwrap();
+        assert!(
+            lpd.len() == 2 && lpd.iter().all(|l| l.is_finite()),
+            "{lpd:?}"
+        );
+        // Deterministic for the backtest's seed.
+        let again = model.forecast(&cells, &train, &test, 500, 3).unwrap();
+        assert_eq!(
+            again.distribution.draw_matrix(),
+            f.distribution.draw_matrix()
+        );
+        assert_eq!(again.log_density.unwrap(), lpd);
+
+        // Without its only cell, the newest origin (row 90) has no train
+        // row.
+        let without: Vec<usize> = train.iter().copied().filter(|&r| r != 90).collect();
+        let e = model.forecast(&cells, &without, &[90], 100, 3).unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.contains("without a train row")),
+            "{e}"
+        );
     }
 }

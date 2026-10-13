@@ -28,7 +28,7 @@ numbers of Mildenhall's `aggregate`.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. Still to do: REML, tensor smooths |
-| v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC and CSR (`Meyers`, Rust, Python and R), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.7: Bayesian | Specs and diagnostics, sampling with nutpie, Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC and CSR (`Meyers`, Rust, Python and R), `BayesOdp` over segments and in the diagonal backtest, the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -70,13 +70,14 @@ what it is aiming for by v1.0.
     `Sampled`), plus counts, the Pareto family, the inverse gamma,
     inverse Gaussian, Burr and scaled beta, mixtures, truncation and
     splicing, `Custom` and the `Dist` enum with JSON save and load.
-    Third raw moments on `Severity` and `Counting`.
+    Third raw moments on `Severity` and `Counting`; `aggregate`'s named
+    fixed, Bernoulli and geometric counts.
   - `PredictiveDistribution`: join, reorder, blend, Arrow IPC; provenance
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean),
     Iman–Conover, capital allocation (Euler, covariance, Shapley and
-    others), EVT (GPD, POT, Hill).
+    others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
 - **Next:**
   1. Nested Archimedean and vine copulas (`docs/design/risk.md`).
   2. Threshold diagnostics for EVT.
@@ -104,11 +105,19 @@ what it is aiming for by v1.0.
     moment approximations (normal, gamma, lognormal, shifted gamma and
     lognormal); per-occurrence layer statistics and each view of a tower
     priced under a distortion, the grid towers checked against
-    `aggregate` point by point.
+    `aggregate` point by point; the senior and junior priority ladder
+    for capital, exact under any dependence from scenarios; eventual ruin
+    by Pollaczeck–Khinchine; a severity reshaped to layer loss picks;
+    pricing bounds for other risks and the envelope of the distortions;
+    the total cession of a stage with several layers, priced, and
+    statistics of total cessions and aggregate covers; each unit priced
+    alone against the book, the comonotonic allocation, and the expected
+    reinstatement premium checked against `aggregate` (tier 2 complete).
 - **Next:**
-  1. The rest of `aggregate` parity tier 2 (the user's choice, 2026-10-12),
-     in the order listed in `docs/design/aggregate.md`: a priority ladder, eventual ruin, layer
-     loss picks, pricing bounds.
+  1. Open, waiting on the user. Candidates, the large items parked from
+     `aggregate` parity (`docs/design/aggregate.md`): the P&L ledger (once
+     signed grids exist), bivariate FFT aggregates and `clash`, renewal
+     counts with Wiener–Hopf ruin.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any
@@ -169,14 +178,18 @@ what it is aiming for by v1.0.
     cumulative values with premium, his priors, at parity with his own
     Stan code and his printed results on group 353 Commercial Auto, in
     Python (`Meyers`) and R (`meyers()`).
+  - `BayesOdp` over segments (`fit_segments`, independent or rank
+    correlated) and in the diagonal backtest (`reserving-bayes.md`, PR 2;
+    `fit_segments` in Python (`BayesOdp.fit_segments`) and R
+    (`bayes_odp_segments()`)).
   - The Bayesian Bornhuetter–Ferguson, `BayesBf` (`reserving-bayes.md`,
     PR 4): England, Verrall and Wüthrich's gamma priors on the origins'
     row parameters, at parity with the same model in Stan and with
     their printed totals, in Python (`BayesBf`) and R (`bayes_bf()`).
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
-  1. PR 2: `BayesOdp::fit_segments` with `SegmentDependence`, and
-     `BayesOdp` in the diagonal backtest.
+  Open, waiting on the user: the four PRs of `reserving-bayes.md` are
+  done; what comes next is its open decisions.
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.

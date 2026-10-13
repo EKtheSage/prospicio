@@ -823,8 +823,26 @@ fn reorder_groups_rust(
     Ok(PredictiveDistribution { inner })
 }
 
+/// TVaR of a discrete distribution at each `p` (`risk::tvar_weighted`).
+#[extendr]
+fn tvar_weighted_rust(values: &[f64], probs: &[f64], p: &[f64]) -> Result<Vec<f64>> {
+    p.iter()
+        .map(|&p| prospicio_prob::risk::tvar_weighted(values, probs, p).map_err(to_r))
+        .collect()
+}
+
+/// `TVaR(t) = VaR(p)` at each `p` (`risk::tvar_threshold`).
+#[extendr]
+fn tvar_threshold_rust(values: &[f64], probs: &[f64], p: &[f64]) -> Result<Vec<f64>> {
+    p.iter()
+        .map(|&p| prospicio_prob::risk::tvar_threshold(values, probs, p).map_err(to_r))
+        .collect()
+}
+
 extendr_module! {
     mod distributions;
+    fn tvar_weighted_rust;
+    fn tvar_threshold_rust;
     fn join_rust;
     fn reorder_groups_rust;
     fn blend_rust;

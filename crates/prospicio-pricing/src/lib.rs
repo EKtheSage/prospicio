@@ -1,5 +1,8 @@
 //! Pricing on top of `prospicio-prob` severities and `prospicio-aggregate` models.
 //!
+//! - [`bounds`]: pricing bounds, the range of another risk's price over
+//!   the distortions that price a reference risk at a premium, and the
+//!   envelope of those distortions (Mildenhall 2022).
 //! - [`classical`]: the classical premium principles (expected value,
 //!   variance, standard deviation, semi-variance, exponential, Esscher,
 //!   Dutch, Fischer, VaR), each calibrated to a premium.
@@ -26,6 +29,7 @@
 //!
 //! See `docs/design/pareto.md`.
 
+pub mod bounds;
 pub mod classical;
 pub mod credibility;
 pub mod exposure;

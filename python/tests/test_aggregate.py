@@ -455,3 +455,76 @@ def test_layer_statistics_and_prices_by_view():
     # Distortion prices are subadditive.
     assert p.ceded[0].premium + p.net.premium >= p.gross.premium
     assert compound_moments(n, sev).mean == pytest.approx(p.gross.loss, rel=1e-9)
+
+
+def test_eventual_ruin():
+    from prospicio.aggregate import eventual_ruin
+    from prospicio.distributions import Grid
+
+    # Claims of 1, 2 or 3; aggregate 1.0.1's pollaczeck_khinchine at rho 0.1.
+    sev = Grid(1.0, [0.0, 0.5, 0.3, 0.2] + [0.0] * 1020)
+    ruin = eventual_ruin(sev, rho=0.1)
+    assert ruin.u[:3] == [0.0, 1.0, 2.0]
+    assert ruin.psi_at(10.0) == pytest.approx(0.15362022867039649, abs=1e-12)
+    assert ruin.severity_mean == pytest.approx(1.7)
+    assert ruin.capital(0.01) is not None
+    assert ruin.lundberg_exponent > 0
+    assert ruin.report.aliasing_error < 1e-12
+    same = eventual_ruin(sev, loss_ratio=1 / 1.1)
+    assert same.psi == pytest.approx(ruin.psi, abs=1e-14)
+    capped = eventual_ruin(sev, rho=0.1, cap=2.0)
+    assert capped.severity_mean == pytest.approx((0.5 + 0.6) / 0.8)
+    with pytest.raises(ValueError):
+        eventual_ruin(sev, rho=0.1, loss_ratio=0.9)
+    with pytest.raises(ValueError):
+        eventual_ruin(sev, rho=0.1, cap=2.0, excess=1.0)
+    with pytest.raises(ValueError):
+        eventual_ruin(sev, rho=0.0)
+
+
+def test_layer_loss_picks():
+    from prospicio.aggregate import layer_loss_picks
+    from prospicio.distributions import Gamma, Grid
+
+    sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.5), 1.0, 1 << 14)
+    picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
+    assert not picked.straight_bottom
+    # aggregate 1.0.1's Aggregate.picks at loss 200 (picks_aggregate.csv).
+    assert picked.severity.probs[200] == pytest.approx(0.0008386073686922624, abs=1e-12)
+    layers = picked.to_dict()
+    assert layers["top"] == [100.0, 500.0, 1000.0]
+    assert layers["target"] == pytest.approx([48.0, 42.0, 6.0])
+    assert layer_loss_picks(sev, [100, 500, 1000], [700, 250, 50], claims=10).straight_bottom
+    with pytest.raises(ValueError):
+        layer_loss_picks(sev, [100.5], [10.0])
+    with pytest.raises(ValueError):
+        layer_loss_picks(sev, [100, 500], [480, 1], claims=10)
+
+
+def test_stage_cession_and_aggregate_cover_statistics():
+    from prospicio.distributions import Gamma, Grid, Poisson
+    from prospicio.reinsurance import (
+        Layer,
+        Tower,
+        aggregate_layer_statistics,
+        occurrence_cession_statistics,
+    )
+    from prospicio.risk import Distortion
+
+    # Book T of validation/scripts/aggregate_reinsurance.py.
+    sev, _ = Grid.rounding(Gamma.from_mean_cv(50.0, 1.5), 1.0, 1001)
+    n = Poisson(5.0)
+    layers = [(1.0, 100.0, 100.0), (1.0, 200.0, 200.0)]
+    c = occurrence_cession_statistics(n, sev, layers)
+    occ = Tower([Layer("a", 100.0, 100.0), Layer("b", 200.0, 200.0)]).on_grid(n, sev, 1 << 14)
+    total = occ.stage_ceded[0]
+    # aggregate 1.0.1's reins_stats_df and reins_price_df.
+    assert c.aggregate.mean == pytest.approx(67.33279562141576, rel=1e-9)
+    price = occ.price(Distortion.proportional_hazard(0.7))
+    assert price.stages[0].premium == pytest.approx(111.0007062267948, rel=2e-8)
+    assert price.stages[0].loss == pytest.approx(sum(v.loss for v in price.ceded), rel=1e-10)
+    assert len(occ.stage_ceded) == 1
+    s = aggregate_layer_statistics(occ.net, 1.0, 300.0, 200.0)
+    assert s.pr_attach == pytest.approx(0.3912338371214888, abs=1e-12)
+    assert s.aggregate.mean == pytest.approx(38.7761195844111, rel=1e-9)
+    assert s.loss_on_line == pytest.approx(s.aggregate.mean / 300.0)
