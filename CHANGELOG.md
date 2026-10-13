@@ -135,7 +135,7 @@ under "Unreleased" until then.
 - As-if history: each year's large losses as reported under the program in
   force that year, beside the trended losses under the proposed tower, to
   reconcile with the cedant's recoveries (`Prepared::as_if`, `AsIf`).
-  Python `PreparedLosses.as_if`; R `as_if_history()`.
+  Python `PreparedLosses.as_if`; R `as_if_history()` (#226).
 
 ### Examples
 
