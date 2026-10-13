@@ -69,6 +69,7 @@ reference:
       - simulate_events
       - occurrence_pml
       - compound_moments
+      - eventual_ruin
       - events_from_years
       - event_sums_insured
       - event_times

@@ -260,3 +260,14 @@ stopifnot(identical(p$view, c("gross", "occ", "net")),
           abs(p$premium / c(297.443189953534, 139.358753189474, 164.315772212950) - 1) < 2e-8)
 stopifnot(inherits(try(occurrence_layer_statistics(poisson_count(2), sev, 500, 100, share = 0),
                        silent = TRUE), "try-error"))
+# Eventual ruin: claims of 1, 2 or 3 at rho 0.1, against aggregate 1.0.1.
+sev3 <- grid_distribution(1, c(0, 0.5, 0.3, 0.2, numeric(1020)))
+ruin <- eventual_ruin(sev3, rho = 0.1, p = c(0.1, 1e-300))
+stopifnot(abs(ruin$psi$psi[ruin$psi$u == 10] - 0.15362022867039649) < 1e-12)
+stopifnot(abs(ruin$severity_mean - 1.7) < 1e-12, ruin$lundberg_exponent > 0, ruin$aliasing_error < 1e-12)
+stopifnot(!is.na(ruin$capital[1]), is.na(ruin$capital[2]), ruin$capital_interpolated[1] <= ruin$capital[1])
+same <- eventual_ruin(sev3, loss_ratio = 1 / 1.1)
+stopifnot(max(abs(same$psi$psi - ruin$psi$psi)) < 1e-14)
+stopifnot(abs(eventual_ruin(sev3, rho = 0.1, cap = 2)$severity_mean - 1.1 / 0.8) < 1e-12)
+stopifnot(inherits(try(eventual_ruin(sev3, rho = 0.1, cap = 2, excess = 1), silent = TRUE), "try-error"))
+stopifnot(inherits(try(eventual_ruin(sev3, rho = 0), silent = TRUE), "try-error"))

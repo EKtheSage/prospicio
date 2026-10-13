@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-12T23:58:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-13T00:27:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -34,6 +34,9 @@ sources:
   - id: natural
     resource: ../validation/scripts/aggregate_natural.py
     title: aggregate_natural.py
+  - id: ruin
+    resource: ../validation/scripts/aggregate_ruin.py
+    title: aggregate_ruin.py
 ---
 
 # Which source for what
@@ -237,8 +240,27 @@ sources:
 * Senior and junior are two-tier readings (unit against the rest pooled);
   1.0.1 has no ordered k-tier schedule.[^natural]
 
+# Eventual ruin
+
+* `Aggregate.pollaczeck_khinchine(rho, cap=, excess=, stop_loss=,
+  kind=)` returns `(ruin, find_u, mean, density)`: `ruin` a Series of
+  `ψ(u)` on the severity grid's index, `density` the equilibrium severity
+  `bs S(x) / mean` with `S` strictly above `x`. It needs a Poisson
+  frequency; the rate cancels.[^ruin]
+* `ψ` is one FFT of twice the grid with wrapping; on the books checked
+  (2^16 points) it agrees with a compound FFT at four and eight times the
+  grid to `1e-12`, so the wrap is negligible there.[^ruin]
+* `find_u(p)` with `kind='index'` is the smallest grid point with
+  `ψ < p` (strict); `kind='interp'` interpolates linearly between the
+  bracketing points.[^ruin]
+* `eventual_ruin` reports the Lundberg exponent from the private
+  `_lundberg_exponent(p_sev, xs, rho)`, by brentq on `(1e-12, 700 / max x)`
+  of the whole severity (not the capped one), and a 1,000-path simulated
+  check of the same discretized model.[^ruin]
+
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py
 [^oep]: aggregate_oep.py
 [^reins]: aggregate_reinsurance.py
 [^natural]: aggregate_natural.py
+[^ruin]: aggregate_ruin.py

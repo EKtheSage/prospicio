@@ -10656,6 +10656,77 @@ class RiskProfile:
         """
 
 @final
+class Ruin:
+    """
+    The probability of eventual ruin at each initial surplus on the grid, by
+    the Pollaczeck–Khinchine formula, from ``eventual_ruin``.
+    """
+    def __repr__(self, /) -> str: ...
+    def capital(self, /, p: float, interpolate: bool = False) -> float |None:
+        """
+        The initial surplus for ruin probability ``p``: the smallest grid
+        point with ``psi(u) < p``, or linear between grid points.
+        
+        Parameters
+        ----------
+        p : float
+        interpolate : bool, default False
+        
+        Returns
+        -------
+        float or None
+            None when the grid does not reach it.
+        """
+    @property
+    def equilibrium(self, /) -> Grid:
+        """
+        The equilibrium (integrated tail) severity.
+        """
+    @property
+    def lundberg_exponent(self, /) -> float |None:
+        """
+        The Lundberg exponent ``R`` with ``psi(u) <= exp(-R u)``, or None
+        when the grid's severity has no root below ``700 / max(x)``.
+        """
+    @property
+    def psi(self, /) -> list[float]:
+        """
+        ``psi(u)`` at each grid point; the last is the mass beyond the grid.
+        """
+    def psi_at(self, /, u: float) -> float:
+        """
+        ``psi(u)`` at any initial surplus (constant between grid points).
+        
+        Parameters
+        ----------
+        u : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def report(self, /) -> CompoundReport:
+        """
+        The compound FFT's report; read ``aliasing_error``.
+        """
+    @property
+    def rho(self, /) -> float:
+        """
+        The margin ``rho``; the loss ratio is ``1 / (1 + rho)``.
+        """
+    @property
+    def severity_mean(self, /) -> float:
+        """
+        The severity's mean on the grid, after any cap, excess or stop loss.
+        """
+    @property
+    def u(self, /) -> list[float]:
+        """
+        The initial surplus at each grid point.
+        """
+
+@final
 class Sampled:
     """
     A distribution known only through equally weighted draws.
@@ -13376,6 +13447,46 @@ def esscher_allocation(pd: PredictiveDistribution, h: float) -> list[float]:
     ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
     >>> esscher_allocation(pd, 0.0)
     [2.5, 3.5]
+    """
+
+def eventual_ruin(severity: Grid, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None, cap: float |None = None, excess: float |None = None, stop_loss: float |None = None) -> Ruin:
+    """
+    The probability of eventual ruin of the classical surplus process by
+    the Pollaczeck–Khinchine formula, as ``aggregate``'s
+    ``pollaczeck_khinchine`` and ``eventual_ruin``: Poisson claims with this
+    severity and a premium at ``1 + rho`` times the expected loss. The
+    Poisson rate cancels. The maximal aggregate loss is a compound geometric
+    of the equilibrium severity, by FFT.
+    
+    Parameters
+    ----------
+    severity : Grid
+    rho : float, optional
+        The margin to loss, positive. Or give ``loss_ratio``.
+    loss_ratio : float, optional
+        ``1 / (1 + rho)``, in (0, 1).
+    points : int, optional
+        Grid points for ``psi``; the severity's by default.
+    cap : float, optional
+        Use ``X | X <= cap``.
+    excess : float, optional
+        Use ``X | X > excess`` (not shifted).
+    stop_loss : float, optional
+        Use ``X`` with the mass above ``stop_loss`` moved onto it.
+    
+    Returns
+    -------
+    Ruin
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import eventual_ruin
+    >>> from prospicio.distributions import Gamma, Grid
+    >>> sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.0), 1.0, 1 << 14)
+    >>> ruin = eventual_ruin(sev, rho=0.2)
+    >>> # Exponential claims: exp(-u / 600) / 1.2 = 0.157; the step costs 1%.
+    >>> round(ruin.psi_at(1000.0), 3)
+    0.156
     """
 
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:

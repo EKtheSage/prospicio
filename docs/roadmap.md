@@ -101,11 +101,12 @@ what it is aiming for by v1.0.
     lognormal); per-occurrence layer statistics and each view of a tower
     priced under a distortion, the grid towers checked against
     `aggregate` point by point; the senior and junior priority ladder
-    for capital, exact under any dependence from scenarios.
+    for capital, exact under any dependence from scenarios; eventual ruin
+    by Pollaczeck–Khinchine.
 - **Next:**
   1. The rest of `aggregate` parity tier 2 (the user's choice, 2026-10-12),
-     in the order listed in `docs/design/aggregate.md`: eventual ruin, layer
-     loss picks, pricing bounds.
+     in the order listed in `docs/design/aggregate.md`: layer loss picks,
+     pricing bounds.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

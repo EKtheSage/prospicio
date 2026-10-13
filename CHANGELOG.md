@@ -44,6 +44,12 @@ under "Unreleased" until then.
   dependence for a portfolio built from scenarios. Python
   `Portfolio.priority`, `Portfolio.priority_kappa`; R `priority_ladder()`,
   `priority_kappa()`.
+- Eventual ruin of the classical surplus process by the
+  Pollaczeck–Khinchine formula, `aggregate`'s `pollaczeck_khinchine` and
+  `eventual_ruin`: `ψ(u)` on the severity's grid, the capital for a ruin
+  probability, and the Lundberg exponent, with the severity capped, in
+  excess or stopped (`prospicio_aggregate::ruin`). Python
+  `prospicio.aggregate.eventual_ruin`; R `eventual_ruin()`.
 
 ### Reserving
 

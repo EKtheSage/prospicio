@@ -149,6 +149,61 @@ annual_maxima <- function(events) {
   predictive_distribution(ptr = rust_result(events@ptr$maxima()))
 }
 
+#' Eventual ruin by the Pollaczeck–Khinchine formula
+#'
+#' The probability `psi(u)` that the classical surplus process, Poisson
+#' claims with this severity and a premium of `1 + rho` times the expected
+#' loss, ever falls below zero from initial surplus `u`, as the Python
+#' package `aggregate`'s `pollaczeck_khinchine` and `eventual_ruin`. The
+#' Poisson rate cancels. The maximal aggregate loss is a compound geometric
+#' of the equilibrium severity `S(x) / E[X]`, by FFT; `psi(u)` is its
+#' survival function on the severity's grid.
+#'
+#' @param severity A [grid_distribution].
+#' @param rho The margin to loss, positive. Or give `loss_ratio`.
+#' @param loss_ratio `1 / (1 + rho)`, in `(0, 1)`.
+#' @param p Ruin probabilities at which to find the capital.
+#' @param points Grid points for `psi`; the severity's by default.
+#' @param cap,excess,stop_loss At most one: use `X | X <= cap`,
+#'   `X | X > excess` (not shifted), or `X` with the mass above `stop_loss`
+#'   moved onto it.
+#' @returns A list: `psi`, a data frame of `u` and `psi` on the grid (the
+#'   last row is the mass beyond it); `capital` and `capital_interpolated`
+#'   at each `p` (the smallest grid point with `psi(u) < p`, or linear
+#'   between grid points; `NA` where the grid does not reach it);
+#'   `lundberg_exponent` (`R` with `psi(u) <= exp(-R u)`, `NA` when none on
+#'   the grid), `severity_mean` and `aliasing_error`.
+#' @export
+#' @examples
+#' sev <- discretize(gamma_from_mean_cv(100, 1), step = 1, points = 2^14, method = "rounding")
+#' ruin <- eventual_ruin(sev, rho = 0.2, p = c(0.1, 0.01))
+#' ruin$capital
+#' # Exponential claims: exp(-1000 / 600) / 1.2 = 0.157; the step costs 1%.
+#' ruin$psi$psi[ruin$psi$u == 1000]
+eventual_ruin <- function(severity, rho = NULL, loss_ratio = NULL, p = numeric(), points = NULL,
+                          cap = NULL, excess = NULL, stop_loss = NULL) {
+  if (is.null(rho) == is.null(loss_ratio)) stop("give exactly one of rho and loss_ratio")
+  if (is.null(rho)) {
+    if (!(loss_ratio > 0 && loss_ratio < 1)) stop("the loss ratio must be in (0, 1)")
+    rho <- 1 / loss_ratio - 1
+  }
+  parts <- list(cap = cap, excess = excess, stop_loss = stop_loss)
+  parts <- parts[!vapply(parts, is.null, logical(1))]
+  if (length(parts) > 1) stop("give at most one of cap, excess and stop_loss")
+  part <- if (length(parts)) names(parts) else "all"
+  value <- if (length(parts)) as.double(parts[[1]]) else 0
+  r <- rust_result(eventual_ruin_rust(
+    severity@ptr, as.double(rho), as.double(if (is.null(points)) 0 else points), part, value,
+    as.double(p)
+  ))
+  list(
+    psi = data.frame(u = r$u, psi = r$psi), capital = r$capital,
+    capital_interpolated = r$capital_interpolated,
+    lundberg_exponent = r$lundberg_exponent, severity_mean = r$severity_mean,
+    aliasing_error = r$aliasing_error
+  )
+}
+
 #' Compound moments to third order and moment approximations
 #'
 #' `compound_moments()` is the mean, variance, third cumulant, cv and

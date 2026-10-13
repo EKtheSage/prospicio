@@ -512,6 +512,36 @@ falls when unit `i` is junior.
   equal ≤ junior, for every unit; on two units
   `senior₁ + junior₂ = E[X ∧ a]`.
 
+### Eventual ruin
+
+`aggregate`'s `pollaczeck_khinchine` and `eventual_ruin`, in
+`prospicio_aggregate::ruin`. Poisson claims with severity `X` and a premium
+of `(1 + ρ)` times the expected loss: the maximal aggregate loss `L` is a
+compound geometric, `P(N = n) = (1 − q) qⁿ` with `q = 1 / (1 + ρ)`, of the
+equilibrium severity `S(x) / E[X]`, and `ψ(u) = P(L > u)`. The Poisson
+rate cancels.
+
+- On the severity's grid the equilibrium severity is `h S(jh) / E[X]` at
+  `jh` (with the grid's mean, so it sums to 1), as `aggregate`. The
+  geometric is the negative binomial with `r = 1`, `β = 1/ρ`, so the
+  compound is the existing `fft`
+  with its aliasing check; `aggregate` uses one FFT of twice the grid,
+  wrapped. `ψ` at the last point is the mass beyond the grid.
+- The grid puts ladder heights below `h` at 0, so `ψ(0)` is below the
+  continuous `1 / (1 + ρ)`; `ψ` is `O(h / E[X])` off the continuous
+  model (1% at `h = E[X] / 100` for exponential claims).
+- `SeverityPart` carries `aggregate`'s `cap` (`X | X ≤ c`), `excess`
+  (`X | X > c`, not shifted) and `stop_loss` (the mass above moved onto
+  the first point at or above `s`).
+- The capital for a ruin probability `p` is the smallest grid point with
+  `ψ(u) < p` (`find_u`, `kind='index'`) or linear between grid points
+  (`kind='interp'`). The Lundberg exponent solves
+  `M_X(R) = 1 + (1 + ρ) E[X] R` on the grid's severity below the overflow
+  guard `700 / max(x)`, else none.
+- `eventual_ruin`'s simulated check of the same discretized model is not
+  carried: the exact `ψ` is the deliverable. Renewal counts (Wiener–Hopf)
+  stay parked.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -599,6 +629,16 @@ conditional ladder). A test checks the identities above, and that the
 ladder from the 36 joint scenarios of the three-unit case equals the one
 from its grids at `1e-12`, at asset levels on and off the grid.
 
+Eventual ruin is checked against `aggregate` 1.0.1's
+`pollaczeck_khinchine` and its Lundberg exponent
+(`validation/scripts/aggregate_ruin.py`, 110 values): a gamma severity
+(mean 50, cv 1.5) on `2^16` points at ρ = 0.1 and 0.25, and capped,
+in excess and stopped at ρ = 0.1, and claims of 1, 2 or 3. `ψ` matches at
+`1e-12` absolute, the capital on the grid exactly, interpolated at `1e-10`
+relative (observed 1.5e-11: round-off over a slope of about 1e-6), `R` at
+`1e-10` relative. Unit tests check `ψ` against the exponential closed form
+`e^{−ρu / ((1 + ρ)μ)} / (1 + ρ)` and its `R`, and the FFT against Panjer.
+
 ## Next
 
 1. The rest of `aggregate` parity tier 2, in this order (the gap list of
@@ -610,8 +650,8 @@ from its grids at `1e-12`, at asset levels on and off the grid.
       a distortion; the grid towers checked against `aggregate` itself.)
    3. (Done: the senior and junior priority ladder, `priority_epd_df`
       and `priority_kappa`, on `natural::Portfolio`.)
-   4. Eventual ruin by Pollaczeck–Khinchine (`pollaczeck_khinchine`,
-      `eventual_ruin`).
+   4. (Done: eventual ruin by Pollaczeck–Khinchine, `pollaczeck_khinchine`
+      and `eventual_ruin`, in `prospicio_aggregate::ruin`.)
    5. Layer loss picks (`Aggregate.picks`).
    6. `Bounds` and `PricingBounds`, the rest of the 2022 pricing bounds.
    Small items to fold into these: a total-ceded grid for a stage with

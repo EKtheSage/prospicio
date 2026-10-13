@@ -71,6 +71,8 @@ reference:
       - aggregate.compound_moments
       - aggregate.CompoundMoments
       - aggregate.Approximation
+      - aggregate.eventual_ruin
+      - aggregate.Ruin
   - title: Reinsurance
     desc: Excess-of-loss layers and towers, applied to simulated losses or exactly on the grid.
     contents:

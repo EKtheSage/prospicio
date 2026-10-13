@@ -596,3 +596,49 @@ fn reinsurance_statistics_and_prices_match_aggregate() {
         Some(view(name)?.probs().get(x).copied().unwrap_or(0.0))
     });
 }
+
+#[test]
+fn eventual_ruin_matches_aggregate() {
+    use prospicio_aggregate::ruin::{SeverityPart, pollaczeck_khinchine};
+    use prospicio_prob::Gamma;
+    // validation/scripts/aggregate_ruin.py: a gamma severity on 2^16 points
+    // and claims of 1, 2 or 3 on 2^10, both on a step of 1.
+    let (gamma, _) =
+        Grid::rounding(&Gamma::from_mean_cv(50.0, 1.5).unwrap(), 1.0, 1 << 16).unwrap();
+    let mut small = vec![0.0; 1 << 10];
+    small[1..4].copy_from_slice(&[0.5, 0.3, 0.2]);
+    let small = Grid::new(1.0, small).unwrap();
+    let cases = reference("ruin_aggregate.csv");
+    check(&cases, |c| {
+        let params: std::collections::HashMap<&str, f64> = c
+            .get("params")
+            .split(';')
+            .filter_map(|kv| kv.split_once('='))
+            .filter_map(|(k, v)| Some((k, v.parse().ok()?)))
+            .collect();
+        let sev = match c.get("distribution") {
+            "G" => &gamma,
+            "D" => &small,
+            _ => return None,
+        };
+        let part = if let Some(&v) = params.get("cap") {
+            SeverityPart::AtMost(v)
+        } else if let Some(&v) = params.get("excess") {
+            SeverityPart::Above(v)
+        } else if let Some(&v) = params.get("stop_loss") {
+            SeverityPart::StopLoss(v)
+        } else {
+            SeverityPart::All
+        };
+        let ruin = pollaczeck_khinchine(sev, *params.get("rho")?, sev.len(), part).ok()?;
+        let arg = c.number("arg")?;
+        match c.get("quantity") {
+            "mean" => Some(ruin.severity_mean()),
+            "psi" => Some(ruin.psi_at(arg)),
+            "u_index" => ruin.capital(arg),
+            "u_interp" => ruin.capital_interpolated(arg),
+            "lundberg" => ruin.lundberg_exponent(),
+            _ => None,
+        }
+    });
+}

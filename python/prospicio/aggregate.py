@@ -1,6 +1,7 @@
 """Aggregate loss: compound distributions by Panjer and FFT, and simulated
-events, the occurrence exceedance (OEP) curve, and compound moments to third
-order with the approximations fitted to them. Layers and towers are in
+events, the occurrence exceedance (OEP) curve, compound moments to third
+order with the approximations fitted to them, and eventual ruin by the
+Pollaczeck–Khinchine formula. Layers and towers are in
 ``prospicio.reinsurance``."""
 
 from .prospicio_native import (
@@ -10,7 +11,9 @@ from .prospicio_native import (
     EventSet,
     GridSize,
     OccurrencePml,
+    Ruin,
     compound_moments,
+    eventual_ruin,
     fft,
     fft_auto,
     occurrence_exceedance,
@@ -37,4 +40,6 @@ __all__ = [
     "compound_moments",
     "CompoundMoments",
     "Approximation",
+    "eventual_ruin",
+    "Ruin",
 ]

@@ -455,3 +455,28 @@ def test_layer_statistics_and_prices_by_view():
     # Distortion prices are subadditive.
     assert p.ceded[0].premium + p.net.premium >= p.gross.premium
     assert compound_moments(n, sev).mean == pytest.approx(p.gross.loss, rel=1e-9)
+
+
+def test_eventual_ruin():
+    from prospicio.aggregate import eventual_ruin
+    from prospicio.distributions import Grid
+
+    # Claims of 1, 2 or 3; aggregate 1.0.1's pollaczeck_khinchine at rho 0.1.
+    sev = Grid(1.0, [0.0, 0.5, 0.3, 0.2] + [0.0] * 1020)
+    ruin = eventual_ruin(sev, rho=0.1)
+    assert ruin.u[:3] == [0.0, 1.0, 2.0]
+    assert ruin.psi_at(10.0) == pytest.approx(0.15362022867039649, abs=1e-12)
+    assert ruin.severity_mean == pytest.approx(1.7)
+    assert ruin.capital(0.01) is not None
+    assert ruin.lundberg_exponent > 0
+    assert ruin.report.aliasing_error < 1e-12
+    same = eventual_ruin(sev, loss_ratio=1 / 1.1)
+    assert same.psi == pytest.approx(ruin.psi, abs=1e-14)
+    capped = eventual_ruin(sev, rho=0.1, cap=2.0)
+    assert capped.severity_mean == pytest.approx((0.5 + 0.6) / 0.8)
+    with pytest.raises(ValueError):
+        eventual_ruin(sev, rho=0.1, loss_ratio=0.9)
+    with pytest.raises(ValueError):
+        eventual_ruin(sev, rho=0.1, cap=2.0, excess=1.0)
+    with pytest.raises(ValueError):
+        eventual_ruin(sev, rho=0.0)
