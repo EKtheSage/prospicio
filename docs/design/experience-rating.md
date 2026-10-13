@@ -1,6 +1,7 @@
 # Design note: experience rating from large losses
 
-Status: **In progress** (PR 1 of 3: trend, as-if layer loss, burning cost) ·
+Status: **In progress** (PRs 1 and 2 of 3: trend, as-if layer loss, burning cost;
+per-claim development and count IBNR) ·
 Depends on: `prospicio-aggregate` towers · Lane: Aggregate · Issue: #190
 
 ## Goal
@@ -16,7 +17,7 @@ The reference is Clark's *Basics of Reinsurance Pricing* (CAS study note,
 2014), the section on per-risk experience rating, whose worked example the
 validation reproduces.
 
-## What exists (PR 1)
+## What exists (PRs 1 and 2)
 
 `prospicio_pricing::experience`:
 
@@ -41,14 +42,35 @@ validation reproduces.
   layer the premium-weighted `loss_cost` (developed losses over premium,
   summed, Clark's total) and the equally weighted `mean_loss_cost`.
 
-Bindings: Python `prospicio.pricing.LargeLossExperience`, `PreparedLosses`,
-`BurningCost`; R `trend_large_losses()` and `burning_cost()`.
+- PR 2, per-claim development: `DevelopmentPattern::new(ages, factors)`
+  holds factors to ultimate by age, and `DevelopmentPattern::from_history`
+  estimates one from each claim's valuations (`ClaimValuation { id, age,
+  amount }`). `Experience::with_valuation(date)` and
+  `prepare_developed(&Trend, &Development)` develop each known loss to
+  ultimate (IBNER) before trending, by `Development::Pattern` at its age at
+  the valuation date or by `Development::Factors`, one per loss.
+  `PreparedLoss` gains `development` and `ultimate`, and `trended` is now
+  `ultimate × factor`.
+- PR 2, count IBNR: `YearBasis::from_count_pattern(year, premium, &counts,
+  valuation)` sets a year's development factor from a count pattern at the
+  year's average age, `valuation − (year + ½)`.
+
+Bindings: Python `prospicio.pricing.LargeLossExperience` (with
+`valuation=`), `DevelopmentPattern`, `PreparedLosses` (`prepare(...,
+development=)`), `BurningCost` (`burning_cost` takes a count pattern as
+`development`); R `trend_large_losses()` (with `valuation` and
+`development`), `burning_cost()`, `development_pattern()`,
+`development_pattern_from_history()` and `pattern_factor()`.
 
 ## Decisions
 
-1. **Development by year in PR 1.** Clark develops each year's layer total
-   with an excess factor; per-claim development (IBNER) waits for PR 2,
-   where it changes which losses reach the layer.
+1. **Development by year, or claim by claim.** Clark develops each year's
+   layer total with an excess factor. PR 2 adds per-claim development
+   (IBNER), which changes which losses reach the layer and how far. The
+   two are alternatives: after per-claim development, a year's factor in
+   `YearBasis` is the count IBNR factor only, never an excess factor that
+   already holds IBNER (Clark's "smaller development factor … to include
+   only 'true IBNR' claims").
 2. **Losses below `complete_above` are dropped, not adjusted.** Dropping is
    the standard treatment and needs no assumption about the missing
    losses' sizes.
@@ -58,12 +80,31 @@ Bindings: Python `prospicio.pricing.LargeLossExperience`, `PreparedLosses`,
 4. **Dates are actual days over 365.25** in the validation, which reproduces
    all fourteen of Clark's printed factors to three decimals; the library
    itself takes decimal years and leaves the day count to the caller.
+5. **Two shapes of development, as for trend.** A pattern read at each
+   loss's age, or a factor per loss (as an exhibit prints them or another
+   tool gives them).
+6. **A pattern holds at its ends.** Between ages it interpolates linearly;
+   before the first age it takes the first factor and after the last the
+   last, rather than extrapolate. A pattern should start at the record's
+   youngest age and end where development stops.
+7. **Only claims seen at both ages enter a link.** `from_history` pairs a
+   claim into the factor from age `k` to `k + 1` only when it is valued at
+   both with a positive amount at `k`; a claim first seen later is IBNR,
+   not IBNER, and would bias the factor up. A link with no pairs is an
+   error. With every claim valued at every age up to its latest, the
+   pattern is the volume-weighted chain ladder on the summed triangle,
+   which the validation checks against `prospicio-reserving`'s
+   `ChainLadder`. Clark describes the step but prints no exhibit for it.
+8. **Completeness stays on the reported amount.** The record is complete
+   for losses reported above the threshold, whatever they develop to, so
+   `complete_above` is compared with the reported amount trended. A
+   truncated record also biases the IBNER factors estimated from it (small
+   claims that grow are missing); the pattern is the user's to choose.
+9. **A count pattern is read at the year's mid-point**, `valuation − (year
+   + ½)`, the average accident date of a year written evenly.
 
 ## Next
 
-- **PR 2:** per-claim development (IBNER) from factors by age or a
-  large-loss triangle, applied before the layer; count IBNR for
-  late-reported claims.
 - **PR 3:** an indexation (stability) clause that moves the retention and
   limit with an index, with the franchise variant; FX conversion at a
   stated or historical rate.

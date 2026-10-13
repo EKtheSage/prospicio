@@ -50,7 +50,9 @@ mod prospicio_native {
         PyPredictiveDistribution, PySampled, from_json, to_json,
     };
     #[pymodule_export]
-    use super::experience::{PyBurningCost, PyLargeLossExperience, PyPreparedLosses};
+    use super::experience::{
+        PyBurningCost, PyDevelopmentPattern, PyLargeLossExperience, PyPreparedLosses,
+    };
     #[pymodule_export]
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,

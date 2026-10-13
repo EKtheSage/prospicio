@@ -9,7 +9,9 @@ trend_large_losses(
   rate = NULL,
   to = NULL,
   factors = NULL,
-  threshold = 0
+  threshold = 0,
+  valuation = NULL,
+  development = NULL
 )
 }
 \arguments{
@@ -25,17 +27,26 @@ date of the prospective period.}
 \item{factors}{A trend factor per loss, instead of \code{rate} and \code{to}.}
 
 \item{threshold}{The reporting threshold of the record.}
+
+\item{valuation}{The date the amounts were valued at, a decimal year;
+needed to develop by a \code{\link[=development_pattern]{development_pattern()}}.}
+
+\item{development}{Develops each known loss to ultimate: a
+\code{\link[=development_pattern]{development_pattern()}}, read at each loss's age at \code{valuation}, or a
+factor per loss. Then give \code{\link[=burning_cost]{burning_cost()}} only the count IBNR
+factors, not an excess factor that already holds IBNER.}
 }
 \value{
-A list with \code{losses} (the input columns with \code{year}, \code{factor}
-and \code{trended}), \code{complete_above}, and the inputs \code{\link[=burning_cost]{burning_cost()}}
-needs.
+A list with \code{losses} (the input columns with \code{year},
+\code{development}, \code{ultimate}, \code{factor} and \code{trended}), \code{complete_above},
+and the inputs \code{\link[=burning_cost]{burning_cost()}} needs.
 }
 \description{
 The first step of experience rating from individual large losses
-(Clark, \emph{Basics of Reinsurance Pricing}): trend each loss from its
-accident date to the prospective period, by an annual \code{rate} to the date
-\code{to} (\code{(1 + rate)^(to - accident)}) or by a factor per loss. Cost the
+(Clark, \emph{Basics of Reinsurance Pricing}): develop each known loss to
+ultimate (IBNER), if asked, and trend it from its accident date to the
+prospective period, by an annual \code{rate} to the date \code{to}
+(\code{(1 + rate)^(to - accident)}) or by a factor per loss. Cost the
 trended losses with \code{\link[=burning_cost]{burning_cost()}}.
 }
 \details{
