@@ -212,3 +212,28 @@ stopifnot(abs(q$premium * 0.87 - p$premium) < 1e-12, abs(q$return_on_capital - 0
           abs(implied_quote(q, q$premium)$risk_premium - p$premium) < 1e-12,
           implied_quote(q, 3)$return_on_capital > 0.1,
           is.nan(technical_quote(p)$rate_on_line))
+
+# Experience rating from large losses reproduces Clark's study note (#190).
+clark <- data.frame(
+  id = as.character(1:14),
+  date = as.Date(c("1988-09-20", "1988-10-11", "1989-03-15", "1990-06-21", "1990-10-24",
+                   "1991-01-10", "1992-02-23", "1992-04-30", "1992-09-22", "1993-01-01",
+                   "1993-05-18", "1993-08-01", "1994-08-15", "1995-07-12")),
+  amount = c(240946, 821499, 158129, 114051, 78043, 162533, 324298, 100549, 75476, 171885,
+             94218, 170297, 87133, 771249),
+  factor = c(1.411, 1.408, 1.385, 1.317, 1.300, 1.289, 1.234, 1.225, 1.206, 1.193, 1.175,
+             1.166, 1.119, 1.080)
+)
+clark$accident <- 1997.5 - as.numeric(as.Date("1997-07-01") - clark$date) / 365.25
+tr <- trend_large_losses(clark, rate = 0.04, to = 1997.5)
+stopifnot(all(abs(tr$losses$factor - clark$factor) <= 0.0005 + 1e-12))
+pr <- trend_large_losses(clark, factors = clark$factor)
+tw <- reinsurance_tower(list(xol_layer("400 xs 100", 4e5, 1e5)))
+bc <- burning_cost(pr, tw, 1988:1995,
+                   premium = c(1422554, 1823103, 2054034, 2147147, 2151541, 2159198, 2167158,
+                               2187654),
+                   development = c(1, 1, 1, 1, 1.01, 1.05, 1.15, 1.3))
+stopifnot(all(abs(bc$year_loss_cost[, 1] -
+                  c(0.450, 0.065, 0.025, 0.051, 0.152, 0.104, 0, 0.238)) <= 0.0005 + 1e-12),
+          abs(bc$loss_cost - 0.124) <= 0.0005,
+          identical(bc$years$year, 1988:1995))
