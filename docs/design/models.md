@@ -151,8 +151,10 @@ models and compares them.
   every estimate, pointwise ELPD to `1e-9` and `k̂` to `1e-6`.
 - **Sampling: nutpie** (decided 2026-10-04). Native models (Bayesian GLM,
   Bayesian chain ladder, credibility) will sample with nutpie's Rust core
-  `nuts-rs`, so R gets NUTS too; Python users can hand nutpie traces of
-  PyMC or Stan models to the same diagnostics and ELPD.
+  `nuts-rs`, so R gets NUTS too. The nutpie Python package itself is not
+  used. Only our own NUTS draws reach the diagnostics and ELPD today; taking
+  external draws (nutpie or Stan traces, arviz `InferenceData`) is a
+  longer-term idea (`reserving-bayes.md`, open decision 11), not built.
 - **Bayesian GLM** (`prospicio_bayes::glm`): `BayesGlm` samples a GLM's
   posterior with `nuts-rs` 0.19 (MIT): normal priors on the coefficients
   (`intercept_sd`, `prior_sd`), and for the Gaussian, gamma and inverse
@@ -182,8 +184,8 @@ models and compares them.
   a half-line support, exact replay, and the gamma-Poisson posterior
   predictive against the exact negative binomial. No Python or R
   binding: a density written in Python or R would call back into the
-  interpreter at every gradient; those users hand nutpie or Stan traces
-  to the diagnostics instead.
+  interpreter at every gradient. Passing external traces to the
+  diagnostics is not built yet (see above).
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 
@@ -199,7 +201,7 @@ life cycle; each heavy engine sits in its own crate behind a feature flag.
 | `prospicio-models` | The `Model` trait, model specs, `Design`, `Family` and links, resampling, metrics, tuning, comparison and stacking, model artifacts | None |
 | `prospicio-glm` | GLM by IRLS; GAM as a penalized GLM on the same solver (P-splines, tensor smooths, GCV/REML) | `faer` |
 | `prospicio-nn` | Neural networks on Burn: CANN (a GLM offset plus a network correction) and the attention CANN (a transformer over feature tokens) | Burn, opt-in feature |
-| `prospicio-bayes` | Bayesian model specs and diagnostics (R-hat, ESS, divergences, ELPD by PSIS-LOO and WAIC); sampling through nutpie | Samplers, opt-in feature |
+| `prospicio-bayes` | Bayesian model specs and diagnostics (R-hat, ESS, divergences, ELPD by PSIS-LOO and WAIC); sampling through `nuts-rs` (nutpie's Rust core) | Samplers, opt-in feature |
 | *(no crate)* | Gradient boosting: Python and R adapters over LightGBM and XGBoost that implement the interface and return shared objects | None in Rust |
 
 - **Families live in `prospicio-models`, distributions in `prospicio-prob`.** A
