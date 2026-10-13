@@ -1,5 +1,9 @@
 # Bundle history
 
+## 2026-10-13
+
+* **Creation**: [Notebooks without outputs, executed on the docs site](/environment/notebooks-on-site.md), from moving the notebooks' results to the docs site (branch examples/notebooks-on-site): the notebooks are committed without outputs under an nbstripout 0.9.1 filter (the Python version needs `filter.nbstripout.extrakeys`, which cannot be committed), `git status` lists a re-run notebook until `git add` although `git diff` is empty and the staged blob is unchanged, `cargo xtask python` stages the guides and the notebooks executed by nbconvert as the great-docs User Guide, and great-docs 0.17.0 reads only `.qmd` and `.md` there, publishes a `README.md` unrendered, and on Windows needs `PYTHONUTF8=1`. Not yet run by CI.
+
 ## 2026-10-12
 
 * **Note**: from writing `docs/guides/reinsurance-price.md` (branch guides/reinsurance-price): the guide taught nothing new for the bundle. Its numbers (a 5x5 layer's loss on line, the 99% TVaR pentagon, `TowerGrids.price(Distortion.ccoc(r))` equal to (expected loss + r times the annual limit) / (1 + r), a calibrated proportional hazard distortion across three layers, the quota share commission, a neutral sliding scale and profit commission) are checked by `python/tests/test_guides.py`, not recorded as concepts.
