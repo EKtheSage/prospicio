@@ -1,7 +1,8 @@
 # Design note: compartmental reserving (Gesmann and Morris)
 
-Status: **Proposed** (2026-10-13; nothing built; every decision below is
-Proposed until the user settles the open decisions at the end) · Lane:
+Status: **Decided** (2026-10-13; nothing built; the user settled the open
+decisions at the end, all as recommended, with decision 1 widened: see
+there) · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -129,7 +130,19 @@ cannot be used.
 
 ### 1. Which model ships first
 
-Proposed. Four candidates:
+Decided 2026-10-13 by the user: model 1 first, then model 2, then the
+two-OS model, **with the API flexible from PR B on**. The user asked that
+the likelihood and the response be settings, not separate models: the
+likelihood (normal, log-normal, and later others such as gamma), the
+response scale (amounts, or loss ratios to premium), the paid response
+(cumulative or incremental), and the pair fitted (paid with outstanding,
+or paid with incurred, or one alone). PR B builds model 1 as one point of
+that grid, with the settings in place and the other values returning
+`Error::Bayes` ("not yet") until their PR adds them; PR C fills in the
+log-normal, loss ratios and incremental paid. Each value that ships gets
+its own Stan reference.
+
+The analysis that led here, as proposed: Four candidates:
 
 | Candidate | Reference | Solver | Sampler difficulty |
 |---|---|---|---|
@@ -486,7 +499,7 @@ process error past the square. A reserve to ultimate is open decision 5.
 
 ### 6. The API
 
-Proposed:
+Decided 2026-10-13 (the shape; names may change in PR B):
 
 ```rust
 #[cfg(feature = "bayes")]
@@ -497,6 +510,12 @@ pub mod bayes {
     }
 
     pub enum CompartmentalLikelihood { Normal, LogNormal }   // model 1, model 2 (PR C)
+
+    // Decision 1 (the user, 2026-10-13): the response is a setting too.
+    pub enum Scale { Amount, LossRatio }                     // PR B: Amount; PR C: LossRatio
+    pub enum PaidResponse { Cumulative, Incremental }        // PR B: Cumulative; PR C: Incremental
+    pub enum Fitted { PaidAndOutstanding, PaidAndIncurred, PaidOnly, IncurredOnly }
+    // PR B ships PaidAndOutstanding; the others return Error::Bayes until added.
 
     pub struct CompartmentalPriors {
         pub k_er: PositivePrior, pub k_p: PositivePrior,
@@ -726,8 +745,10 @@ likelihoods exist.
 
 ## Open decisions for the user
 
-Each has a recommendation. All are Proposed; nothing past PR A is built
-until 1 to 4 are settled.
+Decided 2026-10-13 by the user: every item as recommended ((a) for 1, 2,
+3, 5, 6, 7 and 8; (c) for 4), with item 1 widened so that the likelihood,
+the response scale, cumulative or incremental paid and the pair fitted
+are settings from PR B on (decision 1).
 
 1. **First model.** (a) Gesmann and Morris' model 1 (Gaussian, origin
    effects on `RLR` and `RRF`) in PR B, then model 2 in PR C, then the
