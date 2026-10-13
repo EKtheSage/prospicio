@@ -7,6 +7,13 @@ reader who knows primary pricing can follow it without the reinsurance
 vocabulary. The notebooks in [`examples/`](../../examples/README.md) are
 worked analyses; the guides are the reading that goes before them.
 
+The guides are also published on the [docs site](https://ekthesage.github.io/prospicio/),
+in the Python site's User Guide beside the notebooks, which the site runs so
+their results show there (the repository keeps the notebooks without outputs).
+`cargo xtask python` builds that User Guide from this folder: every `.md` file
+here but this README becomes a page, its first `#` heading the page's title,
+and a link to a notebook in `examples/` points to the notebook's page.
+
 Every guide's code is tested. `python/tests/test_guides.py` runs each guide's
 ```` ```python ```` blocks in order in one namespace, and when a block is
 followed by a ```` ```text ```` block, requires the block to print exactly that
