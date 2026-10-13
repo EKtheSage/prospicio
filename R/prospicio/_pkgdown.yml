@@ -121,6 +121,7 @@ reference:
       - technical_quote
       - trend_large_losses
       - burning_cost
+      - development_pattern
       - pentagon
       - premium_bounds
       - pricing_bounds
