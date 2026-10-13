@@ -68,6 +68,7 @@ reference:
       - aggregate.CompoundReport
       - aggregate.simulate_events
       - aggregate.EventSet
+      - aggregate.EventLossTable
       - aggregate.occurrence_exceedance
       - aggregate.occurrence_pml
       - aggregate.OccurrencePml

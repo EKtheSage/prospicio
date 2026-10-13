@@ -1,7 +1,7 @@
 //! `prospicio.aggregate`: wrappers over `prospicio_aggregate` (compound
 //! distributions and simulated events).
 
-use prospicio_aggregate::{CompoundMethod, CompoundReport, EventSet};
+use prospicio_aggregate::{CompoundMethod, CompoundReport, EventLossTable, EventSet};
 use prospicio_prob::{Counting, Grid};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -504,6 +504,38 @@ impl PyEventSet {
                 .map_err(to_py)?;
         }
         Ok(Self { inner })
+    }
+
+    /// Years of losses in long form, as a year loss table lists them: one
+    /// row per loss with its year, an index from 0 to ``n_years - 1``.
+    ///
+    /// Within a year the losses keep their order; years with no row are
+    /// empty.
+    ///
+    /// Parameters
+    /// ----------
+    /// years : list of int
+    /// losses : list of float
+    /// n_years : int
+    ///     The number of simulated years, including those with no loss.
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_long([2, 0, 2], [5.0, 1.0, 7.0], 4)
+    /// >>> e.counts(), e.events(2)
+    /// ([1, 0, 2, 0], [5.0, 7.0])
+    #[staticmethod]
+    #[pyo3(signature = (years, losses, n_years, seed = 0))]
+    fn from_long(years: Vec<usize>, losses: Vec<f64>, n_years: usize, seed: u64) -> PyResult<Self> {
+        Ok(Self {
+            inner: EventSet::from_long(&years, &losses, n_years, seed).map_err(to_py)?,
+        })
     }
 
     /// The same events at times spread uniformly over the year.
@@ -1358,4 +1390,136 @@ pub(crate) fn layer_loss_picks(
         prospicio_aggregate::layer_loss_picks(&severity.inner, &attachments, &picks, claims)
             .map_err(to_py)?;
     Ok(PyPicks { inner })
+}
+
+/// A catastrophe model's event loss table with secondary uncertainty.
+///
+/// Each row is an event with an annual rate, a mean loss, independent and
+/// correlated standard deviations, and an exposure, the most it can lose.
+/// Events occur as independent Poisson processes; an event's loss, given
+/// that it occurs, is a beta distribution on ``[0, exposure]`` with the
+/// row's mean and standard deviation ``sd_independent + sd_correlated``
+/// (summed, as catastrophe models report them for one portfolio), or the
+/// mean exactly when that is 0. A row whose standard deviation no beta on
+/// its exposure can have is an error naming the row.
+///
+/// Parameters
+/// ----------
+/// rate, mean, sd_independent, sd_correlated, exposure : list of float
+///     One value per event, as the table's columns.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import EventLossTable
+/// >>> elt = EventLossTable([0.01, 0.05], [800.0, 200.0], [200.0, 0.0], [100.0, 0.0], [2000.0, 500.0])
+/// >>> round(elt.rate, 12), round(elt.expected_annual_loss, 12)
+/// (0.06, 18.0)
+/// >>> events, ids = elt.simulate(1000, seed=1)
+/// >>> events.n_sims
+/// 1000
+#[pyclass(name = "EventLossTable", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyEventLossTable {
+    inner: EventLossTable,
+}
+
+#[pymethods]
+impl PyEventLossTable {
+    #[new]
+    fn new(
+        rate: Vec<f64>,
+        mean: Vec<f64>,
+        sd_independent: Vec<f64>,
+        sd_correlated: Vec<f64>,
+        exposure: Vec<f64>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: EventLossTable::new(&rate, &mean, &sd_independent, &sd_correlated, &exposure)
+                .map_err(to_py)?,
+        })
+    }
+
+    /// The mean number of events a year, the rates' sum.
+    #[getter]
+    fn rate(&self) -> f64 {
+        self.inner.rate()
+    }
+
+    /// The expected annual loss, the sum of rate times mean.
+    #[getter]
+    fn expected_annual_loss(&self) -> f64 {
+        self.inner.expected_annual_loss()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// The annual frequency of events losing more than ``x``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn exceedance_frequency(&self, x: f64) -> f64 {
+        self.inner.exceedance_frequency(x)
+    }
+
+    /// The occurrence exceedance probability at ``x``,
+    /// ``1 - exp(-exceedance_frequency(x))``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn oep(&self, x: f64) -> f64 {
+        self.inner.oep(x)
+    }
+
+    /// The occurrence PML at annual probability ``p``: the loss whose
+    /// occurrence exceedance probability is ``p``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn occurrence_pml(&self, p: f64) -> PyResult<f64> {
+        self.inner.occurrence_pml(p).map_err(to_py)
+    }
+
+    /// Simulated years of events, with each loss's event (row index).
+    ///
+    /// Year ``i`` draws from its own stream of the seed: a Poisson count,
+    /// then for each event the row by its rate and its loss, so any year
+    /// replays alone.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_years : int
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (EventSet, list of list of int)
+    #[pyo3(signature = (n_years, seed = 0))]
+    fn simulate(&self, n_years: usize, seed: u64) -> PyResult<(PyEventSet, Vec<Vec<usize>>)> {
+        let (inner, ids) = self.inner.simulate(n_years, seed).map_err(to_py)?;
+        Ok((PyEventSet { inner }, ids))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "EventLossTable(events={}, rate={})",
+            self.inner.len(),
+            self.inner.rate()
+        )
+    }
 }

@@ -4599,6 +4599,104 @@ class Elpd:
         """
 
 @final
+class EventLossTable:
+    """
+    A catastrophe model's event loss table with secondary uncertainty.
+    
+    Each row is an event with an annual rate, a mean loss, independent and
+    correlated standard deviations, and an exposure, the most it can lose.
+    Events occur as independent Poisson processes; an event's loss, given
+    that it occurs, is a beta distribution on ``[0, exposure]`` with the
+    row's mean and standard deviation ``sd_independent + sd_correlated``
+    (summed, as catastrophe models report them for one portfolio), or the
+    mean exactly when that is 0. A row whose standard deviation no beta on
+    its exposure can have is an error naming the row.
+    
+    Parameters
+    ----------
+    rate, mean, sd_independent, sd_correlated, exposure : list of float
+        One value per event, as the table's columns.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import EventLossTable
+    >>> elt = EventLossTable([0.01, 0.05], [800.0, 200.0], [200.0, 0.0], [100.0, 0.0], [2000.0, 500.0])
+    >>> round(elt.rate, 12), round(elt.expected_annual_loss, 12)
+    (0.06, 18.0)
+    >>> events, ids = elt.simulate(1000, seed=1)
+    >>> events.n_sims
+    1000
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, rate: Sequence[float], mean: Sequence[float], sd_independent: Sequence[float], sd_correlated: Sequence[float], exposure: Sequence[float]) -> EventLossTable: ...
+    def __repr__(self, /) -> str: ...
+    def exceedance_frequency(self, /, x: float) -> float:
+        """
+        The annual frequency of events losing more than ``x``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def expected_annual_loss(self, /) -> float:
+        """
+        The expected annual loss, the sum of rate times mean.
+        """
+    def occurrence_pml(self, /, p: float) -> float:
+        """
+        The occurrence PML at annual probability ``p``: the loss whose
+        occurrence exceedance probability is ``p``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def oep(self, /, x: float) -> float:
+        """
+        The occurrence exceedance probability at ``x``,
+        ``1 - exp(-exceedance_frequency(x))``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def rate(self, /) -> float:
+        """
+        The mean number of events a year, the rates' sum.
+        """
+    def simulate(self, /, n_years: int, seed: int = 0) -> tuple[EventSet, list[list[int]]]:
+        """
+        Simulated years of events, with each loss's event (row index).
+        
+        Year ``i`` draws from its own stream of the seed: a Poisson count,
+        then for each event the row by its rate and its loss, so any year
+        replays alone.
+        
+        Parameters
+        ----------
+        n_years : int
+        seed : int, default 0
+        
+        Returns
+        -------
+        tuple of (EventSet, list of list of int)
+        """
+
+@final
 class EventSet:
     """
     Simulated years of individual losses, for applying per-loss terms such
@@ -4633,6 +4731,34 @@ class EventSet:
         ------
         IndexError
             If ``sim`` is not a simulated year.
+        """
+    @staticmethod
+    def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0) -> EventSet:
+        """
+        Years of losses in long form, as a year loss table lists them: one
+        row per loss with its year, an index from 0 to ``n_years - 1``.
+        
+        Within a year the losses keep their order; years with no row are
+        empty.
+        
+        Parameters
+        ----------
+        years : list of int
+        losses : list of float
+        n_years : int
+            The number of simulated years, including those with no loss.
+        seed : int, default 0
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_long([2, 0, 2], [5.0, 1.0, 7.0], 4)
+        >>> e.counts(), e.events(2)
+        ([1, 0, 2, 0], [5.0, 7.0])
         """
     @staticmethod
     def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0, times: Sequence[Sequence[float]] |None = None) -> EventSet:
