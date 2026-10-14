@@ -13,6 +13,9 @@ sources:
   - id: design
     resource: ../docs/design/reserving-bayes.md
     title: Design note, Bayesian reserving (decision 10)
+  - id: compartmental
+    resource: ../validation/scripts/reserving_compartmental_stan.py
+    title: The Stan reference generator for Compartmental
   - id: meyers
     resource: ../validation/scripts/reserving_meyers_stan.py
     title: The Stan reference generator for Meyers (CRC and CSR)
@@ -58,3 +61,12 @@ sources:
   root with the same `uv` command; one case (incurred) takes a few
   minutes, and three runs with the same seed reproduced every
   summary.[^meyers]
+* Gesmann and Morris' model 1 (2026-10-13):
+  `validation/scripts/reserving_compartmental_stan.py` imports the
+  toolchain and the compile from `reserving_meyers_stan.py` and runs with
+  the same `uv` command; the program compiles in about 2 minutes and 4
+  chains of 2,000 warm-up and 25,000 draws at `adapt_delta` 0.99 and
+  `max_treedepth` 15 take about 20 minutes (one chain finished 6 minutes
+  after the others). Stan prints rejections during warm-up (a NaN mean,
+  an LKJ Cholesky factor at 0); none in the kept draws, which have no
+  divergence and no draw at the maximum depth.[^compartmental]
