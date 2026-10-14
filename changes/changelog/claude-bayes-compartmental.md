@@ -20,4 +20,4 @@
   `outstanding=...`, `prior_predictive`) and in R as `compartmental()`
   (`gesmann_morris_priors()`, `compartmental_prior_predictive()`), with
   the settings as strings, the diagnostics as one warning, and
-  `bayes_loo()` in R.
+  `bayes_loo()` in R (#243).
