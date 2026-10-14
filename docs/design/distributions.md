@@ -90,7 +90,9 @@ conversion reports the error it introduces.
 - `prospicio_prob::Discrete`, a distribution on finitely many values of
   either sign and any spacing: the rows of the P&L ledger
   (`docs/design/pnl.md`, PR 1). Equal values (to `1e-12`) merge, the
-  probabilities are rescaled to 1, and the lower and upper quantiles,
+  probabilities are rescaled to 1 (unless they already sum to 1 to
+  `1e-12`, which keeps a cumulative on a quantile's jump where `aggregate`
+  has it), and the lower and upper quantiles,
   `tvar` (the upper tail) and the return-period table (`tail`,
   `RETURN_PERIODS`) follow `aggregate`'s `GridDistribution` and
   `make_var_tvar`, including its `k / n` cumulative for equal masses.

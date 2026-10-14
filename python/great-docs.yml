@@ -82,6 +82,11 @@ reference:
       - aggregate.JointGrid
       - aggregate.BivariateReport
       - aggregate.Clash
+      - aggregate.wiener_hopf
+      - aggregate.RenewalRuin
+      - aggregate.Ledger
+      - aggregate.Group
+      - aggregate.Leg
       - aggregate.layer_loss_picks
       - aggregate.Picks
   - title: Reinsurance

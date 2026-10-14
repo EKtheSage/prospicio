@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **In progress** (PR 1 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **In progress** (PRs 1 and 2 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -161,12 +161,23 @@ Each PR is one type or method, with its parity tests, bindings and docs.
    `1e-12` (`1e-10` on TVaR and skewness). Python `Discrete`, R
    `discrete_distribution()`. The display snap of values within `1e-12`
    of 0 moves to PR 2, where the exhibits are.
-2. **The ledger kernel**, `prospicio_aggregate::pnl::{Leg, Group,
-   Ledger}`, over a one-dimensional source: the row plan (legs, side
-   totals, group results, running nets, tiers, net-of blocks, grand rows,
-   total impact), the moments, the card, the sheet with `κ`, each row's
-   marginal ladder, the legs table, `prob_eq_0` and `+`. Parity:
-   examples 1, 2, 2c and 3a with the gross marginal as the source.
+2. (Done.) **The ledger kernel**, `prospicio_aggregate::pnl::{Leg,
+   Group, Ledger, Source, Layout}`, over a one-dimensional source: the row
+   plan (legs, side totals, group results, running nets, spans with
+   subtotal and net-of blocks, grand rows, total impact), the moments, the
+   card (`Ledger::card`), the scenario columns (`Ledger::scenarios`), each
+   row's own quantiles, the legs, `prob_eq_0`, and `Ledger::extend` (`+`).
+   Legs are constants, functions of the source's value, or values at each
+   atom (the bindings call a callable once on all the atoms). Parity:
+   `validation/scripts/aggregate_pnl_ledger.py`, 1,704 values of
+   `aggregate`'s `PnL` built by hand on examples 1, 2, 2c, 3a and a
+   three-group ledger with a span and a net-of block, all at `1e-12`
+   (`1e-10` on skewness). `Discrete` now keeps probabilities that already
+   sum to 1 (to `1e-12`) instead of rescaling them again: the second
+   rescaling moved a cumulative 0.1 to 0.09999999999999999 and the 10%
+   quantile across its jump. Python `prospicio.aggregate.{Ledger, Group,
+   Leg}`, R `pnl_ledger()`, `pnl_group()`, `pnl_leg()` and the
+   `ledger_*()` exhibits.
 3. **Rebucketed legs and ratios**: a leg on a step (signed regular grid by
    linear, mean-keeping scatter) with its validation table, the ratio
    exhibit and the stack of several ledgers' results. Parity: 2b, 2.

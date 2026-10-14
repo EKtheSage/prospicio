@@ -17,6 +17,7 @@ mod discrete;
 mod distributions;
 mod models;
 mod pareto;
+mod pnl;
 mod pricing;
 mod ratemaking;
 mod reinsurance;
@@ -47,6 +48,7 @@ extendr_module! {
     use distributions;
     use models;
     use pareto;
+    use pnl;
     use pricing;
     use ratemaking;
     use reinsurance;

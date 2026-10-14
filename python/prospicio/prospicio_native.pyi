@@ -6873,6 +6873,32 @@ class GridSize:
         """
 
 @final
+class Group:
+    """
+    A book of the ledger: ``sell`` (the insurer of the subject business,
+    booking ``+consideration - obligation``) or ``buy`` (a cession, booking
+    the contra: ceded premium paid, recoveries and commission received).
+    
+    Parameters
+    ----------
+    label : str
+    role : str
+        ``sell`` or ``buy``.
+    consideration : list of Leg, optional
+    obligation : list of Leg, optional
+    margin_label : str, optional
+        The label of a seller's own margin on a ledger that also buys
+        cover; ``Gross`` by default.
+    """
+    def __new__(cls, /, label: str, role: str, consideration: Sequence[Leg] |None = None, obligation: Sequence[Leg] |None = None, margin_label: str |None = None) -> Group: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def label(self, /) -> str:
+        """
+        The label.
+        """
+
+@final
 class HierarchicalStacking:
     """
     Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
@@ -8197,6 +8223,151 @@ class LayerStatistics:
     def share(self, /) -> float:
         """
         The placed share.
+        """
+
+@final
+class Ledger:
+    """
+    A P&L ledger, as ``aggregate``'s ``PnL``: a source (a :class:`Grid`, or
+    values and their probabilities) and its groups, with every row (each
+    leg, each side's total, each group's result, running nets, tier and
+    net-of blocks, and with several groups the grand rows and the total
+    impact) a sum of signed legs at each atom, and its exact distribution.
+    
+    The scenario columns ``k01`` to ``k99`` (``aggregate``'s ``κ``) are each
+    row's conditional mean given that the grand result equals its quantile
+    at that level, so each column is one state of the world and foots down
+    the sheet. Rows are in the payoff convention: ``k01`` is the bad year.
+    The source's probabilities are rescaled to sum to 1.
+    
+    Parameters
+    ----------
+    source : Grid or tuple of (list of float, list of float)
+    groups : list of Group
+    name : str, default "ledger"
+    result_name : str, default "result"
+    spans : list of tuple of (str, int, int), optional
+        ``(label, lo, hi)``: groups ``lo`` to ``hi - 1`` with their own
+        subtotal block, and a net-of block when a later group follows.
+    force_tower : bool, default False
+        Present one group as a tower, with a step level.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Group, Ledger, Leg
+    >>> book = Group("Book", "sell", [Leg("Premium", 10.0)], [Leg("Loss", lambda x: x)])
+    >>> pnl = Ledger(([2.0, 8.0], [0.5, 0.5]), [book], name="Book")
+    >>> pnl.result.mean()
+    5.0
+    >>> s = pnl.sheet()
+    >>> s["label"], s["k01"]
+    (['Premium', 'Loss', 'Total'], [10.0, -8.0, 2.0])
+    """
+    def __new__(cls, /, source: Any, groups: Sequence[Group], *, name: str = ..., result_name: str = ..., spans: Sequence[tuple[str, int, int]] |None = None, force_tower: bool = False) -> Ledger: ...
+    def __repr__(self, /) -> str: ...
+    def card(self, /) -> dict:
+        """
+        The card, ``aggregate``'s ``summary_df``: each block's consideration,
+        obligation and margin (and on a tower each step's running net and
+        the covers' total impact), with ``EX``, ``SD``, ``CV``, ``Skew``,
+        ``P01``, ``Median`` and ``P99`` of each row's own distribution.
+        
+        Returns
+        -------
+        dict
+        """
+    def legs(self, /) -> dict:
+        """
+        The declared legs, ``aggregate``'s ``legs_df``: step, side, label,
+        kind, ``EX`` and ``SD``.
+        
+        Returns
+        -------
+        dict
+        """
+    def marginal(self, /) -> dict:
+        """
+        Each row's own quantiles, ``aggregate``'s ``economic_marginal_df``:
+        ``P01`` to ``P99``, which do not add down the sheet.
+        
+        Returns
+        -------
+        dict
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The ledger's name.
+        """
+    @property
+    def prob_eq_0(self, /) -> float:
+        """
+        The chance that the result is 0.
+        """
+    @property
+    def result(self, /) -> Discrete:
+        """
+        The (grand) result's distribution.
+        """
+    def row(self, /, label: str) -> Discrete:
+        """
+        The distribution of the row labelled ``label``.
+        
+        Parameters
+        ----------
+        label : str
+        
+        Returns
+        -------
+        Discrete
+        """
+    @property
+    def rows(self, /) -> list[str]:
+        """
+        The rows' labels, in sheet order.
+        """
+    def sheet(self, /) -> dict:
+        """
+        The sheet, ``aggregate``'s ``economic_df``: every row with its mean,
+        standard deviation, coefficient of variation, skewness and scenario
+        columns ``k01`` to ``k99``.
+        
+        Returns
+        -------
+        dict
+            Columns ``step`` (on a tower), ``side``, ``label``, ``row`` (the
+            row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios.
+        """
+
+@final
+class Leg:
+    """
+    One cash flow of a :class:`Group`: a constant, or a function of the
+    source's value, written as a positive magnitude; the group's role signs
+    it. A function is called once with all the source's values (a numpy
+    array when numpy is installed, else a list) and returns one value per
+    value, or a single number.
+    
+    Parameters
+    ----------
+    label : str
+        Unique across the ledger.
+    value : float or callable
+    kind : str, optional
+        ``premium``, ``loss``, ``expense``, ``recovery`` or ``commission``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Leg
+    >>> Leg("Loss", lambda x: x, kind="loss")
+    Leg("Loss")
+    """
+    def __new__(cls, /, label: str, value: Any, kind: str |None = None) -> Leg: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def label(self, /) -> str:
+        """
+        The label.
         """
 
 @final
