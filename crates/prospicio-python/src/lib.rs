@@ -107,13 +107,13 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::reserving::{
-        PyBayesBf, PyBayesBfFit, PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits, PyBenktander,
-        PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder, PyChainLadderFit,
-        PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf, PyCompartmental,
-        PyCompartmentalFit, PyCompartmentalPriors, PyExpectedLoss, PyExpectedLossFit, PyMack,
-        PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits,
-        PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve,
-        PyTailLogLinear, PyTriangle,
+        PyBayesBf, PyBayesBfFit, PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits, PyBayesOneYearFit,
+        PyBayesOneYearFits, PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit,
+        PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit,
+        PyClarkLdf, PyCompartmental, PyCompartmentalFit, PyCompartmentalPriors, PyExpectedLoss,
+        PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers,
+        PyMeyersFit, PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy,
+        PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built in Rust** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS; its bindings are the next stage. The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -1483,6 +1483,43 @@ the sketch below, which is kept as proposed:
   an informative one, with no LOO). Over seeds 0 to 29 these means sat
   within 0.7% of their targets with sds of 0.15% to 0.23%, so each
   tolerance is at least 6 sds beyond the mean offset.
+* **The one-year view (PR 8, decision 16)**: Python
+  `BayesOdp.one_year(triangle, column, k_threshold=0.7,
+  refit="refit_flagged")` and `one_year_segments` with the same arguments
+  (`refit` is `"refit_flagged"`, `"reweight_only"` or `"refit_all"`,
+  `OneYearRefit`'s variants), returning `BayesOneYearFit` and
+  `BayesOneYearFits`; R `bayes_odp_one_year()` and
+  `bayes_odp_one_year_segments()` with `bayes_odp()`'s (and
+  `bayes_odp_segments()`'s) arguments in the same order and
+  `k_threshold = 0.7, refit = c("refit_flagged", "reweight_only",
+  "refit_all")` last, returning a `bayes_one_year_fit` and a
+  `bayes_one_year_fits`. The settings are arguments of the method rather
+  than of `BayesOdp`, as `BayesOneYear` is a separate argument in Rust,
+  and the class names carry no model, as `BayesOneYearFit<F>` does not,
+  so `Meyers` and the others can return them too. The single fit has
+  `fit` (the `BayesOdpFit`, `bayes_odp()`'s for the same settings),
+  `chain_ladder`, `origins`, `development`, `latest`,
+  `opening_ultimate`, `opening_reserve`, `cdr`, `pareto_k`, `refitted`,
+  `refit_warnings`, `k_threshold`, `flagged_share` and the frames
+  (`totals_frame()` adds `scale` and `flagged_share`); the fit over
+  segments has the layout of `OneYearFit` plus `diagnostics` and
+  `diagnostics_frame()`, with `scale`, `pareto_k`, `refitted`,
+  `refit_warnings` and `flagged_share` for one segment only. `refitted`
+  is 0-based in Python and 1-based in R. Failed diagnostics of the fit
+  raise the usual warning, and refits that failed theirs one more
+  (`"2 of 1357 refits"`, each segment's label first). Tests:
+  `python/tests/test_reserving_bayes_one_year.py` and
+  `R/prospicio/tests/test-reserving-bayes-one-year.R` run GenIns with
+  the default chains and `"reweight_only"` (no warning, the fields and
+  frames, the lifetime fit equal to `fit`'s, the oldest origin's CDR 0,
+  the mean within 5 standard errors of 0, the flagged share between 0.1
+  and 0.45, the sd within 12% of the ODP bootstrap's one-year view, a
+  loose check because the validation test pins it), replay by seed, the
+  refitted simulations on a four-origin triangle (those above
+  `k_threshold`, or all; a refitted row is `"refit_all"`'s and the others
+  `"reweight_only"`'s), the refit warning on 2 × 20 kept draws, two
+  segments (one segment's fields, the frames, a rank correlation of 0.8
+  within 0.05) and the errors.
 * **Tests**: `python/tests/test_reserving_bayes.py` and
   `R/prospicio/tests/test-reserving-bayes.R` fit GenIns with the default
   chains (no warning, the Stan-matched scale, the reserves near the chain
@@ -1559,9 +1596,9 @@ models with thousands of parameters.
 
 Built in Rust on `claude/bayes-one-year` (2026-10-14), for `BayesOdp`
 first, as the user decided on 2026-10-13 (open decision 6 (b), with a
-refit per flagged simulation as the fallback). The Python and R bindings
-are the next stage of the same PR line (decision 13); `Meyers`, `BayesBf`
-and `Compartmental` follow, each in its own PR, through the same engine.
+refit per flagged simulation as the fallback), with the Python and R
+bindings in the same PR (decision 13); `Meyers`, `BayesBf` and
+`Compartmental` follow, each in its own PR, through the same engine.
 
 **API** (module `bayes`):
 
