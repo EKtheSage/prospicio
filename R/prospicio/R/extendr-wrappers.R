@@ -486,9 +486,9 @@ PnlLedger <- new.env(parent = emptyenv())
 
 PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower) .Call(wrap__PnlLedger__new, values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower)
 
-PnlLedger$book <- function(values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face, retro) .Call(wrap__PnlLedger__book, values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face, retro)
+PnlLedger$book <- function(values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face, retro, expense_at_mean) .Call(wrap__PnlLedger__book, values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face, retro, expense_at_mean)
 
-PnlLedger$book_occurrence <- function(gross, ceded, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face) .Call(wrap__PnlLedger__book_occurrence, gross, ceded, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face)
+PnlLedger$book_occurrence <- function(gross, ceded, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, expense_at_mean) .Call(wrap__PnlLedger__book_occurrence, gross, ceded, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, expense_at_mean)
 
 PnlLedger$rows <- function() .Call(wrap__PnlLedger__rows, self)
 

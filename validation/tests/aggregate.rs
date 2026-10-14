@@ -1547,7 +1547,14 @@ fn pnl_builders_match_aggregate() {
                 .ledger(&ex5, None, Face::Consolidated),
         ),
         ("lblw", lbl.ledger(&small, Some(&one()), Face::Walk)),
-        ("lblc", lbl.ledger(&small, Some(&one()), Face::Consolidated)),
+        // aggregate's guaranteed-cost consolidated face books the loss
+        // expense at the expected gross loss: the opt-in.
+        (
+            "lblc",
+            lbl.clone()
+                .expense_at_expected_loss()
+                .ledger(&small, Some(&one()), Face::Consolidated),
+        ),
     ]
     .into_iter()
     .map(|(k, l)| (k, l.unwrap()))
@@ -1810,7 +1817,8 @@ fn pnl_occurrence_covers_match_aggregate() {
 #[test]
 fn pnl_variable_terms_match_aggregate() {
     use prospicio_aggregate::pnl::{
-        Book, Expense, Face, Ledger, ProgramLayer, Source, pnl_program, pnl_program_stated, snap,
+        Book, Expense, ExpenseBasis, Face, Ledger, ProgramLayer, Source, pnl_program,
+        pnl_program_stated, snap,
     };
     use prospicio_aggregate::{Layer, LossSensitivePremium, Tower};
     // validation/scripts/aggregate_pnl_variable.py: swing rating, a sliding
@@ -1903,6 +1911,17 @@ fn pnl_variable_terms_match_aggregate() {
     ledgers.insert(
         "retro".into(),
         retro.ledger(&small, None, Face::Consolidated).unwrap(),
+    );
+    // A loss-basis expense on the consolidated face, at each atom.
+    let lae = Book::new("V", 10.0).expense(Expense::premium(0.1).and(ExpenseBasis::Loss, 0.05));
+    ledgers.insert(
+        "swlc".into(),
+        lae.ledger(
+            &small,
+            Some(&Tower::new(vec![swing()]).unwrap()),
+            Face::Consolidated,
+        )
+        .unwrap(),
     );
     let cases = reference("pnl_variable_aggregate.csv");
     let input = |row: &str, col: &str| -> Option<f64> {
@@ -2028,7 +2047,7 @@ fn pnl_variable_terms_match_aggregate() {
 
 #[test]
 fn pnl_reinstatements_match_aggregate() {
-    use prospicio_aggregate::pnl::{Book, Expense, Face, Ledger, Source, snap};
+    use prospicio_aggregate::pnl::{Book, Expense, ExpenseBasis, Face, Ledger, Source, snap};
     use prospicio_aggregate::{Layer, Tower};
     // validation/scripts/aggregate_pnl_reinstatements.py: an occurrence
     // cover with reinstatements over the joint of the gross loss and its
@@ -2073,6 +2092,12 @@ fn pnl_reinstatements_match_aggregate() {
     let ledgers: std::collections::HashMap<&str, Ledger> = [
         ("r1", build(&one, None, Face::Walk)),
         ("r1c", build(&one, None, Face::Consolidated)),
+        (
+            "r1lc",
+            Book::new("R", 20.0)
+                .expense(Expense::premium(0.1).and(ExpenseBasis::Loss, 0.05))
+                .occurrence_ledger(&joint, &one, None, Face::Consolidated),
+        ),
         ("r0", build(&none, None, Face::Walk)),
         ("r0c", build(&none, None, Face::Consolidated)),
         ("r2", build(&two, Some(&agg), Face::Walk)),

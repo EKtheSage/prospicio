@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **Done** (PRs 1 to 6b); follow-ups in progress (7a done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **Done** (PRs 1 to 6b); follow-ups in progress (7a and 7b done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -281,8 +281,8 @@ Each PR is one type or method, with its parity tests, bindings and docs.
       respelling and an engine's stated technical premium came in 7a).
       On the consolidated face `aggregate`'s variable builder books a
       loss-basis expense stochastic on the gross, where its guaranteed
-      cost builder (and prospicio on both) books it at the expected gross
-      loss; no parity case has one. Parity:
+      cost builder books it at the expected gross loss (prospicio's choice
+      is 7b). Parity:
       `validation/scripts/aggregate_pnl_variable.py`, 2,342 values: each
       feature walked and consolidated on a 3 xs 5 cover, a profit
       commission on half the layer, a swing-rated cover behind example
@@ -309,8 +309,7 @@ Each PR is one type or method, with its parity tests, bindings and docs.
       to an occurrence cover. `aggregate` refuses to peel a reinstated
       program; prospicio peels it, the tier being one layer. Its
       consolidated face is over the joint with a loss-basis expense
-      stochastic on the gross; prospicio's is the same per-atom ledger
-      with the expense at its expectation, as everywhere. Parity:
+      stochastic on the gross, as prospicio's (7b). Parity:
       `validation/scripts/aggregate_pnl_reinstatements.py`, 1,121 values
       on example 4's joint: one reinstatement at 100%, none (an annual
       limit of 2), and one free and one at 50% with a ceding commission
@@ -336,10 +335,28 @@ Each PR is one type or method, with its parity tests, bindings and docs.
       tiers, a stated engine with and without cover, a layer with its own
       deposit kept), every number exact. Python `pnl_program_stated` and
       `rates`; R `pnl_program_stated()` and `rates`.
-   b. **A loss-basis expense on the consolidated face** at each atom's
-      gross loss rather than its expectation, and the two cases where
-      prospicio builds what `aggregate` refuses (a walk over a retro
-      book, a peel of a reinstated layer) recorded as decisions.
+   b. (Done.) **A loss-basis expense on the consolidated face** at each
+      atom's gross loss, `rate × x` with `x` the gross coordinate of the
+      atom whose net loss the face is over. `aggregate` books it three
+      ways: at the expected gross loss on its guaranteed-cost and
+      occurrence builders (its source there is a net marginal, where the
+      gross loss is not measurable), stochastic on its variable builder
+      without an occurrence program and on its reinstatement builder.
+      prospicio's consolidated face always has the gross loss at hand, so
+      it books the expense per atom on every face; the mean is the same,
+      and the consolidated margin is then the walk's net margin atom by
+      atom (a unit test checks every quantile).
+      `Book::expense_at_expected_loss` keeps `aggregate`'s guaranteed-cost booking, which its parity
+      case `lblc` uses. Parity: `swlc` (a swing-rated cover, the variable
+      builder) and `r1lc` (a reinstated layer) with `10% premium expense
+      and 5% loss expense` match `aggregate` exactly. Two cases where
+      prospicio builds what `aggregate` refuses are choices, not
+      oversights, each with a unit test: a walk over a retro book is the
+      one gross group (the consolidated face's result; there is no cover
+      to walk through), and a peel of a single reinstated occurrence layer
+      is its walk (the tier is one layer). Python `Book(...,
+      expense_at_expected_loss=True)`; R `pnl_book(expense_at_expected_loss
+      = TRUE)`.
    c. **The stitched peel** of several occurrence layers, revising
       decision 8.
 

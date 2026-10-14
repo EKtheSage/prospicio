@@ -142,6 +142,7 @@ impl PnlLedger {
         tower: Robj,
         face: &str,
         retro: &[f64],
+        expense_at_mean: bool,
     ) -> Result<Self> {
         let source = Source::new(values.to_vec(), probs.to_vec()).map_err(to_r)?;
         let mut book = make_book(
@@ -164,6 +165,9 @@ impl PnlLedger {
                 )
                 .map_err(to_r)?,
             );
+        }
+        if expense_at_mean {
+            book = book.expense_at_expected_loss();
         }
         let face = face_of(face)?;
         let tower = tower_of(&tower)?;
@@ -194,9 +198,10 @@ impl PnlLedger {
         occurrence: Robj,
         aggregate: Robj,
         face: &str,
+        expense_at_mean: bool,
     ) -> Result<Self> {
         let joint = Source::joint(gross.to_vec(), ceded.to_vec(), probs.to_vec()).map_err(to_r)?;
-        let book = make_book(
+        let mut book = make_book(
             name,
             premium,
             exp_index,
@@ -205,6 +210,9 @@ impl PnlLedger {
             &exp_label,
             [premium_label, loss_label, step_label],
         )?;
+        if expense_at_mean {
+            book = book.expense_at_expected_loss();
+        }
         let face = face_of(face)?;
         let occurrence = tower_of(&occurrence)?
             .ok_or_else(|| Error::Other("occurrence must be a reinsurance_tower".into()))?;

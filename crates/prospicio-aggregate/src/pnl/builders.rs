@@ -11,9 +11,10 @@
 //!   tower it is premium less loss less expenses over the gross; with one,
 //!   net premium (gross less the ceded premiums) less the net loss less the
 //!   commission received (booked as a negative obligation) less expenses,
-//!   over the net loss at each atom. The gross loss is not on that source,
-//!   so a loss-basis expense books as its rate times the expected gross
-//!   loss.
+//!   over the net loss at each atom. A loss-basis expense books as its
+//!   rate times the atom's gross loss, so the margin is the walk's net
+//!   margin atom by atom ([`Book::expense_at_expected_loss`] books it at
+//!   the expected gross loss instead).
 //! - [`Face::Walk`], `xpnl`: the gross book, then one buy group per stage
 //!   of the tower, every leg a function of the gross loss, with the
 //!   running net and the covers' total impact. Without a tower it is the
@@ -514,6 +515,7 @@ pub struct Book {
     step_label: Option<String>,
     expenses: Vec<Expense>,
     retro: Option<LossSensitivePremium>,
+    expense_at_mean: bool,
 }
 
 impl Book {
@@ -528,6 +530,7 @@ impl Book {
             step_label: None,
             expenses: Vec::new(),
             retro: None,
+            expense_at_mean: false,
         }
     }
 
@@ -555,6 +558,17 @@ impl Book {
     /// Adds an expense leg.
     pub fn expense(mut self, expense: Expense) -> Self {
         self.expenses.push(expense);
+        self
+    }
+
+    /// Books a loss-basis expense on the consolidated face at the expected
+    /// gross loss, `rate × E[gross]`, as `aggregate`'s guaranteed-cost and
+    /// occurrence builders do, rather than at each atom's gross loss (the
+    /// default, as its reinstatement builder). The mean is the same; the
+    /// default makes the consolidated margin the walk's net margin atom by
+    /// atom.
+    pub fn expense_at_expected_loss(mut self) -> Self {
+        self.expense_at_mean = true;
         self
     }
 
@@ -689,10 +703,11 @@ impl Book {
         self.loss_label.clone().unwrap_or_else(|| "Gross".into())
     }
 
-    /// One obligation leg per expense, `aggregate`'s `_expense_legs`: on
-    /// the source, a loss-basis term is `rate × x`; off it, `rate × E[gross
-    /// loss]`. Zero legs are left out.
-    fn expense_legs(&self, gross_mean: Option<f64>, taken: &[String]) -> Vec<Leg> {
+    /// One obligation leg per expense, `aggregate`'s `_expense_legs`: a
+    /// loss-basis term is `rate × x` at the source's value, or at `gross[k]`
+    /// at each atom when the source is the net loss (the consolidated
+    /// face). Zero legs are left out.
+    fn expense_legs(&self, gross: Option<&[f64]>, taken: &[String]) -> Vec<Leg> {
         let mut used: Vec<String> = taken.to_vec();
         let lone_unlabelled = self.expenses.len() == 1 && self.expenses[0].label.is_none();
         let mut legs = Vec::new();
@@ -709,11 +724,11 @@ impl Book {
             }
             used.push(key.clone());
             let (scalar, rate) = e.split(self.premium);
-            let leg = match gross_mean {
+            let leg = match gross {
                 _ if rate == 0.0 && scalar == 0.0 => continue,
                 _ if rate == 0.0 => Leg::constant(key, scalar),
                 None => Leg::of(key, move |x| rate * x + scalar),
-                Some(m) => Leg::constant(key, rate * m + scalar),
+                Some(g) => Leg::values(key, g.iter().map(|x| rate * x + scalar).collect()),
             };
             legs.push(leg.kind(LegKind::Expense));
         }
@@ -909,15 +924,23 @@ impl Book {
         } else if commission[0] != 0.0 {
             obligation.push(Leg::constant("commission", -commission[0]).kind(LegKind::Commission));
         }
-        let gross_mean: f64 = source
-            .values()
-            .iter()
-            .zip(source.probs())
-            .map(|(x, p)| x * p)
-            .sum();
-        obligation.extend(
-            self.expense_legs(Some(gross_mean), &[prem.clone(), loss, "commission".into()]),
-        );
+        // A loss-basis expense on each atom's gross loss (the consolidated
+        // margin is then the walk's net margin atom by atom), or at its mean.
+        let at_mean: Vec<f64>;
+        let gross = if self.expense_at_mean {
+            let m: f64 = source
+                .values()
+                .iter()
+                .zip(source.probs())
+                .map(|(x, p)| x * p)
+                .sum();
+            at_mean = vec![m; source.values().len()];
+            &at_mean[..]
+        } else {
+            source.values()
+        };
+        obligation
+            .extend(self.expense_legs(Some(gross), &[prem.clone(), loss, "commission".into()]));
         let net_premium = if premium_varies {
             Leg::values(
                 prem,
@@ -1343,6 +1366,75 @@ mod tests {
             .ledger(&gross(), None, Face::Consolidated)
             .unwrap();
         assert!((mixed.row("expense").unwrap().mean() + 1.19).abs() < 1e-12);
+    }
+
+    #[test]
+    fn consolidated_loss_expense_at_each_atom() {
+        let book = Book::new("B", 10.0).expense(Expense::loss(0.1));
+        let cover = Tower::new(vec![
+            Layer::stop_loss("SL", 3.0, 5.0)
+                .unwrap()
+                .deposit_premium(1.0)
+                .unwrap(),
+        ])
+        .unwrap();
+        let c = book
+            .ledger(&gross(), Some(&cover), Face::Consolidated)
+            .unwrap();
+        let w = book.ledger(&gross(), Some(&cover), Face::Walk).unwrap();
+        // The consolidated margin is the walk's net margin at every level.
+        for q in [0.01, 0.25, 0.5, 0.9, 0.99] {
+            let (a, b) = (
+                c.result().quantile(q).unwrap(),
+                w.result().quantile(q).unwrap(),
+            );
+            assert!((a - b).abs() < 1e-12, "{q}: {a} {b}");
+        }
+        assert!((c.result().sd() - w.result().sd()).abs() < 1e-12);
+        // At the expected loss: the same mean, a constant leg.
+        let m = book
+            .clone()
+            .expense_at_expected_loss()
+            .ledger(&gross(), Some(&cover), Face::Consolidated)
+            .unwrap();
+        assert!((m.result().mean() - c.result().mean()).abs() < 1e-12);
+        assert_eq!(m.row("expense").unwrap().sd(), 0.0);
+        assert!(c.row("expense").unwrap().sd() > 0.0);
+    }
+
+    #[test]
+    fn built_where_aggregate_refuses() {
+        // A walk over a retro book: the one gross group (aggregate's xpnl
+        // refuses retro; prospicio's walk has nothing to walk through).
+        let retro = Book::new("R", 2.0)
+            .retro(LossSensitivePremium::new(2.0, 1.1, Some(3.0), Some(9.0)).unwrap());
+        let w = retro.ledger(&gross(), None, Face::Walk).unwrap();
+        let c = retro.ledger(&gross(), None, Face::Consolidated).unwrap();
+        assert!((w.result().mean() - c.result().mean()).abs() < 1e-12);
+        // A peel of a single reinstated occurrence layer is its walk.
+        let joint = Source::joint(
+            vec![2.0, 4.0, 6.0],
+            vec![1.0, 2.0, 4.0],
+            vec![0.5, 0.3, 0.2],
+        )
+        .unwrap();
+        let occ = Tower::new(vec![
+            Layer::xol("XL", 2.0, 2.0)
+                .unwrap()
+                .paid_reinstatements(1.0, vec![1.0])
+                .unwrap(),
+        ])
+        .unwrap();
+        let b = Book::new("B", 10.0);
+        let walk = b.occurrence_ledger(&joint, &occ, None, Face::Walk).unwrap();
+        let peel = b
+            .occurrence_ledger(&joint, &occ, None, Face::PeelTopDown)
+            .unwrap();
+        assert_eq!(walk.rows().len(), peel.rows().len());
+        for (r, s) in walk.rows().iter().zip(peel.rows()) {
+            assert_eq!(r.label, s.label);
+            assert!((r.mean() - s.mean()).abs() < 1e-12);
+        }
     }
 
     #[test]

@@ -1725,7 +1725,8 @@ class Book:
     - ``consolidated`` (``pnl``): one group, the net position. With a tower
       it books net premium (gross less ceded premiums) less the net loss
       less the commission received less expenses, over the net loss; a
-      loss-basis expense books as its rate times the expected gross loss.
+      loss-basis expense books as its rate times each year's gross loss
+      (or the expected one, with ``expense_at_expected_loss``).
     - ``walk`` (``xpnl``): the gross book, then one buy group per stage of
       the tower, with the running net and the covers' total impact.
     - ``peel-top-down`` and ``peel-bottom-up`` (``xpnl ... peel``): one buy
@@ -1754,6 +1755,11 @@ class Book:
         and ``premium`` (the collar's basic premium in ``aggregate``) is
         what premium-basis expenses are taken on. A retro book buys no
         cover here.
+    expense_at_expected_loss : bool, default False
+        Book a loss-basis expense on the consolidated face at the expected
+        gross loss, as ``aggregate``'s guaranteed-cost builder does, rather
+        than at each year's gross loss (which makes the consolidated margin
+        the walk's net margin year by year).
     
     Examples
     --------
@@ -1767,7 +1773,7 @@ class Book:
     >>> round(walk.result.mean(), 12), walk.sheet()["step"][-1]
     (4.54, 'All')
     """
-    def __new__(cls, /, name: str, premium: float, expenses: Sequence[Expense] |None = None, *, premium_label: str |None = None, loss_label: str |None = None, step_label: str |None = None, retro: LossSensitivePremium |None = None) -> Book: ...
+    def __new__(cls, /, name: str, premium: float, expenses: Sequence[Expense] |None = None, *, premium_label: str |None = None, loss_label: str |None = None, step_label: str |None = None, retro: LossSensitivePremium |None = None, expense_at_expected_loss: bool = False) -> Book: ...
     def __repr__(self, /) -> str: ...
     def ledger(self, /, source: Any, tower: Tower |None = None, face: str = "consolidated") -> Ledger:
         """

@@ -801,7 +801,8 @@ pub(crate) fn derive_premium(technical: f64, expenses: Vec<PyExpense>) -> PyResu
 /// - ``consolidated`` (``pnl``): one group, the net position. With a tower
 ///   it books net premium (gross less ceded premiums) less the net loss
 ///   less the commission received less expenses, over the net loss; a
-///   loss-basis expense books as its rate times the expected gross loss.
+///   loss-basis expense books as its rate times each year's gross loss
+///   (or the expected one, with ``expense_at_expected_loss``).
 /// - ``walk`` (``xpnl``): the gross book, then one buy group per stage of
 ///   the tower, with the running net and the covers' total impact.
 /// - ``peel-top-down`` and ``peel-bottom-up`` (``xpnl ... peel``): one buy
@@ -830,6 +831,11 @@ pub(crate) fn derive_premium(technical: f64, expenses: Vec<PyExpense>) -> PyResu
 ///     and ``premium`` (the collar's basic premium in ``aggregate``) is
 ///     what premium-basis expenses are taken on. A retro book buys no
 ///     cover here.
+/// expense_at_expected_loss : bool, default False
+///     Book a loss-basis expense on the consolidated face at the expected
+///     gross loss, as ``aggregate``'s guaranteed-cost builder does, rather
+///     than at each year's gross loss (which makes the consolidated margin
+///     the walk's net margin year by year).
 ///
 /// Examples
 /// --------
@@ -850,7 +856,8 @@ pub(crate) struct PyBook {
 #[pymethods]
 impl PyBook {
     #[new]
-    #[pyo3(signature = (name, premium, expenses=None, *, premium_label=None, loss_label=None, step_label=None, retro=None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (name, premium, expenses=None, *, premium_label=None, loss_label=None, step_label=None, retro=None, expense_at_expected_loss=false))]
     fn new(
         name: String,
         premium: f64,
@@ -859,8 +866,12 @@ impl PyBook {
         loss_label: Option<String>,
         step_label: Option<String>,
         retro: Option<PyRef<'_, PyLossSensitivePremium>>,
+        expense_at_expected_loss: bool,
     ) -> Self {
         let mut b = RsBook::new(name, premium);
+        if expense_at_expected_loss {
+            b = b.expense_at_expected_loss();
+        }
         if let Some(r) = retro {
             b = b.retro(r.inner);
         }

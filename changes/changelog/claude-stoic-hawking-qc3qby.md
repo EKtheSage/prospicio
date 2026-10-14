@@ -101,3 +101,10 @@
   `pnl::pnl_program_stated` prices an engine that states its own technical
   premium; `ProgramLayer` says its tier. Python `pnl_program_stated` and a
   `rates` entry; R `pnl_program_stated()` and `rates` (#249).
+- The P&L's consolidated face books a loss-basis expense at each year's
+  gross loss, so its margin is the walk's net margin year by year (the
+  mean is unchanged; its spread now includes the expense's).
+  `Book::expense_at_expected_loss` keeps the expected-loss booking of
+  `aggregate`'s guaranteed-cost builder. Python
+  `Book(expense_at_expected_loss=)`; R `pnl_book(expense_at_expected_loss
+  =)`.
