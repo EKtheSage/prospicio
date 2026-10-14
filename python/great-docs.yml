@@ -35,6 +35,7 @@ reference:
       - distributions.from_json
       - distributions.Grid
       - distributions.DiscretizationReport
+      - distributions.Discrete
       - distributions.Sampled
   - title: Large-loss severities
     desc: The Pareto family for layer and treaty pricing, with maximum likelihood fits.

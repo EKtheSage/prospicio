@@ -4081,6 +4081,183 @@ class DevelopmentPattern:
         """
 
 @final
+class Discrete:
+    """
+    A distribution on finitely many values, of either sign and any spacing:
+    a row of a P&L (premium less loss less expenses) or any other signed
+    outcome, as the Python package ``aggregate``'s ``GridDistribution`` on an
+    irregular support.
+    
+    Values may repeat and come in any order: equal values (to ``1e-12``) are
+    merged, zero probabilities dropped, and the probabilities rescaled to
+    sum to 1. Quantiles and TVaR follow ``aggregate`` exactly; ``tvar`` is
+    the upper tail even when the values are a payoff, whose adverse tail is
+    the low one.
+    
+    Parameters
+    ----------
+    values : list of float
+    probs : list of float
+        Non-negative, with a positive total.
+    
+    Raises
+    ------
+    ValueError
+        If the lengths differ, a value is not finite, a probability is
+        negative or none is positive.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Discrete
+    >>> # A margin: 9 less the loss of two claims of 1, 2 or 4.
+    >>> m = Discrete([7, 6, 5, 4, 3, 1], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    >>> round(m.mean(), 12), m.quantile(0.01)
+    (5.2, 1.0)
+    >>> round(m.tvar(0.01), 6)
+    5.242424
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, values: Sequence[float], probs: Sequence[float]) -> Discrete: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    def pmf(self, /, x: float) -> float:
+        """
+        The probability of exactly ``x`` (to ``1e-12``).
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def probs(self, /) -> list[float]:
+        """
+        Their probabilities, summing to 1.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The lower quantile, the smallest value with ``F >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    def quantile_upper(self, /, p: float) -> float |None:
+        """
+        The upper quantile, the smallest value with ``F > p``; None at
+        ``p = 1``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float or None
+        """
+    def skewness(self, /) -> float |None:
+        """
+        The skewness, or None when the variance is 0.
+        
+        Returns
+        -------
+        float or None
+        """
+    def std_dev(self, /) -> float:
+        """
+        The standard deviation.
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        ``P(X > x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tail(self, /, periods: Sequence[float] |None = None) -> dict:
+        """
+        The return-period table, as ``aggregate``'s ``tail_df``: each period
+        ``T`` read from both tails, at ``P = 1 / T`` and ``P = 1 - 1 / T``. A
+        payoff (a P&L) is read off the low rows, a loss off the high ones.
+        
+        Parameters
+        ----------
+        periods : list of float, optional
+            At least 1; ``aggregate``'s 2, 5, 10, 25, 50, 100, 200, 250, 500,
+            1000 by default.
+        
+        Returns
+        -------
+        dict
+            Columns ``p``, ``period``, ``var``, ``tvar``, ``excess`` (VaR less
+            the mean) and ``var_to_mean`` (None near a zero mean).
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p``: the mean of the upper ``1 - p`` of the
+        distribution, the upper tail even for a payoff.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def values(self, /) -> list[float]:
+        """
+        The distinct values, ascending.
+        """
+    def variance(self, /) -> float:
+        """
+        The variance.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class DiscretizationReport:
     """
     How a distribution was discretized, and the error that introduced.

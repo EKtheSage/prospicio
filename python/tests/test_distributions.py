@@ -337,3 +337,31 @@ def test_named_counts_and_tvar_threshold():
     assert t < 0.85
     assert g.tvar(t) == pytest.approx(g.quantile(0.85), abs=1e-12)
     assert g.tvar(0.0) == pytest.approx(g.mean(), abs=1e-15)
+
+
+def test_discrete():
+    from prospicio.distributions import Discrete
+
+    # The P&L design note's example 1: the margin 9 less the loss of two
+    # claims of 1, 2 or 4; aggregate 1.0.1's GridDistribution.
+    m = Discrete([7, 6, 5, 4, 3, 1], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    assert m.values == [1.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    assert m.mean() == pytest.approx(5.2, abs=1e-12)
+    assert m.std_dev() == pytest.approx(1.6062378404209, abs=1e-12)
+    assert m.skewness() == pytest.approx(-0.7181304929229927, abs=1e-10)
+    assert [m.quantile(p) for p in (0.01, 0.05, 0.5, 0.99)] == [1.0, 3.0, 6.0, 7.0]
+    assert m.tvar(0.01) == pytest.approx(5.242424242424243, abs=1e-12)
+    assert m.quantile_upper(1.0) is None
+    assert m.cdf(4.0) == pytest.approx(0.36, abs=1e-15)
+    assert m.pmf(6.0) == pytest.approx(0.3, abs=1e-15)
+    t = m.tail()
+    assert t["p"][0] == pytest.approx(0.001)
+    assert t["var"][0] == 1.0 and t["period"][0] == 1000.0
+    # Values equal to the last bit are one atom; zero masses drop out.
+    d = Discrete([3.1, 3.0999999999999996, -2.0, 9.0], [1, 1, 2, 0])
+    assert len(d) == 2 and d.probs == [0.5, 0.5]
+    assert Discrete([-4.5], [1.0]).skewness() is None
+    with pytest.raises(ValueError):
+        Discrete([1.0], [0.0])
+    with pytest.raises(ValueError):
+        Discrete([1.0, 2.0], [0.5])

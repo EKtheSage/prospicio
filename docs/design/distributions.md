@@ -87,6 +87,17 @@ conversion reports the error it introduces.
   `Distribution` and a `Severity` (exact LEV, stop-loss and layers on the
   grid). Parity: `validation/reference/grid_mpmath.csv`, masses from the
   textbook definitions at 30 digits (`validation/scripts/mpmath_grid.py`).
+- `prospicio_prob::Discrete`, a distribution on finitely many values of
+  either sign and any spacing: the rows of the P&L ledger
+  (`docs/design/pnl.md`, PR 1). Equal values (to `1e-12`) merge, the
+  probabilities are rescaled to 1, and the lower and upper quantiles,
+  `tvar` (the upper tail) and the return-period table (`tail`,
+  `RETURN_PERIODS`) follow `aggregate`'s `GridDistribution` and
+  `make_var_tvar`, including its `k / n` cumulative for equal masses.
+  `Distribution`, `pmf`, `skewness`. Parity:
+  `validation/reference/discrete_aggregate.csv` (544 values, `1e-12`;
+  `1e-10` on TVaR and skewness). Python `Discrete`, R
+  `discrete_distribution()`.
 
 - `prospicio_prob::Counting` (`pmf`, `cdf`, `mean`, `variance`, `panjer_ab`, `pgf`,
   `quantile`, `sample`), with `Poisson` and `NegativeBinomial` (Klugman's
