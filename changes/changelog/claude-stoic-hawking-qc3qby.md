@@ -88,4 +88,4 @@
   refuse loss-sensitive terms (reinstatement premiums still are). Python
   `Book(retro=)`, `pnl_program`, `size_premium`, `round_premium`; R
   `pnl_book(retro =)`, `pnl_program()`, `size_premium()`,
-  `round_premium()`.
+  `round_premium()` (#247).
