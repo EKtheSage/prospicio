@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **Proposed** · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **In progress** (PR 1 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -150,12 +150,17 @@ on a step (PR 3).
 
 Each PR is one type or method, with its parity tests, bindings and docs.
 
-1. **`Discrete`** in `prospicio-prob`: the signed irregular distribution
-   of decision 1, with `aggregate`'s `make_var_tvar` (built on the atoms
-   with mass; equal masses read as `k / n` exactly; the lower quantile by
-   `searchsorted(F, p, 'left')`, `tvar` at `p ≥ F[n−2]` the top atom),
-   the return-period table, and the noise snap (`|v| ≤ 1e-12` reads 0).
-   Parity: the result atoms of examples 1 and 2 below.
+1. (Done.) **`Discrete`** in `prospicio-prob`: the signed irregular
+   distribution of decision 1, with `aggregate`'s `make_var_tvar` (built on
+   the atoms with mass; equal masses read as `k / n` exactly; the lower
+   quantile by `searchsorted(F, p, 'left')`, `tvar` at `p ≥ F[n−2]` the
+   top atom, and for a lone atom that atom, where `aggregate` raises an
+   `IndexError`) and the return-period table. Parity:
+   `validation/scripts/aggregate_discrete.py`, 544 values on the results
+   of examples 1 and 2, equal masses, a signed sample and a lone atom, at
+   `1e-12` (`1e-10` on TVaR and skewness). Python `Discrete`, R
+   `discrete_distribution()`. The display snap of values within `1e-12`
+   of 0 moves to PR 2, where the exhibits are.
 2. **The ledger kernel**, `prospicio_aggregate::pnl::{Leg, Group,
    Ledger}`, over a one-dimensional source: the row plan (legs, side
    totals, group results, running nets, tiers, net-of blocks, grand rows,
@@ -191,8 +196,8 @@ the numbers a first run gave (2026-10-14):
   bs=1)`. Margin `EX` 5.2, `SD` 1.60623784, skew −0.7181304929, `P01`,
   median, `P99` 1, 6, 7. `κ01…κ99` of the loss −8, −6, −6, −5, −3, −2,
   −2, −2, −2 and of the margin 1, 3, 3, 4, 6, 7, 7, 7, 7. The result's
-  atoms −1, 1, 2, 3, 4, 5 with probabilities 0.04, 0.12, 0.2, 0.09, 0.3,
-  0.25; `q` at 0.01, 0.05, 0.5, 0.99 is 1, 3, 6, 7; `tvar` at 0.01, 0.5,
+  atoms (9 less the loss) 1, 3, 4, 5, 6, 7 with probabilities 0.04, 0.12,
+  0.2, 0.09, 0.3, 0.25; `q` at 0.01, 0.05, 0.5, 0.99 is 1, 3, 6, 7; `tvar` at 0.01, 0.5,
   0.9 is 5.242424242, 6.5, 7.
 - **Example 2**, a hand-built ledger on `x = [0, 10, 20, 50]`, `p = [.4,
   .3, .2, .1]`: `Gross` sells a premium `clip(5 + 1.1x, 12, 40)` against

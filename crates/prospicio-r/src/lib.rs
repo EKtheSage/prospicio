@@ -13,6 +13,7 @@ use extendr_api::{Error, Result};
 mod aggregate;
 mod counts;
 mod credibility;
+mod discrete;
 mod distributions;
 mod models;
 mod pareto;
@@ -42,6 +43,7 @@ extendr_module! {
     use aggregate;
     use counts;
     use credibility;
+    use discrete;
     use distributions;
     use models;
     use pareto;

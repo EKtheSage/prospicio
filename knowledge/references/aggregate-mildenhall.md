@@ -412,7 +412,11 @@ sources:
 * `GridDistribution`'s `tvar` is the upper tail even on a payoff, so on a
   P&L row it sits near the mean; `return_period` is the only accessor that
   reads the payoff sign (`T = 1 / p`). Its `make_var_tvar` reads equal
-  masses as `k / n` exactly and builds on the atoms with mass only.[^pnl]
+  masses as `k / n` exactly (equal meaning within `2⁻⁵³ + 1e-5`
+  relative, `np.isclose`'s default `rtol`) and builds on the atoms with
+  mass only; `tvar` on a lone atom raises an `IndexError` (it reads
+  `F[-2]`). `prospicio_prob::Discrete` matches it on 544 values
+  (`aggregate_discrete.py`).[^pnl]
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 

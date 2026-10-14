@@ -853,3 +853,71 @@ fn copula_cdfs_match_mpmath() {
         Some(c.cdf(&point).unwrap())
     });
 }
+
+#[test]
+fn discrete_matches_aggregate() {
+    use prospicio_prob::Discrete;
+    use prospicio_prob::discrete::RETURN_PERIODS;
+    // validation/scripts/aggregate_discrete.py: aggregate's GridDistribution
+    // on the P&L design note's results, equal masses, a signed sample and a
+    // lone atom; the signed sample's atoms are in discrete_aggregate_atoms.csv.
+    let mut cases: std::collections::HashMap<String, Discrete> = Default::default();
+    let atoms = |name: &str| -> Option<(Vec<f64>, Vec<f64>)> {
+        Some(match name {
+            "ex1" => (
+                vec![1.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+                vec![0.04, 0.12, 0.2, 0.09, 0.3, 0.25],
+            ),
+            "ex2" => (vec![1.9, 7.4, 8.4, 8.9], vec![0.3, 0.2, 0.4, 0.1]),
+            "equal" => (
+                vec![-30.0, -10.0, 0.0, 5.0, 25.0, 60.0, 61.0],
+                vec![1.0 / 7.0; 7],
+            ),
+            "single" => (vec![-4.5], vec![1.0]),
+            _ => return None,
+        })
+    };
+    check(&reference("discrete_aggregate.csv"), |c| {
+        let name = c.get("case");
+        if !cases.contains_key(name) {
+            let (x, p) = match atoms(name) {
+                Some(a) => a,
+                None => discrete_case(name)?,
+            };
+            cases.insert(name.to_string(), Discrete::new(x, p).ok()?);
+        }
+        let d = &cases[name];
+        let arg = c.number("arg")?;
+        let row = |p: f64| {
+            d.tail(&RETURN_PERIODS)
+                .ok()?
+                .into_iter()
+                .find(|r| (r.p - p).abs() < 1e-12)
+        };
+        match c.get("quantity") {
+            "mean" => Some(d.mean()),
+            "sd" => Some(d.std_dev()),
+            "skew" => d.skewness(),
+            "cdf" => Some(d.cdf(arg)),
+            "q_lower" => d.quantile(arg).ok(),
+            "q_upper" => d.quantile_upper(arg).ok()?,
+            "tvar" => d.tvar(arg).ok(),
+            "tail_var" => Some(row(arg)?.var),
+            "tail_tvar" => Some(row(arg)?.tvar),
+            "tail_period" => Some(row(arg)?.period),
+            _ => None,
+        }
+    });
+}
+
+/// The atoms of a case the reference script draws at random, read back
+/// from `discrete_aggregate_atoms.csv`.
+fn discrete_case(name: &str) -> Option<(Vec<f64>, Vec<f64>)> {
+    let rows = reference("discrete_aggregate_atoms.csv");
+    let (x, p): (Vec<f64>, Vec<f64>) = rows
+        .iter()
+        .filter(|r| r.get("case") == name)
+        .map(|r| (r.number("value").unwrap(), r.number("prob").unwrap()))
+        .unzip();
+    (!x.is_empty()).then_some((x, p))
+}

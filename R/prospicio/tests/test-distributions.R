@@ -132,3 +132,18 @@ stopifnot(inherits(try(renewal_count(gamma_distribution(2, 1), 5, step = 0.01), 
 g <- grid_distribution(1, c(0.4, 0.3, 0.2, 0.1))
 t <- tvar_threshold(g, 0.85)
 stopifnot(t < 0.85, abs(TVaR(g, t) - quantile(g, 0.85)) < 1e-12)
+
+# A signed discrete distribution, against aggregate 1.0.1's GridDistribution:
+# the P&L design note's example 1, the margin 9 less the loss of two claims.
+m <- discrete_distribution(c(7, 6, 5, 4, 3, 1), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+stopifnot(identical(m@values, c(1, 3, 4, 5, 6, 7)), abs(mean(m) - 5.2) < 1e-12)
+stopifnot(abs(sqrt(variance(m)) - 1.6062378404209) < 1e-12)
+stopifnot(abs(discrete_skewness(m) + 0.7181304929229927) < 1e-10)
+stopifnot(identical(quantile(m, c(0.01, 0.05, 0.5, 0.99)), c(1, 3, 6, 7)))
+stopifnot(abs(TVaR(m, 0.01) - 5.242424242424243) < 1e-12, is.na(quantile_upper(m, 1)))
+stopifnot(abs(cdf(m, 4) - 0.36) < 1e-15, abs(pmf(m, 6) - 0.3) < 1e-15, abs(survival(m, 4) - 0.64) < 1e-15)
+rp <- return_periods(m)
+stopifnot(abs(rp$p[1] - 0.001) < 1e-15, rp$var[1] == 1, rp$period[1] == 1000)
+d <- discrete_distribution(c(3.1, 3.0999999999999996, -2, 9), c(1, 1, 2, 0))
+stopifnot(length(d@values) == 2, identical(d@probs, c(0.5, 0.5)), is.na(discrete_skewness(discrete_distribution(-4.5, 1))))
+stopifnot(inherits(try(discrete_distribution(1, 0), silent = TRUE), "try-error"))

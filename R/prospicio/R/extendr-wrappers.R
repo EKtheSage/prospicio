@@ -438,6 +438,40 @@ NegativeBinomial$sample <- function(n, seed, stream) .Call(wrap__NegativeBinomia
 #' @export
 `[[.NegativeBinomial` <- `$.NegativeBinomial`
 
+DiscreteDist <- new.env(parent = emptyenv())
+
+DiscreteDist$new <- function(values, probs) .Call(wrap__DiscreteDist__new, values, probs)
+
+DiscreteDist$values <- function() .Call(wrap__DiscreteDist__values, self)
+
+DiscreteDist$probs <- function() .Call(wrap__DiscreteDist__probs, self)
+
+DiscreteDist$mean <- function() .Call(wrap__DiscreteDist__mean, self)
+
+DiscreteDist$variance <- function() .Call(wrap__DiscreteDist__variance, self)
+
+DiscreteDist$skewness <- function() .Call(wrap__DiscreteDist__skewness, self)
+
+DiscreteDist$cdf <- function(x) .Call(wrap__DiscreteDist__cdf, self, x)
+
+DiscreteDist$survival <- function(x) .Call(wrap__DiscreteDist__survival, self, x)
+
+DiscreteDist$pmf <- function(x) .Call(wrap__DiscreteDist__pmf, self, x)
+
+DiscreteDist$quantile <- function(p) .Call(wrap__DiscreteDist__quantile, self, p)
+
+DiscreteDist$quantile_upper <- function(p) .Call(wrap__DiscreteDist__quantile_upper, self, p)
+
+DiscreteDist$tvar <- function(p) .Call(wrap__DiscreteDist__tvar, self, p)
+
+DiscreteDist$tail <- function(periods) .Call(wrap__DiscreteDist__tail, self, periods)
+
+#' @export
+`$.DiscreteDist` <- function (self, name) { func <- DiscreteDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.DiscreteDist` <- `$.DiscreteDist`
+
 Grid <- new.env(parent = emptyenv())
 
 Grid$new <- function(step, probs) .Call(wrap__Grid__new, step, probs)

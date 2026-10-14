@@ -6,6 +6,12 @@
   (`prospicio_math::special::bivariate_norm_cdf`, Genz's BVND, about
   `1e-15`); an error for the t copula. Python `cdf` on the copula classes;
   R `copula_cdf()` (#234).
+- A distribution on finitely many values of either sign and any spacing,
+  `prospicio_prob::Discrete`, for the rows of a P&L: equal values merged,
+  the lower and upper quantiles, TVaR and the return-period table as
+  `aggregate` 1.0.1's `GridDistribution`, `pmf` and skewness. Python
+  `Discrete`; R `discrete_distribution()`, `quantile_upper()`,
+  `discrete_skewness()` and `return_periods()`.
 
 ### Aggregate and reinsurance
 

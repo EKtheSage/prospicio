@@ -16,6 +16,7 @@ use pyo3::prelude::*;
 mod aggregate;
 mod counts;
 mod credibility;
+mod discrete;
 mod distributions;
 mod experience;
 mod models;
@@ -46,6 +47,8 @@ mod prospicio_native {
     use super::counts::PyCount;
     #[pymodule_export]
     use super::credibility::{PyBuhlmannStraubFit, PyLimitedFluctuation, buhlmann_straub};
+    #[pymodule_export]
+    use super::discrete::PyDiscrete;
     #[pymodule_export]
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
