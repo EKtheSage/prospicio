@@ -95,4 +95,4 @@
   premium `D + h(R)` varying with the year on every face, and an
   aggregate cover behind it, matching `aggregate` 1.0.1. Annual covers
   now refuse paid reinstatements with a pointer to
-  `Book::occurrence_ledger`.
+  `Book::occurrence_ledger` (#248).
