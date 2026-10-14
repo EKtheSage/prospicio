@@ -115,4 +115,4 @@
   `pnl::Ledger::stitched`; the mean column foots, the other statistics and
   the card are each row's own, with no scenario columns. Python
   `Book.occurrence_peel` and `Ledger.is_stitched`; R
-  `book_occurrence_peel()` and `ledger_is_stitched()`.
+  `book_occurrence_peel()` and `ledger_is_stitched()` (#251).
