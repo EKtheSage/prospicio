@@ -42,6 +42,9 @@ CASES = {
 }
 TWO = (f'{B} {OCC} cede 25% reinstatements 1 free and 1 at 50% poisson '
        'aggregate net of 3 xs 5 deposit 0.5')
+# A loss-basis expense on the consolidated face: at each atom's gross loss.
+CASES['r1lc'] = (f'pnl R 20 premium less {B} {OCC} reinstatements 1 at 100% poisson '
+                 'less 10% premium expense and 5% loss expense')
 CASES['r2'] = f'xpnl R 20 premium less {TWO} {EXP}'
 CASES['r2c'] = f'pnl R 20 premium less {TWO} {EXP}'
 

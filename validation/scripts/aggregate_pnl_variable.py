@@ -46,6 +46,9 @@ for key, cover in COVERS.items():
 OCC = f'{B} occurrence net of 2 xs 2 deposit 2 cede 25% poisson aggregate net of 3 xs 5 {SWING}'
 CASES['occsw'] = f'xpnl V 20 premium less {OCC} {EXP}'
 CASES['occswc'] = f'pnl V 20 premium less {OCC} {EXP}'
+# A loss-basis expense on the consolidated face: at each atom's gross loss.
+CASES['swlc'] = (f'pnl V 10 premium less {A} {COVERS["swing"]} '
+                 'less 10% premium expense and 5% loss expense')
 CASES['retro'] = f'pnl V retro basic 2 lcm 1.1 min 3 max 9 premium less {A} {EXP}'
 
 rows = []

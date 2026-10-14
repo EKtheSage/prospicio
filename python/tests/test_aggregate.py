@@ -897,3 +897,18 @@ def test_pnl_program_rates_and_stated_premium():
     assert pnl_program_stated(1000.0, 0.25)["premium"] == pytest.approx(1000 / 0.75, abs=1e-9)
     kept = pnl_program(406.0, 0.9, 0.25, [dict(share=0.5, stated=20.0)])
     assert kept["rates"] == [None]
+
+
+def test_consolidated_loss_expense_each_year():
+    from prospicio.aggregate import Book, Expense
+    from prospicio.reinsurance import Layer, Tower
+
+    gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    cover = Tower([Layer.stop_loss("SL", 3.0, 5.0).with_deposit_premium(1.0)])
+    book = Book("B", 10.0, [Expense("loss", 0.05)])
+    c, w = book.ledger(gross, cover), book.ledger(gross, cover, "walk")
+    # The consolidated margin is the walk's net margin, year by year.
+    assert c.result.std_dev() == pytest.approx(w.result.std_dev(), abs=1e-12)
+    m = Book("B", 10.0, [Expense("loss", 0.05)], expense_at_expected_loss=True).ledger(gross, cover)
+    assert m.result.mean() == pytest.approx(c.result.mean(), abs=1e-12)
+    assert m.row("expense").std_dev() == 0.0 and c.row("expense").std_dev() > 0.0

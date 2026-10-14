@@ -236,7 +236,8 @@ pnl_flat_expenses <- function(expenses) {
 #' - `"consolidated"` (`pnl`): one group, the net position. With a tower it
 #'   books net premium (gross less ceded premiums) less the net loss less
 #'   the commission received less expenses, over the net loss; a
-#'   loss-basis expense books as its rate times the expected gross loss.
+#'   loss-basis expense books as its rate times each year's gross loss (or
+#'   the expected one, with `expense_at_expected_loss`).
 #' - `"walk"` (`xpnl`): the gross book, then one buy group per stage of the
 #'   tower, with the running net and the covers' total impact.
 #' - `"peel-top-down"` and `"peel-bottom-up"`: one buy group per layer, with
@@ -266,6 +267,11 @@ pnl_flat_expenses <- function(expenses) {
 #'   maximum)` at the year's gross loss `x`, and `premium` (the collar's
 #'   basic premium in `aggregate`) is what premium-basis expenses are taken
 #'   on. A retro book buys no cover here.
+#' @param expense_at_expected_loss Book a loss-basis expense on the
+#'   consolidated face at the expected gross loss, as `aggregate`'s
+#'   guaranteed-cost builder does, rather than at each year's gross loss
+#'   (which makes the consolidated margin the walk's net margin year by
+#'   year).
 #' @param basis `"fixed"`, `"premium"` or `"loss"`, or a list of
 #'   `list(basis, value)` terms.
 #' @param value The amount or rate, with a single `basis`.
@@ -287,7 +293,7 @@ pnl_flat_expenses <- function(expenses) {
 #' walk <- book_ledger(book, gross, reinsurance_tower(list(cover)), "walk")
 #' mean(ledger_result(walk))
 pnl_book <- function(name, premium, expenses = list(), premium_label = NULL, loss_label = NULL,
-                     step_label = NULL, retro = NULL) {
+                     step_label = NULL, retro = NULL, expense_at_expected_loss = FALSE) {
   if (!is.null(retro)) {
     retro <- as.double(retro)
     if (length(retro) == 2) retro <- c(retro, NA, NA)
@@ -296,7 +302,7 @@ pnl_book <- function(name, premium, expenses = list(), premium_label = NULL, los
   }
   structure(list(name = as.character(name), premium = as.double(premium), expenses = expenses,
                  premium_label = premium_label, loss_label = loss_label, step_label = step_label,
-                 retro = retro),
+                 retro = retro, expense_at_expected_loss = isTRUE(expense_at_expected_loss)),
             class = "pnl_book")
 }
 
@@ -323,7 +329,7 @@ book_ledger <- function(book, source, tower = NULL, face = "consolidated") {
     src$values, src$probs, book$name, book$premium, e$index, e$basis, e$value, e$label,
     lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
     if (is.null(tower)) NULL else tower@ptr, as.character(face),
-    if (is.null(book$retro)) double() else book$retro
+    if (is.null(book$retro)) double() else book$retro, isTRUE(book$expense_at_expected_loss)
   ))
   structure(list(ptr = ptr), class = "pnl_ledger")
 }
@@ -390,7 +396,8 @@ book_occurrence_ledger <- function(book, joint, occurrence, aggregate = NULL, fa
     as.double(joint[[1]]), as.double(joint[[2]]), as.double(joint[[3]]),
     book$name, book$premium, e$index, e$basis, e$value, e$label,
     lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
-    occurrence@ptr, if (is.null(aggregate)) NULL else aggregate@ptr, as.character(face)
+    occurrence@ptr, if (is.null(aggregate)) NULL else aggregate@ptr, as.character(face),
+    isTRUE(book$expense_at_expected_loss)
   ))
   structure(list(ptr = ptr), class = "pnl_ledger")
 }

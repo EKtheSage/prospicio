@@ -14,7 +14,8 @@ pnl_book(
   premium_label = NULL,
   loss_label = NULL,
   step_label = NULL,
-  retro = NULL
+  retro = NULL,
+  expense_at_expected_loss = FALSE
 )
 
 pnl_expense(basis, value = NULL, label = NULL)
@@ -38,6 +39,12 @@ a walk) and the gross book's step on a walk (\code{"Gross"}).}
 open end) to rate the book retrospectively, \code{aggregate}'s \verb{retro <collar> premium}: the premium is \code{clip(basic + lcm * x, minimum, maximum)} at the year's gross loss \code{x}, and \code{premium} (the collar's
 basic premium in \code{aggregate}) is what premium-basis expenses are taken
 on. A retro book buys no cover here.}
+
+\item{expense_at_expected_loss}{Book a loss-basis expense on the
+consolidated face at the expected gross loss, as \code{aggregate}'s
+guaranteed-cost builder does, rather than at each year's gross loss
+(which makes the consolidated margin the walk's net margin year by
+year).}
 
 \item{basis}{\code{"fixed"}, \code{"premium"} or \code{"loss"}, or a list of
 \code{list(basis, value)} terms.}
@@ -73,7 +80,8 @@ over a source of annual gross losses, with the annual covers of a
 \item \code{"consolidated"} (\code{pnl}): one group, the net position. With a tower it
 books net premium (gross less ceded premiums) less the net loss less
 the commission received less expenses, over the net loss; a
-loss-basis expense books as its rate times the expected gross loss.
+loss-basis expense books as its rate times each year's gross loss (or
+the expected one, with \code{expense_at_expected_loss}).
 \item \code{"walk"} (\code{xpnl}): the gross book, then one buy group per stage of the
 tower, with the running net and the covers' total impact.
 \item \code{"peel-top-down"} and \code{"peel-bottom-up"}: one buy group per layer, with

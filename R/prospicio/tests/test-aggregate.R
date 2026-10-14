@@ -496,3 +496,17 @@ local({
   k <- pnl_program(406, 0.9, 0.25, data.frame(share = 0.5, stated = 20))
   stopifnot(is.na(k$rates))
 })
+
+# A loss-basis expense on the consolidated face, at each year's gross loss.
+local({
+  gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+  cover <- reinsurance_tower(list(with_deposit_premium(aggregate_stop_loss("SL", 3, 5), 1)))
+  book <- pnl_book("B", 10, list(pnl_expense("loss", 0.05)))
+  c1 <- book_ledger(book, gross, cover)
+  w <- book_ledger(book, gross, cover, "walk")
+  sdv <- function(d) sqrt(d@ptr$variance())
+  stopifnot(abs(sdv(ledger_result(c1)) - sdv(ledger_result(w))) < 1e-12)
+  m <- book_ledger(pnl_book("B", 10, list(pnl_expense("loss", 0.05)), expense_at_expected_loss = TRUE),
+                   gross, cover)
+  stopifnot(abs(mean(ledger_result(m)) - mean(ledger_result(c1))) < 1e-12)
+})
