@@ -11755,6 +11755,73 @@ class NegativeBinomial:
         """
 
 @final
+class NestedArchimedeanCopula:
+    """
+    A nested (hierarchical) Archimedean copula: groups of dimensions joined
+    by their own Clayton or Gumbel copula, and the groups joined by an outer
+    one with weaker dependence, to any depth. Kendall's tau between two
+    dimensions is that of the node where they first meet.
+    
+    Parameters
+    ----------
+    family : {"clayton", "gumbel"}
+    tree : tuple
+        The root node ``(theta, members)``: each member a dimension
+        (0-based) or a node. Every dimension appears once, every node has at
+        least two members, and no child's ``theta`` is below its parent's.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import NestedArchimedeanCopula
+    >>> c = NestedArchimedeanCopula("gumbel", (1.5, [0, (3.0, [1, 2]), (2.0, [3, 4])]))
+    >>> c.dim, c.family
+    (5, 'gumbel')
+    >>> c.cdf([1.0, 0.5, 1.0, 1.0, 1.0])
+    0.5
+    """
+    def __new__(cls, /, family: str, tree: Any) -> NestedArchimedeanCopula: ...
+    def cdf(self, /, u: Sequence[float]) -> float:
+        """
+        The copula's distribution function at the point ``u``.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of dimensions.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        Family name.
+        """
+    def sample(self, /, n: int, seed: int) -> list[list[float]]:
+        """
+        ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def tree(self, /) -> Any:
+        """
+        The tree, as given: ``(theta, members)``, leaves first.
+        """
+
+@final
 class OccurrencePml:
     """
     One point of the occurrence PML curve, from ``occurrence_pml``.

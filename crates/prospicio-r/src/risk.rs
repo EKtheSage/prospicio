@@ -307,6 +307,7 @@ pub(crate) enum AnyCopula {
     Gaussian(GaussianCopula),
     StudentT(StudentTCopula),
     Archimedean(ArchimedeanCopula),
+    Nested(prospicio_prob::NestedArchimedeanCopula),
 }
 
 impl AnyCopula {
@@ -315,8 +316,42 @@ impl AnyCopula {
             Self::Gaussian(c) => c,
             Self::StudentT(c) => c,
             Self::Archimedean(c) => c,
+            Self::Nested(c) => c,
         }
     }
+}
+
+/// A node `list(theta, leaves, children)` with 1-based leaves.
+fn nested_node(node: &Robj) -> Result<prospicio_prob::NestedNode> {
+    let bad = || Error::Other("a node is list(theta, leaves, children)".into());
+    let l = List::try_from(node).map_err(|_| bad())?;
+    if l.len() != 3 {
+        return Err(bad());
+    }
+    let parts: Vec<Robj> = l.values().collect();
+    let theta = parts[0]
+        .as_real()
+        .ok_or_else(|| Error::Other("theta must be a number".into()))?;
+    let leaves = parts[1]
+        .as_real_vector()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|j| {
+            if j >= 1.0 && j.fract() == 0.0 {
+                Ok(j as usize - 1)
+            } else {
+                Err(Error::Other(format!(
+                    "leaf {j} is not a dimension (1, 2, ...)"
+                )))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let children = List::try_from(&parts[2])
+        .map_err(|_| Error::Other("children must be a list of nodes".into()))?
+        .values()
+        .map(|c| nested_node(&c))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(prospicio_prob::NestedNode::new(theta, leaves, children))
 }
 
 /// A copula.
@@ -360,6 +395,24 @@ impl RiskCopula {
         })
     }
 
+    /// A nested Archimedean copula from its root node.
+    fn nested(family: &str, root: Robj) -> Result<Self> {
+        let family = match family {
+            "clayton" => Archimedean::Clayton,
+            "gumbel" => Archimedean::Gumbel,
+            other => {
+                return Err(Error::Other(format!(
+                    "a nested copula is \"clayton\" or \"gumbel\", not {other:?}"
+                )));
+            }
+        };
+        let c = prospicio_prob::NestedArchimedeanCopula::new(family, nested_node(&root)?)
+            .map_err(to_r)?;
+        Ok(Self {
+            inner: AnyCopula::Nested(c),
+        })
+    }
+
     fn dim(&self) -> f64 {
         self.inner.as_copula().dim() as f64
     }
@@ -389,6 +442,7 @@ impl RiskCopula {
             AnyCopula::Gaussian(_) => "Gaussian".into(),
             AnyCopula::StudentT(c) => format!("Student t, nu = {}", c.nu()),
             AnyCopula::Archimedean(c) => format!("{:?}, theta = {}", c.family(), c.theta()),
+            AnyCopula::Nested(c) => format!("nested {:?}, theta = {}", c.family(), c.root().theta),
         }
     }
 

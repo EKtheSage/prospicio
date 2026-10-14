@@ -12,6 +12,12 @@
   `aggregate` 1.0.1's `GridDistribution`, `pmf` and skewness. Python
   `Discrete`; R `discrete_distribution()`, `quantile_upper()`,
   `discrete_skewness()` and `return_periods()` (#241).
+- Nested (hierarchical) Archimedean copulas,
+  `prospicio_prob::NestedArchimedeanCopula`: Clayton or Gumbel copulas
+  joining groups of dimensions inside a weaker outer one, to any depth,
+  with the distribution function and McNeil's sampling. Python
+  `prospicio.risk.NestedArchimedeanCopula`; R
+  `nested_archimedean_copula()` and `nac_node()`.
 - A severity under a mix of policy limits, `prospicio_prob::PolicyLimits`
   (#213): `min(X, L)` with each limit's weight, exact layer moments from
   the base severity's and an atom at each finite limit, so it discretizes,

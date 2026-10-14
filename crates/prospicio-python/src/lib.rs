@@ -120,8 +120,9 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::risk::{
-        PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail,
-        PyStudentTCopula, allocate, calibrate, capital, covar, entropic, esscher,
-        esscher_allocation, hill, iman_conover, marginal_expected_shortfall, mean_excess, simulate,
+        PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
+        PyNestedArchimedeanCopula, PyPotTail, PyStudentTCopula, allocate, calibrate, capital,
+        covar, entropic, esscher, esscher_allocation, hill, iman_conover,
+        marginal_expected_shortfall, mean_excess, simulate,
     };
 }

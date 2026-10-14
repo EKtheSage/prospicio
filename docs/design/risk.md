@@ -53,6 +53,16 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   component's draws to a target correlation.
 - `ArchimedeanCopula` (Clayton, Gumbel, Frank, Joe), exchangeable in any
   dimension.
+- `NestedArchimedeanCopula` (decided 2026-10-14): a tree of `NestedNode`s,
+  each with its `θ`, its leaves (0-based dimensions) and its children, so
+  groups of lines can depend more strongly within than across. One family
+  throughout, Clayton or Gumbel; each child's `θ` at least its parent's
+  (the sufficient nesting condition, McNeil 2008), so Kendall's tau between
+  two dimensions is that of the node where they first meet. The cdf
+  recurses, `ψ(Σ_leaves ψ⁻¹(u_j) + Σ_children ψ⁻¹(C_child))`. Python
+  `NestedArchimedeanCopula(family, (theta, [members]))` with members
+  dimensions or nodes; R `nested_archimedean_copula(family, nac_node(theta,
+  leaves, children))` with 1-based leaves.
 - `Copula::cdf(&u)`, the copula's distribution function: the Archimedean
   copulas' `ψ(Σ ψ⁻¹(u_j))` in any dimension (with
   `ArchimedeanCopula::inverse_generator`), the Gaussian copula's
@@ -180,8 +190,22 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   logarithmic by Kemp's LK, Sibuya by inverting its distribution
   function), then `d` unit exponentials, `u_j = ψ(E_j / V)`. This is exact
   in every dimension, uses a fixed number of uniforms except for the gamma
-  rejection step, and gives exchangeable dependence only; nested and
-  vine structures come later.
+  rejection step, and gives exchangeable dependence only.
+- **Nested copulas by McNeil's recursion.** The root frailty as above;
+  at each node one exponential per leaf, in order, then each child with an
+  inner frailty whose Laplace transform is `exp(−V ψ⁻¹(ψ_child(t)))`. For
+  Gumbel that is `V^(1/α) S(α)`, `α = θ/θ_child`, with `S` the same
+  positive stable. For Clayton it is the exponentially tilted stable
+  `exp(−V((1 + t)^α − 1))`; plain rejection from `V^(1/α) S(α)` accepts
+  with probability `e^−V`, which collapses for a small root `θ` (a large
+  gamma frailty), so the frailty is split into `m = ⌈V⌉` parts of size
+  `V/m`, each accepted with probability at least `e^−1`, at a cost of
+  `O(V)` per draw. Frank and Joe nesting (Hofert 2011) and mixed families
+  are refused until needed. Tested without an external reference (R's
+  `copula` package is not installed here): a one-node tree gives the
+  exchangeable copula's draws exactly, Kendall's tau within and across
+  groups and the cdf against the draws, and the Clayton inner frailty's
+  Laplace transform by Monte Carlo. Vines come next.
 - **Uniforms stay inside `(0, 1)`.** Far in a tail, `Φ` or a generator
   rounds to 0 or 1, where marginal quantiles are infinite, so every copula
   clamps to `[f64::MIN_POSITIVE, 1 - 2^-53]`.

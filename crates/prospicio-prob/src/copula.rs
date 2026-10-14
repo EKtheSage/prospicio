@@ -345,6 +345,215 @@ impl Copula for ArchimedeanCopula {
     }
 }
 
+/// One node of a [`NestedArchimedeanCopula`]: its parameter, the
+/// dimensions joined at this level (`leaves`, 0-based) and the nested
+/// copulas below it (`children`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NestedNode {
+    pub theta: f64,
+    pub leaves: Vec<usize>,
+    pub children: Vec<NestedNode>,
+}
+
+impl NestedNode {
+    /// A node with parameter `theta`, leaves and children.
+    pub fn new(theta: f64, leaves: Vec<usize>, children: Vec<NestedNode>) -> Self {
+        Self {
+            theta,
+            leaves,
+            children,
+        }
+    }
+}
+
+/// A nested (hierarchical) Archimedean copula: groups of dimensions joined
+/// by their own Archimedean copula, and the groups joined by an outer one
+/// with weaker dependence, to any depth. Lines within a class can depend
+/// more strongly on each other than on other classes, which an
+/// exchangeable copula cannot express.
+///
+/// The cdf recurses: a node is
+/// `ψ_θ(Σ_leaves ψ_θ⁻¹(u_j) + Σ_children ψ_θ⁻¹(C_child(u)))`. Every node
+/// has the same family, Clayton or Gumbel, and each child's `θ` is at
+/// least its parent's (the sufficient nesting condition, McNeil 2008), so
+/// Kendall's tau between two dimensions is that of the node where they
+/// first meet.
+///
+/// Draws follow McNeil (2008): the root's frailty `V` as in
+/// [`ArchimedeanCopula`]; at each node, a unit exponential `E` per leaf in
+/// order, `u = ψ_θ(E / V)`, then each child in order with an inner frailty
+/// whose Laplace transform is `exp(−V ψ_θ⁻¹(ψ_θc(t)))`. For Gumbel that is
+/// `V^(1/α) S` with `S` positive stable of index `α = θ/θc`. For Clayton it
+/// is `exp(−V((1 + t)^α − 1))`, an exponentially tilted stable, drawn as a
+/// sum of `m = ⌈V⌉` tilted stables of size `V/m`, each by rejection with
+/// acceptance at least `e^−1`, so a draw costs `O(V)`.
+///
+/// ```
+/// use prospicio_prob::copula::{Archimedean, Copula, NestedArchimedeanCopula, NestedNode};
+///
+/// // Dimensions 1 and 2 joined at θ = 4 (tau 0.75), with 0 at θ = 2 (tau 0.5).
+/// let c = NestedArchimedeanCopula::new(
+///     Archimedean::Gumbel,
+///     NestedNode::new(2.0, vec![0], vec![NestedNode::new(4.0, vec![1, 2], vec![])]),
+/// )
+/// .unwrap();
+/// assert_eq!(c.dim(), 3);
+/// // ψ₂(ψ₂⁻¹(u₀) + ψ₂⁻¹(ψ₄(ψ₄⁻¹(u₁) + ψ₄⁻¹(u₂)))).
+/// let inner = (-((-0.6f64.ln()).powi(4) + (-0.7f64.ln()).powi(4)).powf(0.25)).exp();
+/// let want = (-((-0.5f64.ln()).powi(2) + (-inner.ln()).powi(2)).sqrt()).exp();
+/// assert!((c.cdf(&[0.5, 0.6, 0.7]).unwrap() - want).abs() < 1e-14);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct NestedArchimedeanCopula {
+    family: Archimedean,
+    root: NestedNode,
+    dim: usize,
+}
+
+impl NestedArchimedeanCopula {
+    /// A nested copula of `family` (Clayton or Gumbel) with the tree
+    /// `root`: the leaves across the tree are `0..d` once each, every node
+    /// joins at least two members (leaves and children), and no child has
+    /// a smaller `θ` than its parent.
+    pub fn new(family: Archimedean, root: NestedNode) -> Result<Self> {
+        if !matches!(family, Archimedean::Clayton | Archimedean::Gumbel) {
+            return Err(Error::Data(
+                "nested Archimedean copulas are built for the Clayton and Gumbel families".into(),
+            ));
+        }
+        let mut seen = Vec::new();
+        check_node(family, &root, None, &mut seen)?;
+        seen.sort_unstable();
+        if seen.iter().enumerate().any(|(i, &j)| i != j) {
+            return Err(Error::Data(format!(
+                "the leaves must be 0..{} once each, got {seen:?}",
+                seen.len()
+            )));
+        }
+        let dim = seen.len();
+        Ok(Self { family, root, dim })
+    }
+
+    pub fn family(&self) -> Archimedean {
+        self.family
+    }
+
+    /// The tree.
+    pub fn root(&self) -> &NestedNode {
+        &self.root
+    }
+
+    fn generator(&self, theta: f64) -> ArchimedeanCopula {
+        ArchimedeanCopula {
+            family: self.family,
+            theta,
+            dim: 2,
+        }
+    }
+
+    fn sample_node(&self, node: &NestedNode, v: f64, rng: &mut StreamRng, u: &mut [f64]) {
+        let g = self.generator(node.theta);
+        for &j in &node.leaves {
+            let e = -rng.next_open01().ln();
+            u[j] = open01(g.generator(e / v));
+        }
+        for child in &node.children {
+            let w = inner_frailty(self.family, node.theta / child.theta, v, rng);
+            self.sample_node(child, w, rng, u);
+        }
+    }
+
+    fn cdf_node(&self, node: &NestedNode, u: &[f64]) -> f64 {
+        let g = self.generator(node.theta);
+        let mut t: f64 = node.leaves.iter().map(|&j| g.inverse_generator(u[j])).sum();
+        for child in &node.children {
+            t += g.inverse_generator(self.cdf_node(child, u));
+        }
+        g.generator(t)
+    }
+}
+
+fn check_node(
+    family: Archimedean,
+    node: &NestedNode,
+    parent: Option<f64>,
+    seen: &mut Vec<usize>,
+) -> Result<()> {
+    ArchimedeanCopula::new(family, node.theta, 2)?;
+    if let Some(p) = parent {
+        if node.theta < p {
+            return Err(invalid(
+                "theta",
+                node.theta,
+                "a nested copula's theta must be at least its parent's",
+            ));
+        }
+    }
+    if node.leaves.len() + node.children.len() < 2 {
+        return Err(Error::Data(
+            "each node of a nested copula joins at least two members".into(),
+        ));
+    }
+    seen.extend(&node.leaves);
+    for child in &node.children {
+        check_node(family, child, Some(node.theta), seen)?;
+    }
+    Ok(())
+}
+
+/// A child's frailty given its parent's `v`, with `alpha = θ_parent/θ_child`
+/// in `(0, 1]` (see [`NestedArchimedeanCopula`]).
+fn inner_frailty(family: Archimedean, alpha: f64, v: f64, rng: &mut StreamRng) -> f64 {
+    if alpha >= 1.0 {
+        return v;
+    }
+    match family {
+        Archimedean::Gumbel => v.powf(1.0 / alpha) * positive_stable(rng, alpha),
+        _ => {
+            let m = v.ceil().max(1.0);
+            let scale = (v / m).powf(1.0 / alpha);
+            (0..m as usize)
+                .map(|_| {
+                    loop {
+                        let s = scale * positive_stable(rng, alpha);
+                        if rng.next_open01() <= (-s).exp() {
+                            break s;
+                        }
+                    }
+                })
+                .sum()
+        }
+    }
+}
+
+impl Copula for NestedArchimedeanCopula {
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn sample(&self, rng: &mut StreamRng, u: &mut [f64]) {
+        let v = self.generator(self.root.theta).frailty(rng);
+        self.sample_node(&self.root, v, rng, u);
+    }
+
+    fn cdf(&self, u: &[f64]) -> Result<f64> {
+        if u.len() != self.dim {
+            return Err(Error::Data(format!(
+                "{} arguments for a {}-dimensional copula",
+                u.len(),
+                self.dim
+            )));
+        }
+        if let Some(&bad) = u.iter().find(|x| !(0.0..=1.0).contains(*x)) {
+            return Err(invalid("u", bad, "must be in [0, 1]"));
+        }
+        if u.contains(&0.0) {
+            return Ok(0.0);
+        }
+        Ok(self.cdf_node(&self.root, u).clamp(0.0, 1.0))
+    }
+}
+
 /// Simulates marginals joined by a copula: in simulation `i`, draws `u`
 /// from `copula` with `StreamRng::new(seed, i)` and sets component `j` to
 /// `marginals[j].quantile(u_j)`.
@@ -716,6 +925,120 @@ mod tests {
             .enumerate()
             .map(|(i, &x)| (x - i as f64 / n).max((i + 1) as f64 / n - x))
             .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn nested_archimedean_one_node_is_the_exchangeable_copula() {
+        for family in [Archimedean::Clayton, Archimedean::Gumbel] {
+            let flat = ArchimedeanCopula::new(family, 2.5, 3).unwrap();
+            let nested =
+                NestedArchimedeanCopula::new(family, NestedNode::new(2.5, vec![0, 1, 2], vec![]))
+                    .unwrap();
+            assert_eq!(draws(&flat, 50, 3), draws(&nested, 50, 3));
+            let u = [0.3, 0.7, 0.5];
+            assert!((flat.cdf(&u).unwrap() - nested.cdf(&u).unwrap()).abs() < 1e-15);
+        }
+    }
+
+    #[test]
+    fn nested_archimedean_taus_follow_the_tree() {
+        // {0, {1, 2}, {3, 4}}: tau 1/3 across classes, 0.6 and 0.75 within.
+        for (family, outer, a, b) in [
+            (Archimedean::Gumbel, 1.5, 2.5, 4.0),
+            (Archimedean::Clayton, 1.0, 3.0, 6.0),
+        ] {
+            let tau = |th: f64| match family {
+                Archimedean::Gumbel => 1.0 - 1.0 / th,
+                _ => th / (th + 2.0),
+            };
+            let c = NestedArchimedeanCopula::new(
+                family,
+                NestedNode::new(
+                    outer,
+                    vec![0],
+                    vec![
+                        NestedNode::new(a, vec![1, 2], vec![]),
+                        NestedNode::new(b, vec![3, 4], vec![]),
+                    ],
+                ),
+            )
+            .unwrap();
+            let d = draws(&c, 3000, 7);
+            let col = |j: usize| d.iter().map(|u| u[j]).collect::<Vec<_>>();
+            for (i, j, want) in [
+                (1, 2, tau(a)),
+                (3, 4, tau(b)),
+                (0, 1, tau(outer)),
+                (2, 3, tau(outer)),
+            ] {
+                let got = kendall_tau(&col(i), &col(j));
+                assert!(
+                    (got - want).abs() < 0.03,
+                    "{family:?} {i}{j}: {got} vs {want}"
+                );
+            }
+            for j in 0..5 {
+                assert!(ks_uniform(col(j)) < 0.03, "{family:?} margin {j}");
+            }
+            // The cdf against the share of draws below a point.
+            let n = 20_000;
+            let d = draws(&c, n, 9);
+            for p in [[0.5; 5], [0.3, 0.6, 0.7, 0.8, 0.4]] {
+                let hit = d
+                    .iter()
+                    .filter(|u| u.iter().zip(&p).all(|(x, q)| x <= q))
+                    .count();
+                let want = c.cdf(&p).unwrap();
+                let se = (want * (1.0 - want) / n as f64).sqrt();
+                assert!(
+                    (hit as f64 / n as f64 - want).abs() < 4.0 * se,
+                    "{family:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn clayton_inner_frailty_has_its_laplace_transform() {
+        // E[e^(-tW)] = exp(-V((1 + t)^α − 1)) for the tilted stable.
+        let (v, alpha) = (3.7, 0.5);
+        let n = 100_000;
+        let w: Vec<f64> = (0..n)
+            .map(|i| inner_frailty(Archimedean::Clayton, alpha, v, &mut StreamRng::new(2, i)))
+            .collect();
+        for t in [0.3, 1.0, 4.0] {
+            let got = w.iter().map(|x| (-t * x).exp()).sum::<f64>() / n as f64;
+            let want = (-v * ((1.0 + t).powf(alpha) - 1.0)).exp();
+            assert!((got - want).abs() < 4e-3, "{t}: {got} vs {want}");
+        }
+    }
+
+    #[test]
+    fn nested_archimedean_refuses_bad_trees() {
+        let node = |th, l: Vec<usize>, c| NestedNode::new(th, l, c);
+        let g = Archimedean::Gumbel;
+        // A child weaker than its parent.
+        assert!(
+            NestedArchimedeanCopula::new(
+                g,
+                node(3.0, vec![0], vec![node(2.0, vec![1, 2], vec![])])
+            )
+            .is_err()
+        );
+        // Leaves not 0..d, a node with one member, an unsupported family.
+        assert!(NestedArchimedeanCopula::new(g, node(2.0, vec![0, 2], vec![])).is_err());
+        assert!(
+            NestedArchimedeanCopula::new(g, node(2.0, vec![0], vec![node(3.0, vec![1], vec![])]))
+                .is_err()
+        );
+        assert!(
+            NestedArchimedeanCopula::new(Archimedean::Frank, node(2.0, vec![0, 1], vec![]))
+                .is_err()
+        );
+        let c = NestedArchimedeanCopula::new(g, node(2.0, vec![0, 1], vec![])).unwrap();
+        assert!(c.cdf(&[0.5]).is_err());
+        assert_eq!(c.cdf(&[0.0, 0.5]).unwrap(), 0.0);
+        assert_eq!(c.cdf(&[1.0, 0.5]).unwrap(), 0.5);
     }
 
     const R: [f64; 9] = [1.0, 0.6, -0.3, 0.6, 1.0, 0.1, -0.3, 0.1, 1.0];

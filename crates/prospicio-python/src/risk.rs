@@ -957,6 +957,7 @@ pub(crate) enum AnyCopula {
     Gaussian(GaussianCopula),
     StudentT(StudentTCopula),
     Archimedean(ArchimedeanCopula),
+    Nested(copula::NestedArchimedeanCopula),
 }
 
 impl AnyCopula {
@@ -970,8 +971,12 @@ impl AnyCopula {
         if let Ok(c) = obj.extract::<PyRef<'_, PyArchimedeanCopula>>() {
             return Ok(Self::Archimedean(c.inner.clone()));
         }
+        if let Ok(c) = obj.extract::<PyRef<'_, PyNestedArchimedeanCopula>>() {
+            return Ok(Self::Nested(c.inner.clone()));
+        }
         Err(PyTypeError::new_err(
-            "expected a GaussianCopula, StudentTCopula or ArchimedeanCopula",
+            "expected a GaussianCopula, StudentTCopula, ArchimedeanCopula or \
+             NestedArchimedeanCopula",
         ))
     }
 
@@ -980,6 +985,7 @@ impl AnyCopula {
             Self::Gaussian(c) => c,
             Self::StudentT(c) => c,
             Self::Archimedean(c) => c,
+            Self::Nested(c) => c,
         }
     }
 }
@@ -1267,6 +1273,135 @@ impl PyArchimedeanCopula {
     #[getter]
     fn theta(&self) -> f64 {
         self.inner.theta()
+    }
+
+    /// ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    fn sample(&self, py: Python<'_>, n: usize, seed: u64) -> Vec<Vec<f64>> {
+        let c = &self.inner;
+        py.detach(|| sample_rows(c, n, seed))
+    }
+}
+
+fn archimedean_family(family: &str) -> PyResult<Archimedean> {
+    Ok(match family {
+        "clayton" => Archimedean::Clayton,
+        "gumbel" => Archimedean::Gumbel,
+        "frank" => Archimedean::Frank,
+        "joe" => Archimedean::Joe,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown family {other:?}: use \"clayton\", \"gumbel\", \"frank\" or \"joe\""
+            )));
+        }
+    })
+}
+
+/// A node ``(theta, members)``, each member a dimension (an int) or a node.
+fn nested_node(obj: &Bound<'_, PyAny>) -> PyResult<copula::NestedNode> {
+    let (theta, members): (f64, Vec<Bound<'_, PyAny>>) = obj.extract().map_err(|_| {
+        PyTypeError::new_err("a node is a tuple (theta, members), each member an int or a node")
+    })?;
+    let (mut leaves, mut children) = (Vec::new(), Vec::new());
+    for m in members {
+        match m.extract::<usize>() {
+            Ok(j) => leaves.push(j),
+            Err(_) => children.push(nested_node(&m)?),
+        }
+    }
+    Ok(copula::NestedNode::new(theta, leaves, children))
+}
+
+fn node_to_py<'py>(py: Python<'py>, node: &copula::NestedNode) -> PyResult<Bound<'py, PyAny>> {
+    let mut members: Vec<Bound<'py, PyAny>> = Vec::new();
+    for &j in &node.leaves {
+        members.push(j.into_pyobject(py)?.into_any());
+    }
+    for c in &node.children {
+        members.push(node_to_py(py, c)?);
+    }
+    Ok((node.theta, members).into_pyobject(py)?.into_any())
+}
+
+/// A nested (hierarchical) Archimedean copula: groups of dimensions joined
+/// by their own Clayton or Gumbel copula, and the groups joined by an outer
+/// one with weaker dependence, to any depth. Kendall's tau between two
+/// dimensions is that of the node where they first meet.
+///
+/// Parameters
+/// ----------
+/// family : {"clayton", "gumbel"}
+/// tree : tuple
+///     The root node ``(theta, members)``: each member a dimension
+///     (0-based) or a node. Every dimension appears once, every node has at
+///     least two members, and no child's ``theta`` is below its parent's.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import NestedArchimedeanCopula
+/// >>> c = NestedArchimedeanCopula("gumbel", (1.5, [0, (3.0, [1, 2]), (2.0, [3, 4])]))
+/// >>> c.dim, c.family
+/// (5, 'gumbel')
+/// >>> c.cdf([1.0, 0.5, 1.0, 1.0, 1.0])
+/// 0.5
+#[pyclass(name = "NestedArchimedeanCopula", module = "prospicio.risk", frozen)]
+pub(crate) struct PyNestedArchimedeanCopula {
+    inner: copula::NestedArchimedeanCopula,
+}
+
+#[pymethods]
+impl PyNestedArchimedeanCopula {
+    #[new]
+    fn new(family: &str, tree: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let family = archimedean_family(family)?;
+        let root = nested_node(tree)?;
+        Ok(Self {
+            inner: copula::NestedArchimedeanCopula::new(family, root).map_err(to_py)?,
+        })
+    }
+
+    /// Number of dimensions.
+    #[getter]
+    fn dim(&self) -> usize {
+        self.inner.dim()
+    }
+
+    /// Family name.
+    #[getter]
+    fn family(&self) -> &'static str {
+        match self.inner.family() {
+            Archimedean::Clayton => "clayton",
+            Archimedean::Gumbel => "gumbel",
+            Archimedean::Frank => "frank",
+            Archimedean::Joe => "joe",
+        }
+    }
+
+    /// The tree, as given: ``(theta, members)``, leaves first.
+    #[getter]
+    fn tree<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        node_to_py(py, self.inner.root())
+    }
+
+    /// The copula's distribution function at the point ``u``.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn cdf(&self, u: Vec<f64>) -> PyResult<f64> {
+        self.inner.cdf(&u).map_err(to_py)
     }
 
     /// ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.

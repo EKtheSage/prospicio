@@ -353,6 +353,9 @@ covar <- function(x, key, p, q) {
 #' copula_sample(gaussian_copula(r), 3, seed = 1)
 #' t_copula(r, nu = 4)
 #' archimedean_copula("clayton", 2, dim = 3)
+#' nac <- nested_archimedean_copula("gumbel",
+#'   nac_node(1.5, 1, list(nac_node(3, c(2, 3)), nac_node(2, c(4, 5)))))
+#' copula_cdf(nac, c(1, 0.5, 1, 1, 1))
 copula <- S7::new_class(
   "copula",
   package = "prospicio",
@@ -390,6 +393,29 @@ t_copula <- function(correlation, nu) {
 archimedean_copula <- function(family = c("clayton", "gumbel", "frank", "joe"), theta, dim = 2) {
   family <- match.arg(family)
   copula(rust_result(RiskCopula$archimedean(family, as.double(theta), as.double(dim))))
+}
+
+#' @rdname copula
+#' @param tree For `nested_archimedean_copula()`, the root node, built with
+#'   `nac_node(theta, leaves, children)`: `leaves` the dimensions (1, 2,
+#'   ...) joined at this level and `children` a list of nested nodes. Every
+#'   dimension appears once, every node has at least two members, and no
+#'   child's `theta` is below its parent's. Clayton or Gumbel only.
+#' @details `nested_archimedean_copula()` joins groups of dimensions by their
+#'   own Archimedean copula and the groups by an outer one with weaker
+#'   dependence, to any depth (McNeil 2008): Kendall's tau between two
+#'   dimensions is that of the node where they first meet.
+#' @export
+nested_archimedean_copula <- function(family = c("clayton", "gumbel"), tree) {
+  family <- match.arg(family)
+  copula(rust_result(RiskCopula$nested(family, tree)))
+}
+
+#' @rdname copula
+#' @param leaves,children See `tree`.
+#' @export
+nac_node <- function(theta, leaves = numeric(), children = list()) {
+  list(as.double(theta), as.double(leaves), children)
 }
 
 #' Copula distribution function

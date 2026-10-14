@@ -88,7 +88,8 @@ what it is aiming for by v1.0.
     result, such as a tower's cession, before joining it), Arrow IPC; provenance
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
-  - Risk measures and distortions, copulas (Gaussian, t, Archimedean)
+  - Risk measures and distortions, copulas (Gaussian, t, Archimedean,
+    nested Archimedean)
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
   - `Discrete`, a distribution on finitely many values of either sign,
