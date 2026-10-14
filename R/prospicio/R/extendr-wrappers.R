@@ -24,7 +24,7 @@ pnl_derive_premium <- function(technical, exp_index, exp_basis, exp_value, exp_l
 
 pnl_occurrence_source <- function(frequency, step, probs, occurrence, points_a, points_b) .Call(wrap__pnl_occurrence_source, frequency, step, probs, occurrence, points_a, points_b)
 
-pnl_program_rust <- function(net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated) .Call(wrap__pnl_program_rust, net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated)
+pnl_program_rust <- function(net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated, aggregate, stated_premium) .Call(wrap__pnl_program_rust, net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated, aggregate, stated_premium)
 
 size_premium_rust <- function(expected_loss, loss_ratio) .Call(wrap__size_premium_rust, expected_loss, loss_ratio)
 

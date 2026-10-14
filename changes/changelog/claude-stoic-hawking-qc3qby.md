@@ -96,3 +96,8 @@
   aggregate cover behind it, matching `aggregate` 1.0.1. Annual covers
   now refuse paid reinstatements with a pointer to
   `Book::occurrence_ledger` (#248).
+- `pnl::pnl_program` also respells each priced deposit as a rate
+  (`Program::rates`, `aggregate`'s `premium_style='rate'`), and
+  `pnl::pnl_program_stated` prices an engine that states its own technical
+  premium; `ProgramLayer` says its tier. Python `pnl_program_stated` and a
+  `rates` entry; R `pnl_program_stated()` and `rates`.

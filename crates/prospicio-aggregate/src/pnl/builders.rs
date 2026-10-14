@@ -225,8 +225,10 @@ pub fn size_premium(expected_loss: f64, loss_ratio: f64) -> Result<f64> {
 
 /// One layer of [`pnl_program`]: its expected ceded loss at its placed
 /// share, the share, its target combined ratio (expected ceded loss over
-/// ceded premium), and its premium if the contract already states one (in
-/// currency, at the placed share), which the ladder then keeps.
+/// ceded premium), its premium if the contract already states one (in
+/// currency, at the placed share), which the ladder then keeps, and whether
+/// it is on the aggregate tier (which inures behind the occurrence tier, so
+/// its rate is quoted on the gross premium less the occurrence premiums).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProgramLayer {
     /// Expected ceded loss, at the placed share.
@@ -237,13 +239,45 @@ pub struct ProgramLayer {
     pub combined_ratio: f64,
     /// A premium the contract already states, at the placed share.
     pub stated: Option<f64>,
+    /// On the aggregate tier rather than the occurrence tier.
+    pub aggregate: bool,
+}
+
+impl ProgramLayer {
+    /// An occurrence layer the ladder prices.
+    pub fn occurrence(ceded_loss: f64, share: f64, combined_ratio: f64) -> Self {
+        Self {
+            ceded_loss,
+            share,
+            combined_ratio,
+            stated: None,
+            aggregate: false,
+        }
+    }
+
+    /// An aggregate layer the ladder prices.
+    pub fn aggregate(ceded_loss: f64, share: f64, combined_ratio: f64) -> Self {
+        Self {
+            aggregate: true,
+            ..Self::occurrence(ceded_loss, share, combined_ratio)
+        }
+    }
+
+    /// The layer with a premium its contract states (at the placed share),
+    /// which the ladder keeps.
+    pub fn stated(mut self, premium: f64) -> Self {
+        self.stated = Some(premium);
+        self
+    }
 }
 
 /// What [`pnl_program`] prices: the gross premium to book and each layer's
-/// deposit at 100% placement.
+/// deposit at 100% placement, and the same as a rate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    /// The gross premium, rounded by [`round_premium`].
+    /// The gross premium, rounded by [`round_premium`] (unrounded when an
+    /// engine's stated premium is only grossed up, `aggregate`'s `derive
+    /// premium`).
     pub premium: f64,
     /// The technical premium before expenses: the net technical premium
     /// plus the ceded premiums.
@@ -251,6 +285,12 @@ pub struct Program {
     /// Each layer's deposit at 100% placement (a stated premium over its
     /// share).
     pub deposits: Vec<f64>,
+    /// Each ladder-priced layer's deposit respelled as a rate, to eight
+    /// significant figures, `aggregate`'s `premium_style='rate'`: on the
+    /// booked premium for an occurrence layer, on the booked premium less
+    /// the occurrence premiums for an aggregate one (each resolved from its
+    /// rate). `None` for a layer that states its premium.
+    pub rates: Vec<Option<f64>>,
     /// The ceded premium of all layers, at their shares.
     pub ceded_premium: f64,
 }
@@ -265,41 +305,90 @@ pub struct Program {
 /// a contract states it), the technical premium `TP = T_net + Σ s_j d_j`,
 /// and the booked premium `P = round(TP / (1 − ER))`. The book's own
 /// margin is then `(1 − c_net) T_net` whatever the cover costs. Layers
-/// stating their own premium keep it. `aggregate` writes the result as
-/// DecL; its `premium_style='rate'` respelling and the engine's own stated
-/// premium are left out.
+/// stating their own premium keep it. Each priced deposit is also given as
+/// a rate ([`Program::rates`]). An engine that states its own technical
+/// premium is priced by [`pnl_program_stated`]. `aggregate` writes the
+/// result as DecL.
 ///
 /// ```
 /// use prospicio_aggregate::pnl::{ProgramLayer, pnl_program};
 ///
-/// let layer = ProgramLayer { ceded_loss: 86.0, share: 1.0, combined_ratio: 0.6, stated: None };
+/// let layer = ProgramLayer::occurrence(86.0, 1.0, 0.6);
 /// let p = pnl_program(406.0, 0.9, 0.25, &[layer]).unwrap();
 /// assert_eq!(p.deposits, vec![143.0]); // 86 / 0.6, rounded
 /// // (406 / 0.9 + 143) / (1 − 0.25) = 792.15, booked as 792.
 /// assert_eq!(p.premium, 792.0);
+/// assert_eq!(p.rates, vec![Some(0.18055556)]); // 143 / 792
 /// ```
 ///
 /// # Errors
 ///
 /// A ratio that is not positive and finite, an expense ratio outside
-/// `[0, 1)`, or a share outside `(0, 1]`.
+/// `[0, 1)`, a share outside `(0, 1]`, or a rate that cannot be quoted (a
+/// subject premium at or below zero).
 pub fn pnl_program(
     net_loss: f64,
     net_combined_ratio: f64,
     expense_ratio: f64,
     layers: &[ProgramLayer],
 ) -> Result<Program> {
-    let positive = |name: &str, v: f64| -> Result<()> {
-        if v.is_finite() && v > 0.0 {
-            Ok(())
-        } else {
-            Err(Error::Data(format!(
-                "{name} must be positive and finite, not {v}"
-            )))
-        }
-    };
     positive("the net combined ratio", net_combined_ratio)?;
     positive("the expected net loss", net_loss)?;
+    ladder(
+        Some(net_loss / net_combined_ratio),
+        None,
+        expense_ratio,
+        layers,
+    )
+}
+
+/// The premium ladder for an engine that states its own technical premium
+/// `stated` (`aggregate`'s `premium at lr` exposure): the stated premium
+/// takes the net book's place, so `TP = stated + Σ s_j d_j` and `P =
+/// round(TP / (1 − ER))`. With no layer to pay for, the premium is the
+/// stated one grossed up and left unrounded, as `aggregate`'s `derive
+/// premium`.
+///
+/// ```
+/// use prospicio_aggregate::pnl::pnl_program_stated;
+///
+/// let p = pnl_program_stated(1000.0, 0.25, &[]).unwrap();
+/// assert!((p.premium - 1000.0 / 0.75).abs() < 1e-12);
+/// ```
+///
+/// # Errors
+///
+/// As [`pnl_program`], and a stated premium that is not positive.
+pub fn pnl_program_stated(
+    stated: f64,
+    expense_ratio: f64,
+    layers: &[ProgramLayer],
+) -> Result<Program> {
+    positive("the stated technical premium", stated)?;
+    ladder(None, Some(stated), expense_ratio, layers)
+}
+
+fn positive(name: &str, v: f64) -> Result<()> {
+    if v.is_finite() && v > 0.0 {
+        Ok(())
+    } else {
+        Err(Error::Data(format!(
+            "{name} must be positive and finite, not {v}"
+        )))
+    }
+}
+
+/// A number to eight significant figures, as Python's `f"{x:.8g}"`.
+fn eight_figures(x: f64) -> f64 {
+    format!("{x:.7e}").parse().unwrap_or(x)
+}
+
+fn ladder(
+    net_technical: Option<f64>,
+    stated: Option<f64>,
+    expense_ratio: f64,
+    layers: &[ProgramLayer],
+) -> Result<Program> {
     let mut deposits = Vec::with_capacity(layers.len());
     let mut ceded_premium = 0.0;
     for l in layers {
@@ -322,15 +411,57 @@ pub fn pnl_program(
             }
         }
     }
-    let technical = net_loss / net_combined_ratio + ceded_premium;
-    let premium = round_premium(derive_premium(
-        technical,
-        &[Expense::premium(expense_ratio)],
-    )?);
+    let expenses = [Expense::premium(expense_ratio)];
+    let (technical, premium) = match (net_technical, stated) {
+        (Some(t), _) => {
+            let technical = t + ceded_premium;
+            (
+                technical,
+                round_premium(derive_premium(technical, &expenses)?),
+            )
+        }
+        (None, Some(s)) if ceded_premium == 0.0 => (s, derive_premium(s, &expenses)?),
+        (None, Some(s)) => {
+            let technical = s + ceded_premium;
+            (
+                technical,
+                round_premium(derive_premium(technical, &expenses)?),
+            )
+        }
+        (None, None) => unreachable!("the ladder needs a net or a stated premium"),
+    };
+    // The rate respelling: occurrence rates on the booked premium, then
+    // aggregate rates on it less the occurrence premiums as they resolve.
+    let mut rates = vec![None; layers.len()];
+    let mut base = premium;
+    for tier in [false, true] {
+        let mut resolved = 0.0;
+        for (j, l) in layers.iter().enumerate() {
+            if l.aggregate != tier {
+                continue;
+            }
+            match l.stated {
+                Some(p) => resolved += p,
+                None => {
+                    if base <= 0.0 {
+                        return Err(Error::Data(format!(
+                            "layer {} cannot be quoted as a rate: its subject premium is {base}",
+                            j + 1
+                        )));
+                    }
+                    let rate = eight_figures(deposits[j] / base);
+                    resolved += l.share * rate * base;
+                    rates[j] = Some(rate);
+                }
+            }
+        }
+        base -= resolved;
+    }
     Ok(Program {
         premium,
         technical,
         deposits,
+        rates,
         ceded_premium,
     })
 }

@@ -485,3 +485,14 @@ local({
   stopifnot(abs(s$EX[s$row == "occ 2 xs 2 premium"] + 2.65936) < 1e-5)
   stopifnot(abs(mean(ledger_result(book_occurrence_ledger(book, joint, occ))) - 12.323104) < 1e-6)
 })
+
+# pnl_program's rates and an engine's stated premium (aggregate 1.0.1).
+local({
+  p <- pnl_program(405.97794085441933, 0.9, 0.25, data.frame(
+    ceded_loss = c(86.78504710067914, 8.144345556686755), share = 1, combined_ratio = c(0.6, 0.5),
+    aggregate = c(FALSE, TRUE)))
+  stopifnot(identical(p$rates, c(0.17747858, 0.024241071)))
+  stopifnot(abs(pnl_program_stated(1000, 0.25)$premium - 1000 / 0.75) < 1e-9)
+  k <- pnl_program(406, 0.9, 0.25, data.frame(share = 0.5, stated = 20))
+  stopifnot(is.na(k$rates))
+})

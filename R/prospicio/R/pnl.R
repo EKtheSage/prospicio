@@ -403,7 +403,13 @@ book_occurrence_ledger <- function(book, joint, occurrence, aggregate = NULL, fa
 #' combined_ratio / share)` (or the premium it states), and the booked
 #' premium `round((T_net + sum share * deposit) / (1 - expense_ratio))`.
 #' The book's own margin is `(1 - net_combined_ratio) T_net` whatever the
-#' cover costs. `round_premium()` rounds as `aggregate` writes a premium:
+#' cover costs. Each priced deposit is also respelled as a rate,
+#' `aggregate`'s `premium_style = 'rate'`: of the booked premium on the
+#' occurrence tier, of it less the occurrence premiums on the aggregate
+#' tier. `pnl_program_stated()` prices an engine that states its own
+#' technical premium (`premium at lr`), which takes the net book's place;
+#' with no layer, it is only grossed up and left unrounded, as
+#' `aggregate`'s `derive premium`. `round_premium()` rounds as `aggregate` writes a premium:
 #' to whole units above 100, to cents at or below it, ties to even;
 #' `size_premium()` sizes one from a target loss ratio.
 #'
@@ -412,17 +418,30 @@ book_occurrence_ledger <- function(book, joint, occurrence, aggregate = NULL, fa
 #' @param expense_ratio Gross expenses as a fraction of premium.
 #' @param layers `NULL` or a data frame with `ceded_loss` (expected, at the
 #'   placed share), `share`, `combined_ratio` and optionally `stated` (a
-#'   premium the contract states at the placed share, kept; `NA` to price).
+#'   premium the contract states at the placed share, kept; `NA` to price)
+#'   and `aggregate` (`TRUE` for a layer on the aggregate tier).
+#' @param stated The engine's stated technical premium.
 #' @param premium A premium.
 #' @param expected_loss Expected loss.
 #' @param loss_ratio Target loss ratio.
-#' @returns `pnl_program()` a list of `premium`, `technical`, `deposits` and
+#' @returns `pnl_program()` and `pnl_program_stated()` a list of `premium`,
+#'   `technical`, `deposits`, `rates` (`NA` for a stated layer) and
 #'   `ceded_premium`; the others a number.
 #' @export
 #' @examples
 #' pnl_program(406, 0.9, 0.25, data.frame(ceded_loss = 86, share = 1, combined_ratio = 0.6))
 #' round_premium(c(714.12, 16.285))
 pnl_program <- function(net_loss, net_combined_ratio, expense_ratio, layers = NULL) {
+  pnl_ladder(net_loss, net_combined_ratio, expense_ratio, layers, NaN)
+}
+
+#' @rdname pnl_program
+#' @export
+pnl_program_stated <- function(stated, expense_ratio, layers = NULL) {
+  pnl_ladder(0, 1, expense_ratio, layers, as.double(stated))
+}
+
+pnl_ladder <- function(net_loss, net_combined_ratio, expense_ratio, layers, stated_premium) {
   n <- if (is.null(layers)) 0 else nrow(layers)
   col <- function(name, default) {
     if (n == 0) return(double())
@@ -430,11 +449,13 @@ pnl_program <- function(net_loss, net_combined_ratio, expense_ratio, layers = NU
     v[is.na(v)] <- default
     v
   }
-  stated <- col("stated", NaN)
-  rust_result(pnl_program_rust(
+  r <- rust_result(pnl_program_rust(
     as.double(net_loss), as.double(net_combined_ratio), as.double(expense_ratio),
-    col("ceded_loss", 0), col("share", 1), col("combined_ratio", 1), stated
+    col("ceded_loss", 0), col("share", 1), col("combined_ratio", 1), col("stated", NaN),
+    col("aggregate", 0), stated_premium
   ))
+  r$rates[is.nan(r$rates)] <- NA_real_
+  r
 }
 
 #' @rdname pnl_program

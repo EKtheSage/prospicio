@@ -879,3 +879,21 @@ def test_book_reinstatements():
     assert net.result.mean() == pytest.approx(12.323104, abs=1e-6)
     with pytest.raises(ValueError):
         book.ledger(([1.0, 5.0], [0.5, 0.5]), occ, "walk")
+
+
+def test_pnl_program_rates_and_stated_premium():
+    from prospicio.aggregate import pnl_program, pnl_program_stated
+
+    # aggregate 1.0.1's premium_style='rate' on the design note's engine.
+    p = pnl_program(405.97794085441933, 0.9, 0.25, [
+        dict(ceded_loss=86.78504710067914, share=1.0, combined_ratio=0.6),
+        dict(ceded_loss=8.144345556686755, share=1.0, combined_ratio=0.5, aggregate=True)])
+    assert p["rates"] == [0.17747858, 0.024241071]
+    # An engine stating 1000 of premium, with and without cover.
+    s = pnl_program_stated(1000.0, 0.25, [
+        dict(ceded_loss=112.82015639464626, share=1.0, combined_ratio=0.6),
+        dict(ceded_loss=25.56634375990714, share=1.0, combined_ratio=0.5, aggregate=True)])
+    assert s["premium"] == 1652.0 and s["rates"] == [0.11380145, 0.034924863]
+    assert pnl_program_stated(1000.0, 0.25)["premium"] == pytest.approx(1000 / 0.75, abs=1e-9)
+    kept = pnl_program(406.0, 0.9, 0.25, [dict(share=0.5, stated=20.0)])
+    assert kept["rates"] == [None]

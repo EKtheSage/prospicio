@@ -93,6 +93,7 @@ reference:
       - aggregate.derive_premium
       - aggregate.occurrence_source
       - aggregate.pnl_program
+      - aggregate.pnl_program_stated
       - aggregate.size_premium
       - aggregate.round_premium
       - aggregate.layer_loss_picks

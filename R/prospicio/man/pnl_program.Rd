@@ -2,11 +2,14 @@
 % Please edit documentation in R/pnl.R
 \name{pnl_program}
 \alias{pnl_program}
+\alias{pnl_program_stated}
 \alias{round_premium}
 \alias{size_premium}
 \title{Premium ladder from target combined ratios}
 \usage{
 pnl_program(net_loss, net_combined_ratio, expense_ratio, layers = NULL)
+
+pnl_program_stated(stated, expense_ratio, layers = NULL)
 
 round_premium(premium)
 
@@ -21,7 +24,10 @@ size_premium(expected_loss, loss_ratio)
 
 \item{layers}{\code{NULL} or a data frame with \code{ceded_loss} (expected, at the
 placed share), \code{share}, \code{combined_ratio} and optionally \code{stated} (a
-premium the contract states at the placed share, kept; \code{NA} to price).}
+premium the contract states at the placed share, kept; \code{NA} to price)
+and \code{aggregate} (\code{TRUE} for a layer on the aggregate tier).}
+
+\item{stated}{The engine's stated technical premium.}
 
 \item{premium}{A premium.}
 
@@ -30,7 +36,8 @@ premium the contract states at the placed share, kept; \code{NA} to price).}
 \item{loss_ratio}{Target loss ratio.}
 }
 \value{
-\code{pnl_program()} a list of \code{premium}, \code{technical}, \code{deposits} and
+\code{pnl_program()} and \code{pnl_program_stated()} a list of \code{premium},
+\code{technical}, \code{deposits}, \code{rates} (\code{NA} for a stated layer) and
 \code{ceded_premium}; the others a number.
 }
 \description{
@@ -39,7 +46,13 @@ as numbers: the net technical premium \code{net_loss / net_combined_ratio},
 each layer's deposit at 100\% placement \code{round(ceded_loss / combined_ratio / share)} (or the premium it states), and the booked
 premium \verb{round((T_net + sum share * deposit) / (1 - expense_ratio))}.
 The book's own margin is \verb{(1 - net_combined_ratio) T_net} whatever the
-cover costs. \code{round_premium()} rounds as \code{aggregate} writes a premium:
+cover costs. Each priced deposit is also respelled as a rate,
+\code{aggregate}'s \code{premium_style = 'rate'}: of the booked premium on the
+occurrence tier, of it less the occurrence premiums on the aggregate
+tier. \code{pnl_program_stated()} prices an engine that states its own
+technical premium (\verb{premium at lr}), which takes the net book's place;
+with no layer, it is only grossed up and left unrounded, as
+\code{aggregate}'s \verb{derive premium}. \code{round_premium()} rounds as \code{aggregate} writes a premium:
 to whole units above 100, to cents at or below it, ties to even;
 \code{size_premium()} sizes one from a target loss ratio.
 }

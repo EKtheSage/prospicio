@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **Done** (PRs 1 to 6b) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **Done** (PRs 1 to 6b); follow-ups in progress (7a done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -277,8 +277,8 @@ Each PR is one type or method, with its parity tests, bindings and docs.
       placement `round(E_j / c_j / s_j)`, the booked premium
       `round((E_net / c_net + Σ s_j d_j) / (1 − ER))`, rounded as
       `aggregate` writes them (whole units above 100, cents below, ties
-      to even), with `size_premium` and `round_premium`; the `rate`
-      respelling and an engine's stated technical premium are left out.
+      to even), with `size_premium` and `round_premium` (the `rate`
+      respelling and an engine's stated technical premium came in 7a).
       On the consolidated face `aggregate`'s variable builder books a
       loss-basis expense stochastic on the gross, where its guaranteed
       cost builder (and prospicio on both) books it at the expected gross
@@ -318,6 +318,30 @@ Each PR is one type or method, with its parity tests, bindings and docs.
       `1e-12` (standard deviations relative to `1e-10`: `E[X²] − E[X]²`
       on a net premium of 17.4 with an SD of 0.24 loses about `1e-12` to
       cancellation, summed in different orders on each side).
+7. **Follow-ups** to the six PRs, at the user's request (2026-10-14):
+
+   a. (Done.) **`pnl_program`'s rates and an engine's stated premium.**
+      `Program::rates` respells each ladder-priced deposit as a rate to
+      eight significant figures, `aggregate`'s `premium_style='rate'`
+      (`_respell_as_rates`): an occurrence layer's on the booked premium,
+      an aggregate layer's on it less the occurrence premiums as their
+      rates resolve, so `ProgramLayer` now says its tier (`aggregate`,
+      with the constructors `ProgramLayer::occurrence`, `::aggregate` and
+      `.stated`); a stated layer has no rate. `pnl_program_stated` prices
+      an engine that states its own technical premium (`premium at lr`):
+      it takes the net book's place, and with no layer to pay for the
+      premium is only grossed up, unrounded, as `aggregate`'s `derive
+      premium`. Parity: the `program` block of
+      `aggregate_pnl_variable.py` grows to five engines (rates on both
+      tiers, a stated engine with and without cover, a layer with its own
+      deposit kept), every number exact. Python `pnl_program_stated` and
+      `rates`; R `pnl_program_stated()` and `rates`.
+   b. **A loss-basis expense on the consolidated face** at each atom's
+      gross loss rather than its expectation, and the two cases where
+      prospicio builds what `aggregate` refuses (a walk over a retro
+      book, a peel of a reinstated layer) recorded as decisions.
+   c. **The stitched peel** of several occurrence layers, revising
+      decision 8.
 
 ## Validation
 

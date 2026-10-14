@@ -78,40 +78,76 @@ for case, prog in CASES.items():
     # 1-D net-of-occurrence engine; prospicio builds it from the joint.
     record(case, pnl, 1e-11 if case == 'occswc' else 1e-12)
 
-# pnl_program's ladder: T_net = E_net / c_net, Q_j = E_j / c_j, deposits
-# d_j = round(Q_j / s_j), P = round((T_net + sum s_j d_j) / (1 - ER)).
+# pnl_program's ladder: T_net = E_net / c_net (or the engine's stated
+# premium), Q_j = E_j / c_j, deposits d_j = round(Q_j / s_j),
+# P = round((T_net + sum s_j d_j) / (1 - ER)); premium_style='rate' respells
+# each priced deposit as a rate of P (the aggregate tier's of P less the
+# occurrence premiums), and a layer's own deposit clause is kept.
 PROGRAMS = {
     'note': ('agg Prog 10 claims sev lognorm 50 cv 1.5 '
              'occurrence net of 200 xs 100 poisson aggregate net of 500 xs 1000',
-             13, dict(expense_ratio=0.25, net_combined_ratio=0.9,
-                      occ_combined_ratio=0.6, agg_combined_ratio=0.5)),
+             dict(expense_ratio=0.25, net_combined_ratio=0.9,
+                  occ_combined_ratio=0.6, agg_combined_ratio=0.5)),
     'half': ('agg ProgH 10 claims sev lognorm 50 cv 1.5 '
              'occurrence net of 100 po 200 xs 100 poisson',
-             13, dict(expense_ratio=0.3, net_combined_ratio=0.8,
-                      occ_combined_ratio=0.55, agg_combined_ratio=None)),
+             dict(expense_ratio=0.3, net_combined_ratio=0.8,
+                  occ_combined_ratio=0.55, agg_combined_ratio=None)),
+    'stated': ('agg ProgS 1000 premium at 0.65 lr sev lognorm 50 cv 1.5 '
+               'occurrence net of 200 xs 100 poisson aggregate net of 500 xs 1000',
+               dict(expense_ratio=0.25, net_combined_ratio=0.9,
+                    occ_combined_ratio=0.6, agg_combined_ratio=0.5)),
+    'statedn': ('agg ProgN 1000 premium at 0.65 lr sev lognorm 50 cv 1.5 poisson',
+                dict(expense_ratio=0.25, net_combined_ratio=0.9,
+                     occ_combined_ratio=None, agg_combined_ratio=None)),
+    'kept': ('agg ProgK 10 claims sev lognorm 50 cv 1.5 occurrence net of '
+             '100 po 200 xs 100 deposit 40 and 300 xs 300 poisson',
+             dict(expense_ratio=0.25, net_combined_ratio=0.9,
+                  occ_combined_ratio=0.6, agg_combined_ratio=None)),
 }
-for key, (prog, log2, kw) in PROGRAMS.items():
-    ob = build(prog, log2=log2, bs=1 / 8)
+for key, (prog, kw) in PROGRAMS.items():
+    ob = build(prog, log2=13, bs=1 / 8)
     _kind, _name, spec = _require_program(ob, 'x')
     stats = ob.reins_stats_df
-    add('program', 'input', key, 'net_loss', float(ob.est_m))
+    stated = float(np.sum(np.asarray(ob.exp_premium if ob.exp_premium is not None else 0.0)))
+    if stated:
+        add('program', 'input', key, 'stated', stated)
+    else:
+        add('program', 'input', key, 'net_loss', float(ob.est_m))
     add('program', 'input', key, 'expense_ratio', kw['expense_ratio'])
     add('program', 'input', key, 'net_combined_ratio', kw['net_combined_ratio'])
-    booked, occ, agg = _pnl_technical(ob, spec, kw['expense_ratio'],
-                                      kw['net_combined_ratio'],
-                                      kw['occ_combined_ratio'],
-                                      kw['agg_combined_ratio'], 'x')
+    out = {}
+    for style in ('deposit', 'rate'):
+        _, _, spec = _require_program(ob, 'x')
+        out[style] = _pnl_technical(ob, spec, kw['expense_ratio'],
+                                    kw['net_combined_ratio'],
+                                    kw['occ_combined_ratio'],
+                                    kw['agg_combined_ratio'], 'x',
+                                    premium_style=style)
+    booked, occ, agg = out['deposit']
+    _, occ_r, agg_r = out['rate']
     j = 0
-    for tier, k, entries in (('occurrence', 'occ', occ), ('aggregate', 'agg', agg)):
+    for k, entries, rated in (('occ', occ, occ_r), ('agg', agg, agg_r)):
         ratio = kw[f'{k}_combined_ratio'] or kw['net_combined_ratio']
+        existing = spec.get(f'{k}_reins_premium')
         for i, (share, _limit, _attach) in enumerate(spec.get(f'{k}_reins') or []):
-            ceded = float(stats.loc[('agg', 'mean'), (k, f'layer.{i + 1}')])
-            add('program', 'input', f'{key}|{j}', 'ceded_loss', ceded)
-            add('program', 'input', f'{key}|{j}', 'share', share)
-            add('program', 'input', f'{key}|{j}', 'combined_ratio', ratio)
-            add('program', 'deposit', f'{key}|{j}', 'deposit', entries[i][1], 0.0)
+            row = f'{key}|{j}'
+            add('program', 'input', row, 'tier', 1.0 if k == 'agg' else 0.0)
+            add('program', 'input', row, 'share', share)
+            if existing is not None and existing[i] is not None:
+                # a clause the author wrote: kept, at the placed share
+                add('program', 'input', row, 'stated', share * existing[i][1])
+            else:
+                ceded = float(stats.loc[('agg', 'mean'), (k, f'layer.{i + 1}')])
+                add('program', 'input', row, 'ceded_loss', ceded)
+                add('program', 'input', row, 'combined_ratio', ratio)
+                add('program', 'rate', row, 'rate', rated[i][1], 0.0)
+            add('program', 'deposit', row, 'deposit', entries[i][1], 0.0)
             j += 1
-    add('program', 'premium', key, 'premium', booked, 0.0)
+    if isinstance(booked, float):
+        add('program', 'premium', key, 'premium', booked, 0.0)
+    else:
+        # derive premium: the stated premium grossed up at build, unrounded
+        add('program', 'premium', key, 'premium', stated / (1 - kw['expense_ratio']))
 
 (ref / 'pnl_variable_aggregate.csv').write_text(
     'case,quantity,row,col,expected,abs_tol,rel_tol,source\n' + '\n'.join(rows) + '\n')
