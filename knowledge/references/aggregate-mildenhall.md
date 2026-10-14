@@ -443,6 +443,19 @@ sources:
   tier of several layers after its first declared label, and a peel
   skips zero-share layers. `prospicio_aggregate::pnl::Book` matches the
   builders on 2,401 values (`aggregate_pnl_builders.py`).[^pnl]
+* The occurrence walk runs on `occ_bivariate(views=('gross', 'ceded'))`:
+  each claim goes to `(x, c(x))` on the exact common lattice when the
+  budget affords it (`bs` 1, 64 × 32 cells for example 4), compounded by
+  a 2-D FFT, with cells below `1e-15` of the total mass zeroed
+  (`_clip_density_fuzz`); its total stays `0.9999999999999893` and `PnL`
+  divides by it. An aggregate cover behind it recovers on
+  `max(l − c, 0)`, and a one-group span followed by another group earns
+  only its `Net of occurrence` block. The consolidated face reads its net
+  marginal off the 1-D engine, about `2e-12` from the joint's in its
+  standard deviation. In DecL the count goes between the two covers:
+  `occurrence net of ... poisson aggregate net of ...`.
+  `Book::occurrence_ledger` matches on 1,566 values
+  (`aggregate_pnl_occurrence.py`).[^pnl]
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 

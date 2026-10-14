@@ -788,3 +788,35 @@ def test_book_builders():
         book.ledger(gross, None, "sideways")
     with pytest.raises(ValueError):
         Expense("bogus", 1.0)
+
+
+def test_book_occurrence_covers():
+    from prospicio.aggregate import Book, Expense, occurrence_source
+    from prospicio.distributions import Grid, Poisson
+    from prospicio.reinsurance import Layer, Tower
+
+    # The P&L design note's example 4 against aggregate 1.0.1: gross margin
+    # 14.2, the occurrence cover's recovery 0.8 and margin -0.7, net 13.5.
+    sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
+    occ = Tower([Layer("occ 2 xs 2", 2.0, 2.0).with_deposit_premium(2.0).with_ceding_commission(0.25)])
+    joint, report = occurrence_source(Poisson(2.0), sev, occ, (64, 32))
+    assert len(joint) == 3 and len(joint[0]) == 280
+    book = Book("Ex4", 20.0, [Expense("premium", 0.1)])
+    walk = book.occurrence_ledger(joint, occ, face="walk")
+    s = walk.sheet()
+    net = s["row"].index("net through occ 2 xs 2")
+    assert s["EX"][net] == pytest.approx(13.5, abs=1e-10)
+    assert s["SD"][net] == pytest.approx(2.236067977, abs=1e-8)
+    assert s["k01"][net] == pytest.approx(7.5, abs=1e-10)
+    rec = s["row"].index("occ 2 xs 2 recovery")
+    assert s["EX"][rec] == pytest.approx(0.8, abs=1e-10)
+    agg = Tower([Layer.stop_loss("agg 3 xs 5", 3.0, 5.0).with_deposit_premium(0.5)])
+    c = book.occurrence_ledger(joint, occ, agg)
+    w = book.occurrence_ledger(joint, occ, agg, "walk")
+    assert c.result.mean() == pytest.approx(w.result.mean(), abs=1e-12)
+    assert "Net of occurrence" in w.sheet()["step"]
+    with pytest.raises(ValueError):
+        book.occurrence_ledger(([1.0], [1.0]), occ)
+    two = Tower([Layer("a", 1.0, 1.0), Layer("b", 2.0, 2.0)])
+    with pytest.raises(ValueError):
+        book.occurrence_ledger(joint, two, face="peel-top-down")

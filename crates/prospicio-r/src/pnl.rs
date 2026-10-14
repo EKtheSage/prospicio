@@ -6,7 +6,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::{
     Book, Expense, ExpenseBasis, Face, Group, LADDER, Layout, Ledger, Leg, LegKind, RatioRow, Role,
-    RowKind, Source, derive_premium, snap,
+    RowKind, Source, derive_premium, occurrence_source, snap,
 };
 
 use crate::discrete::DiscreteDist;
@@ -142,41 +142,62 @@ impl PnlLedger {
         face: &str,
     ) -> Result<Self> {
         let source = Source::new(values.to_vec(), probs.to_vec()).map_err(to_r)?;
-        let mut book = Book::new(name, premium);
-        for e in expenses(exp_index, &exp_basis, exp_value, &exp_label)? {
-            book = book.expense(e);
-        }
-        if !premium_label.is_empty() {
-            book = book.premium_label(premium_label);
-        }
-        if !loss_label.is_empty() {
-            book = book.loss_label(loss_label);
-        }
-        if !step_label.is_empty() {
-            book = book.step_label(step_label);
-        }
-        let face = match face {
-            "consolidated" => Face::Consolidated,
-            "walk" => Face::Walk,
-            "peel-top-down" => Face::PeelTopDown,
-            "peel-bottom-up" => Face::PeelBottomUp,
-            other => {
-                return Err(Error::Other(format!(
-                    "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
-                )));
-            }
-        };
-        let tower = if tower.is_null() {
-            None
-        } else {
-            Some(
-                <&ReinsuranceTower>::try_from(&tower)
-                    .map_err(|_| Error::Other("tower must be a reinsurance_tower".into()))?,
-            )
-        };
+        let book = make_book(
+            name,
+            premium,
+            exp_index,
+            &exp_basis,
+            exp_value,
+            &exp_label,
+            [premium_label, loss_label, step_label],
+        )?;
+        let face = face_of(face)?;
+        let tower = tower_of(&tower)?;
         Ok(Self {
             inner: book
                 .ledger(&source, tower.map(|t| &t.inner), face)
+                .map_err(to_r)?,
+        })
+    }
+
+    /// A book's ledger with occurrence covers over the joint source
+    /// `(gross, ceded, probs)`, the rest as `book`; `aggregate` is NULL or
+    /// a `ReinsuranceTower`.
+    #[allow(clippy::too_many_arguments)]
+    fn book_occurrence(
+        gross: &[f64],
+        ceded: &[f64],
+        probs: &[f64],
+        name: &str,
+        premium: f64,
+        exp_index: &[f64],
+        exp_basis: Vec<String>,
+        exp_value: &[f64],
+        exp_label: Vec<String>,
+        premium_label: &str,
+        loss_label: &str,
+        step_label: &str,
+        occurrence: Robj,
+        aggregate: Robj,
+        face: &str,
+    ) -> Result<Self> {
+        let joint = Source::joint(gross.to_vec(), ceded.to_vec(), probs.to_vec()).map_err(to_r)?;
+        let book = make_book(
+            name,
+            premium,
+            exp_index,
+            &exp_basis,
+            exp_value,
+            &exp_label,
+            [premium_label, loss_label, step_label],
+        )?;
+        let face = face_of(face)?;
+        let occurrence = tower_of(&occurrence)?
+            .ok_or_else(|| Error::Other("occurrence must be a reinsurance_tower".into()))?;
+        let aggregate = tower_of(&aggregate)?;
+        Ok(Self {
+            inner: book
+                .occurrence_ledger(&joint, &occurrence.inner, aggregate.map(|t| &t.inner), face)
                 .map_err(to_r)?,
         })
     }
@@ -382,6 +403,83 @@ fn pnl_derive_premium(
     derive_premium(technical, &e).map_err(to_r)
 }
 
+/// The joint source of the annual gross and occurrence-ceded loss:
+/// `list(gross, ceded, probs)`.
+#[extendr]
+fn pnl_occurrence_source(
+    frequency: Robj,
+    step: f64,
+    probs: &[f64],
+    occurrence: Robj,
+    points_a: f64,
+    points_b: f64,
+) -> Result<List> {
+    let n = crate::aggregate::AnyCount::from_robj(&frequency)?;
+    let severity = prospicio_prob::Grid::new(step, probs.to_vec()).map_err(to_r)?;
+    let tower = tower_of(&occurrence)?
+        .ok_or_else(|| Error::Other("occurrence must be a reinsurance_tower".into()))?;
+    let (source, _) = occurrence_source(
+        &n,
+        &severity,
+        &tower.inner,
+        [points_a as usize, points_b as usize],
+    )
+    .map_err(to_r)?;
+    Ok(list!(
+        gross = source.values().to_vec(),
+        ceded = source.second().unwrap_or_default().to_vec(),
+        probs = source.probs().to_vec()
+    ))
+}
+
+fn tower_of(tower: &Robj) -> Result<Option<&ReinsuranceTower>> {
+    if tower.is_null() {
+        return Ok(None);
+    }
+    <&ReinsuranceTower>::try_from(tower)
+        .map(Some)
+        .map_err(|_| Error::Other("tower must be a reinsurance_tower".into()))
+}
+
+fn face_of(face: &str) -> Result<Face> {
+    match face {
+        "consolidated" => Ok(Face::Consolidated),
+        "walk" => Ok(Face::Walk),
+        "peel-top-down" => Ok(Face::PeelTopDown),
+        "peel-bottom-up" => Ok(Face::PeelBottomUp),
+        other => Err(Error::Other(format!(
+            "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
+        ))),
+    }
+}
+
+/// A book from flattened expenses; an empty label means the default.
+fn make_book(
+    name: &str,
+    premium: f64,
+    exp_index: &[f64],
+    exp_basis: &[String],
+    exp_value: &[f64],
+    exp_label: &[String],
+    labels: [&str; 3],
+) -> Result<Book> {
+    let mut book = Book::new(name, premium);
+    for e in expenses(exp_index, exp_basis, exp_value, exp_label)? {
+        book = book.expense(e);
+    }
+    let [premium_label, loss_label, step_label] = labels;
+    if !premium_label.is_empty() {
+        book = book.premium_label(premium_label);
+    }
+    if !loss_label.is_empty() {
+        book = book.loss_label(loss_label);
+    }
+    if !step_label.is_empty() {
+        book = book.step_label(step_label);
+    }
+    Ok(book)
+}
+
 /// Expense legs from flattened terms.
 fn expenses(
     index: &[f64],
@@ -424,4 +522,5 @@ extendr_module! {
     mod pnl;
     impl PnlLedger;
     fn pnl_derive_premium;
+    fn pnl_occurrence_source;
 }

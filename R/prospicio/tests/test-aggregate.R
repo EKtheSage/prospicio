@@ -436,3 +436,23 @@ local({
   stopifnot(inherits(try(derive_premium(5, list(pnl_expense("loss", 0.1))), silent = TRUE), "try-error"))
   stopifnot(inherits(try(book_ledger(book, gross, NULL, "peel-top-down"), silent = TRUE), "try-error"))
 })
+
+# Occurrence covers on the joint gross and ceded loss (aggregate 1.0.1's
+# example 4): net 13.5, the cover's recovery 0.8.
+local({
+  sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))
+  occ <- reinsurance_tower(list(with_ceding_commission(
+    with_deposit_premium(xol_layer("occ 2 xs 2", 2, 2), 2), 0.25)))
+  joint <- occurrence_source(poisson_count(2), sev, occ, c(64, 32))
+  stopifnot(length(joint$gross) == 280)
+  book <- pnl_book("Ex4", 20, list(pnl_expense("premium", 0.1)))
+  s <- ledger_sheet(book_occurrence_ledger(book, joint, occ, face = "walk"))
+  stopifnot(abs(s$EX[s$row == "net through occ 2 xs 2"] - 13.5) < 1e-10)
+  stopifnot(abs(s$k01[s$row == "net through occ 2 xs 2"] - 7.5) < 1e-10)
+  stopifnot(abs(s$EX[s$row == "occ 2 xs 2 recovery"] - 0.8) < 1e-10)
+  agg <- reinsurance_tower(list(with_deposit_premium(aggregate_stop_loss("agg 3 xs 5", 3, 5), 0.5)))
+  w <- book_occurrence_ledger(book, joint, occ, agg, "walk")
+  c7 <- book_occurrence_ledger(book, joint, occ, agg)
+  stopifnot(abs(mean(ledger_result(w)) - mean(ledger_result(c7))) < 1e-12)
+  stopifnot("Net of occurrence" %in% ledger_sheet(w)$step)
+})

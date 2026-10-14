@@ -1786,6 +1786,37 @@ class Book:
             A peel without a tower, a layer that needs each event, or one
             with loss-sensitive terms.
         """
+    def occurrence_ledger(self, /, joint: Any, occurrence: Tower, aggregate: Tower |None = None, face: str = "consolidated") -> Ledger:
+        """
+        The ledger with occurrence covers over the joint source ``joint``
+        of the annual gross loss and the loss the ``occurrence`` tower cedes
+        (:func:`occurrence_source`), then the aggregate covers of
+        ``aggregate`` on the net of the occurrence covers, as
+        ``aggregate``'s ``xpnl`` and ``pnl`` over its ``occ_bivariate``.
+        
+        The occurrence covers are one group on the walk, named after the
+        first layer; a peel needs exactly one occurrence layer. The
+        consolidated face is over the net loss at each atom.
+        
+        Parameters
+        ----------
+        joint : tuple of (list of float, list of float, list of float)
+            ``(gross, ceded, probs)``.
+        occurrence : prospicio.reinsurance.Tower
+            Per-occurrence covers without annual terms.
+        aggregate : prospicio.reinsurance.Tower, optional
+        face : str, default "consolidated"
+        
+        Returns
+        -------
+        Ledger
+        
+        Raises
+        ------
+        ValueError
+            As :meth:`ledger`, an occurrence layer with annual terms, or a
+            peel through several occurrence layers.
+        """
     @property
     def premium(self, /) -> float:
         """
@@ -17712,6 +17743,42 @@ def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
     >>> pml = occurrence_pml(Poisson(2.0), Lognormal.from_mean_cv(100.0, 2.0), 0.01)
     >>> round(pml.loss, 4), pml.annual_return_period
     (1171.4979, 100.0)
+    """
+
+def occurrence_source(frequency: Any, severity: Grid, occurrence: Tower, points: tuple[int, int]) -> tuple[tuple[list[float], list[float], list[float]], BivariateReport]:
+    """
+    The joint source of the annual gross loss and the loss ceded by the
+    per-occurrence covers of ``occurrence``, ``aggregate``'s
+    ``occ_bivariate(views=('gross', 'ceded'))``: each claim on the
+    severity's grid goes to ``(x, c(x))``, the cession split linearly
+    between grid points, compounded by a two-dimensional FFT on ``points``
+    points per axis; cells below ``1e-15`` of the total mass are dropped as
+    round-off.
+    
+    Parameters
+    ----------
+    frequency : Poisson, NegativeBinomial, Binomial or a count
+    severity : Grid
+    occurrence : prospicio.reinsurance.Tower
+        Per-occurrence covers without annual terms.
+    points : tuple of (int, int)
+    
+    Returns
+    -------
+    tuple of (tuple of (list of float, list of float, list of float), BivariateReport)
+        The joint source ``(gross, ceded, probs)`` for
+        :meth:`Book.occurrence_ledger`, and the FFT's report.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import occurrence_source
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> from prospicio.reinsurance import Layer, Tower
+    >>> sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
+    >>> cover = Tower([Layer("occ 2 xs 2", 2.0, 2.0)])
+    >>> (gross, ceded, probs), _ = occurrence_source(Poisson(2.0), sev, cover, (64, 32))
+    >>> round(sum(c * p for c, p in zip(ceded, probs)), 12)
+    0.8
     """
 
 def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:

@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **In progress** (PRs 1 to 4 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **In progress** (PRs 1 to 5 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -228,9 +228,33 @@ Each PR is one type or method, with its parity tests, bindings and docs.
    test checks those six cells are that tie. Python `Book`, `Expense`,
    `derive_premium`; R `pnl_book()`, `pnl_expense()`, `book_ledger()`,
    `derive_premium()`.
-5. **Occurrence covers on a joint source**: the comonotone `(gross,
-   ceded)` per claim, compounded by `fft_bivariate`, and the walk through
-   an occurrence tier then an aggregate one. Parity: 4.
+5. (Done.) **Occurrence covers on a joint source**: `Source::joint`
+   (atoms with two coordinates) and `Leg::of2` (a function of both; a
+   one-argument leg reads the first), `pnl::occurrence_source` (each claim
+   on the severity's grid to `(x, c(x))`, the cession of one event split
+   linearly between grid points, compounded by `fft_bivariate`, cells
+   below `1e-15` of the total mass dropped as `aggregate`'s
+   `_clip_density_fuzz` does) and `Book::occurrence_ledger` (the walk:
+   the occurrence tier as one group, its recovery the joint's second
+   coordinate, then each aggregate cover on `max(gross − ceded, 0)`, with
+   the `Net of occurrence` block; the per-atom peel with one occurrence
+   layer; the consolidated face over the net loss at each atom). A peel
+   through several occurrence layers is refused: the joint carries only
+   the total cession, and `aggregate`'s stitched route (each row its own
+   marginal, no `κ`) is not built. Occurrence layers may not carry annual
+   terms. Parity: `validation/scripts/aggregate_pnl_occurrence.py`, 1,566
+   values: example 4 walked and consolidated, the same with an aggregate
+   cover 3 xs 5 on its net walked, consolidated and peeled top down, and
+   the joint of example 4 cell by cell (280 cells at `1e-15`, built here
+   from the severity and the cover). The ledgers run on `aggregate`'s
+   joint with `PnL`'s probabilities, at `1e-12`; the consolidated faces at
+   `1e-11`, since `aggregate` reads their net marginal off its 1-D engine
+   and prospicio off the joint, and their standard deviations differ by
+   about `2e-12`. A joint built here keeps its total (`0.99999999999999`)
+   where `aggregate` divides by it, a shift of about `1e-14` in every
+   probability. Python `occurrence_source`, `Book.occurrence_ledger` and a
+   joint source as a tuple `(gross, ceded, probs)`; R
+   `occurrence_source()`, `book_occurrence_ledger()`.
 6. **`pnl_program`** (premium and layer deposits or rates from target
    combined ratios), then the variable terms and reinstatement premiums
    as legs (swing, sliding scale, profit commission, corridor, retro;
