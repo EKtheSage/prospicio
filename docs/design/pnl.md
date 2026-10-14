@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **Done** (PRs 1 to 6b); follow-ups in progress (7a and 7b done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **Done** (PRs 1 to 6b, follow-ups 7a to 7c) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -141,10 +141,10 @@ on a step (PR 3).
 7. **`pnl_program` returns numbers** (premium, each layer's deposit or
    rate, the targets used), not DecL text.
 8. **Left out:** charts, the DecL writer and parser, help text, the
-   massive one-sweep route and the stitched peel with its Palm scenario
-   ladder (several occurrence layers peeled one by one), `waterfall_df`
-   and `pentagon_df`, `evaluate` (Cherny–Madan break-even), and the
-   engine pass-throughs (`stats_df`, `reins_*`).
+   massive one-sweep route, the Palm scenario ladder of the stitched peel
+   (the stitched peel itself came in 7c, without it), `waterfall_df` and
+   `pentagon_df`, `evaluate` (Cherny–Madan break-even), and the engine
+   pass-throughs (`stats_df`, `reins_*`).
 
 ## PR plan
 
@@ -357,8 +357,50 @@ Each PR is one type or method, with its parity tests, bindings and docs.
       is its walk (the tier is one layer). Python `Book(...,
       expense_at_expected_loss=True)`; R `pnl_book(expense_at_expected_loss
       = TRUE)`.
-   c. **The stitched peel** of several occurrence layers, revising
-      decision 8.
+   c. (Done.) **The stitched peel** of several occurrence layers, revising
+      decision 8. The joint carries only the occurrence tier's total
+      cession, so no shared source can carry a per-layer occurrence walk.
+      `Book::occurrence_peel(frequency, severity, occurrence, aggregate,
+      face, points)` builds every row as its own exact marginal instead,
+      as `aggregate`'s `_peel_stitched`: an occurrence layer's recovery,
+      each running net and the tier's total are each one compound (by
+      FFT on twice `points`, truncated, no tail lumped) of a per-claim
+      map of the severity (the layer's cession of one claim, taken from
+      the whole tower so the layers add to the tier), split linearly onto
+      the grid; an aggregate layer's recovery and running net are
+      pushforwards of the net-of-occurrence aggregate through its annual
+      terms; premiums and commissions are constants, and every other row
+      is one of these with a sign and a shift. `Ledger::stitched` lays
+      such rows out by the same plan as a per-atom ledger. The mean column
+      foots by linearity; the standard deviation, skewness and card
+      quantiles are each row's own (marginal). Built differently, by
+      necessity:
+      - no scenario columns: `aggregate` prints a Palm ladder here, which
+        conditions each row on the result through the claims or, with an
+        aggregate tier, through the retained aggregate, so the same gross
+        loss row reads `κ01 = −16` on one program and `−11.55` on another;
+        those columns are not statistics of the rows and are not built
+        (`scenarios` and `stack` refuse a stitched ledger);
+      - the `Impact` row is the differences of the grand result's
+        statistics and the gross result's (its standard deviation can be
+        negative), as `aggregate`, since the two are not on one source;
+      - a loss-basis expense is constant at `rate × E[gross]` (no shared
+        source, as `aggregate`'s `on_source_loss=False`): the exception to
+        7b.
+      Occurrence layers on this route have fixed terms (no annual terms
+      or reinstatements) and aggregate layers no loss-sensitive terms,
+      as `aggregate`'s stitched route is guaranteed cost. The route is
+      chosen by calling it: `occurrence_ledger` still refuses a peel
+      through several occurrence layers, and its message points here.
+      Parity: `validation/scripts/aggregate_pnl_stitched.py`, 495 values
+      (two occurrence layers with a commission peeled top down, and
+      bottom up with an aggregate cover behind them; the sheet's mean,
+      standard deviation, CV and skewness, the card with its marginal
+      quantiles, the legs), every one at `1e-12` (`1e-10` for skewness)
+      on the first run. `aggregate` normalizes each marginal by its total
+      mass after the FFT's truncation, as `Ledger::stitched` does. Python
+      `Book.occurrence_peel` and `Ledger.is_stitched`; R
+      `book_occurrence_peel()` and `ledger_is_stitched()`.
 
 ## Validation
 

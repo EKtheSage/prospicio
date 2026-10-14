@@ -361,13 +361,32 @@ impl PyLedger {
     /// Returns
     /// -------
     /// Discrete
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     No such row, or a stitched peel's ``Impact`` row, a difference of
+    ///     statistics with no distribution of its own.
     fn row(&self, label: &str) -> PyResult<PyDiscrete> {
-        self.inner
+        let r = self
+            .inner
             .row(label)
-            .map(|r| PyDiscrete {
-                inner: r.distribution().clone(),
-            })
-            .ok_or_else(|| PyValueError::new_err(format!("no row labelled {label:?}")))
+            .ok_or_else(|| PyValueError::new_err(format!("no row labelled {label:?}")))?;
+        if r.is_delta() {
+            return Err(PyValueError::new_err(format!(
+                "row {label:?} is a difference of two rows' statistics, with no distribution"
+            )));
+        }
+        Ok(PyDiscrete {
+            inner: r.distribution().clone(),
+        })
+    }
+
+    /// Whether every row is its own marginal (:meth:`Book.occurrence_peel`):
+    /// the sheet then has no scenario columns.
+    #[getter]
+    fn is_stitched(&self) -> bool {
+        self.inner.is_stitched()
     }
 
     /// The chance that the result is 0.
@@ -384,7 +403,8 @@ impl PyLedger {
     /// -------
     /// dict
     ///     Columns ``step`` (on a tower), ``side``, ``label``, ``row`` (the
-    ///     row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios.
+    ///     row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios
+    ///     (none on a stitched peel, :meth:`Book.occurrence_peel`).
     fn sheet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let d = self.index(py)?;
         let rows = self.inner.rows();
@@ -401,11 +421,14 @@ impl PyLedger {
             "Skew",
             rows.iter().map(|r| r.skew().map(snap)).collect::<Vec<_>>(),
         )?;
-        for q in LADDER {
-            d.set_item(
-                ladder_label("k", q),
-                self.inner.scenarios(q).map_err(to_py)?,
-            )?;
+        // A stitched ledger has no common source, so no scenario columns.
+        if !self.inner.is_stitched() {
+            for q in LADDER {
+                d.set_item(
+                    ladder_label("k", q),
+                    self.inner.scenarios(q).map_err(to_py)?,
+                )?;
+            }
         }
         Ok(d)
     }
@@ -986,6 +1009,66 @@ impl PyBook {
                 )
                 .map_err(to_py)?,
         })
+    }
+
+    /// Several occurrence layers peeled one by one, and the aggregate
+    /// covers of ``aggregate`` behind them, ``aggregate``'s stitched peel.
+    /// The joint source carries only the occurrence tier's total cession,
+    /// so every row is its own exact marginal: each occurrence layer's
+    /// recovery, running net and the tier's total the compound of a
+    /// per-claim map of ``severity`` under ``frequency`` (by FFT on twice
+    /// ``points``), each aggregate layer's a pushforward of the
+    /// net-of-occurrence aggregate. The mean column foots; the other
+    /// statistics are each row's own, with no scenario columns; ``Impact``
+    /// is the difference of the grand and gross results' statistics; a
+    /// loss-basis expense is booked at the expected gross loss.
+    ///
+    /// Parameters
+    /// ----------
+    /// frequency : Poisson, NegativeBinomial, Binomial or a count
+    /// severity : Grid
+    /// occurrence : prospicio.reinsurance.Tower
+    ///     Occurrence layers with fixed terms.
+    /// aggregate : prospicio.reinsurance.Tower, optional
+    /// face : str, default "peel-top-down"
+    ///     ``peel-top-down`` or ``peel-bottom-up``.
+    /// points : int, default 1024
+    ///
+    /// Returns
+    /// -------
+    /// Ledger
+    ///     A stitched ledger (``is_stitched``).
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     A face that is not a peel, a retro book, occurrence layers with
+    ///     annual terms, reinstatements or loss-sensitive terms, aggregate
+    ///     layers with loss-sensitive terms, or a severity grid longer than
+    ///     ``points``.
+    #[pyo3(signature = (frequency, severity, occurrence, aggregate=None, face="peel-top-down", points=1024))]
+    #[allow(clippy::too_many_arguments)]
+    fn occurrence_peel(
+        &self,
+        py: Python<'_>,
+        frequency: &Bound<'_, PyAny>,
+        severity: PyRef<'_, PyGrid>,
+        occurrence: PyRef<'_, PyTower>,
+        aggregate: Option<PyRef<'_, PyTower>>,
+        face: &str,
+        points: usize,
+    ) -> PyResult<PyLedger> {
+        let face = face_of(face)?;
+        let n = AnyCount::extract(frequency)?;
+        let (sev, occ) = (severity.inner.clone(), occurrence.inner.clone());
+        let agg = aggregate.map(|t| t.inner.clone());
+        let book = self.inner.clone();
+        let inner = py
+            .detach(|| {
+                book.occurrence_peel(n.as_counting(), &sev, &occ, agg.as_ref(), face, points)
+            })
+            .map_err(to_py)?;
+        Ok(PyLedger { inner })
     }
 
     fn __repr__(&self) -> String {

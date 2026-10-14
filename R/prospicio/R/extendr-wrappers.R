@@ -488,6 +488,10 @@ PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_label
 
 PnlLedger$book <- function(values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face, retro, expense_at_mean) .Call(wrap__PnlLedger__book, values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face, retro, expense_at_mean)
 
+PnlLedger$is_stitched <- function() .Call(wrap__PnlLedger__is_stitched, self)
+
+PnlLedger$book_peel <- function(frequency, step, severity, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, points) .Call(wrap__PnlLedger__book_peel, frequency, step, severity, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, points)
+
 PnlLedger$book_occurrence <- function(gross, ceded, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, expense_at_mean) .Call(wrap__PnlLedger__book_occurrence, gross, ceded, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, expense_at_mean)
 
 PnlLedger$rows <- function() .Call(wrap__PnlLedger__rows, self)

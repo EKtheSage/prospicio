@@ -1833,6 +1833,44 @@ class Book:
             As :meth:`ledger`, annual terms on an occurrence tier of several
             layers, or a peel through several occurrence layers.
         """
+    def occurrence_peel(self, /, frequency: Any, severity: Grid, occurrence: Tower, aggregate: Tower |None = None, face: str = "peel-top-down", points: int = 1024) -> Ledger:
+        """
+        Several occurrence layers peeled one by one, and the aggregate
+        covers of ``aggregate`` behind them, ``aggregate``'s stitched peel.
+        The joint source carries only the occurrence tier's total cession,
+        so every row is its own exact marginal: each occurrence layer's
+        recovery, running net and the tier's total the compound of a
+        per-claim map of ``severity`` under ``frequency`` (by FFT on twice
+        ``points``), each aggregate layer's a pushforward of the
+        net-of-occurrence aggregate. The mean column foots; the other
+        statistics are each row's own, with no scenario columns; ``Impact``
+        is the difference of the grand and gross results' statistics; a
+        loss-basis expense is booked at the expected gross loss.
+        
+        Parameters
+        ----------
+        frequency : Poisson, NegativeBinomial, Binomial or a count
+        severity : Grid
+        occurrence : prospicio.reinsurance.Tower
+            Occurrence layers with fixed terms.
+        aggregate : prospicio.reinsurance.Tower, optional
+        face : str, default "peel-top-down"
+            ``peel-top-down`` or ``peel-bottom-up``.
+        points : int, default 1024
+        
+        Returns
+        -------
+        Ledger
+            A stitched ledger (``is_stitched``).
+        
+        Raises
+        ------
+        ValueError
+            A face that is not a peel, a retro book, occurrence layers with
+            annual terms, reinstatements or loss-sensitive terms, aggregate
+            layers with loss-sensitive terms, or a severity grid longer than
+            ``points``.
+        """
     @property
     def premium(self, /) -> float:
         """
@@ -8960,6 +8998,12 @@ class Ledger:
         -------
         dict
         """
+    @property
+    def is_stitched(self, /) -> bool:
+        """
+        Whether every row is its own marginal (:meth:`Book.occurrence_peel`):
+        the sheet then has no scenario columns.
+        """
     def legs(self, /) -> dict:
         """
         The declared legs, ``aggregate``'s ``legs_df``: step, side, label,
@@ -9019,6 +9063,12 @@ class Ledger:
         Returns
         -------
         Discrete
+        
+        Raises
+        ------
+        ValueError
+            No such row, or a stitched peel's ``Impact`` row, a difference of
+            statistics with no distribution of its own.
         """
     @property
     def rows(self, /) -> list[str]:
@@ -9035,7 +9085,8 @@ class Ledger:
         -------
         dict
             Columns ``step`` (on a tower), ``side``, ``label``, ``row`` (the
-            row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios.
+            row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios
+            (none on a stitched peel, :meth:`Book.occurrence_peel`).
         """
     def validation(self, /) -> dict:
         """

@@ -485,6 +485,18 @@ sources:
   one books a loss-basis expense stochastic on `L`), and `xpnl ... peel`
   is refused. `Book::occurrence_ledger` matches on 1,121 values
   (`aggregate_pnl_reinstatements.py`).[^pnl]
+* With two or more occurrence layers, `xpnl ... peel` takes the
+  stitched route (`_peel_stitched`): every row is `sign × X + shift` of
+  its own marginal, a compound of a per-claim map of the severity (one
+  FFT on the padded grid, truncated and normalized by its mass) or a
+  pushforward of the retained aggregate; the `Impact` row is the
+  differences of the grand and gross results' statistics (its SD can be
+  negative), and a loss-basis expense is constant. Its `κ` columns are a
+  Palm ladder conditioned through the claims, or through the retained
+  aggregate once an aggregate cover exists, so they depend on the
+  program (the gross loss row's `κ01` reads −16 on one and −11.55 on
+  another). `Book::occurrence_peel` matches the 495 other values
+  (`aggregate_pnl_stitched.py`).[^pnl]
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 

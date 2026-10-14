@@ -35,7 +35,7 @@
 
 use prospicio_core::{Error, Result};
 
-use super::{Group, Layout, Ledger, Leg, LegKind, Role, Source};
+use super::{Group, Layout, Ledger, Leg, LegKind, Marginal, Role, RowKind, Side, Source};
 use crate::bivariate::{BivariateReport, JointGrid, fft_bivariate};
 use crate::reinsurance::{Commission, Layer, LossSensitivePremium, Tower};
 use prospicio_prob::{Counting, Grid};
@@ -669,6 +669,292 @@ impl Book {
         self.covered(joint, Some(occurrence), aggregate, face)
     }
 
+    /// The book with several occurrence layers peeled one by one, and the
+    /// aggregate covers of `aggregate` behind them, `aggregate`'s stitched
+    /// peel (`xpnl ... peel` with two or more occurrence layers). The
+    /// occurrence tier's total cession is all a joint source carries, so
+    /// every row is its own exact marginal ([`Ledger::stitched`]): an
+    /// occurrence layer's recovery, each running net through the
+    /// occurrence layers and the tier's total are each the compound of a
+    /// per-claim map of `severity` (the layer's cession of one claim from
+    /// the whole tower, split linearly onto the grid) under `frequency`, by
+    /// FFT on `2 × points` points kept to `points`; an aggregate layer's
+    /// recovery and running net are pushforwards of the net-of-occurrence
+    /// aggregate through its annual terms; premiums and commissions are
+    /// constants. The mean column foots; the other statistics and the card
+    /// are each row's own; there are no scenario columns; the `Impact` row
+    /// is the differences of the grand and gross results' statistics; a
+    /// loss-basis expense is constant at the expected gross loss.
+    ///
+    /// # Errors
+    ///
+    /// A face that is not a peel, a retro book, no occurrence layer with a
+    /// share, occurrence layers with annual terms, reinstatements or
+    /// loss-sensitive terms, aggregate layers with loss-sensitive terms or
+    /// reinstatements, `points` of 0, or a severity grid longer than
+    /// `points`.
+    pub fn occurrence_peel<N: Counting + ?Sized>(
+        &self,
+        frequency: &N,
+        severity: &Grid,
+        occurrence: &Tower,
+        aggregate: Option<&Tower>,
+        face: Face,
+        points: usize,
+    ) -> Result<Ledger> {
+        self.validate()?;
+        if !matches!(face, Face::PeelTopDown | Face::PeelBottomUp) {
+            return Err(Error::Data(
+                "the stitched route peels: give Face::PeelTopDown or Face::PeelBottomUp".into(),
+            ));
+        }
+        if self.retro.is_some() {
+            return Err(Error::Data(
+                "a retrospectively rated book buys no cover here".into(),
+            ));
+        }
+        if points == 0 || severity.len() > points {
+            return Err(Error::Data(format!(
+                "points must be at least the severity grid's {} points",
+                severity.len()
+            )));
+        }
+        check_events(occurrence)?;
+        check_occurrence(occurrence)?;
+        if annual_occurrence(occurrence).is_some() {
+            return Err(Error::Data(
+                "the stitched peel's occurrence layers have fixed terms: no annual terms or \
+                 reinstatements"
+                    .into(),
+            ));
+        }
+        if let Some(t) = aggregate {
+            check_tower(t)?;
+            if let Some(l) = t.layers.iter().find(|l| {
+                l.swing.is_some()
+                    || matches!(l.commission, Some(Commission::SlidingScale(_)))
+                    || l.profit_commission.is_some()
+            }) {
+                return Err(Error::Data(format!(
+                    "aggregate layer {:?} has loss-sensitive terms; the stitched peel is \
+                     guaranteed cost, as aggregate's",
+                    l.name
+                )));
+            }
+        }
+        let occ_covers = agg_covers(occurrence, face);
+        if occ_covers.is_empty() {
+            return Err(Error::Data(
+                "every occurrence layer has a zero share; there is no cover to peel".into(),
+            ));
+        }
+        let agg_steps = aggregate.map(|t| agg_covers(t, face)).unwrap_or_default();
+        let h = severity.step();
+        let xs: Vec<f64> = (0..points).map(|k| k as f64 * h).collect();
+        // Each occurrence layer's cession of a claim at each severity point.
+        let per_claim: Vec<Vec<f64>> = (0..severity.len())
+            .map(|k| {
+                occurrence
+                    .year(&[k as f64 * h], None, None)
+                    .into_iter()
+                    .map(|(c, _)| c)
+                    .collect()
+            })
+            .collect();
+        let compound = |f: &dyn Fn(usize) -> f64| -> Vec<f64> {
+            let mut moved = vec![0.0; points];
+            for (k, &p) in severity.probs().iter().enumerate() {
+                spread(&mut moved, f(k) / h, p);
+            }
+            let mut out = crate::fft::compound_buffer(frequency, &moved, 2 * points);
+            out.truncate(points);
+            out
+        };
+        let pushforward = |subject: &[f64], f: &dyn Fn(usize) -> f64| -> Vec<f64> {
+            let mut out = vec![0.0; points];
+            for (k, &p) in subject.iter().enumerate() {
+                spread(&mut out, f(k) / h, p);
+            }
+            out
+        };
+        let gross = compound(&|k| k as f64 * h);
+        let gross_mean = mean_of(&xs, &gross);
+        // (label, premium, commission, recovery, running net) per step.
+        let mut covers: Vec<PeelStep> = Vec::new();
+        let mut taken: Vec<usize> = Vec::new();
+        for (label, idx) in &occ_covers {
+            let i = idx[0];
+            taken.push(i);
+            let l = &occurrence.layers[i];
+            let recovery = compound(&|k| per_claim[k][i]);
+            let net =
+                compound(&|k| k as f64 * h - taken.iter().map(|&j| per_claim[k][j]).sum::<f64>());
+            covers.push((label.clone(), l.premium, flat_commission(l), recovery, net));
+        }
+        let n_occ = covers.len();
+        let mut spans: Vec<(&str, usize, usize, Option<Vec<f64>>)> = Vec::new();
+        let occ_total = (n_occ >= 2)
+            .then(|| compound(&|k| taken.iter().map(|&j| per_claim[k][j]).sum::<f64>()));
+        spans.push(("All occurrence", 1, 1 + n_occ, occ_total));
+        let subject = covers[n_occ - 1].4.clone();
+        if let Some(t) = aggregate {
+            let ceded = ceded_at(t, &xs);
+            let mut taken: Vec<usize> = Vec::new();
+            for (label, idx) in &agg_steps {
+                let i = idx[0];
+                taken.push(i);
+                let l = &t.layers[i];
+                let recovery = pushforward(&subject, &|k| ceded[k][i]);
+                let net = pushforward(&subject, &|k| {
+                    xs[k] - taken.iter().map(|&j| ceded[k][j]).sum::<f64>()
+                });
+                covers.push((label.clone(), l.premium, flat_commission(l), recovery, net));
+            }
+            let agg_total = (agg_steps.len() >= 2).then(|| {
+                pushforward(&subject, &|k| {
+                    taken.iter().map(|&j| ceded[k][j]).sum::<f64>()
+                })
+            });
+            spans.push(("All aggregate", 1 + n_occ, covers.len() + 1, agg_total));
+        }
+        // The plan's groups: constant legs with the right labels and kinds.
+        let step = self.step_label.clone().unwrap_or_else(|| "Gross".into());
+        let (prem, loss) = (self.prem_key(), self.loss_key());
+        let expense_legs = self.expense_legs(Some(&[gross_mean]), &[prem.clone(), loss.clone()]);
+        let mut expenses = Vec::with_capacity(expense_legs.len());
+        for leg in &expense_legs {
+            expenses.push(leg.evaluate(&[0.0], None)?[0]);
+        }
+        let e_total: f64 = expenses.iter().sum();
+        let mut gross_group = Group::sell(step)
+            .consideration(Leg::constant(prem, self.premium).kind(LegKind::Premium))
+            .obligation(Leg::constant(loss, 0.0).kind(LegKind::Loss))
+            .margin_label(self.margin_key());
+        for leg in expense_legs {
+            gross_group = gross_group.obligation(leg);
+        }
+        let mut groups = vec![gross_group];
+        let mut used = Vec::new();
+        for (label, premium, comm, _, _) in &covers {
+            groups.push(cover_group(
+                label.clone(),
+                Flows {
+                    premium: vec![*premium],
+                    premium_varies: false,
+                    recovery: vec![0.0],
+                    flat: *comm,
+                    sliding: None,
+                    profit: None,
+                },
+                &mut used,
+            ));
+        }
+        let mut layout = Layout::new(self.name.clone()).result_name("margin");
+        for (label, lo, hi, _) in &spans {
+            layout = layout.span(*label, *lo, *hi);
+        }
+        let p = self.premium;
+        let running: Vec<f64> = covers
+            .iter()
+            .scan(0.0, |acc, c| {
+                *acc += c.2 - c.1;
+                Some(*acc)
+            })
+            .collect();
+        let pc_total: f64 = covers.iter().map(|c| c.1).sum();
+        let comm_total: f64 = covers.iter().map(|c| c.2).sum();
+        let final_net = &covers[covers.len() - 1].4;
+        let affine = |probs: &[f64], sign: f64, shift: f64| Marginal::Affine {
+            values: xs.clone(),
+            probs: probs.to_vec(),
+            sign,
+            shift,
+        };
+        let span_rec = |k: usize| -> Result<&Vec<f64>> {
+            spans
+                .get(k)
+                .and_then(|s| s.3.as_ref())
+                .ok_or_else(|| Error::Data("a subtotal of a single step".into()))
+        };
+        let span_pc_comm = |k: usize| -> (f64, f64) {
+            let (lo, hi) = (spans[k].1, spans[k].2);
+            let block = &covers[lo - 1..hi - 1];
+            (
+                block.iter().map(|c| c.1).sum(),
+                block.iter().map(|c| c.2).sum(),
+            )
+        };
+        Ledger::stitched(groups, layout, |kind| {
+            Ok(match *kind {
+                RowKind::Leg {
+                    group: 0,
+                    side,
+                    index,
+                } => match (side, index) {
+                    (Side::Consideration, _) => Marginal::Constant(p),
+                    (_, 0) => affine(&gross, -1.0, 0.0),
+                    (_, i) => Marginal::Constant(-expenses[i - 1]),
+                },
+                RowKind::Leg { group, side, index } => {
+                    let c = &covers[group - 1];
+                    match (side, index) {
+                        (Side::Consideration, _) => Marginal::Constant(-c.1),
+                        (_, 0) => affine(&c.3, 1.0, 0.0),
+                        _ => Marginal::Constant(c.2),
+                    }
+                }
+                RowKind::GroupTotal { group: 0, .. } => affine(&gross, -1.0, -e_total),
+                RowKind::GroupTotal { group, .. } => {
+                    let c = &covers[group - 1];
+                    affine(&c.3, 1.0, c.2)
+                }
+                RowKind::GroupResult(0) => affine(&gross, -1.0, p - e_total),
+                RowKind::GroupResult(group) => {
+                    let c = &covers[group - 1];
+                    affine(&c.3, 1.0, c.2 - c.1)
+                }
+                RowKind::RunningNet(group) => {
+                    affine(&covers[group - 1].4, -1.0, p - e_total + running[group - 1])
+                }
+                RowKind::SpanTotal { span, side } => {
+                    let (pc, comm) = span_pc_comm(span);
+                    match side {
+                        Side::Consideration => Marginal::Constant(-pc),
+                        _ => affine(span_rec(span)?, 1.0, comm),
+                    }
+                }
+                RowKind::SpanResult(span) => {
+                    let (pc, comm) = span_pc_comm(span);
+                    affine(span_rec(span)?, 1.0, comm - pc)
+                }
+                RowKind::NetTotal { span, side } => {
+                    let hi = spans[span].2;
+                    let block = &covers[..hi - 1];
+                    match side {
+                        Side::Consideration => {
+                            Marginal::Constant(p - block.iter().map(|c| c.1).sum::<f64>())
+                        }
+                        _ => affine(
+                            &covers[hi - 2].4,
+                            -1.0,
+                            block.iter().map(|c| c.2).sum::<f64>() - e_total,
+                        ),
+                    }
+                }
+                RowKind::NetResult(span) => {
+                    let hi = spans[span].2;
+                    affine(&covers[hi - 2].4, -1.0, p - e_total + running[hi - 2])
+                }
+                RowKind::GrandTotal(Side::Consideration) => Marginal::Constant(p - pc_total),
+                RowKind::GrandTotal(_) => affine(final_net, -1.0, comm_total - e_total),
+                RowKind::GrandResult => {
+                    affine(final_net, -1.0, p - pc_total + comm_total - e_total)
+                }
+                RowKind::TotalImpact => Marginal::Constant(0.0),
+            })
+        })
+    }
+
     fn validate(&self) -> Result<()> {
         if !self.premium.is_finite() {
             return Err(Error::Data(format!(
@@ -851,7 +1137,8 @@ impl Book {
             if face != Face::Walk && idx.len() > 1 {
                 return Err(Error::Data(
                     "a peel through several occurrence layers needs each layer's own cession, \
-                     which the joint source does not carry; walk the occurrence tier instead"
+                     which the joint source does not carry; walk the occurrence tier, or peel \
+                     with occurrence_peel (every row its own marginal)"
                         .into(),
                 ));
             }
@@ -958,6 +1245,29 @@ impl Book {
             "margin",
         )
     }
+}
+
+/// A stitched peel's step: its label, premium, commission, recovery and
+/// running net (masses on the grid).
+type PeelStep = (String, f64, f64, Vec<f64>, Vec<f64>);
+
+/// `mass` split linearly between the grid points around index `u`
+/// (`aggregate`'s linear `_rebucket_to_grid`), kept within the grid.
+fn spread(out: &mut [f64], u: f64, mass: f64) {
+    let n = out.len();
+    let j = u.floor().max(0.0);
+    let w = (u - j).clamp(0.0, 1.0);
+    let j = (j as usize).min(n - 1);
+    out[j] += mass * (1.0 - w);
+    if w > 0.0 {
+        out[(j + 1).min(n - 1)] += mass * w;
+    }
+}
+
+/// The mean of masses `probs` at `values`, normalized.
+fn mean_of(values: &[f64], probs: &[f64]) -> f64 {
+    let total: f64 = probs.iter().sum();
+    values.iter().zip(probs).map(|(x, p)| x * p).sum::<f64>() / total
 }
 
 /// `(label, layers)` of each aggregate cover group: one per stage on a
@@ -1435,6 +1745,66 @@ mod tests {
             assert_eq!(r.label, s.label);
             assert!((r.mean() - s.mean()).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn stitched_peel() {
+        use prospicio_prob::Poisson;
+        let sev = Grid::new(1.0, vec![0.0, 0.4, 0.3, 0.0, 0.2, 0.0, 0.1]).unwrap();
+        let occ = Tower::new(vec![
+            Layer::xol("a", 1.0, 1.0)
+                .unwrap()
+                .deposit_premium(1.0)
+                .unwrap(),
+            Layer::xol("b", 2.0, 2.0)
+                .unwrap()
+                .deposit_premium(1.0)
+                .unwrap(),
+        ])
+        .unwrap();
+        let n = Poisson::new(2.0).unwrap();
+        let book = Book::new("S", 20.0);
+        let peel = book
+            .occurrence_peel(&n, &sev, &occ, None, Face::PeelBottomUp, 64)
+            .unwrap();
+        assert!(peel.is_stitched());
+        // The mean column foots: the grand result is the gross less the net
+        // cost of the covers.
+        let gross = peel.row("Gross result").unwrap().mean();
+        let grand = peel.result().mean();
+        let covers: f64 = ["a result", "b result"]
+            .iter()
+            .map(|l| peel.row(l).unwrap().mean())
+            .sum();
+        assert!((grand - gross - covers).abs() < 1e-9);
+        assert!(peel.scenarios(0.5).is_err());
+        assert!(peel.extend(&peel, Layout::new("x")).is_err());
+        let impact = peel.row("total impact").unwrap();
+        assert!(impact.is_delta());
+        assert!(
+            (impact.sd() - (peel.result().sd() - peel.row("Gross result").unwrap().sd())).abs()
+                < 1e-15
+        );
+        // Refusals: a walk, fixed terms only on the occurrence layers.
+        assert!(
+            book.occurrence_peel(&n, &sev, &occ, None, Face::Walk, 64)
+                .is_err()
+        );
+        let capped = Tower::new(vec![
+            Layer::xol("a", 1.0, 1.0)
+                .unwrap()
+                .aggregate_limit(2.0)
+                .unwrap(),
+        ])
+        .unwrap();
+        assert!(
+            book.occurrence_peel(&n, &sev, &capped, None, Face::PeelTopDown, 64)
+                .is_err()
+        );
+        assert!(
+            book.occurrence_peel(&n, &sev, &occ, None, Face::PeelTopDown, 4)
+                .is_err()
+        );
     }
 
     #[test]

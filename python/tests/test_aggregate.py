@@ -912,3 +912,26 @@ def test_consolidated_loss_expense_each_year():
     m = Book("B", 10.0, [Expense("loss", 0.05)], expense_at_expected_loss=True).ledger(gross, cover)
     assert m.result.mean() == pytest.approx(c.result.mean(), abs=1e-12)
     assert m.row("expense").std_dev() == 0.0 and c.row("expense").std_dev() > 0.0
+
+
+def test_stitched_occurrence_peel():
+    from prospicio.aggregate import Book, Expense
+    from prospicio.distributions import Grid, Poisson
+    from prospicio.reinsurance import Layer, Tower
+
+    # aggregate 1.0.1's stitched peel: two occurrence layers, top down.
+    sev = Grid(1.0, [0.0, 0.4, 0.3, 0.0, 0.2, 0.0, 0.1])
+    occ = Tower([Layer("occ 1 xs 1", 1.0, 1.0).with_deposit_premium(1.0),
+                 Layer("occ 2 xs 2", 2.0, 2.0).with_deposit_premium(1.0).with_ceding_commission(0.2)])
+    book = Book("S", 20.0, [Expense("premium", 0.1)])
+    peel = book.occurrence_peel(Poisson(2.0), sev, occ, points=64)
+    assert peel.is_stitched
+    s = peel.sheet()
+    assert "k01" not in s
+    net = s["row"].index("net through occ 1 xs 1")
+    assert s["SD"][net] == pytest.approx(1.897366596, abs=1e-8)
+    assert s["EX"][net] == pytest.approx(13.8, abs=1e-9)
+    with pytest.raises(ValueError):
+        peel.row("total impact")
+    with pytest.raises(ValueError):
+        book.occurrence_peel(Poisson(2.0), sev, occ, face="walk", points=64)

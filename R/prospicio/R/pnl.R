@@ -474,3 +474,57 @@ round_premium <- function(premium) vapply(as.double(premium), round_premium_rust
 size_premium <- function(expected_loss, loss_ratio) {
   rust_result(size_premium_rust(as.double(expected_loss), as.double(loss_ratio)))
 }
+
+#' Several occurrence layers peeled one by one
+#'
+#' The stitched peel of the Python package `aggregate` (`xpnl ... peel` with
+#' two or more occurrence layers). The joint of [occurrence_source()]
+#' carries only the occurrence tier's total cession, so every row is its own
+#' exact marginal: each occurrence layer's recovery, each running net and the
+#' tier's total is the compound of a per-claim map of the severity under the
+#' claim count (by FFT on twice `points`), and each aggregate layer's a
+#' pushforward of the net-of-occurrence aggregate. The mean column foots; the
+#' other statistics are each row's own, and the sheet has no scenario columns
+#' (`ledger_is_stitched()` is `TRUE`); the `Impact` row is the difference of
+#' the grand and gross results' statistics, with no distribution of its own;
+#' a loss-basis expense is booked at the expected gross loss.
+#'
+#' @param book A [pnl_book()].
+#' @param frequency A claim count, as [poisson_count()].
+#' @param severity A [grid_distribution] of one claim.
+#' @param occurrence A [reinsurance_tower] of occurrence layers with fixed
+#'   terms.
+#' @param aggregate `NULL` or a [reinsurance_tower] of aggregate covers
+#'   without loss-sensitive terms.
+#' @param face `"peel-top-down"` or `"peel-bottom-up"`.
+#' @param points The number of grid points.
+#' @param ledger A [pnl_ledger()].
+#' @returns `book_occurrence_peel()` a [pnl_ledger()]; `ledger_is_stitched()`
+#'   whether every row is its own marginal.
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0, 0.2, 0, 0.1))
+#' occ <- reinsurance_tower(list(
+#'   with_deposit_premium(xol_layer("occ 1 xs 1", 1, 1), 1),
+#'   with_deposit_premium(xol_layer("occ 2 xs 2", 2, 2), 1)))
+#' book <- pnl_book("S", 20, list(pnl_expense("premium", 0.1)))
+#' peel <- book_occurrence_peel(book, poisson_count(2), sev, occ, points = 64)
+#' ledger_sheet(peel)[, c("step", "label", "EX", "SD")]
+book_occurrence_peel <- function(book, frequency, severity, occurrence, aggregate = NULL,
+                                 face = "peel-top-down", points = 1024) {
+  e <- pnl_flat_expenses(book$expenses)
+  lbl <- function(x) if (is.null(x)) "" else as.character(x)
+  if (!is.null(book$retro)) stop("a retrospectively rated book buys no cover here")
+  ptr <- rust_result(PnlLedger$book_peel(
+    frequency@ptr, severity@step, severity@probs,
+    book$name, book$premium, e$index, e$basis, e$value, e$label,
+    lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
+    occurrence@ptr, if (is.null(aggregate)) NULL else aggregate@ptr, as.character(face),
+    as.double(points)
+  ))
+  structure(list(ptr = ptr), class = "pnl_ledger")
+}
+
+#' @rdname book_occurrence_peel
+#' @export
+ledger_is_stitched <- function(ledger) ledger$ptr$is_stitched()

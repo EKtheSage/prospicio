@@ -510,3 +510,18 @@ local({
                    gross, cover)
   stopifnot(abs(mean(ledger_result(m)) - mean(ledger_result(c1))) < 1e-12)
 })
+
+# The stitched peel of several occurrence layers (aggregate 1.0.1).
+local({
+  sev <- grid_distribution(1, c(0, 0.4, 0.3, 0, 0.2, 0, 0.1))
+  occ <- reinsurance_tower(list(
+    with_deposit_premium(xol_layer("occ 1 xs 1", 1, 1), 1),
+    with_ceding_commission(with_deposit_premium(xol_layer("occ 2 xs 2", 2, 2), 1), 0.2)))
+  book <- pnl_book("S", 20, list(pnl_expense("premium", 0.1)))
+  peel <- book_occurrence_peel(book, poisson_count(2), sev, occ, points = 64)
+  stopifnot(ledger_is_stitched(peel))
+  s <- ledger_sheet(peel)
+  stopifnot(!("k01" %in% names(s)))
+  stopifnot(abs(s$SD[s$row == "net through occ 1 xs 1"] - 1.897366596) < 1e-8)
+  stopifnot(abs(s$SD[s$step == "All" & s$label == "Impact"] + 2.201414) < 1e-6)
+})
