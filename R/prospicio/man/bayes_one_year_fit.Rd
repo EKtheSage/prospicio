@@ -135,7 +135,11 @@ flagged on RAA and GenIns, so a default run of 10,000 simulations takes
 one to two minutes there; \code{"reweight_only"} takes about a second and
 leaves the total's standard deviation about 1\% low. On RAA and GenIns
 the standard deviation of the total CDR agrees with \code{\link[=odp_one_year]{odp_one_year()}}'s
-within 1\%.
+on average over seeds (with \code{"reweight_only"}, a ratio of 1.001 on RAA
+and 1.006 on GenIns over 80 seeds); any single run of 10,000
+simulations is within a few percent of it. A triangle with no cells in
+the coming year (every origin at the last age) has a CDR of zero,
+Pareto k of 0 and no refits.
 
 \code{bayes_odp_one_year_segments()} does the same in every segment of the
 triangle, each segment's posterior and simulations as in

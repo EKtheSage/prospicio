@@ -62,5 +62,10 @@ with NUTS by default.[^design]
 * **Cost** (release, 16 threads): reweighting 10,000 simulations takes
   0.3 to 1.2 s with the fit; a refit about 39 ms, so the default
   takes 54 s on RAA and 104 s on GenIns.
+* **A year with no cells has no tail.** On a fully developed triangle
+  (every origin at the last age) every log ratio is 0 and PSIS returns
+  an infinite `k`, which flagged every simulation and refitted each one
+  under the default; the year is now recognised as uninformative, with
+  equal weights, `k` 0 and no refit (a unit test checks it).
 
 Not yet run by CI.

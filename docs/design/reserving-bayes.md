@@ -1828,7 +1828,15 @@ second oldest's sd is its lifetime reserve's within 10%, every origin's
 mean CDR is within 4 standard errors of 0, the total is narrower than
 the lifetime total, replay whatever the threads, `RefitFlagged`'s rows
 are `RefitAll`'s for the flagged simulations and `ReweightOnly`'s for the
-others, segments and the errors.
+others, a fully developed triangle, segments and the errors.
+
+**A year with no information.** When the coming year has no cells (every
+origin at the last age, for example a closed run-off line among
+segments) or every log ratio is equal, the weights are equal and exact:
+`k̂` is set to 0 and the simulation is never refitted, whatever `refit`
+says. PSIS itself would give an infinite `k̂` for want of a tail, and
+under the default every simulation would run a NUTS refit of an
+unchanged triangle and report a flagged share of 1. The CDR is then 0.
 
 **Defaults.** `k_threshold` 0.7: the threshold of Vehtari et al. (2024)
 for a few thousand draws (`elpd::loo` uses `min(1 − 1/log10 S, 0.7)`, 0.7

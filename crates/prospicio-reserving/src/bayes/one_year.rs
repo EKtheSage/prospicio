@@ -198,9 +198,18 @@ pub(crate) fn simulate<M: YearModel>(
             let log_r: Vec<f64> = (0..s)
                 .map(|d| model.year_log_likelihood(posterior.draw(d), &year))
                 .collect();
-            let (log_w, k) = psis(&log_r);
+            // A year that tells nothing about the parameters (no cells, as
+            // in a fully developed segment, or equal ratios) leaves the
+            // posterior as it is: equal weights, k̂ = 0 and no refit, where
+            // `psis` would give an infinite k̂ for want of a tail.
+            let uninformative = ny == 0 || log_r.iter().all(|&v| v == log_r[0]);
+            let (log_w, k) = if uninformative {
+                (vec![0.0; s], 0.0)
+            } else {
+                psis(&log_r)
+            };
             let mut closing = vec![0.0; no];
-            let (refitted, mut warned) = (settings.refits(k), false);
+            let (refitted, mut warned) = (!uninformative && settings.refits(k), false);
             if refitted {
                 match model.refit(&year, refit_seed) {
                     Ok((draws, warn)) => {
@@ -378,7 +387,9 @@ pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     /// the posterior mean reserve after the year. A negative value is an
     /// adverse development.
     pub cdr: PredictiveDistribution,
-    /// Each simulation's Pareto `k̂`, in the order of the simulations.
+    /// Each simulation's Pareto `k̂`, in the order of the simulations; 0
+    /// when the year has no cells (a fully developed triangle), whose
+    /// simulations are never refitted.
     pub pareto_k: Vec<f64>,
     /// The simulations refitted with NUTS, in order.
     pub refitted: Vec<usize>,

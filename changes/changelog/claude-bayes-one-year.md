@@ -10,7 +10,9 @@
   default; `ReweightOnly` and `RefitAll` too). Each simulation's Pareto
   k and the flagged share are reported; segments are independent or rank
   correlated. Its standard deviation agrees with the ODP bootstrap's
-  one-year view on RAA and GenIns. In Python `BayesOdp.one_year` and
+  one-year view on RAA and GenIns on average over seeds. A triangle with
+  no cells in the coming year gives a zero CDR, Pareto k of 0 and no
+  refits. In Python `BayesOdp.one_year` and
   `one_year_segments` (`k_threshold=0.7`, `refit="refit_flagged"`,
   `"reweight_only"` or `"refit_all"`) return `BayesOneYearFit` and
   `BayesOneYearFits`; in R `bayes_odp_one_year()` and

@@ -418,7 +418,9 @@ impl BayesOdp {
     /// extended by its year, with this model's sampler and a seed drawn
     /// from the simulation's own stream, when [`BayesOneYear::refit`] says
     /// so. An origin with every remaining cell in the year has its whole
-    /// run-off as its one-year view; one at the last age has none.
+    /// run-off as its one-year view; one at the last age has none. A
+    /// triangle with no cells in the year (every origin at the last age)
+    /// leaves the posterior unchanged: `k̂` is 0 and nothing is refitted.
     ///
     /// Unlike the ODP bootstrap, which leaves the cells of an origin that
     /// lags the valuation unobserved before the year, every cell up to the
@@ -2209,6 +2211,32 @@ mod tests {
             matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
             "{e}"
         );
+    }
+
+    #[test]
+    fn a_fully_developed_triangle_has_no_flags_and_no_refits() {
+        // Every origin at the last age: the coming year has no cells, so
+        // the reweighting has nothing to do and the default refits nothing.
+        let square = annual(
+            2001,
+            &[
+                &[357.0, 1124.0, 1735.0, 2218.0],
+                &[352.0, 1236.0, 2170.0, 3353.0],
+                &[290.0, 1292.0, 2219.0, 3235.0],
+                &[310.0, 1418.0, 2195.0, 3757.0],
+            ],
+        );
+        let model = BayesOdp {
+            n_sims: 200,
+            ..quick(4)
+        };
+        let view = model
+            .one_year(&square, "values", &BayesOneYear::default())
+            .unwrap();
+        assert_eq!(view.flagged_share(), 0.0);
+        assert!(view.refitted.is_empty());
+        assert!(view.pareto_k.iter().all(|&k| k == 0.0));
+        assert!(view.cdr.draw_matrix().iter().all(|v| v.abs() < 1e-9));
     }
 
     #[test]
