@@ -434,8 +434,9 @@ gamma to three moments, where `Severity` stops at two, so step 1 adds the
 bulk single big jump to reach as far on skewed books; its single big
 jump uses a quantile fitted to the severity's moments, prospicio the
 severity's own quantile; it refuses infinite-variance books without a
-bucket. Signed and offset windows (a grid not starting at 0, for P&L)
-wait on signed grids (`roadmap.md`, `prospicio-prob`).
+bucket. Signed and offset windows (a grid not starting at 0) are not
+carried; the P&L ledger needs none (`pnl.md`: its rows are signed
+functions of a non-negative source, on an irregular support).
 
 ### Occurrence PML
 
@@ -1017,6 +1018,7 @@ copula, the t copula, a trigger outside `[0, 1]`).
    bivariate FFT aggregates, `clash`, and copula coupling of the two lines;
    see "Two lines and clash"; renewal counts, see "Renewal counts");
    eventual ruin for renewal claims, see "Eventual ruin for renewal
-   claims"); then the P&L ledger (`pnl`, which needs signed grids).
+   claims"); then the P&L ledger (`pnl` and `xpnl`), planned in
+   `pnl.md`.
 2. Deficit and credit carry-forward in profit commissions and sliding
    scales, once multi-year simulation exists.
