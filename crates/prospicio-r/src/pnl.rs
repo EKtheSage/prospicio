@@ -6,8 +6,8 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::{
     Book, Expense, ExpenseBasis, Face, Group, LADDER, Layout, Ledger, Leg, LegKind, ProgramLayer,
-    RatioRow, Role, RowKind, Source, derive_premium, occurrence_source, pnl_program, round_premium,
-    size_premium, snap,
+    RatioRow, Role, RowKind, Source, derive_premium, occurrence_source, pnl_program,
+    pnl_program_stated, round_premium, size_premium, snap,
 };
 
 use crate::discrete::DiscreteDist;
@@ -417,8 +417,11 @@ fn pnl_derive_premium(
     derive_premium(technical, &e).map_err(to_r)
 }
 
-/// `pnl_program`'s ladder: `list(premium, technical, deposits,
-/// ceded_premium)`; a NaN `stated` means the ladder prices the layer.
+/// `pnl_program`'s ladder: `list(premium, technical, deposits, rates,
+/// ceded_premium)`; a NaN `stated` means the ladder prices the layer, a
+/// rate is NaN for a stated layer, and a non-NaN `stated_premium` prices an
+/// engine that states its own premium (`net_loss` is then unused).
+#[allow(clippy::too_many_arguments)]
 #[extendr]
 fn pnl_program_rust(
     net_loss: f64,
@@ -428,6 +431,8 @@ fn pnl_program_rust(
     share: &[f64],
     combined_ratio: &[f64],
     stated: &[f64],
+    aggregate: &[f64],
+    stated_premium: f64,
 ) -> Result<List> {
     let layers: Vec<ProgramLayer> = (0..share.len())
         .map(|j| ProgramLayer {
@@ -435,13 +440,21 @@ fn pnl_program_rust(
             share: share[j],
             combined_ratio: combined_ratio[j],
             stated: (!stated[j].is_nan()).then_some(stated[j]),
+            aggregate: aggregate[j] != 0.0,
         })
         .collect();
-    let p = pnl_program(net_loss, net_combined_ratio, expense_ratio, &layers).map_err(to_r)?;
+    let p = if stated_premium.is_nan() {
+        pnl_program(net_loss, net_combined_ratio, expense_ratio, &layers)
+    } else {
+        pnl_program_stated(stated_premium, expense_ratio, &layers)
+    }
+    .map_err(to_r)?;
+    let rates: Vec<f64> = p.rates.iter().map(|r| r.unwrap_or(f64::NAN)).collect();
     Ok(list!(
         premium = p.premium,
         technical = p.technical,
         deposits = p.deposits,
+        rates = rates,
         ceded_premium = p.ceded_premium
     ))
 }

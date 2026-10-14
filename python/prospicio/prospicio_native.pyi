@@ -18454,6 +18454,9 @@ def pnl_program(net_loss: float, net_combined_ratio: float, expense_ratio: float
     100% placement ``round(E_j / c_j / s_j)`` (or the premium it states),
     and the booked premium ``round((T_net + sum s_j d_j) / (1 - ER))``. The
     book's own margin is ``(1 - c_net) T_net`` whatever the cover costs.
+    Each priced deposit is also respelled as a rate, ``aggregate``'s
+    ``premium_style='rate'``: of the booked premium on the occurrence tier,
+    of it less the occurrence premiums on the aggregate tier.
     
     Parameters
     ----------
@@ -18464,13 +18467,15 @@ def pnl_program(net_loss: float, net_combined_ratio: float, expense_ratio: float
         Gross expenses as a fraction of premium.
     layers : list of dict, optional
         Each with ``ceded_loss`` (expected, at the placed share), ``share``,
-        ``combined_ratio`` and optionally ``stated`` (a premium the contract
-        states, at the placed share, which is kept).
+        ``combined_ratio``, optionally ``stated`` (a premium the contract
+        states, at the placed share, which is kept) and ``aggregate``
+        (``True`` for a layer on the aggregate tier).
     
     Returns
     -------
     dict
-        ``premium``, ``technical``, ``deposits`` and ``ceded_premium``.
+        ``premium``, ``technical``, ``deposits``, ``rates`` (``None`` for a
+        stated layer) and ``ceded_premium``.
     
     Raises
     ------
@@ -18482,8 +18487,35 @@ def pnl_program(net_loss: float, net_combined_ratio: float, expense_ratio: float
     --------
     >>> from prospicio.aggregate import pnl_program
     >>> p = pnl_program(406.0, 0.9, 0.25, [dict(ceded_loss=86.0, share=1.0, combined_ratio=0.6)])
-    >>> p["premium"], p["deposits"]
-    (792.0, [143.0])
+    >>> p["premium"], p["deposits"], p["rates"]
+    (792.0, [143.0], [0.18055556])
+    """
+
+def pnl_program_stated(stated: float, expense_ratio: float, layers: Sequence[dict] |None = None) -> dict:
+    """
+    The premium ladder for an engine that states its own technical premium
+    (``aggregate``'s ``premium at lr``): the stated premium takes the net
+    book's place. With no layer to pay for, the premium is the stated one
+    grossed up and left unrounded, as ``aggregate``'s ``derive premium``.
+    
+    Parameters
+    ----------
+    stated : float
+        The engine's technical premium.
+    expense_ratio : float
+    layers : list of dict, optional
+        As :func:`pnl_program`.
+    
+    Returns
+    -------
+    dict
+        As :func:`pnl_program`.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import pnl_program_stated
+    >>> round(pnl_program_stated(1000.0, 0.25)["premium"], 6)
+    1333.333333
     """
 
 def premium_based_expenses(ratios: Sequence[float], fixed_shares: Sequence[float]) -> tuple[float, float]:

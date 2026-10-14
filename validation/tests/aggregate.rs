@@ -1810,7 +1810,7 @@ fn pnl_occurrence_covers_match_aggregate() {
 #[test]
 fn pnl_variable_terms_match_aggregate() {
     use prospicio_aggregate::pnl::{
-        Book, Expense, Face, Ledger, ProgramLayer, Source, pnl_program, snap,
+        Book, Expense, Face, Ledger, ProgramLayer, Source, pnl_program, pnl_program_stated, snap,
     };
     use prospicio_aggregate::{Layer, LossSensitivePremium, Tower};
     // validation/scripts/aggregate_pnl_variable.py: swing rating, a sliding
@@ -1915,22 +1915,32 @@ fn pnl_variable_terms_match_aggregate() {
         let mut layers = Vec::new();
         for j in 0.. {
             let row = format!("{key}|{j}");
-            let Some(ceded_loss) = input(&row, "ceded_loss") else {
+            let Some(share) = input(&row, "share") else {
                 break;
             };
+            let layer = match input(&row, "stated") {
+                Some(p) => ProgramLayer::occurrence(0.0, share, 1.0).stated(p),
+                None => ProgramLayer::occurrence(
+                    input(&row, "ceded_loss")?,
+                    share,
+                    input(&row, "combined_ratio")?,
+                ),
+            };
             layers.push(ProgramLayer {
-                ceded_loss,
-                share: input(&row, "share")?,
-                combined_ratio: input(&row, "combined_ratio")?,
-                stated: None,
+                aggregate: input(&row, "tier")? == 1.0,
+                ..layer
             });
         }
-        pnl_program(
-            input(key, "net_loss")?,
-            input(key, "net_combined_ratio")?,
-            input(key, "expense_ratio")?,
-            &layers,
-        )
+        let er = input(key, "expense_ratio")?;
+        match input(key, "stated") {
+            Some(t) => pnl_program_stated(t, er, &layers),
+            None => pnl_program(
+                input(key, "net_loss")?,
+                input(key, "net_combined_ratio")?,
+                er,
+                &layers,
+            ),
+        }
         .ok()
     };
     let ladder = |col: &str| -> Option<f64> {
@@ -1946,6 +1956,10 @@ fn pnl_variable_terms_match_aggregate() {
             return match c.get("quantity") {
                 "input" => c.number("expected"),
                 "premium" => Some(program(row_key)?.premium),
+                "rate" => {
+                    let (key, j) = row_key.split_once('|')?;
+                    program(key)?.rates.get(j.parse::<usize>().ok()?).copied()?
+                }
                 "deposit" => {
                     let (key, j) = row_key.split_once('|')?;
                     program(key)?

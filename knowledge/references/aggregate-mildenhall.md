@@ -469,6 +469,11 @@ sources:
   the guaranteed-cost builder at its expectation. `pnl_program`'s ladder
   (`_pnl_technical`) rounds each deposit at 100% placement before the
   premium, both half to even (whole units above 100, cents below).
+  `premium_style='rate'` respells each priced deposit as
+  `f"{d / base:.8g}"`, the aggregate tier's base the booked premium less
+  the occurrence premiums as resolved; an engine stating its own premium
+  (`premium at lr`) replaces `E_net / c_net`, and with no cession the
+  program says `derive premium`.
   prospicio matches on 2,342 values (`aggregate_pnl_variable.py`).[^pnl]
 * Reinstatements decorate a single occurrence layer (`deposit 2
   reinstatements 1 at 100%`, `1 free and 1 at 50%`, `no reinstatements`;

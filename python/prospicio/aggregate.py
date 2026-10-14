@@ -43,6 +43,7 @@ from .prospicio_native import (
     occurrence_source,
     panjer,
     pnl_program,
+    pnl_program_stated,
     recommend_grid,
     round_bucket,
     round_premium,
@@ -88,6 +89,7 @@ __all__ = [
     "derive_premium",
     "occurrence_source",
     "pnl_program",
+    "pnl_program_stated",
     "size_premium",
     "round_premium",
 ]

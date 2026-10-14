@@ -86,7 +86,7 @@ mod prospicio_native {
     #[pymodule_export]
     use super::pnl::{
         PyBook, PyExpense, PyGroup, PyLedger, PyLeg, derive_premium, occurrence_source,
-        pnl_program, round_premium, size_premium, stack,
+        pnl_program, pnl_program_stated, round_premium, size_premium, stack,
     };
     #[pymodule_export]
     use super::pricing::{

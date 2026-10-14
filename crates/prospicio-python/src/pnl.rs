@@ -3,9 +3,10 @@
 
 use prospicio_aggregate::pnl::{
     Book as RsBook, Expense as RsExpense, ExpenseBasis, Face, Group as RsGroup, LADDER, Layout,
-    Ledger as RsLedger, Leg as RsLeg, LegKind, ProgramLayer, Role, Row, RowKind, Source, Stats,
-    derive_premium as rs_derive_premium, pnl_program as rs_pnl_program,
-    round_premium as rs_round_premium, size_premium as rs_size_premium, snap, stack as rs_stack,
+    Ledger as RsLedger, Leg as RsLeg, LegKind, Program, ProgramLayer, Role, Row, RowKind, Source,
+    Stats, derive_premium as rs_derive_premium, pnl_program as rs_pnl_program,
+    pnl_program_stated as rs_pnl_program_stated, round_premium as rs_round_premium,
+    size_premium as rs_size_premium, snap, stack as rs_stack,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -1107,6 +1108,9 @@ pub(crate) fn size_premium(expected_loss: f64, loss_ratio: f64) -> PyResult<f64>
 /// 100% placement ``round(E_j / c_j / s_j)`` (or the premium it states),
 /// and the booked premium ``round((T_net + sum s_j d_j) / (1 - ER))``. The
 /// book's own margin is ``(1 - c_net) T_net`` whatever the cover costs.
+/// Each priced deposit is also respelled as a rate, ``aggregate``'s
+/// ``premium_style='rate'``: of the booked premium on the occurrence tier,
+/// of it less the occurrence premiums on the aggregate tier.
 ///
 /// Parameters
 /// ----------
@@ -1117,13 +1121,15 @@ pub(crate) fn size_premium(expected_loss: f64, loss_ratio: f64) -> PyResult<f64>
 ///     Gross expenses as a fraction of premium.
 /// layers : list of dict, optional
 ///     Each with ``ceded_loss`` (expected, at the placed share), ``share``,
-///     ``combined_ratio`` and optionally ``stated`` (a premium the contract
-///     states, at the placed share, which is kept).
+///     ``combined_ratio``, optionally ``stated`` (a premium the contract
+///     states, at the placed share, which is kept) and ``aggregate``
+///     (``True`` for a layer on the aggregate tier).
 ///
 /// Returns
 /// -------
 /// dict
-///     ``premium``, ``technical``, ``deposits`` and ``ceded_premium``.
+///     ``premium``, ``technical``, ``deposits``, ``rates`` (``None`` for a
+///     stated layer) and ``ceded_premium``.
 ///
 /// Raises
 /// ------
@@ -1135,8 +1141,8 @@ pub(crate) fn size_premium(expected_loss: f64, loss_ratio: f64) -> PyResult<f64>
 /// --------
 /// >>> from prospicio.aggregate import pnl_program
 /// >>> p = pnl_program(406.0, 0.9, 0.25, [dict(ceded_loss=86.0, share=1.0, combined_ratio=0.6)])
-/// >>> p["premium"], p["deposits"]
-/// (792.0, [143.0])
+/// >>> p["premium"], p["deposits"], p["rates"]
+/// (792.0, [143.0], [0.18055556])
 #[pyfunction]
 #[pyo3(signature = (net_loss, net_combined_ratio, expense_ratio, layers=None))]
 pub(crate) fn pnl_program<'py>(
@@ -1146,6 +1152,48 @@ pub(crate) fn pnl_program<'py>(
     expense_ratio: f64,
     layers: Option<Vec<Bound<'py, PyDict>>>,
 ) -> PyResult<Bound<'py, PyDict>> {
+    let ls = program_layers(layers)?;
+    let p = rs_pnl_program(net_loss, net_combined_ratio, expense_ratio, &ls).map_err(to_py)?;
+    program_dict(py, p)
+}
+
+/// The premium ladder for an engine that states its own technical premium
+/// (``aggregate``'s ``premium at lr``): the stated premium takes the net
+/// book's place. With no layer to pay for, the premium is the stated one
+/// grossed up and left unrounded, as ``aggregate``'s ``derive premium``.
+///
+/// Parameters
+/// ----------
+/// stated : float
+///     The engine's technical premium.
+/// expense_ratio : float
+/// layers : list of dict, optional
+///     As :func:`pnl_program`.
+///
+/// Returns
+/// -------
+/// dict
+///     As :func:`pnl_program`.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import pnl_program_stated
+/// >>> round(pnl_program_stated(1000.0, 0.25)["premium"], 6)
+/// 1333.333333
+#[pyfunction]
+#[pyo3(signature = (stated, expense_ratio, layers=None))]
+pub(crate) fn pnl_program_stated<'py>(
+    py: Python<'py>,
+    stated: f64,
+    expense_ratio: f64,
+    layers: Option<Vec<Bound<'py, PyDict>>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let ls = program_layers(layers)?;
+    let p = rs_pnl_program_stated(stated, expense_ratio, &ls).map_err(to_py)?;
+    program_dict(py, p)
+}
+
+fn program_layers(layers: Option<Vec<Bound<'_, PyDict>>>) -> PyResult<Vec<ProgramLayer>> {
     let mut ls = Vec::new();
     for d in layers.unwrap_or_default() {
         let get = |k: &str| -> PyResult<f64> {
@@ -1157,32 +1205,27 @@ pub(crate) fn pnl_program<'py>(
             Some(v) if !v.is_none() => Some(v.extract::<f64>()?),
             _ => None,
         };
-        ls.push(ProgramLayer {
-            ceded_loss: if stated.is_some() {
-                d.get_item("ceded_loss")?
-                    .map(|v| v.extract())
-                    .transpose()?
-                    .unwrap_or(0.0)
-            } else {
-                get("ceded_loss")?
-            },
-            share: get("share")?,
-            combined_ratio: if stated.is_some() {
-                d.get_item("combined_ratio")?
-                    .map(|v| v.extract())
-                    .transpose()?
-                    .unwrap_or(1.0)
-            } else {
-                get("combined_ratio")?
-            },
-            stated,
-        });
+        let layer = match stated {
+            Some(p) => ProgramLayer::occurrence(0.0, get("share")?, 1.0).stated(p),
+            None => {
+                ProgramLayer::occurrence(get("ceded_loss")?, get("share")?, get("combined_ratio")?)
+            }
+        };
+        let aggregate = match d.get_item("aggregate")? {
+            Some(v) if !v.is_none() => v.extract::<bool>()?,
+            _ => false,
+        };
+        ls.push(ProgramLayer { aggregate, ..layer });
     }
-    let p = rs_pnl_program(net_loss, net_combined_ratio, expense_ratio, &ls).map_err(to_py)?;
+    Ok(ls)
+}
+
+fn program_dict(py: Python<'_>, p: Program) -> PyResult<Bound<'_, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("premium", p.premium)?;
     out.set_item("technical", p.technical)?;
     out.set_item("deposits", p.deposits)?;
+    out.set_item("rates", p.rates)?;
     out.set_item("ceded_premium", p.ceded_premium)?;
     Ok(out)
 }
