@@ -262,3 +262,25 @@ def test_nested_archimedean_copula():
 
     pd = simulate(c, [Lognormal.from_mean_cv(1.0, 0.5)] * 5, 2000, 3)
     assert pd.mean() == pytest.approx(5.0, rel=0.05)
+
+
+def test_vine_copula():
+    from prospicio.distributions import Lognormal
+    from prospicio.risk import PairCopula, VineCopula, simulate
+
+    g, c, f = PairCopula("gumbel", 2.0), PairCopula("clayton", 1.5, 90), PairCopula("frank", 3.0)
+    v = VineCopula("d", [0, 1, 2], [[g, c], [f]])
+    assert v.dim == 3 and v.kind == "d" and v.order == [0, 1, 2]
+    u = [0.2, 0.7, 0.4]
+    want = (math.log(g.density(0.2, 0.7)) + math.log(c.density(0.7, 0.4))
+            + math.log(f.density(g.h2(0.2, 0.7), c.h1(0.4, 0.7))))
+    assert v.log_density(u) == pytest.approx(want, rel=1e-12)
+    # The inverse Rosenblatt transform of the first uniform alone is itself.
+    assert v.inverse_rosenblatt([0.3, 0.5, 0.5])[0] == pytest.approx(0.3)
+    assert c.h2_inverse(c.h2(0.3, 0.6), 0.6) == pytest.approx(0.3, abs=1e-12)
+    with pytest.raises(ValueError):
+        PairCopula("gaussian", 0.5, 90)
+    with pytest.raises(ValueError):
+        VineCopula("d", [0, 1, 2], [[g]])
+    pd = simulate(v, [Lognormal.from_mean_cv(1.0, 0.5)] * 3, 2000, 5)
+    assert pd.mean() == pytest.approx(3.0, rel=0.05)

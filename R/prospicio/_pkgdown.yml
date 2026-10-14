@@ -216,6 +216,7 @@ reference:
       - copula
       - copula_sample
       - copula_cdf
+      - vine_copula
       - copula_simulate
       - iman_conover
   - title: Extreme value tails

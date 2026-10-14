@@ -921,3 +921,98 @@ fn discrete_case(name: &str) -> Option<(Vec<f64>, Vec<f64>)> {
         .unzip();
     (!x.is_empty()).then_some((x, p))
 }
+
+/// Pair copulas and three-dimensional C- and D-vines against pyvinecopulib
+/// 1.0.1 (`validation/scripts/pyvinecopulib_vines.py`): every family and
+/// rotation's cdf, density, both conditional distributions and their
+/// inverses, and the vines' log-density and inverse Rosenblatt transform
+/// with rotated (asymmetric) pairs.
+#[test]
+fn vines_match_pyvinecopulib() {
+    use prospicio_prob::vine::{PairCopula, PairFamily, VineCopula, VineKind};
+    let point = |c: &prospicio_validation::Case| -> Vec<f64> {
+        c.get("u").split(';').map(|x| x.parse().unwrap()).collect()
+    };
+    let cases = reference("vine_pyvinecopulib.csv");
+    let pair = |f, p, r| PairCopula::new(f, p, r).unwrap();
+    let t1 = vec![
+        pair(PairFamily::Gumbel, 2.0, 0),
+        pair(PairFamily::Clayton, 1.5, 90),
+    ];
+    let t2 = vec![pair(PairFamily::Joe, 1.8, 270)];
+    let order = vec![1, 2, 0];
+    let dvine = VineCopula::new(
+        VineKind::Drawable,
+        order.clone(),
+        vec![t1.clone(), t2.clone()],
+    )
+    .unwrap();
+    let cvine = VineCopula::new(
+        VineKind::Canonical,
+        order.clone(),
+        vec![t1.clone(), t2.clone()],
+    )
+    .unwrap();
+    // pyvinecopulib inverts a D-vine from the end of its order: the same
+    // D-vine read backwards, each pair transposed.
+    let reversed = VineCopula::new(
+        VineKind::Drawable,
+        vec![0, 2, 1],
+        vec![
+            vec![t1[1].transposed(), t1[0].transposed()],
+            vec![t2[0].transposed()],
+        ],
+    )
+    .unwrap();
+    for u in [[0.2, 0.7, 0.4], [0.9, 0.15, 0.6]] {
+        let (a, b) = (
+            dvine.log_density(&u).unwrap(),
+            reversed.log_density(&u).unwrap(),
+        );
+        assert!((a - b).abs() < 1e-12, "{a} {b}");
+    }
+    check(&cases, |c| {
+        let x = point(c);
+        let vine = match c.get("case") {
+            "pair" => {
+                let family = match c.get("family") {
+                    "gaussian" => PairFamily::Gaussian,
+                    "frank" => PairFamily::Frank,
+                    "clayton" => PairFamily::Clayton,
+                    "gumbel" => PairFamily::Gumbel,
+                    "joe" => PairFamily::Joe,
+                    _ => return None,
+                };
+                let rotation = c.get("rotation").parse().ok()?;
+                let p = PairCopula::new(family, c.number("parameter")?, rotation).ok()?;
+                let (u, v) = (x[0], x[1]);
+                return match c.get("quantity") {
+                    "cdf" => Some(p.cdf(u, v)),
+                    "log_pdf" => Some(p.log_density(u, v)),
+                    "h2" => Some(p.h2(u, v)),
+                    "h1" => Some(p.h1(v, u)),
+                    "h2_inverse" => Some(p.h2_inverse(u, v)),
+                    "h1_inverse" => Some(p.h1_inverse(v, u)),
+                    _ => None,
+                };
+            }
+            "dvine" => &dvine,
+            "cvine" => &cvine,
+            _ => return None,
+        };
+        match c.get("quantity") {
+            "log_pdf" => vine.log_density(&x).ok(),
+            q => {
+                let j: usize = q.strip_prefix("inverse_rosenblatt_")?.parse().ok()?;
+                let vine = if c.get("case") == "dvine" {
+                    &reversed
+                } else {
+                    vine
+                };
+                // pyvinecopulib's uniforms are by variable; ours in vine order.
+                let w: Vec<f64> = vine.order().iter().map(|&k| x[k]).collect();
+                Some(vine.inverse_rosenblatt(&w)[j])
+            }
+        }
+    });
+}

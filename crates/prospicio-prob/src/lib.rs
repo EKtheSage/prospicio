@@ -46,6 +46,7 @@ pub mod severity;
 pub mod severity_fit;
 pub mod truncated;
 pub mod tweedie;
+pub mod vine;
 pub mod weibull;
 
 pub use beta::Beta;

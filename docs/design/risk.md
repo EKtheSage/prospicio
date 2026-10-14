@@ -63,6 +63,15 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `NestedArchimedeanCopula(family, (theta, [members]))` with members
   dimensions or nodes; R `nested_archimedean_copula(family, nac_node(theta,
   leaves, children))` with 1-based leaves.
+- `prospicio_prob::vine` (decided 2026-10-14): `PairCopula` (independence,
+  Gaussian, Clayton, Gumbel, Frank, Joe; Clayton, Gumbel and Joe rotated by
+  90, 180 or 270 degrees) with its cdf, density, `h₂(u | v) = ∂C/∂v`,
+  `h₁(v | u) = ∂C/∂u` and their inverses, and `VineCopula`, a C- or D-vine
+  over an order with `pairs[t]` per tree. Each edge's first argument is its
+  earlier variable in the order; fewer trees truncate the vine. It
+  implements `Copula`, so `simulate` and the two-line coupling take it.
+  Python `PairCopula`, `VineCopula` (`log_density`, `inverse_rosenblatt`);
+  R `pair_copula()`, `vine_copula()`, `copula_log_density()`.
 - `Copula::cdf(&u)`, the copula's distribution function: the Archimedean
   copulas' `ψ(Σ ψ⁻¹(u_j))` in any dimension (with
   `ArchimedeanCopula::inverse_generator`), the Gaussian copula's
@@ -205,7 +214,26 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `copula` package is not installed here): a one-node tree gives the
   exchangeable copula's draws exactly, Kendall's tau within and across
   groups and the cdf against the draws, and the Clayton inner frailty's
-  Laplace transform by Monte Carlo. Vines come next.
+  Laplace transform by Monte Carlo.
+- **Vines by the Rosenblatt transform** (Aas et al. 2009). The density
+  multiplies the pair densities along the trees, carrying both conditional
+  values of each edge forward (`h₂` for the earlier variable, `h₁` for the
+  later), so rotated, asymmetric pairs are right in either position. A draw
+  takes `d` uniforms in vine order and inverts one variable at a time: in a
+  C-vine the `t`-th variable given those before is the `t`-th uniform
+  itself; in a D-vine each new variable walks down the trees, keeping the
+  earlier variables' conditional values. Gumbel's and Joe's `h` are
+  inverted by bisection to a relative `1e-15`, the others in closed form.
+  The student t pair waits for a t quantile, and an R-vine matrix (which
+  covers both shapes and more), fitting by sequential maximum likelihood
+  and structure selection are later work. Tested: against pyvinecopulib
+  1.0.1, every family and rotation's cdf, density, `h₁`, `h₂` and inverses,
+  and three-dimensional C- and D-vines' log-density and inverse Rosenblatt
+  transform with rotated pairs (512 values, `1e-9` relative); Gaussian C-
+  and D-vines with partial correlations equal the Gaussian copula's
+  density to `1e-10`; and draws against the density's integral over a box.
+  pyvinecopulib's C-vine order puts the root last, and its D-vine inverse
+  Rosenblatt runs backwards (`knowledge/references/pyvinecopulib.md`).
 - **Uniforms stay inside `(0, 1)`.** Far in a tail, `Φ` or a generator
   rounds to 0 or 1, where marginal quantiles are infinite, so every copula
   clamps to `[f64::MIN_POSITIVE, 1 - 2^-53]`.
