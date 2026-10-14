@@ -36,7 +36,7 @@ when from experience, and which pricing method fits which scenario.
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
-| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. P-splines with REML too. Still to do: tensor smooths |
+| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. P-splines with REML too, tensor product smooths |
 | v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental model 1 (`Compartmental`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
@@ -273,11 +273,10 @@ what it is aiming for by v1.0.
 ### `prospicio-glm` (Models lane)
 
 - **Now:** GLM by IRLS, Tweedie with power profiling, elastic net with a
-  cross-validated path, robust covariance, GAM with P-splines (GCV/UBRE
-  and REML).
-- **Next:**
-  1. Tensor smooths.
-  2. Cyclic and monotone smooths. This completes the GAM scope of v0.6.
+  cross-validated path, robust covariance, GAM with P-splines and tensor
+  product smooths (GCV/UBRE and REML).
+- **Next:** cyclic and monotone smooths. This completes the GAM scope of
+  v0.6.
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.
 
 ### `prospicio-nn` (Models lane, opt-in)

@@ -505,6 +505,8 @@ fn gam_fit_design(
     n_basis: &[f64],
     smoothing: &str,
     lambdas: &[f64],
+    tensors: List,
+    tensor_basis: List,
 ) -> Result<GamModel> {
     let f = family(family_name, theta, power)?;
     let l = link(link_name, f, f64::NAN)?;
@@ -534,11 +536,25 @@ fn gam_fit_design(
             )));
         }
     };
+    if tensors.len() != tensor_basis.len() {
+        return Err(Error::Other("give one tensor_basis per tensor".into()));
+    }
+    let mut gam = Gam::new(glm, splines);
+    for (cols, k) in tensors.values().zip(tensor_basis.values()) {
+        let cols: Vec<String> = cols
+            .as_string_vector()
+            .ok_or_else(|| Error::Other("each tensor is a character vector of columns".into()))?;
+        let refs: Vec<&str> = cols.iter().map(String::as_str).collect();
+        let k = k
+            .as_real_vector()
+            .ok_or_else(|| Error::Other("tensor_basis must be numeric".into()))?
+            .into_iter()
+            .map(|v| whole(v, "tensor_basis").map(|v| v as usize))
+            .collect::<Result<Vec<_>>>()?;
+        gam = gam.tensor(prospicio_glm::gam::TensorSpline::new(&refs).n_basis(k));
+    }
     let d = design(x, names, offset, weights)?;
-    let inner = Gam::new(glm, splines)
-        .smoothing(smoothing)
-        .fit(&d, y)
-        .map_err(to_r)?;
+    let inner = gam.smoothing(smoothing).fit(&d, y).map_err(to_r)?;
     Ok(GamModel { inner })
 }
 

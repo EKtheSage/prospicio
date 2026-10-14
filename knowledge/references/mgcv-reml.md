@@ -43,5 +43,12 @@ Nelder–Mead search reaches a lower score, by up to `2e-3` on a score of
 4,700, with effective degrees of freedom up to 0.7% apart; where the smooth
 is clearly non-linear the two agree to `1e-6`.[^tests]
 
+For tensor products, `te(x, z, bs = "ps")` by default (`np = TRUE`)
+reparameterizes each margin before forming the penalties `P_x ⊗ I` and
+`I ⊗ P_z`, which gives a different model from the same penalties on the
+B-spline coefficients; `np = FALSE` gives that one, and then the fit and
+the REML score match prospicio's to `1e-6` or better, whatever penalty
+scaling or constraint basis mgcv picks.[^tests]
+
 [^wood]: Wood (2011)
 [^tests]: gams_match_mgcv

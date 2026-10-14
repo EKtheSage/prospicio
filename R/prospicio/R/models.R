@@ -375,7 +375,12 @@ S7::method(print, elastic_net_model) <- function(x, ...) {
 #' @param smooths Names of numeric terms to smooth.
 #' @param n_basis Basis functions per smooth (recycled; 10 by default).
 #' @param smoothing `"auto"`, `"gcv"`, `"ubre"`, `"reml"`, or a numeric vector of
-#'   fixed smoothing parameters, one per smooth.
+#'   fixed smoothing parameters: one per smooth, then one per tensor margin.
+#' @param tensors A list of tensor product smooths (mgcv's
+#'   `te(..., bs = "ps", np = FALSE)`), each a character vector of two or
+#'   more numeric terms. Each margin has its own smoothing parameter.
+#' @param tensor_basis Basis functions per margin of each tensor: one number
+#'   (recycled) or a list with one vector per tensor (5 by default).
 #' @returns A `gam_model` with properties `coefficients`, `lambdas`, `edf`,
 #'   `dispersion`, `deviance`, `score`, `reml_scale` (`NA` unless REML) and
 #'   `fitted`.
@@ -388,7 +393,7 @@ S7::method(print, elastic_net_model) <- function(x, ...) {
 #' predict(m, data.frame(x = 0.5)) - (sin(3) + 2)
 gam_fit <- function(formula, data, smooths, n_basis = 10, family = "poisson", link = NULL,
                     offset = NULL, weights = NULL, dispersion = NULL, theta = NULL,
-                    power = NULL, smoothing = "auto") {
+                    power = NULL, smoothing = "auto", tensors = list(), tensor_basis = 5) {
   des <- model_design(formula, data, offset, weights)
   fa <- family_args(theta, power)
   da <- dispersion_args(dispersion)
@@ -397,7 +402,10 @@ gam_fit <- function(formula, data, smooths, n_basis = 10, family = "poisson", li
     as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
     if (is.null(link)) "" else link, da$kind, da$value, fa$theta, fa$power,
     as.character(smooths), rep_len(as.double(n_basis), length(smooths)),
-    if (fixed) "fixed" else smoothing, if (fixed) as.double(smoothing) else double()
+    if (fixed) "fixed" else smoothing, if (fixed) as.double(smoothing) else double(),
+    lapply(tensors, as.character),
+    if (is.list(tensor_basis)) lapply(tensor_basis, as.double) else
+      lapply(tensors, function(t) rep_len(as.double(tensor_basis), length(t)))
   ))
   gam_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels)
 }

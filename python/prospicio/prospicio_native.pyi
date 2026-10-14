@@ -6291,7 +6291,12 @@ class Gam:
         ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
         ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
         unknown dispersion with the smoothing parameters), or fixed
-        smoothing parameters, one per smooth.
+        smoothing parameters: one per smooth, then one per tensor margin.
+    tensors : list, optional
+        Tensor product smooths (mgcv's ``te(..., bs = "ps", np = FALSE)``):
+        each a list of two or more column names, or ``(columns, n_basis)``
+        with one basis size per column (5 by default). Each margin has its
+        own smoothing parameter.
     
     Examples
     --------
@@ -6304,7 +6309,7 @@ class Gam:
     >>> abs(fit.predict(d)[50] - y[50]) < 0.01
     True
     """
-    def __new__(cls, /, glm: Glm, smooths: Sequence[Any], smoothing: Any |None = None) -> Gam: ...
+    def __new__(cls, /, glm: Glm, smooths: Sequence[Any], smoothing: Any |None = None, tensors: Sequence[Any] |None = None) -> Gam: ...
     def fit(self, /, design: Design, y: Sequence[float]) -> GamFit:
         """
         Fits the model.

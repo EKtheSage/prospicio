@@ -10,7 +10,7 @@
 
 use prospicio_core::{Error, Result};
 use prospicio_math::linalg::{cholesky, cholesky_inverse, symmetric_eigenvalues};
-use prospicio_math::optimize::{NelderMead, minimize, nelder_mead};
+use prospicio_math::optimize::{NelderMead, brent, minimize, nelder_mead};
 use prospicio_math::special::ln_gamma;
 use prospicio_math::spline::{bspline_basis, difference_penalty, pspline_knots};
 use prospicio_models::{Design, Fitted, Model};
@@ -50,6 +50,49 @@ impl PSpline {
     pub fn n_basis(mut self, k: usize) -> Self {
         self.n_basis = k;
         self
+    }
+}
+
+/// A tensor product smooth of several numeric design columns: mgcv's
+/// `te(x, z, bs = "ps", np = FALSE)`. Each margin is a cubic B-spline basis
+/// with a difference penalty, the basis is their row-wise Kronecker
+/// product, and margin `i` contributes the penalty `I ⊗ … ⊗ P_i ⊗ … ⊗ I`
+/// with its own smoothing parameter, so the surface can be smoother in one
+/// direction than another. The whole product is centered to sum to zero
+/// over the data, as a [`PSpline`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct TensorSpline {
+    /// The design columns it replaces, one per margin.
+    pub columns: Vec<String>,
+    /// Basis functions per margin (mgcv's `k`, 5 by default).
+    pub n_basis: Vec<usize>,
+    /// B-spline degree of every margin (3: cubic).
+    pub degree: usize,
+    /// Order of every margin's difference penalty.
+    pub order: usize,
+}
+
+impl TensorSpline {
+    /// A tensor smooth of `columns` with 5 cubic basis functions and a
+    /// second-order penalty per margin, mgcv's `te()` default size.
+    pub fn new(columns: &[&str]) -> Self {
+        Self {
+            columns: columns.iter().map(|c| (*c).to_string()).collect(),
+            n_basis: vec![5; columns.len()],
+            degree: 3,
+            order: 2,
+        }
+    }
+
+    /// The same smooth with `k[i]` basis functions in margin `i`.
+    pub fn n_basis(mut self, k: Vec<usize>) -> Self {
+        self.n_basis = k;
+        self
+    }
+
+    /// The smooth's label, `te(x,z)`.
+    pub fn label(&self) -> String {
+        format!("te({})", self.columns.join(","))
     }
 }
 
@@ -105,6 +148,9 @@ pub enum Smoothing {
 pub struct Gam {
     pub glm: Glm,
     pub smooths: Vec<PSpline>,
+    /// Tensor product smooths, after the P-splines; each has one smoothing
+    /// parameter per margin.
+    pub tensors: Vec<TensorSpline>,
     pub smoothing: Smoothing,
 }
 
@@ -114,8 +160,16 @@ impl Gam {
         Self {
             glm,
             smooths,
+            tensors: Vec::new(),
             smoothing: Smoothing::Auto,
         }
+    }
+
+    /// The same GAM with a tensor product smooth added. Smoothing
+    /// parameters run over the P-splines first, then each tensor's margins.
+    pub fn tensor(mut self, tensor: TensorSpline) -> Self {
+        self.tensors.push(tensor);
+        self
     }
 
     /// The same GAM with smoothing parameters chosen by `smoothing`.
@@ -164,17 +218,7 @@ impl Basis {
                 *cj += b;
             }
         }
-        let norm = c.iter().map(|v| v * v).sum::<f64>().sqrt();
-        let mut v = c;
-        v[0] += norm.copysign(v[0]);
-        let vv: f64 = v.iter().map(|a| a * a).sum();
-        let mut z = vec![0.0; k * (k - 1)];
-        for i in 0..k {
-            for j in 1..k {
-                let h = f64::from(u8::from(i == j)) - 2.0 * v[i] * v[j] / vv;
-                z[i * (k - 1) + j - 1] = h;
-            }
-        }
+        let z = centering(c);
         Ok(Self {
             spline: spline.clone(),
             knots,
@@ -219,10 +263,185 @@ impl Basis {
     }
 }
 
+/// `Z` (`k × (k − 1)`, row-major) spanning the complement of the column
+/// sums `c`, by a Householder reflection: the sum-to-zero constraint.
+fn centering(c: Vec<f64>) -> Vec<f64> {
+    let k = c.len();
+    let norm = c.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let mut v = c;
+    v[0] += norm.copysign(v[0]);
+    let vv: f64 = v.iter().map(|a| a * a).sum();
+    let mut z = vec![0.0; k * (k - 1)];
+    for i in 0..k {
+        for j in 1..k {
+            let h = f64::from(u8::from(i == j)) - 2.0 * v[i] * v[j] / vv;
+            z[i * (k - 1) + j - 1] = h;
+        }
+    }
+    z
+}
+
+/// `Zᵀ P Z` for a `k × k` penalty `P` and `Z` `k × m`.
+fn project(p: &[f64], z: &[f64], k: usize, m: usize) -> Vec<f64> {
+    // P Z first, then Zᵀ (P Z).
+    let mut pz = vec![0.0; k * m];
+    for i in 0..k {
+        for j in 0..k {
+            let pij = p[i * k + j];
+            if pij != 0.0 {
+                for b in 0..m {
+                    pz[i * m + b] += pij * z[j * m + b];
+                }
+            }
+        }
+    }
+    let mut out = vec![0.0; m * m];
+    for i in 0..k {
+        for a in 0..m {
+            let zia = z[i * m + a];
+            if zia != 0.0 {
+                for b in 0..m {
+                    out[a * m + b] += zia * pz[i * m + b];
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A tensor smooth's basis as fitted: knots per margin and the centering
+/// constraint's `Z` (`K × (K − 1)` for `K = Π k_i`).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TensorBasis {
+    pub(crate) tensor: TensorSpline,
+    pub(crate) knots: Vec<Vec<f64>>,
+    pub(crate) z: Vec<f64>,
+}
+
+impl TensorBasis {
+    fn fit(tensor: &TensorSpline, cols: &[&[f64]]) -> Result<Self> {
+        if tensor.columns.len() < 2 || tensor.n_basis.len() != tensor.columns.len() {
+            return Err(Error::InvalidParameter {
+                name: "n_basis",
+                value: tensor.n_basis.len() as f64,
+                reason: "a tensor smooth needs two or more columns, one n_basis each",
+            });
+        }
+        let mut knots = Vec::new();
+        for ((col, &k), name) in cols.iter().zip(&tensor.n_basis).zip(&tensor.columns) {
+            let spline = PSpline {
+                column: name.clone(),
+                n_basis: k,
+                degree: tensor.degree,
+                order: tensor.order,
+            };
+            // The margin's checks and knots, without its own constraint.
+            knots.push(Basis::fit(&spline, col)?.knots);
+        }
+        let mut b = Self {
+            tensor: tensor.clone(),
+            knots,
+            z: Vec::new(),
+        };
+        let raw = b.raw(cols);
+        let c: Vec<f64> = raw.iter().map(|col| col.iter().sum()).collect();
+        b.z = centering(c);
+        Ok(b)
+    }
+
+    fn size(&self) -> usize {
+        self.tensor.n_basis.iter().product()
+    }
+
+    fn width(&self) -> usize {
+        self.size() - 1
+    }
+
+    /// The unconstrained product basis, one column per coefficient (the
+    /// last margin's index fastest).
+    fn raw(&self, cols: &[&[f64]]) -> Vec<Vec<f64>> {
+        let n = cols[0].len();
+        let size = self.size();
+        let mut out = vec![vec![0.0; n]; size];
+        for r in 0..n {
+            let mut row = vec![1.0];
+            for (m, col) in cols.iter().enumerate() {
+                let b = bspline_basis(col[r], &self.knots[m], self.tensor.degree);
+                row = row
+                    .iter()
+                    .flat_map(|&a| b.iter().map(move |&v| a * v))
+                    .collect();
+            }
+            for (j, v) in row.into_iter().enumerate() {
+                out[j][r] = v;
+            }
+        }
+        out
+    }
+
+    /// The constrained basis columns.
+    fn columns(&self, cols: &[&[f64]]) -> Vec<Vec<f64>> {
+        let raw = self.raw(cols);
+        let m = self.width();
+        let n = cols[0].len();
+        let mut out = vec![vec![0.0; n]; m];
+        for (i, col) in raw.iter().enumerate() {
+            for (j, o) in out.iter_mut().enumerate() {
+                let zij = self.z[i * m + j];
+                if zij != 0.0 {
+                    for r in 0..n {
+                        o[r] += col[r] * zij;
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Margin `i`'s penalty `I ⊗ P_i ⊗ I`, projected by `Z`.
+    fn penalties(&self) -> Vec<Vec<f64>> {
+        let ks = &self.tensor.n_basis;
+        let (size, m) = (self.size(), self.width());
+        (0..ks.len())
+            .map(|i| {
+                let p = difference_penalty(ks[i], self.tensor.order);
+                let before: usize = ks[..i].iter().product();
+                let after: usize = ks[i + 1..].iter().product();
+                let mut full = vec![0.0; size * size];
+                for a in 0..before {
+                    for c in 0..after {
+                        for u in 0..ks[i] {
+                            for v in 0..ks[i] {
+                                let row = (a * ks[i] + u) * after + c;
+                                let col = (a * ks[i] + v) * after + c;
+                                full[row * size + col] = p[u * ks[i] + v];
+                            }
+                        }
+                    }
+                }
+                project(&full, &self.z, size, m)
+            })
+            .collect()
+    }
+}
+
+/// The design columns a smooth reads.
+fn column_of<'a>(design: &'a Design, name: &str) -> Result<&'a [f64]> {
+    let j = design
+        .names()
+        .iter()
+        .position(|n| n == name)
+        .ok_or_else(|| Error::Data(format!("no design column {name:?}")))?;
+    Ok(design.column(j))
+}
+
 /// Replaces each smooth's raw column of `design` by its basis columns,
-/// appended after the parametric columns.
-fn expand(design: &Design, bases: &[Basis]) -> Result<Design> {
-    let raw: Vec<&str> = bases.iter().map(|b| b.spline.column.as_str()).collect();
+/// appended after the parametric columns: the P-splines, then the tensors.
+fn expand(design: &Design, bases: &[Basis], tensors: &[TensorBasis]) -> Result<Design> {
+    let mut raw: Vec<&str> = bases.iter().map(|b| b.spline.column.as_str()).collect();
+    for t in tensors {
+        raw.extend(t.tensor.columns.iter().map(String::as_str));
+    }
     let mut names = Vec::new();
     let mut cols = Vec::new();
     for (j, name) in design.names().iter().enumerate() {
@@ -242,6 +461,19 @@ fn expand(design: &Design, bases: &[Basis]) -> Result<Design> {
             cols.push(col);
         }
     }
+    for t in tensors {
+        let inputs = t
+            .tensor
+            .columns
+            .iter()
+            .map(|c| column_of(design, c))
+            .collect::<Result<Vec<_>>>()?;
+        let label = t.tensor.label();
+        for (i, col) in t.columns(&inputs).into_iter().enumerate() {
+            names.push(format!("{label}.{}", i + 1));
+            cols.push(col);
+        }
+    }
     Design::new(names, cols)?
         .with_offset(design.offset().to_vec())?
         .with_weights(design.weights().to_vec())
@@ -252,6 +484,7 @@ fn expand(design: &Design, bases: &[Basis]) -> Result<Design> {
 pub struct GamFit {
     pub(crate) spec: Gam,
     pub(crate) bases: Vec<Basis>,
+    pub(crate) tensors: Vec<TensorBasis>,
     pub(crate) names: Vec<String>,
     pub(crate) coefficients: Vec<f64>,
     pub(crate) lambdas: Vec<f64>,
@@ -263,6 +496,22 @@ pub struct GamFit {
     pub(crate) reml_scale: Option<f64>,
     pub(crate) fitted: Vec<f64>,
     pub(crate) input_hash: String,
+}
+
+/// The best of 64 equal cells of `(lo, hi)`, refined by Brent's method to
+/// `1e-4`: a starting point for a joint search.
+fn coarse_minimize(lo: f64, hi: f64, mut f: impl FnMut(f64) -> f64) -> f64 {
+    const CELLS: usize = 64;
+    let h = (hi - lo) / CELLS as f64;
+    let x = |j: usize| lo + h * j as f64;
+    let (mut best, mut f_best) = (1, f(x(1)));
+    for j in 2..CELLS {
+        let v = f(x(j));
+        if v < f_best {
+            (best, f_best) = (j, v);
+        }
+    }
+    brent(x(best - 1), x(best + 1), 1e-4, f).0
 }
 
 /// The saturated log-likelihood `l_s(φ)` of mgcv's `fix.family.ls`, the
@@ -356,7 +605,7 @@ impl Model for Gam {
     fn fit(&self, design: &Design, y: &[f64]) -> Result<GamFit> {
         let glm = self.glm;
         glm.family.validate()?;
-        if self.smooths.is_empty() {
+        if self.smooths.is_empty() && self.tensors.is_empty() {
             return Err(Error::InvalidParameter {
                 name: "smooths",
                 value: 0.0,
@@ -375,7 +624,19 @@ impl Model for Gam {
                 Basis::fit(s, design.column(j))
             })
             .collect::<Result<Vec<_>>>()?;
-        let x = expand(design, &bases)?;
+        let tensors = self
+            .tensors
+            .iter()
+            .map(|t| {
+                let cols = t
+                    .columns
+                    .iter()
+                    .map(|c| column_of(design, c))
+                    .collect::<Result<Vec<_>>>()?;
+                TensorBasis::fit(t, &cols)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let x = expand(design, &bases, &tensors)?;
         let (n, p) = (x.n_rows(), x.n_cols());
         if y.len() != n {
             return Err(Error::Data(format!(
@@ -390,37 +651,53 @@ impl Model for Gam {
                 reason: "is outside the family's range",
             });
         }
-        // Each smooth's penalty block sits at the end, in order.
-        let blocks: Vec<(usize, Vec<f64>)> = {
-            let mut start = p - bases.iter().map(Basis::width).sum::<usize>();
-            bases
-                .iter()
-                .map(|b| {
-                    let at = start;
-                    start += b.width();
-                    (at, b.penalty())
-                })
-                .collect()
+        // Each smooth's penalty block sits at the end, in order: its start,
+        // width and penalties (one per smoothing parameter).
+        let blocks: Vec<(usize, usize, Vec<Vec<f64>>)> = {
+            let widths: usize = bases.iter().map(Basis::width).sum::<usize>()
+                + tensors.iter().map(TensorBasis::width).sum::<usize>();
+            let mut start = p - widths;
+            let mut out = Vec::new();
+            for b in &bases {
+                out.push((start, b.width(), vec![b.penalty()]));
+                start += b.width();
+            }
+            for t in &tensors {
+                out.push((start, t.width(), t.penalties()));
+                start += t.width();
+            }
+            out
         };
+        let n_lambda: usize = blocks.iter().map(|b| b.2.len()).sum();
         let w = x.weights();
         let y_mean = y.iter().zip(w).map(|(a, b)| a * b).sum::<f64>() / w.iter().sum::<f64>();
+        // Each trial starts IRLS from the last trial's means.
+        let warm: std::cell::RefCell<Option<Vec<f64>>> = std::cell::RefCell::new(None);
         let trial = |lambdas: &[f64]| -> Result<Trial> {
             let mut s = vec![0.0; p * p];
-            for ((at, block), (lambda, basis)) in blocks.iter().zip(lambdas.iter().zip(&bases)) {
-                let m = basis.width();
-                for a in 0..m {
-                    for b in 0..m {
-                        s[(at + a) * p + at + b] += lambda * block[a * m + b];
+            let mut lambda = lambdas.iter();
+            for (at, m, penalties) in &blocks {
+                for block in penalties {
+                    let l = *lambda.next().expect("one lambda per penalty");
+                    for a in 0..*m {
+                        for b in 0..*m {
+                            s[(at + a) * p + at + b] += l * block[a * m + b];
+                        }
                     }
                 }
             }
+            let start = warm.borrow().clone();
             let fit = irls(
                 &glm,
                 &x,
                 y,
-                |i| glm.family.initial_mu(y[i], w[i], y_mean),
+                |i| match &start {
+                    Some(mu) => mu[i],
+                    None => glm.family.initial_mu(y[i], w[i], y_mean),
+                },
                 Some(&s),
             )?;
+            *warm.borrow_mut() = Some(fit.mu.clone());
             // edf = tr((XᵀWX + S)⁻¹ XᵀWX) = p - tr((XᵀWX + S)⁻¹ S).
             let mut a = fit.information.clone();
             for (v, si) in a.iter_mut().zip(&s) {
@@ -451,18 +728,48 @@ impl Model for Gam {
             _ => fixed.is_some(),
         };
         let use_reml = self.smoothing == Smoothing::Reml;
-        // Each smooth's penalty rank and ln|P_j|₊, for ln|S|₊ = Σ r_j ln λ_j + ln|P_j|₊.
-        let ranks: Vec<(f64, f64)> = blocks
+        // Each block's penalty rank (of the sum of its penalties) and, for a
+        // single penalty, ln|P|₊: ln|λ P|₊ = r ln λ + ln|P|₊. A block with
+        // several penalties (a tensor) takes ln|Σ λ_i P_i|₊ from the top r
+        // eigenvalues at each trial.
+        let ranks: Vec<(usize, f64)> = blocks
             .iter()
-            .zip(&bases)
-            .map(|((_, block), b)| {
-                let e = symmetric_eigenvalues(block, b.width());
+            .map(|(_, m, penalties)| {
+                let mut sum = vec![0.0; m * m];
+                for pen in penalties {
+                    for (a, b) in sum.iter_mut().zip(pen) {
+                        *a += b;
+                    }
+                }
+                let e = symmetric_eigenvalues(&sum, *m);
                 let top = e.iter().copied().fold(0.0, f64::max);
                 let kept: Vec<f64> = e.into_iter().filter(|v| *v > 1e-10 * top).collect();
-                (kept.len() as f64, kept.iter().map(|v| v.ln()).sum())
+                (kept.len(), kept.iter().map(|v| v.ln()).sum())
             })
             .collect();
-        let null_dim = p as f64 - ranks.iter().map(|r| r.0).sum::<f64>();
+        let null_dim = p as f64 - ranks.iter().map(|r| r.0 as f64).sum::<f64>();
+        let ln_pseudo_det = |lambdas: &[f64]| -> f64 {
+            let mut lambda = lambdas.iter();
+            blocks
+                .iter()
+                .zip(&ranks)
+                .map(|((_, m, penalties), &(r, ln_p))| {
+                    if penalties.len() == 1 {
+                        let l = *lambda.next().expect("one lambda per penalty");
+                        return r as f64 * l.ln() + ln_p;
+                    }
+                    let mut sum = vec![0.0; m * m];
+                    for pen in penalties {
+                        let l = *lambda.next().expect("one lambda per penalty");
+                        for (a, b) in sum.iter_mut().zip(pen) {
+                            *a += l * b;
+                        }
+                    }
+                    let e = symmetric_eigenvalues(&sum, *m);
+                    e[m - r..].iter().map(|v| v.ln()).sum()
+                })
+                .sum()
+        };
         if use_reml {
             saturated_log_likelihood(glm.family, y, w, 1.0)?;
         }
@@ -479,11 +786,7 @@ impl Model for Gam {
                 Error::Data("the penalized observed information is not positive definite".into())
             })?;
             let ln_det: f64 = (0..p).map(|i| 2.0 * l[i * p + i].ln()).sum();
-            let ln_s: f64 = ranks
-                .iter()
-                .zip(lambdas)
-                .map(|(&(r, ln_p), &lambda)| r * lambda.ln() + ln_p)
-                .sum();
+            let ln_s = ln_pseudo_det(lambdas);
             let v = |phi: f64| -> f64 {
                 let ls = saturated_log_likelihood(glm.family, y, w, phi).unwrap_or(f64::NAN);
                 dp / (2.0 * phi) - ls + 0.5 * ln_det
@@ -516,30 +819,34 @@ impl Model for Gam {
         };
         let lambdas = match &self.smoothing {
             Smoothing::Fixed(l) => {
-                if l.len() != bases.len() || l.iter().any(|v| !(v.is_finite() && *v >= 0.0)) {
+                if l.len() != n_lambda || l.iter().any(|v| !(v.is_finite() && *v >= 0.0)) {
                     return Err(Error::InvalidParameter {
                         name: "smoothing",
                         value: l.len() as f64,
-                        reason: "needs one finite, non-negative value per smooth",
+                        reason: "needs one finite, non-negative value per smoothing parameter \
+                                 (one per P-spline, one per tensor margin)",
                     });
                 }
                 l.clone()
             }
             _ => {
-                // Coordinate search on ln λ, smooth by smooth, three passes.
-                let mut log_l = vec![0.0; bases.len()];
-                let passes = if bases.len() == 1 { 1 } else { 3 };
-                for _ in 0..passes {
-                    for j in 0..bases.len() {
-                        let objective = |v: f64| {
-                            let mut l: Vec<f64> = log_l.iter().map(|a: &f64| a.exp()).collect();
-                            l[j] = v.exp();
-                            trial(&l).map_or(f64::INFINITY, |t| score(&t, &l))
-                        };
-                        log_l[j] = minimize(-15.0, 20.0, objective);
-                    }
+                // One smoothing parameter: a scan of ln λ and golden section
+                // to full precision. Several: one coarse coordinate pass (the
+                // scan, then Brent to 1e-4), polished jointly by Nelder–Mead.
+                let mut log_l = vec![0.0; n_lambda];
+                for j in 0..n_lambda {
+                    let objective = |v: f64| {
+                        let mut l: Vec<f64> = log_l.iter().map(|a: &f64| a.exp()).collect();
+                        l[j] = v.exp();
+                        trial(&l).map_or(f64::INFINITY, |t| score(&t, &l))
+                    };
+                    log_l[j] = if n_lambda == 1 {
+                        minimize(-15.0, 20.0, objective)
+                    } else {
+                        coarse_minimize(-15.0, 20.0, objective)
+                    };
                 }
-                if use_reml && bases.len() > 1 {
+                if n_lambda > 1 {
                     // Polish the coordinate search jointly.
                     let objective = |v: &[f64]| {
                         if v.iter().any(|a| !(-15.0..=20.0).contains(a)) {
@@ -593,6 +900,7 @@ impl Model for Gam {
             score: score(&best, &lambdas),
             reml_scale,
             bases,
+            tensors,
             names: x.names().to_vec(),
             coefficients: best.irls.beta,
             lambdas,
@@ -674,7 +982,7 @@ impl Fitted for GamFit {
     /// Predictions for a design with the same columns as the training
     /// design (raw smooth columns included).
     fn predict(&self, design: &Design) -> Result<Vec<f64>> {
-        let x = expand(design, &self.bases)?;
+        let x = expand(design, &self.bases, &self.tensors)?;
         if x.names() != self.names.as_slice() {
             return Err(Error::Data(
                 "design columns do not match the fitted GAM".into(),
@@ -694,7 +1002,7 @@ impl Fitted for GamFit {
         n_sims: usize,
         seed: u64,
     ) -> Result<PredictiveDistribution> {
-        let x = expand(design, &self.bases)?;
+        let x = expand(design, &self.bases, &self.tensors)?;
         let provenance = Provenance::new("gam")
             .version("prospicio-glm", env!("CARGO_PKG_VERSION"))
             .param("family", self.spec.glm.family.name())

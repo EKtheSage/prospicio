@@ -16,7 +16,9 @@ gam_fit(
   dispersion = NULL,
   theta = NULL,
   power = NULL,
-  smoothing = "auto"
+  smoothing = "auto",
+  tensors = list(),
+  tensor_basis = 5
 )
 }
 \arguments{
@@ -50,7 +52,14 @@ as the fitted means stay positive), \code{"deviance"} or a fixed number.}
 \item{power}{Tweedie power in \verb{(1, 2)}.}
 
 \item{smoothing}{\code{"auto"}, \code{"gcv"}, \code{"ubre"}, \code{"reml"}, or a numeric vector of
-fixed smoothing parameters, one per smooth.}
+fixed smoothing parameters: one per smooth, then one per tensor margin.}
+
+\item{tensors}{A list of tensor product smooths (mgcv's
+\code{te(..., bs = "ps", np = FALSE)}), each a character vector of two or
+more numeric terms. Each margin has its own smoothing parameter.}
+
+\item{tensor_basis}{Basis functions per margin of each tensor: one number
+(recycled) or a list with one vector per tensor (5 by default).}
 }
 \value{
 A \code{gam_model} with properties \code{coefficients}, \code{lambdas}, \code{edf},

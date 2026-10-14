@@ -196,3 +196,9 @@
   `Gam(..., smoothing="reml")` and `GamFit.reml_scale`; R
   `gam_fit(smoothing = "reml")` and `@reml_scale`. New in
   `prospicio-math`: `linalg::symmetric_eigenvalues`.
+- Tensor product smooths for GAMs (`TensorSpline`, `Gam::tensor`):
+  mgcv's `te(..., bs = "ps", np = FALSE)`, a smoothing parameter per
+  margin, with GCV, UBRE or REML, matching mgcv 1.9.1. Searches with
+  several smoothing parameters now polish a coarse coordinate pass
+  jointly. Python `Gam(..., tensors=)`; R `gam_fit(tensors =,
+  tensor_basis =)`.

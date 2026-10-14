@@ -155,6 +155,32 @@ models and compares them.
   those cases compare the score to 1e-6 and the fit loosely, and the test
   asserts that the score is never above mgcv's. The wavy single smooths
   agree to 1e-6.
+- Tensor product smooths (`TensorSpline`, `Gam::tensor`, decided
+  2026-10-14): mgcv's `te(x, z, bs = "ps", np = FALSE)`. Each margin is a
+  cubic B-spline basis on mgcv's `"ps"` knots (5 functions by default),
+  the basis is the row-wise Kronecker product (the last margin's index
+  fastest), margin `i` contributes `I ⊗ … ⊗ P_i ⊗ … ⊗ I` with its own
+  smoothing parameter, and the whole product is centered to sum to zero
+  like a P-spline. `np = FALSE` matters: mgcv's default reparameterizes
+  each margin before forming the Kronecker penalties, which is a
+  different model, not a different basis for the same one; with it off,
+  how mgcv scales the penalties or picks the constraint's basis leaves the
+  fit unchanged. Smoothing parameters run over the P-splines, then each
+  tensor's margins. For REML, a block with several penalties takes
+  `ln|Σ λ_i P_i|₊` from its top `r` eigenvalues at each trial, `r` the rank
+  of `Σ P_i`. The search for several smoothing parameters is now one coarse
+  coordinate pass (a 64-cell scan of `ln λ`, then Brent to 1e-4) polished
+  jointly by Nelder–Mead, for every criterion, and each trial starts IRLS
+  from the previous trial's means; a single smooth keeps the full-precision
+  scan, so its results are unchanged. Parity:
+  `validation/reference/gam_tensor_mgcv.csv`
+  (`validation/scripts/r_gam_tensor.R`, data `validation/data/
+  gam_surface.csv`): a surface by REML and GCV, Poisson counts by REML,
+  and a P-spline next to the tensor by REML, at 1e-5 and 1e-6 for the
+  score; GCV with two parameters is flat and mgcv stops about 1e-9 above
+  prospicio's score, so its fitted values are compared to 2e-4. Python
+  `Gam(..., tensors=[["x", "z"]])`; R `gam_fit(..., tensors = list(c("x",
+  "z")), tensor_basis = 5)`.
 - `prospicio-bayes`: MCMC diagnostics for any sampler's draws, the estimators
   of Vehtari et al. (2021) as R's `posterior` implements them:
   rank-normalized split `rhat` (the larger of the bulk and folded
