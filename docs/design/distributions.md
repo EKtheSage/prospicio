@@ -65,6 +65,28 @@ conversion reports the error it introduces.
   the cdf, survival, quantile and moments, and 30-digit integration of the
   survival for layer means and second moments
   (`validation/scripts/mpmath_layer_moments.py`).
+- `prospicio_prob::severity_fit::fit_severity` (decided 2026-10-14,
+  #194) fits a lognormal, gamma, Weibull or Burr to the `LargeLosses` the
+  Pareto fits take: each loss contributes `w (ln f(y) − ln S(r))`, or
+  `ln S(y)` in place of `ln f(y)` when censored. One entry point over a
+  `Family` enum returns a `SeverityFit` (the `Dist`, parameters,
+  covariance from a central-difference Hessian of the log-likelihood,
+  log-likelihood, AIC, BIC, `converged`), rather than a `fit` on each
+  family. Nelder–Mead runs over the logarithms of the positive
+  parameters from moments of the uncensored losses; the Burr starts from
+  the Weibull fit and two heavier tails and keeps the best, since on
+  little data it drifts towards a boundary where it mimics a Weibull
+  (`α → ∞`) or a Pareto. `ln S` is exact for the Weibull and Burr, through
+  the Mills ratio for the lognormal's upper tail, and `ln Q` of the
+  regularized incomplete gamma for the gamma. Tested: untruncated
+  closed forms (the lognormal's mean and n-denominator sd of the logs with
+  standard errors `σ/√n` and `σ/√(2n)`, the gamma's `ln k − ψ(k)` equation,
+  the Weibull's profile equation), and recovery of all four within 4.5
+  standard errors on 10,000 draws reported above 300 for half of them and
+  capped at 5,000, with a zero score at the maximum. This answers the
+  issue's GLM line too: an intercept-only GLM stays untruncated.
+  Goodness-of-fit diagnostics for such data (a product-limit estimator
+  with left truncation, P-P and Q-Q against the fit) come next.
 - `prospicio_prob::PolicyLimits` (decided 2026-10-14, #213) is a severity
   capped by a mix of policy limits, `min(X, L)` with `L = limits[j]` with
   probability `weights[j]` (normalized to 1; infinity for an unlimited

@@ -1356,6 +1356,8 @@ pareto_fit_standard_error_rust <- function(losses, t, reporting, censored, weigh
 
 piecewise_pareto_fit_standard_errors_rust <- function(losses, t, reporting, censored, weights, truncation_at, truncation_type) .Call(wrap__piecewise_pareto_fit_standard_errors_rust, losses, t, reporting, censored, weights, truncation_at, truncation_type)
 
+severity_fit_rust <- function(family, losses, reporting, censored, weights) .Call(wrap__severity_fit_rust, family, losses, reporting, censored, weights)
+
 MixtureDist <- new.env(parent = emptyenv())
 
 MixtureDist$new <- function(weights, components) .Call(wrap__MixtureDist__new, weights, components)

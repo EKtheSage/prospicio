@@ -1075,7 +1075,12 @@ dist_to_json <- function(dist) rust_result(dist_to_json_rust(dist@ptr))
 #' @export
 dist_from_json <- function(text) {
   r <- rust_result(dist_from_json_rust(as.character(text)))
-  cls <- switch(r$family,
+  wrap_dist(r$family, r$ptr)
+}
+
+# A Rust distribution pointer in the R class of its family.
+wrap_dist <- function(family, ptr) {
+  cls <- switch(family,
     lognormal = lognormal, pareto = pareto, piecewise_pareto = piecewise_pareto,
     log_affine_pareto = log_affine_pareto, generalized_pareto = generalized_pareto,
     gamma = gamma_distribution, tweedie = tweedie, weibull = weibull_distribution,
@@ -1084,7 +1089,44 @@ dist_from_json <- function(text) {
     beta = beta_distribution, truncated = truncated_distribution,
     policy_limits = policy_limits_distribution, mixture = mixture_distribution,
     grid = grid_distribution, sampled = sampled,
-    stop("unknown family ", r$family)
+    stop("unknown family ", family)
   )
-  cls(ptr = r$ptr)
+  cls(ptr = ptr)
+}
+
+#' Fit a body severity to large losses
+#'
+#' Maximum likelihood fit of a lognormal, gamma, Weibull or Burr severity to
+#' large losses, each conditioned on exceeding its reporting threshold (left
+#' truncation), with losses capped by a policy limit censored: the same data
+#' as [pareto_fit()]. The standard errors and covariance come from the
+#' observed information. A Burr fit on little data can drift towards a
+#' boundary where it mimics a Weibull or a Pareto; check `converged` and the
+#' standard errors.
+#'
+#' @param family `"lognormal"`, `"gamma"`, `"weibull"` or `"burr"`.
+#' @inheritParams pareto_fit
+#' @returns A list: `distribution` (the fitted severity), `parameters` and
+#'   `standard_errors` (named), `covariance` (a matrix), `log_likelihood`,
+#'   `aic`, `bic` and `converged`.
+#' @export
+#' @examples
+#' y <- c(120, 300, 450, 800, 1500, 2600, 4000)
+#' fit <- severity_fit("lognormal", y)
+#' fit$parameters
+#' severity_fit("weibull", y, reporting_thresholds = rep(100, 7))$aic
+severity_fit <- function(family, losses, reporting_thresholds = NULL, censored = NULL,
+                         weights = NULL) {
+  r <- rust_result(severity_fit_rust(
+    as.character(family), as.double(losses), optional_arg(reporting_thresholds),
+    optional_arg(censored), optional_arg(weights)
+  ))
+  k <- length(r$parameters)
+  list(
+    distribution = wrap_dist(r$family, r$ptr), parameters = r$parameters,
+    standard_errors = r$standard_errors,
+    covariance = matrix(r$covariance, k, k, byrow = TRUE,
+                        dimnames = list(names(r$parameters), names(r$parameters))),
+    log_likelihood = r$log_likelihood, aic = r$aic, bic = r$bic, converged = r$converged
+  )
 }

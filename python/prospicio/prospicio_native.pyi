@@ -15139,6 +15139,63 @@ class Sampled:
         """
 
 @final
+class SeverityFit:
+    """
+    A severity fitted by maximum likelihood to large losses, from
+    ``fit_severity``: the distribution, its parameters with standard errors
+    and covariance (from the observed information), and the fit's
+    log-likelihood with AIC and BIC.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aic(self, /) -> float:
+        """
+        Akaike's information criterion.
+        """
+    @property
+    def bic(self, /) -> float:
+        """
+        The Bayesian information criterion, with the losses' total weight.
+        """
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the optimizer met its tolerance.
+        """
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The parameters' covariance, one row per parameter in the family's
+        order (``meanlog, sdlog``; ``shape, scale``; ``alpha, gamma, scale``).
+        """
+    @property
+    def distribution(self, /) -> Any:
+        """
+        The fitted distribution.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The family's name.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximized log-likelihood.
+        """
+    @property
+    def parameters(self, /) -> dict[str, float]:
+        """
+        The parameters by name.
+        """
+    @property
+    def standard_errors(self, /) -> dict[str, float]:
+        """
+        Each parameter's standard error, by name; NaN where the observed
+        information is singular.
+        """
+
+@final
 class StackingFit:
     """
     Posterior stacking weights, from ``BayesStacking.fit`` or
@@ -18161,6 +18218,37 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     >>> m = fit_references([(1000.0, 1000.0, 150.0), (3000.0, 1500.0, 160.0)], [(1000.0, 0.3)])
     >>> round(m.layer_loss(3000.0, 1500.0), 6)
     160.0
+    """
+
+def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> SeverityFit:
+    """
+    Maximum likelihood fit of a lognormal, gamma, Weibull or Burr severity
+    to large losses, each conditioned on exceeding its reporting threshold
+    (left truncation), with losses capped by a policy limit censored.
+    
+    Parameters
+    ----------
+    family : {"lognormal", "gamma", "weibull", "burr"}
+    losses : list of float
+    reporting_thresholds : list of float, optional
+        Per-loss thresholds below which a loss would not have been
+        reported.
+    censored : list of bool, optional
+        ``True`` where a policy limit capped the loss.
+    weights : list of float, optional
+    
+    Returns
+    -------
+    SeverityFit
+    
+    Examples
+    --------
+    >>> import math
+    >>> from prospicio.distributions import fit_severity
+    >>> y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0]
+    >>> fit = fit_severity("lognormal", y)
+    >>> round(fit.parameters["meanlog"], 6) == round(sum(map(math.log, y)) / 7, 6)
+    True
     """
 
 def from_json(text: str) -> Any:

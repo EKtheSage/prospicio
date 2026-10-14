@@ -160,3 +160,15 @@ near(pareto_standard_error(losses, 1000, censored = c(FALSE, FALSE, FALSE, TRUE)
 pw <- piecewise_pareto_fit(c(1200, 1500, 2500, 6000), c(1000, 2000))
 near(piecewise_pareto_standard_errors(c(1200, 1500, 2500, 6000), c(1000, 2000)),
      pw@alpha / sqrt(2))
+
+# Issue #194: body severities fitted with truncation and censoring.
+y <- c(120, 300, 450, 800, 1500, 2600, 4000, 650, 90, 2100)
+f <- severity_fit("lognormal", y)
+sdl <- sqrt(mean((log(y) - mean(log(y)))^2))
+stopifnot(abs(f$parameters[["meanlog"]] - mean(log(y))) < 1e-7)
+stopifnot(abs(f$parameters[["sdlog"]] / sdl - 1) < 1e-7)
+stopifnot(abs(f$standard_errors[["meanlog"]] / (sdl / sqrt(10)) - 1) < 1e-4)
+stopifnot(inherits(f$distribution, "prospicio::lognormal"), all(dim(f$covariance) == 2))
+fb <- severity_fit("burr", y, reporting_thresholds = ifelse(y > 100, 100, 0), censored = y >= 4000)
+stopifnot(inherits(fb$distribution, "prospicio::burr_distribution"), is.finite(fb$log_likelihood))
+stopifnot(inherits(try(severity_fit("pareto", y), silent = TRUE), "try-error"))

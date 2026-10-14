@@ -23,6 +23,13 @@
   Python `Pareto.fit_with_standard_error`,
   `PiecewisePareto.fit_with_standard_errors`; R `pareto_standard_error()`,
   `piecewise_pareto_standard_errors()`.
+- Maximum likelihood fits of the lognormal, gamma, Weibull and Burr to
+  large losses with reporting thresholds (left truncation), policy limits
+  (censoring) and weights (#194):
+  `prospicio_prob::severity_fit::fit_severity`, returning the
+  distribution, parameters, standard errors and covariance,
+  log-likelihood, AIC and BIC. Python `fit_severity` and `SeverityFit`; R
+  `severity_fit()`.
 
 ### Aggregate and reinsurance
 

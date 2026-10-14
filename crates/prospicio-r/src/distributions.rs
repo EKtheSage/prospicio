@@ -157,14 +157,21 @@ fn dist_to_json_rust(dist: Robj) -> Result<String> {
 /// of the family's Rust type for R to wrap in its class.
 #[extendr]
 fn dist_from_json_rust(text: &str) -> Result<List> {
+    let d = Dist::from_json(text).map_err(to_r)?;
+    let family = d.family();
+    let ptr = dist_to_robj(d)?;
+    Ok(list!(family = family, ptr = ptr))
+}
+
+/// A distribution as the pointer of its family's Rust type, for R to wrap
+/// in its class by `Dist::family`.
+pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
     use crate::pareto::{
         BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist, InverseGaussianDist,
         LogAffinePareto, LoglogisticDist, MixtureDist, Pareto, PiecewisePareto, PolicyLimitsDist,
         TruncatedDist, TweedieDist, WeibullDist,
     };
-    let d = Dist::from_json(text).map_err(to_r)?;
-    let family = d.family();
-    let ptr: Robj = match d {
+    Ok(match d {
         Dist::Lognormal(inner) => Lognormal { inner }.into(),
         Dist::Pareto(inner) => Pareto { inner }.into(),
         Dist::PiecewisePareto(inner) => PiecewisePareto { inner }.into(),
@@ -188,8 +195,7 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
                 "a custom distribution cannot be loaded".into(),
             ));
         }
-    };
-    Ok(list!(family = family, ptr = ptr))
+    })
 }
 
 /// The distributions accepted as a severity, for error messages.

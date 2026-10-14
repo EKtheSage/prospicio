@@ -176,7 +176,9 @@ year fractions (`year_fraction(y, m, d)` converts a calendar date).
   `Glm("gamma" | "inverse_gaussian", "log")` fits the mean by maximum
   likelihood (shape from `1/dispersion`), and a lognormal is a Gaussian
   GLM on `log(y)`. Partial: no truncation or censoring outside the
-  Pareto family, no Burr or Weibull fit. Gap (#194).
+  Pareto family, no Burr or Weibull fit. Gap (#194; since added:
+  `fit_severity("lognormal" | "gamma" | "weibull" | "burr", ...)` with
+  reporting thresholds, censoring and weights, and standard errors).
 * Attritional plus large: `Mixture.splice([(w, body), (1-w, Pareto)],
   [0, t, inf])` and `Truncated(sev, lower, upper)`. Verified.
 * Frequency: `claim_count(mean, dispersion)` (below 1 binomial, 1

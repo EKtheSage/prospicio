@@ -104,6 +104,18 @@ impl LargeLosses {
         self.values.is_empty()
     }
 
+    /// `(y, r, censored, w)` per loss, the reporting threshold as given.
+    pub(crate) fn rows(&self) -> impl Iterator<Item = (f64, f64, bool, f64)> + '_ {
+        (0..self.len()).map(|i| {
+            (
+                self.values[i],
+                self.reporting[i],
+                self.censored[i],
+                self.weights[i],
+            )
+        })
+    }
+
     fn check_len(&self, n: usize) -> Result<()> {
         if n != self.values.len() {
             return Err(invalid("length", n as f64, "must have one entry per loss"));

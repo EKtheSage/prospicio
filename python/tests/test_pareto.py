@@ -158,3 +158,27 @@ def test_issue_213_policy_limits_and_standard_errors():
     with pytest.raises(ValueError):
         D.PiecewisePareto.fit_with_standard_errors(losses, [1000.0, 2000.0], truncation=50_000.0,
                                                    truncation_type="wd")
+
+
+def test_issue_194_severity_fits_with_truncation_and_censoring():
+    y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0, 650.0, 90.0, 2100.0]
+    logs = [math.log(v) for v in y]
+    mu = sum(logs) / len(y)
+    sd = math.sqrt(sum((v - mu) ** 2 for v in logs) / len(y))
+    fit = D.fit_severity("lognormal", y)
+    assert fit.parameters["meanlog"] == pytest.approx(mu, abs=1e-7)
+    assert fit.parameters["sdlog"] == pytest.approx(sd, rel=1e-7)
+    assert fit.standard_errors["meanlog"] == pytest.approx(sd / math.sqrt(len(y)), rel=1e-4)
+    assert isinstance(fit.distribution, D.Lognormal)
+    assert fit.aic == pytest.approx(4 - 2 * fit.log_likelihood)
+    # Truncated and censored data: the reporting thresholds change the fit,
+    # and every family returns its own class.
+    r = [100.0 if v > 100 else 0.0 for v in y]
+    c = [v >= 4000.0 for v in y]
+    for family, cls in [("gamma", D.Gamma), ("weibull", D.Weibull), ("burr", D.Burr)]:
+        f = D.fit_severity(family, y, reporting_thresholds=r, censored=c)
+        assert isinstance(f.distribution, cls)
+        assert len(f.covariance) == len(f.parameters)
+        assert math.isfinite(f.log_likelihood)
+    with pytest.raises(ValueError):
+        D.fit_severity("pareto", y)
