@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Gesmann and Morris (2020), hierarchical compartmental reserving models
-description: The CAS Research Paper behind prospicio's Compartmental; its brms code (not a Stan program) reconstructed as the Stan program brms generates reproduces its printed model 1 posterior to rounding on company 337; its text and code disagree on the origin hierarchy (both models) and on model 2's sigma prior, and the code wins for parity.
+description: The CAS Research Paper behind prospicio's Compartmental; its brms code (not a Stan program) reconstructed as the Stan program brms generates reproduces its printed model 1 posterior to rounding and its model 2 posterior within 0.08 printed sd on company 337; its text and code disagree on the origin hierarchy (both models) and on model 2's sigma prior, and the code wins for parity.
 tags: [reserving, compartmental, bayes, brms, stan, reference]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-13T21:00:00-07:00 }
@@ -18,6 +18,12 @@ sources:
   - id: script
     resource: ../validation/scripts/reserving_compartmental_stan.py
     title: The reference generator, with the printed m1fit
+  - id: stan2
+    resource: ../validation/scripts/stan/compartmental_gm2.stan
+    title: The reconstruction of model 2
+  - id: script2
+    resource: ../validation/scripts/reserving_compartmental_gm2_stan.py
+    title: The model 2 reference generator, with the printed m2fit
 ---
 
 # Facts
@@ -49,6 +55,40 @@ sources:
 * Text against code, model 2's sigma prior: the text gives a median of
   0.1, the code `log sigma ~ normal(log 0.2, 0.2)`. The code wins for
   parity (PR C).[^paper][^design]
+* Model 2's code (sec. 7.2.3, read from the published PDF on 2026-10-14):
+  the response is the outstanding loss ratio or the incremental paid loss
+  ratio to direct premium (the paid loss ratio less its lag, with 0 before
+  the first age), brms family `lognormal` with `link_sigma = "log"` and the
+  location `log(claimsprocess(dev_year, 1.0, ...))`. Its `claimsprocess`
+  returns the outstanding closed form for an outstanding cell, and for a
+  paid cell after the first age the paid closed form at `t` less the same
+  at `t - 1`, both with the cell's own parameters. The multipliers are
+  model 1's (`3`, `1`, `0.7`, `0.8` and `0.1`, `0.1`, `0.2`, `0.1`); `oRLR`
+  and `oRRF ~ 1 + (1 | ID | accident_year) + (1 | dev_year)`, `oker` and
+  `okp ~ 1 + (1 | accident_year) + (1 | dev_year)`; sd priors half
+  `student_t(10, 0, 0.3)` on `oker` and `okp`, 0.7 on `oRLR` and 0.5 on
+  `oRRF`, each shared by the nlpar's two groups; LKJ(1).[^paper][^stan2]
+* The printed model 2 posterior (`m2fit`, sec. 7.2.3, mean and sd; 90
+  observations, 9 accident years and 9 development years): intercepts
+  `oRLR` 1.54 (0.44), `oRRF` -1.45 (0.69), `oker` -1.31 (1.08), `okp`
+  -5.07 (1.75); accident-year sds `oRLR` 0.69 (0.31), `oRRF` 0.73 (0.47),
+  `oker` 0.26 (0.22), `okp` 2.23 (1.35), their correlation 0.37 (0.47);
+  development-year sds `oRLR` 0.35 (0.26), `oRRF` 1.11 (0.49), `oker` 0.27
+  (0.23), `okp` 0.45 (0.43); `log sigma_OS` -1.78 (0.16), `log sigma_PD`
+  -1.89 (0.16). Bulk ESS 470 to 4,150 in 4 x 1,000 draws (`okp` 499, its
+  accident-year sd 470), so the paper's own Monte Carlo error is up to
+  about 0.05 sd on a mean.[^paper]
+* The model 2 reconstruction under CmdStan 2.39.0 (4 x 25,000 draws,
+  `adapt_delta` 0.999, 0 divergences, max R-hat 1.0004) gives intercepts
+  1.534 (0.455), -1.446 (0.696), -1.271 (1.056) and -5.064 (1.722); sds
+  0.695, 0.743, 0.260 and 2.211 by accident year, correlation 0.357, and
+  0.361, 1.119, 0.272 and 0.481 by development year; `log sigma` -1.787 and
+  -1.887: every mean within 0.08 printed sd of `m2fit` (the largest,
+  `tau_dev_kp`'s, 0.072) and every sd within 3.4% but `tau_dev_kp`'s, 0.518
+  against the printed 0.43, a heavy-tailed sd that the paper's 552 bulk
+  draws estimate loosely; so no brms convention appears missed. At `adapt_delta`
+  0.99, the paper's, the same program left 5 divergent transitions in
+  100,000 kept draws.[^script2]
 * The paper's `m1fit` ran `brm(..., control = list(adapt_delta = 0.99,
   max_treedepth = 15), seed = 123, iter = 2000, chains = 4)`: 4 chains of
   1,000 kept draws, with bulk ESS 1,300 to 2,200 printed for the

@@ -128,9 +128,6 @@ def test_settings_and_defaults():
 
 
 @pytest.mark.parametrize("setting", [
-    dict(likelihood="lognormal"),
-    dict(scale="loss_ratio"),
-    dict(paid_response="incremental"),
     dict(fitted="paid_and_incurred"),
     dict(fitted="paid_only"),
     dict(fitted="incurred_only"),

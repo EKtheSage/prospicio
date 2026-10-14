@@ -15,6 +15,9 @@ sources:
   - id: code
     resource: ../crates/prospicio-reserving/src/bayes/autodiff.rs
     title: The oracle tests and the benchmark (autodiff_benchmark, ignored)
+  - id: model2
+    resource: ../crates/prospicio-reserving/src/bayes/compartmental.rs
+    title: Compartmental, its per-cell gradient, its oracle test and model_2_gradient_benchmark (ignored)
   - id: numdual
     resource: https://crates.io/crates/num-dual
     title: num-dual on crates.io
@@ -96,8 +99,24 @@ ignored test `autodiff_benchmark`.[^code]
   gradient then matches central differences to 7.1e-9 through
   `k_er = k_p`.
 
+* **Model 2 on company 337 (2026-10-14, PR C).** On the real density (87
+  parameters, 90 cells, 135 closed forms), release, median µs while other
+  fits loaded the machine: the value 4.5 to 5.6, the chunked dual pass 67
+  to 74 (13 to 15 times the value). A gradient that keeps the dual type
+  for the pieces only (the prior terms without a `z` in one `Dual<16>`
+  pass, each cell's term in a `Dual<5>` over its four `o` values and its
+  `log σ`, the `z` terms and the chain rule from the `o` values to the
+  sampler's parameters by hand) costs 10, 1.8 times the value, and matches
+  the chunked pass over the generic density to 2e-15 on the value and
+  6e-16 of the largest component on the gradient. The chunked pass alone
+  would meet decision 15's rule (within 10 times a hand-written gradient
+  of 1.5 times the value or more); the faster one took a model 2 fit at
+  seed 0 from 81 s to 31 s (4 x 2,000 draws, other fits beside it), which
+  its deep trees make worth having.[^model2]
+
 [^design]: reserving-bayes.md, decision 15
 [^compartmental]: reserving-compartmental.md, decision 4 (PR A)
 [^code]: The oracle tests and the benchmark (autodiff_benchmark, ignored)
 [^numdual]: num-dual on crates.io
 [^burn]: Burn on crates.io
+[^model2]: Compartmental's per-cell gradient and model_2_gradient_benchmark

@@ -85,8 +85,7 @@ expect_error_like(compartmental(tri, "paid", "premium", list(), incurred = "incu
                   "priors must be a compartmental_priors list")
 
 # The other settings are named but not yet built.
-for (setting in list(list(likelihood = "lognormal"), list(scale = "loss_ratio"),
-                     list(paid_response = "incremental"), list(fitted = "paid_and_incurred"),
+for (setting in list(list(fitted = "paid_and_incurred"),
                      list(fitted = "paid_only"), list(fitted = "incurred_only"))) {
   expect_error_like(do.call(compartmental, c(list(tri, "paid", "premium", gm,
                                                   incurred = "incurred"), setting)),

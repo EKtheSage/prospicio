@@ -7777,6 +7777,11 @@ impl PyCompartmentalPriors {
                 rrf_effect_sd: half_prior("rrf_effect_sd", &rrf_effect_sd)?,
                 lkj_eta,
                 log_sigma: log_sigma_priors(&log_sigma)?,
+                // Model 1's hierarchy; model 2's effects reach Python in
+                // the bindings stage of PR C.
+                ker_effect_sd: None,
+                kp_effect_sd: None,
+                development_effect_sd: [None; 4],
             },
         })
     }

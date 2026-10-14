@@ -2936,6 +2936,11 @@ fn compartmental_priors(priors: &[f64], families: &[String]) -> Result<Compartme
             real(&families[2], 13, "log_sigma[[1]]")?,
             real(&families[3], 16, "log_sigma[[2]]")?,
         ],
+        // Model 1's hierarchy; model 2's effects reach R in the bindings
+        // stage of PR C.
+        ker_effect_sd: None,
+        kp_effect_sd: None,
+        development_effect_sd: [None; 4],
     })
 }
 
