@@ -1217,7 +1217,8 @@ R.
 Built (PR C, bindings): both likelihoods now reach Python and R. The
 guide page belongs in `docs/guides/`, which the Guides lane owns, so it
 is left to that lane (or to the user's go-ahead for this one) rather than
-written in this PR.
+written in this PR, tracked as
+[#253](https://github.com/EKtheSage/prospicio/issues/253).
 
 ## Risks
 

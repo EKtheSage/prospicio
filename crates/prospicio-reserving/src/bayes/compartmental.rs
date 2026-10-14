@@ -2,7 +2,9 @@
 //! outstanding compartment (`docs/design/reserving-compartmental.md`):
 //! paid and outstanding fitted jointly from one set of interpretable
 //! parameters, sampled with NUTS on a density written once over
-//! [`Scalar`] and differentiated with the chunked dual type (decision 4).
+//! [`Scalar`] and differentiated with the chunked dual type (decision 4),
+//! or with per-cell duals and a hand-written chain rule when the priors put
+//! effects on each cell (model 2).
 
 use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
@@ -519,7 +521,12 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 /// point ([`CompartmentalStart`]), a pilot run of `tune` warm-up and
 /// `max(tune, 100)` kept draws per chain, then the pilot draws' mean and
 /// covariance. The gradient comes from the density written once over
-/// dual numbers (decision 4); a non-finite value counts as a divergence.
+/// dual numbers (decision 4) for priors without effects by cell (model 1).
+/// With effects by cell (model 2, or any origin effect on a rate or
+/// development effect), it is per-cell dual numbers over the cell's four
+/// parameters and `log σ`, then a hand-written chain rule to the sampled
+/// parameters, checked against the single dual pass over the generic
+/// density by a unit test. A non-finite value counts as a divergence.
 ///
 /// An origin with a positive premium and no observed cell (the papers'
 /// training triangle has none for its youngest accident year) has no `z`:
@@ -889,6 +896,8 @@ impl Compartmental {
             .param("n_sims", n_sims)
             .param("seed", self.seed)
             .param("rate_order", format!("{:?}", self.rate_order))
+            .param("priors", format!("{pr:?}"))
+            .param("paid_response", format!("{:?}", self.paid_response))
             .param("premium", premium)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"));
         let both = PredictiveDistribution::simulate(
@@ -1214,9 +1223,15 @@ impl CompartmentalFit {
     }
 
     /// PSIS-LOO of the observed cells, with each cell's relative efficiency
-    /// from the chains. The pointwise term is the full normal log density of
-    /// each amount (brms' `log_lik`), so the result compares with other fits
-    /// of the same amounts only.
+    /// from the chains. The pointwise term is the full log density of each
+    /// cell's response under the fit's likelihood (brms' `log_lik`): normal,
+    /// or log-normal including its `-ln y` term, on the fit's scale (amounts
+    /// or loss ratios to premium) and paid response (cumulative or
+    /// incremental). So elpd_loo compares only fits with the same scale and
+    /// paid response: model 2's elpd on loss ratios does not compare with
+    /// model 1's on amounts. Check each cell's Pareto k: model 2 on the
+    /// papers' training triangle has a few above 0.7 (up to about 1.3), so
+    /// there the estimate is rough.
     pub fn loo(&self) -> Result<CompartmentalLoo> {
         let model = &self.model;
         let n = model.cells.len();
@@ -3791,6 +3806,30 @@ mod tests {
         assert!(os.iter().all(|v| v.is_finite() && *v > 0.0));
         let again = preset_2().prior_predictive(&tri, "premium", 500).unwrap();
         assert_eq!(draws, again.paid.draw_matrix());
+        // The provenance records the paid response and the priors.
+        let param = |pd: &PredictiveDistribution, key: &str| {
+            pd.provenance()
+                .parameters
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        let cumulative = Compartmental {
+            paid_response: PaidResponse::Cumulative,
+            ..preset_2()
+        }
+        .prior_predictive(&tri, "premium", 10)
+        .unwrap();
+        assert_ne!(
+            param(&paths.paid, "paid_response"),
+            param(&cumulative.paid, "paid_response")
+        );
+        let model_1 = preset().prior_predictive(&tri, "premium", 10).unwrap();
+        assert_ne!(
+            param(&paths.outstanding, "priors"),
+            param(&model_1.outstanding, "priors")
+        );
     }
 
     #[test]
