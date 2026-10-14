@@ -23,7 +23,8 @@ swing-rated layer, \verb{("ceding_commission", <layer name>)} per layer with a
 flat or sliding commission and \verb{("profit_commission", <layer name>)} per
 layer with a profit commission. \code{aggregate(result, keep = "kind")} gives
 gross, total ceded and net per year; net is a loss, before premiums and
-commissions.
+commissions. Take one kind with \code{\link[=select_components]{select_components()}} before joining it
+to a book: summing over \code{kind} adds gross, ceded and net together.
 }
 \description{
 With an \code{event_set} each year's individual losses go through the tower.

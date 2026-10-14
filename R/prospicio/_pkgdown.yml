@@ -61,6 +61,7 @@ reference:
       - blend_predictive
       - portfolio
       - marginal
+      - select_components
       - total
       - draw_matrix
       - provenance

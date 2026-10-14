@@ -13812,6 +13812,39 @@ class PredictiveDistribution:
         -------
         PredictiveDistribution
         """
+    def select(self, /, dim: str, keys: Sequence[int |str]) -> PredictiveDistribution:
+        """
+        The components whose value on dimension ``dim`` is one of ``keys``,
+        with every dimension and the draws' joint structure kept.
+        
+        Take one part of a result this way before joining it to another:
+        ``Tower.apply(...).select("kind", ["ceded"])`` is a treaty's cession,
+        ready to add to a book. Aggregating over ``kind`` instead adds gross,
+        ceded and net together.
+        
+        Parameters
+        ----------
+        dim : str
+        keys : list of int or str
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            An unknown dimension, no keys, or a key no component has.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(
+        ...     ["kind", "layer"], [("gross", "ground_up"), ("ceded", "5x5"), ("net", "retained")],
+        ...     [[10.0, 3.0, 7.0], [4.0, 0.0, 4.0]])
+        >>> pd.select("kind", ["ceded"]).mean()
+        1.5
+        """
     def total(self, /) -> Sampled:
         """
         The total over all components, one value per simulation.
@@ -15376,7 +15409,9 @@ class Tower:
         layer, ``("ceding_commission", name)`` per layer with a flat or
         sliding commission and ``("profit_commission", name)`` per layer with
         a profit commission. ``aggregate(["kind"])`` gives gross, total ceded
-        and net; net is a loss, before premiums and commissions.
+        and net; net is a loss, before premiums and commissions. Take one kind
+        with ``select("kind", ["ceded"])`` before joining it to a book:
+        summing over ``kind`` adds gross, ceded and net together.
         
         Parameters
         ----------
