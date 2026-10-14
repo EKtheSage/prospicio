@@ -100,4 +100,4 @@
   (`Program::rates`, `aggregate`'s `premium_style='rate'`), and
   `pnl::pnl_program_stated` prices an engine that states its own technical
   premium; `ProgramLayer` says its tier. Python `pnl_program_stated` and a
-  `rates` entry; R `pnl_program_stated()` and `rates`.
+  `rates` entry; R `pnl_program_stated()` and `rates` (#249).
