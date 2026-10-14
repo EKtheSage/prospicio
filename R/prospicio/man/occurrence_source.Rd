@@ -52,9 +52,10 @@ cells below \code{1e-15} of the total mass as round-off.
 the occurrence covers are one group named after the first layer, then
 each aggregate cover of \code{aggregate} recovers its cession of the net of
 the occurrence covers; a peel needs exactly one occurrence layer; the
-consolidated face is over the net loss at each atom. Occurrence layers
-may not carry annual terms (an aggregate deductible or limit, or a
-corridor).
+consolidated face is over the net loss at each atom. A single occurrence
+layer may carry annual terms and paid reinstatements, on the joint's
+unlimited annual cession \code{R}: its recovery \code{A(R)} and premium \code{D + h(R)}
+then vary with the year. On a tier of several layers they are refused.
 }
 \examples{
 sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))

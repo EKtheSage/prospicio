@@ -483,11 +483,19 @@ impl Book {
     /// route for several is not built). The consolidated face is over the
     /// net loss at each atom.
     ///
+    /// An occurrence tier of one layer may carry annual terms and paid
+    /// reinstatements, applied to the joint's second coordinate, its
+    /// unlimited annual cession `R`: the recovery is `share ×
+    /// after_terms(R / share)` and the premium the deposit plus the
+    /// reinstatement premium on that layer loss, `aggregate`'s `A(R)` and
+    /// `D + h(R)`, so the cover's premium varies with the year.
+    ///
     /// # Errors
     ///
-    /// As [`Book::ledger`], and a source that is not joint, an occurrence
-    /// layer with annual terms (an aggregate deductible or limit, or a
-    /// corridor), or a peel through more than one occurrence layer.
+    /// As [`Book::ledger`], and a source that is not joint, annual terms or
+    /// reinstatements on an occurrence tier of several layers, loss-sensitive
+    /// terms on an occurrence layer, or a peel through more than one
+    /// occurrence layer.
     pub fn occurrence_ledger(
         &self,
         joint: &Source,
@@ -508,7 +516,7 @@ impl Book {
                     .into(),
             ));
         }
-        check_tower(occurrence)?;
+        check_events(occurrence)?;
         check_occurrence(occurrence)?;
         if let Some(t) = aggregate {
             check_tower(t)?;
@@ -644,8 +652,12 @@ impl Book {
         face: Face,
     ) -> Result<Ledger> {
         let xs = source.values();
-        let occ_ceded: Vec<f64> = match occ {
-            Some(_) => source.second().unwrap_or_default().to_vec(),
+        // The occurrence tier's cash flows from the joint's unlimited annual
+        // cession: its recovery after any annual terms, and its premium with
+        // any reinstatement premium.
+        let occ_flows = occ.map(|t| occurrence_flows(t, source.second().unwrap_or_default()));
+        let occ_ceded: Vec<f64> = match &occ_flows {
+            Some(f) => f.recovery.clone(),
             None => vec![0.0; xs.len()],
         };
         // The aggregate covers' subject: the gross, or its net of the
@@ -667,9 +679,8 @@ impl Book {
                 })
                 .collect();
             let mut covers = Vec::new();
-            if let Some(t) = occ {
-                let all: Vec<&Layer> = t.layers.iter().collect();
-                covers.push(Flows::fixed(&all, occ_ceded.clone()));
+            if let Some(f) = occ_flows {
+                covers.push(f);
             }
             if let (Some(t), Some(ceded)) = (agg, &agg_ceded) {
                 let all: Vec<usize> = (0..t.layers.len()).collect();
@@ -698,10 +709,10 @@ impl Book {
                         .into(),
                 ));
             }
-            let picked: Vec<&Layer> = idx.iter().map(|&i| &t.layers[i]).collect();
+            let flows = occ_flows.ok_or_else(|| Error::Data("no occurrence flows".into()))?;
             groups.push(cover_group(
-                picked[0].name.clone(),
-                Flows::fixed(&picked, occ_ceded.clone()),
+                t.layers[idx[0]].name.clone(),
+                flows,
                 &mut taken,
             ));
             spans.push(("All occurrence", 1, 2));
@@ -928,14 +939,87 @@ fn cover_group(label: String, f: Flows, taken: &mut Vec<String>) -> Group {
     g
 }
 
-/// Refuses an occurrence layer with annual terms: a claim's cession alone
-/// cannot carry them.
+/// Whether an occurrence tier is one layer with annual terms or paid
+/// reinstatements, applied to the joint's unlimited annual cession.
+fn annual_occurrence(tower: &Tower) -> Option<&Layer> {
+    match tower.layers.as_slice() {
+        [l] if l.has_annual_terms() || !l.reinstatement_rates.is_empty() => Some(l),
+        _ => None,
+    }
+}
+
+/// The occurrence tier's cash flows at each atom, `ceded` the joint's
+/// unlimited annual cession (at the placed share): with one layer carrying
+/// annual terms, its recovery `share × after_terms(R / share)` and its
+/// premium plus the reinstatement premium on that layer loss
+/// (`aggregate`'s `A(R)` and `D + h(R)`); otherwise the cession itself and
+/// the fixed premium.
+fn occurrence_flows(tower: &Tower, ceded: &[f64]) -> Flows {
+    let Some(l) = annual_occurrence(tower) else {
+        let live: Vec<&Layer> = tower.layers.iter().filter(|l| l.share != 0.0).collect();
+        return Flows::fixed(&live, ceded.to_vec());
+    };
+    let loss: Vec<f64> = ceded
+        .iter()
+        .map(|&r| {
+            if l.share > 0.0 {
+                l.after_terms(r / l.share)
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    let premium: Vec<f64> = loss
+        .iter()
+        .map(|&x| l.premium + l.reinstatement_premium_on(x))
+        .collect();
+    Flows {
+        premium,
+        premium_varies: !l.reinstatement_rates.is_empty(),
+        recovery: loss.iter().map(|x| l.share * x).collect(),
+        flat: flat_commission(l),
+        sliding: None,
+        profit: None,
+    }
+}
+
+/// The tower each claim is ceded to: a single layer's annual terms and
+/// reinstatements stripped, as they apply to the year's total.
+fn per_claim(tower: &Tower) -> Result<Tower> {
+    match annual_occurrence(tower) {
+        Some(l) => {
+            let mut l = l.clone();
+            l.aggregate_deductible = 0.0;
+            l.aggregate_limit = f64::INFINITY;
+            l.corridor = None;
+            l.reinstatement_rates = Vec::new();
+            Tower::new(vec![l])
+        }
+        None => Ok(tower.clone()),
+    }
+}
+
+/// Refuses an occurrence tier the joint cannot carry: annual terms or
+/// reinstatements on a tier of several layers (the joint carries the
+/// tier's total cession), or loss-sensitive terms.
 fn check_occurrence(tower: &Tower) -> Result<()> {
-    for l in &tower.layers {
-        if l.aggregate_deductible != 0.0 || l.aggregate_limit.is_finite() || l.corridor.is_some() {
+    if annual_occurrence(tower).is_some() {
+        let l = &tower.layers[0];
+        if l.pro_rata_time {
             return Err(Error::Data(format!(
-                "occurrence layer {:?} has annual terms (an aggregate deductible or limit, or a \
-                 corridor); the joint source carries each claim's cession only",
+                "occurrence layer {:?} has reinstatements pro rata as to time; the joint carries \
+                 no event times",
+                l.name
+            )));
+        }
+    }
+    for l in &tower.layers {
+        let annual = l.has_annual_terms() || !l.reinstatement_rates.is_empty();
+        if annual && tower.layers.len() > 1 {
+            return Err(Error::Data(format!(
+                "occurrence layer {:?} has annual terms or reinstatements on a tier of several \
+                 layers; the joint source carries the tier's total cession, so only a tier of \
+                 one layer may have them",
                 l.name
             )));
         }
@@ -962,6 +1046,9 @@ fn check_occurrence(tower: &Tower) -> Result<()> {
 /// compounded by [`fft_bivariate`](crate::bivariate::fft_bivariate) on
 /// `points` points per axis, cells below `1e-15` of the total mass are
 /// dropped as round-off (`aggregate`'s floor), and the rest are the atoms.
+/// A tier of one layer with annual terms or reinstatements cedes each
+/// claim without them: the second coordinate is then the unlimited annual
+/// cession, which [`Book::occurrence_ledger`] caps.
 ///
 /// ```
 /// use prospicio_aggregate::pnl::occurrence_source;
@@ -980,8 +1067,8 @@ fn check_occurrence(tower: &Tower) -> Result<()> {
 ///
 /// # Errors
 ///
-/// An occurrence layer with annual terms or one that needs each event's
-/// sum insured or time, loss-sensitive terms, or what
+/// Annual terms or reinstatements on a tier of several layers, a layer that
+/// needs each event's sum insured or time, loss-sensitive terms, or what
 /// [`fft_bivariate`](crate::bivariate::fft_bivariate) refuses.
 pub fn occurrence_source<N: Counting + ?Sized>(
     frequency: &N,
@@ -989,12 +1076,13 @@ pub fn occurrence_source<N: Counting + ?Sized>(
     occurrence: &Tower,
     points: [usize; 2],
 ) -> Result<(Source, BivariateReport)> {
-    check_tower(occurrence)?;
+    check_events(occurrence)?;
     check_occurrence(occurrence)?;
+    let claims = per_claim(occurrence)?;
     let h = severity.step();
     let cession: Vec<f64> = (0..severity.len())
         .map(|k| {
-            occurrence
+            claims
                 .year(&[k as f64 * h], None, None)
                 .iter()
                 .map(|(c, _)| c)
@@ -1058,8 +1146,8 @@ fn flat_commission(layer: &Layer) -> f64 {
     }
 }
 
-/// Refuses a layer the builders cannot book.
-fn check_tower(tower: &Tower) -> Result<()> {
+/// Refuses a layer that needs each event's sum insured or time.
+fn check_events(tower: &Tower) -> Result<()> {
     for l in &tower.layers {
         if l.needs_sums_insured() || l.needs_times() {
             return Err(Error::Data(format!(
@@ -1068,13 +1156,25 @@ fn check_tower(tower: &Tower) -> Result<()> {
                 l.name
             )));
         }
-        if !l.reinstatement_rates.is_empty() {
-            return Err(Error::Data(format!(
-                "layer {:?} has paid reinstatements; the builders do not book reinstatement \
-                 premiums, so write its legs with Leg::of",
-                l.name
-            )));
-        }
+    }
+    Ok(())
+}
+
+/// Refuses an annual cover the builders cannot book: one that needs each
+/// event, or paid reinstatements, which belong to an occurrence cover
+/// ([`Book::occurrence_ledger`]).
+fn check_tower(tower: &Tower) -> Result<()> {
+    check_events(tower)?;
+    if let Some(l) = tower
+        .layers
+        .iter()
+        .find(|l| !l.reinstatement_rates.is_empty())
+    {
+        return Err(Error::Data(format!(
+            "layer {:?} has paid reinstatements, which apply to an occurrence cover: book it \
+             with occurrence_ledger over the joint source",
+            l.name
+        )));
     }
     Ok(())
 }
@@ -1128,14 +1228,19 @@ mod tests {
             book.occurrence_ledger(&joint, &occ, None, Face::Walk)
                 .is_ok()
         );
-        // Annual terms on an occurrence layer.
-        let annual = Tower::new(vec![
-            Layer::xol("a", 1.0, 1.0)
-                .unwrap()
-                .aggregate_limit(2.0)
-                .unwrap(),
-        ])
-        .unwrap();
+        // Annual terms on a single occurrence layer apply to the joint's
+        // annual cession; on a tier of several they cannot.
+        let capped = Layer::xol("a", 1.0, 1.0)
+            .unwrap()
+            .aggregate_limit(1.5)
+            .unwrap();
+        let one = Tower::new(vec![capped.clone()]).unwrap();
+        let l = book
+            .occurrence_ledger(&joint, &one, None, Face::Walk)
+            .unwrap();
+        // Ceded 1 and 2, capped at 1.5: a recovery of 1.25.
+        assert!((l.row("a recovery").unwrap().mean() - 1.25).abs() < 1e-12);
+        let annual = Tower::new(vec![capped, Layer::xol("b", 2.0, 2.0).unwrap()]).unwrap();
         assert!(
             book.occurrence_ledger(&joint, &annual, None, Face::Walk)
                 .is_err()

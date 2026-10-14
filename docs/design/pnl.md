@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **In progress** (PRs 1 to 5 and 6a done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **Done** (PRs 1 to 6b) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -292,10 +292,32 @@ Each PR is one type or method, with its parity tests, bindings and docs.
       `Book(retro=)`, `pnl_program`, `size_premium`, `round_premium`; R
       `pnl_book(retro =)`, `pnl_program()`, `size_premium()`,
       `round_premium()`.
-   b. **Reinstatement premiums** as legs, `D + h(R)` on the `(L, R)`
-      joint: an occurrence layer with paid reinstatements over the joint
-      of the gross loss and its unlimited annual cession, both faces over
-      the joint.
+   b. (Done.) **Reinstatement premiums** as legs, `D + h(R)` on the
+      `(L, R)` joint. An occurrence tier of one layer may carry annual
+      terms and paid reinstatements: `occurrence_source` cedes each claim
+      without them, so the joint's second coordinate is the unlimited
+      annual cession `R`, and `Book::occurrence_ledger` books the recovery
+      `A(R) = share × after_terms(R / share)` (the new crate-level
+      `Layer::after_terms` applies the deductible, corridor and annual
+      limit) and the premium `D + h(R)`, the deposit plus the reinstatement
+      premium pro rata as to amount on that layer loss
+      (`Layer::reinstatement_premium_on`), on every face; an aggregate
+      cover behind it recovers on `max(L − A(R), 0)`. On a tier of several
+      layers annual terms and reinstatements are refused (the joint
+      carries the total cession), as `aggregate` requires a single
+      reinstated layer; annual covers refuse reinstatements, which belong
+      to an occurrence cover. `aggregate` refuses to peel a reinstated
+      program; prospicio peels it, the tier being one layer. Its
+      consolidated face is over the joint with a loss-basis expense
+      stochastic on the gross; prospicio's is the same per-atom ledger
+      with the expense at its expectation, as everywhere. Parity:
+      `validation/scripts/aggregate_pnl_reinstatements.py`, 1,121 values
+      on example 4's joint: one reinstatement at 100%, none (an annual
+      limit of 2), and one free and one at 50% with a ceding commission
+      and an aggregate cover behind it, each walked and consolidated, at
+      `1e-12` (standard deviations relative to `1e-10`: `E[X²] − E[X]²`
+      on a net premium of 17.4 with an SD of 0.24 loses about `1e-12` to
+      cancellation, summed in different orders on each side).
 
 ## Validation
 
