@@ -50,7 +50,10 @@ pub mod weibull;
 
 pub use beta::Beta;
 pub use burr::Burr;
-pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, StudentTCopula};
+pub use copula::{
+    Archimedean, ArchimedeanCopula, Copula, GaussianCopula, NestedArchimedeanCopula, NestedNode,
+    StudentTCopula,
+};
 pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
 pub use custom::Custom;
 pub use discrete::{Discrete, TailRow};

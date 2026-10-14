@@ -238,3 +238,27 @@ def test_copula_cdfs():
         c.cdf([0.4, 0.6])
     with pytest.raises(ValueError):
         StudentTCopula([[1.0, 0.5], [0.5, 1.0]], 4.0).cdf([0.5, 0.5])
+
+
+def test_nested_archimedean_copula():
+    from prospicio.risk import ArchimedeanCopula, NestedArchimedeanCopula
+
+    tree = (1.5, [0, (3.0, [1, 2]), (2.0, [3, 4])])
+    c = NestedArchimedeanCopula("gumbel", tree)
+    assert c.dim == 5 and c.tree == tree
+    # A coordinate at 1 does not constrain; one node is the flat copula.
+    assert c.cdf([1.0, 0.5, 1.0, 1.0, 1.0]) == pytest.approx(0.5)
+    flat = ArchimedeanCopula("clayton", 2.0, 3)
+    one = NestedArchimedeanCopula("clayton", (2.0, [0, 1, 2]))
+    assert one.sample(20, 4) == flat.sample(20, 4)
+    assert one.cdf([0.3, 0.5, 0.8]) == pytest.approx(flat.cdf([0.3, 0.5, 0.8]), rel=1e-14)
+    with pytest.raises(ValueError):
+        NestedArchimedeanCopula("gumbel", (3.0, [0, (2.0, [1, 2])]))
+    with pytest.raises(ValueError):
+        NestedArchimedeanCopula("frank", (2.0, [0, 1]))
+    # It joins marginals like any copula.
+    from prospicio.distributions import Lognormal
+    from prospicio.risk import simulate
+
+    pd = simulate(c, [Lognormal.from_mean_cv(1.0, 0.5)] * 5, 2000, 3)
+    assert pd.mean() == pytest.approx(5.0, rel=0.05)
