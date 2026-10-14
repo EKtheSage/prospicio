@@ -37,6 +37,7 @@ reference:
       - generalized_pareto
       - pareto_fit
       - severity_fit
+      - product_limit
       - local_pareto_to_piecewise
       - pareto_severity
       - local_alpha

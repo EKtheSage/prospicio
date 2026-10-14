@@ -85,8 +85,20 @@ conversion reports the error it introduces.
   standard errors on 10,000 draws reported above 300 for half of them and
   capped at 5,000, with a zero score at the maximum. This answers the
   issue's GLM line too: an intercept-only GLM stays untruncated.
-  Goodness-of-fit diagnostics for such data (a product-limit estimator
-  with left truncation, P-P and Q-Q against the fit) come next.
+  The diagnostics for such data are `severity_fit::product_limit`, the
+  Kaplan–Meier estimator with left truncation (the risk set at `x` is the
+  weight with `r < x ≤ y`; Tsai, Jewell and Wang, 1987), which estimates
+  `S(x)/S(τ)` with `τ` the lowest reporting threshold, and
+  `goodness_of_fit(dist, data)`, which sets any severity against it: P-P
+  (the model's `S(x)/S(τ)`), Q-Q (the model's conditional quantile at the
+  middle of each step, so the last step's estimate of 0 does not ask for
+  the quantile at 1) and the largest distance on both sides of each jump.
+  The distance is a Kolmogorov–Smirnov statistic, but its null
+  distribution is not the classical one once parameters are fitted or the
+  data truncated, so no p-value is given. Tested: the weighted empirical
+  survival without truncation, a truncated risk set, and Weibull draws
+  reported above 0, 200 or 500 and capped at 4,000 within 0.02 of the
+  truth, with the Q-Q column within 10% where the risk set is large.
 - `prospicio_prob::PolicyLimits` (decided 2026-10-14, #213) is a severity
   capped by a mix of policy limits, `min(X, L)` with `L = limits[j]` with
   probability `weights[j]` (normalized to 1; infinity for an unlimited

@@ -367,6 +367,144 @@ fn covariance(family: Family, p: &[f64], data: &LargeLosses) -> Vec<f64> {
     cov
 }
 
+/// One step of the [`product_limit`] estimator, at a value where an
+/// uncensored loss lies.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProductLimitStep {
+    /// The value.
+    pub x: f64,
+    /// The weight at risk: losses reported below `x` and not below it,
+    /// `Σ w` over `r < x ≤ y`.
+    pub at_risk: f64,
+    /// The uncensored weight at `x`.
+    pub events: f64,
+    /// `Ŝ(x)`, the estimate of `P(X > x | X > τ)` with `τ` the lowest
+    /// reporting threshold.
+    pub survival: f64,
+}
+
+/// The product-limit (Kaplan–Meier) estimator for left-truncated,
+/// right-censored losses: at each value `x` where an uncensored loss lies,
+/// `Ŝ(x) = Π (1 − d/n)` with `d` the uncensored weight at `x` and `n` the
+/// weight at risk, the losses with `r < x ≤ y` (Tsai, Jewell and Wang,
+/// 1987). It estimates the survival conditional on the lowest reporting
+/// threshold `τ`, `S(x)/S(τ)`; without truncation or censoring it is the
+/// empirical survival function. A step whose risk set is a single loss
+/// can drop the estimate to 0 early; read the tail with `at_risk`.
+///
+/// ```
+/// use prospicio_prob::LargeLosses;
+/// use prospicio_prob::severity_fit::product_limit;
+///
+/// let data = LargeLosses::new(vec![100.0, 200.0, 300.0, 400.0]).unwrap();
+/// let s: Vec<f64> = product_limit(&data).iter().map(|p| p.survival).collect();
+/// assert_eq!(s, vec![0.75, 0.5, 0.25, 0.0]);
+/// ```
+pub fn product_limit(data: &LargeLosses) -> Vec<ProductLimitStep> {
+    let rows: Vec<_> = data.rows().collect();
+    let mut xs: Vec<f64> = rows.iter().filter(|r| !r.2).map(|r| r.0).collect();
+    xs.sort_by(f64::total_cmp);
+    xs.dedup();
+    let mut survival = 1.0;
+    xs.into_iter()
+        .map(|x| {
+            let (mut at_risk, mut events) = (0.0, 0.0);
+            for &(y, r, censored, w) in &rows {
+                if r < x && x <= y {
+                    at_risk += w;
+                }
+                if !censored && y == x {
+                    events += w;
+                }
+            }
+            if at_risk > 0.0 {
+                survival *= 1.0 - events / at_risk;
+            }
+            ProductLimitStep {
+                x,
+                at_risk,
+                events,
+                survival,
+            }
+        })
+        .collect()
+}
+
+/// A fit against the [`product_limit`] estimate at each of its steps.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GoodnessOfFit {
+    /// The product-limit steps.
+    pub steps: Vec<ProductLimitStep>,
+    /// The model's survival conditional on the lowest reporting threshold
+    /// `τ`, `S(x)/S(τ)`, at each step: the P-P comparison with
+    /// `steps[i].survival`.
+    pub model_survival: Vec<f64>,
+    /// The model's conditional quantile at the middle of each step,
+    /// `Q(1 − Ŝ_mid S(τ))` with `Ŝ_mid` halfway between the estimate before
+    /// and after the step: the Q-Q comparison with `steps[i].x`.
+    pub model_quantile: Vec<f64>,
+    /// `max |Ŝ − S/S(τ)|` over the steps, on both sides of each jump: a
+    /// Kolmogorov–Smirnov distance (its null distribution is not the
+    /// classical one once the parameters are fitted or the data truncated).
+    pub max_distance: f64,
+}
+
+/// Compares `dist` with the [`product_limit`] estimate of `data`, each loss
+/// conditioned on its reporting threshold: P-P (survival), Q-Q (quantiles
+/// at the steps' middles) and the largest distance between the two
+/// survival functions. Works for any severity, a [`fit_severity`] result
+/// or a Pareto fit.
+///
+/// ```
+/// use prospicio_prob::severity_fit::{Family, fit_severity, goodness_of_fit};
+/// use prospicio_prob::LargeLosses;
+///
+/// let data = LargeLosses::new(vec![120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0]).unwrap();
+/// let fit = fit_severity(Family::Lognormal, &data).unwrap();
+/// let gof = goodness_of_fit(fit.dist(), &data).unwrap();
+/// assert_eq!(gof.steps.len(), 6);
+/// assert!(gof.max_distance < 0.3);
+/// ```
+///
+/// # Errors
+///
+/// When `dist` gives the lowest reporting threshold no probability.
+pub fn goodness_of_fit<D: crate::Distribution + ?Sized>(
+    dist: &D,
+    data: &LargeLosses,
+) -> Result<GoodnessOfFit> {
+    let tau = data.rows().map(|r| r.1).fold(f64::INFINITY, f64::min);
+    let s_tau = if tau > 0.0 { dist.survival(tau) } else { 1.0 };
+    if s_tau.is_nan() || s_tau <= 0.0 {
+        return Err(Error::Data(format!(
+            "the distribution gives no probability above the lowest reporting threshold {tau}"
+        )));
+    }
+    let steps = product_limit(data);
+    let (mut before, mut max_distance) = (1.0, 0.0f64);
+    let mut model_survival = Vec::with_capacity(steps.len());
+    let mut model_quantile = Vec::with_capacity(steps.len());
+    for st in &steps {
+        let m = dist.survival(st.x) / s_tau;
+        max_distance = max_distance
+            .max((st.survival - m).abs())
+            .max((before - m).abs());
+        model_survival.push(m);
+        let mid = 0.5 * (before + st.survival);
+        model_quantile.push(
+            dist.quantile((1.0 - mid * s_tau).clamp(0.0, 1.0))
+                .unwrap_or(f64::NAN),
+        );
+        before = st.survival;
+    }
+    Ok(GoodnessOfFit {
+        steps,
+        model_survival,
+        model_quantile,
+        max_distance,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,6 +602,48 @@ mod tests {
                 assert!((g * se[i]).abs() < 1e-2, "{family:?} score {i}: {g}");
             }
         }
+    }
+
+    #[test]
+    fn product_limit_handles_truncation_and_censoring() {
+        // Weighted, without truncation or censoring: the empirical survival.
+        let data = LargeLosses::new(vec![100.0, 200.0, 200.0, 400.0])
+            .unwrap()
+            .weights(vec![1.0, 2.0, 1.0, 4.0])
+            .unwrap();
+        let s: Vec<f64> = product_limit(&data).iter().map(|p| p.survival).collect();
+        assert_eq!(s, vec![7.0 / 8.0, 0.5, 0.0]);
+        // Truncated and censored draws track the true conditional survival.
+        let truth = Weibull::new(0.8, 1000.0).unwrap();
+        let draws = truth.sample(&mut StreamRng::new(5, 0), 20_000);
+        let (mut y, mut r, mut c) = (vec![], vec![], vec![]);
+        for (i, x) in draws.into_iter().enumerate() {
+            let threshold = [0.0, 200.0, 500.0][i % 3];
+            if x <= threshold {
+                continue;
+            }
+            y.push(x.min(4000.0));
+            r.push(threshold);
+            c.push(x > 4000.0);
+        }
+        let data = LargeLosses::new(y)
+            .unwrap()
+            .reporting_thresholds(r)
+            .unwrap()
+            .censored(c)
+            .unwrap();
+        let gof = goodness_of_fit(&truth, &data).unwrap();
+        assert!(gof.max_distance < 0.02, "{}", gof.max_distance);
+        // The Q-Q column runs close to the data where the risk set is large.
+        for (st, q) in gof.steps.iter().zip(&gof.model_quantile) {
+            if st.at_risk > 1000.0 && st.x > 50.0 {
+                assert!((q / st.x - 1.0).abs() < 0.1, "{} {q}", st.x);
+            }
+        }
+        // A fit is at least as close as the truth it came from, roughly.
+        let fit = fit_severity(Family::Weibull, &data).unwrap();
+        let gof_fit = goodness_of_fit(fit.dist(), &data).unwrap();
+        assert!(gof_fit.max_distance < 0.02);
     }
 
     #[test]

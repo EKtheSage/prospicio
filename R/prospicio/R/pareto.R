@@ -1130,3 +1130,50 @@ severity_fit <- function(family, losses, reporting_thresholds = NULL, censored =
     log_likelihood = r$log_likelihood, aic = r$aic, bic = r$bic, converged = r$converged
   )
 }
+
+#' Product-limit estimate and goodness of fit for large losses
+#'
+#' `product_limit()` is the Kaplan-Meier estimator for left-truncated,
+#' right-censored losses: at each value `x` where an uncensored loss lies,
+#' the weight at risk (losses reported below `x` and not below it), the
+#' uncensored weight there, and the survival conditional on the lowest
+#' reporting threshold, `prod(1 - events / at_risk)`.
+#'
+#' `goodness_of_fit()` compares a severity with that estimate: P-P
+#' (`survival` against `model_survival`, the model's survival conditional on
+#' the lowest reporting threshold), Q-Q (`x` against `model_quantile`, the
+#' model's conditional quantile at the middle of each step) and
+#' `max_distance`, the largest gap between the two survival functions.
+#'
+#' @param severity A fitted or any other severity.
+#' @inheritParams pareto_fit
+#' @returns `product_limit()`: a data frame with `x`, `at_risk`, `events`,
+#'   `survival`. `goodness_of_fit()`: a list with a data frame `table` (`x`,
+#'   `at_risk`, `survival`, `model_survival`, `model_quantile`) and
+#'   `max_distance`.
+#' @export
+#' @examples
+#' product_limit(c(100, 200, 300, 400))
+#' y <- c(120, 300, 450, 800, 1500, 2600)
+#' goodness_of_fit(severity_fit("lognormal", y)$distribution, y)$max_distance
+product_limit <- function(losses, reporting_thresholds = NULL, censored = NULL, weights = NULL) {
+  as.data.frame(rust_result(product_limit_rust(
+    as.double(losses), optional_arg(reporting_thresholds), optional_arg(censored),
+    optional_arg(weights)
+  )))
+}
+
+#' @rdname product_limit
+#' @export
+goodness_of_fit <- function(severity, losses, reporting_thresholds = NULL, censored = NULL,
+                            weights = NULL) {
+  r <- rust_result(goodness_of_fit_rust(
+    severity@ptr, as.double(losses), optional_arg(reporting_thresholds),
+    optional_arg(censored), optional_arg(weights)
+  ))
+  list(
+    table = data.frame(x = r$x, at_risk = r$at_risk, survival = r$survival,
+                       model_survival = r$model_survival, model_quantile = r$model_quantile),
+    max_distance = r$max_distance
+  )
+}

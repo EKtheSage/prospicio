@@ -743,6 +743,47 @@ fn severity_fit_rust(
     ))
 }
 
+/// The product-limit estimator: `list(x, at_risk, events, survival)`.
+#[extendr]
+fn product_limit_rust(
+    losses: &[f64],
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+) -> Result<List> {
+    let data = large_losses(losses, reporting, censored, weights)?;
+    let s = prospicio_prob::severity_fit::product_limit(&data);
+    Ok(list!(
+        x = s.iter().map(|p| p.x).collect::<Vec<_>>(),
+        at_risk = s.iter().map(|p| p.at_risk).collect::<Vec<_>>(),
+        events = s.iter().map(|p| p.events).collect::<Vec<_>>(),
+        survival = s.iter().map(|p| p.survival).collect::<Vec<_>>()
+    ))
+}
+
+/// A severity against the product-limit estimate: `list(x, at_risk,
+/// survival, model_survival, model_quantile, max_distance)`.
+#[extendr]
+fn goodness_of_fit_rust(
+    severity: Robj,
+    losses: &[f64],
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+) -> Result<List> {
+    let dist = crate::distributions::dist_from_robj(&severity)?;
+    let data = large_losses(losses, reporting, censored, weights)?;
+    let g = prospicio_prob::severity_fit::goodness_of_fit(&dist, &data).map_err(to_r)?;
+    Ok(list!(
+        x = g.steps.iter().map(|p| p.x).collect::<Vec<_>>(),
+        at_risk = g.steps.iter().map(|p| p.at_risk).collect::<Vec<_>>(),
+        survival = g.steps.iter().map(|p| p.survival).collect::<Vec<_>>(),
+        model_survival = g.model_survival,
+        model_quantile = g.model_quantile,
+        max_distance = g.max_distance
+    ))
+}
+
 /// A finite mixture of severities.
 #[extendr]
 pub(crate) struct MixtureDist {
@@ -871,6 +912,8 @@ extendr_module! {
     impl PolicyLimitsDist;
     fn pareto_fit_standard_error_rust;
     fn severity_fit_rust;
+    fn product_limit_rust;
+    fn goodness_of_fit_rust;
     fn piecewise_pareto_fit_standard_errors_rust;
     impl MixtureDist;
     impl Binomial;

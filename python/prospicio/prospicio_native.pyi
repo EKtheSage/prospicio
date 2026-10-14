@@ -18286,6 +18286,39 @@ def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |N
     float
     """
 
+def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict:
+    """
+    A severity against the product-limit estimate of large losses, each
+    conditioned on its reporting threshold: P-P (``survival`` against
+    ``model_survival``, the model's survival conditional on the lowest
+    reporting threshold), Q-Q (``x`` against ``model_quantile``, the
+    model's conditional quantile at the middle of each step) and
+    ``max_distance``, the largest gap between the two survival functions.
+    
+    Parameters
+    ----------
+    severity : a distribution
+        A fit's ``distribution``, a Pareto fit, or any other.
+    losses : list of float
+    reporting_thresholds : list of float, optional
+    censored : list of bool, optional
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict
+        ``x``, ``at_risk``, ``survival``, ``model_survival``,
+        ``model_quantile`` (lists) and ``max_distance`` (float).
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import fit_severity, goodness_of_fit
+    >>> y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0]
+    >>> gof = goodness_of_fit(fit_severity("lognormal", y).distribution, y)
+    >>> len(gof["x"]), gof["max_distance"] < 0.3
+    (6, True)
+    """
+
 def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[int], list[int]]]:
     """
     Grouped ``k``-fold splits: each group's rows stay in one fold.
@@ -19205,6 +19238,33 @@ def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_c
     [3.5, 0.681818]
     >>> p.allocated[1].margin < 0  # the second cover hedges the first
     True
+    """
+
+def product_limit(losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict[str, list[float]]:
+    """
+    The product-limit (Kaplan–Meier) estimator for left-truncated,
+    right-censored losses: at each value where an uncensored loss lies, the
+    weight at risk (losses reported below it and not below it), the
+    uncensored weight there and ``S(x)``, the survival conditional on the
+    lowest reporting threshold.
+    
+    Parameters
+    ----------
+    losses : list of float
+    reporting_thresholds : list of float, optional
+    censored : list of bool, optional
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict of str to list of float
+        ``x``, ``at_risk``, ``events`` and ``survival``.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import product_limit
+    >>> product_limit([100.0, 200.0, 300.0, 400.0])["survival"]
+    [0.75, 0.5, 0.25, 0.0]
     """
 
 def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n_draws: int = 1000, seed: int = 0) -> list[float]:

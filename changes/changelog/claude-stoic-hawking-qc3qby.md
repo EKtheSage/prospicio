@@ -30,6 +30,12 @@
   distribution, parameters, standard errors and covariance,
   log-likelihood, AIC and BIC. Python `fit_severity` and `SeverityFit`; R
   `severity_fit()`.
+- Goodness of fit for large losses with reporting thresholds and
+  censoring (#194): the product-limit (Kaplan–Meier) estimator with left
+  truncation, `severity_fit::product_limit`, and
+  `severity_fit::goodness_of_fit`, which sets any severity against it
+  (P-P, Q-Q and the largest distance). Python `product_limit`,
+  `goodness_of_fit`; R `product_limit()`, `goodness_of_fit()`.
 
 ### Aggregate and reinsurance
 

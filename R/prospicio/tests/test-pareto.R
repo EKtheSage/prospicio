@@ -172,3 +172,12 @@ stopifnot(inherits(f$distribution, "prospicio::lognormal"), all(dim(f$covariance
 fb <- severity_fit("burr", y, reporting_thresholds = ifelse(y > 100, 100, 0), censored = y >= 4000)
 stopifnot(inherits(fb$distribution, "prospicio::burr_distribution"), is.finite(fb$log_likelihood))
 stopifnot(inherits(try(severity_fit("pareto", y), silent = TRUE), "try-error"))
+
+# Issue #194: the product-limit estimator and goodness of fit.
+pl <- product_limit(c(100, 200, 200, 400), weights = c(1, 2, 1, 4))
+stopifnot(isTRUE(all.equal(pl$survival, c(7 / 8, 0.5, 0))))
+stopifnot(identical(product_limit(c(120, 200, 300), c(0, 150, 150))$at_risk, c(1, 2, 1)))
+gy <- c(120, 300, 450, 800, 1500, 2600, 4000)
+gc <- c(rep(FALSE, 6), TRUE)
+g <- goodness_of_fit(severity_fit("weibull", gy, censored = gc)$distribution, gy, censored = gc)
+stopifnot(nrow(g$table) == 6, g$max_distance > 0, g$max_distance < 0.5)

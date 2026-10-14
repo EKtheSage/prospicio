@@ -32,7 +32,9 @@ from .prospicio_native import (
     claim_count,
     fit_severity,
     from_json,
+    goodness_of_fit,
     local_pareto_to_piecewise,
+    product_limit,
     to_json,
 )
 
@@ -61,6 +63,8 @@ __all__ = [
     "claim_count",
     "SeverityFit",
     "fit_severity",
+    "product_limit",
+    "goodness_of_fit",
     "local_pareto_to_piecewise",
     "Grid",
     "DiscretizationReport",

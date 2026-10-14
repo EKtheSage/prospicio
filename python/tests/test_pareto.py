@@ -182,3 +182,22 @@ def test_issue_194_severity_fits_with_truncation_and_censoring():
         assert math.isfinite(f.log_likelihood)
     with pytest.raises(ValueError):
         D.fit_severity("pareto", y)
+
+
+def test_issue_194_product_limit_and_goodness_of_fit():
+    # Without truncation or censoring, the weighted empirical survival.
+    pl = D.product_limit([100.0, 200.0, 200.0, 400.0], weights=[1.0, 2.0, 1.0, 4.0])
+    assert pl["survival"] == pytest.approx([7 / 8, 0.5, 0.0])
+    # Truncation shrinks the risk set: losses reported above 150 are not at
+    # risk at 120.
+    pl = D.product_limit([120.0, 200.0, 300.0], reporting_thresholds=[0.0, 150.0, 150.0])
+    assert pl["at_risk"] == [1.0, 2.0, 1.0]
+    y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0]
+    c = [False] * 6 + [True]
+    fit = D.fit_severity("weibull", y, censored=c)
+    gof = D.goodness_of_fit(fit.distribution, y, censored=c)
+    assert gof["x"] == y[:6]
+    assert 0.0 < gof["max_distance"] < 0.5
+    assert len(gof["model_quantile"]) == 6
+    # Any severity works, a Pareto fit included.
+    assert D.goodness_of_fit(D.Pareto.fit(y, 100.0), y)["max_distance"] > 0.0

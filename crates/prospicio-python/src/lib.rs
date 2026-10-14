@@ -79,7 +79,7 @@ mod prospicio_native {
         PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma,
         PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
         PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PyTruncated, PyTweedie, PyWeibull,
-        claim_count, fit_severity, local_pareto_to_piecewise,
+        claim_count, fit_severity, goodness_of_fit, local_pareto_to_piecewise, product_limit,
     };
     #[pymodule_export]
     use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
