@@ -3357,7 +3357,7 @@ class CollectiveModel:
 class Compartmental:
     """
     Gesmann and Morris' (2020) hierarchical compartmental reserving model
-    with one outstanding compartment, their model 1
+    with one outstanding compartment, their models 1 and 2
     (``docs/design/reserving-compartmental.md``). Claims flow from exposure
     into outstanding as they are reported, at rate ``k_er``, and from
     outstanding into paid as they settle, at rate ``k_p``. For origin ``i``
@@ -3369,53 +3369,65 @@ class Compartmental:
     
     so ``RLR_i`` is the reported loss ratio, ``RRF_i`` the reserve
     robustness factor (paid over reported) and ``RLR_i RRF_i`` the ultimate
-    loss ratio. The rates are shared; ``RLR`` and ``RRF`` vary by origin with
-    correlated effects (LKJ prior on the correlation) on the priors' ``o``
-    scale. Outstanding and cumulative paid amounts are normal about these
-    curves, each type with its own sigma. NUTS samples the posterior on a
-    pilot run's dense scale, with the gradient from dual numbers.
+    loss ratio. ``RLR`` and ``RRF`` vary by origin with correlated effects
+    (LKJ prior on the correlation) on the priors' ``o`` scale; the priors
+    can add origin effects on the rates and development-year effects on any
+    of the four (``CompartmentalPriors``), each cell then taking its own
+    parameters. NUTS samples the posterior on a pilot run's dense scale,
+    with the gradient from dual numbers.
     
-    ``priors`` is required (``CompartmentalPriors.gesmann_morris()`` is the
-    paper's case study). ``likelihood``, ``scale``, ``paid_response`` and
-    ``fitted`` take the values of model 1 by default; their other values
-    are accepted here, but ``fit`` raises ``ValueError`` saying they are not
-    yet built.
+    Model 1 (the defaults) has normal outstanding and cumulative paid
+    amounts about these curves, each type with its own sigma. Model 2
+    (``Compartmental.model_2``, with
+    ``CompartmentalPriors.gesmann_morris_2()``) has log-normal outstanding
+    and incremental paid loss ratios to premium; every combination of
+    ``likelihood``, ``scale`` and ``paid_response`` is built. Under
+    ``likelihood="lognormal"`` every response must be positive, and under
+    ``paid_response="incremental"`` each paid cell needs the paid at the
+    age before; ``fit`` raises ``ValueError`` naming the cell otherwise.
+    ``fitted`` other than ``"paid_and_outstanding"`` is accepted here, but
+    ``fit`` raises ``ValueError`` saying it is not yet built.
     
     An origin with a premium and no observed cell (the papers' training
     triangle has one) draws its effects from the population in each
-    simulation. The reserve is the paid at the square's last age less the
-    latest paid; the square has as many ages as the premium column has
-    origins, and the origin and development grains must be equal. One
-    ``seed`` replays a fit exactly: the chains and the simulations each
-    take a seed derived from it.
+    simulation, and so does a development age with no observed cell. The
+    reserve is the paid at the square's last age less the latest paid; the
+    square has as many ages as the premium column has origins, and the
+    origin and development grains must be equal. One ``seed`` replays a fit
+    exactly: the chains and the simulations each take a seed derived from
+    it.
     
     The means are exactly invariant under swapping the two rates (with
     ``RLR`` and ``RRF`` rescaled), so only the priors tell the two modes
     apart. Under ``rate_order="free"`` (the paper's priors) the fit warns
-    when any posterior draw has ``k_er <= k_p``; ``rate_order="ordered"``
-    samples ``k_er = k_p + exp(delta)``, the same priors restricted to
-    ``k_er > k_p``.
+    when any posterior draw has population rates with ``k_er <= k_p``;
+    ``rate_order="ordered"`` samples ``k_er = k_p + exp(delta)``, the same
+    priors restricted to ``k_er > k_p``. With effects on the rates,
+    ``CompartmentalFit.cell_rate_swaps`` reports the share of draws and
+    cells with ``k_er <= k_p``.
     
     Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
     per chain, any divergent transition) and rate swaps do not fail the
     fit: ``fit`` raises one ``UserWarning`` listing them, and they stay in
     ``CompartmentalFit.diagnostics``. With the defaults, 194 of 200 seeds on
-    company 337 passed every threshold; each of the other six just missed
-    one.
+    company 337 passed every threshold for model 1, and with
+    ``model_2``'s sampler 195 of 200 for model 2; each of the others just
+    missed one.
     
     Parameters
     ----------
     priors : CompartmentalPriors
         The priors; required.
     likelihood : str
-        ``"normal"`` (model 1); ``"lognormal"`` is not yet built.
+        ``"normal"`` (model 1) or ``"lognormal"`` (model 2).
     scale : str
-        ``"amount"`` (model 1); ``"loss_ratio"`` is not yet built.
+        The response scale: ``"amount"`` (model 1) or ``"loss_ratio"``,
+        amounts over the origin's premium (model 2).
     paid_response : str
-        ``"cumulative"`` (model 1); ``"incremental"`` is not yet built.
+        ``"cumulative"`` (model 1) or ``"incremental"`` (model 2).
     fitted : str
-        ``"paid_and_outstanding"`` (model 1); ``"paid_and_incurred"``,
-        ``"paid_only"`` and ``"incurred_only"`` are not yet built.
+        ``"paid_and_outstanding"``; ``"paid_and_incurred"``, ``"paid_only"``
+        and ``"incurred_only"`` are not yet built.
     rate_order : str
         ``"free"`` or ``"ordered"``, as above.
     start : str
@@ -3526,6 +3538,31 @@ class Compartmental:
         """
         Largest NUTS tree depth.
         """
+    @staticmethod
+    def model_2(priors: CompartmentalPriors, *, rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 2000, draws: int = 8000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.999, max_depth: int = 10) -> Compartmental:
+        """
+        Gesmann and Morris' model 2 with ``priors`` (the paper's are
+        ``CompartmentalPriors.gesmann_morris_2()``): the log-normal
+        likelihood on loss ratios with incremental paid, and a longer, finer
+        sampler than the constructor's, four chains of 2,000 warm-up and
+        8,000 kept draws with target acceptance 0.999. With 87 parameters,
+        effect sds whose posteriors pile up near 0 and a slowly mixing
+        ``k_p``, model 1's sampler left divergent transitions or an R-hat
+        above 1.01 on most seeds; this one passes every threshold on 195 of
+        200 seeds on company 337. A fit takes about a minute. The other
+        arguments are the constructor's.
+        
+        Returns
+        -------
+        Compartmental
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import Compartmental, CompartmentalPriors
+        >>> m = Compartmental.model_2(CompartmentalPriors.gesmann_morris_2())
+        >>> m.likelihood, m.scale, m.paid_response, m.tune, m.draws, m.target_accept
+        ('lognormal', 'loss_ratio', 'incremental', 2000, 8000, 0.999)
+        """
     @property
     def n_sims(self, /) -> int:
         """
@@ -3612,6 +3649,15 @@ class CompartmentalFit:
     """
     def __repr__(self, /) -> str: ...
     @property
+    def cell_rate_swaps(self, /) -> float |None:
+        """
+        With effects on the rates (each cell its own ``k_er`` and ``k_p``),
+        the share of posterior draws and observed cells with
+        ``k_er <= k_p``: a diagnostic, not a warning, since each cell's
+        means are invariant under the swap on their own. ``None`` when the
+        rates are shared.
+        """
+    @property
     def chains(self, /) -> int:
         """
         Number of chains.
@@ -3638,9 +3684,11 @@ class CompartmentalFit:
         """
         PSIS-LOO of the observed cells, outstanding cells first and then
         paid cells, with each cell's relative efficiency from the chains.
-        The pointwise term is the full normal log density of each amount
-        (brms' ``log_lik``), so compare it only with fits of the same
-        amounts. ``loo_by_type`` splits the elpd.
+        The pointwise term is the full log density of each response, normal
+        or log-normal (with its ``-log y`` term), as brms' ``log_lik``, on
+        the response's scale: amounts or loss ratios, cumulative or
+        incremental paid. Compare it only with fits of the same responses.
+        ``loo_by_type`` splits the elpd.
         
         Returns
         -------
@@ -3694,11 +3742,19 @@ class CompartmentalFit:
     @property
     def parameter_names(self, /) -> list[str]:
         """
-        Parameter names: ``k_er``, ``k_p``, ``RLR``, ``RRF``, ``sigma_os``,
-        ``sigma_pd``, ``RLR[o]`` and ``RRF[o]`` for each origin with an
-        observed cell, then on the scale the paper prints ``b_ker``,
-        ``b_kp``, ``b_RLR``, ``b_RRF``, ``tau_RLR``, ``tau_RRF``, ``rho``,
-        ``log_sigma_os`` and ``log_sigma_pd``.
+        Parameter names: on the natural scale ``k_er``, ``k_p``, ``RLR``,
+        ``RRF`` (the population values, at a zero effect), ``sigma_os``,
+        ``sigma_pd``, ``RLR[o]`` and ``RRF[o]`` for each origin ``o`` with
+        an observed cell (at a zero development effect), with origin effects
+        on the rates ``k_er[o]`` and ``k_p[o]`` too, and with development
+        effects ``dev_ker[a]``, ``dev_kp[a]``, ``dev_RLR[a]`` and
+        ``dev_RRF[a]``, each development age ``a`` (months) with an observed
+        cell's effect on the ``o`` scale; then on the scale the paper prints
+        ``b_ker``, ``b_kp``, ``b_RLR``, ``b_RRF``, ``tau_RLR``,
+        ``tau_RRF`` (and ``tau_ker``, ``tau_kp``), ``rho`` (and
+        ``tau_dev_ker``, ``tau_dev_kp``, ``tau_dev_RLR``, ``tau_dev_RRF``),
+        ``log_sigma_os`` and ``log_sigma_pd``. Each name in parentheses is
+        there only when the priors have that effect.
         """
     @property
     def population_origins(self, /) -> list[str]:
@@ -3714,8 +3770,8 @@ class CompartmentalFit:
     @property
     def rate_swaps(self, /) -> int:
         """
-        The number of posterior draws with ``k_er <= k_p`` (0 under
-        ``rate_order="ordered"``).
+        The number of posterior draws whose population rates have
+        ``k_er <= k_p`` (0 under ``rate_order="ordered"``).
         """
     @property
     def reserves(self, /) -> PredictiveDistribution:
@@ -3766,13 +3822,21 @@ class CompartmentalPriors:
     The priors of ``Compartmental``, a required argument: the rates and
     ratios are specific to a line and a book, so the library does not choose
     them silently. ``CompartmentalPriors.gesmann_morris()`` is the paper's
-    case study; check any set with ``Compartmental.prior_predictive`` before
-    fitting.
+    model 1 and ``CompartmentalPriors.gesmann_morris_2()`` its model 2;
+    check any set with ``Compartmental.prior_predictive`` before fitting.
     
     Each positive parameter ``θ`` (``k_er``, ``k_p``, ``rlr``, ``rrf``) is
     ``median * exp(sd * o)`` with ``o ~ N(0, 1)``: a log-normal prior with
-    that median and log-scale sd, given as ``(median, sd)``. The origin
-    effects on ``RLR`` and ``RRF`` live on that ``o`` scale.
+    that median and log-scale sd, given as ``(median, sd)``. The effects
+    live on that ``o`` scale.
+    
+    The hierarchy follows from the priors. ``RLR`` and ``RRF`` always vary
+    by origin, with correlated effects. ``ker_effect_sd`` and
+    ``kp_effect_sd`` add origin effects on the rates, uncorrelated with the
+    others, and ``development_effect_sd`` adds development-year effects on
+    any of the four parameters; ``None`` (model 1) means no such effect.
+    A development age with no observed cell takes a new effect from the
+    population in each simulation, as an origin with no cell does.
     
     Parameters
     ----------
@@ -3790,6 +3854,13 @@ class CompartmentalPriors:
     log_sigma : sequence of two tuples
         Priors on ``log sigma_os`` and ``log sigma_pd``, in that order, each
         ``("student_t", nu, location, scale)`` or ``("normal", mean, sd)``.
+    ker_effect_sd, kp_effect_sd : tuple, optional
+        Priors on the sds of origin effects on ``k_er`` and ``k_p``, in the
+        form of ``rlr_effect_sd``; ``None``: no such effect.
+    development_effect_sd : sequence of four, optional
+        Priors on the sds of development-year effects on ``k_er``, ``k_p``,
+        ``rlr`` and ``rrf``, in that order, each ``None`` (no effect) or a
+        half prior; ``None``: no development effect.
     
     Raises
     ------
@@ -3805,19 +3876,49 @@ class CompartmentalPriors:
     ((3.0, 0.1), ('student_t', 10.0, 0.2), ('student_t', 1.0, 0.0, 1000.0))
     >>> p.replace(k_er=(2.0, 0.3)).k_er
     (2.0, 0.3)
+    >>> q = CompartmentalPriors.gesmann_morris_2()
+    >>> q.kp_effect_sd, q.development_effect_sd[2]
+    (('student_t', 10.0, 0.3), ('student_t', 10.0, 0.7))
+    >>> q.replace(kp_effect_sd=False).kp_effect_sd is None
+    True
     """
     def __eq__(self, other: object, /) -> bool: ...
-    def __new__(cls, /, *, k_er: tuple[float, float], k_p: tuple[float, float], rlr: tuple[float, float], rrf: tuple[float, float], rlr_effect_sd: tuple, rrf_effect_sd: tuple, lkj_eta: float, log_sigma: Sequence[tuple]) -> CompartmentalPriors: ...
+    def __new__(cls, /, *, k_er: tuple[float, float], k_p: tuple[float, float], rlr: tuple[float, float], rrf: tuple[float, float], rlr_effect_sd: tuple, rrf_effect_sd: tuple, lkj_eta: float, log_sigma: Sequence[tuple], ker_effect_sd: Any |None = None, kp_effect_sd: Any |None = None, development_effect_sd: Any |None = None) -> CompartmentalPriors: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def development_effect_sd(self, /) -> list[tuple |None]:
+        """
+        Priors on the sds of the development-year effects on ``k_er``,
+        ``k_p``, ``rlr`` and ``rrf``, each ``None`` when there is no such
+        effect.
+        """
     @staticmethod
     def gesmann_morris() -> CompartmentalPriors:
         """
         Gesmann and Morris' (2020) case study, model 1: ``k_er`` (3, 0.1),
         ``k_p`` (1, 0.1), ``rlr`` (0.7, 0.2), ``rrf`` (0.8, 0.1), half
         Student-t(10) effect sds with scales 0.2 and 0.1, LKJ(1), and
-        Student-t(1, 0, 1000) on each ``log sigma`` (effectively flat). On
-        company 337 the data pull the rates 5 to 9 prior sds from these
-        medians: the posterior is a compromise with the preset.
+        Student-t(1, 0, 1000) on each ``log sigma`` (effectively flat), with
+        no effect on the rates and no development effect. On company 337 the
+        data pull the rates 5 to 9 prior sds from these medians: the
+        posterior is a compromise with the preset.
+        
+        Returns
+        -------
+        CompartmentalPriors
+        """
+    @staticmethod
+    def gesmann_morris_2() -> CompartmentalPriors:
+        """
+        Gesmann and Morris' (2020) case study, model 2 (their code, sec.
+        7.2.3, where it and the text disagree): model 1's rate and ratio
+        priors; origin effects on all four parameters (``RLR`` and ``RRF``
+        correlated, LKJ(1)) and development-year effects on all four, every
+        effect sd half Student-t(10) on the ``o`` scale with one scale per
+        parameter, shared by its two groups: 0.3 for ``k_er`` and ``k_p``,
+        0.7 for ``rlr`` and 0.5 for ``rrf``; and ``("normal", log 0.2,
+        0.2)`` on each ``log sigma`` (the text gives a median of 0.1). Use
+        it with ``Compartmental.model_2``.
         
         Returns
         -------
@@ -3834,6 +3935,18 @@ class CompartmentalPriors:
         ``(median, sd)`` of the payment rate.
         """
     @property
+    def ker_effect_sd(self, /) -> tuple |None:
+        """
+        Prior on the sd of the origin effects on ``k_er``; ``None``: no such
+        effect.
+        """
+    @property
+    def kp_effect_sd(self, /) -> tuple |None:
+        """
+        Prior on the sd of the origin effects on ``k_p``; ``None``: no such
+        effect.
+        """
+    @property
     def lkj_eta(self, /) -> float:
         """
         LKJ shape of the correlation of the two effects.
@@ -3843,9 +3956,13 @@ class CompartmentalPriors:
         """
         Priors on ``log sigma_os`` and ``log sigma_pd``.
         """
-    def replace(self, /, *, k_er: tuple[float, float] |None = None, k_p: tuple[float, float] |None = None, rlr: tuple[float, float] |None = None, rrf: tuple[float, float] |None = None, rlr_effect_sd: tuple |None = None, rrf_effect_sd: tuple |None = None, lkj_eta: float |None = None, log_sigma: Sequence[tuple] |None = None) -> CompartmentalPriors:
+    def replace(self, /, *, k_er: tuple[float, float] |None = None, k_p: tuple[float, float] |None = None, rlr: tuple[float, float] |None = None, rrf: tuple[float, float] |None = None, rlr_effect_sd: tuple |None = None, rrf_effect_sd: tuple |None = None, lkj_eta: float |None = None, log_sigma: Sequence[tuple] |None = None, ker_effect_sd: Any |None = None, kp_effect_sd: Any |None = None, development_effect_sd: Any |None = None) -> CompartmentalPriors:
         """
-        A copy with the given priors replaced, each in the constructor's form.
+        A copy with the given priors replaced, each in the constructor's
+        form. For ``ker_effect_sd`` and ``kp_effect_sd``, ``None`` keeps the
+        current prior and ``False`` removes the effect; a
+        ``development_effect_sd`` replaces all four, its ``None`` items
+        removing those effects.
         
         Returns
         -------

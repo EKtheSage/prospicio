@@ -1,10 +1,11 @@
 suppressMessages(library(prospicio))
 
-# compartmental(), Gesmann and Morris' compartmental model 1
-# (docs/design/reserving-compartmental.md). The parity with the paper's brms
-# code in Stan and its printed posterior is
-# validation/tests/reserving_compartmental.rs; these tests check the binding
-# on company 337 workers' compensation as the papers fit it.
+# compartmental() and compartmental_model_2(), Gesmann and Morris'
+# compartmental models 1 and 2 (docs/design/reserving-compartmental.md). The
+# parity with the paper's brms code in Stan and its printed posterior is
+# validation/tests/reserving_compartmental.rs (model 1) and
+# reserving_compartmental_gm2.rs (model 2); these tests check the binding on
+# company 337 workers' compensation as the papers fit it.
 
 near <- function(a, b, rel) {
   if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
@@ -199,3 +200,115 @@ stopifnot(
   startsWith(run$warnings, "compartmental: the MCMC diagnostics failed"),
   length(run$value@diagnostics$warnings) > 0
 )
+
+# Model 2 (PR C): the log-normal likelihood on loss ratios with incremental
+# paid, and the hierarchy of gesmann_morris_2_priors().
+stopifnot(is.na(fit@cell_rate_swaps))  # model 1: the rates are shared
+gm2 <- gesmann_morris_2_priors()
+half <- function(scale) list(family = "student_t", nu = 10, scale = scale)
+stopifnot(
+  inherits(gm2, "compartmental_priors"),
+  identical(gm2$k_er, gm$k_er), identical(gm2$rrf, gm$rrf),
+  identical(gm2$rlr_effect_sd, half(0.7)), identical(gm2$rrf_effect_sd, half(0.5)),
+  identical(gm2$ker_effect_sd, half(0.3)), identical(gm2$kp_effect_sd, half(0.3)),
+  identical(gm2$development_effect_sd,
+            list(k_er = half(0.3), k_p = half(0.3), rlr = half(0.7), rrf = half(0.5))),
+  identical(gm2$log_sigma[[1]], list(family = "normal", mean = log(0.2), sd = 0.2)),
+  is.null(gm$ker_effect_sd), is.null(gm$kp_effect_sd), is.null(gm$development_effect_sd)
+)
+# A development effect on some parameters only; the others have none.
+some <- compartmental_priors(k_er = gm$k_er, k_p = gm$k_p, rlr = gm$rlr, rrf = gm$rrf,
+                             rlr_effect_sd = gm$rlr_effect_sd,
+                             rrf_effect_sd = gm$rrf_effect_sd, lkj_eta = 1,
+                             log_sigma = gm$log_sigma,
+                             development_effect_sd = list(rlr = list(family = "normal",
+                                                                     scale = 0.5)))
+stopifnot(identical(names(some$development_effect_sd), "rlr"), is.null(some$kp_effect_sd))
+expect_error_like(compartmental_priors(k_er = gm$k_er, k_p = gm$k_p, rlr = gm$rlr,
+                                       rrf = gm$rrf, rlr_effect_sd = gm$rlr_effect_sd,
+                                       rrf_effect_sd = gm$rrf_effect_sd, lkj_eta = 1,
+                                       log_sigma = gm$log_sigma, ker_effect_sd = 0.3),
+                  "ker_effect_sd must be")
+expect_error_like(compartmental_priors(k_er = gm$k_er, k_p = gm$k_p, rlr = gm$rlr,
+                                       rrf = gm$rrf, rlr_effect_sd = gm$rlr_effect_sd,
+                                       rrf_effect_sd = gm$rrf_effect_sd, lkj_eta = 1,
+                                       log_sigma = gm$log_sigma,
+                                       development_effect_sd = half(0.3)),
+                  "development_effect_sd must be NULL or a named list")
+expect_error_like(compartmental_priors(k_er = gm$k_er, k_p = gm$k_p, rlr = gm$rlr,
+                                       rrf = gm$rrf, rlr_effect_sd = gm$rlr_effect_sd,
+                                       rrf_effect_sd = gm$rrf_effect_sd, lkj_eta = 1,
+                                       log_sigma = gm$log_sigma,
+                                       development_effect_sd = list(k_p = list(family = "t"))),
+                  "development_effect_sd$k_p must be")
+expect_error_like(compartmental_model_2(tri, "paid", "premium", incurred = "incurred"),
+                  "gesmann_morris_2_priors()")
+
+# Shorter chains than compartmental_model_2()'s (4 x 2,000 warm-up and
+# 8,000 draws, about a minute, warning-free at seed 0; the Rust validation
+# runs them): about 20 seconds. They may miss an ESS threshold.
+fit2 <- suppressWarnings(compartmental_model_2(tri, "paid", "premium", gm2,
+                                               incurred = "incurred", tune = 1000,
+                                               draws = 2000, n_sims = 2000))
+nm <- colnames(fit2@draws)
+stopifnot(
+  S7::S7_inherits(fit2, compartmental_fit),
+  identical(fit2@population_origins, "1997"),
+  provenance(fit2@reserves)$model == "compartmental_gm2",
+  all(paste0("k_p[", 1988:1996, "]") %in% nm),
+  all(paste0("dev_RLR[", seq(12, 108, 12), "]") %in% nm),
+  !"dev_kp[120]" %in% nm,
+  all(c("tau_ker", "tau_kp", "tau_dev_ker", "tau_dev_kp", "tau_dev_RLR", "tau_dev_RRF") %in% nm),
+  is.double(fit2@cell_rate_swaps), fit2@cell_rate_swaps >= 0, fit2@cell_rate_swaps <= 1
+)
+# Stan (4 x 25,000 draws): total reserve 152,242, b_kp -5.064 (sd 1.722),
+# elpd_loo 204.29 on the loss ratios.
+near(mean(fit2@reserves), 152242, 0.03)
+s2 <- summary(fit2)
+stopifnot(abs(s2$mean[s2$parameter == "b_kp"] - (-5.064)) < 0.5)
+loo2 <- bayes_loo(fit2)
+stopifnot(abs(loo2$estimates[["elpd"]] - 204.29) < 3, length(loo2$pointwise) == 90)
+stopifnot(nrow(as.data.frame(fit2)) == 10, nrow(fit2@paid_table) == 55)
+
+# Every combination of likelihood, scale and paid response is built.
+for (setting in list(list(scale = "loss_ratio"), list(paid_response = "incremental"),
+                     list(likelihood = "lognormal", scale = "loss_ratio"))) {
+  priors <- if (is.null(setting$likelihood)) gm else {
+    p <- gm
+    p$log_sigma <- gm2$log_sigma
+    p
+  }
+  mixed <- suppressWarnings(do.call(compartmental, c(
+    list(tri, "paid", "premium", priors, incurred = "incurred", chains = 2, tune = 100,
+         draws = 100, n_sims = 200), setting)))
+  stopifnot(all(is.finite(draw_matrix(mixed@reserves)[1, ])), is.na(mixed@cell_rate_swaps))
+}
+
+# The log-normal needs positive responses; incremental paid the paid before.
+small_long <- data.frame(year = rep(1988:1990, 3:1), age = c(12, 24, 36, 12, 24, 12),
+                         paid = c(9.6, 22.8, 33.3, 7.9, 19.5, 8.7),
+                         incurred = c(9.6, 64.0, 65.6, 62.1, 56.7, 64.0),
+                         premium = rep(c(104.4, 88.9, 86.0), 3:1))
+zero <- triangle(small_long, "year", "age", c("paid", "incurred", "premium"))
+expect_error_like(compartmental_model_2(zero, "paid", "premium", gm2, incurred = "incurred",
+                                        chains = 1, tune = 10, draws = 10, n_sims = 10),
+                  "origin 1988 at development age 12 months has outstanding 0")
+gap_long <- small_long
+gap_long$incurred[1] <- 62.7
+gap_long$paid[1] <- NA
+gap <- triangle(gap_long, "year", "age", c("paid", "incurred", "premium"))
+expect_error_like(compartmental_model_2(gap, "paid", "premium", gm2, outstanding = "incurred",
+                                        chains = 1, tune = 10, draws = 10, n_sims = 10),
+                  "incremental paid needs the paid of the age before")
+
+# The prior predictive check with development effects, replayed by seed.
+p2 <- compartmental_prior_predictive(tri, "premium", gm2, n_sims = 300, seed = 4,
+                                     paid_response = "incremental")
+again2 <- compartmental_prior_predictive(tri, "premium", gm2, n_sims = 300, seed = 4,
+                                         paid_response = "incremental")
+stopifnot(
+  p2$paid@n_sims == 300, nrow(p2$outstanding@keys) == 100,
+  identical(draw_matrix(p2$paid), draw_matrix(again2$paid))
+)
+paid2_120 <- mean(marginal(p2$paid, list(origin = "1988", age = 120)))
+stopifnot(paid2_120 / 104437 > 0.2, paid2_120 / 104437 < 1.5)

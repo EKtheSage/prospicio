@@ -3,9 +3,10 @@
 Status: **Decided** (2026-10-13; the user settled the open decisions at
 the end, all as recommended, with decision 1 widened: see there). PR A
 built (decision 4); PR B built (decisions 2, 5, 6, 7 and 9, each with its
-"Built" paragraph: the Rust core and its Python and R bindings); PR C's
-Rust core built (decisions 1, 2, 4, 5, 6 and 7, each with its "Built (PR
-C)" paragraph), its bindings next; PRs D and E not yet · Lane:
+"Built" paragraph: the Rust core and its Python and R bindings); PR C
+built (decisions 1, 2, 4, 5, 6, 7 and 9, each with its "Built (PR C)"
+paragraph: the Rust core and its Python and R bindings); PRs D and E not
+yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -892,8 +893,8 @@ new effects too, and with incremental paid and effects by cell its paid
 path is the sum of the cells' mean increments. The provenance's model is
 `compartmental_gm1` or `compartmental_gm2` when the settings and the
 hierarchy are the paper's, `compartmental` otherwise. The Python and R
-bindings build `CompartmentalPriors` with no new effect (model 1) until
-PR C's bindings stage.
+bindings take the new effects and model 2's settings (decision 9, "Built
+(PR C, bindings)").
 
 ### 7. Validation
 
@@ -1148,6 +1149,46 @@ decision 10 (a)):
   short chains, the settings not yet built and the missing priors. A
   default fit takes about 5 seconds in a release build.
 
+**Built (PR C, bindings).** Model 2 in both languages, in the style of
+PR B's bindings:
+
+* **Python**: `CompartmentalPriors(...)` takes `ker_effect_sd` and
+  `kp_effect_sd` (a half prior's tuple, or `None` for no effect) and
+  `development_effect_sd` (`None`, or four items on `k_er`, `k_p`, `rlr`
+  and `rrf`, each `None` or a half prior), all `None` by default, so PR
+  B's calls build model 1 unchanged; getters for the three (the last a
+  list of four), `CompartmentalPriors.gesmann_morris_2()`, and in
+  `replace` `None` keeps an effect, `False` removes it and a
+  `development_effect_sd` replaces all four. `Compartmental.model_2(priors,
+  *, rate_order, start, chains=4, tune=2000, draws=8000, n_sims=10000,
+  seed=0, target_accept=0.999, max_depth=10)` is the core's
+  `Compartmental::model_2`; the constructor accepts every likelihood,
+  scale and paid response, and `fitted` other than paid and outstanding
+  is still the core's "not yet built" `ValueError`.
+  `CompartmentalFit.cell_rate_swaps` is a float, or `None` when the rates
+  are shared. `prior_predictive` uses the model's settings, so a
+  `model_2` check sums the incremental paths.
+* **R**: `compartmental_priors()` gains `ker_effect_sd = NULL`,
+  `kp_effect_sd = NULL` and `development_effect_sd = NULL`, the last a
+  named list with any of `k_er`, `k_p`, `rlr` and `rrf` (one left out has
+  no development effect); `gesmann_morris_2_priors()`;
+  `compartmental_model_2()`, `compartmental()` with model 2's settings
+  and sampler as defaults; the fit's `cell_rate_swaps` property (`NA`
+  when the rates are shared); and `compartmental_prior_predictive()` gains
+  `paid_response` (last, so PR B's positional calls are unchanged). The
+  priors cross to Rust as 31 numbers and 10 family names, `"none"` for an
+  absent effect.
+* Tests: both fit company 337's training triangle with model 2's priors
+  and settings on shorter chains than `model_2`'s (4 x 1,000 warm-up and
+  2,000 draws, about 20 seconds; the default's minute and its
+  warning-free seed 0 are checked by the Rust validation), with the
+  total reserve within 3% of Stan's 152,242, `b_kp` within 0.5 of Stan's
+  -5.064 (posterior sd 1.72) and `elpd_loo` within 3 of 204.29; the new
+  parameter names, `cell_rate_swaps`, the presets and their errors, the
+  three mixed settings on short chains, the log-normal's non-positive
+  response and incremental paid's missing paid before as errors, and the
+  prior predictive check with development effects, replayed by seed.
+
 ### 10. Docs and knowledge
 
 Proposed. Each PR updates in itself: the Reserving row of AGENTS.md, the
@@ -1172,6 +1213,11 @@ finding, the per-cell gradient in the autodiff finding and the model 2
 reference's run time in the CmdStan environment fact. The guide page waits
 for PR C's bindings, so that it can show both likelihoods from Python and
 R.
+
+Built (PR C, bindings): both likelihoods now reach Python and R. The
+guide page belongs in `docs/guides/`, which the Guides lane owns, so it
+is left to that lane (or to the user's go-ahead for this one) rather than
+written in this PR.
 
 ## Risks
 

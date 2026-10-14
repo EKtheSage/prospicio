@@ -10,6 +10,9 @@ sources:
   - id: setup
     resource: process:local-session setup agent, reserving v0.2 (PRs #131 to #136)
     title: Local R build check, 2026-10-05
+  - id: r-libs
+    resource: process:local-session, Compartmental PR C bindings (branch claude/bayes-compartmental-lognormal)
+    title: R_LIBS with a Git Bash path, 2026-10-14
 ---
 
 # Facts (2026-10-05)
@@ -32,6 +35,11 @@ sources:
   rerun when `R_HOME` changes.
 * `R_LIBS` per worktree keeps parallel sessions from overwriting each
   other's installed `prospicio` in the shared user library.
+* `R_LIBS` must hold Windows paths (`C:/Users/...`), separated by `;`.
+  A Git Bash path (`/c/Users/...`) is silently dropped: `R CMD INSTALL
+  --library=/c/...` still installs there, but `Rscript` then loads the
+  older `prospicio` of the default library, and a test fails on a function
+  that is new in the branch.[^r-libs]
 * `PYTHONUTF8=1` is needed: without it great-docs fails at "Prepare freeze
   cache" with `'utf-8' codec can't decode byte 0x96`.
 * `cargo xtask r` and `cargo xtask python` (without `--check`) regenerate
@@ -41,3 +49,4 @@ sources:
   package; it can still run ChainLadder parity scripts.
 
 [^setup]: Local R build check
+[^r-libs]: R_LIBS with a Git Bash path

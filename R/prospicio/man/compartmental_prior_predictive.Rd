@@ -10,7 +10,8 @@ compartmental_prior_predictive(
   priors,
   rate_order = c("free", "ordered"),
   n_sims = 1000,
-  seed = 0
+  seed = 0,
+  paid_response = c("cumulative", "incremental")
 )
 }
 \arguments{
@@ -27,6 +28,9 @@ value); the fit's origins are this column's.}
 
 \item{seed}{Seed of the chains and of the simulations, a non-negative
 whole number.}
+
+\item{paid_response}{\code{"cumulative"} or \code{"incremental"}, as in the fit to
+be checked; it matters only with effects by cell.}
 }
 \value{
 A list of two \link{predictive_distribution}s, \code{outstanding} and
@@ -39,9 +43,12 @@ premium column at each age of the square, drawn from the priors alone
 \code{\link[=compartmental]{compartmental()}} fits it. Each simulation draws the intercepts, the
 effect sds, the correlation and each origin's effects. The paths are
 means, without the likelihood's noise, which under the preset's
-effectively flat prior on \verb{log sigma} would swamp them. Under
-\code{rate_order = "ordered"} the rates are drawn from their priors restricted
-to \code{k_er > k_p}. The seed is derived from \code{seed}, as the fit's
+effectively flat prior on \verb{log sigma} would swamp them. With
+development effects in the priors, each simulation also draws each age's
+effects (shared by the origins), and with effects by cell and
+\code{paid_response = "incremental"} the cumulative paid path is the sum of
+the cells' mean increments. Under \code{rate_order = "ordered"} the rates are
+drawn from their priors restricted to \code{k_er > k_p}. The seed is derived from \code{seed}, as the fit's
 simulations' is.
 }
 \details{
@@ -58,5 +65,6 @@ paths <- compartmental_prior_predictive(tri, "premium", gesmann_morris_priors(),
 quantile(marginal(paths$paid, list(origin = "1988", age = 36)), c(0.05, 0.5, 0.95)) / 104.4
 }
 \seealso{
-\code{\link[=compartmental]{compartmental()}}, \code{\link[=gesmann_morris_priors]{gesmann_morris_priors()}}.
+\code{\link[=compartmental]{compartmental()}}, \code{\link[=gesmann_morris_priors]{gesmann_morris_priors()}},
+\code{\link[=gesmann_morris_2_priors]{gesmann_morris_2_priors()}}.
 }
