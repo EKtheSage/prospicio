@@ -87,6 +87,7 @@ reference:
       - aggregate.Ledger
       - aggregate.Group
       - aggregate.Leg
+      - aggregate.stack
       - aggregate.layer_loss_picks
       - aggregate.Picks
   - title: Reinsurance

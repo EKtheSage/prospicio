@@ -8304,6 +8304,21 @@ class Ledger:
         """
         The chance that the result is 0.
         """
+    def ratios(self, /) -> dict:
+        """
+        The ratio exhibit, ``aggregate``'s ``economic_ratios_df``: for each
+        group, span, net-of block and ``All``, premium ``P``, loss ``L`` net
+        of recoveries, expense ``E`` net of commission and the result ``M``
+        (mean amounts, signed for the block's own view), the result's ``SD``,
+        the ratios of means ``LR``, ``ER``, ``CR``, the means of ratios
+        ``E_LR``, ``E_ER``, ``E_CR`` (where the premium never vanishes), and
+        ``P_share`` and ``M_share`` of the first block. Legs without a kind
+        count as premium on the consideration side and loss on the other.
+        
+        Returns
+        -------
+        dict
+        """
     @property
     def result(self, /) -> Discrete:
         """
@@ -8338,6 +8353,16 @@ class Ledger:
             Columns ``step`` (on a tower), ``side``, ``label``, ``row`` (the
             row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios.
         """
+    def validation(self, /) -> dict:
+        """
+        Each rebucketed leg's exact mean against its grid's,
+        ``aggregate``'s ``validation_df``. Empty when no leg has a ``step``.
+        
+        Returns
+        -------
+        dict
+            Columns ``label``, ``EX``, ``Est``, ``abs_err`` and ``rel_err``.
+        """
 
 @final
 class Leg:
@@ -8355,6 +8380,12 @@ class Leg:
     value : float or callable
     kind : str, optional
         ``premium``, ``loss``, ``expense``, ``recovery`` or ``commission``.
+    step : float, optional
+        Put the leg's own distribution on a grid of this step (``aggregate``'s
+        ``bs``), scattering each value linearly to its two neighbours, which
+        keeps its mean. Only its marginal quantiles change; its mean, the
+        sums down the sheet and the scenario columns stay exact.
+        :meth:`Ledger.validation` compares the two means.
     
     Examples
     --------
@@ -8362,7 +8393,7 @@ class Leg:
     >>> Leg("Loss", lambda x: x, kind="loss")
     Leg("Loss")
     """
-    def __new__(cls, /, label: str, value: Any, kind: str |None = None) -> Leg: ...
+    def __new__(cls, /, label: str, value: Any, kind: str |None = None, step: float |None = None) -> Leg: ...
     def __repr__(self, /) -> str: ...
     @property
     def label(self, /) -> str:
@@ -18032,6 +18063,41 @@ def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: i
     >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
     >>> round(pd.mean(), 1)
     0.5
+    """
+
+def stack(ledgers: dict, impacts: Sequence[tuple[str, str, str]] |None = None) -> dict:
+    """
+    Stack ledgers' results, ``aggregate``'s ``stack_marginal_pnls``: one row
+    per ledger with the mean, standard deviation, coefficient of variation,
+    skewness and quantiles ``P01`` to ``P99`` of its result, then one row per
+    impact, the difference of two stacked rows statistic by statistic.
+    
+    Parameters
+    ----------
+    ledgers : dict of str to Ledger
+        In row order.
+    impacts : list of tuple of (str, str, str), optional
+        ``(label, target, base)``: the row ``target`` less the row ``base``.
+    
+    Returns
+    -------
+    dict
+        Columns ``label``, ``EX``, ``SD``, ``CV``, ``Skew`` and ``P01`` to
+        ``P99``.
+    
+    Raises
+    ------
+    ValueError
+        If an impact names a row that is not stacked.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Group, Ledger, Leg, stack
+    >>> src = ([2.0, 8.0], [0.5, 0.5])
+    >>> a = Ledger(src, [Group("A", "sell", [Leg("P", 10.0)], [Leg("L", lambda x: x)])])
+    >>> b = Ledger(src, [Group("B", "sell", [Leg("P", 12.0)], [Leg("L", lambda x: x)])])
+    >>> stack({"a": a, "b": b}, [("b less a", "b", "a")])["EX"]
+    [5.0, 7.0, 2.0]
     """
 
 def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:

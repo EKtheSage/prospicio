@@ -423,6 +423,14 @@ sources:
   level, as 0.1 on four outcomes of 0.4, 0.3, 0.2, 0.1, across the
   quantile's jump. `prospicio_aggregate::pnl::Ledger` matches the kernel
   on 1,704 values (`aggregate_pnl_ledger.py`).[^pnl]
+* A leg's `bs` puts only that row's own distribution on a regular grid
+  (a linear, mean-keeping scatter from `floor(lo / bs) bs`; a constant
+  gets a span of `(|lo| + 1) 1e-9`): `economic_marginal_df` reads the
+  grid, while `summary_df`'s quantiles, the moments and `κ` stay on the
+  exact values. A `PnL` built with `role=` names its one group after the
+  ledger, the label of its `economic_ratios_df` row. Rebucketed legs, the
+  ratios and `stack_marginal_pnls` match on 324 values
+  (`aggregate_pnl_ratios.py`).[^pnl]
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 

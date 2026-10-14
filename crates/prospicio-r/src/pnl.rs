@@ -5,7 +5,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::{
-    Group, LADDER, Layout, Ledger, Leg, LegKind, Role, RowKind, Source, snap,
+    Group, LADDER, Layout, Ledger, Leg, LegKind, RatioRow, Role, RowKind, Source, snap,
 };
 
 use crate::discrete::DiscreteDist;
@@ -41,7 +41,8 @@ fn na(v: Option<f64>) -> f64 {
 impl PnlLedger {
     /// `leg_values` holds each leg's `length(values)` values in turn;
     /// `leg_side` is "consideration" or "obligation"; `leg_group` counts
-    /// from 1; an empty `margin_labels` entry means the default.
+    /// from 1; an empty `margin_labels` entry means the default; a NaN
+    /// `leg_step` leaves the leg on its own values.
     #[allow(clippy::too_many_arguments)]
     fn new(
         values: &[f64],
@@ -54,6 +55,7 @@ impl PnlLedger {
         leg_label: Vec<String>,
         leg_kind: Vec<String>,
         leg_values: &[f64],
+        leg_step: &[f64],
         name: &str,
         result_name: &str,
         span_label: Vec<String>,
@@ -93,6 +95,9 @@ impl PnlLedger {
             let mut leg = Leg::values(label.clone(), leg_values[i * n..(i + 1) * n].to_vec());
             if let Some(k) = kind_of(&leg_kind[i])? {
                 leg = leg.kind(k);
+            }
+            if !leg_step[i].is_nan() {
+                leg = leg.step(leg_step[i]);
             }
             let g = groups.remove(gi - 1);
             let g = if leg_side[i] == "consideration" {
@@ -235,6 +240,46 @@ impl PnlLedger {
             Median = card.iter().map(|r| r.median).collect::<Vec<_>>(),
             P99 = card.iter().map(|r| r.p99).collect::<Vec<_>>()
         ))
+    }
+
+    fn validation(&self) -> List {
+        let v = self.inner.validation();
+        list!(
+            label = v.iter().map(|r| r.label.clone()).collect::<Vec<_>>(),
+            EX = v.iter().map(|r| r.ex).collect::<Vec<_>>(),
+            Est = v.iter().map(|r| r.est).collect::<Vec<_>>(),
+            abs_err = v.iter().map(|r| r.abs_err).collect::<Vec<_>>(),
+            rel_err = v.iter().map(|r| r.rel_err).collect::<Vec<_>>()
+        )
+    }
+
+    fn ratios(&self) -> List {
+        let r = self.inner.ratios();
+        let col = |f: fn(&RatioRow) -> Option<f64>| r.iter().map(|r| na(f(r))).collect::<Vec<_>>();
+        list!(
+            step = r.iter().map(|r| r.step.clone()).collect::<Vec<_>>(),
+            P = col(|r| Some(r.p)),
+            L = col(|r| Some(r.l)),
+            E = col(|r| Some(r.e)),
+            M = col(|r| Some(r.m)),
+            SD = col(|r| r.sd),
+            LR = col(|r| r.lr),
+            ER = col(|r| r.er),
+            CR = col(|r| r.cr),
+            E_LR = col(|r| r.e_lr),
+            E_ER = col(|r| r.e_er),
+            E_CR = col(|r| r.e_cr),
+            P_share = col(|r| r.p_share),
+            M_share = col(|r| r.m_share)
+        )
+    }
+
+    /// `c(EX, SD, CV, Skew, P01, …, P99)` of the result, NA where undefined.
+    fn result_stats(&self) -> Result<Vec<f64>> {
+        let s = self.inner.result_stats().map_err(to_r)?;
+        let mut out = vec![s.ex, s.sd, na(s.cv), na(s.skew)];
+        out.extend(s.ladder);
+        Ok(out)
     }
 
     fn legs(&self) -> List {

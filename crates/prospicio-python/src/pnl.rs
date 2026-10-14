@@ -3,7 +3,7 @@
 
 use prospicio_aggregate::pnl::{
     Group as RsGroup, LADDER, Layout, Ledger as RsLedger, Leg as RsLeg, LegKind, Role, Row,
-    RowKind, Source, snap,
+    RowKind, Source, Stats, snap, stack as rs_stack,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -42,6 +42,12 @@ fn kind_of(name: Option<&str>) -> PyResult<Option<LegKind>> {
 /// value : float or callable
 /// kind : str, optional
 ///     ``premium``, ``loss``, ``expense``, ``recovery`` or ``commission``.
+/// step : float, optional
+///     Put the leg's own distribution on a grid of this step (``aggregate``'s
+///     ``bs``), scattering each value linearly to its two neighbours, which
+///     keeps its mean. Only its marginal quantiles change; its mean, the
+///     sums down the sheet and the scenario columns stay exact.
+///     :meth:`Ledger.validation` compares the two means.
 ///
 /// Examples
 /// --------
@@ -53,17 +59,24 @@ pub(crate) struct PyLeg {
     label: String,
     value: Py<PyAny>,
     kind: Option<LegKind>,
+    step: Option<f64>,
 }
 
 #[pymethods]
 impl PyLeg {
     #[new]
-    #[pyo3(signature = (label, value, kind=None))]
-    fn new(label: String, value: Py<PyAny>, kind: Option<&str>) -> PyResult<Self> {
+    #[pyo3(signature = (label, value, kind=None, step=None))]
+    fn new(
+        label: String,
+        value: Py<PyAny>,
+        kind: Option<&str>,
+        step: Option<f64>,
+    ) -> PyResult<Self> {
         Ok(Self {
             label,
             value,
             kind: kind_of(kind)?,
+            step,
         })
     }
 
@@ -111,8 +124,12 @@ impl PyLeg {
                 self.label
             )));
         };
-        Ok(match self.kind {
+        let leg = match self.kind {
             Some(k) => leg.kind(k),
+            None => leg,
+        };
+        Ok(match self.step {
+            Some(h) => leg.step(h),
             None => leg,
         })
     }
@@ -460,6 +477,59 @@ impl PyLedger {
         Ok(d)
     }
 
+    /// Each rebucketed leg's exact mean against its grid's,
+    /// ``aggregate``'s ``validation_df``. Empty when no leg has a ``step``.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     Columns ``label``, ``EX``, ``Est``, ``abs_err`` and ``rel_err``.
+    fn validation<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let v = self.inner.validation();
+        let d = PyDict::new(py);
+        d.set_item(
+            "label",
+            v.iter().map(|r| r.label.clone()).collect::<Vec<_>>(),
+        )?;
+        d.set_item("EX", v.iter().map(|r| r.ex).collect::<Vec<_>>())?;
+        d.set_item("Est", v.iter().map(|r| r.est).collect::<Vec<_>>())?;
+        d.set_item("abs_err", v.iter().map(|r| r.abs_err).collect::<Vec<_>>())?;
+        d.set_item("rel_err", v.iter().map(|r| r.rel_err).collect::<Vec<_>>())?;
+        Ok(d)
+    }
+
+    /// The ratio exhibit, ``aggregate``'s ``economic_ratios_df``: for each
+    /// group, span, net-of block and ``All``, premium ``P``, loss ``L`` net
+    /// of recoveries, expense ``E`` net of commission and the result ``M``
+    /// (mean amounts, signed for the block's own view), the result's ``SD``,
+    /// the ratios of means ``LR``, ``ER``, ``CR``, the means of ratios
+    /// ``E_LR``, ``E_ER``, ``E_CR`` (where the premium never vanishes), and
+    /// ``P_share`` and ``M_share`` of the first block. Legs without a kind
+    /// count as premium on the consideration side and loss on the other.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    fn ratios<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let r = self.inner.ratios();
+        let d = PyDict::new(py);
+        d.set_item("step", r.iter().map(|r| r.step.clone()).collect::<Vec<_>>())?;
+        d.set_item("P", r.iter().map(|r| r.p).collect::<Vec<_>>())?;
+        d.set_item("L", r.iter().map(|r| r.l).collect::<Vec<_>>())?;
+        d.set_item("E", r.iter().map(|r| r.e).collect::<Vec<_>>())?;
+        d.set_item("M", r.iter().map(|r| r.m).collect::<Vec<_>>())?;
+        d.set_item("SD", r.iter().map(|r| r.sd).collect::<Vec<_>>())?;
+        d.set_item("LR", r.iter().map(|r| r.lr).collect::<Vec<_>>())?;
+        d.set_item("ER", r.iter().map(|r| r.er).collect::<Vec<_>>())?;
+        d.set_item("CR", r.iter().map(|r| r.cr).collect::<Vec<_>>())?;
+        d.set_item("E_LR", r.iter().map(|r| r.e_lr).collect::<Vec<_>>())?;
+        d.set_item("E_ER", r.iter().map(|r| r.e_er).collect::<Vec<_>>())?;
+        d.set_item("E_CR", r.iter().map(|r| r.e_cr).collect::<Vec<_>>())?;
+        d.set_item("P_share", r.iter().map(|r| r.p_share).collect::<Vec<_>>())?;
+        d.set_item("M_share", r.iter().map(|r| r.m_share).collect::<Vec<_>>())?;
+        Ok(d)
+    }
+
     fn __repr__(&self) -> String {
         let r = self.inner.result();
         format!(
@@ -496,4 +566,75 @@ impl PyLedger {
         )?;
         Ok(d)
     }
+}
+
+/// Stack ledgers' results, ``aggregate``'s ``stack_marginal_pnls``: one row
+/// per ledger with the mean, standard deviation, coefficient of variation,
+/// skewness and quantiles ``P01`` to ``P99`` of its result, then one row per
+/// impact, the difference of two stacked rows statistic by statistic.
+///
+/// Parameters
+/// ----------
+/// ledgers : dict of str to Ledger
+///     In row order.
+/// impacts : list of tuple of (str, str, str), optional
+///     ``(label, target, base)``: the row ``target`` less the row ``base``.
+///
+/// Returns
+/// -------
+/// dict
+///     Columns ``label``, ``EX``, ``SD``, ``CV``, ``Skew`` and ``P01`` to
+///     ``P99``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If an impact names a row that is not stacked.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import Group, Ledger, Leg, stack
+/// >>> src = ([2.0, 8.0], [0.5, 0.5])
+/// >>> a = Ledger(src, [Group("A", "sell", [Leg("P", 10.0)], [Leg("L", lambda x: x)])])
+/// >>> b = Ledger(src, [Group("B", "sell", [Leg("P", 12.0)], [Leg("L", lambda x: x)])])
+/// >>> stack({"a": a, "b": b}, [("b less a", "b", "a")])["EX"]
+/// [5.0, 7.0, 2.0]
+#[pyfunction]
+#[pyo3(signature = (ledgers, impacts=None))]
+pub(crate) fn stack<'py>(
+    py: Python<'py>,
+    ledgers: &Bound<'py, PyDict>,
+    impacts: Option<Vec<(String, String, String)>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let mut held: Vec<(String, Py<PyLedger>)> = Vec::with_capacity(ledgers.len());
+    for (k, v) in ledgers.iter() {
+        held.push((k.extract()?, v.extract()?));
+    }
+    let refs: Vec<(&str, &RsLedger)> = held
+        .iter()
+        .map(|(k, l)| (k.as_str(), &l.get().inner))
+        .collect();
+    let impacts = impacts.unwrap_or_default();
+    let imp: Vec<(&str, &str, &str)> = impacts
+        .iter()
+        .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str()))
+        .collect();
+    let rows = rs_stack(&refs, &imp).map_err(to_py)?;
+    let d = PyDict::new(py);
+    d.set_item(
+        "label",
+        rows.iter().map(|(l, _)| l.clone()).collect::<Vec<_>>(),
+    )?;
+    let col = |f: fn(&Stats) -> Option<f64>| rows.iter().map(|(_, s)| f(s)).collect::<Vec<_>>();
+    d.set_item("EX", col(|s| Some(s.ex)))?;
+    d.set_item("SD", col(|s| Some(s.sd)))?;
+    d.set_item("CV", col(|s| s.cv))?;
+    d.set_item("Skew", col(|s| s.skew))?;
+    for (k, q) in LADDER.iter().enumerate() {
+        d.set_item(
+            ladder_label("P", *q),
+            rows.iter().map(|(_, s)| s.ladder[k]).collect::<Vec<_>>(),
+        )?;
+    }
+    Ok(d)
 }

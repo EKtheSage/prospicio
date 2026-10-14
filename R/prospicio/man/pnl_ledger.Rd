@@ -8,6 +8,9 @@
 \alias{ledger_marginal}
 \alias{ledger_card}
 \alias{ledger_legs}
+\alias{ledger_validation}
+\alias{ledger_ratios}
+\alias{ledger_stack}
 \alias{ledger_result}
 \alias{ledger_row}
 \title{P&L ledger}
@@ -21,7 +24,7 @@ pnl_ledger(
   force_tower = FALSE
 )
 
-pnl_leg(label, value, kind = NULL)
+pnl_leg(label, value, kind = NULL, step = NULL)
 
 pnl_group(
   label,
@@ -38,6 +41,12 @@ ledger_marginal(ledger)
 ledger_card(ledger)
 
 ledger_legs(ledger)
+
+ledger_validation(ledger)
+
+ledger_ratios(ledger)
+
+ledger_stack(ledgers, impacts = NULL)
 
 ledger_result(ledger)
 
@@ -66,6 +75,8 @@ ledger.}
 \item{kind}{\code{NULL} or one of \code{"premium"}, \code{"loss"}, \code{"expense"},
 \code{"recovery"}, \code{"commission"}.}
 
+\item{step}{\code{NULL}, or the step of a grid for the leg's own distribution.}
+
 \item{role}{\code{"sell"} or \code{"buy"}.}
 
 \item{consideration, obligation}{Lists of \code{pnl_leg()}s.}
@@ -75,12 +86,17 @@ buys cover; \code{"Gross"} by default.}
 
 \item{ledger}{A \code{pnl_ledger()}.}
 
+\item{ledgers}{A named list of \code{pnl_ledger()}s, in row order.}
+
+\item{impacts}{\code{NULL} or a list of \code{c(label, target, base)}.}
+
 \item{row}{A row's label.}
 }
 \value{
 \code{pnl_leg()} and \code{pnl_group()} lists; \code{pnl_ledger()} a ledger;
 \code{ledger_sheet()}, \code{ledger_marginal()}, \code{ledger_card()} and
-\code{ledger_legs()} data frames; \code{ledger_result()} and \code{ledger_row()} a
+\code{ledger_legs()}, \code{ledger_validation()}, \code{ledger_ratios()} and
+\code{ledger_stack()} data frames; \code{ledger_result()} and \code{ledger_row()} a
 \link{discrete_distribution}.
 }
 \description{
@@ -104,6 +120,20 @@ bad year). \code{ledger_marginal()} gives each row's own quantiles,
 \code{ledger_card()} the card (\code{summary_df}), \code{ledger_legs()} the declared
 legs, \code{ledger_result()} and \code{ledger_row()} a row's distribution as a
 \link{discrete_distribution}. The source's probabilities are rescaled to 1.
+
+A leg with a \code{step} has its own distribution put on a grid of that step
+(\code{aggregate}'s \code{bs}), each value scattered linearly to its two
+neighbours, which keeps its mean; only its marginal quantiles change, and
+\code{ledger_validation()} compares the exact and grid means.
+\code{ledger_ratios()} is \code{aggregate}'s \code{economic_ratios_df}: for each group,
+span, net-of block and \code{All}, premium \code{P}, loss \code{L} net of recoveries,
+expense \code{E} net of commission and result \code{M}, the result's \code{SD}, ratios
+of means \code{LR}, \code{ER}, \code{CR}, means of ratios \code{E_LR}, \code{E_ER}, \code{E_CR}, and
+\code{P_share} and \code{M_share} of the first block; a leg without a kind counts
+as premium on the consideration side and loss on the other.
+\code{ledger_stack()} is \code{stack_marginal_pnls}: each ledger's result
+statistics, then each impact \code{c(label, target, base)} as the difference
+of two stacked rows, statistic by statistic.
 }
 \examples{
 book <- pnl_group("Book", "sell", list(pnl_leg("Premium", 10)), list(pnl_leg("Loss", identity)))

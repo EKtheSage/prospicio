@@ -474,7 +474,7 @@ DiscreteDist$tail <- function(periods) .Call(wrap__DiscreteDist__tail, self, per
 
 PnlLedger <- new.env(parent = emptyenv())
 
-PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, name, result_name, span_label, span_lo, span_hi, force_tower) .Call(wrap__PnlLedger__new, values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, name, result_name, span_label, span_lo, span_hi, force_tower)
+PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower) .Call(wrap__PnlLedger__new, values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower)
 
 PnlLedger$rows <- function() .Call(wrap__PnlLedger__rows, self)
 
@@ -491,6 +491,12 @@ PnlLedger$sheet <- function() .Call(wrap__PnlLedger__sheet, self)
 PnlLedger$marginal <- function() .Call(wrap__PnlLedger__marginal, self)
 
 PnlLedger$card <- function() .Call(wrap__PnlLedger__card, self)
+
+PnlLedger$validation <- function() .Call(wrap__PnlLedger__validation, self)
+
+PnlLedger$ratios <- function() .Call(wrap__PnlLedger__ratios, self)
+
+PnlLedger$result_stats <- function() .Call(wrap__PnlLedger__result_stats, self)
 
 PnlLedger$legs <- function() .Call(wrap__PnlLedger__legs, self)
 

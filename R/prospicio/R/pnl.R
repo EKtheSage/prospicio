@@ -24,11 +24,26 @@ NULL
 #' legs, `ledger_result()` and `ledger_row()` a row's distribution as a
 #' [discrete_distribution]. The source's probabilities are rescaled to 1.
 #'
+#' A leg with a `step` has its own distribution put on a grid of that step
+#' (`aggregate`'s `bs`), each value scattered linearly to its two
+#' neighbours, which keeps its mean; only its marginal quantiles change, and
+#' `ledger_validation()` compares the exact and grid means.
+#' `ledger_ratios()` is `aggregate`'s `economic_ratios_df`: for each group,
+#' span, net-of block and `All`, premium `P`, loss `L` net of recoveries,
+#' expense `E` net of commission and result `M`, the result's `SD`, ratios
+#' of means `LR`, `ER`, `CR`, means of ratios `E_LR`, `E_ER`, `E_CR`, and
+#' `P_share` and `M_share` of the first block; a leg without a kind counts
+#' as premium on the consideration side and loss on the other.
+#' `ledger_stack()` is `stack_marginal_pnls`: each ledger's result
+#' statistics, then each impact `c(label, target, base)` as the difference
+#' of two stacked rows, statistic by statistic.
+#'
 #' @param label A leg's or group's label; leg labels are unique across the
 #'   ledger.
 #' @param value A number, or a function of the source's values.
 #' @param kind `NULL` or one of `"premium"`, `"loss"`, `"expense"`,
 #'   `"recovery"`, `"commission"`.
+#' @param step `NULL`, or the step of a grid for the leg's own distribution.
 #' @param role `"sell"` or `"buy"`.
 #' @param consideration,obligation Lists of `pnl_leg()`s.
 #' @param margin_label A seller's own margin label on a ledger that also
@@ -43,9 +58,12 @@ NULL
 #' @param force_tower Present one group as a tower.
 #' @param ledger A `pnl_ledger()`.
 #' @param row A row's label.
+#' @param ledgers A named list of `pnl_ledger()`s, in row order.
+#' @param impacts `NULL` or a list of `c(label, target, base)`.
 #' @returns `pnl_leg()` and `pnl_group()` lists; `pnl_ledger()` a ledger;
 #'   `ledger_sheet()`, `ledger_marginal()`, `ledger_card()` and
-#'   `ledger_legs()` data frames; `ledger_result()` and `ledger_row()` a
+#'   `ledger_legs()`, `ledger_validation()`, `ledger_ratios()` and
+#'   `ledger_stack()` data frames; `ledger_result()` and `ledger_row()` a
 #'   [discrete_distribution].
 #' @export
 #' @examples
@@ -69,6 +87,7 @@ pnl_ledger <- function(source, groups, name = "ledger", result_name = "result", 
   leg_label <- character()
   leg_kind <- character()
   leg_values <- double()
+  leg_step <- double()
   for (gi in seq_along(groups)) {
     g <- groups[[gi]]
     for (side in c("consideration", "obligation")) {
@@ -84,6 +103,7 @@ pnl_ledger <- function(source, groups, name = "ledger", result_name = "result", 
         leg_label <- c(leg_label, leg$label)
         leg_kind <- c(leg_kind, if (is.null(leg$kind)) "" else leg$kind)
         leg_values <- c(leg_values, v)
+        leg_step <- c(leg_step, if (is.null(leg$step)) NaN else as.double(leg$step))
       }
     }
   }
@@ -95,7 +115,7 @@ pnl_ledger <- function(source, groups, name = "ledger", result_name = "result", 
     vapply(groups, function(g) g$label, character(1)),
     vapply(groups, function(g) g$role, character(1)),
     vapply(groups, function(g) if (is.null(g$margin_label)) "" else g$margin_label, character(1)),
-    as.double(leg_group), leg_side, leg_label, leg_kind, leg_values,
+    as.double(leg_group), leg_side, leg_label, leg_kind, leg_values, leg_step,
     as.character(name), as.character(result_name), span_label, span_lo, span_hi, isTRUE(force_tower)
   ))
   structure(list(ptr = ptr), class = "pnl_ledger")
@@ -103,10 +123,10 @@ pnl_ledger <- function(source, groups, name = "ledger", result_name = "result", 
 
 #' @rdname pnl_ledger
 #' @export
-pnl_leg <- function(label, value, kind = NULL) {
+pnl_leg <- function(label, value, kind = NULL, step = NULL) {
   kinds <- c("premium", "loss", "expense", "recovery", "commission")
   if (!is.null(kind) && !kind %in% kinds) stop(sprintf("unknown leg kind %s", kind))
-  list(label = as.character(label), value = value, kind = kind)
+  list(label = as.character(label), value = value, kind = kind, step = step)
 }
 
 #' @rdname pnl_ledger
@@ -145,6 +165,30 @@ ledger_card <- function(ledger) {
 #' @rdname pnl_ledger
 #' @export
 ledger_legs <- function(ledger) as.data.frame(ledger$ptr$legs(), stringsAsFactors = FALSE)
+
+#' @rdname pnl_ledger
+#' @export
+ledger_validation <- function(ledger) as.data.frame(ledger$ptr$validation(), stringsAsFactors = FALSE)
+
+#' @rdname pnl_ledger
+#' @export
+ledger_ratios <- function(ledger) as.data.frame(ledger$ptr$ratios(), stringsAsFactors = FALSE)
+
+#' @rdname pnl_ledger
+#' @export
+ledger_stack <- function(ledgers, impacts = NULL) {
+  cols <- c("EX", "SD", "CV", "Skew", sprintf("P%02d", c(1, 5, 10, 25, 50, 75, 90, 95, 99)))
+  stats <- lapply(ledgers, function(l) rust_result(l$ptr$result_stats()))
+  for (imp in impacts) {
+    if (!all(imp[2:3] %in% names(stats))) {
+      stop(sprintf("impact %s names a ledger that is not stacked", imp[[1]]))
+    }
+    stats[[imp[[1]]]] <- stats[[imp[[2]]]] - stats[[imp[[3]]]]
+  }
+  m <- do.call(rbind, stats)
+  colnames(m) <- cols
+  data.frame(label = names(stats), m, row.names = NULL, stringsAsFactors = FALSE)
+}
 
 #' @rdname pnl_ledger
 #' @export

@@ -113,6 +113,7 @@ pub struct Leg {
     label: String,
     kind: Option<LegKind>,
     value: LegValue,
+    step: Option<f64>,
 }
 
 impl std::fmt::Debug for Leg {
@@ -137,6 +138,7 @@ impl Leg {
             label: label.into(),
             kind: None,
             value: LegValue::Constant(amount),
+            step: None,
         }
     }
 
@@ -147,6 +149,7 @@ impl Leg {
             label: label.into(),
             kind: None,
             value: LegValue::Of(Box::new(f)),
+            step: None,
         }
     }
 
@@ -157,7 +160,19 @@ impl Leg {
             label: label.into(),
             kind: None,
             value: LegValue::Values(values),
+            step: None,
         }
+    }
+
+    /// The leg with its distribution put on a regular grid of step
+    /// `step` (any sign, from a multiple of the step at or below its least
+    /// value), each value's probability split between its two neighbours so
+    /// the mean is kept, as `aggregate`'s `Leg(bs=…)`. Only the row's own
+    /// quantiles change: its moments and scenario columns stay exact, off
+    /// the atoms. [`Ledger::validation`] compares the two means.
+    pub fn step(mut self, step: f64) -> Self {
+        self.step = Some(step);
+        self
     }
 
     /// The leg with its kind set.
@@ -370,9 +385,50 @@ pub struct Row {
     distribution: Discrete,
     mean: f64,
     sd: f64,
+    skew: Option<f64>,
+    step_size: Option<f64>,
 }
 
 impl Row {
+    /// The step of a rebucketed leg's grid ([`Leg::step`]); `None` for an
+    /// exact row.
+    pub fn step_size(&self) -> Option<f64> {
+        self.step_size
+    }
+
+    /// The row put on a grid of step `step`, when one is given.
+    fn rebucketed(mut self, step: Option<f64>, probs: &[f64]) -> Result<Self> {
+        let Some(h) = step else {
+            return Ok(self);
+        };
+        let (mut lo, mut hi) = self
+            .values
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+                (a.min(v), b.max(v))
+            });
+        // aggregate's _pushforward_grid: a constant gets a tiny span.
+        if hi <= lo {
+            hi = lo + (lo.abs() + 1.0) * 1e-9;
+        }
+        lo = (lo / h).floor() * h;
+        let n = ((hi - lo) / h).ceil() as usize + 1;
+        let mut mass = vec![0.0; n];
+        for (&v, &p) in self.values.iter().zip(probs) {
+            let u = (v - lo) / h;
+            let k0 = u.floor();
+            let f = (u - k0).clamp(0.0, 1.0);
+            let k0c = (k0.max(0.0) as usize).min(n - 1);
+            let k1c = ((k0 + 1.0).max(0.0) as usize).min(n - 1);
+            mass[k0c] += p * (1.0 - f);
+            mass[k1c] += p * f;
+        }
+        let grid = (0..n).map(|k| lo + h * k as f64).collect();
+        self.distribution = Discrete::new(grid, mass)?;
+        self.step_size = Some(h);
+        Ok(self)
+    }
+
     /// The row's signed value at each atom of the source.
     pub fn values(&self) -> &[f64] {
         &self.values
@@ -402,18 +458,7 @@ impl Row {
 
     /// The skewness off the atoms; `None` when the standard deviation is 0.
     pub fn skew(&self) -> Option<f64> {
-        if self.sd <= 0.0 {
-            return None;
-        }
-        let d = &self.distribution;
-        Some(
-            d.values()
-                .iter()
-                .zip(d.probs())
-                .map(|(x, p)| (x - self.mean).powi(3) * p)
-                .sum::<f64>()
-                / self.sd.powi(3),
-        )
+        self.skew
     }
 
     /// The row's own quantile at `p` (the marginal ladder).
@@ -444,6 +489,112 @@ pub struct CardRow {
     pub median: f64,
     /// The 99% quantile.
     pub p99: f64,
+}
+
+/// A rebucketed leg's exact mean against its grid's, [`Ledger::validation`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Validation {
+    /// The leg.
+    pub label: String,
+    /// The exact mean, off the atoms.
+    pub ex: f64,
+    /// The grid's mean.
+    pub est: f64,
+    /// `|ex − est|`.
+    pub abs_err: f64,
+    /// `abs_err / |ex|`, or `abs_err` when `ex` is 0.
+    pub rel_err: f64,
+}
+
+/// One block of [`Ledger::ratios`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct RatioRow {
+    /// The block: a group, a span, a net-of block or `All`.
+    pub step: String,
+    /// Premium.
+    pub p: f64,
+    /// Loss, net of recoveries.
+    pub l: f64,
+    /// Expense, net of commission.
+    pub e: f64,
+    /// The result, `P − L − E`.
+    pub m: f64,
+    /// The standard deviation of the block's result row.
+    pub sd: Option<f64>,
+    /// `L / P`.
+    pub lr: Option<f64>,
+    /// `E / P`.
+    pub er: Option<f64>,
+    /// `(L + E) / P`.
+    pub cr: Option<f64>,
+    /// `E[L / P]`.
+    pub e_lr: Option<f64>,
+    /// `E[E / P]`.
+    pub e_er: Option<f64>,
+    /// `E[(L + E) / P]`.
+    pub e_cr: Option<f64>,
+    /// `P` over the first block's.
+    pub p_share: Option<f64>,
+    /// `M` over the first block's.
+    pub m_share: Option<f64>,
+}
+
+/// A ledger's result statistics, [`Ledger::result_stats`], and a row of
+/// [`stack`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stats {
+    /// The mean.
+    pub ex: f64,
+    /// The standard deviation.
+    pub sd: f64,
+    /// The coefficient of variation.
+    pub cv: Option<f64>,
+    /// The skewness.
+    pub skew: Option<f64>,
+    /// The quantiles at [`LADDER`].
+    pub ladder: [f64; 9],
+}
+
+impl Stats {
+    /// `self − other`, statistic by statistic (a difference of quantiles is
+    /// not a quantile of anything).
+    pub fn less(&self, other: &Stats) -> Stats {
+        let opt = |a: Option<f64>, b: Option<f64>| a.zip(b).map(|(a, b)| a - b);
+        let ladder = std::array::from_fn(|k| self.ladder[k] - other.ladder[k]);
+        Stats {
+            ex: self.ex - other.ex,
+            sd: self.sd - other.sd,
+            cv: opt(self.cv, other.cv),
+            skew: opt(self.skew, other.skew),
+            ladder,
+        }
+    }
+}
+
+/// Independent ledgers' results side by side, `aggregate`'s
+/// `stack_marginal_pnls`: a row of [`Stats`] for each `(label, ledger)`,
+/// then a row for each `(label, target, base)` in `impacts`, the target's
+/// row less the base's, statistic by statistic. The ledgers share no
+/// atoms, so the quantiles are each result's own.
+pub fn stack(
+    ledgers: &[(&str, &Ledger)],
+    impacts: &[(&str, &str, &str)],
+) -> Result<Vec<(String, Stats)>> {
+    let mut out: Vec<(String, Stats)> = Vec::new();
+    for (label, ledger) in ledgers {
+        out.push((label.to_string(), ledger.result_stats()?));
+    }
+    for (label, target, base) in impacts {
+        let find = |name: &str| {
+            out.iter()
+                .find(|(l, _)| l == name)
+                .map(|(_, s)| s.clone())
+                .ok_or_else(|| Error::Data(format!("no stacked ledger labelled {name:?}")))
+        };
+        let row = find(target)?.less(&find(base)?);
+        out.push((label.to_string(), row));
+    }
+    Ok(out)
 }
 
 /// A source: the atoms a ledger's legs are evaluated at, with their
@@ -632,6 +783,8 @@ impl Ledger {
         struct Evaluated {
             cons: SignedLegs,
             obl: SignedLegs,
+            cons_steps: Vec<Option<f64>>,
+            obl_steps: Vec<Option<f64>>,
             cons_total: Vec<f64>,
             obl_total: Vec<f64>,
             result: Vec<f64>,
@@ -663,9 +816,23 @@ impl Ledger {
                 .iter()
                 .fold(zeros.clone(), |acc, (_, _, v)| add(&acc, v));
             let result = add(&cons_total, &obl_total);
+            let steps = |legs: &[Leg]| -> Result<Vec<Option<f64>>> {
+                legs.iter()
+                    .map(|leg| match leg.step {
+                        Some(h) if !(h.is_finite() && h > 0.0) => Err(Error::InvalidParameter {
+                            name: "step",
+                            value: h,
+                            reason: "must be finite and positive",
+                        }),
+                        other => Ok(other),
+                    })
+                    .collect()
+            };
             evaluated.push(Evaluated {
                 cons,
                 obl,
+                cons_steps: steps(&g.consideration)?,
+                obl_steps: steps(&g.obligation)?,
                 cons_total,
                 obl_total,
                 result,
@@ -744,7 +911,8 @@ impl Ledger {
                         label.clone(),
                         *kind,
                         v.clone(),
-                    )?,
+                    )?
+                    .rebucketed(e.cons_steps[li], &probs)?,
                 )?;
             }
             if e.cons.len() > 1 {
@@ -779,7 +947,8 @@ impl Ledger {
                         label.clone(),
                         *kind,
                         v.clone(),
-                    )?,
+                    )?
+                    .rebucketed(e.obl_steps[li], &probs)?,
                 )?;
             }
             if e.obl.len() > 1 {
@@ -1074,6 +1243,14 @@ impl Ledger {
             let m2: f64 = values.iter().zip(probs).map(|(v, p)| v * v * p).sum();
             (m, (m2 - m * m).max(0.0).sqrt())
         };
+        let skew = (sd > 0.0).then(|| {
+            values
+                .iter()
+                .zip(probs)
+                .map(|(v, p)| (v - mean).powi(3) * p)
+                .sum::<f64>()
+                / sd.powi(3)
+        });
         Ok(Row {
             label,
             kind,
@@ -1085,6 +1262,8 @@ impl Ledger {
             distribution,
             mean,
             sd,
+            skew,
+            step_size: None,
         })
     }
 
@@ -1305,6 +1484,188 @@ impl Ledger {
         Ok(out)
     }
 
+    /// The rebucketed legs ([`Leg::step`]): each one's exact mean against
+    /// its grid's, `aggregate`'s `validation_df`. Empty when every leg is
+    /// exact.
+    pub fn validation(&self) -> Vec<Validation> {
+        self.rows
+            .iter()
+            .filter(|r| matches!(r.kind, RowKind::Leg { .. }) && r.step_size.is_some())
+            .map(|r| {
+                let est = r.distribution.mean();
+                let abs_err = (r.mean - est).abs();
+                Validation {
+                    label: r.label.clone(),
+                    ex: r.mean,
+                    est,
+                    abs_err,
+                    rel_err: if r.mean != 0.0 {
+                        abs_err / r.mean.abs()
+                    } else {
+                        abs_err
+                    },
+                }
+            })
+            .collect()
+    }
+
+    /// The blocks of the ratio exhibit: each group, each span with two or
+    /// more groups, each net-of block, and `All` with several groups.
+    fn blocks(&self) -> Vec<(String, std::ops::Range<usize>, Option<usize>)> {
+        let n = self.groups.len();
+        let find = |kind: RowKind| self.rows.iter().position(|r| r.kind == kind);
+        let mut out = Vec::new();
+        for gi in 0..n {
+            out.push((
+                self.groups[gi].0.clone(),
+                gi..gi + 1,
+                find(RowKind::GroupResult(gi)),
+            ));
+            for (k, sp) in self.spans.iter().enumerate() {
+                if sp.hi >= sp.lo + 2 && sp.hi - 1 == gi {
+                    out.push((sp.label.clone(), sp.lo..sp.hi, find(RowKind::SpanResult(k))));
+                }
+            }
+            for (k, sp) in self.spans.iter().enumerate() {
+                if sp.lo < sp.hi && sp.hi < n && sp.hi >= 2 && sp.hi - 1 == gi {
+                    out.push((net_of(&sp.label), 0..sp.hi, find(RowKind::NetResult(k))));
+                }
+            }
+        }
+        if n > 1 {
+            out.push(("All".into(), 0..n, Some(self.result)));
+        }
+        out
+    }
+
+    /// Amounts and ratios by block, `aggregate`'s `economic_ratios_df`.
+    /// Premium `P`, loss `L` and expense `E` are signed in the gross
+    /// direction (consideration as booked, obligations negated), so a
+    /// cession's ceded premium and recovery are negative and `M = P − L −
+    /// E`. A leg's [`LegKind`] picks its amount: recoveries are part of
+    /// `L` and commissions of `E` (each a contra); a leg without a kind
+    /// counts as `P` on the consideration side and `L` on the obligation
+    /// side. `LR`, `ER` and `CR` are ratios of means; `E_LR`, `E_ER` and
+    /// `E_CR` means of ratios at each atom (the same as the ratios when
+    /// every premium leg is constant, `None` where a premium at an atom
+    /// with mass is within `1e-12` of 0). `P_share` and `M_share` are over
+    /// the first block's. Net-of blocks are cumulative.
+    pub fn ratios(&self) -> Vec<RatioRow> {
+        let n = self.probs.len();
+        let leg_rows: Vec<(usize, &Row)> = self
+            .rows
+            .iter()
+            .filter_map(|r| match r.kind {
+                RowKind::Leg { group, .. } => Some((group, r)),
+                _ => None,
+            })
+            .collect();
+        let mut out: Vec<RatioRow> = Vec::new();
+        let mut first: Option<(f64, f64)> = None;
+        for (label, range, result) in self.blocks() {
+            let mut amounts = [0.0; 3];
+            let mut vectors = vec![vec![0.0; n]; 3];
+            let mut m = 0.0;
+            let mut fixed_p = true;
+            for &(_, r) in leg_rows.iter().filter(|(g, _)| range.contains(g)) {
+                let RowKind::Leg { side, .. } = r.kind else {
+                    continue;
+                };
+                let factor = if side == Side::Consideration {
+                    1.0
+                } else {
+                    -1.0
+                };
+                let bucket = match (r.leg_kind, side) {
+                    (Some(LegKind::Premium), _) => 0,
+                    (Some(LegKind::Loss | LegKind::Recovery), _) => 1,
+                    (Some(LegKind::Expense | LegKind::Commission), _) => 2,
+                    (None, Side::Consideration) => 0,
+                    (None, _) => 1,
+                };
+                amounts[bucket] += factor * r.mean;
+                for (acc, v) in vectors[bucket].iter_mut().zip(&r.values) {
+                    *acc += factor * v;
+                }
+                if bucket == 0 && r.sd > NOISE {
+                    fixed_p = false;
+                }
+                m += r.mean;
+            }
+            let [p, l, e] = amounts;
+            let first = *first.get_or_insert((p, m));
+            let live = p.abs() > NOISE;
+            // aggregate: `num / p or 0.0`, so a zero ratio is +0.
+            let ratio = |num: f64| {
+                live.then(|| {
+                    let r = num / p;
+                    if r == 0.0 { 0.0 } else { r }
+                })
+            };
+            let (lr, er, cr) = (ratio(l), ratio(e), ratio(l + e));
+            let mean_of = |num: &[f64]| -> Option<f64> {
+                let den = &vectors[0];
+                let mut total = 0.0;
+                for k in 0..n {
+                    if self.probs[k] > 0.0 {
+                        if den[k].abs() <= NOISE {
+                            return None;
+                        }
+                        total += self.probs[k] * num[k] / den[k];
+                    }
+                }
+                Some(total)
+            };
+            let (e_lr, e_er, e_cr) = if !live {
+                (None, None, None)
+            } else if fixed_p {
+                (lr, er, cr)
+            } else {
+                let le: Vec<f64> = vectors[1]
+                    .iter()
+                    .zip(&vectors[2])
+                    .map(|(a, b)| a + b)
+                    .collect();
+                (mean_of(&vectors[1]), mean_of(&vectors[2]), mean_of(&le))
+            };
+            out.push(RatioRow {
+                step: label,
+                p,
+                l,
+                e,
+                m,
+                sd: result.map(|i| self.rows[i].sd),
+                lr,
+                er,
+                cr,
+                e_lr,
+                e_er,
+                e_cr,
+                p_share: (first.0.abs() > NOISE).then(|| p / first.0),
+                m_share: (first.1.abs() > NOISE).then(|| m / first.1),
+            });
+        }
+        out
+    }
+
+    /// The result's statistics: mean, standard deviation, coefficient of
+    /// variation, skewness and its own quantiles at [`LADDER`], snapped
+    /// within [`NOISE`] of 0, `aggregate`'s `stat_vector`.
+    pub fn result_stats(&self) -> Result<Stats> {
+        let r = self.result();
+        let mut ladder = [0.0; 9];
+        for (slot, q) in ladder.iter_mut().zip(LADDER) {
+            *slot = snap(r.quantile(q)?);
+        }
+        Ok(Stats {
+            ex: snap(r.mean),
+            sd: snap(r.sd),
+            cv: r.cv().map(snap),
+            skew: r.skew.map(snap),
+            ladder,
+        })
+    }
+
     /// The ledger of `self`'s groups followed by `other`'s, over the same
     /// source (`aggregate`'s `pnl_a + pnl_b`): every row is rebuilt from the
     /// legs' values. Fails if the sources differ.
@@ -1340,6 +1701,7 @@ impl Ledger {
                             row.values.iter().map(|v| sign * v).collect(),
                         );
                         leg.kind = row.leg_kind;
+                        leg.step = row.step_size;
                         g = if side == Side::Consideration {
                             g.consideration(leg)
                         } else {

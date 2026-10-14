@@ -1,0 +1,325 @@
+case,quantity,row,col,expected,abs_tol,rel_tol,source
+ex1,ratios,Ex1,P,10.0,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,L,3.8000000000000003,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,E,1.0,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,M,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,SD,1.6062378404209017,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,LR,0.38,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,ER,0.1,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,CR,0.4800000000000001,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,E_LR,0.38,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,E_ER,0.1,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,E_CR,0.4800000000000001,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,P_share,1.0,1e-12,0.0,aggregate 1.0.1
+ex1,ratios,Ex1,M_share,1.0,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,P,19.000000000000004,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,L,12.000000000000004,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,E,0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,M,6.4,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,SD,6.967065379340142,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,LR,0.6315789473684211,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,ER,0.031578947368421054,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,CR,0.6631578947368422,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,E_LR,0.46064814814814825,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,E_ER,0.02303240740740741,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,E_CR,0.4836805555555556,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,P_share,1.0,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,Gross,M_share,1.0,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,P,-4.0,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,L,-3.500000000000001,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,E,-0.4,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,M,-0.09999999999999909,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,SD,7.433034373659253,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,LR,0.8750000000000002,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,ER,0.1,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,CR,0.9750000000000002,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,E_LR,0.8750000000000002,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,E_ER,0.1,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,E_CR,0.9750000000000002,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,P_share,-0.21052631578947364,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,XL,M_share,-0.015624999999999858,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,P,15.000000000000004,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,L,8.500000000000004,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,E,0.20000000000000007,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,M,6.300000000000002,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,SD,2.9137604568666933,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,LR,0.5666666666666668,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,ER,0.013333333333333334,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,CR,0.5800000000000001,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,E_LR,0.4498792270531402,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,E_ER,-0.006449275362318844,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,E_CR,0.4434299516908212,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,P_share,0.7894736842105263,1e-12,0.0,aggregate 1.0.1
+ex2,ratios,All,M_share,0.9843750000000002,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,P,10.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,L,3.8000000000000003,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,E,1.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,M,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,SD,1.6062378404209017,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,LR,0.38,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,ER,0.1,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,CR,0.4800000000000001,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,E_LR,0.38,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,E_ER,0.1,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,E_CR,0.4800000000000001,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,P_share,1.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,Gross,M_share,1.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,P,-1.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,L,-0.024,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,E,0.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,M,-0.976,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,SD,0.06499230723708602,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,LR,0.024,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,ER,0.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,CR,0.024,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,E_LR,0.024,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,E_ER,0.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,E_CR,0.024,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,P_share,-0.1,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,agg 3 xs 5,M_share,-0.1876923076923077,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,P,9.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,L,3.7760000000000002,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,E,1.0,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,M,4.223999999999999,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,SD,1.5590458620579442,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,LR,0.41955555555555557,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,ER,0.1111111111111111,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,CR,0.5306666666666666,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,E_LR,0.41955555555555557,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,E_ER,0.1111111111111111,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,E_CR,0.5306666666666666,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,P_share,0.9,1e-12,0.0,aggregate 1.0.1
+ex3,ratios,All,M_share,0.8123076923076923,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,P,30.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,L,12.000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,E,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,M,17.999999999999996,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,SD,14.696938456699069,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,LR,0.40000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,CR,0.40000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,E_LR,0.40000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,E_ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,E_CR,0.40000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,P_share,1.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Gross,M_share,1.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,P,-3.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,L,-3.000000000000001,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,E,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,M,8.881784197001252e-16,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,SD,4.582575694955841,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,LR,1.0000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,CR,1.0000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,E_LR,1.0000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,E_ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,E_CR,1.0000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,P_share,-0.1,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL1,M_share,4.9343245538895856e-17,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,P,27.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,L,9.000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,E,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,M,17.999999999999996,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,SD,11.357816691600545,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,LR,0.3333333333333335,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,CR,0.3333333333333335,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,E_LR,0.3333333333333335,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,E_ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,E_CR,0.3333333333333335,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,P_share,0.9,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All gross and XL1,M_share,1.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,P,27.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,L,9.000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,E,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,M,17.999999999999996,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,SD,11.357816691600545,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,LR,0.3333333333333335,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,CR,0.3333333333333335,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,E_LR,0.3333333333333335,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,E_ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,E_CR,0.3333333333333335,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,P_share,0.9,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,Net of gross and XL1,M_share,1.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,P,-2.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,L,-3.0000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,E,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,M,1.0000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,SD,9.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,LR,1.5000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,CR,1.5000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,E_LR,1.5000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,E_ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,E_CR,1.5000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,P_share,-0.06666666666666667,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,XL2,M_share,0.055555555555555594,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,P,-5.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,L,-6.000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,E,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,M,1.0000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,SD,12.000000000000002,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,LR,1.2000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,CR,1.2000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,E_LR,1.2000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,E_ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,E_CR,1.2000000000000004,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,P_share,-0.16666666666666666,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All XL,M_share,0.05555555555555564,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,P,25.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,L,6.0000000000000036,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,E,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,M,18.999999999999996,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,SD,4.89897948556635,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,LR,0.24000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,CR,0.24000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,E_LR,0.24000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,E_ER,0.0,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,E_CR,0.24000000000000013,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,P_share,0.8333333333333334,1e-12,0.0,aggregate 1.0.1
+tiers,ratios,All,M_share,1.0555555555555556,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,EX,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k01,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k05,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k10,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k25,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k50,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k75,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k90,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k95,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Consideration|consideration,k99,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,EX,-12.360000000000003,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,SD,15.137846610400041,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,CV,-1.2247448713915887,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,Skew,-1.5422713195301492,1e-10,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k01,-51.5,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k05,-51.5,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k10,-51.5,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k25,-20.6,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k50,-10.3,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k75,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k90,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k95,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Obligation|Loss,k99,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,EX,7.640000000000001,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,SD,15.137846610400043,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,CV,1.9813935353926757,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,Skew,-1.542271319530149,1e-10,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k01,-31.500000000000004,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k05,-31.500000000000004,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k10,-31.500000000000004,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k25,-0.6000000000000014,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k50,9.7,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k75,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k90,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k95,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,sheet,Margin|Total,k99,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P01,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P05,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P10,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P25,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P50,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P75,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P90,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P95,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Consideration|consideration,P99,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P01,-52.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P05,-52.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P10,-48.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P25,-20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P50,-8.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P75,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P90,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P95,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Obligation|Loss,P99,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P01,-31.5,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P05,-31.5,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P10,-31.5,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P25,-0.6000000000000014,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P50,9.7,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P75,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P90,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P95,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,marginal,Margin|Total,P99,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Consideration,EX,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Consideration,P01,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Consideration,Median,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Consideration,P99,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Obligation,EX,-12.360000000000003,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Obligation,SD,15.137846610400041,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Obligation,CV,-1.2247448713915887,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Obligation,Skew,-1.5422713195301492,1e-10,0.0,aggregate 1.0.1
+ex2b,card,Obligation,P01,-51.5,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Obligation,Median,-10.3,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Obligation,P99,0.0,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Margin,EX,7.640000000000001,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Margin,SD,15.137846610400043,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Margin,CV,1.9813935353926757,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Margin,Skew,-1.542271319530149,1e-10,0.0,aggregate 1.0.1
+ex2b,card,Margin,P01,-31.5,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Margin,Median,9.7,1e-12,0.0,aggregate 1.0.1
+ex2b,card,Margin,P99,20.0,1e-12,0.0,aggregate 1.0.1
+ex2b,validation,Loss,EX,-12.360000000000003,1e-14,0.0,aggregate 1.0.1
+ex2b,validation,Loss,Est,-12.360000000000001,1e-14,0.0,aggregate 1.0.1
+ex2b,validation,Loss,abs_err,1.7763568394002505e-15,1e-14,0.0,aggregate 1.0.1
+ex2b,validation,Loss,rel_err,1.4371819088998787e-16,1e-14,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-52.0,0.08750000000000002,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-48.0,0.012500000000000002,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-44.0,0.0,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-40.0,0.0,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-36.0,0.0,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-32.0,0.0,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-28.0,0.0,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-24.0,0.030000000000000075,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-20.0,0.16999999999999996,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-16.0,0.0,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-12.0,0.17249999999999982,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-8.0,0.12750000000000022,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,-4.0,0.0,1e-15,0.0,aggregate 1.0.1
+ex2b,grid,Loss,0.0,0.4000000000000001,1e-15,0.0,aggregate 1.0.1
+stack,stack,ex2b,EX,7.640000000000001,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,SD,15.137846610400043,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,CV,1.9813935353926757,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,Skew,-1.542271319530149,1e-10,0.0,aggregate 1.0.1
+stack,stack,ex2b,P01,-31.5,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,P05,-31.5,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,P10,-31.5,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,P25,-0.6000000000000014,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,P50,9.7,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,P75,20.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,P90,20.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,P95,20.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2b,P99,20.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,EX,2.000000000000001,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,SD,14.69693845669907,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,CV,7.348469228349532,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,Skew,-2.2378054440241373,1e-10,0.0,aggregate 1.0.1
+stack,stack,ex2c,P01,-40.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,P05,-40.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,P10,-40.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,P25,0.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,P50,10.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,P75,10.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,P90,10.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,P95,10.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,ex2c,P99,10.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,EX,-5.64,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,SD,-0.44090815370097225,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,CV,5.367075692956856,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,Skew,-0.6955341244939883,1e-10,0.0,aggregate 1.0.1
+stack,stack,c less b,P01,-8.5,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,P05,-8.5,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,P10,-8.5,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,P25,0.6000000000000014,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,P50,0.3000000000000007,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,P75,-10.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,P90,-10.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,P95,-10.0,1e-12,0.0,aggregate 1.0.1
+stack,stack,c less b,P99,-10.0,1e-12,0.0,aggregate 1.0.1
