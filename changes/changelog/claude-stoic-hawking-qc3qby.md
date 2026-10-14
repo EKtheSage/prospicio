@@ -11,7 +11,7 @@
   the lower and upper quantiles, TVaR and the return-period table as
   `aggregate` 1.0.1's `GridDistribution`, `pmf` and skewness. Python
   `Discrete`; R `discrete_distribution()`, `quantile_upper()`,
-  `discrete_skewness()` and `return_periods()`.
+  `discrete_skewness()` and `return_periods()` (#241).
 
 ### Aggregate and reinsurance
 
