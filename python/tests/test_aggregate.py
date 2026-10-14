@@ -858,3 +858,24 @@ def test_book_variable_terms_and_program():
     assert round_premium(146.5) == 146.0 and size_premium(499.885, 0.7) == 714.0
     with pytest.raises(ValueError):
         size_premium(-1.0, 0.7)
+
+
+def test_book_reinstatements():
+    from prospicio.aggregate import Book, Expense, occurrence_source
+    from prospicio.distributions import Grid, Poisson
+    from prospicio.reinsurance import Layer, Tower
+
+    # aggregate 1.0.1: an occurrence cover 2 xs 2 with one reinstatement at
+    # 100% on example 4's book; the premium D + h(R) varies with the year.
+    sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
+    occ = Tower([Layer("occ 2 xs 2", 2.0, 2.0, premium=2.0, reinstatement_rates=[1.0])])
+    joint, _ = occurrence_source(Poisson(2.0), sev, occ, (64, 32))
+    book = Book("R", 20.0, [Expense("premium", 0.1)])
+    s = book.occurrence_ledger(joint, occ, face="walk").sheet()
+    prem = s["row"].index("occ 2 xs 2 premium")
+    assert s["EX"][prem] == pytest.approx(-2.65936, abs=1e-5)
+    assert s["SD"][prem] == pytest.approx(0.940194, abs=1e-6)
+    net = book.occurrence_ledger(joint, occ)
+    assert net.result.mean() == pytest.approx(12.323104, abs=1e-6)
+    with pytest.raises(ValueError):
+        book.ledger(([1.0, 5.0], [0.5, 0.5]), occ, "walk")

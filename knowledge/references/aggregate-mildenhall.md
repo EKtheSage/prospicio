@@ -470,6 +470,16 @@ sources:
   (`_pnl_technical`) rounds each deposit at 100% placement before the
   premium, both half to even (whole units above 100, cents below).
   prospicio matches on 2,342 values (`aggregate_pnl_variable.py`).[^pnl]
+* Reinstatements decorate a single occurrence layer (`deposit 2
+  reinstatements 1 at 100%`, `1 free and 1 at 50%`, `no reinstatements`;
+  a base premium clause is required). The ledger runs on the `(L, R)`
+  joint, `R` the layer's unlimited annual cession, with the recovery
+  `A(R)` capped at the annual limit and the premium `D + h(R)`, `h` pro
+  rata as to amount; an aggregate cover behind it recovers on
+  `max(L − A(R), 0)`. Both faces are over the joint (the consolidated
+  one books a loss-basis expense stochastic on `L`), and `xpnl ... peel`
+  is refused. `Book::occurrence_ledger` matches on 1,121 values
+  (`aggregate_pnl_reinstatements.py`).[^pnl]
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 

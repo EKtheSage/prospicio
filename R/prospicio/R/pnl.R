@@ -350,9 +350,10 @@ derive_premium <- function(technical, expenses) {
 #' the occurrence covers are one group named after the first layer, then
 #' each aggregate cover of `aggregate` recovers its cession of the net of
 #' the occurrence covers; a peel needs exactly one occurrence layer; the
-#' consolidated face is over the net loss at each atom. Occurrence layers
-#' may not carry annual terms (an aggregate deductible or limit, or a
-#' corridor).
+#' consolidated face is over the net loss at each atom. A single occurrence
+#' layer may carry annual terms and paid reinstatements, on the joint's
+#' unlimited annual cession `R`: its recovery `A(R)` and premium `D + h(R)`
+#' then vary with the year. On a tier of several layers they are refused.
 #'
 #' @param frequency A claim count, as [poisson_count()].
 #' @param severity A [grid_distribution] of one claim.

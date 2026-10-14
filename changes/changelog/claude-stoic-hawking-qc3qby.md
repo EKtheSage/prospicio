@@ -89,3 +89,10 @@
   `Book(retro=)`, `pnl_program`, `size_premium`, `round_premium`; R
   `pnl_book(retro =)`, `pnl_program()`, `size_premium()`,
   `round_premium()` (#247).
+- Reinstatement premiums in the P&L ledger: an occurrence cover of one
+  layer with annual terms and paid reinstatements over the joint of the
+  gross loss and its unlimited annual cession, its recovery `A(R)` and
+  premium `D + h(R)` varying with the year on every face, and an
+  aggregate cover behind it, matching `aggregate` 1.0.1. Annual covers
+  now refuse paid reinstatements with a pointer to
+  `Book::occurrence_ledger` (#248).

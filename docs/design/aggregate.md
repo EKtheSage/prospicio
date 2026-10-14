@@ -97,7 +97,8 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   and its annual covers (`pnl::Book`: consolidated, walk and peel) and of
   its occurrence covers over the joint gross and ceded loss
   (`pnl::occurrence_source`, `Book::occurrence_ledger`), with variable
-  terms and retro as legs, and `pnl::pnl_program`'s premium ladder
+  terms, retro and reinstatement premiums as legs, and
+  `pnl::pnl_program`'s premium ladder
   (`docs/design/pnl.md`). Python `Ledger`, `Group`, `Leg`, `stack`,
   `Book`, `Expense`; R `pnl_ledger()`, `ledger_ratios()`, `ledger_stack()`,
   `pnl_book()`, `book_ledger()`.

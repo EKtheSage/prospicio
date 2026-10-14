@@ -837,17 +837,7 @@ impl Layer {
         if self.reinstatement_rates.is_empty() {
             return 0.0;
         }
-        // Rate-weighted limits used between layer losses `a` and `b`.
-        let used = |a: f64, b: f64| -> f64 {
-            self.reinstatement_rates
-                .iter()
-                .enumerate()
-                .map(|(k, rate)| {
-                    let floor = k as f64 * self.limit;
-                    rate * ((b - floor).clamp(0.0, self.limit) - (a - floor).clamp(0.0, self.limit))
-                })
-                .sum()
-        };
+        let used = |a: f64, b: f64| self.reinstated(a, b);
         if !self.pro_rata_time {
             return self.premium * used(0.0, self.layer_loss(losses, si)) / self.limit;
         }
@@ -930,6 +920,29 @@ impl Layer {
     /// the loss basis.
     pub(crate) fn recovery(&self, loss: f64) -> f64 {
         self.recovery_at(loss, None)
+    }
+
+    /// Rate-weighted limits used between annual layer losses `a` and `b`
+    /// (at 100%, after the annual terms).
+    fn reinstated(&self, a: f64, b: f64) -> f64 {
+        self.reinstatement_rates
+            .iter()
+            .enumerate()
+            .map(|(k, rate)| {
+                let floor = k as f64 * self.limit;
+                rate * ((b - floor).clamp(0.0, self.limit) - (a - floor).clamp(0.0, self.limit))
+            })
+            .sum()
+    }
+
+    /// The reinstatement premium on an annual layer loss `layer_loss` at
+    /// 100% after the annual terms, pro rata as to amount:
+    /// `premium × Σ_k rates[k] × min(max(L − k × limit, 0), limit) / limit`.
+    pub(crate) fn reinstatement_premium_on(&self, layer_loss: f64) -> f64 {
+        if self.reinstatement_rates.is_empty() {
+            return 0.0;
+        }
+        self.premium * self.reinstated(0.0, layer_loss) / self.limit
     }
 
     /// Per-occurrence recovery at 100%, before annual terms, for a loss on

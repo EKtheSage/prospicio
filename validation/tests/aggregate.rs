@@ -2011,3 +2011,123 @@ fn pnl_variable_terms_match_aggregate() {
         }
     });
 }
+
+#[test]
+fn pnl_reinstatements_match_aggregate() {
+    use prospicio_aggregate::pnl::{Book, Expense, Face, Ledger, Source, snap};
+    use prospicio_aggregate::{Layer, Tower};
+    // validation/scripts/aggregate_pnl_reinstatements.py: an occurrence
+    // cover with reinstatements over the joint of the gross loss and its
+    // unlimited annual cession, the recovery A(R) and the premium D + h(R).
+    let joint = {
+        let rows = reference("pnl_occurrence_sources.csv");
+        let (mut x, mut y, mut p) = (Vec::new(), Vec::new(), Vec::new());
+        for r in rows.iter().filter(|r| r.get("source") == "ex4") {
+            x.push(r.number("gross").unwrap());
+            y.push(r.number("ceded").unwrap());
+            p.push(r.number("prob").unwrap());
+        }
+        Source::joint(x, y, p).unwrap()
+    };
+    let layer = || Layer::xol("occ 2 xs 2", 2.0, 2.0).unwrap();
+    let one = Tower::new(vec![layer().paid_reinstatements(2.0, vec![1.0]).unwrap()]).unwrap();
+    let none = Tower::new(vec![
+        layer()
+            .deposit_premium(2.0)
+            .unwrap()
+            .reinstatements(0)
+            .unwrap(),
+    ])
+    .unwrap();
+    let two = Tower::new(vec![
+        layer()
+            .paid_reinstatements(2.0, vec![0.0, 0.5])
+            .unwrap()
+            .ceding_commission(0.25)
+            .unwrap(),
+    ])
+    .unwrap();
+    let agg = Tower::new(vec![
+        Layer::stop_loss("agg 3 xs 5", 3.0, 5.0)
+            .unwrap()
+            .deposit_premium(0.5)
+            .unwrap(),
+    ])
+    .unwrap();
+    let book = Book::new("R", 20.0).expense(Expense::premium(0.1));
+    let build = |t: &Tower, a: Option<&Tower>, face| book.occurrence_ledger(&joint, t, a, face);
+    let ledgers: std::collections::HashMap<&str, Ledger> = [
+        ("r1", build(&one, None, Face::Walk)),
+        ("r1c", build(&one, None, Face::Consolidated)),
+        ("r0", build(&none, None, Face::Walk)),
+        ("r0c", build(&none, None, Face::Consolidated)),
+        ("r2", build(&two, Some(&agg), Face::Walk)),
+        ("r2c", build(&two, Some(&agg), Face::Consolidated)),
+    ]
+    .into_iter()
+    .map(|(k, l)| (k, l.unwrap()))
+    .collect();
+    let ladder = |col: &str| -> Option<f64> {
+        let q: f64 = col[1..].parse::<f64>().ok()? / 100.0;
+        prospicio_aggregate::pnl::LADDER
+            .iter()
+            .copied()
+            .find(|l| (l - q).abs() < 1e-12)
+    };
+    check(&reference("pnl_reinstatements_aggregate.csv"), |c| {
+        let (row_key, col) = (c.get("row"), c.get("col"));
+        let pnl = ledgers.get(c.get("case"))?;
+        let key = |r: &prospicio_aggregate::pnl::Row| {
+            if pnl.is_tower() {
+                format!("{}|{}|{}", r.step, r.side.name(), r.display)
+            } else {
+                format!("{}|{}", r.side.name(), r.display)
+            }
+        };
+        match c.get("quantity") {
+            "sheet" => {
+                let i = pnl.rows().iter().position(|r| key(r) == row_key)?;
+                let r = &pnl.rows()[i];
+                match col {
+                    "EX" => Some(snap(r.mean())),
+                    "SD" => Some(snap(r.sd())),
+                    "CV" => r.cv().map(snap),
+                    "Skew" => r.skew().map(snap),
+                    _ => Some(pnl.scenarios(ladder(col)?).ok()?[i]),
+                }
+            }
+            "card" => {
+                let card = pnl.card().ok()?;
+                let r = card.iter().find(|r| {
+                    if pnl.is_tower() {
+                        format!("{}|{}", r.step, r.side) == row_key
+                    } else {
+                        r.side == row_key
+                    }
+                })?;
+                match col {
+                    "EX" => Some(r.ex),
+                    "SD" => Some(r.sd),
+                    "CV" => r.cv,
+                    "Skew" => r.skew,
+                    "P01" => Some(r.p01),
+                    "Median" => Some(r.median),
+                    "P99" => Some(r.p99),
+                    _ => None,
+                }
+            }
+            "legs" => {
+                let mut parts = row_key.splitn(3, '|');
+                let (step, side, label) = (parts.next()?, parts.next()?, parts.next()?);
+                let r = pnl.rows().iter().find(|r| {
+                    matches!(r.kind, prospicio_aggregate::pnl::RowKind::Leg { .. })
+                        && r.step == step
+                        && r.side.name() == side
+                        && r.label == label
+                })?;
+                Some(r.mean())
+            }
+            _ => None,
+        }
+    });
+}

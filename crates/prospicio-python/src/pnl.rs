@@ -929,14 +929,18 @@ impl PyBook {
     ///
     /// The occurrence covers are one group on the walk, named after the
     /// first layer; a peel needs exactly one occurrence layer. The
-    /// consolidated face is over the net loss at each atom.
+    /// consolidated face is over the net loss at each atom. A single
+    /// occurrence layer may carry annual terms and paid reinstatements on
+    /// the joint's unlimited annual cession ``R``: its recovery ``A(R)``
+    /// and premium ``D + h(R)`` then vary with the year.
     ///
     /// Parameters
     /// ----------
     /// joint : tuple of (list of float, list of float, list of float)
     ///     ``(gross, ceded, probs)``.
     /// occurrence : prospicio.reinsurance.Tower
-    ///     Per-occurrence covers without annual terms.
+    ///     Per-occurrence covers; annual terms and reinstatements on a
+    ///     single layer only.
     /// aggregate : prospicio.reinsurance.Tower, optional
     /// face : str, default "consolidated"
     ///
@@ -947,8 +951,8 @@ impl PyBook {
     /// Raises
     /// ------
     /// ValueError
-    ///     As :meth:`ledger`, an occurrence layer with annual terms, or a
-    ///     peel through several occurrence layers.
+    ///     As :meth:`ledger`, annual terms on an occurrence tier of several
+    ///     layers, or a peel through several occurrence layers.
     #[pyo3(signature = (joint, occurrence, aggregate=None, face="consolidated"))]
     fn occurrence_ledger(
         &self,
@@ -1005,7 +1009,8 @@ fn face_of(face: &str) -> PyResult<Face> {
 /// frequency : Poisson, NegativeBinomial, Binomial or a count
 /// severity : Grid
 /// occurrence : prospicio.reinsurance.Tower
-///     Per-occurrence covers without annual terms.
+///     Per-occurrence covers; a single layer may carry annual terms and
+///     reinstatements, and each claim is then ceded without them.
 /// points : tuple of (int, int)
 ///
 /// Returns

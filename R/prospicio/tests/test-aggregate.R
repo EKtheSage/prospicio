@@ -474,3 +474,14 @@ local({
   stopifnot(p$premium == 817, identical(p$deposits, c(145, 16.29)))
   stopifnot(identical(round_premium(c(146.5, 16.285)), c(146, 16.29)), size_premium(499.885, 0.7) == 714)
 })
+
+# Reinstatement premiums on the joint (aggregate 1.0.1): D + h(R) varies.
+local({
+  sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))
+  occ <- reinsurance_tower(list(xol_layer("occ 2 xs 2", 2, 2, premium = 2, reinstatement_rates = 1)))
+  joint <- occurrence_source(poisson_count(2), sev, occ, c(64, 32))
+  book <- pnl_book("R", 20, list(pnl_expense("premium", 0.1)))
+  s <- ledger_sheet(book_occurrence_ledger(book, joint, occ, face = "walk"))
+  stopifnot(abs(s$EX[s$row == "occ 2 xs 2 premium"] + 2.65936) < 1e-5)
+  stopifnot(abs(mean(ledger_result(book_occurrence_ledger(book, joint, occ))) - 12.323104) < 1e-6)
+})
