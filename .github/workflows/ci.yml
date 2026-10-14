@@ -2,7 +2,9 @@ name: CI
 
 # Cost: the repo is private, so minutes are billed and Windows counts double.
 # Pull requests run Ubuntu only; Windows runs on the weekly schedule and on
-# demand. A push to main runs only the Rust job, since its PR already passed.
+# demand. A push to main runs only the Rust job, since its PR already passed;
+# the jobs that run a slow suite in a release build (bayes, fremtpl2) run on
+# a PR that touches their inputs and on the weekly and manual runs.
 # The scheduled run also keeps main's caches warm for new PRs.
 on:
   push:
@@ -32,8 +34,10 @@ jobs:
       - run: python3 -m pip install --quiet pyyaml && python3 validation/scripts/check_okf.py knowledge
       # Change fragments (changes/README.md) are valid and fold cleanly.
       - run: python3 validation/scripts/fold_changes.py --self-test && python3 validation/scripts/fold_changes.py --check
-      # Default members: pure-Rust crates and the parity suite.
-      - run: cargo clippy --all-targets -- -D warnings
+      # Default members: pure-Rust crates and the parity suite. The feature
+      # lints the Bayesian parity tests too; `cargo test` skips them (the
+      # bayes job runs them in release).
+      - run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
       - run: cargo test
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
@@ -222,3 +226,42 @@ jobs:
         run: cargo test --release -p prospicio-validation --test fremtpl2
         env:
           RISK_RS_REQUIRE_FREMTPL2: "1"
+
+  # The Bayesian (NUTS) parity tests: the [[test]] targets of
+  # validation/Cargo.toml that require the `slow-bayes` feature, the one
+  # place that lists them. A debug build takes about 220 s on them, a
+  # release build about 17 s, so the rust job's `cargo test` skips them and
+  # this job runs them in release. On a pull request it runs only when
+  # their inputs change; otherwise its steps are skipped and it passes.
+  bayes:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether the Bayesian inputs changed
+        id: changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+              | grep -qE '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers)|\.github/workflows/ci\.yml)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No Bayesian inputs changed; skipping the Bayesian parity."
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - if: steps.changes.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - if: steps.changes.outputs.run == 'true'
+        name: Run the Bayesian parity tests in release
+        run: |
+          tests=$(python3 -c "import tomllib; t = tomllib.load(open('validation/Cargo.toml', 'rb')); print(' '.join('--test ' + x['name'] for x in t['test'] if 'slow-bayes' in x.get('required-features', [])))")
+          echo "cargo test --release -p prospicio-validation --features slow-bayes $tests"
+          cargo test --release -p prospicio-validation --features slow-bayes $tests
