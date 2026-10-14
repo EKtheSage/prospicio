@@ -9164,6 +9164,8 @@ class LimitedFluctuation:
     >>> lf = LimitedFluctuation(0.90, 0.05)
     >>> round(lf.frequency_standard())
     1082
+    >>> lf.p, lf.k
+    (0.9, 0.05)
     """
     def __new__(cls, /, p: float = 0.90, k: float = 0.05) -> LimitedFluctuation: ...
     def __repr__(self, /) -> str: ...
@@ -9187,6 +9189,16 @@ class LimitedFluctuation:
         Returns
         -------
         float
+        """
+    @property
+    def k(self, /) -> float:
+        """
+        The tolerance ``k``, relative to the mean.
+        """
+    @property
+    def p(self, /) -> float:
+        """
+        The probability ``p`` of lying within ``k`` of the mean.
         """
     def pure_premium_standard(self, /, cv: float) -> float:
         """
@@ -10716,6 +10728,44 @@ class Mbbefd:
         Returns
         -------
         Mbbefd
+        """
+    @staticmethod
+    def swiss_re_for_layer_share(limit: float, attachment: float, mpl: float, share: float) -> tuple[Mbbefd, float]:
+        """
+        The Swiss Re curve that gives ``limit`` xs ``attachment`` the share
+        ``share`` of a risk's loss with maximum possible loss ``mpl``
+        (``G((a + l)/mpl) - G(a/mpl)``), and its ``c``.
+        
+        Parameters
+        ----------
+        limit, attachment, mpl : float
+        share : float
+        
+        Returns
+        -------
+        tuple of (Mbbefd, float)
+        """
+    @staticmethod
+    def swiss_re_for_mean_rate(rate: float) -> tuple[Mbbefd, float]:
+        """
+        The Swiss Re curve whose mean destruction rate is ``rate``, and its
+        ``c``.
+        
+        Parameters
+        ----------
+        rate : float
+            Between the curves at ``c = 10`` and ``c = 0`` (0.5).
+        
+        Returns
+        -------
+        tuple of (Mbbefd, float)
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import Mbbefd
+        >>> curve, c = Mbbefd.swiss_re_for_mean_rate(Mbbefd.swiss_re(3.0).mean())
+        >>> round(c, 9)
+        3.0
         """
     def total_loss_probability(self, /) -> float:
         """
@@ -14597,12 +14647,17 @@ class RiskProfile:
         ``sums_insured``), each simulated loss draws its own ``SI`` between
         the bounds, and the exposure-rated expectations average over the
         band, weighted by sum insured.
-    spread : {"uniform", "tilted"}, default "uniform"
+    spread : {"uniform", "tilted", "auto"}, optional
         How a band with bounds spreads its sums insured. ``"tilted"`` keeps
         ``sums_insured`` as the mean, so the spread matches both the bounds
         and the band's total sum insured: the density ``∝ exp(θ s)`` on the
         bounds with ``θ`` solved for that mean (``sums_insured`` must lie
-        strictly between the bounds).
+        strictly between the bounds). ``"uniform"`` moves the mean to
+        ``(lower + upper) / 2``. ``"auto"`` tilts a band whose
+        ``sums_insured`` lies strictly between its bounds and spreads any
+        other uniformly. Not given, the spread is uniform, with a
+        ``UserWarning`` for each band whose mean moves (as with ``"auto"``).
+        A band may start at ``lower = 0``.
     
     Examples
     --------
@@ -14615,11 +14670,12 @@ class RiskProfile:
     >>> events.has_sums_insured
     True
     """
-    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None, lower: Sequence[float |None] |None = None, upper: Sequence[float |None] |None = None, spread: str = "uniform") -> RiskProfile: ...
+    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None, lower: Sequence[float |None] |None = None, upper: Sequence[float |None] |None = None, spread: str |None = None) -> RiskProfile: ...
     def __repr__(self, /) -> str: ...
     def expected_claims(self, /) -> list[float]:
         """
-        Expected number of losses a year, per band.
+        Expected number of losses a year, per band: losses of every size,
+        not only those that reach a layer.
         
         Returns
         -------
@@ -15062,6 +15118,33 @@ class TabulatedCurve:
         Returns
         -------
         list of float
+        """
+    @staticmethod
+    def from_severity(severity: Any, mpl: float, points: int = 200) -> TabulatedCurve:
+        """
+        The exposure curve of ``severity`` capped at ``mpl``, tabulated at
+        ``points`` points, for a risk profile's band (which takes an
+        ``Mbbefd`` or a ``TabulatedCurve``).
+        
+        Parameters
+        ----------
+        severity : a severity
+        mpl : float
+            The maximum possible loss.
+        points : int, default 200
+            At least 4.
+        
+        Returns
+        -------
+        TabulatedCurve
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Lognormal
+        >>> from prospicio.pricing import TabulatedCurve
+        >>> t = TabulatedCurve.from_severity(Lognormal.from_mean_cv(1e5, 2.0), 1e6)
+        >>> t.x[0], t.x[-1], t.g[-1]
+        (0.0, 1.0, 1.0)
         """
     @property
     def g(self, /) -> list[float]:
@@ -18011,6 +18094,32 @@ def ks_uniform(values: Sequence[float]) -> float:
     float
     """
 
+def layer_cv(severity: Any, limit: float, attachment: float) -> float:
+    """
+    Coefficient of variation of the loss to ``limit`` xs ``attachment``
+    per loss that reaches the layer: ``sd / mean`` of
+    ``min(max(X - a, 0), l)`` given ``X > a``. It is the CV that
+    ``LimitedFluctuation``'s pure premium standard needs for a layer.
+    
+    Parameters
+    ----------
+    severity : a severity
+    limit : float
+        Positive; ``inf`` for an unlimited layer.
+    attachment : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Gamma
+    >>> from prospicio.pricing import layer_cv
+    >>> round(layer_cv(Gamma(1.0, 100.0), float("inf"), 50.0), 9)
+    1.0
+    """
+
 def layer_loss_picks(severity: Grid, attachments: Sequence[float], picks: Sequence[float], claims: float = 1.0) -> Picks:
     """
     Reshapes a severity so that its expected loss to each layer hits a
@@ -19239,6 +19348,10 @@ def year_fraction(year: int, month: int, day: int) -> float:
     The year fraction of a date on Werner and Modlin's half-month grid: the
     first of a month is its start, a day near the middle is half way, and
     the last day is the next month's start (6/30 is 7/1).
+    
+    It is a ratemaking date, not a calendar: do not assign accident years
+    with it, since ``year_fraction(2016, 12, 31)`` is 2017.0. Take the
+    accident year from the date itself.
     
     Parameters
     ----------

@@ -125,6 +125,7 @@ reference:
       - collective_simulate
       - excess_frequency
       - layer_rating
+      - layer_cv
       - risk_loaded_price
       - capital_portfolio
       - natural_price

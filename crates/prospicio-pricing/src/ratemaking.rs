@@ -39,6 +39,10 @@ use prospicio_core::{Error, Result};
 /// day is rounded the same way, so the 24th of a 31-day month is already
 /// the next month's start.
 ///
+/// It is a ratemaking date, not a calendar: do not assign accident years
+/// with it, since a loss on 31 December 2016 falls at 2017.0, in 2017's
+/// year. Take the accident year from the date itself.
+///
 /// ```
 /// use prospicio_pricing::ratemaking::year_fraction;
 ///

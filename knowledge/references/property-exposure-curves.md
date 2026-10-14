@@ -76,6 +76,16 @@ sources:
   at the retention inside a quadrature piece then costs about 3e-8,
   relative.[^profile]
 
+- **A tabulated curve needs points where the curve bends.** A
+  severity's curve tabulated on a coarse grid misprices layers: 37
+  geometric points gave 0.0619 for a layer whose exact share is 0.0617
+  (issue #212). `TabulatedCurve::from_severity` puts half its points
+  where `G` takes equal steps, which keeps the curve within `1e-3` of
+  the exact one at 200 points. The table's mean rate is its first
+  chord's, so the first point must be small (`1e-6`). The Swiss Re
+  curves' mean rate and the share of any layer both fall as `c` rises,
+  so `c` calibrates to either one by bisection.[^profile]
+
 [^pep]: Exposure modelling in property reinsurance
 [^cas]: CAS Reinsurance Seminar 2014 handout
 [^verisk]: Verisk, original loss curves

@@ -18,6 +18,11 @@ is its start, a day near the middle is half way, and the last day is the
 next month's start (30 June is 1 July). Ratemaking dates are year
 fractions, so 1 July 2011 is 2011.5.
 }
+\details{
+It is a ratemaking date, not a calendar: do not assign accident years
+with it, since \code{year_fraction(2016, 12, 31)} is 2017. Take the accident
+year from the date itself.
+}
 \examples{
 year_fraction(2013, 6, 30) - year_fraction(2011, 1, 1)
 year_fraction(2011, c(1, 11), c(1, 15))

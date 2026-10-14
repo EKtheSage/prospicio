@@ -599,7 +599,8 @@ impl Portfolio {
         let full = self.expected();
         let total_full: f64 = full.iter().sum();
         let (paid, units) = self.limited_expected(a);
-        let ratio = |e: f64, l: f64| if e > 0.0 { (e - l) / e } else { 0.0 };
+        // Clamped at 0: the paid loss can round a last bit above the full.
+        let ratio = |e: f64, l: f64| if e > 0.0 { ((e - l) / e).max(0.0) } else { 0.0 };
         (
             ratio(total_full, paid),
             full.iter()

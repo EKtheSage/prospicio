@@ -278,6 +278,34 @@ pub(crate) fn ilf(severity: &Bound<'_, PyAny>, limit: f64, basic_limit: f64) -> 
     prospicio_pricing::layer::ilf(&sev, limit, basic_limit).map_err(to_py)
 }
 
+/// Coefficient of variation of the loss to ``limit`` xs ``attachment``
+/// per loss that reaches the layer: ``sd / mean`` of
+/// ``min(max(X - a, 0), l)`` given ``X > a``. It is the CV that
+/// ``LimitedFluctuation``'s pure premium standard needs for a layer.
+///
+/// Parameters
+/// ----------
+/// severity : a severity
+/// limit : float
+///     Positive; ``inf`` for an unlimited layer.
+/// attachment : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Gamma
+/// >>> from prospicio.pricing import layer_cv
+/// >>> round(layer_cv(Gamma(1.0, 100.0), float("inf"), 50.0), 9)
+/// 1.0
+#[pyfunction]
+pub(crate) fn layer_cv(severity: &Bound<'_, PyAny>, limit: f64, attachment: f64) -> PyResult<f64> {
+    let sev = extract_severity(severity)?;
+    prospicio_pricing::layer::layer_cv(&sev, limit, attachment).map_err(to_py)
+}
+
 /// Loss elimination ratio of a deductible, ``LEV(deductible) / E[X]``.
 ///
 /// Parameters
@@ -896,6 +924,54 @@ impl PyMbbefd {
         })
     }
 
+    /// The Swiss Re curve whose mean destruction rate is ``rate``, and its
+    /// ``c``.
+    ///
+    /// Parameters
+    /// ----------
+    /// rate : float
+    ///     Between the curves at ``c = 10`` and ``c = 0`` (0.5).
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (Mbbefd, float)
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import Mbbefd
+    /// >>> curve, c = Mbbefd.swiss_re_for_mean_rate(Mbbefd.swiss_re(3.0).mean())
+    /// >>> round(c, 9)
+    /// 3.0
+    #[staticmethod]
+    fn swiss_re_for_mean_rate(rate: f64) -> PyResult<(Self, f64)> {
+        let (inner, c) = Mbbefd::swiss_re_for_mean_rate(rate).map_err(to_py)?;
+        Ok((Self { inner }, c))
+    }
+
+    /// The Swiss Re curve that gives ``limit`` xs ``attachment`` the share
+    /// ``share`` of a risk's loss with maximum possible loss ``mpl``
+    /// (``G((a + l)/mpl) - G(a/mpl)``), and its ``c``.
+    ///
+    /// Parameters
+    /// ----------
+    /// limit, attachment, mpl : float
+    /// share : float
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (Mbbefd, float)
+    #[staticmethod]
+    fn swiss_re_for_layer_share(
+        limit: f64,
+        attachment: f64,
+        mpl: f64,
+        share: f64,
+    ) -> PyResult<(Self, f64)> {
+        let (inner, c) =
+            Mbbefd::swiss_re_for_layer_share(limit, attachment, mpl, share).map_err(to_py)?;
+        Ok((Self { inner }, c))
+    }
+
     /// Parameter ``b``.
     #[getter]
     fn b(&self) -> f64 {
@@ -1037,6 +1113,38 @@ impl PyTabulatedCurve {
         })
     }
 
+    /// The exposure curve of ``severity`` capped at ``mpl``, tabulated at
+    /// ``points`` points, for a risk profile's band (which takes an
+    /// ``Mbbefd`` or a ``TabulatedCurve``).
+    ///
+    /// Parameters
+    /// ----------
+    /// severity : a severity
+    /// mpl : float
+    ///     The maximum possible loss.
+    /// points : int, default 200
+    ///     At least 4.
+    ///
+    /// Returns
+    /// -------
+    /// TabulatedCurve
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Lognormal
+    /// >>> from prospicio.pricing import TabulatedCurve
+    /// >>> t = TabulatedCurve.from_severity(Lognormal.from_mean_cv(1e5, 2.0), 1e6)
+    /// >>> t.x[0], t.x[-1], t.g[-1]
+    /// (0.0, 1.0, 1.0)
+    #[staticmethod]
+    #[pyo3(signature = (severity, mpl, points = 200))]
+    fn from_severity(severity: &Bound<'_, PyAny>, mpl: f64, points: usize) -> PyResult<Self> {
+        let sev = extract_severity(severity)?;
+        Ok(Self {
+            inner: TabulatedCurve::from_severity(&sev, mpl, points).map_err(to_py)?,
+        })
+    }
+
     /// The table's ``x``.
     #[getter]
     fn x(&self) -> Vec<f64> {
@@ -1158,12 +1266,17 @@ fn band_curve(obj: &Bound<'_, PyAny>) -> PyResult<prospicio_pricing::profile::Ba
 ///     ``sums_insured``), each simulated loss draws its own ``SI`` between
 ///     the bounds, and the exposure-rated expectations average over the
 ///     band, weighted by sum insured.
-/// spread : {"uniform", "tilted"}, default "uniform"
+/// spread : {"uniform", "tilted", "auto"}, optional
 ///     How a band with bounds spreads its sums insured. ``"tilted"`` keeps
 ///     ``sums_insured`` as the mean, so the spread matches both the bounds
 ///     and the band's total sum insured: the density ``∝ exp(θ s)`` on the
 ///     bounds with ``θ`` solved for that mean (``sums_insured`` must lie
-///     strictly between the bounds).
+///     strictly between the bounds). ``"uniform"`` moves the mean to
+///     ``(lower + upper) / 2``. ``"auto"`` tilts a band whose
+///     ``sums_insured`` lies strictly between its bounds and spreads any
+///     other uniformly. Not given, the spread is uniform, with a
+///     ``UserWarning`` for each band whose mean moves (as with ``"auto"``).
+///     A band may start at ``lower = 0``.
 ///
 /// Examples
 /// --------
@@ -1183,7 +1296,7 @@ pub(crate) struct PyRiskProfile {
 #[pymethods]
 impl PyRiskProfile {
     #[new]
-    #[pyo3(signature = (sums_insured, risks, curves, expected_losses = None, premiums = None, loss_ratio = None, lower = None, upper = None, spread = "uniform"))]
+    #[pyo3(signature = (sums_insured, risks, curves, expected_losses = None, premiums = None, loss_ratio = None, lower = None, upper = None, spread = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         sums_insured: Vec<f64>,
@@ -1194,10 +1307,11 @@ impl PyRiskProfile {
         loss_ratio: Option<&Bound<'_, PyAny>>,
         lower: Option<Vec<Option<f64>>>,
         upper: Option<Vec<Option<f64>>>,
-        spread: &str,
+        spread: Option<&str>,
     ) -> PyResult<Self> {
         use prospicio_pricing::profile::{Band, RiskProfile};
         use pyo3::exceptions::PyValueError;
+        let curves_py = curves.py();
         let n = sums_insured.len();
         if risks.len() != n {
             return Err(PyValueError::new_err("give one number of risks per band"));
@@ -1260,12 +1374,21 @@ impl PyRiskProfile {
             }
         }
         .map_err(to_py)?;
-        let tilted = match spread {
-            "uniform" => false,
-            "tilted" => true,
+        #[derive(Clone, Copy, PartialEq)]
+        enum Spread {
+            Auto,
+            Uniform,
+            Tilted,
+        }
+        // Not given: uniform, with a warning for each band whose mean moves.
+        let warn = matches!(spread, None | Some("auto"));
+        let spread = match spread.unwrap_or("uniform") {
+            "auto" => Spread::Auto,
+            "uniform" => Spread::Uniform,
+            "tilted" => Spread::Tilted,
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "spread must be \"uniform\" or \"tilted\", not {other:?}"
+                    "spread must be \"auto\", \"uniform\" or \"tilted\", not {other:?}"
                 )));
             }
         };
@@ -1277,16 +1400,47 @@ impl PyRiskProfile {
                         "give one lower and one upper per band",
                     ));
                 }
-                bands
+                let bands: Vec<Band> = bands
                     .into_iter()
                     .zip(lo.into_iter().zip(up))
-                    .map(|(b, bounds)| match bounds {
-                        (None, None) => Ok(b),
-                        (Some(l), Some(u)) if tilted => b.with_tilted_bounds(l, u).map_err(to_py),
-                        (Some(l), Some(u)) => b.with_bounds(l, u).map_err(to_py),
+                    .map(|(b, bounds)| match (bounds, spread) {
+                        ((None, None), _) => Ok(b),
+                        ((Some(l), Some(u)), Spread::Tilted) => {
+                            b.with_tilted_bounds(l, u).map_err(to_py)
+                        }
+                        ((Some(l), Some(u)), Spread::Uniform) => b.with_bounds(l, u).map_err(to_py),
+                        ((Some(l), Some(u)), Spread::Auto) => {
+                            b.with_spread_bounds(l, u).map_err(to_py)
+                        }
                         _ => Err(PyValueError::new_err("a band has both bounds or neither")),
                     })
-                    .collect::<PyResult<_>>()?
+                    .collect::<PyResult<_>>()?;
+                if warn {
+                    let moved: Vec<String> = bands
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, b)| {
+                            (b.mean_sum_insured() - b.sum_insured).abs()
+                                > 1e-9 * b.sum_insured.abs().max(1.0)
+                        })
+                        .map(|(i, b)| {
+                            format!("band {i}: {} -> {}", b.sum_insured, b.mean_sum_insured())
+                        })
+                        .collect();
+                    if !moved.is_empty() {
+                        let py = curves_py;
+                        let msg = format!(
+                            "a band spread uniformly between its bounds no longer has \
+                             sums_insured as its mean ({}); expected claims and layer losses use \
+                             the moved mean. Give spread=\"tilted\" or \"auto\" to keep it, or \
+                             spread=\"uniform\" to silence this",
+                            moved.join(", ")
+                        );
+                        let cat = py.get_type::<pyo3::exceptions::PyUserWarning>();
+                        PyErr::warn(py, &cat, &std::ffi::CString::new(msg).unwrap(), 1)?;
+                    }
+                }
+                bands
             }
             _ => return Err(PyValueError::new_err("give lower and upper together")),
         };
@@ -1304,7 +1458,8 @@ impl PyRiskProfile {
         self.inner.expected_loss()
     }
 
-    /// Expected number of losses a year, per band.
+    /// Expected number of losses a year, per band: losses of every size,
+    /// not only those that reach a layer.
     ///
     /// Returns
     /// -------

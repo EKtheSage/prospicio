@@ -275,6 +275,24 @@ ilf <- function(severity, limit, basic_limit) {
   rust_result(pricing_ilf(severity@ptr, as.double(limit), as.double(basic_limit)))
 }
 
+#' Coefficient of variation of a layer's loss
+#'
+#' The CV of the loss to `limit` xs `attachment` per loss that reaches the
+#' layer: `sd / mean` of `min(max(X - a, 0), l)` given `X > a`, the CV that
+#' a limited fluctuation pure premium standard needs for a layer.
+#'
+#' @param severity A severity: [lognormal], [grid_distribution] or a
+#'   Pareto-family distribution.
+#' @param limit Positive; `Inf` for an unlimited layer.
+#' @param attachment Non-negative.
+#' @returns A number.
+#' @export
+#' @examples
+#' layer_cv(pareto(100, 3), Inf, 0)
+layer_cv <- function(severity, limit, attachment) {
+  rust_result(pricing_layer_cv(severity@ptr, as.double(limit), as.double(attachment)))
+}
+
 #' @rdname layer_rating
 #' @export
 loss_elimination_ratio <- function(severity, deductible) {
@@ -461,6 +479,30 @@ swiss_re_curve <- function(c) {
 }
 
 #' @rdname mbbefd
+#' @param rate A mean destruction rate, between the curves' at `c = 10`
+#'   and `c = 0` (0.5).
+#' @param share The layer's share of a risk's expected loss.
+#' @details `swiss_re_for_mean_rate()` and `swiss_re_for_layer_share()`
+#'   calibrate `c`: to a mean destruction rate (a cedant's loss ratio over
+#'   its rate on sum insured, say), or to the share of a risk's expected
+#'   loss in one layer. They return the curve, with its `c` as the
+#'   attribute `"c"`.
+#' @export
+swiss_re_for_mean_rate <- function(rate) {
+  c <- rust_result(pricing_swiss_re_c_for_mean_rate(as.double(rate)))
+  structure(swiss_re_curve(c), c = c)
+}
+
+#' @rdname mbbefd
+#' @export
+swiss_re_for_layer_share <- function(limit, attachment, mpl, share) {
+  c <- rust_result(pricing_swiss_re_c_for_layer_share(
+    as.double(limit), as.double(attachment), as.double(mpl), as.double(share)
+  ))
+  structure(swiss_re_curve(c), c = c)
+}
+
+#' @rdname mbbefd
 #' @export
 exposure_curve <- function(curve, x) curve@ptr$curve(as.double(x))
 
@@ -495,14 +537,22 @@ rate_quantile <- function(curve, u) curve@ptr$rate_quantile(as.double(u))
 #' Works with [exposure_curve()], [exposure_layer_share()] and
 #' [rate_quantile()], like an [mbbefd] curve.
 #'
+#' `tabulated_curve_from_severity()` tabulates a severity's exposure curve
+#' capped at the MPL (as [severity_exposure_curve()]) at `points` points,
+#' half spaced geometrically from `1e-6` and half at equal steps of `G`,
+#' so a risk profile's band can use it.
+#'
 #' @param x Increasing from 0 to 1.
 #' @param g `G(x)`, from 0 to 1.
+#' @param ptr Internal.
 #' @returns A `tabulated_curve` object with properties `x`, `g` and `mean`.
 #' @export
 #' @examples
 #' t <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
 #' exposure_curve(t, 0.3)
 #' t@mean
+#' s <- tabulated_curve_from_severity(lognormal_from_mean_cv(1e5, 2), 1e6)
+#' exposure_curve(s, 0.5)
 tabulated_curve <- S7::new_class(
   "tabulated_curve",
   package = "prospicio",
@@ -512,11 +562,23 @@ tabulated_curve <- S7::new_class(
     g = S7::new_property(S7::class_double, getter = function(self) self@ptr$g()),
     mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean())
   ),
-  constructor = function(x, g) {
-    ptr <- rust_result(Tabulated$new(as.double(x), as.double(g)))
+  constructor = function(x, g, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(Tabulated$new(as.double(x), as.double(g)))
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
+
+#' @rdname tabulated_curve
+#' @param severity A severity: [lognormal], [grid_distribution] or a
+#'   Pareto-family distribution.
+#' @param mpl The maximum possible loss.
+#' @param points Number of points, at least 4.
+#' @export
+tabulated_curve_from_severity <- function(severity, mpl, points = 200) {
+  tabulated_curve(ptr = rust_result(Tabulated$from_severity(
+    severity@ptr, as.double(mpl), as.double(points)
+  )))
+}
 
 S7::method(print, tabulated_curve) <- function(x, ...) {
   cat(sprintf("<tabulated_curve> %d points, mean rate %s\n", length(x@x), format(x@mean)))
@@ -547,18 +609,23 @@ S7::method(print, tabulated_curve) <- function(x, ...) {
 #' @param premium Premium per band.
 #' @param loss_ratio Expected loss ratio: one value, or one per band.
 #' @param lower,upper Optional bounds of each band's sums insured, one per
-#'   band (`NA` for a band without). A band with bounds spreads its risks'
-#'   sums insured uniformly between them: its mean `SI` is
-#'   `(lower + upper) / 2` (in place of `sums_insured`), each simulated loss
-#'   draws its own `SI` between the bounds, and the exposure-rated
+#'   band (`NA` for a band without; a band may start at 0). A band with
+#'   bounds spreads its risks' sums insured between them: each simulated
+#'   loss draws its own `SI` between the bounds, and the exposure-rated
 #'   expectations average over the band, weighted by sum insured.
 #' @param spread How a band with bounds spreads its sums insured:
-#'   `"uniform"`, or `"tilted"` to keep `sums_insured` as the mean, so the
+#'   `"uniform"` (its mean `SI` becomes `(lower + upper) / 2`, in place of
+#'   `sums_insured`), `"tilted"` to keep `sums_insured` as the mean, so the
 #'   spread matches both the bounds and the band's total sum insured (the
 #'   density `exp(theta * s)` on the bounds, `theta` solved for that mean;
-#'   `sums_insured` must lie strictly between the bounds).
+#'   `sums_insured` must lie strictly between the bounds), or `"auto"`
+#'   (tilted when `sums_insured` lies strictly between the bounds, uniform
+#'   otherwise). Not given, the spread is uniform with a warning for each
+#'   band whose mean moves (as with `"auto"`).
 #' @returns `risk_profile()`: a `risk_profile` object with properties
-#'   `expected_loss` (all bands) and `expected_claims` (per band).
+#'   `expected_loss` (all bands), `expected_claims` (per band: losses of
+#'   every size, not only those that reach a layer) and
+#'   `mean_sums_insured` (per band).
 #' @export
 #' @examples
 #' p <- risk_profile(c(1e6, 10e6), c(800, 50), swiss_re_curve(3),
@@ -576,12 +643,15 @@ risk_profile <- S7::new_class(
   properties = list(
     ptr = S7::new_S3_class("RiskProfile"),
     expected_loss = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_loss()),
-    expected_claims = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_claims())
+    expected_claims = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected_claims()),
+    mean_sums_insured = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean_sums_insured())
   ),
   constructor = function(sums_insured, risks, curves, expected_loss = NULL, premium = NULL,
                          loss_ratio = NULL, lower = NULL, upper = NULL,
-                         spread = c("uniform", "tilted")) {
+                         spread = c("uniform", "tilted", "auto")) {
+    warn <- missing(spread)
     spread <- match.arg(spread)
+    warn <- warn || spread == "auto"
     n <- length(sums_insured)
     if (is.null(lower) != is.null(upper)) stop("give lower and upper together")
     if (!is.list(curves)) curves <- rep(list(curves), n)
@@ -596,8 +666,23 @@ risk_profile <- S7::new_class(
       if (is.null(loss_ratio)) double() else as.double(loss_ratio),
       if (is.null(lower)) double() else as.double(lower),
       if (is.null(upper)) double() else as.double(upper),
-      spread == "tilted"
+      spread
     ))
+    if (warn) {
+      given <- ptr$sums_insured()
+      mean <- ptr$mean_sums_insured()
+      moved <- which(abs(mean - given) > 1e-9 * pmax(abs(given), 1))
+      if (length(moved) > 0) {
+        warning(sprintf(
+          paste("a band spread uniformly between its bounds no longer has sums_insured as",
+                "its mean (%s); expected claims and layer losses use the moved mean. Give",
+                "spread = \"tilted\" or \"auto\" to keep it, or spread = \"uniform\" to",
+                "silence this"),
+          paste(sprintf("band %d: %s -> %s", moved, format(given[moved]), format(mean[moved])),
+                collapse = ", ")
+        ), call. = FALSE)
+      }
+    }
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
