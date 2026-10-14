@@ -473,6 +473,13 @@ impl Row {
     }
 
     /// The row's distribution.
+    ///
+    /// On a stitched ledger's `Impact` row ([`Row::is_delta`]) this is a
+    /// placeholder with no meaning: that row is the difference of two
+    /// rows' statistics, which its [`mean`](Row::mean), [`sd`](Row::sd),
+    /// [`cv`](Row::cv), [`skew`](Row::skew) and [`quantile`](Row::quantile)
+    /// give. Do not use its distribution; the Python and R bindings refuse
+    /// it.
     pub fn distribution(&self) -> &Discrete {
         &self.distribution
     }
