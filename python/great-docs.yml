@@ -92,6 +92,9 @@ reference:
       - aggregate.Expense
       - aggregate.derive_premium
       - aggregate.occurrence_source
+      - aggregate.pnl_program
+      - aggregate.size_premium
+      - aggregate.round_premium
       - aggregate.layer_loss_picks
       - aggregate.Picks
   - title: Reinsurance

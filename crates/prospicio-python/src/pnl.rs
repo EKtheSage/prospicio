@@ -3,8 +3,9 @@
 
 use prospicio_aggregate::pnl::{
     Book as RsBook, Expense as RsExpense, ExpenseBasis, Face, Group as RsGroup, LADDER, Layout,
-    Ledger as RsLedger, Leg as RsLeg, LegKind, Role, Row, RowKind, Source, Stats,
-    derive_premium as rs_derive_premium, snap, stack as rs_stack,
+    Ledger as RsLedger, Leg as RsLeg, LegKind, ProgramLayer, Role, Row, RowKind, Source, Stats,
+    derive_premium as rs_derive_premium, pnl_program as rs_pnl_program,
+    round_premium as rs_round_premium, size_premium as rs_size_premium, snap, stack as rs_stack,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -13,7 +14,7 @@ use pyo3::types::{PyDict, PyTuple};
 use crate::aggregate::{AnyCount, PyBivariateReport};
 use crate::discrete::PyDiscrete;
 use crate::distributions::PyGrid;
-use crate::reinsurance::PyTower;
+use crate::reinsurance::{PyLossSensitivePremium, PyTower};
 use crate::to_py;
 
 fn kind_of(name: Option<&str>) -> PyResult<Option<LegKind>> {
@@ -822,6 +823,12 @@ pub(crate) fn derive_premium(technical: f64, expenses: Vec<PyExpense>) -> PyResu
 ///     ``Loss`` by default; also the gross book's margin on a walk.
 /// step_label : str, optional
 ///     The gross book's step on a walk, ``Gross`` by default.
+/// retro : prospicio.reinsurance.LossSensitivePremium, optional
+///     Rate the book retrospectively (``aggregate``'s ``retro <collar>
+///     premium``): the premium is these terms at the year's gross loss,
+///     and ``premium`` (the collar's basic premium in ``aggregate``) is
+///     what premium-basis expenses are taken on. A retro book buys no
+///     cover here.
 ///
 /// Examples
 /// --------
@@ -842,7 +849,7 @@ pub(crate) struct PyBook {
 #[pymethods]
 impl PyBook {
     #[new]
-    #[pyo3(signature = (name, premium, expenses=None, *, premium_label=None, loss_label=None, step_label=None))]
+    #[pyo3(signature = (name, premium, expenses=None, *, premium_label=None, loss_label=None, step_label=None, retro=None))]
     fn new(
         name: String,
         premium: f64,
@@ -850,8 +857,12 @@ impl PyBook {
         premium_label: Option<String>,
         loss_label: Option<String>,
         step_label: Option<String>,
+        retro: Option<PyRef<'_, PyLossSensitivePremium>>,
     ) -> Self {
         let mut b = RsBook::new(name, premium);
+        if let Some(r) = retro {
+            b = b.retro(r.inner);
+        }
         for e in expenses.unwrap_or_default() {
             b = b.expense(e.inner);
         }
@@ -1041,4 +1052,132 @@ pub(crate) fn occurrence_source(
         ),
         PyBivariateReport { inner: report },
     ))
+}
+
+/// A premium rounded as ``aggregate`` writes one: to whole units above 100,
+/// to cents at or below it, ties to even.
+///
+/// Parameters
+/// ----------
+/// premium : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import round_premium
+/// >>> round_premium(714.12), round_premium(16.285)
+/// (714.0, 16.29)
+#[pyfunction]
+pub(crate) fn round_premium(premium: f64) -> f64 {
+    rs_round_premium(premium)
+}
+
+/// The premium sized from a target loss ratio, ``aggregate``'s
+/// ``pnl_program`` without the ladder: the expected loss over
+/// ``loss_ratio``, rounded by :func:`round_premium`.
+///
+/// Parameters
+/// ----------
+/// expected_loss : float
+/// loss_ratio : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If either is not positive and finite.
+#[pyfunction]
+pub(crate) fn size_premium(expected_loss: f64, loss_ratio: f64) -> PyResult<f64> {
+    rs_size_premium(expected_loss, loss_ratio).map_err(to_py)
+}
+
+/// The premium ladder of ``aggregate``'s ``pnl_program``, as numbers:
+/// the net technical premium ``E_net / c_net``, each layer's deposit at
+/// 100% placement ``round(E_j / c_j / s_j)`` (or the premium it states),
+/// and the booked premium ``round((T_net + sum s_j d_j) / (1 - ER))``. The
+/// book's own margin is ``(1 - c_net) T_net`` whatever the cover costs.
+///
+/// Parameters
+/// ----------
+/// net_loss : float
+///     Expected net loss.
+/// net_combined_ratio : float
+/// expense_ratio : float
+///     Gross expenses as a fraction of premium.
+/// layers : list of dict, optional
+///     Each with ``ceded_loss`` (expected, at the placed share), ``share``,
+///     ``combined_ratio`` and optionally ``stated`` (a premium the contract
+///     states, at the placed share, which is kept).
+///
+/// Returns
+/// -------
+/// dict
+///     ``premium``, ``technical``, ``deposits`` and ``ceded_premium``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     A ratio that is not positive, an expense ratio outside ``[0, 1)``
+///     or a share outside ``(0, 1]``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import pnl_program
+/// >>> p = pnl_program(406.0, 0.9, 0.25, [dict(ceded_loss=86.0, share=1.0, combined_ratio=0.6)])
+/// >>> p["premium"], p["deposits"]
+/// (792.0, [143.0])
+#[pyfunction]
+#[pyo3(signature = (net_loss, net_combined_ratio, expense_ratio, layers=None))]
+pub(crate) fn pnl_program<'py>(
+    py: Python<'py>,
+    net_loss: f64,
+    net_combined_ratio: f64,
+    expense_ratio: f64,
+    layers: Option<Vec<Bound<'py, PyDict>>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let mut ls = Vec::new();
+    for d in layers.unwrap_or_default() {
+        let get = |k: &str| -> PyResult<f64> {
+            d.get_item(k)?
+                .ok_or_else(|| PyValueError::new_err(format!("a program layer needs {k:?}")))?
+                .extract()
+        };
+        let stated = match d.get_item("stated")? {
+            Some(v) if !v.is_none() => Some(v.extract::<f64>()?),
+            _ => None,
+        };
+        ls.push(ProgramLayer {
+            ceded_loss: if stated.is_some() {
+                d.get_item("ceded_loss")?
+                    .map(|v| v.extract())
+                    .transpose()?
+                    .unwrap_or(0.0)
+            } else {
+                get("ceded_loss")?
+            },
+            share: get("share")?,
+            combined_ratio: if stated.is_some() {
+                d.get_item("combined_ratio")?
+                    .map(|v| v.extract())
+                    .transpose()?
+                    .unwrap_or(1.0)
+            } else {
+                get("combined_ratio")?
+            },
+            stated,
+        });
+    }
+    let p = rs_pnl_program(net_loss, net_combined_ratio, expense_ratio, &ls).map_err(to_py)?;
+    let out = PyDict::new(py);
+    out.set_item("premium", p.premium)?;
+    out.set_item("technical", p.technical)?;
+    out.set_item("deposits", p.deposits)?;
+    out.set_item("ceded_premium", p.ceded_premium)?;
+    Ok(out)
 }

@@ -79,3 +79,13 @@
   the consolidated face, matching `aggregate` 1.0.1. Python
   `occurrence_source`, `Book.occurrence_ledger`; R `occurrence_source()`,
   `book_occurrence_ledger()` (#246).
+- Variable terms in the P&L builders: a swing-rated premium, a
+  sliding-scale or profit commission and a loss corridor booked as legs
+  at each atom from the layer's own terms, on every face; retro rating of
+  the book (`Book::retro`); and `pnl::pnl_program`, the premium and each
+  layer's deposit from target combined ratios, with `size_premium` and
+  `round_premium`, matching `aggregate` 1.0.1. The builders no longer
+  refuse loss-sensitive terms (reinstatement premiums still are). Python
+  `Book(retro=)`, `pnl_program`, `size_premium`, `round_premium`; R
+  `pnl_book(retro =)`, `pnl_program()`, `size_premium()`,
+  `round_premium()` (#247).

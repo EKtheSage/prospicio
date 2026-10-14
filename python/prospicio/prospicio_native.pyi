@@ -1748,6 +1748,12 @@ class Book:
         ``Loss`` by default; also the gross book's margin on a walk.
     step_label : str, optional
         The gross book's step on a walk, ``Gross`` by default.
+    retro : prospicio.reinsurance.LossSensitivePremium, optional
+        Rate the book retrospectively (``aggregate``'s ``retro <collar>
+        premium``): the premium is these terms at the year's gross loss,
+        and ``premium`` (the collar's basic premium in ``aggregate``) is
+        what premium-basis expenses are taken on. A retro book buys no
+        cover here.
     
     Examples
     --------
@@ -1761,7 +1767,7 @@ class Book:
     >>> round(walk.result.mean(), 12), walk.sheet()["step"][-1]
     (4.54, 'All')
     """
-    def __new__(cls, /, name: str, premium: float, expenses: Sequence[Expense] |None = None, *, premium_label: str |None = None, loss_label: str |None = None, step_label: str |None = None) -> Book: ...
+    def __new__(cls, /, name: str, premium: float, expenses: Sequence[Expense] |None = None, *, premium_label: str |None = None, loss_label: str |None = None, step_label: str |None = None, retro: LossSensitivePremium |None = None) -> Book: ...
     def __repr__(self, /) -> str: ...
     def ledger(self, /, source: Any, tower: Tower |None = None, face: str = "consolidated") -> Ledger:
         """
@@ -18436,6 +18442,45 @@ def pit_histogram(pit: Sequence[float], bins: int = 10) -> list[int]:
     list of int
     """
 
+def pnl_program(net_loss: float, net_combined_ratio: float, expense_ratio: float, layers: Sequence[dict] |None = None) -> dict:
+    """
+    The premium ladder of ``aggregate``'s ``pnl_program``, as numbers:
+    the net technical premium ``E_net / c_net``, each layer's deposit at
+    100% placement ``round(E_j / c_j / s_j)`` (or the premium it states),
+    and the booked premium ``round((T_net + sum s_j d_j) / (1 - ER))``. The
+    book's own margin is ``(1 - c_net) T_net`` whatever the cover costs.
+    
+    Parameters
+    ----------
+    net_loss : float
+        Expected net loss.
+    net_combined_ratio : float
+    expense_ratio : float
+        Gross expenses as a fraction of premium.
+    layers : list of dict, optional
+        Each with ``ceded_loss`` (expected, at the placed share), ``share``,
+        ``combined_ratio`` and optionally ``stated`` (a premium the contract
+        states, at the placed share, which is kept).
+    
+    Returns
+    -------
+    dict
+        ``premium``, ``technical``, ``deposits`` and ``ceded_premium``.
+    
+    Raises
+    ------
+    ValueError
+        A ratio that is not positive, an expense ratio outside ``[0, 1)``
+        or a share outside ``(0, 1]``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import pnl_program
+    >>> p = pnl_program(406.0, 0.9, 0.25, [dict(ceded_loss=86.0, share=1.0, combined_ratio=0.6)])
+    >>> p["premium"], p["deposits"]
+    (792.0, [143.0])
+    """
+
 def premium_based_expenses(ratios: Sequence[float], fixed_shares: Sequence[float]) -> tuple[float, float]:
     """
     The premium-based projection of expenses: each expense ratio split by
@@ -18670,6 +18715,26 @@ def round_bucket(bs: float) -> float:
     (4.0, 0.5)
     """
 
+def round_premium(premium: float) -> float:
+    """
+    A premium rounded as ``aggregate`` writes one: to whole units above 100,
+    to cents at or below it, ties to even.
+    
+    Parameters
+    ----------
+    premium : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import round_premium
+    >>> round_premium(714.12), round_premium(16.285)
+    (714.0, 16.29)
+    """
+
 def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> list[float]:
     """
     The exposure curve of a severity capped at the maximum possible loss
@@ -18794,6 +18859,27 @@ def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: i
     >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
     >>> round(pd.mean(), 1)
     0.5
+    """
+
+def size_premium(expected_loss: float, loss_ratio: float) -> float:
+    """
+    The premium sized from a target loss ratio, ``aggregate``'s
+    ``pnl_program`` without the ladder: the expected loss over
+    ``loss_ratio``, rounded by :func:`round_premium`.
+    
+    Parameters
+    ----------
+    expected_loss : float
+    loss_ratio : float
+    
+    Returns
+    -------
+    float
+    
+    Raises
+    ------
+    ValueError
+        If either is not positive and finite.
     """
 
 def stack(ledgers: dict, impacts: Sequence[tuple[str, str, str]] |None = None) -> dict:

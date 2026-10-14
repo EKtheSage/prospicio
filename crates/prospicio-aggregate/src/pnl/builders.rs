@@ -24,17 +24,19 @@
 //!
 //! Every layer's terms are taken at the annual total, as
 //! [`Tower::on_annual_grid`] does: its ceded loss after its aggregate
-//! deductible, limit and corridor, at its share. The builders book a fixed
-//! premium and a flat ceding commission; a layer with loss-sensitive terms
-//! (swing rating, a sliding scale, a profit commission or reinstatement
-//! premiums) is refused, and its legs can be written by hand with
-//! [`Leg::of`].
+//! deductible, limit and corridor, at its share. Its premium (swing rated,
+//! or fixed), flat commission, sliding-scale commission and profit
+//! commission are legs at each atom, from the layer's own functions at its
+//! annual ceded loss. Reinstatement premiums are not booked; a layer with
+//! them is refused, and its legs can be written by hand with [`Leg::of`].
+//! [`pnl_program`] prices the book and its covers from target combined
+//! ratios.
 
 use prospicio_core::{Error, Result};
 
 use super::{Group, Layout, Ledger, Leg, LegKind, Role, Source};
 use crate::bivariate::{BivariateReport, JointGrid, fft_bivariate};
-use crate::reinsurance::{Commission, Layer, Tower};
+use crate::reinsurance::{Commission, Layer, LossSensitivePremium, Tower};
 use prospicio_prob::{Counting, Grid};
 
 /// What an expense is a fraction of, `aggregate`'s expense bases.
@@ -180,6 +182,159 @@ pub fn derive_premium(technical: f64, expenses: &[Expense]) -> Result<f64> {
     Ok((technical + fixed) / (1.0 - rate))
 }
 
+/// A premium rounded as `aggregate` writes one: to whole units above 100,
+/// to cents at or below it, ties to even (Python's `round`).
+///
+/// ```
+/// use prospicio_aggregate::pnl::round_premium;
+///
+/// assert_eq!(round_premium(714.12), 714.0);
+/// assert_eq!(round_premium(16.285), 16.29);
+/// assert_eq!(round_premium(146.5), 146.0);
+/// ```
+pub fn round_premium(premium: f64) -> f64 {
+    if premium > 100.0 {
+        premium.round_ties_even()
+    } else {
+        // Formatting rounds the exact binary value to cents, ties to even,
+        // as Python's round(x, 2).
+        format!("{premium:.2}").parse().unwrap_or(premium)
+    }
+}
+
+/// The premium sized from a target loss ratio, `aggregate`'s
+/// `pnl_program` without the ladder: the expected loss over `loss_ratio`,
+/// rounded by [`round_premium`].
+///
+/// # Errors
+///
+/// An expected loss or loss ratio that is not positive and finite.
+pub fn size_premium(expected_loss: f64, loss_ratio: f64) -> Result<f64> {
+    if !(expected_loss.is_finite() && expected_loss > 0.0) {
+        return Err(Error::Data(format!(
+            "a premium is sized from a positive expected loss, not {expected_loss}"
+        )));
+    }
+    if !(loss_ratio.is_finite() && loss_ratio > 0.0) {
+        return Err(Error::Data(format!(
+            "the loss ratio must be positive and finite, not {loss_ratio}"
+        )));
+    }
+    Ok(round_premium(expected_loss / loss_ratio))
+}
+
+/// One layer of [`pnl_program`]: its expected ceded loss at its placed
+/// share, the share, its target combined ratio (expected ceded loss over
+/// ceded premium), and its premium if the contract already states one (in
+/// currency, at the placed share), which the ladder then keeps.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProgramLayer {
+    /// Expected ceded loss, at the placed share.
+    pub ceded_loss: f64,
+    /// The placed share, in `(0, 1]`.
+    pub share: f64,
+    /// Target combined ratio: expected ceded loss over ceded premium.
+    pub combined_ratio: f64,
+    /// A premium the contract already states, at the placed share.
+    pub stated: Option<f64>,
+}
+
+/// What [`pnl_program`] prices: the gross premium to book and each layer's
+/// deposit at 100% placement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Program {
+    /// The gross premium, rounded by [`round_premium`].
+    pub premium: f64,
+    /// The technical premium before expenses: the net technical premium
+    /// plus the ceded premiums.
+    pub technical: f64,
+    /// Each layer's deposit at 100% placement (a stated premium over its
+    /// share).
+    pub deposits: Vec<f64>,
+    /// The ceded premium of all layers, at their shares.
+    pub ceded_premium: f64,
+}
+
+/// The premium ladder of `aggregate`'s `pnl_program`, as numbers: price
+/// the net book at `net_combined_ratio` and each layer at its own, then
+/// gross up once for a premium-basis `expense_ratio`.
+///
+/// With `E_net` the expected net loss and `E_j` layer `j`'s expected ceded
+/// loss at share `s_j`: the net technical premium `T_net = E_net / c_net`,
+/// each layer's deposit `d_j = round(E_j / c_j / s_j)` (quoted at 100%, as
+/// a contract states it), the technical premium `TP = T_net + Σ s_j d_j`,
+/// and the booked premium `P = round(TP / (1 − ER))`. The book's own
+/// margin is then `(1 − c_net) T_net` whatever the cover costs. Layers
+/// stating their own premium keep it. `aggregate` writes the result as
+/// DecL; its `premium_style='rate'` respelling and the engine's own stated
+/// premium are left out.
+///
+/// ```
+/// use prospicio_aggregate::pnl::{ProgramLayer, pnl_program};
+///
+/// let layer = ProgramLayer { ceded_loss: 86.0, share: 1.0, combined_ratio: 0.6, stated: None };
+/// let p = pnl_program(406.0, 0.9, 0.25, &[layer]).unwrap();
+/// assert_eq!(p.deposits, vec![143.0]); // 86 / 0.6, rounded
+/// // (406 / 0.9 + 143) / (1 − 0.25) = 792.15, booked as 792.
+/// assert_eq!(p.premium, 792.0);
+/// ```
+///
+/// # Errors
+///
+/// A ratio that is not positive and finite, an expense ratio outside
+/// `[0, 1)`, or a share outside `(0, 1]`.
+pub fn pnl_program(
+    net_loss: f64,
+    net_combined_ratio: f64,
+    expense_ratio: f64,
+    layers: &[ProgramLayer],
+) -> Result<Program> {
+    let positive = |name: &str, v: f64| -> Result<()> {
+        if v.is_finite() && v > 0.0 {
+            Ok(())
+        } else {
+            Err(Error::Data(format!(
+                "{name} must be positive and finite, not {v}"
+            )))
+        }
+    };
+    positive("the net combined ratio", net_combined_ratio)?;
+    positive("the expected net loss", net_loss)?;
+    let mut deposits = Vec::with_capacity(layers.len());
+    let mut ceded_premium = 0.0;
+    for l in layers {
+        if !(l.share > 0.0 && l.share <= 1.0) {
+            return Err(Error::Data(format!(
+                "a layer's share is in (0, 1], not {}",
+                l.share
+            )));
+        }
+        match l.stated {
+            Some(p) => {
+                ceded_premium += p;
+                deposits.push(p / l.share);
+            }
+            None => {
+                positive("a layer's combined ratio", l.combined_ratio)?;
+                let d = round_premium(l.ceded_loss / l.combined_ratio / l.share);
+                ceded_premium += l.share * d;
+                deposits.push(d);
+            }
+        }
+    }
+    let technical = net_loss / net_combined_ratio + ceded_premium;
+    let premium = round_premium(derive_premium(
+        technical,
+        &[Expense::premium(expense_ratio)],
+    )?);
+    Ok(Program {
+        premium,
+        technical,
+        deposits,
+        ceded_premium,
+    })
+}
+
 /// How [`Book::ledger`] lays the book and its covers out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Face {
@@ -227,6 +382,7 @@ pub struct Book {
     loss_label: Option<String>,
     step_label: Option<String>,
     expenses: Vec<Expense>,
+    retro: Option<LossSensitivePremium>,
 }
 
 impl Book {
@@ -240,6 +396,7 @@ impl Book {
             loss_label: None,
             step_label: None,
             expenses: Vec::new(),
+            retro: None,
         }
     }
 
@@ -270,6 +427,16 @@ impl Book {
         self
     }
 
+    /// Rates the book retrospectively, `aggregate`'s `retro <collar>
+    /// premium`: the premium is `terms` at the year's gross loss, and the
+    /// gross premium given to [`Book::new`] (the collar's basic premium in
+    /// `aggregate`) is what premium-basis expenses are taken on. A
+    /// retrospectively rated book buys no cover in these builders.
+    pub fn retro(mut self, terms: LossSensitivePremium) -> Self {
+        self.retro = Some(terms);
+        self
+    }
+
     /// The gross premium.
     pub fn gross_premium(&self) -> f64 {
         self.premium
@@ -288,6 +455,11 @@ impl Book {
         self.validate()?;
         match tower {
             None => self.plain(gross, face),
+            Some(_) if self.retro.is_some() => Err(Error::Data(
+                "a retrospectively rated book buys no cover here: retro rating varies the gross \
+                 premium with the gross loss, as aggregate's retro"
+                    .into(),
+            )),
             Some(t) => {
                 check_tower(t)?;
                 self.covered(gross, None, Some(t), face)
@@ -324,6 +496,11 @@ impl Book {
         face: Face,
     ) -> Result<Ledger> {
         self.validate()?;
+        if self.retro.is_some() {
+            return Err(Error::Data(
+                "a retrospectively rated book buys no cover here".into(),
+            ));
+        }
         if joint.second().is_none() {
             return Err(Error::Data(
                 "occurrence covers need the joint source of the gross and ceded loss \
@@ -404,11 +581,20 @@ impl Book {
         legs
     }
 
+    /// The gross premium leg: fixed, or the retro premium at the gross loss.
+    fn premium_leg(&self, label: String) -> Leg {
+        match self.retro {
+            Some(terms) => Leg::of(label, move |x| terms.premium(x)),
+            None => Leg::constant(label, self.premium),
+        }
+        .kind(LegKind::Premium)
+    }
+
     /// The gross book's group.
     fn gross_group(&self, label: String) -> Group {
         let (prem, loss) = (self.prem_key(), self.loss_key());
         let mut g = Group::sell(label)
-            .consideration(Leg::constant(prem.clone(), self.premium).kind(LegKind::Premium))
+            .consideration(self.premium_leg(prem.clone()))
             .obligation(Leg::of(loss.clone(), |x| x).kind(LegKind::Loss))
             .margin_label(self.margin_key());
         for leg in self.expense_legs(None, &[prem, loss]) {
@@ -427,7 +613,7 @@ impl Book {
                     gross,
                     self.name.clone(),
                     Role::Sell,
-                    vec![Leg::constant(prem, self.premium).kind(LegKind::Premium)],
+                    vec![self.premium_leg(prem)],
                     obligation,
                     "margin",
                 )
@@ -473,9 +659,6 @@ impl Book {
             None => xs.to_vec(),
         };
         let agg_ceded = agg.map(|t| ceded_at(t, &subject));
-        let layers =
-            |t: Option<&Tower>| -> Vec<Layer> { t.map(|t| t.layers.clone()).unwrap_or_default() };
-        let all: Vec<Layer> = [layers(occ), layers(agg)].concat();
         if face == Face::Consolidated {
             let net: Vec<f64> = (0..xs.len())
                 .map(|k| {
@@ -483,8 +666,18 @@ impl Book {
                     xs[k] - occ_ceded[k] - a
                 })
                 .collect();
-            return self.consolidated(source, net, &all);
+            let mut covers = Vec::new();
+            if let Some(t) = occ {
+                let all: Vec<&Layer> = t.layers.iter().collect();
+                covers.push(Flows::fixed(&all, occ_ceded.clone()));
+            }
+            if let (Some(t), Some(ceded)) = (agg, &agg_ceded) {
+                let all: Vec<usize> = (0..t.layers.len()).collect();
+                covers.push(Flows::of(t, &all, ceded));
+            }
+            return self.consolidated(source, net, &covers);
         }
+        let mut taken: Vec<String> = Vec::new();
         let step = self.step_label.clone().unwrap_or_else(|| "Gross".into());
         let mut groups = vec![self.gross_group(step)];
         let mut spans = Vec::new();
@@ -508,8 +701,8 @@ impl Book {
             let picked: Vec<&Layer> = idx.iter().map(|&i| &t.layers[i]).collect();
             groups.push(cover_group(
                 picked[0].name.clone(),
-                &picked,
-                occ_ceded.clone(),
+                Flows::fixed(&picked, occ_ceded.clone()),
+                &mut taken,
             ));
             spans.push(("All occurrence", 1, 2));
         }
@@ -523,12 +716,11 @@ impl Book {
             }
             let first = groups.len();
             for (label, idx) in &covers {
-                let recovery: Vec<f64> = ceded
-                    .iter()
-                    .map(|c| idx.iter().map(|&i| c[i]).sum())
-                    .collect();
-                let picked: Vec<&Layer> = idx.iter().map(|&i| &t.layers[i]).collect();
-                groups.push(cover_group(label.clone(), &picked, recovery));
+                groups.push(cover_group(
+                    label.clone(),
+                    Flows::of(t, idx, ceded),
+                    &mut taken,
+                ));
             }
             spans.push(("All aggregate", first, first + covers.len()));
         }
@@ -540,20 +732,40 @@ impl Book {
     }
 
     /// One group, the net position over the net loss `net` at each atom of
-    /// `source`, after the covers `layers`.
-    fn consolidated(&self, source: &Source, net: Vec<f64>, layers: &[Layer]) -> Result<Ledger> {
+    /// `source`, after the covers' cash flows `covers`.
+    fn consolidated(&self, source: &Source, net: Vec<f64>, covers: &[Flows]) -> Result<Ledger> {
+        let n = net.len();
         let net_source = Source::new(net, source.probs().to_vec())?;
-        let ceded_premium: f64 = layers.iter().map(|l| l.premium).sum();
-        let commission: f64 = layers.iter().map(flat_commission).sum();
+        let mut ceded_premium = vec![0.0; n];
+        let mut commission = vec![0.0; n];
+        let (mut premium_varies, mut commission_varies) = (false, false);
+        for f in covers {
+            premium_varies |= f.premium_varies;
+            for k in 0..n {
+                ceded_premium[k] += f.premium[k];
+                commission[k] += f.flat;
+            }
+            for v in [&f.sliding, &f.profit].into_iter().flatten() {
+                commission_varies = true;
+                for k in 0..n {
+                    commission[k] += v[k];
+                }
+            }
+        }
         let prem = match &self.premium_label {
             Some(l) => format!("{l} (net)"),
             None => "net premium".into(),
         };
         let loss = format!("{} (net)", self.loss_key());
         let mut obligation = vec![Leg::of(loss.clone(), |x| x).kind(LegKind::Loss)];
-        if commission != 0.0 {
-            // Received: a negative obligation books positive.
-            obligation.push(Leg::constant("commission", -commission).kind(LegKind::Commission));
+        // Received: a negative obligation books positive.
+        if commission_varies {
+            obligation.push(
+                Leg::values("commission", commission.iter().map(|c| -c).collect())
+                    .kind(LegKind::Commission),
+            );
+        } else if commission[0] != 0.0 {
+            obligation.push(Leg::constant("commission", -commission[0]).kind(LegKind::Commission));
         }
         let gross_mean: f64 = source
             .values()
@@ -564,11 +776,19 @@ impl Book {
         obligation.extend(
             self.expense_legs(Some(gross_mean), &[prem.clone(), loss, "commission".into()]),
         );
+        let net_premium = if premium_varies {
+            Leg::values(
+                prem,
+                ceded_premium.iter().map(|c| self.premium - c).collect(),
+            )
+        } else {
+            Leg::constant(prem, self.premium - ceded_premium[0])
+        };
         Ledger::single(
             &net_source,
             self.name.clone(),
             Role::Sell,
-            vec![Leg::constant(prem, self.premium - ceded_premium).kind(LegKind::Premium)],
+            vec![net_premium.kind(LegKind::Premium)],
             obligation,
             "margin",
         )
@@ -612,17 +832,97 @@ fn agg_covers(tower: &Tower, face: Face) -> Vec<(String, Vec<usize>)> {
     covers
 }
 
-/// A cover's buy group: its premium, its recovery at each atom and its
-/// commission when it has one.
-fn cover_group(label: String, layers: &[&Layer], recovery: Vec<f64>) -> Group {
-    let premium: f64 = layers.iter().map(|l| l.premium).sum();
-    let commission: f64 = layers.iter().map(|l| flat_commission(l)).sum();
+/// A cover's cash flows at each atom: its premium (swing rated, or fixed),
+/// its recovery, its flat commission, and its sliding-scale and profit
+/// commissions when it has them.
+struct Flows {
+    premium: Vec<f64>,
+    premium_varies: bool,
+    recovery: Vec<f64>,
+    flat: f64,
+    sliding: Option<Vec<f64>>,
+    profit: Option<Vec<f64>>,
+}
+
+impl Flows {
+    /// Fixed terms only, with the cover's total recovery at each atom.
+    fn fixed(layers: &[&Layer], recovery: Vec<f64>) -> Self {
+        let premium: f64 = layers.iter().map(|l| l.premium).sum();
+        Self {
+            premium: vec![premium; recovery.len()],
+            premium_varies: false,
+            recovery,
+            flat: layers.iter().map(|l| flat_commission(l)).sum(),
+            sliding: None,
+            profit: None,
+        }
+    }
+
+    /// The layers `idx` of `tower`, `ceded[k][i]` layer `i`'s ceded loss at
+    /// atom `k`: each term at the layer's own annual ceded loss.
+    fn of(tower: &Tower, idx: &[usize], ceded: &[Vec<f64>]) -> Self {
+        let layers: Vec<&Layer> = idx.iter().map(|&i| &tower.layers[i]).collect();
+        let at = |f: &dyn Fn(&Layer, f64) -> f64| -> Vec<f64> {
+            ceded
+                .iter()
+                .map(|c| idx.iter().zip(&layers).map(|(&i, l)| f(l, c[i])).sum())
+                .collect()
+        };
+        let sliding = layers
+            .iter()
+            .any(|l| matches!(l.commission, Some(Commission::SlidingScale(_))));
+        let profit = layers.iter().any(|l| l.profit_commission.is_some());
+        Self {
+            premium: at(&|l, c| l.premium_for(c)),
+            premium_varies: layers.iter().any(|l| l.swing.is_some()),
+            recovery: at(&|_, c| c),
+            flat: layers.iter().map(|l| flat_commission(l)).sum(),
+            sliding: sliding.then(|| {
+                at(&|l, c| match l.commission {
+                    Some(Commission::SlidingScale(_)) => l.ceding_commission_for(c),
+                    _ => 0.0,
+                })
+            }),
+            profit: profit.then(|| at(&|l, c| l.profit_commission_for(c))),
+        }
+    }
+}
+
+/// `name`, or `<label> name` when another group took it.
+fn free_label(name: &str, label: &str, taken: &mut Vec<String>) -> String {
+    let key = if taken.iter().any(|t| t == name) {
+        format!("{label} {name}")
+    } else {
+        name.to_string()
+    };
+    taken.push(key.clone());
+    key
+}
+
+/// A cover's buy group: its premium, its recovery and its commissions at
+/// each atom, labelled as `aggregate`'s (a sliding-scale or profit
+/// commission is `sliding commission` or `profit commission`, prefixed by
+/// the cover's label when another cover took that name).
+fn cover_group(label: String, f: Flows, taken: &mut Vec<String>) -> Group {
+    let premium = if f.premium_varies {
+        Leg::values(format!("{label} premium"), f.premium)
+    } else {
+        Leg::constant(format!("{label} premium"), f.premium[0])
+    };
     let mut g = Group::buy(label.clone())
-        .consideration(Leg::constant(format!("{label} premium"), premium).kind(LegKind::Premium))
-        .obligation(Leg::values(format!("{label} recovery"), recovery).kind(LegKind::Recovery));
-    if commission != 0.0 {
+        .consideration(premium.kind(LegKind::Premium))
+        .obligation(Leg::values(format!("{label} recovery"), f.recovery).kind(LegKind::Recovery));
+    if let Some(v) = f.sliding {
+        let key = free_label("sliding commission", &label, taken);
+        g = g.obligation(Leg::values(key, v).kind(LegKind::Commission));
+    }
+    if let Some(v) = f.profit {
+        let key = free_label("profit commission", &label, taken);
+        g = g.obligation(Leg::values(key, v).kind(LegKind::Commission));
+    }
+    if f.flat != 0.0 {
         g = g.obligation(
-            Leg::constant(format!("{label} commission"), commission).kind(LegKind::Commission),
+            Leg::constant(format!("{label} commission"), f.flat).kind(LegKind::Commission),
         );
     }
     g
@@ -636,6 +936,16 @@ fn check_occurrence(tower: &Tower) -> Result<()> {
             return Err(Error::Data(format!(
                 "occurrence layer {:?} has annual terms (an aggregate deductible or limit, or a \
                  corridor); the joint source carries each claim's cession only",
+                l.name
+            )));
+        }
+        let variable = l.swing.is_some()
+            || matches!(l.commission, Some(Commission::SlidingScale(_)))
+            || l.profit_commission.is_some();
+        if variable {
+            return Err(Error::Data(format!(
+                "occurrence layer {:?} has loss-sensitive terms; as in aggregate, they go on an \
+                 aggregate cover",
                 l.name
             )));
         }
@@ -758,15 +1068,10 @@ fn check_tower(tower: &Tower) -> Result<()> {
                 l.name
             )));
         }
-        let variable = l.swing.is_some()
-            || matches!(l.commission, Some(Commission::SlidingScale(_)))
-            || l.profit_commission.is_some()
-            || !l.reinstatement_rates.is_empty();
-        if variable {
+        if !l.reinstatement_rates.is_empty() {
             return Err(Error::Data(format!(
-                "layer {:?} has loss-sensitive terms (swing rating, a sliding scale, a profit \
-                 commission or reinstatement premiums); the builders book a fixed premium and \
-                 a flat commission, so write its legs with Leg::of",
+                "layer {:?} has paid reinstatements; the builders do not book reinstatement \
+                 premiums, so write its legs with Leg::of",
                 l.name
             )));
         }
@@ -862,7 +1167,19 @@ mod tests {
             .profit_commission(0.2, 0.1)
             .unwrap();
         let t = Tower::new(vec![pc]).unwrap();
-        assert!(book.ledger(&gross(), Some(&t), Face::Walk).is_err());
+        assert!(book.ledger(&gross(), Some(&t), Face::Walk).is_ok());
+        // Reinstatement premiums, and retro with a cover.
+        let reinstated = Layer::xol("XL", 2.0, 2.0)
+            .unwrap()
+            .paid_reinstatements(1.0, vec![1.0])
+            .unwrap();
+        let r = Tower::new(vec![reinstated]).unwrap();
+        assert!(book.ledger(&gross(), Some(&r), Face::Walk).is_err());
+        let retro = Book::new("R", 2.0)
+            .retro(LossSensitivePremium::new(2.0, 1.1, Some(3.0), Some(9.0)).unwrap());
+        assert!(retro.ledger(&gross(), Some(&t), Face::Walk).is_err());
+        let plain = retro.ledger(&gross(), None, Face::Consolidated).unwrap();
+        assert!((plain.row("Premium").unwrap().mean() - 6.108).abs() < 1e-12);
         assert!(derive_premium(1.0, &[Expense::loss(0.1)]).is_err());
         assert!(derive_premium(1.0, &[Expense::premium(1.0)]).is_err());
     }

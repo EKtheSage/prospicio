@@ -260,6 +260,12 @@ pnl_flat_expenses <- function(expenses) {
 #' @param premium_label,loss_label,step_label The premium leg's label
 #'   (`"Premium"`), the loss leg's (`"Loss"`, also the gross book's margin on
 #'   a walk) and the gross book's step on a walk (`"Gross"`).
+#' @param retro `NULL`, or `c(basic, lcm, minimum, maximum)` (`NA` for an
+#'   open end) to rate the book retrospectively, `aggregate`'s `retro
+#'   <collar> premium`: the premium is `clip(basic + lcm * x, minimum,
+#'   maximum)` at the year's gross loss `x`, and `premium` (the collar's
+#'   basic premium in `aggregate`) is what premium-basis expenses are taken
+#'   on. A retro book buys no cover here.
 #' @param basis `"fixed"`, `"premium"` or `"loss"`, or a list of
 #'   `list(basis, value)` terms.
 #' @param value The amount or rate, with a single `basis`.
@@ -281,9 +287,16 @@ pnl_flat_expenses <- function(expenses) {
 #' walk <- book_ledger(book, gross, reinsurance_tower(list(cover)), "walk")
 #' mean(ledger_result(walk))
 pnl_book <- function(name, premium, expenses = list(), premium_label = NULL, loss_label = NULL,
-                     step_label = NULL) {
+                     step_label = NULL, retro = NULL) {
+  if (!is.null(retro)) {
+    retro <- as.double(retro)
+    if (length(retro) == 2) retro <- c(retro, NA, NA)
+    if (length(retro) != 4) stop("retro is c(basic, lcm, minimum, maximum)")
+    retro[is.na(retro)] <- NaN
+  }
   structure(list(name = as.character(name), premium = as.double(premium), expenses = expenses,
-                 premium_label = premium_label, loss_label = loss_label, step_label = step_label),
+                 premium_label = premium_label, loss_label = loss_label, step_label = step_label,
+                 retro = retro),
             class = "pnl_book")
 }
 
@@ -309,7 +322,8 @@ book_ledger <- function(book, source, tower = NULL, face = "consolidated") {
   ptr <- rust_result(PnlLedger$book(
     src$values, src$probs, book$name, book$premium, e$index, e$basis, e$value, e$label,
     lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
-    if (is.null(tower)) NULL else tower@ptr, as.character(face)
+    if (is.null(tower)) NULL else tower@ptr, as.character(face),
+    if (is.null(book$retro)) double() else book$retro
   ))
   structure(list(ptr = ptr), class = "pnl_ledger")
 }
@@ -378,4 +392,56 @@ book_occurrence_ledger <- function(book, joint, occurrence, aggregate = NULL, fa
     occurrence@ptr, if (is.null(aggregate)) NULL else aggregate@ptr, as.character(face)
   ))
   structure(list(ptr = ptr), class = "pnl_ledger")
+}
+
+#' Premium ladder from target combined ratios
+#'
+#' The premium ladder of the Python package `aggregate`'s `pnl_program`,
+#' as numbers: the net technical premium `net_loss / net_combined_ratio`,
+#' each layer's deposit at 100% placement `round(ceded_loss /
+#' combined_ratio / share)` (or the premium it states), and the booked
+#' premium `round((T_net + sum share * deposit) / (1 - expense_ratio))`.
+#' The book's own margin is `(1 - net_combined_ratio) T_net` whatever the
+#' cover costs. `round_premium()` rounds as `aggregate` writes a premium:
+#' to whole units above 100, to cents at or below it, ties to even;
+#' `size_premium()` sizes one from a target loss ratio.
+#'
+#' @param net_loss Expected net loss.
+#' @param net_combined_ratio Target net combined ratio.
+#' @param expense_ratio Gross expenses as a fraction of premium.
+#' @param layers `NULL` or a data frame with `ceded_loss` (expected, at the
+#'   placed share), `share`, `combined_ratio` and optionally `stated` (a
+#'   premium the contract states at the placed share, kept; `NA` to price).
+#' @param premium A premium.
+#' @param expected_loss Expected loss.
+#' @param loss_ratio Target loss ratio.
+#' @returns `pnl_program()` a list of `premium`, `technical`, `deposits` and
+#'   `ceded_premium`; the others a number.
+#' @export
+#' @examples
+#' pnl_program(406, 0.9, 0.25, data.frame(ceded_loss = 86, share = 1, combined_ratio = 0.6))
+#' round_premium(c(714.12, 16.285))
+pnl_program <- function(net_loss, net_combined_ratio, expense_ratio, layers = NULL) {
+  n <- if (is.null(layers)) 0 else nrow(layers)
+  col <- function(name, default) {
+    if (n == 0) return(double())
+    v <- if (name %in% names(layers)) as.double(layers[[name]]) else rep(default, n)
+    v[is.na(v)] <- default
+    v
+  }
+  stated <- col("stated", NaN)
+  rust_result(pnl_program_rust(
+    as.double(net_loss), as.double(net_combined_ratio), as.double(expense_ratio),
+    col("ceded_loss", 0), col("share", 1), col("combined_ratio", 1), stated
+  ))
+}
+
+#' @rdname pnl_program
+#' @export
+round_premium <- function(premium) vapply(as.double(premium), round_premium_rust, double(1))
+
+#' @rdname pnl_program
+#' @export
+size_premium <- function(expected_loss, loss_ratio) {
+  rust_result(size_premium_rust(as.double(expected_loss), as.double(loss_ratio)))
 }

@@ -456,6 +456,20 @@ sources:
   `occurrence net of ... poisson aggregate net of ...`.
   `Book::occurrence_ledger` matches on 1,566 values
   (`aggregate_pnl_occurrence.py`).[^pnl]
+* Variable features (`swing basic b lcm m [min] [max]`, `slide c at lr
+  and ...`, `pc s after a`, `corridor s po w xs a`) decorate one aggregate
+  layer, which the engine then drops, so the walk's feature step is the
+  generic `ceded agg` and its commission legs `sliding commission` and
+  `profit commission`. The corridor works on the ceded loss ratio:
+  `LR − s clip(LR − a, 0, w)` times the ceded premium. `retro <collar>
+  premium` is `pnl` only (`xpnl` refuses it, and any reinsurance with
+  it), its premium expenses taken on the collar's basic. Partial
+  placement is spelled `1.5 po 3 xs 5`. On the consolidated face the
+  variable builder books a loss-basis expense stochastic on the gross,
+  the guaranteed-cost builder at its expectation. `pnl_program`'s ladder
+  (`_pnl_technical`) rounds each deposit at 100% placement before the
+  premium, both half to even (whole units above 100, cents below).
+  prospicio matches on 2,342 values (`aggregate_pnl_variable.py`).[^pnl]
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 

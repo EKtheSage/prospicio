@@ -13,7 +13,8 @@ pnl_book(
   expenses = list(),
   premium_label = NULL,
   loss_label = NULL,
-  step_label = NULL
+  step_label = NULL,
+  retro = NULL
 )
 
 pnl_expense(basis, value = NULL, label = NULL)
@@ -32,6 +33,11 @@ derive_premium(technical, expenses)
 \item{premium_label, loss_label, step_label}{The premium leg's label
 (\code{"Premium"}), the loss leg's (\code{"Loss"}, also the gross book's margin on
 a walk) and the gross book's step on a walk (\code{"Gross"}).}
+
+\item{retro}{\code{NULL}, or \code{c(basic, lcm, minimum, maximum)} (\code{NA} for an
+open end) to rate the book retrospectively, \code{aggregate}'s \verb{retro <collar> premium}: the premium is \code{clip(basic + lcm * x, minimum, maximum)} at the year's gross loss \code{x}, and \code{premium} (the collar's
+basic premium in \code{aggregate}) is what premium-basis expenses are taken
+on. A retro book buys no cover here.}
 
 \item{basis}{\code{"fixed"}, \code{"premium"} or \code{"loss"}, or a list of
 \code{list(basis, value)} terms.}

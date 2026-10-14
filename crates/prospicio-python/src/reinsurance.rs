@@ -716,7 +716,7 @@ fn with_premium(mut layer: Layer, premium: f64) -> PyResult<Layer> {
     frozen
 )]
 pub(crate) struct PyLossSensitivePremium {
-    inner: LossSensitivePremium,
+    pub(crate) inner: LossSensitivePremium,
 }
 
 #[pymethods]

@@ -1,0 +1,2343 @@
+case,quantity,row,col,expected,abs_tol,rel_tol,source
+swing,sheet,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k01,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k05,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k10,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k25,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k50,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k75,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k90,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k95,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Consideration|Premium,k99,10.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,SD,1.606237840420901,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,CV,-0.42269416853181613,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,Skew,-0.718130492922993,1e-10,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k01,-8.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k05,-6.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k10,-6.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k25,-5.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k50,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k75,-2.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k90,-2.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k95,-2.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Loss,k99,-2.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k01,-9.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k05,-7.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k10,-7.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Obligation|Total,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k01,1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k05,3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k10,3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k25,4.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k50,6.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k75,7.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k90,7.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k95,7.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,Gross|Margin|Gross,k99,7.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,EX,-0.7959999999999999,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,SD,0.4753777445358586,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,CV,-0.5972082217787169,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,Skew,-2.3639314644687057,1e-10,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k01,-2.5,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k05,-1.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k10,-1.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k25,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k50,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k75,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k90,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k95,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Consideration|ceded agg premium,k99,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,EX,0.23999999999999996,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,SD,0.6499230723708768,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,CV,2.7080128015453204,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,Skew,3.212967667949175,1e-10,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k01,3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k05,1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k10,1.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k25,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k50,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k75,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k90,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k95,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Obligation|ceded agg recovery,k99,0.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,EX,-0.5559999999999999,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,SD,0.21555509736491982,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,CV,-0.3876890240376256,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,Skew,4.694855340334415,1e-10,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k01,0.5,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k05,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k10,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k25,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k50,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k75,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k90,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k95,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Total,k99,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,EX,4.644,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,SD,1.5022862576752796,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,CV,0.3234897195683203,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,Skew,-0.4430410932125093,1e-10,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k01,1.5,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k05,2.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k10,2.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k25,3.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k50,5.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k75,6.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k90,6.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k95,6.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,ceded agg|Margin|Net,k99,6.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,EX,9.204,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,SD,0.4753777445358403,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,CV,0.05164903786786618,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,Skew,-2.3639314644689806,1e-10,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k01,7.499999999999999,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k05,8.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k10,8.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k25,9.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k50,9.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k75,9.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k90,9.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k95,9.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Consideration|Net,k99,9.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,EX,-4.56,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,SD,1.2109500402576483,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,CV,-0.26555921935474747,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,Skew,-0.045520250842972475,1e-10,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k01,-6.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k05,-6.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k10,-6.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Obligation|Net,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,EX,4.644,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,SD,1.5022862576752796,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,CV,0.3234897195683203,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,Skew,-0.4430410932125093,1e-10,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k01,1.5,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k05,2.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k10,2.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k25,3.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k50,5.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k75,6.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k90,6.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k95,6.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Net,k99,6.4,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,EX,-0.5559999999999997,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,SD,0.21555509736491993,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,CV,-0.38768902403762595,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,Skew,4.694855340334402,1e-10,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k01,0.5,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k05,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k10,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k25,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k50,-0.5999999999999996,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k75,-0.5999999999999996,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k90,-0.5999999999999996,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k95,-0.5999999999999996,1e-12,0.0,aggregate 1.0.1
+swing,sheet,All|Margin|Impact,k99,-0.5999999999999996,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Consideration,EX,10.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Consideration,P01,10.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Consideration,Median,10.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Consideration,P99,10.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Obligation,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Obligation,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Obligation,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Obligation,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+swing,card,Gross|Obligation,P01,-9.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Margin,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Margin,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Margin,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Margin,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+swing,card,Gross|Margin,P01,1.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Margin,Median,6.0,1e-12,0.0,aggregate 1.0.1
+swing,card,Gross|Margin,P99,7.0,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Consideration,EX,-0.7959999999999999,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Consideration,SD,0.4753777445358586,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Consideration,CV,-0.5972082217787169,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Consideration,Skew,-2.3639314644687057,1e-10,0.0,aggregate 1.0.1
+swing,card,ceded agg|Consideration,P01,-2.5,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Consideration,Median,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Consideration,P99,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Obligation,EX,0.23999999999999996,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Obligation,SD,0.6499230723708768,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Obligation,CV,2.7080128015453204,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Obligation,Skew,3.212967667949175,1e-10,0.0,aggregate 1.0.1
+swing,card,ceded agg|Obligation,P01,0.0,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Obligation,Median,0.0,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Obligation,P99,3.0,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Margin,EX,-0.5559999999999999,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Margin,SD,0.21555509736491982,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Margin,CV,-0.3876890240376256,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Margin,Skew,4.694855340334415,1e-10,0.0,aggregate 1.0.1
+swing,card,ceded agg|Margin,P01,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Margin,Median,-0.6,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Margin,P99,0.5,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Net,EX,4.644,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Net,SD,1.5022862576752796,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Net,CV,0.3234897195683203,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Net,Skew,-0.4430410932125093,1e-10,0.0,aggregate 1.0.1
+swing,card,ceded agg|Net,P01,1.5,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Net,Median,5.4,1e-12,0.0,aggregate 1.0.1
+swing,card,ceded agg|Net,P99,6.4,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Consideration,EX,9.204,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Consideration,SD,0.4753777445358403,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Consideration,CV,0.05164903786786618,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Consideration,Skew,-2.3639314644689806,1e-10,0.0,aggregate 1.0.1
+swing,card,All|Consideration,P01,7.5,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Consideration,Median,9.4,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Consideration,P99,9.4,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Obligation,EX,-4.56,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Obligation,SD,1.2109500402576483,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Obligation,CV,-0.26555921935474747,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Obligation,Skew,-0.045520250842972475,1e-10,0.0,aggregate 1.0.1
+swing,card,All|Obligation,P01,-6.0,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Margin,EX,4.644,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Margin,SD,1.5022862576752796,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Margin,CV,0.3234897195683203,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Margin,Skew,-0.4430410932125093,1e-10,0.0,aggregate 1.0.1
+swing,card,All|Margin,P01,1.5,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Margin,Median,5.4,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Margin,P99,6.4,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Impact,EX,-0.5559999999999997,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Impact,SD,0.21555509736491993,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Impact,CV,-0.38768902403762595,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Impact,Skew,4.694855340334402,1e-10,0.0,aggregate 1.0.1
+swing,card,All|Impact,P01,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Impact,Median,-0.5999999999999996,1e-12,0.0,aggregate 1.0.1
+swing,card,All|Impact,P99,0.5,1e-12,0.0,aggregate 1.0.1
+swing,legs,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+swing,legs,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+swing,legs,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+swing,legs,ceded agg|Consideration|ceded agg premium,EX,-0.7959999999999999,1e-12,0.0,aggregate 1.0.1
+swing,legs,ceded agg|Obligation|ceded agg recovery,EX,0.23999999999999996,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,EX,9.204,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,SD,0.4753777445358403,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,CV,0.05164903786786618,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,Skew,-2.3639314644689806,1e-10,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k01,7.499999999999999,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k05,8.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k10,8.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k25,9.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k50,9.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k75,9.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k90,9.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k95,9.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Consideration|net premium,k99,9.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),EX,-3.5599999999999996,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),SD,1.2109500402576492,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),CV,-0.34015450569035094,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),Skew,-0.04552025084297237,1e-10,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k01,-5.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k05,-5.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k10,-5.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k25,-5.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k50,-3.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k75,-2.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k90,-2.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k95,-2.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Loss (net),k99,-2.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,EX,-4.56,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,SD,1.2109500402576483,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,CV,-0.26555921935474747,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,Skew,-0.045520250842972475,1e-10,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k01,-6.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k05,-6.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k10,-6.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Obligation|Total,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,EX,4.644,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,SD,1.5022862576752796,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,CV,0.3234897195683203,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,Skew,-0.4430410932125089,1e-10,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k01,1.5,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k05,2.4000000000000004,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k10,2.4000000000000004,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k25,3.400000000000001,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k50,5.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k75,6.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k90,6.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k95,6.4,1e-12,0.0,aggregate 1.0.1
+swingc,sheet,Margin|Total,k99,6.4,1e-12,0.0,aggregate 1.0.1
+swingc,card,Consideration,EX,9.204,1e-12,0.0,aggregate 1.0.1
+swingc,card,Consideration,SD,0.4753777445358403,1e-12,0.0,aggregate 1.0.1
+swingc,card,Consideration,CV,0.05164903786786618,1e-12,0.0,aggregate 1.0.1
+swingc,card,Consideration,Skew,-2.3639314644689806,1e-10,0.0,aggregate 1.0.1
+swingc,card,Consideration,P01,7.5,1e-12,0.0,aggregate 1.0.1
+swingc,card,Consideration,Median,9.4,1e-12,0.0,aggregate 1.0.1
+swingc,card,Consideration,P99,9.4,1e-12,0.0,aggregate 1.0.1
+swingc,card,Obligation,EX,-4.56,1e-12,0.0,aggregate 1.0.1
+swingc,card,Obligation,SD,1.2109500402576483,1e-12,0.0,aggregate 1.0.1
+swingc,card,Obligation,CV,-0.26555921935474747,1e-12,0.0,aggregate 1.0.1
+swingc,card,Obligation,Skew,-0.045520250842972475,1e-10,0.0,aggregate 1.0.1
+swingc,card,Obligation,P01,-6.0,1e-12,0.0,aggregate 1.0.1
+swingc,card,Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+swingc,card,Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+swingc,card,Margin,EX,4.644,1e-12,0.0,aggregate 1.0.1
+swingc,card,Margin,SD,1.5022862576752796,1e-12,0.0,aggregate 1.0.1
+swingc,card,Margin,CV,0.3234897195683203,1e-12,0.0,aggregate 1.0.1
+swingc,card,Margin,Skew,-0.4430410932125089,1e-10,0.0,aggregate 1.0.1
+swingc,card,Margin,P01,1.5,1e-12,0.0,aggregate 1.0.1
+swingc,card,Margin,Median,5.4,1e-12,0.0,aggregate 1.0.1
+swingc,card,Margin,P99,6.4,1e-12,0.0,aggregate 1.0.1
+swingc,legs,V|Consideration|net premium,EX,9.204,1e-12,0.0,aggregate 1.0.1
+swingc,legs,V|Obligation|Loss (net),EX,-3.5599999999999996,1e-12,0.0,aggregate 1.0.1
+swingc,legs,V|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k01,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k05,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k10,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k25,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k50,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k75,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k90,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k95,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Consideration|Premium,k99,10.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,SD,1.606237840420901,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,CV,-0.42269416853181613,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,Skew,-0.718130492922993,1e-10,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k01,-6.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k05,-6.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k10,-6.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k25,-5.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k50,-3.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k75,-2.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k90,-2.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k95,-2.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Loss,k99,-2.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k01,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k05,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k10,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Obligation|Total,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k01,2.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k05,2.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k10,2.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k25,4.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k50,6.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k75,7.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k90,7.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k95,7.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,Gross|Margin|Gross,k99,7.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Consideration|ceded agg premium,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,EX,0.23999999999999996,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,SD,0.6499230723708768,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,CV,2.7080128015453204,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,Skew,3.212967667949175,1e-10,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k01,1.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k05,1.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k10,1.5,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k25,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k50,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k75,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k90,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k95,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|ceded agg recovery,k99,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,EX,0.26799999999999996,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,SD,0.07332121111929348,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,CV,0.2735866086540802,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,Skew,-1.8548520670059305,1e-10,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k01,0.09999999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k05,0.09999999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k10,0.09999999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k25,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k50,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k75,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k90,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k95,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|sliding commission,k99,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,EX,0.508,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,SD,0.589182484464703,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,CV,1.1598080402848485,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,Skew,3.490542278339948,1e-10,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k01,1.5999999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k05,1.5999999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k10,1.5999999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k25,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k50,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k75,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k90,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k95,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Obligation|Total,k99,0.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,EX,-0.4919999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,SD,0.589182484464703,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,CV,-1.1975253749282584,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,Skew,3.490542278339948,1e-10,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k01,0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k05,0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k10,0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k25,-0.6999999999999998,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k50,-0.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k75,-0.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k90,-0.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k95,-0.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Total,k99,-0.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,EX,4.707999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,SD,1.250574268086468,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,CV,0.26562749959355736,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,Skew,-0.08111949393275455,1e-10,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k01,3.1,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k05,3.1,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k10,3.1,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k25,3.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k50,5.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k75,6.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k90,6.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k95,6.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,ceded agg|Margin|Net,k99,6.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,EX,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k01,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k05,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k10,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k25,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k50,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k75,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k90,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k95,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Consideration|Net,k99,9.0,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,EX,-4.292,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,SD,1.2505742680864667,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,CV,-0.29137331502480585,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,Skew,-0.0811194939327573,1e-10,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k01,-5.9,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k05,-5.9,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k10,-5.9,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k25,-5.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k50,-3.7000000000000006,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k75,-2.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k90,-2.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k95,-2.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Obligation|Net,k99,-2.7,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,EX,4.707999999999999,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,SD,1.250574268086468,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,CV,0.26562749959355736,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,Skew,-0.08111949393275455,1e-10,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k01,3.1,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k05,3.1,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k10,3.1,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k25,3.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k50,5.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k75,6.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k90,6.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k95,6.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Net,k99,6.3,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,EX,-0.4920000000000001,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,SD,0.589182484464703,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,CV,-1.197525374928258,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,Skew,3.490542278339948,1e-10,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k01,0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k05,0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k10,0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k25,-0.7000000000000002,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k50,-0.7000000000000002,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k75,-0.7000000000000002,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k90,-0.7000000000000002,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k95,-0.7000000000000002,1e-12,0.0,aggregate 1.0.1
+slide,sheet,All|Margin|Impact,k99,-0.7000000000000002,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Consideration,EX,10.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Consideration,P01,10.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Consideration,Median,10.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Consideration,P99,10.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Obligation,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Obligation,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Obligation,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Obligation,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+slide,card,Gross|Obligation,P01,-9.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Margin,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Margin,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Margin,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Margin,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+slide,card,Gross|Margin,P01,1.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Margin,Median,6.0,1e-12,0.0,aggregate 1.0.1
+slide,card,Gross|Margin,P99,7.0,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Consideration,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Consideration,P01,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Consideration,Median,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Consideration,P99,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Obligation,EX,0.508,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Obligation,SD,0.589182484464703,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Obligation,CV,1.1598080402848485,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Obligation,Skew,3.490542278339948,1e-10,0.0,aggregate 1.0.1
+slide,card,ceded agg|Obligation,P01,0.3,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Obligation,Median,0.3,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Obligation,P99,3.1,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Margin,EX,-0.4919999999999999,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Margin,SD,0.589182484464703,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Margin,CV,-1.1975253749282584,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Margin,Skew,3.490542278339948,1e-10,0.0,aggregate 1.0.1
+slide,card,ceded agg|Margin,P01,-0.7,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Margin,Median,-0.7,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Margin,P99,2.1,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Net,EX,4.707999999999999,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Net,SD,1.250574268086468,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Net,CV,0.26562749959355736,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Net,Skew,-0.08111949393275455,1e-10,0.0,aggregate 1.0.1
+slide,card,ceded agg|Net,P01,3.1,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Net,Median,5.3,1e-12,0.0,aggregate 1.0.1
+slide,card,ceded agg|Net,P99,6.3,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Consideration,EX,9.0,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Consideration,P01,9.0,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Consideration,Median,9.0,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Consideration,P99,9.0,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Obligation,EX,-4.292,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Obligation,SD,1.2505742680864667,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Obligation,CV,-0.29137331502480585,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Obligation,Skew,-0.0811194939327573,1e-10,0.0,aggregate 1.0.1
+slide,card,All|Obligation,P01,-5.9,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Obligation,Median,-3.7,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Obligation,P99,-2.7,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Margin,EX,4.707999999999999,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Margin,SD,1.250574268086468,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Margin,CV,0.26562749959355736,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Margin,Skew,-0.08111949393275455,1e-10,0.0,aggregate 1.0.1
+slide,card,All|Margin,P01,3.1,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Margin,Median,5.3,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Margin,P99,6.3,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Impact,EX,-0.4920000000000001,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Impact,SD,0.589182484464703,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Impact,CV,-1.197525374928258,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Impact,Skew,3.490542278339948,1e-10,0.0,aggregate 1.0.1
+slide,card,All|Impact,P01,-0.7000000000000002,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Impact,Median,-0.7000000000000002,1e-12,0.0,aggregate 1.0.1
+slide,card,All|Impact,P99,2.1,1e-12,0.0,aggregate 1.0.1
+slide,legs,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+slide,legs,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+slide,legs,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,legs,ceded agg|Consideration|ceded agg premium,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+slide,legs,ceded agg|Obligation|ceded agg recovery,EX,0.23999999999999996,1e-12,0.0,aggregate 1.0.1
+slide,legs,ceded agg|Obligation|sliding commission,EX,0.26799999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,EX,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k01,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k05,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k10,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k25,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k50,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k75,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k90,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k95,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Consideration|net premium,k99,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),EX,-3.5599999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),SD,1.2109500402576492,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),CV,-0.34015450569035094,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),Skew,-0.04552025084297237,1e-10,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k01,-5.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k05,-5.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k10,-5.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k25,-5.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k50,-3.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k75,-2.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k90,-2.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k95,-2.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Loss (net),k99,-2.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,EX,0.26799999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,SD,0.07332121111929348,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,CV,0.2735866086540802,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,Skew,-1.8548520670059305,1e-10,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k01,0.09999999999999999,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k05,0.09999999999999999,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k10,0.09999999999999999,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k25,0.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k50,0.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k75,0.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k90,0.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k95,0.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|commission,k99,0.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,EX,-4.292,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,SD,1.2505742680864667,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,CV,-0.29137331502480585,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,Skew,-0.0811194939327573,1e-10,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k01,-5.9,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k05,-5.9,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k10,-5.9,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k25,-5.7,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k50,-3.7000000000000006,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k75,-2.7,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k90,-2.7,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k95,-2.7,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Obligation|Total,k99,-2.7,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,EX,4.707999999999999,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,SD,1.250574268086468,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,CV,0.26562749959355736,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,Skew,-0.08111949393275483,1e-10,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k01,3.0999999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k05,3.0999999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k10,3.0999999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k25,3.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k50,5.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k75,6.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k90,6.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k95,6.3,1e-12,0.0,aggregate 1.0.1
+slidec,sheet,Margin|Total,k99,6.3,1e-12,0.0,aggregate 1.0.1
+slidec,card,Consideration,EX,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,card,Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+slidec,card,Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+slidec,card,Consideration,P01,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,card,Consideration,Median,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,card,Consideration,P99,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,card,Obligation,EX,-4.292,1e-12,0.0,aggregate 1.0.1
+slidec,card,Obligation,SD,1.2505742680864667,1e-12,0.0,aggregate 1.0.1
+slidec,card,Obligation,CV,-0.29137331502480585,1e-12,0.0,aggregate 1.0.1
+slidec,card,Obligation,Skew,-0.0811194939327573,1e-10,0.0,aggregate 1.0.1
+slidec,card,Obligation,P01,-5.9,1e-12,0.0,aggregate 1.0.1
+slidec,card,Obligation,Median,-3.7,1e-12,0.0,aggregate 1.0.1
+slidec,card,Obligation,P99,-2.7,1e-12,0.0,aggregate 1.0.1
+slidec,card,Margin,EX,4.707999999999999,1e-12,0.0,aggregate 1.0.1
+slidec,card,Margin,SD,1.250574268086468,1e-12,0.0,aggregate 1.0.1
+slidec,card,Margin,CV,0.26562749959355736,1e-12,0.0,aggregate 1.0.1
+slidec,card,Margin,Skew,-0.08111949393275483,1e-10,0.0,aggregate 1.0.1
+slidec,card,Margin,P01,3.0999999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,card,Margin,Median,5.3,1e-12,0.0,aggregate 1.0.1
+slidec,card,Margin,P99,6.3,1e-12,0.0,aggregate 1.0.1
+slidec,legs,V|Consideration|net premium,EX,9.0,1e-12,0.0,aggregate 1.0.1
+slidec,legs,V|Obligation|Loss (net),EX,-3.5599999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,legs,V|Obligation|commission,EX,0.26799999999999996,1e-12,0.0,aggregate 1.0.1
+slidec,legs,V|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k01,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k05,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k10,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k25,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k50,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k75,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k90,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k95,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Consideration|Premium,k99,10.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,SD,1.606237840420901,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,CV,-0.42269416853181613,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,Skew,-0.718130492922993,1e-10,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k01,-6.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k05,-6.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k10,-6.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k25,-5.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k50,-3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k75,-2.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k90,-2.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k95,-2.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Loss,k99,-2.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k01,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k05,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k10,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Obligation|Total,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k01,2.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k05,2.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k10,2.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k25,4.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k50,6.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k75,7.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k90,7.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k95,7.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,Gross|Margin|Gross,k99,7.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Consideration|ceded agg premium,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,EX,0.23999999999999996,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,SD,0.6499230723708768,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,CV,2.7080128015453204,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,Skew,3.212967667949175,1e-10,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k01,1.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k05,1.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k10,1.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k25,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k50,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k75,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k90,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k95,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|ceded agg recovery,k99,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,EX,0.189,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,SD,0.08248636250920514,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,CV,0.4364357804719849,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,Skew,-1.8548520670059334,1e-10,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k01,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k05,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k10,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k25,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k50,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k75,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k90,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k95,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|profit commission,k99,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,EX,0.42899999999999994,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,SD,0.5817937778972889,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,CV,1.3561626524412331,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,Skew,3.5291377225948333,1e-10,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k01,1.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k05,1.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k10,1.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k25,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k50,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k75,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k90,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k95,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Obligation|Total,k99,0.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,EX,-0.571,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,SD,0.581793777897289,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,CV,-1.018903288786846,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,Skew,3.5291377225948297,1e-10,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k01,0.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k05,0.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k10,0.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k25,-0.7750000000000001,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k50,-0.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k75,-0.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k90,-0.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k95,-0.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Total,k99,-0.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,EX,4.629,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,SD,1.2557404190357175,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,CV,0.27127682415980076,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,Skew,-0.08648060440056281,1e-10,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k01,3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k05,3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k10,3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k25,3.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k50,5.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k75,6.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k90,6.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k95,6.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,ceded agg|Margin|Net,k99,6.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,EX,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k01,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k05,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k10,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k25,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k50,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k75,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k90,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k95,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Consideration|Net,k99,9.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,EX,-4.370999999999999,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,SD,1.255740419035722,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,CV,-0.2872890457642925,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,Skew,-0.08648060440056597,1e-10,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k01,-6.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k05,-6.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k10,-6.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k25,-5.7749999999999995,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k50,-3.7749999999999995,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k75,-2.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k90,-2.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k95,-2.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Obligation|Net,k99,-2.775,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,EX,4.629,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,SD,1.2557404190357175,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,CV,0.27127682415980076,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,Skew,-0.08648060440056281,1e-10,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k01,3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k05,3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k10,3.0,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k25,3.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k50,5.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k75,6.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k90,6.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k95,6.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Net,k99,6.225,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,EX,-0.5710000000000002,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,SD,0.581793777897289,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,CV,-1.0189032887868457,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,Skew,3.5291377225948315,1e-10,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k01,0.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k05,0.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k10,0.5,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k25,-0.7749999999999999,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k50,-0.7750000000000004,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k75,-0.7750000000000004,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k90,-0.7750000000000004,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k95,-0.7750000000000004,1e-12,0.0,aggregate 1.0.1
+pc,sheet,All|Margin|Impact,k99,-0.7750000000000004,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Consideration,EX,10.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Consideration,P01,10.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Consideration,Median,10.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Consideration,P99,10.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Obligation,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Obligation,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Obligation,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Obligation,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+pc,card,Gross|Obligation,P01,-9.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Margin,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Margin,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Margin,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Margin,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+pc,card,Gross|Margin,P01,1.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Margin,Median,6.0,1e-12,0.0,aggregate 1.0.1
+pc,card,Gross|Margin,P99,7.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Consideration,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Consideration,P01,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Consideration,Median,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Consideration,P99,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Obligation,EX,0.42899999999999994,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Obligation,SD,0.5817937778972889,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Obligation,CV,1.3561626524412331,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Obligation,Skew,3.5291377225948333,1e-10,0.0,aggregate 1.0.1
+pc,card,ceded agg|Obligation,P01,0.225,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Obligation,Median,0.225,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Obligation,P99,3.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Margin,EX,-0.571,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Margin,SD,0.581793777897289,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Margin,CV,-1.018903288786846,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Margin,Skew,3.5291377225948297,1e-10,0.0,aggregate 1.0.1
+pc,card,ceded agg|Margin,P01,-0.775,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Margin,Median,-0.775,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Margin,P99,2.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Net,EX,4.629,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Net,SD,1.2557404190357175,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Net,CV,0.27127682415980076,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Net,Skew,-0.08648060440056281,1e-10,0.0,aggregate 1.0.1
+pc,card,ceded agg|Net,P01,3.0,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Net,Median,5.225,1e-12,0.0,aggregate 1.0.1
+pc,card,ceded agg|Net,P99,6.225,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Consideration,EX,9.0,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Consideration,P01,9.0,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Consideration,Median,9.0,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Consideration,P99,9.0,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Obligation,EX,-4.370999999999999,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Obligation,SD,1.255740419035722,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Obligation,CV,-0.2872890457642925,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Obligation,Skew,-0.08648060440056597,1e-10,0.0,aggregate 1.0.1
+pc,card,All|Obligation,P01,-6.0,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Obligation,Median,-3.775,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Obligation,P99,-2.775,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Margin,EX,4.629,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Margin,SD,1.2557404190357175,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Margin,CV,0.27127682415980076,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Margin,Skew,-0.08648060440056281,1e-10,0.0,aggregate 1.0.1
+pc,card,All|Margin,P01,3.0,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Margin,Median,5.225,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Margin,P99,6.225,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Impact,EX,-0.5710000000000002,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Impact,SD,0.581793777897289,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Impact,CV,-1.0189032887868457,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Impact,Skew,3.5291377225948315,1e-10,0.0,aggregate 1.0.1
+pc,card,All|Impact,P01,-0.7750000000000004,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Impact,Median,-0.7750000000000004,1e-12,0.0,aggregate 1.0.1
+pc,card,All|Impact,P99,2.0,1e-12,0.0,aggregate 1.0.1
+pc,legs,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+pc,legs,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+pc,legs,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,legs,ceded agg|Consideration|ceded agg premium,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+pc,legs,ceded agg|Obligation|ceded agg recovery,EX,0.23999999999999996,1e-12,0.0,aggregate 1.0.1
+pc,legs,ceded agg|Obligation|profit commission,EX,0.189,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,EX,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k01,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k05,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k10,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k25,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k50,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k75,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k90,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k95,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Consideration|net premium,k99,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),EX,-3.5599999999999996,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),SD,1.2109500402576492,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),CV,-0.34015450569035094,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),Skew,-0.04552025084297237,1e-10,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k01,-5.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k05,-5.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k10,-5.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k25,-5.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k50,-3.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k75,-2.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k90,-2.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k95,-2.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Loss (net),k99,-2.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,EX,0.189,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,SD,0.08248636250920514,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,CV,0.4364357804719849,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,Skew,-1.8548520670059334,1e-10,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k01,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k05,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k10,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k25,0.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k50,0.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k75,0.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k90,0.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k95,0.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|commission,k99,0.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,EX,-4.370999999999999,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,SD,1.255740419035722,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,CV,-0.2872890457642925,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,Skew,-0.08648060440056597,1e-10,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k01,-6.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k05,-6.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k10,-6.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k25,-5.7749999999999995,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k50,-3.7749999999999995,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k75,-2.775,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k90,-2.775,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k95,-2.775,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Obligation|Total,k99,-2.775,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,EX,4.629,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,SD,1.2557404190357175,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,CV,0.27127682415980076,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,Skew,-0.08648060440056303,1e-10,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k01,3.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k05,3.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k10,3.0,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k25,3.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k50,5.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k75,6.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k90,6.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k95,6.225,1e-12,0.0,aggregate 1.0.1
+pcc,sheet,Margin|Total,k99,6.225,1e-12,0.0,aggregate 1.0.1
+pcc,card,Consideration,EX,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,card,Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,card,Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+pcc,card,Consideration,P01,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,card,Consideration,Median,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,card,Consideration,P99,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,card,Obligation,EX,-4.370999999999999,1e-12,0.0,aggregate 1.0.1
+pcc,card,Obligation,SD,1.255740419035722,1e-12,0.0,aggregate 1.0.1
+pcc,card,Obligation,CV,-0.2872890457642925,1e-12,0.0,aggregate 1.0.1
+pcc,card,Obligation,Skew,-0.08648060440056597,1e-10,0.0,aggregate 1.0.1
+pcc,card,Obligation,P01,-6.0,1e-12,0.0,aggregate 1.0.1
+pcc,card,Obligation,Median,-3.775,1e-12,0.0,aggregate 1.0.1
+pcc,card,Obligation,P99,-2.775,1e-12,0.0,aggregate 1.0.1
+pcc,card,Margin,EX,4.629,1e-12,0.0,aggregate 1.0.1
+pcc,card,Margin,SD,1.2557404190357175,1e-12,0.0,aggregate 1.0.1
+pcc,card,Margin,CV,0.27127682415980076,1e-12,0.0,aggregate 1.0.1
+pcc,card,Margin,Skew,-0.08648060440056303,1e-10,0.0,aggregate 1.0.1
+pcc,card,Margin,P01,3.0,1e-12,0.0,aggregate 1.0.1
+pcc,card,Margin,Median,5.225,1e-12,0.0,aggregate 1.0.1
+pcc,card,Margin,P99,6.225,1e-12,0.0,aggregate 1.0.1
+pcc,legs,V|Consideration|net premium,EX,9.0,1e-12,0.0,aggregate 1.0.1
+pcc,legs,V|Obligation|Loss (net),EX,-3.5599999999999996,1e-12,0.0,aggregate 1.0.1
+pcc,legs,V|Obligation|commission,EX,0.189,1e-12,0.0,aggregate 1.0.1
+pcc,legs,V|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k01,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k05,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k10,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k25,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k50,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k75,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k90,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k95,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Consideration|Premium,k99,10.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,SD,1.606237840420901,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,CV,-0.42269416853181613,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,Skew,-0.718130492922993,1e-10,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k01,-6.5,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k05,-6.5,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k10,-6.5,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k25,-5.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k50,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k75,-2.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k90,-2.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k95,-2.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Loss,k99,-2.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k01,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k05,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k10,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Obligation|Total,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k01,2.5,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k05,2.5,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k10,2.5,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k25,4.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k50,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k75,7.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k90,7.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k95,7.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,Gross|Margin|Gross,k99,7.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Consideration|ceded agg premium,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,EX,0.21599999999999997,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,SD,0.6041059509721783,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,CV,2.7967868100563815,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,Skew,3.4159577762238116,1e-10,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k01,1.35,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k05,1.35,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k10,1.35,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k25,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k50,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k75,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k90,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k95,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Obligation|ceded agg recovery,k99,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,EX,-0.784,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,SD,0.6041059509721783,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,CV,-0.770543304811452,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,Skew,3.4159577762238116,1e-10,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k01,0.35000000000000003,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k05,0.35000000000000003,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k10,0.35000000000000003,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Total,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,EX,4.4159999999999995,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,SD,1.240380586755535,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,CV,0.2808832850442788,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,Skew,-0.07096815111831487,1e-10,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k01,2.85,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k05,2.85,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k10,2.85,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k25,3.0000000000000004,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k50,5.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k75,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k90,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k95,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,ceded agg|Margin|Net,k99,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,EX,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k01,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k05,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k10,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k25,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k50,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k75,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k90,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k95,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Consideration|Net,k99,9.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,EX,-4.584,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,SD,1.2403805867555335,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,CV,-0.27058913323637296,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,Skew,-0.07096815111831752,1e-10,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k01,-6.15,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k05,-6.15,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k10,-6.15,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Obligation|Net,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,EX,4.4159999999999995,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,SD,1.240380586755535,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,CV,0.2808832850442788,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,Skew,-0.07096815111831487,1e-10,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k01,2.85,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k05,2.85,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k10,2.85,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k25,3.0000000000000004,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k50,5.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k75,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k90,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k95,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Net,k99,6.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,EX,-0.784,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,SD,0.6041059509721783,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,CV,-0.770543304811452,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,Skew,3.4159577762238116,1e-10,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k01,0.3500000000000001,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k05,0.3500000000000001,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k10,0.3500000000000001,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,sheet,All|Margin|Impact,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Consideration,EX,10.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Consideration,P01,10.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Consideration,Median,10.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Consideration,P99,10.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Obligation,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Obligation,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Obligation,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Obligation,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+corr,card,Gross|Obligation,P01,-9.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Margin,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Margin,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Margin,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Margin,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+corr,card,Gross|Margin,P01,1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Margin,Median,6.0,1e-12,0.0,aggregate 1.0.1
+corr,card,Gross|Margin,P99,7.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Consideration,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Consideration,P01,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Consideration,Median,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Consideration,P99,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Obligation,EX,0.21599999999999997,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Obligation,SD,0.6041059509721783,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Obligation,CV,2.7967868100563815,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Obligation,Skew,3.4159577762238116,1e-10,0.0,aggregate 1.0.1
+corr,card,ceded agg|Obligation,P01,0.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Obligation,Median,0.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Obligation,P99,2.85,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Margin,EX,-0.784,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Margin,SD,0.6041059509721783,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Margin,CV,-0.770543304811452,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Margin,Skew,3.4159577762238116,1e-10,0.0,aggregate 1.0.1
+corr,card,ceded agg|Margin,P01,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Margin,Median,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Margin,P99,1.85,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Net,EX,4.4159999999999995,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Net,SD,1.240380586755535,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Net,CV,0.2808832850442788,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Net,Skew,-0.07096815111831487,1e-10,0.0,aggregate 1.0.1
+corr,card,ceded agg|Net,P01,2.85,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Net,Median,5.0,1e-12,0.0,aggregate 1.0.1
+corr,card,ceded agg|Net,P99,6.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Consideration,EX,9.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Consideration,P01,9.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Consideration,Median,9.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Consideration,P99,9.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Obligation,EX,-4.584,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Obligation,SD,1.2403805867555335,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Obligation,CV,-0.27058913323637296,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Obligation,Skew,-0.07096815111831752,1e-10,0.0,aggregate 1.0.1
+corr,card,All|Obligation,P01,-6.15,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Margin,EX,4.4159999999999995,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Margin,SD,1.240380586755535,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Margin,CV,0.2808832850442788,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Margin,Skew,-0.07096815111831487,1e-10,0.0,aggregate 1.0.1
+corr,card,All|Margin,P01,2.85,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Margin,Median,5.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Margin,P99,6.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Impact,EX,-0.784,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Impact,SD,0.6041059509721783,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Impact,CV,-0.770543304811452,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Impact,Skew,3.4159577762238116,1e-10,0.0,aggregate 1.0.1
+corr,card,All|Impact,P01,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Impact,Median,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,card,All|Impact,P99,1.85,1e-12,0.0,aggregate 1.0.1
+corr,legs,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+corr,legs,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+corr,legs,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,legs,ceded agg|Consideration|ceded agg premium,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+corr,legs,ceded agg|Obligation|ceded agg recovery,EX,0.21599999999999997,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,EX,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k01,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k05,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k10,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k25,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k50,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k75,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k90,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k95,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Consideration|net premium,k99,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),EX,-3.5839999999999996,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),SD,1.2403805867555335,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),CV,-0.34608833335812883,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),Skew,-0.07096815111831752,1e-10,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k01,-5.15,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k05,-5.15,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k10,-5.15,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k25,-5.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k50,-3.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k75,-2.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k90,-2.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k95,-2.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Loss (net),k99,-2.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,EX,-4.584,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,SD,1.2403805867555335,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,CV,-0.27058913323637296,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,Skew,-0.07096815111831752,1e-10,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k01,-6.15,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k05,-6.15,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k10,-6.15,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Obligation|Total,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,EX,4.4159999999999995,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,SD,1.240380586755535,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,CV,0.2808832850442788,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,Skew,-0.07096815111831516,1e-10,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k01,2.8499999999999996,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k05,2.8499999999999996,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k10,2.8499999999999996,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k25,3.0000000000000004,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k50,5.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k75,6.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k90,6.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k95,6.0,1e-12,0.0,aggregate 1.0.1
+corrc,sheet,Margin|Total,k99,6.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Consideration,EX,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Consideration,P01,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Consideration,Median,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Consideration,P99,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Obligation,EX,-4.584,1e-12,0.0,aggregate 1.0.1
+corrc,card,Obligation,SD,1.2403805867555335,1e-12,0.0,aggregate 1.0.1
+corrc,card,Obligation,CV,-0.27058913323637296,1e-12,0.0,aggregate 1.0.1
+corrc,card,Obligation,Skew,-0.07096815111831752,1e-10,0.0,aggregate 1.0.1
+corrc,card,Obligation,P01,-6.15,1e-12,0.0,aggregate 1.0.1
+corrc,card,Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Margin,EX,4.4159999999999995,1e-12,0.0,aggregate 1.0.1
+corrc,card,Margin,SD,1.240380586755535,1e-12,0.0,aggregate 1.0.1
+corrc,card,Margin,CV,0.2808832850442788,1e-12,0.0,aggregate 1.0.1
+corrc,card,Margin,Skew,-0.07096815111831516,1e-10,0.0,aggregate 1.0.1
+corrc,card,Margin,P01,2.8499999999999996,1e-12,0.0,aggregate 1.0.1
+corrc,card,Margin,Median,5.0,1e-12,0.0,aggregate 1.0.1
+corrc,card,Margin,P99,6.0,1e-12,0.0,aggregate 1.0.1
+corrc,legs,V|Consideration|net premium,EX,9.0,1e-12,0.0,aggregate 1.0.1
+corrc,legs,V|Obligation|Loss (net),EX,-3.5839999999999996,1e-12,0.0,aggregate 1.0.1
+corrc,legs,V|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k01,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k05,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k10,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k25,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k50,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k75,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k90,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k95,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Consideration|Premium,k99,10.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,SD,1.606237840420901,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,CV,-0.42269416853181613,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,Skew,-0.718130492922993,1e-10,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k01,-8.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k05,-6.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k10,-6.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k25,-5.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k50,-3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k75,-2.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k90,-2.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k95,-2.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Loss,k99,-2.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k01,-9.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k05,-7.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k10,-7.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k25,-6.000000000000001,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k50,-4.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k90,-3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k95,-3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Obligation|Total,k99,-3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k01,1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k05,3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k10,3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k25,4.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k50,6.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k75,7.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k90,7.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k95,7.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,Gross|Margin|Gross,k99,7.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,EX,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k01,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k05,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k10,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k25,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k50,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k75,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k90,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k95,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Consideration|ceded agg premium,k99,-0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,EX,0.11999999999999998,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,SD,0.3249615361854384,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,CV,2.7080128015453204,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,Skew,3.212967667949175,1e-10,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k01,1.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k05,0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k10,0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k25,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k50,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k75,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k90,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k95,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|ceded agg recovery,k99,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,EX,0.0945,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,SD,0.04124318125460257,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,CV,0.4364357804719849,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,Skew,-1.8548520670059334,1e-10,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k01,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k05,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k10,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k25,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k50,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k75,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k90,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k95,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|profit commission,k99,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,EX,0.21449999999999997,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,SD,0.29089688894864446,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,CV,1.3561626524412331,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,Skew,3.5291377225948333,1e-10,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k01,1.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k05,0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k10,0.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k25,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k50,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k75,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k90,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k95,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Obligation|Total,k99,0.1125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,EX,-0.2855,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,SD,0.2908968889486445,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,CV,-1.018903288786846,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,Skew,3.5291377225948297,1e-10,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k01,1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k05,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k10,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k25,-0.38750000000000007,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k50,-0.3875,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k75,-0.3875,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k90,-0.3875,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k95,-0.3875,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Total,k99,-0.3875,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,EX,4.914499999999999,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,SD,1.4120272660256956,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,CV,0.2873186012871494,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,Skew,-0.33754644260581046,1e-10,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k01,2.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k05,3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k10,3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k25,3.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k50,5.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k75,6.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k90,6.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k95,6.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,ceded agg|Margin|Net,k99,6.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,EX,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,SD,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,CV,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k01,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k05,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k10,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k25,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k50,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k75,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k90,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k95,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Consideration|Net,k99,9.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,EX,-4.5855,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,SD,1.412027266025697,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,CV,-0.3079331078455342,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,Skew,-0.33754644260581157,1e-10,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k01,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k05,-6.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k10,-6.5,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k25,-5.887499999999999,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k50,-3.8875,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k75,-2.8875,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k90,-2.8875,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k95,-2.8875,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Obligation|Net,k99,-2.8875,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,EX,4.914499999999999,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,SD,1.4120272660256956,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,CV,0.2873186012871494,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,Skew,-0.33754644260581046,1e-10,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k01,2.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k05,3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k10,3.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k25,3.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k50,5.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k75,6.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k90,6.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k95,6.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Net,k99,6.6125,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,EX,-0.28550000000000014,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,SD,0.2908968889486445,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,CV,-1.0189032887868454,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,Skew,3.5291377225948315,1e-10,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k01,1.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k05,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k10,0.0,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k25,-0.3875000000000002,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k50,-0.3875000000000002,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k75,-0.3875000000000002,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k90,-0.3875000000000002,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k95,-0.3875000000000002,1e-12,0.0,aggregate 1.0.1
+half,sheet,All|Margin|Impact,k99,-0.3875000000000002,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Consideration,EX,10.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Consideration,P01,10.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Consideration,Median,10.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Consideration,P99,10.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Obligation,EX,-4.8,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Obligation,SD,1.6062378404209006,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Obligation,CV,-0.334632883421021,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Obligation,Skew,-0.7181304929229925,1e-10,0.0,aggregate 1.0.1
+half,card,Gross|Obligation,P01,-9.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Obligation,Median,-4.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Obligation,P99,-3.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Margin,EX,5.199999999999999,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Margin,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Margin,CV,0.3088918923886352,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Margin,Skew,-0.7181304929229879,1e-10,0.0,aggregate 1.0.1
+half,card,Gross|Margin,P01,1.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Margin,Median,6.0,1e-12,0.0,aggregate 1.0.1
+half,card,Gross|Margin,P99,7.0,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Consideration,EX,-0.5,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Consideration,P01,-0.5,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Consideration,Median,-0.5,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Consideration,P99,-0.5,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Obligation,EX,0.21449999999999997,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Obligation,SD,0.29089688894864446,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Obligation,CV,1.3561626524412331,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Obligation,Skew,3.5291377225948333,1e-10,0.0,aggregate 1.0.1
+half,card,ceded agg|Obligation,P01,0.1125,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Obligation,Median,0.1125,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Obligation,P99,1.5,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Margin,EX,-0.2855,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Margin,SD,0.2908968889486445,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Margin,CV,-1.018903288786846,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Margin,Skew,3.5291377225948297,1e-10,0.0,aggregate 1.0.1
+half,card,ceded agg|Margin,P01,-0.3875,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Margin,Median,-0.3875,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Margin,P99,1.0,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Net,EX,4.914499999999999,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Net,SD,1.4120272660256956,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Net,CV,0.2873186012871494,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Net,Skew,-0.33754644260581046,1e-10,0.0,aggregate 1.0.1
+half,card,ceded agg|Net,P01,2.0,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Net,Median,5.6125,1e-12,0.0,aggregate 1.0.1
+half,card,ceded agg|Net,P99,6.6125,1e-12,0.0,aggregate 1.0.1
+half,card,All|Consideration,EX,9.5,1e-12,0.0,aggregate 1.0.1
+half,card,All|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+half,card,All|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+half,card,All|Consideration,P01,9.5,1e-12,0.0,aggregate 1.0.1
+half,card,All|Consideration,Median,9.5,1e-12,0.0,aggregate 1.0.1
+half,card,All|Consideration,P99,9.5,1e-12,0.0,aggregate 1.0.1
+half,card,All|Obligation,EX,-4.5855,1e-12,0.0,aggregate 1.0.1
+half,card,All|Obligation,SD,1.412027266025697,1e-12,0.0,aggregate 1.0.1
+half,card,All|Obligation,CV,-0.3079331078455342,1e-12,0.0,aggregate 1.0.1
+half,card,All|Obligation,Skew,-0.33754644260581157,1e-10,0.0,aggregate 1.0.1
+half,card,All|Obligation,P01,-7.5,1e-12,0.0,aggregate 1.0.1
+half,card,All|Obligation,Median,-3.8875,1e-12,0.0,aggregate 1.0.1
+half,card,All|Obligation,P99,-2.8875,1e-12,0.0,aggregate 1.0.1
+half,card,All|Margin,EX,4.914499999999999,1e-12,0.0,aggregate 1.0.1
+half,card,All|Margin,SD,1.4120272660256956,1e-12,0.0,aggregate 1.0.1
+half,card,All|Margin,CV,0.2873186012871494,1e-12,0.0,aggregate 1.0.1
+half,card,All|Margin,Skew,-0.33754644260581046,1e-10,0.0,aggregate 1.0.1
+half,card,All|Margin,P01,2.0,1e-12,0.0,aggregate 1.0.1
+half,card,All|Margin,Median,5.6125,1e-12,0.0,aggregate 1.0.1
+half,card,All|Margin,P99,6.6125,1e-12,0.0,aggregate 1.0.1
+half,card,All|Impact,EX,-0.28550000000000014,1e-12,0.0,aggregate 1.0.1
+half,card,All|Impact,SD,0.2908968889486445,1e-12,0.0,aggregate 1.0.1
+half,card,All|Impact,CV,-1.0189032887868454,1e-12,0.0,aggregate 1.0.1
+half,card,All|Impact,Skew,3.5291377225948315,1e-10,0.0,aggregate 1.0.1
+half,card,All|Impact,P01,-0.3875000000000002,1e-12,0.0,aggregate 1.0.1
+half,card,All|Impact,Median,-0.3875000000000002,1e-12,0.0,aggregate 1.0.1
+half,card,All|Impact,P99,1.0,1e-12,0.0,aggregate 1.0.1
+half,legs,Gross|Consideration|Premium,EX,10.0,1e-12,0.0,aggregate 1.0.1
+half,legs,Gross|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+half,legs,Gross|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+half,legs,ceded agg|Consideration|ceded agg premium,EX,-0.5,1e-12,0.0,aggregate 1.0.1
+half,legs,ceded agg|Obligation|ceded agg recovery,EX,0.11999999999999998,1e-12,0.0,aggregate 1.0.1
+half,legs,ceded agg|Obligation|profit commission,EX,0.0945,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,EX,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k01,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k05,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k10,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k25,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k50,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k75,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k90,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k95,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Consideration|net premium,k99,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),EX,-3.6799999999999997,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),SD,1.384774349849101,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),CV,-0.37629737767638616,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),Skew,-0.30264777336297427,1e-10,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k01,-6.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k05,-5.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k10,-5.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k25,-5.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k50,-3.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k75,-2.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k90,-2.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k95,-2.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Loss (net),k99,-2.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,EX,0.0945,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,SD,0.04124318125460257,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,CV,0.4364357804719849,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,Skew,-1.8548520670059334,1e-10,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k01,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k05,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k10,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k25,0.1125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k50,0.1125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k75,0.1125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k90,0.1125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k95,0.1125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|commission,k99,0.1125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k01,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k05,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k10,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k25,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k50,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k90,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k95,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|expense,k99,-1.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,EX,-4.5855,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,SD,1.412027266025697,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,CV,-0.3079331078455342,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,Skew,-0.33754644260581157,1e-10,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k01,-7.499999999999999,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k05,-6.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k10,-6.5,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k25,-5.887499999999999,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k50,-3.8875,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k75,-2.8875,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k90,-2.8875,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k95,-2.8875,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Obligation|Total,k99,-2.8875,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,EX,4.914499999999999,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,SD,1.4120272660256956,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,CV,0.2873186012871494,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,Skew,-0.33754644260581046,1e-10,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k01,2.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k05,3.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k10,3.0,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k25,3.6125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k50,5.6125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k75,6.6125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k90,6.6125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k95,6.6125,1e-12,0.0,aggregate 1.0.1
+halfc,sheet,Margin|Total,k99,6.6125,1e-12,0.0,aggregate 1.0.1
+halfc,card,Consideration,EX,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,card,Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,card,Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+halfc,card,Consideration,P01,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,card,Consideration,Median,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,card,Consideration,P99,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,card,Obligation,EX,-4.5855,1e-12,0.0,aggregate 1.0.1
+halfc,card,Obligation,SD,1.412027266025697,1e-12,0.0,aggregate 1.0.1
+halfc,card,Obligation,CV,-0.3079331078455342,1e-12,0.0,aggregate 1.0.1
+halfc,card,Obligation,Skew,-0.33754644260581157,1e-10,0.0,aggregate 1.0.1
+halfc,card,Obligation,P01,-7.5,1e-12,0.0,aggregate 1.0.1
+halfc,card,Obligation,Median,-3.8875,1e-12,0.0,aggregate 1.0.1
+halfc,card,Obligation,P99,-2.8875,1e-12,0.0,aggregate 1.0.1
+halfc,card,Margin,EX,4.914499999999999,1e-12,0.0,aggregate 1.0.1
+halfc,card,Margin,SD,1.4120272660256956,1e-12,0.0,aggregate 1.0.1
+halfc,card,Margin,CV,0.2873186012871494,1e-12,0.0,aggregate 1.0.1
+halfc,card,Margin,Skew,-0.33754644260581046,1e-10,0.0,aggregate 1.0.1
+halfc,card,Margin,P01,2.0,1e-12,0.0,aggregate 1.0.1
+halfc,card,Margin,Median,5.6125,1e-12,0.0,aggregate 1.0.1
+halfc,card,Margin,P99,6.6125,1e-12,0.0,aggregate 1.0.1
+halfc,legs,V|Consideration|net premium,EX,9.5,1e-12,0.0,aggregate 1.0.1
+halfc,legs,V|Obligation|Loss (net),EX,-3.6799999999999997,1e-12,0.0,aggregate 1.0.1
+halfc,legs,V|Obligation|commission,EX,0.0945,1e-12,0.0,aggregate 1.0.1
+halfc,legs,V|Obligation|expense,EX,-1.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,EX,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k01,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k05,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k10,20.000000000000004,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k25,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k50,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k75,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k90,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k95,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Consideration|Premium,k99,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,EX,-3.7999999999995273,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,SD,3.1304951684962714,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,CV,-0.823814518025437,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,Skew,-1.0235063336953505,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k01,-11.802045921224565,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k05,-9.600000000000001,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k10,-7.812688821752267,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k25,-5.152,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k50,-3.685714285714286,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k75,-1.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k90,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k95,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Loss,k99,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,EX,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k01,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k05,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k10,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k25,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k50,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k75,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k90,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k95,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|expense,k99,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,EX,-5.799999999999528,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,SD,3.1304951684962687,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,CV,-0.539740546292504,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,Skew,-1.0235063336953525,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k01,-13.802045921224565,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k05,-11.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k10,-9.812688821752266,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k25,-7.152000000000001,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k50,-5.685714285714285,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k75,-3.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k90,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k95,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Obligation|Total,k99,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,EX,14.200000000000474,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,SD,3.1304951684962665,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,CV,0.2204574062321241,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,Skew,-1.0235063336953565,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k01,6.197954078775434,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k05,8.4,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k10,10.187311178247736,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k25,12.847999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k50,14.314285714285715,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k75,17.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k90,18.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k95,18.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,Gross|Margin|Gross,k99,18.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,EX,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,SD,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,CV,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k01,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k05,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k10,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k25,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k50,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k75,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k90,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k95,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Consideration|occ 2 xs 2 premium,k99,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,EX,0.7999999999998482,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,SD,1.2649110640662278,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,CV,1.5811388300830849,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,Skew,1.581138830060085,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k01,2.802045921224565,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k05,2.2371248701179636,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k10,1.8126888217522659,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k25,1.1520000000000001,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k50,0.6857142857142856,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k75,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k90,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k95,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,k99,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,EX,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,SD,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,CV,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k01,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k05,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k10,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k25,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k50,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k75,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k90,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k95,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|occ 2 xs 2 commission,k99,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,EX,1.299999999999848,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,SD,1.2649110640662282,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,CV,0.9730085108202894,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,Skew,1.5811388300600835,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k01,3.302045921224565,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k05,2.7371248701179636,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k10,2.312688821752266,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k25,1.652,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k50,1.1857142857142857,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k75,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k90,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k95,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Obligation|Total,k99,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,EX,-0.7000000000001521,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,SD,1.264911064066228,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,CV,-1.8070158058085046,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,Skew,1.5811388300600846,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k01,1.3020459212245652,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k05,0.7371248701179637,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k10,0.312688821752266,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k25,-0.34799999999999986,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k50,-0.8142857142857144,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k75,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k90,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k95,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Total,k99,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,EX,13.500000000000323,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,SD,2.236067977497616,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,CV,0.16563466499981944,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,Skew,-0.8049844718762053,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k01,7.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k05,9.137124870117963,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k10,10.499999999999998,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k25,12.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k50,13.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k75,15.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k90,16.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k95,16.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,occ 2 xs 2|Margin|Net,k99,16.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,EX,-0.8026135997061159,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,SD,0.5365804648108248,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,CV,-0.6685414563213213,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,Skew,-2.4967281077906005,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k01,-2.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k05,-2.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k10,-1.5999999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k25,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k50,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k75,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k90,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k95,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Consideration|ceded agg premium,k99,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,EX,0.2489075846347564,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,SD,0.7002553532509517,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,CV,2.8133146455882283,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,Skew,2.9442061595299722,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k01,3.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k05,2.3628751298820365,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k10,1.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k25,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k50,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k75,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k90,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k95,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Obligation|ceded agg recovery,k99,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,EX,-0.5537060150713594,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,SD,0.21279427547151072,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,CV,-0.38430912736984923,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,Skew,4.714704943541202,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k01,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k05,-0.13712487011796348,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k10,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k25,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k50,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k75,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k90,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k95,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Total,k99,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,EX,12.946293984928964,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,SD,2.1242913039011553,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,CV,0.16408489613893248,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,Skew,-0.5827230506182073,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k01,8.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k05,9.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k10,9.9,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k25,11.9,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k50,12.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k75,14.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k90,15.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k95,15.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,ceded agg|Margin|Net,k99,15.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,EX,17.197386400293883,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,SD,0.5365804648108595,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,CV,0.031201279794567504,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,Skew,-2.4967281077901124,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k01,15.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k05,15.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k10,16.4,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k25,17.4,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k50,17.4,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k75,17.4,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k90,17.4,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k95,17.4,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Consideration|Net,k99,17.4,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,EX,-4.251092415364923,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,SD,1.7834938212453653,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,CV,-0.4195377674687099,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,Skew,-0.12146234846895093,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k01,-7.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k05,-6.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k10,-6.500000000000001,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k25,-5.499999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k50,-4.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k75,-2.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k90,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k95,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Obligation|Net,k99,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,EX,12.946293984928964,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,SD,2.1242913039011553,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,CV,0.16408489613893248,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,Skew,-0.5827230506182073,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k01,8.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k05,9.0,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k10,9.9,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k25,11.9,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k50,12.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k75,14.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k90,15.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k95,15.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Net,k99,15.899999999999999,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,EX,-1.2537060150715111,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,SD,1.351066409534235,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,CV,-1.0776580739761152,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,Skew,1.756410896551064,1e-10,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k01,1.8020459212245652,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k05,0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k10,-0.2873111782477337,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k25,-0.9479999999999997,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k50,-1.4142857142857141,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k75,-2.0999999999999996,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k90,-2.0999999999999996,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k95,-2.0999999999999996,1e-12,0.0,aggregate 1.0.1
+occsw,sheet,All|Margin|Impact,k99,-2.0999999999999996,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Consideration,EX,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Consideration,P01,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Consideration,Median,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Consideration,P99,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Obligation,EX,-5.799999999999528,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Obligation,SD,3.1304951684962687,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Obligation,CV,-0.539740546292504,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Obligation,Skew,-1.0235063336953525,1e-10,0.0,aggregate 1.0.1
+occsw,card,Gross|Obligation,P01,-15.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Obligation,Median,-5.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Obligation,P99,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Margin,EX,14.200000000000474,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Margin,SD,3.1304951684962665,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Margin,CV,0.2204574062321241,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Margin,Skew,-1.0235063336953565,1e-10,0.0,aggregate 1.0.1
+occsw,card,Gross|Margin,P01,5.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Margin,Median,15.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,Gross|Margin,P99,18.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Consideration,EX,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Consideration,SD,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Consideration,CV,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Consideration,P01,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Consideration,Median,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Consideration,P99,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Obligation,EX,1.299999999999848,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Obligation,SD,1.2649110640662282,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Obligation,CV,0.9730085108202894,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Obligation,Skew,1.5811388300600835,1e-10,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Obligation,P01,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Obligation,Median,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Obligation,P99,4.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Margin,EX,-0.7000000000001521,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Margin,SD,1.264911064066228,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Margin,CV,-1.8070158058085046,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Margin,Skew,1.5811388300600846,1e-10,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Margin,P01,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Margin,Median,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Margin,P99,2.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Net,EX,13.500000000000323,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Net,SD,2.236067977497616,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Net,CV,0.16563466499981944,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Net,Skew,-0.8049844718762053,1e-10,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Net,P01,7.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Net,Median,13.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,occ 2 xs 2|Net,P99,16.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Consideration,EX,-0.8026135997061159,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Consideration,SD,0.5365804648108248,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Consideration,CV,-0.6685414563213213,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Consideration,Skew,-2.4967281077906005,1e-10,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Consideration,P01,-2.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Consideration,Median,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Consideration,P99,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Obligation,EX,0.2489075846347564,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Obligation,SD,0.7002553532509517,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Obligation,CV,2.8133146455882283,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Obligation,Skew,2.9442061595299722,1e-10,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Obligation,P01,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Obligation,Median,0.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Obligation,P99,3.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Margin,EX,-0.5537060150713594,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Margin,SD,0.21279427547151072,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Margin,CV,-0.38430912736984923,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Margin,Skew,4.714704943541202,1e-10,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Margin,P01,-0.6000000000000001,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Margin,Median,-0.6,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Margin,P99,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Net,EX,12.946293984928964,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Net,SD,2.1242913039011553,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Net,CV,0.16408489613893248,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Net,Skew,-0.5827230506182073,1e-10,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Net,P01,8.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Net,Median,12.9,1e-12,0.0,aggregate 1.0.1
+occsw,card,ceded agg|Net,P99,15.9,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Consideration,EX,17.197386400293883,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Consideration,SD,0.5365804648108595,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Consideration,CV,0.031201279794567504,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Consideration,Skew,-2.4967281077901124,1e-10,0.0,aggregate 1.0.1
+occsw,card,All|Consideration,P01,15.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Consideration,Median,17.4,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Consideration,P99,17.4,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Obligation,EX,-4.251092415364923,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Obligation,SD,1.7834938212453653,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Obligation,CV,-0.4195377674687099,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Obligation,Skew,-0.12146234846895093,1e-10,0.0,aggregate 1.0.1
+occsw,card,All|Obligation,P01,-7.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Obligation,Median,-4.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Obligation,P99,-1.5,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Margin,EX,12.946293984928964,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Margin,SD,2.1242913039011553,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Margin,CV,0.16408489613893248,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Margin,Skew,-0.5827230506182073,1e-10,0.0,aggregate 1.0.1
+occsw,card,All|Margin,P01,8.0,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Margin,Median,12.9,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Margin,P99,15.9,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Impact,EX,-1.2537060150715111,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Impact,SD,1.351066409534235,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Impact,CV,-1.0776580739761152,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Impact,Skew,1.756410896551064,1e-10,0.0,aggregate 1.0.1
+occsw,card,All|Impact,P01,-2.0999999999999996,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Impact,Median,-2.0999999999999996,1e-12,0.0,aggregate 1.0.1
+occsw,card,All|Impact,P99,3.0,1e-12,0.0,aggregate 1.0.1
+occsw,legs,Gross|Consideration|Premium,EX,20.0,1e-12,0.0,aggregate 1.0.1
+occsw,legs,Gross|Obligation|Loss,EX,-3.7999999999995273,1e-12,0.0,aggregate 1.0.1
+occsw,legs,Gross|Obligation|expense,EX,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,legs,occ 2 xs 2|Consideration|occ 2 xs 2 premium,EX,-2.0,1e-12,0.0,aggregate 1.0.1
+occsw,legs,occ 2 xs 2|Obligation|occ 2 xs 2 recovery,EX,0.7999999999998482,1e-12,0.0,aggregate 1.0.1
+occsw,legs,occ 2 xs 2|Obligation|occ 2 xs 2 commission,EX,0.5,1e-12,0.0,aggregate 1.0.1
+occsw,legs,ceded agg|Consideration|ceded agg premium,EX,-0.8026135997061159,1e-12,0.0,aggregate 1.0.1
+occsw,legs,ceded agg|Obligation|ceded agg recovery,EX,0.2489075846347564,1e-12,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,EX,17.197386400293865,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,SD,0.5365804648108066,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,CV,0.031201279794564458,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,Skew,-2.496728107791058,1e-10,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k01,15.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k05,15.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k10,16.4,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k25,17.4,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k50,17.4,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k75,17.4,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k90,17.4,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k95,17.4,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Consideration|net premium,k99,17.4,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),EX,-2.7510924153652088,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),SD,1.7834938212475566,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),CV,-0.6482856814574864,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),Skew,-0.12146234850626322,1e-10,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k01,-6.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k05,-5.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k10,-5.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k25,-4.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k50,-3.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k75,-1.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k90,0.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k95,0.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Loss (net),k99,0.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,EX,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,SD,0.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,CV,0.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k01,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k05,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k10,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k25,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k50,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k75,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k90,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k95,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|commission,k99,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,EX,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,SD,0.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,CV,0.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k01,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k05,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k10,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k25,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k50,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k75,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k90,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k95,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|expense,k99,-2.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,EX,-4.251092415365209,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,SD,1.7834938212475566,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,CV,-0.41953776746919713,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,Skew,-0.12146234850626322,1e-10,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k01,-7.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k05,-6.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k10,-6.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k25,-5.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k50,-4.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k75,-2.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k90,-1.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k95,-1.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Obligation|Total,k99,-1.5,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,EX,12.946293984928657,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,SD,2.124291303903256,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,CV,0.16408489613909863,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,Skew,-0.5827230506431061,1e-10,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k01,8.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k05,9.0,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k10,9.899999999999999,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k25,11.899999999999999,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k50,12.899999999999999,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k75,14.899999999999997,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k90,15.899999999999999,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k95,15.899999999999999,1e-11,0.0,aggregate 1.0.1
+occswc,sheet,Margin|Total,k99,15.899999999999999,1e-11,0.0,aggregate 1.0.1
+occswc,card,Consideration,EX,17.197386400293865,1e-11,0.0,aggregate 1.0.1
+occswc,card,Consideration,SD,0.5365804648108066,1e-11,0.0,aggregate 1.0.1
+occswc,card,Consideration,CV,0.031201279794564458,1e-11,0.0,aggregate 1.0.1
+occswc,card,Consideration,Skew,-2.496728107791058,1e-10,0.0,aggregate 1.0.1
+occswc,card,Consideration,P01,15.5,1e-11,0.0,aggregate 1.0.1
+occswc,card,Consideration,Median,17.4,1e-11,0.0,aggregate 1.0.1
+occswc,card,Consideration,P99,17.4,1e-11,0.0,aggregate 1.0.1
+occswc,card,Obligation,EX,-4.251092415365209,1e-11,0.0,aggregate 1.0.1
+occswc,card,Obligation,SD,1.7834938212475566,1e-11,0.0,aggregate 1.0.1
+occswc,card,Obligation,CV,-0.41953776746919713,1e-11,0.0,aggregate 1.0.1
+occswc,card,Obligation,Skew,-0.12146234850626322,1e-10,0.0,aggregate 1.0.1
+occswc,card,Obligation,P01,-7.5,1e-11,0.0,aggregate 1.0.1
+occswc,card,Obligation,Median,-4.5,1e-11,0.0,aggregate 1.0.1
+occswc,card,Obligation,P99,-1.5,1e-11,0.0,aggregate 1.0.1
+occswc,card,Margin,EX,12.946293984928657,1e-11,0.0,aggregate 1.0.1
+occswc,card,Margin,SD,2.124291303903256,1e-11,0.0,aggregate 1.0.1
+occswc,card,Margin,CV,0.16408489613909863,1e-11,0.0,aggregate 1.0.1
+occswc,card,Margin,Skew,-0.5827230506431061,1e-10,0.0,aggregate 1.0.1
+occswc,card,Margin,P01,8.0,1e-11,0.0,aggregate 1.0.1
+occswc,card,Margin,Median,12.899999999999999,1e-11,0.0,aggregate 1.0.1
+occswc,card,Margin,P99,15.899999999999999,1e-11,0.0,aggregate 1.0.1
+occswc,legs,V|Consideration|net premium,EX,17.197386400293865,1e-11,0.0,aggregate 1.0.1
+occswc,legs,V|Obligation|Loss (net),EX,-2.7510924153652088,1e-11,0.0,aggregate 1.0.1
+occswc,legs,V|Obligation|commission,EX,0.5,1e-11,0.0,aggregate 1.0.1
+occswc,legs,V|Obligation|expense,EX,-2.0,1e-11,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,EX,6.108,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,SD,1.6065291780730286,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,CV,0.2630204941180466,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,Skew,0.35488981445763684,1e-10,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k01,9.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k05,4.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k10,4.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k25,4.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k50,5.300000000000001,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k75,7.5,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k90,8.600000000000001,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k95,8.600000000000001,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Consideration|Premium,k99,8.600000000000001,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,SD,1.606237840420901,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,CV,-0.42269416853181613,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,Skew,-0.718130492922993,1e-10,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k01,-8.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k05,-2.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k10,-2.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k25,-2.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k50,-3.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k75,-5.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k90,-6.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k95,-6.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Loss,k99,-6.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,EX,-0.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,SD,0.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,CV,0.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k01,-0.19999999999999998,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k05,-0.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k10,-0.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k25,-0.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k50,-0.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k75,-0.20000000000000004,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k90,-0.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k95,-0.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|expense,k99,-0.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,EX,-3.9999999999999996,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,CV,-0.40155946010522575,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,Skew,-0.7181304929229898,1e-10,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k01,-8.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k05,-2.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k10,-2.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k25,-2.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k50,-3.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k75,-5.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k90,-6.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k95,-6.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Obligation|Total,k99,-6.2,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,EX,2.1079999999999997,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,SD,0.2995596768592229,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,CV,0.14210610856699382,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,Skew,-3.175226524071611,1e-10,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k01,0.8000000000000007,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k05,2.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k10,2.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k25,2.0,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k50,2.1000000000000005,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k75,2.3,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k90,2.4000000000000012,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k95,2.4000000000000012,1e-12,0.0,aggregate 1.0.1
+retro,sheet,Margin|Total,k99,2.4000000000000012,1e-12,0.0,aggregate 1.0.1
+retro,card,Consideration,EX,6.108,1e-12,0.0,aggregate 1.0.1
+retro,card,Consideration,SD,1.6065291780730286,1e-12,0.0,aggregate 1.0.1
+retro,card,Consideration,CV,0.2630204941180466,1e-12,0.0,aggregate 1.0.1
+retro,card,Consideration,Skew,0.35488981445763684,1e-10,0.0,aggregate 1.0.1
+retro,card,Consideration,P01,4.2,1e-12,0.0,aggregate 1.0.1
+retro,card,Consideration,Median,5.300000000000001,1e-12,0.0,aggregate 1.0.1
+retro,card,Consideration,P99,9.0,1e-12,0.0,aggregate 1.0.1
+retro,card,Obligation,EX,-3.9999999999999996,1e-12,0.0,aggregate 1.0.1
+retro,card,Obligation,SD,1.6062378404209028,1e-12,0.0,aggregate 1.0.1
+retro,card,Obligation,CV,-0.40155946010522575,1e-12,0.0,aggregate 1.0.1
+retro,card,Obligation,Skew,-0.7181304929229898,1e-10,0.0,aggregate 1.0.1
+retro,card,Obligation,P01,-8.2,1e-12,0.0,aggregate 1.0.1
+retro,card,Obligation,Median,-3.2,1e-12,0.0,aggregate 1.0.1
+retro,card,Obligation,P99,-2.2,1e-12,0.0,aggregate 1.0.1
+retro,card,Margin,EX,2.1079999999999997,1e-12,0.0,aggregate 1.0.1
+retro,card,Margin,SD,0.2995596768592229,1e-12,0.0,aggregate 1.0.1
+retro,card,Margin,CV,0.14210610856699382,1e-12,0.0,aggregate 1.0.1
+retro,card,Margin,Skew,-3.175226524071611,1e-10,0.0,aggregate 1.0.1
+retro,card,Margin,P01,0.8000000000000007,1e-12,0.0,aggregate 1.0.1
+retro,card,Margin,Median,2.1000000000000005,1e-12,0.0,aggregate 1.0.1
+retro,card,Margin,P99,2.4000000000000012,1e-12,0.0,aggregate 1.0.1
+retro,legs,V|Consideration|Premium,EX,6.108,1e-12,0.0,aggregate 1.0.1
+retro,legs,V|Obligation|Loss,EX,-3.7999999999999994,1e-12,0.0,aggregate 1.0.1
+retro,legs,V|Obligation|expense,EX,-0.2,1e-12,0.0,aggregate 1.0.1
+program,input,note,net_loss,405.97794085441933,1e-12,0.0,aggregate 1.0.1
+program,input,note,expense_ratio,0.25,1e-12,0.0,aggregate 1.0.1
+program,input,note,net_combined_ratio,0.9,1e-12,0.0,aggregate 1.0.1
+program,input,note|0,ceded_loss,86.78504710067914,1e-12,0.0,aggregate 1.0.1
+program,input,note|0,share,1.0,1e-12,0.0,aggregate 1.0.1
+program,input,note|0,combined_ratio,0.6,1e-12,0.0,aggregate 1.0.1
+program,deposit,note|0,deposit,145.0,0.0,0.0,aggregate 1.0.1
+program,input,note|1,ceded_loss,8.144345556686755,1e-12,0.0,aggregate 1.0.1
+program,input,note|1,share,1.0,1e-12,0.0,aggregate 1.0.1
+program,input,note|1,combined_ratio,0.5,1e-12,0.0,aggregate 1.0.1
+program,deposit,note|1,deposit,16.29,0.0,0.0,aggregate 1.0.1
+program,premium,note,premium,817.0,0.0,0.0,aggregate 1.0.1
+program,input,half,net_loss,446.8385993297781,1e-12,0.0,aggregate 1.0.1
+program,input,half,expense_ratio,0.3,1e-12,0.0,aggregate 1.0.1
+program,input,half,net_combined_ratio,0.8,1e-12,0.0,aggregate 1.0.1
+program,input,half|0,ceded_loss,43.392573966479134,1e-12,0.0,aggregate 1.0.1
+program,input,half|0,share,0.5,1e-12,0.0,aggregate 1.0.1
+program,input,half|0,combined_ratio,0.55,1e-12,0.0,aggregate 1.0.1
+program,deposit,half|0,deposit,158.0,0.0,0.0,aggregate 1.0.1
+program,premium,half,premium,911.0,0.0,0.0,aggregate 1.0.1
