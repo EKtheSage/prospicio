@@ -65,6 +65,21 @@ conversion reports the error it introduces.
   the cdf, survival, quantile and moments, and 30-digit integration of the
   survival for layer means and second moments
   (`validation/scripts/mpmath_layer_moments.py`).
+- `prospicio_prob::PolicyLimits` (decided 2026-10-14, #213) is a severity
+  capped by a mix of policy limits, `min(X, L)` with `L = limits[j]` with
+  probability `weights[j]` (normalized to 1; infinity for an unlimited
+  policy), independent of `X`. It is a `Dist` variant of its own, not a
+  `Mixture` of one-limit pieces, so a limits profile is one object that
+  saves as JSON with its limits. Every quantity is a weighted sum of the
+  base severity's limited moments (`lev(min(d, L_j))`, and
+  `layer(min(l, L_j − a), a)` over the limits above `a`), so it is exact
+  and never forms `mean − lev`. The distribution function has an atom
+  `w_j S(L_j)` at each finite limit. The quantile bisects and then takes
+  the smallest limit whose cdf reaches `p`, so a `p` inside an atom
+  returns the limit itself. It has no third moment. Tested: layer moments
+  against midpoint integration of the survival, the atoms' quantiles, a
+  single infinite limit equal to the base severity, a JSON round trip, and
+  `Grid` discretizations in Python and R.
 - **Growth curves.** Clark's LDF and Cape Cod methods model the share of
   ultimate reported by age `t` as a growth curve `G(t)`, usually the
   loglogistic `t^ω / (t^ω + θ^ω)` or the Weibull `1 - exp(-(t/θ)^ω)`.

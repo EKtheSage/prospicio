@@ -165,6 +165,70 @@ impl Pareto {
             Some(tr) => p.truncated(tr),
         }
     }
+
+    /// [`Pareto::fit`] with the standard error of the alpha from the
+    /// observed information, `1 / sqrt(−ℓ''(α̂))`.
+    ///
+    /// Untruncated, `ℓ = n ln α − α Σ w ln(y/r)` with `n` the uncensored
+    /// weight, so the standard error is `α̂ / sqrt(n)`. Truncated at `T`,
+    /// each loss's conditioning term `ln(r^(−α) − T^(−α))` adds
+    /// `c² q / (1 − q)²` to `ℓ''` (with `c = ln(T/r)`, `q = (r/T)^α`), and
+    /// a censored loss its own term at `y`. An alpha clamped to
+    /// `[1e-3, 1e3]` is not an interior maximum, and its standard error
+    /// means little.
+    ///
+    /// ```
+    /// use prospicio_prob::{LargeLosses, Pareto};
+    ///
+    /// let data = LargeLosses::new(vec![1500.0, 2500.0, 4000.0]).unwrap();
+    /// let (fit, se) = Pareto::fit_with_standard_error(1000.0, &data, None).unwrap();
+    /// assert!((se - fit.alpha() / 3f64.sqrt()).abs() < 1e-14);
+    /// ```
+    pub fn fit_with_standard_error(
+        t: f64,
+        data: &LargeLosses,
+        truncation: Option<f64>,
+    ) -> Result<(Self, f64)> {
+        let fit = Pareto::fit(t, data, truncation)?;
+        let losses = data.above(t)?;
+        let alpha = fit.alpha();
+        let se = match truncation {
+            None => alpha / uncensored_weight(&losses).sqrt(),
+            Some(tr) => truncated_standard_error(&losses, tr, alpha),
+        };
+        Ok((fit, se))
+    }
+}
+
+/// The weight of the uncensored losses, `n` in `α̂ = n / Σ w ln(y/r)`.
+fn uncensored_weight(losses: &[(f64, f64, bool, f64)]) -> f64 {
+    losses.iter().filter(|l| !l.2).map(|l| l.3).sum()
+}
+
+/// `1 / sqrt(−ℓ''(α))` for a Pareto truncated at `tr` (see
+/// [`truncated_alpha`]): with `g'(x) = −c² q/(1 − q)²`, `c = ln(T/x)` and
+/// `q = (x/T)^α`, an uncensored loss adds `−1/α² − g'(r)` to `ℓ''` and a
+/// censored one `g'(y) − g'(r)`.
+fn truncated_standard_error(losses: &[(f64, f64, bool, f64)], tr: f64, alpha: f64) -> f64 {
+    let dg = |x: f64| -> f64 {
+        let c = (tr / x).ln();
+        let log_q = -alpha * c;
+        // q/(1 − q)² = 1/(e² q) with e = expm1(−ln q) = (1 − q)/q.
+        let e = (-log_q).exp_m1();
+        -c * c / (e * e * log_q.exp())
+    };
+    let second: f64 = losses
+        .iter()
+        .map(|&(y, r, censored, w)| {
+            let own = if censored {
+                dg(y)
+            } else {
+                -1.0 / (alpha * alpha)
+            };
+            w * (own - dg(r))
+        })
+        .sum();
+    1.0 / (-second).sqrt()
 }
 
 impl PiecewisePareto {
@@ -255,6 +319,66 @@ impl PiecewisePareto {
             None => Ok(fit),
             Some((tr, kind)) => fit.truncated(tr, kind),
         }
+    }
+
+    /// [`PiecewisePareto::fit`] with the standard error of each alpha from
+    /// the observed information. The likelihood separates by piece, so the
+    /// alphas are uncorrelated: piece `k`'s standard error is
+    /// `α_k / sqrt(n_k)`, `n_k` the uncensored weight ending in it (NaN
+    /// where no loss ends, and the alpha is 0), and a last piece truncated
+    /// on its own takes [`Pareto::fit_with_standard_error`]'s. Truncation
+    /// of the whole distribution couples the alphas and is refused.
+    ///
+    /// ```
+    /// use prospicio_prob::{LargeLosses, PiecewisePareto};
+    ///
+    /// let data = LargeLosses::new(vec![1200.0, 1500.0, 2500.0, 6000.0]).unwrap();
+    /// let (fit, se) =
+    ///     PiecewisePareto::fit_with_standard_errors(vec![1000.0, 2000.0], &data, None).unwrap();
+    /// // Two losses end in each piece.
+    /// assert!((se[0] - fit.alphas()[0] / 2f64.sqrt()).abs() < 1e-14);
+    /// assert!((se[1] - fit.alphas()[1] / 2f64.sqrt()).abs() < 1e-14);
+    /// ```
+    pub fn fit_with_standard_errors(
+        t: Vec<f64>,
+        data: &LargeLosses,
+        truncation: Option<(f64, Truncation)>,
+    ) -> Result<(Self, Vec<f64>)> {
+        if let Some((tr, Truncation::WholeDistribution)) = truncation {
+            return Err(invalid(
+                "truncation",
+                tr,
+                "couples the alphas; standard errors need a truncation of the last piece or none",
+            ));
+        }
+        let fit = PiecewisePareto::fit(t.clone(), data, truncation)?;
+        let losses = data.above(t[0])?;
+        let n = t.len();
+        let se = (0..n)
+            .map(|k| {
+                let (lo, hi) = (t[k], t.get(k + 1).copied().unwrap_or(f64::INFINITY));
+                let alpha = fit.alphas()[k];
+                if let (true, Some((tr, _))) = (k + 1 == n, truncation) {
+                    let reaching: Vec<_> = losses
+                        .iter()
+                        .filter(|&&(y, ..)| y > lo)
+                        .map(|&(y, r, c, w)| (y, r.max(lo), c, w))
+                        .collect();
+                    return truncated_standard_error(&reaching, tr, alpha);
+                }
+                let count: f64 = losses
+                    .iter()
+                    .filter(|&&(y, _, censored, _)| !censored && y >= lo && y < hi)
+                    .map(|l| l.3)
+                    .sum();
+                if count > 0.0 {
+                    alpha / count.sqrt()
+                } else {
+                    f64::NAN
+                }
+            })
+            .collect();
+        Ok((fit, se))
     }
 }
 
@@ -560,6 +684,61 @@ mod tests {
     use super::*;
     use crate::{Distribution, Severity};
     use prospicio_core::StreamRng;
+
+    #[test]
+    fn truncated_standard_error_is_the_observed_information() {
+        // Issue #213: against a central second difference of the
+        // conditional log-likelihood at the fit.
+        let data = LargeLosses::new(vec![1200.0, 1500.0, 2500.0, 4000.0, 8000.0, 9000.0])
+            .unwrap()
+            .reporting_thresholds(vec![1000.0, 1000.0, 2000.0, 1000.0, 1000.0, 3000.0])
+            .unwrap()
+            .censored(vec![false, false, false, true, false, false])
+            .unwrap()
+            .weights(vec![1.0, 2.0, 1.0, 1.0, 0.5, 1.0])
+            .unwrap();
+        let tr = 10_000.0;
+        let (fit, se) = Pareto::fit_with_standard_error(1000.0, &data, Some(tr)).unwrap();
+        let losses = data.above(1000.0).unwrap();
+        let ll = |a: f64| -> f64 {
+            let tail = |x: f64| (x.powf(-a) - tr.powf(-a)).ln();
+            losses
+                .iter()
+                .map(|&(y, r, c, w)| {
+                    let own = if c {
+                        tail(y)
+                    } else {
+                        a.ln() - (a + 1.0) * y.ln()
+                    };
+                    w * (own - tail(r))
+                })
+                .sum()
+        };
+        let (a, h) = (fit.alpha(), 1e-4);
+        let second = (ll(a + h) - 2.0 * ll(a) + ll(a - h)) / (h * h);
+        let want = 1.0 / (-second).sqrt();
+        assert!((se / want - 1.0).abs() < 1e-5, "{se} vs {want}");
+        // Untruncated: alpha over the root of the uncensored weight.
+        let (fit, se) = Pareto::fit_with_standard_error(1000.0, &data, None).unwrap();
+        assert!((se - fit.alpha() / 5.5f64.sqrt()).abs() < 1e-14);
+        // A truncated last piece takes the same, whole truncation is refused.
+        let (pw, ses) = PiecewisePareto::fit_with_standard_errors(
+            vec![1000.0, 2000.0],
+            &data,
+            Some((tr, Truncation::LastPiece)),
+        )
+        .unwrap();
+        assert!(ses.iter().all(|s| s.is_finite() && *s > 0.0), "{ses:?}");
+        assert!(pw.alphas()[1] > 0.0);
+        assert!(
+            PiecewisePareto::fit_with_standard_errors(
+                vec![1000.0, 2000.0],
+                &data,
+                Some((tr, Truncation::WholeDistribution)),
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn closed_form_pareto_with_thresholds_and_censoring() {

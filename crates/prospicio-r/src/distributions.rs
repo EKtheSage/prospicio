@@ -83,7 +83,7 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     use crate::pareto::{
         BetaDist, BurrDist, CustomDist, GammaDist, GeneralizedPareto, InverseGammaDist,
         InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-        PiecewisePareto, TruncatedDist, TweedieDist, WeibullDist,
+        PiecewisePareto, PolicyLimitsDist, TruncatedDist, TweedieDist, WeibullDist,
     };
     if let Ok(d) = <&Lognormal>::try_from(obj) {
         return Ok(d.inner.into());
@@ -130,6 +130,9 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     if let Ok(d) = <&TruncatedDist>::try_from(obj) {
         return Ok(Dist::Truncated(d.inner.clone()));
     }
+    if let Ok(d) = <&PolicyLimitsDist>::try_from(obj) {
+        return Ok(Dist::PolicyLimits(d.inner.clone()));
+    }
     if let Ok(d) = <&MixtureDist>::try_from(obj) {
         return Ok(d.inner.clone().into());
     }
@@ -156,8 +159,8 @@ fn dist_to_json_rust(dist: Robj) -> Result<String> {
 fn dist_from_json_rust(text: &str) -> Result<List> {
     use crate::pareto::{
         BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist, InverseGaussianDist,
-        LogAffinePareto, LoglogisticDist, MixtureDist, Pareto, PiecewisePareto, TruncatedDist,
-        TweedieDist, WeibullDist,
+        LogAffinePareto, LoglogisticDist, MixtureDist, Pareto, PiecewisePareto, PolicyLimitsDist,
+        TruncatedDist, TweedieDist, WeibullDist,
     };
     let d = Dist::from_json(text).map_err(to_r)?;
     let family = d.family();
@@ -176,6 +179,7 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
         Dist::Burr(inner) => BurrDist { inner }.into(),
         Dist::Beta(inner) => BetaDist { inner }.into(),
         Dist::Truncated(inner) => TruncatedDist { inner }.into(),
+        Dist::PolicyLimits(inner) => PolicyLimitsDist { inner }.into(),
         Dist::Mixture(inner) => MixtureDist { inner }.into(),
         Dist::Grid(inner) => Grid::wrap(inner).into(),
         Dist::Sampled(inner) => Sampled { inner }.into(),
@@ -190,7 +194,8 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
 
 /// The distributions accepted as a severity, for error messages.
 const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, inverse gamma, \
-                          inverse Gaussian, Burr, beta, truncated, mixture, grid, custom, or \
+                          inverse Gaussian, Burr, beta, truncated, policy limits, mixture, grid, \
+                          custom, or \
                           a Pareto-family distribution";
 
 /// A severity accepted wherever a parametric or discretized loss

@@ -15,7 +15,8 @@ use crate::evt::Gpd;
 use crate::severity::Severity;
 use crate::{
     Beta, Burr, Custom, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
-    Lognormal, Mixture, Pareto, PiecewisePareto, Sampled, Truncated, Tweedie, Weibull,
+    Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, Truncated, Tweedie,
+    Weibull,
 };
 
 /// Any native univariate distribution.
@@ -57,6 +58,8 @@ pub enum Dist {
     /// A severity conditioned on a window; held in an [`Arc`], like a
     /// mixture, since it holds a distribution itself.
     Truncated(Arc<Truncated>),
+    /// A severity capped by a mix of policy limits, in an [`Arc`].
+    PolicyLimits(Arc<PolicyLimits>),
     Mixture(Arc<Mixture>),
     Grid(Grid),
     Sampled(Sampled),
@@ -82,6 +85,7 @@ macro_rules! each {
             Dist::Burr($d) => $call,
             Dist::Beta($d) => $call,
             Dist::Truncated($d) => $call,
+            Dist::PolicyLimits($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
             Dist::Sampled($d) => $call,
@@ -112,6 +116,7 @@ impl Dist {
             Self::Burr(_) => "burr",
             Self::Beta(_) => "beta",
             Self::Truncated(_) => "truncated",
+            Self::PolicyLimits(_) => "policy_limits",
             Self::Mixture(_) => "mixture",
             Self::Grid(_) => "grid",
             Self::Sampled(_) => "sampled",
@@ -138,6 +143,7 @@ impl Dist {
             Self::Burr(d) => d,
             Self::Beta(d) => d,
             Self::Truncated(d) => d.as_ref(),
+            Self::PolicyLimits(d) => d.as_ref(),
             Self::Mixture(d) => d.as_ref(),
             Self::Grid(d) => d,
             Self::Custom(d) => d,
@@ -275,6 +281,7 @@ macro_rules! each_severity {
             Dist::Burr($d) => $call,
             Dist::Beta($d) => $call,
             Dist::Truncated($d) => $call,
+            Dist::PolicyLimits($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
             Dist::Custom($d) => $call,

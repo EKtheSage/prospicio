@@ -24,6 +24,7 @@ reference:
       - burr_distribution
       - beta_distribution
       - truncated_distribution
+      - policy_limits_distribution
       - mixture_distribution
       - custom_distribution
       - dist_to_json

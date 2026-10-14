@@ -143,3 +143,20 @@ for (d in list(ig, iv, b, bt, tr, sp)) {
 stopifnot(inherits(try(truncated_distribution(pareto(100, 2), 0, 50), silent = TRUE), "try-error"))
 
 cat("prospicio R pareto tests passed\n")
+
+# Issue #213: a severity under a mix of policy limits, and fit standard errors.
+x <- pareto(100, 2)
+pl <- policy_limits_distribution(x, c(1000, 5000, Inf), c(2, 1, 1))
+stopifnot(all(abs(pl@weights - c(0.5, 0.25, 0.25)) < 1e-15))
+near(mean(pl), 0.5 * 100 * 1.9 + 0.25 * 100 * 1.98 + 0.25 * 200)
+near(layer(pl, 500, 1500), 0.5 * layer(x, 500, 1500))
+near(mean(dist_from_json(dist_to_json(pl))), mean(pl))
+gpl <- discretize(pl, 10, 2000)
+stopifnot(abs(mean(gpl) - lev(pl, 1999 * 10)) < 1e-9 * mean(pl))
+losses <- c(1500, 2500, 4000, 10000)
+fit <- pareto_fit(losses, 1000, censored = c(FALSE, FALSE, FALSE, TRUE))
+near(pareto_standard_error(losses, 1000, censored = c(FALSE, FALSE, FALSE, TRUE)),
+     fit@alpha / sqrt(3))
+pw <- piecewise_pareto_fit(c(1200, 1500, 2500, 6000), c(1000, 2000))
+near(piecewise_pareto_standard_errors(c(1200, 1500, 2500, 6000), c(1000, 2000)),
+     pw@alpha / sqrt(2))

@@ -12,6 +12,17 @@
   `aggregate` 1.0.1's `GridDistribution`, `pmf` and skewness. Python
   `Discrete`; R `discrete_distribution()`, `quantile_upper()`,
   `discrete_skewness()` and `return_periods()` (#241).
+- A severity under a mix of policy limits, `prospicio_prob::PolicyLimits`
+  (#213): `min(X, L)` with each limit's weight, exact layer moments from
+  the base severity's and an atom at each finite limit, so it discretizes,
+  compounds and saves as JSON like any severity. Python `PolicyLimits`; R
+  `policy_limits_distribution()`.
+- Standard errors of the Pareto fits from the observed information
+  (#213): `Pareto::fit_with_standard_error` (truncated or not) and
+  `PiecewisePareto::fit_with_standard_errors` (uncorrelated by piece).
+  Python `Pareto.fit_with_standard_error`,
+  `PiecewisePareto.fit_with_standard_errors`; R `pareto_standard_error()`,
+  `piecewise_pareto_standard_errors()`.
 
 ### Aggregate and reinsurance
 

@@ -20,7 +20,8 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' [tweedie], [weibull_distribution], [loglogistic_distribution],
 #' [inverse_gamma_distribution], [inverse_gaussian_distribution],
 #' [burr_distribution], [beta_distribution], [truncated_distribution],
-#' [mixture_distribution] and [custom_distribution].
+#' [policy_limits_distribution], [mixture_distribution] and
+#' [custom_distribution].
 #'
 #' @param dist A Pareto-family severity.
 #' @param q Numeric vector.
@@ -132,6 +133,35 @@ piecewise_pareto_fit <- function(losses, t, reporting_thresholds = NULL, censore
     as.character(truncation_type)
   ))
   piecewise_pareto(ptr = ptr)
+}
+
+#' @rdname pareto_fit
+#' @details `pareto_standard_error()` and `piecewise_pareto_standard_errors()`
+#'   take the same arguments as the fits and give the standard error of each
+#'   alpha from the observed information: `alpha / sqrt(n)` untruncated, `n`
+#'   the uncensored weight (ending in the piece, for a piecewise Pareto,
+#'   whose alphas are uncorrelated; `NaN` where none does). A truncated fit
+#'   adds the conditioning terms; a piecewise Pareto truncated as a whole
+#'   couples its alphas and is refused.
+#' @export
+pareto_standard_error <- function(losses, t, reporting_thresholds = NULL, censored = NULL,
+                                  weights = NULL, truncation = NULL) {
+  rust_result(pareto_fit_standard_error_rust(
+    as.double(losses), as.double(t), optional_arg(reporting_thresholds),
+    optional_arg(censored), optional_arg(weights), truncation_arg(truncation)
+  ))
+}
+
+#' @rdname pareto_fit
+#' @export
+piecewise_pareto_standard_errors <- function(losses, t, reporting_thresholds = NULL,
+                                             censored = NULL, weights = NULL,
+                                             truncation = NULL, truncation_type = "lp") {
+  rust_result(piecewise_pareto_fit_standard_errors_rust(
+    as.double(losses), as.double(t), optional_arg(reporting_thresholds),
+    optional_arg(censored), optional_arg(weights), truncation_arg(truncation),
+    as.character(truncation_type)
+  ))
 }
 
 #' @rdname pareto_fit
@@ -678,6 +708,46 @@ truncated_distribution <- S7::new_class(
   }
 )
 
+#' Severity under a mix of policy limits
+#'
+#' The loss `min(X, L)` where `L` is `limits[j]` with probability
+#' `weights[j]`: a cedant's losses censored at its policies' limits. Every
+#' layer moment is exact, from the base severity's, and the distribution
+#' function has an atom at each finite limit, so it discretizes and
+#' compounds like any severity. Properties: `d@limits`, `d@weights`
+#' (normalized to sum to 1), `d@family` (the base severity's).
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param severity Any severity but a [sampled] distribution.
+#' @param limits Positive policy limits; `Inf` for an unlimited policy.
+#' @param weights Non-negative weights, one per limit, normalized to 1.
+#' @param ptr Internal: an existing object to wrap.
+#' @returns A `policy_limits_distribution`, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' d <- policy_limits_distribution(pareto(100, 2), c(1000, 5000), c(3, 1))
+#' mean(d)
+policy_limits_distribution <- S7::new_class(
+  "policy_limits_distribution",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("PolicyLimitsDist"),
+    limits = S7::new_property(S7::class_double, getter = function(self) self@ptr$limits()),
+    weights = S7::new_property(S7::class_double, getter = function(self) self@ptr$weights()),
+    family = S7::new_property(S7::class_character, getter = function(self) self@ptr$family())
+  ),
+  constructor = function(severity, limits, weights, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(PolicyLimitsDist$new(severity@ptr, as.double(limits),
+                                              as.double(weights)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
 #' @rdname truncated_distribution
 #' @export
 splice_distribution <- function(weights, components, breaks) {
@@ -794,8 +864,8 @@ S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.do
 for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
                  gamma_distribution, tweedie, weibull_distribution, loglogistic_distribution,
                  inverse_gamma_distribution, inverse_gaussian_distribution, burr_distribution,
-                 beta_distribution, truncated_distribution, mixture_distribution,
-                 custom_distribution)) {
+                 beta_distribution, truncated_distribution, policy_limits_distribution,
+                 mixture_distribution, custom_distribution)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
   S7::method(cdf, cls) <- function(dist, q, ...) dist@ptr$cdf(as.double(q))
@@ -886,6 +956,11 @@ S7::method(print, beta_distribution) <- function(x, ...) {
 S7::method(print, truncated_distribution) <- function(x, ...) {
   cat(sprintf("<truncated_distribution> %s on (%s, %s]\n", x@family,
               format(x@lower, digits = 15), format(x@upper, digits = 15)))
+  invisible(x)
+}
+S7::method(print, policy_limits_distribution) <- function(x, ...) {
+  cat(sprintf("<policy_limits_distribution> %s under limits %s\n", x@family,
+              paste(format(x@limits, digits = 15), collapse = ", ")))
   invisible(x)
 }
 S7::method(print, custom_distribution) <- function(x, ...) {
@@ -1006,7 +1081,8 @@ dist_from_json <- function(text) {
     gamma = gamma_distribution, tweedie = tweedie, weibull = weibull_distribution,
     loglogistic = loglogistic_distribution, inverse_gamma = inverse_gamma_distribution,
     inverse_gaussian = inverse_gaussian_distribution, burr = burr_distribution,
-    beta = beta_distribution, truncated = truncated_distribution, mixture = mixture_distribution,
+    beta = beta_distribution, truncated = truncated_distribution,
+    policy_limits = policy_limits_distribution, mixture = mixture_distribution,
     grid = grid_distribution, sampled = sampled,
     stop("unknown family ", r$family)
   )

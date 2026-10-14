@@ -317,7 +317,19 @@ for fixed `k = α_ini/α_tail` the tail alpha is a closed form, so it is a
 one-dimensional profile likelihood in `k`, solved by bisection on its
 analytic score. R's optimizer stops about `2e-5` short of the maximum
 (our estimate has the higher likelihood at 40 digits), so those parity
-rows use `1e-4`. `PiecewisePareto::fit` with
+rows use `1e-4`.
+`Pareto::fit_with_standard_error` and
+`PiecewisePareto::fit_with_standard_errors` (decided 2026-10-14, #213)
+add the observed-information standard error of each alpha. Untruncated
+it is `α̂ / sqrt(n)` with `n` the uncensored weight, which is the stand-in
+the submission notebook used. Truncated at `T`, each conditioning term
+adds `c² q/(1 − q)²` to the information (with `c = ln(T/r)` and
+`q = (r/T)^α`), and the result matches a central second difference of
+the log-likelihood to `1e-5`. A piecewise Pareto's likelihood separates
+by piece, so its alphas are uncorrelated and each takes `α_k / sqrt(n_k)`
+(or the truncated Pareto's for a truncated last piece). Truncation of the
+whole distribution couples the alphas and is refused rather than given a
+full Hessian. `fit` keeps its return type. `PiecewisePareto::fit` with
 `Truncation::WholeDistribution` maximizes the coupled likelihood by
 coordinate ascent from the untruncated estimates (each alpha by the
 Illinois method on its analytic partial derivative, clamped to
