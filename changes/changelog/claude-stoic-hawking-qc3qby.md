@@ -116,3 +116,8 @@
   the card are each row's own, with no scenario columns. Python
   `Book.occurrence_peel` and `Ledger.is_stitched`; R
   `book_occurrence_peel()` and `ledger_is_stitched()` (#251).
+- `PredictiveDistribution::select(dim, keys)`: the components with given
+  values on one dimension, joint structure kept, so a tower's ceded part
+  can be joined to a book (#193). Python `PredictiveDistribution.select`, R
+  `select_components()`; `Tower.apply`'s docs now warn against summing over
+  `kind`.

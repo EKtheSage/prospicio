@@ -81,7 +81,8 @@ what it is aiming for by v1.0.
     splicing, `Custom` and the `Dist` enum with JSON save and load.
     Third raw moments on `Severity` and `Counting`; `aggregate`'s named
     fixed, Bernoulli and geometric counts.
-  - `PredictiveDistribution`: join, reorder, blend, Arrow IPC; provenance
+  - `PredictiveDistribution`: join, reorder, blend, select (one part of a
+    result, such as a tower's cession, before joining it), Arrow IPC; provenance
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean)
@@ -92,7 +93,6 @@ what it is aiming for by v1.0.
 - **Next:**
   1. Nested Archimedean and vine copulas (`docs/design/risk.md`).
   2. Threshold diagnostics for EVT.
-  3. Signed regular grids for rebucketed P&L legs (`pnl.md`, PR 3).
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 

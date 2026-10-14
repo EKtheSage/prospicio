@@ -1573,6 +1573,42 @@ impl PyPredictiveDistribution {
         Ok(Self { inner })
     }
 
+    /// The components whose value on dimension ``dim`` is one of ``keys``,
+    /// with every dimension and the draws' joint structure kept.
+    ///
+    /// Take one part of a result this way before joining it to another:
+    /// ``Tower.apply(...).select("kind", ["ceded"])`` is a treaty's cession,
+    /// ready to add to a book. Aggregating over ``kind`` instead adds gross,
+    /// ceded and net together.
+    ///
+    /// Parameters
+    /// ----------
+    /// dim : str
+    /// keys : list of int or str
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     An unknown dimension, no keys, or a key no component has.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> pd = PredictiveDistribution(
+    /// ...     ["kind", "layer"], [("gross", "ground_up"), ("ceded", "5x5"), ("net", "retained")],
+    /// ...     [[10.0, 3.0, 7.0], [4.0, 0.0, 4.0]])
+    /// >>> pd.select("kind", ["ceded"]).mean()
+    /// 1.5
+    fn select(&self, dim: &str, keys: Vec<KeyArg>) -> PyResult<Self> {
+        let keys = key_from_py(keys);
+        let inner = self.inner.select(dim, &keys).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
     /// The total over all components, one value per simulation.
     ///
     /// Returns

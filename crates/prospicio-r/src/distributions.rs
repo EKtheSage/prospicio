@@ -675,6 +675,12 @@ impl PredictiveDistribution {
         Ok(Self { inner })
     }
 
+    fn select(&self, dim: &str, keys: Robj) -> Result<Self> {
+        let keys = key_column(&keys)?;
+        let inner = self.inner.select(dim, &keys).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
     fn total(&self) -> Sampled {
         Sampled {
             inner: self.inner.total().clone(),

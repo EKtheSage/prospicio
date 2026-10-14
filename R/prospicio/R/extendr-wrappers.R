@@ -600,6 +600,8 @@ PredictiveDistribution$marginal <- function(key) .Call(wrap__PredictiveDistribut
 
 PredictiveDistribution$aggregate <- function(keep) .Call(wrap__PredictiveDistribution__aggregate, self, keep)
 
+PredictiveDistribution$select <- function(dim, keys) .Call(wrap__PredictiveDistribution__select, self, dim, keys)
+
 PredictiveDistribution$total <- function() .Call(wrap__PredictiveDistribution__total, self)
 
 PredictiveDistribution$mean <- function() .Call(wrap__PredictiveDistribution__mean, self)
