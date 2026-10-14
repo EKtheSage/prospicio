@@ -146,7 +146,9 @@ what it is aiming for by v1.0.
      with its scenario columns, rebucketed legs, the ratio exhibit, the
      stack, the builders for annual covers and occurrence covers on the
      joint gross and ceded loss, variable terms, `pnl_program` and
-     reinstatement premiums are done: the P&L ledger is complete.
+     reinstatement premiums are done: the P&L ledger is complete, with
+     the follow-ups (`pnl_program`'s rates, a loss expense per atom on the
+     consolidated face, the stitched peel).
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

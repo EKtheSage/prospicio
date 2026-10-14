@@ -108,3 +108,11 @@
   `aggregate`'s guaranteed-cost builder. Python
   `Book(expense_at_expected_loss=)`; R `pnl_book(expense_at_expected_loss
   =)` (#250).
+- The stitched peel of several occurrence layers, `aggregate`'s `xpnl ...
+  peel` with two or more occurrence layers: `Book::occurrence_peel` builds
+  every row as its own exact marginal (compounds of per-claim maps, and
+  pushforwards for aggregate covers behind them) through
+  `pnl::Ledger::stitched`; the mean column foots, the other statistics and
+  the card are each row's own, with no scenario columns. Python
+  `Book.occurrence_peel` and `Ledger.is_stitched`; R
+  `book_occurrence_peel()` and `ledger_is_stitched()` (#251).

@@ -2170,3 +2170,95 @@ fn pnl_reinstatements_match_aggregate() {
         }
     });
 }
+
+#[test]
+fn pnl_stitched_peel_matches_aggregate() {
+    use prospicio_aggregate::pnl::{Book, Expense, Face, Ledger};
+    use prospicio_aggregate::{Layer, Tower};
+    use prospicio_prob::{Grid, Poisson};
+    // validation/scripts/aggregate_pnl_stitched.py: several occurrence
+    // layers peeled one by one, every row its own marginal.
+    let severity = Grid::new(1.0, vec![0.0, 0.4, 0.3, 0.0, 0.2, 0.0, 0.1]).unwrap();
+    let occ = Tower::new(vec![
+        Layer::xol("occ 1 xs 1", 1.0, 1.0)
+            .unwrap()
+            .deposit_premium(1.0)
+            .unwrap(),
+        Layer::xol("occ 2 xs 2", 2.0, 2.0)
+            .unwrap()
+            .deposit_premium(1.0)
+            .unwrap()
+            .ceding_commission(0.2)
+            .unwrap(),
+    ])
+    .unwrap();
+    let agg = Tower::new(vec![
+        Layer::stop_loss("agg 3 xs 5", 3.0, 5.0)
+            .unwrap()
+            .deposit_premium(0.5)
+            .unwrap(),
+    ])
+    .unwrap();
+    let book = Book::new("S", 20.0).expense(Expense::premium(0.1));
+    let n = Poisson::new(2.0).unwrap();
+    let ledgers: std::collections::HashMap<&str, Ledger> = [
+        (
+            "td",
+            book.occurrence_peel(&n, &severity, &occ, None, Face::PeelTopDown, 64),
+        ),
+        (
+            "bu",
+            book.occurrence_peel(&n, &severity, &occ, Some(&agg), Face::PeelBottomUp, 64),
+        ),
+    ]
+    .into_iter()
+    .map(|(k, l)| (k, l.unwrap()))
+    .collect();
+    check(&reference("pnl_stitched_aggregate.csv"), |c| {
+        let (row_key, col) = (c.get("row"), c.get("col"));
+        let pnl = ledgers.get(c.get("case"))?;
+        match c.get("quantity") {
+            "sheet" => {
+                let r = pnl
+                    .rows()
+                    .iter()
+                    .find(|r| format!("{}|{}|{}", r.step, r.side.name(), r.display) == row_key)?;
+                match col {
+                    "EX" => Some(r.mean()),
+                    "SD" => Some(r.sd()),
+                    "CV" => r.cv(),
+                    "Skew" => r.skew(),
+                    _ => None,
+                }
+            }
+            "card" => {
+                let card = pnl.card().ok()?;
+                let r = card
+                    .iter()
+                    .find(|r| format!("{}|{}", r.step, r.side) == row_key)?;
+                match col {
+                    "EX" => Some(r.ex),
+                    "SD" => Some(r.sd),
+                    "CV" => r.cv,
+                    "Skew" => r.skew,
+                    "P01" => Some(r.p01),
+                    "Median" => Some(r.median),
+                    "P99" => Some(r.p99),
+                    _ => None,
+                }
+            }
+            "legs" => {
+                let mut parts = row_key.splitn(3, '|');
+                let (step, side, label) = (parts.next()?, parts.next()?, parts.next()?);
+                let r = pnl.rows().iter().find(|r| {
+                    matches!(r.kind, prospicio_aggregate::pnl::RowKind::Leg { .. })
+                        && r.step == step
+                        && r.side.name() == side
+                        && r.label == label
+                })?;
+                Some(r.mean())
+            }
+            _ => None,
+        }
+    });
+}

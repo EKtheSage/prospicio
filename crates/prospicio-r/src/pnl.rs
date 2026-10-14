@@ -235,12 +235,73 @@ impl PnlLedger {
     }
 
     fn row(&self, label: &str) -> Result<DiscreteDist> {
-        self.inner
+        let r = self
+            .inner
             .row(label)
-            .map(|r| DiscreteDist {
-                inner: r.distribution().clone(),
-            })
-            .ok_or_else(|| Error::Other(format!("no row labelled {label:?}")))
+            .ok_or_else(|| Error::Other(format!("no row labelled {label:?}")))?;
+        if r.is_delta() {
+            return Err(Error::Other(format!(
+                "row {label:?} is a difference of two rows' statistics, with no distribution"
+            )));
+        }
+        Ok(DiscreteDist {
+            inner: r.distribution().clone(),
+        })
+    }
+
+    fn is_stitched(&self) -> bool {
+        self.inner.is_stitched()
+    }
+
+    /// A book's stitched peel of several occurrence layers (and the
+    /// aggregate covers behind them), on a severity grid; `aggregate` is
+    /// NULL or a `ReinsuranceTower`.
+    #[allow(clippy::too_many_arguments)]
+    fn book_peel(
+        frequency: Robj,
+        step: f64,
+        severity: &[f64],
+        name: &str,
+        premium: f64,
+        exp_index: &[f64],
+        exp_basis: Vec<String>,
+        exp_value: &[f64],
+        exp_label: Vec<String>,
+        premium_label: &str,
+        loss_label: &str,
+        step_label: &str,
+        occurrence: Robj,
+        aggregate: Robj,
+        face: &str,
+        points: f64,
+    ) -> Result<Self> {
+        let n = crate::aggregate::AnyCount::from_robj(&frequency)?;
+        let severity = prospicio_prob::Grid::new(step, severity.to_vec()).map_err(to_r)?;
+        let book = make_book(
+            name,
+            premium,
+            exp_index,
+            &exp_basis,
+            exp_value,
+            &exp_label,
+            [premium_label, loss_label, step_label],
+        )?;
+        let face = face_of(face)?;
+        let occurrence = tower_of(&occurrence)?
+            .ok_or_else(|| Error::Other("occurrence must be a reinsurance_tower".into()))?;
+        let aggregate = tower_of(&aggregate)?;
+        Ok(Self {
+            inner: book
+                .occurrence_peel(
+                    &n,
+                    &severity,
+                    &occurrence.inner,
+                    aggregate.map(|t| &t.inner),
+                    face,
+                    points as usize,
+                )
+                .map_err(to_r)?,
+        })
     }
 
     fn prob_eq_0(&self) -> f64 {
@@ -289,9 +350,12 @@ impl PnlLedger {
                 .collect::<Vec<_>>()
                 .into(),
         ];
-        for q in LADDER {
-            names.push(format!("k{:02.0}", q * 100.0));
-            cols.push(self.inner.scenarios(q).map_err(to_r)?.into());
+        // A stitched ledger has no common source, so no scenario columns.
+        if !self.inner.is_stitched() {
+            for q in LADDER {
+                names.push(format!("k{:02.0}", q * 100.0));
+                cols.push(self.inner.scenarios(q).map_err(to_r)?.into());
+            }
         }
         List::from_names_and_values(names, cols)
     }

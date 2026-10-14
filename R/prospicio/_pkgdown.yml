@@ -80,6 +80,7 @@ reference:
       - pnl_ledger
       - pnl_book
       - occurrence_source
+      - book_occurrence_peel
       - pnl_program
       - layer_loss_picks
       - fft_bivariate
