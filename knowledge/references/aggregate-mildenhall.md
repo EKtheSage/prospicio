@@ -52,6 +52,9 @@ sources:
   - id: renewal
     resource: ../validation/scripts/aggregate_renewal.py
     title: aggregate_renewal.py
+  - id: pnl
+    resource: ../docs/design/pnl.md
+    title: docs/design/pnl.md (the P&L ledger's design note and its reference cases)
 ---
 
 # Which source for what
@@ -394,6 +397,26 @@ sources:
   `pollaczeck_khinchine`. The suite's cases are the `Y.Renewal.*` lines of
   `agg/_test_suite.agg`.[^renewal]
 
+# The P&L ledger
+
+* `PnL` (`_pnl.py`) evaluates every leg at each atom of its source and
+  groups the signed values into a `GridDistribution` with irregular,
+  possibly negative support; it never needs a signed FFT grid. The source's
+  probabilities are rescaled to sum to 1, so a ledger over an FFT density
+  with mass `1 − 2e-5` shows the rescaled means.[^pnl]
+* The scenario columns (`κ`) slice the atoms whose grand result equals its
+  lower quantile by exact float equality (`_scenario_ladder`); the walk
+  (`xpnl`) and consolidated (`pnl`) faces of one program differ in the last
+  bit (`3.1` against `3.0999999999999996`, a cumulative `0.75` against
+  `0.7499999999999999`) and so in `κ75`.[^pnl]
+* `GridDistribution`'s `tvar` is the upper tail even on a payoff, so on a
+  P&L row it sits near the mean; `return_period` is the only accessor that
+  reads the payoff sign (`T = 1 / p`). Its `make_var_tvar` reads equal
+  masses as `k / n` exactly and builds on the atoms with mass only.[^pnl]
+* `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
+  `economic_df`. `pnl_program` returns DecL text.[^pnl]
+
+[^pnl]: pnl.md
 [^renewal]: aggregate_renewal.py
 [^clash]: aggregate_clash.py
 [^terms]: aggregate_contract_terms.py
