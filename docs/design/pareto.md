@@ -459,6 +459,26 @@ Where the references leave freedom, this completion differs from the R
 package's (which fills gaps with a default alpha), so the two are not
 compared.
 
+A fit that reproduces its references can still be implausible between them
+(issue #211; `knowledge/findings/tower-fit-shape.md`). Two tools:
+
+- `TowerModel::diagnostics(min_alpha, max_ratio)`: the alpha range, the
+  largest ratio between neighbouring alphas, whether the mean is infinite
+  (the last, untruncated piece at alpha 1 or below; a low alpha elsewhere
+  is only heavy), and a warning per failed check.
+- `fit_references_bounded(.., alpha_bounds)`: the alpha between
+  consecutive reference points kept in `[lo, hi]`, linear in the
+  frequencies and so part of the linear program and of the analytic
+  center's inequalities; the unlimited top layer's alpha too. It does not
+  bound the two pieces `match_tower` fits inside a limited layer, whose
+  constraint would be nonlinear in the layer loss; `diagnostics` reports
+  those. Infeasible bounds are refused naming the bounds, inconsistent
+  references naming their number (no longer `NaN`).
+
+`match_tower`'s jagged alphas on exposure-rated losses are exact matching
+of a curve that is not piecewise Pareto, not a defect; a least-squares fit
+that trades exactness for smoothness would be a separate method.
+
 Bindings: Python `prospicio.pricing` (`CollectiveModel`, `ilf`,
 `loss_elimination_ratio`, `pareto_extrapolation`, the three implied-alpha
 functions, `match_tower`, `fit_pml_curve`, `fit_references`,

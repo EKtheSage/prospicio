@@ -305,3 +305,15 @@ stopifnot(abs(same$premium - p1$premium) < 1e-14,
           < 1e-12,
           inherits(try(payment_pattern_from_development(c(1, 2), c(2, 1.1)), silent = TRUE),
                    "try-error"))
+
+# Issue #211: tower diagnostics and alpha bounds.
+local({
+  layers <- data.frame(limit = c(1, 5, Inf), attachment = c(1, 5, 10),
+                       expected_loss = c(1.706, 0.675, 0.295))
+  freq <- data.frame(threshold = 1, frequency = 2.8)
+  free <- fit_references(layers, freq)
+  d <- tower_diagnostics(free)
+  stopifnot(d$min_alpha < 1, !d$infinite_mean, length(d$warnings) > 0)
+  b <- fit_references(layers, freq, alpha_bounds = c(1.2, 3))
+  stopifnot(abs(layer(b, 5, 5) / 0.675 - 1) < 1e-10, layer(b, 2, 2) < layer(free, 2, 2))
+})

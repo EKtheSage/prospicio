@@ -119,6 +119,18 @@ impl TowerModel {
         self.inner.layer_loss(limit, attachment)
     }
 
+    /// `list(min_alpha, max_alpha, max_ratio, infinite_mean, warnings)`.
+    fn diagnostics(&self, min_alpha: f64, max_ratio: f64) -> List {
+        let d = self.inner.diagnostics(min_alpha, max_ratio);
+        list!(
+            min_alpha = d.min_alpha,
+            max_alpha = d.max_alpha,
+            max_ratio = d.max_ratio,
+            infinite_mean = d.infinite_mean,
+            warnings = d.warnings
+        )
+    }
+
     fn match_tower(
         attachments: &[f64],
         layer_losses: &[f64],
@@ -156,7 +168,9 @@ impl TowerModel {
     }
 
     /// Layers as parallel vectors `limits`, `attachments`, `losses`;
-    /// frequencies as `thresholds`, `frequencies`.
+    /// frequencies as `thresholds`, `frequencies`; `alpha_bounds` empty or
+    /// `c(lo, hi)`.
+    #[allow(clippy::too_many_arguments)]
     fn fit_references(
         limits: &[f64],
         attachments: &[f64],
@@ -165,7 +179,15 @@ impl TowerModel {
         frequencies: &[f64],
         default_alpha: f64,
         rule_name: &str,
+        alpha_bounds: &[f64],
     ) -> Result<Self> {
+        let bounds = match *alpha_bounds {
+            [] => None,
+            [lo, hi] => Some((lo, hi)),
+            _ => {
+                return Err(Error::Other("alpha_bounds is NULL or c(lo, hi)".into()));
+            }
+        };
         if limits.len() != attachments.len() || limits.len() != losses.len() {
             return Err(Error::Other(
                 "layer limits, attachments and losses must have the same length".into(),
@@ -189,9 +211,13 @@ impl TowerModel {
                 frequency,
             });
         }
-        let inner =
-            prospicio_pricing::tower::fit_references(&refs, default_alpha, rule(rule_name)?)
-                .map_err(to_r)?;
+        let inner = prospicio_pricing::tower::fit_references_bounded(
+            &refs,
+            default_alpha,
+            rule(rule_name)?,
+            bounds,
+        )
+        .map_err(to_r)?;
         Ok(Self { inner })
     }
 }

@@ -183,6 +183,10 @@ fit_pml_curve <- function(return_periods, amounts, tail_alpha = 2, truncation = 
 #' @param default_alpha Alpha above the highest point, unless an unlimited
 #'   layer sets it.
 #' @param rule As in [match_tower()].
+#' @param alpha_bounds `NULL`, or `c(lo, hi)`: keep the Pareto alpha between
+#'   consecutive reference points within these bounds. The two pieces fitted
+#'   inside a limited layer can still fall either side; check with
+#'   [tower_diagnostics()].
 #' @returns A [tower_model].
 #' @export
 #' @examples
@@ -193,13 +197,39 @@ fit_pml_curve <- function(return_periods, amounts, tail_alpha = 2, truncation = 
 #' )
 #' layer(m, 3000, 1500)
 fit_references <- function(layers = NULL, frequencies = NULL, default_alpha = 2,
-                           rule = c("minimize", "midpoint")) {
+                           rule = c("minimize", "midpoint"), alpha_bounds = NULL) {
   rule <- match.arg(rule)
   col <- function(df, name) if (is.null(df)) double() else as.double(df[[name]])
   tower_model(rust_result(TowerModel$fit_references(
     col(layers, "limit"), col(layers, "attachment"), col(layers, "expected_loss"),
-    col(frequencies, "threshold"), col(frequencies, "frequency"), as.double(default_alpha), rule
+    col(frequencies, "threshold"), col(frequencies, "frequency"), as.double(default_alpha), rule,
+    if (is.null(alpha_bounds)) double() else as.double(alpha_bounds)
   )))
+}
+
+#' Checks on a tower model's shape
+#'
+#' A match reproduces its references exactly, but between and beyond them a
+#' piece of the severity can be implausible: an alpha below `min_alpha` (below
+#' 1 on the last, untruncated piece the mean is infinite), or neighbouring
+#' alphas more than `max_ratio` apart.
+#'
+#' @param model A [tower_model].
+#' @param min_alpha The smallest plausible alpha.
+#' @param max_ratio The largest plausible ratio between neighbouring alphas.
+#' @returns A list with `min_alpha`, `max_alpha`, `max_ratio`, `infinite_mean`
+#'   and `warnings` (a character vector, empty when the shape looks
+#'   plausible).
+#' @export
+#' @examples
+#' m <- fit_references(
+#'   layers = data.frame(limit = c(1, 5, Inf), attachment = c(1, 5, 10),
+#'                       expected_loss = c(1.706, 0.675, 0.295)),
+#'   frequencies = data.frame(threshold = 1, frequency = 2.8)
+#' )
+#' tower_diagnostics(m)$warnings
+tower_diagnostics <- function(model, min_alpha = 1, max_ratio = 2) {
+  model@ptr$diagnostics(as.double(min_alpha), as.double(max_ratio))
 }
 
 #' Layer rating

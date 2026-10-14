@@ -8,7 +8,8 @@ fit_references(
   layers = NULL,
   frequencies = NULL,
   default_alpha = 2,
-  rule = c("minimize", "midpoint")
+  rule = c("minimize", "midpoint"),
+  alpha_bounds = NULL
 )
 }
 \arguments{
@@ -22,6 +23,11 @@ fit_references(
 layer sets it.}
 
 \item{rule}{As in \code{\link[=match_tower]{match_tower()}}.}
+
+\item{alpha_bounds}{\code{NULL}, or \code{c(lo, hi)}: keep the Pareto alpha between
+consecutive reference points within these bounds. The two pieces fitted
+inside a limited layer can still fall either side; check with
+\code{\link[=tower_diagnostics]{tower_diagnostics()}}.}
 }
 \value{
 A \link{tower_model}.
