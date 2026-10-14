@@ -23,6 +23,7 @@ mod models;
 mod natural;
 mod pareto;
 mod payout;
+mod pnl;
 mod pricing;
 mod ratemaking;
 mod reinsurance;
@@ -82,6 +83,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
+    #[pymodule_export]
+    use super::pnl::{PyGroup, PyLedger, PyLeg};
     #[pymodule_export]
     use super::pricing::{
         PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,

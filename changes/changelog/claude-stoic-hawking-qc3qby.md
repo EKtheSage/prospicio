@@ -41,3 +41,13 @@
   (`prospicio_aggregate::ruin::wiener_hopf`, returning `RenewalRuin`),
   matching `aggregate` 1.0.1's `wiener_hopf`. Python `wiener_hopf`; R
   `wiener_hopf()` (#237).
+- The P&L ledger, as `aggregate` 1.0.1's `PnL`
+  (`prospicio_aggregate::pnl::{Ledger, Group, Leg}`): signed legs in books
+  that sell or buy cover over a source, every row (legs, side totals,
+  results, running nets, spans and net-of blocks, grand rows, the covers'
+  total impact) a sum at each atom with its exact distribution, the card,
+  and the scenario columns that condition each row on the grand result.
+  Python `prospicio.aggregate.Ledger`, `Group`, `Leg`; R `pnl_ledger()`,
+  `pnl_group()`, `pnl_leg()` and `ledger_sheet()`, `ledger_card()`,
+  `ledger_marginal()`, `ledger_legs()`, `ledger_result()`, `ledger_row()`
+  (#242).

@@ -21,6 +21,7 @@ pub mod monte_carlo;
 pub mod panjer;
 pub mod picks;
 pub mod pml;
+pub mod pnl;
 pub mod reinsurance;
 pub mod renewal;
 pub mod ruin;

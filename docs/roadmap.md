@@ -142,7 +142,8 @@ what it is aiming for by v1.0.
 - **Next:**
   1. The last large item parked from `aggregate` parity
      (`docs/design/aggregate.md`): the P&L ledger, planned in six PRs in
-     `docs/design/pnl.md`, starting with a signed discrete distribution.
+     `docs/design/pnl.md`; the signed distribution and the ledger kernel
+     with its scenario columns are done, the builders for covers next.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

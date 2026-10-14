@@ -73,7 +73,8 @@ impl Discrete {
     /// The distribution putting probability `probs[i]` on `values[i]`.
     /// Values may repeat (and come in any order); equal values (to `1e-12`)
     /// are merged at the smallest of them, and zero probabilities dropped.
-    /// The probabilities are rescaled to sum to 1.
+    /// The probabilities are rescaled to sum to 1, unless they already do to
+    /// `1e-12`.
     ///
     /// Fails if the lengths differ, a value or probability is not finite, a
     /// probability is negative, or no probability is positive.
@@ -131,8 +132,16 @@ impl Discrete {
             }
         }
         let total: f64 = merged.iter().map(|a| a.1).sum();
+        // Probabilities already summing to 1 are kept as given, as
+        // aggregate keeps them: rescaling them again moves a cumulative 0.1
+        // to 0.09999999999999999, across a quantile's jump.
+        let scale = if (total - 1.0).abs() <= 1e-12 {
+            1.0
+        } else {
+            total
+        };
         let (values, probs): (Vec<f64>, Vec<f64>) =
-            merged.into_iter().map(|(x, p)| (x, p / total)).unzip();
+            merged.into_iter().map(|(x, p)| (x, p / scale)).unzip();
         Ok(Self::build(values, probs))
     }
 

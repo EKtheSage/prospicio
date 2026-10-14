@@ -5,7 +5,7 @@ Pollaczeck–Khinchine formula and, for renewal claims, by Wiener–Hopf
 (wiener_hopf), a severity reshaped to layer loss picks, and a catastrophe model's
 event loss table with secondary uncertainty (EventLossTable), and two lines hit by
 the same events: their joint loss by a 2-D FFT (fft_bivariate, JointGrid) and the
-clash model (Clash). Layers and towers are in
+clash model (Clash), and the P&L ledger (Ledger, Group, Leg). Layers and towers are in
 ``prospicio.reinsurance``."""
 
 from .prospicio_native import (
@@ -17,7 +17,10 @@ from .prospicio_native import (
     EventLossTable,
     EventSet,
     GridSize,
+    Group,
     JointGrid,
+    Ledger,
+    Leg,
     OccurrencePml,
     Picks,
     RenewalRuin,
@@ -64,4 +67,7 @@ __all__ = [
     "JointGrid",
     "BivariateReport",
     "Clash",
+    "Ledger",
+    "Group",
+    "Leg",
 ]

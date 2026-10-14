@@ -417,6 +417,12 @@ sources:
   mass only; `tvar` on a lone atom raises an `IndexError` (it reads
   `F[-2]`). `prospicio_prob::Discrete` matches it on 544 values
   (`aggregate_discrete.py`).[^pnl]
+* `PnL` divides the source's probabilities by their total once and its
+  rows' distributions keep them as they are: dividing again (even by a
+  total of `0.9999999999999999`) moves a cumulative that equals a ladder
+  level, as 0.1 on four outcomes of 0.4, 0.3, 0.2, 0.1, across the
+  quantile's jump. `prospicio_aggregate::pnl::Ledger` matches the kernel
+  on 1,704 values (`aggregate_pnl_ledger.py`).[^pnl]
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 

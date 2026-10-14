@@ -472,6 +472,34 @@ DiscreteDist$tail <- function(periods) .Call(wrap__DiscreteDist__tail, self, per
 #' @export
 `[[.DiscreteDist` <- `$.DiscreteDist`
 
+PnlLedger <- new.env(parent = emptyenv())
+
+PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, name, result_name, span_label, span_lo, span_hi, force_tower) .Call(wrap__PnlLedger__new, values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, name, result_name, span_label, span_lo, span_hi, force_tower)
+
+PnlLedger$rows <- function() .Call(wrap__PnlLedger__rows, self)
+
+PnlLedger$result <- function() .Call(wrap__PnlLedger__result, self)
+
+PnlLedger$row <- function(label) .Call(wrap__PnlLedger__row, self, label)
+
+PnlLedger$prob_eq_0 <- function() .Call(wrap__PnlLedger__prob_eq_0, self)
+
+PnlLedger$is_tower <- function() .Call(wrap__PnlLedger__is_tower, self)
+
+PnlLedger$sheet <- function() .Call(wrap__PnlLedger__sheet, self)
+
+PnlLedger$marginal <- function() .Call(wrap__PnlLedger__marginal, self)
+
+PnlLedger$card <- function() .Call(wrap__PnlLedger__card, self)
+
+PnlLedger$legs <- function() .Call(wrap__PnlLedger__legs, self)
+
+#' @export
+`$.PnlLedger` <- function (self, name) { func <- PnlLedger[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.PnlLedger` <- `$.PnlLedger`
+
 Grid <- new.env(parent = emptyenv())
 
 Grid$new <- function(step, probs) .Call(wrap__Grid__new, step, probs)

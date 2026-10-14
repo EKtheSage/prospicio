@@ -1071,3 +1071,175 @@ fn wiener_hopf_ruin_matches_aggregate() {
         }
     });
 }
+
+#[test]
+fn pnl_ledgers_match_aggregate() {
+    use prospicio_aggregate::pnl::{
+        Group, LADDER, Layout, Ledger, Leg, LegKind, Role, Source, snap,
+    };
+    // validation/scripts/aggregate_pnl_ledger.py: aggregate's PnL built from
+    // Leg and Group on the same sources.
+    let sources = reference("pnl_ledger_sources.csv");
+    let source = |name: &str| {
+        let (x, p): (Vec<f64>, Vec<f64>) = sources
+            .iter()
+            .filter(|r| r.get("source") == name)
+            .map(|r| (r.number("value").unwrap(), r.number("prob").unwrap()))
+            .unzip();
+        Source::new(x, p).unwrap()
+    };
+    let (loss, hand) = (source("loss"), source("hand"));
+    let seller = || {
+        Group::sell("Gross")
+            .consideration(Leg::constant("Premium", 10.0).kind(LegKind::Premium))
+            .obligation(Leg::of("Loss", |x| x).kind(LegKind::Loss))
+            .obligation(Leg::constant("expense", 1.0).kind(LegKind::Expense))
+    };
+    let ledgers: std::collections::HashMap<&str, Ledger> = [
+        (
+            "ex1",
+            Ledger::single(
+                &loss,
+                "Ex1",
+                Role::Sell,
+                vec![Leg::constant("Premium", 10.0)],
+                vec![Leg::of("Loss", |x| x), Leg::constant("expense", 1.0)],
+                "margin",
+            ),
+        ),
+        (
+            "ex2",
+            Ledger::new(
+                &hand,
+                vec![
+                    Group::sell("Gross")
+                        .consideration(Leg::of("Premium", |x| (5.0 + 1.1 * x).clamp(12.0, 40.0)))
+                        .obligation(Leg::of("Loss", |x| x))
+                        .obligation(Leg::of("LAE", |x| 0.05 * x)),
+                    Group::buy("XL")
+                        .consideration(Leg::constant("XL premium", 4.0))
+                        .obligation(Leg::of("XL recovery", |x| (x - 15.0).clamp(0.0, 25.0)))
+                        .obligation(Leg::constant("XL commission", 0.4)),
+                ],
+                Layout::new("Ex2").result_name("margin"),
+            ),
+        ),
+        (
+            "ex2c",
+            Ledger::single(
+                &hand,
+                "Ex2c",
+                Role::Sell,
+                vec![Leg::of("Prem", |x| if x == 20.0 { 30.0 } else { 10.0 })],
+                vec![Leg::of("Loss", |x| x)],
+                "result",
+            ),
+        ),
+        (
+            "ex3",
+            Ledger::new(
+                &loss,
+                vec![
+                    seller(),
+                    Group::buy("agg 3 xs 5")
+                        .consideration(Leg::constant("agg premium", 1.0))
+                        .obligation(Leg::of("agg recovery", |x| 0.1 * (x - 5.0).clamp(0.0, 3.0))),
+                ],
+                Layout::new("Ex3").result_name("margin"),
+            ),
+        ),
+        (
+            "tiers",
+            Ledger::new(
+                &hand,
+                vec![
+                    Group::sell("Gross")
+                        .consideration(Leg::constant("Premium", 30.0))
+                        .obligation(Leg::of("Loss", |x| x))
+                        .margin_label("Direct"),
+                    Group::buy("XL1")
+                        .consideration(Leg::constant("XL1 premium", 3.0))
+                        .obligation(Leg::of("XL1 recovery", |x| (x - 10.0).clamp(0.0, 10.0))),
+                    Group::buy("XL2")
+                        .consideration(Leg::constant("XL2 premium", 2.0))
+                        .obligation(Leg::of("XL2 recovery", |x| (x - 20.0).clamp(0.0, 30.0))),
+                ],
+                Layout::new("Tiers")
+                    .span("All XL", 1, 3)
+                    .span("All gross and XL1", 0, 2),
+            ),
+        ),
+    ]
+    .into_iter()
+    .map(|(k, l)| (k, l.unwrap()))
+    .collect();
+    check(&reference("pnl_ledger_aggregate.csv"), |c| {
+        let pnl = ledgers.get(c.get("case"))?;
+        let key = |r: &prospicio_aggregate::pnl::Row| {
+            if pnl.is_tower() {
+                format!("{}|{}|{}", r.step, r.side.name(), r.display)
+            } else {
+                format!("{}|{}", r.side.name(), r.display)
+            }
+        };
+        let (row_key, col) = (c.get("row"), c.get("col"));
+        let ladder = |col: &str| -> Option<f64> {
+            let q: f64 = col[1..].parse::<f64>().ok()? / 100.0;
+            LADDER.iter().copied().find(|l| (l - q).abs() < 1e-12)
+        };
+        match c.get("quantity") {
+            "sheet" => {
+                let i = pnl.rows().iter().position(|r| key(r) == row_key)?;
+                let r = &pnl.rows()[i];
+                match col {
+                    "EX" => Some(snap(r.mean())),
+                    "SD" => Some(snap(r.sd())),
+                    "CV" => r.cv().map(snap),
+                    "Skew" => r.skew().map(snap),
+                    _ => Some(pnl.scenarios(ladder(col)?).ok()?[i]),
+                }
+            }
+            "marginal" => {
+                let r = pnl.rows().iter().find(|r| key(r) == row_key)?;
+                r.quantile(ladder(col)?).ok().map(snap)
+            }
+            "card" => {
+                let card = pnl.card().ok()?;
+                let r = card.iter().find(|r| {
+                    if pnl.is_tower() {
+                        format!("{}|{}", r.step, r.side) == row_key
+                    } else {
+                        r.side == row_key
+                    }
+                })?;
+                match col {
+                    "EX" => Some(r.ex),
+                    "SD" => Some(r.sd),
+                    "CV" => r.cv,
+                    "Skew" => r.skew,
+                    "P01" => Some(r.p01),
+                    "Median" => Some(r.median),
+                    "P99" => Some(r.p99),
+                    _ => None,
+                }
+            }
+            "prob_eq_0" => Some(pnl.prob_eq_0()),
+            "legs" => {
+                let mut parts = row_key.splitn(3, '|');
+                let (step, side, label) = (parts.next()?, parts.next()?, parts.next()?);
+                let r = pnl.rows().iter().find(|r| {
+                    matches!(r.kind, prospicio_aggregate::pnl::RowKind::Leg { .. })
+                        && r.step == step
+                        && r.side.name() == side
+                        && r.label == label
+                })?;
+                match col {
+                    "EX" => Some(r.mean()),
+                    "SD" => Some(snap(r.sd())),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    });
+}
