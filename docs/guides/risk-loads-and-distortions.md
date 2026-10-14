@@ -168,11 +168,11 @@ for principle, t in loadings.items():
          exponential    0.333    1.31    2.12    5.66
 ```
 
-The exponential loading comes from the small `bisect` helper above, as a
-workaround: `calibrate_classical("exponential", ...)` returns a loading of about
-1e-31 for this layer, without an error, and that loading does not give the target
-premium. Whatever the principle, check a calibrated loading by pricing with it
-again:
+The exponential loading comes from the small `bisect` helper above;
+`calibrate_classical("exponential", ...)` now gives the same loading. Before
+issue #214 it returned about 1e-31 for this layer, because the premium lost its
+loading to cancellation at a tiny loading. Whatever the principle, check a
+calibrated loading by pricing with it again:
 
 ```python
 for principle in ("exponential", "standard_deviation"):
@@ -182,7 +182,7 @@ for principle in ("exponential", "standard_deviation"):
 ```
 
 ```text
-         exponential: loading 4.25e-31, gives the target premium: False
+         exponential: loading 0.333, gives the target premium: True
   standard_deviation: loading 0.43, gives the target premium: True
 ```
 
