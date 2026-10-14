@@ -652,6 +652,33 @@ impl Posterior for Model {
     }
 }
 
+/// The log posterior written once over [`Scalar`](super::scalar::Scalar),
+/// the oracle of the compartmental note's decision 4: test-only, beside
+/// the hand-written [`Posterior::log_posterior`], which stays the fast
+/// path.
+#[cfg(test)]
+impl super::autodiff::GenericDensity for Model {
+    fn n_params(&self) -> usize {
+        self.dim()
+    }
+
+    fn log_density<S: super::scalar::Scalar>(&self, theta: &[S]) -> S {
+        let no = self.n_origins;
+        let mut f = S::from_f64(0.0);
+        for &u in &theta[..no] {
+            f += (u - u.exp_m1()) * self.shape;
+        }
+        for &b in &theta[no..] {
+            f -= b * b * (0.5 * self.development_precision);
+        }
+        for &(w, d, x) in &self.cells {
+            let eta = theta[w] + self.log_prior[w] + theta[no + d];
+            f += (eta * x - eta.exp()) / self.phi;
+        }
+        f
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -800,6 +827,18 @@ mod tests {
                 .map(|j| 0.3 * ((j % 3) as f64 - 1.0))
                 .collect();
             assert_gradient(|z, g| whitened.log_density(z, g).unwrap(), &z);
+        }
+    }
+
+    #[test]
+    fn the_generic_density_matches_the_hand_written_one() {
+        use crate::bayes::autodiff::{assert_oracle, posterior_points};
+        for (label, cv) in [("BayesBf cv 0.2", 0.2), ("BayesBf flat", f64::INFINITY)] {
+            let (_, model, start) = prepared(&genins(), &BayesBf { cv, ..quick(0) });
+            let mode = mode(&model, start).unwrap();
+            let whitened = Whitened::new(&model, &mode).unwrap();
+            let points = posterior_points(&whitened, model.dim(), 20);
+            assert_oracle(label, &model, &points);
         }
     }
 

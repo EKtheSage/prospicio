@@ -1,8 +1,8 @@
 # Design note: compartmental reserving (Gesmann and Morris)
 
-Status: **Decided** (2026-10-13; nothing built; the user settled the open
-decisions at the end, all as recommended, with decision 1 widened: see
-there) · Lane:
+Status: **Decided** (2026-10-13; the user settled the open decisions at
+the end, all as recommended, with decision 1 widened: see there). PR A
+built (decision 4); PRs B to E not yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -183,8 +183,13 @@ PD(t) = Π_i RLR_i RRF_i [ (1 − e^{−k_p t}) − k_p g(t) ]
 ```
 
 The second line is exact for every `Δ`, and `(−expm1(−x))/x` takes a
-series branch for `|x| < 1e-5` (`1 − x/2 + x²/6`), so the density and its
-dual gradient are finite and smooth through `k_er = k_p`, where
+series branch for `|x| < 1e-2` (`Σ (−x)^k/(k+1)!` to `k = 6`; PR A's
+`exprel_neg` in `bayes/scalar.rs`), so the density and its
+dual gradient are finite and smooth through `k_er = k_p`. The threshold is
+set by the dual derivative, not the value: the quotient's derivative loses
+about `2ε/|x|` relative, 3e-12 at the `1e-5` first proposed here with a
+three-term series, 2e-14 at `1e-2`, where seven terms keep the series'
+value and derivative exact to rounding. At `k_er = k_p`,
 `g(t) = t e^{−k t}`. The PD form follows from the paper's by
 `k_er (1 − e^{−k_p t}) − k_p (1 − e^{−k_er t}) = Δ (1 − e^{−k_p t}) −
 k_p Δ g(t)`. The ultimate loss ratio is `PD(∞)/Π_i = RLR_i RRF_i`, and OS
@@ -397,8 +402,8 @@ otherwise, and an ODE crate only for a stiff system:
 
 ### 4. Gradients: the `Scalar` trait and the dual type (PR A)
 
-Proposed, following `reserving-bayes.md` decision 15 (decided). PR A adds,
-with no new model:
+Built (PR A; the outcome at the end of this decision), following
+`reserving-bayes.md` decision 15 (decided). PR A adds, with no new model:
 
 * **`crates/prospicio-reserving/src/bayes/scalar.rs`**: `pub(crate) trait
   Scalar`, implemented for `f64` and the dual type: `Copy`, the four
@@ -446,6 +451,69 @@ with no new model:
   one-OS gradient by hand (the closed form makes that practical) and keeps
   duals for the oracle and the RK4 models. The `p` = 90 time sizes model
   2's cost for PR C, which applies the same rule.
+
+**Built (PR A, 2026-10-13; branch `claude/bayes-dual`).** As proposed,
+with these outcomes and departures:
+
+* **`Scalar`** has the operators with `Self` and `f64`, `+=` and `-=`,
+  `from_f64`, `value`, and `exp`, `exp_m1`, `ln`, `ln_1p`, `sqrt`, `tanh`
+  and `powi` (Meyers' CSR speed-up is an integer power). `powf`, `lgamma`
+  and the normal log cdf are left out: no density written so far needs
+  them (the half Student-t and Cauchy priors need only `ln_1p`, the LKJ(1)
+  Jacobian `ln`), and each is a small addition with its dual derivative
+  when one does. Beside the trait, `scalar.rs` holds the generic
+  `exprel_neg` (decision 2's kernel, with the wider series branch
+  explained there), `softplus` and `logistic`, which branch on `value()`
+  so the dual follows the value's branch.
+* **`Dual<N>`** computes each value exactly as `f64` does (a quotient
+  divides, it does not multiply by a reciprocal), so the generic value
+  in duals equals it bit for bit, and `tanh`'s derivative is
+  `1 / cosh²`, since `1 − tanh²` loses digits as `|x|` grows (2e-14 at
+  `x = −4`). `gradient::<N>(theta, grad, f)` runs `⌈p / N⌉` passes and
+  returns the value. **`N` = 32** (`dual::CHUNK`).
+* **The generic densities** implement a test-only trait,
+  `GenericDensity::log_density<S: Scalar>`, in `odp.rs`, `bf.rs` and
+  `meyers.rs`; the test support (the oracle check, the closed form, two
+  synthetic compartmental densities and the benchmark) is in
+  `bayes/autodiff.rs`, `#[cfg(test)]`. No non-test line of the three
+  models changed, so the sampler's output is unchanged.
+* **Oracle results**, largest relative error over 20 points `centre + L z`
+  on each model's whitening scale (the Laplace scale at the mode for
+  `BayesOdp` and `BayesBf`, the pilot's scale at the start for `Meyers`),
+  value / gradient against its largest component / gradient
+  componentwise: `BayesOdp` GenIns 0 / 3.7e-16 / 1.0e-14 and RAA 0 /
+  3.8e-16 / 3.3e-14; `BayesBf` GenIns at cv 0.2 0 / 2.4e-16 / 4.2e-14 and
+  flat 0 / 4.5e-16 / 7.1e-15; `Meyers` CRC 1.4e-15 / 3.6e-16 / 3.5e-14,
+  CSR 1.6e-14 / 1.1e-15 / 2.5e-13, CAY 1.0e-14 / 9.3e-16 / 2.5e-14. Chunks
+  of 8 give the same gradient as one pass, bit for bit. Every elementary
+  function's dual derivative matches its analytic one to 1e-14 (1e-13 for
+  `exprel_neg` on both sides of its branch), and the closed form's dual
+  gradient matches central differences to 7.1e-9 at its worst, through
+  `k_er = k_p` and inside the series branch.
+* **The measurement** (release, median µs per value and gradient; rustc
+  1.98.1, Windows, Intel Core Ultra 9 285H; times vary about 15% between
+  runs). `p` = 27 and 90 are the one-OS models 1 and 2 on a synthetic
+  triangle shaped like company 337's training triangle (its data arrive in
+  PR B), with model 2's 87 parameters padded by three standard normals to
+  90; neither has a hand-written gradient, so their ratios are to the f64
+  value:
+
+  | `p` | value | hand-written | N = 4 | N = 8 | N = 16 | N = 32 | fixed size |
+  |---|---|---|---|---|---|---|---|
+  | 27 (model 1) | 0.35 | | 5.23 | 4.31 | 3.73 | 3.25 (9.2× value) | 2.84 |
+  | 29 (Meyers CRC, group 353 paid) | 0.52 | 1.11 | 5.60 | 3.54 | 3.04 | 2.77 (2.5× hand) | 3.55 |
+  | 90 (model 2) | 2.42 | | 100.3 | 63.9 | 48.5 | 43.5 (18× value) | 58.4 |
+
+  **Accepted**: at `p` = 29 the chunked gradient costs 2.3 to 2.5 times
+  the hand-written one at `N` = 32 (2.9 to 3.2 times at 8, 4.7 to 5.8 at
+  4) over three runs, well within 10 times, so PR B writes only the
+  generic density. `N` = 32 was the fastest or within noise of it in
+  every row: one pass up to 32 parameters, and at 90 three passes
+  against six at 16 and twelve at 8. A fixed size of 90 tangents is
+  slower than three passes of 32. Model 2 at 90 costs about 18 times its
+  own value, 43 to 54 µs a gradient; PR C applies the rule above to it.
+  Run the benchmark with `cargo test --release -p prospicio-reserving
+  --features bayes --lib autodiff_benchmark -- --ignored --nocapture`.
 
 Laplace Hessians stay central differences of the exact gradient
 (`bayes/laplace.rs`, `Posterior::negative_hessian`), as decided.

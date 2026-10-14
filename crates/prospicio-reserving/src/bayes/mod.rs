@@ -36,10 +36,14 @@
 //! [`PredictiveDistribution`]: prospicio_prob::PredictiveDistribution
 //! [`OdpBootstrapFit::reserves`]: crate::OdpBootstrapFit::reserves
 
+#[cfg(test)]
+mod autodiff;
 mod bf;
+mod dual;
 mod laplace;
 mod meyers;
 mod odp;
+mod scalar;
 
 pub use bf::{BayesBf, BayesBfFit};
 pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};

@@ -1541,8 +1541,11 @@ duals matched a closed-form one-compartment model to 9e-10, so the
 compartmental models need no ODE crate unless they turn out stiff
 (`diffsol` then, behind its own feature).
 
-Still to measure before the first model uses it: the cost of chunked passes
-when the parameter count is known only at run time. Revisit with reverse
+The cost of chunked passes when the parameter count is known only at run
+time, measured 2026-10-13 (`reserving-compartmental.md` decision 4, PR A):
+32 tangents a pass, a gradient of Meyers' CRC costs 2.3 to 2.5 times the
+hand-written one, within the 10 times accepted, and the in-house dual
+matches every hand-written gradient here to 1e-12 relative. Revisit with reverse
 mode (Burn, `ad_trait`, or `std::autodiff` once stable) for hierarchical
 models with thousands of parameters.
 
