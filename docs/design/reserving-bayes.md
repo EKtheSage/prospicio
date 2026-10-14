@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built in Rust** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS; its bindings are the next stage. The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -45,7 +45,7 @@ together, as in `reserving-v02.md` decision 7.
 | 5 | `claude/bayes-cay` | `MeyersModel::Cay` (decision 7, "CAY"), in Rust, Python and R | PR 3 |
 | 6 | `claude/bayes-meyers-segments` | Meyers' CRC, CSR and CAY with `fit_segments` and `TriangleModel` (open decision 9; decisions 8 and 11, "Meyers"), in Rust, with `fit_segments` in Python and R | PR 5 |
 | 7 | next | compartmental reserving, in its own design note (open decision 9) | |
-| 8 | next | the one-year view by PSIS reweighting (open decision 6) | PR 1 |
+| 8 | `claude/bayes-one-year` | the one-year view by PSIS reweighting, `BayesOdp` first, with segments (open decision 6, decision 16); Rust, then the bindings | PR 1 |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
 PRs 2 to 4 touch the same binding files
@@ -1331,6 +1331,12 @@ smoothed importance sampling (the `loo` machinery already exists, and
 `k̂` says when it fails), or a Laplace approximation of the updated
 posterior for the ODP model, whose posterior is close to normal.
 
+Built in PR 8 for `BayesOdp` (decision 16, 2026-10-14): PSIS
+reweighting, the flagged simulations refitted. Still no tail: when a
+model gains one, its tail step joins the year as in the bootstraps'
+one-year view (`reserving-v02.md` decision 11), an origin at the last age
+closing on its simulated tail increment.
+
 ### 13. Bindings
 
 Proposed; built for `BayesOdp` in PR 1 (2026-10-12) with these changes from
@@ -1549,6 +1555,253 @@ matches every hand-written gradient here to 1e-12 relative. Revisit with reverse
 mode (Burn, `ad_trait`, or `std::autodiff` once stable) for hierarchical
 models with thousands of parameters.
 
+### 16. The one-year view by PSIS reweighting (PR 8)
+
+Built in Rust on `claude/bayes-one-year` (2026-10-14), for `BayesOdp`
+first, as the user decided on 2026-10-13 (open decision 6 (b), with a
+refit per flagged simulation as the fallback). The Python and R bindings
+are the next stage of the same PR line (decision 13); `Meyers`, `BayesBf`
+and `Compartmental` follow, each in its own PR, through the same engine.
+
+**API** (module `bayes`):
+
+```rust
+pub enum OneYearRefit { ReweightOnly, RefitFlagged /* default */, RefitAll }
+
+pub struct BayesOneYear {
+    pub k_threshold: f64,    // 0.7
+    pub refit: OneYearRefit, // RefitFlagged
+}
+
+impl BayesOdp {
+    pub fn one_year(&self, triangle: &Triangle, column: &str, settings: &BayesOneYear)
+        -> Result<BayesOneYearFit>;
+    pub fn one_year_segments(&self, triangle: &Triangle, column: &str, settings: &BayesOneYear)
+        -> Result<BayesOneYearFits>;
+}
+
+pub struct BayesOneYearFit<F = BayesOdpFit> {
+    pub fit: F,                     // fit()'s posterior and lifetime reserves, draw for draw
+    pub opening_ultimate: Vec<f64>, // latest + opening_reserve
+    pub opening_reserve: Vec<f64>,  // posterior mean reserve per origin
+    pub cdr: PredictiveDistribution, // dimension origin
+    pub pareto_k: Vec<f64>,         // per simulation
+    pub refitted: Vec<usize>,       // the simulations refitted with NUTS
+    pub refit_warnings: usize,      // refits whose diagnostics warn
+    pub k_threshold: f64,
+}
+// flagged_share(), to_long(), totals(); BayesOneYearFits<S = BayesOdpSegment>
+// holds SegmentFits<BayesOneYearSegment<S>> and the joint cdr, with
+// to_long(), totals() and segment(keys), as OneYearFits.
+```
+
+The settings are a separate argument, not fields of `BayesOdp`, so the
+lifetime model is unchanged and the same struct serves every Bayesian
+model. The number of simulations and the seed are the model's own
+(`n_sims`, `seed`), as for the bootstraps' `one_year`.
+
+**Method.** The year is the cells valued in the twelve months after the
+segment's valuation, found as the bootstraps find them (`YearCells`, no
+tail): one per open origin with an annual grain, up to four with a
+quarterly one. Simulation `i`, on stream `i` of its seed:
+
+1. picks a posterior draw `θ_j` uniformly and draws the year's
+   increments `X` from it with the model's process error (Gamma, mean
+   `μ = exp(η)`, variance `φ μ`, or none);
+2. weights every posterior draw `θ_s` by `exp(Σ_year (X η_s − e^{η_s}) /
+   φ)`, the quasi likelihood of the year with `φ`, `c0` and the priors
+   left at their opening values, so the weighted draws target exactly the
+   posterior the model would have on the extended triangle with the same
+   plug-ins;
+3. smooths the log weights with PSIS (relative efficiency 1, tail
+   `M = min(0.2 S, 3 √S)`) and records `k̂`;
+4. computes origin `w`'s claims development result
+
+   ```text
+   CDR_w = E[R_w | D0] − ( X_w + E[R'_w | D0, X] )
+   ```
+
+   where `R_w = Σ_{d > latest_w} μ_wd(θ)` is the expected run-off at the
+   opening, `X_w` the origin's increments in the year, and
+   `R'_w = Σ_{d > last_w} μ_wd(θ)` the expected run-off after the year;
+   `E[· | D0]` is the plain mean over the posterior draws and
+   `E[· | D0, X]` the smoothed, self-normalised weighted mean. So the
+   opening and closing estimates are both posterior means of the expected
+   remaining payments, the Bayesian counterpart of the bootstraps'
+   re-reserving with the chain ladder (whose opening and closing
+   estimates are the chain ladder's on the observed and the extended
+   triangle). By the tower property its mean is zero, up to Monte Carlo
+   and importance sampling error. An origin at the last age has no cell
+   and a CDR of 0; one whose remaining cells all fall in the year has its
+   whole run-off, `E[R_w | D0] − X_w`, as in the bootstraps.
+5. When `k̂` is above `k_threshold` (or not finite) and `refit` is
+   `RefitFlagged`, or always under `RefitAll`, `E[R'_w | D0, X]` comes
+   instead from a NUTS run on the triangle extended by `X` (the same
+   model, priors, `c0` and `φ`, the model's `sampler`, Newton started at
+   the opening posterior mean, seed drawn on the simulation's own stream
+   right after `X`, so every setting of `refit` sees the same years and
+   the same refit seeds).
+
+Under a lagging origin (one whose latest cell is before the valuation),
+every cell up to the end of the year is drawn and conditioned on; the
+ODP bootstrap leaves the cells before the valuation unobserved and
+appends only the year's. Each cell's mean is a single `exp(η_wd)`, so a
+sum over unobserved cells would need a likelihood of its own; this is
+the simpler choice and the difference only touches triangles with a
+ragged diagonal.
+
+**Seeds.** The one-year simulations use the first value of stream
+`u64::MAX` of the predictive simulations' derived seed (decision 5; the
+segment's over segments, decision 11), which those simulations never
+reach, so `one_year` keeps `fit`'s posterior and lifetime reserves bit
+for bit (a test) and replays for a seed whatever the threads (a test).
+
+**PSIS.** `prospicio_bayes::elpd`'s PSIS (Zhang and Stephens' GPD fit,
+shrunk towards 0.5) is private to its crate, which the Models lane owns,
+so the engine carries a copy (`bayes/one_year.rs::psis`, about 70 lines)
+and a test checks that its `k̂` equals `elpd::loo`'s on the same ratios.
+Making `psis` public in `prospicio-bayes` and deleting the copy is a
+small Models-lane PR (new open decision 13).
+
+**The engine and other models.** `bayes/one_year.rs` knows no model: a
+model implements the crate-private `YearModel` (draw the year from `θ`,
+score it, each origin's payment, the expected reserve at the opening
+and after the year given `θ` and the year, and a refit on the extended
+triangle). `closing` takes the year, because Meyers' cumulative models
+condition the remaining development on the new cells; the ODP's does
+not, so it is computed once per posterior draw. `BayesOneYearFit<F>`
+and `BayesOneYearFits<S>` are generic over the lifetime fit, as
+`OneYearFit<B>` is over the bootstrap.
+
+**Segments.** `one_year_segments` fits each segment as `fit_segments`
+does (its own chains and simulation seeds, decision 11), runs each
+segment's one-year simulations on its own seed, and joins them by row:
+`Independent` as drawn, `RankCorrelation` by Iman–Conover on the
+segments' total CDRs (the bootstraps' `reorder`), `Synchronized` an
+`Error::Bayes` before any sampling. Unit tests: twin GenIns lines are
+uncorrelated (rank correlation within `4.5/√n_sims`) and a target
+Spearman 0.7 is met within 0.05. No tails: `BayesOdp` has none
+(decision 12).
+
+**Results** (`validation/tests/reserving_bayes_one_year.rs`; defaults,
+seed 0, 10,000 simulations; the ODP bootstrap's one-year view with the
+chain ladder, 50,000 simulations, seed 1; Merz–Wüthrich from `Mack`).
+Standard deviation of the claims development result:
+
+| RAA origin | opening reserve | reweight only | refit flagged | ODP bootstrap | Merz–Wüthrich |
+|---|---|---|---|---|---|
+| 1982 | 202 | 650 | 650 | 708 | 143 |
+| 1983 | 716 | 961 | 967 | 1,033 | 570 |
+| 1984 | 1,775 | 1,407 | 1,416 | 1,427 | 378 |
+| 1985 | 2,906 | 1,540 | 1,554 | 1,551 | 1,299 |
+| 1986 | 3,799 | 1,788 | 1,787 | 1,792 | 1,668 |
+| 1987 | 5,595 | 2,147 | 2,146 | 2,146 | 1,186 |
+| 1988 | 11,093 | 3,353 | 3,352 | 3,419 | 4,691 |
+| 1989 | 10,864 | 4,614 | 4,614 | 4,565 | 4,707 |
+| 1990 | 17,105 | 11,790 | 11,825 | 11,869 | 23,610 |
+| total | 54,055 | 14,993 | 15,117 | 15,439 | 25,166 |
+
+| GenIns origin | opening reserve | reweight only | refit flagged | ODP bootstrap | Merz–Wüthrich |
+|---|---|---|---|---|---|
+| 2002 | 98,613 | 113,080 | 113,080 | 115,069 | 71,835 |
+| 2003 | 475,537 | 198,882 | 198,198 | 197,831 | 104,446 |
+| 2004 | 716,185 | 174,527 | 173,647 | 177,064 | 78,739 |
+| 2005 | 992,248 | 199,804 | 199,538 | 202,938 | 234,801 |
+| 2006 | 1,427,226 | 235,636 | 232,324 | 229,568 | 318,170 |
+| 2007 | 2,185,602 | 314,976 | 313,570 | 319,287 | 360,812 |
+| 2008 | 3,948,315 | 607,024 | 600,873 | 589,044 | 629,452 |
+| 2009 | 4,305,394 | 778,667 | 781,948 | 790,766 | 588,493 |
+| 2010 | 4,692,920 | 1,745,247 | 1,750,157 | 1,778,970 | 1,029,850 |
+| total | 18,842,040 | 2,351,573 | 2,367,332 | 2,427,934 | 1,774,014 |
+
+* **Against the ODP bootstrap**: the same process and, under vague
+  priors, about the same parameter error, so the two should agree, and
+  they do within Monte Carlo error. Over seeds 0 to 79 (reweight only)
+  the total's sd ratio averages 1.001 on RAA (seed-to-seed sd 0.026) and
+  1.006 on GenIns (0.021), each origin's 0.98 to 1.02, except RAA's two
+  oldest open origins: 1982 at 0.909 (sd 0.046) and 1983 at 0.947
+  (0.028). They ride on the skewed `b[10]` and `b[9]` (decision 10), where
+  the Bayesian lifetime reserve already differs from the bootstrap's;
+  1982's one-year view is its whole run-off, so this is the lifetime
+  model difference, not the reweighting.
+* **Against Merz–Wüthrich**: not expected to agree. Merz–Wüthrich assumes
+  Mack's process (variance proportional to the cumulative value), the
+  ODP a constant `φ` times the mean, so per origin the ratio runs from
+  0.50 (RAA 1990) to 4.5 (RAA 1982) and in total 0.60 (RAA) and 1.33
+  (GenIns), as the ODP bootstrap's does (0.505, 5.06, 0.615 and 1.373,
+  `knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`), where
+  `MackBootstrap` reconciles the re-reserving with Merz–Wüthrich.
+* **Flagged share**: `k̂` above 0.7 in 13.6% of the simulations on RAA
+  (seed-to-seed sd 0.47 points) and 26.3% on GenIns (0.65 points); mean
+  `k̂` 0.38 and 0.56, largest about 6. The year doubles the information
+  on the newest origin's `a_n` and the last development effect, which
+  rest on one cell each, so the posterior moves far for a few
+  parameters, and over 4,000 draws the weights are heavy-tailed.
+* **The importance sampling error**, from 2,000 simulations at seed 0
+  run both ways on the same years (reweight only against refit all),
+  each simulation's total CDR gap as a root mean square in units of the
+  total's sd: RAA 0.029, 0.060, 0.113 and 0.301 for `k̂` in
+  (−∞, 0.5], (0.5, 0.7], (0.7, 1] and above 1; GenIns 0.040, 0.059,
+  0.100 and 0.198. Below 0.5 the gap is about the two estimators' own
+  Monte Carlo error (the refit's posterior mean from 4,000 draws). The
+  gap leans one way: the reweighting under-reacts to an outlying year,
+  so reweighting every simulation gives the total a 1.0% (RAA) and 1.2%
+  (GenIns) lower sd than refitting every one (15,054 against 15,199;
+  2,399,585 against 2,428,321), and refitting only the flagged ones
+  closes two thirds of that on RAA and a fifth on GenIns (15,149 and
+  2,405,963; on one seed, so the split is rough). On
+  the 10,000 simulations above, refitting the flagged raises the total's
+  sd by 0.8% and 0.7%. The tail quantiles move by the same order (GenIns
+  99.5% of the 2,000: 5,607,525 reweighted, 5,471,518 refitted where
+  flagged, 5,459,202 all refitted).
+* **Runtime** (release, 16 threads): reweighting only, about 0.6 s on
+  RAA and 0.3 to 1.2 s on GenIns for 10,000 simulations, the fit
+  included; with the default, the flagged simulations' refits cost about
+  39 ms each, so 54 s on RAA (1,357 refits) and 104 s on GenIns (2,725).
+  Refitting all 2,000 took 78 s and 69 s. No refit at the defaults had a
+  diagnostic warning on either triangle at 10,000 simulations; at 2,000
+  refitted RAA simulations, 2 did (the kind is not recorded; RAA's
+  skewed `b[10]` makes a divergence the likely one). In a debug build the
+  four unit tests (1,200 draws, at most 2,000 simulations, up to 40
+  refits) take about 23 s in all, and the validation test below 285 s
+  (9 s in release).
+
+**Validation in CI** (release, `slow-bayes`, about 8 s): seed 0,
+reweight only, 10,000 simulations, 28 rows. Each origin's and the
+total's sd against the bootstrap's, as a ratio with target 1: RAA
+tolerances 0.30 (1982), 0.18 (1983), 0.12, 0.12, 0.09, 0.10, 0.11, 0.12,
+0.15 and 0.12 (total); GenIns 0.12 (2002), 0.08 to 0.11 for the rest and
+0.10 for the total. The seed-to-seed sd of a ratio is 1.3% to 3.4% (4.9%
+for RAA 1982), so each tolerance is at least the row's mean offset from 1
+plus 4 such sds over seeds 0 to 79 (a first sizing from seeds 0 to 39
+failed RAA 1985 at a fresh seed, 1.088 against 0.09, and was widened);
+the two RAA rows with the skewed parameters carry their offset honestly
+rather than a target moved to match it. The total's mean CDR within 5
+Monte Carlo standard errors of 0 (seed-to-seed sd of the z score 0.84 to
+1.01). The flagged share within 0.03 of 0.136 (RAA) and 0.035 of 0.264
+(GenIns), 4 sds 0.022 and 0.030. On 100 simulations refitted all, the
+root mean square gap below the threshold under 0.08 sd (RAA) and 0.10
+(GenIns), above it under 0.7 and 0.5 (mean plus 4 sds over seeds 0 to
+19: about 0.05, 0.08, 0.59 and 0.25; the flagged rows rest on about 13
+and 26 simulations each, so they are loose). At seed 0 every row uses at
+most 0.47 of its tolerance; over seeds 0 to 79 at most 0.79 (RAA 1983).
+Unit tests in `bayes/odp.rs`: the posterior and lifetime
+reserves are `fit`'s draw for draw, the oldest origin's CDR is 0, the
+second oldest's sd is its lifetime reserve's within 10%, every origin's
+mean CDR is within 4 standard errors of 0, the total is narrower than
+the lifetime total, replay whatever the threads, `RefitFlagged`'s rows
+are `RefitAll`'s for the flagged simulations and `ReweightOnly`'s for the
+others, segments and the errors.
+
+**Defaults.** `k_threshold` 0.7: the threshold of Vehtari et al. (2024)
+for a few thousand draws (`elpd::loo` uses `min(1 − 1/log10 S, 0.7)`, 0.7
+at 4,000). `RefitFlagged`: the user's decision, and the one setting
+whose tail is not biased by the reweighting's under-reaction. Its cost,
+a minute or two per triangle at the defaults, is the price; a user who
+wants a quick look sets `ReweightOnly` (about 1% low on the sd here) or
+fewer simulations. Whether a cheaper first fallback should come before
+the refit is new open decision 12.
+
 ## Open decisions for the user
 
 Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a),
@@ -1596,7 +1849,10 @@ are settled.
    per simulation (d) stays exact there but costs one NUTS run per
    simulation (about 0.1 s each, so 1,000 s for 10,000 simulations on one
    thread); a hybrid that refits only the flagged simulations is the
-   proposed fallback.
+   proposed fallback. Built for `BayesOdp` in PR 8 (decision 16,
+   2026-10-14) with that hybrid as the default (`RefitFlagged`); 14% to
+   26% of the simulations are flagged on RAA and GenIns, so the default
+   costs a minute or two per triangle (new open decision 12).
 7. **Meyers' data source.** Decided 2026-10-12 by the user:
    `EKtheSage/cas-schedule-p-data-model` (see Data above), which holds the
    full 10×10 squares that chainladder-python's `clrd` (upper triangles
@@ -1628,3 +1884,32 @@ are settled.
     `InferenceData`, Stan CSV, nutpie traces) into our R-hat, ESS and LOO.
     Today only our own NUTS draws (nuts-rs, the Rust core of nutpie) reach
     them; `docs/design/models.md` and the roadmap are corrected to say so.
+12. **A cheaper first fallback for the one-year view.** Raised
+    2026-10-14 by PR 8 (decision 16). At the defaults 14% (RAA) to 26%
+    (GenIns) of the simulations have `k̂` above 0.7, and refitting them
+    costs a minute or two per triangle; reweighting alone is about 1% low
+    on the sd. (a) Keep `RefitFlagged` as the only fallback; (b) before
+    refitting, retry a flagged simulation with the posterior draws moved
+    by the affine map from the opening Laplace approximation to the
+    updated one (importance sampling with a transformed proposal, the
+    moment matching of Paananen et al. 2021, which `loo` offers as
+    `loo_moment_match`), refitting only when its `k̂` is still high: the
+    ODP's log posterior and Newton mode are at hand, and one such
+    reweighting costs about one 4,000-draw pass of the log posterior,
+    some ms, against about 39 ms for a refit, but it needs each model's
+    log posterior in the engine and is not measured yet; (c) refit with a
+    shorter sampler (the refits need only a posterior mean). *Recommended:
+    (a) now, with (b) measured on RAA and GenIns before the bindings
+    expose the settings*, since (b) would change the defaults' cost and
+    the flagged share the user sees.
+13. **One PSIS for both crates.** Raised 2026-10-14 by PR 8. The one-year
+    engine carries a copy of `prospicio_bayes::elpd`'s private PSIS (a
+    test checks the two agree on `k̂`). (a) Make `psis` public in
+    `prospicio-bayes` (a Models-lane PR of a few lines) and delete the
+    copy; (b) keep the copy. *Recommended: (a)*.
+14. **The order of the one-year views to come.** Raised 2026-10-14 by PR
+    8. The engine takes `Meyers` (whose `closing` depends on the year's
+    cumulative values), `BayesBf` and `Compartmental` through
+    `YearModel`. *Recommended: `BayesBf` first (the ODP's likelihood, so
+    the same code with its priors), then `Meyers` (CRC, CSR, CAY), then
+    `Compartmental`*, after this PR's bindings.
