@@ -25,7 +25,10 @@ use pyo3::types::{
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
-    BayesBf, BayesBfFit, BayesOdpFits, BayesOdpSegment, MeyersFits, MeyersSegment,
+    BayesBf, BayesBfFit, BayesOdpFits, BayesOdpSegment, Compartmental, CompartmentalFit,
+    CompartmentalLikelihood, CompartmentalPriors, CompartmentalStart, Fitted, HalfPrior,
+    MeyersFits, MeyersSegment, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior,
+    Scale as CompartmentalScale,
 };
 use prospicio_reserving::{BayesOdp, BayesOdpFit, Diagnostics, Meyers, MeyersFit, MeyersModel};
 
@@ -7605,6 +7608,992 @@ impl PyMeyersFits {
             segments_prefix(segments),
             self.origins().len(),
             self.inner.reserves.n_sims(),
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gesmann and Morris' compartmental model (docs/design/reserving-compartmental.md)
+// ---------------------------------------------------------------------------
+
+/// `(median, sd)` of a log-normal prior on a positive parameter.
+fn positive_prior(name: &str, value: (f64, f64)) -> PyResult<PositivePrior> {
+    let (median, sd) = value;
+    if !(median.is_finite() && median > 0.0 && sd.is_finite() && sd > 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "{name} must be (median, sd) with both finite and positive, got ({median}, {sd})"
+        )));
+    }
+    Ok(PositivePrior::LogNormal { median, sd })
+}
+
+fn positive_prior_tuple(prior: PositivePrior) -> (f64, f64) {
+    let PositivePrior::LogNormal { median, sd } = prior;
+    (median, sd)
+}
+
+/// A half prior from ``("student_t", nu, scale)`` or ``("normal", scale)``.
+fn half_prior(name: &str, value: &Bound<'_, PyTuple>) -> PyResult<HalfPrior> {
+    let bad = || {
+        PyValueError::new_err(format!(
+            "{name} must be (\"student_t\", nu, scale) or (\"normal\", scale)"
+        ))
+    };
+    let family: String = value.get_item(0).map_err(|_| bad())?.extract()?;
+    let num = |i: usize| -> PyResult<f64> { value.get_item(i).map_err(|_| bad())?.extract() };
+    match (family.to_ascii_lowercase().as_str(), value.len()) {
+        ("student_t", 3) => Ok(HalfPrior::StudentT {
+            nu: num(1)?,
+            scale: num(2)?,
+        }),
+        ("normal", 2) => Ok(HalfPrior::Normal { scale: num(1)? }),
+        _ => Err(bad()),
+    }
+}
+
+fn half_prior_tuple<'py>(py: Python<'py>, prior: HalfPrior) -> PyResult<Bound<'py, PyTuple>> {
+    match prior {
+        HalfPrior::StudentT { nu, scale } => ("student_t", nu, scale).into_pyobject(py),
+        HalfPrior::Normal { scale } => ("normal", scale).into_pyobject(py),
+    }
+}
+
+/// A real prior from ``("student_t", nu, location, scale)`` or
+/// ``("normal", mean, sd)``.
+fn real_prior(name: &str, value: &Bound<'_, PyTuple>) -> PyResult<RealPrior> {
+    let bad = || {
+        PyValueError::new_err(format!(
+            "{name} must be (\"student_t\", nu, location, scale) or (\"normal\", mean, sd)"
+        ))
+    };
+    let family: String = value.get_item(0).map_err(|_| bad())?.extract()?;
+    let num = |i: usize| -> PyResult<f64> { value.get_item(i).map_err(|_| bad())?.extract() };
+    match (family.to_ascii_lowercase().as_str(), value.len()) {
+        ("student_t", 4) => Ok(RealPrior::StudentT {
+            nu: num(1)?,
+            location: num(2)?,
+            scale: num(3)?,
+        }),
+        ("normal", 3) => Ok(RealPrior::Normal {
+            mean: num(1)?,
+            sd: num(2)?,
+        }),
+        _ => Err(bad()),
+    }
+}
+
+fn real_prior_tuple<'py>(py: Python<'py>, prior: RealPrior) -> PyResult<Bound<'py, PyTuple>> {
+    match prior {
+        RealPrior::StudentT {
+            nu,
+            location,
+            scale,
+        } => ("student_t", nu, location, scale).into_pyobject(py),
+        RealPrior::Normal { mean, sd } => ("normal", mean, sd).into_pyobject(py),
+    }
+}
+
+fn log_sigma_priors(value: &[Bound<'_, PyTuple>]) -> PyResult<[RealPrior; 2]> {
+    if value.len() != 2 {
+        return Err(PyValueError::new_err(
+            "log_sigma must hold two priors: log sigma_os, then log sigma_pd",
+        ));
+    }
+    Ok([
+        real_prior("log_sigma[0]", &value[0])?,
+        real_prior("log_sigma[1]", &value[1])?,
+    ])
+}
+
+/// The priors of ``Compartmental``, a required argument: the rates and
+/// ratios are specific to a line and a book, so the library does not choose
+/// them silently. ``CompartmentalPriors.gesmann_morris()`` is the paper's
+/// case study; check any set with ``Compartmental.prior_predictive`` before
+/// fitting.
+///
+/// Each positive parameter ``θ`` (``k_er``, ``k_p``, ``rlr``, ``rrf``) is
+/// ``median * exp(sd * o)`` with ``o ~ N(0, 1)``: a log-normal prior with
+/// that median and log-scale sd, given as ``(median, sd)``. The origin
+/// effects on ``RLR`` and ``RRF`` live on that ``o`` scale.
+///
+/// Parameters
+/// ----------
+/// k_er, k_p : tuple of (float, float)
+///     ``(median, sd)`` of the reporting rate and the payment rate, per year.
+/// rlr, rrf : tuple of (float, float)
+///     ``(median, sd)`` of the population reported loss ratio and reserve
+///     robustness factor (paid over reported).
+/// rlr_effect_sd, rrf_effect_sd : tuple
+///     Priors on the sds of the origin effects on the ``o`` scale:
+///     ``("student_t", nu, scale)`` for a half Student-t or
+///     ``("normal", scale)`` for a half normal.
+/// lkj_eta : float
+///     LKJ shape of the correlation of the two effects (1: uniform).
+/// log_sigma : sequence of two tuples
+///     Priors on ``log sigma_os`` and ``log sigma_pd``, in that order, each
+///     ``("student_t", nu, location, scale)`` or ``("normal", mean, sd)``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a prior has the wrong form or a log-normal median or sd is not
+///     finite and positive. The other settings are checked by the fit.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import CompartmentalPriors
+/// >>> p = CompartmentalPriors.gesmann_morris()
+/// >>> p.k_er, p.rlr_effect_sd, p.log_sigma[0]
+/// ((3.0, 0.1), ('student_t', 10.0, 0.2), ('student_t', 1.0, 0.0, 1000.0))
+/// >>> p.replace(k_er=(2.0, 0.3)).k_er
+/// (2.0, 0.3)
+#[pyclass(name = "CompartmentalPriors", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyCompartmentalPriors {
+    inner: CompartmentalPriors,
+}
+
+#[pymethods]
+impl PyCompartmentalPriors {
+    #[new]
+    #[pyo3(signature = (*, k_er, k_p, rlr, rrf, rlr_effect_sd, rrf_effect_sd, lkj_eta, log_sigma))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        k_er: (f64, f64),
+        k_p: (f64, f64),
+        rlr: (f64, f64),
+        rrf: (f64, f64),
+        rlr_effect_sd: Bound<'_, PyTuple>,
+        rrf_effect_sd: Bound<'_, PyTuple>,
+        lkj_eta: f64,
+        log_sigma: Vec<Bound<'_, PyTuple>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: CompartmentalPriors {
+                k_er: positive_prior("k_er", k_er)?,
+                k_p: positive_prior("k_p", k_p)?,
+                rlr: positive_prior("rlr", rlr)?,
+                rrf: positive_prior("rrf", rrf)?,
+                rlr_effect_sd: half_prior("rlr_effect_sd", &rlr_effect_sd)?,
+                rrf_effect_sd: half_prior("rrf_effect_sd", &rrf_effect_sd)?,
+                lkj_eta,
+                log_sigma: log_sigma_priors(&log_sigma)?,
+            },
+        })
+    }
+
+    /// Gesmann and Morris' (2020) case study, model 1: ``k_er`` (3, 0.1),
+    /// ``k_p`` (1, 0.1), ``rlr`` (0.7, 0.2), ``rrf`` (0.8, 0.1), half
+    /// Student-t(10) effect sds with scales 0.2 and 0.1, LKJ(1), and
+    /// Student-t(1, 0, 1000) on each ``log sigma`` (effectively flat). On
+    /// company 337 the data pull the rates 5 to 9 prior sds from these
+    /// medians: the posterior is a compromise with the preset.
+    ///
+    /// Returns
+    /// -------
+    /// CompartmentalPriors
+    #[staticmethod]
+    fn gesmann_morris() -> Self {
+        Self {
+            inner: CompartmentalPriors::gesmann_morris(),
+        }
+    }
+
+    /// A copy with the given priors replaced, each in the constructor's form.
+    ///
+    /// Returns
+    /// -------
+    /// CompartmentalPriors
+    #[pyo3(signature = (
+        *,
+        k_er = None,
+        k_p = None,
+        rlr = None,
+        rrf = None,
+        rlr_effect_sd = None,
+        rrf_effect_sd = None,
+        lkj_eta = None,
+        log_sigma = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn replace(
+        &self,
+        k_er: Option<(f64, f64)>,
+        k_p: Option<(f64, f64)>,
+        rlr: Option<(f64, f64)>,
+        rrf: Option<(f64, f64)>,
+        rlr_effect_sd: Option<Bound<'_, PyTuple>>,
+        rrf_effect_sd: Option<Bound<'_, PyTuple>>,
+        lkj_eta: Option<f64>,
+        log_sigma: Option<Vec<Bound<'_, PyTuple>>>,
+    ) -> PyResult<Self> {
+        let mut p = self.inner;
+        if let Some(v) = k_er {
+            p.k_er = positive_prior("k_er", v)?;
+        }
+        if let Some(v) = k_p {
+            p.k_p = positive_prior("k_p", v)?;
+        }
+        if let Some(v) = rlr {
+            p.rlr = positive_prior("rlr", v)?;
+        }
+        if let Some(v) = rrf {
+            p.rrf = positive_prior("rrf", v)?;
+        }
+        if let Some(v) = rlr_effect_sd {
+            p.rlr_effect_sd = half_prior("rlr_effect_sd", &v)?;
+        }
+        if let Some(v) = rrf_effect_sd {
+            p.rrf_effect_sd = half_prior("rrf_effect_sd", &v)?;
+        }
+        if let Some(v) = lkj_eta {
+            p.lkj_eta = v;
+        }
+        if let Some(v) = log_sigma {
+            p.log_sigma = log_sigma_priors(&v)?;
+        }
+        Ok(Self { inner: p })
+    }
+
+    /// ``(median, sd)`` of the reporting rate.
+    #[getter]
+    fn k_er(&self) -> (f64, f64) {
+        positive_prior_tuple(self.inner.k_er)
+    }
+
+    /// ``(median, sd)`` of the payment rate.
+    #[getter]
+    fn k_p(&self) -> (f64, f64) {
+        positive_prior_tuple(self.inner.k_p)
+    }
+
+    /// ``(median, sd)`` of the population reported loss ratio.
+    #[getter]
+    fn rlr(&self) -> (f64, f64) {
+        positive_prior_tuple(self.inner.rlr)
+    }
+
+    /// ``(median, sd)`` of the population reserve robustness factor.
+    #[getter]
+    fn rrf(&self) -> (f64, f64) {
+        positive_prior_tuple(self.inner.rrf)
+    }
+
+    /// Prior on the sd of the origin effects on ``RLR``.
+    #[getter]
+    fn rlr_effect_sd<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        half_prior_tuple(py, self.inner.rlr_effect_sd)
+    }
+
+    /// Prior on the sd of the origin effects on ``RRF``.
+    #[getter]
+    fn rrf_effect_sd<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        half_prior_tuple(py, self.inner.rrf_effect_sd)
+    }
+
+    /// LKJ shape of the correlation of the two effects.
+    #[getter]
+    fn lkj_eta(&self) -> f64 {
+        self.inner.lkj_eta
+    }
+
+    /// Priors on ``log sigma_os`` and ``log sigma_pd``.
+    #[getter]
+    fn log_sigma<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyTuple>>> {
+        self.inner
+            .log_sigma
+            .iter()
+            .map(|&p| real_prior_tuple(py, p))
+            .collect()
+    }
+
+    fn __eq__(&self, other: PyRef<'_, Self>) -> bool {
+        self.inner == other.inner
+    }
+
+    fn __repr__(&self) -> String {
+        let p = &self.inner;
+        let half = |h: HalfPrior| match h {
+            HalfPrior::StudentT { nu, scale } => format!("(\"student_t\", {nu:?}, {scale:?})"),
+            HalfPrior::Normal { scale } => format!("(\"normal\", {scale:?})"),
+        };
+        let real = |r: RealPrior| match r {
+            RealPrior::StudentT {
+                nu,
+                location,
+                scale,
+            } => format!("(\"student_t\", {nu:?}, {location:?}, {scale:?})"),
+            RealPrior::Normal { mean, sd } => format!("(\"normal\", {mean:?}, {sd:?})"),
+        };
+        let pos = |v: PositivePrior| format!("{:?}", positive_prior_tuple(v));
+        format!(
+            "CompartmentalPriors(k_er={}, k_p={}, rlr={}, rrf={}, rlr_effect_sd={}, \
+             rrf_effect_sd={}, lkj_eta={:?}, log_sigma=[{}, {}])",
+            pos(p.k_er),
+            pos(p.k_p),
+            pos(p.rlr),
+            pos(p.rrf),
+            half(p.rlr_effect_sd),
+            half(p.rrf_effect_sd),
+            p.lkj_eta,
+            real(p.log_sigma[0]),
+            real(p.log_sigma[1]),
+        )
+    }
+}
+
+/// A setting given as a string, with its accepted names in order.
+fn named<T: Copy>(setting: &str, name: &str, values: &[(&str, T)]) -> PyResult<T> {
+    let lower = name.to_ascii_lowercase();
+    values
+        .iter()
+        .find(|(n, _)| *n == lower)
+        .map(|(_, v)| *v)
+        .ok_or_else(|| {
+            let expected: Vec<String> = values.iter().map(|(n, _)| format!("{n:?}")).collect();
+            PyValueError::new_err(format!(
+                "unknown {setting} {name:?}; expected one of {}",
+                expected.join(", ")
+            ))
+        })
+}
+
+/// The name of a setting's value.
+fn name_of<T: PartialEq>(value: T, values: &[(&'static str, T)]) -> &'static str {
+    values
+        .iter()
+        .find(|(_, v)| *v == value)
+        .map_or("?", |(n, _)| n)
+}
+
+const LIKELIHOODS: [(&str, CompartmentalLikelihood); 2] = [
+    ("normal", CompartmentalLikelihood::Normal),
+    ("lognormal", CompartmentalLikelihood::LogNormal),
+];
+const SCALES: [(&str, CompartmentalScale); 2] = [
+    ("amount", CompartmentalScale::Amount),
+    ("loss_ratio", CompartmentalScale::LossRatio),
+];
+const PAID_RESPONSES: [(&str, PaidResponse); 2] = [
+    ("cumulative", PaidResponse::Cumulative),
+    ("incremental", PaidResponse::Incremental),
+];
+const FITTED: [(&str, Fitted); 4] = [
+    ("paid_and_outstanding", Fitted::PaidAndOutstanding),
+    ("paid_and_incurred", Fitted::PaidAndIncurred),
+    ("paid_only", Fitted::PaidOnly),
+    ("incurred_only", Fitted::IncurredOnly),
+];
+const RATE_ORDERS: [(&str, RateOrder); 2] =
+    [("free", RateOrder::Free), ("ordered", RateOrder::Ordered)];
+const STARTS: [(&str, CompartmentalStart); 2] = [
+    ("data", CompartmentalStart::Data),
+    ("prior_centre", CompartmentalStart::PriorCentre),
+];
+
+/// Gesmann and Morris' (2020) hierarchical compartmental reserving model
+/// with one outstanding compartment, their model 1
+/// (``docs/design/reserving-compartmental.md``). Claims flow from exposure
+/// into outstanding as they are reported, at rate ``k_er``, and from
+/// outstanding into paid as they settle, at rate ``k_p``. For origin ``i``
+/// with premium ``P_i`` and development time ``t`` in years, with
+/// ``g(t) = (exp(-k_p t) - exp(-k_er t)) / (k_er - k_p)``::
+///
+///     OS_i(t) = P_i RLR_i k_er g(t)
+///     PD_i(t) = P_i RLR_i RRF_i [(1 - exp(-k_p t)) - k_p g(t)]
+///
+/// so ``RLR_i`` is the reported loss ratio, ``RRF_i`` the reserve
+/// robustness factor (paid over reported) and ``RLR_i RRF_i`` the ultimate
+/// loss ratio. The rates are shared; ``RLR`` and ``RRF`` vary by origin with
+/// correlated effects (LKJ prior on the correlation) on the priors' ``o``
+/// scale. Outstanding and cumulative paid amounts are normal about these
+/// curves, each type with its own sigma. NUTS samples the posterior on a
+/// pilot run's dense scale, with the gradient from dual numbers.
+///
+/// ``priors`` is required (``CompartmentalPriors.gesmann_morris()`` is the
+/// paper's case study). ``likelihood``, ``scale``, ``paid_response`` and
+/// ``fitted`` take the values of model 1 by default; their other values
+/// are accepted here, but ``fit`` raises ``ValueError`` saying they are not
+/// yet built.
+///
+/// An origin with a premium and no observed cell (the papers' training
+/// triangle has one) draws its effects from the population in each
+/// simulation. The reserve is the paid at the square's last age less the
+/// latest paid; the square has as many ages as the premium column has
+/// origins, and the origin and development grains must be equal. One
+/// ``seed`` replays a fit exactly: the chains and the simulations each
+/// take a seed derived from it.
+///
+/// The means are exactly invariant under swapping the two rates (with
+/// ``RLR`` and ``RRF`` rescaled), so only the priors tell the two modes
+/// apart. Under ``rate_order="free"`` (the paper's priors) the fit warns
+/// when any posterior draw has ``k_er <= k_p``; ``rate_order="ordered"``
+/// samples ``k_er = k_p + exp(delta)``, the same priors restricted to
+/// ``k_er > k_p``.
+///
+/// Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
+/// per chain, any divergent transition) and rate swaps do not fail the
+/// fit: ``fit`` raises one ``UserWarning`` listing them, and they stay in
+/// ``CompartmentalFit.diagnostics``. With the defaults, 194 of 200 seeds on
+/// company 337 passed every threshold; each of the other six just missed
+/// one.
+///
+/// Parameters
+/// ----------
+/// priors : CompartmentalPriors
+///     The priors; required.
+/// likelihood : str
+///     ``"normal"`` (model 1); ``"lognormal"`` is not yet built.
+/// scale : str
+///     ``"amount"`` (model 1); ``"loss_ratio"`` is not yet built.
+/// paid_response : str
+///     ``"cumulative"`` (model 1); ``"incremental"`` is not yet built.
+/// fitted : str
+///     ``"paid_and_outstanding"`` (model 1); ``"paid_and_incurred"``,
+///     ``"paid_only"`` and ``"incurred_only"`` are not yet built.
+/// rate_order : str
+///     ``"free"`` or ``"ordered"``, as above.
+/// start : str
+///     Where the pilot run starts: ``"data"``, a least-squares fit of the
+///     population curve (the prior centre if that fit fails), or
+///     ``"prior_centre"``.
+/// chains, tune, draws : int
+///     NUTS chains, warm-up draws per chain and kept draws per chain.
+/// n_sims : int
+///     Number of predictive simulations; positive.
+/// seed : int
+///     Seed of the chains and of the simulations.
+/// target_accept : float
+///     Target mean acceptance rate (the paper's ``adapt_delta``, 0.99).
+/// max_depth : int
+///     Largest NUTS tree depth.
+///
+/// Examples
+/// --------
+/// >>> import warnings
+/// >>> from prospicio.reserving import Compartmental, CompartmentalPriors, Triangle
+/// >>> paid = [[9.6, 22.8, 33.3, 40.3, 45.1], [7.9, 19.5, 29.6, 36.8],
+/// ...         [8.7, 24.3, 35.4], [13.3, 33.0], [11.4]]
+/// >>> incurred = [[62.7, 64.0, 65.6, 65.3, 62.3], [62.1, 56.7, 56.6, 56.8],
+/// ...             [64.0, 61.5, 63.2], [73.9, 75.1], [77.1]]
+/// >>> premium = [104.4, 88.9, 86.0, 99.3, 104.9]
+/// >>> rows = [(1988 + w, 12 * (d + 1), paid[w][d], incurred[w][d], premium[w])
+/// ...         for w in range(5) for d in range(len(paid[w]))]
+/// >>> origin, age, pd, inc, prem = map(list, zip(*rows))
+/// >>> tri = Triangle.from_long(
+/// ...     origin, age, {"paid": pd, "incurred": inc, "premium": prem})
+/// >>> model = Compartmental(CompartmentalPriors.gesmann_morris(), chains=2,
+/// ...                       tune=150, draws=150, target_accept=0.9, n_sims=1000)
+/// >>> # Check the priors first: the mean paid of 1988 at age 60 over its premium.
+/// >>> paths = model.prior_predictive(tri, "premium", n_sims=1000)
+/// >>> ratio = paths["paid"].marginal(("1988", 60))
+/// >>> 0.2 < ratio.quantile(0.05) / 104.4 and ratio.quantile(0.95) / 104.4 < 1.2
+/// True
+/// >>> with warnings.catch_warnings():
+/// ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+/// ...     fit = model.fit(tri, "paid", "premium", incurred="incurred")
+/// >>> fit.reserves.dims, fit.parameter_names[0]
+/// (['origin'], 'k_er')
+#[pyclass(name = "Compartmental", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyCompartmental {
+    inner: Compartmental,
+}
+
+#[pymethods]
+impl PyCompartmental {
+    #[new]
+    #[pyo3(signature = (
+        priors,
+        *,
+        likelihood = "normal",
+        scale = "amount",
+        paid_response = "cumulative",
+        fitted = "paid_and_outstanding",
+        rate_order = "free",
+        start = "data",
+        chains = 4,
+        tune = 1000,
+        draws = 2000,
+        n_sims = 10_000,
+        seed = 0,
+        target_accept = 0.99,
+        max_depth = 10,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        priors: PyRef<'_, PyCompartmentalPriors>,
+        likelihood: &str,
+        scale: &str,
+        paid_response: &str,
+        fitted: &str,
+        rate_order: &str,
+        start: &str,
+        chains: usize,
+        tune: usize,
+        draws: usize,
+        n_sims: usize,
+        seed: u64,
+        target_accept: f64,
+        max_depth: u64,
+    ) -> PyResult<Self> {
+        if n_sims == 0 {
+            return Err(PyValueError::new_err("n_sims must be positive"));
+        }
+        Ok(Self {
+            inner: Compartmental {
+                priors: priors.inner,
+                likelihood: named("likelihood", likelihood, &LIKELIHOODS)?,
+                scale: named("scale", scale, &SCALES)?,
+                paid_response: named("paid_response", paid_response, &PAID_RESPONSES)?,
+                fitted: named("fitted", fitted, &FITTED)?,
+                rate_order: named("rate_order", rate_order, &RATE_ORDERS)?,
+                start: named("start", start, &STARTS)?,
+                sampler: BayesSampler {
+                    chains,
+                    tune,
+                    draws,
+                    seed: 0,
+                    target_accept,
+                    max_depth,
+                },
+                n_sims,
+                seed,
+            },
+        })
+    }
+
+    /// The priors.
+    #[getter]
+    fn priors(&self) -> PyCompartmentalPriors {
+        PyCompartmentalPriors {
+            inner: self.inner.priors,
+        }
+    }
+
+    /// The likelihood: ``"normal"`` or ``"lognormal"``.
+    #[getter]
+    fn likelihood(&self) -> &'static str {
+        name_of(self.inner.likelihood, &LIKELIHOODS)
+    }
+
+    /// The response scale: ``"amount"`` or ``"loss_ratio"``.
+    #[getter]
+    fn scale(&self) -> &'static str {
+        name_of(self.inner.scale, &SCALES)
+    }
+
+    /// The paid response: ``"cumulative"`` or ``"incremental"``.
+    #[getter]
+    fn paid_response(&self) -> &'static str {
+        name_of(self.inner.paid_response, &PAID_RESPONSES)
+    }
+
+    /// The responses fitted.
+    #[getter]
+    fn fitted(&self) -> &'static str {
+        name_of(self.inner.fitted, &FITTED)
+    }
+
+    /// How the rates are kept apart: ``"free"`` or ``"ordered"``.
+    #[getter]
+    fn rate_order(&self) -> &'static str {
+        name_of(self.inner.rate_order, &RATE_ORDERS)
+    }
+
+    /// Where the pilot run starts: ``"data"`` or ``"prior_centre"``.
+    #[getter]
+    fn start(&self) -> &'static str {
+        name_of(self.inner.start, &STARTS)
+    }
+
+    /// Number of NUTS chains.
+    #[getter]
+    fn chains(&self) -> usize {
+        self.inner.sampler.chains
+    }
+
+    /// Warm-up draws per chain.
+    #[getter]
+    fn tune(&self) -> usize {
+        self.inner.sampler.tune
+    }
+
+    /// Kept draws per chain.
+    #[getter]
+    fn draws(&self) -> usize {
+        self.inner.sampler.draws
+    }
+
+    /// Number of predictive simulations.
+    #[getter]
+    fn n_sims(&self) -> usize {
+        self.inner.n_sims
+    }
+
+    /// Seed of the chains and of the simulations.
+    #[getter]
+    fn seed(&self) -> u64 {
+        self.inner.seed
+    }
+
+    /// Target mean acceptance rate.
+    #[getter]
+    fn target_accept(&self) -> f64 {
+        self.inner.sampler.target_accept
+    }
+
+    /// Largest NUTS tree depth.
+    #[getter]
+    fn max_depth(&self) -> u64 {
+        self.inner.sampler.max_depth
+    }
+
+    /// Samples the posterior of paid and outstanding of a single-segment
+    /// cumulative triangle, with each origin's premium from another column
+    /// (its latest value), and simulates the future cells of the square and
+    /// the reserves. Outstanding comes from ``outstanding``, a column of
+    /// outstanding amounts, or from ``incurred``, a column of incurred
+    /// amounts less paid cell by cell (the papers' outstanding on company
+    /// 337 is incurred with bulk and IBNR less paid); give exactly one.
+    /// Raises one ``UserWarning`` listing the failed diagnostics and any
+    /// rate swap.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative, with one segment.
+    /// paid : str
+    ///     Cumulative paid amounts.
+    /// premium : str
+    ///     The premium of each origin; the fit's origins are this column's.
+    /// outstanding : str, optional
+    ///     A column of outstanding amounts.
+    /// incurred : str, optional
+    ///     A column of incurred amounts.
+    ///
+    /// Returns
+    /// -------
+    /// CompartmentalFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a setting of the model is not yet built; if not exactly one
+    ///     of ``outstanding`` and ``incurred`` is given; if a column is
+    ///     missing, the triangle has several segments, a premium is missing
+    ///     or not positive, or the origin and development grains differ; if
+    ///     a prior or sampler setting is invalid; or if there are no more
+    ///     observed cells than parameters.
+    #[pyo3(signature = (triangle, paid, premium, *, outstanding = None, incurred = None))]
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        paid: &str,
+        premium: &str,
+        outstanding: Option<&str>,
+        incurred: Option<&str>,
+    ) -> PyResult<PyCompartmentalFit> {
+        let os = match (outstanding, incurred) {
+            (Some(c), None) => Outstanding::Column(c),
+            (None, Some(c)) => Outstanding::FromIncurred(c),
+            _ => {
+                return Err(PyValueError::new_err(
+                    "give exactly one of outstanding (a column of outstanding amounts) and \
+                     incurred (a column of incurred amounts)",
+                ));
+            }
+        };
+        let (model, tri) = (&self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| model.fit(tri, paid, os, premium))
+            .map_err(err)?;
+        warn_diagnostics(py, "Compartmental", &inner.diagnostics.warnings)?;
+        Ok(PyCompartmentalFit { inner })
+    }
+
+    /// Paths of the mean outstanding and cumulative paid of each origin of
+    /// the premium column at each age of the square, drawn from the priors
+    /// alone (Gesmann and Morris, sec. 3.4): a check of a prior set before
+    /// fitting. The paths are means, without the likelihood's noise, which
+    /// under the preset's effectively flat prior on ``log sigma`` would
+    /// swamp them. The seed is derived from ``seed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative, with one segment.
+    /// premium : str
+    ///     The premium of each origin.
+    /// n_sims : int
+    ///     Number of paths; positive.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``{"outstanding": PredictiveDistribution, "paid":
+    ///     PredictiveDistribution}``, each with dimensions ``origin`` and
+    ///     ``age`` (months).
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a prior setting is invalid, ``n_sims`` is 0, the premium
+    ///     column is missing or not positive, or the grains differ.
+    #[pyo3(signature = (triangle, premium, n_sims = 1000))]
+    fn prior_predictive<'py>(
+        &self,
+        py: Python<'py>,
+        triangle: PyRef<'_, PyTriangle>,
+        premium: &str,
+        n_sims: usize,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let (model, tri) = (&self.inner, &triangle.inner);
+        let paths = py
+            .detach(|| model.prior_predictive(tri, premium, n_sims))
+            .map_err(err)?;
+        let out = PyDict::new(py);
+        out.set_item(
+            "outstanding",
+            PyPredictiveDistribution {
+                inner: paths.outstanding,
+            },
+        )?;
+        out.set_item("paid", PyPredictiveDistribution { inner: paths.paid })?;
+        Ok(out)
+    }
+
+    fn __repr__(&self) -> String {
+        let (m, s) = (&self.inner, &self.inner.sampler);
+        format!(
+            "Compartmental(likelihood={:?}, scale={:?}, paid_response={:?}, fitted={:?}, \
+             rate_order={:?}, start={:?}, chains={}, tune={}, draws={}, n_sims={}, seed={})",
+            name_of(m.likelihood, &LIKELIHOODS),
+            name_of(m.scale, &SCALES),
+            name_of(m.paid_response, &PAID_RESPONSES),
+            name_of(m.fitted, &FITTED),
+            name_of(m.rate_order, &RATE_ORDERS),
+            name_of(m.start, &STARTS),
+            s.chains,
+            s.tune,
+            s.draws,
+            m.n_sims,
+            m.seed,
+        )
+    }
+}
+
+/// A fitted ``Compartmental``: the posterior, its MCMC diagnostics, and the
+/// posterior predictive distributions of the reserves and of the future
+/// paid and outstanding cells, all from the same simulations.
+#[pyclass(name = "CompartmentalFit", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyCompartmentalFit {
+    inner: CompartmentalFit,
+}
+
+#[pymethods]
+impl PyCompartmentalFit {
+    /// Origin period of each component, those of the premium column.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.inner.origins.iter().map(ToString::to_string).collect()
+    }
+
+    /// Each origin's premium.
+    #[getter]
+    fn premium(&self) -> Vec<f64> {
+        self.inner.premium.clone()
+    }
+
+    /// Each origin's latest observed paid (0 with none).
+    #[getter]
+    fn latest_paid(&self) -> Vec<f64> {
+        self.inner.latest_paid.clone()
+    }
+
+    /// The origins with no observed cell, whose effects each simulation
+    /// draws from the population.
+    #[getter]
+    fn population_origins(&self) -> Vec<String> {
+        self.inner
+            .population_origins
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    /// Joint posterior predictive distribution of each origin's reserve, the
+    /// paid at the square's last age less the latest paid: dimension
+    /// ``"origin"``, laid out as ``OdpBootstrapFit.reserves``.
+    #[getter]
+    fn reserves(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    /// Posterior predictive cumulative paid of each future cell of the
+    /// square: dimensions ``"origin"`` and ``"age"`` (months).
+    #[getter]
+    fn paid(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.paid.clone(),
+        }
+    }
+
+    /// Posterior predictive outstanding of each future cell of the square,
+    /// laid out as ``paid``.
+    #[getter]
+    fn outstanding(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.outstanding.clone(),
+        }
+    }
+
+    /// Each origin's posterior mean ultimate loss ratio ``RLR_i RRF_i``,
+    /// without process error past the square.
+    #[getter]
+    fn ultimate_loss_ratio(&self) -> Vec<f64> {
+        self.inner.ultimate_loss_ratio.clone()
+    }
+
+    /// The number of posterior draws with ``k_er <= k_p`` (0 under
+    /// ``rate_order="ordered"``).
+    #[getter]
+    fn rate_swaps(&self) -> usize {
+        self.inner.rate_swaps
+    }
+
+    /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
+    /// ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
+    /// failed threshold and one for rate swaps; empty when all is well).
+    #[getter]
+    fn diagnostics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        diagnostics_dict(py, &self.inner.diagnostics)
+    }
+
+    /// Parameter names: ``k_er``, ``k_p``, ``RLR``, ``RRF``, ``sigma_os``,
+    /// ``sigma_pd``, ``RLR[o]`` and ``RRF[o]`` for each origin with an
+    /// observed cell, then on the scale the paper prints ``b_ker``,
+    /// ``b_kp``, ``b_RLR``, ``b_RRF``, ``tau_RLR``, ``tau_RRF``, ``rho``,
+    /// ``log_sigma_os`` and ``log_sigma_pd``.
+    #[getter]
+    fn parameter_names(&self) -> Vec<String> {
+        self.inner.posterior.names().to_vec()
+    }
+
+    /// Posterior draws, one row per draw (chain by chain), one column per
+    /// parameter in the order of ``parameter_names``.
+    #[getter]
+    fn draws(&self) -> Vec<Vec<f64>> {
+        let p = self.inner.posterior.dim().max(1);
+        self.inner
+            .posterior
+            .values()
+            .chunks(p)
+            .map(<[f64]>::to_vec)
+            .collect()
+    }
+
+    /// Number of chains.
+    #[getter]
+    fn chains(&self) -> usize {
+        self.inner.posterior.chains()
+    }
+
+    /// Posterior summary, one row per parameter, as ``MeyersFit.summary``.
+    /// Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let fit = &self.inner;
+        let s = py.detach(|| fit.summary()).map_err(err)?;
+        summary_frame(py, &s)
+    }
+
+    /// PSIS-LOO of the observed cells, outstanding cells first and then
+    /// paid cells, with each cell's relative efficiency from the chains.
+    /// The pointwise term is the full normal log density of each amount
+    /// (brms' ``log_lik``), so compare it only with fits of the same
+    /// amounts. ``loo_by_type`` splits the elpd.
+    ///
+    /// Returns
+    /// -------
+    /// Elpd
+    fn loo(&self, py: Python<'_>) -> PyResult<PyElpd> {
+        let fit = &self.inner;
+        let l = py.detach(|| fit.loo()).map_err(err)?;
+        Ok(PyElpd::from_loo(l.loo))
+    }
+
+    /// The elpd of ``loo`` split by type: a dict with ``n_outstanding``
+    /// (the number of outstanding cells, which come first in the pointwise
+    /// values), ``elpd_outstanding`` and ``elpd_paid``.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    fn loo_by_type<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let fit = &self.inner;
+        let l = py.detach(|| fit.loo()).map_err(err)?;
+        let out = PyDict::new(py);
+        out.set_item("n_outstanding", l.n_outstanding)?;
+        out.set_item("elpd_outstanding", l.elpd_outstanding)?;
+        out.set_item("elpd_paid", l.elpd_paid)?;
+        Ok(out)
+    }
+
+    /// One row per origin: ``origin``, ``premium``, ``latest_paid``, the
+    /// ``mean`` and ``std_dev`` of the posterior predictive reserve, and the
+    /// posterior mean ``ultimate_loss_ratio``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row: the total ``premium`` and ``latest_paid``, and the ``mean``
+    /// and ``std_dev`` of the posterior predictive total reserve. Needs
+    /// pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// One row per future paid cell: ``origin``, ``development`` (age in
+    /// months), and the ``mean``, ``std_dev``, ``q05``, ``q50`` and ``q95``
+    /// of the posterior predictive cumulative paid. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn paid_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.paid_table().map_err(err)?)
+    }
+
+    /// The same for the future outstanding cells. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn outstanding_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.outstanding_table().map_err(err)?)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CompartmentalFit(origins={}, draws={}, n_sims={}, rate_swaps={}, warnings={})",
+            self.inner.origins.len(),
+            self.inner.posterior.n_draws(),
+            self.inner.reserves.n_sims(),
+            self.inner.rate_swaps,
+            self.inner.diagnostics.warnings.len(),
         )
     }
 }

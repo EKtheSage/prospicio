@@ -1,0 +1,2568 @@
+//! Gesmann and Morris' hierarchical compartmental reserving model with one
+//! outstanding compartment (`docs/design/reserving-compartmental.md`):
+//! paid and outstanding fitted jointly from one set of interpretable
+//! parameters, sampled with NUTS on a density written once over
+//! [`Scalar`] and differentiated with the chunked dual type (decision 4).
+
+use prospicio_bayes::elpd::Loo;
+use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
+use prospicio_core::{Grain, Lag, Period, StreamRng};
+use prospicio_math::special::{norm_cdf, norm_quantile};
+use prospicio_prob::{
+    Distribution, Gamma, InputHasher, KeyValue, PredictiveDistribution, Provenance,
+};
+
+use super::dual::{CHUNK, gradient};
+use super::laplace::{Posterior, Whitened, mode};
+use super::scalar::{Scalar, exprel_neg};
+use super::{Diagnostics, Stream, derive_seed, pilot_seed};
+use crate::bootstrap::component_sums;
+use crate::error::{Error, Result};
+use crate::segments::FitTable;
+use crate::triangle::{Segment, Triangle};
+
+/// The one-compartment closed form (decision 2) per unit of premium:
+/// `OS(t) / (Π RLR) = k_er g(t)` and
+/// `PD(t) / (Π RLR RRF) = (1 - e^(-k_p t)) - k_p g(t)`, with
+/// `g(t) = t e^(-k_p t) (1 - e^(-Δ t)) / (Δ t)` and `Δ = k_er - k_p`,
+/// finite and smooth through `k_er = k_p` by [`exprel_neg`].
+pub(crate) fn one_os<S: Scalar>(k_er: S, k_p: S, t: f64) -> (S, S) {
+    let decay = k_p * (-t);
+    let g = decay.exp() * t * exprel_neg((k_er - k_p) * t);
+    (k_er * g, -decay.exp_m1() - k_p * g)
+}
+
+/// Where the outstanding amounts come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outstanding<'a> {
+    /// A column of outstanding amounts (a case reserve, or one with bulk and
+    /// IBNR: the user's choice of column).
+    Column(&'a str),
+    /// A column of incurred amounts: outstanding is incurred less paid,
+    /// cell by cell, where both are observed. Gesmann and Morris' outstanding
+    /// on company 337 is incurred with bulk and IBNR less paid.
+    FromIncurred(&'a str),
+}
+
+/// The likelihood of the observed amounts (decision 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CompartmentalLikelihood {
+    /// Normal, each response type with its own sigma: Gesmann and Morris'
+    /// model 1.
+    #[default]
+    Normal,
+    /// Log-normal, the paper's model 2: not yet built ([`Error::Bayes`]).
+    LogNormal,
+}
+
+/// The scale of the response (decision 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Scale {
+    /// Amounts, as model 1.
+    #[default]
+    Amount,
+    /// Loss ratios to premium, as model 2: not yet built ([`Error::Bayes`]).
+    LossRatio,
+}
+
+/// The paid response (decision 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaidResponse {
+    /// Cumulative paid, as model 1.
+    #[default]
+    Cumulative,
+    /// Incremental paid, as model 2: not yet built ([`Error::Bayes`]).
+    Incremental,
+}
+
+/// Which responses are fitted (decision 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Fitted {
+    /// Paid and outstanding, as both of the paper's models.
+    #[default]
+    PaidAndOutstanding,
+    /// Paid and incurred: not yet built ([`Error::Bayes`]).
+    PaidAndIncurred,
+    /// Paid alone: not yet built ([`Error::Bayes`]); from paid alone only
+    /// `RLR × RRF` is identified (decision 2).
+    PaidOnly,
+    /// Incurred alone: not yet built ([`Error::Bayes`]).
+    IncurredOnly,
+}
+
+/// How the two rates are kept apart (decision 2, "Identification"; open
+/// decision 4, settled as (c)). The means are exactly invariant under the
+/// swap `(k_er, k_p, RLR_i, RRF_i) -> (k_p, k_er, RLR_i k_er / k_p,
+/// RRF_i k_p / k_er)`, so only the priors tell the two modes apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RateOrder {
+    /// The paper's independent rate priors; the fit warns (in its
+    /// diagnostics) when any posterior draw has `k_er <= k_p`.
+    #[default]
+    Free,
+    /// `k_er = k_p + e^delta`: the same rate priors restricted to
+    /// `k_er > k_p` (the prior on `k_er`'s `o` is kept, with the Jacobian of
+    /// the map), for a user who widens the rate priors.
+    Ordered,
+}
+
+/// Where the sampler's pilot run starts (decision 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CompartmentalStart {
+    /// A least-squares fit of the population curve (shared rates and
+    /// ratios, no origin effects), mapped to the intercepts, with each
+    /// `log sigma` at the log of its type's residual sd; it falls back to
+    /// [`PriorCentre`](Self::PriorCentre) when that fit fails.
+    #[default]
+    Data,
+    /// Every `o` at 0 (the prior medians), each `log sigma` at the log of
+    /// its type's residual sd about the prior-median curve.
+    PriorCentre,
+}
+
+/// A prior on a positive parameter `θ` (decision 2).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PositivePrior {
+    /// `θ = median e^(sd o)` with `o ~ N(0, 1)`: log-normal with that
+    /// median and log-scale sd, written as the paper writes it.
+    LogNormal { median: f64, sd: f64 },
+}
+
+/// A prior on a standard deviation, half of a distribution centred on 0.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HalfPrior {
+    /// Half Student-t with `nu` degrees of freedom and scale `scale`.
+    StudentT { nu: f64, scale: f64 },
+    /// Half normal with scale `scale`.
+    Normal { scale: f64 },
+}
+
+/// A prior on a real parameter.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RealPrior {
+    /// Student-t with `nu` degrees of freedom, location and scale (Cauchy
+    /// at `nu = 1`).
+    StudentT { nu: f64, location: f64, scale: f64 },
+    /// Normal with mean and sd.
+    Normal { mean: f64, sd: f64 },
+}
+
+/// The priors of [`Compartmental`], a required argument (open decision 2,
+/// settled as (a)): the rates and ratios are specific to a line and a book,
+/// so the library does not choose them silently. Check a set with
+/// [`Compartmental::prior_predictive`] before fitting.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CompartmentalPriors {
+    /// The reporting rate `k_er`.
+    pub k_er: PositivePrior,
+    /// The payment rate `k_p`.
+    pub k_p: PositivePrior,
+    /// The reported loss ratio `RLR` (its population value; each origin
+    /// adds its effect on the `o` scale).
+    pub rlr: PositivePrior,
+    /// The reserve robustness factor `RRF`, paid over reported.
+    pub rrf: PositivePrior,
+    /// The sd `τ₁` of the origin effects on `RLR`'s `o` scale.
+    pub rlr_effect_sd: HalfPrior,
+    /// The sd `τ₂` of the origin effects on `RRF`'s `o` scale.
+    pub rrf_effect_sd: HalfPrior,
+    /// The LKJ shape of the correlation of the two effects (1: uniform on
+    /// `(-1, 1)`).
+    pub lkj_eta: f64,
+    /// Priors on `log σ_OS` and `log σ_PD`, in that order.
+    pub log_sigma: [RealPrior; 2],
+}
+
+impl CompartmentalPriors {
+    /// Gesmann and Morris' (2020) case study, model 1 (sec. 5.2.1, code
+    /// 7.2.2): `k_er = 3 e^(0.1 o)`, `k_p = e^(0.1 o)`, `RLR = 0.7 e^(0.2 o)`,
+    /// `RRF = 0.8 e^(0.1 o)`, origin effect sds half `student_t(10, 0, 0.2)`
+    /// and `student_t(10, 0, 0.1)` on the `o` scale, LKJ(1), and
+    /// `student_t(1, 0, 1000)` on each `log σ` (brms' class `b` prior on
+    /// `sigma ~ 0 + deltaf`, effectively flat). On company 337 the data pull
+    /// the rates 5 to 9 prior sds from these medians (decision 2): the
+    /// posterior is a compromise with the preset, not a description of it.
+    pub fn gesmann_morris() -> Self {
+        let cauchy = RealPrior::StudentT {
+            nu: 1.0,
+            location: 0.0,
+            scale: 1000.0,
+        };
+        Self {
+            k_er: PositivePrior::LogNormal {
+                median: 3.0,
+                sd: 0.1,
+            },
+            k_p: PositivePrior::LogNormal {
+                median: 1.0,
+                sd: 0.1,
+            },
+            rlr: PositivePrior::LogNormal {
+                median: 0.7,
+                sd: 0.2,
+            },
+            rrf: PositivePrior::LogNormal {
+                median: 0.8,
+                sd: 0.1,
+            },
+            rlr_effect_sd: HalfPrior::StudentT {
+                nu: 10.0,
+                scale: 0.2,
+            },
+            rrf_effect_sd: HalfPrior::StudentT {
+                nu: 10.0,
+                scale: 0.1,
+            },
+            lkj_eta: 1.0,
+            log_sigma: [cauchy, cauchy],
+        }
+    }
+
+    fn validate(&self) -> Result<()> {
+        let positive = |name: &'static str, value: f64| {
+            if value.is_finite() && value > 0.0 {
+                Ok(())
+            } else {
+                Err(Error::InvalidSetting {
+                    name,
+                    value,
+                    expected: "a finite, positive prior setting",
+                })
+            }
+        };
+        for (median_name, sd_name, prior) in [
+            ("k_er median", "k_er sd", self.k_er),
+            ("k_p median", "k_p sd", self.k_p),
+            ("rlr median", "rlr sd", self.rlr),
+            ("rrf median", "rrf sd", self.rrf),
+        ] {
+            let PositivePrior::LogNormal { median, sd } = prior;
+            positive(median_name, median)?;
+            positive(sd_name, sd)?;
+        }
+        for (nu_name, scale_name, prior) in [
+            (
+                "rlr_effect_sd nu",
+                "rlr_effect_sd scale",
+                self.rlr_effect_sd,
+            ),
+            (
+                "rrf_effect_sd nu",
+                "rrf_effect_sd scale",
+                self.rrf_effect_sd,
+            ),
+        ] {
+            match prior {
+                HalfPrior::StudentT { nu, scale } => {
+                    positive(nu_name, nu)?;
+                    positive(scale_name, scale)?;
+                }
+                HalfPrior::Normal { scale } => positive(scale_name, scale)?,
+            }
+        }
+        positive("lkj_eta", self.lkj_eta)?;
+        for prior in self.log_sigma {
+            match prior {
+                RealPrior::StudentT {
+                    nu,
+                    location,
+                    scale,
+                } => {
+                    positive("log_sigma nu", nu)?;
+                    positive("log_sigma scale", scale)?;
+                    if !location.is_finite() {
+                        return Err(Error::InvalidSetting {
+                            name: "log_sigma location",
+                            value: location,
+                            expected: "a finite prior location",
+                        });
+                    }
+                }
+                RealPrior::Normal { mean, sd } => {
+                    positive("log_sigma sd", sd)?;
+                    if !mean.is_finite() {
+                        return Err(Error::InvalidSetting {
+                            name: "log_sigma mean",
+                            value: mean,
+                            expected: "a finite prior mean",
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Below this prior mass on `k_er > k_p`, [`Compartmental::prior_predictive`]
+/// under [`RateOrder::Ordered`] is an error: the restricted prior is then
+/// a sliver at the boundary rather than a prior worth checking.
+const MIN_ORDERED_MASS: f64 = 1e-6;
+
+/// The restriction `k_er > k_p` on the rate intercepts' standard normals
+/// `(b_ker, b_kp)` as `z > a`, where `z = (s_er b_ker - s_p b_kp) / s` is
+/// standard normal and `s = sqrt(s_er^2 + s_p^2)`: `(a, s)`. The priors'
+/// mass on the restriction is `Φ(-a)`.
+fn rate_order_bound(pr: CompartmentalPriors) -> (f64, f64) {
+    let (m_er, s_er) = lognormal(pr.k_er);
+    let (m_p, s_p) = lognormal(pr.k_p);
+    let s = s_er.hypot(s_p);
+    ((m_p / m_er).ln() / s, s)
+}
+
+/// The rate intercepts' standard normals `(b_ker, b_kp)` drawn exactly
+/// from their priors restricted to `k_er > k_p`, a half-plane: the
+/// projection `z` of [`rate_order_bound`] from its normal truncated to
+/// `z > a` by the inverse of the upper tail (`Φ(-z) = u Φ(-a)`, accurate
+/// however far out `a` is), and the orthogonal projection from its normal.
+fn ordered_rates(pr: CompartmentalPriors, rng: &mut StreamRng) -> (f64, f64) {
+    let (_, s_er) = lognormal(pr.k_er);
+    let (_, s_p) = lognormal(pr.k_p);
+    let (a, s) = rate_order_bound(pr);
+    let z = -norm_quantile(norm_cdf(-a) * rng.next_open01());
+    let y = norm_quantile(rng.next_open01());
+    ((s_er * z + s_p * y) / s, (s_er * y - s_p * z) / s)
+}
+
+/// `(median, sd)` of a [`PositivePrior`].
+fn lognormal(prior: PositivePrior) -> (f64, f64) {
+    let PositivePrior::LogNormal { median, sd } = prior;
+    (median, sd)
+}
+
+/// The log density of a half prior on `τ = e^l`, in `l`, with the Jacobian
+/// `l` and without constants.
+fn half_on_log<S: Scalar>(l: S, prior: HalfPrior) -> S {
+    match prior {
+        HalfPrior::StudentT { nu, scale } => {
+            let x = l.exp() / scale;
+            l - (x * x / nu).ln_1p() * ((nu + 1.0) / 2.0)
+        }
+        HalfPrior::Normal { scale } => {
+            let x = l.exp() / scale;
+            l - x * x * 0.5
+        }
+    }
+}
+
+/// The log density of a real prior at `x`, without constants.
+fn real_prior<S: Scalar>(x: S, prior: RealPrior) -> S {
+    match prior {
+        RealPrior::StudentT {
+            nu,
+            location,
+            scale,
+        } => {
+            let r = (x - location) / scale;
+            -(r * r / nu).ln_1p() * ((nu + 1.0) / 2.0)
+        }
+        RealPrior::Normal { mean, sd } => {
+            let r = (x - mean) / sd;
+            -(r * r * 0.5)
+        }
+    }
+}
+
+/// About the median of a half prior: `0.6745` times its scale (the half
+/// normal's; the half Student-t(10)'s is `0.6998`), for the start only.
+fn half_median(prior: HalfPrior) -> f64 {
+    match prior {
+        HalfPrior::StudentT { scale, .. } | HalfPrior::Normal { scale } => 0.6745 * scale,
+    }
+}
+
+/// One draw of a half prior.
+fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
+    let z = norm_quantile(rng.next_open01()).abs();
+    match prior {
+        HalfPrior::StudentT { nu, scale } => {
+            let chi2 = Gamma::new(nu / 2.0, 2.0)
+                .expect("nu was validated")
+                .sample(rng, 1)[0];
+            scale * z / (chi2 / nu).sqrt()
+        }
+        HalfPrior::Normal { scale } => scale * z,
+    }
+}
+
+/// Gesmann and Morris' (2020) hierarchical compartmental reserving model
+/// with one outstanding compartment (`docs/design/reserving-compartmental.md`).
+/// Claims flow from exposure into outstanding as they are reported, at rate
+/// `k_er`, and from outstanding into paid as they settle, at rate `k_p`:
+///
+/// ```text
+/// dEX/dt = -k_er EX                      EX(0) = Π_i
+/// dOS/dt =  k_er RLR_i EX - k_p OS       OS(0) = 0
+/// dPD/dt =  k_p RRF_i OS                 PD(0) = 0
+/// ```
+///
+/// for origin `i` with premium `Π_i` and development time `t` in years. In
+/// closed form (the paper's Eq. 2), with `g(t) = (e^(-k_p t) - e^(-k_er t))
+/// / (k_er - k_p)` computed stably through `k_er = k_p`:
+///
+/// ```text
+/// OS_i(t) = Π_i RLR_i k_er g(t)
+/// PD_i(t) = Π_i RLR_i RRF_i [(1 - e^(-k_p t)) - k_p g(t)]
+/// ```
+///
+/// so `RLR_i` is the reported loss ratio, `RRF_i` the reserve robustness
+/// factor (paid over reported) and `RLR_i RRF_i` the ultimate loss ratio.
+/// The rates are shared; `RLR` and `RRF` vary by origin with correlated
+/// effects on the paper's standardised `o` scale (model 1, as its brms
+/// code):
+///
+/// ```text
+/// RLR_i = m_RLR e^(s_RLR (b_RLR + u_i1)),   RRF_i = m_RRF e^(s_RRF (b_RRF + u_i2))
+/// k_er = m_ker e^(s_ker b_ker),             k_p = m_kp e^(s_kp b_kp)
+/// u_i = diag(τ) L z_i,  z_i ~ N(0, I),  L L' = [[1, ρ], [ρ, 1]],  ρ ~ LKJ(η)
+/// b ~ N(0, 1),  τ_1, τ_2 ~ half priors,  log σ_OS, log σ_PD ~ real priors
+/// y_OS ~ N(OS_i(t), σ_OS²),  y_PD ~ N(PD_i(t), σ_PD²)   (cumulative paid)
+/// ```
+///
+/// with each `m e^(s o)` a [`PositivePrior::LogNormal`] of
+/// [`CompartmentalPriors`]. The priors are a required argument;
+/// [`CompartmentalPriors::gesmann_morris`] is the paper's case study.
+///
+/// NUTS samples the intercepts `b`, `log τ`, `atanh ρ`, the `z_i` of each
+/// origin with an observed cell and the two `log σ`, on a dense scale from a
+/// pilot run as [`Meyers`](super::Meyers) does: a scale whitened at a start
+/// point ([`CompartmentalStart`]), a pilot run of `tune` warm-up and
+/// `max(tune, 100)` kept draws per chain, then the pilot draws' mean and
+/// covariance. The gradient comes from the density written once over
+/// dual numbers (decision 4); a non-finite value counts as a divergence.
+///
+/// An origin with a positive premium and no observed cell (the papers'
+/// training triangle has none for its youngest accident year) has no `z`:
+/// each predictive simulation draws its effect from the population with the
+/// draw's `τ` and `ρ` (decision 2); the fit lists such origins in
+/// [`CompartmentalFit::population_origins`]. The reserve is the paid to the
+/// square's last age less the latest observed paid (decision 5): the square
+/// has as many ages as the premium column has origins, and an origin
+/// observed at that age has a reserve of 0. The origin and development
+/// grains must be equal.
+///
+/// The settings [`likelihood`](Self::likelihood), [`scale`](Self::scale),
+/// [`paid_response`](Self::paid_response) and [`fitted`](Self::fitted) take
+/// the values of the paper's model 1 only, for now; any other value is an
+/// [`Error::Bayes`] saying it is not yet built.
+///
+/// ```
+/// use prospicio_bayes::nuts::Sampler;
+/// use prospicio_reserving::bayes::{Compartmental, CompartmentalPriors, Outstanding};
+/// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+/// use prospicio_prob::{Distribution, KeyValue};
+///
+/// // Five origins of cumulative paid and incurred with premium.
+/// let paid: [&[f64]; 5] = [
+///     &[9.6, 22.8, 33.3, 40.3, 45.1],
+///     &[7.9, 19.5, 29.6, 36.8],
+///     &[8.7, 24.3, 35.4],
+///     &[13.3, 33.0],
+///     &[11.4],
+/// ];
+/// let incurred: [&[f64]; 5] = [
+///     &[62.7, 64.0, 65.6, 65.3, 62.3],
+///     &[62.1, 56.7, 56.6, 56.8],
+///     &[64.0, 61.5, 63.2],
+///     &[73.9, 75.1],
+///     &[77.1],
+/// ];
+/// let premium = [104.4, 88.9, 86.0, 99.3, 104.9];
+/// let (mut origin, mut age, mut pd, mut inc, mut prem) = (vec![], vec![], vec![], vec![], vec![]);
+/// for w in 0..5 {
+///     for d in 0..paid[w].len() {
+///         origin.push(Month::january(1988 + w as i32));
+///         age.push(12 * (d as u32 + 1));
+///         pd.push(paid[w][d]);
+///         inc.push(incurred[w][d]);
+///         prem.push(premium[w]);
+///     }
+/// }
+/// let tri = Triangle::from_long(&Long {
+///     keys: &[],
+///     origin: &origin,
+///     development: DevelopmentColumn::Age(&age),
+///     values: &[("paid", &pd), ("incurred", &inc), ("premium", &prem)],
+///     origin_grain: Grain::Year,
+///     development_grain: Grain::Year,
+///     cumulative: true,
+/// })?;
+/// // The paper's case study priors; a short run for the example.
+/// let preset = Compartmental::new(CompartmentalPriors::gesmann_morris());
+/// let model = Compartmental {
+///     sampler: Sampler { chains: 2, tune: 150, draws: 150, target_accept: 0.9, ..preset.sampler },
+///     n_sims: 1_000,
+///     ..preset
+/// };
+/// // Check the priors first: paths of the mean paid and outstanding they
+/// // imply, here the paid at age 5 of the oldest origin over its premium.
+/// let paths = model.prior_predictive(&tri, "premium", 1_000)?;
+/// let key = vec![tri.origins()[0].into(), KeyValue::Int(60)];
+/// let paid_5 = paths.paid.marginal(&key).unwrap();
+/// let (lo, hi) = (paid_5.quantile(0.05)?, paid_5.quantile(0.95)?);
+/// assert!(lo / 104.4 > 0.2 && hi / 104.4 < 1.2);
+/// let fit = model.fit(&tri, "paid", Outstanding::FromIncurred("incurred"), "premium")?;
+/// assert_eq!(fit.reserves.n_components(), 5);
+/// assert_eq!(fit.posterior.names()[0], "k_er");
+/// # Ok::<(), prospicio_reserving::Error>(())
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct Compartmental {
+    /// The priors (decision 2; a required argument of [`new`](Self::new)).
+    pub priors: CompartmentalPriors,
+    /// The likelihood: [`Normal`](CompartmentalLikelihood::Normal) only, for
+    /// now.
+    pub likelihood: CompartmentalLikelihood,
+    /// The response scale: [`Amount`](Scale::Amount) only, for now.
+    pub scale: Scale,
+    /// Cumulative or incremental paid: [`Cumulative`](PaidResponse::Cumulative)
+    /// only, for now.
+    pub paid_response: PaidResponse,
+    /// The responses fitted: [`PaidAndOutstanding`](Fitted::PaidAndOutstanding)
+    /// only, for now.
+    pub fitted: Fitted,
+    /// How the rates are kept apart.
+    pub rate_order: RateOrder,
+    /// Where the pilot run starts.
+    pub start: CompartmentalStart,
+    /// NUTS settings. Its `seed` is not used: the chains take a seed derived
+    /// from [`seed`](Self::seed) (module docs, "Seeds").
+    pub sampler: Sampler,
+    /// Number of predictive simulations.
+    pub n_sims: usize,
+    /// Seed of the chains (and the pilot run) and of the simulations, each
+    /// through its own derived seed (module docs, "Seeds").
+    pub seed: u64,
+}
+
+impl Compartmental {
+    /// The model with `priors` and the defaults: model 1 (normal on amounts,
+    /// cumulative paid, paid and outstanding), free rate order, the
+    /// data-based start, four chains of 1,000 warm-up and 2,000 kept draws
+    /// with target acceptance 0.99 (the paper's `adapt_delta`) and tree depth
+    /// at most 10, 10,000 simulations, seed 0.
+    pub fn new(priors: CompartmentalPriors) -> Self {
+        Self {
+            priors,
+            likelihood: CompartmentalLikelihood::Normal,
+            scale: Scale::Amount,
+            paid_response: PaidResponse::Cumulative,
+            fitted: Fitted::PaidAndOutstanding,
+            rate_order: RateOrder::Free,
+            start: CompartmentalStart::Data,
+            sampler: Sampler {
+                target_accept: 0.99,
+                draws: 2000,
+                ..Sampler::default()
+            },
+            n_sims: 10_000,
+            seed: 0,
+        }
+    }
+
+    /// Fits paid and outstanding of a single-segment cumulative triangle
+    /// with premium from its `premium` column (the latest value per origin).
+    /// The fit's origins are the premium column's; an origin with no paid
+    /// or outstanding cell is drawn from the population. Failed diagnostics
+    /// do not fail the fit: they are warnings in
+    /// [`CompartmentalFit::diagnostics`], as is any posterior draw with
+    /// `k_er <= k_p` under [`RateOrder::Free`].
+    pub fn fit(
+        &self,
+        triangle: &Triangle,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
+    ) -> Result<CompartmentalFit> {
+        self.validate()?;
+        let data = Data::new(triangle, paid, outstanding, premium)?;
+        let model = Model::new(&data, self.priors, self.rate_order == RateOrder::Ordered);
+        if model.cells.len() <= model.dim() {
+            return Err(Error::Bayes(format!(
+                "{} observed cells for {} parameters; the model needs more cells than parameters",
+                model.cells.len(),
+                model.dim()
+            )));
+        }
+        let (posterior, mut diagnostics) =
+            self.sample(&model, derive_seed(self.seed, Stream::Chains))?;
+        let rate_swaps = {
+            let (j_er, j_p) = (0, 1);
+            posterior
+                .values()
+                .chunks_exact(posterior.dim())
+                .filter(|d| d[j_er] <= d[j_p])
+                .count()
+        };
+        if rate_swaps > 0 {
+            diagnostics.warnings.push(format!(
+                "{rate_swaps} of {} posterior draws have k_er <= k_p, the mirror image of the \
+                 rate swap; check the rate priors, or set rate_order to Ordered",
+                posterior.n_draws()
+            ));
+        }
+
+        let mut hasher = InputHasher::new();
+        hasher.str(paid);
+        hasher.str(outstanding_name(outstanding));
+        hasher.str(premium);
+        hasher.f64s(&data.premium);
+        for c in &model.cells {
+            hasher.f64s(&[c.origin as f64, c.t, c.y, f64::from(u8::from(c.paid))]);
+        }
+        let provenance = self.provenance(paid, outstanding, premium, hasher);
+
+        let future = data.future_cells();
+        let n_paid = future.paid.len();
+        let n_future = n_paid + future.outstanding.len();
+        let joint = posterior.predictive(
+            vec!["cell".into()],
+            (0..n_future)
+                .map(|j| vec![KeyValue::Int(j as i64)])
+                .collect(),
+            self.n_sims,
+            derive_seed(self.seed, Stream::Predictive),
+            provenance.clone(),
+            |nat, rng, row| model.simulate(nat, &future, rng, row),
+        )?;
+        let provenance = joint.provenance().clone();
+        let n_origins = data.origins.len();
+        let mut paid_draws = Vec::with_capacity(self.n_sims * n_paid);
+        let mut os_draws = Vec::with_capacity(self.n_sims * (n_future - n_paid));
+        let mut reserve_draws = Vec::with_capacity(self.n_sims * n_origins);
+        for row in joint.draw_matrix().chunks_exact(n_future) {
+            paid_draws.extend_from_slice(&row[..n_paid]);
+            os_draws.extend_from_slice(&row[n_paid..]);
+            for (i, last) in future.last_paid.iter().enumerate() {
+                reserve_draws.push(match last {
+                    Some(j) => row[*j] - data.latest_paid[i].map_or(0.0, |(_, v)| v),
+                    None => 0.0,
+                });
+            }
+        }
+        let cell_keys = |cells: &[(usize, usize)]| -> Vec<Vec<KeyValue>> {
+            cells
+                .iter()
+                .map(|&(i, k)| {
+                    vec![
+                        data.origins[i].into(),
+                        KeyValue::Int(i64::from(data.age(k))),
+                    ]
+                })
+                .collect()
+        };
+        let with_output = |name: &str| {
+            let mut p = provenance.clone();
+            p.parameters.retain(|(k, _)| k != "output");
+            p.param("output", name)
+        };
+        let reserves = PredictiveDistribution::from_draws(
+            vec!["origin".into()],
+            data.origins.iter().map(|&o| vec![o.into()]).collect(),
+            reserve_draws,
+            with_output("reserves"),
+        )?;
+        let paid_pd = PredictiveDistribution::from_draws(
+            vec!["origin".into(), "age".into()],
+            cell_keys(&future.paid),
+            paid_draws,
+            with_output("paid"),
+        )?;
+        let os_pd = PredictiveDistribution::from_draws(
+            vec!["origin".into(), "age".into()],
+            cell_keys(&future.outstanding),
+            os_draws,
+            with_output("outstanding"),
+        )?;
+        let ultimate_loss_ratio = model.mean_ultimate_loss_ratios(&posterior);
+        Ok(CompartmentalFit {
+            origins: data.origins.clone(),
+            premium: data.premium.clone(),
+            latest_paid: data
+                .latest_paid
+                .iter()
+                .map(|l| l.map_or(0.0, |(_, v)| v))
+                .collect(),
+            population_origins: (0..n_origins)
+                .filter(|&i| model.level[i].is_none())
+                .map(|i| data.origins[i])
+                .collect(),
+            posterior,
+            diagnostics,
+            rate_swaps,
+            reserves,
+            paid: paid_pd,
+            outstanding: os_pd,
+            ultimate_loss_ratio,
+            model,
+        })
+    }
+
+    /// Paths of the mean outstanding and cumulative paid of each origin of
+    /// the premium column at each age of the square, drawn from the priors
+    /// alone (Gesmann and Morris, sec. 3.4): a check of a prior set before
+    /// fitting. Each simulation draws the intercepts, the effect sds, the
+    /// correlation and each origin's effects. The paths are means, without
+    /// the likelihood's noise: the preset's prior on `log σ` is effectively
+    /// flat, so its draws of `σ` would swamp them. Under
+    /// [`RateOrder::Ordered`] the rate intercepts are drawn from their priors
+    /// restricted to `k_er > k_p`, exactly; if those priors put less than
+    /// `1e-6` of their mass on `k_er > k_p` the check is an
+    /// [`Error::Bayes`]. The seed is the simulations' derived
+    /// seed of [`seed`](Self::seed).
+    pub fn prior_predictive(
+        &self,
+        triangle: &Triangle,
+        premium: &str,
+        n_sims: usize,
+    ) -> Result<CompartmentalPaths> {
+        self.validate_priors()?;
+        if n_sims == 0 {
+            return Err(Error::InvalidSetting {
+                name: "n_sims",
+                value: 0.0,
+                expected: "a positive number of simulations",
+            });
+        }
+        if self.rate_order == RateOrder::Ordered {
+            let (a, _) = rate_order_bound(self.priors);
+            let mass = norm_cdf(-a);
+            if mass < MIN_ORDERED_MASS {
+                return Err(Error::Bayes(format!(
+                    "the rate priors give almost no mass to k_er > k_p ({mass:.1e}, \
+                     below {MIN_ORDERED_MASS:.0e}), so the prior check under \
+                     RateOrder::Ordered cannot draw from them; centre the rate \
+                     priors with k_er above k_p, or use RateOrder::Free"
+                )));
+            }
+        }
+        let (origins, premiums, grain) = premium_of(triangle, premium)?;
+        let n = origins.len();
+        let ages: Vec<Lag> = (1..=n as u32).map(|k| k * grain.months()).collect();
+        let times: Vec<f64> = ages.iter().map(|&a| f64::from(a) / 12.0).collect();
+        let pr = self.priors;
+        let ordered = self.rate_order == RateOrder::Ordered;
+        let mut keys = Vec::with_capacity(n * n);
+        for &o in &origins {
+            for &a in &ages {
+                keys.push(vec![o.into(), KeyValue::Int(i64::from(a))]);
+            }
+        }
+        let provenance = Provenance::new("compartmental_prior_predictive")
+            .param("n_sims", n_sims)
+            .param("seed", self.seed)
+            .param("rate_order", format!("{:?}", self.rate_order))
+            .param("premium", premium)
+            .version("prospicio-reserving", env!("CARGO_PKG_VERSION"));
+        let both = PredictiveDistribution::simulate(
+            vec!["cell".into()],
+            (0..2 * n * n)
+                .map(|j| vec![KeyValue::Int(j as i64)])
+                .collect(),
+            n_sims,
+            derive_seed(self.seed, Stream::Predictive),
+            provenance.clone(),
+            |rng, row| {
+                let normal = |rng: &mut StreamRng| norm_quantile(rng.next_open01());
+                let (m_er, s_er) = lognormal(pr.k_er);
+                let (m_p, s_p) = lognormal(pr.k_p);
+                let (m_rlr, s_rlr) = lognormal(pr.rlr);
+                let (m_rrf, s_rrf) = lognormal(pr.rrf);
+                let (b_ker, b_kp) = if ordered {
+                    ordered_rates(pr, rng)
+                } else {
+                    (normal(rng), normal(rng))
+                };
+                let k_er = m_er * (s_er * b_ker).exp();
+                let k_p = m_p * (s_p * b_kp).exp();
+                let b_rlr = normal(rng);
+                let b_rrf = normal(rng);
+                let tau1 = draw_half(pr.rlr_effect_sd, rng);
+                let tau2 = draw_half(pr.rrf_effect_sd, rng);
+                let gamma = Gamma::new(pr.lkj_eta, 1.0).expect("lkj_eta was validated");
+                let (g1, g2) = (gamma.sample(rng, 1)[0], gamma.sample(rng, 1)[0]);
+                let rho = 2.0 * g1 / (g1 + g2) - 1.0;
+                let rho_c = (1.0 - rho * rho).max(0.0).sqrt();
+                let curves: Vec<(f64, f64)> = times.iter().map(|&t| one_os(k_er, k_p, t)).collect();
+                for i in 0..n {
+                    let (z1, z2) = (normal(rng), normal(rng));
+                    let u1 = tau1 * z1;
+                    let u2 = tau2 * (rho * z1 + rho_c * z2);
+                    let rlr = m_rlr * (s_rlr * (b_rlr + u1)).exp() * premiums[i];
+                    let rrf = m_rrf * (s_rrf * (b_rrf + u2)).exp();
+                    for (k, (os, pd)) in curves.iter().enumerate() {
+                        row[i * n + k] = rlr * os;
+                        row[n * n + i * n + k] = rlr * rrf * pd;
+                    }
+                }
+            },
+        )?;
+        let split = |half: usize, name: &str| -> Result<PredictiveDistribution> {
+            let draws: Vec<f64> = both
+                .draw_matrix()
+                .chunks_exact(2 * n * n)
+                .flat_map(|r| r[half * n * n..(half + 1) * n * n].to_vec())
+                .collect();
+            Ok(PredictiveDistribution::from_draws(
+                vec!["origin".into(), "age".into()],
+                keys.clone(),
+                draws,
+                provenance.clone().param("output", name),
+            )?)
+        };
+        Ok(CompartmentalPaths {
+            outstanding: split(0, "outstanding")?,
+            paid: split(1, "paid")?,
+        })
+    }
+
+    /// NUTS on `model` with the chains' seed `chains`: a pilot run on a
+    /// scale whitened at the start, then the main run on the pilot draws'
+    /// scale, as [`Meyers`](super::Meyers) samples. The draws on the
+    /// natural scale and their diagnostics.
+    fn sample(&self, model: &Model, chains: u64) -> Result<(PosteriorDraws, Diagnostics)> {
+        let p = model.dim();
+        let start = model.start(self.start);
+        let rough = Whitened::regularised(model, &start)?;
+        let pilot = sample(
+            &rough,
+            &vec![0.0; p],
+            Sampler {
+                seed: pilot_seed(chains),
+                draws: self.sampler.tune.max(MIN_PILOT_DRAWS),
+                ..self.sampler
+            },
+        )?;
+        let pilot = pilot.transform(model.sampled_names(), |z| rough.theta(z))?;
+        let whitened = Whitened::from_draws(model, &pilot)?;
+        let draws = sample(
+            &whitened,
+            &vec![0.0; p],
+            Sampler {
+                seed: chains,
+                ..self.sampler
+            },
+        )?;
+        let posterior = draws.transform(model.names(), |z| model.natural(&whitened.theta(z)))?;
+        let summary = posterior.summary()?;
+        let diagnostics = Diagnostics::new(
+            &summary,
+            posterior.chains(),
+            posterior.divergences().iter().sum(),
+        );
+        Ok((posterior, diagnostics))
+    }
+
+    fn validate_priors(&self) -> Result<()> {
+        self.priors.validate()
+    }
+
+    fn validate(&self) -> Result<()> {
+        let not_yet = |what: &str| {
+            Err(Error::Bayes(format!(
+                "{what} is not yet built; this release fits Gesmann and Morris' model 1 \
+                 (normal likelihood on amounts, cumulative paid, paid and outstanding)"
+            )))
+        };
+        if self.likelihood != CompartmentalLikelihood::Normal {
+            return not_yet("the log-normal likelihood");
+        }
+        if self.scale != Scale::Amount {
+            return not_yet("the loss-ratio scale");
+        }
+        if self.paid_response != PaidResponse::Cumulative {
+            return not_yet("incremental paid");
+        }
+        match self.fitted {
+            Fitted::PaidAndOutstanding => {}
+            Fitted::PaidAndIncurred => return not_yet("fitting paid and incurred"),
+            Fitted::PaidOnly => return not_yet("fitting paid alone"),
+            Fitted::IncurredOnly => return not_yet("fitting incurred alone"),
+        }
+        self.validate_priors()?;
+        if self.n_sims == 0 {
+            return Err(Error::InvalidSetting {
+                name: "n_sims",
+                value: 0.0,
+                expected: "a positive number of simulations",
+            });
+        }
+        Ok(())
+    }
+
+    fn provenance(
+        &self,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
+        hasher: InputHasher,
+    ) -> Provenance {
+        let s = &self.sampler;
+        let pr = &self.priors;
+        Provenance::new("compartmental_gm1")
+            .param("priors", format!("{pr:?}"))
+            .param("likelihood", format!("{:?}", self.likelihood))
+            .param("scale", format!("{:?}", self.scale))
+            .param("paid_response", format!("{:?}", self.paid_response))
+            .param("fitted", format!("{:?}", self.fitted))
+            .param("rate_order", format!("{:?}", self.rate_order))
+            .param("start", format!("{:?}", self.start))
+            .param("chains", s.chains)
+            .param("tune", s.tune)
+            .param("draws", s.draws)
+            .param("target_accept", s.target_accept)
+            .param("max_depth", s.max_depth)
+            .param("n_sims", self.n_sims)
+            .param("seed", self.seed)
+            .param("paid", paid)
+            .param("outstanding", format!("{outstanding:?}"))
+            .param("premium", premium)
+            .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
+            .input_hash(hasher.finish())
+    }
+}
+
+fn outstanding_name<'a>(outstanding: Outstanding<'a>) -> &'a str {
+    match outstanding {
+        Outstanding::Column(c) | Outstanding::FromIncurred(c) => c,
+    }
+}
+
+/// Fewest kept draws per chain of the pilot run.
+const MIN_PILOT_DRAWS: usize = 100;
+
+/// Paths drawn from the priors alone ([`Compartmental::prior_predictive`]):
+/// the mean outstanding and cumulative paid of each origin at each age of
+/// the square, dimensions `origin` and `age` (months).
+#[derive(Debug, Clone)]
+pub struct CompartmentalPaths {
+    /// The mean outstanding.
+    pub outstanding: PredictiveDistribution,
+    /// The mean cumulative paid.
+    pub paid: PredictiveDistribution,
+}
+
+/// A fitted [`Compartmental`].
+#[derive(Debug, Clone)]
+pub struct CompartmentalFit {
+    /// The origins, those of the premium column.
+    pub origins: Vec<Period>,
+    /// Each origin's premium, the latest value of the premium column.
+    pub premium: Vec<f64>,
+    /// Each origin's latest observed paid (0 with none).
+    pub latest_paid: Vec<f64>,
+    /// The origins with no observed cell, whose effects each simulation
+    /// draws from the population (decision 2).
+    pub population_origins: Vec<Period>,
+    /// Posterior draws, by chain: on the natural scale `k_er`, `k_p`, `RLR`
+    /// and `RRF` (the population values, at a zero effect), `sigma_os`,
+    /// `sigma_pd`, then `RLR[o]` and `RRF[o]` for each origin `o` with an
+    /// observed cell; and on the scale the paper prints, the intercepts
+    /// `b_ker`, `b_kp`, `b_RLR`, `b_RRF`, the effect sds `tau_RLR` and
+    /// `tau_RRF` on the `o` scale, `rho`, `log_sigma_os` and `log_sigma_pd`.
+    pub posterior: PosteriorDraws,
+    /// R-hat, ESS and divergences, with warnings for failed thresholds and
+    /// (under [`RateOrder::Free`]) for draws with `k_er <= k_p`.
+    pub diagnostics: Diagnostics,
+    /// The number of posterior draws with `k_er <= k_p` (0 under
+    /// [`RateOrder::Ordered`]).
+    pub rate_swaps: usize,
+    /// Joint posterior predictive distribution of each origin's reserve, the
+    /// paid at the square's last age less the latest paid: dimension
+    /// `origin`, one component per origin, with the layout of
+    /// [`OdpBootstrapFit::reserves`](crate::OdpBootstrapFit::reserves).
+    pub reserves: PredictiveDistribution,
+    /// Posterior predictive cumulative paid of each future cell of the square
+    /// (after each origin's latest paid), dimensions `origin` and `age`
+    /// (months), with the same simulations as the reserves.
+    pub paid: PredictiveDistribution,
+    /// Posterior predictive outstanding of each future cell of the square
+    /// (after each origin's latest outstanding), the same layout.
+    pub outstanding: PredictiveDistribution,
+    /// Each origin's posterior mean ultimate loss ratio `RLR_i RRF_i` (for an
+    /// origin drawn from the population, the mean over its effect too). The
+    /// model's ultimate, without process error past the square.
+    pub ultimate_loss_ratio: Vec<f64>,
+    model: Model,
+}
+
+/// [`CompartmentalFit::loo`]: PSIS-LOO over every observed cell, with the
+/// elpd split by type.
+#[derive(Debug, Clone)]
+pub struct CompartmentalLoo {
+    /// PSIS-LOO over the outstanding cells and then the paid cells, each by
+    /// origin and age.
+    pub loo: Loo,
+    /// The number of outstanding cells, which come first.
+    pub n_outstanding: usize,
+    /// The elpd of the outstanding cells.
+    pub elpd_outstanding: f64,
+    /// The elpd of the paid cells.
+    pub elpd_paid: f64,
+}
+
+impl CompartmentalFit {
+    /// Posterior summary of each parameter: mean, sd, 5/50/95% quantiles,
+    /// R-hat, bulk and tail ESS.
+    pub fn summary(&self) -> Result<Vec<ParamSummary>> {
+        Ok(self.posterior.summary()?)
+    }
+
+    /// PSIS-LOO of the observed cells, with each cell's relative efficiency
+    /// from the chains. The pointwise term is the full normal log density of
+    /// each amount (brms' `log_lik`), so the result compares with other fits
+    /// of the same amounts only.
+    pub fn loo(&self) -> Result<CompartmentalLoo> {
+        let model = &self.model;
+        let n = model.cells.len();
+        let post = &self.posterior;
+        let s = post.n_draws();
+        let mut ll = Vec::with_capacity(s * n);
+        for nat in post.values().chunks_exact(post.dim()) {
+            model.log_likelihoods(nat, &mut ll);
+        }
+        let chains = post.chains();
+        let per_chain = s / chains;
+        let r_eff: Vec<f64> = (0..n)
+            .map(|i| {
+                let by_chain: Vec<Vec<f64>> = (0..chains)
+                    .map(|c| {
+                        (0..per_chain)
+                            .map(|k| ll[(c * per_chain + k) * n + i].exp())
+                            .collect()
+                    })
+                    .collect();
+                let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
+                let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
+                if ess.is_finite() && ess > 0.0 {
+                    ess / s as f64
+                } else {
+                    1.0
+                }
+            })
+            .collect();
+        let loo = prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?;
+        let n_os = model.n_outstanding;
+        let elpd_outstanding = loo.estimate.pointwise[..n_os].iter().sum();
+        let elpd_paid = loo.estimate.pointwise[n_os..].iter().sum();
+        Ok(CompartmentalLoo {
+            loo,
+            n_outstanding: n_os,
+            elpd_outstanding,
+            elpd_paid,
+        })
+    }
+
+    /// One row per origin: `premium`, `latest_paid`, the `mean` and
+    /// `std_dev` of the posterior predictive reserve, and the posterior mean
+    /// `ultimate_loss_ratio`.
+    pub fn to_long(&self) -> FitTable {
+        let sums = component_sums(&self.reserves);
+        FitTable {
+            keys: Vec::new(),
+            origin: Some(self.origins.clone()),
+            age: None,
+            values: vec![
+                ("premium".into(), self.premium.clone()),
+                ("latest_paid".into(), self.latest_paid.clone()),
+                ("mean".into(), sums.iter().map(|d| d.mean()).collect()),
+                ("std_dev".into(), sums.iter().map(|d| d.std_dev()).collect()),
+                (
+                    "ultimate_loss_ratio".into(),
+                    self.ultimate_loss_ratio.clone(),
+                ),
+            ],
+        }
+    }
+
+    /// One row: the total `premium` and `latest_paid`, and the `mean` and
+    /// `std_dev` of the posterior predictive total reserve.
+    pub fn totals(&self) -> FitTable {
+        let total = self.reserves.total();
+        FitTable {
+            keys: Vec::new(),
+            origin: None,
+            age: None,
+            values: vec![
+                ("premium".into(), vec![self.premium.iter().sum()]),
+                ("latest_paid".into(), vec![self.latest_paid.iter().sum()]),
+                ("mean".into(), vec![total.mean()]),
+                ("std_dev".into(), vec![total.std_dev()]),
+            ],
+        }
+    }
+
+    /// One row per future cell of [`paid`](Self::paid): its origin and age,
+    /// and the `mean`, `std_dev` and 5%, 50% and 95% quantiles (`q05`,
+    /// `q50`, `q95`) of the posterior predictive cumulative paid.
+    pub fn paid_table(&self) -> Result<FitTable> {
+        cell_table(&self.paid)
+    }
+
+    /// The same for [`outstanding`](Self::outstanding).
+    pub fn outstanding_table(&self) -> Result<FitTable> {
+        cell_table(&self.outstanding)
+    }
+}
+
+/// A long table of a cell distribution with dimensions `origin` and `age`.
+fn cell_table(cells: &PredictiveDistribution) -> Result<FitTable> {
+    let sums = component_sums(cells);
+    let mut origin = Vec::with_capacity(sums.len());
+    let mut age = Vec::with_capacity(sums.len());
+    for key in cells.components() {
+        match (&key[0], &key[1]) {
+            (KeyValue::Period(o), KeyValue::Int(a)) => {
+                origin.push(*o);
+                age.push(*a as Lag);
+            }
+            _ => unreachable!("cell keys are (origin, age)"),
+        }
+    }
+    let q = |p: f64| -> Result<Vec<f64>> {
+        sums.iter()
+            .map(|d| Ok(d.quantile(p)?))
+            .collect::<Result<Vec<f64>>>()
+    };
+    Ok(FitTable {
+        keys: Vec::new(),
+        origin: Some(origin),
+        age: Some(age),
+        values: vec![
+            ("mean".into(), sums.iter().map(|d| d.mean()).collect()),
+            ("std_dev".into(), sums.iter().map(|d| d.std_dev()).collect()),
+            ("q05".into(), q(0.05)?),
+            ("q50".into(), q(0.5)?),
+            ("q95".into(), q(0.95)?),
+        ],
+    })
+}
+
+/// Each origin of the premium column, its premium (the latest value, which
+/// must be finite and positive) and the grain of the square.
+fn premium_of(triangle: &Triangle, premium: &str) -> Result<(Vec<Period>, Vec<f64>, Grain)> {
+    let grain = triangle.development_grain();
+    if triangle.origin_grain() != grain {
+        return Err(Error::Bayes(format!(
+            "origin grain {} and development grain {} differ; the compartmental model's \
+             square needs them equal (not yet built otherwise)",
+            triangle.origin_grain(),
+            grain
+        )));
+    }
+    let segment = triangle.segment(premium)?;
+    let premiums = (0..segment.n_origins)
+        .map(|o| {
+            segment
+                .latest(o)
+                .ok()
+                .map(|(_, v)| v)
+                .filter(|v| v.is_finite() && *v > 0.0)
+                .ok_or_else(|| {
+                    Error::Bayes(format!(
+                        "origin {} has no positive premium in column {premium}",
+                        segment.origins[o]
+                    ))
+                })
+        })
+        .collect::<Result<Vec<f64>>>()?;
+    Ok((segment.origins.clone(), premiums, grain))
+}
+
+/// The observed cells of a fit, by the premium column's origins.
+#[derive(Debug, Clone)]
+struct Data {
+    origins: Vec<Period>,
+    premium: Vec<f64>,
+    grain: Grain,
+    /// The square's number of ages.
+    n_ages: usize,
+    /// `(origin, age index, value)` of each observed outstanding cell.
+    outstanding: Vec<(usize, usize, f64)>,
+    /// The same for paid.
+    paid: Vec<(usize, usize, f64)>,
+    /// Each origin's latest observed paid: age index and value.
+    latest_paid: Vec<Option<(usize, f64)>>,
+    /// Each origin's latest observed outstanding age index.
+    latest_outstanding: Vec<Option<usize>>,
+}
+
+/// The future cells of the square: `(origin, age index)` of each paid and
+/// outstanding cell, and the position in `paid` of each origin's cell at
+/// the last age, if it is in the future.
+#[derive(Debug, Clone)]
+struct Future {
+    paid: Vec<(usize, usize)>,
+    outstanding: Vec<(usize, usize)>,
+    last_paid: Vec<Option<usize>>,
+}
+
+impl Data {
+    fn new(
+        triangle: &Triangle,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
+    ) -> Result<Self> {
+        let (origins, premiums, grain) = premium_of(triangle, premium)?;
+        let premium_segment = triangle.segment(premium)?;
+        let paid_segment = triangle.segment(paid)?;
+        let months = grain.months();
+        // The fit's origin of a segment's origin `o`.
+        let origin_of = |segment: &Segment, o: usize, column: &str| -> Result<usize> {
+            (segment.origin_offset + o)
+                .checked_sub(premium_segment.origin_offset)
+                .filter(|&i| i < origins.len())
+                .ok_or_else(|| {
+                    Error::Bayes(format!(
+                        "origin {} has {column} but no premium in column {premium}",
+                        segment.origins[o]
+                    ))
+                })
+        };
+        let age_index = |age: Lag| -> Result<usize> {
+            if age == 0 || age % months != 0 {
+                return Err(Error::Bayes(format!(
+                    "development age {age} months is not a whole number of {grain} periods"
+                )));
+            }
+            Ok((age / months - 1) as usize)
+        };
+        let cells_of = |segment: &Segment, column: &str| -> Result<Vec<(usize, usize, f64)>> {
+            let mut out = Vec::new();
+            for o in 0..segment.n_origins {
+                for d in 0..segment.n_dev {
+                    if let Some(v) = segment.get(o, d) {
+                        if !v.is_finite() {
+                            return Err(Error::Bayes(format!(
+                                "origin {} at development age {} months has {column} {v}",
+                                segment.origins[o], segment.ages[d]
+                            )));
+                        }
+                        out.push((
+                            origin_of(segment, o, column)?,
+                            age_index(segment.ages[d])?,
+                            v,
+                        ));
+                    }
+                }
+            }
+            Ok(out)
+        };
+        let paid_cells = cells_of(&paid_segment, paid)?;
+        let os_cells = match outstanding {
+            Outstanding::Column(column) => cells_of(&triangle.segment(column)?, column)?,
+            Outstanding::FromIncurred(column) => {
+                let incurred = cells_of(&triangle.segment(column)?, column)?;
+                incurred
+                    .into_iter()
+                    .filter_map(|(i, k, v)| {
+                        paid_cells
+                            .iter()
+                            .find(|c| c.0 == i && c.1 == k)
+                            .map(|c| (i, k, v - c.2))
+                    })
+                    .collect()
+            }
+        };
+        if os_cells.is_empty() {
+            return Err(Error::Bayes(format!(
+                "column {} gives no outstanding cell; the model needs the outstanding column \
+                 (from paid alone only RLR x RRF is identified)",
+                outstanding_name(outstanding)
+            )));
+        }
+        let n = origins.len();
+        let observed_ages = paid_cells
+            .iter()
+            .chain(&os_cells)
+            .map(|c| c.1 + 1)
+            .max()
+            .unwrap_or(0);
+        let n_ages = n.max(observed_ages);
+        let mut latest_paid = vec![None; n];
+        for &(i, k, v) in &paid_cells {
+            if latest_paid[i].is_none_or(|(l, _)| k > l) {
+                latest_paid[i] = Some((k, v));
+            }
+        }
+        let mut latest_outstanding: Vec<Option<usize>> = vec![None; n];
+        for &(i, k, _) in &os_cells {
+            if latest_outstanding[i].is_none_or(|l| k > l) {
+                latest_outstanding[i] = Some(k);
+            }
+        }
+        Ok(Self {
+            origins,
+            premium: premiums,
+            grain,
+            n_ages,
+            outstanding: os_cells,
+            paid: paid_cells,
+            latest_paid,
+            latest_outstanding,
+        })
+    }
+
+    /// The age in months of age index `k`.
+    fn age(&self, k: usize) -> Lag {
+        (k as Lag + 1) * self.grain.months()
+    }
+
+    fn future_cells(&self) -> Future {
+        let n = self.origins.len();
+        let mut paid = Vec::new();
+        let mut last_paid = vec![None; n];
+        for (i, last) in last_paid.iter_mut().enumerate() {
+            let from = self.latest_paid[i].map_or(0, |(k, _)| k + 1);
+            for k in from..self.n_ages {
+                if k + 1 == self.n_ages {
+                    *last = Some(paid.len());
+                }
+                paid.push((i, k));
+            }
+        }
+        let mut outstanding = Vec::new();
+        for i in 0..n {
+            let from = self.latest_outstanding[i].map_or(0, |k| k + 1);
+            for k in from..self.n_ages {
+                outstanding.push((i, k));
+            }
+        }
+        Future {
+            paid,
+            outstanding,
+            last_paid,
+        }
+    }
+}
+
+/// An observed amount.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Obs {
+    origin: usize,
+    /// The age index, into [`Model::times`].
+    k: usize,
+    t: f64,
+    y: f64,
+    /// Paid (true) or outstanding.
+    paid: bool,
+}
+
+/// The log posterior on the unconstrained `theta = (b_ker | delta, b_kp,
+/// b_RLR, b_RRF, log τ₁, log τ₂, atanh ρ, z_11, z_12, .., z_m1, z_m2,
+/// log σ_OS, log σ_PD)` over the `m` origins with an observed cell, where
+/// under [`RateOrder::Ordered`] `k_er = k_p + e^delta`.
+#[derive(Debug, Clone, PartialEq)]
+struct Model {
+    /// Outstanding cells first, then paid, each by origin and age.
+    cells: Vec<Obs>,
+    n_outstanding: usize,
+    premium: Vec<f64>,
+    /// Each origin's level (position among the origins with data), if any.
+    level: Vec<Option<usize>>,
+    /// The origin of each level.
+    level_origin: Vec<usize>,
+    /// The origin label of each level, for the names.
+    labels: Vec<String>,
+    /// Development time of each age index of the square, in years.
+    times: Vec<f64>,
+    /// The age indices that hold an observed cell, `0..n_observed`.
+    n_observed: usize,
+    priors: CompartmentalPriors,
+    ordered: bool,
+}
+
+/// Positions in `theta`.
+const B_KER: usize = 0;
+const B_KP: usize = 1;
+const B_RLR: usize = 2;
+const B_RRF: usize = 3;
+const LOG_TAU: usize = 4;
+const ATANH_RHO: usize = 6;
+const Z0: usize = 7;
+
+impl Model {
+    fn new(data: &Data, priors: CompartmentalPriors, ordered: bool) -> Self {
+        let n = data.origins.len();
+        let mut has = vec![false; n];
+        for c in data.outstanding.iter().chain(&data.paid) {
+            has[c.0] = true;
+        }
+        let mut level = vec![None; n];
+        let mut level_origin = Vec::new();
+        for i in 0..n {
+            if has[i] {
+                level[i] = Some(level_origin.len());
+                level_origin.push(i);
+            }
+        }
+        let labels = level_origin
+            .iter()
+            .map(|&i| data.origins[i].to_string())
+            .collect();
+        let times: Vec<f64> = (0..data.n_ages)
+            .map(|k| f64::from(data.age(k)) / 12.0)
+            .collect();
+        let obs = |&(origin, k, y): &(usize, usize, f64), paid: bool| Obs {
+            origin,
+            k,
+            t: times[k],
+            y,
+            paid,
+        };
+        let mut os: Vec<Obs> = data.outstanding.iter().map(|c| obs(c, false)).collect();
+        let mut pd: Vec<Obs> = data.paid.iter().map(|c| obs(c, true)).collect();
+        os.sort_by_key(|c| (c.origin, c.k));
+        pd.sort_by_key(|c| (c.origin, c.k));
+        let n_outstanding = os.len();
+        let mut cells = os;
+        cells.extend(pd);
+        let n_observed = cells.iter().map(|c| c.k + 1).max().unwrap_or(0);
+        Self {
+            cells,
+            n_outstanding,
+            premium: data.premium.clone(),
+            level,
+            level_origin,
+            labels,
+            times,
+            n_observed,
+            priors,
+            ordered,
+        }
+    }
+
+    fn n_levels(&self) -> usize {
+        self.level_origin.len()
+    }
+
+    /// Position of `log σ_OS`; `log σ_PD` follows.
+    fn log_sigma0(&self) -> usize {
+        Z0 + 2 * self.n_levels()
+    }
+
+    /// The names of `theta`, for the pilot draws.
+    fn sampled_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = [
+            if self.ordered { "delta" } else { "b_ker" },
+            "b_kp",
+            "b_RLR",
+            "b_RRF",
+            "log_tau_RLR",
+            "log_tau_RRF",
+            "atanh_rho",
+        ]
+        .map(String::from)
+        .to_vec();
+        for j in 0..self.n_levels() {
+            names.push(format!("z[{j},1]"));
+            names.push(format!("z[{j},2]"));
+        }
+        names.push("log_sigma_os".into());
+        names.push("log_sigma_pd".into());
+        names
+    }
+
+    /// The names of the natural-scale draws ([`CompartmentalFit::posterior`]).
+    fn names(&self) -> Vec<String> {
+        let mut names: Vec<String> = ["k_er", "k_p", "RLR", "RRF", "sigma_os", "sigma_pd"]
+            .map(String::from)
+            .to_vec();
+        for name in ["RLR", "RRF"] {
+            for j in 0..self.n_levels() {
+                names.push(format!("{name}[{}]", self.labels[j]));
+            }
+        }
+        names.extend(
+            [
+                "b_ker",
+                "b_kp",
+                "b_RLR",
+                "b_RRF",
+                "tau_RLR",
+                "tau_RRF",
+                "rho",
+                "log_sigma_os",
+                "log_sigma_pd",
+            ]
+            .map(String::from),
+        );
+        names
+    }
+
+    /// The rates `(k_er, k_p)` and `b_ker`, from `theta`.
+    fn rates<S: Scalar>(&self, theta: &[S]) -> (S, S, S) {
+        let (m_er, s_er) = lognormal(self.priors.k_er);
+        let (m_p, s_p) = lognormal(self.priors.k_p);
+        let k_p = (theta[B_KP] * s_p).exp() * m_p;
+        if self.ordered {
+            let k_er = k_p + theta[B_KER].exp();
+            let b_ker = (k_er / m_er).ln() / s_er;
+            (k_er, k_p, b_ker)
+        } else {
+            let b_ker = theta[B_KER];
+            ((b_ker * s_er).exp() * m_er, k_p, b_ker)
+        }
+    }
+
+    /// The log posterior, written once over [`Scalar`].
+    fn log_density<S: Scalar>(&self, theta: &[S]) -> S {
+        let pr = &self.priors;
+        let mut f = S::from_f64(0.0);
+        for &b in &theta[B_KP..=B_RRF] {
+            f -= b * b * 0.5;
+        }
+        let (k_er, k_p, b_ker) = self.rates(theta);
+        f -= b_ker * b_ker * 0.5;
+        if self.ordered {
+            // The Jacobian of delta -> b_ker: e^delta / (s_ker k_er), less
+            // its constant.
+            f += theta[B_KER] - k_er.ln();
+        }
+        let (l1, l2) = (theta[LOG_TAU], theta[LOG_TAU + 1]);
+        f += half_on_log(l1, pr.rlr_effect_sd) + half_on_log(l2, pr.rrf_effect_sd);
+        // LKJ(eta) on a 2x2 correlation is (1 - ρ²)^(eta - 1); with the
+        // Jacobian 1 - ρ² of ρ = tanh(v), eta log(1 - ρ²).
+        let rho = theta[ATANH_RHO].tanh();
+        let rho_c2 = -(rho * rho) + 1.0;
+        f += rho_c2.ln() * pr.lkj_eta;
+        let rho_c = rho_c2.sqrt();
+        let ls = self.log_sigma0();
+        for &z in &theta[Z0..ls] {
+            f -= z * z * 0.5;
+        }
+        let (ls_os, ls_pd) = (theta[ls], theta[ls + 1]);
+        f += real_prior(ls_os, pr.log_sigma[0]) + real_prior(ls_pd, pr.log_sigma[1]);
+        let inv = [(-ls_os).exp(), (-ls_pd).exp()];
+        let (tau1, tau2) = (l1.exp(), l2.exp());
+        let (m_rlr, s_rlr) = lognormal(pr.rlr);
+        let (m_rrf, s_rrf) = lognormal(pr.rrf);
+        // The rates are shared, so the closed form is one per age.
+        let curves: Vec<(S, S)> = self.times[..self.n_observed]
+            .iter()
+            .map(|&t| one_os(k_er, k_p, t))
+            .collect();
+        // Π RLR and Π RLR RRF of each level.
+        let scale: Vec<(S, S)> = self
+            .level_origin
+            .iter()
+            .enumerate()
+            .map(|(j, &i)| {
+                let (z1, z2) = (theta[Z0 + 2 * j], theta[Z0 + 2 * j + 1]);
+                let u1 = tau1 * z1;
+                let u2 = tau2 * (rho * z1 + rho_c * z2);
+                let rlr = ((theta[B_RLR] + u1) * s_rlr).exp() * (m_rlr * self.premium[i]);
+                let rrf = ((theta[B_RRF] + u2) * s_rrf).exp() * m_rrf;
+                (rlr, rlr * rrf)
+            })
+            .collect();
+        let mut n_os = 0.0;
+        for c in &self.cells {
+            let (os, pd) = curves[c.k];
+            let (a, b) = scale[self.level[c.origin].expect("an observed origin has a level")];
+            let r = if c.paid {
+                (-(b * pd) + c.y) * inv[1]
+            } else {
+                n_os += 1.0;
+                (-(a * os) + c.y) * inv[0]
+            };
+            f -= r * r * 0.5;
+        }
+        let n_pd = (self.cells.len() - self.n_outstanding) as f64;
+        f - ls_os * n_os - ls_pd * n_pd
+    }
+
+    /// `theta` on the natural scale ([`names`](Self::names)).
+    fn natural(&self, theta: &[f64]) -> Vec<f64> {
+        let (m_rlr, s_rlr) = lognormal(self.priors.rlr);
+        let (m_rrf, s_rrf) = lognormal(self.priors.rrf);
+        let (k_er, k_p, b_ker) = self.rates(theta);
+        let ls = self.log_sigma0();
+        let (tau1, tau2) = (theta[LOG_TAU].exp(), theta[LOG_TAU + 1].exp());
+        let rho = theta[ATANH_RHO].tanh();
+        let rho_c = (1.0 - rho * rho).max(0.0).sqrt();
+        let mut out = vec![
+            k_er,
+            k_p,
+            m_rlr * (s_rlr * theta[B_RLR]).exp(),
+            m_rrf * (s_rrf * theta[B_RRF]).exp(),
+            theta[ls].exp(),
+            theta[ls + 1].exp(),
+        ];
+        let m = self.n_levels();
+        let mut rrf = Vec::with_capacity(m);
+        for j in 0..m {
+            let (z1, z2) = (theta[Z0 + 2 * j], theta[Z0 + 2 * j + 1]);
+            out.push(m_rlr * (s_rlr * (theta[B_RLR] + tau1 * z1)).exp());
+            rrf.push(m_rrf * (s_rrf * (theta[B_RRF] + tau2 * (rho * z1 + rho_c * z2))).exp());
+        }
+        out.extend(rrf);
+        out.extend([
+            b_ker,
+            theta[B_KP],
+            theta[B_RLR],
+            theta[B_RRF],
+            tau1,
+            tau2,
+            rho,
+            theta[ls],
+            theta[ls + 1],
+        ]);
+        out
+    }
+
+    /// Positions in a natural-scale draw.
+    fn nat_rlr(&self, j: usize) -> usize {
+        6 + j
+    }
+
+    fn nat_rrf(&self, j: usize) -> usize {
+        6 + self.n_levels() + j
+    }
+
+    fn nat_b0(&self) -> usize {
+        6 + 2 * self.n_levels()
+    }
+
+    /// `(RLR_i, RRF_i)` of origin `i` from a natural-scale draw: its own
+    /// for an origin with data, else a new effect from the population drawn
+    /// from `rng` (two normals).
+    fn ratios(&self, nat: &[f64], i: usize, rng: &mut StreamRng) -> (f64, f64) {
+        if let Some(j) = self.level[i] {
+            return (nat[self.nat_rlr(j)], nat[self.nat_rrf(j)]);
+        }
+        let b = self.nat_b0();
+        let (b_rlr, b_rrf, tau1, tau2, rho) =
+            (nat[b + 2], nat[b + 3], nat[b + 4], nat[b + 5], nat[b + 6]);
+        let (m_rlr, s_rlr) = lognormal(self.priors.rlr);
+        let (m_rrf, s_rrf) = lognormal(self.priors.rrf);
+        let z1 = norm_quantile(rng.next_open01());
+        let z2 = norm_quantile(rng.next_open01());
+        let rho_c = (1.0 - rho * rho).max(0.0).sqrt();
+        (
+            m_rlr * (s_rlr * (b_rlr + tau1 * z1)).exp(),
+            m_rrf * (s_rrf * (b_rrf + tau2 * (rho * z1 + rho_c * z2))).exp(),
+        )
+    }
+
+    /// One simulation of the future cells, paid then outstanding, into
+    /// `row`, given a natural-scale draw: each cell normal about its mean
+    /// with its type's σ, independent given the draw. An origin with no
+    /// observed cell takes one new effect for all its cells.
+    fn simulate(&self, nat: &[f64], future: &Future, rng: &mut StreamRng, row: &mut [f64]) {
+        let (k_er, k_p) = (nat[0], nat[1]);
+        let (sigma_os, sigma_pd) = (nat[4], nat[5]);
+        let curves: Vec<(f64, f64)> = self.times.iter().map(|&t| one_os(k_er, k_p, t)).collect();
+        let n = self.premium.len();
+        let mut ratios: Vec<Option<(f64, f64)>> = vec![None; n];
+        let mut get = |i: usize, rng: &mut StreamRng| -> (f64, f64) {
+            *ratios[i].get_or_insert_with(|| self.ratios(nat, i, rng))
+        };
+        let n_paid = future.paid.len();
+        for (x, &(i, k)) in row[..n_paid].iter_mut().zip(&future.paid) {
+            let (rlr, rrf) = get(i, rng);
+            let mean = self.premium[i] * rlr * rrf * curves[k].1;
+            *x = mean + sigma_pd * norm_quantile(rng.next_open01());
+        }
+        for (x, &(i, k)) in row[n_paid..].iter_mut().zip(&future.outstanding) {
+            let (rlr, _) = get(i, rng);
+            let mean = self.premium[i] * rlr * curves[k].0;
+            *x = mean + sigma_os * norm_quantile(rng.next_open01());
+        }
+    }
+
+    /// The full normal log density of each cell from a natural-scale draw,
+    /// appended to `out`.
+    fn log_likelihoods(&self, nat: &[f64], out: &mut Vec<f64>) {
+        let (k_er, k_p) = (nat[0], nat[1]);
+        let (sigma_os, sigma_pd) = (nat[4], nat[5]);
+        let half_log_tau = 0.5 * std::f64::consts::TAU.ln();
+        for c in &self.cells {
+            let (os, pd) = one_os(k_er, k_p, c.t);
+            let j = self.level[c.origin].expect("an observed origin has a level");
+            let rlr = nat[self.nat_rlr(j)] * self.premium[c.origin];
+            let (mean, sigma) = if c.paid {
+                (rlr * nat[self.nat_rrf(j)] * pd, sigma_pd)
+            } else {
+                (rlr * os, sigma_os)
+            };
+            let z = (c.y - mean) / sigma;
+            out.push(-half_log_tau - sigma.ln() - 0.5 * z * z);
+        }
+    }
+
+    /// Each origin's posterior mean `RLR_i RRF_i`; for an origin with no
+    /// data, `E[RLR RRF | draw] = m e^(s_RLR b_RLR + s_RRF b_RRF + v / 2)`
+    /// with `v` the variance of `s_RLR u_1 + s_RRF u_2`, averaged over the
+    /// draws.
+    fn mean_ultimate_loss_ratios(&self, posterior: &PosteriorDraws) -> Vec<f64> {
+        let (m_rlr, s_rlr) = lognormal(self.priors.rlr);
+        let (m_rrf, s_rrf) = lognormal(self.priors.rrf);
+        let n = self.premium.len();
+        let mut sums = vec![0.0; n];
+        for nat in posterior.values().chunks_exact(posterior.dim()) {
+            let b = self.nat_b0();
+            let (b_rlr, b_rrf, tau1, tau2, rho) =
+                (nat[b + 2], nat[b + 3], nat[b + 4], nat[b + 5], nat[b + 6]);
+            for (i, sum) in sums.iter_mut().enumerate() {
+                *sum += match self.level[i] {
+                    Some(j) => nat[self.nat_rlr(j)] * nat[self.nat_rrf(j)],
+                    None => {
+                        let (a, c) = (s_rlr * tau1, s_rrf * tau2);
+                        let v = a * a + c * c + 2.0 * rho * a * c;
+                        m_rlr * m_rrf * (s_rlr * b_rlr + s_rrf * b_rrf + 0.5 * v).exp()
+                    }
+                };
+            }
+        }
+        let draws = posterior.n_draws() as f64;
+        sums.iter().map(|s| s / draws).collect()
+    }
+
+    /// The start of the pilot run (decision 5).
+    fn start(&self, start: CompartmentalStart) -> Vec<f64> {
+        if start == CompartmentalStart::Data
+            && let Some(theta) = self.data_start()
+        {
+            return theta;
+        }
+        self.prior_centre_start()
+    }
+
+    /// `theta` with the population values `(k_er, k_p, RLR, RRF)`, every `z`
+    /// and `atanh ρ` at 0, `log τ` at about the prior medians and the
+    /// `log σ` at the log of each type's residual sd about the population
+    /// curve.
+    fn theta_at(&self, population: [f64; 4]) -> Option<Vec<f64>> {
+        let [k_er, k_p, rlr, rrf] = population;
+        let pr = &self.priors;
+        let o = |prior: PositivePrior, v: f64| {
+            let (m, s) = lognormal(prior);
+            (v / m).ln() / s
+        };
+        let mut theta = vec![0.0; self.dim()];
+        theta[B_KER] = if self.ordered {
+            if k_er <= k_p {
+                return None;
+            }
+            (k_er - k_p).ln()
+        } else {
+            o(pr.k_er, k_er)
+        };
+        theta[B_KP] = o(pr.k_p, k_p);
+        theta[B_RLR] = o(pr.rlr, rlr);
+        theta[B_RRF] = o(pr.rrf, rrf);
+        theta[LOG_TAU] = half_median(pr.rlr_effect_sd).ln();
+        theta[LOG_TAU + 1] = half_median(pr.rrf_effect_sd).ln();
+        let rms = self.residual_rms(population);
+        let ls = self.log_sigma0();
+        theta[ls] = rms[0].ln();
+        theta[ls + 1] = rms[1].ln();
+        let mut grad = vec![0.0; theta.len()];
+        let f = self.log_posterior(&theta, &mut grad);
+        (f.is_finite() && theta.iter().all(|v| v.is_finite())).then_some(theta)
+    }
+
+    /// The root mean square residual of the outstanding and the paid cells
+    /// about the population curve, each at least `1e-6` of its cells' mean
+    /// absolute value.
+    fn residual_rms(&self, [k_er, k_p, rlr, rrf]: [f64; 4]) -> [f64; 2] {
+        let mut sum = [0.0; 2];
+        let mut size = [0.0; 2];
+        let mut count = [0.0; 2];
+        for c in &self.cells {
+            let (os, pd) = one_os(k_er, k_p, c.t);
+            let base = self.premium[c.origin] * rlr;
+            let (mean, k) = if c.paid {
+                (base * rrf * pd, 1)
+            } else {
+                (base * os, 0)
+            };
+            sum[k] += (c.y - mean) * (c.y - mean);
+            size[k] += c.y.abs();
+            count[k] += 1.0;
+        }
+        [0, 1].map(|k| {
+            let floor = 1e-6 * (size[k] / count[k]).max(1.0);
+            (sum[k] / count[k]).sqrt().max(floor)
+        })
+    }
+
+    /// The data-based start: least squares of the population curve on the
+    /// log scale of `(k_er, k_p, RLR, RRF)`, each type weighted by the
+    /// inverse of its residual variance (twice, from the prior medians), then
+    /// the representative of the rate swap the priors prefer.
+    fn data_start(&self) -> Option<Vec<f64>> {
+        let pr = &self.priors;
+        let medians = [pr.k_er, pr.k_p, pr.rlr, pr.rrf].map(|p| lognormal(p).0);
+        let mut phi = medians.map(f64::ln).to_vec();
+        for _ in 0..2 {
+            let population = [0, 1, 2, 3].map(|j| phi[j].exp());
+            let rms = self.residual_rms(population);
+            let ls = LeastSquares {
+                model: self,
+                weight: rms.map(|r| 1.0 / (r * r)),
+            };
+            phi = mode(&ls, phi).ok()?;
+        }
+        let [k_er, k_p, rlr, rrf] = [0, 1, 2, 3].map(|j| phi[j].exp());
+        let swapped = [k_p, k_er, rlr * k_er / k_p, rrf * k_p / k_er];
+        let candidates = [self.theta_at([k_er, k_p, rlr, rrf]), self.theta_at(swapped)];
+        let mut grad = vec![0.0; self.dim()];
+        candidates
+            .into_iter()
+            .flatten()
+            .map(|theta| (self.log_posterior(&theta, &mut grad), theta))
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, theta)| theta)
+    }
+
+    /// The fallback start at the prior medians. Under
+    /// [`RateOrder::Ordered`], with medians that break the order, `k_er` is
+    /// raised to `1.1 k_p`.
+    fn prior_centre_start(&self) -> Vec<f64> {
+        let pr = &self.priors;
+        let [k_er, k_p, rlr, rrf] = [pr.k_er, pr.k_p, pr.rlr, pr.rrf].map(|p| lognormal(p).0);
+        let k_er = if self.ordered {
+            k_er.max(1.1 * k_p)
+        } else {
+            k_er
+        };
+        self.theta_at([k_er, k_p, rlr, rrf]).unwrap_or_else(|| {
+            // A curve too far from the data to give a finite density: the
+            // log σ at the scale of the data.
+            let mut theta = vec![0.0; self.dim()];
+            let ls = self.log_sigma0();
+            let rms = self.residual_rms([k_er, k_p, rlr, rrf]);
+            theta[ls] = rms[0].ln();
+            theta[ls + 1] = rms[1].ln();
+            theta
+        })
+    }
+}
+
+impl Posterior for Model {
+    fn dim(&self) -> usize {
+        self.log_sigma0() + 2
+    }
+
+    fn log_posterior(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
+        let f = gradient::<CHUNK>(theta, grad, |x| self.log_density(x));
+        if f.is_finite() { f } else { f64::NAN }
+    }
+}
+
+/// The population curve's weighted least squares on
+/// `phi = log (k_er, k_p, RLR, RRF)`, as a [`Posterior`] for [`mode`].
+struct LeastSquares<'a> {
+    model: &'a Model,
+    weight: [f64; 2],
+}
+
+impl LeastSquares<'_> {
+    fn value<S: Scalar>(&self, phi: &[S]) -> S {
+        let (k_er, k_p, rlr, rrf) = (phi[0].exp(), phi[1].exp(), phi[2].exp(), phi[3].exp());
+        let curves: Vec<(S, S)> = self.model.times[..self.model.n_observed]
+            .iter()
+            .map(|&t| one_os(k_er, k_p, t))
+            .collect();
+        let mut f = S::from_f64(0.0);
+        for c in &self.model.cells {
+            let (os, pd) = curves[c.k];
+            let base = rlr * self.model.premium[c.origin];
+            let (mean, w) = if c.paid {
+                (base * rrf * pd, self.weight[1])
+            } else {
+                (base * os, self.weight[0])
+            };
+            let r = -mean + c.y;
+            f -= r * r * (0.5 * w);
+        }
+        f
+    }
+}
+
+impl Posterior for LeastSquares<'_> {
+    fn dim(&self) -> usize {
+        4
+    }
+
+    fn log_posterior(&self, phi: &[f64], grad: &mut [f64]) -> f64 {
+        let f = gradient::<4>(phi, grad, |x| self.value(x));
+        if f.is_finite() { f } else { f64::NAN }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bayes::laplace::tests::assert_gradient;
+    use crate::triangle::Long;
+    use crate::{DevelopmentColumn, Month};
+    use prospicio_math::special::norm_pdf;
+
+    /// Company 337 workers' compensation, the papers' training triangle
+    /// (validation/data/clrd_wkcomp_337.csv, calendar years up to 1996):
+    /// cumulative paid and incurred (with bulk and IBNR), USD thousands.
+    const PAID: [&[f64]; 9] = [
+        &[
+            9558., 22778., 33298., 40348., 45146., 48048., 49782., 50623., 51812.,
+        ],
+        &[
+            7913., 19472., 29622., 36816., 40975., 43302., 44707., 45871.,
+        ],
+        &[8744., 24302., 35406., 43412., 48057., 50897., 52879.],
+        &[13301., 32950., 47201., 56394., 61650., 65039.],
+        &[11424., 29086., 42034., 50910., 56406.],
+        &[11792., 27161., 38229., 46722.],
+        &[11194., 26893., 38488.],
+        &[12550., 31604.],
+        &[13194.],
+    ];
+    const INCURRED: [&[f64]; 9] = [
+        &[
+            62679., 64000., 65607., 65292., 62250., 61185., 59387., 57138., 53473.,
+        ],
+        &[
+            62058., 56660., 56598., 56831., 55294., 53481., 51379., 48446.,
+        ],
+        &[63955., 61523., 63166., 61402., 59474., 57613., 57161.],
+        &[73918., 75094., 73188., 71199., 71056., 70831.],
+        &[77143., 75133., 73284., 73155., 68284.],
+        &[79925., 78263., 78163., 68546.],
+        &[73628., 73554., 70736.],
+        &[69521., 80281.],
+        &[69720.],
+    ];
+    /// Direct earned premium, 1988 to 1997.
+    const PREMIUM: [f64; 10] = [
+        104437., 88883., 85956., 99339., 104897., 119427., 110784., 77731., 63646., 48052.,
+    ];
+
+    /// The training triangle with columns `paid`, `incurred`, `os`
+    /// (incurred - paid) and `premium`, and 1997 with its premium only when
+    /// `with_1997`.
+    fn triangle(with_1997: bool) -> Triangle {
+        let (mut origin, mut ages) = (vec![], vec![]);
+        let (mut paid, mut inc, mut os, mut prem) = (vec![], vec![], vec![], vec![]);
+        for (w, row) in PAID.iter().enumerate() {
+            for (d, &p) in row.iter().enumerate() {
+                origin.push(Month::january(1988 + w as i32));
+                ages.push(12 * (d as Lag + 1));
+                paid.push(p);
+                inc.push(INCURRED[w][d]);
+                os.push(INCURRED[w][d] - p);
+                prem.push(PREMIUM[w]);
+            }
+        }
+        if with_1997 {
+            origin.push(Month::january(1997));
+            ages.push(12);
+            paid.push(f64::NAN);
+            inc.push(f64::NAN);
+            os.push(f64::NAN);
+            prem.push(PREMIUM[9]);
+        }
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[
+                ("paid", &paid),
+                ("incurred", &inc),
+                ("os", &os),
+                ("premium", &prem),
+            ],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    fn preset() -> Compartmental {
+        Compartmental::new(CompartmentalPriors::gesmann_morris())
+    }
+
+    fn quick(seed: u64) -> Compartmental {
+        Compartmental {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 100,
+                target_accept: 0.9,
+                ..preset().sampler
+            },
+            n_sims: 500,
+            seed,
+            ..preset()
+        }
+    }
+
+    fn incurred() -> Outstanding<'static> {
+        Outstanding::FromIncurred("incurred")
+    }
+
+    fn model(ordered: bool) -> Model {
+        let tri = triangle(true);
+        let data = Data::new(&tri, "paid", incurred(), "premium").unwrap();
+        Model::new(&data, CompartmentalPriors::gesmann_morris(), ordered)
+    }
+
+    /// Points around the paper's posterior: `theta` at the printed means
+    /// with a deterministic spread.
+    fn points(model: &Model) -> Vec<Vec<f64>> {
+        (0..20)
+            .map(|k| {
+                let mut x = vec![0.0; model.dim()];
+                let wobble = |j: usize| 0.3 * ((7 * k + 3 * j) as f64).sin();
+                x[B_KER] = if model.ordered {
+                    0.2 + wobble(0)
+                } else {
+                    -5.4 + wobble(0)
+                };
+                x[B_KP] = -8.49 + wobble(1);
+                x[B_RLR] = 1.44 + wobble(2);
+                x[B_RRF] = -1.36 + wobble(3);
+                x[LOG_TAU] = 0.64f64.ln() + wobble(4);
+                x[LOG_TAU + 1] = 0.74f64.ln() + wobble(5);
+                x[ATANH_RHO] = 0.6 + wobble(6);
+                let ls = model.log_sigma0();
+                for (j, z) in x[Z0..ls].iter_mut().enumerate() {
+                    *z = 3.0 * wobble(7 + j);
+                }
+                x[ls] = 8.25 + wobble(ls);
+                x[ls + 1] = 6.66 + wobble(ls + 1);
+                x
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_layout_on_the_papers_training_triangle() {
+        let m = model(false);
+        assert_eq!(m.dim(), 27);
+        assert_eq!((m.cells.len(), m.n_outstanding), (90, 45));
+        assert_eq!(m.level[9], None);
+        assert_eq!(m.n_levels(), 9);
+        assert_eq!(m.times.len(), 10);
+        assert_eq!(m.n_observed, 9);
+        let names = m.names();
+        assert_eq!(names.len(), 6 + 18 + 9);
+        assert_eq!(names[6], "RLR[1988]");
+        assert_eq!(names[15], "RRF[1988]");
+        // Outstanding from incurred less paid.
+        assert_eq!(m.cells[0].y, 62679. - 9558.);
+        assert!(m.cells[45].paid && m.cells[45].y == 9558.);
+    }
+
+    #[test]
+    fn the_dual_gradient_matches_central_differences() {
+        for ordered in [false, true] {
+            let m = model(ordered);
+            for x in points(&m) {
+                assert_gradient(|t, g| m.log_posterior(t, g), &x);
+            }
+        }
+    }
+
+    #[test]
+    fn the_density_is_the_model_written_out() {
+        // At one point, against the model written out in f64 with the
+        // paper's form of the closed form (away from k_er = k_p).
+        let m = model(false);
+        let x = &points(&m)[3];
+        let half_t = |l: f64, s: f64| l - 5.5 * ((l.exp() / s).powi(2) / 10.0).ln_1p();
+        let cauchy = |v: f64| -((v / 1000.0).powi(2)).ln_1p();
+        let (a, b) = (3.0 * (0.1 * x[0]).exp(), (0.1 * x[1]).exp());
+        let rho = x[6].tanh();
+        let ls = m.log_sigma0();
+        let mut f = -0.5 * (x[0] * x[0] + x[1] * x[1] + x[2] * x[2] + x[3] * x[3])
+            + half_t(x[4], 0.2)
+            + half_t(x[5], 0.1)
+            + (1.0 - rho * rho).ln()
+            + cauchy(x[ls])
+            + cauchy(x[ls + 1]);
+        for z in &x[Z0..ls] {
+            f -= 0.5 * z * z;
+        }
+        for c in &m.cells {
+            let j = m.level[c.origin].unwrap();
+            let (z1, z2) = (x[Z0 + 2 * j], x[Z0 + 2 * j + 1]);
+            let u1 = x[4].exp() * z1;
+            let u2 = x[5].exp() * (rho * z1 + (1.0 - rho * rho).sqrt() * z2);
+            let rlr = 0.7 * (0.2 * (x[2] + u1)).exp();
+            let rrf = 0.8 * (0.1 * (x[3] + u2)).exp();
+            let t = c.t;
+            let os = rlr * a / (a - b) * ((-b * t).exp() - (-a * t).exp());
+            let pd =
+                rlr * rrf / (a - b) * (a * (1.0 - (-b * t).exp()) - b * (1.0 - (-a * t).exp()));
+            let (mean, l) = if c.paid { (pd, x[ls + 1]) } else { (os, x[ls]) };
+            let r = (c.y - PREMIUM[c.origin] * mean) / l.exp();
+            f -= l + 0.5 * r * r;
+        }
+        let mut g = vec![0.0; m.dim()];
+        let got = m.log_posterior(x, &mut g);
+        assert!((got - f).abs() <= 1e-12 * f.abs(), "{got} vs {f}");
+    }
+
+    #[test]
+    fn the_means_are_invariant_under_the_rate_swap() {
+        let mut rng = StreamRng::new(7, 0);
+        let mut worst: f64 = 0.0;
+        for _ in 0..200 {
+            let mut u = |lo: f64, hi: f64| lo + (hi - lo) * rng.next_open01();
+            let (k_er, k_p, rlr, rrf, t) = (
+                u(0.05, 6.0),
+                u(0.05, 6.0),
+                u(0.3, 1.5),
+                u(0.5, 1.5),
+                u(0.1, 15.0),
+            );
+            let (os, pd) = one_os(k_er, k_p, t);
+            let (os2, pd2) = one_os(k_p, k_er, t);
+            let (rlr2, rrf2) = (rlr * k_er / k_p, rrf * k_p / k_er);
+            for (x, y) in [(rlr * os, rlr2 * os2), (rlr * rrf * pd, rlr2 * rrf2 * pd2)] {
+                let err = (x - y).abs() / x.abs();
+                worst = worst.max(err);
+                assert!(err <= 1e-12, "{k_er} {k_p} {t}: {x} vs {y}");
+            }
+        }
+        println!("swap invariance: worst relative difference {worst:.1e}");
+    }
+
+    #[test]
+    fn the_data_start_is_the_population_least_squares() {
+        let m = model(false);
+        let start = m.start(CompartmentalStart::Data);
+        // On the paper's side of the swap and near its posterior (k_er about
+        // 1.75 and k_p about 0.43, so b_ker -5.4 and b_kp -8.5; log sigma
+        // 8.25 and 6.66). Without origin effects the population curve fits
+        // paid worse, so its log sigma_PD starts higher (about 8.7).
+        let ls = m.log_sigma0();
+        assert!(start[B_KER] > -9.0 && start[B_KER] < 0.0, "{start:?}");
+        assert!(start[B_KP] > -10.0 && start[B_KP] < -7.0, "{start:?}");
+        assert!((start[ls] - 8.25).abs() < 1.5, "{start:?}");
+        assert!((start[ls + 1] - 6.66).abs() < 2.5, "{start:?}");
+        assert!(start[Z0..ls].iter().all(|&z| z == 0.0));
+        let centre = m.start(CompartmentalStart::PriorCentre);
+        assert_eq!(&centre[..4], &[0.0; 4]);
+        let ordered = model(true);
+        let s = ordered.start(CompartmentalStart::Data);
+        let (k_er, k_p, _) = ordered.rates(&s);
+        assert!(k_er > k_p);
+    }
+
+    #[test]
+    fn a_seed_replays_whatever_the_threads() {
+        let tri = triangle(true);
+        let fit = |m: &Compartmental| m.fit(&tri, "paid", incurred(), "premium").unwrap();
+        let a = fit(&quick(3));
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let b = pool.install(|| fit(&quick(3)));
+        assert_eq!(a.posterior, b.posterior);
+        assert_eq!(a.reserves.draw_matrix(), b.reserves.draw_matrix());
+        assert_eq!(a.paid.draw_matrix(), b.paid.draw_matrix());
+        let c = fit(&quick(4));
+        assert_ne!(a.posterior, c.posterior);
+    }
+
+    #[test]
+    fn the_fit_and_its_tables() {
+        let tri = triangle(true);
+        let fit = quick(1)
+            .fit(&tri, "paid", Outstanding::Column("os"), "premium")
+            .unwrap();
+        assert_eq!(fit.origins.len(), 10);
+        assert_eq!(fit.population_origins, [Period::year(1997)]);
+        assert_eq!((fit.latest_paid[0], fit.latest_paid[9]), (51812., 0.0));
+        assert_eq!(fit.reserves.n_components(), 10);
+        // Future paid: 1988 at age 10, 1989 at 9 and 10, ..., 1997 at all 10.
+        assert_eq!(fit.paid.n_components(), (1..=9).sum::<usize>() + 10);
+        assert_eq!(fit.outstanding.n_components(), fit.paid.n_components());
+        // The reserve is the paid at age 10 less the latest paid.
+        let key = vec![Period::year(1990).into(), KeyValue::Int(120)];
+        let at_10 = fit.paid.marginal(&key).unwrap();
+        let reserve = fit
+            .reserves
+            .marginal(&vec![Period::year(1990).into()])
+            .unwrap();
+        assert!((at_10.mean() - 52879. - reserve.mean()).abs() < 1e-6 * at_10.mean());
+        let long = fit.to_long();
+        assert_eq!(long.n_rows(), 10);
+        assert_eq!(long.column("premium").unwrap(), PREMIUM);
+        let ulr = long.column("ultimate_loss_ratio").unwrap();
+        assert!(ulr.iter().all(|&v| v > 0.3 && v < 1.5), "{ulr:?}");
+        let totals = fit.totals();
+        assert_eq!(totals.n_rows(), 1);
+        let sum: f64 = long.column("mean").unwrap().iter().sum();
+        assert!((totals.column("mean").unwrap()[0] - sum).abs() < 1e-6 * sum);
+        let table = fit.paid_table().unwrap();
+        assert_eq!(table.n_rows(), fit.paid.n_components());
+        assert_eq!(table.age.as_ref().unwrap()[0], 120);
+        let q = |n| table.column(n).unwrap()[0];
+        assert!(q("q05") < q("q50") && q("q50") < q("q95"));
+        assert_eq!(
+            fit.outstanding_table().unwrap().n_rows(),
+            fit.outstanding.n_components()
+        );
+        assert_eq!(fit.summary().unwrap().len(), 33);
+        let loo = fit.loo().unwrap();
+        assert_eq!(loo.n_outstanding, 45);
+        assert!(loo.elpd_outstanding.is_finite() && loo.elpd_paid.is_finite());
+        let output = |pd: &PredictiveDistribution| {
+            pd.provenance()
+                .parameters
+                .iter()
+                .filter(|(k, _)| k == "output")
+                .map(|(_, v)| v.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(output(&fit.reserves), ["reserves"]);
+        assert_eq!(output(&fit.paid), ["paid"]);
+    }
+
+    #[test]
+    fn an_origin_observed_at_the_last_age_has_no_reserve() {
+        // Without 1997 the square has 9 ages, and 1988 is observed at age 9.
+        let tri = triangle(false);
+        let fit = quick(2).fit(&tri, "paid", incurred(), "premium").unwrap();
+        assert!(fit.population_origins.is_empty());
+        let r = fit
+            .reserves
+            .marginal(&vec![Period::year(1988).into()])
+            .unwrap();
+        assert_eq!((r.mean(), r.std_dev()), (0.0, 0.0));
+        assert_eq!(fit.paid.n_components(), (1..=8).sum::<usize>());
+    }
+
+    #[test]
+    fn the_rate_swap_warns() {
+        // Rate priors centred on the mirror image of the paper's posterior:
+        // the posterior sits at k_er < k_p and the fit says so.
+        let priors = CompartmentalPriors {
+            k_er: PositivePrior::LogNormal {
+                median: 0.43,
+                sd: 0.05,
+            },
+            k_p: PositivePrior::LogNormal {
+                median: 1.75,
+                sd: 0.05,
+            },
+            ..CompartmentalPriors::gesmann_morris()
+        };
+        let tri = triangle(true);
+        let fit = Compartmental { priors, ..quick(5) }
+            .fit(&tri, "paid", incurred(), "premium")
+            .unwrap();
+        assert!(fit.rate_swaps > 0);
+        assert!(
+            fit.diagnostics
+                .warnings
+                .iter()
+                .any(|w| w.contains("k_er <= k_p")),
+            "{:?}",
+            fit.diagnostics.warnings
+        );
+        let ordered = Compartmental {
+            priors,
+            rate_order: RateOrder::Ordered,
+            ..quick(5)
+        }
+        .fit(&tri, "paid", incurred(), "premium")
+        .unwrap();
+        assert_eq!(ordered.rate_swaps, 0);
+        assert!(
+            !ordered
+                .diagnostics
+                .warnings
+                .iter()
+                .any(|w| w.contains("k_er <= k_p"))
+        );
+    }
+
+    #[test]
+    fn the_ordered_prior_check_keeps_the_order() {
+        let rates = |er: f64, p: f64, sd: f64| CompartmentalPriors {
+            k_er: PositivePrior::LogNormal { median: er, sd },
+            k_p: PositivePrior::LogNormal { median: p, sd },
+            ..CompartmentalPriors::gesmann_morris()
+        };
+        // The swapped priors of the_rate_swap_warns put about 1e-88 of
+        // their mass on k_er > k_p: the ordered prior check says so
+        // instead of drawing rates that break the order.
+        let swapped = rates(0.43, 1.75, 0.05);
+        let (a, _) = rate_order_bound(swapped);
+        assert!(norm_cdf(-a) < 1e-80, "{a}");
+        let e = Compartmental {
+            priors: swapped,
+            rate_order: RateOrder::Ordered,
+            ..preset()
+        }
+        .prior_predictive(&triangle(true), "premium", 100)
+        .unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(why) if why.contains("almost no mass to k_er > k_p")),
+            "{e}"
+        );
+        // About 2.2e-5 of the mass on the order (a = 4.09): every draw
+        // keeps it, and the projection's mean is the truncated normal's,
+        // φ(a) / Φ(-a), with the orthogonal one's mean 0.
+        let pr = rates(1.0, 1.75, 0.0968);
+        let (m_er, s_er) = lognormal(pr.k_er);
+        let (m_p, s_p) = lognormal(pr.k_p);
+        let (a, s) = rate_order_bound(pr);
+        let mass = norm_cdf(-a);
+        assert!((1e-6..1e-4).contains(&mass), "{mass}");
+        let mut rng = StreamRng::new(7, 0);
+        let n = 20_000;
+        let (mut z_sum, mut y_sum) = (0.0, 0.0);
+        for _ in 0..n {
+            let (b_ker, b_kp) = ordered_rates(pr, &mut rng);
+            assert!(m_er * (s_er * b_ker).exp() > m_p * (s_p * b_kp).exp());
+            z_sum += (s_er * b_ker - s_p * b_kp) / s;
+            y_sum += (s_p * b_ker + s_er * b_kp) / s;
+        }
+        let mills = norm_pdf(a) / mass;
+        // Standard errors: under 1 / (a sqrt(n)) = 0.002 for z (the
+        // truncated normal's sd is below 1 / a) and 1 / sqrt(n) = 0.007
+        // for y.
+        assert!(
+            (z_sum / n as f64 - mills).abs() < 0.01,
+            "{}",
+            z_sum / n as f64
+        );
+        assert!((y_sum / n as f64).abs() < 0.03, "{}", y_sum / n as f64);
+    }
+
+    #[test]
+    fn settings_not_yet_built_are_errors() {
+        let tri = triangle(true);
+        let fit = |m: Compartmental| {
+            m.fit(&tri, "paid", incurred(), "premium")
+                .unwrap_err()
+                .to_string()
+        };
+        let cases = [
+            (
+                Compartmental {
+                    likelihood: CompartmentalLikelihood::LogNormal,
+                    ..preset()
+                },
+                "log-normal",
+            ),
+            (
+                Compartmental {
+                    scale: Scale::LossRatio,
+                    ..preset()
+                },
+                "loss-ratio",
+            ),
+            (
+                Compartmental {
+                    paid_response: PaidResponse::Incremental,
+                    ..preset()
+                },
+                "incremental",
+            ),
+            (
+                Compartmental {
+                    fitted: Fitted::PaidAndIncurred,
+                    ..preset()
+                },
+                "paid and incurred",
+            ),
+            (
+                Compartmental {
+                    fitted: Fitted::PaidOnly,
+                    ..preset()
+                },
+                "paid alone",
+            ),
+            (
+                Compartmental {
+                    fitted: Fitted::IncurredOnly,
+                    ..preset()
+                },
+                "incurred alone",
+            ),
+        ];
+        for (m, what) in cases {
+            let e = fit(m);
+            assert!(e.contains(what) && e.contains("not yet"), "{e}");
+        }
+    }
+
+    #[test]
+    fn bad_settings_are_invalid() {
+        let tri = triangle(true);
+        let fit = |m: &Compartmental| m.fit(&tri, "paid", incurred(), "premium").unwrap_err();
+        let name = |e: Error| match e {
+            Error::InvalidSetting { name, .. } => name,
+            other => panic!("{other}"),
+        };
+        let with = |f: fn(&mut CompartmentalPriors)| {
+            let mut priors = CompartmentalPriors::gesmann_morris();
+            f(&mut priors);
+            Compartmental { priors, ..preset() }
+        };
+        type Change = fn(&mut CompartmentalPriors);
+        let cases: [(Change, &str); 5] = [
+            (
+                |p| {
+                    p.k_p = PositivePrior::LogNormal {
+                        median: -1.0,
+                        sd: 0.1,
+                    }
+                },
+                "k_p median",
+            ),
+            (
+                |p| {
+                    p.rlr = PositivePrior::LogNormal {
+                        median: 0.7,
+                        sd: 0.0,
+                    }
+                },
+                "rlr sd",
+            ),
+            (
+                |p| p.rrf_effect_sd = HalfPrior::Normal { scale: 0.0 },
+                "rrf_effect_sd scale",
+            ),
+            (|p| p.lkj_eta = f64::NAN, "lkj_eta"),
+            (
+                |p| {
+                    p.log_sigma[1] = RealPrior::Normal {
+                        mean: f64::INFINITY,
+                        sd: 1.0,
+                    }
+                },
+                "log_sigma mean",
+            ),
+        ];
+        for (f, expected) in cases {
+            assert_eq!(name(fit(&with(f))), expected);
+        }
+        let m = Compartmental {
+            n_sims: 0,
+            ..preset()
+        };
+        assert_eq!(name(fit(&m)), "n_sims");
+    }
+
+    #[test]
+    fn bad_data_are_errors() {
+        let tri = triangle(true);
+        let err = |paid: &str, os: Outstanding<'_>, premium: &str| {
+            preset()
+                .fit(&tri, paid, os, premium)
+                .unwrap_err()
+                .to_string()
+        };
+        // Missing columns.
+        assert!(err("nope", incurred(), "premium").contains("nope"));
+        assert!(err("paid", Outstanding::Column("nope"), "premium").contains("nope"));
+        assert!(err("paid", incurred(), "nope").contains("nope"));
+        // An outstanding column with no cell, and unequal grains.
+        let origin: Vec<Month> = (0..3).map(|w| Month::january(2000 + w)).collect();
+        let small = |development_grain: Grain, ages: &[Lag], os: &[f64]| {
+            Triangle::from_long(&Long {
+                keys: &[],
+                origin: &origin,
+                development: DevelopmentColumn::Age(ages),
+                values: &[
+                    ("paid", &[1.0, 2.0, 3.0]),
+                    ("os", os),
+                    ("premium", &[10.0, 10.0, 10.0]),
+                ],
+                origin_grain: Grain::Year,
+                development_grain,
+                cumulative: true,
+            })
+            .unwrap()
+        };
+        let none = small(Grain::Year, &[12, 12, 12], &[f64::NAN; 3]);
+        let e = preset()
+            .fit(&none, "paid", Outstanding::Column("os"), "premium")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("os"), "{e}");
+        let quarterly = small(Grain::Quarter, &[3, 3, 3], &[1.0, 2.0, 3.0]);
+        let e = preset()
+            .fit(&quarterly, "paid", Outstanding::Column("os"), "premium")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("grain"), "{e}");
+        let few = small(Grain::Year, &[12, 12, 12], &[1.0, 2.0, 3.0]);
+        let e = preset()
+            .fit(&few, "paid", Outstanding::Column("os"), "premium")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("more cells than parameters"), "{e}");
+        // An origin with paid but no premium.
+        let gap = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 12, 12]),
+            values: &[
+                ("paid", &[1.0, 2.0, 3.0]),
+                ("os", &[1.0, 2.0, 3.0]),
+                ("premium", &[10.0, f64::NAN, 10.0]),
+            ],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let e = preset()
+            .fit(&gap, "paid", Outstanding::Column("os"), "premium")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("2001") && e.contains("premium"), "{e}");
+    }
+
+    #[test]
+    fn the_prior_predictive_paths() {
+        let tri = triangle(true);
+        let paths = preset().prior_predictive(&tri, "premium", 2_000).unwrap();
+        assert_eq!(paths.paid.n_components(), 100);
+        assert_eq!(paths.outstanding.n_components(), 100);
+        assert_eq!(paths.paid.dims(), ["origin", "age"]);
+        // Paid rises with age; at the preset's medians (k_er 3, k_p 1, RLR
+        // 0.7, RRF 0.8) the paid at age 10 is about 0.56 of premium.
+        let key = |a: i64| vec![Period::year(1988).into(), KeyValue::Int(a)];
+        let at = |a| paths.paid.marginal(&key(a)).unwrap().mean();
+        assert!(at(12) < at(60) && at(60) < at(120));
+        let median = paths
+            .paid
+            .marginal(&key(120))
+            .unwrap()
+            .quantile(0.5)
+            .unwrap();
+        assert!((median / PREMIUM[0] - 0.56).abs() < 0.05, "{median}");
+        let again = preset().prior_predictive(&tri, "premium", 2_000).unwrap();
+        assert_eq!(paths.paid.draw_matrix(), again.paid.draw_matrix());
+        let ordered = Compartmental {
+            rate_order: RateOrder::Ordered,
+            ..preset()
+        }
+        .prior_predictive(&tri, "premium", 500)
+        .unwrap();
+        assert!(
+            ordered
+                .paid
+                .draw_matrix()
+                .iter()
+                .all(|v| v.is_finite() && *v > 0.0)
+        );
+        assert!(matches!(
+            preset().prior_predictive(&tri, "premium", 0),
+            Err(Error::InvalidSetting { name: "n_sims", .. })
+        ));
+    }
+}

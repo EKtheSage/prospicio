@@ -13,9 +13,10 @@ use std::time::{Duration, Instant};
 
 use prospicio_core::StreamRng;
 
+use super::compartmental::one_os;
 use super::dual::{CHUNK, gradient};
 use super::laplace::{Posterior, Whitened};
-use super::scalar::{Scalar, exprel_neg};
+use super::scalar::Scalar;
 
 /// A log density written once over [`Scalar`]: its value with `f64`, its
 /// gradient with [`Dual`] through [`gradient`].
@@ -119,17 +120,6 @@ pub(crate) fn assert_oracle<M: Posterior + GenericDensity>(
         errors.componentwise
     );
     errors
-}
-
-/// The one-compartment closed form (the compartmental note, decision 2) per
-/// unit of premium: `OS(t) / (Π RLR) = k_er g(t)` and
-/// `PD(t) / (Π RLR RRF) = (1 - e^(-k_p t)) - k_p g(t)`, with
-/// `g(t) = t e^(-k_p t) (1 - e^(-Δ t)) / (Δ t)` and `Δ = k_er - k_p`,
-/// finite and smooth through `k_er = k_p` by [`exprel_neg`].
-pub(crate) fn one_os<S: Scalar>(k_er: S, k_p: S, t: f64) -> (S, S) {
-    let decay = k_p * (-t);
-    let g = decay.exp() * t * exprel_neg((k_er - k_p) * t);
-    (k_er * g, -decay.exp_m1() - k_p * g)
 }
 
 /// Cells of a triangle: `(origin, age, and two observed values)`.

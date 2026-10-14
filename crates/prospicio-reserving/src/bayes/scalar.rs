@@ -12,12 +12,11 @@
 //! same branch as the plain value.
 //!
 //! The existing models keep their hand-written gradients as the fast
-//! path; the generic densities beside them are test-only oracles until a
-//! model (the compartmental models, PR B onward) is written only
-//! generically.
+//! path, with the generic densities beside them as test-only oracles;
+//! [`Compartmental`](super::Compartmental) is written only generically.
 
-// The first production user is the compartmental model (PR B); until then
-// the trait and its helpers are used by the tests only.
+// `softplus`, `logistic`, `powi` and `tanh` serve the test-only oracles
+// (and `Compartmental` uses `tanh`), so some are unused outside tests.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use std::fmt::Debug;

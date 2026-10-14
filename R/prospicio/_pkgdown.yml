@@ -240,6 +240,9 @@ reference:
       - bayes_odp_fits
       - meyers_fit
       - meyers_fits
+      - compartmental_fit
+      - compartmental_priors
+      - compartmental_prior_predictive
       - one_year_fit
       - clark_fit
       - fit_frames

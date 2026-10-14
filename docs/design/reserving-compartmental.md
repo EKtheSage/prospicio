@@ -2,7 +2,9 @@
 
 Status: **Decided** (2026-10-13; the user settled the open decisions at
 the end, all as recommended, with decision 1 widened: see there). PR A
-built (decision 4); PRs B to E not yet · Lane:
+built (decision 4); PR B built (decisions 2, 5, 6, 7 and 9, each with its
+"Built" paragraph: the Rust core and its Python and R bindings); PRs C to
+E not yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -125,6 +127,12 @@ case incurred and net premium. The generator asserts that cell (paid
 104,437) and Morris' printed table row by row before writing. The repo's
 `clrd_wkcomp.csv` and `clrd_lines.csv` have no outstanding column and
 cannot be used.
+
+Built (PR B): as above. The generator asserts the 1988 cell and every cell
+of Morris' printed upper triangles (calendar years up to 1997: premium,
+outstanding and cumulative paid, headed $'000s but in USD millions) to
+within 0.5 of the printed figure; all 55 of each pass, with the papers'
+outstanding and direct premium only (`knowledge/datasets/clrd-wkcomp-337.md`).
 
 ## Decisions
 
@@ -342,6 +350,39 @@ diagnostic and not a warning, the share of draws and cells with
 fire (above), and the two give the same posterior within Monte Carlo
 error; they differ only when a user widens the rate priors.
 
+**Built (PR B, Rust core).** As proposed: the 27 parameters on the
+paper's training triangle in the order above, the density written once
+over `Scalar` (`bayes/compartmental.rs`) and its gradient from one chunked
+dual pass (`dual::CHUNK` = 32), with no hand-written gradient; the Laplace
+Hessian is the default central differences of that exact gradient. The
+closed form `one_os` moved from PR A's test support into the model. With
+these additions and departures:
+
+* **Priors.** `PositivePrior::LogNormal { median, sd }` only, as decided;
+  `HalfPrior` is `StudentT { nu, scale }` or `Normal { scale }`, on `τ` with
+  the log map's Jacobian; `RealPrior` is `StudentT { nu, location, scale }`
+  or `Normal { mean, sd }`. The LKJ shape `lkj_eta` is general: for two
+  effects its density in `atanh ρ`, with the Jacobian, is
+  `eta log(1 - ρ²)`. A unit test checks the density at one point against
+  the model written out in `f64` with the paper's form of the closed form
+  (1e-12), and the dual gradient against central differences at 20 points
+  around the posterior, for both rate orders.
+* **The swap.** The invariance holds to 1.1e-14 at 200 random points
+  (`the_means_are_invariant_under_the_rate_swap`;
+  `knowledge/findings/compartmental-rate-swap.md`). Under
+  `RateOrder::Free` the fit counts the draws with `k_er <= k_p`
+  (`CompartmentalFit::rate_swaps`) and adds a diagnostics warning when
+  there are any; none in 200 seeds on company 337. `RateOrder::Ordered`
+  samples `delta` with `k_er = k_p + e^delta` and keeps the prior on
+  `k_er`'s `o` with the Jacobian `delta - log k_er`, so the prior is the
+  preset's restricted to `k_er > k_p`; on company 337 it gives the same
+  posterior means within the Stan rows' tolerances. A test with rate
+  priors centred on the mirror image lands there and warns.
+* **Origins with no cell** have no `z`, as decided; each simulation draws
+  one new effect per such origin, shared by its cells, and
+  `CompartmentalFit::population_origins` lists them. Its mean ultimate loss
+  ratio is exact given a draw (log-normal moments of the effect).
+
 ### 3. The ODE strategy
 
 Proposed. **Closed form wherever one exists**, a generic fixed-step solver
@@ -549,12 +590,50 @@ A test fits company 337 from the default start and checks convergence (no
 divergence, every R-hat below 1.01), and a second test does the same from
 `o = 0`, so the fallback start is known to work.
 
-Defaults: 4 chains, 1,000 tuning and 1,000 kept draws each,
-`target_accept = 0.99` (the paper's `adapt_delta`) and `max_depth = 10`
-(`Sampler::default()`, which `Meyers` also keeps, with `target_accept`
-0.95). The paper's `max_treedepth` 15 is used for the Stan reference only.
-The seed sweep (decision 7) counts draws that hit the maximum depth, and
-PR B raises the default if more than 1% do; a deeper tree is a setting.
+**Built (PR B, Rust core).** As proposed, with these outcomes:
+
+* **The start** is a weighted least-squares fit of the population curve on
+  `log (k_er, k_p, RLR, RRF)` by the Newton of `laplace::mode`, each type
+  weighted by the inverse of its residual variance, twice from the prior
+  medians; both representatives of the swap are mapped to `theta` and the
+  one with the higher log posterior is kept. `log τ` starts at 0.6745 times
+  the half prior's scale (about its median) and `log σ` at the log of each
+  type's residual RMS. On company 337 it gives `k_er` 2.64 and `k_p` 0.405
+  (`b_ker` -1.28, `b_kp` -9.03) and `log σ` 8.46 and 8.69: without origin
+  effects paid fits worse. The prior centre is the fallback and a setting
+  (`CompartmentalStart::PriorCentre`); from either start the default fit
+  at seed 0 converges with no warning (validation tests).
+* **Defaults**: 4 chains of 1,000 warm-up and **2,000** kept draws (not
+  1,000), `target_accept` 0.99, `max_depth` 10. With 1,000 kept draws 9 of
+  30 seeds failed a threshold (R-hat just above 1.01 or ESS below 400 on
+  `tau_RRF`, `rho`, `RLR[1991]`); with 2,000, 6 of 200 still do, each just
+  over (R-hat at most 1.014, one tail ESS of 391, one divergent
+  transition); 2,000 warm-up draws as well gave 1 of 40. The sweep does not
+  count draws at the maximum depth: `prospicio-bayes` does not report tree
+  depths (Models lane); Stan had none at its depth 15.
+* **The predictive** draws every future cell of the square, paid and
+  outstanding, normal about its mean with its type's σ and independent
+  given the draw; the reserve is each origin's paid at the last age less
+  its latest paid, 0 for an origin observed there. The square has
+  `max(number of origins, observed ages)` ages; the origin and development
+  grains must be equal (otherwise `Error::Bayes`, not yet built).
+* **Runtime** on company 337 (rustc 1.98.1, Windows, Intel Core Ultra 9
+  285H, 4 chains in parallel): about 5.5 s a default fit in release
+  (median over the 200 seeds), including the pilot run and 10,000
+  simulations, and about 430 s in a debug build (measured while CmdStan
+  ran beside it), with the same draws as in release; so the default fits
+  run only in the release `slow-bayes` suite, and the unit tests use 2
+  chains of 100 warm-up and 100 kept draws (about 67 s for all of them in
+  debug).
+
+Defaults (as built; the **Defaults** decision above records why): 4
+chains, 1,000 tuning and 2,000 kept draws each, `target_accept = 0.99`
+(the paper's `adapt_delta`) and `max_depth = 10` (`Sampler::default()`'s
+depth, which `Meyers` also keeps, with `target_accept` 0.95). The paper's
+`max_treedepth` 15 is used for the Stan reference only. The plan was 1,000
+kept draws and a seed sweep that counts draws at the maximum depth; the
+sweep showed 1,000 kept draws too few, and it could not count tree depths
+because `prospicio-bayes` does not report them. A deeper tree is a setting.
 `n_sims = 10_000`, `seed = 0`. Seeds as
 `reserving-bayes.md` decision 5: derived streams for the chains, the pilot
 (`pilot_seed`) and the simulations, exact replay whatever the thread
@@ -631,13 +710,41 @@ pub mod bayes {
   `ultimate_loss_ratio` by origin, `to_long()`, `totals()`.
 * **`prior_predictive`** draws OS and paid paths from the priors alone,
   so a user can check a prior set before fitting, as the paper does in
-  sec. 3.4 to test identifiability.
+  sec. 3.4 to test identifiability. Under `RateOrder::Ordered` it draws
+  the rate intercepts exactly from their priors restricted to
+  `k_er > k_p` (a half-plane in their standard normals: the projection
+  across it from a truncated normal, by the inverse of its upper tail),
+  and it is `Error::Bayes` when the rate priors put less than `1e-6` of
+  their mass on `k_er > k_p`.
 * **Errors.** A missing column or premium, a non-positive premium, and a
   triangle with no outstanding cell, and a triangle where no origin has an
   observed cell, are `Error::Bayes` naming the origin or column; an origin
   with no observed cell is accepted and drawn from the population
   (decision 2); bad prior settings are `InvalidSetting`.
 * **Segments and the backtest** wait for PR E (decision 8).
+
+**Built (PR B, Rust core).** The shape above, with these names and
+additions: `Outstanding::{Column, FromIncurred}`;
+`CompartmentalLikelihood::{Normal, LogNormal}`, `Scale::{Amount,
+LossRatio}`, `PaidResponse::{Cumulative, Incremental}` and
+`Fitted::{PaidAndOutstanding, PaidAndIncurred, PaidOnly, IncurredOnly}`,
+each value but model 1's an `Error::Bayes` that says it is not yet built;
+`RateOrder::{Free, Ordered}`; `CompartmentalStart::{Data, PriorCentre}`
+(decision 5). `Compartmental` has no `Default`: `Compartmental::new(priors)`
+takes the priors and sets the rest. `CompartmentalFit` holds `origins`,
+`premium`, `latest_paid`, `population_origins`, `posterior` (the names of
+decision 6, with `RLR[o]` and `RRF[o]` by origin label), `diagnostics`,
+`rate_swaps`, `reserves`, `paid` and `outstanding` (each a
+`PredictiveDistribution` over the future cells, dimensions `origin` and
+`age`, from the same simulations as the reserves, with `paid_table()` and
+`outstanding_table()` as long frames of mean, sd and 5/50/95%),
+`ultimate_loss_ratio`, `summary()`, `loo()` (a `CompartmentalLoo`: the
+`Loo` over the outstanding cells then the paid cells, and the elpd of
+each), `to_long()` and `totals()`. `prior_predictive` returns
+`CompartmentalPaths { outstanding, paid }`, the mean paths of every origin
+at every age of the square, without the likelihood's noise (the preset's
+flat prior on `log σ` would swamp them); the `Compartmental` doc example
+shows the check. A bad prior setting is `InvalidSetting` naming it.
 
 ### 7. Validation
 
@@ -718,6 +825,42 @@ Proposed, on the pattern of `reserving-bayes.md` decision 10.
   company 337 against the chain ladder's on incurred (a report, not a
   bound, since the models differ).
 
+**Built (PR B, Rust core).** `compartmental_gm1.stan` and
+`reserving_compartmental_stan.py` as proposed (seed 20261014, 4 chains of
+2,000 warm-up and 25,000 draws, `adapt_delta` 0.99, `max_treedepth` 15;
+about 20 minutes; max R-hat 1.0002, no divergence, no draw at the maximum
+depth or with `k_er <= k_p`; with `--reuse` it rereads its draws). The
+reconstruction matches the printed `m1fit` with every mean within 0.04
+printed sd and every sd within 2.5%, so the rate rows were trusted. The
+training triangle is built in `validation/tests/reserving_compartmental.rs`
+from the square (calendar years up to 1996, and 1997 with its premium
+only). Results at seed 0, ours / Stan / printed (mean, sd): `b_ker` -5.395
+(0.833) / -5.392 (0.830) / -5.40 (0.81); `b_kp` -8.485 / -8.488 / -8.49;
+`b_RLR` 1.446 / 1.442 / 1.44; `b_RRF` -1.357 / -1.358 / -1.36; `tau_RLR`
+0.643 / 0.642 / 0.64; `tau_RRF` 0.739 / 0.737 / 0.74; `rho` 0.533 / 0.534 /
+0.54; `log_sigma_os` 8.249 / 8.252 / 8.25; `log_sigma_pd` 6.671 / 6.671 /
+6.66; total reserve 173,390 (10,167) / 173,341 (10,076); 1997 reserve
+31,376 (6,171) / 31,321 (6,125); elpd_loo -810.7 / -811.0
+(`knowledge/findings/compartmental-gm1-parity.md`).
+
+Tolerances, from the sweep over seeds 0 to 199 (largest seed-to-seed sd in
+each family, `s` the Stan posterior sd): parameter means `0.15 s` (spread
+`0.032 s`), parameter sds 15% (2.3%), reserve means `0.15 s` (`0.016 s`),
+reserve sds 15% (1.4%), reserve percentiles `0.3 s` (`0.042 s`), test
+means `0.15 s` (`0.025 s`), elpd_loo 1.5 (0.35): every row at least 4.25
+times its spread, and all 170 rows pass at every seed (at most 0.73 of a
+tolerance). No row is dropped: the 1997 reserve is normal given a draw and
+its sd is not heavy-tailed. The test-diagonal means are the posterior
+means of the cells' expected values, not of the predictive cells, whose
+noise (`σ_OS` about 3,900) is larger than the tolerance on a small cell.
+The printed rows get 0.2 printed sd on a mean (not 0.15) and 15% on an sd:
+the combined error of our run, the paper's (4 x 1,000 draws, bulk ESS from
+1,300) and the rounding to two decimals is at most 0.043 printed sd and
+3.6%, and 0.15 would be only 3.5 times it. Not built yet: the report of
+the posterior mean ultimate loss ratio against the chain ladder's on
+incurred; the CSV checks each origin's mean `RLR_i RRF_i` against Stan
+instead.
+
 ### 8. Segments and the backtest (PR E)
 
 Proposed. `Compartmental::fit_segments(triangle, paid, outstanding,
@@ -755,6 +898,53 @@ decision 10 (a)):
   the default chains (no warning, the frames, totals close to the Rust
   values), replay by seed, and the errors. Docs regenerated with
   `cargo xtask docs`.
+
+**Built (PR B, bindings).** As proposed, with these outcomes:
+
+* **Python** (`prospicio.reserving`): `Compartmental(priors, *,
+  likelihood="normal", scale="amount", paid_response="cumulative",
+  fitted="paid_and_outstanding", rate_order="free", start="data",
+  chains=4, tune=1000, draws=2000, n_sims=10000, seed=0,
+  target_accept=0.99, max_depth=10)`: `priors` is the one positional
+  argument and has no default (a `TypeError` without it), and the
+  settings are keyword-only strings. The defaults are the Rust core's
+  (2,000 kept draws, not the 1,000 proposed). A setting not yet built is
+  accepted and named, and `fit` raises the core's "not yet built"
+  `ValueError`. `CompartmentalPriors` takes every prior as a keyword
+  (`(median, sd)` for a positive parameter, `("student_t", nu, scale)` or
+  `("normal", scale)` for an effect sd, `("student_t", nu, location,
+  scale)` or `("normal", mean, sd)` for each `log sigma`), with
+  `CompartmentalPriors.gesmann_morris()` and `replace(...)` to change a
+  few. `fit(triangle, paid, premium, *, outstanding=None, incurred=None)`
+  returns a `CompartmentalFit` with `reserves`, `paid` and `outstanding`
+  (`PredictiveDistribution`s), `diagnostics`, `rate_swaps`,
+  `population_origins`, `ultimate_loss_ratio`, `parameter_names`,
+  `draws`, `summary()`, `loo()` (an `Elpd`, outstanding cells first) and
+  `loo_by_type()` (the elpd split), `to_frame()`, `totals_frame()`,
+  `paid_frame()` and `outstanding_frame()`. `prior_predictive(triangle,
+  premium, n_sims=1000)` returns a dict of the two path distributions.
+* **R**: `compartmental(triangle, paid, premium, priors, outstanding =
+  NULL, incurred = NULL, likelihood, scale, paid_response, fitted,
+  rate_order, start, chains = 4, tune = 1000, draws = 2000, n_sims =
+  10000, seed = 0, target_accept = 0.99, max_depth = 10)`, with `priors`
+  required (an error naming `gesmann_morris_priors()` without it), not
+  defaulted to the preset as proposed: decision 2 settled priors as a
+  required argument. Priors are `compartmental_priors(...)` lists
+  (`c(median = , sd = )` and `list(family = , ...)`), with
+  `gesmann_morris_priors()`. `compartmental_fit` has the Python fit's
+  fields as properties (`paid_table` and `outstanding_table` as data
+  frames), `as.data.frame()`, `totals_frame()`, `summary()` and
+  `bayes_loo()` (with `n_outstanding`, `elpd_outstanding` and
+  `elpd_paid`); `development_frame()` is an error, as for Clark.
+  `compartmental_prior_predictive(triangle, premium, priors, rate_order,
+  n_sims = 1000, seed = 0)` returns a list of the two path
+  distributions.
+* Tests: both fit company 337's training triangle with the default
+  chains at seed 0 with no warning, and check the total reserve within 2%
+  of the Rust value, `b_kp` within 0.1 and `elpd_loo` within 2 of Stan's,
+  the frames, the prior predictive check, replay by seed, a warning from
+  short chains, the settings not yet built and the missing priors. A
+  default fit takes about 5 seconds in a release build.
 
 ### 10. Docs and knowledge
 

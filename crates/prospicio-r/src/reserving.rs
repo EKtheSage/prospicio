@@ -23,8 +23,10 @@ use prospicio_reserving::{
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
-    BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment, MeyersFits as MeyersFitsInner,
-    MeyersSegment,
+    BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment, Compartmental,
+    CompartmentalFit as CompartmentalInner, CompartmentalLikelihood, CompartmentalPriors,
+    CompartmentalStart, Fitted, HalfPrior, MeyersFits as MeyersFitsInner, MeyersSegment,
+    Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesOdp, BayesOdpFit as BayesOdpInner, Diagnostics,
@@ -1002,6 +1004,65 @@ impl Triangle {
             .fit_segments(&self.inner, column, premium)
             .map_err(to_r)?;
         Ok(MeyersFits { inner })
+    }
+
+    /// Gesmann and Morris' compartmental model 1 of a single-segment
+    /// triangle: cumulative paid from the `paid` column, outstanding from
+    /// the `outstanding` column ("column") or as the `outstanding` column
+    /// of incurred less paid ("incurred"), each origin's premium from the
+    /// `premium` column. `priors` and `families` are encoded as
+    /// `compartmental_priors_values()` in R encodes them; `settings` are the
+    /// likelihood, scale, paid response, fitted responses, rate order and
+    /// start; `run` is `chains`, `tune`, `draws`, `n_sims`, `seed`,
+    /// `target_accept` and `max_depth`.
+    #[allow(clippy::too_many_arguments)]
+    fn compartmental(
+        &self,
+        paid: &str,
+        outstanding: &str,
+        outstanding_from: &str,
+        premium: &str,
+        priors: Vec<f64>,
+        families: Vec<String>,
+        settings: Vec<String>,
+        run: Vec<f64>,
+    ) -> Result<CompartmentalFit> {
+        let model = compartmental_settings(&priors, &families, &settings, &run)?;
+        let os = match outstanding_from {
+            "column" => Outstanding::Column(outstanding),
+            "incurred" => Outstanding::FromIncurred(outstanding),
+            _ => {
+                return Err(Error::Other(format!(
+                    "outstanding_from must be \"column\" or \"incurred\", got \"{outstanding_from}\""
+                )));
+            }
+        };
+        let inner = model.fit(&self.inner, paid, os, premium).map_err(to_r)?;
+        Ok(CompartmentalFit { inner })
+    }
+
+    /// Paths of the mean outstanding and cumulative paid drawn from the
+    /// priors alone: `list(outstanding, paid)`, two predictive
+    /// distributions with dimensions `origin` and `age`. The arguments are
+    /// those of `compartmental`.
+    fn compartmental_prior_predictive(
+        &self,
+        premium: &str,
+        priors: Vec<f64>,
+        families: Vec<String>,
+        settings: Vec<String>,
+        run: Vec<f64>,
+    ) -> Result<List> {
+        let model = compartmental_settings(&priors, &families, &settings, &run)?;
+        let paths = model
+            .prior_predictive(&self.inner, premium, model.n_sims)
+            .map_err(to_r)?;
+        Ok(list!(
+            outstanding = PredictiveDistribution {
+                inner: paths.outstanding
+            },
+            paid = PredictiveDistribution { inner: paths.paid }
+        ))
     }
 
     /// The Bayesian Bornhuetter-Ferguson of a single-segment triangle
@@ -2819,6 +2880,291 @@ impl MeyersFits {
     }
 }
 
+/// The `CompartmentalPriors` of `priors` (19 numbers) and `families` (4
+/// names): `k_er`, `k_p`, `rlr` and `rrf` as (median, sd); the half priors
+/// on the effect sds as (nu, scale) for "student_t" or (scale, NaN) for
+/// "normal"; `lkj_eta`; and the priors on `log sigma_os` and
+/// `log sigma_pd` as (nu, location, scale) for "student_t" or (mean, sd,
+/// NaN) for "normal".
+fn compartmental_priors(priors: &[f64], families: &[String]) -> Result<CompartmentalPriors> {
+    if priors.len() != 19 || families.len() != 4 {
+        return Err(Error::Other(
+            "priors must hold 19 numbers and 4 family names".into(),
+        ));
+    }
+    let positive = |i: usize| PositivePrior::LogNormal {
+        median: priors[i],
+        sd: priors[i + 1],
+    };
+    let half = |family: &str, i: usize, arg: &str| -> Result<HalfPrior> {
+        match family {
+            "student_t" => Ok(HalfPrior::StudentT {
+                nu: priors[i],
+                scale: priors[i + 1],
+            }),
+            "normal" => Ok(HalfPrior::Normal { scale: priors[i] }),
+            _ => Err(Error::Other(format!(
+                "{arg} family must be \"student_t\" or \"normal\", got \"{family}\""
+            ))),
+        }
+    };
+    let real = |family: &str, i: usize, arg: &str| -> Result<RealPrior> {
+        match family {
+            "student_t" => Ok(RealPrior::StudentT {
+                nu: priors[i],
+                location: priors[i + 1],
+                scale: priors[i + 2],
+            }),
+            "normal" => Ok(RealPrior::Normal {
+                mean: priors[i],
+                sd: priors[i + 1],
+            }),
+            _ => Err(Error::Other(format!(
+                "{arg} family must be \"student_t\" or \"normal\", got \"{family}\""
+            ))),
+        }
+    };
+    Ok(CompartmentalPriors {
+        k_er: positive(0),
+        k_p: positive(2),
+        rlr: positive(4),
+        rrf: positive(6),
+        rlr_effect_sd: half(&families[0], 8, "rlr_effect_sd")?,
+        rrf_effect_sd: half(&families[1], 10, "rrf_effect_sd")?,
+        lkj_eta: priors[12],
+        log_sigma: [
+            real(&families[2], 13, "log_sigma[[1]]")?,
+            real(&families[3], 16, "log_sigma[[2]]")?,
+        ],
+    })
+}
+
+/// The `Compartmental` of `compartmental` and
+/// `compartmental_prior_predictive`.
+fn compartmental_settings(
+    priors: &[f64],
+    families: &[String],
+    settings: &[String],
+    run: &[f64],
+) -> Result<Compartmental> {
+    let [likelihood, scale, paid_response, fitted, rate_order, start] = settings else {
+        return Err(Error::Other("settings must hold 6 names".into()));
+    };
+    let &[chains, tune, draws, n_sims, seed, target_accept, max_depth] = run else {
+        return Err(Error::Other("run must hold 7 numbers".into()));
+    };
+    let bad = |arg: &str, value: &str, expected: &str| {
+        Err(Error::Other(format!(
+            "{arg} must be {expected}, got \"{value}\""
+        )))
+    };
+    let likelihood = match likelihood.as_str() {
+        "normal" => CompartmentalLikelihood::Normal,
+        "lognormal" => CompartmentalLikelihood::LogNormal,
+        v => return bad("likelihood", v, "\"normal\" or \"lognormal\""),
+    };
+    let scale = match scale.as_str() {
+        "amount" => CompartmentalScale::Amount,
+        "loss_ratio" => CompartmentalScale::LossRatio,
+        v => return bad("scale", v, "\"amount\" or \"loss_ratio\""),
+    };
+    let paid_response = match paid_response.as_str() {
+        "cumulative" => PaidResponse::Cumulative,
+        "incremental" => PaidResponse::Incremental,
+        v => return bad("paid_response", v, "\"cumulative\" or \"incremental\""),
+    };
+    let fitted = match fitted.as_str() {
+        "paid_and_outstanding" => Fitted::PaidAndOutstanding,
+        "paid_and_incurred" => Fitted::PaidAndIncurred,
+        "paid_only" => Fitted::PaidOnly,
+        "incurred_only" => Fitted::IncurredOnly,
+        v => {
+            return bad(
+                "fitted",
+                v,
+                "\"paid_and_outstanding\", \"paid_and_incurred\", \"paid_only\" or \"incurred_only\"",
+            );
+        }
+    };
+    let rate_order = match rate_order.as_str() {
+        "free" => RateOrder::Free,
+        "ordered" => RateOrder::Ordered,
+        v => return bad("rate_order", v, "\"free\" or \"ordered\""),
+    };
+    let start = match start.as_str() {
+        "data" => CompartmentalStart::Data,
+        "prior_centre" => CompartmentalStart::PriorCentre,
+        v => return bad("start", v, "\"data\" or \"prior_centre\""),
+    };
+    let n_sims = whole(n_sims, "n_sims")? as usize;
+    if n_sims == 0 {
+        return Err(Error::Other("n_sims must be positive".into()));
+    }
+    Ok(Compartmental {
+        priors: compartmental_priors(priors, families)?,
+        likelihood,
+        scale,
+        paid_response,
+        fitted,
+        rate_order,
+        start,
+        sampler: BayesSampler {
+            chains: whole(chains, "chains")? as usize,
+            tune: whole(tune, "tune")? as usize,
+            draws: whole(draws, "draws")? as usize,
+            seed: 0,
+            target_accept,
+            max_depth: whole(max_depth, "max_depth")?,
+        },
+        n_sims,
+        seed: whole(seed, "seed")?,
+    })
+}
+
+/// Gesmann and Morris' compartmental model 1 of a single-segment triangle.
+#[extendr]
+pub(crate) struct CompartmentalFit {
+    inner: CompartmentalInner,
+}
+
+#[extendr]
+impl CompartmentalFit {
+    fn origins(&self) -> Vec<String> {
+        self.inner.origins.iter().map(ToString::to_string).collect()
+    }
+
+    fn premium(&self) -> Vec<f64> {
+        self.inner.premium.clone()
+    }
+
+    fn latest_paid(&self) -> Vec<f64> {
+        self.inner.latest_paid.clone()
+    }
+
+    fn population_origins(&self) -> Vec<String> {
+        self.inner
+            .population_origins
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    fn reserves(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    fn paid(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.paid.clone(),
+        }
+    }
+
+    fn outstanding(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.outstanding.clone(),
+        }
+    }
+
+    fn ultimate_loss_ratio(&self) -> Vec<f64> {
+        self.inner.ultimate_loss_ratio.clone()
+    }
+
+    fn rate_swaps(&self) -> f64 {
+        self.inner.rate_swaps as f64
+    }
+
+    /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
+    fn diagnostics(&self) -> List {
+        let d = &self.inner.diagnostics;
+        list!(
+            max_rhat = d.max_rhat,
+            min_ess_bulk = d.min_ess_bulk,
+            min_ess_tail = d.min_ess_tail,
+            divergences = d.divergences as f64,
+            warnings = d.warnings.clone()
+        )
+    }
+
+    fn parameter_names(&self) -> Vec<String> {
+        self.inner.posterior.names().to_vec()
+    }
+
+    /// Posterior draws, row-major `n_draws x n_parameters`, chain by chain.
+    fn draws(&self) -> Vec<f64> {
+        self.inner.posterior.values().to_vec()
+    }
+
+    fn chains(&self) -> f64 {
+        self.inner.posterior.chains() as f64
+    }
+
+    /// The posterior summary, columns as `bayes_glm_model@summary`.
+    fn summary(&self) -> Result<List> {
+        let s = self.inner.summary().map_err(to_r)?;
+        let col = |g: fn(&ParamSummary) -> f64| s.iter().map(g).collect::<Vec<f64>>();
+        Ok(list!(
+            parameter = s.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+            mean = col(|p| p.mean),
+            sd = col(|p| p.sd),
+            q05 = col(|p| p.q05),
+            q50 = col(|p| p.q50),
+            q95 = col(|p| p.q95),
+            rhat = col(|p| p.rhat),
+            ess_bulk = col(|p| p.ess_bulk),
+            ess_tail = col(|p| p.ess_tail)
+        ))
+    }
+
+    /// PSIS-LOO of the observed cells, outstanding first: `list(estimates,
+    /// pointwise, pareto_k, k_threshold, n_outstanding, elpd_outstanding,
+    /// elpd_paid)`.
+    fn loo(&self) -> Result<List> {
+        let l = self.inner.loo().map_err(to_r)?;
+        let e = &l.loo.estimate;
+        Ok(list!(
+            estimates = vec![e.elpd, e.se, e.p, e.ic],
+            pointwise = e.pointwise.clone(),
+            pareto_k = l.loo.pareto_k,
+            k_threshold = l.loo.k_threshold,
+            n_outstanding = l.n_outstanding as f64,
+            elpd_outstanding = l.elpd_outstanding,
+            elpd_paid = l.elpd_paid
+        ))
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn paid_table(&self) -> Result<List> {
+        Ok(fit_table(self.inner.paid_table().map_err(to_r)?))
+    }
+
+    fn outstanding_table(&self) -> Result<List> {
+        Ok(fit_table(self.inner.outstanding_table().map_err(to_r)?))
+    }
+
+    /// The fit itself, as for any single-segment fit without keys: a
+    /// condition on a key is an error.
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        let one = SegmentFits {
+            key_names: Vec::new(),
+            labels: vec![Label::new(Vec::<String>::new())],
+            fits: vec![()],
+        };
+        pick(&one, keys, values)?;
+        Ok(Self {
+            inner: self.inner.clone(),
+        })
+    }
+}
+
 extendr_module! {
     mod reserving;
     impl Triangle;
@@ -2833,6 +3179,7 @@ extendr_module! {
     impl BayesOdpFits;
     impl MeyersFit;
     impl MeyersFits;
+    impl CompartmentalFit;
     impl BayesBfFit;
     impl MackBootstrapFit;
     impl OneYearFit;
