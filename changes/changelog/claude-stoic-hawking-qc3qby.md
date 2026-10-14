@@ -59,4 +59,4 @@
   `bs`, `economic_ratios_df` and `stack_marginal_pnls`. Python
   `Leg(step=)`, `Ledger.validation`, `Ledger.ratios`, `stack`; R
   `pnl_leg(step =)`, `ledger_validation()`, `ledger_ratios()`,
-  `ledger_stack()`.
+  `ledger_stack()` (#244).
