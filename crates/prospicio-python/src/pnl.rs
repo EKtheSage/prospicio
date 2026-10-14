@@ -10,6 +10,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
+use crate::aggregate::{AnyCount, PyBivariateReport};
 use crate::discrete::PyDiscrete;
 use crate::distributions::PyGrid;
 use crate::reinsurance::PyTower;
@@ -210,14 +211,12 @@ impl PyGroup {
     }
 }
 
-/// A source: a :class:`Grid`, or a tuple ``(values, probs)``.
+/// A source: a :class:`Grid`, a tuple ``(values, probs)``, or a joint
+/// source ``(gross, ceded, probs)``.
 fn source_of(source: &Bound<'_, PyAny>) -> PyResult<Source> {
     Ok(if let Ok(g) = source.extract::<PyRef<'_, PyGrid>>() {
         Source::from_grid(&g.inner).map_err(to_py)?
     } else if let Ok(t) = source.cast::<PyTuple>() {
-        if t.len() != 2 {
-            return Err(PyTypeError::new_err("a source tuple is (values, probs)"));
-        }
         let col = |o: Bound<'_, PyAny>| -> PyResult<Vec<f64>> {
             if o.hasattr("tolist")? {
                 o.call_method0("tolist")?.extract()
@@ -225,10 +224,23 @@ fn source_of(source: &Bound<'_, PyAny>) -> PyResult<Source> {
                 o.extract()
             }
         };
-        Source::new(col(t.get_item(0)?)?, col(t.get_item(1)?)?).map_err(to_py)?
+        match t.len() {
+            2 => Source::new(col(t.get_item(0)?)?, col(t.get_item(1)?)?).map_err(to_py)?,
+            3 => Source::joint(
+                col(t.get_item(0)?)?,
+                col(t.get_item(1)?)?,
+                col(t.get_item(2)?)?,
+            )
+            .map_err(to_py)?,
+            _ => {
+                return Err(PyTypeError::new_err(
+                    "a source tuple is (values, probs) or a joint (gross, ceded, probs)",
+                ));
+            }
+        }
     } else {
         return Err(PyTypeError::new_err(
-            "the source is a Grid or a tuple (values, probs)",
+            "the source is a Grid, a tuple (values, probs) or a joint (gross, ceded, probs)",
         ));
     })
 }
@@ -888,17 +900,7 @@ impl PyBook {
         tower: Option<PyRef<'_, PyTower>>,
         face: &str,
     ) -> PyResult<PyLedger> {
-        let face = match face {
-            "consolidated" => Face::Consolidated,
-            "walk" => Face::Walk,
-            "peel-top-down" => Face::PeelTopDown,
-            "peel-bottom-up" => Face::PeelBottomUp,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
-                )));
-            }
-        };
+        let face = face_of(face)?;
         let source = source_of(source)?;
         Ok(PyLedger {
             inner: self
@@ -908,7 +910,135 @@ impl PyBook {
         })
     }
 
+    /// The ledger with occurrence covers over the joint source ``joint``
+    /// of the annual gross loss and the loss the ``occurrence`` tower cedes
+    /// (:func:`occurrence_source`), then the aggregate covers of
+    /// ``aggregate`` on the net of the occurrence covers, as
+    /// ``aggregate``'s ``xpnl`` and ``pnl`` over its ``occ_bivariate``.
+    ///
+    /// The occurrence covers are one group on the walk, named after the
+    /// first layer; a peel needs exactly one occurrence layer. The
+    /// consolidated face is over the net loss at each atom.
+    ///
+    /// Parameters
+    /// ----------
+    /// joint : tuple of (list of float, list of float, list of float)
+    ///     ``(gross, ceded, probs)``.
+    /// occurrence : prospicio.reinsurance.Tower
+    ///     Per-occurrence covers without annual terms.
+    /// aggregate : prospicio.reinsurance.Tower, optional
+    /// face : str, default "consolidated"
+    ///
+    /// Returns
+    /// -------
+    /// Ledger
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As :meth:`ledger`, an occurrence layer with annual terms, or a
+    ///     peel through several occurrence layers.
+    #[pyo3(signature = (joint, occurrence, aggregate=None, face="consolidated"))]
+    fn occurrence_ledger(
+        &self,
+        joint: &Bound<'_, PyAny>,
+        occurrence: PyRef<'_, PyTower>,
+        aggregate: Option<PyRef<'_, PyTower>>,
+        face: &str,
+    ) -> PyResult<PyLedger> {
+        let face = face_of(face)?;
+        let joint = source_of(joint)?;
+        Ok(PyLedger {
+            inner: self
+                .inner
+                .occurrence_ledger(
+                    &joint,
+                    &occurrence.inner,
+                    aggregate.as_deref().map(|t| &t.inner),
+                    face,
+                )
+                .map_err(to_py)?,
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!("Book(premium={})", self.inner.gross_premium())
     }
+}
+
+/// A joint source's columns: gross, ceded, probabilities.
+type JointColumns = (Vec<f64>, Vec<f64>, Vec<f64>);
+
+fn face_of(face: &str) -> PyResult<Face> {
+    match face {
+        "consolidated" => Ok(Face::Consolidated),
+        "walk" => Ok(Face::Walk),
+        "peel-top-down" => Ok(Face::PeelTopDown),
+        "peel-bottom-up" => Ok(Face::PeelBottomUp),
+        other => Err(PyValueError::new_err(format!(
+            "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
+        ))),
+    }
+}
+
+/// The joint source of the annual gross loss and the loss ceded by the
+/// per-occurrence covers of ``occurrence``, ``aggregate``'s
+/// ``occ_bivariate(views=('gross', 'ceded'))``: each claim on the
+/// severity's grid goes to ``(x, c(x))``, the cession split linearly
+/// between grid points, compounded by a two-dimensional FFT on ``points``
+/// points per axis; cells below ``1e-15`` of the total mass are dropped as
+/// round-off.
+///
+/// Parameters
+/// ----------
+/// frequency : Poisson, NegativeBinomial, Binomial or a count
+/// severity : Grid
+/// occurrence : prospicio.reinsurance.Tower
+///     Per-occurrence covers without annual terms.
+/// points : tuple of (int, int)
+///
+/// Returns
+/// -------
+/// tuple of (tuple of (list of float, list of float, list of float), BivariateReport)
+///     The joint source ``(gross, ceded, probs)`` for
+///     :meth:`Book.occurrence_ledger`, and the FFT's report.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import occurrence_source
+/// >>> from prospicio.distributions import Grid, Poisson
+/// >>> from prospicio.reinsurance import Layer, Tower
+/// >>> sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
+/// >>> cover = Tower([Layer("occ 2 xs 2", 2.0, 2.0)])
+/// >>> (gross, ceded, probs), _ = occurrence_source(Poisson(2.0), sev, cover, (64, 32))
+/// >>> round(sum(c * p for c, p in zip(ceded, probs)), 12)
+/// 0.8
+#[pyfunction]
+pub(crate) fn occurrence_source(
+    py: Python<'_>,
+    frequency: &Bound<'_, PyAny>,
+    severity: PyRef<'_, PyGrid>,
+    occurrence: PyRef<'_, PyTower>,
+    points: (usize, usize),
+) -> PyResult<(JointColumns, PyBivariateReport)> {
+    let n = AnyCount::extract(frequency)?;
+    let (sev, tower) = (severity.inner.clone(), occurrence.inner.clone());
+    let (source, report) = py
+        .detach(|| {
+            prospicio_aggregate::pnl::occurrence_source(
+                n.as_counting(),
+                &sev,
+                &tower,
+                [points.0, points.1],
+            )
+        })
+        .map_err(to_py)?;
+    Ok((
+        (
+            source.values().to_vec(),
+            source.second().unwrap_or_default().to_vec(),
+            source.probs().to_vec(),
+        ),
+        PyBivariateReport { inner: report },
+    ))
 }

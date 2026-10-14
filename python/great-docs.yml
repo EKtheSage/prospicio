@@ -91,6 +91,7 @@ reference:
       - aggregate.Book
       - aggregate.Expense
       - aggregate.derive_premium
+      - aggregate.occurrence_source
       - aggregate.layer_loss_picks
       - aggregate.Picks
   - title: Reinsurance

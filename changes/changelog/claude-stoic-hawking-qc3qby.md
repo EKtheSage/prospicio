@@ -70,3 +70,12 @@
   sum to 1 (to `1e-12`). Python `Book`, `Expense`, `derive_premium`; R
   `pnl_book()`, `pnl_expense()`, `book_ledger()`, `derive_premium()`
   (#245).
+- Occurrence covers in the P&L ledger: a joint source of the annual
+  gross and occurrence-ceded loss (`pnl::Source::joint`,
+  `pnl::occurrence_source` by a 2-D FFT of each claim and its cession,
+  `aggregate`'s `occ_bivariate`), legs of both coordinates
+  (`pnl::Leg::of2`), and `Book::occurrence_ledger`: the walk through the
+  occurrence covers and then aggregate covers on their net, the peel and
+  the consolidated face, matching `aggregate` 1.0.1. Python
+  `occurrence_source`, `Book.occurrence_ledger`; R `occurrence_source()`,
+  `book_occurrence_ledger()` (#246).

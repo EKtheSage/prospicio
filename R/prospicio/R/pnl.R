@@ -320,3 +320,62 @@ derive_premium <- function(technical, expenses) {
   e <- pnl_flat_expenses(expenses)
   rust_result(pnl_derive_premium(as.double(technical), e$index, e$basis, e$value, e$label))
 }
+
+#' Occurrence covers on the joint gross and ceded loss
+#'
+#' The ledger of a [pnl_book()] with per-occurrence covers, as the Python
+#' package `aggregate`'s `xpnl` and `pnl` over its `occ_bivariate`. The
+#' ceded aggregate is not a function of the gross aggregate (the claim count
+#' decouples them), so the source is their joint law: `occurrence_source()`
+#' sends each claim on the severity's grid to `(x, c(x))`, `c` the tower's
+#' cession of one event (split linearly between grid points), compounds the
+#' pairs by a two-dimensional FFT on `points` points per axis, and drops
+#' cells below `1e-15` of the total mass as round-off.
+#'
+#' `book_occurrence_ledger()` lays the book out over that joint: on a walk
+#' the occurrence covers are one group named after the first layer, then
+#' each aggregate cover of `aggregate` recovers its cession of the net of
+#' the occurrence covers; a peel needs exactly one occurrence layer; the
+#' consolidated face is over the net loss at each atom. Occurrence layers
+#' may not carry annual terms (an aggregate deductible or limit, or a
+#' corridor).
+#'
+#' @param frequency A claim count, as [poisson_count()].
+#' @param severity A [grid_distribution] of one claim.
+#' @param occurrence A [reinsurance_tower] of per-occurrence covers.
+#' @param points The number of points on each axis, `c(gross, ceded)`.
+#' @param book A [pnl_book()].
+#' @param joint `list(gross, ceded, probs)`, from `occurrence_source()`.
+#' @param aggregate `NULL` or a [reinsurance_tower] of aggregate covers.
+#' @param face `"consolidated"`, `"walk"`, `"peel-top-down"` or
+#'   `"peel-bottom-up"`.
+#' @returns `occurrence_source()` a `list(gross, ceded, probs)`,
+#'   `book_occurrence_ledger()` a [pnl_ledger()].
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))
+#' occ <- reinsurance_tower(list(with_ceding_commission(
+#'   with_deposit_premium(xol_layer("occ 2 xs 2", 2, 2), 2), 0.25)))
+#' joint <- occurrence_source(poisson_count(2), sev, occ, c(64, 32))
+#' book <- pnl_book("Ex4", 20, list(pnl_expense("premium", 0.1)))
+#' mean(ledger_result(book_occurrence_ledger(book, joint, occ, face = "walk")))
+occurrence_source <- function(frequency, severity, occurrence, points) {
+  points <- rep_len(as.double(points), 2)
+  rust_result(pnl_occurrence_source(
+    frequency@ptr, severity@step, severity@probs, occurrence@ptr, points[1], points[2]
+  ))
+}
+
+#' @rdname occurrence_source
+#' @export
+book_occurrence_ledger <- function(book, joint, occurrence, aggregate = NULL, face = "consolidated") {
+  e <- pnl_flat_expenses(book$expenses)
+  lbl <- function(x) if (is.null(x)) "" else as.character(x)
+  ptr <- rust_result(PnlLedger$book_occurrence(
+    as.double(joint[[1]]), as.double(joint[[2]]), as.double(joint[[3]]),
+    book$name, book$premium, e$index, e$basis, e$value, e$label,
+    lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
+    occurrence@ptr, if (is.null(aggregate)) NULL else aggregate@ptr, as.character(face)
+  ))
+  structure(list(ptr = ptr), class = "pnl_ledger")
+}

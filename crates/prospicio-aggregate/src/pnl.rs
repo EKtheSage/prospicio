@@ -38,7 +38,7 @@ use prospicio_core::{Error, Result};
 use prospicio_prob::{Discrete, Distribution, Grid};
 
 mod builders;
-pub use builders::{Book, Expense, ExpenseBasis, Face, derive_premium};
+pub use builders::{Book, Expense, ExpenseBasis, Face, derive_premium, occurrence_source};
 
 /// The levels of the scenario and marginal columns, `aggregate`'s
 /// `PERCENTILE_LADDER`.
@@ -101,6 +101,7 @@ impl LegKind {
 }
 
 type Of = Box<dyn Fn(f64) -> f64 + Send + Sync>;
+type Of2 = Box<dyn Fn(f64, f64) -> f64 + Send + Sync>;
 
 /// A side's legs once evaluated: label, kind and signed values.
 type SignedLegs = Vec<(String, Option<LegKind>, Vec<f64>)>;
@@ -108,6 +109,7 @@ type SignedLegs = Vec<(String, Option<LegKind>, Vec<f64>)>;
 enum LegValue {
     Constant(f64),
     Of(Of),
+    Of2(Of2),
     Values(Vec<f64>),
 }
 
@@ -126,6 +128,7 @@ impl std::fmt::Debug for Leg {
         let value = match &self.value {
             LegValue::Constant(c) => format!("constant {c}"),
             LegValue::Of(_) => "a function of the source".to_string(),
+            LegValue::Of2(_) => "a function of the joint source".to_string(),
             LegValue::Values(v) => format!("{} values", v.len()),
         };
         f.debug_struct("Leg")
@@ -154,6 +157,21 @@ impl Leg {
             label: label.into(),
             kind: None,
             value: LegValue::Of(Box::new(f)),
+            step: None,
+        }
+    }
+
+    /// A leg that is a function of both coordinates of a joint source
+    /// ([`Source::joint`]): an occurrence cover's recovery, the second
+    /// coordinate, or an aggregate cover on the net of it.
+    pub fn of2(
+        label: impl Into<String>,
+        f: impl Fn(f64, f64) -> f64 + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            kind: None,
+            value: LegValue::Of2(Box::new(f)),
             step: None,
         }
     }
@@ -191,10 +209,19 @@ impl Leg {
         &self.label
     }
 
-    fn evaluate(&self, xs: &[f64]) -> Result<Vec<f64>> {
+    fn evaluate(&self, xs: &[f64], ys: Option<&[f64]>) -> Result<Vec<f64>> {
         let v = match &self.value {
             LegValue::Constant(c) => vec![*c; xs.len()],
             LegValue::Of(f) => xs.iter().map(|&x| f(x)).collect(),
+            LegValue::Of2(f) => {
+                let ys = ys.ok_or_else(|| {
+                    Error::Data(format!(
+                        "leg {:?} is a function of two values and needs a joint source",
+                        self.label
+                    ))
+                })?;
+                xs.iter().zip(ys).map(|(&x, &y)| f(x, y)).collect()
+            }
             LegValue::Values(v) => {
                 if v.len() != xs.len() {
                     return Err(Error::Data(format!(
@@ -607,6 +634,7 @@ pub fn stack(
 #[derive(Debug, Clone, PartialEq)]
 pub struct Source {
     values: Vec<f64>,
+    second: Option<Vec<f64>>,
     probs: Vec<f64>,
 }
 
@@ -640,7 +668,29 @@ impl Source {
         } else {
             probs.into_iter().map(|p| p / total).collect()
         };
-        Ok(Self { values, probs })
+        Ok(Self {
+            values,
+            second: None,
+            probs,
+        })
+    }
+
+    /// A joint source: atoms `(values[k], second[k])` with probabilities
+    /// `probs`, as [`Source::new`]. One-argument legs read the first
+    /// coordinate, [`Leg::of2`] legs both: the gross loss and the ceded
+    /// loss of an occurrence cover, say.
+    pub fn joint(values: Vec<f64>, second: Vec<f64>, probs: Vec<f64>) -> Result<Self> {
+        if second.len() != values.len() {
+            return Err(Error::Data(
+                "a joint source needs as many second values as first".into(),
+            ));
+        }
+        if second.iter().any(|v| !v.is_finite()) {
+            return Err(Error::Data("the source's values must be finite".into()));
+        }
+        let mut s = Self::new(values, probs)?;
+        s.second = Some(second);
+        Ok(s)
     }
 
     /// The points of a grid with mass.
@@ -655,9 +705,14 @@ impl Source {
         Self::new(values, probs)
     }
 
-    /// The atoms' values.
+    /// The atoms' values (their first coordinates on a joint source).
     pub fn values(&self) -> &[f64] {
         &self.values
+    }
+
+    /// The atoms' second coordinates on a joint source.
+    pub fn second(&self) -> Option<&[f64]> {
+        self.second.as_deref()
     }
 
     /// Their probabilities, summing to 1.
@@ -808,7 +863,7 @@ impl Ledger {
             let side = |legs: &[Leg], s: f64| -> Result<SignedLegs> {
                 legs.iter()
                     .map(|leg| {
-                        let v = leg.evaluate(xs)?;
+                        let v = leg.evaluate(xs, source.second())?;
                         Ok((
                             leg.label.clone(),
                             leg.kind,
@@ -1734,6 +1789,7 @@ impl Ledger {
         let n = self.probs.len();
         let source = Source {
             values: (0..n).map(|k| k as f64).collect(),
+            second: None,
             probs: self.probs.clone(),
         };
         Ledger::new(&source, groups, layout)

@@ -33,7 +33,9 @@
 use prospicio_core::{Error, Result};
 
 use super::{Group, Layout, Ledger, Leg, LegKind, Role, Source};
+use crate::bivariate::{BivariateReport, JointGrid, fft_bivariate};
 use crate::reinsurance::{Commission, Layer, Tower};
+use prospicio_prob::{Counting, Grid};
 
 /// What an expense is a fraction of, `aggregate`'s expense bases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,6 +285,61 @@ impl Book {
     /// treaty, or reinstatements pro rata as to time), a layer with
     /// loss-sensitive terms, or a ledger the kernel refuses.
     pub fn ledger(&self, gross: &Source, tower: Option<&Tower>, face: Face) -> Result<Ledger> {
+        self.validate()?;
+        match tower {
+            None => self.plain(gross, face),
+            Some(t) => {
+                check_tower(t)?;
+                self.covered(gross, None, Some(t), face)
+            }
+        }
+    }
+
+    /// The ledger of the book with occurrence covers over the joint source
+    /// `joint` of the annual gross loss and the annual loss ceded by the
+    /// `occurrence` tower ([`occurrence_source`]), then the aggregate
+    /// covers of `aggregate`, if given, on the net of the occurrence
+    /// covers, as `aggregate`'s `xpnl` and `pnl` over its `occ_bivariate`.
+    ///
+    /// The ceded aggregate is not a function of the gross aggregate (the
+    /// claim count decouples them), so the walk needs the joint: the
+    /// occurrence tier is one group (the joint's second coordinate is its
+    /// total cession) and each aggregate cover recovers its cession of
+    /// `max(gross − ceded, 0)`. On the walk the occurrence covers are one
+    /// group named after the first layer; a peel needs exactly one
+    /// occurrence layer, as `aggregate`'s per-atom peel (its stitched
+    /// route for several is not built). The consolidated face is over the
+    /// net loss at each atom.
+    ///
+    /// # Errors
+    ///
+    /// As [`Book::ledger`], and a source that is not joint, an occurrence
+    /// layer with annual terms (an aggregate deductible or limit, or a
+    /// corridor), or a peel through more than one occurrence layer.
+    pub fn occurrence_ledger(
+        &self,
+        joint: &Source,
+        occurrence: &Tower,
+        aggregate: Option<&Tower>,
+        face: Face,
+    ) -> Result<Ledger> {
+        self.validate()?;
+        if joint.second().is_none() {
+            return Err(Error::Data(
+                "occurrence covers need the joint source of the gross and ceded loss \
+                 (occurrence_source)"
+                    .into(),
+            ));
+        }
+        check_tower(occurrence)?;
+        check_occurrence(occurrence)?;
+        if let Some(t) = aggregate {
+            check_tower(t)?;
+        }
+        self.covered(joint, Some(occurrence), aggregate, face)
+    }
+
+    fn validate(&self) -> Result<()> {
         if !self.premium.is_finite() {
             return Err(Error::Data(format!(
                 "the premium must be finite, not {}",
@@ -299,16 +356,7 @@ impl Book {
                 )));
             }
         }
-        match tower {
-            None => self.plain(gross, face),
-            Some(t) => {
-                check_tower(t)?;
-                match face {
-                    Face::Consolidated => self.consolidated(gross, t),
-                    _ => self.walk(gross, t, face),
-                }
-            }
-        }
+        Ok(())
     }
 
     fn prem_key(&self) -> String {
@@ -400,17 +448,103 @@ impl Book {
         }
     }
 
-    fn consolidated(&self, gross: &Source, tower: &Tower) -> Result<Ledger> {
-        let ceded = ceded_at(tower, gross.values());
-        let net: Vec<f64> = gross
-            .values()
-            .iter()
-            .zip(&ceded)
-            .map(|(x, c)| x - c.iter().sum::<f64>())
-            .collect();
-        let source = Source::new(net, gross.probs().to_vec())?;
-        let ceded_premium: f64 = tower.layers.iter().map(|l| l.premium).sum();
-        let commission: f64 = tower.layers.iter().map(flat_commission).sum();
+    /// The book with occurrence covers (on a joint source) and aggregate
+    /// covers, laid out as `face`.
+    fn covered(
+        &self,
+        source: &Source,
+        occ: Option<&Tower>,
+        agg: Option<&Tower>,
+        face: Face,
+    ) -> Result<Ledger> {
+        let xs = source.values();
+        let occ_ceded: Vec<f64> = match occ {
+            Some(_) => source.second().unwrap_or_default().to_vec(),
+            None => vec![0.0; xs.len()],
+        };
+        // The aggregate covers' subject: the gross, or its net of the
+        // occurrence covers (clipped at 0 off the support, as aggregate).
+        let subject: Vec<f64> = match occ {
+            Some(_) => xs
+                .iter()
+                .zip(&occ_ceded)
+                .map(|(l, c)| (l - c).max(0.0))
+                .collect(),
+            None => xs.to_vec(),
+        };
+        let agg_ceded = agg.map(|t| ceded_at(t, &subject));
+        let layers =
+            |t: Option<&Tower>| -> Vec<Layer> { t.map(|t| t.layers.clone()).unwrap_or_default() };
+        let all: Vec<Layer> = [layers(occ), layers(agg)].concat();
+        if face == Face::Consolidated {
+            let net: Vec<f64> = (0..xs.len())
+                .map(|k| {
+                    let a: f64 = agg_ceded.as_ref().map_or(0.0, |c| c[k].iter().sum());
+                    xs[k] - occ_ceded[k] - a
+                })
+                .collect();
+            return self.consolidated(source, net, &all);
+        }
+        let step = self.step_label.clone().unwrap_or_else(|| "Gross".into());
+        let mut groups = vec![self.gross_group(step)];
+        let mut spans = Vec::new();
+        if let Some(t) = occ {
+            let idx: Vec<usize> = (0..t.layers.len())
+                .filter(|&i| t.layers[i].share != 0.0)
+                .collect();
+            if idx.is_empty() {
+                return Err(Error::Data(
+                    "every occurrence layer has a zero share; there is no cover to walk through"
+                        .into(),
+                ));
+            }
+            if face != Face::Walk && idx.len() > 1 {
+                return Err(Error::Data(
+                    "a peel through several occurrence layers needs each layer's own cession, \
+                     which the joint source does not carry; walk the occurrence tier instead"
+                        .into(),
+                ));
+            }
+            let picked: Vec<&Layer> = idx.iter().map(|&i| &t.layers[i]).collect();
+            groups.push(cover_group(
+                picked[0].name.clone(),
+                &picked,
+                occ_ceded.clone(),
+            ));
+            spans.push(("All occurrence", 1, 2));
+        }
+        if let (Some(t), Some(ceded)) = (agg, &agg_ceded) {
+            let covers = agg_covers(t, face);
+            if covers.is_empty() {
+                return Err(Error::Data(
+                    "every layer of the tower has a zero share; there is no cover to walk through"
+                        .into(),
+                ));
+            }
+            let first = groups.len();
+            for (label, idx) in &covers {
+                let recovery: Vec<f64> = ceded
+                    .iter()
+                    .map(|c| idx.iter().map(|&i| c[i]).sum())
+                    .collect();
+                let picked: Vec<&Layer> = idx.iter().map(|&i| &t.layers[i]).collect();
+                groups.push(cover_group(label.clone(), &picked, recovery));
+            }
+            spans.push(("All aggregate", first, first + covers.len()));
+        }
+        let mut layout = Layout::new(self.name.clone()).result_name("margin");
+        for (label, lo, hi) in spans {
+            layout = layout.span(label, lo, hi);
+        }
+        Ledger::new(source, groups, layout)
+    }
+
+    /// One group, the net position over the net loss `net` at each atom of
+    /// `source`, after the covers `layers`.
+    fn consolidated(&self, source: &Source, net: Vec<f64>, layers: &[Layer]) -> Result<Ledger> {
+        let net_source = Source::new(net, source.probs().to_vec())?;
+        let ceded_premium: f64 = layers.iter().map(|l| l.premium).sum();
+        let commission: f64 = layers.iter().map(flat_commission).sum();
         let prem = match &self.premium_label {
             Some(l) => format!("{l} (net)"),
             None => "net premium".into(),
@@ -421,17 +555,17 @@ impl Book {
             // Received: a negative obligation books positive.
             obligation.push(Leg::constant("commission", -commission).kind(LegKind::Commission));
         }
-        let gross_mean: f64 = gross
+        let gross_mean: f64 = source
             .values()
             .iter()
-            .zip(gross.probs())
+            .zip(source.probs())
             .map(|(x, p)| x * p)
             .sum();
         obligation.extend(
             self.expense_legs(Some(gross_mean), &[prem.clone(), loss, "commission".into()]),
         );
         Ledger::single(
-            &source,
+            &net_source,
             self.name.clone(),
             Role::Sell,
             vec![Leg::constant(prem, self.premium - ceded_premium).kind(LegKind::Premium)],
@@ -439,79 +573,157 @@ impl Book {
             "margin",
         )
     }
+}
 
-    fn walk(&self, gross: &Source, tower: &Tower, face: Face) -> Result<Ledger> {
-        let ceded = ceded_at(tower, gross.values());
-        let step = self.step_label.clone().unwrap_or_else(|| "Gross".into());
-        let mut groups = vec![self.gross_group(step)];
-        // (label, layers) of each cover group.
-        let mut covers: Vec<(String, Vec<usize>)> = Vec::new();
-        let mut start = 0;
-        while start < tower.layers.len() {
-            let stage = tower.stages[start];
-            let end = start
-                + tower.stages[start..]
-                    .iter()
-                    .take_while(|&&s| s == stage)
-                    .count();
-            let idx: Vec<usize> = (start..end)
-                .filter(|&i| tower.layers[i].share != 0.0)
-                .collect();
-            match face {
-                Face::Walk if !idx.is_empty() => {
-                    covers.push((tower.layers[idx[0]].name.clone(), idx));
-                }
-                Face::PeelTopDown => {
-                    covers.extend(
-                        idx.iter()
-                            .rev()
-                            .map(|&i| (tower.layers[i].name.clone(), vec![i])),
-                    );
-                }
-                Face::PeelBottomUp => {
-                    covers.extend(idx.iter().map(|&i| (tower.layers[i].name.clone(), vec![i])));
-                }
-                _ => {}
-            }
-            start = end;
-        }
-        if covers.is_empty() {
-            return Err(Error::Data(
-                "every layer of the tower has a zero share; there is no cover to walk through"
-                    .into(),
-            ));
-        }
-        for (label, idx) in &covers {
-            let recovery: Vec<f64> = ceded
+/// `(label, layers)` of each aggregate cover group: one per stage on a
+/// walk (named after its first layer), one per layer on a peel, the highest
+/// or the lowest first within each stage. Zero shares are left out.
+fn agg_covers(tower: &Tower, face: Face) -> Vec<(String, Vec<usize>)> {
+    let mut covers: Vec<(String, Vec<usize>)> = Vec::new();
+    let mut start = 0;
+    while start < tower.layers.len() {
+        let stage = tower.stages[start];
+        let end = start
+            + tower.stages[start..]
                 .iter()
-                .map(|c| idx.iter().map(|&i| c[i]).sum())
-                .collect();
-            let premium: f64 = idx.iter().map(|&i| tower.layers[i].premium).sum();
-            let commission: f64 = idx.iter().map(|&i| flat_commission(&tower.layers[i])).sum();
-            let mut g = Group::buy(label.clone())
-                .consideration(
-                    Leg::constant(format!("{label} premium"), premium).kind(LegKind::Premium),
-                )
-                .obligation(
-                    Leg::values(format!("{label} recovery"), recovery).kind(LegKind::Recovery),
-                );
-            if commission != 0.0 {
-                g = g.obligation(
-                    Leg::constant(format!("{label} commission"), commission)
-                        .kind(LegKind::Commission),
+                .take_while(|&&s| s == stage)
+                .count();
+        let idx: Vec<usize> = (start..end)
+            .filter(|&i| tower.layers[i].share != 0.0)
+            .collect();
+        match face {
+            Face::Walk if !idx.is_empty() => {
+                covers.push((tower.layers[idx[0]].name.clone(), idx));
+            }
+            Face::PeelTopDown => {
+                covers.extend(
+                    idx.iter()
+                        .rev()
+                        .map(|&i| (tower.layers[i].name.clone(), vec![i])),
                 );
             }
-            groups.push(g);
+            Face::PeelBottomUp => {
+                covers.extend(idx.iter().map(|&i| (tower.layers[i].name.clone(), vec![i])));
+            }
+            _ => {}
         }
-        let n = covers.len();
-        Ledger::new(
-            gross,
-            groups,
-            Layout::new(self.name.clone())
-                .result_name("margin")
-                .span("All aggregate", 1, 1 + n),
-        )
+        start = end;
     }
+    covers
+}
+
+/// A cover's buy group: its premium, its recovery at each atom and its
+/// commission when it has one.
+fn cover_group(label: String, layers: &[&Layer], recovery: Vec<f64>) -> Group {
+    let premium: f64 = layers.iter().map(|l| l.premium).sum();
+    let commission: f64 = layers.iter().map(|l| flat_commission(l)).sum();
+    let mut g = Group::buy(label.clone())
+        .consideration(Leg::constant(format!("{label} premium"), premium).kind(LegKind::Premium))
+        .obligation(Leg::values(format!("{label} recovery"), recovery).kind(LegKind::Recovery));
+    if commission != 0.0 {
+        g = g.obligation(
+            Leg::constant(format!("{label} commission"), commission).kind(LegKind::Commission),
+        );
+    }
+    g
+}
+
+/// Refuses an occurrence layer with annual terms: a claim's cession alone
+/// cannot carry them.
+fn check_occurrence(tower: &Tower) -> Result<()> {
+    for l in &tower.layers {
+        if l.aggregate_deductible != 0.0 || l.aggregate_limit.is_finite() || l.corridor.is_some() {
+            return Err(Error::Data(format!(
+                "occurrence layer {:?} has annual terms (an aggregate deductible or limit, or a \
+                 corridor); the joint source carries each claim's cession only",
+                l.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The joint source of the annual gross loss and the annual loss ceded by
+/// the per-occurrence covers of `occurrence`, `aggregate`'s
+/// `occ_bivariate(views=('gross', 'ceded'))`: each claim `X` on the
+/// severity's grid goes to `(X, c(X))`, `c` the tower's cession of one
+/// event (inuring stages applied per event), split linearly between the
+/// two grid points around it when it falls between them; the pairs are
+/// compounded by [`fft_bivariate`](crate::bivariate::fft_bivariate) on
+/// `points` points per axis, cells below `1e-15` of the total mass are
+/// dropped as round-off (`aggregate`'s floor), and the rest are the atoms.
+///
+/// ```
+/// use prospicio_aggregate::pnl::occurrence_source;
+/// use prospicio_aggregate::{Layer, Tower};
+/// use prospicio_prob::{Grid, Poisson};
+///
+/// // Claims of 1, 2 or 4; a cover of 2 xs 2 on each.
+/// let severity = Grid::new(1.0, vec![0.0, 0.5, 0.3, 0.0, 0.2]).unwrap();
+/// let cover = Tower::new(vec![Layer::xol("occ 2 xs 2", 2.0, 2.0).unwrap()]).unwrap();
+/// let (joint, _) =
+///     occurrence_source(&Poisson::new(2.0).unwrap(), &severity, &cover, [64, 32]).unwrap();
+/// let ceded = joint.second().unwrap();
+/// let mean: f64 = ceded.iter().zip(joint.probs()).map(|(c, p)| c * p).sum();
+/// assert!((mean - 0.8).abs() < 1e-12); // 2 claims × 0.2 × 2
+/// ```
+///
+/// # Errors
+///
+/// An occurrence layer with annual terms or one that needs each event's
+/// sum insured or time, loss-sensitive terms, or what
+/// [`fft_bivariate`](crate::bivariate::fft_bivariate) refuses.
+pub fn occurrence_source<N: Counting + ?Sized>(
+    frequency: &N,
+    severity: &Grid,
+    occurrence: &Tower,
+    points: [usize; 2],
+) -> Result<(Source, BivariateReport)> {
+    check_tower(occurrence)?;
+    check_occurrence(occurrence)?;
+    let h = severity.step();
+    let cession: Vec<f64> = (0..severity.len())
+        .map(|k| {
+            occurrence
+                .year(&[k as f64 * h], None, None)
+                .iter()
+                .map(|(c, _)| c)
+                .sum()
+        })
+        .collect();
+    let cols = cession
+        .iter()
+        .map(|c| (c / h).floor() as usize + 2)
+        .max()
+        .unwrap_or(1);
+    let mut probs = vec![0.0; severity.len() * cols];
+    for (k, (&p, &c)) in severity.probs().iter().zip(&cession).enumerate() {
+        let u = c / h;
+        let j = u.floor();
+        let w = u - j;
+        let j = j as usize;
+        probs[k * cols + j] += p * (1.0 - w);
+        if w > 0.0 {
+            probs[k * cols + j + 1] += p * w;
+        }
+    }
+    let pairs = JointGrid::new([h, h], [severity.len(), cols], probs)?;
+    let (joint, report) = fft_bivariate(frequency, &pairs, points)?;
+    let total: f64 = joint.probs().iter().map(|p| p.abs()).sum();
+    let floor = 1e-15 * total;
+    let [na, nb] = joint.shape();
+    let (mut xs, mut ys, mut ps) = (Vec::new(), Vec::new(), Vec::new());
+    for i in 0..na {
+        for j in 0..nb {
+            let p = joint.prob(i, j);
+            if p >= floor && p > 0.0 {
+                xs.push(i as f64 * h);
+                ys.push(j as f64 * h);
+                ps.push(p);
+            }
+        }
+    }
+    Ok((Source::joint(xs, ys, ps)?, report))
 }
 
 /// Each layer's ceded loss at each annual total.
@@ -595,6 +807,48 @@ mod tests {
             .ledger(&gross(), None, Face::Consolidated)
             .unwrap();
         assert!((mixed.row("expense").unwrap().mean() + 1.19).abs() < 1e-12);
+    }
+
+    #[test]
+    fn occurrence_refusals() {
+        let book = Book::new("B", 10.0);
+        let occ = Tower::new(vec![Layer::xol("a", 1.0, 1.0).unwrap()]).unwrap();
+        // Not a joint source.
+        assert!(
+            book.occurrence_ledger(&gross(), &occ, None, Face::Walk)
+                .is_err()
+        );
+        let joint = Source::joint(vec![2.0, 4.0], vec![1.0, 2.0], vec![0.5, 0.5]).unwrap();
+        assert!(
+            book.occurrence_ledger(&joint, &occ, None, Face::Walk)
+                .is_ok()
+        );
+        // Annual terms on an occurrence layer.
+        let annual = Tower::new(vec![
+            Layer::xol("a", 1.0, 1.0)
+                .unwrap()
+                .aggregate_limit(2.0)
+                .unwrap(),
+        ])
+        .unwrap();
+        assert!(
+            book.occurrence_ledger(&joint, &annual, None, Face::Walk)
+                .is_err()
+        );
+        // A peel through two occurrence layers.
+        let two = Tower::new(vec![
+            Layer::xol("a", 1.0, 1.0).unwrap(),
+            Layer::xol("b", 2.0, 2.0).unwrap(),
+        ])
+        .unwrap();
+        assert!(
+            book.occurrence_ledger(&joint, &two, None, Face::Walk)
+                .is_ok()
+        );
+        assert!(
+            book.occurrence_ledger(&joint, &two, None, Face::PeelTopDown)
+                .is_err()
+        );
     }
 
     #[test]

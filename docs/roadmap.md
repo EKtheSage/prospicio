@@ -144,8 +144,9 @@ what it is aiming for by v1.0.
      (`docs/design/aggregate.md`): the P&L ledger, planned in six PRs in
      `docs/design/pnl.md`; the signed distribution, the ledger kernel
      with its scenario columns, rebucketed legs, the ratio exhibit, the
-     stack and the builders for annual covers are done, occurrence covers
-     next.
+     stack, the builders for annual covers and occurrence covers on the
+     joint gross and ceded loss are done, `pnl_program` with variable
+     terms and reinstatements next.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

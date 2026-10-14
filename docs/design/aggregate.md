@@ -94,7 +94,9 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   cover, every row's exact distribution and the scenario columns, legs
   rebucketed on a step, the ratio exhibit (`Ledger::ratios`) and the stack
   of several ledgers' results (`pnl::stack`), and the builders of a book
-  and its annual covers (`pnl::Book`: consolidated, walk and peel)
+  and its annual covers (`pnl::Book`: consolidated, walk and peel) and of
+  its occurrence covers over the joint gross and ceded loss
+  (`pnl::occurrence_source`, `Book::occurrence_ledger`)
   (`docs/design/pnl.md`). Python `Ledger`, `Group`, `Leg`, `stack`,
   `Book`, `Expense`; R `pnl_ledger()`, `ledger_ratios()`, `ledger_stack()`,
   `pnl_book()`, `book_ledger()`.
