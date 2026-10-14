@@ -73,15 +73,9 @@ NULL
 #' ledger_sheet(pnl)[, c("label", "EX", "k01", "k99")]
 pnl_ledger <- function(source, groups, name = "ledger", result_name = "result", spans = NULL,
                        force_tower = FALSE) {
-  if (S7::S7_inherits(source, grid_distribution)) {
-    p <- source@probs
-    keep <- p > 0
-    values <- (seq_along(p) - 1)[keep] * source@step
-    probs <- p[keep]
-  } else {
-    values <- as.double(source[[1]])
-    probs <- as.double(source[[2]])
-  }
+  src <- pnl_source(source)
+  values <- src$values
+  probs <- src$probs
   leg_group <- integer()
   leg_side <- character()
   leg_label <- character()
@@ -203,4 +197,126 @@ print.pnl_ledger <- function(x, ...) {
   r <- ledger_result(x)
   cat(sprintf("<pnl_ledger> %d rows, result mean %s\n", length(x$ptr$rows()), format(mean(r))))
   invisible(x)
+}
+
+pnl_source <- function(source) {
+  if (S7::S7_inherits(source, grid_distribution)) {
+    p <- source@probs
+    keep <- p > 0
+    list(values = (seq_along(p) - 1)[keep] * source@step, probs = p[keep])
+  } else {
+    list(values = as.double(source[[1]]), probs = as.double(source[[2]]))
+  }
+}
+
+pnl_flat_expenses <- function(expenses) {
+  idx <- integer()
+  basis <- character()
+  value <- double()
+  label <- character()
+  for (i in seq_along(expenses)) {
+    e <- expenses[[i]]
+    for (t in e$terms) {
+      idx <- c(idx, i)
+      basis <- c(basis, t[[1]])
+      value <- c(value, as.double(t[[2]]))
+      label <- c(label, if (is.null(e$label)) "" else e$label)
+    }
+  }
+  list(index = as.double(idx), basis = basis, value = value, label = label)
+}
+
+#' Book of a seller and its annual covers
+#'
+#' The ledger of a book, as the Python package `aggregate`'s `pnl` and
+#' `xpnl` builders: a gross premium less the annual loss less expenses,
+#' over a source of annual gross losses, with the annual covers of a
+#' [reinsurance_tower]. `book_ledger()` lays it out as one of three faces:
+#'
+#' - `"consolidated"` (`pnl`): one group, the net position. With a tower it
+#'   books net premium (gross less ceded premiums) less the net loss less
+#'   the commission received less expenses, over the net loss; a
+#'   loss-basis expense books as its rate times the expected gross loss.
+#' - `"walk"` (`xpnl`): the gross book, then one buy group per stage of the
+#'   tower, with the running net and the covers' total impact.
+#' - `"peel-top-down"` and `"peel-bottom-up"`: one buy group per layer, with
+#'   an `All aggregate` subtotal.
+#'
+#' Every layer's terms are taken at the annual total. The builders book a
+#' fixed premium and a flat ceding commission; a layer with loss-sensitive
+#' terms is refused (write its legs with [pnl_leg()]).
+#'
+#' `pnl_expense()` is one expense leg: an amount (`"fixed"`), a fraction of
+#' the gross premium (`"premium"`) or of the gross loss (`"loss"`), or
+#' several terms. Unlabelled, a book's only expense is the leg `expense`;
+#' with several, a single-basis one is `<basis> expense` and a mixed one
+#' `expense`. `derive_premium()` is the gross premium whose expenses leave
+#' a technical premium, `(T + F) / (1 - r)` (`aggregate`'s `derive
+#' premium`).
+#'
+#' @param name The ledger's name.
+#' @param premium The gross premium.
+#' @param expenses A list of `pnl_expense()`s.
+#' @param premium_label,loss_label,step_label The premium leg's label
+#'   (`"Premium"`), the loss leg's (`"Loss"`, also the gross book's margin on
+#'   a walk) and the gross book's step on a walk (`"Gross"`).
+#' @param basis `"fixed"`, `"premium"` or `"loss"`, or a list of
+#'   `list(basis, value)` terms.
+#' @param value The amount or rate, with a single `basis`.
+#' @param label The leg's label.
+#' @param book A `pnl_book()`.
+#' @param source A [grid_distribution] or `list(values, probs)` of annual
+#'   gross losses.
+#' @param tower `NULL` or a [reinsurance_tower].
+#' @param face `"consolidated"`, `"walk"`, `"peel-top-down"` or
+#'   `"peel-bottom-up"`.
+#' @param technical The technical premium.
+#' @returns `pnl_book()` and `pnl_expense()` lists, `book_ledger()` a
+#'   [pnl_ledger()], `derive_premium()` a number.
+#' @export
+#' @examples
+#' cover <- with_ceding_commission(with_deposit_premium(aggregate_stop_loss("agg 3 xs 5", 3, 5), 1), 0.1)
+#' book <- pnl_book("Ex3", 10, list(pnl_expense("premium", 0.1)))
+#' gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+#' walk <- book_ledger(book, gross, reinsurance_tower(list(cover)), "walk")
+#' mean(ledger_result(walk))
+pnl_book <- function(name, premium, expenses = list(), premium_label = NULL, loss_label = NULL,
+                     step_label = NULL) {
+  structure(list(name = as.character(name), premium = as.double(premium), expenses = expenses,
+                 premium_label = premium_label, loss_label = loss_label, step_label = step_label),
+            class = "pnl_book")
+}
+
+#' @rdname pnl_book
+#' @export
+pnl_expense <- function(basis, value = NULL, label = NULL) {
+  terms <- if (is.character(basis)) {
+    if (is.null(value)) stop("an expense with one basis needs a value")
+    list(list(basis, value))
+  } else {
+    basis
+  }
+  if (length(terms) == 0) stop("an expense needs at least one term")
+  list(terms = terms, label = label)
+}
+
+#' @rdname pnl_book
+#' @export
+book_ledger <- function(book, source, tower = NULL, face = "consolidated") {
+  src <- pnl_source(source)
+  e <- pnl_flat_expenses(book$expenses)
+  lbl <- function(x) if (is.null(x)) "" else as.character(x)
+  ptr <- rust_result(PnlLedger$book(
+    src$values, src$probs, book$name, book$premium, e$index, e$basis, e$value, e$label,
+    lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
+    if (is.null(tower)) NULL else tower@ptr, as.character(face)
+  ))
+  structure(list(ptr = ptr), class = "pnl_ledger")
+}
+
+#' @rdname pnl_book
+#' @export
+derive_premium <- function(technical, expenses) {
+  e <- pnl_flat_expenses(expenses)
+  rust_result(pnl_derive_premium(as.double(technical), e$index, e$basis, e$value, e$label))
 }

@@ -431,6 +431,18 @@ sources:
   ledger, the label of its `economic_ratios_df` row. Rebucketed legs, the
   ratios and `stack_marginal_pnls` match on 324 values
   (`aggregate_pnl_ratios.py`).[^pnl]
+* In the builders' DecL, `deposit 1 cede 10%` on a cover is a premium of
+  1 and a 10% ceding commission on it, not a 10% share. A DecL ledger's
+  source is the engine's whole grid, zeros included, and `PnL` normalizes
+  by numpy's pairwise sum over it, which can differ in the last bit from
+  a sum over the atoms with mass alone: on example 1 one total is exactly
+  1 and the other `0.9999999999999999`, and `κ75` moves by an atom. The
+  consolidated face (`pnl`) reads the net marginal off
+  `reins_density_df`, rebucketed onto the grid and renormalized, so its
+  `κ75` on example 3b sits across the same kind of tie. The walk names a
+  tier of several layers after its first declared label, and a peel
+  skips zero-share layers. `prospicio_aggregate::pnl::Book` matches the
+  builders on 2,401 values (`aggregate_pnl_builders.py`).[^pnl]
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 

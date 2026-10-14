@@ -60,3 +60,13 @@
   `Leg(step=)`, `Ledger.validation`, `Ledger.ratios`, `stack`; R
   `pnl_leg(step =)`, `ledger_validation()`, `ledger_ratios()`,
   `ledger_stack()` (#244).
+- The ledger of a seller's book and the annual covers it buys, as
+  `aggregate` 1.0.1's `pnl` and `xpnl` builders
+  (`prospicio_aggregate::pnl::{Book, Expense, Face, derive_premium}`):
+  consolidated (the net position over the net loss), walked (one group
+  per stage of the tower) or peeled (one group per layer, top down or
+  bottom up), with expenses on a fixed, premium or loss basis and
+  `derive premium`. `pnl::Source` now keeps probabilities that already
+  sum to 1 (to `1e-12`). Python `Book`, `Expense`, `derive_premium`; R
+  `pnl_book()`, `pnl_expense()`, `book_ledger()`, `derive_premium()`
+  (#245).

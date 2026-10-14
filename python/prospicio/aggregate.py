@@ -6,17 +6,20 @@ Pollaczeck–Khinchine formula and, for renewal claims, by Wiener–Hopf
 event loss table with secondary uncertainty (EventLossTable), and two lines hit by
 the same events: their joint loss by a 2-D FFT (fft_bivariate, JointGrid) and the
 clash model (Clash), and the P&L ledger (Ledger, Group, Leg, and stack to set
-ledgers' results side by side). Layers and towers are in
+ledgers' results side by side; Book, Expense and derive_premium build the ledger of
+a book and its annual covers). Layers and towers are in
 ``prospicio.reinsurance``."""
 
 from .prospicio_native import (
     Approximation,
     BivariateReport,
+    Book,
     Clash,
     CompoundMoments,
     CompoundReport,
     EventLossTable,
     EventSet,
+    Expense,
     GridSize,
     Group,
     JointGrid,
@@ -27,6 +30,7 @@ from .prospicio_native import (
     RenewalRuin,
     Ruin,
     compound_moments,
+    derive_premium,
     eventual_ruin,
     fft,
     fft_auto,
@@ -73,4 +77,7 @@ __all__ = [
     "Group",
     "Leg",
     "stack",
+    "Book",
+    "Expense",
+    "derive_premium",
 ]

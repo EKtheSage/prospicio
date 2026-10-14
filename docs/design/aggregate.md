@@ -93,9 +93,11 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   P&L ledger, `aggregate`'s `PnL`: signed legs in books that sell or buy
   cover, every row's exact distribution and the scenario columns, legs
   rebucketed on a step, the ratio exhibit (`Ledger::ratios`) and the stack
-  of several ledgers' results (`pnl::stack`) (`docs/design/pnl.md`, which
-  plans its builders). Python `Ledger`, `Group`, `Leg`, `stack`; R
-  `pnl_ledger()`, `ledger_ratios()`, `ledger_stack()`.
+  of several ledgers' results (`pnl::stack`), and the builders of a book
+  and its annual covers (`pnl::Book`: consolidated, walk and peel)
+  (`docs/design/pnl.md`). Python `Ledger`, `Group`, `Leg`, `stack`,
+  `Book`, `Expense`; R `pnl_ledger()`, `ledger_ratios()`, `ledger_stack()`,
+  `pnl_book()`, `book_ledger()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.

@@ -29,11 +29,16 @@
 //!
 //! The source's probabilities are rescaled to sum to 1, as `aggregate`
 //! does, so a ledger over an FFT density that lost a little tail mass shows
-//! rescaled means. Rows are in the payoff convention: profit is positive and
+//! rescaled means; probabilities already within `1e-12` of 1 are kept as
+//! given. [`Book`] builds the ledger of a seller's book and the annual
+//! covers it buys. Rows are in the payoff convention: profit is positive and
 //! the adverse tail the low one, so `κ01` is the bad state.
 
 use prospicio_core::{Error, Result};
 use prospicio_prob::{Discrete, Distribution, Grid};
+
+mod builders;
+pub use builders::{Book, Expense, ExpenseBasis, Face, derive_premium};
 
 /// The levels of the scenario and marginal columns, `aggregate`'s
 /// `PERCENTILE_LADDER`.
@@ -606,7 +611,10 @@ pub struct Source {
 }
 
 impl Source {
-    /// Atoms `values` with probabilities `probs`, rescaled to sum to 1.
+    /// Atoms `values` with probabilities `probs`, rescaled to sum to 1
+    /// unless their total is already within `1e-12` of 1 (a second
+    /// rescaling would move a cumulative probability that lands on a
+    /// ladder level across a quantile's jump).
     pub fn new(values: Vec<f64>, probs: Vec<f64>) -> Result<Self> {
         if values.len() != probs.len() || values.is_empty() {
             return Err(Error::Data(
@@ -627,10 +635,12 @@ impl Source {
                 "the source needs a positive probability".into(),
             ));
         }
-        Ok(Self {
-            values,
-            probs: probs.into_iter().map(|p| p / total).collect(),
-        })
+        let probs = if (total - 1.0).abs() <= 1e-12 {
+            probs
+        } else {
+            probs.into_iter().map(|p| p / total).collect()
+        };
+        Ok(Self { values, probs })
     }
 
     /// The points of a grid with mass.
