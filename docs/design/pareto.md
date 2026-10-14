@@ -318,6 +318,8 @@ one-dimensional profile likelihood in `k`, solved by bisection on its
 analytic score. R's optimizer stops about `2e-5` short of the maximum
 (our estimate has the higher likelihood at 40 digits), so those parity
 rows use `1e-4`.
+The body families take the same data through
+`severity_fit::fit_severity` (`docs/design/distributions.md`).
 `Pareto::fit_with_standard_error` and
 `PiecewisePareto::fit_with_standard_errors` (decided 2026-10-14, #213)
 add the observed-information standard error of each alpha. Untruncated

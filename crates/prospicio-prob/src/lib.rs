@@ -43,6 +43,7 @@ pub mod risk;
 pub mod sampled;
 pub mod serial;
 pub mod severity;
+pub mod severity_fit;
 pub mod truncated;
 pub mod tweedie;
 pub mod weibull;

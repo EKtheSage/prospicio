@@ -80,7 +80,8 @@ what it is aiming for by v1.0.
     inverse Gaussian, Burr and scaled beta, mixtures, truncation and
     splicing, a severity under a mix of policy limits, `Custom` and the
     `Dist` enum with JSON save and load; standard errors of the Pareto
-    fits.
+    fits, and maximum likelihood fits of the lognormal, gamma, Weibull and
+    Burr with reporting thresholds and censoring.
     Third raw moments on `Severity` and `Counting`; `aggregate`'s named
     fixed, Bernoulli and geometric counts.
   - `PredictiveDistribution`: join, reorder, blend, select (one part of a
