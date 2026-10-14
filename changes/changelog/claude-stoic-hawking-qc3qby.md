@@ -107,4 +107,4 @@
   `Book::expense_at_expected_loss` keeps the expected-loss booking of
   `aggregate`'s guaranteed-cost builder. Python
   `Book(expense_at_expected_loss=)`; R `pnl_book(expense_at_expected_loss
-  =)`.
+  =)` (#250).
