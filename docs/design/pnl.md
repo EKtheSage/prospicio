@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **Proposed** · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **In progress** (PRs 1 to 3 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -150,21 +150,54 @@ on a step (PR 3).
 
 Each PR is one type or method, with its parity tests, bindings and docs.
 
-1. **`Discrete`** in `prospicio-prob`: the signed irregular distribution
-   of decision 1, with `aggregate`'s `make_var_tvar` (built on the atoms
-   with mass; equal masses read as `k / n` exactly; the lower quantile by
-   `searchsorted(F, p, 'left')`, `tvar` at `p ≥ F[n−2]` the top atom),
-   the return-period table, and the noise snap (`|v| ≤ 1e-12` reads 0).
-   Parity: the result atoms of examples 1 and 2 below.
-2. **The ledger kernel**, `prospicio_aggregate::pnl::{Leg, Group,
-   Ledger}`, over a one-dimensional source: the row plan (legs, side
-   totals, group results, running nets, tiers, net-of blocks, grand rows,
-   total impact), the moments, the card, the sheet with `κ`, each row's
-   marginal ladder, the legs table, `prob_eq_0` and `+`. Parity:
-   examples 1, 2, 2c and 3a with the gross marginal as the source.
-3. **Rebucketed legs and ratios**: a leg on a step (signed regular grid by
-   linear, mean-keeping scatter) with its validation table, the ratio
-   exhibit and the stack of several ledgers' results. Parity: 2b, 2.
+1. (Done.) **`Discrete`** in `prospicio-prob`: the signed irregular
+   distribution of decision 1, with `aggregate`'s `make_var_tvar` (built on
+   the atoms with mass; equal masses read as `k / n` exactly; the lower
+   quantile by `searchsorted(F, p, 'left')`, `tvar` at `p ≥ F[n−2]` the
+   top atom, and for a lone atom that atom, where `aggregate` raises an
+   `IndexError`) and the return-period table. Parity:
+   `validation/scripts/aggregate_discrete.py`, 544 values on the results
+   of examples 1 and 2, equal masses, a signed sample and a lone atom, at
+   `1e-12` (`1e-10` on TVaR and skewness). Python `Discrete`, R
+   `discrete_distribution()`. The display snap of values within `1e-12`
+   of 0 moves to PR 2, where the exhibits are.
+2. (Done.) **The ledger kernel**, `prospicio_aggregate::pnl::{Leg,
+   Group, Ledger, Source, Layout}`, over a one-dimensional source: the row
+   plan (legs, side totals, group results, running nets, spans with
+   subtotal and net-of blocks, grand rows, total impact), the moments, the
+   card (`Ledger::card`), the scenario columns (`Ledger::scenarios`), each
+   row's own quantiles, the legs, `prob_eq_0`, and `Ledger::extend` (`+`).
+   Legs are constants, functions of the source's value, or values at each
+   atom (the bindings call a callable once on all the atoms). Parity:
+   `validation/scripts/aggregate_pnl_ledger.py`, 1,704 values of
+   `aggregate`'s `PnL` built by hand on examples 1, 2, 2c, 3a and a
+   three-group ledger with a span and a net-of block, all at `1e-12`
+   (`1e-10` on skewness). `Discrete` now keeps probabilities that already
+   sum to 1 (to `1e-12`) instead of rescaling them again: the second
+   rescaling moved a cumulative 0.1 to 0.09999999999999999 and the 10%
+   quantile across its jump. Python `prospicio.aggregate.{Ledger, Group,
+   Leg}`, R `pnl_ledger()`, `pnl_group()`, `pnl_leg()` and the
+   `ledger_*()` exhibits.
+3. (Done.) **Rebucketed legs and ratios**: `Leg::step` puts a leg's own
+   distribution on a signed regular grid by `aggregate`'s linear,
+   mean-keeping scatter (from `floor(lo / h) h`; a constant gets a span of
+   `(|lo| + 1) 1e-9`), which changes only that row's marginal quantiles:
+   its mean, the sums down the sheet and the scenario columns stay on the
+   exact values. `Ledger::validation` compares the exact and grid means,
+   `Ledger::ratios` is `economic_ratios_df` (premium, loss net of
+   recoveries, expense net of commission and result by block, the ratios
+   of means and, where the premium never vanishes, the means of ratios,
+   the shares of the first block; a leg without a kind is premium on the
+   consideration side and loss on the other), and `pnl::stack` is
+   `stack_marginal_pnls` (each ledger's result statistics, and impacts as
+   differences statistic by statistic). Parity:
+   `validation/scripts/aggregate_pnl_ratios.py`, 324 values: the ratios of
+   examples 1, 2, 3a and the three-group ledger, example 2b's sheet,
+   marginals, card, validation and grid, and the stack of 2b, 2c and their
+   difference, at `1e-12` (`1e-10` on skewness, `1e-15` on the grid).
+   Python `Leg(step=)`, `Ledger.validation`, `Ledger.ratios`,
+   `prospicio.aggregate.stack`; R `pnl_leg(step =)`, `ledger_validation()`,
+   `ledger_ratios()`, `ledger_stack()`.
 4. **Builders for annual covers**: expenses (fixed, premium, loss basis;
    `derive premium`), the plain and consolidated ledgers, the walk and
    the per-atom peel over aggregate covers, on `Tower::on_annual_grid`.
@@ -191,8 +224,8 @@ the numbers a first run gave (2026-10-14):
   bs=1)`. Margin `EX` 5.2, `SD` 1.60623784, skew −0.7181304929, `P01`,
   median, `P99` 1, 6, 7. `κ01…κ99` of the loss −8, −6, −6, −5, −3, −2,
   −2, −2, −2 and of the margin 1, 3, 3, 4, 6, 7, 7, 7, 7. The result's
-  atoms −1, 1, 2, 3, 4, 5 with probabilities 0.04, 0.12, 0.2, 0.09, 0.3,
-  0.25; `q` at 0.01, 0.05, 0.5, 0.99 is 1, 3, 6, 7; `tvar` at 0.01, 0.5,
+  atoms (9 less the loss) 1, 3, 4, 5, 6, 7 with probabilities 0.04, 0.12,
+  0.2, 0.09, 0.3, 0.25; `q` at 0.01, 0.05, 0.5, 0.99 is 1, 3, 6, 7; `tvar` at 0.01, 0.5,
   0.9 is 5.242424242, 6.5, 7.
 - **Example 2**, a hand-built ledger on `x = [0, 10, 20, 50]`, `p = [.4,
   .3, .2, .1]`: `Gross` sells a premium `clip(5 + 1.1x, 12, 40)` against

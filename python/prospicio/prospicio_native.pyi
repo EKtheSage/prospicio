@@ -4600,6 +4600,183 @@ class DevelopmentPattern:
         """
 
 @final
+class Discrete:
+    """
+    A distribution on finitely many values, of either sign and any spacing:
+    a row of a P&L (premium less loss less expenses) or any other signed
+    outcome, as the Python package ``aggregate``'s ``GridDistribution`` on an
+    irregular support.
+    
+    Values may repeat and come in any order: equal values (to ``1e-12``) are
+    merged, zero probabilities dropped, and the probabilities rescaled to
+    sum to 1. Quantiles and TVaR follow ``aggregate`` exactly; ``tvar`` is
+    the upper tail even when the values are a payoff, whose adverse tail is
+    the low one.
+    
+    Parameters
+    ----------
+    values : list of float
+    probs : list of float
+        Non-negative, with a positive total.
+    
+    Raises
+    ------
+    ValueError
+        If the lengths differ, a value is not finite, a probability is
+        negative or none is positive.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Discrete
+    >>> # A margin: 9 less the loss of two claims of 1, 2 or 4.
+    >>> m = Discrete([7, 6, 5, 4, 3, 1], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    >>> round(m.mean(), 12), m.quantile(0.01)
+    (5.2, 1.0)
+    >>> round(m.tvar(0.01), 6)
+    5.242424
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, values: Sequence[float], probs: Sequence[float]) -> Discrete: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    def pmf(self, /, x: float) -> float:
+        """
+        The probability of exactly ``x`` (to ``1e-12``).
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def probs(self, /) -> list[float]:
+        """
+        Their probabilities, summing to 1.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The lower quantile, the smallest value with ``F >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    def quantile_upper(self, /, p: float) -> float |None:
+        """
+        The upper quantile, the smallest value with ``F > p``; None at
+        ``p = 1``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float or None
+        """
+    def skewness(self, /) -> float |None:
+        """
+        The skewness, or None when the variance is 0.
+        
+        Returns
+        -------
+        float or None
+        """
+    def std_dev(self, /) -> float:
+        """
+        The standard deviation.
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        ``P(X > x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tail(self, /, periods: Sequence[float] |None = None) -> dict:
+        """
+        The return-period table, as ``aggregate``'s ``tail_df``: each period
+        ``T`` read from both tails, at ``P = 1 / T`` and ``P = 1 - 1 / T``. A
+        payoff (a P&L) is read off the low rows, a loss off the high ones.
+        
+        Parameters
+        ----------
+        periods : list of float, optional
+            At least 1; ``aggregate``'s 2, 5, 10, 25, 50, 100, 200, 250, 500,
+            1000 by default.
+        
+        Returns
+        -------
+        dict
+            Columns ``p``, ``period``, ``var``, ``tvar``, ``excess`` (VaR less
+            the mean) and ``var_to_mean`` (None near a zero mean).
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p``: the mean of the upper ``1 - p`` of the
+        distribution, the upper tail even for a payoff.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def values(self, /) -> list[float]:
+        """
+        The distinct values, ascending.
+        """
+    def variance(self, /) -> float:
+        """
+        The variance.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class DiscretizationReport:
     """
     How a distribution was discretized, and the error that introduced.
@@ -7215,6 +7392,32 @@ class GridSize:
         """
 
 @final
+class Group:
+    """
+    A book of the ledger: ``sell`` (the insurer of the subject business,
+    booking ``+consideration - obligation``) or ``buy`` (a cession, booking
+    the contra: ceded premium paid, recoveries and commission received).
+    
+    Parameters
+    ----------
+    label : str
+    role : str
+        ``sell`` or ``buy``.
+    consideration : list of Leg, optional
+    obligation : list of Leg, optional
+    margin_label : str, optional
+        The label of a seller's own margin on a ledger that also buys
+        cover; ``Gross`` by default.
+    """
+    def __new__(cls, /, label: str, role: str, consideration: Sequence[Leg] |None = None, obligation: Sequence[Leg] |None = None, margin_label: str |None = None) -> Group: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def label(self, /) -> str:
+        """
+        The label.
+        """
+
+@final
 class HierarchicalStacking:
     """
     Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
@@ -8539,6 +8742,182 @@ class LayerStatistics:
     def share(self, /) -> float:
         """
         The placed share.
+        """
+
+@final
+class Ledger:
+    """
+    A P&L ledger, as ``aggregate``'s ``PnL``: a source (a :class:`Grid`, or
+    values and their probabilities) and its groups, with every row (each
+    leg, each side's total, each group's result, running nets, tier and
+    net-of blocks, and with several groups the grand rows and the total
+    impact) a sum of signed legs at each atom, and its exact distribution.
+    
+    The scenario columns ``k01`` to ``k99`` (``aggregate``'s ``κ``) are each
+    row's conditional mean given that the grand result equals its quantile
+    at that level, so each column is one state of the world and foots down
+    the sheet. Rows are in the payoff convention: ``k01`` is the bad year.
+    The source's probabilities are rescaled to sum to 1.
+    
+    Parameters
+    ----------
+    source : Grid or tuple of (list of float, list of float)
+    groups : list of Group
+    name : str, default "ledger"
+    result_name : str, default "result"
+    spans : list of tuple of (str, int, int), optional
+        ``(label, lo, hi)``: groups ``lo`` to ``hi - 1`` with their own
+        subtotal block, and a net-of block when a later group follows.
+    force_tower : bool, default False
+        Present one group as a tower, with a step level.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Group, Ledger, Leg
+    >>> book = Group("Book", "sell", [Leg("Premium", 10.0)], [Leg("Loss", lambda x: x)])
+    >>> pnl = Ledger(([2.0, 8.0], [0.5, 0.5]), [book], name="Book")
+    >>> pnl.result.mean()
+    5.0
+    >>> s = pnl.sheet()
+    >>> s["label"], s["k01"]
+    (['Premium', 'Loss', 'Total'], [10.0, -8.0, 2.0])
+    """
+    def __new__(cls, /, source: Any, groups: Sequence[Group], *, name: str = ..., result_name: str = ..., spans: Sequence[tuple[str, int, int]] |None = None, force_tower: bool = False) -> Ledger: ...
+    def __repr__(self, /) -> str: ...
+    def card(self, /) -> dict:
+        """
+        The card, ``aggregate``'s ``summary_df``: each block's consideration,
+        obligation and margin (and on a tower each step's running net and
+        the covers' total impact), with ``EX``, ``SD``, ``CV``, ``Skew``,
+        ``P01``, ``Median`` and ``P99`` of each row's own distribution.
+        
+        Returns
+        -------
+        dict
+        """
+    def legs(self, /) -> dict:
+        """
+        The declared legs, ``aggregate``'s ``legs_df``: step, side, label,
+        kind, ``EX`` and ``SD``.
+        
+        Returns
+        -------
+        dict
+        """
+    def marginal(self, /) -> dict:
+        """
+        Each row's own quantiles, ``aggregate``'s ``economic_marginal_df``:
+        ``P01`` to ``P99``, which do not add down the sheet.
+        
+        Returns
+        -------
+        dict
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The ledger's name.
+        """
+    @property
+    def prob_eq_0(self, /) -> float:
+        """
+        The chance that the result is 0.
+        """
+    def ratios(self, /) -> dict:
+        """
+        The ratio exhibit, ``aggregate``'s ``economic_ratios_df``: for each
+        group, span, net-of block and ``All``, premium ``P``, loss ``L`` net
+        of recoveries, expense ``E`` net of commission and the result ``M``
+        (mean amounts, signed for the block's own view), the result's ``SD``,
+        the ratios of means ``LR``, ``ER``, ``CR``, the means of ratios
+        ``E_LR``, ``E_ER``, ``E_CR`` (where the premium never vanishes), and
+        ``P_share`` and ``M_share`` of the first block. Legs without a kind
+        count as premium on the consideration side and loss on the other.
+        
+        Returns
+        -------
+        dict
+        """
+    @property
+    def result(self, /) -> Discrete:
+        """
+        The (grand) result's distribution.
+        """
+    def row(self, /, label: str) -> Discrete:
+        """
+        The distribution of the row labelled ``label``.
+        
+        Parameters
+        ----------
+        label : str
+        
+        Returns
+        -------
+        Discrete
+        """
+    @property
+    def rows(self, /) -> list[str]:
+        """
+        The rows' labels, in sheet order.
+        """
+    def sheet(self, /) -> dict:
+        """
+        The sheet, ``aggregate``'s ``economic_df``: every row with its mean,
+        standard deviation, coefficient of variation, skewness and scenario
+        columns ``k01`` to ``k99``.
+        
+        Returns
+        -------
+        dict
+            Columns ``step`` (on a tower), ``side``, ``label``, ``row`` (the
+            row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios.
+        """
+    def validation(self, /) -> dict:
+        """
+        Each rebucketed leg's exact mean against its grid's,
+        ``aggregate``'s ``validation_df``. Empty when no leg has a ``step``.
+        
+        Returns
+        -------
+        dict
+            Columns ``label``, ``EX``, ``Est``, ``abs_err`` and ``rel_err``.
+        """
+
+@final
+class Leg:
+    """
+    One cash flow of a :class:`Group`: a constant, or a function of the
+    source's value, written as a positive magnitude; the group's role signs
+    it. A function is called once with all the source's values (a numpy
+    array when numpy is installed, else a list) and returns one value per
+    value, or a single number.
+    
+    Parameters
+    ----------
+    label : str
+        Unique across the ledger.
+    value : float or callable
+    kind : str, optional
+        ``premium``, ``loss``, ``expense``, ``recovery`` or ``commission``.
+    step : float, optional
+        Put the leg's own distribution on a grid of this step (``aggregate``'s
+        ``bs``), scattering each value linearly to its two neighbours, which
+        keeps its mean. Only its marginal quantiles change; its mean, the
+        sums down the sheet and the scenario columns stay exact.
+        :meth:`Ledger.validation` compares the two means.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Leg
+    >>> Leg("Loss", lambda x: x, kind="loss")
+    Leg("Loss")
+    """
+    def __new__(cls, /, label: str, value: Any, kind: str |None = None, step: float |None = None) -> Leg: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def label(self, /) -> str:
+        """
+        The label.
         """
 
 @final
@@ -18203,6 +18582,41 @@ def simulate_from_means(family: str, means: Sequence[Sequence[float]], n_sims: i
     >>> pd = simulate_from_means("poisson", [[0.1, 0.4]], 20_000, 7)
     >>> round(pd.mean(), 1)
     0.5
+    """
+
+def stack(ledgers: dict, impacts: Sequence[tuple[str, str, str]] |None = None) -> dict:
+    """
+    Stack ledgers' results, ``aggregate``'s ``stack_marginal_pnls``: one row
+    per ledger with the mean, standard deviation, coefficient of variation,
+    skewness and quantiles ``P01`` to ``P99`` of its result, then one row per
+    impact, the difference of two stacked rows statistic by statistic.
+    
+    Parameters
+    ----------
+    ledgers : dict of str to Ledger
+        In row order.
+    impacts : list of tuple of (str, str, str), optional
+        ``(label, target, base)``: the row ``target`` less the row ``base``.
+    
+    Returns
+    -------
+    dict
+        Columns ``label``, ``EX``, ``SD``, ``CV``, ``Skew`` and ``P01`` to
+        ``P99``.
+    
+    Raises
+    ------
+    ValueError
+        If an impact names a row that is not stacked.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Group, Ledger, Leg, stack
+    >>> src = ([2.0, 8.0], [0.5, 0.5])
+    >>> a = Ledger(src, [Group("A", "sell", [Leg("P", 10.0)], [Leg("L", lambda x: x)])])
+    >>> b = Ledger(src, [Group("B", "sell", [Leg("P", 12.0)], [Leg("L", lambda x: x)])])
+    >>> stack({"a": a, "b": b}, [("b less a", "b", "a")])["EX"]
+    [5.0, 7.0, 2.0]
     """
 
 def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:

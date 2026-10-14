@@ -87,10 +87,12 @@ what it is aiming for by v1.0.
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean)
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
+  - `Discrete`, a distribution on finitely many values of either sign,
+    for the P&L ledger's rows (`docs/design/pnl.md`).
 - **Next:**
   1. Nested Archimedean and vine copulas (`docs/design/risk.md`).
   2. Threshold diagnostics for EVT.
-  3. Signed grids for net cash flow and P&L, when capital needs them.
+  3. Signed regular grids for rebucketed P&L legs (`pnl.md`, PR 3).
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -140,7 +142,9 @@ what it is aiming for by v1.0.
 - **Next:**
   1. The last large item parked from `aggregate` parity
      (`docs/design/aggregate.md`): the P&L ledger, planned in six PRs in
-     `docs/design/pnl.md`, starting with a signed discrete distribution.
+     `docs/design/pnl.md`; the signed distribution, the ledger kernel
+     with its scenario columns, rebucketed legs, the ratio exhibit and the
+     stack are done, the builders for covers next.
   2. Deficit and credit carry-forward in profit commissions and sliding
      scales, once multi-year simulation exists.
 - **v1.0:** a reinsurance programme described once and applied to any

@@ -362,3 +362,52 @@ cj <- fft_bivariate(poisson_count(3), cs$density, cs$steps, points = 64)
 stopifnot(cj$correlation > 0,
           inherits(try(copula_severity(ca, cb, t_copula(matrix(c(1, 0.5, 0.5, 1), 2), 4)),
                        silent = TRUE), "try-error"))
+# The P&L ledger: the design note's example 2 against aggregate 1.0.1's PnL.
+gross <- pnl_group("Gross", "sell",
+  list(pnl_leg("Premium", function(x) pmin(pmax(5 + 1.1 * x, 12), 40), kind = "premium")),
+  list(pnl_leg("Loss", identity, kind = "loss"), pnl_leg("LAE", function(x) 0.05 * x)))
+xl <- pnl_group("XL", "buy", list(pnl_leg("XL premium", 4)),
+  list(pnl_leg("XL recovery", function(x) pmin(pmax(x - 15, 0), 25)), pnl_leg("XL commission", 0.4)))
+pnl <- pnl_ledger(list(c(0, 10, 20, 50), c(0.4, 0.3, 0.2, 0.1)), list(gross, xl), name = "Ex2",
+                  result_name = "margin")
+s <- ledger_sheet(pnl)
+m <- s[s$row == "margin", ]
+stopifnot(abs(m$EX - 6.3) < 1e-12, abs(m$SD - 2.913760457) < 1e-9)
+stopifnot(max(abs(c(m$k01, m$k50, m$k99) - c(1.9, 7.4, 8.9))) < 1e-12)
+stopifnot(abs(s$k50[s$row == "Premium"] - 27) < 1e-12, s$label[nrow(s)] == "Impact")
+card <- ledger_card(pnl)
+stopifnot(card$side[nrow(card)] == "Impact", abs(card$EX[nrow(card)] + 0.1) < 1e-12)
+stopifnot(abs(TVaR(ledger_result(pnl), 0.5) - 8.5) < 1e-12, abs(mean(ledger_row(pnl, "Loss")) + 12) < 1e-12)
+stopifnot(identical(ledger_legs(pnl)$kind[1:2], c("premium", "loss")))
+one <- pnl_ledger(grid_distribution(1, c(0.5, 0, 0.5)),
+                  list(pnl_group("Book", "sell", list(pnl_leg("P", 3)), list(pnl_leg("L", identity)))))
+stopifnot(identical(ledger_sheet(one)$label, c("P", "L", "Total")), is.null(ledger_sheet(one)$step))
+stopifnot(inherits(try(pnl_leg("L", 1, kind = "bogus"), silent = TRUE), "try-error"))
+
+# Rebucketed legs, the ratio exhibit and the stack (aggregate 1.0.1).
+local({
+  src <- list(c(0, 10, 20, 50), c(0.4, 0.3, 0.2, 0.1))
+  gross <- pnl_group("Gross", "sell",
+    list(pnl_leg("Premium", function(x) pmin(pmax(5 + 1.1 * x, 12), 40), kind = "premium")),
+    list(pnl_leg("Loss", identity, kind = "loss"),
+         pnl_leg("LAE", function(x) 0.05 * x, kind = "expense")))
+  xl <- pnl_group("XL", "buy", list(pnl_leg("XL premium", 4, kind = "premium")),
+    list(pnl_leg("XL recovery", function(x) pmin(pmax(x - 15, 0), 25), kind = "recovery"),
+         pnl_leg("XL commission", 0.4, kind = "commission")))
+  r <- ledger_ratios(pnl_ledger(src, list(gross, xl), name = "Ex2", result_name = "margin"))
+  stopifnot(identical(r$step, c("Gross", "XL", "All")))
+  stopifnot(abs(r$E_LR[1] - 0.46064814814814825) < 1e-12)
+  stopifnot(abs(r$M_share[3] - 0.984375) < 1e-12)
+  b <- pnl_ledger(src, list(pnl_group("Ex2b", "sell", list(pnl_leg("consideration", 20)),
+    list(pnl_leg("Loss", function(x) 1.03 * x, step = 4)))))
+  v <- ledger_validation(b)
+  stopifnot(v$label == "Loss", abs(v$EX + 12.36) < 1e-12, v$abs_err < 1e-12)
+  m <- ledger_marginal(b)
+  stopifnot(identical(unname(unlist(m[m$row == "Loss", c("P01", "P10", "P50")])), c(-52, -48, -8)))
+  c2 <- pnl_ledger(src, list(pnl_group("Ex2c", "sell",
+    list(pnl_leg("Prem", function(x) ifelse(x == 20, 30, 10))), list(pnl_leg("Loss", identity)))))
+  s <- ledger_stack(list(ex2b = b, ex2c = c2), list(c("c less b", "ex2c", "ex2b")))
+  stopifnot(identical(s$label, c("ex2b", "ex2c", "c less b")))
+  stopifnot(abs(s$EX[3] + 5.64) < 1e-12, abs(s$P01[3] + 8.5) < 1e-12)
+  stopifnot(inherits(try(ledger_stack(list(a = b), list(c("x", "a", "nope"))), silent = TRUE), "try-error"))
+})

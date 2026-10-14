@@ -6,6 +6,12 @@
   (`prospicio_math::special::bivariate_norm_cdf`, Genz's BVND, about
   `1e-15`); an error for the t copula. Python `cdf` on the copula classes;
   R `copula_cdf()` (#234).
+- A distribution on finitely many values of either sign and any spacing,
+  `prospicio_prob::Discrete`, for the rows of a P&L: equal values merged,
+  the lower and upper quantiles, TVaR and the return-period table as
+  `aggregate` 1.0.1's `GridDistribution`, `pmf` and skewness. Python
+  `Discrete`; R `discrete_distribution()`, `quantile_upper()`,
+  `discrete_skewness()` and `return_periods()` (#241).
 
 ### Aggregate and reinsurance
 
@@ -35,3 +41,22 @@
   (`prospicio_aggregate::ruin::wiener_hopf`, returning `RenewalRuin`),
   matching `aggregate` 1.0.1's `wiener_hopf`. Python `wiener_hopf`; R
   `wiener_hopf()` (#237).
+- The P&L ledger, as `aggregate` 1.0.1's `PnL`
+  (`prospicio_aggregate::pnl::{Ledger, Group, Leg}`): signed legs in books
+  that sell or buy cover over a source, every row (legs, side totals,
+  results, running nets, spans and net-of blocks, grand rows, the covers'
+  total impact) a sum at each atom with its exact distribution, the card,
+  and the scenario columns that condition each row on the grand result.
+  Python `prospicio.aggregate.Ledger`, `Group`, `Leg`; R `pnl_ledger()`,
+  `pnl_group()`, `pnl_leg()` and `ledger_sheet()`, `ledger_card()`,
+  `ledger_marginal()`, `ledger_legs()`, `ledger_result()`, `ledger_row()`
+  (#242).
+- Legs rebucketed on a step (`Leg::step`, with `Ledger::validation`
+  comparing the exact and grid means), the ratio exhibit
+  (`Ledger::ratios`: premium, loss, expense and result by block, ratios of
+  means and means of ratios, shares) and the stack of several ledgers'
+  results with their differences (`pnl::stack`), as `aggregate` 1.0.1's
+  `bs`, `economic_ratios_df` and `stack_marginal_pnls`. Python
+  `Leg(step=)`, `Ledger.validation`, `Ledger.ratios`, `stack`; R
+  `pnl_leg(step =)`, `ledger_validation()`, `ledger_ratios()`,
+  `ledger_stack()` (#244).

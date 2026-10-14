@@ -35,6 +35,7 @@ reference:
       - distributions.from_json
       - distributions.Grid
       - distributions.DiscretizationReport
+      - distributions.Discrete
       - distributions.Sampled
   - title: Large-loss severities
     desc: The Pareto family for layer and treaty pricing, with maximum likelihood fits.
@@ -81,6 +82,12 @@ reference:
       - aggregate.JointGrid
       - aggregate.BivariateReport
       - aggregate.Clash
+      - aggregate.wiener_hopf
+      - aggregate.RenewalRuin
+      - aggregate.Ledger
+      - aggregate.Group
+      - aggregate.Leg
+      - aggregate.stack
       - aggregate.layer_loss_picks
       - aggregate.Picks
   - title: Reinsurance

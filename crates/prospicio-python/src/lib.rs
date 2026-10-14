@@ -16,12 +16,14 @@ use pyo3::prelude::*;
 mod aggregate;
 mod counts;
 mod credibility;
+mod discrete;
 mod distributions;
 mod experience;
 mod models;
 mod natural;
 mod pareto;
 mod payout;
+mod pnl;
 mod pricing;
 mod ratemaking;
 mod reinsurance;
@@ -46,6 +48,8 @@ mod prospicio_native {
     use super::counts::PyCount;
     #[pymodule_export]
     use super::credibility::{PyBuhlmannStraubFit, PyLimitedFluctuation, buhlmann_straub};
+    #[pymodule_export]
+    use super::discrete::PyDiscrete;
     #[pymodule_export]
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
@@ -79,6 +83,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
+    #[pymodule_export]
+    use super::pnl::{PyGroup, PyLedger, PyLeg, stack};
     #[pymodule_export]
     use super::pricing::{
         PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,

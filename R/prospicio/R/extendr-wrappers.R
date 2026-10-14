@@ -438,6 +438,74 @@ NegativeBinomial$sample <- function(n, seed, stream) .Call(wrap__NegativeBinomia
 #' @export
 `[[.NegativeBinomial` <- `$.NegativeBinomial`
 
+DiscreteDist <- new.env(parent = emptyenv())
+
+DiscreteDist$new <- function(values, probs) .Call(wrap__DiscreteDist__new, values, probs)
+
+DiscreteDist$values <- function() .Call(wrap__DiscreteDist__values, self)
+
+DiscreteDist$probs <- function() .Call(wrap__DiscreteDist__probs, self)
+
+DiscreteDist$mean <- function() .Call(wrap__DiscreteDist__mean, self)
+
+DiscreteDist$variance <- function() .Call(wrap__DiscreteDist__variance, self)
+
+DiscreteDist$skewness <- function() .Call(wrap__DiscreteDist__skewness, self)
+
+DiscreteDist$cdf <- function(x) .Call(wrap__DiscreteDist__cdf, self, x)
+
+DiscreteDist$survival <- function(x) .Call(wrap__DiscreteDist__survival, self, x)
+
+DiscreteDist$pmf <- function(x) .Call(wrap__DiscreteDist__pmf, self, x)
+
+DiscreteDist$quantile <- function(p) .Call(wrap__DiscreteDist__quantile, self, p)
+
+DiscreteDist$quantile_upper <- function(p) .Call(wrap__DiscreteDist__quantile_upper, self, p)
+
+DiscreteDist$tvar <- function(p) .Call(wrap__DiscreteDist__tvar, self, p)
+
+DiscreteDist$tail <- function(periods) .Call(wrap__DiscreteDist__tail, self, periods)
+
+#' @export
+`$.DiscreteDist` <- function (self, name) { func <- DiscreteDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.DiscreteDist` <- `$.DiscreteDist`
+
+PnlLedger <- new.env(parent = emptyenv())
+
+PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower) .Call(wrap__PnlLedger__new, values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower)
+
+PnlLedger$rows <- function() .Call(wrap__PnlLedger__rows, self)
+
+PnlLedger$result <- function() .Call(wrap__PnlLedger__result, self)
+
+PnlLedger$row <- function(label) .Call(wrap__PnlLedger__row, self, label)
+
+PnlLedger$prob_eq_0 <- function() .Call(wrap__PnlLedger__prob_eq_0, self)
+
+PnlLedger$is_tower <- function() .Call(wrap__PnlLedger__is_tower, self)
+
+PnlLedger$sheet <- function() .Call(wrap__PnlLedger__sheet, self)
+
+PnlLedger$marginal <- function() .Call(wrap__PnlLedger__marginal, self)
+
+PnlLedger$card <- function() .Call(wrap__PnlLedger__card, self)
+
+PnlLedger$validation <- function() .Call(wrap__PnlLedger__validation, self)
+
+PnlLedger$ratios <- function() .Call(wrap__PnlLedger__ratios, self)
+
+PnlLedger$result_stats <- function() .Call(wrap__PnlLedger__result_stats, self)
+
+PnlLedger$legs <- function() .Call(wrap__PnlLedger__legs, self)
+
+#' @export
+`$.PnlLedger` <- function (self, name) { func <- PnlLedger[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.PnlLedger` <- `$.PnlLedger`
+
 Grid <- new.env(parent = emptyenv())
 
 Grid$new <- function(step, probs) .Call(wrap__Grid__new, step, probs)

@@ -659,3 +659,94 @@ def test_copula_coupled_lines():
     assert joint.correlation() > 0
     with pytest.raises(ValueError):
         JointGrid.from_copula(a, b, StudentTCopula([[1.0, 0.5], [0.5, 1.0]], 4.0))
+
+
+def test_ledger():
+    import math
+
+    from prospicio.aggregate import Group, Ledger, Leg
+    from prospicio.distributions import Grid
+
+    # The P&L design note's example 2 against aggregate 1.0.1's PnL.
+    x, p = [0.0, 10.0, 20.0, 50.0], [0.4, 0.3, 0.2, 0.1]
+    gross = Group(
+        "Gross", "sell",
+        [Leg("Premium", lambda v: [min(max(5 + 1.1 * a, 12), 40) for a in v], kind="premium")],
+        [Leg("Loss", lambda v: v, kind="loss"), Leg("LAE", lambda v: [0.05 * a for a in v])],
+    )
+    xl = Group(
+        "XL", "buy", [Leg("XL premium", 4.0)],
+        [Leg("XL recovery", lambda v: [min(max(a - 15, 0), 25) for a in v]),
+         Leg("XL commission", 0.4)],
+    )
+    pnl = Ledger((x, p), [gross, xl], name="Ex2", result_name="margin")
+    s = pnl.sheet()
+    i = s["row"].index("margin")
+    assert s["EX"][i] == pytest.approx(6.3, abs=1e-12)
+    assert s["SD"][i] == pytest.approx(2.913760457, abs=1e-9)
+    assert [s[k][i] for k in ("k01", "k50", "k99")] == pytest.approx([1.9, 7.4, 8.9], abs=1e-12)
+    j = s["row"].index("Premium")
+    assert s["k50"][j] == pytest.approx(27.0, abs=1e-12) and s["k75"][j] == pytest.approx(12.0)
+    assert s["step"][-1] == "All" and s["label"][-1] == "Impact"
+    card = pnl.card()
+    assert card["side"][-1] == "Impact" and card["EX"][-1] == pytest.approx(-0.1, abs=1e-12)
+    assert pnl.legs()["kind"][:2] == ["premium", "loss"]
+    assert pnl.marginal()["P99"][i] == pytest.approx(8.9)
+    assert pnl.result.tvar(0.5) == pytest.approx(8.5, abs=1e-12)
+    assert pnl.row("Loss").mean() == pytest.approx(-12.0)
+    assert pnl.prob_eq_0 == 0.0
+    # A grid as the source; one group without a buyer reads Total.
+    g = Grid(1.0, [0.5, 0.0, 0.5])
+    one = Ledger(g, [Group("Book", "sell", [Leg("P", 3.0)], [Leg("L", lambda v: v)])])
+    assert one.sheet()["label"] == ["P", "L", "Total"] and one.result.mean() == pytest.approx(2.0)
+    with pytest.raises(ValueError):
+        Leg("L", 1.0, kind="bogus")
+    with pytest.raises(ValueError):
+        Group("A", "lend")
+    with pytest.raises(ValueError):
+        Ledger(g, [Group("A", "sell", [Leg("P", 1.0)]), Group("B", "buy", [Leg("P", 1.0)])])
+    assert not math.isnan(one.sheet()["EX"][0])
+
+
+def test_ledger_ratios_and_stack():
+    from prospicio.aggregate import Group, Ledger, Leg, stack
+
+    # The P&L design note's examples 2, 2b and 2c against aggregate 1.0.1.
+    x, p = [0.0, 10.0, 20.0, 50.0], [0.4, 0.3, 0.2, 0.1]
+    gross = Group(
+        "Gross", "sell",
+        [Leg("Premium", lambda v: [min(max(5 + 1.1 * a, 12), 40) for a in v], kind="premium")],
+        [Leg("Loss", lambda v: v, kind="loss"),
+         Leg("LAE", lambda v: [0.05 * a for a in v], kind="expense")],
+    )
+    xl = Group(
+        "XL", "buy", [Leg("XL premium", 4.0, kind="premium")],
+        [Leg("XL recovery", lambda v: [min(max(a - 15, 0), 25) for a in v], kind="recovery"),
+         Leg("XL commission", 0.4, kind="commission")],
+    )
+    r = Ledger((x, p), [gross, xl], name="Ex2", result_name="margin").ratios()
+    assert r["step"] == ["Gross", "XL", "All"]
+    assert [r[k][0] for k in ("P", "L", "E", "M")] == pytest.approx([19.0, 12.0, 0.6, 6.4])
+    assert r["E_LR"][0] == pytest.approx(0.46064814814814825, abs=1e-12)
+    assert r["E_ER"][2] == pytest.approx(-0.006449275362318844, abs=1e-12)
+    assert r["M_share"][2] == pytest.approx(0.984375, abs=1e-12)
+
+    b = Ledger((x, p), [Group("Ex2b", "sell", [Leg("consideration", 20.0)],
+                              [Leg("Loss", lambda v: v * 1.03, step=4.0)])])
+    v = b.validation()
+    assert v["label"] == ["Loss"] and v["EX"][0] == pytest.approx(-12.36, abs=1e-12)
+    assert v["abs_err"][0] < 1e-12
+    m = b.marginal()
+    i = m["row"].index("Loss")
+    assert [m[k][i] for k in ("P01", "P10", "P50")] == [-52.0, -48.0, -8.0]
+    # The sheet's scenario columns stay on the exact values.
+    assert b.sheet()["k01"][i] == pytest.approx(-51.5)
+    c = Ledger((x, p), [Group("Ex2c", "sell",
+                              [Leg("Prem", lambda v: [30.0 if a == 20 else 10.0 for a in v])],
+                              [Leg("Loss", lambda v: v)])])
+    s = stack({"ex2b": b, "ex2c": c}, [("c less b", "ex2c", "ex2b")])
+    assert s["label"] == ["ex2b", "ex2c", "c less b"]
+    assert s["EX"][2] == pytest.approx(-5.64, abs=1e-12)
+    assert s["P01"][2] == pytest.approx(-8.5, abs=1e-12)
+    with pytest.raises(ValueError):
+        stack({"ex2b": b}, [("x", "ex2b", "nope")])
