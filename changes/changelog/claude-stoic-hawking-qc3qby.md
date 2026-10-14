@@ -78,4 +78,4 @@
   occurrence covers and then aggregate covers on their net, the peel and
   the consolidated face, matching `aggregate` 1.0.1. Python
   `occurrence_source`, `Book.occurrence_ledger`; R `occurrence_source()`,
-  `book_occurrence_ledger()`.
+  `book_occurrence_ledger()` (#246).
