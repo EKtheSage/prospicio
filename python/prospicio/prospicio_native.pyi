@@ -12353,6 +12353,71 @@ class OneYearFit:
         """
 
 @final
+class PairCopula:
+    """
+    A bivariate copula for a vine: a family, its parameter and a rotation.
+    
+    Parameters
+    ----------
+    family : {"independence", "gaussian", "clayton", "gumbel", "frank", "joe"}
+    parameter : float, default 0.0
+        Gaussian correlation in (-1, 1); Clayton above 0; Gumbel and Joe at
+        least 1; Frank not 0 (negative for negative dependence).
+    rotation : {0, 90, 180, 270}, default 0
+        For Clayton, Gumbel and Joe: 90 and 270 give negative dependence,
+        180 moves the tail dependence to the other corner (pyvinecopulib's
+        conventions).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import PairCopula
+    >>> c = PairCopula("clayton", 2.0)
+    >>> round(c.h2(0.3, 0.6), 12) == round(0.6**-3 * (0.3**-2 + 0.6**-2 - 1) ** -1.5, 12)
+    True
+    """
+    def __new__(cls, /, family: str, parameter: float = 0.0, rotation: int = 0) -> PairCopula: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, u: float, v: float) -> float:
+        """
+        The distribution function ``C(u, v)``.
+        """
+    def density(self, /, u: float, v: float) -> float:
+        """
+        The density ``c(u, v)``.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        Family name.
+        """
+    def h1(self, /, v: float, u: float) -> float:
+        """
+        ``h1(v | u) = dC(u, v)/du``: the second argument given the first.
+        """
+    def h1_inverse(self, /, p: float, u: float) -> float:
+        """
+        The ``v`` with ``h1(v | u) = p``.
+        """
+    def h2(self, /, u: float, v: float) -> float:
+        """
+        ``h2(u | v) = dC(u, v)/dv``: the first argument given the second.
+        """
+    def h2_inverse(self, /, p: float, v: float) -> float:
+        """
+        The ``u`` with ``h2(u | v) = p``.
+        """
+    @property
+    def parameter(self, /) -> float:
+        """
+        The parameter.
+        """
+    @property
+    def rotation(self, /) -> int:
+        """
+        The rotation in degrees.
+        """
+
+@final
 class Pareto:
     """
     Single-parameter Pareto: ``P(X > x) = (t / x) ** alpha`` for ``x >= t``,
@@ -17281,6 +17346,88 @@ class ViewPrice:
     def premium(self, /) -> float:
         """
         The distorted expectation.
+        """
+
+@final
+class VineCopula:
+    """
+    A C- or D-vine copula built from bivariate pair copulas (Aas et al.
+    2009), with each edge's first argument its earlier variable in the
+    order.
+    
+    Parameters
+    ----------
+    kind : {"c", "d"}
+        A C-vine: tree ``t`` joins the ``t``-th variable in the order to
+        every later one, given the first ``t``. A D-vine: tree ``t`` joins
+        variables ``t + 1`` places apart in the order, given those between.
+    order : list of int
+        The dimensions (0-based) in vine order.
+    pairs : list of list of PairCopula
+        Tree ``t``'s ``d - 1 - t`` pair copulas, edge by edge. Fewer trees
+        truncate the vine (the rest independence).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import PairCopula, VineCopula
+    >>> v = VineCopula("d", [0, 1, 2], [[PairCopula("gumbel", 2.0), PairCopula("clayton", 1.5, 90)],
+    ...                                 [PairCopula("frank", 3.0)]])
+    >>> v.dim
+    3
+    """
+    def __new__(cls, /, kind: str, order: Sequence[int], pairs: Sequence[Sequence[PairCopula]]) -> VineCopula: ...
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of dimensions.
+        """
+    def inverse_rosenblatt(self, /, w: Sequence[float]) -> list[float]:
+        """
+        The inverse Rosenblatt transform: the point whose conditional
+        distributions, in vine order, are the uniforms ``w`` (in vine order).
+        
+        Parameters
+        ----------
+        w : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        ``"c"`` or ``"d"``.
+        """
+    def log_density(self, /, u: Sequence[float]) -> float:
+        """
+        The log-density at the point ``u``.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def order(self, /) -> list[int]:
+        """
+        The order.
+        """
+    def sample(self, /, n: int, seed: int) -> list[list[float]]:
+        """
+        ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        
+        Returns
+        -------
+        list of list of float
         """
 
 @final

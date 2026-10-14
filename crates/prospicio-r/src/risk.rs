@@ -308,6 +308,7 @@ pub(crate) enum AnyCopula {
     StudentT(StudentTCopula),
     Archimedean(ArchimedeanCopula),
     Nested(prospicio_prob::NestedArchimedeanCopula),
+    Vine(prospicio_prob::vine::VineCopula),
 }
 
 impl AnyCopula {
@@ -317,8 +318,37 @@ impl AnyCopula {
             Self::StudentT(c) => c,
             Self::Archimedean(c) => c,
             Self::Nested(c) => c,
+            Self::Vine(c) => c,
         }
     }
+}
+
+/// A pair copula from `list(family, parameter, rotation)`.
+fn pair_copula(p: &Robj) -> Result<prospicio_prob::vine::PairCopula> {
+    use prospicio_prob::vine::{PairCopula, PairFamily};
+    let bad = || Error::Other("a pair copula is list(family, parameter, rotation)".into());
+    let l = List::try_from(p).map_err(|_| bad())?;
+    let parts: Vec<Robj> = l.values().collect();
+    if parts.len() != 3 {
+        return Err(bad());
+    }
+    let family = match parts[0].as_str().ok_or_else(bad)? {
+        "independence" => PairFamily::Independence,
+        "gaussian" => PairFamily::Gaussian,
+        "clayton" => PairFamily::Clayton,
+        "gumbel" => PairFamily::Gumbel,
+        "frank" => PairFamily::Frank,
+        "joe" => PairFamily::Joe,
+        other => return Err(Error::Other(format!("unknown pair family {other:?}"))),
+    };
+    let parameter = parts[1].as_real().ok_or_else(bad)?;
+    let rotation = parts[2].as_real().ok_or_else(bad)?;
+    if !matches!(rotation, 0.0 | 90.0 | 180.0 | 270.0) {
+        return Err(Error::Other(format!(
+            "rotation {rotation} is not 0, 90, 180 or 270"
+        )));
+    }
+    PairCopula::new(family, parameter, rotation as u16).map_err(to_r)
 }
 
 /// A node `list(theta, leaves, children)` with 1-based leaves.
@@ -413,6 +443,68 @@ impl RiskCopula {
         })
     }
 
+    /// A C- or D-vine: `order` 1-based, `pairs` a list of trees, each a
+    /// list of `list(family, parameter, rotation)`.
+    fn vine(kind: &str, order: &[f64], pairs: List) -> Result<Self> {
+        use prospicio_prob::vine::{VineCopula, VineKind};
+        let kind = match kind {
+            "c" => VineKind::Canonical,
+            "d" => VineKind::Drawable,
+            other => {
+                return Err(Error::Other(format!(
+                    "kind must be \"c\" or \"d\", not {other:?}"
+                )));
+            }
+        };
+        let order = order
+            .iter()
+            .map(|&j| {
+                if j >= 1.0 && j.fract() == 0.0 {
+                    Ok(j as usize - 1)
+                } else {
+                    Err(Error::Other(format!("{j} is not a dimension (1, 2, ...)")))
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let pairs = pairs
+            .values()
+            .map(|tree| {
+                List::try_from(&tree)
+                    .map_err(|_| Error::Other("each tree is a list of pair copulas".into()))?
+                    .values()
+                    .map(|p| pair_copula(&p))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let c = VineCopula::new(kind, order, pairs).map_err(to_r)?;
+        Ok(Self {
+            inner: AnyCopula::Vine(c),
+        })
+    }
+
+    /// The vine's log-density at each row of `u` (`n × dim`, column-major).
+    fn log_density(&self, u: &[f64], n: f64) -> Result<Vec<f64>> {
+        let AnyCopula::Vine(v) = &self.inner else {
+            return Err(Error::Other(
+                "only a vine copula has a log-density here".into(),
+            ));
+        };
+        let n = whole(n, "n")? as usize;
+        let d = v.dim();
+        if u.len() != n * d {
+            return Err(Error::Other(format!(
+                "{} values for {n} points in {d} dimensions",
+                u.len()
+            )));
+        }
+        (0..n)
+            .map(|i| {
+                let row: Vec<f64> = (0..d).map(|j| u[j * n + i]).collect();
+                v.log_density(&row).map_err(to_r)
+            })
+            .collect()
+    }
+
     fn dim(&self) -> f64 {
         self.inner.as_copula().dim() as f64
     }
@@ -443,6 +535,14 @@ impl RiskCopula {
             AnyCopula::StudentT(c) => format!("Student t, nu = {}", c.nu()),
             AnyCopula::Archimedean(c) => format!("{:?}, theta = {}", c.family(), c.theta()),
             AnyCopula::Nested(c) => format!("nested {:?}, theta = {}", c.family(), c.root().theta),
+            AnyCopula::Vine(c) => format!(
+                "{}-vine on {} trees",
+                match c.kind() {
+                    prospicio_prob::vine::VineKind::Canonical => "C",
+                    prospicio_prob::vine::VineKind::Drawable => "D",
+                },
+                c.pairs().len()
+            ),
         }
     }
 

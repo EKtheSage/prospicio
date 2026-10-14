@@ -18,6 +18,13 @@
   with the distribution function and McNeil's sampling. Python
   `prospicio.risk.NestedArchimedeanCopula`; R
   `nested_archimedean_copula()` and `nac_node()`.
+- Vine copulas, `prospicio_prob::vine`: pair copulas (independence,
+  Gaussian, Clayton, Gumbel, Frank, Joe, with rotations) with their
+  conditional distributions and densities, and C- and D-vines built from
+  them (log-density, inverse Rosenblatt transform, sampling), matching
+  pyvinecopulib 1.0.1. Python `prospicio.risk.PairCopula` and
+  `VineCopula`; R `pair_copula()`, `vine_copula()` and
+  `copula_log_density()`.
 - A severity under a mix of policy limits, `prospicio_prob::PolicyLimits`
   (#213): `min(X, L)` with each limit's weight, exact layer moments from
   the base severity's and an atom at each finite limit, so it discretizes,

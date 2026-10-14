@@ -418,6 +418,58 @@ nac_node <- function(theta, leaves = numeric(), children = list()) {
   list(as.double(theta), as.double(leaves), children)
 }
 
+#' Vine copulas
+#'
+#' A C- or D-vine copula built from bivariate pair copulas (Aas et al.
+#' 2009). `pair_copula()` is one: a family, its parameter and a rotation by
+#' 0, 90, 180 or 270 degrees (for Clayton, Gumbel and Joe; 90 and 270 give
+#' negative dependence; pyvinecopulib's conventions). In a C-vine, tree `t`
+#' joins the `t`-th variable in the order to every later one, given those
+#' before; in a D-vine, variables `t` places apart in the order, given those
+#' between. Each edge's first argument is its earlier variable. Fewer trees
+#' than `d - 1` truncate the vine (the rest independence).
+#' `copula_log_density()` is the vine's log-density.
+#'
+#' @param family One of `"independence"`, `"gaussian"`, `"clayton"`,
+#'   `"gumbel"`, `"frank"` and `"joe"`.
+#' @param parameter Gaussian correlation in (-1, 1); Clayton above 0; Gumbel
+#'   and Joe at least 1; Frank not 0.
+#' @param rotation 0, 90, 180 or 270.
+#' @param kind `"c"` or `"d"`.
+#' @param order The dimensions (1, 2, ...) in vine order.
+#' @param pairs A list of trees, tree `t` a list of its `d - t` pair copulas.
+#' @param copula A vine [copula].
+#' @param u A point or a matrix with one point per row.
+#' @returns `pair_copula()`: a list; `vine_copula()`: a [copula];
+#'   `copula_log_density()`: one value per point.
+#' @export
+#' @examples
+#' v <- vine_copula("d", 1:3, list(
+#'   list(pair_copula("gumbel", 2), pair_copula("clayton", 1.5, 90)),
+#'   list(pair_copula("frank", 3))))
+#' copula_log_density(v, c(0.2, 0.7, 0.4))
+#' copula_sample(v, 3, seed = 1)
+vine_copula <- function(kind = c("c", "d"), order, pairs) {
+  kind <- match.arg(kind)
+  copula(rust_result(RiskCopula$vine(kind, as.double(order), pairs)))
+}
+
+#' @rdname vine_copula
+#' @export
+pair_copula <- function(family = c("independence", "gaussian", "clayton", "gumbel", "frank",
+                                   "joe"),
+                        parameter = 0, rotation = 0) {
+  family <- match.arg(family)
+  list(family, as.double(parameter), as.double(rotation))
+}
+
+#' @rdname vine_copula
+#' @export
+copula_log_density <- function(copula, u) {
+  u <- if (is.matrix(u)) u else matrix(u, nrow = 1)
+  rust_result(copula@ptr$log_density(as.double(u), as.double(nrow(u))))
+}
+
 #' Copula distribution function
 #'
 #' `C(u) = P(U_1 <= u_1, ..., U_d <= u_d)` at each point: the Gaussian

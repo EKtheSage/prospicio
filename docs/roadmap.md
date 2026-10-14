@@ -89,7 +89,7 @@ what it is aiming for by v1.0.
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean,
-    nested Archimedean)
+    nested Archimedean, C- and D-vines)
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
   - `Discrete`, a distribution on finitely many values of either sign,

@@ -2355,6 +2355,10 @@ RiskCopula$archimedean <- function(family, theta, dim) .Call(wrap__RiskCopula__a
 
 RiskCopula$nested <- function(family, root) .Call(wrap__RiskCopula__nested, family, root)
 
+RiskCopula$vine <- function(kind, order, pairs) .Call(wrap__RiskCopula__vine, kind, order, pairs)
+
+RiskCopula$log_density <- function(u, n) .Call(wrap__RiskCopula__log_density, self, u, n)
+
 RiskCopula$dim <- function() .Call(wrap__RiskCopula__dim, self)
 
 RiskCopula$cdf <- function(u, n) .Call(wrap__RiskCopula__cdf, self, u, n)
