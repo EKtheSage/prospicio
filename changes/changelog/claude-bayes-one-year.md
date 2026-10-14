@@ -19,4 +19,4 @@
   `bayes_odp_one_year_segments()` return a `bayes_one_year_fit` and a
   `bayes_one_year_fits`, with `fit`, `cdr`, `pareto_k`, `refitted`,
   `flagged_share` and the frames. Refits that fail their MCMC
-  diagnostics raise a warning.
+  diagnostics raise a warning (#252).
