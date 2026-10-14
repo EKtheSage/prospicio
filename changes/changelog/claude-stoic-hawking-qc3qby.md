@@ -68,4 +68,5 @@
   bottom up), with expenses on a fixed, premium or loss basis and
   `derive premium`. `pnl::Source` now keeps probabilities that already
   sum to 1 (to `1e-12`). Python `Book`, `Expense`, `derive_premium`; R
-  `pnl_book()`, `pnl_expense()`, `book_ledger()`, `derive_premium()`.
+  `pnl_book()`, `pnl_expense()`, `book_ledger()`, `derive_premium()`
+  (#245).
