@@ -1672,7 +1672,8 @@ quarterly one. Simulation `i`, on stream `i` of its seed:
    and a CDR of 0; one whose remaining cells all fall in the year has its
    whole run-off, `E[R_w | D0] − X_w`, as in the bootstraps.
 5. When `k̂` is above `k_threshold` (or not finite) and `refit` is
-   `RefitFlagged`, or always under `RefitAll`, `E[R'_w | D0, X]` comes
+   `RefitFlagged`, or always under `RefitAll` (except for a year with no
+   information, below), `E[R'_w | D0, X]` comes
    instead from a NUTS run on the triangle extended by `X` (the same
    model, priors, `c0` and `φ`, the model's `sampler`, Newton started at
    the opening posterior mean, seed drawn on the simulation's own stream
