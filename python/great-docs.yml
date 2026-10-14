@@ -88,6 +88,9 @@ reference:
       - aggregate.Group
       - aggregate.Leg
       - aggregate.stack
+      - aggregate.Book
+      - aggregate.Expense
+      - aggregate.derive_premium
       - aggregate.layer_loss_picks
       - aggregate.Picks
   - title: Reinsurance

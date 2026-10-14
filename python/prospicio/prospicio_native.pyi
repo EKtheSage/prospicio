@@ -1714,6 +1714,85 @@ class BivariateReport:
         """
 
 @final
+class Book:
+    """
+    A seller's book, ``aggregate``'s ``pnl`` and ``xpnl`` builders: a gross
+    premium, expenses and the labels of its legs, laid out over a source of
+    annual gross losses with the annual covers of a tower.
+    
+    :meth:`ledger` gives one of three faces:
+    
+    - ``consolidated`` (``pnl``): one group, the net position. With a tower
+      it books net premium (gross less ceded premiums) less the net loss
+      less the commission received less expenses, over the net loss; a
+      loss-basis expense books as its rate times the expected gross loss.
+    - ``walk`` (``xpnl``): the gross book, then one buy group per stage of
+      the tower, with the running net and the covers' total impact.
+    - ``peel-top-down`` and ``peel-bottom-up`` (``xpnl ... peel``): one buy
+      group per layer, with an ``All aggregate`` subtotal.
+    
+    Every layer's terms are taken at the annual total. The builders book a
+    fixed premium and a flat ceding commission; a layer with loss-sensitive
+    terms is refused (write its legs with :class:`Leg`).
+    
+    Parameters
+    ----------
+    name : str
+        The ledger's name.
+    premium : float
+        The gross premium.
+    expenses : list of Expense, optional
+    premium_label : str, optional
+        ``Premium`` by default.
+    loss_label : str, optional
+        ``Loss`` by default; also the gross book's margin on a walk.
+    step_label : str, optional
+        The gross book's step on a walk, ``Gross`` by default.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Book, Expense
+    >>> from prospicio.reinsurance import Layer, Tower
+    >>> gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    >>> cover = Layer.stop_loss("agg 3 xs 5", 3.0, 5.0).with_deposit_premium(1.0)
+    >>> cover = cover.with_ceding_commission(0.1)
+    >>> book = Book("Ex3", 10.0, [Expense("premium", 0.1)])
+    >>> walk = book.ledger(gross, Tower([cover]), "walk")
+    >>> round(walk.result.mean(), 12), walk.sheet()["step"][-1]
+    (4.54, 'All')
+    """
+    def __new__(cls, /, name: str, premium: float, expenses: Sequence[Expense] |None = None, *, premium_label: str |None = None, loss_label: str |None = None, step_label: str |None = None) -> Book: ...
+    def __repr__(self, /) -> str: ...
+    def ledger(self, /, source: Any, tower: Tower |None = None, face: str = "consolidated") -> Ledger:
+        """
+        The ledger over the annual gross losses ``source``.
+        
+        Parameters
+        ----------
+        source : Grid or tuple of (list of float, list of float)
+        tower : prospicio.reinsurance.Tower, optional
+            Annual covers; without one, the plain book.
+        face : str, default "consolidated"
+            ``consolidated``, ``walk``, ``peel-top-down`` or
+            ``peel-bottom-up``.
+        
+        Returns
+        -------
+        Ledger
+        
+        Raises
+        ------
+        ValueError
+            A peel without a tower, a layer that needs each event, or one
+            with loss-sensitive terms.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The gross premium.
+        """
+
+@final
 class BornhuetterFerguson:
     """
     The Bornhuetter–Ferguson method: each origin's latest value plus the
@@ -5550,6 +5629,45 @@ class ExpectedLossFit:
     def ultimate(self, /) -> list[float]:
         """
         This method's ultimate per origin.
+        """
+
+@final
+class Expense:
+    """
+    One expense leg of a :class:`Book`: an amount (``fixed``), a fraction of
+    the gross premium (``premium``) or of the gross loss (``loss``, loss
+    adjustment expense), or several such terms in one leg.
+    
+    Unlabelled, a book's only expense is the leg ``expense``; with several,
+    a single-basis one is ``<basis> expense`` and a mixed one ``expense``,
+    with ``(2)``, ``(3)`` … added to a name already taken, as ``aggregate``.
+    
+    Parameters
+    ----------
+    basis : str or list of tuple of (str, float)
+        ``fixed``, ``premium`` or ``loss``; or a list of ``(basis, value)``
+        terms.
+    value : float, optional
+        The amount or rate, with a single ``basis``.
+    label : str, optional
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Expense
+    >>> Expense("premium", 0.25, label="Acq")
+    Expense("Acq", [("premium", 0.25)])
+    """
+    def __new__(cls, /, basis: Any, value: float |None = None, *, label: str |None = None) -> Expense: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def label(self, /) -> str |None:
+        """
+        The label, or None.
+        """
+    @property
+    def terms(self, /) -> list[tuple[str, float]]:
+        """
+        The ``(basis, value)`` terms.
         """
 
 @final
@@ -16704,6 +16822,33 @@ def crps(draws: Sequence[float], y: float) -> float:
     Returns
     -------
     float
+    """
+
+def derive_premium(technical: float, expenses: Sequence[Expense]) -> float:
+    """
+    The gross premium whose own expenses leave the technical premium
+    ``technical``, ``aggregate``'s ``derive premium``: ``(T + F) / (1 - r)``
+    with ``F`` the fixed amounts and ``r`` the premium rates.
+    
+    Parameters
+    ----------
+    technical : float
+    expenses : list of Expense
+    
+    Returns
+    -------
+    float
+    
+    Raises
+    ------
+    ValueError
+        On a loss-basis term, or premium rates totalling 1 or more.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Expense, derive_premium
+    >>> round(derive_premium(5.0, [Expense("premium", 0.1), Expense("fixed", 1.0)]), 12)
+    6.666666666667
     """
 
 def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> float:

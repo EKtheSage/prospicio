@@ -113,7 +113,8 @@ for case, (src, kw) in CASES.items():
 
 (ref / 'pnl_ledger_aggregate.csv').write_text(
     'case,quantity,row,col,expected,abs_tol,rel_tol,source\n' + '\n'.join(rows) + '\n')
+# The probabilities PnL uses: normalized once, as PnL does.
 (ref / 'pnl_ledger_sources.csv').write_text(
     'source,value,prob\n' + '\n'.join(
         f'{name},{v!r},{q!r}' for name, (xs, ps) in SOURCES.items()
-        for v, q in zip(xs.tolist(), ps.tolist())) + '\n')
+        for v, q in zip(xs.tolist(), (ps / ps.sum()).tolist())) + '\n')

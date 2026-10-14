@@ -20,6 +20,8 @@ dist_to_json_rust <- function(dist) .Call(wrap__dist_to_json_rust, dist)
 
 dist_from_json_rust <- function(text) .Call(wrap__dist_from_json_rust, text)
 
+pnl_derive_premium <- function(technical, exp_index, exp_basis, exp_value, exp_label) .Call(wrap__pnl_derive_premium, technical, exp_index, exp_basis, exp_value, exp_label)
+
 tvar_weighted_rust <- function(values, probs, p) .Call(wrap__tvar_weighted_rust, values, probs, p)
 
 tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
@@ -475,6 +477,8 @@ DiscreteDist$tail <- function(periods) .Call(wrap__DiscreteDist__tail, self, per
 PnlLedger <- new.env(parent = emptyenv())
 
 PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower) .Call(wrap__PnlLedger__new, values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower)
+
+PnlLedger$book <- function(values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face) .Call(wrap__PnlLedger__book, values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face)
 
 PnlLedger$rows <- function() .Call(wrap__PnlLedger__rows, self)
 

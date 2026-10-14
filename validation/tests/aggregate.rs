@@ -1460,3 +1460,195 @@ fn pnl_ratios_and_stack_match_aggregate() {
         }
     });
 }
+
+#[test]
+fn pnl_builders_match_aggregate() {
+    use prospicio_aggregate::pnl::{
+        Book, Expense, ExpenseBasis, Face, Ledger, Source, derive_premium, snap,
+    };
+    use prospicio_aggregate::{Layer, Tower};
+    // validation/scripts/aggregate_pnl_builders.py: aggregate's pnl and xpnl
+    // builders over a book and its aggregate covers.
+    let sources = reference("pnl_builder_sources.csv");
+    let source = |name: &str| {
+        let (x, p): (Vec<f64>, Vec<f64>) = sources
+            .iter()
+            .filter(|r| r.get("source") == name)
+            .map(|r| (r.number("value").unwrap(), r.number("prob").unwrap()))
+            .unzip();
+        Source::new(x, p).unwrap()
+    };
+    let (small, ex5) = (source("ex3a"), source("ex5"));
+    let one = || {
+        let cover = Layer::stop_loss("agg 3 xs 5", 3.0, 5.0)
+            .unwrap()
+            .deposit_premium(1.0)
+            .unwrap()
+            .ceding_commission(0.1)
+            .unwrap();
+        Tower::new(vec![cover]).unwrap()
+    };
+    let two = Tower::new(vec![
+        Layer::stop_loss("Low", 2.0, 3.0)
+            .unwrap()
+            .deposit_premium(0.5)
+            .unwrap(),
+        Layer::stop_loss("High", 3.0, 5.0)
+            .unwrap()
+            .deposit_premium(1.0)
+            .unwrap()
+            .ceding_commission(0.1)
+            .unwrap(),
+    ])
+    .unwrap();
+    let premium = || Expense::premium(0.1);
+    let ex3 = Book::new("Ex3", 10.0).expense(premium());
+    let ex6 = Book::new("Ex6", 10.0).expense(premium());
+    let lbl = Book::new("Lbl", 10.0)
+        .premium_label("GWP")
+        .loss_label("Claims")
+        .step_label("Book")
+        .expense(premium().and(ExpenseBasis::Loss, 0.05));
+    let ex1 = Book::new("Ex1", 10.0).expense(premium());
+    let built: Vec<(&str, Ledger)> = vec![
+        ("ex3a", ex3.ledger(&small, Some(&one()), Face::Walk)),
+        ("ex3b", ex3.ledger(&small, Some(&one()), Face::Consolidated)),
+        ("ex6w", ex6.ledger(&small, Some(&two), Face::Walk)),
+        ("ex6td", ex6.ledger(&small, Some(&two), Face::PeelTopDown)),
+        ("ex6bu", ex6.ledger(&small, Some(&two), Face::PeelBottomUp)),
+        ("ex1", ex1.ledger(&small, None, Face::Consolidated)),
+        ("ex1w", ex1.ledger(&small, None, Face::Walk)),
+        (
+            "exp1",
+            Book::new("E1", 10.0)
+                .expense(premium())
+                .expense(Expense::loss(0.05))
+                .expense(Expense::fixed(1.0))
+                .ledger(&small, None, Face::Consolidated),
+        ),
+        (
+            "exp2",
+            Book::new("E2", 10.0)
+                .expense(premium().and(ExpenseBasis::Loss, 0.05))
+                .ledger(&small, None, Face::Consolidated),
+        ),
+        (
+            "exp3",
+            Book::new("E3", 10.0)
+                .expense(premium().label("Acq"))
+                .expense(Expense::loss(0.05).label("LAE"))
+                .ledger(&small, None, Face::Consolidated),
+        ),
+        (
+            "ex5",
+            Book::new("Ex5", 1000.0)
+                .expense(Expense::loss(0.05).label("LAE"))
+                .expense(Expense::premium(0.25).label("Acq"))
+                .ledger(&ex5, None, Face::Consolidated),
+        ),
+        ("lblw", lbl.ledger(&small, Some(&one()), Face::Walk)),
+        ("lblc", lbl.ledger(&small, Some(&one()), Face::Consolidated)),
+    ]
+    .into_iter()
+    .map(|(k, l)| (k, l.unwrap()))
+    .collect();
+    let ledgers: std::collections::HashMap<&str, Ledger> = built.into_iter().collect();
+    let derive = |key: &str| -> Option<f64> {
+        let e: Vec<Expense> = match key {
+            "none" => vec![],
+            "premium" => vec![premium()],
+            "mixed" => vec![premium(), Expense::fixed(1.0)],
+            "groups" => vec![
+                premium(),
+                Expense::premium(0.15)
+                    .and(ExpenseBasis::Fixed, 2.0)
+                    .label("Acq"),
+            ],
+            _ => return None,
+        };
+        derive_premium(5.0, &e).ok()
+    };
+    let ladder = |col: &str| -> Option<f64> {
+        let q: f64 = col[1..].parse::<f64>().ok()? / 100.0;
+        prospicio_aggregate::pnl::LADDER
+            .iter()
+            .copied()
+            .find(|l| (l - q).abs() < 1e-12)
+    };
+    // On the consolidated face aggregate rebuilds the net marginal on its
+    // grid and renormalizes it over every grid point, which puts the
+    // result's cumulative probability at 0.75 on the other side of the
+    // level by a last bit (design note, decision 2): its κ75 is the next
+    // atom. Those cells are checked to be that tie instead.
+    let mut cases = reference("pnl_builders_aggregate.csv");
+    cases.retain(|c| !(matches!(c.get("case"), "ex3b" | "lblc") && c.get("col") == "k75"));
+    for case in ["ex3b", "lblc"] {
+        use prospicio_prob::Distribution;
+        let r = ledgers[case].result().distribution();
+        let q = r.quantile(0.75).unwrap();
+        let below = r.values().iter().rev().find(|&&v| v < q).copied().unwrap();
+        assert!(
+            (r.cdf(below) - 0.75).abs() < 1e-12,
+            "{case}: no tie at 0.75"
+        );
+    }
+    check(&cases, |c| {
+        let (row_key, col) = (c.get("row"), c.get("col"));
+        if c.get("case") == "derive" {
+            return derive(row_key);
+        }
+        let pnl = ledgers.get(c.get("case"))?;
+        let key = |r: &prospicio_aggregate::pnl::Row| {
+            if pnl.is_tower() {
+                format!("{}|{}|{}", r.step, r.side.name(), r.display)
+            } else {
+                format!("{}|{}", r.side.name(), r.display)
+            }
+        };
+        match c.get("quantity") {
+            "sheet" => {
+                let i = pnl.rows().iter().position(|r| key(r) == row_key)?;
+                let r = &pnl.rows()[i];
+                match col {
+                    "EX" => Some(snap(r.mean())),
+                    "SD" => Some(snap(r.sd())),
+                    "CV" => r.cv().map(snap),
+                    "Skew" => r.skew().map(snap),
+                    _ => Some(pnl.scenarios(ladder(col)?).ok()?[i]),
+                }
+            }
+            "card" => {
+                let card = pnl.card().ok()?;
+                let r = card.iter().find(|r| {
+                    if pnl.is_tower() {
+                        format!("{}|{}", r.step, r.side) == row_key
+                    } else {
+                        r.side == row_key
+                    }
+                })?;
+                match col {
+                    "EX" => Some(r.ex),
+                    "SD" => Some(r.sd),
+                    "CV" => r.cv,
+                    "Skew" => r.skew,
+                    "P01" => Some(r.p01),
+                    "Median" => Some(r.median),
+                    "P99" => Some(r.p99),
+                    _ => None,
+                }
+            }
+            "legs" => {
+                let mut parts = row_key.splitn(3, '|');
+                let (step, side, label) = (parts.next()?, parts.next()?, parts.next()?);
+                let r = pnl.rows().iter().find(|r| {
+                    matches!(r.kind, prospicio_aggregate::pnl::RowKind::Leg { .. })
+                        && r.step == step
+                        && r.side.name() == side
+                        && r.label == label
+                })?;
+                Some(r.mean())
+            }
+            _ => None,
+        }
+    });
+}

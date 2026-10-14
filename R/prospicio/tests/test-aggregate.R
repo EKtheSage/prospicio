@@ -411,3 +411,28 @@ local({
   stopifnot(abs(s$EX[3] + 5.64) < 1e-12, abs(s$P01[3] + 8.5) < 1e-12)
   stopifnot(inherits(try(ledger_stack(list(a = b), list(c("x", "a", "nope"))), silent = TRUE), "try-error"))
 })
+
+# The book builders over annual covers (aggregate 1.0.1's pnl and xpnl).
+local({
+  gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+  high <- with_ceding_commission(with_deposit_premium(aggregate_stop_loss("High", 3, 5), 1), 0.1)
+  low <- with_deposit_premium(aggregate_stop_loss("Low", 2, 3), 0.5)
+  book <- pnl_book("Ex6", 10, list(pnl_expense("premium", 0.1)))
+  walk <- book_ledger(book, gross, reinsurance_tower(list(high)), "walk")
+  s <- ledger_sheet(walk)
+  stopifnot(abs(s$EX[s$row == "High recovery"] - 0.24) < 1e-12)
+  stopifnot(abs(s$k01[s$row == "High recovery"] - 2 / 3) < 1e-12)
+  net <- book_ledger(book, gross, reinsurance_tower(list(high)))
+  stopifnot(abs(mean(ledger_result(net)) - 4.54) < 1e-12, "commission" %in% ledger_sheet(net)$row)
+  peel <- book_ledger(book, gross, reinsurance_tower(list(low, high)), "peel-top-down")
+  st <- ledger_sheet(peel)$step
+  stopifnot(match("High", st) < match("Low", st), "All aggregate" %in% st)
+  stopifnot(abs(mean(ledger_result(peel)) - 4.85) < 1e-12)
+  plain <- pnl_book("P", 10, list(pnl_expense("premium", 0.1, label = "Acq"),
+                                  pnl_expense(list(list("loss", 0.05), list("fixed", 1)))))
+  r <- ledger_sheet(book_ledger(plain, gross))
+  stopifnot(identical(r$row[3:4], c("Acq", "expense")))
+  stopifnot(abs(derive_premium(5, list(pnl_expense("premium", 0.1), pnl_expense("fixed", 1))) - 6 / 0.9) < 1e-12)
+  stopifnot(inherits(try(derive_premium(5, list(pnl_expense("loss", 0.1))), silent = TRUE), "try-error"))
+  stopifnot(inherits(try(book_ledger(book, gross, NULL, "peel-top-down"), silent = TRUE), "try-error"))
+})

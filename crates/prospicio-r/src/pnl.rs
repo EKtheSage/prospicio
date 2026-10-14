@@ -5,10 +5,12 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::{
-    Group, LADDER, Layout, Ledger, Leg, LegKind, RatioRow, Role, RowKind, Source, snap,
+    Book, Expense, ExpenseBasis, Face, Group, LADDER, Layout, Ledger, Leg, LegKind, RatioRow, Role,
+    RowKind, Source, derive_premium, snap,
 };
 
 use crate::discrete::DiscreteDist;
+use crate::reinsurance::ReinsuranceTower;
 use crate::to_r;
 
 /// A P&L ledger.
@@ -116,6 +118,66 @@ impl PnlLedger {
         }
         Ok(Self {
             inner: Ledger::new(&source, groups, layout).map_err(to_r)?,
+        })
+    }
+
+    /// A book's ledger: expenses flattened to one term per entry, with
+    /// `exp_index` (from 1) grouping the terms into legs and an empty
+    /// `exp_label` leaving a leg unlabelled; `tower` is NULL or a
+    /// `ReinsuranceTower`; an empty label means the default.
+    #[allow(clippy::too_many_arguments)]
+    fn book(
+        values: &[f64],
+        probs: &[f64],
+        name: &str,
+        premium: f64,
+        exp_index: &[f64],
+        exp_basis: Vec<String>,
+        exp_value: &[f64],
+        exp_label: Vec<String>,
+        premium_label: &str,
+        loss_label: &str,
+        step_label: &str,
+        tower: Robj,
+        face: &str,
+    ) -> Result<Self> {
+        let source = Source::new(values.to_vec(), probs.to_vec()).map_err(to_r)?;
+        let mut book = Book::new(name, premium);
+        for e in expenses(exp_index, &exp_basis, exp_value, &exp_label)? {
+            book = book.expense(e);
+        }
+        if !premium_label.is_empty() {
+            book = book.premium_label(premium_label);
+        }
+        if !loss_label.is_empty() {
+            book = book.loss_label(loss_label);
+        }
+        if !step_label.is_empty() {
+            book = book.step_label(step_label);
+        }
+        let face = match face {
+            "consolidated" => Face::Consolidated,
+            "walk" => Face::Walk,
+            "peel-top-down" => Face::PeelTopDown,
+            "peel-bottom-up" => Face::PeelBottomUp,
+            other => {
+                return Err(Error::Other(format!(
+                    "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
+                )));
+            }
+        };
+        let tower = if tower.is_null() {
+            None
+        } else {
+            Some(
+                <&ReinsuranceTower>::try_from(&tower)
+                    .map_err(|_| Error::Other("tower must be a reinsurance_tower".into()))?,
+            )
+        };
+        Ok(Self {
+            inner: book
+                .ledger(&source, tower.map(|t| &t.inner), face)
+                .map_err(to_r)?,
         })
     }
 
@@ -306,7 +368,60 @@ impl PnlLedger {
     }
 }
 
+/// The gross premium that leaves `technical` after the expenses (flattened
+/// as in `PnlLedger::book`).
+#[extendr]
+fn pnl_derive_premium(
+    technical: f64,
+    exp_index: &[f64],
+    exp_basis: Vec<String>,
+    exp_value: &[f64],
+    exp_label: Vec<String>,
+) -> Result<f64> {
+    let e = expenses(exp_index, &exp_basis, exp_value, &exp_label)?;
+    derive_premium(technical, &e).map_err(to_r)
+}
+
+/// Expense legs from flattened terms.
+fn expenses(
+    index: &[f64],
+    basis: &[String],
+    value: &[f64],
+    label: &[String],
+) -> Result<Vec<Expense>> {
+    let mut out: Vec<Expense> = Vec::new();
+    for (k, &i) in index.iter().enumerate() {
+        let b = match basis[k].as_str() {
+            "fixed" => ExpenseBasis::Fixed,
+            "premium" => ExpenseBasis::Premium,
+            "loss" => ExpenseBasis::Loss,
+            other => {
+                return Err(Error::Other(format!(
+                    "an expense basis is fixed, premium or loss, not {other:?}"
+                )));
+            }
+        };
+        let i = i as usize;
+        if i == out.len() + 1 {
+            let mut e = Expense::new(b, value[k]);
+            if !label[k].is_empty() {
+                e = e.label(label[k].clone());
+            }
+            out.push(e);
+        } else if i == out.len() && i > 0 {
+            let last = out.pop().unwrap();
+            out.push(last.and(b, value[k]));
+        } else {
+            return Err(Error::Other(
+                "expense indices must run 1, 2, … in order".into(),
+            ));
+        }
+    }
+    Ok(out)
+}
+
 extendr_module! {
     mod pnl;
     impl PnlLedger;
+    fn pnl_derive_premium;
 }

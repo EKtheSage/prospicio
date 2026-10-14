@@ -2,8 +2,9 @@
 //! `prospicio_aggregate::pnl`.
 
 use prospicio_aggregate::pnl::{
-    Group as RsGroup, LADDER, Layout, Ledger as RsLedger, Leg as RsLeg, LegKind, Role, Row,
-    RowKind, Source, Stats, snap, stack as rs_stack,
+    Book as RsBook, Expense as RsExpense, ExpenseBasis, Face, Group as RsGroup, LADDER, Layout,
+    Ledger as RsLedger, Leg as RsLeg, LegKind, Role, Row, RowKind, Source, Stats,
+    derive_premium as rs_derive_premium, snap, stack as rs_stack,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -11,6 +12,7 @@ use pyo3::types::{PyDict, PyTuple};
 
 use crate::discrete::PyDiscrete;
 use crate::distributions::PyGrid;
+use crate::reinsurance::PyTower;
 use crate::to_py;
 
 fn kind_of(name: Option<&str>) -> PyResult<Option<LegKind>> {
@@ -208,6 +210,29 @@ impl PyGroup {
     }
 }
 
+/// A source: a :class:`Grid`, or a tuple ``(values, probs)``.
+fn source_of(source: &Bound<'_, PyAny>) -> PyResult<Source> {
+    Ok(if let Ok(g) = source.extract::<PyRef<'_, PyGrid>>() {
+        Source::from_grid(&g.inner).map_err(to_py)?
+    } else if let Ok(t) = source.cast::<PyTuple>() {
+        if t.len() != 2 {
+            return Err(PyTypeError::new_err("a source tuple is (values, probs)"));
+        }
+        let col = |o: Bound<'_, PyAny>| -> PyResult<Vec<f64>> {
+            if o.hasattr("tolist")? {
+                o.call_method0("tolist")?.extract()
+            } else {
+                o.extract()
+            }
+        };
+        Source::new(col(t.get_item(0)?)?, col(t.get_item(1)?)?).map_err(to_py)?
+    } else {
+        return Err(PyTypeError::new_err(
+            "the source is a Grid or a tuple (values, probs)",
+        ));
+    })
+}
+
 fn ladder_label(prefix: &str, q: f64) -> String {
     format!("{prefix}{:02.0}", q * 100.0)
 }
@@ -264,25 +289,7 @@ impl PyLedger {
         spans: Option<Vec<(String, usize, usize)>>,
         force_tower: bool,
     ) -> PyResult<Self> {
-        let source = if let Ok(g) = source.extract::<PyRef<'_, PyGrid>>() {
-            Source::from_grid(&g.inner).map_err(to_py)?
-        } else if let Ok(t) = source.cast::<PyTuple>() {
-            if t.len() != 2 {
-                return Err(PyTypeError::new_err("a source tuple is (values, probs)"));
-            }
-            let col = |o: Bound<'_, PyAny>| -> PyResult<Vec<f64>> {
-                if o.hasattr("tolist")? {
-                    o.call_method0("tolist")?.extract()
-                } else {
-                    o.extract()
-                }
-            };
-            Source::new(col(t.get_item(0)?)?, col(t.get_item(1)?)?).map_err(to_py)?
-        } else {
-            return Err(PyTypeError::new_err(
-                "the source is a Grid or a tuple (values, probs)",
-            ));
-        };
+        let source = source_of(source)?;
         let xs = source.values().to_vec();
         let mut rs_groups = Vec::with_capacity(groups.len());
         for g in &groups {
@@ -637,4 +644,271 @@ pub(crate) fn stack<'py>(
         )?;
     }
     Ok(d)
+}
+
+fn basis_of(name: &str) -> PyResult<ExpenseBasis> {
+    match name {
+        "fixed" => Ok(ExpenseBasis::Fixed),
+        "premium" => Ok(ExpenseBasis::Premium),
+        "loss" => Ok(ExpenseBasis::Loss),
+        other => Err(PyValueError::new_err(format!(
+            "an expense basis is fixed, premium or loss, not {other:?}"
+        ))),
+    }
+}
+
+/// One expense leg of a :class:`Book`: an amount (``fixed``), a fraction of
+/// the gross premium (``premium``) or of the gross loss (``loss``, loss
+/// adjustment expense), or several such terms in one leg.
+///
+/// Unlabelled, a book's only expense is the leg ``expense``; with several,
+/// a single-basis one is ``<basis> expense`` and a mixed one ``expense``,
+/// with ``(2)``, ``(3)`` … added to a name already taken, as ``aggregate``.
+///
+/// Parameters
+/// ----------
+/// basis : str or list of tuple of (str, float)
+///     ``fixed``, ``premium`` or ``loss``; or a list of ``(basis, value)``
+///     terms.
+/// value : float, optional
+///     The amount or rate, with a single ``basis``.
+/// label : str, optional
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import Expense
+/// >>> Expense("premium", 0.25, label="Acq")
+/// Expense("Acq", [("premium", 0.25)])
+#[pyclass(
+    name = "Expense",
+    module = "prospicio.aggregate",
+    frozen,
+    from_py_object
+)]
+#[derive(Clone)]
+pub(crate) struct PyExpense {
+    inner: RsExpense,
+}
+
+#[pymethods]
+impl PyExpense {
+    #[new]
+    #[pyo3(signature = (basis, value=None, *, label=None))]
+    fn new(basis: &Bound<'_, PyAny>, value: Option<f64>, label: Option<String>) -> PyResult<Self> {
+        let terms: Vec<(String, f64)> = if let Ok(b) = basis.extract::<String>() {
+            let v = value
+                .ok_or_else(|| PyTypeError::new_err("an expense with one basis needs a value"))?;
+            vec![(b, v)]
+        } else {
+            if value.is_some() {
+                return Err(PyTypeError::new_err(
+                    "give either a basis and a value, or a list of (basis, value) terms",
+                ));
+            }
+            basis.extract()?
+        };
+        if terms.is_empty() {
+            return Err(PyValueError::new_err("an expense needs at least one term"));
+        }
+        let terms = terms
+            .into_iter()
+            .map(|(b, v)| Ok((basis_of(&b)?, v)))
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Self {
+            inner: RsExpense { label, terms },
+        })
+    }
+
+    /// The label, or None.
+    #[getter]
+    fn label(&self) -> Option<String> {
+        self.inner.label.clone()
+    }
+
+    /// The ``(basis, value)`` terms.
+    #[getter]
+    fn terms(&self) -> Vec<(&'static str, f64)> {
+        self.inner
+            .terms
+            .iter()
+            .map(|(b, v)| (b.name(), *v))
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        let terms: Vec<String> = self
+            .inner
+            .terms
+            .iter()
+            .map(|(b, v)| format!("({:?}, {v})", b.name()))
+            .collect();
+        match &self.inner.label {
+            Some(l) => format!("Expense({l:?}, [{}])", terms.join(", ")),
+            None => format!("Expense([{}])", terms.join(", ")),
+        }
+    }
+}
+
+/// The gross premium whose own expenses leave the technical premium
+/// ``technical``, ``aggregate``'s ``derive premium``: ``(T + F) / (1 - r)``
+/// with ``F`` the fixed amounts and ``r`` the premium rates.
+///
+/// Parameters
+/// ----------
+/// technical : float
+/// expenses : list of Expense
+///
+/// Returns
+/// -------
+/// float
+///
+/// Raises
+/// ------
+/// ValueError
+///     On a loss-basis term, or premium rates totalling 1 or more.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import Expense, derive_premium
+/// >>> round(derive_premium(5.0, [Expense("premium", 0.1), Expense("fixed", 1.0)]), 12)
+/// 6.666666666667
+#[pyfunction]
+pub(crate) fn derive_premium(technical: f64, expenses: Vec<PyExpense>) -> PyResult<f64> {
+    let e: Vec<RsExpense> = expenses.into_iter().map(|e| e.inner).collect();
+    rs_derive_premium(technical, &e).map_err(to_py)
+}
+
+/// A seller's book, ``aggregate``'s ``pnl`` and ``xpnl`` builders: a gross
+/// premium, expenses and the labels of its legs, laid out over a source of
+/// annual gross losses with the annual covers of a tower.
+///
+/// :meth:`ledger` gives one of three faces:
+///
+/// - ``consolidated`` (``pnl``): one group, the net position. With a tower
+///   it books net premium (gross less ceded premiums) less the net loss
+///   less the commission received less expenses, over the net loss; a
+///   loss-basis expense books as its rate times the expected gross loss.
+/// - ``walk`` (``xpnl``): the gross book, then one buy group per stage of
+///   the tower, with the running net and the covers' total impact.
+/// - ``peel-top-down`` and ``peel-bottom-up`` (``xpnl ... peel``): one buy
+///   group per layer, with an ``All aggregate`` subtotal.
+///
+/// Every layer's terms are taken at the annual total. The builders book a
+/// fixed premium and a flat ceding commission; a layer with loss-sensitive
+/// terms is refused (write its legs with :class:`Leg`).
+///
+/// Parameters
+/// ----------
+/// name : str
+///     The ledger's name.
+/// premium : float
+///     The gross premium.
+/// expenses : list of Expense, optional
+/// premium_label : str, optional
+///     ``Premium`` by default.
+/// loss_label : str, optional
+///     ``Loss`` by default; also the gross book's margin on a walk.
+/// step_label : str, optional
+///     The gross book's step on a walk, ``Gross`` by default.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import Book, Expense
+/// >>> from prospicio.reinsurance import Layer, Tower
+/// >>> gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+/// >>> cover = Layer.stop_loss("agg 3 xs 5", 3.0, 5.0).with_deposit_premium(1.0)
+/// >>> cover = cover.with_ceding_commission(0.1)
+/// >>> book = Book("Ex3", 10.0, [Expense("premium", 0.1)])
+/// >>> walk = book.ledger(gross, Tower([cover]), "walk")
+/// >>> round(walk.result.mean(), 12), walk.sheet()["step"][-1]
+/// (4.54, 'All')
+#[pyclass(name = "Book", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyBook {
+    inner: RsBook,
+}
+
+#[pymethods]
+impl PyBook {
+    #[new]
+    #[pyo3(signature = (name, premium, expenses=None, *, premium_label=None, loss_label=None, step_label=None))]
+    fn new(
+        name: String,
+        premium: f64,
+        expenses: Option<Vec<PyExpense>>,
+        premium_label: Option<String>,
+        loss_label: Option<String>,
+        step_label: Option<String>,
+    ) -> Self {
+        let mut b = RsBook::new(name, premium);
+        for e in expenses.unwrap_or_default() {
+            b = b.expense(e.inner);
+        }
+        if let Some(l) = premium_label {
+            b = b.premium_label(l);
+        }
+        if let Some(l) = loss_label {
+            b = b.loss_label(l);
+        }
+        if let Some(l) = step_label {
+            b = b.step_label(l);
+        }
+        Self { inner: b }
+    }
+
+    /// The gross premium.
+    #[getter]
+    fn premium(&self) -> f64 {
+        self.inner.gross_premium()
+    }
+
+    /// The ledger over the annual gross losses ``source``.
+    ///
+    /// Parameters
+    /// ----------
+    /// source : Grid or tuple of (list of float, list of float)
+    /// tower : prospicio.reinsurance.Tower, optional
+    ///     Annual covers; without one, the plain book.
+    /// face : str, default "consolidated"
+    ///     ``consolidated``, ``walk``, ``peel-top-down`` or
+    ///     ``peel-bottom-up``.
+    ///
+    /// Returns
+    /// -------
+    /// Ledger
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     A peel without a tower, a layer that needs each event, or one
+    ///     with loss-sensitive terms.
+    #[pyo3(signature = (source, tower=None, face="consolidated"))]
+    fn ledger(
+        &self,
+        source: &Bound<'_, PyAny>,
+        tower: Option<PyRef<'_, PyTower>>,
+        face: &str,
+    ) -> PyResult<PyLedger> {
+        let face = match face {
+            "consolidated" => Face::Consolidated,
+            "walk" => Face::Walk,
+            "peel-top-down" => Face::PeelTopDown,
+            "peel-bottom-up" => Face::PeelBottomUp,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
+                )));
+            }
+        };
+        let source = source_of(source)?;
+        Ok(PyLedger {
+            inner: self
+                .inner
+                .ledger(&source, tower.as_deref().map(|t| &t.inner), face)
+                .map_err(to_py)?,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Book(premium={})", self.inner.gross_premium())
+    }
 }

@@ -750,3 +750,41 @@ def test_ledger_ratios_and_stack():
     assert s["P01"][2] == pytest.approx(-8.5, abs=1e-12)
     with pytest.raises(ValueError):
         stack({"ex2b": b}, [("x", "ex2b", "nope")])
+
+
+def test_book_builders():
+    from prospicio.aggregate import Book, Expense, derive_premium
+    from prospicio.distributions import Grid
+    from prospicio.reinsurance import Layer, Tower
+
+    # The P&L design note's examples 3a, 3b and 6 against aggregate 1.0.1.
+    gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    high = Layer.stop_loss("High", 3.0, 5.0).with_deposit_premium(1.0).with_ceding_commission(0.1)
+    low = Layer.stop_loss("Low", 2.0, 3.0).with_deposit_premium(0.5)
+    book = Book("Ex6", 10.0, [Expense("premium", 0.1)])
+    walk = book.ledger(gross, Tower([high]), "walk")
+    s = walk.sheet()
+    i = s["row"].index("High recovery")
+    assert s["EX"][i] == pytest.approx(0.24) and s["k01"][i] == pytest.approx(2 / 3)
+    net = book.ledger(gross, Tower([high]))
+    assert net.result.mean() == pytest.approx(4.54) and "commission" in net.rows
+    assert net.row("net premium").mean() == pytest.approx(9.0)
+    peel = book.ledger(gross, Tower([low, high]), "peel-top-down")
+    steps = peel.sheet()["step"]
+    assert steps.index("High") < steps.index("Low") and "All aggregate" in steps
+    assert peel.result.mean() == pytest.approx(4.85)
+    # The plain book; a Grid works as the source.
+    plain = Book("P", 10.0, [Expense("premium", 0.1, label="Acq"), Expense("loss", 0.05)])
+    g = Grid(1.0, [0.0, 0.0, 0.5, 0.5])
+    assert plain.ledger(g).result.mean() == pytest.approx(10 - 2.5 - 1 - 0.125)
+    mixed = Expense([("premium", 0.1), ("loss", 0.05)])
+    assert mixed.terms == [("premium", 0.1), ("loss", 0.05)]
+    assert derive_premium(5.0, [Expense("premium", 0.1), Expense("fixed", 1.0)]) == pytest.approx(6 / 0.9)
+    with pytest.raises(ValueError):
+        derive_premium(5.0, [Expense("loss", 0.1)])
+    with pytest.raises(ValueError):
+        book.ledger(gross, None, "peel-top-down")
+    with pytest.raises(ValueError):
+        book.ledger(gross, None, "sideways")
+    with pytest.raises(ValueError):
+        Expense("bogus", 1.0)

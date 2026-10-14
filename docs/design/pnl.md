@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **In progress** (PRs 1 to 3 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **In progress** (PRs 1 to 4 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -198,10 +198,36 @@ Each PR is one type or method, with its parity tests, bindings and docs.
    Python `Leg(step=)`, `Ledger.validation`, `Ledger.ratios`,
    `prospicio.aggregate.stack`; R `pnl_leg(step =)`, `ledger_validation()`,
    `ledger_ratios()`, `ledger_stack()`.
-4. **Builders for annual covers**: expenses (fixed, premium, loss basis;
-   `derive premium`), the plain and consolidated ledgers, the walk and
-   the per-atom peel over aggregate covers, on `Tower::on_annual_grid`.
-   Parity: 3a, 3b, 5.
+4. (Done.) **Builders for annual covers**, `pnl::{Book, Expense, Face,
+   derive_premium}`: a seller's book (premium, expenses on a fixed,
+   premium or loss basis, and the labels of its legs) laid out over a
+   source of annual gross losses with the annual covers of a `Tower`, as
+   the consolidated ledger (`pnl`: net premium less net loss less the
+   commission received less expenses, over the net loss at each atom),
+   the walk (`xpnl`: one buy group per stage) or the per-atom peel (one
+   group per layer, top down or bottom up, with an `All aggregate`
+   subtotal); without a tower, the plain book or its one-step walk. Each
+   layer's ceded loss is `Tower::year` at the annual total, as
+   `Tower::on_annual_grid` takes it. The builders book a fixed premium and
+   a flat ceding commission and refuse loss-sensitive terms, which PR 6
+   adds. Expense legs are named as `aggregate`'s (`expense` alone,
+   `<basis> expense` among several, `(2)` on a clash), and a loss-basis
+   expense is `rate × E[gross]` off the gross source. Parity:
+   `validation/scripts/aggregate_pnl_builders.py`, 2,401 values: examples
+   3a, 3b, 5 (the FFT book, 4,096 atoms, at `1e-9`), example 1 as `pnl`
+   and as a one-step `xpnl`, two aggregate layers walked and peeled both
+   ways, expense names, premium and loss labels on both faces, and
+   `derive premium`. The sources are the probabilities `PnL` itself uses:
+   `aggregate` normalizes over the engine's whole grid, zeros included,
+   and a sum over the atoms with mass alone can differ in the last bit,
+   so `Source::new` now keeps probabilities within `1e-12` of 1 as given
+   (as `Discrete`). The consolidated face's net source is exact here,
+   while `aggregate` rebuckets the net onto its grid and renormalizes it,
+   which on 3b puts the result's cumulative at 0.75 a last bit below the
+   level: its `κ75` is the next atom (5.1 against 6.1, decision 2); the
+   test checks those six cells are that tie. Python `Book`, `Expense`,
+   `derive_premium`; R `pnl_book()`, `pnl_expense()`, `book_ledger()`,
+   `derive_premium()`.
 5. **Occurrence covers on a joint source**: the comonotone `(gross,
    ceded)` per claim, compounded by `fft_bivariate`, and the walk through
    an occurrence tier then an aggregate one. Parity: 4.

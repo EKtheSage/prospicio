@@ -78,6 +78,7 @@ reference:
       - eventual_ruin
       - wiener_hopf
       - pnl_ledger
+      - pnl_book
       - layer_loss_picks
       - fft_bivariate
       - copula_severity
