@@ -247,7 +247,7 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers)|\.github/workflows/ci\.yml)'; then
+              | grep -qE '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers|compartmental)|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
