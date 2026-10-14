@@ -129,6 +129,90 @@ impl Mbbefd {
         )
     }
 
+    /// The Swiss Re curve ([`Mbbefd::swiss_re`]) whose mean destruction
+    /// rate (expected loss over MPL) is `rate`, in `(0, 1]`: the `c` that
+    /// matches a cedant's loss cost per unit of sum insured, by bisection
+    /// on `c` in `[0, 10]`, where the mean rate falls from 1. Returns the
+    /// curve and its `c`.
+    ///
+    /// ```
+    /// use prospicio_pricing::exposure::{ExposureCurve, Mbbefd};
+    ///
+    /// let target = Mbbefd::swiss_re(3.0).unwrap().mean_rate();
+    /// let (curve, c) = Mbbefd::swiss_re_for_mean_rate(target).unwrap();
+    /// assert!((c - 3.0).abs() < 1e-9);
+    /// assert!((curve.mean_rate() / target - 1.0).abs() < 1e-12);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// A rate outside what `c` in `[0, 10]` reaches.
+    pub fn swiss_re_for_mean_rate(rate: f64) -> Result<(Self, f64)> {
+        Self::fit_swiss_re("mean rate", rate, |m| m.mean_rate())
+    }
+
+    /// The Swiss Re curve whose share of a risk's expected loss in `limit`
+    /// xs `attachment`, for a risk of MPL `mpl`, is `share`: the `c` that
+    /// matches a cedant's experience in one layer, by bisection on `c` in
+    /// `[0, 10]` (a share above the layer's straight-line share needs a
+    /// layer at the bottom, one below it a layer higher up). Returns the
+    /// curve and its `c`.
+    ///
+    /// ```
+    /// use prospicio_pricing::exposure::{ExposureCurve, Mbbefd};
+    ///
+    /// let share = Mbbefd::swiss_re(4.0).unwrap().layer_share(5e6, 5e6, 10e6).unwrap();
+    /// let (_, c) = Mbbefd::swiss_re_for_layer_share(5e6, 5e6, 10e6, share).unwrap();
+    /// assert!((c - 4.0).abs() < 1e-8);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// An invalid layer, or a share outside what `c` in `[0, 10]` reaches.
+    pub fn swiss_re_for_layer_share(
+        limit: f64,
+        attachment: f64,
+        mpl: f64,
+        share: f64,
+    ) -> Result<(Self, f64)> {
+        Self::swiss_re(1.0)?.layer_share(limit, attachment, mpl)?;
+        Self::fit_swiss_re("layer share", share, |m| {
+            m.layer_share(limit, attachment, mpl).unwrap_or(f64::NAN)
+        })
+    }
+
+    /// Bisection on `c` in `[0, 10]` for `f(swiss_re(c)) = target`, with
+    /// `f` monotone in `c`.
+    fn fit_swiss_re(what: &str, target: f64, f: impl Fn(&Self) -> f64) -> Result<(Self, f64)> {
+        let at = |c: f64| -> f64 { f(&Self::swiss_re(c).expect("c in [0, 10]")) - target };
+        let (mut lo, mut hi) = (0.0, 10.0);
+        let (flo, fhi) = (at(lo), at(hi));
+        if !(target.is_finite() && flo.is_finite() && fhi.is_finite()) || flo * fhi > 0.0 {
+            return Err(Error::Data(format!(
+                "a {what} of {target} is outside what the Swiss Re curves reach (c from 0 to \
+                 10 gives {} to {})",
+                flo + target,
+                fhi + target
+            )));
+        }
+        if flo == 0.0 {
+            return Ok((Self::swiss_re(0.0)?, 0.0));
+        }
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if at(mid) * flo > 0.0 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+            if hi - lo < 1e-13 {
+                break;
+            }
+        }
+        let c = 0.5 * (lo + hi);
+        Ok((Self::swiss_re(c)?, c))
+    }
+
     pub fn b(&self) -> f64 {
         self.b
     }
@@ -364,6 +448,65 @@ impl TabulatedCurve {
         x[n - 1] = 1.0;
         g[n - 1] = 1.0;
         Ok(Self { x, g, cdf })
+    }
+
+    /// The curve of `severity` capped at `mpl` ([`SeverityCurve`]),
+    /// tabulated at `points` points chosen so linear interpolation stays
+    /// close to it: half evenly spaced in `G` (the curve's own scale) and
+    /// half geometric in `x` from `1e-6`, where the curve is steepest and
+    /// its first chord sets the mean rate. A coarse hand-made grid can
+    /// misprice layers; 200 points prices layers to about `1e-4`.
+    ///
+    /// ```
+    /// use prospicio_pricing::exposure::{ExposureCurve, SeverityCurve, TabulatedCurve};
+    /// use prospicio_prob::Lognormal;
+    ///
+    /// let sev = Lognormal::from_mean_cv(2e5, 2.0).unwrap();
+    /// let exact = SeverityCurve::new(&sev, 1e6).unwrap();
+    /// let table = TabulatedCurve::from_severity(&sev, 1e6, 200).unwrap();
+    /// let (e, t) = (exact.layer_share(5e5, 5e5, 1e6).unwrap(), table.layer_share(5e5, 5e5, 1e6).unwrap());
+    /// assert!((t / e - 1.0).abs() < 1e-3);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Fewer than 4 points, or what [`SeverityCurve::new`] refuses.
+    pub fn from_severity<S: Severity + ?Sized>(
+        severity: &S,
+        mpl: f64,
+        points: usize,
+    ) -> Result<Self> {
+        if points < 4 {
+            return Err(Error::Data(format!(
+                "a tabulated curve from a severity needs at least 4 points, not {points}"
+            )));
+        }
+        let curve = SeverityCurve::new(severity, mpl)?;
+        let half = points / 2;
+        let mut xs: Vec<f64> = (0..half)
+            .map(|j| 10f64.powf(-6.0 + 6.0 * j as f64 / half as f64))
+            .collect();
+        // x where G(x) = k / n, by bisection: G rises from 0 to 1.
+        let n = points - half;
+        for k in 1..n {
+            let target = k as f64 / n as f64;
+            let (mut lo, mut hi) = (0.0, 1.0);
+            for _ in 0..100 {
+                let mid = 0.5 * (lo + hi);
+                if curve.g(mid) < target {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            xs.push(0.5 * (lo + hi));
+        }
+        xs.push(0.0);
+        xs.push(1.0);
+        xs.sort_by(f64::total_cmp);
+        xs.dedup_by(|a, b| (*a - *b).abs() <= 1e-12);
+        let gs: Vec<f64> = xs.iter().map(|&x| curve.g(x)).collect();
+        Self::new(&xs, &gs)
     }
 
     /// The points' `x`.

@@ -232,6 +232,35 @@ fn pricing_ilf(severity: Robj, limit: &[f64], basic_limit: f64) -> Result<Vec<f6
         .collect()
 }
 
+/// The CV of the loss to `limit` xs `attachment` per loss that reaches it.
+#[extendr]
+fn pricing_layer_cv(severity: Robj, limit: f64, attachment: f64) -> Result<f64> {
+    let sev = severity_from_robj(&severity)?;
+    prospicio_pricing::layer::layer_cv(&sev, limit, attachment).map_err(to_r)
+}
+
+/// The Swiss Re `c` whose curve has mean destruction rate `rate`.
+#[extendr]
+fn pricing_swiss_re_c_for_mean_rate(rate: f64) -> Result<f64> {
+    Ok(MbbefdInner::swiss_re_for_mean_rate(rate).map_err(to_r)?.1)
+}
+
+/// The Swiss Re `c` that gives `limit` xs `attachment` the share `share`
+/// of a risk's loss with maximum possible loss `mpl`.
+#[extendr]
+fn pricing_swiss_re_c_for_layer_share(
+    limit: f64,
+    attachment: f64,
+    mpl: f64,
+    share: f64,
+) -> Result<f64> {
+    Ok(
+        MbbefdInner::swiss_re_for_layer_share(limit, attachment, mpl, share)
+            .map_err(to_r)?
+            .1,
+    )
+}
+
 /// Loss elimination ratios `LEV(d) / E[X]`.
 #[extendr]
 fn pricing_loss_elimination_ratio(severity: Robj, deductible: &[f64]) -> Result<Vec<f64>> {
@@ -380,6 +409,16 @@ impl Tabulated {
         })
     }
 
+    fn from_severity(severity: Robj, mpl: f64, points: f64) -> Result<Self> {
+        let sev = severity_from_robj(&severity)?;
+        if !(points.is_finite() && points >= 0.0 && points.fract() == 0.0) {
+            return Err(Error::Other("points must be a whole number".into()));
+        }
+        Ok(Self {
+            inner: TabulatedCurve::from_severity(&sev, mpl, points as usize).map_err(to_r)?,
+        })
+    }
+
     fn x(&self) -> Vec<f64> {
         self.inner.x().to_vec()
     }
@@ -419,8 +458,9 @@ fn band_curve(obj: &Robj) -> Result<prospicio_pricing::profile::BandCurve> {
 
 /// A risk profile; `expected_losses` or `premiums` (with `loss_ratio`, one
 /// value or one per band) is empty when not given. `lower` and `upper` are
-/// empty, or one per band with NA for a band without bounds; `tilted`
-/// spreads a band with bounds about its given sum insured.
+/// empty, or one per band with NA for a band without bounds; `spread` is
+/// "uniform", "tilted" (about the band's given sum insured) or "auto"
+/// (tilted when the sum insured lies strictly between the bounds).
 #[extendr]
 pub(crate) struct RiskProfile {
     inner: prospicio_pricing::profile::RiskProfile,
@@ -438,9 +478,14 @@ impl RiskProfile {
         loss_ratio: &[f64],
         lower: &[f64],
         upper: &[f64],
-        tilted: bool,
+        spread: &str,
     ) -> Result<Self> {
         use prospicio_pricing::profile::{Band, RiskProfile as Inner};
+        if !matches!(spread, "uniform" | "tilted" | "auto") {
+            return Err(Error::Other(format!(
+                "spread must be \"uniform\", \"tilted\" or \"auto\", not {spread:?}"
+            )));
+        }
         let n = sums_insured.len();
         if risks.len() != n || curves.len() != n {
             return Err(Error::Other(
@@ -496,10 +541,12 @@ impl RiskProfile {
                 .enumerate()
                 .map(|(i, b)| match (lower[i].is_nan(), upper[i].is_nan()) {
                     (true, true) => Ok(b),
-                    (false, false) if tilted => {
-                        b.with_tilted_bounds(lower[i], upper[i]).map_err(to_r)
+                    (false, false) => match spread {
+                        "tilted" => b.with_tilted_bounds(lower[i], upper[i]),
+                        "auto" => b.with_spread_bounds(lower[i], upper[i]),
+                        _ => b.with_bounds(lower[i], upper[i]),
                     }
-                    (false, false) => b.with_bounds(lower[i], upper[i]).map_err(to_r),
+                    .map_err(to_r),
                     _ => Err(Error::Other("a band has both bounds or neither".into())),
                 })
                 .collect::<Result<_>>()?
@@ -511,6 +558,18 @@ impl RiskProfile {
 
     fn expected_loss(&self) -> f64 {
         self.inner.expected_loss()
+    }
+
+    fn sums_insured(&self) -> Vec<f64> {
+        self.inner.bands().iter().map(|b| b.sum_insured).collect()
+    }
+
+    fn mean_sums_insured(&self) -> Vec<f64> {
+        self.inner
+            .bands()
+            .iter()
+            .map(|b| b.mean_sum_insured())
+            .collect()
     }
 
     fn expected_claims(&self) -> Vec<f64> {
@@ -1438,6 +1497,9 @@ extendr_module! {
     fn pricing_price;
     fn pricing_price_portfolio;
     fn pricing_ilf;
+    fn pricing_layer_cv;
+    fn pricing_swiss_re_c_for_mean_rate;
+    fn pricing_swiss_re_c_for_layer_share;
     fn pricing_loss_elimination_ratio;
     fn pricing_pareto_extrapolation;
     fn pricing_alpha_between_layers;

@@ -158,7 +158,8 @@ what it is aiming for by v1.0.
 
 - **Now:**
   - Layer rating, ILFs and Pareto extrapolation, tower matching.
-  - Exposure curves (MBBEFD, tabulated, from a severity) and risk
+  - Exposure curves (MBBEFD, tabulated, from a severity, with the Swiss
+    Re `c` calibrated to a mean rate or a layer's share) and risk
     profiles with spread sums insured.
   - Risk-loaded prices from simulated losses.
   - Classical credibility: limited fluctuation standards and the

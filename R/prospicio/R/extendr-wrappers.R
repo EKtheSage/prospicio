@@ -164,6 +164,12 @@ pricing_calibrate_classical <- function(x, principle, premium, q) .Call(wrap__pr
 
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
 
+pricing_layer_cv <- function(severity, limit, attachment) .Call(wrap__pricing_layer_cv, severity, limit, attachment)
+
+pricing_swiss_re_c_for_mean_rate <- function(rate) .Call(wrap__pricing_swiss_re_c_for_mean_rate, rate)
+
+pricing_swiss_re_c_for_layer_share <- function(limit, attachment, mpl, share) .Call(wrap__pricing_swiss_re_c_for_layer_share, limit, attachment, mpl, share)
+
 pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)
 
 pricing_pareto_extrapolation <- function(from, to, alpha, truncation_at) .Call(wrap__pricing_pareto_extrapolation, from, to, alpha, truncation_at)
@@ -1536,6 +1542,8 @@ Tabulated <- new.env(parent = emptyenv())
 
 Tabulated$new <- function(x, g) .Call(wrap__Tabulated__new, x, g)
 
+Tabulated$from_severity <- function(severity, mpl, points) .Call(wrap__Tabulated__from_severity, severity, mpl, points)
+
 Tabulated$x <- function() .Call(wrap__Tabulated__x, self)
 
 Tabulated$g <- function() .Call(wrap__Tabulated__g, self)
@@ -1556,9 +1564,13 @@ Tabulated$rate_quantile <- function(u) .Call(wrap__Tabulated__rate_quantile, sel
 
 RiskProfile <- new.env(parent = emptyenv())
 
-RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, tilted) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, tilted)
+RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, spread) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, spread)
 
 RiskProfile$expected_loss <- function() .Call(wrap__RiskProfile__expected_loss, self)
+
+RiskProfile$sums_insured <- function() .Call(wrap__RiskProfile__sums_insured, self)
+
+RiskProfile$mean_sums_insured <- function() .Call(wrap__RiskProfile__mean_sums_insured, self)
 
 RiskProfile$expected_claims <- function() .Call(wrap__RiskProfile__expected_claims, self)
 

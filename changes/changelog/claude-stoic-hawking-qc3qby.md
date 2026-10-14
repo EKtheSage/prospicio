@@ -128,3 +128,17 @@
   `references = NaN` when it refuses. Python `TowerModel.diagnostics()` and
   `fit_references(..., alpha_bounds=)`; R `tower_diagnostics()` and
   `fit_references(alpha_bounds =)`.
+- Exposure-rating helpers (#212): `TabulatedCurve::from_severity` (a
+  severity's exposure curve, tabulated where it bends),
+  `Mbbefd::swiss_re_for_mean_rate` and `swiss_re_for_layer_share` (the
+  Swiss Re `c` calibrated to a mean destruction rate or to one layer's
+  share), and `layer::layer_cv` (the CV of a layer's loss per loss that
+  reaches it). A risk profile's band may start at 0, and
+  `Band::with_spread_bounds` keeps the band's sum insured as the mean
+  when it can. The Python and R risk profiles now warn when the default
+  uniform spread moves a band's mean, and take `spread="auto"`. Python
+  `TabulatedCurve.from_severity`, `Mbbefd.swiss_re_for_mean_rate`,
+  `Mbbefd.swiss_re_for_layer_share`, `layer_cv`; R
+  `tabulated_curve_from_severity()`, `swiss_re_for_mean_rate()`,
+  `swiss_re_for_layer_share()`, `layer_cv()` and
+  `risk_profile(spread = "auto")`.
