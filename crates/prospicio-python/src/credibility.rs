@@ -35,6 +35,8 @@ use crate::to_py;
 /// >>> lf = LimitedFluctuation(0.90, 0.05)
 /// >>> round(lf.frequency_standard())
 /// 1082
+/// >>> lf.p, lf.k
+/// (0.9, 0.05)
 #[pyclass(name = "LimitedFluctuation", module = "prospicio.credibility", frozen)]
 pub(crate) struct PyLimitedFluctuation {
     inner: LimitedFluctuation,
@@ -48,6 +50,18 @@ impl PyLimitedFluctuation {
         Ok(Self {
             inner: LimitedFluctuation::new(p, k).map_err(to_py)?,
         })
+    }
+
+    /// The probability ``p`` of lying within ``k`` of the mean.
+    #[getter]
+    fn p(&self) -> f64 {
+        self.inner.p()
+    }
+
+    /// The tolerance ``k``, relative to the mean.
+    #[getter]
+    fn k(&self) -> f64 {
+        self.inner.k()
     }
 
     /// Full standard for the frequency, in expected claims.
@@ -103,7 +117,9 @@ impl PyLimitedFluctuation {
 
     fn __repr__(&self) -> String {
         format!(
-            "LimitedFluctuation(frequency_standard={:.2})",
+            "LimitedFluctuation(p={}, k={}, frequency_standard={:.2})",
+            self.inner.p(),
+            self.inner.k(),
             self.inner.frequency_standard()
         )
     }

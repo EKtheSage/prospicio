@@ -142,3 +142,9 @@
   `tabulated_curve_from_severity()`, `swiss_re_for_mean_rate()`,
   `swiss_re_for_layer_share()`, `layer_cv()` and
   `risk_profile(spread = "auto")`.
+- Small fixes from the guides (#214): `LimitedFluctuation::p` and `k`
+  (Python `LimitedFluctuation.p`, `.k`); `year_fraction`'s docs warn
+  against assigning accident years with it; the exponential premium
+  principle keeps its loading at a very small `k` (it fell below the
+  mean at `k = 1e-12`); `Portfolio::epd` no longer returns a tiny
+  negative ratio.

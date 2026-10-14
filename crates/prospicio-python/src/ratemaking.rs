@@ -16,6 +16,10 @@ use crate::to_py;
 /// first of a month is its start, a day near the middle is half way, and
 /// the last day is the next month's start (6/30 is 7/1).
 ///
+/// It is a ratemaking date, not a calendar: do not assign accident years
+/// with it, since ``year_fraction(2016, 12, 31)`` is 2017.0. Take the
+/// accident year from the date itself.
+///
 /// Parameters
 /// ----------
 /// year : int

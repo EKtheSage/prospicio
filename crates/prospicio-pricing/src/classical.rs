@@ -129,7 +129,22 @@ impl Principle {
                 if k == 0.0 {
                     mean
                 } else {
-                    log_mgf(values, probs, k) / k
+                    // About the mean, so a small k does not lose the
+                    // loading to `log(1 + tiny) / k`: within `|k d| ≤ 1`,
+                    // `ln_1p(E[expm1(k d)])` keeps every digit.
+                    let d: Vec<f64> = values.iter().map(|x| x - mean).collect();
+                    let spread = d
+                        .iter()
+                        .zip(probs)
+                        .filter(|(_, p)| **p > 0.0)
+                        .map(|(d, _)| (k * d).abs())
+                        .fold(0.0, f64::max);
+                    if spread <= 1.0 {
+                        let m: f64 = d.iter().zip(probs).map(|(d, p)| p * (k * d).exp_m1()).sum();
+                        mean + m.ln_1p() / k
+                    } else {
+                        mean + log_mgf(&d, probs, k) / k
+                    }
                 }
             }
             Self::Esscher(h) => {
@@ -310,6 +325,21 @@ mod tests {
         assert_eq!(v, Principle::Var(0.7000000000000001));
         assert_eq!(v.premium(&X, &P).unwrap(), 40.0);
         assert!(calibrate(Kind::Variance, &X, &P, 40.0).is_err());
+    }
+
+    #[test]
+    fn exponential_keeps_a_small_loading() {
+        // Issue #214: log E[e^(kX)] / k lost the loading to cancellation
+        // below k = 1e-8. About the mean, it is mean + k var / 2 + O(k²).
+        let (x, p) = ([0.0, 10.0], [0.5, 0.5]);
+        for k in [1e-4, 1e-8, 1e-10, 1e-12, -1e-12] {
+            let got = Principle::Exponential(k).premium(&x, &p).unwrap();
+            let want = 5.0 + 12.5 * k;
+            assert!(
+                (got - want).abs() < 1e-14 + 10.0 * k * k,
+                "{k}: {got} vs {want}"
+            );
+        }
     }
 
     #[test]

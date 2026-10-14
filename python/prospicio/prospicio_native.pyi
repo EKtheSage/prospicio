@@ -9164,6 +9164,8 @@ class LimitedFluctuation:
     >>> lf = LimitedFluctuation(0.90, 0.05)
     >>> round(lf.frequency_standard())
     1082
+    >>> lf.p, lf.k
+    (0.9, 0.05)
     """
     def __new__(cls, /, p: float = 0.90, k: float = 0.05) -> LimitedFluctuation: ...
     def __repr__(self, /) -> str: ...
@@ -9187,6 +9189,16 @@ class LimitedFluctuation:
         Returns
         -------
         float
+        """
+    @property
+    def k(self, /) -> float:
+        """
+        The tolerance ``k``, relative to the mean.
+        """
+    @property
+    def p(self, /) -> float:
+        """
+        The probability ``p`` of lying within ``k`` of the mean.
         """
     def pure_premium_standard(self, /, cv: float) -> float:
         """
@@ -19336,6 +19348,10 @@ def year_fraction(year: int, month: int, day: int) -> float:
     The year fraction of a date on Werner and Modlin's half-month grid: the
     first of a month is its start, a day near the middle is half way, and
     the last day is the next month's start (6/30 is 7/1).
+    
+    It is a ratemaking date, not a calendar: do not assign accident years
+    with it, since ``year_fraction(2016, 12, 31)`` is 2017.0. Take the
+    accident year from the date itself.
     
     Parameters
     ----------
