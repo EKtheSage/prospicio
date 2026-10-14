@@ -119,6 +119,7 @@ impl GamFit {
                     Smoothing::Auto => json!({"kind": "auto"}),
                     Smoothing::Gcv => json!({"kind": "gcv"}),
                     Smoothing::Ubre => json!({"kind": "ubre"}),
+                    Smoothing::Reml => json!({"kind": "reml"}),
                     Smoothing::Fixed(l) => json!({"kind": "fixed", "lambdas": nums(l.as_slice())}),
                 },
             },
@@ -135,6 +136,7 @@ impl GamFit {
             "dispersion": num(self.dispersion),
             "deviance": num(self.deviance),
             "score": num(self.score),
+            "reml_scale": self.reml_scale.map(num),
             "fitted": nums(&self.fitted),
         });
         serde_json::to_string(&doc).expect("a JSON value serializes")
@@ -155,6 +157,7 @@ impl GamFit {
             Some("auto") => Smoothing::Auto,
             Some("gcv") => Smoothing::Gcv,
             Some("ubre") => Smoothing::Ubre,
+            Some("reml") => Smoothing::Reml,
             Some("fixed") => Smoothing::Fixed(floats(sm, "lambdas")?),
             _ => return Err(bad("spec.smoothing.kind")),
         };
@@ -198,6 +201,10 @@ impl GamFit {
             dispersion: float(field(top, "dispersion")?, "dispersion")?,
             deviance: float(field(top, "deviance")?, "deviance")?,
             score: float(field(top, "score")?, "score")?,
+            reml_scale: match top.get("reml_scale") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(v) => Some(float(v, "reml_scale")?),
+            },
             fitted: floats(top, "fitted")?,
             input_hash: input_hash(top)?,
         })

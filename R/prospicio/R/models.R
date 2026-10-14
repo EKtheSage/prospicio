@@ -367,15 +367,18 @@ S7::method(print, elastic_net_model) <- function(x, ...) {
 #' A [glm_fit()] model in which each name in `smooths` (a numeric term of
 #' the formula) becomes a cubic P-spline (mgcv's `s(x, bs = "ps")`), with
 #' smoothing chosen by GCV when the dispersion is estimated and UBRE when
-#' it is fixed (mgcv's `method = "GCV.Cp"`), or fixed by `smoothing`.
+#' it is fixed (mgcv's `method = "GCV.Cp"`), by REML (`smoothing = "reml"`,
+#' mgcv's `method = "REML"`, which estimates an unknown dispersion with the
+#' smoothing parameters as `reml_scale`), or fixed by `smoothing`.
 #'
 #' @inheritParams glm_fit
 #' @param smooths Names of numeric terms to smooth.
 #' @param n_basis Basis functions per smooth (recycled; 10 by default).
-#' @param smoothing `"auto"`, `"gcv"`, `"ubre"`, or a numeric vector of
+#' @param smoothing `"auto"`, `"gcv"`, `"ubre"`, `"reml"`, or a numeric vector of
 #'   fixed smoothing parameters, one per smooth.
 #' @returns A `gam_model` with properties `coefficients`, `lambdas`, `edf`,
-#'   `dispersion`, `deviance`, `score` and `fitted`.
+#'   `dispersion`, `deviance`, `score`, `reml_scale` (`NA` unless REML) and
+#'   `fitted`.
 #' @export
 #' @examples
 #' d <- data.frame(x = seq(0, 1, length.out = 100))
@@ -421,6 +424,7 @@ gam_model <- S7::new_class(
     dispersion = S7::new_property(S7::class_double, getter = function(self) self@ptr$dispersion()),
     deviance = S7::new_property(S7::class_double, getter = function(self) self@ptr$deviance()),
     score = S7::new_property(S7::class_double, getter = function(self) self@ptr$score()),
+    reml_scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$reml_scale()),
     fitted = S7::new_property(S7::class_double, getter = function(self) self@ptr$fitted())
   ),
   constructor = function(ptr, terms, xlevels) {

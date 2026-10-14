@@ -177,13 +177,38 @@ fn robust_std_errors_match_statsmodels() {
 
 #[test]
 fn gams_match_mgcv() {
-    use prospicio_glm::gam::{Gam, GamFit, PSpline};
+    use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
     use prospicio_models::Fitted;
     let data = policies();
     let cases = reference("gam_mgcv.csv");
     let fit_case = |case: &str| -> GamFit {
+        let reml = case.starts_with("reml_");
+        let case = match case.strip_prefix("reml_").unwrap_or(case) {
+            "gaussian" => "gaussian_identity",
+            "poisson" => "poisson_log",
+            "gamma" => "gamma_log",
+            other => other,
+        };
         let d = design(&data);
         let log_exposure: Vec<f64> = numeric(&data, "exposure").iter().map(|e| e.ln()).collect();
+        if case == "two_smooths" {
+            // wavy ~ region + s(age, k = 12) + s(exposure, k = 8), by REML.
+            let mut names = d.names().to_vec();
+            let mut cols: Vec<Vec<f64>> = (0..d.n_cols()).map(|j| d.column(j).to_vec()).collect();
+            names.push("exposure".into());
+            cols.push(numeric(&data, "exposure"));
+            let d = prospicio_models::Design::new(names, cols).unwrap();
+            return Gam::new(
+                Glm::new(Family::Gaussian, Link::Identity),
+                vec![
+                    PSpline::new("age").n_basis(12),
+                    PSpline::new("exposure").n_basis(8),
+                ],
+            )
+            .smoothing(Smoothing::Reml)
+            .fit(&d, &numeric(&data, "wavy"))
+            .unwrap_or_else(|e| panic!("{case}: {e}"));
+        }
         let (glm, y, d, k) = match case {
             "gaussian_identity" => (
                 Glm::new(Family::Gaussian, Link::Identity),
@@ -217,9 +242,13 @@ fn gams_match_mgcv() {
             ),
             other => panic!("unknown case {other}"),
         };
-        Gam::new(glm, vec![PSpline::new("age").n_basis(k)])
-            .fit(&d, &y)
-            .unwrap_or_else(|e| panic!("{case}: {e}"))
+        let gam = Gam::new(glm, vec![PSpline::new("age").n_basis(k)]);
+        let gam = if reml {
+            gam.smoothing(Smoothing::Reml)
+        } else {
+            gam
+        };
+        gam.fit(&d, &y).unwrap_or_else(|e| panic!("{case}: {e}"))
     };
     let mut fits: Vec<(String, GamFit)> = Vec::new();
     check(&cases, |c| {
@@ -232,7 +261,19 @@ fn gams_match_mgcv() {
             "deviance" => Some(fit.deviance()),
             "edf" => Some(fit.edf()),
             "scale" => Some(fit.dispersion()),
-            "score" => Some(fit.score()),
+            "score" => {
+                // mgcv stops short of the REML minimum where it is flat:
+                // never above its score.
+                if name.starts_with("reml_") {
+                    let want = c.number("expected")?;
+                    assert!(
+                        fit.score() <= want + 1e-9 * want.abs(),
+                        "{name}: REML score above mgcv's"
+                    );
+                }
+                Some(fit.score())
+            }
+            "reml_scale" => fit.reml_scale(),
             "coef" => {
                 let j = fit.names().iter().position(|n| n == c.get("arg"))?;
                 Some(fit.coefficients()[j])

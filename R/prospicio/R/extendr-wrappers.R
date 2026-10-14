@@ -778,6 +778,8 @@ GamModel$deviance <- function() .Call(wrap__GamModel__deviance, self)
 
 GamModel$score <- function() .Call(wrap__GamModel__score, self)
 
+GamModel$reml_scale <- function() .Call(wrap__GamModel__reml_scale, self)
+
 GamModel$fitted <- function() .Call(wrap__GamModel__fitted, self)
 
 GamModel$predict <- function(x, names, offset) .Call(wrap__GamModel__predict, self, x, names, offset)

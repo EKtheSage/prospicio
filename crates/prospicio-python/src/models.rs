@@ -1252,7 +1252,9 @@ impl PyElasticNetFit {
 ///     functions (10 by default).
 /// smoothing : str or list of float, default "auto"
 ///     ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
-///     ``"ubre"``, or fixed smoothing parameters, one per smooth.
+///     ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
+///     unknown dispersion with the smoothing parameters), or fixed
+///     smoothing parameters, one per smooth.
 ///
 /// Examples
 /// --------
@@ -1302,10 +1304,11 @@ impl PyGam {
                         "auto" => Smoothing::Auto,
                         "gcv" => Smoothing::Gcv,
                         "ubre" => Smoothing::Ubre,
+                        "reml" => Smoothing::Reml,
                         other => {
                             return Err(PyValueError::new_err(format!(
-                                "smoothing must be \"auto\", \"gcv\", \"ubre\" or a list \
-                                 of numbers, got {other:?}"
+                                "smoothing must be \"auto\", \"gcv\", \"ubre\", \"reml\" or a \
+                                 list of numbers, got {other:?}"
                             )));
                         }
                     }
@@ -1423,10 +1426,17 @@ impl PyGamFit {
         self.inner.deviance()
     }
 
-    /// The minimized GCV or UBRE score.
+    /// The minimized GCV, UBRE or REML score (mgcv's ``gcv.ubre``).
     #[getter]
     fn score(&self) -> f64 {
         self.inner.score()
+    }
+
+    /// The dispersion REML estimates with the smoothing parameters
+    /// (mgcv's ``reml.scale``), or ``None`` for GCV and UBRE.
+    #[getter]
+    fn reml_scale(&self) -> Option<f64> {
+        self.inner.reml_scale()
     }
 
     /// Fitted means on the training data.

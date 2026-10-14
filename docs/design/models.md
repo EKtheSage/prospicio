@@ -131,6 +131,30 @@ models and compares them.
   offset, gamma): deviance, edf, scale, score, a coefficient and fitted
   values, at 1e-5 to 1e-6 where the smooth is clearly non-linear and
   looser where the optimal smoothing is effectively infinite.
+- REML smoothing (`Smoothing::Reml`, decided 2026-10-14): mgcv's
+  `method = "REML"`, the Laplace approximation to the restricted
+  likelihood (Wood 2011), `D_p/(2φ) − l_s(φ) + ½ ln|XᵀWX + S| − ½ ln|S|₊ −
+  (M_p/2) ln(2πφ)`. Checked in R against mgcv's own `gcv.ubre` before
+  building: it matches only with `W` the observed (Newton) weights, which
+  differ from the expected ones for a non-canonical link such as the gamma
+  with a log link, and with `φ` mgcv's `reml.scale`, not `sig2`. So the
+  determinant uses the observed information at the fit (the β̂ is the same
+  PIRLS solution either way), `l_s` is mgcv's `fix.family.ls` (Gaussian,
+  Poisson, gamma, inverse Gaussian, binomial; negative binomial and
+  Tweedie are refused), `ln|S|₊ = Σ r_j ln λ_j + ln|P_j|₊` with each
+  smooth's rank and log pseudo-determinant from its eigenvalues (Jacobi,
+  `prospicio_math::linalg::symmetric_eigenvalues`), and an unknown `φ` is
+  minimized with the score at each trial: `D_p/(n − M_p)` in closed form
+  for the Gaussian and inverse Gaussian, by Brent on `ln φ` for the gamma.
+  `GamFit::reml_scale` reports it; `dispersion` stays the `Dispersion`
+  estimate (mgcv's `sig2`). The search is the coordinate search on
+  `ln λ`, then Nelder–Mead jointly for several smooths. Parity: six REML
+  cases in `gam_mgcv.csv` (the five GAMs above and two smooths). mgcv
+  stops once the score settles to about 3e-7 relative; where the score is
+  flat in `λ` prospicio reaches a lower score (by up to 2e-3 in 4,700), so
+  those cases compare the score to 1e-6 and the fit loosely, and the test
+  asserts that the score is never above mgcv's. The wavy single smooths
+  agree to 1e-6.
 - `prospicio-bayes`: MCMC diagnostics for any sampler's draws, the estimators
   of Vehtari et al. (2021) as R's `posterior` implements them:
   rank-normalized split `rhat` (the larger of the bulk and folded

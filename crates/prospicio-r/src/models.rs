@@ -486,7 +486,7 @@ pub(crate) struct GamModel {
 
 /// Fits a GAM: the GLM spec plus P-spline smooths of the named design
 /// columns with `n_basis` functions each. `smoothing` is "auto", "gcv",
-/// "ubre" or "fixed" with `lambdas`.
+/// "ubre", "reml" or "fixed" with `lambdas`.
 #[extendr]
 #[allow(clippy::too_many_arguments)]
 fn gam_fit_design(
@@ -526,10 +526,11 @@ fn gam_fit_design(
         "auto" => Smoothing::Auto,
         "gcv" => Smoothing::Gcv,
         "ubre" => Smoothing::Ubre,
+        "reml" => Smoothing::Reml,
         "fixed" => Smoothing::Fixed(lambdas.to_vec()),
         other => {
             return Err(Error::Other(format!(
-                "smoothing must be auto, gcv, ubre or numeric, got {other}"
+                "smoothing must be auto, gcv, ubre, reml or numeric, got {other}"
             )));
         }
     };
@@ -579,6 +580,11 @@ impl GamModel {
 
     fn score(&self) -> f64 {
         self.inner.score()
+    }
+
+    /// The REML dispersion, `NA` for GCV and UBRE.
+    fn reml_scale(&self) -> f64 {
+        self.inner.reml_scale().unwrap_or(f64::NAN)
     }
 
     fn fitted(&self) -> Vec<f64> {

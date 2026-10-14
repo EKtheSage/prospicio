@@ -49,18 +49,21 @@ as the fitted means stay positive), \code{"deviance"} or a fixed number.}
 
 \item{power}{Tweedie power in \verb{(1, 2)}.}
 
-\item{smoothing}{\code{"auto"}, \code{"gcv"}, \code{"ubre"}, or a numeric vector of
+\item{smoothing}{\code{"auto"}, \code{"gcv"}, \code{"ubre"}, \code{"reml"}, or a numeric vector of
 fixed smoothing parameters, one per smooth.}
 }
 \value{
 A \code{gam_model} with properties \code{coefficients}, \code{lambdas}, \code{edf},
-\code{dispersion}, \code{deviance}, \code{score} and \code{fitted}.
+\code{dispersion}, \code{deviance}, \code{score}, \code{reml_scale} (\code{NA} unless REML) and
+\code{fitted}.
 }
 \description{
 A \code{\link[=glm_fit]{glm_fit()}} model in which each name in \code{smooths} (a numeric term of
 the formula) becomes a cubic P-spline (mgcv's \code{s(x, bs = "ps")}), with
 smoothing chosen by GCV when the dispersion is estimated and UBRE when
-it is fixed (mgcv's \code{method = "GCV.Cp"}), or fixed by \code{smoothing}.
+it is fixed (mgcv's \code{method = "GCV.Cp"}), by REML (\code{smoothing = "reml"},
+mgcv's \code{method = "REML"}, which estimates an unknown dispersion with the
+smoothing parameters as \code{reml_scale}), or fixed by \code{smoothing}.
 }
 \examples{
 d <- data.frame(x = seq(0, 1, length.out = 100))

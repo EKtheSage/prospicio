@@ -1,6 +1,6 @@
 //! Generalized additive models: a GLM with penalized B-spline smooths
 //! (P-splines), fitted by penalized IRLS with smoothing parameters chosen
-//! by GCV or UBRE.
+//! by GCV, UBRE or REML.
 //!
 //! Each smooth replaces a numeric column of the design with a cubic
 //! B-spline basis on equally spaced knots, with a second-order difference
@@ -9,13 +9,15 @@
 //! keeps it identifiable next to the intercept.
 
 use prospicio_core::{Error, Result};
-use prospicio_math::linalg::{cholesky, cholesky_inverse};
-use prospicio_math::optimize::minimize;
+use prospicio_math::linalg::{cholesky, cholesky_inverse, symmetric_eigenvalues};
+use prospicio_math::optimize::{NelderMead, minimize, nelder_mead};
+use prospicio_math::special::ln_gamma;
 use prospicio_math::spline::{bspline_basis, difference_penalty, pspline_knots};
 use prospicio_models::{Design, Fitted, Model};
 use prospicio_prob::{PredictiveDistribution, Provenance};
 
 use crate::{Dispersion, Glm, Irls, dev, irls, simulate_responses};
+use prospicio_models::Family;
 
 /// A P-spline smooth of one numeric design column.
 #[derive(Debug, Clone, PartialEq)]
@@ -61,6 +63,16 @@ pub enum Smoothing {
     Gcv,
     /// Un-biased risk estimator, `D / n + 2 φ edf / n - φ`.
     Ubre,
+    /// Restricted maximum likelihood, mgcv's `method = "REML"`: the Laplace
+    /// approximation to the restricted likelihood (Wood 2011),
+    /// `D_p/(2φ) − l_s(φ) + ½ ln|XᵀWX + S| − ½ ln|S|₊ − (M_p/2) ln(2πφ)`,
+    /// minimized over the smoothing parameters, with `W` the observed
+    /// (Newton) weights, `D_p` the penalized deviance, `l_s` the saturated
+    /// log-likelihood and `M_p` the dimension of the penalty's null space.
+    /// An unknown dispersion is estimated with them
+    /// ([`GamFit::reml_scale`]). For the Gaussian, Poisson, gamma, inverse
+    /// Gaussian and binomial families.
+    Reml,
     /// Fixed smoothing parameters, one per smooth.
     Fixed(Vec<f64>),
 }
@@ -248,8 +260,86 @@ pub struct GamFit {
     pub(crate) dispersion: f64,
     pub(crate) deviance: f64,
     pub(crate) score: f64,
+    pub(crate) reml_scale: Option<f64>,
     pub(crate) fitted: Vec<f64>,
     pub(crate) input_hash: String,
+}
+
+/// The saturated log-likelihood `l_s(φ)` of mgcv's `fix.family.ls`, the
+/// part of the log-likelihood that the deviance leaves out, for REML.
+fn saturated_log_likelihood(family: Family, y: &[f64], w: &[f64], phi: f64) -> Result<f64> {
+    let rows = y.iter().zip(w).filter(|(_, w)| **w > 0.0);
+    Ok(match family {
+        Family::Gaussian => rows
+            .map(|(_, &w)| -0.5 * (2.0 * std::f64::consts::PI * phi).ln() + 0.5 * w.ln())
+            .sum(),
+        Family::InverseGaussian => rows
+            .map(|(&y, &w)| {
+                -0.5 * (2.0 * std::f64::consts::PI * phi * y.powi(3)).ln() + 0.5 * w.ln()
+            })
+            .sum(),
+        Family::Poisson => rows
+            .map(|(&y, &w)| {
+                let ylny = if y > 0.0 { y * y.ln() } else { 0.0 };
+                w * (ylny - y - ln_gamma(y + 1.0))
+            })
+            .sum(),
+        Family::Gamma => rows
+            .map(|(&y, &w)| {
+                let s = phi / w;
+                -ln_gamma(1.0 / s) - s.ln() / s - 1.0 / s - y.ln()
+            })
+            .sum(),
+        Family::Binomial => rows
+            .map(|(&y, &m)| {
+                // ln dbinom(round(m y), round(m), y): m trials, y the share.
+                let (k, n) = ((m * y).round(), m.round());
+                let lc = ln_gamma(n + 1.0) - ln_gamma(k + 1.0) - ln_gamma(n - k + 1.0);
+                let a = if k > 0.0 { k * y.ln() } else { 0.0 };
+                let b = if n - k > 0.0 {
+                    (n - k) * (-y).ln_1p()
+                } else {
+                    0.0
+                };
+                lc + a + b
+            })
+            .sum(),
+        other => {
+            return Err(Error::Data(format!(
+                "REML smoothing is not available for the {} family",
+                other.name()
+            )));
+        }
+    })
+}
+
+/// `Xᵀ W X` with the observed (Newton) weights at the fitted means: the
+/// expected weights less `(y − μ)` times the derivative of `μ'/V` in `η`.
+/// They are the expected ones for a canonical link.
+fn observed_information(glm: &Glm, x: &Design, y: &[f64], mu: &[f64]) -> Vec<f64> {
+    let (family, link) = (glm.family, glm.link);
+    let (n, p) = (x.n_rows(), x.n_cols());
+    let w = x.weights();
+    let mut info = vec![0.0; p * p];
+    for i in 0..n {
+        let eta = link.link(mu[i]);
+        let (d1, d2) = (link.mu_eta(eta), link.mu_eta2(eta));
+        let (v, dv) = (family.variance(mu[i]), family.variance_deriv(mu[i]));
+        let r = y[i] - mu[i];
+        let wi = w[i] * (d1 * d1 / v - r * (d2 / v - d1 * d1 * dv / (v * v)));
+        for a in 0..p {
+            let xa = x.column(a)[i] * wi;
+            for b in 0..=a {
+                info[a * p + b] += xa * x.column(b)[i];
+            }
+        }
+    }
+    for a in 0..p {
+        for b in a + 1..p {
+            info[a * p + b] = info[b * p + a];
+        }
+    }
+    info
 }
 
 /// One penalized fit at fixed smoothing parameters.
@@ -352,6 +442,7 @@ impl Model for Gam {
         };
         let fixed = match glm.dispersion {
             Dispersion::Fixed(phi) => Some(phi),
+            _ if glm.family.unit_dispersion() && self.smoothing == Smoothing::Reml => Some(1.0),
             _ => None,
         };
         let use_ubre = match self.smoothing {
@@ -359,9 +450,64 @@ impl Model for Gam {
             Smoothing::Gcv => false,
             _ => fixed.is_some(),
         };
+        let use_reml = self.smoothing == Smoothing::Reml;
+        // Each smooth's penalty rank and ln|P_j|₊, for ln|S|₊ = Σ r_j ln λ_j + ln|P_j|₊.
+        let ranks: Vec<(f64, f64)> = blocks
+            .iter()
+            .zip(&bases)
+            .map(|((_, block), b)| {
+                let e = symmetric_eigenvalues(block, b.width());
+                let top = e.iter().copied().fold(0.0, f64::max);
+                let kept: Vec<f64> = e.into_iter().filter(|v| *v > 1e-10 * top).collect();
+                (kept.len() as f64, kept.iter().map(|v| v.ln()).sum())
+            })
+            .collect();
+        let null_dim = p as f64 - ranks.iter().map(|r| r.0).sum::<f64>();
+        if use_reml {
+            saturated_log_likelihood(glm.family, y, w, 1.0)?;
+        }
         let nf = n as f64;
-        let score = |t: &Trial| -> f64 {
-            if use_ubre {
+        let n_obs = w.iter().filter(|v| **v > 0.0).count() as f64;
+        // The REML score and dispersion at a trial.
+        let reml = |t: &Trial, lambdas: &[f64]| -> Result<(f64, f64)> {
+            let dp = t.deviance + crate::quadratic(&t.penalty, &t.irls.beta);
+            let mut a = observed_information(&glm, &x, y, &t.irls.mu);
+            for (v, si) in a.iter_mut().zip(&t.penalty) {
+                *v += si;
+            }
+            let l = cholesky(&a, p).ok_or_else(|| {
+                Error::Data("the penalized observed information is not positive definite".into())
+            })?;
+            let ln_det: f64 = (0..p).map(|i| 2.0 * l[i * p + i].ln()).sum();
+            let ln_s: f64 = ranks
+                .iter()
+                .zip(lambdas)
+                .map(|(&(r, ln_p), &lambda)| r * lambda.ln() + ln_p)
+                .sum();
+            let v = |phi: f64| -> f64 {
+                let ls = saturated_log_likelihood(glm.family, y, w, phi).unwrap_or(f64::NAN);
+                dp / (2.0 * phi) - ls + 0.5 * ln_det
+                    - 0.5 * ln_s
+                    - 0.5 * null_dim * (2.0 * std::f64::consts::PI * phi).ln()
+            };
+            let phi = match (fixed, glm.family) {
+                (Some(phi), _) => phi,
+                (None, Family::Gaussian | Family::InverseGaussian) => dp / (n_obs - null_dim),
+                (None, _) => {
+                    let start = (dp / (n_obs - null_dim)).ln();
+                    minimize(start - 8.0, start + 8.0, |lp| {
+                        let s = v(lp.exp());
+                        if s.is_finite() { s } else { f64::INFINITY }
+                    })
+                    .exp()
+                }
+            };
+            Ok((v(phi), phi))
+        };
+        let score = |t: &Trial, lambdas: &[f64]| -> f64 {
+            if use_reml {
+                reml(t, lambdas).map_or(f64::INFINITY, |r| r.0)
+            } else if use_ubre {
                 let phi = fixed.unwrap_or(1.0);
                 t.deviance / nf + 2.0 * phi * t.edf / nf - phi
             } else {
@@ -388,10 +534,25 @@ impl Model for Gam {
                         let objective = |v: f64| {
                             let mut l: Vec<f64> = log_l.iter().map(|a: &f64| a.exp()).collect();
                             l[j] = v.exp();
-                            trial(&l).map_or(f64::INFINITY, |t| score(&t))
+                            trial(&l).map_or(f64::INFINITY, |t| score(&t, &l))
                         };
                         log_l[j] = minimize(-15.0, 20.0, objective);
                     }
+                }
+                if use_reml && bases.len() > 1 {
+                    // Polish the coordinate search jointly.
+                    let objective = |v: &[f64]| {
+                        if v.iter().any(|a| !(-15.0..=20.0).contains(a)) {
+                            return f64::INFINITY;
+                        }
+                        let l: Vec<f64> = v.iter().map(|a| a.exp()).collect();
+                        trial(&l).map_or(f64::INFINITY, |t| score(&t, &l))
+                    };
+                    let options = NelderMead {
+                        initial_step: 0.5,
+                        ..NelderMead::default()
+                    };
+                    log_l = nelder_mead(objective, &log_l, &options).x;
                 }
                 log_l.iter().map(|v| v.exp()).collect()
             }
@@ -422,9 +583,15 @@ impl Model for Gam {
             .into_iter()
             .map(|v| v * dispersion)
             .collect();
+        let reml_scale = if use_reml {
+            Some(reml(&best, &lambdas)?.1)
+        } else {
+            None
+        };
         Ok(GamFit {
             spec: self.clone(),
-            score: score(&best),
+            score: score(&best, &lambdas),
+            reml_scale,
             bases,
             names: x.names().to_vec(),
             coefficients: best.irls.beta,
@@ -484,10 +651,17 @@ impl GamFit {
         self.deviance
     }
 
-    /// The minimized GCV or UBRE score (or the score at fixed smoothing
-    /// parameters).
+    /// The minimized GCV, UBRE or REML score (or the score at fixed
+    /// smoothing parameters): mgcv's `gcv.ubre`.
     pub fn score(&self) -> f64 {
         self.score
+    }
+
+    /// The dispersion that REML estimates with the smoothing parameters
+    /// (mgcv's `reml.scale`), or the fixed one; `None` for GCV or UBRE.
+    /// [`dispersion`](Self::dispersion) stays the [`Dispersion`] estimate.
+    pub fn reml_scale(&self) -> Option<f64> {
+        self.reml_scale
     }
 
     /// Fitted means on the training data.

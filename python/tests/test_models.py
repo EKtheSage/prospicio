@@ -75,6 +75,11 @@ def test_gam_smooths_a_curve():
     assert fit.names[0] == "(Intercept)" and fit.names[1] == "s(x).1"
     fixed = Gam(Glm("gaussian"), ["x"], smoothing=[1e8]).fit(d, y)
     assert abs(fixed.edf - 2.0) < 1e-4
+    assert fit.reml_scale is None
+    # REML: a noisy curve, its dispersion estimated with the smoothing.
+    noisy = [v + 0.1 * math.sin(97.0 * i) for i, v in enumerate(y)]
+    reml = Gam(Glm("gaussian"), [("x", 12)], smoothing="reml").fit(d, noisy)
+    assert 0.002 < reml.reml_scale < 0.02 and 4 < reml.edf < 12
 
 
 def test_metrics_and_splits():

@@ -113,6 +113,10 @@ s$y <- sin(6 * s$x) + 2
 gm <- gam_fit(y ~ x, s, smooths = "x", n_basis = 12, family = "gaussian")
 stopifnot(max(abs(predict(gm, s) - s$y)) < 0.02)
 near(gam_fit(y ~ x, s, smooths = "x", family = "gaussian", smoothing = 1e8)@edf, 2, 1e-4)
+stopifnot(is.na(gm@reml_scale))
+s$noisy <- s$y + 0.1 * sin(97 * (seq_len(100) - 1))
+gr <- gam_fit(noisy ~ x, s, smooths = "x", n_basis = 12, family = "gaussian", smoothing = "reml")
+stopifnot(gr@reml_scale > 0.002, gr@reml_scale < 0.02, gr@edf > 4, gr@edf < 12)
 
 # Metrics, splits, MCMC.
 near(family_deviance("gaussian", c(1, 3), c(2, 2)), 2)

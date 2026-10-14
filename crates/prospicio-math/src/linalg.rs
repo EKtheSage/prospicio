@@ -136,6 +136,67 @@ pub fn solve(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
     Some(x)
 }
 
+/// The eigenvalues of the symmetric `n × n` matrix `a` (row-major; only
+/// its lower triangle is read), in increasing order, by cyclic Jacobi
+/// rotations. Accurate to a few ulps of the largest eigenvalue, which
+/// suits the small penalty matrices of smoothing splines (`n` up to a few
+/// hundred).
+///
+/// ```
+/// use prospicio_math::linalg::symmetric_eigenvalues;
+///
+/// let e = symmetric_eigenvalues(&[2.0, 1.0, 1.0, 2.0], 2);
+/// assert!((e[0] - 1.0).abs() < 1e-15 && (e[1] - 3.0).abs() < 1e-15);
+/// ```
+pub fn symmetric_eigenvalues(a: &[f64], n: usize) -> Vec<f64> {
+    assert_eq!(a.len(), n * n, "a must be n × n");
+    let mut m = vec![0.0; n * n];
+    for i in 0..n {
+        for j in 0..=i {
+            m[i * n + j] = a[i * n + j];
+            m[j * n + i] = a[i * n + j];
+        }
+    }
+    let scale: f64 = m.iter().map(|v| v * v).sum::<f64>().sqrt();
+    for _sweep in 0..100 {
+        let off: f64 = (0..n)
+            .flat_map(|i| (0..i).map(move |j| (i, j)))
+            .map(|(i, j)| m[i * n + j] * m[i * n + j])
+            .sum::<f64>()
+            .sqrt();
+        if off <= 1e-15 * scale || off == 0.0 {
+            break;
+        }
+        for p in 0..n {
+            for q in p + 1..n {
+                let apq = m[p * n + q];
+                if apq == 0.0 {
+                    continue;
+                }
+                let (app, aqq) = (m[p * n + p], m[q * n + q]);
+                let theta = (aqq - app) / (2.0 * apq);
+                let t = theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt());
+                let t = if theta == 0.0 { 1.0 } else { t };
+                let c = 1.0 / (t * t + 1.0).sqrt();
+                let s = t * c;
+                for k in 0..n {
+                    let (mkp, mkq) = (m[k * n + p], m[k * n + q]);
+                    m[k * n + p] = c * mkp - s * mkq;
+                    m[k * n + q] = s * mkp + c * mkq;
+                }
+                for k in 0..n {
+                    let (mpk, mqk) = (m[p * n + k], m[q * n + k]);
+                    m[p * n + k] = c * mpk - s * mqk;
+                    m[q * n + k] = s * mpk + c * mqk;
+                }
+            }
+        }
+    }
+    let mut e: Vec<f64> = (0..n).map(|i| m[i * n + i]).collect();
+    e.sort_by(f64::total_cmp);
+    e
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +249,34 @@ mod tests {
         for (a, b) in back.iter().zip(&x) {
             assert!((a - b).abs() < 1e-14);
         }
+    }
+
+    #[test]
+    fn symmetric_eigenvalues_of_a_difference_penalty() {
+        // The second-difference penalty DᵀD on 6 points: rank 4, trace 20,
+        // eigenvalues of a known matrix match its trace and determinant
+        // structure; check against the characteristic quantities.
+        let n = 6;
+        let mut d = vec![0.0; (n - 2) * n];
+        for r in 0..n - 2 {
+            d[r * n + r] = 1.0;
+            d[r * n + r + 1] = -2.0;
+            d[r * n + r + 2] = 1.0;
+        }
+        let mut p = vec![0.0; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                p[i * n + j] = (0..n - 2).map(|r| d[r * n + i] * d[r * n + j]).sum();
+            }
+        }
+        let e = symmetric_eigenvalues(&p, n);
+        assert!(e[0].abs() < 1e-13 && e[1].abs() < 1e-13, "{e:?}");
+        let trace: f64 = (0..n).map(|i| p[i * n + i]).sum();
+        assert!((e.iter().sum::<f64>() - trace).abs() < 1e-12);
+        // Each eigenvalue λ has a vector: det(P − λI) = 0, checked by the
+        // Frobenius norm identity Σλ² = ‖P‖².
+        let fro: f64 = p.iter().map(|v| v * v).sum();
+        assert!((e.iter().map(|v| v * v).sum::<f64>() - fro).abs() < 1e-11);
     }
 
     #[test]
