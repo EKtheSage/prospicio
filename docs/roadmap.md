@@ -223,7 +223,10 @@ what it is aiming for by v1.0.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
-  design note (the 200-triangle calibration study can now use
+  models of `reserving-compartmental.md`, whose PR A (the `Scalar` trait
+  and an in-house dual type, checked against every hand-written gradient;
+  internal) is done, with PR B (`Compartmental`, Gesmann and Morris'
+  model 1) next (the 200-triangle calibration study can now use
   `TriangleModel for Meyers`);
   then the one-year view by PSIS reweighting (open decision 6).
   Claim-level reserving (v0.8) is parked; see the milestones.

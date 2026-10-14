@@ -969,6 +969,34 @@ impl Posterior for Model {
     }
 }
 
+/// The log posterior written once over [`Scalar`](super::scalar::Scalar),
+/// the oracle of the compartmental note's decision 4: test-only, beside
+/// the hand-written [`Posterior::log_posterior`], which stays the fast
+/// path.
+#[cfg(test)]
+impl super::autodiff::GenericDensity for Model {
+    fn n_params(&self) -> usize {
+        self.dim()
+    }
+
+    fn log_density<S: super::scalar::Scalar>(&self, theta: &[S]) -> S {
+        let mut f = S::from_f64(0.0);
+        for (j, &t) in theta.iter().enumerate() {
+            let r = t - self.prior_mean[j];
+            f -= r * r * (0.5 * self.prior_precision[j]);
+        }
+        for &(w, d, x) in &self.cells {
+            let eta = self
+                .params(w, d)
+                .into_iter()
+                .flatten()
+                .fold(S::from_f64(0.0), |acc, j| acc + theta[j]);
+            f += (eta * x - eta.exp()) / self.phi;
+        }
+        f
+    }
+}
+
 /// PSIS-LOO of `model`'s observed increments under `posterior` ([`BayesOdpFit::loo`]).
 fn loo(model: &Model, posterior: &PosteriorDraws, chain_ladder: &ChainLadderFit) -> Result<Loo> {
     if let Some(&(w, d, x)) = model.cells.iter().find(|c| c.2 < 0.0) {
@@ -1071,6 +1099,18 @@ mod tests {
             .map(|j| 0.3 * ((j % 3) as f64 - 1.0))
             .collect();
         assert_gradient(|z, g| whitened.log_density(z, g).unwrap(), &z);
+    }
+
+    #[test]
+    fn the_generic_density_matches_the_hand_written_one() {
+        use crate::bayes::autodiff::{assert_oracle, posterior_points};
+        for (label, triangle) in [("BayesOdp GenIns", genins()), ("BayesOdp RAA", raa())] {
+            let Prepared { model, start, .. } = prepared(&triangle, &BayesOdp::default(), true);
+            let mode = mode(&model, start).unwrap();
+            let whitened = Whitened::new(&model, &mode).unwrap();
+            let points = posterior_points(&whitened, model.dim(), 20);
+            assert_oracle(label, &model, &points);
+        }
     }
 
     #[test]

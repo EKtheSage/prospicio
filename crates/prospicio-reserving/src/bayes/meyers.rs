@@ -1799,8 +1799,82 @@ impl Posterior for Model {
     }
 }
 
+/// The log posterior written once over [`Scalar`](super::scalar::Scalar),
+/// the oracle of the compartmental note's decision 4: test-only, beside
+/// the hand-written [`Posterior::log_posterior`], which stays the fast
+/// path. It computes each cell's residual forward, as the value does, and
+/// lets the dual carry CAY's chain of residuals.
 #[cfg(test)]
-mod tests {
+impl super::autodiff::GenericDensity for Model {
+    fn n_params(&self) -> usize {
+        self.dim()
+    }
+
+    fn log_density<S: super::scalar::Scalar>(&self, theta: &[S]) -> S {
+        use super::scalar::{logistic, softplus};
+        let (n, m) = (self.n_origins, self.n_dev);
+        let zero = S::from_f64(0.0);
+        let mut f = zero;
+        if self.priors {
+            let prior = |x: S, mean: f64, sd: f64| {
+                let r = x - mean;
+                r * r * (0.5 / (sd * sd))
+            };
+            f -= prior(theta[0], self.logelr_mean, self.logelr_sd);
+            for &a in &theta[1..n] {
+                f -= prior(a, 0.0, self.origin_sd);
+            }
+            for &b in &theta[n..n + m - 1] {
+                f -= prior(b, 0.0, self.development_sd);
+            }
+            if self.csr() {
+                f -= prior(theta[self.after_beta()], 0.0, self.gamma_sd);
+            }
+            if self.cay() {
+                let v = theta[self.after_beta()] * 2.0;
+                f -= (softplus(v) + softplus(-v)) * self.rho_shape;
+            }
+        }
+        let u0 = self.u0();
+        let mut var = vec![zero; m];
+        let mut acc = zero;
+        for d in (0..m).rev() {
+            acc += logistic(theta[u0 + d]) * (1.0 - S_FLOOR) + S_FLOOR;
+            var[d] = acc;
+        }
+        for &u in &theta[u0..u0 + m] {
+            f -= softplus(-u) + softplus(u);
+        }
+        let k = self.after_beta();
+        let rho = if self.cay() { theta[k].tanh() } else { zero };
+        let mut r: Vec<S> = Vec::with_capacity(self.cells.len());
+        for c in &self.cells {
+            let mut mu = theta[0] + c.offset;
+            if c.w > 0 {
+                mu += theta[c.w];
+            }
+            if c.d + 1 < m {
+                let beta = theta[self.beta0() + c.d];
+                mu += if self.csr() {
+                    beta * (-theta[k] + 1.0).powi(c.w as i32)
+                } else {
+                    beta
+                };
+            }
+            let mut res = -mu + c.y;
+            if let Some(p) = c.prev {
+                res -= rho * r[p];
+            }
+            r.push(res);
+            let v = var[c.d];
+            f -= (v.ln() + res * res / v) * 0.5;
+        }
+        f
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
     use super::*;
     use crate::bayes::laplace::tests::assert_gradient;
     use crate::triangle::Long;
@@ -1935,6 +2009,33 @@ mod tests {
                 .collect();
             assert_gradient(|z, g| whitened.log_density(z, g).unwrap(), &z);
         }
+    }
+
+    #[test]
+    fn the_generic_density_matches_the_hand_written_one() {
+        use crate::bayes::autodiff::{assert_oracle, posterior_points};
+        for kind in [MeyersModel::Crc, MeyersModel::Csr, MeyersModel::Cay] {
+            let model = prepared(kind);
+            // The pilot run's scale at the start: the posterior's bulk,
+            // not the joint mode deep in the funnel.
+            let whitened = Whitened::regularised(&model, &model.start()).unwrap();
+            let points = posterior_points(&whitened, model.dim(), 20);
+            assert_oracle(&format!("Meyers {}", kind.name()), &model, &points);
+        }
+    }
+
+    /// The benchmark's row for Meyers' CRC on group 353's paid column
+    /// (`validation/data/clrd_comauto_353.csv`, the training cells in
+    /// [`PAID`]): 29 parameters, 55 cells, at the start point.
+    pub(crate) fn bench_crc_353() {
+        let model = prepared(MeyersModel::Crc);
+        let theta = model.start();
+        crate::bayes::autodiff::bench_row::<_, 29>(
+            "Meyers CRC, group 353 paid",
+            &model,
+            &theta,
+            Some(&|t: &[f64], g: &mut [f64]| model.log_posterior(t, g)),
+        );
     }
 
     #[test]
