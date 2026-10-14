@@ -2,9 +2,9 @@
 
 Status: **Decided** (2026-10-13; the user settled the open decisions at
 the end, all as recommended, with decision 1 widened: see there). PR A
-built (decision 4); PR B's Rust core built (decisions 2, 5, 6 and 7, each
-with its "Built" paragraph), its Python and R bindings next; PRs C to E not
-yet · Lane:
+built (decision 4); PR B built (decisions 2, 5, 6, 7 and 9, each with its
+"Built" paragraph: the Rust core and its Python and R bindings); PRs C to
+E not yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -891,6 +891,53 @@ decision 10 (a)):
   the default chains (no warning, the frames, totals close to the Rust
   values), replay by seed, and the errors. Docs regenerated with
   `cargo xtask docs`.
+
+**Built (PR B, bindings).** As proposed, with these outcomes:
+
+* **Python** (`prospicio.reserving`): `Compartmental(priors, *,
+  likelihood="normal", scale="amount", paid_response="cumulative",
+  fitted="paid_and_outstanding", rate_order="free", start="data",
+  chains=4, tune=1000, draws=2000, n_sims=10000, seed=0,
+  target_accept=0.99, max_depth=10)`: `priors` is the one positional
+  argument and has no default (a `TypeError` without it), and the
+  settings are keyword-only strings. The defaults are the Rust core's
+  (2,000 kept draws, not the 1,000 proposed). A setting not yet built is
+  accepted and named, and `fit` raises the core's "not yet built"
+  `ValueError`. `CompartmentalPriors` takes every prior as a keyword
+  (`(median, sd)` for a positive parameter, `("student_t", nu, scale)` or
+  `("normal", scale)` for an effect sd, `("student_t", nu, location,
+  scale)` or `("normal", mean, sd)` for each `log sigma`), with
+  `CompartmentalPriors.gesmann_morris()` and `replace(...)` to change a
+  few. `fit(triangle, paid, premium, *, outstanding=None, incurred=None)`
+  returns a `CompartmentalFit` with `reserves`, `paid` and `outstanding`
+  (`PredictiveDistribution`s), `diagnostics`, `rate_swaps`,
+  `population_origins`, `ultimate_loss_ratio`, `parameter_names`,
+  `draws`, `summary()`, `loo()` (an `Elpd`, outstanding cells first) and
+  `loo_by_type()` (the elpd split), `to_frame()`, `totals_frame()`,
+  `paid_frame()` and `outstanding_frame()`. `prior_predictive(triangle,
+  premium, n_sims=1000)` returns a dict of the two path distributions.
+* **R**: `compartmental(triangle, paid, premium, priors, outstanding =
+  NULL, incurred = NULL, likelihood, scale, paid_response, fitted,
+  rate_order, start, chains = 4, tune = 1000, draws = 2000, n_sims =
+  10000, seed = 0, target_accept = 0.99, max_depth = 10)`, with `priors`
+  required (an error naming `gesmann_morris_priors()` without it), not
+  defaulted to the preset as proposed: decision 2 settled priors as a
+  required argument. Priors are `compartmental_priors(...)` lists
+  (`c(median = , sd = )` and `list(family = , ...)`), with
+  `gesmann_morris_priors()`. `compartmental_fit` has the Python fit's
+  fields as properties (`paid_table` and `outstanding_table` as data
+  frames), `as.data.frame()`, `totals_frame()`, `summary()` and
+  `bayes_loo()` (with `n_outstanding`, `elpd_outstanding` and
+  `elpd_paid`); `development_frame()` is an error, as for Clark.
+  `compartmental_prior_predictive(triangle, premium, priors, rate_order,
+  n_sims = 1000, seed = 0)` returns a list of the two path
+  distributions.
+* Tests: both fit company 337's training triangle with the default
+  chains at seed 0 with no warning, and check the total reserve within 2%
+  of the Rust value, `b_kp` within 0.1 and `elpd_loo` within 2 of Stan's,
+  the frames, the prior predictive check, replay by seed, a warning from
+  short chains, the settings not yet built and the missing priors. A
+  default fit takes about 5 seconds in a release build.
 
 ### 10. Docs and knowledge
 

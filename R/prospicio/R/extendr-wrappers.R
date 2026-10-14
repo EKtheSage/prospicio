@@ -1556,6 +1556,10 @@ Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, orig
 
 Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__meyers_segments, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
 
+Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
+
+Triangle$compartmental_prior_predictive <- function(premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_prior_predictive, self, premium, priors, families, settings, run)
+
 Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman)
@@ -1928,6 +1932,54 @@ MeyersFits$segment <- function(keys, values) .Call(wrap__MeyersFits__segment, se
 
 #' @export
 `[[.MeyersFits` <- `$.MeyersFits`
+
+CompartmentalFit <- new.env(parent = emptyenv())
+
+CompartmentalFit$origins <- function() .Call(wrap__CompartmentalFit__origins, self)
+
+CompartmentalFit$premium <- function() .Call(wrap__CompartmentalFit__premium, self)
+
+CompartmentalFit$latest_paid <- function() .Call(wrap__CompartmentalFit__latest_paid, self)
+
+CompartmentalFit$population_origins <- function() .Call(wrap__CompartmentalFit__population_origins, self)
+
+CompartmentalFit$reserves <- function() .Call(wrap__CompartmentalFit__reserves, self)
+
+CompartmentalFit$paid <- function() .Call(wrap__CompartmentalFit__paid, self)
+
+CompartmentalFit$outstanding <- function() .Call(wrap__CompartmentalFit__outstanding, self)
+
+CompartmentalFit$ultimate_loss_ratio <- function() .Call(wrap__CompartmentalFit__ultimate_loss_ratio, self)
+
+CompartmentalFit$rate_swaps <- function() .Call(wrap__CompartmentalFit__rate_swaps, self)
+
+CompartmentalFit$diagnostics <- function() .Call(wrap__CompartmentalFit__diagnostics, self)
+
+CompartmentalFit$parameter_names <- function() .Call(wrap__CompartmentalFit__parameter_names, self)
+
+CompartmentalFit$draws <- function() .Call(wrap__CompartmentalFit__draws, self)
+
+CompartmentalFit$chains <- function() .Call(wrap__CompartmentalFit__chains, self)
+
+CompartmentalFit$summary <- function() .Call(wrap__CompartmentalFit__summary, self)
+
+CompartmentalFit$loo <- function() .Call(wrap__CompartmentalFit__loo, self)
+
+CompartmentalFit$long_table <- function() .Call(wrap__CompartmentalFit__long_table, self)
+
+CompartmentalFit$totals_table <- function() .Call(wrap__CompartmentalFit__totals_table, self)
+
+CompartmentalFit$paid_table <- function() .Call(wrap__CompartmentalFit__paid_table, self)
+
+CompartmentalFit$outstanding_table <- function() .Call(wrap__CompartmentalFit__outstanding_table, self)
+
+CompartmentalFit$segment <- function(keys, values) .Call(wrap__CompartmentalFit__segment, self, keys, values)
+
+#' @export
+`$.CompartmentalFit` <- function (self, name) { func <- CompartmentalFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CompartmentalFit` <- `$.CompartmentalFit`
 
 BayesBfFit <- new.env(parent = emptyenv())
 

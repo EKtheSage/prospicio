@@ -15,4 +15,9 @@
   model 1 (normal on amounts, cumulative paid, paid and outstanding), at
   parity with the paper's code reconstructed in Stan and its printed
   posterior on company 337; the other values are an error saying they are
-  not yet built. Rust only for now.
+  not yet built. In Python as `prospicio.reserving.Compartmental`
+  (`CompartmentalPriors.gesmann_morris()`, `fit(..., incurred=...)` or
+  `outstanding=...`, `prior_predictive`) and in R as `compartmental()`
+  (`gesmann_morris_priors()`, `compartmental_prior_predictive()`), with
+  the settings as strings, the diagnostics as one warning, and
+  `bayes_loo()` in R.

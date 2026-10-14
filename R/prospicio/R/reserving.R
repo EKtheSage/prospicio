@@ -2949,11 +2949,11 @@ growth <- function(fit, age) {
 check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
                   mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, meyers_fit,
-                  meyers_fits, one_year_fit, clark_fit)
+                  meyers_fits, one_year_fit, clark_fit, compartmental_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
          "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, ",
-         "meyers_fit, meyers_fits, one_year_fit or clark_fit",
+         "meyers_fit, meyers_fits, one_year_fit, clark_fit or compartmental_fit",
          call. = FALSE)
   }
 }
@@ -2963,7 +2963,7 @@ check_fit <- function(fit) {
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #' [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #' [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#' [one_year_fit] or [clark_fit] with the triangle's key columns by name. `as.data.frame(fit)` has one row per
+#' [one_year_fit], [clark_fit] or [compartmental_fit] with the triangle's key columns by name. `as.data.frame(fit)` has one row per
 #' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
 #' method's own), plus for Mack `process_risk`, `parameter_risk` and
 #' `standard_error`, for the expected-loss methods `exposure` and `apriori`
@@ -2974,7 +2974,9 @@ check_fit <- function(fit) {
 #' [meyers_segments()] add the `premium` and the
 #' `ultimate_mean` and `ultimate_std_dev` of the predictive ultimate), and
 #' for Clark (Cape Cod)
-#' `exposure`, `expected_ultimate` and the three standard errors. The
+#' `exposure`, `expected_ultimate` and the three standard errors; for
+#' [compartmental()] the `premium`, `latest_paid`, the `mean` and `std_dev`
+#' of the posterior predictive reserve and the `ultimate_loss_ratio`. The
 #' one-year view names them `opening_ultimate` and `opening_reserve` and
 #' adds the `cdr_mean` and `cdr_std_dev` of the claims development result.
 #' `totals_frame()` has one row per segment with the same quantities for
@@ -3002,7 +3004,8 @@ check_fit <- function(fit) {
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#'   [one_year_fit] or [clark_fit] (a [clark_fit] not for `development_frame()`).
+#'   [one_year_fit], [clark_fit] or [compartmental_fit] (a [clark_fit] or
+#'   [compartmental_fit] not for `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -3029,6 +3032,10 @@ development_frame <- function(fit) {
   check_fit(fit)
   if (S7::S7_inherits(fit, clark_fit)) {
     stop("a clark_fit has no development table; use development_frame(fit@chain_ladder)",
+         call. = FALSE)
+  }
+  if (S7::S7_inherits(fit, compartmental_fit)) {
+    stop("a compartmental_fit has no development table; see its paid_table and outstanding_table",
          call. = FALSE)
   }
   fit_table_frame(fit@ptr$development_table())
@@ -3260,3 +3267,421 @@ print_expected_loss <- function(x, name) {
 }
 S7::method(print, expected_loss_fit) <- function(x, ...) print_expected_loss(x, "expected_loss_fit")
 S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape_cod_fit")
+
+#' Priors of Gesmann and Morris' compartmental model
+#'
+#' The priors of [compartmental()], a required argument: the rates and
+#' ratios are specific to a line and a book, so the library does not choose
+#' them silently. `gesmann_morris_priors()` is the paper's case study
+#' (Gesmann and Morris 2020, model 1): `k_er` (3, 0.1), `k_p` (1, 0.1),
+#' `rlr` (0.7, 0.2), `rrf` (0.8, 0.1), half Student-t(10) effect sds with
+#' scales 0.2 and 0.1, LKJ(1), and Student-t(1, 0, 1000) on each
+#' `log sigma` (effectively flat). On company 337 the data pull the rates 5
+#' to 9 prior sds from these medians: the posterior is a compromise with
+#' the preset, not a description of it. Check any set with
+#' [compartmental_prior_predictive()] before fitting.
+#'
+#' Each positive parameter `theta` (`k_er`, `k_p`, `rlr`, `rrf`) is
+#' `median * exp(sd * o)` with `o ~ N(0, 1)`: a log-normal prior with that
+#' median and log-scale sd. The origin effects on `RLR` and `RRF` live on
+#' that `o` scale.
+#'
+#' Errors: if a prior has the wrong form or a log-normal median or sd is
+#' not finite and positive. The other settings are checked by the fit.
+#'
+#' @param k_er,k_p `c(median = , sd = )` of the reporting rate and the
+#'   payment rate, per year.
+#' @param rlr,rrf `c(median = , sd = )` of the population reported loss
+#'   ratio and reserve robustness factor (paid over reported).
+#' @param rlr_effect_sd,rrf_effect_sd Priors on the sds of the origin
+#'   effects on the `o` scale: `list(family = "student_t", nu = , scale = )`
+#'   for a half Student-t or `list(family = "normal", scale = )` for a half
+#'   normal.
+#' @param lkj_eta LKJ shape of the correlation of the two effects (1:
+#'   uniform).
+#' @param log_sigma A list of two priors, on `log sigma_os` and
+#'   `log sigma_pd` in that order, each
+#'   `list(family = "student_t", nu = , location = , scale = )` or
+#'   `list(family = "normal", mean = , sd = )`.
+#' @returns A `compartmental_priors` list.
+#' @seealso [compartmental()], [compartmental_prior_predictive()].
+#' @export
+#' @examples
+#' p <- gesmann_morris_priors()
+#' p$k_er
+#' # Wider rate priors, a half-normal effect sd on RRF.
+#' q <- compartmental_priors(k_er = c(median = 2, sd = 0.3), k_p = p$k_p, rlr = p$rlr,
+#'                           rrf = p$rrf, rlr_effect_sd = p$rlr_effect_sd,
+#'                           rrf_effect_sd = list(family = "normal", scale = 0.2),
+#'                           lkj_eta = 2, log_sigma = p$log_sigma)
+#' q$rrf_effect_sd
+compartmental_priors <- function(k_er, k_p, rlr, rrf, rlr_effect_sd, rrf_effect_sd, lkj_eta,
+                                 log_sigma) {
+  positive <- function(x, arg) {
+    if (!is.numeric(x) || length(x) != 2 || anyNA(x) || any(!is.finite(x)) || any(x <= 0)) {
+      stop(sprintf("%s must be c(median = , sd = ), both finite and positive", arg), call. = FALSE)
+    }
+    c(median = x[[1]], sd = x[[2]])
+  }
+  family_of <- function(x, arg, forms) {
+    if (!is.list(x) || !is.character(x$family) || length(x$family) != 1 ||
+        !x$family %in% names(forms)) {
+      stop(sprintf("%s must be %s", arg, paste(vapply(forms, `[[`, "", "text"), collapse = " or ")),
+           call. = FALSE)
+    }
+    fields <- forms[[x$family]]$fields
+    values <- lapply(fields, function(f) x[[f]])
+    if (any(vapply(values, function(v) !is.numeric(v) || length(v) != 1 || is.na(v), TRUE))) {
+      stop(sprintf("%s must be %s", arg, forms[[x$family]]$text), call. = FALSE)
+    }
+    c(list(family = x$family), stats::setNames(lapply(values, as.double), fields))
+  }
+  half <- list(
+    student_t = list(fields = c("nu", "scale"),
+                     text = 'list(family = "student_t", nu = , scale = )'),
+    normal = list(fields = "scale", text = 'list(family = "normal", scale = )'))
+  real <- list(
+    student_t = list(fields = c("nu", "location", "scale"),
+                     text = 'list(family = "student_t", nu = , location = , scale = )'),
+    normal = list(fields = c("mean", "sd"), text = 'list(family = "normal", mean = , sd = )'))
+  if (!is.list(log_sigma) || length(log_sigma) != 2) {
+    stop("log_sigma must be a list of two priors: log sigma_os, then log sigma_pd", call. = FALSE)
+  }
+  structure(list(
+    k_er = positive(k_er, "k_er"), k_p = positive(k_p, "k_p"), rlr = positive(rlr, "rlr"),
+    rrf = positive(rrf, "rrf"),
+    rlr_effect_sd = family_of(rlr_effect_sd, "rlr_effect_sd", half),
+    rrf_effect_sd = family_of(rrf_effect_sd, "rrf_effect_sd", half),
+    lkj_eta = single_number(lkj_eta, "lkj_eta"),
+    log_sigma = list(family_of(log_sigma[[1]], "log_sigma[[1]]", real),
+                     family_of(log_sigma[[2]], "log_sigma[[2]]", real))
+  ), class = "compartmental_priors")
+}
+
+#' @rdname compartmental_priors
+#' @export
+gesmann_morris_priors <- function() {
+  cauchy <- list(family = "student_t", nu = 1, location = 0, scale = 1000)
+  compartmental_priors(
+    k_er = c(median = 3, sd = 0.1), k_p = c(median = 1, sd = 0.1),
+    rlr = c(median = 0.7, sd = 0.2), rrf = c(median = 0.8, sd = 0.1),
+    rlr_effect_sd = list(family = "student_t", nu = 10, scale = 0.2),
+    rrf_effect_sd = list(family = "student_t", nu = 10, scale = 0.1),
+    lkj_eta = 1, log_sigma = list(cauchy, cauchy))
+}
+
+# The priors as the Rust side reads them: 19 numbers and 4 family names.
+compartmental_prior_values <- function(priors, call) {
+  if (!inherits(priors, "compartmental_priors")) {
+    stop(errorCondition(paste0(
+      "priors must be a compartmental_priors list; use gesmann_morris_priors() for the paper's ",
+      "case study, or compartmental_priors()"), call = call))
+  }
+  half <- function(h) if (h$family == "student_t") c(h$nu, h$scale) else c(h$scale, NaN)
+  real <- function(r) {
+    if (r$family == "student_t") c(r$nu, r$location, r$scale) else c(r$mean, r$sd, NaN)
+  }
+  list(
+    values = as.double(c(priors$k_er, priors$k_p, priors$rlr, priors$rrf,
+                         half(priors$rlr_effect_sd), half(priors$rrf_effect_sd), priors$lkj_eta,
+                         real(priors$log_sigma[[1]]), real(priors$log_sigma[[2]]))),
+    families = c(priors$rlr_effect_sd$family, priors$rrf_effect_sd$family,
+                 priors$log_sigma[[1]]$family, priors$log_sigma[[2]]$family))
+}
+
+#' Gesmann and Morris' compartmental model
+#'
+#' Gesmann and Morris' (2020) hierarchical compartmental reserving model
+#' with one outstanding compartment, their model 1, fitted to paid and
+#' outstanding jointly with NUTS. Claims flow from exposure into outstanding
+#' as they are reported, at rate `k_er`, and from outstanding into paid as
+#' they settle, at rate `k_p`. For origin `i` with premium `P_i` and
+#' development time `t` in years, with
+#' `g(t) = (exp(-k_p t) - exp(-k_er t)) / (k_er - k_p)`,
+#' `OS_i(t) = P_i RLR_i k_er g(t)` and
+#' `PD_i(t) = P_i RLR_i RRF_i [(1 - exp(-k_p t)) - k_p g(t)]`, so `RLR_i` is
+#' the reported loss ratio, `RRF_i` the reserve robustness factor (paid over
+#' reported) and `RLR_i RRF_i` the ultimate loss ratio. The rates are
+#' shared; `RLR` and `RRF` vary by origin with correlated effects (LKJ
+#' prior on the correlation) on the priors' `o` scale. Outstanding and
+#' cumulative paid amounts are normal about these curves, each type with
+#' its own sigma. NUTS samples on a pilot run's dense scale, with the
+#' gradient from dual numbers (`docs/design/reserving-compartmental.md`).
+#'
+#' `priors` is required ([gesmann_morris_priors()] is the paper's case
+#' study). `likelihood`, `scale`, `paid_response` and `fitted` take the
+#' values of model 1 by default; their other values are accepted but the
+#' fit stops with an error saying they are not yet built.
+#'
+#' An origin with a premium and no observed cell (the papers' training
+#' triangle has one) draws its effects from the population in each
+#' simulation. The reserve is the paid at the square's last age less the
+#' latest paid; the square has as many ages as the premium column has
+#' origins, and the origin and development grains must be equal. One `seed`
+#' replays a fit exactly: the chains and the simulations each take a seed
+#' derived from it.
+#'
+#' The means are exactly invariant under swapping the two rates (with `RLR`
+#' and `RRF` rescaled), so only the priors tell the two modes apart. Under
+#' `rate_order = "free"` (the paper's priors) the fit warns when any
+#' posterior draw has `k_er <= k_p`; `rate_order = "ordered"` samples
+#' `k_er = k_p + exp(delta)`, the same priors restricted to `k_er > k_p`.
+#'
+#' Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
+#' per chain, any divergent transition) and rate swaps do not fail the fit:
+#' `compartmental()` raises one [warning()] listing them, and they stay in
+#' the fit's `diagnostics`. With the defaults, 194 of 200 seeds on company
+#' 337 passed every threshold; each of the other six just missed one.
+#'
+#' Properties of the fit: `origins` (those of the premium column),
+#' `premium`, `latest_paid` (0 for an origin with none),
+#' `population_origins` (origins drawn from the population), `reserves` (a
+#' [predictive_distribution] with dimension `origin`, laid out as
+#' [odp_bootstrap()]'s), `paid` and `outstanding` (the future cells of the
+#' square, dimensions `origin` and `age` in months, from the same
+#' simulations), `ultimate_loss_ratio` (each origin's posterior mean
+#' `RLR_i RRF_i`), `rate_swaps`, `diagnostics`, `summary` (also
+#' `summary(fit)`), `draws` (a matrix of the posterior draws of `k_er`,
+#' `k_p`, `RLR`, `RRF`, `sigma_os`, `sigma_pd`, `RLR[o]` and `RRF[o]` for
+#' each origin with an observed cell, then `b_ker`, `b_kp`, `b_RLR`,
+#' `b_RRF`, `tau_RLR`, `tau_RRF`, `rho`, `log_sigma_os` and
+#' `log_sigma_pd`), and `paid_table` and `outstanding_table` (one row per
+#' future cell: `origin`, `development`, `mean`, `std_dev`, `q05`, `q50`
+#' and `q95`). `as.data.frame()` has one row per origin with the `premium`,
+#' `latest_paid`, the `mean` and `std_dev` of the posterior predictive
+#' reserve and the `ultimate_loss_ratio`; [totals_frame()] has the totals.
+#' [bayes_loo()] gives the PSIS-LOO of the observed cells, outstanding
+#' first, with the full normal log density of each amount (brms'
+#' `log_lik`), plus `n_outstanding`, `elpd_outstanding` and `elpd_paid`.
+#'
+#' Errors: if a setting is not yet built; if not exactly one of
+#' `outstanding` and `incurred` is given; if a column is missing, the
+#' triangle has several segments, a premium is missing or not positive, or
+#' the origin and development grains differ; if a prior or sampler setting
+#' is invalid; or if there are no more observed cells than parameters.
+#'
+#' @param triangle A cumulative [triangle] with one segment.
+#' @param paid Name of the column of cumulative paid amounts.
+#' @param premium Name of the column with each origin's premium (its latest
+#'   value); the fit's origins are this column's.
+#' @param priors A [compartmental_priors] list; required.
+#' @param outstanding Name of a column of outstanding amounts.
+#' @param incurred Name of a column of incurred amounts: outstanding is
+#'   incurred less paid, cell by cell (the papers' outstanding on company
+#'   337 is incurred with bulk and IBNR less paid). Give exactly one of
+#'   `outstanding` and `incurred`.
+#' @param likelihood `"normal"` (model 1); `"lognormal"` is not yet built.
+#' @param scale `"amount"` (model 1); `"loss_ratio"` is not yet built.
+#' @param paid_response `"cumulative"` (model 1); `"incremental"` is not
+#'   yet built.
+#' @param fitted `"paid_and_outstanding"` (model 1); `"paid_and_incurred"`,
+#'   `"paid_only"` and `"incurred_only"` are not yet built.
+#' @param rate_order `"free"` or `"ordered"`, as above.
+#' @param start Where the pilot run starts: `"data"`, a least-squares fit
+#'   of the population curve (the prior centre if that fit fails), or
+#'   `"prior_centre"`.
+#' @param chains,tune,draws NUTS chains, warm-up draws per chain and kept
+#'   draws per chain.
+#' @param n_sims Number of predictive simulations; positive.
+#' @param seed Seed of the chains and of the simulations, a non-negative
+#'   whole number.
+#' @param target_accept Target mean acceptance rate (the paper's
+#'   `adapt_delta`, 0.99).
+#' @param max_depth Largest NUTS tree depth.
+#' @param ptr A `CompartmentalFit` pointer; used internally.
+#' @returns A `compartmental_fit` object.
+#' @seealso [compartmental_priors()], [compartmental_prior_predictive()],
+#'   [meyers()], [bayes_loo()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(1988:1992, 5:1),
+#'                    age = unlist(lapply(5:1, function(k) 12 * seq_len(k))),
+#'                    paid = c(9.6, 22.8, 33.3, 40.3, 45.1, 7.9, 19.5, 29.6, 36.8,
+#'                             8.7, 24.3, 35.4, 13.3, 33.0, 11.4),
+#'                    incurred = c(62.7, 64.0, 65.6, 65.3, 62.3, 62.1, 56.7, 56.6, 56.8,
+#'                                 64.0, 61.5, 63.2, 73.9, 75.1, 77.1),
+#'                    premium = rep(c(104.4, 88.9, 86.0, 99.3, 104.9), 5:1))
+#' tri <- triangle(long, "year", "age", c("paid", "incurred", "premium"))
+#' # Check the priors first: the mean paid of 1988 at 60 months over its premium.
+#' paths <- compartmental_prior_predictive(tri, "premium", gesmann_morris_priors(),
+#'                                         n_sims = 1000)
+#' quantile(marginal(paths$paid, list(origin = "1988", age = 60)), c(0.05, 0.95)) / 104.4
+#' # Short chains may miss a diagnostic threshold.
+#' fit <- suppressWarnings(compartmental(tri, "paid", "premium", gesmann_morris_priors(),
+#'                                       incurred = "incurred", chains = 2, tune = 150,
+#'                                       draws = 150, target_accept = 0.9, n_sims = 1000))
+#' head(fit@summary)
+#' as.data.frame(fit)
+compartmental_fit <- S7::new_class(
+  "compartmental_fit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("CompartmentalFit"),
+    origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+    premium = S7::new_property(S7::class_double, getter = function(self) self@ptr$premium()),
+    latest_paid = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$latest_paid()
+    }),
+    population_origins = S7::new_property(S7::class_character, getter = function(self) {
+      self@ptr$population_origins()
+    }),
+    reserves = predictive_distribution,
+    paid = predictive_distribution,
+    outstanding = predictive_distribution,
+    ultimate_loss_ratio = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$ultimate_loss_ratio()
+    }),
+    rate_swaps = S7::new_property(S7::class_integer, getter = function(self) {
+      as.integer(self@ptr$rate_swaps())
+    }),
+    diagnostics = S7::new_property(S7::class_list, getter = function(self) {
+      self@ptr$diagnostics()
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$parameter_names()
+      matrix(self@ptr$draws(), ncol = length(nm), byrow = TRUE, dimnames = list(NULL, nm))
+    }),
+    paid_table = S7::new_property(S7::class_any, getter = function(self) {
+      fit_table_frame(rust_result(self@ptr$paid_table(), call = NULL))
+    }),
+    outstanding_table = S7::new_property(S7::class_any, getter = function(self) {
+      fit_table_frame(rust_result(self@ptr$outstanding_table(), call = NULL))
+    })
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   reserves = predictive_distribution(ptr = ptr$reserves()),
+                   paid = predictive_distribution(ptr = ptr$paid()),
+                   outstanding = predictive_distribution(ptr = ptr$outstanding()))
+  }
+)
+
+# The settings and run of compartmental() and compartmental_prior_predictive().
+compartmental_run <- function(chains, tune, draws, n_sims, seed, target_accept, max_depth) {
+  c(single_number(chains, "chains"), single_number(tune, "tune"), single_number(draws, "draws"),
+    single_number(n_sims, "n_sims"), single_number(seed, "seed"),
+    single_number(target_accept, "target_accept"), single_number(max_depth, "max_depth"))
+}
+
+#' @rdname compartmental_fit
+#' @export
+compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, incurred = NULL,
+                          likelihood = c("normal", "lognormal"),
+                          scale = c("amount", "loss_ratio"),
+                          paid_response = c("cumulative", "incremental"),
+                          fitted = c("paid_and_outstanding", "paid_and_incurred", "paid_only",
+                                     "incurred_only"),
+                          rate_order = c("free", "ordered"), start = c("data", "prior_centre"),
+                          chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
+                          target_accept = 0.99, max_depth = 10) {
+  call <- sys.call()
+  check_triangle(triangle)
+  for (arg in c("paid", "premium")) {
+    value <- get(arg)
+    if (!is.character(value) || length(value) != 1 || is.na(value)) {
+      stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
+    }
+  }
+  if (missing(priors)) {
+    stop(paste0("priors are required: use gesmann_morris_priors() for the paper's case study, ",
+                "or compartmental_priors(), and check them with compartmental_prior_predictive()"),
+         call. = FALSE)
+  }
+  p <- compartmental_prior_values(priors, call)
+  if (is.null(outstanding) == is.null(incurred)) {
+    stop(paste0("give exactly one of outstanding (a column of outstanding amounts) and ",
+                "incurred (a column of incurred amounts)"), call. = FALSE)
+  }
+  os <- if (is.null(incurred)) outstanding else incurred
+  if (!is.character(os) || length(os) != 1 || is.na(os)) {
+    stop(sprintf("%s must be the name of a column",
+                 if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
+  }
+  settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
+                match.arg(fitted), match.arg(rate_order), match.arg(start))
+  ptr <- rust_result(triangle@ptr$compartmental(
+    paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
+    settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth)),
+    call = call)
+  fit <- compartmental_fit(ptr = ptr)
+  failed <- fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("compartmental: the MCMC diagnostics failed; check them before relying on the fit: ",
+            paste(failed, collapse = "; "), call. = FALSE)
+  }
+  fit
+}
+
+#' Prior predictive check of the compartmental model
+#'
+#' Paths of the mean outstanding and cumulative paid of each origin of the
+#' premium column at each age of the square, drawn from the priors alone
+#' (Gesmann and Morris 2020, sec. 3.4): a check of a prior set before
+#' [compartmental()] fits it. Each simulation draws the intercepts, the
+#' effect sds, the correlation and each origin's effects. The paths are
+#' means, without the likelihood's noise, which under the preset's
+#' effectively flat prior on `log sigma` would swamp them. Under
+#' `rate_order = "ordered"` the rates are drawn from their priors restricted
+#' to `k_er > k_p`. The seed is derived from `seed`, as the fit's
+#' simulations' is.
+#'
+#' Errors: if a prior setting is invalid, `n_sims` is 0, the premium column
+#' is missing or not positive, or the origin and development grains differ.
+#'
+#' @inheritParams compartmental_fit
+#' @param n_sims Number of paths; positive.
+#' @returns A list of two [predictive_distribution]s, `outstanding` and
+#'   `paid`, each with dimensions `origin` and `age` (months).
+#' @seealso [compartmental()], [gesmann_morris_priors()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(1988:1990, 3:1), age = c(12, 24, 36, 12, 24, 12),
+#'                    premium = rep(c(104.4, 88.9, 86.0), 3:1))
+#' tri <- triangle(long, "year", "age", "premium")
+#' paths <- compartmental_prior_predictive(tri, "premium", gesmann_morris_priors(),
+#'                                         n_sims = 1000)
+#' # The mean paid of 1988 at 36 months over its premium, as the preset implies.
+#' quantile(marginal(paths$paid, list(origin = "1988", age = 36)), c(0.05, 0.5, 0.95)) / 104.4
+compartmental_prior_predictive <- function(triangle, premium, priors,
+                                           rate_order = c("free", "ordered"), n_sims = 1000,
+                                           seed = 0) {
+  call <- sys.call()
+  check_triangle(triangle)
+  if (!is.character(premium) || length(premium) != 1 || is.na(premium)) {
+    stop("premium must be the name of a column", call. = FALSE)
+  }
+  if (missing(priors)) {
+    stop("priors are required: use gesmann_morris_priors() for the paper's case study",
+         call. = FALSE)
+  }
+  p <- compartmental_prior_values(priors, call)
+  settings <- c("normal", "amount", "cumulative", "paid_and_outstanding", match.arg(rate_order),
+                "data")
+  out <- rust_result(triangle@ptr$compartmental_prior_predictive(
+    premium, p$values, p$families, settings,
+    compartmental_run(4, 1000, 2000, n_sims, seed, 0.99, 10)), call = call)
+  list(outstanding = predictive_distribution(ptr = out$outstanding),
+       paid = predictive_distribution(ptr = out$paid))
+}
+
+S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
+  fit_table_frame(x@ptr$long_table())
+}
+S7::method(summary, compartmental_fit) <- function(object, ...) object@summary
+S7::method(print, compartmental_fit) <- function(x, ...) {
+  r <- x@reserves
+  d <- x@diagnostics
+  cat(sprintf("<compartmental_fit> %d draws in %d chains, %d simulations\n", nrow(x@draws),
+              as.integer(x@ptr$chains()), as.integer(r@n_sims)))
+  cat(sprintf("diagnostics: max R-hat %s, min bulk ESS %s, min tail ESS %s, %d divergences%s\n",
+              format(d$max_rhat, digits = 4), format(d$min_ess_bulk, digits = 4),
+              format(d$min_ess_tail, digits = 4), as.integer(d$divergences),
+              if (length(d$warnings)) sprintf(", %d warnings", length(d$warnings)) else ""))
+  cat(sprintf("total reserve: posterior mean %s, sd %s\n", format(mean(r), digits = 10),
+              format(totals_frame(x)$std_dev, digits = 6)))
+  print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}

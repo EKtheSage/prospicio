@@ -103,10 +103,11 @@ mod prospicio_native {
     use super::reserving::{
         PyBayesBf, PyBayesBfFit, PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits, PyBenktander,
         PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit, PyChainLadder, PyChainLadderFit,
-        PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf, PyExpectedLoss,
-        PyExpectedLossFit, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers,
-        PyMeyersFit, PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy,
-        PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle,
+        PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf, PyCompartmental,
+        PyCompartmentalFit, PyCompartmentalPriors, PyExpectedLoss, PyExpectedLossFit, PyMack,
+        PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits,
+        PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve,
+        PyTailLogLinear, PyTriangle,
     };
     #[pymodule_export]
     use super::risk::{

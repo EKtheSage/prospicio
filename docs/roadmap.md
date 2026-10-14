@@ -37,7 +37,7 @@ when from experience, and which pricing method fits which scenario.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. Still to do: REML, tensor smooths |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental model 1 (`Compartmental`, Rust). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental model 1 (`Compartmental`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -221,22 +221,24 @@ what it is aiming for by v1.0.
     frame and simulates each origin's path jointly; `fit_segments` in
     Python (`Meyers.fit_segments`) and R (`meyers_segments()`).
   - Gesmann and Morris' hierarchical compartmental model with one
-    outstanding compartment, model 1 (`reserving-compartmental.md` PR B,
-    Rust core): `Compartmental` fits paid and outstanding jointly with
+    outstanding compartment, model 1 (`reserving-compartmental.md` PR B):
+    `Compartmental` fits paid and outstanding jointly with
     NUTS on a density written once over dual numbers, with priors a
     required argument (`CompartmentalPriors::gesmann_morris()` the
     paper's case study), a prior predictive check, the likelihood, scale,
     paid response and fitted pair as settings (other values an error
     until their PR), a warning when a draw's rates are swapped or
     `RateOrder::Ordered`; at parity with the paper's brms code
-    reconstructed in Stan and its printed posterior on company 337.
+    reconstructed in Stan and its printed posterior on company 337; in
+    Python (`Compartmental`, `CompartmentalPriors.gesmann_morris()`) and
+    R (`compartmental()`, `gesmann_morris_priors()`).
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
   models of `reserving-compartmental.md`, whose PR A (the `Scalar` trait
   and an in-house dual type, checked against every hand-written gradient;
-  internal) and PR B's Rust core (`Compartmental`, Gesmann and Morris'
-  model 1) are done, with PR B's Python and R bindings next, then PR C
+  internal) and PR B (`Compartmental`, Gesmann and Morris' model 1, in
+  Rust, Python and R) are done, with PR C next
   (model 2's log-normal likelihood) (the 200-triangle calibration study
   can now use `TriangleModel for Meyers`);
   then the one-year view by PSIS reweighting (open decision 6).

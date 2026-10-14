@@ -3275,6 +3275,525 @@ class CollectiveModel:
         """
 
 @final
+class Compartmental:
+    """
+    Gesmann and Morris' (2020) hierarchical compartmental reserving model
+    with one outstanding compartment, their model 1
+    (``docs/design/reserving-compartmental.md``). Claims flow from exposure
+    into outstanding as they are reported, at rate ``k_er``, and from
+    outstanding into paid as they settle, at rate ``k_p``. For origin ``i``
+    with premium ``P_i`` and development time ``t`` in years, with
+    ``g(t) = (exp(-k_p t) - exp(-k_er t)) / (k_er - k_p)``::
+    
+        OS_i(t) = P_i RLR_i k_er g(t)
+        PD_i(t) = P_i RLR_i RRF_i [(1 - exp(-k_p t)) - k_p g(t)]
+    
+    so ``RLR_i`` is the reported loss ratio, ``RRF_i`` the reserve
+    robustness factor (paid over reported) and ``RLR_i RRF_i`` the ultimate
+    loss ratio. The rates are shared; ``RLR`` and ``RRF`` vary by origin with
+    correlated effects (LKJ prior on the correlation) on the priors' ``o``
+    scale. Outstanding and cumulative paid amounts are normal about these
+    curves, each type with its own sigma. NUTS samples the posterior on a
+    pilot run's dense scale, with the gradient from dual numbers.
+    
+    ``priors`` is required (``CompartmentalPriors.gesmann_morris()`` is the
+    paper's case study). ``likelihood``, ``scale``, ``paid_response`` and
+    ``fitted`` take the values of model 1 by default; their other values
+    are accepted here, but ``fit`` raises ``ValueError`` saying they are not
+    yet built.
+    
+    An origin with a premium and no observed cell (the papers' training
+    triangle has one) draws its effects from the population in each
+    simulation. The reserve is the paid at the square's last age less the
+    latest paid; the square has as many ages as the premium column has
+    origins, and the origin and development grains must be equal. One
+    ``seed`` replays a fit exactly: the chains and the simulations each
+    take a seed derived from it.
+    
+    The means are exactly invariant under swapping the two rates (with
+    ``RLR`` and ``RRF`` rescaled), so only the priors tell the two modes
+    apart. Under ``rate_order="free"`` (the paper's priors) the fit warns
+    when any posterior draw has ``k_er <= k_p``; ``rate_order="ordered"``
+    samples ``k_er = k_p + exp(delta)``, the same priors restricted to
+    ``k_er > k_p``.
+    
+    Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
+    per chain, any divergent transition) and rate swaps do not fail the
+    fit: ``fit`` raises one ``UserWarning`` listing them, and they stay in
+    ``CompartmentalFit.diagnostics``. With the defaults, 194 of 200 seeds on
+    company 337 passed every threshold; each of the other six just missed
+    one.
+    
+    Parameters
+    ----------
+    priors : CompartmentalPriors
+        The priors; required.
+    likelihood : str
+        ``"normal"`` (model 1); ``"lognormal"`` is not yet built.
+    scale : str
+        ``"amount"`` (model 1); ``"loss_ratio"`` is not yet built.
+    paid_response : str
+        ``"cumulative"`` (model 1); ``"incremental"`` is not yet built.
+    fitted : str
+        ``"paid_and_outstanding"`` (model 1); ``"paid_and_incurred"``,
+        ``"paid_only"`` and ``"incurred_only"`` are not yet built.
+    rate_order : str
+        ``"free"`` or ``"ordered"``, as above.
+    start : str
+        Where the pilot run starts: ``"data"``, a least-squares fit of the
+        population curve (the prior centre if that fit fails), or
+        ``"prior_centre"``.
+    chains, tune, draws : int
+        NUTS chains, warm-up draws per chain and kept draws per chain.
+    n_sims : int
+        Number of predictive simulations; positive.
+    seed : int
+        Seed of the chains and of the simulations.
+    target_accept : float
+        Target mean acceptance rate (the paper's ``adapt_delta``, 0.99).
+    max_depth : int
+        Largest NUTS tree depth.
+    
+    Examples
+    --------
+    >>> import warnings
+    >>> from prospicio.reserving import Compartmental, CompartmentalPriors, Triangle
+    >>> paid = [[9.6, 22.8, 33.3, 40.3, 45.1], [7.9, 19.5, 29.6, 36.8],
+    ...         [8.7, 24.3, 35.4], [13.3, 33.0], [11.4]]
+    >>> incurred = [[62.7, 64.0, 65.6, 65.3, 62.3], [62.1, 56.7, 56.6, 56.8],
+    ...             [64.0, 61.5, 63.2], [73.9, 75.1], [77.1]]
+    >>> premium = [104.4, 88.9, 86.0, 99.3, 104.9]
+    >>> rows = [(1988 + w, 12 * (d + 1), paid[w][d], incurred[w][d], premium[w])
+    ...         for w in range(5) for d in range(len(paid[w]))]
+    >>> origin, age, pd, inc, prem = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(
+    ...     origin, age, {"paid": pd, "incurred": inc, "premium": prem})
+    >>> model = Compartmental(CompartmentalPriors.gesmann_morris(), chains=2,
+    ...                       tune=150, draws=150, target_accept=0.9, n_sims=1000)
+    >>> # Check the priors first: the mean paid of 1988 at age 60 over its premium.
+    >>> paths = model.prior_predictive(tri, "premium", n_sims=1000)
+    >>> ratio = paths["paid"].marginal(("1988", 60))
+    >>> 0.2 < ratio.quantile(0.05) / 104.4 and ratio.quantile(0.95) / 104.4 < 1.2
+    True
+    >>> with warnings.catch_warnings():
+    ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+    ...     fit = model.fit(tri, "paid", "premium", incurred="incurred")
+    >>> fit.reserves.dims, fit.parameter_names[0]
+    (['origin'], 'k_er')
+    """
+    def __new__(cls, /, priors: CompartmentalPriors, *, likelihood: str = "normal", scale: str = "amount", paid_response: str = "cumulative", fitted: str = "paid_and_outstanding", rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.99, max_depth: int = 10) -> Compartmental: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of NUTS chains.
+        """
+    @property
+    def draws(self, /) -> int:
+        """
+        Kept draws per chain.
+        """
+    def fit(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None) -> CompartmentalFit:
+        """
+        Samples the posterior of paid and outstanding of a single-segment
+        cumulative triangle, with each origin's premium from another column
+        (its latest value), and simulates the future cells of the square and
+        the reserves. Outstanding comes from ``outstanding``, a column of
+        outstanding amounts, or from ``incurred``, a column of incurred
+        amounts less paid cell by cell (the papers' outstanding on company
+        337 is incurred with bulk and IBNR less paid); give exactly one.
+        Raises one ``UserWarning`` listing the failed diagnostics and any
+        rate swap.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        paid : str
+            Cumulative paid amounts.
+        premium : str
+            The premium of each origin; the fit's origins are this column's.
+        outstanding : str, optional
+            A column of outstanding amounts.
+        incurred : str, optional
+            A column of incurred amounts.
+        
+        Returns
+        -------
+        CompartmentalFit
+        
+        Raises
+        ------
+        ValueError
+            If a setting of the model is not yet built; if not exactly one
+            of ``outstanding`` and ``incurred`` is given; if a column is
+            missing, the triangle has several segments, a premium is missing
+            or not positive, or the origin and development grains differ; if
+            a prior or sampler setting is invalid; or if there are no more
+            observed cells than parameters.
+        """
+    @property
+    def fitted(self, /) -> str:
+        """
+        The responses fitted.
+        """
+    @property
+    def likelihood(self, /) -> str:
+        """
+        The likelihood: ``"normal"`` or ``"lognormal"``.
+        """
+    @property
+    def max_depth(self, /) -> int:
+        """
+        Largest NUTS tree depth.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of predictive simulations.
+        """
+    @property
+    def paid_response(self, /) -> str:
+        """
+        The paid response: ``"cumulative"`` or ``"incremental"``.
+        """
+    def prior_predictive(self, /, triangle: Triangle, premium: str, n_sims: int = 1000) -> dict:
+        """
+        Paths of the mean outstanding and cumulative paid of each origin of
+        the premium column at each age of the square, drawn from the priors
+        alone (Gesmann and Morris, sec. 3.4): a check of a prior set before
+        fitting. The paths are means, without the likelihood's noise, which
+        under the preset's effectively flat prior on ``log sigma`` would
+        swamp them. The seed is derived from ``seed``.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        premium : str
+            The premium of each origin.
+        n_sims : int
+            Number of paths; positive.
+        
+        Returns
+        -------
+        dict
+            ``{"outstanding": PredictiveDistribution, "paid":
+            PredictiveDistribution}``, each with dimensions ``origin`` and
+            ``age`` (months).
+        
+        Raises
+        ------
+        ValueError
+            If a prior setting is invalid, ``n_sims`` is 0, the premium
+            column is missing or not positive, or the grains differ.
+        """
+    @property
+    def priors(self, /) -> CompartmentalPriors:
+        """
+        The priors.
+        """
+    @property
+    def rate_order(self, /) -> str:
+        """
+        How the rates are kept apart: ``"free"`` or ``"ordered"``.
+        """
+    @property
+    def scale(self, /) -> str:
+        """
+        The response scale: ``"amount"`` or ``"loss_ratio"``.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        Seed of the chains and of the simulations.
+        """
+    @property
+    def start(self, /) -> str:
+        """
+        Where the pilot run starts: ``"data"`` or ``"prior_centre"``.
+        """
+    @property
+    def target_accept(self, /) -> float:
+        """
+        Target mean acceptance rate.
+        """
+    @property
+    def tune(self, /) -> int:
+        """
+        Warm-up draws per chain.
+        """
+
+@final
+class CompartmentalFit:
+    """
+    A fitted ``Compartmental``: the posterior, its MCMC diagnostics, and the
+    posterior predictive distributions of the reserves and of the future
+    paid and outstanding cells, all from the same simulations.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains.
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
+        ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
+        failed threshold and one for rate swaps; empty when all is well).
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws, one row per draw (chain by chain), one column per
+        parameter in the order of ``parameter_names``.
+        """
+    @property
+    def latest_paid(self, /) -> list[float]:
+        """
+        Each origin's latest observed paid (0 with none).
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of the observed cells, outstanding cells first and then
+        paid cells, with each cell's relative efficiency from the chains.
+        The pointwise term is the full normal log density of each amount
+        (brms' ``log_lik``), so compare it only with fits of the same
+        amounts. ``loo_by_type`` splits the elpd.
+        
+        Returns
+        -------
+        Elpd
+        """
+    def loo_by_type(self, /) -> dict:
+        """
+        The elpd of ``loo`` split by type: a dict with ``n_outstanding``
+        (the number of outstanding cells, which come first in the pointwise
+        values), ``elpd_outstanding`` and ``elpd_paid``.
+        
+        Returns
+        -------
+        dict
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each component, those of the premium column.
+        """
+    @property
+    def outstanding(self, /) -> PredictiveDistribution:
+        """
+        Posterior predictive outstanding of each future cell of the square,
+        laid out as ``paid``.
+        """
+    def outstanding_frame(self, /) -> Any:
+        """
+        The same for the future outstanding cells. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def paid(self, /) -> PredictiveDistribution:
+        """
+        Posterior predictive cumulative paid of each future cell of the
+        square: dimensions ``"origin"`` and ``"age"`` (months).
+        """
+    def paid_frame(self, /) -> Any:
+        """
+        One row per future paid cell: ``origin``, ``development`` (age in
+        months), and the ``mean``, ``std_dev``, ``q05``, ``q50`` and ``q95``
+        of the posterior predictive cumulative paid. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names: ``k_er``, ``k_p``, ``RLR``, ``RRF``, ``sigma_os``,
+        ``sigma_pd``, ``RLR[o]`` and ``RRF[o]`` for each origin with an
+        observed cell, then on the scale the paper prints ``b_ker``,
+        ``b_kp``, ``b_RLR``, ``b_RRF``, ``tau_RLR``, ``tau_RRF``, ``rho``,
+        ``log_sigma_os`` and ``log_sigma_pd``.
+        """
+    @property
+    def population_origins(self, /) -> list[str]:
+        """
+        The origins with no observed cell, whose effects each simulation
+        draws from the population.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        Each origin's premium.
+        """
+    @property
+    def rate_swaps(self, /) -> int:
+        """
+        The number of posterior draws with ``k_er <= k_p`` (0 under
+        ``rate_order="ordered"``).
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of each origin's reserve, the
+        paid at the square's last age less the latest paid: dimension
+        ``"origin"``, laid out as ``OdpBootstrapFit.reserves``.
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary, one row per parameter, as ``MeyersFit.summary``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, ``premium``, ``latest_paid``, the
+        ``mean`` and ``std_dev`` of the posterior predictive reserve, and the
+        posterior mean ``ultimate_loss_ratio``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row: the total ``premium`` and ``latest_paid``, and the ``mean``
+        and ``std_dev`` of the posterior predictive total reserve. Needs
+        pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimate_loss_ratio(self, /) -> list[float]:
+        """
+        Each origin's posterior mean ultimate loss ratio ``RLR_i RRF_i``,
+        without process error past the square.
+        """
+
+@final
+class CompartmentalPriors:
+    """
+    The priors of ``Compartmental``, a required argument: the rates and
+    ratios are specific to a line and a book, so the library does not choose
+    them silently. ``CompartmentalPriors.gesmann_morris()`` is the paper's
+    case study; check any set with ``Compartmental.prior_predictive`` before
+    fitting.
+    
+    Each positive parameter ``θ`` (``k_er``, ``k_p``, ``rlr``, ``rrf``) is
+    ``median * exp(sd * o)`` with ``o ~ N(0, 1)``: a log-normal prior with
+    that median and log-scale sd, given as ``(median, sd)``. The origin
+    effects on ``RLR`` and ``RRF`` live on that ``o`` scale.
+    
+    Parameters
+    ----------
+    k_er, k_p : tuple of (float, float)
+        ``(median, sd)`` of the reporting rate and the payment rate, per year.
+    rlr, rrf : tuple of (float, float)
+        ``(median, sd)`` of the population reported loss ratio and reserve
+        robustness factor (paid over reported).
+    rlr_effect_sd, rrf_effect_sd : tuple
+        Priors on the sds of the origin effects on the ``o`` scale:
+        ``("student_t", nu, scale)`` for a half Student-t or
+        ``("normal", scale)`` for a half normal.
+    lkj_eta : float
+        LKJ shape of the correlation of the two effects (1: uniform).
+    log_sigma : sequence of two tuples
+        Priors on ``log sigma_os`` and ``log sigma_pd``, in that order, each
+        ``("student_t", nu, location, scale)`` or ``("normal", mean, sd)``.
+    
+    Raises
+    ------
+    ValueError
+        If a prior has the wrong form or a log-normal median or sd is not
+        finite and positive. The other settings are checked by the fit.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import CompartmentalPriors
+    >>> p = CompartmentalPriors.gesmann_morris()
+    >>> p.k_er, p.rlr_effect_sd, p.log_sigma[0]
+    ((3.0, 0.1), ('student_t', 10.0, 0.2), ('student_t', 1.0, 0.0, 1000.0))
+    >>> p.replace(k_er=(2.0, 0.3)).k_er
+    (2.0, 0.3)
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __new__(cls, /, *, k_er: tuple[float, float], k_p: tuple[float, float], rlr: tuple[float, float], rrf: tuple[float, float], rlr_effect_sd: tuple, rrf_effect_sd: tuple, lkj_eta: float, log_sigma: Sequence[tuple]) -> CompartmentalPriors: ...
+    def __repr__(self, /) -> str: ...
+    @staticmethod
+    def gesmann_morris() -> CompartmentalPriors:
+        """
+        Gesmann and Morris' (2020) case study, model 1: ``k_er`` (3, 0.1),
+        ``k_p`` (1, 0.1), ``rlr`` (0.7, 0.2), ``rrf`` (0.8, 0.1), half
+        Student-t(10) effect sds with scales 0.2 and 0.1, LKJ(1), and
+        Student-t(1, 0, 1000) on each ``log sigma`` (effectively flat). On
+        company 337 the data pull the rates 5 to 9 prior sds from these
+        medians: the posterior is a compromise with the preset.
+        
+        Returns
+        -------
+        CompartmentalPriors
+        """
+    @property
+    def k_er(self, /) -> tuple[float, float]:
+        """
+        ``(median, sd)`` of the reporting rate.
+        """
+    @property
+    def k_p(self, /) -> tuple[float, float]:
+        """
+        ``(median, sd)`` of the payment rate.
+        """
+    @property
+    def lkj_eta(self, /) -> float:
+        """
+        LKJ shape of the correlation of the two effects.
+        """
+    @property
+    def log_sigma(self, /) -> list[tuple]:
+        """
+        Priors on ``log sigma_os`` and ``log sigma_pd``.
+        """
+    def replace(self, /, *, k_er: tuple[float, float] |None = None, k_p: tuple[float, float] |None = None, rlr: tuple[float, float] |None = None, rrf: tuple[float, float] |None = None, rlr_effect_sd: tuple |None = None, rrf_effect_sd: tuple |None = None, lkj_eta: float |None = None, log_sigma: Sequence[tuple] |None = None) -> CompartmentalPriors:
+        """
+        A copy with the given priors replaced, each in the constructor's form.
+        
+        Returns
+        -------
+        CompartmentalPriors
+        """
+    @property
+    def rlr(self, /) -> tuple[float, float]:
+        """
+        ``(median, sd)`` of the population reported loss ratio.
+        """
+    @property
+    def rlr_effect_sd(self, /) -> tuple:
+        """
+        Prior on the sd of the origin effects on ``RLR``.
+        """
+    @property
+    def rrf(self, /) -> tuple[float, float]:
+        """
+        ``(median, sd)`` of the population reserve robustness factor.
+        """
+    @property
+    def rrf_effect_sd(self, /) -> tuple:
+        """
+        Prior on the sd of the origin effects on ``RRF``.
+        """
+
+@final
 class CompoundMoments:
     """
     Compound moments to third order, from ``compound_moments``.

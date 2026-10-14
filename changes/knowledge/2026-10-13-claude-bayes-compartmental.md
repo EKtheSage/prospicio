@@ -3,3 +3,4 @@
 * **Creation**: [The one-OS compartmental means are invariant under a rate swap](/findings/compartmental-rate-swap.md), from the same branch: only the priors separate the two modes, even with outstanding observed.
 * **Creation**: [Compartmental model 1 against the paper's code in Stan and its printed posterior](/findings/compartmental-gm1-parity.md), from the same branch: parity on company 337 at every one of 200 seeds, the tolerances and the defaults the sweep chose.
 * **Update**: [CmdStan on the local Windows machine](/environment/local-cmdstan.md), from the same branch: the compartmental reference compiles in about 2 minutes and samples in about 20.
+* **Update**: [Compartmental model 1 against the paper's code in Stan and its printed posterior](/findings/compartmental-gm1-parity.md), from the same branch: the Python and R bindings give the Rust core's posterior and reserve at seed 0 with no diagnostic warning.

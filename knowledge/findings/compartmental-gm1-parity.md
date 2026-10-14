@@ -18,6 +18,9 @@ sources:
   - id: script
     resource: ../validation/scripts/reserving_compartmental_stan.py
     title: The reference generator and its tolerances
+  - id: bindings
+    resource: ../python/tests/test_reserving_compartmental.py
+    title: The Python binding tests (R's are R/prospicio/tests/test-reserving-compartmental.R)
   - id: design
     resource: ../docs/design/reserving-compartmental.md
     title: Design note, compartmental reserving (decisions 5 and 7)
@@ -72,3 +75,8 @@ sources:
   prior centre, `o = 0`, 5 to 9 prior sds from the posterior's rates), and
   `RateOrder::Ordered` gives the same posterior means within the Stan
   rows' tolerances.[^test]
+* Through the Python and R bindings (release builds), the default fit at
+  seed 0 with 2,000 simulations passes every diagnostic and gives the Rust
+  core's posterior (`b_kp` -8.485, elpd_loo -810.7) and a total reserve of
+  173,457 (sd 10,260), against 173,390 with 10,000 simulations; it takes
+  about 5 s, and the 17 Python tests about 11 s in all.[^bindings]

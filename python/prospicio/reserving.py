@@ -3,9 +3,10 @@ model with its one-year view, the expected-loss methods, Clark's growth
 curves, and the ODP bootstrap with its simulated one-year view of the chain
 ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
 one-year views under Mack's process, and the Bayesian ODP chain ladder, the Bayesian
-Bornhuetter-Ferguson and Meyers' CRC, CSR and CAY models sampled with NUTS
+Bornhuetter-Ferguson, Meyers' CRC, CSR and CAY models and Gesmann and Morris'
+compartmental model sampled with NUTS
 (docs/design/triangle.md, docs/design/reserving-v02.md,
-docs/design/reserving-bayes.md)."""
+docs/design/reserving-bayes.md, docs/design/reserving-compartmental.md)."""
 
 from .prospicio_native import (
     BayesBf,
@@ -23,6 +24,9 @@ from .prospicio_native import (
     ClarkCapeCod,
     ClarkFit,
     ClarkLdf,
+    Compartmental,
+    CompartmentalFit,
+    CompartmentalPriors,
     ExpectedLoss,
     ExpectedLossFit,
     Mack,
@@ -70,6 +74,9 @@ __all__ = [
     "Meyers",
     "MeyersFit",
     "MeyersFits",
+    "Compartmental",
+    "CompartmentalPriors",
+    "CompartmentalFit",
     "OneYearFit",
     "TailConstant",
     "TailCurve",
