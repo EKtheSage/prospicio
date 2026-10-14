@@ -626,12 +626,14 @@ divergence, every R-hat below 1.01), and a second test does the same from
   chains of 100 warm-up and 100 kept draws (about 67 s for all of them in
   debug).
 
-Defaults: 4 chains, 1,000 tuning and 1,000 kept draws each,
-`target_accept = 0.99` (the paper's `adapt_delta`) and `max_depth = 10`
-(`Sampler::default()`, which `Meyers` also keeps, with `target_accept`
-0.95). The paper's `max_treedepth` 15 is used for the Stan reference only.
-The seed sweep (decision 7) counts draws that hit the maximum depth, and
-PR B raises the default if more than 1% do; a deeper tree is a setting.
+Defaults (as built; the **Defaults** decision above records why): 4
+chains, 1,000 tuning and 2,000 kept draws each, `target_accept = 0.99`
+(the paper's `adapt_delta`) and `max_depth = 10` (`Sampler::default()`'s
+depth, which `Meyers` also keeps, with `target_accept` 0.95). The paper's
+`max_treedepth` 15 is used for the Stan reference only. The plan was 1,000
+kept draws and a seed sweep that counts draws at the maximum depth; the
+sweep showed 1,000 kept draws too few, and it could not count tree depths
+because `prospicio-bayes` does not report them. A deeper tree is a setting.
 `n_sims = 10_000`, `seed = 0`. Seeds as
 `reserving-bayes.md` decision 5: derived streams for the chains, the pilot
 (`pilot_seed`) and the simulations, exact replay whatever the thread
@@ -708,7 +710,12 @@ pub mod bayes {
   `ultimate_loss_ratio` by origin, `to_long()`, `totals()`.
 * **`prior_predictive`** draws OS and paid paths from the priors alone,
   so a user can check a prior set before fitting, as the paper does in
-  sec. 3.4 to test identifiability.
+  sec. 3.4 to test identifiability. Under `RateOrder::Ordered` it draws
+  the rate intercepts exactly from their priors restricted to
+  `k_er > k_p` (a half-plane in their standard normals: the projection
+  across it from a truncated normal, by the inverse of its upper tail),
+  and it is `Error::Bayes` when the rate priors put less than `1e-6` of
+  their mass on `k_er > k_p`.
 * **Errors.** A missing column or premium, a non-positive premium, and a
   triangle with no outstanding cell, and a triangle where no origin has an
   observed cell, are `Error::Bayes` naming the origin or column; an origin

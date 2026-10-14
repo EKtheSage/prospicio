@@ -10,7 +10,7 @@
 //!   `scripts/reserving_compartmental_stan.py` (`scripts/stan/
 //!   compartmental_gm1.stan`, CmdStan 2.39.0, 4 chains of 25,000 draws),
 //!   rows `stan_gm1`. Our side runs the defaults with the paper's preset
-//!   (4 chains of 1,000 warm-up and 1,000 kept draws, target acceptance
+//!   (4 chains of 1,000 warm-up and 2,000 kept draws, target acceptance
 //!   0.99, 10,000 simulations, seed 0). Each tolerance is at least 4 times
 //!   our Monte Carlo error, measured per row as the seed-to-seed sd over
 //!   seeds 0 to 199 (the `seed_sweep` test below, ignored in CI); the

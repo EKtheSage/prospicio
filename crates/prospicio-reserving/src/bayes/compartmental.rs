@@ -294,6 +294,36 @@ impl CompartmentalPriors {
     }
 }
 
+/// Below this prior mass on `k_er > k_p`, [`Compartmental::prior_predictive`]
+/// under [`RateOrder::Ordered`] is an error: the restricted prior is then
+/// a sliver at the boundary rather than a prior worth checking.
+const MIN_ORDERED_MASS: f64 = 1e-6;
+
+/// The restriction `k_er > k_p` on the rate intercepts' standard normals
+/// `(b_ker, b_kp)` as `z > a`, where `z = (s_er b_ker - s_p b_kp) / s` is
+/// standard normal and `s = sqrt(s_er^2 + s_p^2)`: `(a, s)`. The priors'
+/// mass on the restriction is `Φ(-a)`.
+fn rate_order_bound(pr: CompartmentalPriors) -> (f64, f64) {
+    let (m_er, s_er) = lognormal(pr.k_er);
+    let (m_p, s_p) = lognormal(pr.k_p);
+    let s = s_er.hypot(s_p);
+    ((m_p / m_er).ln() / s, s)
+}
+
+/// The rate intercepts' standard normals `(b_ker, b_kp)` drawn exactly
+/// from their priors restricted to `k_er > k_p`, a half-plane: the
+/// projection `z` of [`rate_order_bound`] from its normal truncated to
+/// `z > a` by the inverse of the upper tail (`Φ(-z) = u Φ(-a)`, accurate
+/// however far out `a` is), and the orthogonal projection from its normal.
+fn ordered_rates(pr: CompartmentalPriors, rng: &mut StreamRng) -> (f64, f64) {
+    let (_, s_er) = lognormal(pr.k_er);
+    let (_, s_p) = lognormal(pr.k_p);
+    let (a, s) = rate_order_bound(pr);
+    let z = -norm_quantile(norm_cdf(-a) * rng.next_open01());
+    let y = norm_quantile(rng.next_open01());
+    ((s_er * z + s_p * y) / s, (s_er * y - s_p * z) / s)
+}
+
 /// `(median, sd)` of a [`PositivePrior`].
 fn lognormal(prior: PositivePrior) -> (f64, f64) {
     let PositivePrior::LogNormal { median, sd } = prior;
@@ -676,7 +706,9 @@ impl Compartmental {
     /// the likelihood's noise: the preset's prior on `log σ` is effectively
     /// flat, so its draws of `σ` would swamp them. Under
     /// [`RateOrder::Ordered`] the rate intercepts are drawn from their priors
-    /// restricted to `k_er > k_p`. The seed is the simulations' derived
+    /// restricted to `k_er > k_p`, exactly; if those priors put less than
+    /// `1e-6` of their mass on `k_er > k_p` the check is an
+    /// [`Error::Bayes`]. The seed is the simulations' derived
     /// seed of [`seed`](Self::seed).
     pub fn prior_predictive(
         &self,
@@ -691,6 +723,18 @@ impl Compartmental {
                 value: 0.0,
                 expected: "a positive number of simulations",
             });
+        }
+        if self.rate_order == RateOrder::Ordered {
+            let (a, _) = rate_order_bound(self.priors);
+            let mass = norm_cdf(-a);
+            if mass < MIN_ORDERED_MASS {
+                return Err(Error::Bayes(format!(
+                    "the rate priors give almost no mass to k_er > k_p ({mass:.1e}, \
+                     below {MIN_ORDERED_MASS:.0e}), so the prior check under \
+                     RateOrder::Ordered cannot draw from them; centre the rate \
+                     priors with k_er above k_p, or use RateOrder::Free"
+                )));
+            }
         }
         let (origins, premiums, grain) = premium_of(triangle, premium)?;
         let n = origins.len();
@@ -725,21 +769,7 @@ impl Compartmental {
                 let (m_rlr, s_rlr) = lognormal(pr.rlr);
                 let (m_rrf, s_rrf) = lognormal(pr.rrf);
                 let (b_ker, b_kp) = if ordered {
-                    // b_kp from its marginal under the restriction (by
-                    // rejection on P(k_er > k_p | b_kp)), then b_ker from
-                    // its normal truncated to k_er > k_p.
-                    let mut b_kp = normal(rng);
-                    let mut lo = ((m_p * (s_p * b_kp).exp()) / m_er).ln() / s_er;
-                    for _ in 0..1000 {
-                        if rng.next_open01() < 1.0 - norm_cdf(lo) {
-                            break;
-                        }
-                        b_kp = normal(rng);
-                        lo = ((m_p * (s_p * b_kp).exp()) / m_er).ln() / s_er;
-                    }
-                    let p_lo = norm_cdf(lo);
-                    let u = p_lo + (1.0 - p_lo) * rng.next_open01();
-                    (norm_quantile(u.min(1.0 - 1e-16)), b_kp)
+                    ordered_rates(pr, rng)
                 } else {
                     (normal(rng), normal(rng))
                 };
@@ -1870,6 +1900,7 @@ mod tests {
     use crate::bayes::laplace::tests::assert_gradient;
     use crate::triangle::Long;
     use crate::{DevelopmentColumn, Month};
+    use prospicio_math::special::norm_pdf;
 
     /// Company 337 workers' compensation, the papers' training triangle
     /// (validation/data/clrd_wkcomp_337.csv, calendar years up to 1996):
@@ -2252,6 +2283,60 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("k_er <= k_p"))
         );
+    }
+
+    #[test]
+    fn the_ordered_prior_check_keeps_the_order() {
+        let rates = |er: f64, p: f64, sd: f64| CompartmentalPriors {
+            k_er: PositivePrior::LogNormal { median: er, sd },
+            k_p: PositivePrior::LogNormal { median: p, sd },
+            ..CompartmentalPriors::gesmann_morris()
+        };
+        // The swapped priors of the_rate_swap_warns put about 1e-88 of
+        // their mass on k_er > k_p: the ordered prior check says so
+        // instead of drawing rates that break the order.
+        let swapped = rates(0.43, 1.75, 0.05);
+        let (a, _) = rate_order_bound(swapped);
+        assert!(norm_cdf(-a) < 1e-80, "{a}");
+        let e = Compartmental {
+            priors: swapped,
+            rate_order: RateOrder::Ordered,
+            ..preset()
+        }
+        .prior_predictive(&triangle(true), "premium", 100)
+        .unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(why) if why.contains("almost no mass to k_er > k_p")),
+            "{e}"
+        );
+        // About 2.2e-5 of the mass on the order (a = 4.09): every draw
+        // keeps it, and the projection's mean is the truncated normal's,
+        // φ(a) / Φ(-a), with the orthogonal one's mean 0.
+        let pr = rates(1.0, 1.75, 0.0968);
+        let (m_er, s_er) = lognormal(pr.k_er);
+        let (m_p, s_p) = lognormal(pr.k_p);
+        let (a, s) = rate_order_bound(pr);
+        let mass = norm_cdf(-a);
+        assert!((1e-6..1e-4).contains(&mass), "{mass}");
+        let mut rng = StreamRng::new(7, 0);
+        let n = 20_000;
+        let (mut z_sum, mut y_sum) = (0.0, 0.0);
+        for _ in 0..n {
+            let (b_ker, b_kp) = ordered_rates(pr, &mut rng);
+            assert!(m_er * (s_er * b_ker).exp() > m_p * (s_p * b_kp).exp());
+            z_sum += (s_er * b_ker - s_p * b_kp) / s;
+            y_sum += (s_p * b_ker + s_er * b_kp) / s;
+        }
+        let mills = norm_pdf(a) / mass;
+        // Standard errors: under 1 / (a sqrt(n)) = 0.002 for z (the
+        // truncated normal's sd is below 1 / a) and 1 / sqrt(n) = 0.007
+        // for y.
+        assert!(
+            (z_sum / n as f64 - mills).abs() < 0.01,
+            "{}",
+            z_sum / n as f64
+        );
+        assert!((y_sum / n as f64).abs() < 0.03, "{}", y_sum / n as f64);
     }
 
     #[test]
