@@ -16,6 +16,14 @@
 //! [`PredictiveDistribution`] by origin too. [`BayesOdp`] and [`Meyers`]
 //! both fit over segments and take part in the diagonal backtest.
 //!
+//! [`Compartmental`] is Gesmann and Morris' (2020) hierarchical
+//! compartmental model with one outstanding compartment
+//! (`docs/design/reserving-compartmental.md`): paid and outstanding fitted
+//! jointly from a reporting rate, a payment rate and each origin's reported
+//! loss ratio and reserve robustness factor. Its density is written once
+//! over a number type and differentiated with forward-mode dual numbers;
+//! its `reserves` are a [`PredictiveDistribution`] by origin.
+//!
 //! # Seeds
 //!
 //! One `seed` drives a fit, as in the bootstraps. The chains and the
@@ -29,7 +37,8 @@
 //! (in index order) takes tags `2 + 2k` (its chains) and `3 + 2k` (its
 //! simulations) instead, so every segment samples and simulates from its
 //! own streams and independent segments are independent (decision 11).
-//! [`Meyers`]' pilot run, which sets its sampling scale, takes stream
+//! The pilot run of [`Meyers`] and [`Compartmental`], which sets the
+//! sampling scale, takes stream
 //! `u64::MAX` of its chains' seed (the segment's, over segments), which no
 //! chain reaches.
 //!
@@ -39,6 +48,7 @@
 #[cfg(test)]
 mod autodiff;
 mod bf;
+mod compartmental;
 mod dual;
 mod laplace;
 mod meyers;
@@ -46,6 +56,11 @@ mod odp;
 mod scalar;
 
 pub use bf::{BayesBf, BayesBfFit};
+pub use compartmental::{
+    Compartmental, CompartmentalFit, CompartmentalLikelihood, CompartmentalLoo, CompartmentalPaths,
+    CompartmentalPriors, CompartmentalStart, Fitted, HalfPrior, Outstanding, PaidResponse,
+    PositivePrior, RateOrder, RealPrior, Scale,
+};
 pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};
 pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};
 
