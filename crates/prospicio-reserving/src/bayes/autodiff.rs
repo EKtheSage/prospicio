@@ -347,14 +347,18 @@ impl GenericDensity for OneOsModel2 {
 
 #[test]
 fn the_closed_form_gradient_matches_central_differences() {
-    // Through k_er = k_p exactly, within the series branch (|Δ t| < 1e-5),
-    // and away from it; the last row is the 99.9th prior percentiles.
+    // Through k_er = k_p exactly, within the series branch
+    // (|Δ t| < EXPREL_SERIES = 1e-2), just inside and just outside its edge
+    // (at t = 1), and away from it; the last row is the 99.9th prior
+    // percentiles.
     let points = [
         (1.75, 0.43),
         (3.0, 1.0),
         (1.0, 1.0),
         (1.0, 1.0 + 3e-6),
         (0.7, 0.7 - 2e-7),
+        (1.0, 1.0099),
+        (1.0, 1.0101),
         (0.5, 4.0),
         (4.09, 1.36),
     ];

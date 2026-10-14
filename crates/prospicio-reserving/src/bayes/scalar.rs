@@ -103,7 +103,7 @@ pub(crate) const EXPREL_SERIES: f64 = 1e-2;
 ///
 /// For `|x| < 1e-2` it takes the series `sum_k (-x)^k / (k + 1)!` to
 /// `k = 6`, whose value and derivative are both exact to rounding there
-/// (the first omitted terms are below `3e-19` and `2e-17`). The threshold
+/// (the first omitted terms are below `3e-19` and `2e-16`, a few eps relative). The threshold
 /// is set by the derivative, not the value: the quotient's dual derivative
 /// `(e^(-x) - f) / x` loses about `2 eps / |x|` relative, 2e-14 at 1e-2 but
 /// 3e-12 at the `1e-5` of a value-only threshold.

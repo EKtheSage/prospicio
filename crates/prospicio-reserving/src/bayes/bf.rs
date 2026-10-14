@@ -830,9 +830,6 @@ mod tests {
         }
     }
 
-    /// With a flat prior on `alpha` the mode's fitted means are the chain
-    /// ladder's (EVW, eq. 2.1-2.2 and sec. 2.3), up to the vague prior on
-    /// `beta`, which at sd 1,000 moves them by less than 1e-4.
     #[test]
     fn the_generic_density_matches_the_hand_written_one() {
         use crate::bayes::autodiff::{assert_oracle, posterior_points};
@@ -845,6 +842,9 @@ mod tests {
         }
     }
 
+    /// With a flat prior on `alpha` the mode's fitted means are the chain
+    /// ladder's (EVW, eq. 2.1-2.2 and sec. 2.3), up to the vague prior on
+    /// `beta`, which at sd 1,000 moves them by less than 1e-4.
     #[test]
     fn a_flat_prior_has_the_chain_ladder_at_its_mode() {
         let model = BayesBf {
