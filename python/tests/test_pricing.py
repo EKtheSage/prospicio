@@ -590,3 +590,23 @@ def test_payment_pattern_and_price_over_payout():
         price_over_payout(one, p)
     with pytest.raises(ValueError):
         PaymentPattern.from_development([1.0, 2.0], [2.0, 1.1])
+
+
+def test_tower_diagnostics_and_alpha_bounds():
+    # Issue #211: fits that reproduce the references can be implausible
+    # between them; diagnostics say so, and alpha bounds rein them in.
+    import math
+    from prospicio.pricing import fit_references
+
+    layers = [(1, 1, 1.706), (5, 5, 0.675), (math.inf, 10, 0.295)]
+    free = fit_references(layers, [(1, 2.8)], default_alpha=2.0)
+    d = free.diagnostics()
+    assert d["min_alpha"] < 1.0 and not d["infinite_mean"] and d["warnings"]
+    bounded = fit_references(layers, [(1, 2.8)], default_alpha=2.0, alpha_bounds=(1.2, 3.0))
+    assert bounded.layer_loss(5, 5) == pytest.approx(0.675, rel=1e-11)
+    assert bounded.layer_loss(2, 2) < free.layer_loss(2, 2)
+    with pytest.raises(ValueError, match="widen the bounds"):
+        fit_references(layers, [(1, 2.8)], alpha_bounds=(2.5, 3.0))
+    with pytest.raises(ValueError) as e:
+        fit_references([(5.0, 5.0, 3.0)], [(5.0, 0.2)])
+    assert "NaN" not in str(e.value)

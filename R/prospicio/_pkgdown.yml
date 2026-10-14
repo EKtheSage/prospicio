@@ -150,6 +150,7 @@ reference:
       - match_tower
       - fit_pml_curve
       - fit_references
+      - tower_diagnostics
       - tower_model
   - title: Credibility
     contents:

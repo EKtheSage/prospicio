@@ -1490,11 +1490,13 @@ TowerModel$excess_frequency <- function(x) .Call(wrap__TowerModel__excess_freque
 
 TowerModel$layer_loss <- function(limit, attachment) .Call(wrap__TowerModel__layer_loss, self, limit, attachment)
 
+TowerModel$diagnostics <- function(min_alpha, max_ratio) .Call(wrap__TowerModel__diagnostics, self, min_alpha, max_ratio)
+
 TowerModel$match_tower <- function(attachments, layer_losses, frequencies, rule_name) .Call(wrap__TowerModel__match_tower, attachments, layer_losses, frequencies, rule_name)
 
 TowerModel$fit_pml_curve <- function(return_periods, amounts, tail_alpha, truncation_at) .Call(wrap__TowerModel__fit_pml_curve, return_periods, amounts, tail_alpha, truncation_at)
 
-TowerModel$fit_references <- function(limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name) .Call(wrap__TowerModel__fit_references, limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name)
+TowerModel$fit_references <- function(limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name, alpha_bounds) .Call(wrap__TowerModel__fit_references, limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name, alpha_bounds)
 
 #' @export
 `$.TowerModel` <- function (self, name) { func <- TowerModel[[name]]; environment(func) <- environment(); func }

@@ -121,3 +121,10 @@
   can be joined to a book (#193). Python `PredictiveDistribution.select`, R
   `select_components()`; `Tower.apply`'s docs now warn against summing over
   `kind`.
+- Tower matching diagnostics (#211): `TowerModel::diagnostics` reports
+  alphas below a minimum, jumps between neighbouring alphas and an
+  infinite mean, and `fit_references_bounded` keeps the alpha between
+  reference points within bounds; `fit_references` no longer says
+  `references = NaN` when it refuses. Python `TowerModel.diagnostics()` and
+  `fit_references(..., alpha_bounds=)`; R `tower_diagnostics()` and
+  `fit_references(alpha_bounds =)`.

@@ -15721,6 +15721,25 @@ class TowerModel:
     a PML curve or a set of references.
     """
     def __repr__(self, /) -> str: ...
+    def diagnostics(self, /, min_alpha: float = 1.0, max_ratio: float = 2.0) -> dict:
+        """
+        Checks on the matched severity's shape. A match reproduces its
+        references exactly, but between and beyond them a piece can be
+        implausible: an alpha below ``min_alpha`` (below 1 on the last,
+        untruncated piece the mean is infinite), or neighbouring alphas more
+        than ``max_ratio`` apart.
+        
+        Parameters
+        ----------
+        min_alpha : float, default 1.0
+        max_ratio : float, default 2.0
+        
+        Returns
+        -------
+        dict
+            ``min_alpha``, ``max_alpha``, ``max_ratio``, ``infinite_mean`` and
+            ``warnings`` (a list of str, empty when the shape looks plausible).
+        """
     def excess_frequency(self, /, x: float) -> float:
         """
         Expected number of losses a year above ``x``.
@@ -17801,7 +17820,7 @@ def fit_pml_curve(return_periods: Sequence[float], amounts: Sequence[float], tai
     TowerModel
     """
 
-def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequencies: Sequence[tuple[float, float]] = ..., default_alpha: float = 2.0, rule: str = "minimize") -> TowerModel:
+def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequencies: Sequence[tuple[float, float]] = ..., default_alpha: float = 2.0, rule: str = "minimize", alpha_bounds: tuple[float, float] |None = None) -> TowerModel:
     """
     A model that reproduces every reference: expected layer losses (which
     may overlap or leave gaps) and excess frequencies.
@@ -17815,10 +17834,20 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     default_alpha : float, default 2.0
         Alpha above the highest point, unless an unlimited layer sets it.
     rule : {"minimize", "midpoint"}, default "minimize"
+    alpha_bounds : tuple of (float, float), optional
+        ``(lo, hi)``: keep the Pareto alpha between consecutive reference
+        points within these bounds. The two pieces fitted inside a limited
+        layer can still fall either side; check with
+        :meth:`TowerModel.diagnostics`.
     
     Returns
     -------
     TowerModel
+    
+    Raises
+    ------
+    ValueError
+        Inconsistent references, or bounds that leave no tower meeting them.
     
     Examples
     --------

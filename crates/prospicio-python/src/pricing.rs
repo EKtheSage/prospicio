@@ -10,6 +10,7 @@ use prospicio_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use crate::aggregate::{AnyCount, PyEventSet};
 use crate::distributions::{
@@ -194,6 +195,39 @@ impl PyTowerModel {
     /// float
     fn layer_loss(&self, limit: f64, attachment: f64) -> f64 {
         self.inner.layer_loss(limit, attachment)
+    }
+
+    /// Checks on the matched severity's shape. A match reproduces its
+    /// references exactly, but between and beyond them a piece can be
+    /// implausible: an alpha below ``min_alpha`` (below 1 on the last,
+    /// untruncated piece the mean is infinite), or neighbouring alphas more
+    /// than ``max_ratio`` apart.
+    ///
+    /// Parameters
+    /// ----------
+    /// min_alpha : float, default 1.0
+    /// max_ratio : float, default 2.0
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``min_alpha``, ``max_alpha``, ``max_ratio``, ``infinite_mean`` and
+    ///     ``warnings`` (a list of str, empty when the shape looks plausible).
+    #[pyo3(signature = (min_alpha = 1.0, max_ratio = 2.0))]
+    fn diagnostics<'py>(
+        &self,
+        py: Python<'py>,
+        min_alpha: f64,
+        max_ratio: f64,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let d = self.inner.diagnostics(min_alpha, max_ratio);
+        let out = PyDict::new(py);
+        out.set_item("min_alpha", d.min_alpha)?;
+        out.set_item("max_alpha", d.max_alpha)?;
+        out.set_item("max_ratio", d.max_ratio)?;
+        out.set_item("infinite_mean", d.infinite_mean)?;
+        out.set_item("warnings", d.warnings)?;
+        Ok(out)
     }
 
     fn __repr__(&self) -> String {
@@ -489,10 +523,20 @@ pub(crate) fn fit_pml_curve(
 /// default_alpha : float, default 2.0
 ///     Alpha above the highest point, unless an unlimited layer sets it.
 /// rule : {"minimize", "midpoint"}, default "minimize"
+/// alpha_bounds : tuple of (float, float), optional
+///     ``(lo, hi)``: keep the Pareto alpha between consecutive reference
+///     points within these bounds. The two pieces fitted inside a limited
+///     layer can still fall either side; check with
+///     :meth:`TowerModel.diagnostics`.
 ///
 /// Returns
 /// -------
 /// TowerModel
+///
+/// Raises
+/// ------
+/// ValueError
+///     Inconsistent references, or bounds that leave no tower meeting them.
 ///
 /// Examples
 /// --------
@@ -501,13 +545,14 @@ pub(crate) fn fit_pml_curve(
 /// >>> round(m.layer_loss(3000.0, 1500.0), 6)
 /// 160.0
 #[pyfunction]
-#[pyo3(signature = (layers = Vec::new(), frequencies = Vec::new(), default_alpha = 2.0, rule = "minimize"))]
+#[pyo3(signature = (layers = Vec::new(), frequencies = Vec::new(), default_alpha = 2.0, rule = "minimize", alpha_bounds = None))]
 pub(crate) fn fit_references(
     py: Python<'_>,
     layers: Vec<(f64, f64, f64)>,
     frequencies: Vec<(f64, f64)>,
     default_alpha: f64,
     rule: &str,
+    alpha_bounds: Option<(f64, f64)>,
 ) -> PyResult<PyTowerModel> {
     let rule = self::rule(rule)?;
     let mut refs = Vec::with_capacity(layers.len() + frequencies.len());
@@ -524,7 +569,14 @@ pub(crate) fn fit_references(
         });
     }
     let inner = py
-        .detach(|| prospicio_pricing::tower::fit_references(&refs, default_alpha, rule))
+        .detach(|| {
+            prospicio_pricing::tower::fit_references_bounded(
+                &refs,
+                default_alpha,
+                rule,
+                alpha_bounds,
+            )
+        })
         .map_err(to_py)?;
     Ok(PyTowerModel { inner })
 }
