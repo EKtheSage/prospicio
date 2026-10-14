@@ -34,4 +34,4 @@
   loss rate, by the cepstral Wiener–Hopf factorization of the claim walk
   (`prospicio_aggregate::ruin::wiener_hopf`, returning `RenewalRuin`),
   matching `aggregate` 1.0.1's `wiener_hopf`. Python `wiener_hopf`; R
-  `wiener_hopf()`.
+  `wiener_hopf()` (#237).
