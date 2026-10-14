@@ -75,6 +75,7 @@ reference:
       - occurrence_pml
       - compound_moments
       - eventual_ruin
+      - wiener_hopf
       - layer_loss_picks
       - fft_bivariate
       - copula_severity

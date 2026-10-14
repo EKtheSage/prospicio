@@ -482,6 +482,28 @@ def test_eventual_ruin():
         eventual_ruin(sev, rho=0.0)
 
 
+
+def test_wiener_hopf():
+    from prospicio.aggregate import wiener_hopf
+    from prospicio.distributions import Gamma, Grid
+
+    # Claims of 1, 2 or 3 after gamma waits (shape 2); aggregate 1.0.1's
+    # wiener_hopf at rho 0.1 on the same grid.
+    sev = Grid(1.0, [0.0, 0.5, 0.3, 0.2] + [0.0] * 1020)
+    ruin = wiener_hopf(sev, Gamma(2.0, 1.0), rho=0.1)
+    assert ruin.psi_at(10.0) == pytest.approx(0.1973674584712206, abs=1e-10)
+    assert ruin.capital(0.01) == 31.0
+    assert ruin.premium_rate == pytest.approx(1.1 * 1.7 / 2.0)
+    assert ruin.mean_step < 0.0
+    assert len(ruin.maximum) == len(ruin.psi) == 1024
+    same = wiener_hopf(sev, Gamma(2.0, 1.0), loss_ratio=1 / 1.1)
+    assert same.psi == pytest.approx(ruin.psi, abs=1e-14)
+    with pytest.raises(ValueError):
+        wiener_hopf(sev, Gamma(2.0, 1.0), rho=0.0)
+    with pytest.raises(ValueError):
+        wiener_hopf(sev, Gamma(2.0, 1.0), rho=0.1, points=8)
+
+
 def test_clash():
     from prospicio.aggregate import Clash, JointGrid, fft_bivariate
     from prospicio.distributions import Grid, NegativeBinomial, Poisson

@@ -46,5 +46,5 @@ pub use reinsurance::{
     Basis, Commission, Corridor, Layer, LossSensitivePremium, ProfitCommission, Tower,
 };
 pub use renewal::{RenewalCount, Wait, WaitGrid, renewal_count};
-pub use ruin::{Ruin, SeverityPart, pollaczeck_khinchine};
+pub use ruin::{RenewalRuin, Ruin, SeverityPart, pollaczeck_khinchine, wiener_hopf};
 pub use sizing::{GridSize, Sizing, SizingMethod, fft_auto, recommend_grid, round_bucket};

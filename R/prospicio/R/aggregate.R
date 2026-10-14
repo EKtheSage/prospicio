@@ -204,6 +204,53 @@ eventual_ruin <- function(severity, rho = NULL, loss_ratio = NULL, p = numeric()
   )
 }
 
+#' Eventual ruin for renewal claims by Wiener-Hopf
+#'
+#' The probability `psi(u)` of eventual ruin from initial surplus `u` when
+#' the waits between claims follow any law (a renewal, or Sparre Andersen,
+#' process), as the Python package `aggregate`'s `wiener_hopf`: claims of
+#' this severity, waits drawn from `wait`, and the premium at the rate
+#' `(1 + rho) E[X] / E[W]`. Ruin comes at a claim, so `psi(u)` is the
+#' chance that the walk with steps `X - cW` ever rises above `u`, found by
+#' the cepstral Wiener-Hopf factorization. Exponential waits give
+#' [eventual_ruin()].
+#'
+#' @param severity A [grid_distribution].
+#' @param wait A distribution: the wait between claims, with a finite mean.
+#' @param rho The margin to loss, positive. Or give `loss_ratio`.
+#' @param loss_ratio `1 / (1 + rho)`, in `(0, 1)`.
+#' @param p Ruin probabilities at which to find the capital.
+#' @param points Grid points for `psi`, at least the severity's (the
+#'   default); raise it when `psi` at the last point is not small.
+#' @returns A list: `psi`, a data frame of `u`, `psi` and `maximum` (the
+#'   probabilities of the claim walk's all-time maximum) on the grid;
+#'   `capital` and `capital_interpolated` at each `p` (`NA` where the grid
+#'   does not reach it); `premium_rate`, `severity_mean` and `mean_step`
+#'   (the grid's mean step of the walk, negative).
+#' @export
+#' @examples
+#' sev <- discretize(gamma_from_mean_cv(10, 0.3), step = 1 / 32, points = 2^14, method = "rounding")
+#' # Gamma waits (shape 2) are more regular than Poisson arrivals.
+#' wh <- wiener_hopf(sev, gamma_distribution(2, 1), rho = 0.2, p = 0.01)
+#' pk <- eventual_ruin(sev, rho = 0.2, p = 0.01)
+#' c(wh$capital, pk$capital)
+wiener_hopf <- function(severity, wait, rho = NULL, loss_ratio = NULL, p = numeric(), points = NULL) {
+  if (is.null(rho) == is.null(loss_ratio)) stop("give exactly one of rho and loss_ratio")
+  if (is.null(rho)) {
+    if (!(loss_ratio > 0 && loss_ratio < 1)) stop("the loss ratio must be in (0, 1)")
+    rho <- 1 / loss_ratio - 1
+  }
+  r <- rust_result(wiener_hopf_rust(
+    severity@ptr, wait@ptr, as.double(rho), as.double(if (is.null(points)) 0 else points),
+    as.double(p)
+  ))
+  list(
+    psi = data.frame(u = r$u, psi = r$psi, maximum = r$maximum), capital = r$capital,
+    capital_interpolated = r$capital_interpolated, premium_rate = r$premium_rate,
+    severity_mean = r$severity_mean, mean_step = r$mean_step
+  )
+}
+
 #' Two lines hit by the same events, and clash
 #'
 #' `fft_bivariate()` gives the joint annual loss `(A, B)` of two lines hit by

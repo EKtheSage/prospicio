@@ -1350,6 +1350,171 @@ pub(crate) fn eventual_ruin(
     Ok(PyRuin { inner })
 }
 
+/// The probability of eventual ruin at each initial surplus on the grid
+/// when the waits between claims follow any law, by Wiener–Hopf, from
+/// ``wiener_hopf``.
+#[pyclass(name = "RenewalRuin", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyRenewalRuin {
+    inner: prospicio_aggregate::RenewalRuin,
+}
+
+#[pymethods]
+impl PyRenewalRuin {
+    /// The margin ``rho``.
+    #[getter]
+    fn rho(&self) -> f64 {
+        self.inner.rho()
+    }
+
+    /// The premium rate ``c = (1 + rho) E[X] / E[W]``.
+    #[getter]
+    fn premium_rate(&self) -> f64 {
+        self.inner.premium_rate()
+    }
+
+    /// The initial surplus at each grid point.
+    #[getter]
+    fn u(&self) -> Vec<f64> {
+        let h = self.inner.step();
+        (0..self.inner.psi().len()).map(|j| j as f64 * h).collect()
+    }
+
+    /// ``psi(u)`` at each grid point; the last shows the mass beyond the
+    /// grid.
+    #[getter]
+    fn psi(&self) -> Vec<f64> {
+        self.inner.psi().to_vec()
+    }
+
+    /// The probabilities of the claim walk's all-time maximum at each grid
+    /// point.
+    #[getter]
+    fn maximum(&self) -> Vec<f64> {
+        self.inner.maximum().to_vec()
+    }
+
+    /// ``psi(u)`` at any initial surplus (constant between grid points).
+    ///
+    /// Parameters
+    /// ----------
+    /// u : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn psi_at(&self, u: f64) -> f64 {
+        self.inner.psi_at(u)
+    }
+
+    /// The initial surplus for ruin probability ``p``: the smallest grid
+    /// point with ``psi(u) < p``, or linear between grid points.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    /// interpolate : bool, default False
+    ///
+    /// Returns
+    /// -------
+    /// float or None
+    ///     None when the grid does not reach it.
+    #[pyo3(signature = (p, interpolate=false))]
+    fn capital(&self, p: f64, interpolate: bool) -> Option<f64> {
+        if interpolate {
+            self.inner.capital_interpolated(p)
+        } else {
+            self.inner.capital(p)
+        }
+    }
+
+    /// The severity's mean on the grid.
+    #[getter]
+    fn severity_mean(&self) -> f64 {
+        self.inner.severity_mean()
+    }
+
+    /// The grid's mean step of the claim walk ``X - cW``, negative.
+    #[getter]
+    fn mean_step(&self) -> f64 {
+        self.inner.mean_step()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "RenewalRuin(rho={}, psi(0)={:.6}, points={})",
+            self.inner.rho(),
+            self.inner.psi()[0],
+            self.inner.psi().len()
+        )
+    }
+}
+
+/// The probability of eventual ruin when the waits between claims follow
+/// any law (a renewal, or Sparre Andersen, process), as ``aggregate``'s
+/// ``wiener_hopf``: claims of this severity, waits drawn from ``wait``,
+/// and the premium at the rate ``(1 + rho) E[X] / E[W]``. Ruin comes at a
+/// claim, so ``psi(u)`` is the chance that the walk with steps ``X - cW``
+/// ever rises above ``u``, found by the cepstral Wiener–Hopf
+/// factorization. Exponential waits give ``eventual_ruin``.
+///
+/// Parameters
+/// ----------
+/// severity : Grid
+/// wait : distribution
+///     The law of the wait between claims, with a finite mean.
+/// rho : float, optional
+///     The margin to loss, positive. Or give ``loss_ratio``.
+/// loss_ratio : float, optional
+///     ``1 / (1 + rho)``, in (0, 1).
+/// points : int, optional
+///     Grid points for ``psi``, at least the severity's (the default).
+///     Raise it when ``psi`` at the last point is not small.
+///
+/// Returns
+/// -------
+/// RenewalRuin
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import eventual_ruin, wiener_hopf
+/// >>> from prospicio.distributions import Gamma, Grid
+/// >>> sev, _ = Grid.rounding(Gamma.from_mean_cv(10.0, 0.3), 1 / 32, 1 << 14)
+/// >>> # Gamma waits (shape 2) are more regular than Poisson arrivals.
+/// >>> wh = wiener_hopf(sev, Gamma(2.0, 1.0), rho=0.2)
+/// >>> pk = eventual_ruin(sev, rho=0.2)
+/// >>> wh.psi_at(50.0) < pk.psi_at(50.0)
+/// True
+#[pyfunction]
+#[pyo3(signature = (severity, wait, rho=None, *, loss_ratio=None, points=None))]
+pub(crate) fn wiener_hopf(
+    severity: PyRef<'_, PyGrid>,
+    wait: &Bound<'_, PyAny>,
+    rho: Option<f64>,
+    loss_ratio: Option<f64>,
+    points: Option<usize>,
+) -> PyResult<PyRenewalRuin> {
+    use pyo3::exceptions::PyValueError;
+    let rho = match (rho, loss_ratio) {
+        (Some(r), None) => r,
+        (None, Some(lr)) if lr > 0.0 && lr < 1.0 => 1.0 / lr - 1.0,
+        (None, Some(lr)) => {
+            return Err(PyValueError::new_err(format!(
+                "the loss ratio must be in (0, 1), not {lr}"
+            )));
+        }
+        _ => {
+            return Err(PyValueError::new_err(
+                "give exactly one of rho and loss_ratio",
+            ));
+        }
+    };
+    let wait = crate::distributions::extract_dist(wait)?;
+    let points = points.unwrap_or(severity.inner.len());
+    let inner =
+        prospicio_aggregate::wiener_hopf(&severity.inner, &wait, rho, points).map_err(to_py)?;
+    Ok(PyRenewalRuin { inner })
+}
+
 /// A severity reshaped to layer loss picks, from ``layer_loss_picks``.
 #[pyclass(name = "Picks", module = "prospicio.aggregate", frozen)]
 pub(crate) struct PyPicks {

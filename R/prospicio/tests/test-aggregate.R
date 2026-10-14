@@ -271,6 +271,12 @@ stopifnot(max(abs(same$psi$psi - ruin$psi$psi)) < 1e-14)
 stopifnot(abs(eventual_ruin(sev3, rho = 0.1, cap = 2)$severity_mean - 1.1 / 0.8) < 1e-12)
 stopifnot(inherits(try(eventual_ruin(sev3, rho = 0.1, cap = 2, excess = 1), silent = TRUE), "try-error"))
 stopifnot(inherits(try(eventual_ruin(sev3, rho = 0), silent = TRUE), "try-error"))
+# Wiener-Hopf: the same claims after gamma waits (shape 2), against
+# aggregate 1.0.1's wiener_hopf at rho 0.1.
+wh <- wiener_hopf(sev3, gamma_distribution(2, 1), rho = 0.1, p = 0.01)
+stopifnot(abs(wh$psi$psi[wh$psi$u == 10] - 0.1973674584712206) < 1e-10, wh$capital == 31)
+stopifnot(abs(wh$premium_rate - 1.1 * 1.7 / 2) < 1e-12, wh$mean_step < 0)
+stopifnot(inherits(try(wiener_hopf(sev3, gamma_distribution(2, 1), rho = 0), silent = TRUE), "try-error"))
 # Clash against aggregate 1.0.1: clash C 2 3 1 claims dsev [1 2] [.5 .5]
 # dsev [1] poisson, bs 1 and log2 (7, 7).
 clash <- clash_model(2, 3, 1)

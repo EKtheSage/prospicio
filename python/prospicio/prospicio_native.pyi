@@ -13341,6 +13341,79 @@ class RateLevel:
         """
 
 @final
+class RenewalRuin:
+    """
+    The probability of eventual ruin at each initial surplus on the grid
+    when the waits between claims follow any law, by Wiener–Hopf, from
+    ``wiener_hopf``.
+    """
+    def __repr__(self, /) -> str: ...
+    def capital(self, /, p: float, interpolate: bool = False) -> float |None:
+        """
+        The initial surplus for ruin probability ``p``: the smallest grid
+        point with ``psi(u) < p``, or linear between grid points.
+        
+        Parameters
+        ----------
+        p : float
+        interpolate : bool, default False
+        
+        Returns
+        -------
+        float or None
+            None when the grid does not reach it.
+        """
+    @property
+    def maximum(self, /) -> list[float]:
+        """
+        The probabilities of the claim walk's all-time maximum at each grid
+        point.
+        """
+    @property
+    def mean_step(self, /) -> float:
+        """
+        The grid's mean step of the claim walk ``X - cW``, negative.
+        """
+    @property
+    def premium_rate(self, /) -> float:
+        """
+        The premium rate ``c = (1 + rho) E[X] / E[W]``.
+        """
+    @property
+    def psi(self, /) -> list[float]:
+        """
+        ``psi(u)`` at each grid point; the last shows the mass beyond the
+        grid.
+        """
+    def psi_at(self, /, u: float) -> float:
+        """
+        ``psi(u)`` at any initial surplus (constant between grid points).
+        
+        Parameters
+        ----------
+        u : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def rho(self, /) -> float:
+        """
+        The margin ``rho``.
+        """
+    @property
+    def severity_mean(self, /) -> float:
+        """
+        The severity's mean on the grid.
+        """
+    @property
+    def u(self, /) -> list[float]:
+        """
+        The initial surplus at each grid point.
+        """
+
+@final
 class RiskProfile:
     """
     A risk profile for property per-risk business: bands of sum insured,
@@ -17731,6 +17804,45 @@ def trended_present_rates(prior_indicated: float, prior_implemented: float, tren
     >>> c = trended_present_rates(0.10, 0.06, trend_factor(0.05, 2.0))
     >>> round(200 * (1 + c), 2)
     228.82
+    """
+
+def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None) -> RenewalRuin:
+    """
+    The probability of eventual ruin when the waits between claims follow
+    any law (a renewal, or Sparre Andersen, process), as ``aggregate``'s
+    ``wiener_hopf``: claims of this severity, waits drawn from ``wait``,
+    and the premium at the rate ``(1 + rho) E[X] / E[W]``. Ruin comes at a
+    claim, so ``psi(u)`` is the chance that the walk with steps ``X - cW``
+    ever rises above ``u``, found by the cepstral Wiener–Hopf
+    factorization. Exponential waits give ``eventual_ruin``.
+    
+    Parameters
+    ----------
+    severity : Grid
+    wait : distribution
+        The law of the wait between claims, with a finite mean.
+    rho : float, optional
+        The margin to loss, positive. Or give ``loss_ratio``.
+    loss_ratio : float, optional
+        ``1 / (1 + rho)``, in (0, 1).
+    points : int, optional
+        Grid points for ``psi``, at least the severity's (the default).
+        Raise it when ``psi`` at the last point is not small.
+    
+    Returns
+    -------
+    RenewalRuin
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import eventual_ruin, wiener_hopf
+    >>> from prospicio.distributions import Gamma, Grid
+    >>> sev, _ = Grid.rounding(Gamma.from_mean_cv(10.0, 0.3), 1 / 32, 1 << 14)
+    >>> # Gamma waits (shape 2) are more regular than Poisson arrivals.
+    >>> wh = wiener_hopf(sev, Gamma(2.0, 1.0), rho=0.2)
+    >>> pk = eventual_ruin(sev, rho=0.2)
+    >>> wh.psi_at(50.0) < pk.psi_at(50.0)
+    True
     """
 
 def year_fraction(year: int, month: int, day: int) -> float:

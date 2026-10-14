@@ -1,7 +1,8 @@
 """Aggregate loss: compound distributions by Panjer and FFT, and simulated
 events, the occurrence exceedance (OEP) curve, compound moments to third
 order with the approximations fitted to them, eventual ruin by the
-Pollaczeck–Khinchine formula, a severity reshaped to layer loss picks, and a catastrophe model's
+Pollaczeck–Khinchine formula and, for renewal claims, by Wiener–Hopf
+(wiener_hopf), a severity reshaped to layer loss picks, and a catastrophe model's
 event loss table with secondary uncertainty (EventLossTable), and two lines hit by
 the same events: their joint loss by a 2-D FFT (fft_bivariate, JointGrid) and the
 clash model (Clash). Layers and towers are in
@@ -19,6 +20,7 @@ from .prospicio_native import (
     JointGrid,
     OccurrencePml,
     Picks,
+    RenewalRuin,
     Ruin,
     compound_moments,
     eventual_ruin,
@@ -32,6 +34,7 @@ from .prospicio_native import (
     recommend_grid,
     round_bucket,
     simulate_events,
+    wiener_hopf,
 )
 
 __all__ = [
@@ -53,6 +56,8 @@ __all__ = [
     "Approximation",
     "eventual_ruin",
     "Ruin",
+    "wiener_hopf",
+    "RenewalRuin",
     "layer_loss_picks",
     "Picks",
     "fft_bivariate",
