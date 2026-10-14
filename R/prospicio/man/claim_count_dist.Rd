@@ -8,6 +8,7 @@
 \alias{mixed_poisson_count}
 \alias{compound_poisson_count}
 \alias{empirical_count}
+\alias{renewal_count}
 \alias{fixed_count}
 \alias{bernoulli_count}
 \alias{geometric_count}
@@ -32,6 +33,8 @@ compound_poisson_count(rate, secondary)
 
 empirical_count(probs)
 
+renewal_count(wait, horizon, step = NULL, points = NULL, closed = FALSE)
+
 fixed_count(n)
 
 bernoulli_count(p)
@@ -55,6 +58,14 @@ probability, in \verb{[0, 1)}.}
 \item{rate}{The Poisson rate of clusters.}
 
 \item{probs}{Probabilities of \verb{0, 1, ...}, summing to 1.}
+
+\item{wait}{A distribution, or \code{list(values, probs)}.}
+
+\item{horizon}{The period, in the wait's units.}
+
+\item{step, points}{The wait grid; \code{NULL} for \code{aggregate}'s.}
+
+\item{closed}{Whether waits summing to \code{horizon} count in full.}
 
 \item{n}{The fixed number of claims.}
 }
@@ -81,6 +92,14 @@ Variance \verb{mean + mean^2 cv^2}.
 \item \code{compound_poisson_count()}: a Poisson(\code{rate}) number of clusters of
 \code{secondary} claims (Poisson secondaries give the Neyman type A).
 \item \code{empirical_count()}: \code{P(N = k) = probs[k + 1]}.
+\item \code{renewal_count()}: the number of claims by \code{horizon} when the waits
+between claims are independent draws from \code{wait} (a renewal, or
+Sparre Andersen, count; \code{aggregate}'s \verb{years ... wait ...}).
+Exponential waits give the Poisson. The wait is a distribution, or
+\code{list(values, probs)} of waits and their probabilities, which may sum
+to less than 1 (the process then ends). Waits of zero arrive in
+clusters. The wait grid is \code{aggregate}'s unless \code{step} and \code{points}
+are given; \code{closed} counts waits summing to exactly \code{horizon} in full.
 \item \code{fixed_count()}: \code{N = n}; \code{bernoulli_count()}: one claim with
 probability \code{p} in \verb{[0, 1)}; \code{geometric_count()}: \code{P(N = k) = q (1 - q)^k}
 on \verb{0, 1, ...} with \code{q = 1 / (1 + mean)}, a negative binomial with
@@ -96,4 +115,5 @@ pmf(zt, 0:3)
 pig <- mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian")
 variance(pig) # 10 + 100 * 0.25
 compound_distribution(pig, grid_distribution(1, c(0.2, 0.5, 0.3)), 200, method = "fft")
+pmf(renewal_count(gamma_distribution(2, 1), 5), 0) # the first wait beyond 5: 6 exp(-5)
 }

@@ -1,0 +1,310 @@
+case,horizon,quantity,arg,expected,abs_tol,rel_tol,source
+expon,10.0,step,,3.1789143880208335e-06,0.0,1e-14,aggregate 1.0.1
+expon,10.0,points,,4194304.0,0.0,0.0,aggregate 1.0.1
+expon,10.0,closed,,0.0,0.0,0.0,aggregate 1.0.1
+expon,10.0,p0,,0.0,1e-15,0.0,aggregate 1.0.1
+expon,10.0,defect,,0.0,1e-15,0.0,aggregate 1.0.1
+expon,10.0,kmax,,52.0,0.0,0.0,aggregate 1.0.1
+expon,10.0,p,0,4.5406078427290275e-05,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,1,0.00045399364594989056,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,2,0.002269995877340336,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,3,0.007566655064010663,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,4,0.01891663740570948,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,5,0.03783327478879528,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,6,0.06305545797886225,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,7,0.09007922566979687,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,8,0.11259903206661193,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,9,0.12511003559936995,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,10,0.12511003555963818,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,11,0.11373639591619789,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,12,0.09478032987988771,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,13,0.07290794601352146,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,14,0.05207710425576362,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,15,0.03471806947802385,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,16,0.021698793415940637,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,17,0.012763996139680288,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,18,0.007091109000227378,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,19,0.003732162685296147,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,20,0.0018660814132895056,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,21,0.0008886102804457146,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,22,0.0004039138556714815,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,23,0.00017561481483084173,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,24,7.31729328542181e-05,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,25,2.9269260796826863e-05,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,26,1.1257486938828522e-05,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,27,4.169507962676834e-06,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,28,1.489167014481645e-06,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,29,5.135517812703222e-07,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,30,1.7121965136923452e-07,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,31,5.525904053560864e-08,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,32,1.7288063426919067e-08,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,33,5.2526760185104964e-09,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,34,1.5544229730310792e-09,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,35,4.504665004587967e-10,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,36,1.2924255851074849e-10,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,37,3.752420844680014e-11,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,38,1.1467474837745728e-11,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,39,3.893267870274368e-12,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,40,1.52917012057808e-12,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,41,6.893078172281551e-13,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,42,3.398651989110558e-13,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,43,1.744036017921185e-13,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,44,9.020966909152052e-14,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,45,4.626939378531219e-14,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,46,2.3360007059818568e-14,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,47,1.1573784932884243e-14,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,48,5.6212874072289596e-15,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,49,2.675821901770759e-15,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,50,1.2485277540159793e-15,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,51,5.711899331434914e-16,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,52,2.56300683195101e-16,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,step,,6.357828776041667e-06,0.0,1e-14,aggregate 1.0.1
+gamma,5.0,points,,1048576.0,0.0,0.0,aggregate 1.0.1
+gamma,5.0,closed,,0.0,0.0,0.0,aggregate 1.0.1
+gamma,5.0,p0,,0.0,1e-15,0.0,aggregate 1.0.1
+gamma,5.0,defect,,0.0,1e-15,0.0,aggregate 1.0.1
+gamma,5.0,kmax,,23.0,0.0,0.0,aggregate 1.0.1
+gamma,5.0,p,0,0.04042768098692384,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,1,0.2245982342314924,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,2,0.3509347391405271,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,3,0.25066767060883155,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,4,0.10154361659867286,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,5,0.026374965607261575,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,6,0.004755102290283697,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,7,0.0006289820264010653,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,8,6.359206688582005e-05,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,9,5.071195427735805e-06,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,10,3.2703162217187023e-07,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,11,1.74063114798282e-08,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,12,7.784420202330158e-10,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,13,2.985164118101468e-11,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,14,1.026110301286265e-12,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,15,3.682296863540309e-14,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,16,1.9481797189125115e-15,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,17,1.659509240179122e-16,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,18,1.63662121170847e-17,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,19,1.541649473581879e-18,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,20,1.3264379487030262e-19,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,21,1.0374270665814624e-20,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,22,7.397358806798707e-22,1e-8,0.0,aggregate 1.0.1
+gamma,5.0,p,23,4.830308674127953e-23,1e-8,0.0,aggregate 1.0.1
+determin,3.0,step,,1.0,0.0,1e-14,aggregate 1.0.1
+determin,3.0,points,,8.0,0.0,0.0,aggregate 1.0.1
+determin,3.0,closed,,1.0,0.0,0.0,aggregate 1.0.1
+determin,3.0,p0,,0.0,1e-15,0.0,aggregate 1.0.1
+determin,3.0,defect,,0.0,1e-15,0.0,aggregate 1.0.1
+determin,3.0,kmax,,13.0,0.0,0.0,aggregate 1.0.1
+determin,3.0,p,0,1.2323475573339238e-14,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,1,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,2,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,3,1.0000000000000002,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,4,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,5,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,6,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,7,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,8,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,9,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,10,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,11,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,12,0.0,1e-8,0.0,aggregate 1.0.1
+determin,3.0,p,13,0.0,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,step,,1.0,0.0,1e-14,aggregate 1.0.1
+cluster,2.0,points,,8.0,0.0,0.0,aggregate 1.0.1
+cluster,2.0,closed,,1.0,0.0,0.0,aggregate 1.0.1
+cluster,2.0,p0,,0.5,1e-15,0.0,aggregate 1.0.1
+cluster,2.0,defect,,0.0,1e-15,0.0,aggregate 1.0.1
+cluster,2.0,kmax,,12.0,0.0,0.0,aggregate 1.0.1
+cluster,2.0,p,0,0.0,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,1,1.6653345369377353e-16,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,2,0.12500000000000014,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,3,0.1875000000000002,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,4,0.18750000000000008,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,5,0.15624999999999997,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,6,0.11718750000000004,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,7,0.08203125000000003,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,8,0.05468750000000002,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,9,0.035156250000000014,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,10,0.021972656250000024,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,11,0.013427734374999995,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,12,0.008056640625000016,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,13,0.004760742187500001,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,14,0.0027770996093750048,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,15,0.0016021728515625007,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,16,0.0009155273437500009,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,17,0.000518798828125001,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,18,0.0002918243408203124,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,19,0.0001630783081054689,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,20,9.059906005859367e-05,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,21,5.00679016113281e-05,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,22,2.7537345886230523e-05,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,23,1.5079975128173816e-05,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,24,8.22544097900391e-06,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,25,4.470348358154305e-06,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,26,2.4214386940002446e-06,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,27,1.3075768947601335e-06,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,28,7.040798664093021e-07,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,29,3.781169652938841e-07,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,30,2.0256265997886647e-07,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,31,1.0826624929904956e-07,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,32,5.774199962615957e-08,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,33,3.073364496231089e-08,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,34,1.6327248886227565e-08,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,35,8.658389560878252e-09,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,36,4.583853296935549e-09,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,37,2.4228938855230775e-09,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,38,1.2787495506927326e-09,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,39,6.739355740137426e-10,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,40,3.5470293369144124e-10,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,41,1.8644641386345013e-10,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,42,9.788436727831126e-11,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,43,5.1329607231309515e-11,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,44,2.688693712116218e-11,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,45,1.4068746168049943e-11,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,46,7.354117315117068e-12,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,47,3.840483486783337e-12,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,48,2.0037305148434765e-12,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,49,1.0444978215673473e-12,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,50,5.440092820663276e-13,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,51,2.8310687127941653e-13,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,52,1.4721557306529583e-13,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,53,7.649436639667363e-14,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,54,3.971822870596513e-14,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,55,2.060851489460445e-14,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,56,1.068589661201716e-14,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,57,5.537237335317938e-15,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,58,2.8674979057896665e-15,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,59,1.484055933698164e-15,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,60,7.676151381197351e-16,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,61,3.968179951296947e-16,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,62,2.0502263081700943e-16,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,63,1.0587234214321e-16,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,64,5.4643789493269294e-17,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,65,2.818925648462309e-17,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,66,1.453508537488376e-17,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,67,7.491159385516986e-18,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,68,3.859082107690592e-18,1e-8,0.0,aggregate 1.0.1
+cluster,2.0,p,69,1.9871392942585886e-18,1e-8,0.0,aggregate 1.0.1
+defective,2.0,step,,1.0,0.0,1e-14,aggregate 1.0.1
+defective,2.0,points,,8.0,0.0,0.0,aggregate 1.0.1
+defective,2.0,closed,,1.0,0.0,0.0,aggregate 1.0.1
+defective,2.0,p0,,0.0,1e-15,0.0,aggregate 1.0.1
+defective,2.0,defect,,0.09999999999999998,1e-15,0.0,aggregate 1.0.1
+defective,2.0,kmax,,15.0,0.0,0.0,aggregate 1.0.1
+defective,2.0,p,0,0.09999999999999987,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,1,0.7400000000000002,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,2,0.15999999999999998,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,3,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,4,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,5,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,6,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,7,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,8,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,9,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,10,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,11,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,12,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,13,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,14,0.0,1e-8,0.0,aggregate 1.0.1
+defective,2.0,p,15,0.0,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,step,,3.1789143880208335e-06,0.0,1e-14,aggregate 1.0.1
+mixture,5.0,points,,2097152.0,0.0,0.0,aggregate 1.0.1
+mixture,5.0,closed,,0.0,0.0,0.0,aggregate 1.0.1
+mixture,5.0,p0,,0.0,1e-15,0.0,aggregate 1.0.1
+mixture,5.0,defect,,0.0,1e-15,0.0,aggregate 1.0.1
+mixture,5.0,kmax,,53.0,0.0,0.0,aggregate 1.0.1
+mixture,5.0,p,0,0.000122049591703699,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,1,0.0008082179349662155,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,2,0.0031898833831156548,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,3,0.009173723900402275,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,4,0.020856829708691293,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,5,0.03923853501157737,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,6,0.06294085404283578,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,7,0.08794641985585372,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,8,0.10879947806478185,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,9,0.12070281549316775,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,10,0.12133668482078264,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,11,0.11147460695800326,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,12,0.09427650860389081,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,13,0.07384983196628292,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,14,0.05386704878177295,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,15,0.0367568294291698,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,16,0.023559447982735578,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,17,0.014235540629613873,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,18,0.008135140406566724,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,19,0.004409561868269074,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,20,0.0022730009048240038,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,21,0.0011168797749061662,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,22,0.0005242677527850527,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,23,0.00023555756049993085,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,24,0.00010149046391385257,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,25,4.2001322146905594e-05,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,26,1.6721714779779308e-05,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,27,6.413589635614095e-06,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,28,2.373036414882547e-06,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,29,8.480778500748798e-07,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,30,2.9309913520969945e-07,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,31,9.807322920323332e-08,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,32,3.181085246063697e-08,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,33,1.0016407223546493e-08,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,34,3.0678087723658686e-09,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,35,9.170217367008136e-10,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,36,2.692486012093686e-10,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,37,7.866327054729113e-11,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,38,2.3453082935846298e-11,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,39,7.447071226181494e-12,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,40,2.6537743108252525e-12,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,41,1.093573692576366e-12,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,42,5.111968751932883e-13,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,43,2.5794117292363205e-13,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,44,1.343186836073485e-13,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,45,7.023026702611347e-14,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,46,3.63678874653805e-14,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,47,1.8537052267673562e-14,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,48,9.276736761107087e-15,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,49,4.554046234297317e-15,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,50,2.1926736781368596e-15,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,51,1.0355808950700905e-15,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,52,4.798891646387468e-16,1e-8,0.0,aggregate 1.0.1
+mixture,5.0,p,53,2.1826235742407358e-16,1e-8,0.0,aggregate 1.0.1
+expon,10.0,p,0,4.5399929762484854e-05,1e-9,0.0,exact
+expon,10.0,p,1,0.0004539992976248486,1e-9,0.0,exact
+expon,10.0,p,2,0.0022699964881242435,1e-9,0.0,exact
+expon,10.0,p,3,0.007566654960414144,1e-9,0.0,exact
+expon,10.0,p,4,0.01891663740103538,1e-9,0.0,exact
+expon,10.0,p,5,0.03783327480207079,1e-9,0.0,exact
+expon,10.0,p,6,0.06305545800345125,1e-9,0.0,exact
+expon,10.0,p,7,0.090079225719216,1e-9,0.0,exact
+expon,10.0,p,8,0.11259903214902009,1e-9,0.0,exact
+expon,10.0,p,9,0.12511003572113372,1e-9,0.0,exact
+expon,10.0,p,10,0.12511003572113372,1e-9,0.0,exact
+expon,10.0,p,11,0.11373639611012128,1e-9,0.0,exact
+expon,10.0,p,12,0.09478033009176803,1e-9,0.0,exact
+expon,10.0,p,13,0.07290794622443707,1e-9,0.0,exact
+expon,10.0,p,14,0.052077104446026146,1e-9,0.0,exact
+expon,10.0,p,15,0.034718069630684245,1e-9,0.0,exact
+expon,10.0,p,16,0.021698793519177594,1e-9,0.0,exact
+expon,10.0,p,17,0.012763996187751505,1e-9,0.0,exact
+expon,10.0,p,18,0.007091108993195333,1e-9,0.0,exact
+expon,10.0,p,19,0.003732162627997529,1e-9,0.0,exact
+expon,10.0,p,20,0.0018660813139987742,1e-9,0.0,exact
+expon,10.0,p,21,0.000888610149523224,1e-9,0.0,exact
+expon,10.0,p,22,0.0004039137043287357,1e-9,0.0,exact
+expon,10.0,p,23,0.00017561465405597286,1e-9,0.0,exact
+expon,10.0,p,24,7.317277252332212e-05,1e-9,0.0,exact
+expon,10.0,p,25,2.9269109009328823e-05,1e-9,0.0,exact
+expon,10.0,p,26,1.125734961897266e-05,1e-9,0.0,exact
+expon,10.0,p,27,4.169388747767671e-06,1e-9,0.0,exact
+expon,10.0,p,28,1.4890674099170028e-06,1e-9,0.0,exact
+expon,10.0,p,29,5.134715206610449e-07,1e-9,0.0,exact
+expon,10.0,p,30,1.7115717355368203e-07,1e-9,0.0,exact
+expon,10.0,p,31,5.521199146892901e-08,1e-9,0.0,exact
+expon,10.0,p,32,1.725374733404048e-08,1e-9,0.0,exact
+expon,10.0,p,33,5.228408283042485e-09,1e-9,0.0,exact
+expon,10.0,p,34,1.537767142071341e-09,1e-9,0.0,exact
+expon,10.0,p,35,4.393620405918148e-10,1e-9,0.0,exact
+expon,10.0,p,36,1.2204501127550308e-10,1e-9,0.0,exact
+expon,10.0,p,37,3.2985138182568977e-11,1e-9,0.0,exact
+expon,10.0,p,38,8.680299521728504e-12,1e-9,0.0,exact
+expon,10.0,p,39,2.2257178260842644e-12,1e-9,0.0,exact
+gamma,5.0,p,0,0.04042768199451279,1e-9,0.0,exact
+mixture,5.0,p,0,0.00012204806479579637,1e-9,0.0,exact

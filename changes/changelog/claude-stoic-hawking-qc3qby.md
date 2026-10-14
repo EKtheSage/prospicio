@@ -23,3 +23,9 @@
   line an event hits with some probability), for `fft_bivariate`,
   matching `aggregate` 1.0.1's copula `bivariate`. Python
   `JointGrid.from_copula`; R `copula_severity()` (#235).
+- Renewal claim counts: the number of claims by a horizon when the waits
+  between claims follow any law (`prospicio_aggregate::renewal::renewal_count`,
+  a `Wait` that is a distribution or discrete waits, possibly defective,
+  with waits of zero arriving in clusters), on `aggregate`'s wait grid or
+  a given one, matching `aggregate` 1.0.1's `years ... wait ...`
+  frequency. Python `Count.renewal`; R `renewal_count()` (#236).

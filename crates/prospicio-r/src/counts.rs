@@ -77,6 +77,39 @@ impl ClaimCount {
         })
     }
 
+    /// A renewal count: `wait` is a distribution's pointer, or NULL with
+    /// the waits in `values` and `probs`; `step` 0 for the default grid.
+    fn renewal(
+        wait: Robj,
+        values: &[f64],
+        probs: &[f64],
+        horizon: f64,
+        step: f64,
+        points: f64,
+        closed: bool,
+    ) -> Result<Self> {
+        use prospicio_aggregate::renewal::{Wait, WaitGrid, renewal_count};
+        let grid = if step == 0.0 {
+            None
+        } else {
+            Some(WaitGrid {
+                step,
+                points: whole(points, "points")? as usize,
+                closed,
+            })
+        };
+        let n = if wait.is_null() {
+            renewal_count(&Wait::Atoms { values, probs }, horizon, grid)
+        } else {
+            let d = crate::distributions::dist_from_robj(&wait)?;
+            renewal_count(&Wait::Law(&d), horizon, grid)
+        }
+        .map_err(to_r)?;
+        Ok(Self {
+            inner: CountDist::Empirical(n.count),
+        })
+    }
+
     fn fixed(n: f64) -> Result<Self> {
         let n = crate::whole(n, "n")?;
         Ok(Self {

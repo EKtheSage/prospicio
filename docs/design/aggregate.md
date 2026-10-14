@@ -82,6 +82,10 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   below). Python `fft_bivariate`, `JointGrid`, `Clash`; R
   `fft_bivariate()`, `clash_model()`, `clash_severity()`,
   `clash_aggregate()`.
+- `prospicio_aggregate::renewal::{renewal_count, Wait, WaitGrid}`: the
+  number of claims by a horizon when the waits between claims follow any
+  law, `aggregate`'s renewal frequency ("Renewal counts" below). Python
+  `Count.renewal`, R `renewal_count()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
@@ -574,8 +578,53 @@ rate cancels.
   `M_X(R) = 1 + (1 + ρ) E[X] R` on the grid's severity below the overflow
   guard `700 / max(x)`, else none.
 - `eventual_ruin`'s simulated check of the same discretized model is not
-  carried: the exact `ψ` is the deliverable. Renewal counts (Wiener–Hopf)
-  stay parked.
+  carried: the exact `ψ` is the deliverable. Ruin for renewal claims
+  (Wiener–Hopf) comes next, on the renewal counts below.
+
+### Renewal counts
+
+`aggregate`'s `years ... wait ...` frequency (`_renewal.py`), in
+`prospicio_aggregate::renewal`: the number of claims `N(T)` by a horizon
+`T` when the waits between claims are independent draws from any law (a
+Sparre Andersen process; exponential waits give the Poisson).
+
+- `renewal_count(&Wait, horizon, grid)` returns a `RenewalCount`: the
+  count as an `EmpiricalCount` (so `fft`, `panjer` and the rest take it),
+  the wait grid, `P(W ≤ 0)`, the defect and the series length. A `Wait`
+  is a `Law(&dyn Distribution)` (a `Mixture` covers `aggregate`'s wait
+  mixtures) or `Atoms { values, probs }` (`dwait`), whose probabilities
+  may sum to less than 1: a defective wait, which ends the process.
+- `{N ≥ k} = {S_k ≤ T}`, so `P(N = k) = F^{*k}(T) − F^{*(k+1)}(T)`, each
+  read off by Plancherel as the inner product of the wait's transform to
+  the `k`-th power with the transform of the indicator of `[0, T]`, both
+  tilted (`θL = 20`) to damp the wrap. The two transforms are taken
+  separately: packed into one complex FFT, the indicator (up to `e^15`
+  times the wait) puts its round-off on the wait and the count goes wrong
+  (`renewal_count_pmf`).
+- The series runs to `k_max = ⌈T/μ + 10√(Tσ²/μ³) + 10⌉` from the renewal
+  central limit theorem on the grid's moments (capped at `ln 10⁻¹⁷/ln q`
+  for a wait of total mass `q < 1`), and is cut at `⌊T/w⌋` for a smallest
+  wait `w > 0`, where the tilted sums' round-off would put specks on
+  impossible counts.
+- Waits of zero are taken out exactly (`zero_wait_batches`):
+  `N = G_1 + … + G_{M+1} − 1` with `M` the count of the positive waits and
+  `G` geometric on `1, 2, …`; given `M = m`, `N − m` is negative binomial
+  with `m + 1` successes, by the stable recurrence of its terms.
+- The grid is `aggregate`'s `wait_grid` (`WaitGrid::sized`): the step
+  resolves the shape (`μ/64`, and `σ/64` unless `σ < μ/10`) and the error
+  budget (`k_max h² ≤ 1e-9`), with `T` at three quarters of `2^16` to
+  `2^24` points and the reading at `T` on half the last cell; atoms on a
+  lattice with `T` (their exact common step, each value first its closest
+  fraction with a denominator up to `10⁹`, as `Fraction.limit_denominator`)
+  take the lattice's step and the whole last cell. A `WaitGrid` can be
+  given instead. The wait is put on the grid by rounding from survival
+  differences, with the mass past `T` dropped.
+- Not carried: `aggregate`'s unconditional splice window on a continuous
+  wait (`splice [a b] !`, a defect by truncation), the layered wait
+  (`wait y xs a`) and its snap of the grid to the cap. A `Truncated`
+  wait covers the conditional splice.
+- Python `Count.renewal(wait, horizon, *, step, points, closed)`, with
+  `wait` a distribution or `(values, probs)`; R `renewal_count()`.
 
 ### Layer loss picks
 
@@ -820,6 +869,18 @@ relative (observed 1.5e-11: round-off over a slope of about 1e-6), `R` at
 `1e-10` relative. Unit tests check `ψ` against the exponential closed form
 `e^{−ρu / ((1 + ρ)μ)} / (1 + ρ)` and its `R`, and the FFT against Panjer.
 
+Renewal counts are checked against `aggregate` 1.0.1's renewal frequency
+(`validation/scripts/aggregate_renewal.py`, 267 values) on the renewal
+cases of its own test suite: exponential waits over 10 years, gamma waits
+(shape 2) over 5, a fixed wait, waits of 0 or 1 (clusters), a defective
+wait and a mixture of exponentials. The wait grid (step, points, reading)
+and `P(W ≤ 0)`, the defect and `k_max` match exactly; the counts match at
+`1e-8`. At `k = 0` and 1 on the continuous waits `aggregate` is up to
+6e-9 from the exact values (the round-off of its tilted sums) and
+prospicio within 5e-11; 42 more rows check prospicio against the exact
+values at `1e-9`: the Poisson for exponential waits, and `P(N = 0) =
+P(W > T)` for the others.
+
 Layer loss picks are checked against `aggregate` 1.0.1's `Aggregate.picks`
 (`validation/scripts/aggregate_picks.py`, 406 values) on a gamma severity
 (mean 100, cv 1.5) on `2^14` points with layers to 100, 500 and 1,000:
@@ -907,7 +968,9 @@ copula, the t copula, a trigger outside `[0, 1]`).
    `aggregate`.)
    Parked as large, and the candidates for what comes next: (done:
    bivariate FFT aggregates, `clash`, and copula coupling of the two lines;
-   see "Two lines and clash"); then renewal counts with Wiener–Hopf ruin,
-   and the P&L ledger (`pnl`, which needs signed grids).
+   see "Two lines and clash"; renewal counts, see "Renewal counts");
+   then eventual ruin for renewal claims by Wiener–Hopf (`wiener_hopf`,
+   the cepstral factorization of the claim walk), and the P&L ledger
+   (`pnl`, which needs signed grids).
 2. Deficit and credit carry-forward in profit commissions and sliding
    scales, once multi-year simulation exists.

@@ -732,6 +732,14 @@ blend_predictive <- function(models, weights, seed) {
 #' - `compound_poisson_count()`: a Poisson(`rate`) number of clusters of
 #'   `secondary` claims (Poisson secondaries give the Neyman type A).
 #' - `empirical_count()`: `P(N = k) = probs[k + 1]`.
+#' - `renewal_count()`: the number of claims by `horizon` when the waits
+#'   between claims are independent draws from `wait` (a renewal, or
+#'   Sparre Andersen, count; `aggregate`'s `years ... wait ...`).
+#'   Exponential waits give the Poisson. The wait is a distribution, or
+#'   `list(values, probs)` of waits and their probabilities, which may sum
+#'   to less than 1 (the process then ends). Waits of zero arrive in
+#'   clusters. The wait grid is `aggregate`'s unless `step` and `points`
+#'   are given; `closed` counts waits summing to exactly `horizon` in full.
 #' - `fixed_count()`: `N = n`; `bernoulli_count()`: one claim with
 #'   probability `p` in `[0, 1)`; `geometric_count()`: `P(N = k) = q (1 - q)^k`
 #'   on `0, 1, ...` with `q = 1 / (1 + mean)`, a negative binomial with
@@ -749,6 +757,10 @@ blend_predictive <- function(models, weights, seed) {
 #' @param mixing `"gamma"` or `"inverse_gaussian"`.
 #' @param rate The Poisson rate of clusters.
 #' @param probs Probabilities of `0, 1, ...`, summing to 1.
+#' @param wait A distribution, or `list(values, probs)`.
+#' @param horizon The period, in the wait's units.
+#' @param step,points The wait grid; `NULL` for `aggregate`'s.
+#' @param closed Whether waits summing to `horizon` count in full.
 #' @param ptr Internal.
 #' @returns A `claim_count_dist`, which inherits from [distribution]: use
 #'   it with [pmf()], [cdf()], [mean()], [variance()], [quantile()] and
@@ -760,6 +772,7 @@ blend_predictive <- function(models, weights, seed) {
 #' pig <- mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian")
 #' variance(pig) # 10 + 100 * 0.25
 #' compound_distribution(pig, grid_distribution(1, c(0.2, 0.5, 0.3)), 200, method = "fft")
+#' pmf(renewal_count(gamma_distribution(2, 1), 5), 0) # the first wait beyond 5: 6 exp(-5)
 claim_count_dist <- S7::new_class(
   "claim_count_dist",
   parent = distribution,
@@ -820,6 +833,22 @@ compound_poisson_count <- function(rate, secondary) {
 #' @rdname claim_count_dist
 #' @export
 empirical_count <- function(probs) claim_count_dist(rust_result(ClaimCount$empirical(as.double(probs))))
+
+#' @rdname claim_count_dist
+#' @export
+renewal_count <- function(wait, horizon, step = NULL, points = NULL, closed = FALSE) {
+  if (is.null(step) != is.null(points)) stop("give both step and points, or neither")
+  grid <- if (is.null(step)) c(0, 0) else c(as.double(step), as.double(points))
+  ptr <- if (is.list(wait) && !S7::S7_inherits(wait)) {
+    ClaimCount$renewal(
+      NULL, as.double(wait[[1]]), as.double(wait[[2]]), as.double(horizon),
+      grid[1], grid[2], isTRUE(closed)
+    )
+  } else {
+    ClaimCount$renewal(wait@ptr, double(), double(), as.double(horizon), grid[1], grid[2], isTRUE(closed))
+  }
+  claim_count_dist(rust_result(ptr))
+}
 
 #' @rdname claim_count_dist
 #' @export

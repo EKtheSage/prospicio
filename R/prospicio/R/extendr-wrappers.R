@@ -1292,6 +1292,8 @@ ClaimCount$compound_poisson <- function(rate, secondary) .Call(wrap__ClaimCount_
 
 ClaimCount$empirical <- function(probs) .Call(wrap__ClaimCount__empirical, probs)
 
+ClaimCount$renewal <- function(wait, values, probs, horizon, step, points, closed) .Call(wrap__ClaimCount__renewal, wait, values, probs, horizon, step, points, closed)
+
 ClaimCount$fixed <- function(n) .Call(wrap__ClaimCount__fixed, n)
 
 ClaimCount$bernoulli <- function(p) .Call(wrap__ClaimCount__bernoulli, p)

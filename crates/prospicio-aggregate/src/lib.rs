@@ -22,6 +22,7 @@ pub mod panjer;
 pub mod picks;
 pub mod pml;
 pub mod reinsurance;
+pub mod renewal;
 pub mod ruin;
 pub mod serial;
 pub mod sizing;
@@ -44,5 +45,6 @@ pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{
     Basis, Commission, Corridor, Layer, LossSensitivePremium, ProfitCommission, Tower,
 };
+pub use renewal::{RenewalCount, Wait, WaitGrid, renewal_count};
 pub use ruin::{Ruin, SeverityPart, pollaczeck_khinchine};
 pub use sizing::{GridSize, Sizing, SizingMethod, fft_auto, recommend_grid, round_bucket};

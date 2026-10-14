@@ -49,6 +49,9 @@ sources:
   - id: clash
     resource: ../validation/scripts/aggregate_clash.py
     title: aggregate_clash.py
+  - id: renewal
+    resource: ../validation/scripts/aggregate_renewal.py
+    title: aggregate_renewal.py
 ---
 
 # Which source for what
@@ -380,6 +383,18 @@ sources:
   discrete-Sklar rectangle mass `Copula.rectangle_pmf(G1, G2)`; `pnl`
   axes are rejected there.[^clash]
 
+# Renewal counts
+
+* `agg NAME T years sev ... wait LAW` (or `dwait [x] [p]`, with `!` for a
+  defective wait) builds a `FrequencyRenewal` in `aggregate._renewal`; the
+  count is `frequency.freq_df.p`, the grid `wait_bs`, `wait_log2`,
+  `wait_lattice`, with `wait_p0`, `wait_defect` and `kmax` (the count of
+  positive waits, before the zero waits go back). `build(..., update=False)`
+  is enough for the count. `wiener_hopf(rho)` is the renewal ruin, beside
+  `pollaczeck_khinchine`. The suite's cases are the `Y.Renewal.*` lines of
+  `agg/_test_suite.agg`.[^renewal]
+
+[^renewal]: aggregate_renewal.py
 [^clash]: aggregate_clash.py
 [^terms]: aggregate_contract_terms.py
 [^moments]: aggregate_moments.py

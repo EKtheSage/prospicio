@@ -317,6 +317,21 @@ def test_named_counts_and_tvar_threshold():
     assert Count.geometric(3.0).pmf(1) == pytest.approx(0.1875, abs=1e-15)
     with pytest.raises(ValueError):
         Count.geometric(0.0)
+    # Renewal counts (aggregate_renewal.py): exponential waits are Poisson,
+    # waits of 0 or 1 arrive in geometric clusters, a defective wait ends.
+    from prospicio.distributions import Gamma
+
+    n = Count.renewal(Gamma(1.0, 0.5), 2.0)
+    assert n.pmf(4) == pytest.approx(math.exp(-4.0) * 4.0**4 / 24.0, abs=1e-9)
+    c = Count.renewal(([0.0, 1.0], [0.5, 0.5]), 1.0)
+    assert c.pmf(3) == pytest.approx(3.0 / 16.0, abs=1e-12)
+    d = Count.renewal(([1.0], [0.9]), 2.0)
+    assert d.pmf(0) == pytest.approx(0.1, abs=1e-12)
+    assert Count.renewal(Gamma(2.0, 1.0), 5.0, step=1 / 4096, points=1 << 15).pmf(0) == (
+        pytest.approx(6.0 * math.exp(-5.0), abs=1e-7)
+    )
+    with pytest.raises(ValueError):
+        Count.renewal(Gamma(2.0, 1.0), 5.0, step=0.01)
     g = Grid(1.0, [0.4, 0.3, 0.2, 0.1])
     t = g.tvar_threshold(0.85)
     assert t < 0.85
