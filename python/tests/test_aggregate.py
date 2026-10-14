@@ -820,3 +820,41 @@ def test_book_occurrence_covers():
     two = Tower([Layer("a", 1.0, 1.0), Layer("b", 2.0, 2.0)])
     with pytest.raises(ValueError):
         book.occurrence_ledger(joint, two, face="peel-top-down")
+
+
+def test_book_variable_terms_and_program():
+    from prospicio.aggregate import Book, Expense, pnl_program, round_premium, size_premium
+    from prospicio.reinsurance import Layer, LossSensitivePremium, Tower
+
+    # aggregate 1.0.1: a 3 xs 5 cover with a sliding scale, or a profit
+    # commission, on example 1's book.
+    gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    book = Book("V", 10.0, [Expense("premium", 0.1)])
+    base = Layer.stop_loss("ceded agg", 3.0, 5.0).with_deposit_premium(1.0)
+    slide = Tower([base.with_sliding_scale([(0.3, 0.2), (0.1, 0.6)])])
+    s = book.ledger(gross, slide, "walk").sheet()
+    assert s["EX"][s["row"].index("sliding commission")] == pytest.approx(0.268, abs=1e-12)
+    pc = Tower([base.with_profit_commission(0.25, 0.1)])
+    c = book.ledger(gross, pc)
+    assert c.result.mean() == pytest.approx(4.629, abs=1e-12)
+    assert c.sheet()["SD"][c.sheet()["row"].index("commission")] > 0
+    # Swing rating: the ceded premium varies with the ceded loss.
+    swing = Tower([Layer.stop_loss("ceded agg", 3.0, 5.0).with_swing_rating(0.5, 1.1, 0.6, 2.5)])
+    w = book.ledger(gross, swing, "walk").sheet()
+    assert w["EX"][w["row"].index("ceded agg premium")] == pytest.approx(-0.796, abs=1e-12)
+    # Retro: the premium is the collar at the gross loss.
+    retro = Book("V", 2.0, [Expense("premium", 0.1)],
+                 retro=LossSensitivePremium(2.0, 1.1, minimum=3.0, maximum=9.0))
+    assert retro.ledger(gross).row("Premium").mean() == pytest.approx(6.108, abs=1e-12)
+    with pytest.raises(ValueError):
+        retro.ledger(gross, pc)
+    # pnl_program's ladder, against aggregate's on the design note's book.
+    p = pnl_program(405.97794085441933, 0.9, 0.25, [
+        dict(ceded_loss=86.78504710067914, share=1.0, combined_ratio=0.6),
+        dict(ceded_loss=8.144345556686755, share=1.0, combined_ratio=0.5)])
+    assert p["premium"] == 817.0 and p["deposits"] == [145.0, 16.29]
+    kept = pnl_program(406.0, 0.9, 0.25, [dict(share=0.5, stated=50.0)])
+    assert kept["deposits"] == [100.0] and kept["ceded_premium"] == 50.0
+    assert round_premium(146.5) == 146.0 and size_premium(499.885, 0.7) == 714.0
+    with pytest.raises(ValueError):
+        size_premium(-1.0, 0.7)

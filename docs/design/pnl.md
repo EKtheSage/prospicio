@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **In progress** (PRs 1 to 5 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **In progress** (PRs 1 to 5 and 6a done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -255,10 +255,47 @@ Each PR is one type or method, with its parity tests, bindings and docs.
    probability. Python `occurrence_source`, `Book.occurrence_ledger` and a
    joint source as a tuple `(gross, ceded, probs)`; R
    `occurrence_source()`, `book_occurrence_ledger()`.
-6. **`pnl_program`** (premium and layer deposits or rates from target
-   combined ratios), then the variable terms and reinstatement premiums
-   as legs (swing, sliding scale, profit commission, corridor, retro;
-   `D + h(R)` on the `(L, R)` joint).
+6. PR 6 is two PRs, as its two halves turned out independent:
+
+   a. (Done.) **Variable terms and `pnl_program`.** The builders book a
+      layer's loss-sensitive terms as legs at each atom, each from the
+      `Layer`'s own function at its annual ceded loss: a swing-rated
+      premium (`premium_for`), a sliding-scale commission
+      (`ceding_commission_for`, the leg `sliding commission`), a profit
+      commission (`profit_commission_for`, `profit commission`) and a
+      loss corridor (in the recovery), on the walk, the peel and the
+      consolidated face (the net premium and the commission varying per
+      atom), on annual covers and on aggregate covers behind occurrence
+      covers. `aggregate`'s corridor `s po w xs a` on the ceded loss ratio
+      of a premium `P` is `loss_corridor(a P / share, (a + w) P / share,
+      s)`. `Book::retro` rates the book retrospectively (the premium is a
+      `LossSensitivePremium` at the gross loss; premium expenses on the
+      premium given, the collar's basic in `aggregate`); like `aggregate`,
+      a retro book buys no cover. Occurrence layers keep fixed terms, as
+      `aggregate`'s features go on the aggregate tier. `pnl_program`
+      returns the ladder as numbers (decision 7): deposits at 100%
+      placement `round(E_j / c_j / s_j)`, the booked premium
+      `round((E_net / c_net + Σ s_j d_j) / (1 − ER))`, rounded as
+      `aggregate` writes them (whole units above 100, cents below, ties
+      to even), with `size_premium` and `round_premium`; the `rate`
+      respelling and an engine's stated technical premium are left out.
+      On the consolidated face `aggregate`'s variable builder books a
+      loss-basis expense stochastic on the gross, where its guaranteed
+      cost builder (and prospicio on both) books it at the expected gross
+      loss; no parity case has one. Parity:
+      `validation/scripts/aggregate_pnl_variable.py`, 2,342 values: each
+      feature walked and consolidated on a 3 xs 5 cover, a profit
+      commission on half the layer, a swing-rated cover behind example
+      4's occurrence cover (consolidated at `1e-11`, as in PR 5), retro,
+      and the ladder on two engines (premiums 817 and 911, deposits 145,
+      16.29 and 158), with `aggregate`'s expected losses as inputs. Python
+      `Book(retro=)`, `pnl_program`, `size_premium`, `round_premium`; R
+      `pnl_book(retro =)`, `pnl_program()`, `size_premium()`,
+      `round_premium()`.
+   b. **Reinstatement premiums** as legs, `D + h(R)` on the `(L, R)`
+      joint: an occurrence layer with paid reinstatements over the joint
+      of the gross loss and its unlimited annual cession, both faces over
+      the joint.
 
 ## Validation
 
@@ -320,4 +357,6 @@ the numbers a first run gave (2026-10-14):
   gives a premium of 714 (499.885 / 0.7) and expenses of 25% of premium;
   with `occurrence net of 200 xs 100` and `aggregate net of 500 xs 1000`
   (log2=13) at `net_combined_ratio=.9, occ_combined_ratio=.6,
-  agg_combined_ratio=.5`, a premium of 809 and deposits of 146 and 6.09.
+  agg_combined_ratio=.5`, a premium of 809 and deposits of 146 and 6.09
+  on a first run; at `bs=1/8` the ladder gives 817, 145 and 16.29, the
+  numbers PR 6a checks.

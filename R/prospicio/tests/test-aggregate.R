@@ -456,3 +456,21 @@ local({
   stopifnot(abs(mean(ledger_result(w)) - mean(ledger_result(c7))) < 1e-12)
   stopifnot("Net of occurrence" %in% ledger_sheet(w)$step)
 })
+
+# Variable terms as legs, retro and pnl_program's ladder (aggregate 1.0.1).
+local({
+  gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+  book <- pnl_book("V", 10, list(pnl_expense("premium", 0.1)))
+  base <- with_deposit_premium(aggregate_stop_loss("ceded agg", 3, 5), 1)
+  slide <- reinsurance_tower(list(with_sliding_scale(base, c(0.3, 0.1), c(0.2, 0.6))))
+  s <- ledger_sheet(book_ledger(book, gross, slide, "walk"))
+  stopifnot(abs(s$EX[s$row == "sliding commission"] - 0.268) < 1e-12)
+  pc <- reinsurance_tower(list(with_profit_commission(base, 0.25, 0.1)))
+  stopifnot(abs(mean(ledger_result(book_ledger(book, gross, pc))) - 4.629) < 1e-12)
+  retro <- pnl_book("V", 2, list(pnl_expense("premium", 0.1)), retro = c(2, 1.1, 3, 9))
+  stopifnot(abs(mean(ledger_row(book_ledger(retro, gross), "Premium")) - 6.108) < 1e-12)
+  p <- pnl_program(405.97794085441933, 0.9, 0.25, data.frame(
+    ceded_loss = c(86.78504710067914, 8.144345556686755), share = 1, combined_ratio = c(0.6, 0.5)))
+  stopifnot(p$premium == 817, identical(p$deposits, c(145, 16.29)))
+  stopifnot(identical(round_premium(c(146.5, 16.285)), c(146, 16.29)), size_premium(499.885, 0.7) == 714)
+})

@@ -5,8 +5,9 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::{
-    Book, Expense, ExpenseBasis, Face, Group, LADDER, Layout, Ledger, Leg, LegKind, RatioRow, Role,
-    RowKind, Source, derive_premium, occurrence_source, snap,
+    Book, Expense, ExpenseBasis, Face, Group, LADDER, Layout, Ledger, Leg, LegKind, ProgramLayer,
+    RatioRow, Role, RowKind, Source, derive_premium, occurrence_source, pnl_program, round_premium,
+    size_premium, snap,
 };
 
 use crate::discrete::DiscreteDist;
@@ -140,9 +141,10 @@ impl PnlLedger {
         step_label: &str,
         tower: Robj,
         face: &str,
+        retro: &[f64],
     ) -> Result<Self> {
         let source = Source::new(values.to_vec(), probs.to_vec()).map_err(to_r)?;
-        let book = make_book(
+        let mut book = make_book(
             name,
             premium,
             exp_index,
@@ -151,6 +153,18 @@ impl PnlLedger {
             &exp_label,
             [premium_label, loss_label, step_label],
         )?;
+        if let [basic, lcm, minimum, maximum] = *retro {
+            let given = |x: f64| (!x.is_nan()).then_some(x);
+            book = book.retro(
+                prospicio_aggregate::LossSensitivePremium::new(
+                    basic,
+                    lcm,
+                    given(minimum),
+                    given(maximum),
+                )
+                .map_err(to_r)?,
+            );
+        }
         let face = face_of(face)?;
         let tower = tower_of(&tower)?;
         Ok(Self {
@@ -403,6 +417,47 @@ fn pnl_derive_premium(
     derive_premium(technical, &e).map_err(to_r)
 }
 
+/// `pnl_program`'s ladder: `list(premium, technical, deposits,
+/// ceded_premium)`; a NaN `stated` means the ladder prices the layer.
+#[extendr]
+fn pnl_program_rust(
+    net_loss: f64,
+    net_combined_ratio: f64,
+    expense_ratio: f64,
+    ceded_loss: &[f64],
+    share: &[f64],
+    combined_ratio: &[f64],
+    stated: &[f64],
+) -> Result<List> {
+    let layers: Vec<ProgramLayer> = (0..share.len())
+        .map(|j| ProgramLayer {
+            ceded_loss: ceded_loss[j],
+            share: share[j],
+            combined_ratio: combined_ratio[j],
+            stated: (!stated[j].is_nan()).then_some(stated[j]),
+        })
+        .collect();
+    let p = pnl_program(net_loss, net_combined_ratio, expense_ratio, &layers).map_err(to_r)?;
+    Ok(list!(
+        premium = p.premium,
+        technical = p.technical,
+        deposits = p.deposits,
+        ceded_premium = p.ceded_premium
+    ))
+}
+
+/// A premium sized from a loss ratio, rounded as aggregate writes one.
+#[extendr]
+fn size_premium_rust(expected_loss: f64, loss_ratio: f64) -> Result<f64> {
+    size_premium(expected_loss, loss_ratio).map_err(to_r)
+}
+
+/// A premium rounded as aggregate writes one.
+#[extendr]
+fn round_premium_rust(premium: f64) -> f64 {
+    round_premium(premium)
+}
+
 /// The joint source of the annual gross and occurrence-ceded loss:
 /// `list(gross, ceded, probs)`.
 #[extendr]
@@ -523,4 +578,7 @@ extendr_module! {
     impl PnlLedger;
     fn pnl_derive_premium;
     fn pnl_occurrence_source;
+    fn pnl_program_rust;
+    fn size_premium_rust;
+    fn round_premium_rust;
 }

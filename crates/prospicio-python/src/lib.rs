@@ -85,7 +85,8 @@ mod prospicio_native {
     use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
     #[pymodule_export]
     use super::pnl::{
-        PyBook, PyExpense, PyGroup, PyLedger, PyLeg, derive_premium, occurrence_source, stack,
+        PyBook, PyExpense, PyGroup, PyLedger, PyLeg, derive_premium, occurrence_source,
+        pnl_program, round_premium, size_premium, stack,
     };
     #[pymodule_export]
     use super::pricing::{

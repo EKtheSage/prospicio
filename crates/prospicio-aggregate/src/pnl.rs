@@ -38,7 +38,10 @@ use prospicio_core::{Error, Result};
 use prospicio_prob::{Discrete, Distribution, Grid};
 
 mod builders;
-pub use builders::{Book, Expense, ExpenseBasis, Face, derive_premium, occurrence_source};
+pub use builders::{
+    Book, Expense, ExpenseBasis, Face, Program, ProgramLayer, derive_premium, occurrence_source,
+    pnl_program, round_premium, size_premium,
+};
 
 /// The levels of the scenario and marginal columns, `aggregate`'s
 /// `PERCENTILE_LADDER`.
