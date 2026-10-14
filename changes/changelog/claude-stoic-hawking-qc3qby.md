@@ -49,4 +49,5 @@
   and the scenario columns that condition each row on the grand result.
   Python `prospicio.aggregate.Ledger`, `Group`, `Leg`; R `pnl_ledger()`,
   `pnl_group()`, `pnl_leg()` and `ledger_sheet()`, `ledger_card()`,
-  `ledger_marginal()`, `ledger_legs()`, `ledger_result()`, `ledger_row()`.
+  `ledger_marginal()`, `ledger_legs()`, `ledger_result()`, `ledger_row()`
+  (#242).
