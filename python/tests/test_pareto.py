@@ -117,3 +117,44 @@ def test_local_pareto_conversion():
         D.local_pareto_to_piecewise(1.0, bad)
     with pytest.raises(ValueError, match="alpha"):
         D.local_pareto_to_piecewise(1.0, lambda x: -1.0)
+
+
+def test_issue_213_policy_limits_and_standard_errors():
+    from prospicio.pricing import CollectiveModel
+
+    x = D.Pareto(100.0, 2.0)
+    c = D.PolicyLimits(x, [1000.0, 5000.0, math.inf], [2, 1, 1])
+    assert c.weights == pytest.approx([0.5, 0.25, 0.25])
+    # E[min(X, L)] = t (2 - t / L) for alpha 2, and the mean beyond no limit.
+    want = 0.5 * 100.0 * 1.9 + 0.25 * 100.0 * 1.98 + 0.25 * 200.0
+    assert c.mean() == pytest.approx(want, rel=1e-12)
+    # A layer reaches only the policies whose limit exceeds its attachment.
+    assert c.layer(500.0, 1500.0) == pytest.approx(0.5 * x.layer(500.0, 1500.0), rel=1e-12)
+    # The atom at 1000: half of the losses above it.
+    assert c.cdf(1000.0) - c.cdf(999.999999) == pytest.approx(0.5 * 0.01, rel=1e-5)
+    # Discretized and compounded like any severity: local moment matching
+    # keeps the limited mean at its last point, and rounding puts the atom
+    # at 1000 (point 100) whole.
+    grid, _ = D.Grid.local_moment(c, 10.0, 2000)
+    assert grid.mean() == pytest.approx(c.lev(1999 * 10.0), rel=1e-9)
+    rounded, _ = D.Grid.rounding(c, 10.0, 2000)
+    assert rounded.probs[100] == pytest.approx(c.cdf(1005.0) - c.cdf(995.0), rel=1e-12)
+    assert rounded.probs[100] > 0.5 * 0.01
+    model = CollectiveModel(D.Poisson(3.0), c)
+    assert model.layer_mean(1000.0, 500.0) == pytest.approx(3.0 * c.layer(1000.0, 500.0), rel=1e-12)
+    back = D.from_json(D.to_json(c))
+    assert back.mean() == pytest.approx(c.mean(), rel=1e-15)
+    with pytest.raises(ValueError):
+        D.PolicyLimits(x, [1000.0], [1.0, 2.0])
+
+    losses = [1500.0, 2500.0, 4000.0, 10_000.0]
+    fit, se = D.Pareto.fit_with_standard_error(losses, 1000.0, censored=[False, False, False, True])
+    assert se == pytest.approx(fit.alpha / 3 ** 0.5, rel=1e-14)
+    fit, se = D.Pareto.fit_with_standard_error(losses[:3], 1000.0, truncation=20_000.0)
+    assert 0.0 < se < math.inf
+    pw, ses = D.PiecewisePareto.fit_with_standard_errors([1200.0, 1500.0, 2500.0, 6000.0],
+                                                         [1000.0, 2000.0])
+    assert ses == pytest.approx([a / 2 ** 0.5 for a in pw.alpha], rel=1e-14)
+    with pytest.raises(ValueError):
+        D.PiecewisePareto.fit_with_standard_errors(losses, [1000.0, 2000.0], truncation=50_000.0,
+                                                   truncation_type="wd")

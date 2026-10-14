@@ -78,7 +78,9 @@ what it is aiming for by v1.0.
   - Distributions in three representations (parametric, `Grid`,
     `Sampled`), plus counts, the Pareto family, the inverse gamma,
     inverse Gaussian, Burr and scaled beta, mixtures, truncation and
-    splicing, `Custom` and the `Dist` enum with JSON save and load.
+    splicing, a severity under a mix of policy limits, `Custom` and the
+    `Dist` enum with JSON save and load; standard errors of the Pareto
+    fits.
     Third raw moments on `Severity` and `Counting`; `aggregate`'s named
     fixed, Bernoulli and geometric counts.
   - `PredictiveDistribution`: join, reorder, blend, select (one part of a

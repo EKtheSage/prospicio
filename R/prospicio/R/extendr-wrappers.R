@@ -1316,6 +1316,46 @@ TruncatedDist$sample <- function(n, seed, stream) .Call(wrap__TruncatedDist__sam
 #' @export
 `[[.TruncatedDist` <- `$.TruncatedDist`
 
+PolicyLimitsDist <- new.env(parent = emptyenv())
+
+PolicyLimitsDist$new <- function(severity, limits, weights) .Call(wrap__PolicyLimitsDist__new, severity, limits, weights)
+
+PolicyLimitsDist$limits <- function() .Call(wrap__PolicyLimitsDist__limits, self)
+
+PolicyLimitsDist$weights <- function() .Call(wrap__PolicyLimitsDist__weights, self)
+
+PolicyLimitsDist$family <- function() .Call(wrap__PolicyLimitsDist__family, self)
+
+PolicyLimitsDist$mean <- function() .Call(wrap__PolicyLimitsDist__mean, self)
+
+PolicyLimitsDist$variance <- function() .Call(wrap__PolicyLimitsDist__variance, self)
+
+PolicyLimitsDist$cdf <- function(x) .Call(wrap__PolicyLimitsDist__cdf, self, x)
+
+PolicyLimitsDist$survival <- function(x) .Call(wrap__PolicyLimitsDist__survival, self, x)
+
+PolicyLimitsDist$quantile <- function(p) .Call(wrap__PolicyLimitsDist__quantile, self, p)
+
+PolicyLimitsDist$lev <- function(limit) .Call(wrap__PolicyLimitsDist__lev, self, limit)
+
+PolicyLimitsDist$stop_loss <- function(retention) .Call(wrap__PolicyLimitsDist__stop_loss, self, retention)
+
+PolicyLimitsDist$layer <- function(limit, attachment) .Call(wrap__PolicyLimitsDist__layer, self, limit, attachment)
+
+PolicyLimitsDist$layer_variance <- function(limit, attachment) .Call(wrap__PolicyLimitsDist__layer_variance, self, limit, attachment)
+
+PolicyLimitsDist$sample <- function(n, seed, stream) .Call(wrap__PolicyLimitsDist__sample, self, n, seed, stream)
+
+#' @export
+`$.PolicyLimitsDist` <- function (self, name) { func <- PolicyLimitsDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.PolicyLimitsDist` <- `$.PolicyLimitsDist`
+
+pareto_fit_standard_error_rust <- function(losses, t, reporting, censored, weights, truncation_at) .Call(wrap__pareto_fit_standard_error_rust, losses, t, reporting, censored, weights, truncation_at)
+
+piecewise_pareto_fit_standard_errors_rust <- function(losses, t, reporting, censored, weights, truncation_at, truncation_type) .Call(wrap__piecewise_pareto_fit_standard_errors_rust, losses, t, reporting, censored, weights, truncation_at, truncation_type)
+
 MixtureDist <- new.env(parent = emptyenv())
 
 MixtureDist$new <- function(weights, components) .Call(wrap__MixtureDist__new, weights, components)

@@ -644,6 +644,70 @@ severity_class!(TruncatedDist {
     }
 });
 
+/// A severity capped by a mix of policy limits.
+#[extendr]
+pub(crate) struct PolicyLimitsDist {
+    pub(crate) inner: std::sync::Arc<prospicio_prob::PolicyLimits>,
+}
+
+severity_class!(PolicyLimitsDist {
+    fn new(severity: Robj, limits: &[f64], weights: &[f64]) -> Result<Self> {
+        let base = crate::distributions::severity_from_robj(&severity)?;
+        let p = prospicio_prob::PolicyLimits::new(base, limits.to_vec(), weights.to_vec())
+            .map_err(to_r)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(p),
+        })
+    }
+
+    fn limits(&self) -> Vec<f64> {
+        self.inner.limits().to_vec()
+    }
+
+    fn weights(&self) -> Vec<f64> {
+        self.inner.weights().to_vec()
+    }
+
+    fn family(&self) -> String {
+        self.inner.base().dist().family().to_string()
+    }
+});
+
+/// The standard error of a Pareto fit's alpha (observed information).
+#[extendr]
+fn pareto_fit_standard_error_rust(
+    losses: &[f64],
+    t: f64,
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+    truncation_at: f64,
+) -> Result<f64> {
+    let data = large_losses(losses, reporting, censored, weights)?;
+    prospicio_prob::Pareto::fit_with_standard_error(t, &data, truncation(truncation_at))
+        .map(|(_, se)| se)
+        .map_err(to_r)
+}
+
+/// The standard errors of a piecewise Pareto fit's alphas.
+#[extendr]
+fn piecewise_pareto_fit_standard_errors_rust(
+    losses: &[f64],
+    t: &[f64],
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+    truncation_at: f64,
+    truncation_type: &str,
+) -> Result<Vec<f64>> {
+    let data = large_losses(losses, reporting, censored, weights)?;
+    let kind = truncation_kind(truncation_type)?;
+    let truncation = truncation(truncation_at).map(|tr| (tr, kind));
+    prospicio_prob::PiecewisePareto::fit_with_standard_errors(t.to_vec(), &data, truncation)
+        .map(|(_, se)| se)
+        .map_err(to_r)
+}
+
 /// A finite mixture of severities.
 #[extendr]
 pub(crate) struct MixtureDist {
@@ -769,6 +833,9 @@ extendr_module! {
     impl BurrDist;
     impl BetaDist;
     impl TruncatedDist;
+    impl PolicyLimitsDist;
+    fn pareto_fit_standard_error_rust;
+    fn piecewise_pareto_fit_standard_errors_rust;
     impl MixtureDist;
     impl Binomial;
     fn claim_count_parameters;

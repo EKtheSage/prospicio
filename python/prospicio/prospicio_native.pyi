@@ -12361,6 +12361,25 @@ class Pareto:
         >>> round(Pareto.fit([1500.0, 2500.0, 4000.0], 1000.0).alpha, 6)
         1.10524
         """
+    @staticmethod
+    def fit_with_standard_error(losses: Sequence[float], t: float, reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncation: float |None = None) -> tuple[Pareto, float]:
+        """
+        ``Pareto.fit`` with the standard error of the alpha from the
+        observed information. Untruncated it is ``alpha / sqrt(n)``, ``n``
+        the uncensored weight; truncated, the conditioning terms add to the
+        information. Parameters as ``fit``.
+        
+        Returns
+        -------
+        tuple of (Pareto, float)
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Pareto
+        >>> fit, se = Pareto.fit_with_standard_error([1500.0, 2500.0, 4000.0], 1000.0)
+        >>> round(se * 3 ** 0.5 / fit.alpha, 12)
+        1.0
+        """
     def layer(self, /, limit: float, attachment: float) -> float:
         """
         Expected loss to the layer ``limit`` xs ``attachment``.
@@ -12926,6 +12945,20 @@ class PiecewisePareto:
         -------
         PiecewisePareto
         """
+    @staticmethod
+    def fit_with_standard_errors(losses: Sequence[float], t: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncation: float |None = None, truncation_type: str = "lp") -> tuple[PiecewisePareto, list[float]]:
+        """
+        ``PiecewisePareto.fit`` with the standard error of each alpha. The
+        likelihood separates by piece, so the alphas are uncorrelated:
+        ``alpha_k / sqrt(n_k)``, ``n_k`` the uncensored weight ending in
+        piece ``k`` (NaN where none does). A truncated last piece takes the
+        truncated Pareto's; ``truncation_type="wd"`` couples the alphas and
+        is refused. Parameters as ``fit``.
+        
+        Returns
+        -------
+        tuple of (PiecewisePareto, list of float)
+        """
     def layer(self, /, limit: float, attachment: float) -> float:
         """
         Expected loss to the layer ``limit`` xs ``attachment``.
@@ -13178,6 +13211,196 @@ class Poisson:
         Returns
         -------
         float
+        """
+
+@final
+class PolicyLimits:
+    """
+    A severity capped by a mix of policy limits: the loss ``min(X, L)``
+    with ``L = limits[j]`` with probability ``weights[j]``, as a cedant's
+    losses censored at its policies' limits. Every layer moment is exact,
+    from the base severity's, and the distribution function has an atom at
+    each finite limit, so ``Grid.rounding`` and ``CollectiveModel`` take it
+    like any severity.
+    
+    Parameters
+    ----------
+    severity : a severity
+        The losses before the limits; any distribution but ``Sampled``.
+    limits : list of float
+        Positive; ``inf`` for an unlimited policy.
+    weights : list of float
+        Non-negative, normalized to sum to 1 (policy or loss counts do).
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Pareto, PolicyLimits
+    >>> c = PolicyLimits(Pareto(100.0, 2.0), [1000.0, 5000.0], [3, 1])
+    >>> round(c.mean(), 9)  # 0.75 * 100 * (2 - 0.1) + 0.25 * 100 * (2 - 0.02)
+    192.0
+    """
+    def __new__(cls, /, severity: Any, limits: Sequence[float], weights: Sequence[float]) -> PolicyLimits: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def limits(self, /) -> list[float]:
+        """
+        The policy limits.
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def severity(self, /) -> Any:
+        """
+        The severity before the limits.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def weights(self, /) -> list[float]:
+        """
+        Each limit's weight, summing to 1.
         """
 
 @final

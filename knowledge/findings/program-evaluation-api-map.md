@@ -164,7 +164,9 @@ year fractions (`year_fraction(y, m, d)` converts a calendar date).
   `PiecewisePareto.fit(...)`, `GeneralizedPareto.fit_riegel(...)`.
   Verified, with left truncation per loss and right censoring at a
   policy limit (alpha 1.85 uncensored, 1.757 with two censored losses).
-  No standard error and no severity under a mix of policy limits (#213).
+  No standard error and no severity under a mix of policy limits (#213;
+  since added: `Pareto.fit_with_standard_error`,
+  `PiecewisePareto.fit_with_standard_errors` and `PolicyLimits`).
 * `Gpd.fit(exceedances)`, `PotTail.fit`, `mean_excess(draws, thresholds)`
   and `hill(draws, ks)`. Verified; exceedances only, no truncation or
   censoring. `LogAffinePareto` has no fit, and
