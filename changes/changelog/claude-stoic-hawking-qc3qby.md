@@ -185,3 +185,20 @@
   principle keeps its loading at a very small `k` (it fell below the
   mean at `k = 1e-12`); `Portfolio::epd` no longer returns a tiny
   negative ratio.
+
+### Models
+
+- REML smoothing for GAMs (`Smoothing::Reml`, mgcv's `method = "REML"`):
+  the Laplace-approximate restricted likelihood with the observed
+  information, an unknown dispersion estimated with the smoothing
+  parameters (`GamFit::reml_scale`), for the Gaussian, Poisson, gamma,
+  inverse Gaussian and binomial families, matching mgcv 1.9.1. Python
+  `Gam(..., smoothing="reml")` and `GamFit.reml_scale`; R
+  `gam_fit(smoothing = "reml")` and `@reml_scale`. New in
+  `prospicio-math`: `linalg::symmetric_eigenvalues`.
+- Tensor product smooths for GAMs (`TensorSpline`, `Gam::tensor`):
+  mgcv's `te(..., bs = "ps", np = FALSE)`, a smoothing parameter per
+  margin, with GCV, UBRE or REML, matching mgcv 1.9.1. Searches with
+  several smoothing parameters now polish a coarse coordinate pass
+  jointly. Python `Gam(..., tensors=)`; R `gam_fit(tensors =,
+  tensor_basis =)`.

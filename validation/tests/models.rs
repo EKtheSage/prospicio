@@ -177,13 +177,38 @@ fn robust_std_errors_match_statsmodels() {
 
 #[test]
 fn gams_match_mgcv() {
-    use prospicio_glm::gam::{Gam, GamFit, PSpline};
+    use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
     use prospicio_models::Fitted;
     let data = policies();
     let cases = reference("gam_mgcv.csv");
     let fit_case = |case: &str| -> GamFit {
+        let reml = case.starts_with("reml_");
+        let case = match case.strip_prefix("reml_").unwrap_or(case) {
+            "gaussian" => "gaussian_identity",
+            "poisson" => "poisson_log",
+            "gamma" => "gamma_log",
+            other => other,
+        };
         let d = design(&data);
         let log_exposure: Vec<f64> = numeric(&data, "exposure").iter().map(|e| e.ln()).collect();
+        if case == "two_smooths" {
+            // wavy ~ region + s(age, k = 12) + s(exposure, k = 8), by REML.
+            let mut names = d.names().to_vec();
+            let mut cols: Vec<Vec<f64>> = (0..d.n_cols()).map(|j| d.column(j).to_vec()).collect();
+            names.push("exposure".into());
+            cols.push(numeric(&data, "exposure"));
+            let d = prospicio_models::Design::new(names, cols).unwrap();
+            return Gam::new(
+                Glm::new(Family::Gaussian, Link::Identity),
+                vec![
+                    PSpline::new("age").n_basis(12),
+                    PSpline::new("exposure").n_basis(8),
+                ],
+            )
+            .smoothing(Smoothing::Reml)
+            .fit(&d, &numeric(&data, "wavy"))
+            .unwrap_or_else(|e| panic!("{case}: {e}"));
+        }
         let (glm, y, d, k) = match case {
             "gaussian_identity" => (
                 Glm::new(Family::Gaussian, Link::Identity),
@@ -217,9 +242,13 @@ fn gams_match_mgcv() {
             ),
             other => panic!("unknown case {other}"),
         };
-        Gam::new(glm, vec![PSpline::new("age").n_basis(k)])
-            .fit(&d, &y)
-            .unwrap_or_else(|e| panic!("{case}: {e}"))
+        let gam = Gam::new(glm, vec![PSpline::new("age").n_basis(k)]);
+        let gam = if reml {
+            gam.smoothing(Smoothing::Reml)
+        } else {
+            gam
+        };
+        gam.fit(&d, &y).unwrap_or_else(|e| panic!("{case}: {e}"))
     };
     let mut fits: Vec<(String, GamFit)> = Vec::new();
     check(&cases, |c| {
@@ -232,7 +261,19 @@ fn gams_match_mgcv() {
             "deviance" => Some(fit.deviance()),
             "edf" => Some(fit.edf()),
             "scale" => Some(fit.dispersion()),
-            "score" => Some(fit.score()),
+            "score" => {
+                // mgcv stops short of the REML minimum where it is flat:
+                // never above its score.
+                if name.starts_with("reml_") {
+                    let want = c.number("expected")?;
+                    assert!(
+                        fit.score() <= want + 1e-9 * want.abs(),
+                        "{name}: REML score above mgcv's"
+                    );
+                }
+                Some(fit.score())
+            }
+            "reml_scale" => fit.reml_scale(),
             "coef" => {
                 let j = fit.names().iter().position(|n| n == c.get("arg"))?;
                 Some(fit.coefficients()[j])
@@ -1000,4 +1041,112 @@ fn mean_preserving_draws_centre_the_odp_reserve_on_the_chain_ladder() {
     assert!(normal - cl_reserve > 4.0 * se, "{normal} vs {cl_reserve}");
     // Parameter error widens the distribution.
     assert!(se_c > se_f);
+}
+
+/// Tensor product smooths against mgcv's `te(x, z, bs = "ps", np = FALSE)`
+/// (`validation/scripts/r_gam_tensor.R`): a surface by REML and GCV,
+/// Poisson counts by REML, and a P-spline beside the tensor.
+#[test]
+fn tensor_gams_match_mgcv() {
+    use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing, TensorSpline};
+    use prospicio_models::{Design, Fitted};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/gam_surface.csv");
+    let text = std::fs::read_to_string(path).expect("gam_surface.csv");
+    let mut lines = text.lines();
+    let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let rows: Vec<Vec<f64>> = lines
+        .map(|l| l.split(',').map(|v| v.parse().unwrap()).collect())
+        .collect();
+    let col = |name: &str| -> Vec<f64> {
+        let j = header.iter().position(|h| *h == name).unwrap();
+        rows.iter().map(|r| r[j]).collect()
+    };
+    let n = rows.len();
+    // `w` only where a smooth replaces it; otherwise it would be linear.
+    let with_w = Design::new(
+        vec!["(Intercept)".into(), "x".into(), "z".into(), "w".into()],
+        vec![vec![1.0; n], col("x"), col("z"), col("w")],
+    )
+    .unwrap();
+    let design = Design::new(
+        vec!["(Intercept)".into(), "x".into(), "z".into()],
+        vec![vec![1.0; n], col("x"), col("z")],
+    )
+    .unwrap();
+    let te = || TensorSpline::new(&["x", "z"]);
+    let fit_case = |case: &str| -> GamFit {
+        let (family, link, y, smooths, smoothing) = match case {
+            "te_gaussian_reml" => (
+                Family::Gaussian,
+                Link::Identity,
+                "y",
+                vec![],
+                Smoothing::Reml,
+            ),
+            "te_gaussian_gcv" => (
+                Family::Gaussian,
+                Link::Identity,
+                "y",
+                vec![],
+                Smoothing::Auto,
+            ),
+            "te_poisson_reml" => (
+                Family::Poisson,
+                Link::Log,
+                "counts",
+                vec![],
+                Smoothing::Reml,
+            ),
+            "s_te_reml" => (
+                Family::Gaussian,
+                Link::Identity,
+                "y2",
+                vec![PSpline::new("w").n_basis(8)],
+                Smoothing::Reml,
+            ),
+            other => panic!("unknown case {other}"),
+        };
+        let d = if smooths.is_empty() { &design } else { &with_w };
+        Gam::new(Glm::new(family, link), smooths)
+            .tensor(te())
+            .smoothing(smoothing)
+            .fit(d, &col(y))
+            .unwrap_or_else(|e| panic!("{case}: {e}"))
+    };
+    let cases = reference("gam_tensor_mgcv.csv");
+    let mut fits: Vec<(String, GamFit)> = Vec::new();
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !fits.iter().any(|(n, _)| n == name) {
+            fits.push((name.to_string(), fit_case(name)));
+        }
+        let fit = &fits.iter().find(|(n, _)| n == name).unwrap().1;
+        match c.get("quantity") {
+            "deviance" => Some(fit.deviance()),
+            "edf" => Some(fit.edf()),
+            "scale" => Some(fit.dispersion()),
+            "score" => {
+                // Never above mgcv's: it stops where the score is flat.
+                let want = c.number("expected")?;
+                assert!(
+                    fit.score() <= want + 1e-9 * want.abs(),
+                    "{name}: score above mgcv's"
+                );
+                Some(fit.score())
+            }
+            "reml_scale" => fit.reml_scale(),
+            "fitted" => Some(fit.fitted()[c.number("arg")? as usize]),
+            _ => None,
+        }
+    });
+    // Two smoothing parameters for the tensor, and the saved fit predicts
+    // the same.
+    let (_, fit) = &fits[0];
+    assert_eq!(fit.lambdas().len(), 2);
+    let back = GamFit::from_json(&fit.to_json()).unwrap();
+    let (a, b) = (
+        fit.predict(&design).unwrap(),
+        back.predict(&design).unwrap(),
+    );
+    assert!((a[7] - b[7]).abs() < 1e-12 && (a[7] - fit.fitted()[7]).abs() < 1e-9);
 }

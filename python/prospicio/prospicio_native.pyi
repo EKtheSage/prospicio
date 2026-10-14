@@ -6289,7 +6289,14 @@ class Gam:
         functions (10 by default).
     smoothing : str or list of float, default "auto"
         ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
-        ``"ubre"``, or fixed smoothing parameters, one per smooth.
+        ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
+        unknown dispersion with the smoothing parameters), or fixed
+        smoothing parameters: one per smooth, then one per tensor margin.
+    tensors : list, optional
+        Tensor product smooths (mgcv's ``te(..., bs = "ps", np = FALSE)``):
+        each a list of two or more column names, or ``(columns, n_basis)``
+        with one basis size per column (5 by default). Each margin has its
+        own smoothing parameter.
     
     Examples
     --------
@@ -6302,7 +6309,7 @@ class Gam:
     >>> abs(fit.predict(d)[50] - y[50]) < 0.01
     True
     """
-    def __new__(cls, /, glm: Glm, smooths: Sequence[Any], smoothing: Any |None = None) -> Gam: ...
+    def __new__(cls, /, glm: Glm, smooths: Sequence[Any], smoothing: Any |None = None, tensors: Sequence[Any] |None = None) -> Gam: ...
     def fit(self, /, design: Design, y: Sequence[float]) -> GamFit:
         """
         Fits the model.
@@ -6411,9 +6418,15 @@ class GamFit:
         PredictiveDistribution
         """
     @property
+    def reml_scale(self, /) -> float |None:
+        """
+        The dispersion REML estimates with the smoothing parameters
+        (mgcv's ``reml.scale``), or ``None`` for GCV and UBRE.
+        """
+    @property
     def score(self, /) -> float:
         """
-        The minimized GCV or UBRE score.
+        The minimized GCV, UBRE or REML score (mgcv's ``gcv.ubre``).
         """
     def to_json(self, /) -> str:
         """

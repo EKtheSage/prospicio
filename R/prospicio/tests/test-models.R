@@ -113,6 +113,16 @@ s$y <- sin(6 * s$x) + 2
 gm <- gam_fit(y ~ x, s, smooths = "x", n_basis = 12, family = "gaussian")
 stopifnot(max(abs(predict(gm, s) - s$y)) < 0.02)
 near(gam_fit(y ~ x, s, smooths = "x", family = "gaussian", smoothing = 1e8)@edf, 2, 1e-4)
+stopifnot(is.na(gm@reml_scale))
+s$noisy <- s$y + 0.1 * sin(97 * (seq_len(100) - 1))
+gr <- gam_fit(noisy ~ x, s, smooths = "x", n_basis = 12, family = "gaussian", smoothing = "reml")
+stopifnot(gr@reml_scale > 0.002, gr@reml_scale < 0.02, gr@edf > 4, gr@edf < 12)
+# A tensor product smooth.
+tz <- data.frame(x = (((0:199) * 37) %% 101) / 100, z = (((0:199) * 53) %% 97) / 96)
+tz$y <- sin(3 * tz$x) * cos(2 * tz$z) + 0.05 * sin(91 * (0:199))
+gt <- gam_fit(y ~ x + z, tz, smooths = character(), family = "gaussian", smoothing = "reml",
+              tensors = list(c("x", "z")))
+stopifnot(length(gt@lambdas) == 2, max(abs(predict(gt, tz) - tz$y)) < 0.2)
 
 # Metrics, splits, MCMC.
 near(family_deviance("gaussian", c(1, 3), c(2, 2)), 2)
