@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **In progress** (PRs 1 and 2 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **In progress** (PRs 1 to 3 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -178,9 +178,26 @@ Each PR is one type or method, with its parity tests, bindings and docs.
    quantile across its jump. Python `prospicio.aggregate.{Ledger, Group,
    Leg}`, R `pnl_ledger()`, `pnl_group()`, `pnl_leg()` and the
    `ledger_*()` exhibits.
-3. **Rebucketed legs and ratios**: a leg on a step (signed regular grid by
-   linear, mean-keeping scatter) with its validation table, the ratio
-   exhibit and the stack of several ledgers' results. Parity: 2b, 2.
+3. (Done.) **Rebucketed legs and ratios**: `Leg::step` puts a leg's own
+   distribution on a signed regular grid by `aggregate`'s linear,
+   mean-keeping scatter (from `floor(lo / h) h`; a constant gets a span of
+   `(|lo| + 1) 1e-9`), which changes only that row's marginal quantiles:
+   its mean, the sums down the sheet and the scenario columns stay on the
+   exact values. `Ledger::validation` compares the exact and grid means,
+   `Ledger::ratios` is `economic_ratios_df` (premium, loss net of
+   recoveries, expense net of commission and result by block, the ratios
+   of means and, where the premium never vanishes, the means of ratios,
+   the shares of the first block; a leg without a kind is premium on the
+   consideration side and loss on the other), and `pnl::stack` is
+   `stack_marginal_pnls` (each ledger's result statistics, and impacts as
+   differences statistic by statistic). Parity:
+   `validation/scripts/aggregate_pnl_ratios.py`, 324 values: the ratios of
+   examples 1, 2, 3a and the three-group ledger, example 2b's sheet,
+   marginals, card, validation and grid, and the stack of 2b, 2c and their
+   difference, at `1e-12` (`1e-10` on skewness, `1e-15` on the grid).
+   Python `Leg(step=)`, `Ledger.validation`, `Ledger.ratios`,
+   `prospicio.aggregate.stack`; R `pnl_leg(step =)`, `ledger_validation()`,
+   `ledger_ratios()`, `ledger_stack()`.
 4. **Builders for annual covers**: expenses (fixed, premium, loss basis;
    `derive premium`), the plain and consolidated ledgers, the walk and
    the per-atom peel over aggregate covers, on `Tower::on_annual_grid`.

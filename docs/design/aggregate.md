@@ -91,9 +91,11 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   renewal claims" below). Python `wiener_hopf`, R `wiener_hopf()`.
 - `prospicio_aggregate::pnl::{Ledger, Group, Leg, Source, Layout}`: the
   P&L ledger, `aggregate`'s `PnL`: signed legs in books that sell or buy
-  cover, every row's exact distribution and the scenario columns
-  (`docs/design/pnl.md`, which plans its builders). Python
-  `Ledger`, `Group`, `Leg`; R `pnl_ledger()`.
+  cover, every row's exact distribution and the scenario columns, legs
+  rebucketed on a step, the ratio exhibit (`Ledger::ratios`) and the stack
+  of several ledgers' results (`pnl::stack`) (`docs/design/pnl.md`, which
+  plans its builders). Python `Ledger`, `Group`, `Leg`, `stack`; R
+  `pnl_ledger()`, `ledger_ratios()`, `ledger_stack()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.

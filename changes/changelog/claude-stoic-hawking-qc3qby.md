@@ -51,3 +51,12 @@
   `pnl_group()`, `pnl_leg()` and `ledger_sheet()`, `ledger_card()`,
   `ledger_marginal()`, `ledger_legs()`, `ledger_result()`, `ledger_row()`
   (#242).
+- Legs rebucketed on a step (`Leg::step`, with `Ledger::validation`
+  comparing the exact and grid means), the ratio exhibit
+  (`Ledger::ratios`: premium, loss, expense and result by block, ratios of
+  means and means of ratios, shares) and the stack of several ledgers'
+  results with their differences (`pnl::stack`), as `aggregate` 1.0.1's
+  `bs`, `economic_ratios_df` and `stack_marginal_pnls`. Python
+  `Leg(step=)`, `Ledger.validation`, `Ledger.ratios`, `stack`; R
+  `pnl_leg(step =)`, `ledger_validation()`, `ledger_ratios()`,
+  `ledger_stack()`.
