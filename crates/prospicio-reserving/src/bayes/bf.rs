@@ -652,6 +652,33 @@ impl Posterior for Model {
     }
 }
 
+/// The log posterior written once over [`Scalar`](super::scalar::Scalar),
+/// the oracle of the compartmental note's decision 4: test-only, beside
+/// the hand-written [`Posterior::log_posterior`], which stays the fast
+/// path.
+#[cfg(test)]
+impl super::autodiff::GenericDensity for Model {
+    fn n_params(&self) -> usize {
+        self.dim()
+    }
+
+    fn log_density<S: super::scalar::Scalar>(&self, theta: &[S]) -> S {
+        let no = self.n_origins;
+        let mut f = S::from_f64(0.0);
+        for &u in &theta[..no] {
+            f += (u - u.exp_m1()) * self.shape;
+        }
+        for &b in &theta[no..] {
+            f -= b * b * (0.5 * self.development_precision);
+        }
+        for &(w, d, x) in &self.cells {
+            let eta = theta[w] + self.log_prior[w] + theta[no + d];
+            f += (eta * x - eta.exp()) / self.phi;
+        }
+        f
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -806,6 +833,18 @@ mod tests {
     /// With a flat prior on `alpha` the mode's fitted means are the chain
     /// ladder's (EVW, eq. 2.1-2.2 and sec. 2.3), up to the vague prior on
     /// `beta`, which at sd 1,000 moves them by less than 1e-4.
+    #[test]
+    fn the_generic_density_matches_the_hand_written_one() {
+        use crate::bayes::autodiff::{assert_oracle, posterior_points};
+        for (label, cv) in [("BayesBf cv 0.2", 0.2), ("BayesBf flat", f64::INFINITY)] {
+            let (_, model, start) = prepared(&genins(), &BayesBf { cv, ..quick(0) });
+            let mode = mode(&model, start).unwrap();
+            let whitened = Whitened::new(&model, &mode).unwrap();
+            let points = posterior_points(&whitened, model.dim(), 20);
+            assert_oracle(label, &model, &points);
+        }
+    }
+
     #[test]
     fn a_flat_prior_has_the_chain_ladder_at_its_mode() {
         let model = BayesBf {
