@@ -1,20 +1,26 @@
 //! The one-year view of a Bayesian reserving model by Pareto smoothed
-//! importance sampling (`docs/design/reserving-bayes.md`, decision 16).
+//! importance sampling (`docs/design/reserving-bayes.md`, decisions 16 and
+//! 17).
 //!
 //! Each simulation draws the coming year's cells from the posterior
 //! predictive (a posterior draw, then process error), reweights every
 //! posterior draw by the likelihood of those cells, Pareto-smooths the
-//! weights (Vehtari et al. 2024) and takes the time-1 reserve as the
-//! weighted posterior mean of the reserve that remains after the year. A
-//! simulation whose weights are unreliable (Pareto `k̂` above a threshold)
-//! is refitted with NUTS on the extended triangle instead, as
-//! [`BayesOneYear::refit`] says.
+//! weights (`prospicio_bayes::elpd::psis`, Vehtari et al. 2024) and takes
+//! the time-1 reserve as the weighted posterior mean of the reserve that
+//! remains after the year. A simulation whose weights are unreliable
+//! (Pareto `k̂` above a threshold) is refitted with NUTS on the extended
+//! triangle instead, as [`BayesOneYear::refit`] says.
 //!
-//! The engine here knows nothing of a particular model: a model plugs in
-//! through [`YearModel`], which draws the year, scores it and gives the
-//! expected reserve before and after it. [`BayesOdp`](super::BayesOdp)
-//! implements it; Meyers' models, the Bayesian Bornhuetter–Ferguson and the
-//! compartmental model follow.
+//! The engine knows nothing of a particular model (decision 17): a model
+//! plugs in through [`YearModel`], the one interface every Bayesian
+//! model's one-year view implements, and [`simulate`] and [`assemble`] are
+//! written once over it. A model whose cells are over-dispersed Poisson
+//! increments with a log-linear mean ([`BayesOdp`](super::BayesOdp),
+//! [`BayesBf`](super::BayesBf)) gets its [`YearModel`] from [`OdpYear`] by
+//! implementing the smaller [`OdpCells`]. The conformance suite in this
+//! module's tests (and its release-build twin,
+//! `validation/tests/reserving_bayes_one_year_conformance.rs`) runs on every
+//! implementor.
 
 use std::sync::Mutex;
 
@@ -23,11 +29,14 @@ use prospicio_core::StreamRng;
 use prospicio_prob::{PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
-use crate::bootstrap::{component_sums, pick_segment, push_moments, segment_sums};
+use crate::bootstrap::{
+    ProcessDistribution, component_sums, pick_segment, process_draw, push_moments, segment_sums,
+};
 use crate::chain_ladder::ChainLadderFit;
 use crate::error::{Error, Result};
-use crate::one_year_bootstrap::{Failures, opening_names};
+use crate::one_year_bootstrap::{Failures, YearCells, opening_names};
 use crate::segments::{FitTable, ReserveFit, SegmentFits};
+use crate::triangle::{Segment, Triangle};
 
 /// What the one-year view does with a simulation whose Pareto `k̂` is
 /// above [`BayesOneYear::k_threshold`].
@@ -46,8 +55,9 @@ pub enum OneYearRefit {
 }
 
 /// Settings of the one-year view of a Bayesian model
-/// (`BayesOdp::one_year`): the Pareto `k̂` above which a simulation's
-/// importance weights are not trusted, and what is done then.
+/// (`BayesOdp::one_year`, `BayesBf::one_year`): the Pareto `k̂` above
+/// which a simulation's importance weights are not trusted, and what is
+/// done then.
 ///
 /// ```
 /// use prospicio_reserving::bayes::{BayesOneYear, OneYearRefit};
@@ -98,9 +108,21 @@ impl BayesOneYear {
     }
 }
 
-/// A Bayesian model's coming year, as the one-year view needs it. The year
-/// is a fixed list of values per simulation (for the ODP model the
-/// increments of the year's cells, in a fixed order).
+/// A Bayesian model's coming year, as the one-year view needs it: the one
+/// interface every Bayesian model's one-year view implements (decision
+/// 17). The year is a fixed list of values per simulation (for the ODP
+/// likelihood the increments of the year's cells, in a fixed order), and
+/// `theta` is always one posterior draw on the scale
+/// [`PosteriorDraws`] stores it.
+///
+/// Everything a simulation's predictive step would draw afresh that the
+/// year's cells inform (an effect of an origin or an age with no observed
+/// cell, say) must be part of `theta`, carried with each posterior draw,
+/// so that reweighting the draws updates it; only process error that the
+/// year does not inform may be drawn in [`draw_year`](Self::draw_year).
+/// A model whose remaining cells depend on the year's cells given `theta`
+/// (Meyers' cumulative values) says so through
+/// [`closing_uses_year`](Self::closing_uses_year).
 pub(crate) trait YearModel: Sync {
     /// Number of origins, the components of the claims development result.
     fn n_origins(&self) -> usize;
@@ -109,7 +131,10 @@ pub(crate) trait YearModel: Sync {
     /// Draws the year given the parameters `theta`, with process error.
     fn draw_year(&self, theta: &[f64], rng: &mut StreamRng, year: &mut [f64]);
     /// The log likelihood of `year` given `theta`, up to a constant that
-    /// does not depend on `theta`: the log importance ratio.
+    /// does not depend on `theta`: the log importance ratio. It must be
+    /// the change in [`log_posterior`](Self::log_posterior) that the year
+    /// makes, so that the reweighted draws target the posterior a
+    /// [`refit`](Self::refit) samples.
     fn year_log_likelihood(&self, theta: &[f64], year: &[f64]) -> f64;
     /// Each origin's payment in `year`, written into `paid`.
     fn paid(&self, year: &[f64], paid: &mut [f64]);
@@ -119,13 +144,24 @@ pub(crate) trait YearModel: Sync {
     /// `year`.
     fn closing(&self, theta: &[f64], year: &[f64], reserve: &mut [f64]);
     /// Whether [`closing`](Self::closing) depends on `year`; when it does
-    /// not (the ODP model), it is computed once per posterior draw.
+    /// not (the ODP likelihood), it is computed once per posterior draw.
     fn closing_uses_year(&self) -> bool {
         true
     }
     /// The posterior given the observed triangle extended by `year`,
     /// sampled with NUTS from `seed`, and whether its diagnostics warn.
     fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)>;
+    /// The log posterior density of `theta` up to a constant, on the scale
+    /// the draws are stored on, given the observed triangle extended by
+    /// `year` (an empty `year` is the observed triangle alone): the target
+    /// of moment matching (open decision 12 (b), next), and the check of
+    /// the conformance suite that the year's log likelihood is the
+    /// posterior's change. Every model so far stores its draws on an
+    /// unconstrained scale that is an affine map of its sampling scale, so
+    /// no Jacobian term is needed; a model with constrained draws adds its
+    /// own.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64;
 }
 
 /// What the engine returns for one segment.
@@ -185,6 +221,12 @@ pub(crate) fn simulate<M: YearModel>(
         .then(|| per_draw(&|theta, row| model.closing(theta, &[], row)));
 
     let failures = Mutex::new(Failures::default());
+    let fail = |e: Error| {
+        failures
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .record(e);
+    };
     let sims: Vec<Option<Sim>> = (0..n_sims)
         .into_par_iter()
         .map(|i| {
@@ -206,7 +248,18 @@ pub(crate) fn simulate<M: YearModel>(
             let (log_w, k) = if uninformative {
                 (vec![0.0; s], 0.0)
             } else {
-                psis(&log_r)
+                // Relative efficiency 1: the simulations' draws are taken
+                // as independent, as before decision 17.
+                match prospicio_bayes::elpd::psis(&log_r, 1.0) {
+                    Ok(smoothed) => smoothed,
+                    Err(e) => {
+                        fail(Error::Bayes(format!(
+                            "the year's log likelihood is not a number in some posterior \
+                             draw ({e})"
+                        )));
+                        return None;
+                    }
+                }
             };
             let mut closing = vec![0.0; no];
             let (refitted, mut warned) = (!uninformative && settings.refits(k), false);
@@ -224,10 +277,7 @@ pub(crate) fn simulate<M: YearModel>(
                         }
                     }
                     Err(e) => {
-                        failures
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
-                            .record(e);
+                        fail(e);
                         return None;
                     }
                 }
@@ -264,7 +314,7 @@ pub(crate) fn simulate<M: YearModel>(
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some((message, _)) = failures.first {
         return Err(Error::Bayes(format!(
-            "the one-year view's refit failed in {} of {n_sims} simulations, for example: {message}",
+            "the one-year view failed in {} of {n_sims} simulations, for example: {message}",
             failures.count
         )));
     }
@@ -287,91 +337,203 @@ pub(crate) fn simulate<M: YearModel>(
     Ok(out)
 }
 
-/// Pareto smoothed log importance weights for the log ratios `log_r` and
-/// the fitted shape `k̂` (infinite when the tail is too short to fit): the
-/// algorithm of `prospicio_bayes::elpd`'s PSIS-LOO with relative
-/// efficiency 1, the tail `M = min(0.2 S, 3 sqrt(S))` of the `S` ratios
-/// replaced by the quantiles of a generalized Pareto fitted by Zhang and
-/// Stephens' method and shrunk towards 0.5 (Vehtari et al. 2024). A test
-/// checks that `k̂` is `prospicio_bayes::elpd::loo`'s on the same ratios.
-pub(crate) fn psis(log_r: &[f64]) -> (Vec<f64>, f64) {
-    let s = log_r.len();
-    let max = log_r.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let mut lw: Vec<f64> = log_r.iter().map(|v| v - max).collect();
-    let m = ((0.2 * s as f64).ceil()).min((3.0 * (s as f64).sqrt()).ceil()) as usize;
-    if m < 5 || m >= s {
-        return (lw, f64::INFINITY);
-    }
-    let mut order: Vec<usize> = (0..s).collect();
-    order.sort_by(|&a, &b| lw[a].total_cmp(&lw[b]));
-    let tail = &order[s - m..];
-    let cutoff = lw[order[s - m - 1]];
-    let exceed: Vec<f64> = tail.iter().map(|&j| lw[j].exp() - cutoff.exp()).collect();
-    if exceed.iter().all(|&x| x <= 0.0) {
-        return (lw, f64::INFINITY);
-    }
-    let (k, sigma) = gpd_fit(&exceed);
-    for (z, &j) in tail.iter().enumerate() {
-        let p = (z as f64 + 0.5) / m as f64;
-        let q = gpd_quantile(p, k, sigma);
-        lw[j] = (cutoff.exp() + q).ln().min(0.0);
-    }
-    (lw, k)
+/// The one-year view of one segment from the engine's `year`, with the
+/// lifetime `fit` it reweights: the claims development result by origin
+/// (dimension `origin`, `provenance` on it), the opening reserve and
+/// ultimate, and the reliability of each simulation. Written once for
+/// every Bayesian model (decision 17).
+pub(crate) fn assemble<F: ReserveFit>(
+    fit: F,
+    year: YearDraws,
+    segment: &Segment,
+    settings: &BayesOneYear,
+    provenance: Provenance,
+) -> Result<BayesOneYearFit<F>> {
+    let cdr = PredictiveDistribution::from_draws(
+        vec!["origin".into()],
+        segment.origins.iter().map(|&o| vec![o.into()]).collect(),
+        year.cdr,
+        provenance,
+    )?;
+    Ok(BayesOneYearFit {
+        opening_ultimate: opening_ultimate(fit.chain_ladder(), &year.opening),
+        fit,
+        opening_reserve: year.opening,
+        cdr,
+        pareto_k: year.pareto_k,
+        refitted: year.refitted,
+        refit_warnings: year.refit_warnings,
+        k_threshold: settings.k_threshold,
+    })
 }
 
-/// The generalized Pareto quantile `σ/k ((1 - p)^(-k) - 1)`.
-fn gpd_quantile(p: f64, k: f64, sigma: f64) -> f64 {
-    if k.abs() < 1e-12 {
-        -sigma * (-p).ln_1p()
-    } else {
-        sigma / k * ((-k * (-p).ln_1p()).exp() - 1.0)
+/// The latest value plus `reserve`, per origin.
+pub(crate) fn opening_ultimate(chain_ladder: &ChainLadderFit, reserve: &[f64]) -> Vec<f64> {
+    chain_ladder
+        .latest
+        .iter()
+        .zip(reserve)
+        .map(|(l, r)| l + r)
+        .collect()
+}
+
+/// A model of over-dispersed Poisson increments with a log-linear mean
+/// `exp(eta(theta, w, d))` and a plugged-in scale `phi`, which
+/// [`OdpYear`] turns into a [`YearModel`]: [`BayesOdp`](super::BayesOdp)
+/// and [`BayesBf`](super::BayesBf). Every origin and every age of such a
+/// model has an observed cell, so `theta` holds every effect a future cell
+/// needs and nothing in the predictive step but the process error is drawn
+/// afresh (decision 17).
+pub(crate) trait OdpCells: Sync {
+    /// The log mean of cell `(w, d)` given a posterior draw `theta`.
+    fn eta(&self, theta: &[f64], w: usize, d: usize) -> f64;
+    /// The plugged-in scale.
+    fn phi(&self) -> f64;
+    /// The log posterior of `theta` (a posterior draw) with the
+    /// observed increments `extra` (origin, development, value) added, as
+    /// [`YearModel::log_posterior`].
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn log_posterior(&self, theta: &[f64], extra: &[(usize, usize, f64)]) -> f64;
+    /// The posterior with the increments `extra` added, as
+    /// [`YearModel::refit`].
+    fn refit(&self, extra: &[(usize, usize, f64)], seed: u64) -> Result<(PosteriorDraws, bool)>;
+}
+
+/// The coming year of a fitted model of [`OdpCells`], for the one-year
+/// view (decision 16): the year's increments, one per cell valued in the
+/// twelve months after the valuation, in origin and then development order.
+pub(crate) struct OdpYear<'a, C> {
+    cells: &'a C,
+    n_origins: usize,
+    process: ProcessDistribution,
+    /// The year's cells, `(origin, position)`.
+    year: Vec<(usize, usize)>,
+    /// The cells after the latest diagonal, the opening reserve.
+    future: Vec<(usize, usize)>,
+    /// The cells after the year, the closing reserve.
+    after: Vec<(usize, usize)>,
+}
+
+impl<'a, C: OdpCells> OdpYear<'a, C> {
+    /// The year of `segment` of `triangle`, whose origins' latest observed
+    /// positions are `latest`, with `process` error on each drawn cell.
+    pub(crate) fn new(
+        cells: &'a C,
+        process: ProcessDistribution,
+        triangle: &Triangle,
+        segment: &Segment,
+        latest: &[usize],
+    ) -> Self {
+        let nd = segment.n_dev;
+        let mut last = latest.to_vec();
+        // No tail (decision 12): the year stops at the last age.
+        for y in YearCells::of(
+            segment,
+            latest,
+            |o, d| triangle.valuation_of(o + segment.origin_offset, d + segment.dev_offset),
+            false,
+        ) {
+            last[y.origin] = y.last;
+        }
+        let between = |from: &dyn Fn(usize) -> usize, to: &dyn Fn(usize) -> usize| {
+            (0..segment.n_origins)
+                .flat_map(|w| (from(w) + 1..=to(w)).map(move |d| (w, d)))
+                .collect::<Vec<_>>()
+        };
+        Self {
+            cells,
+            n_origins: segment.n_origins,
+            process,
+            year: between(&|w| latest[w], &|w| last[w]),
+            future: between(&|w| latest[w], &|_| nd - 1),
+            after: between(&|w| last[w], &|_| nd - 1),
+        }
+    }
+
+    /// The sum of `exp(eta)` over `cells` by origin, into `reserve`.
+    fn expected(&self, theta: &[f64], cells: &[(usize, usize)], reserve: &mut [f64]) {
+        reserve.fill(0.0);
+        for &(w, d) in cells {
+            reserve[w] += self.cells.eta(theta, w, d).exp();
+        }
+    }
+
+    /// The year's cells with their values.
+    fn extra(&self, year: &[f64]) -> Vec<(usize, usize, f64)> {
+        self.year
+            .iter()
+            .zip(year)
+            .map(|(&(w, d), &x)| (w, d, x))
+            .collect()
     }
 }
 
-/// Zhang and Stephens' (2009) estimate of the generalized Pareto shape and
-/// scale of the exceedances `x`, shrunk towards `k = 0.5` as a prior worth
-/// 10 observations would.
-fn gpd_fit(x: &[f64]) -> (f64, f64) {
-    let mut x = x.to_vec();
-    x.sort_by(f64::total_cmp);
-    let n = x.len();
-    let nf = n as f64;
-    let m = 30 + nf.sqrt().floor() as usize;
-    let x_max = x[n - 1];
-    let x_q = x[((nf / 4.0 + 0.5).floor() as usize).max(1) - 1];
-    let thetas: Vec<f64> = (1..=m)
-        .map(|j| 1.0 / x_max + (1.0 - (m as f64 / (j as f64 - 0.5)).sqrt()) / (3.0 * x_q))
-        .collect();
-    let k_of = |theta: f64| x.iter().map(|v| (-theta * v).ln_1p()).sum::<f64>() / nf;
-    let ll: Vec<f64> = thetas
-        .iter()
-        .map(|&t| {
-            let k = k_of(t);
-            nf * ((-t / k).ln() - k - 1.0)
-        })
-        .collect();
-    let weights: Vec<f64> = ll
-        .iter()
-        .map(|&lj| {
-            let total: f64 = ll.iter().map(|&li| (li - lj).exp()).sum();
-            if total.is_finite() { 1.0 / total } else { 0.0 }
-        })
-        .collect();
-    let wsum: f64 = weights.iter().sum();
-    let theta: f64 = thetas.iter().zip(&weights).map(|(t, w)| t * w).sum::<f64>() / wsum;
-    let k = k_of(theta);
-    let sigma = -k / theta;
-    let k = (nf * k + 10.0 * 0.5) / (nf + 10.0);
-    (k, sigma)
+impl<C: OdpCells> YearModel for OdpYear<'_, C> {
+    fn n_origins(&self) -> usize {
+        self.n_origins
+    }
+
+    fn n_year(&self) -> usize {
+        self.year.len()
+    }
+
+    fn draw_year(&self, theta: &[f64], rng: &mut StreamRng, year: &mut [f64]) {
+        let phi = self.cells.phi();
+        for (x, &(w, d)) in year.iter_mut().zip(&self.year) {
+            let mu = self.cells.eta(theta, w, d).exp();
+            *x = process_draw(self.process, phi, mu, rng);
+        }
+    }
+
+    fn year_log_likelihood(&self, theta: &[f64], year: &[f64]) -> f64 {
+        self.year
+            .iter()
+            .zip(year)
+            .map(|(&(w, d), &x)| {
+                let eta = self.cells.eta(theta, w, d);
+                x * eta - eta.exp()
+            })
+            .sum::<f64>()
+            / self.cells.phi()
+    }
+
+    fn paid(&self, year: &[f64], paid: &mut [f64]) {
+        paid.fill(0.0);
+        for (&(w, _), x) in self.year.iter().zip(year) {
+            paid[w] += x;
+        }
+    }
+
+    fn opening(&self, theta: &[f64], reserve: &mut [f64]) {
+        self.expected(theta, &self.future, reserve);
+    }
+
+    fn closing(&self, theta: &[f64], _year: &[f64], reserve: &mut [f64]) {
+        self.expected(theta, &self.after, reserve);
+    }
+
+    fn closing_uses_year(&self) -> bool {
+        false
+    }
+
+    fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)> {
+        self.cells.refit(&self.extra(year), seed)
+    }
+
+    fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64 {
+        self.cells.log_posterior(theta, &self.extra(year))
+    }
 }
 
 /// The one-year view of a Bayesian model on one segment
-/// ([`BayesOdp::one_year`](super::BayesOdp::one_year)): the lifetime fit,
-/// the opening reserve, the claims development result and how reliable
-/// each simulation's reweighting was.
+/// ([`BayesOdp::one_year`](super::BayesOdp::one_year),
+/// [`BayesBf::one_year`](super::BayesBf::one_year)): the lifetime fit, the
+/// opening reserve, the claims development result and how reliable each
+/// simulation's reweighting was.
 ///
-/// `F` is the model's lifetime fit, [`BayesOdpFit`](super::BayesOdpFit)
-/// for the Bayesian ODP.
+/// `F` is the model's lifetime fit: [`BayesOdpFit`](super::BayesOdpFit)
+/// for the Bayesian ODP, [`BayesBfFit`](super::BayesBfFit) for the
+/// Bayesian Bornhuetter–Ferguson.
 #[derive(Debug, Clone)]
 pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     /// The model fitted to the observed triangle, with its lifetime
@@ -436,6 +598,7 @@ impl<F: ReserveFit> BayesOneYearFit<F> {
             fits: vec![Opened {
                 chain_ladder: self.fit.chain_ladder().clone(),
                 opening_ultimate: self.opening_ultimate.clone(),
+                origins: self.fit.origin_columns(),
                 totals: self.fit.total_columns(),
             }],
         }
@@ -461,6 +624,7 @@ fn flagged_share(pareto_k: &[f64], threshold: f64) -> f64 {
 struct Opened {
     chain_ladder: ChainLadderFit,
     opening_ultimate: Vec<f64>,
+    origins: Vec<(&'static str, Vec<f64>)>,
     totals: Vec<(&'static str, f64)>,
 }
 
@@ -471,6 +635,10 @@ impl ReserveFit for Opened {
 
     fn ultimate(&self) -> &[f64] {
         &self.opening_ultimate
+    }
+
+    fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
+        self.origins.clone()
     }
 
     fn total_columns(&self) -> Vec<(&'static str, f64)> {
@@ -514,6 +682,10 @@ impl<S: ReserveFit> ReserveFit for BayesOneYearSegment<S> {
 
     fn ultimate(&self) -> &[f64] {
         &self.opening_ultimate
+    }
+
+    fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
+        self.fit.origin_columns()
     }
 
     fn total_columns(&self) -> Vec<(&'static str, f64)> {
@@ -574,32 +746,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_shape_is_prospicio_bayes_loo_s() {
-        // Log ratios with a heavy right tail and a light one: loo smooths
-        // the ratios of minus its log likelihood, so it gets -log_r.
-        let mut rng = StreamRng::new(3, 0);
-        for scale in [0.3, 1.0, 3.0] {
-            let log_r: Vec<f64> = (0..4000)
-                .map(|_| scale * prospicio_math::special::norm_quantile(rng.next_open01()))
-                .collect();
-            let (lw, k) = psis(&log_r);
-            let minus: Vec<f64> = log_r.iter().map(|v| -v).collect();
-            let loo = prospicio_bayes::elpd::loo(&minus, 1, None).unwrap();
-            assert_eq!(k, loo.pareto_k[0], "scale {scale}");
-            assert!(lw.iter().all(|v| v.is_finite() && *v <= 0.0));
-        }
-    }
-
-    #[test]
-    fn equal_ratios_give_equal_weights() {
-        let (lw, k) = psis(&[0.5; 1000]);
-        assert!(lw.iter().all(|&v| v == 0.0));
-        assert!(k.is_infinite());
-        let (_, k) = psis(&[0.0, 1.0, 2.0]);
-        assert!(k.is_infinite(), "too few ratios for a tail");
-    }
-
-    #[test]
     fn the_threshold_decides_the_refits() {
         let s = BayesOneYear::default();
         assert!(!s.refits(0.69) && s.refits(0.71) && s.refits(f64::INFINITY));
@@ -623,5 +769,122 @@ mod tests {
             .validate()
             .is_err()
         );
+    }
+}
+
+/// The conformance suite of the one-year view (decision 17): checks that
+/// need no external reference, run on every [`YearModel`] in its model's
+/// unit tests. The checks that need hundreds of NUTS refits run in a
+/// release build in `validation/tests/reserving_bayes_one_year_conformance.rs`.
+/// A new Bayesian model's one-year view passes both before it ships
+/// (AGENTS.md, "Checks").
+#[cfg(test)]
+pub(crate) mod conformance {
+    use super::*;
+
+    /// Runs the suite on `model` under its opening `posterior`, and on
+    /// `closed`, the same model fitted to a triangle whose every origin is
+    /// at the last age, under its posterior `closed_posterior`:
+    ///
+    /// 1. the year's log likelihood is the change the year makes to the
+    ///    log posterior (the importance ratio targets the posterior a
+    ///    refit samples), for years drawn from several posterior draws;
+    /// 2. the total claims development result has mean zero within 4.5
+    ///    Monte Carlo standard errors over 2,000 reweighted simulations;
+    /// 3. a seed replays the view bit for bit, whatever the threads, and
+    ///    another seed gives another view;
+    /// 4. a year with no cells gives a zero claims development result,
+    ///    `k̂` 0 and no refit, even under `RefitAll`.
+    pub(crate) fn check<M: YearModel, C: YearModel>(
+        name: &str,
+        model: &M,
+        posterior: &PosteriorDraws,
+        closed: &C,
+        closed_posterior: &PosteriorDraws,
+    ) {
+        let s = posterior.n_draws();
+        let ny = model.n_year();
+        assert!(ny > 0, "{name}: the open triangle has no year");
+
+        // 1. The importance ratio is the posterior's change.
+        let mut rng = StreamRng::new(11, 0);
+        let mut year = vec![0.0; ny];
+        for j in (0..s).step_by(s / 8) {
+            model.draw_year(posterior.draw(j), &mut rng, &mut year);
+            let change = |d: usize| {
+                let theta = posterior.draw(d);
+                let (with, without) = (
+                    model.log_posterior(theta, &year),
+                    model.log_posterior(theta, &[]),
+                );
+                (with - without, with.abs() + without.abs())
+            };
+            let (base, scale0) = change(0);
+            let ll0 = model.year_log_likelihood(posterior.draw(0), &year);
+            for d in (1..s).step_by(s / 16) {
+                let (delta, scale) = change(d);
+                let ll = model.year_log_likelihood(posterior.draw(d), &year);
+                let gap = (delta - base) - (ll - ll0);
+                assert!(
+                    gap.abs() <= 1e-10 * (1.0 + scale + scale0),
+                    "{name}: draw {d}, year from draw {j}: the log posterior moves by {} and \
+                     the year's log likelihood by {}",
+                    delta - base,
+                    ll - ll0
+                );
+            }
+        }
+
+        // 2. The claims development result has mean zero.
+        let only = BayesOneYear {
+            refit: OneYearRefit::ReweightOnly,
+            ..BayesOneYear::default()
+        };
+        let n = 2_000;
+        let view = simulate(model, posterior, &only, n, 5).unwrap();
+        let no = model.n_origins();
+        let totals: Vec<f64> = view.cdr.chunks_exact(no).map(|r| r.iter().sum()).collect();
+        let mean = totals.iter().sum::<f64>() / n as f64;
+        let sd = (totals.iter().map(|t| (t - mean).powi(2)).sum::<f64>() / n as f64).sqrt();
+        assert!(
+            sd > 0.0,
+            "{name}: the claims development result does not vary"
+        );
+        assert!(
+            mean.abs() < 4.5 * sd / (n as f64).sqrt(),
+            "{name}: mean total CDR {mean}, sd {sd}"
+        );
+        assert!(view.refitted.is_empty() && view.pareto_k.len() == n);
+
+        // 3. A seed replays the view, whatever the threads.
+        let one = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| simulate(model, posterior, &only, 200, 5).unwrap());
+        assert_eq!(one.cdr, view.cdr[..200 * no], "{name}: replay");
+        assert_eq!(one.pareto_k, view.pareto_k[..200], "{name}: replay");
+        let other = simulate(model, posterior, &only, 200, 6).unwrap();
+        assert_ne!(other.cdr, one.cdr, "{name}: another seed");
+
+        // 4. A year with no cells changes nothing and refits nothing.
+        assert_eq!(closed.n_year(), 0, "{name}: the closed triangle has a year");
+        for refit in [
+            OneYearRefit::ReweightOnly,
+            OneYearRefit::RefitFlagged,
+            OneYearRefit::RefitAll,
+        ] {
+            let settings = BayesOneYear {
+                refit,
+                ..BayesOneYear::default()
+            };
+            let view = simulate(closed, closed_posterior, &settings, 50, 7).unwrap();
+            assert!(view.refitted.is_empty(), "{name}: {refit:?} refitted");
+            assert!(view.pareto_k.iter().all(|&k| k == 0.0), "{name}: {refit:?}");
+            assert!(
+                view.cdr.iter().all(|v| v.abs() <= 1e-9 * (1.0 + v.abs())),
+                "{name}: {refit:?} gives a CDR without a year"
+            );
+        }
     }
 }

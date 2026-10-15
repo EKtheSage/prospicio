@@ -11,7 +11,8 @@ use rayon::prelude::*;
 
 use super::laplace::{Posterior, Whitened, mode};
 use super::one_year::{
-    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, YearDraws, YearModel,
+    self, BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, OdpCells, OdpYear,
+    YearDraws,
 };
 use super::{Diagnostics, Stream, derive_seed, one_year_seed};
 use crate::backtest::{CellForecast, TriangleModel};
@@ -23,7 +24,6 @@ use crate::chain_ladder::ChainLadderFit;
 use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
 use crate::frame::TriangleFrame;
-use crate::one_year_bootstrap::YearCells;
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -474,14 +474,9 @@ impl BayesOdp {
         let mut hasher = InputHasher::new();
         hasher.str(column);
         hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
-        let cdr = PredictiveDistribution::from_draws(
-            vec!["origin".into()],
-            segment.origins.iter().map(|&o| vec![o.into()]).collect(),
-            year.cdr,
-            self.one_year_provenance(column, &fit.model, settings)
-                .input_hash(hasher.finish()),
-        )?;
-        let opening_ultimate = opening_ultimate(&fit.chain_ladder, &year.opening);
+        let provenance = self
+            .one_year_provenance(column, &fit.model, settings)
+            .input_hash(hasher.finish());
         let BayesOdpSegment {
             chain_ladder,
             scale,
@@ -489,23 +484,15 @@ impl BayesOdp {
             diagnostics,
             model,
         } = fit;
-        Ok(BayesOneYearFit {
-            fit: BayesOdpFit {
-                chain_ladder,
-                scale,
-                posterior,
-                diagnostics,
-                reserves,
-                model,
-            },
-            opening_ultimate,
-            opening_reserve: year.opening,
-            cdr,
-            pareto_k: year.pareto_k,
-            refitted: year.refitted,
-            refit_warnings: year.refit_warnings,
-            k_threshold: settings.k_threshold,
-        })
+        let fit = BayesOdpFit {
+            chain_ladder,
+            scale,
+            posterior,
+            diagnostics,
+            reserves,
+            model,
+        };
+        one_year::assemble(fit, year, &segment, settings, provenance)
     }
 
     /// The one-year view of `column` in every segment of a cumulative
@@ -564,7 +551,7 @@ impl BayesOdp {
         let cdr = PredictiveDistribution::from_draws(dims, components, draws, provenance)?;
         let segments = fitted.map(|(fit, year)| BayesOneYearSegment {
             fit: fit.clone(),
-            opening_ultimate: opening_ultimate(&fit.chain_ladder, &year.opening),
+            opening_ultimate: one_year::opening_ultimate(&fit.chain_ladder, &year.opening),
             opening_reserve: year.opening.clone(),
             pareto_k: year.pareto_k.clone(),
             refitted: year.refitted.clone(),
@@ -598,8 +585,15 @@ impl BayesOdp {
         predictive: Stream,
         settings: &BayesOneYear,
     ) -> Result<YearDraws> {
-        let year = OdpYear::new(self, triangle, segment, fit);
-        super::one_year::simulate(
+        let cells = OdpRefit::new(self, fit);
+        let year = OdpYear::new(
+            &cells,
+            self.process,
+            triangle,
+            segment,
+            &fit.chain_ladder.latest_position,
+        );
+        one_year::simulate(
             &year,
             &fit.posterior,
             settings,
@@ -616,7 +610,7 @@ impl BayesOdp {
     ) -> Provenance {
         let mut provenance = self.base_provenance(column);
         provenance.model = "bayes_odp_one_year".into();
-        super::one_year::provenance(provenance, settings)
+        one_year::provenance(provenance, settings)
             .param("c0", model.c0)
             .param("scale", model.phi)
     }
@@ -1226,130 +1220,57 @@ impl super::autodiff::GenericDensity for Model {
     }
 }
 
-/// The latest value plus `reserve`, per origin.
-fn opening_ultimate(chain_ladder: &ChainLadderFit, reserve: &[f64]) -> Vec<f64> {
-    chain_ladder
-        .latest
-        .iter()
-        .zip(reserve)
-        .map(|(l, r)| l + r)
-        .collect()
-}
-
-/// The coming year of a fitted [`BayesOdp`] segment, for the one-year
-/// view (decision 16): the year's increments, one per cell valued in the
-/// twelve months after the valuation, in origin and then development order.
-struct OdpYear<'a> {
+/// A fitted [`BayesOdp`] segment as the one-year view sees it
+/// ([`OdpCells`], decision 17): `eta` is [`Model::eta`] on the stored
+/// draws `(c, a, b)`, and a refit or the year's log posterior adds the
+/// year's increments as observed cells to the same model (priors, `c0` and
+/// `phi` unchanged). Every origin and age has an observed cell, so the
+/// draws carry every effect a future cell needs.
+struct OdpRefit<'a> {
     odp: &'a BayesOdp,
     model: &'a Model,
     /// The opening posterior mean, the refits' Newton start.
     start: Vec<f64>,
-    /// The year's cells, `(origin, position)`.
-    year: Vec<(usize, usize)>,
-    /// The cells after the latest diagonal, the opening reserve.
-    future: Vec<(usize, usize)>,
-    /// The cells after the year, the closing reserve.
-    after: Vec<(usize, usize)>,
 }
 
-impl<'a> OdpYear<'a> {
-    fn new(
-        odp: &'a BayesOdp,
-        triangle: &Triangle,
-        segment: &Segment,
-        fit: &'a BayesOdpSegment,
-    ) -> Self {
-        let latest = &fit.chain_ladder.latest_position;
-        let nd = segment.n_dev;
-        let mut last = latest.clone();
-        // No tail (decision 12): the year stops at the last age.
-        for y in YearCells::of(
-            segment,
-            latest,
-            |o, d| triangle.valuation_of(o + segment.origin_offset, d + segment.dev_offset),
-            false,
-        ) {
-            last[y.origin] = y.last;
-        }
-        let cells = |from: &dyn Fn(usize) -> usize, to: &dyn Fn(usize) -> usize| {
-            (0..segment.n_origins)
-                .flat_map(|w| (from(w) + 1..=to(w)).map(move |d| (w, d)))
-                .collect::<Vec<_>>()
-        };
+impl<'a> OdpRefit<'a> {
+    fn new(odp: &'a BayesOdp, fit: &'a BayesOdpSegment) -> Self {
         Self {
             odp,
             model: &fit.model,
             start: fit.posterior.mean(),
-            year: cells(&|w| latest[w], &|w| last[w]),
-            future: cells(&|w| latest[w], &|_| nd - 1),
-            after: cells(&|w| last[w], &|_| nd - 1),
         }
     }
 
-    /// The sum of `exp(eta)` over `cells` by origin, into `reserve`.
-    fn expected(&self, theta: &[f64], cells: &[(usize, usize)], reserve: &mut [f64]) {
-        reserve.fill(0.0);
-        for &(w, d) in cells {
-            reserve[w] += self.model.eta(theta, w, d).exp();
-        }
+    fn extended(&self, extra: &[(usize, usize, f64)]) -> Model {
+        let mut extended = self.model.clone();
+        extended.cells.extend_from_slice(extra);
+        extended
     }
 }
 
-impl YearModel for OdpYear<'_> {
-    fn n_origins(&self) -> usize {
-        self.model.n_origins
+impl OdpCells for OdpRefit<'_> {
+    fn eta(&self, theta: &[f64], w: usize, d: usize) -> f64 {
+        self.model.eta(theta, w, d)
     }
 
-    fn n_year(&self) -> usize {
-        self.year.len()
+    fn phi(&self) -> f64 {
+        self.model.phi
     }
 
-    fn draw_year(&self, theta: &[f64], rng: &mut StreamRng, year: &mut [f64]) {
-        for (x, &(w, d)) in year.iter_mut().zip(&self.year) {
-            let mu = self.model.eta(theta, w, d).exp();
-            *x = process_draw(self.odp.process, self.model.phi, mu, rng);
-        }
+    /// The draws are stored on the model's own scale, an affine map of
+    /// the whitened one NUTS samples, so no Jacobian enters.
+    fn log_posterior(&self, theta: &[f64], extra: &[(usize, usize, f64)]) -> f64 {
+        let mut grad = vec![0.0; theta.len()];
+        self.extended(extra).log_posterior(theta, &mut grad)
     }
 
-    fn year_log_likelihood(&self, theta: &[f64], year: &[f64]) -> f64 {
-        self.year
-            .iter()
-            .zip(year)
-            .map(|(&(w, d), &x)| {
-                let eta = self.model.eta(theta, w, d);
-                x * eta - eta.exp()
-            })
-            .sum::<f64>()
-            / self.model.phi
-    }
-
-    fn paid(&self, year: &[f64], paid: &mut [f64]) {
-        paid.fill(0.0);
-        for (&(w, _), x) in self.year.iter().zip(year) {
-            paid[w] += x;
-        }
-    }
-
-    fn opening(&self, theta: &[f64], reserve: &mut [f64]) {
-        self.expected(theta, &self.future, reserve);
-    }
-
-    fn closing(&self, theta: &[f64], _year: &[f64], reserve: &mut [f64]) {
-        self.expected(theta, &self.after, reserve);
-    }
-
-    fn closing_uses_year(&self) -> bool {
-        false
-    }
-
-    /// The same model (priors, `c0` and `phi` unchanged) with the year's
-    /// increments as observed cells, sampled as [`BayesOdp::fit`] samples.
-    fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)> {
-        let mut extended = self.model.clone();
-        extended
-            .cells
-            .extend(self.year.iter().zip(year).map(|(&(w, d), &x)| (w, d, x)));
-        let (posterior, diagnostics) = self.odp.sample(&extended, self.start.clone(), seed)?;
+    /// Sampled as [`BayesOdp::fit`] samples, from the opening posterior
+    /// mean.
+    fn refit(&self, extra: &[(usize, usize, f64)], seed: u64) -> Result<(PosteriorDraws, bool)> {
+        let (posterior, diagnostics) =
+            self.odp
+                .sample(&self.extended(extra), self.start.clone(), seed)?;
         Ok((posterior, !diagnostics.warnings.is_empty()))
     }
 }
