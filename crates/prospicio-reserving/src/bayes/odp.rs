@@ -2291,4 +2291,54 @@ mod tests {
             [0x1b86_9a1b_102e_2965, 0xa555_8ff3_9fe3_7baf]
         );
     }
+
+    /// The one-year conformance suite (decision 17) on GenIns, with a
+    /// fully developed square as the triangle without a year.
+    #[test]
+    fn the_one_year_view_conforms() {
+        let model = quick(4);
+        let square = annual(
+            2001,
+            &[
+                &[357.0, 1124.0, 1735.0, 2218.0],
+                &[352.0, 1236.0, 2170.0, 3353.0],
+                &[290.0, 1292.0, 2219.0, 3235.0],
+                &[310.0, 1418.0, 2195.0, 3757.0],
+            ],
+        );
+        let fitted: Vec<(Triangle, Segment, BayesOdpSegment)> = [genins(), square]
+            .into_iter()
+            .map(|tri| {
+                let segment = tri.segment("values").unwrap();
+                let (fit, _) = model
+                    .fit_segment(&segment, "values", Stream::Chains, Stream::Predictive)
+                    .unwrap();
+                (tri, segment, fit)
+            })
+            .collect();
+        let cells: Vec<OdpRefit> = fitted
+            .iter()
+            .map(|(_, _, fit)| OdpRefit::new(&model, fit))
+            .collect();
+        let years: Vec<_> = fitted
+            .iter()
+            .zip(&cells)
+            .map(|((tri, segment, fit), cells)| {
+                OdpYear::new(
+                    cells,
+                    model.process,
+                    tri,
+                    segment,
+                    &fit.chain_ladder.latest_position,
+                )
+            })
+            .collect();
+        crate::bayes::one_year::conformance::check(
+            "BayesOdp",
+            &years[0],
+            &fitted[0].2.posterior,
+            &years[1],
+            &fitted[1].2.posterior,
+        );
+    }
 }
