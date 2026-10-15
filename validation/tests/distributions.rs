@@ -288,6 +288,39 @@ fn gpd_fits_match_exact_likelihood() {
     });
 }
 
+#[test]
+fn evt_threshold_diagnostics_match_ismev() {
+    use prospicio_prob::evt::threshold_diagnostics;
+    let cases = reference("evt_thresholds_r.csv");
+    check(&cases, |c| {
+        // The data sets in validation/scripts/r_evt_thresholds.R.
+        let n = c.param("params", "n") as usize;
+        let p = (1..=n).map(|i| (i as f64 - 0.5) / n as f64);
+        let x: Vec<f64> = if c.get("params").contains("data=burr") {
+            let (a, cc) = (c.param("params", "a"), c.param("params", "c"));
+            p.map(|p| ((1.0 - p).powf(-1.0 / a) - 1.0).powf(1.0 / cc))
+                .collect()
+        } else {
+            let k = c.param("params", "k");
+            p.map(|p| (-(-p).ln_1p()).powf(1.0 / k)).collect()
+        };
+        let d = threshold_diagnostics(&x, &[c.number("arg")?])[0];
+        let quantity = c.get("quantity");
+        // ismev's rows are the same quantities from Nelder-Mead.
+        match quantity.strip_prefix("ismev_").unwrap_or(quantity) {
+            "n_above" => Some(d.n_above as f64),
+            "mean_excess" => Some(d.mean_excess),
+            "mean_excess_se" => Some(d.mean_excess_se),
+            "xi" => Some(d.xi),
+            "beta" => Some(d.beta),
+            "modified_scale" => Some(d.modified_scale),
+            "xi_se" => Some(d.xi_se),
+            "modified_scale_se" => Some(d.modified_scale_se),
+            _ => None,
+        }
+    });
+}
+
 /// A Pareto (optionally truncated) from `t=..;alpha=..[;truncation=..]`.
 fn pareto_from(c: &prospicio_validation::Case) -> Option<prospicio_prob::Pareto> {
     let p = prospicio_prob::Pareto::new(c.param("params", "t"), c.param("params", "alpha")).ok()?;

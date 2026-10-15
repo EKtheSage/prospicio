@@ -91,10 +91,12 @@ what it is aiming for by v1.0.
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean,
     nested Archimedean, C- and D-vines)
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
-    others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
+    others), EVT (GPD, POT, Hill, and threshold diagnostics: the mean
+    excess and the GPD's shape and modified scale at each threshold with
+    standard errors, as R's `ismev`); TVaR of a grid and `tvar_threshold`.
   - `Discrete`, a distribution on finitely many values of either sign,
     for the P&L ledger's rows (`docs/design/pnl.md`).
-- **Next:** threshold diagnostics for EVT.
+- **Next:** open.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 

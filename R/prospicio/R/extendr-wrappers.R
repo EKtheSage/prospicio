@@ -222,6 +222,8 @@ mean_excess_rust <- function(draws, thresholds) .Call(wrap__mean_excess_rust, dr
 
 hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
+threshold_diagnostics_rust <- function(draws, thresholds) .Call(wrap__threshold_diagnostics_rust, draws, thresholds)
+
 EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)

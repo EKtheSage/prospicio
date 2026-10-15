@@ -223,6 +223,7 @@ reference:
     contents:
       - pot_tail
       - tail_diagnostics
+      - threshold_diagnostics
       - gpd_fit
   - title: Reserving
     contents:

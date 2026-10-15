@@ -20714,6 +20714,42 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     [0.5, 0.5]
     """
 
+def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -> dict:
+    """
+    Threshold diagnostics for peaks over threshold: at each threshold the
+    mean excess and the generalized Pareto fitted to the exceedances, with
+    standard errors (the numbers behind ``ismev``'s ``mrl.plot`` and
+    ``gpd.fitrange``).
+    
+    Above a threshold where a GPD fits, the mean excess is linear in the
+    threshold and the shape ``xi`` and modified scale ``beta - xi * u`` are
+    constant up to their sampling error: pick the lowest threshold above
+    which they are stable, then fit a :class:`PotTail` there. Standard
+    errors come from the observed information and hold for ``xi > -0.5``.
+    A threshold with too few values above it gives NaN where it cannot
+    estimate (2 for the mean excess's standard error, 3 for the GPD).
+    
+    Parameters
+    ----------
+    draws : list of float
+    thresholds : list of float
+    
+    Returns
+    -------
+    dict of str to list
+        Columns ``threshold``, ``n_above``, ``mean_excess``,
+        ``mean_excess_se``, ``xi``, ``xi_se``, ``beta``,
+        ``modified_scale`` and ``modified_scale_se``, one entry per
+        threshold (``pandas.DataFrame`` takes it as is).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import threshold_diagnostics
+    >>> d = threshold_diagnostics([1.0, 2.0, 3.0, 4.0, 5.0], [2.5])
+    >>> d["n_above"], d["mean_excess"]
+    ([3], [1.5])
+    """
+
 def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], list[int]]]:
     """
     Time-ordered splits: for each of the last ``n_test`` periods, train on
