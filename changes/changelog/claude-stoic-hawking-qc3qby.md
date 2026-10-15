@@ -202,3 +202,14 @@
   several smoothing parameters now polish a coarse coordinate pass
   jointly. Python `Gam(..., tensors=)`; R `gam_fit(tensors =,
   tensor_basis =)`.
+
+### Guides
+
+- The guides and notebooks use the features from #193, #194 and #211 to
+  #214: `PredictiveDistribution.select` for a tower's ceded part,
+  `fit_severity` and `goodness_of_fit` for the body,
+  `Pareto.fit_with_standard_error`, `TowerModel.diagnostics` and
+  `alpha_bounds`, `TabulatedCurve.from_severity`, the Swiss Re `c`
+  calibrations, `layer_cv`, `PolicyLimits` in the submission evaluation,
+  and an explicit `spread` on risk profiles with bounds. The gaps tables
+  keep #192 and clash across more than two lines (#265).
