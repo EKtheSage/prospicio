@@ -374,10 +374,10 @@ mod tests {
         let ll: Vec<f64> = u.iter().map(|&v| 2.0 * v.ln()).collect();
         let r_eff = [1.0, 0.6];
         let l = loo(&ll, n, Some(&r_eff)).unwrap();
-        for i in 0..n {
+        for (i, &r) in r_eff.iter().enumerate() {
             let col = column(&ll, n, i);
             let log_r: Vec<f64> = col.iter().map(|v| -v).collect();
-            let (lw, k) = psis(&log_r, r_eff[i]).unwrap();
+            let (lw, k) = psis(&log_r, r).unwrap();
             assert_eq!(k.to_bits(), l.pareto_k[i].to_bits());
             assert!(k.is_finite());
             let num: Vec<f64> = lw.iter().zip(&col).map(|(w, c)| w + c).collect();
