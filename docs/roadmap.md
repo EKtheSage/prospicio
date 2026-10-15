@@ -341,12 +341,11 @@ what it is aiming for by v1.0.
 
 - **Now:** a prototype XLL for 64-bit desktop Excel (`docs/design/xll.md`):
   the chain ladder and Mack with standard errors as worksheet functions,
-  built by `cargo xtask xll`, a local file for the user to test.
+  built by `cargo xtask xll`, a local file, tested by the user in Excel 365.
 - **Next** (user's order, 2026-10-15):
-  1. The user's test in Excel; settle the prefix and the error style.
-  2. Layer pricing: Pareto or lognormal layer loss, ILF.
-  3. An ODP bootstrap summary.
-  4. Distribution: a CI artifact or a release asset, then signing.
+  1. Layer pricing: Pareto or lognormal layer loss, ILF.
+  2. An ODP bootstrap summary.
+  3. Distribution: a CI artifact or a release asset, then signing.
 
 ## Order of work (set by the user 2026-10-09)
 

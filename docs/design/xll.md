@@ -1,6 +1,6 @@
 # Design note: the Excel add-in (XLL)
 
-Status: **Prototype, for testing by the user** · Lane: Excel (cloud) · Depends on: `triangle.md`, `reserving-v02.md` (the functions it wraps)
+Status: **Prototype, tested by the user in Excel 365 (2026-10-15)** · Lane: Excel (cloud) · Depends on: `triangle.md`, `reserving-v02.md` (the functions it wraps)
 
 ## Goal
 
@@ -71,7 +71,7 @@ in place, with R's totals beside them, for a test in real Excel.
    the sheet; `origins` passes origin labels into the exhibit. Ages are
    read as development periods, so yearly, quarterly and monthly
    triangles all work; link labels say 12-24 and on.
-7. **Errors come back as text.** A bad argument returns one cell
+7. **Errors come back as text** (confirmed, decision 11). A bad argument returns one cell
    `#PROSPICIO! <reason>`, since Excel's `#VALUE!` cannot say why. A panic
    is caught and reported the same way; it never unwinds into Excel.
 8. **Built from Linux or Windows.** `cargo xtask xll` uses
@@ -81,12 +81,14 @@ in place, with R's totals beside them, for a test in real Excel.
    built by `cargo xtask xll`, handed over for testing. A CI artifact or a
    release asset, and code signing, come after the user has tried it.
 
+10. **The prefix is `PRO.`** (user, 2026-10-15): short to type. Every
+    function keeps it, since renaming breaks saved workbooks.
+11. **Errors stay text** (user, 2026-10-15): `#PROSPICIO! <reason>`, which
+    says why; `ISERROR` does not see it (test with `LEFT(x, 11) =
+    "#PROSPICIO!"`).
+
 ## Open (for the user)
 
-- **The prefix.** `PRO.` is short to type; `PROSPICIO.` cannot clash
-  with another add-in. Changing it later breaks saved workbooks.
-- **Text errors or `#VALUE!`.** Text explains itself but is not an Excel
-  error, so `ISERROR` does not see it.
 - **Next functions** (user's order, 2026-10-15): layer pricing (Pareto or
   lognormal layer loss, ILF), then an ODP bootstrap summary.
 - **Distribution after testing:** CI artifact or GitHub release asset;
