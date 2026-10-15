@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, and `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -46,6 +46,7 @@ together, as in `reserving-v02.md` decision 7.
 | 6 | `claude/bayes-meyers-segments` | Meyers' CRC, CSR and CAY with `fit_segments` and `TriangleModel` (open decision 9; decisions 8 and 11, "Meyers"), in Rust, with `fit_segments` in Python and R | PR 5 |
 | 7 | next | compartmental reserving, in its own design note (open decision 9) | |
 | 8 | `claude/bayes-one-year` | the one-year view by PSIS reweighting, `BayesOdp` first, with segments (open decision 6, decision 16); Rust, then the bindings | PR 1 |
+| 9 | `claude/bayes-one-year-generic` | one generic one-year view for every Bayesian model (`YearModel`, decision 17) on the public PSIS, its conformance suite, and `BayesBf::one_year`, in Rust, Python and R | #273 (PR 8 merged) |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
 PRs 2 to 4 touch the same binding files
@@ -1332,7 +1333,8 @@ smoothed importance sampling (the `loo` machinery already exists, and
 posterior for the ODP model, whose posterior is close to normal.
 
 Built in PR 8 for `BayesOdp` (decision 16, 2026-10-14): PSIS
-reweighting, the flagged simulations refitted. Still no tail: when a
+reweighting, the flagged simulations refitted. PR 9 (decision 17) made the
+engine generic and gave `BayesBf` the same view. Still no tail: when a
 model gains one, its tail step joins the year as in the bootstraps'
 one-year view (`reserving-v02.md` decision 11), an origin at the last age
 closing on its simulated tail increment.
@@ -1520,6 +1522,17 @@ the sketch below, which is kept as proposed:
   `"reweight_only"`'s), the refit warning on 2 × 20 kept draws, two
   segments (one segment's fields, the frames, a rank correlation of 0.8
   within 0.05) and the errors.
+* **The one-year view of `BayesBf` (PR 9, decision 17)**: Python
+  `BayesBf.one_year(triangle, column, exposure, k_threshold=0.7,
+  refit="refit_flagged")` and R `bayes_bf_one_year()` with `bayes_bf()`'s
+  arguments in the same order and `k_threshold` and `refit` last. They
+  return the same `BayesOneYearFit` and `bayes_one_year_fit`, whose `fit`
+  is the model's own lifetime fit (`BayesBfFit`, `bayes_bf_fit`); the
+  frames add `exposure` and `prior_ultimate`. In Python the class holds
+  either model's view; in R the extendr object says which (`model()`) and
+  hands out `fit()` or `bf_fit()`. Tests: the two files above add a
+  four-origin triangle with premium (the lifetime fit equal to `fit`'s
+  draw for draw, the oldest origin's CDR 0, the frames, the errors).
 * **Tests**: `python/tests/test_reserving_bayes.py` and
   `R/prospicio/tests/test-reserving-bayes.R` fit GenIns with the default
   chains (no warning, the Stan-matched scale, the reserves near the chain
@@ -1695,21 +1708,23 @@ reach, so `one_year` keeps `fit`'s posterior and lifetime reserves bit
 for bit (a test) and replays for a seed whatever the threads (a test).
 
 **PSIS.** `prospicio_bayes::elpd`'s PSIS (Zhang and Stephens' GPD fit,
-shrunk towards 0.5) is private to its crate, which the Models lane owns,
-so the engine carries a copy (`bayes/one_year.rs::psis`, about 70 lines)
-and a test checks that its `k̂` equals `elpd::loo`'s on the same ratios.
-Making `psis` public in `prospicio-bayes` and deleting the copy is a
-small Models-lane PR (new open decision 13).
+shrunk towards 0.5) was private to its crate, which the Models lane owns,
+so PR 8's engine carried a copy. The user chose open decision 13 (a) on
+2026-10-15: #273 made it public as `prospicio_bayes::elpd::psis(log_ratios,
+r_eff)`, and PR 9 deleted the copy and calls it with `r_eff` 1. The two
+were the same algorithm line for line (the tail length
+`ceil(3 sqrt(S / r_eff))` is `ceil(3 sqrt(S))` at `r_eff` 1), and the
+seed-pinned views of decision 17 are unchanged bit for bit. The copy's
+test against `elpd::loo` went with it; #273 tests `psis` against `loo`.
+A log ratio that is NaN or `+inf` is now an error of the simulation,
+reported as a refit failure is, where the copy went on silently.
 
 **The engine and other models.** `bayes/one_year.rs` knows no model: a
-model implements the crate-private `YearModel` (draw the year from `θ`,
-score it, each origin's payment, the expected reserve at the opening
-and after the year given `θ` and the year, and a refit on the extended
-triangle). `closing` takes the year, because Meyers' cumulative models
-condition the remaining development on the new cells; the ODP's does
-not, so it is computed once per posterior draw. `BayesOneYearFit<F>`
-and `BayesOneYearFits<S>` are generic over the lifetime fit, as
-`OneYearFit<B>` is over the bootstrap.
+model implements `YearModel` (decision 17). `closing` takes the year,
+because Meyers' cumulative models condition the remaining development
+on the new cells; the ODP's does not, so it is computed once per
+posterior draw. `BayesOneYearFit<F>` and `BayesOneYearFits<S>` are
+generic over the lifetime fit, as `OneYearFit<B>` is over the bootstrap.
 
 **Segments.** `one_year_segments` fits each segment as `fit_segments`
 does (its own chains and simulation seeds, decision 11), runs each
@@ -1846,7 +1861,180 @@ whose tail is not biased by the reweighting's under-reaction. Its cost,
 a minute or two per triangle at the defaults, is the price; a user who
 wants a quick look sets `ReweightOnly` (about 1% low on the sd here) or
 fewer simulations. Whether a cheaper first fallback should come before
-the refit is new open decision 12.
+the refit was open decision 12; on 2026-10-15 the user kept
+`RefitFlagged` as the default for now and asked for moment matching, (b),
+to be tried (next, decision 17).
+
+### 17. One one-year view for every Bayesian model (PR 9)
+
+Built in Rust, Python and R on `claude/bayes-one-year-generic`
+(2026-10-15), stacked on #273. The user decided on 2026-10-15 that every
+Bayesian model gets the one-year view, made automatic (open decision
+14): one interface every Bayesian fit implements, one generic view
+written once over it, and a conformance suite run on every implementor,
+which a new Bayesian model must pass before it ships (AGENTS.md,
+"Checks").
+
+**The interface** (`bayes/one_year.rs`, crate-private, since the models
+and their posteriors are):
+
+```rust
+pub(crate) trait YearModel: Sync {
+    fn n_origins(&self) -> usize;
+    fn n_year(&self) -> usize;
+    /// The year's values given a posterior draw, with process error.
+    fn draw_year(&self, theta: &[f64], rng: &mut StreamRng, year: &mut [f64]);
+    /// The log importance ratio: the change the year makes to log_posterior.
+    fn year_log_likelihood(&self, theta: &[f64], year: &[f64]) -> f64;
+    fn paid(&self, year: &[f64], paid: &mut [f64]);
+    /// Each origin's expected reserve given theta, at the opening and after the year.
+    fn opening(&self, theta: &[f64], reserve: &mut [f64]);
+    fn closing(&self, theta: &[f64], year: &[f64], reserve: &mut [f64]);
+    fn closing_uses_year(&self) -> bool { true }
+    /// NUTS on the triangle extended by the year.
+    fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)>;
+    /// The log posterior of a draw (as stored) given the triangle extended
+    /// by `year` (empty: the observed triangle), for moment matching and
+    /// the conformance suite.
+    fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64;
+}
+
+pub(crate) fn simulate<M: YearModel>(model: &M, posterior: &PosteriorDraws,
+    settings: &BayesOneYear, n_sims: usize, seed: u64) -> Result<YearDraws>;
+pub(crate) fn assemble<F: ReserveFit>(fit: F, year: YearDraws, segment: &Segment,
+    settings: &BayesOneYear, provenance: Provenance) -> Result<BayesOneYearFit<F>>;
+```
+
+The engine takes the closing reserve per posterior draw from the model
+and weights it itself (self-normalised smoothed weights, or the refit's
+plain mean), so a model never sees the weights; `assemble` builds the
+`BayesOneYearFit` (the CDR by origin, the opening ultimate and reserve,
+`k̂`, the refits) once for every model. A model of over-dispersed
+Poisson increments with a log-linear mean implements the smaller
+`OdpCells` (`eta(theta, w, d)`, `phi`, the log posterior and a refit
+with extra cells) and gets its `YearModel` from the shared `OdpYear`,
+which finds the year's cells (`YearCells`, no tail), draws them with the
+process error and scores them: `BayesOdp` and `BayesBf` are each about
+50 lines of `OdpCells`. Moment matching (open decision 12 (b)) is the
+reason for `log_posterior`: it moves the draws by an affine map and
+needs the target's density at the moved draws; it is not built yet.
+
+**Carried with each posterior draw.** Reweighting can update only what
+the posterior draws hold. Anything a model's predictive step draws afresh
+per simulation that the year's cells would inform must therefore be part
+of `theta`, drawn once per posterior draw and stored with it (augmented
+draws), not drawn inside `draw_year`; only process error that the year
+does not inform may be. The models, checked:
+
+* `BayesOdp`: nothing to carry. Every origin and every age has an
+  observed cell (`prepare` requires it), so `c`, each `a_w` and each
+  `b_d` is in `theta`; the process error is per cell and, given
+  `theta`, independent of the other cells; `phi` and `c0` are plug-ins
+  held fixed (decision 16).
+* `BayesBf`: nothing to carry, for the same reasons: each `alpha_w` and
+  `beta_d` is in `theta`, the prior ultimates and `phi` are fixed. Its
+  draws are stored as `(alpha, beta)` and sampled as `(u, beta)` with
+  `u_w = alpha_w - log m_w`, a shift, so the log posterior needs no
+  Jacobian and a refit starts Newton at the opening mean moved to `u`.
+* `Meyers` (not in this PR): every parameter is in `theta`, but CRC and
+  CAY's means hold `rho` times the previous origin's residual at the same
+  age, so a year cell's residual informs the next origin's cells at that
+  age given `theta`: `closing` must condition on the year
+  (`closing_uses_year`), and the year's log likelihood is the
+  conditional density of the year's cells given the observed ones. CAY's
+  residual chain also runs through unobserved cells of earlier origins,
+  whose residuals `draw_paths` draws per simulation; where such a cell
+  precedes a year cell, its residual is informed by the year and must be
+  carried with the draw (or integrated out in the likelihood). The
+  ultimates' lognormal noise past the last age is process error.
+* `Compartmental` (not in this PR): `origin_values` draws fresh
+  `z1`, `z2` (and a rate's `z`) for an origin with no observed cell, and
+  `dev_multipliers` fresh effects for an age with no observed cell. A
+  year that adds the first cell of such an origin or age informs them,
+  so both must become part of the stored draw before its `YearModel`.
+  The per-cell normal or log-normal noise is process error.
+
+`Meyers` and `Compartmental` wait on the user for the defaults of their
+refit cost (a Meyers or compartmental NUTS run takes seconds, not 39 ms,
+so `RefitFlagged` at 10,000 simulations would take hours).
+
+**`BayesBf::one_year`**: `(triangle, column, exposure, settings)`,
+returning `BayesOneYearFit<BayesBfFit>`, with `fit`'s posterior and
+lifetime reserves draw for draw (a unit test) and the one-year
+simulations on the seed `BayesOdp` uses (`one_year_seed` of the
+predictive stream). Its tables add the fit's `exposure` and
+`prior_ultimate` (`BayesOneYearFit`'s long tables now forward the
+lifetime fit's origin columns). No segments: `BayesBf` has no
+`fit_segments`, so there is no `one_year_segments` either. Bindings:
+Python `BayesBf.one_year(triangle, column, exposure, k_threshold=0.7,
+refit="refit_flagged")` and R `bayes_bf_one_year()` with `bayes_bf()`'s
+arguments then `k_threshold` and `refit`, returning the same
+`BayesOneYearFit` / `bayes_one_year_fit` as `BayesOdp`, whose `fit` is
+now the model's own lifetime fit (`BayesBfFit` / `bayes_bf_fit`).
+
+**Results** (`validation/tests/reserving_bayes_bf_one_year.rs`; GenIns
+with premium, apriori 0.5, defaults otherwise, `ReweightOnly`, 10,000
+simulations; about 2.4 s in release). Each origin's and the total's sd of
+the CDR as a ratio, mean and seed-to-seed sd over seeds 0 to 39:
+
+| row | target | origins 1 to 9 (mean) | total, mean (sd) | tolerances |
+|---|---|---|---|---|
+| flat prior (`cv` infinite) over `BayesOdp`'s view | 1 | 0.992 to 1.008 | 1.010 (0.027) | 0.09 to 0.15 |
+| tight prior (`cv` 0.001, `development_sd` 100, no process) over the closed form | 1 | 0.999 to 1.009 | 1.008 (0.025) | 0.07 to 0.11 |
+| total sd at `cv` 0.2 over the flat prior's | 0.697 | | 0.697 (0.018) | 0.08 |
+| total sd at `cv` 0.05 over the flat prior's | 0.502 | | 0.502 (0.014) | 0.06 |
+
+The closed form is the strong-prior limit's (EVW, sec. 3.3): each `mu_w`
+at its prior `m_w`, each `gamma_d` independently `Gamma(S_d / phi, M_d /
+phi)`. The year adds `A_d gamma_d` to column `d` (`A_d` the prior
+ultimates of the origins whose year cell is there), which moves the
+posterior mean of `gamma_d` to `(S_d + A_d gamma_d) / (M_d + A_d)`, so
+origin `w`'s CDR is linear in the `gamma_d`, with coefficient `-m_w` at
+its year's column and `-m_w A_d / (M_d + A_d)` after it, and its variance
+is the sum of the squared coefficients times `phi S_d / M_d^2`; the mean
+is 0. The reweighting meets it without refits (this conjugate posterior
+moves little per year). Under a flat prior the view is the Bayesian
+chain ladder's, as the lifetime reserves are (decision 9); the prior
+narrows the view, by 30% at `cv` 0.2 and 50% at 0.05, because the year
+then moves the development pattern and hardly the origins' levels. The
+total's mean CDR is within 5 standard errors of 0 under both limits
+(z scores' seed-to-seed sd 1.03 and 1.13). Every tolerance is the row's
+mean offset plus at least 4 seed-to-seed sds; seed 0 uses at most 0.58
+of any.
+
+**The conformance suite.** No external reference; each property holds
+for any correct model, so a model that fails one has a bug.
+
+* Unit half (`one_year::conformance::check`, debug, on GenIns, run in
+  `bayes/odp.rs` and `bayes/bf.rs` with `cv` 0.2 and flat): the year's
+  log likelihood equals the change it makes to `log_posterior`, for years
+  drawn from 8 posterior draws and compared across 16 others (to 1e-10
+  relative; a 1% error in the scale fails it); the total CDR's mean is
+  within 4.5 standard errors of 0 over 2,000 reweighted simulations; a
+  seed replays bit for bit on one thread against many and another seed
+  differs; a fully developed square gives a zero CDR, `k̂` 0 and no
+  refit under every `refit`. About 5 s for the three.
+* Release half (`validation/tests/reserving_bayes_one_year_conformance.rs`,
+  about 30 s, on `BayesOdp` RAA and GenIns and `BayesBf` GenIns at
+  `cv` 0.2): the mean CDR within 5 standard errors over 10,000
+  simulations; the opening reserve's total within 5 standard errors of
+  the lifetime reserve's mean; replay; on 300 simulations, `RefitAll`
+  sees `ReweightOnly`'s years and `RefitFlagged` gives `RefitAll`'s rows
+  for the flagged and `ReweightOnly`'s for the others; the reweighting's
+  root mean square gap to the refits below 0.08 sd where `k̂ <= 0.7` and
+  0.5 above; and the square without a year under every `refit`. Over
+  seeds 0 to 19: unflagged gaps 0.035 (RAA), 0.044 (GenIns) and 0.056
+  (`BayesBf`), sds 0.004; flagged 0.235, 0.160 and 0.199, sds 0.055,
+  0.018 and 0.042 (about 40, 80 and 38 of the 300 simulations flagged);
+  every seed passes, the largest values 2.35 and 2.18 for the z scores
+  and 0.063 and 0.380 for the gaps.
+
+**Bit for bit.** Before the refactor a unit test pinned `BayesOdp`'s
+views (an FNV hash of every CDR draw, of `k̂` and of the opening reserve,
+and the first values) for `ReweightOnly` on GenIns (2,000 simulations),
+`RefitAll` on 40 simulations and `one_year_segments` on two lines. The
+generic engine and the public PSIS reproduce all three exactly, and
+`reserving_bayes_one_year.rs` passes unchanged.
 
 ## Open decisions for the user
 
@@ -1948,14 +2136,25 @@ are settled.
     (a) now, with (b) measured on RAA and GenIns before the bindings
     expose the settings*, since (b) would change the defaults' cost and
     the flagged share the user sees.
+    Decided 2026-10-15 by the user: keep `RefitFlagged` as the default for
+    now, and try (b); the engine's `YearModel::log_posterior` (decision 17)
+    is its hook, and (b) is measured next.
 13. **One PSIS for both crates.** Raised 2026-10-14 by PR 8. The one-year
     engine carries a copy of `prospicio_bayes::elpd`'s private PSIS (a
     test checks the two agree on `k̂`). (a) Make `psis` public in
     `prospicio-bayes` (a Models-lane PR of a few lines) and delete the
-    copy; (b) keep the copy. *Recommended: (a)*.
+    copy; (b) keep the copy. *Recommended: (a)*. Decided 2026-10-15 by the
+    user: (a). `psis` is public (#273) and PR 9 deleted the copy
+    (decision 16, "PSIS").
 14. **The order of the one-year views to come.** Raised 2026-10-14 by PR
     8. The engine takes `Meyers` (whose `closing` depends on the year's
     cumulative values), `BayesBf` and `Compartmental` through
     `YearModel`. *Recommended: `BayesBf` first (the ODP's likelihood, so
     the same code with its priors), then `Meyers` (CRC, CSR, CAY), then
-    `Compartmental`*, after this PR's bindings.
+    `Compartmental`*, after this PR's bindings. Decided 2026-10-15 by the user: every Bayesian model gets the
+    one-year view, made automatic: one interface every Bayesian fit
+    implements, one generic view, and a conformance suite run on every
+    implementor, with a line in AGENTS.md's "Checks" that a new Bayesian
+    model must pass it. Built in PR 9 (decision 17) with `BayesBf`;
+    `Meyers` and `Compartmental` follow once the user sets the defaults
+    for their refit cost.

@@ -255,5 +255,6 @@ reference:
       - compartmental_prior_predictive
       - one_year_fit
       - bayes_one_year_fit
+      - bayes_bf_one_year
       - clark_fit
       - fit_frames

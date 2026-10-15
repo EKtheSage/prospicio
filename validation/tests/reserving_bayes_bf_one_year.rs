@@ -32,7 +32,9 @@
 
 use std::time::Instant;
 
-use prospicio_reserving::bayes::{BayesBf, BayesOdp, BayesOneYear, OneYearRefit};
+use prospicio_reserving::bayes::{
+    BayesBf, BayesBfFit, BayesOdp, BayesOneYear, BayesOneYearFit, OneYearRefit,
+};
 use prospicio_reserving::{ProcessDistribution, Triangle};
 use prospicio_validation::triangle_columns;
 
@@ -94,13 +96,14 @@ fn reweight() -> BayesOneYear {
     }
 }
 
-/// The one-year view's draws and opening reserves of `BayesBf` at `cv`.
+/// The one-year view of `BayesBf` at `cv`; `tight` adds the strong-prior
+/// limit's `development_sd` 100 and no process error.
 fn bf(
     tri: &Triangle,
     cv: f64,
     tight: bool,
     seed: u64,
-) -> prospicio_reserving::bayes::BayesOneYearFit<prospicio_reserving::bayes::BayesBfFit> {
+) -> BayesOneYearFit<BayesBfFit> {
     let model = BayesBf {
         apriori: 0.5,
         cv,
@@ -124,7 +127,7 @@ fn bf(
 
 /// The strong-prior limit's sd of each origin's and the total's claims
 /// development result (module docs).
-fn closed_form(tri: &Triangle, fit: &prospicio_reserving::bayes::BayesBfFit) -> Vec<f64> {
+fn closed_form(tri: &Triangle, fit: &BayesBfFit) -> Vec<f64> {
     let (latest, m, phi) = (
         &fit.chain_ladder.latest_position,
         &fit.prior_ultimate,

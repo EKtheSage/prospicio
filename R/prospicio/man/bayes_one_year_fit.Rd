@@ -152,8 +152,9 @@ Failed MCMC diagnostics of the fit raise one \code{\link[=warning]{warning()}} l
 and refits that failed theirs raise another (each prefixed with its
 segment's label over segments).
 
-Properties of a \code{bayes_one_year_fit}: \code{fit} (the \link{bayes_odp_fit} with
-the posterior and lifetime reserves), \code{chain_ladder}, \code{origins},
+Properties of a \code{bayes_one_year_fit}: \code{fit} (the \link{bayes_odp_fit}, or the
+\link{bayes_bf_fit} from \code{\link[=bayes_bf_one_year]{bayes_bf_one_year()}}, with the posterior and
+lifetime reserves), \code{chain_ladder}, \code{origins},
 \code{development}; per origin (named as a \link{chain_ladder_fit}'s) \code{latest},
 \code{opening_ultimate} and \code{opening_reserve} (the posterior mean reserve on
 the observed triangle); \code{cdr}, a \link{predictive_distribution} of the CDR
