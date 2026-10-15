@@ -51,4 +51,7 @@ Ctrl+Alt+F9 to recalculate.
   `"inverse_power"` or `"bondy"`.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
 
-A bad argument returns `#PROSPICIO! <reason>` in one cell.
+Type a function in one cell: in Excel 365 its table spills from there
+(older Excel needs it entered as an array formula, Ctrl+Shift+Enter, over
+the result's size). A bad argument returns `#PROSPICIO! <reason>` in one
+cell.

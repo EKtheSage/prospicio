@@ -60,8 +60,11 @@ in place, with R's totals beside them, for a test in real Excel.
    thread safe (`$`); no function reads the sheet or keeps state. Results
    are allocated per call and freed in `xlAutoFree12`.
 5. **Arrays spill.** A table comes back as an array: in Excel 365 it
-   spills from the formula's cell; in older versions it is entered as an
-   array formula over the result's size.
+   spills from the one cell the formula is typed in; in older versions it
+   is entered as an array formula (Ctrl+Shift+Enter) over the result's
+   size. The test workbook saves its formulas as 365 dynamic arrays
+   (`cm="1"` and `xl/metadata.xml`, patched in after openpyxl, which
+   writes only legacy array formulas).
 6. **The triangle is the values only.** One row per origin (oldest first),
    one column per development age; blank, empty text or `#N/A` where
    unobserved, and nothing observed after a blank in a row. Labels stay on
