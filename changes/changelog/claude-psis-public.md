@@ -5,4 +5,4 @@
   smoothed log weights (unnormalized, the largest raw ratio shifted to 0)
   and the Pareto k, by the smoothing `loo` applies, with the tail length
   `min(ceil(0.2 S), ceil(3 sqrt(S / r_eff)))`. `loo` and `waic` are
-  unchanged (#PR).
+  unchanged (#273).
