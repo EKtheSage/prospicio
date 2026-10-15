@@ -16,9 +16,10 @@ use prospicio_reserving::{
     ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
     ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
     Long, Mack, MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit as MackInner,
-    MackProcess, Month, OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod,
-    ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits, SigmaInterpolation, Tail,
-    TailBondy, TailConstant, TailCurve, Triangle as TriangleInner,
+    MackProcess, Month, OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, OneYearPattern,
+    PatternKind, PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits,
+    SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
+    Triangle as TriangleInner,
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
@@ -54,7 +55,11 @@ fn grain(name: &str, arg: &str) -> Result<Grain> {
     }
 }
 
-fn development(average: &str, sigma_interpolation: &str) -> Result<Development> {
+fn development(
+    average: &str,
+    sigma_interpolation: &str,
+    pattern: Option<SelectedPattern>,
+) -> Result<Development> {
     let average = match average {
         "volume" => Average::Volume,
         "simple" => Average::Simple,
@@ -77,13 +82,78 @@ fn development(average: &str, sigma_interpolation: &str) -> Result<Development> 
     Ok(Development {
         average,
         sigma_interpolation,
+        pattern,
     })
 }
 
-/// The chain ladder that gives a method its development pattern.
-fn pattern(average: &str, sigma_interpolation: &str, tail: Robj) -> Result<ChainLadder> {
+/// A selected pattern as `ldf_pattern()` in R encodes it: `NULL`, or a
+/// list of `kind` ("ldf", "cdf" or "percent_developed"), `ages` and
+/// `values`, and `weights` with `weight_ages` (`NULL` for one weight on
+/// every selected factor).
+fn selected_pattern(pattern: &Robj) -> Result<Option<SelectedPattern>> {
+    if pattern.is_null() {
+        return Ok(None);
+    }
+    let list = List::try_from(pattern)
+        .map_err(|_| Error::Other("the selected pattern must be a list".into()))?;
+    let mut kind = None;
+    let (mut ages, mut values) = (Vec::new(), Vec::new());
+    let (mut weight_ages, mut weights) = (None, vec![1.0]);
+    for (name, value) in list.iter() {
+        match name {
+            "kind" => kind = value.as_str().map(str::to_owned),
+            "ages" => ages = value.as_real_vector().unwrap_or_default(),
+            "values" => values = value.as_real_vector().unwrap_or_default(),
+            "weight_ages" => weight_ages = value.as_real_vector(),
+            "weights" => weights = value.as_real_vector().unwrap_or_default(),
+            _ => {}
+        }
+    }
+    let kind = match kind.as_deref() {
+        Some("ldf") => PatternKind::AgeToAge,
+        Some("cdf") => PatternKind::AgeToUltimate,
+        Some("percent_developed") => PatternKind::PercentDeveloped,
+        _ => {
+            return Err(Error::Other(
+                "ldf_kind must be \"ldf\", \"cdf\" or \"percent_developed\"".into(),
+            ));
+        }
+    };
+    let pairs = |ages: &[f64], values: &[f64], what: &str| -> Result<Vec<(Lag, f64)>> {
+        if ages.len() != values.len() {
+            return Err(Error::Other(format!(
+                "{what}: {} ages but {} values",
+                ages.len(),
+                values.len()
+            )));
+        }
+        ages.iter()
+            .zip(values)
+            .map(|(&a, &v)| Ok((age(a)?, v)))
+            .collect()
+    };
+    let weight = match weight_ages {
+        None => match weights.as_slice() {
+            [w] => PatternWeight::All(*w),
+            _ => return Err(Error::Other("ldf_weight must be a single number".into())),
+        },
+        Some(weight_ages) => PatternWeight::ByAge(pairs(&weight_ages, &weights, "ldf_weight")?),
+    };
+    Ok(Some(
+        SelectedPattern::new(kind, pairs(&ages, &values, "ldf")?).with_weight(weight),
+    ))
+}
+
+/// The chain ladder that gives a method its development pattern, with the
+/// selected pattern `ldf` (as `selected_pattern` reads it).
+fn pattern(
+    average: &str,
+    sigma_interpolation: &str,
+    tail: Robj,
+    ldf: &Robj,
+) -> Result<ChainLadder> {
     Ok(ChainLadder {
-        development: development(average, sigma_interpolation)?,
+        development: development(average, sigma_interpolation, selected_pattern(ldf)?)?,
         tail: tail_arg(&tail)?,
     })
 }
@@ -186,6 +256,7 @@ fn segment_dependence(dependence: &str, spearman: Nullable<Vec<f64>>) -> Result<
 }
 
 /// Mack's bootstrap of `mack_bootstrap()` and `mack_one_year()`.
+#[allow(clippy::too_many_arguments)]
 fn mack_bootstrap(
     n_sims: f64,
     seed: f64,
@@ -194,6 +265,7 @@ fn mack_bootstrap(
     sigma_interpolation: &str,
     centre_residuals: bool,
     dependence: SegmentDependence,
+    pattern: Option<SelectedPattern>,
 ) -> Result<MackBootstrap> {
     let n_sims = whole(n_sims, "n_sims")? as usize;
     if n_sims == 0 {
@@ -216,7 +288,7 @@ fn mack_bootstrap(
         n_sims,
         seed: whole(seed, "seed")?,
         process,
-        development: development(average, sigma_interpolation)?,
+        development: development(average, sigma_interpolation, pattern)?,
         centre_residuals,
         dependence,
         ..Default::default()
@@ -680,22 +752,25 @@ impl Triangle {
         Ok(self.inner.to_text(max_rows, max_cols))
     }
 
-    /// `tail` is a `ReservingTail`.
+    /// `tail` is a `ReservingTail`; `ldf` a selected pattern as
+    /// `ldf_pattern()` in R encodes it, or `NULL`.
     fn chain_ladder(
         &self,
         column: &str,
         average: &str,
         sigma_interpolation: &str,
         tail: Robj,
+        ldf: Robj,
     ) -> Result<ChainLadderFit> {
-        let inner = pattern(average, sigma_interpolation, tail)?
+        let inner = pattern(average, sigma_interpolation, tail, &ldf)?
             .fit_segments(&self.inner, column)
             .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
     }
 
     /// `tail` is a `ReservingTail`; `tail_sigma` and `tail_std_err` are
-    /// `NULL` to extrapolate them.
+    /// `NULL` to extrapolate them; `ldf` as in `chain_ladder`.
+    #[allow(clippy::too_many_arguments)]
     fn mack(
         &self,
         column: &str,
@@ -704,9 +779,10 @@ impl Triangle {
         tail: Robj,
         tail_sigma: Nullable<f64>,
         tail_std_err: Nullable<f64>,
+        ldf: Robj,
     ) -> Result<MackFit> {
         let inner = Mack {
-            development: development(average, sigma_interpolation)?,
+            development: development(average, sigma_interpolation, selected_pattern(&ldf)?)?,
             tail: tail_arg(&tail)?,
             tail_sigma: optional(tail_sigma),
             tail_std_err: optional(tail_std_err),
@@ -719,6 +795,7 @@ impl Triangle {
     /// The expected loss ratio method on loss `column` with exposure from
     /// the `exposure` column; the chain ladder gives the development
     /// pattern reported.
+    #[allow(clippy::too_many_arguments)]
     fn expected_loss(
         &self,
         column: &str,
@@ -727,16 +804,18 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         tail: Robj,
+        ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let inner = ExpectedLoss {
             apriori,
-            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+            chain_ladder: pattern(average, sigma_interpolation, tail, &ldf)?,
         }
         .fit_segments(&self.inner, column, exposure)
         .map_err(to_r)?;
         Ok(ExpectedLossFit { inner })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn bornhuetter_ferguson(
         &self,
         column: &str,
@@ -745,10 +824,11 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         tail: Robj,
+        ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let inner = BornhuetterFerguson {
             apriori,
-            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+            chain_ladder: pattern(average, sigma_interpolation, tail, &ldf)?,
         }
         .fit_segments(&self.inner, column, exposure)
         .map_err(to_r)?;
@@ -765,13 +845,14 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         tail: Robj,
+        ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
             .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
         let inner = Benktander {
             apriori,
             n_iters,
-            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+            chain_ladder: pattern(average, sigma_interpolation, tail, &ldf)?,
         }
         .fit_segments(&self.inner, column, exposure)
         .map_err(to_r)?;
@@ -788,11 +869,12 @@ impl Triangle {
         average: &str,
         sigma_interpolation: &str,
         tail: Robj,
+        ldf: Robj,
     ) -> Result<CapeCodFit> {
         let inner = CapeCod {
             trend,
             decay,
-            chain_ladder: pattern(average, sigma_interpolation, tail)?,
+            chain_ladder: pattern(average, sigma_interpolation, tail, &ldf)?,
         }
         .fit_segments(&self.inner, column, exposure)
         .map_err(to_r)?;
@@ -815,11 +897,13 @@ impl Triangle {
         tail_std_err: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
+        ldf: Robj,
     ) -> Result<OdpBootstrapFit> {
         let dependence = segment_dependence(dependence, spearman)?;
         let boot = OdpBootstrap {
             tail: tail_arg(&tail)?,
             tail_std_err: optional(tail_std_err),
+            pattern: selected_pattern(&ldf)?,
             ..bootstrap(n_sims, seed, process, dependence)?
         };
         let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
@@ -1187,6 +1271,7 @@ impl Triangle {
         tail_std_err: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
+        ldf: Robj,
     ) -> Result<MackBootstrapFit> {
         let boot = MackBootstrap {
             tail: tail_arg(&tail)?,
@@ -1200,6 +1285,7 @@ impl Triangle {
                 sigma_interpolation,
                 centre_residuals,
                 segment_dependence(dependence, spearman)?,
+                selected_pattern(&ldf)?,
             )?
         };
         let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
@@ -1236,6 +1322,8 @@ impl Triangle {
         process: &str,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
+        ldf: Robj,
+        bootstrap_ldf: bool,
     ) -> Result<OneYearFit> {
         let boot_tail = if bootstrap_tail {
             tail_arg(&tail)?
@@ -1249,12 +1337,13 @@ impl Triangle {
             n_iters,
             trend,
             decay,
-            pattern(average, sigma_interpolation, tail)?,
+            pattern(average, sigma_interpolation, tail, &ldf)?,
         )?;
         let dependence = segment_dependence(dependence, spearman)?;
         let inner = OdpBootstrap {
             tail: boot_tail,
             tail_std_err: optional(tail_std_err),
+            one_year_pattern: one_year_pattern(bootstrap_ldf),
             ..bootstrap(n_sims, seed, process, dependence)?
         }
         .one_year_segments(&self.inner, column, &method)
@@ -1296,6 +1385,8 @@ impl Triangle {
         centre_residuals: bool,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
+        ldf: Robj,
+        bootstrap_ldf: bool,
     ) -> Result<OneYearFit> {
         let boot_tail = if bootstrap_tail {
             tail_arg(&tail)?
@@ -1309,12 +1400,13 @@ impl Triangle {
             n_iters,
             trend,
             decay,
-            pattern(average, sigma_interpolation, tail)?,
+            pattern(average, sigma_interpolation, tail, &ldf)?,
         )?;
         let inner = MackBootstrap {
             tail: boot_tail,
             tail_sigma: optional(tail_sigma),
             tail_std_err: optional(tail_std_err),
+            one_year_pattern: one_year_pattern(bootstrap_ldf),
             ..mack_bootstrap(
                 n_sims,
                 seed,
@@ -1323,6 +1415,7 @@ impl Triangle {
                 mack_sigma_interpolation,
                 centre_residuals,
                 segment_dependence(dependence, spearman)?,
+                None,
             )?
         }
         .one_year_segments(&self.inner, column, &method)
@@ -1612,9 +1705,49 @@ impl ChainLadderFit {
         Ok(f.development.sigma.clone())
     }
 
+    /// Standard errors of the factors used before the tail: `1 - weight`
+    /// times the estimate's.
     fn std_err(&self) -> Result<Vec<f64>> {
         let f = single(&self.inner, "std_err", "development_frame()")?;
+        Ok(f.development.blended_std_err())
+    }
+
+    fn estimated_std_err(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "estimated_std_err", "development_frame()")?;
         Ok(f.development.std_err.clone())
+    }
+
+    /// The selected pattern's factor of each link; NaN where none.
+    fn selected_ldf(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "selected_ldf", "development_frame()")?;
+        Ok(f.development
+            .selected
+            .iter()
+            .map(|s| s.unwrap_or(f64::NAN))
+            .collect())
+    }
+
+    fn ldf_weight(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "ldf_weight", "development_frame()")?;
+        Ok(f.development.weight.clone())
+    }
+
+    fn blended_ldf(&self) -> Result<Vec<f64>> {
+        let f = single(&self.inner, "blended_ldf", "development_frame()")?;
+        Ok(f.development.blended_ldf())
+    }
+
+    /// The rescale of a cumulative pattern; NaN for an age-to-age pattern
+    /// or none.
+    fn pattern_rescale(&self) -> Result<f64> {
+        let f = single(&self.inner, "pattern_rescale", "totals_frame()")?;
+        Ok(f.pattern_rescale.unwrap_or(f64::NAN))
+    }
+
+    /// The tail a cumulative pattern implies; NaN where it implies none.
+    fn pattern_tail(&self) -> Result<f64> {
+        let f = single(&self.inner, "pattern_tail", "totals_frame()")?;
+        Ok(f.pattern_tail.unwrap_or(f64::NAN))
     }
 
     fn alpha(&self) -> f64 {
@@ -3510,4 +3643,14 @@ extendr_module! {
     impl MackBootstrapFit;
     impl OneYearFit;
     impl ClarkFit;
+}
+
+/// Which factors a one-year bootstrap simulates: with `bootstrap_ldf` the
+/// method's pattern (the Rust default), without it the triangle's own.
+fn one_year_pattern(bootstrap_ldf: bool) -> OneYearPattern {
+    if bootstrap_ldf {
+        OneYearPattern::Method
+    } else {
+        OneYearPattern::Estimated
+    }
 }

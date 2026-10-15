@@ -81,17 +81,18 @@
 
 use std::sync::Mutex;
 
-use prospicio_core::{Month, StreamRng};
+use prospicio_core::{Lag, Month, StreamRng};
 use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
     OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, TailDraw, component_sums,
-    hash_segment, origin_keys, pick_segment, pool_at, prepare, push_moments, segment_sums,
+    hash_segment, origin_keys, pick_segment, pool_at, prepare_selected, push_moments, segment_sums,
 };
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::dependence::{Resample, SegmentDependence, Shared, SharedPool, synchronize};
 use crate::error::{Error, Result};
 use crate::expected_loss::{Benktander, BornhuetterFerguson, CapeCod, ExpectedLoss};
+use crate::pattern::{Blend, SelectedPattern};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each, fit_each_with_exposure};
 use crate::tail::Tail;
 use crate::triangle::{Segment, Triangle};
@@ -151,6 +152,28 @@ impl OneYearMethod {
             Self::BornhuetterFerguson(m, _) => m.chain_ladder.tail,
             Self::Benktander(m, _) => m.chain_ladder.tail,
             Self::CapeCod(m, _) => m.chain_ladder.tail,
+        }
+    }
+
+    /// The selected pattern of the method's chain ladder, if any.
+    ///
+    /// ```
+    /// use prospicio_reserving::{ChainLadder, OneYearMethod};
+    ///
+    /// assert_eq!(OneYearMethod::ChainLadder(ChainLadder::default()).pattern(), None);
+    /// ```
+    pub fn pattern(&self) -> Option<&SelectedPattern> {
+        self.chain_ladder().development.pattern.as_ref()
+    }
+
+    /// The method's chain ladder.
+    fn chain_ladder(&self) -> &ChainLadder {
+        match self {
+            Self::ChainLadder(cl) => cl,
+            Self::ExpectedLoss(m, _) => &m.chain_ladder,
+            Self::BornhuetterFerguson(m, _) => &m.chain_ladder,
+            Self::Benktander(m, _) => &m.chain_ladder,
+            Self::CapeCod(m, _) => &m.chain_ladder,
         }
     }
 
@@ -488,6 +511,8 @@ pub(crate) struct OdpDraw {
     process: ProcessDistribution,
     /// The bootstrap's tail; `None` without one.
     tail: Option<TailDraw>,
+    /// The bootstrap's selected pattern; `None` without one.
+    blend: Option<Blend>,
 }
 
 impl SharedPool for OdpDraw {
@@ -523,8 +548,13 @@ impl NextYear for OdpBootstrapSegment {
             scale: self.scale,
             process: draw.process,
             tail: None,
+            blend: None,
         };
         let (pseudo, factors) = sim.resample(rng, picks);
+        let factors = match &draw.blend {
+            Some(blend) => blend.apply(&factors),
+            None => factors,
+        };
         let (factors, tail) = match &draw.tail {
             None => (factors, None),
             Some(tail) => {
@@ -561,6 +591,36 @@ impl NextYear for OdpBootstrapSegment {
     }
 }
 
+/// Whether a bootstrap with `own` pattern and `tail` reads `taken`, the
+/// pattern it simulates the one-year view of `method` with, without its
+/// level: when it takes the method's pattern, has no tail of its own, and
+/// the method has one. The method rescales the pattern's level to its
+/// tail, and the bootstrap reads the pattern the same way: it implies no
+/// tail (decision 12).
+pub(crate) fn inherits_level_free(
+    own: Option<&SelectedPattern>,
+    taken: &Option<SelectedPattern>,
+    tail: Tail,
+    method: &OneYearMethod,
+) -> bool {
+    own.is_none() && taken.is_some() && tail.is_none() && !method.tail().is_none()
+}
+
+/// Whether two tails develop past the oldest age the same way: equal, or
+/// both a plain constant factor (at the oldest age, as a number converts
+/// to) equal to rounding, as a cumulative pattern's implied tail and the
+/// same factor given as a tail are.
+fn same_tail(a: Tail, b: Tail) -> bool {
+    match (a, b) {
+        (Tail::Constant(x), Tail::Constant(y))
+            if a == Tail::from(x.factor) && b == Tail::from(y.factor) =>
+        {
+            (x.factor - y.factor).abs() <= 1e-12 * x.factor.abs().max(y.factor.abs())
+        }
+        _ => a == b,
+    }
+}
+
 /// One segment, prepared: its bootstrap and opening ultimate, what each
 /// simulation draws from, its cells and exposure, and the cells of its
 /// coming year.
@@ -573,18 +633,37 @@ struct Prepared<B: NextYear> {
 }
 
 impl<B: NextYear> Prepared<B> {
-    /// `model` fits the bootstrap model to the segment; `tail` is whether
-    /// it has a tail.
+    /// `model` fits the bootstrap model to the segment; `tail` is the
+    /// bootstrap's own tail, and `pattern` is the bootstrap's selected
+    /// pattern, which must select what the method's does.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         triangle: &Triangle,
         segment: &Segment,
         exposure: Option<&Segment>,
         method: &OneYearMethod,
         opening: Month,
-        tail: bool,
+        tail: Tail,
+        pattern: Option<&SelectedPattern>,
         model: &impl Fn(&Segment) -> Result<(B, B::Draw)>,
     ) -> Result<Self> {
         let (bootstrap, draw) = model(segment)?;
+        same_pattern(pattern, method, &segment.ages)?;
+        // The tail the bootstrap develops past the oldest age with: its
+        // own, or with none the constant one its pattern implies. The
+        // method must use the same tail, its own or the one its pattern
+        // implies, so both are compared as they are used (decisions 11 and
+        // 12).
+        let in_use = bootstrap.chain_ladder().tail_in_use(tail);
+        let tailed = !in_use.is_none();
+        if tailed && !same_tail(in_use, method.chain_ladder().tail_in_use(&segment.ages)?) {
+            return Err(Error::Bootstrap(if tail.is_none() {
+                "the tail the bootstrap's pattern implies must be the re-reserving method's tail"
+            } else {
+                "the bootstrap's tail must be the re-reserving method's tail"
+            }));
+        }
+        let tail = tailed;
         let year = YearCells::of(
             segment,
             &bootstrap.chain_ladder().latest_position,
@@ -691,18 +770,40 @@ impl Failures {
 }
 
 /// The simulations of a one-year bootstrap: how many, from which seed.
-#[derive(Debug, Clone, Copy)]
+const PATTERN_MISMATCH: Error =
+    Error::Bootstrap("the bootstrap's pattern must be the re-reserving method's pattern");
+
+/// The bootstrap's pattern, if any, is the method's on the segment's
+/// `ages`: the same selected factors and weights, whatever the order, kind
+/// or form of weight they were given in
+/// ([`SelectedPattern::same_selection`]).
+fn same_pattern(
+    bootstrap: Option<&SelectedPattern>,
+    method: &OneYearMethod,
+    ages: &[Lag],
+) -> Result<()> {
+    match (bootstrap, method.pattern()) {
+        (None, _) => Ok(()),
+        (Some(b), Some(m)) if b.same_selection(m, ages)? => Ok(()),
+        _ => Err(PATTERN_MISMATCH),
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct Sims {
     pub(crate) n_sims: usize,
     pub(crate) seed: u64,
     /// The bootstrap's own tail, which must then be the method's
     /// (decision 11).
     pub(crate) tail: Tail,
+    /// The bootstrap's selected pattern, which must then be the method's
+    /// (decision 12).
+    pub(crate) pattern: Option<SelectedPattern>,
 }
 
 impl Sims {
     /// Whether the bootstrap has a tail of its own.
-    fn tailed(self) -> bool {
+    fn tailed(&self) -> bool {
         !self.tail.is_none()
     }
 
@@ -710,14 +811,28 @@ impl Sims {
     /// models the true development past the last age, the method's tail is
     /// the actuary's estimate of it, and the two must agree, or the closed
     /// origins' mean CDR would move for a reason the user did not choose.
-    fn check(self, method: &OneYearMethod) -> Result<()> {
+    ///
+    /// The same holds for a selected pattern: the bootstrap's says how the
+    /// coming year develops, and a method that re-reserves with another
+    /// would move the CDR's mean for a reason the user did not choose. Here
+    /// only a method without any pattern is rejected; whether the two
+    /// patterns select the same factors and weights is checked per segment,
+    /// on its ages ([`same_pattern`]). A method with a pattern and a
+    /// bootstrap without one is allowed.
+    fn check(&self, method: &OneYearMethod) -> Result<()> {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
-        if self.tailed() && method.tail() != self.tail {
+        // A method without a tail of its own may use the one its pattern
+        // implies, which is compared per segment, on its ages
+        // ([`Prepared::new`]).
+        if self.tailed() && method.tail() != self.tail && !method.tail().is_none() {
             return Err(Error::Bootstrap(
                 "the bootstrap's tail must be the re-reserving method's tail",
             ));
+        }
+        if self.pattern.is_some() && method.pattern().is_none() {
+            return Err(PATTERN_MISMATCH);
         }
         Ok(())
     }
@@ -726,7 +841,7 @@ impl Sims {
     /// bootstrap model fitted by `model`; `provenance` names it, given the
     /// hash of the inputs.
     pub(crate) fn one_year<B: NextYear>(
-        self,
+        &self,
         triangle: &Triangle,
         column: &str,
         method: &OneYearMethod,
@@ -743,7 +858,8 @@ impl Sims {
             exposure.as_ref(),
             method,
             opening,
-            self.tailed(),
+            self.tail,
+            self.pattern.as_ref(),
             &model,
         )?;
 
@@ -781,7 +897,7 @@ impl Sims {
     /// distribution, the segments depending on each other as `dependence`
     /// says; `provenance` names it, given the hash of the inputs.
     pub(crate) fn one_year_segments<B: NextYear>(
-        self,
+        &self,
         triangle: &Triangle,
         column: &str,
         method: &OneYearMethod,
@@ -791,13 +907,23 @@ impl Sims {
     ) -> Result<OneYearFits<B>> {
         self.check(method)?;
         let (opening, closing) = valuations(triangle)?;
-        let tailed = self.tailed();
+        let tailed = self.tail;
+        let pattern = self.pattern.as_ref();
         let mut prepared = match method.exposure() {
             None => fit_each(triangle, column, |s| {
-                Prepared::new(triangle, s, None, method, opening, tailed, &model)
+                Prepared::new(triangle, s, None, method, opening, tailed, pattern, &model)
             })?,
             Some(exposure) => fit_each_with_exposure(triangle, column, exposure, |s, e| {
-                Prepared::new(triangle, s, Some(e), method, opening, tailed, &model)
+                Prepared::new(
+                    triangle,
+                    s,
+                    Some(e),
+                    method,
+                    opening,
+                    tailed,
+                    pattern,
+                    &model,
+                )
             })?,
         };
         let shared = match dependence {
@@ -850,7 +976,7 @@ impl Sims {
     /// failed simulation is reported after all have run, with the number
     /// that failed.
     fn simulate_cdr<B: NextYear>(
-        self,
+        &self,
         dims: Vec<String>,
         components: Vec<Vec<KeyValue>>,
         runs: &[Run<'_, B>],
@@ -912,8 +1038,12 @@ impl OdpBootstrap {
     /// observed from the first age to its latest (it may stop short of the
     /// latest diagonal), and an expected-loss method's exposure column must
     /// have a positive value for every origin. With a
-    /// [`tail`](Self::tail), the method's tail must be the same, or the
-    /// call returns [`Error::Bootstrap`]; a simulation whose pseudo factors
+    /// [`tail`](Self::tail), or with none and a pattern of its own that
+    /// implies one, the method's tail must be the same (its own, or the one
+    /// its pattern implies), or the call returns [`Error::Bootstrap`]; a
+    /// pattern taken from the method is read as the method reads it
+    /// ([`OneYearPattern::Method`](crate::OneYearPattern::Method)). A
+    /// simulation whose pseudo factors
     /// the tail cannot be refitted on fails like a failed refit, counted in
     /// [`Error::OneYear`].
     pub fn one_year(
@@ -922,12 +1052,13 @@ impl OdpBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFit> {
-        self.sims().one_year(
+        let (boot, level_free) = self.for_method(method)?;
+        boot.sims().one_year(
             triangle,
             column,
             method,
-            |s| self.model(s),
-            |hasher| self.one_year_provenance(column, method, hasher),
+            |s| boot.one_year_model(s, level_free),
+            |hasher| boot.one_year_provenance(column, method, hasher),
         )
     }
 
@@ -943,14 +1074,50 @@ impl OdpBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFits> {
-        self.sims().one_year_segments(
+        let (boot, level_free) = self.for_method(method)?;
+        boot.sims().one_year_segments(
             triangle,
             column,
             method,
-            &self.dependence,
-            |s| self.model(s),
-            |hasher| self.one_year_provenance(column, method, hasher),
+            &boot.dependence,
+            |s| boot.one_year_model(s, level_free),
+            |hasher| boot.one_year_provenance(column, method, hasher),
         )
+    }
+
+    /// The bootstrap with the pattern it simulates the one-year view of
+    /// `method` with ([`one_year_pattern`](Self::one_year_pattern)), and
+    /// whether it reads that pattern without its level
+    /// ([`inherits_level_free`]).
+    fn for_method(&self, method: &OneYearMethod) -> Result<(Self, bool)> {
+        let pattern = self
+            .one_year_pattern
+            .resolve(self.pattern.as_ref(), method.pattern())?;
+        let level_free = inherits_level_free(self.pattern.as_ref(), &pattern, self.tail, method);
+        Ok((
+            Self {
+                pattern,
+                ..self.clone()
+            },
+            level_free,
+        ))
+    }
+
+    /// [`model`](Self::model), with the pattern read without its level
+    /// when `level_free`.
+    fn one_year_model(
+        &self,
+        segment: &Segment,
+        level_free: bool,
+    ) -> Result<(OdpBootstrapSegment, OdpDraw)> {
+        match (&self.pattern, level_free) {
+            (Some(p), true) => Self {
+                pattern: Some(p.without_level(&segment.ages)?),
+                ..self.clone()
+            }
+            .model(segment),
+            _ => self.model(segment),
+        }
     }
 
     fn sims(&self) -> Sims {
@@ -958,20 +1125,25 @@ impl OdpBootstrap {
             n_sims: self.n_sims,
             seed: self.seed,
             tail: self.tail,
+            pattern: self.pattern.clone(),
         }
     }
 
-    /// The bootstrap of one segment with its tail, the residuals it
-    /// resamples and the tail each simulation draws.
+    /// The bootstrap of one segment with its tail and pattern, the
+    /// residuals it resamples, the tail each simulation draws and the
+    /// pattern it blends with.
     fn model(&self, segment: &Segment) -> Result<(OdpBootstrapSegment, OdpDraw)> {
-        let (fit, pool) = prepare(segment, &segment.ages, self.tail)?;
+        let (fit, pool) =
+            prepare_selected(segment, &segment.ages, self.tail, self.pattern.as_ref())?;
         let tail = self.tail_draw(&fit.chain_ladder)?;
+        let blend = Blend::of(&fit.chain_ladder.development);
         Ok((
             fit,
             OdpDraw {
                 pool,
                 process: self.process,
                 tail,
+                blend,
             },
         ))
     }
@@ -985,15 +1157,16 @@ impl OdpBootstrap {
         let provenance = Provenance::new("odp_bootstrap_one_year")
             .param("n_sims", self.n_sims)
             .param("process", format!("{:?}", self.process));
-        // Without a tail, the provenance is as it was before tails.
-        let provenance = if self.tail.is_none() {
+        // Without a tail, the provenance is as it was before tails; with a
+        // pattern, which may imply a tail, the tail settings are named.
+        let provenance = if self.tail.is_none() && self.pattern.is_none() {
             provenance
         } else {
             provenance
                 .param("tail", format!("{:?}", self.tail))
                 .param("tail_std_err", format!("{:?}", self.tail_std_err))
         };
-        provenance
+        self.with_pattern(provenance)
             .param("column", column)
             .param("method", format!("{method:?}"))
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
@@ -1107,7 +1280,7 @@ mod tests {
             apriori: 0.5,
             ..Default::default()
         };
-        let method = OneYearMethod::BornhuetterFerguson(bf, "premium".into());
+        let method = OneYearMethod::BornhuetterFerguson(bf.clone(), "premium".into());
         let fit = boot(50, 2).one_year(&exact(), "paid", &method).unwrap();
         let (latest, cdf, f) = (
             [15.0, 24.0, 24.0, 16.0],
@@ -1215,7 +1388,7 @@ mod tests {
             .one_year(
                 &tri,
                 "paid",
-                &OneYearMethod::Benktander(bk, "premium".into()),
+                &OneYearMethod::Benktander(bk.clone(), "premium".into()),
             )
             .unwrap();
         assert_eq!(
@@ -1230,7 +1403,11 @@ mod tests {
             ..Default::default()
         };
         let fit = boot(100, 4)
-            .one_year(&tri, "paid", &OneYearMethod::CapeCod(cc, "premium".into()))
+            .one_year(
+                &tri,
+                "paid",
+                &OneYearMethod::CapeCod(cc.clone(), "premium".into()),
+            )
             .unwrap();
         assert_eq!(
             fit.opening_ultimate,
@@ -1755,9 +1932,16 @@ mod tests {
         let method = chain_ladder();
         let (opening, closing) = valuations(&tri).unwrap();
         let odp = boot(1, 0);
-        let prepared = Prepared::new(&tri, &segment, None, &method, opening, false, &|s| {
-            odp.model(s)
-        })
+        let prepared = Prepared::new(
+            &tri,
+            &segment,
+            None,
+            &method,
+            opening,
+            Tail::default(),
+            None,
+            &|s| odp.model(s),
+        )
         .unwrap();
         let run = Run {
             prepared: &prepared,
@@ -2109,6 +2293,7 @@ mod tests {
                 scale: model.scale,
                 process: ProcessDistribution::None,
                 tail: None,
+                blend: None,
             };
             let f = model.chain_ladder.tail.factor;
             let lognormal = prospicio_prob::Lognormal::from_mean_cv(f, 0.02 / f).unwrap();

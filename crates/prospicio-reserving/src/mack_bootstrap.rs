@@ -106,7 +106,9 @@ use crate::error::{Error, Result};
 use crate::mack::{Mack, MackFit};
 use crate::one_year_bootstrap::{
     NextCells, NextYear, OneYearFit, OneYearFits, OneYearMethod, Sims, YearCells,
+    inherits_level_free,
 };
+use crate::pattern::{Blend, OneYearPattern};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Segment, Triangle};
@@ -255,7 +257,22 @@ pub struct MackBootstrap {
     /// Process error on the next cumulative values.
     pub process: MackProcess,
     /// Mack's factors (their `alpha`) and how unestimable sigmas are filled
-    /// in.
+    /// in. With a selected pattern ([`Development::pattern`]) the residuals
+    /// and sigmas stay the triangle's estimate's, and each simulation uses
+    /// `w s + (1 - w) f*` for its pseudo factors `f*`: a fully selected
+    /// factor is the same in every simulation, so the pattern lowers the
+    /// simulated uncertainty, and a wrong benchmark is not reflected in it.
+    /// Each origin is projected from its observed latest value, so with
+    /// every factor selected no parameter error is left, only the process
+    /// error (unlike [`OdpBootstrap::pattern`](crate::OdpBootstrap::pattern),
+    /// whose pseudo latest values keep the origins' level error). With no
+    /// [`tail`](Self::tail), a cumulative pattern to the oldest age implies
+    /// a constant tail ([`ChainLadderFit::pattern_tail`]), the same in
+    /// every simulation unless [`tail_std_err`](Self::tail_std_err) is
+    /// given, its step to ultimate with Mack's process error and the
+    /// extrapolated tail sigma. Without a pattern, the one-year view takes
+    /// the method's ([`one_year_pattern`](Self::one_year_pattern)); with
+    /// one, the method's must select the same factors (decision 12).
     pub development: Development,
     /// Subtract the pool's mean from the residuals before resampling them,
     /// for the pseudo factors and the `Residuals` process, so that the
@@ -292,6 +309,12 @@ pub struct MackBootstrap {
     /// independent by default. Synchronized, every segment resamples the
     /// link-ratio residuals of the same origins and factors.
     pub dependence: SegmentDependence,
+    /// In the one-year view ([`one_year`](Self::one_year)), with no pattern
+    /// in [`development`](Self::development), whether each simulation
+    /// blends its pseudo factors with the re-reserving method's pattern
+    /// (the default) or simulates from the triangle's own estimated
+    /// factors.
+    pub one_year_pattern: OneYearPattern,
 }
 
 impl Default for MackBootstrap {
@@ -306,6 +329,7 @@ impl Default for MackBootstrap {
             tail_sigma: None,
             tail_std_err: None,
             dependence: SegmentDependence::Independent,
+            one_year_pattern: OneYearPattern::Method,
         }
     }
 }
@@ -462,6 +486,9 @@ pub(crate) struct MackDraw {
     tail: Option<(TailDraw, f64)>,
     /// Whether the pool is centred.
     centre: bool,
+    /// The selected pattern the pseudo factors are blended with; `None`
+    /// without one.
+    blend: Option<Blend>,
 }
 
 impl SharedPool for MackDraw {
@@ -562,6 +589,10 @@ impl MackDraw {
         picks: Option<&[usize]>,
     ) -> Result<(Vec<f64>, Option<TailStep>)> {
         let factors = self.factors(dev, rng, picks);
+        let factors = match &self.blend {
+            Some(blend) => blend.apply(&factors),
+            None => factors,
+        };
         Ok(match &self.tail {
             None => (factors, None),
             Some((tail, sigma)) => {
@@ -820,8 +851,9 @@ impl MackBootstrap {
     /// diagonal), with no negative value, and Mack's model must fit
     /// ([`Mack::fit`]). Without a [`tail`](Self::tail), development past
     /// the oldest age moves only through the refitted method's tail; with
-    /// one, it must be the method's (or the call returns
-    /// [`Error::Bootstrap`]), and the origins whose tail step falls in the
+    /// one (or the one a pattern of its own implies), it must be the tail
+    /// the method uses, its own or the one its pattern implies (or the call
+    /// returns [`Error::Bootstrap`]), and the origins whose tail step falls in the
     /// coming year take it and are closed (see
     /// [`crate::one_year_bootstrap`]). A simulation whose pseudo factors
     /// the tail cannot be refitted on is counted in [`Error::OneYear`].
@@ -831,12 +863,13 @@ impl MackBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFit<MackBootstrapSegment>> {
-        self.sims().one_year(
+        let (boot, level_free) = self.for_method(method)?;
+        boot.sims().one_year(
             triangle,
             column,
             method,
-            |s| self.model(s),
-            |hasher| self.provenance(column, method, hasher),
+            |s| boot.one_year_model(s, level_free),
+            |hasher| boot.provenance(column, method, hasher),
         )
     }
 
@@ -851,14 +884,50 @@ impl MackBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFits<MackBootstrapSegment>> {
-        self.sims().one_year_segments(
+        let (boot, level_free) = self.for_method(method)?;
+        boot.sims().one_year_segments(
             triangle,
             column,
             method,
-            &self.dependence,
-            |s| self.model(s),
-            |hasher| self.provenance(column, method, hasher),
+            &boot.dependence,
+            |s| boot.one_year_model(s, level_free),
+            |hasher| boot.provenance(column, method, hasher),
         )
+    }
+
+    /// The bootstrap with the pattern it simulates the one-year view of
+    /// `method` with ([`one_year_pattern`](Self::one_year_pattern)), and
+    /// whether it reads that pattern without its level
+    /// ([`inherits_level_free`]).
+    fn for_method(&self, method: &OneYearMethod) -> Result<(Self, bool)> {
+        let mut boot = self.clone();
+        boot.development.pattern = self
+            .one_year_pattern
+            .resolve(self.development.pattern.as_ref(), method.pattern())?;
+        let level_free = inherits_level_free(
+            self.development.pattern.as_ref(),
+            &boot.development.pattern,
+            self.tail,
+            method,
+        );
+        Ok((boot, level_free))
+    }
+
+    /// [`model`](Self::model), with the pattern read without its level
+    /// when `level_free`.
+    fn one_year_model(
+        &self,
+        segment: &Segment,
+        level_free: bool,
+    ) -> Result<(MackBootstrapSegment, MackDraw)> {
+        match (&self.development.pattern, level_free) {
+            (Some(p), true) => {
+                let mut boot = self.clone();
+                boot.development.pattern = Some(p.without_level(&segment.ages)?);
+                boot.model(segment)
+            }
+            _ => self.model(segment),
+        }
     }
 
     fn sims(&self) -> Sims {
@@ -866,6 +935,7 @@ impl MackBootstrap {
             n_sims: self.n_sims,
             seed: self.seed,
             tail: self.tail,
+            pattern: self.development.pattern.clone(),
         }
     }
 
@@ -891,7 +961,7 @@ impl MackBootstrap {
             }
         }
         let mack = Mack {
-            development: self.development,
+            development: self.development.clone(),
             tail: self.tail,
             tail_sigma: self.tail_sigma,
             tail_std_err: self.tail_std_err,
@@ -934,6 +1004,7 @@ impl MackBootstrap {
         if pool.is_empty() && sigma.iter().any(|&s| s != 0.0) {
             return Err(Error::Bootstrap("no residuals to resample"));
         }
+        let blend = Blend::of(&cl.development);
         Ok((
             MackBootstrapSegment { mack, residuals },
             MackDraw {
@@ -942,6 +1013,7 @@ impl MackBootstrap {
                 process: self.process,
                 tail,
                 centre: self.centre_residuals,
+                blend,
             },
         ))
     }
@@ -960,10 +1032,11 @@ impl MackBootstrap {
         .input_hash(hasher.finish())
     }
 
-    /// `provenance` with the tail's settings when there is a tail; without
-    /// one, as it was before tails.
+    /// `provenance` with the tail's settings when there is a tail or a
+    /// pattern, which may imply one (its sigma and standard error then
+    /// change the draws); without either, as it was before tails.
     fn with_tail(&self, provenance: Provenance) -> Provenance {
-        if self.tail.is_none() {
+        if self.tail.is_none() && self.development.pattern.is_none() {
             provenance
         } else {
             provenance
@@ -1302,7 +1375,7 @@ mod tests {
             apriori: 0.8,
             ..Default::default()
         };
-        let method = OneYearMethod::BornhuetterFerguson(bf, "premium".into());
+        let method = OneYearMethod::BornhuetterFerguson(bf.clone(), "premium".into());
         let fit = b.one_year(&tri, "paid", &method).unwrap();
         assert_eq!(
             fit.opening_ultimate,

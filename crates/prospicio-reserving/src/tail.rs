@@ -262,8 +262,15 @@ const CURVE_THRESHOLD: f64 = 1.00001;
 impl Tail {
     /// Fits the tail to an estimated development pattern, whose ages
     /// (`development`) locate the attachment and fit ages.
+    ///
+    /// With a selected pattern the tail is fitted on the blended factors
+    /// ([`DevelopmentFit::blended_ldf`]), so an estimated tail extrapolates
+    /// the factors in use; its sigma and standard error are still read off
+    /// the triangle's own estimate (`docs/design/reserving-v02.md`,
+    /// decision 12).
     pub fn fit(&self, development: &DevelopmentFit) -> Result<TailFit> {
-        let (attachment, ldf, factor) = self.select(&development.ldf, &development.development)?;
+        let (attachment, ldf, factor) =
+            self.select(&development.blended_ldf(), &development.development)?;
         // No tail carries no risk. A tail below 1 has no position on the
         // line through ln(f - 1), so chainladder-python's
         // `_get_tail_weighted_time_period` reads it where 1.001 would be.

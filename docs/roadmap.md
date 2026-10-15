@@ -31,7 +31,7 @@ when from experience, and which pricing method fits which scenario.
 |---|---|---|
 | Phase 0: Foundation | Workspace, core traits, design notes, RNG streams, Python and R skeletons, parity harness | Done |
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
-| v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136) |
+| v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R) |
 | v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
@@ -262,6 +262,17 @@ what it is aiming for by v1.0.
     (independent or rank correlated), in Rust, Python and R; its claims development
     result agrees with the ODP bootstrap's one-year view on RAA and
     GenIns.
+  - Selected development patterns (`reserving-v02.md`, decision 12;
+    branch `claude/selected-patterns`, in Rust, Python and R):
+    `SelectedPattern` on `Development` as age-to-age factors, factors
+    to ultimate or percents developed, partial or full, blended with
+    the estimate by a weight, for the chain ladder, the expected-loss
+    family, Mack with Merz–Wüthrich and both bootstraps. Selected ages
+    carry no parameter error (a blend `(1 - w)` of it), so a pattern
+    lowers the reported uncertainty; a cumulative pattern's level is
+    rescaled to the tail. Parity with chainladder-python's
+    `DevelopmentConstant` and with R's `MackChainLadder` on the
+    triangle's own factors.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

@@ -14,7 +14,10 @@ mack(
   sigma_interpolation = "log-linear",
   tail = 1,
   tail_sigma = NULL,
-  tail_std_err = NULL
+  tail_std_err = NULL,
+  ldf = NULL,
+  ldf_kind = NULL,
+  ldf_weight = 1
 )
 }
 \arguments{
@@ -40,6 +43,22 @@ extrapolate it. Unused when the tail factor is 1.}
 
 \item{tail_std_err}{The tail factor's standard error (R's \code{tail.se}), or
 \code{NULL} to extrapolate it. Unused when the tail factor is 1.}
+
+\item{ldf}{A selected development pattern (above): a numeric vector
+named by age in months, or a data.frame with columns \code{age} and
+\code{value}; each age a development age of the triangle. \code{NULL} (the
+default) estimates every factor.}
+
+\item{ldf_kind}{How \code{ldf} is expressed: \code{"ldf"} (age-to-age factors),
+\code{"cdf"} (factors to ultimate, at least 1 and not increasing with age)
+or \code{"percent_developed"} (in (0, 1] and not decreasing with age).
+Required with \code{ldf}, since age-to-age factors and factors to ultimate
+cannot be told apart.}
+
+\item{ldf_weight}{The weight \code{w} on each selected factor, from 0 (the
+estimate) to 1 (the selection, the default): a number for every
+selected factor, or a numeric vector named by age (the age that starts
+the factor's link), the others fully selected.}
 }
 \value{
 A \code{mack_fit} object.
@@ -73,6 +92,18 @@ extrapolated. The totals' risks need a single-segment fit: with several
 segments use \code{\link[=totals_frame]{totals_frame()}}, which has them per segment, or
 \code{\link[=segment]{segment()}}. \code{\link[=claims_development_result]{claims_development_result()}} gives Merz and Wuthrich's
 one-year view of a single-segment fit without a tail.
+
+With a selected pattern (\code{ldf}), a selected factor is taken as known: its
+parameter risk is \code{1 - w} times Mack's (none for a fully selected
+factor), checked against R's \code{MackChainLadder()} on the triangle's own
+factors (\code{validation/tests/reserving_patterns.rs}); the process risk
+keeps the triangle's sigmas, around the factors used. A supplied pattern
+therefore lowers the reported standard errors. \code{\link[=claims_development_result]{claims_development_result()}}
+takes the pattern too: with weights strictly between 0 and 1 its calendar
+years need not add up to Mack's. A tail implied by a cumulative pattern
+with no \code{tail} (\code{\link[=chain_ladder]{chain_ladder()}}'s \code{pattern_tail}) has no parameter
+error (\code{tail_std_err} 0 unless given), and its sigma is extrapolated as
+a constant tail's unless \code{tail_sigma} is given.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),

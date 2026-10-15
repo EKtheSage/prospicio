@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -1565,3 +1565,665 @@ use `tail` for the method's tail, so they gain `bootstrap_tail = FALSE`
 construction), `tail_std_err = NULL`, and for Mack `tail_sigma = NULL`;
 either of these given without `bootstrap_tail = TRUE` is an error, since
 the bootstrap would have no tail to apply it to.
+
+### 12. Selected development patterns
+
+Status: **Built** (2026-10-14), branch `claude/selected-patterns`, in Rust,
+Python and R; revised on 2026-10-15 by the user's decisions (a cumulative
+pattern's level as the tail with no tail, interpolated gaps, the Rust
+bootstraps taking the method's pattern in the one-year view, and the ODP's
+level error kept). What changed from the proposal while building it is
+listed under "As built" at the end of this decision, and the revisions
+under "Revisions of 2026-10-15"; the items, the Bindings and the Checks
+below are the built and revised versions.
+
+Every factor-based method estimates its age-to-age factors from the
+triangle alone. The only outside input is `TailConstant { factor,
+attachment_age }`, one benchmark point that replaces the factors from an
+age on with a decay shape it makes up. A full benchmark pattern, a
+credibility blend of a benchmark with the estimate, or a benchmark for the
+immature ages only cannot be expressed. This decision adds a selected
+pattern to the development settings, so that the chain ladder, the
+expected-loss family (decision 2), Mack (with Merz and Wüthrich's one-year
+view) and both bootstraps take it.
+
+Neither reference does all of it. R ChainLadder 0.2.21's `MackChainLadder`
+takes `Triangle, weights, alpha, est.sigma, tail, tail.se, tail.sigma,
+mse.method` and no factors (checked 2026-10-14); `weights` only drops
+link ratios. chainladder-python 0.10.1 has `DevelopmentConstant(patterns,
+style = "ldf" | "cdf", callable_axis)`: a full pattern by age, per index
+level through a callable, no blend; `MackChainladder` rejects its output
+("Triangle not compatible with MackChainladder"), and a partial pattern
+gets factors of 1 at the ages it does not give (checked 2026-10-14). So
+the uncertainty rules below are modelling choices, checked by closed forms
+(see Checks).
+
+#### API
+
+```rust
+/// How the values of a selected pattern are expressed. The user names it:
+/// age-to-age and age-to-ultimate factors are both at least 1 in the usual
+/// case and cannot be told apart.
+pub enum PatternKind {
+    AgeToAge,         // f(a): age a to the next age of the triangle
+    AgeToUltimate,    // CDF(a): age a to ultimate
+    PercentDeveloped, // p(a) = 1 / CDF(a)
+}
+
+/// Weight on the selected factor in `w * selected + (1 - w) * estimated`.
+pub enum PatternWeight {
+    All(f64),              // every selected age; the default is All(1.0)
+    ByAge(Vec<(Lag, f64)>), // listed ages; a selected age not listed gets 1
+}
+
+pub struct SelectedPattern {
+    pub kind: PatternKind,
+    pub values: Vec<(Lag, f64)>, // (age in months, value), any order
+    pub weight: PatternWeight,
+}
+
+pub struct Development {
+    pub average: Average,
+    pub sigma_interpolation: SigmaInterpolation,
+    pub pattern: Option<SelectedPattern>, // None: every factor estimated, as now
+}
+```
+
+* **It lives on `Development`**, the setting that says how the age-to-age
+  factors are obtained. `ChainLadder`, `Mack` and `MackBootstrap` hold a
+  `Development`, and `ExpectedLoss`, `BornhuetterFerguson`, `Benktander`
+  and `CapeCod` hold a `ChainLadder`, so all of them take the pattern with
+  no field of their own. `OdpBootstrap` has no `Development` (its factors
+  are always volume-weighted, as R's `BootChainLadder`), so it gains
+  `pattern: Option<SelectedPattern>`. `ClarkLdf`, `ClarkCapeCod`,
+  `OdpGlm`, `BayesOdp` and the Meyers models have their own development
+  model and take no pattern.
+* **Breaking (Rust):** `Development` drops `Copy` and `Eq` (it now owns a
+  vector and `f64`s), and so do `ChainLadder`, `Mack`, `MackBootstrap`
+  and the four expected-loss settings that contain it; code that copies
+  them clones instead. `DevelopmentFit` and `ChainLadderFit` gain public
+  fields, which breaks struct literals of them.
+* `DevelopmentFit`'s existing fields keep their meaning, the triangle's own
+  estimate (`ldf`, `sigma`, `std_err`, `volume`), so the ODP residuals and
+  the tail statistics, which need the estimate, do not change. It gains,
+  one element per link:
+
+  ```rust
+  pub selected: Vec<Option<f64>>, // the pattern's age-to-age factor, after conversion
+  pub weight: Vec<f64>,           // w on it; 0 where `selected` is None
+  ```
+
+  and `blended_ldf()` (`w * selected + (1 - w) * ldf`, the factors before
+  the tail) and `blended_std_err()` (`(1 - w) * std_err`). Without a
+  pattern both equal the estimate, so every existing result is unchanged.
+* `ChainLadderFit` gains `pattern_rescale: Option<f64>` and
+  `pattern_tail: Option<f64>` (item 5). `ChainLadderFit::ldf()` stays "the factors the projection uses": the
+  blended factors, with the tail's from its attachment.
+* A new `Error::Pattern { age: Option<Lag>, reason: &'static str }`
+  reports every check of item 4, inside `Error::InSegment` with segments.
+
+#### Rules
+
+1. **Conversion to age-to-age factors.** The ages are the triangle's
+   development ages `a_0 < ... < a_n` (months); link `k` runs from `a_k`
+   to `a_{k+1}`.
+   * `AgeToAge`: the value at `a_k` is link `k`'s factor. An age-to-age
+     value at the oldest age `a_n` is an error: development past the
+     oldest age is the tail's.
+   * `AgeToUltimate` and `PercentDeveloped` (with `CDF = 1 / p`): the
+     values sit at two or more ages of the triangle, from `a_m` to
+     `a_{m+r}`, `r >= 1`; the ages they skip are interpolated (item 2), so
+     every age `a_m, ..., a_{m+r}` has a CDF, and the links between them
+     are fixed: `f_k = CDF(a_k) / CDF(a_{k+1})` for `m <= k < m + r`. The
+     level of the pattern, its value at its last age `a_{m+r}`, fixes no
+     link; item 5 makes it the tail or rescales it.
+   * Links the pattern does not fix are estimated from the triangle, as
+     now: those before its first age and those from its last age on. So a
+     cumulative pattern for the immature ages only (CDFs at 12, 24 and 36)
+     selects the links 12-24 and 24-36, and the links from 36 on are
+     estimated.
+
+   Why cumulative patterns fix ratios and not their level: a CDF at age
+   `a` is a statement about every link from `a` to ultimate, including the
+   ones the user leaves to the estimate and the tail. Taking it as exact
+   would force some of those to absorb the difference (rejected: an
+   arbitrary single factor, or a rescaling of estimated factors the user
+   asked to keep). The user's tail rule (item 5) already gives the level
+   to what follows the pattern, so the same rule holds at every last age,
+   and the rule is one sentence: *a cumulative pattern fixes the factors
+   between the ages it gives; what develops after its last age comes from
+   the estimate and the tail.* At the oldest age with no tail, nothing
+   follows the pattern but the tail, so its level is the tail (item 5).
+
+2. **Gaps** (revised 2026-10-15; the proposal rejected them). A cumulative
+   pattern with triangle ages missing between two of its given ages `b <
+   c` is interpolated: `ln CDF` is linear in the development age between
+   them (percents developed converted to CDFs first),
+
+   ```text
+   ln CDF(a) = ln CDF(b) + (a - b) / (c - b) * (ln CDF(c) - ln CDF(b)),   b <= a <= c
+   f_k = (CDF(b) / CDF(c))^((a_{k+1} - a_k) / (c - b))                      b <= a_k < c
+   ```
+
+   so the given ratio `CDF(b) / CDF(c)` is split over the links between
+   `b` and `c` in proportion to their length in months (evenly on an
+   evenly spaced triangle), geometrically. The interpolated links are
+   selected links like the others (a `ByAge` weight may name an
+   interpolated age), and the interpolated pattern selects exactly what
+   the same CDFs given at every age do. Ages before the first and after
+   the last given age are not interpolated: they stay estimated. A single
+   cumulative value is still an error: it fixes no link (use a tail to
+   set development past an age). Age-to-age patterns may have any ages
+   (a missing age-to-age factor is estimated, not interpolated).
+
+3. **Blending** is arithmetic, link by link: `f_k = w_k s_k + (1 - w_k)
+   e_k`, with `s_k` the selected factor and `e_k` the estimate. Chosen
+   over the geometric blend `s^w e^(1-w)` because (i) the variance of the
+   blend is exactly `(1 - w)^2 Var(e_k)`, which items 6 to 8 rely on; the
+   geometric blend's is only a delta-method approximation; (ii) credibility
+   blends of factors are usually stated this way; (iii) the two differ by
+   about `w (1 - w) (s - e)^2 / (2 e)`, below 0.001 for factors within 0.06
+   of each other. For a cumulative pattern the weight applies to the
+   age-to-age factors it converts to, so a blended CDF is the product of
+   blended factors, not the blend of the two CDFs. `PatternWeight::ByAge`
+   keys a weight by the age that starts the link.
+
+4. **Validation**, each an `Error::Pattern` naming the age:
+   * no values; an age given twice (values or weights);
+   * an age that is not a development age of the triangle (of the segment
+     being fitted, with segments);
+   * `AgeToAge`: a value that is not finite and positive (below 1 is
+     allowed: negative development); a value at the oldest age;
+   * `AgeToUltimate`: a value that is not finite or is below 1; values that
+     increase with age;
+   * `PercentDeveloped`: a value outside `(0, 1]`; values that decrease
+     with age. The two cumulative kinds carry the same information and get
+     the same checks;
+   * a cumulative pattern with fewer than two ages (a gap is interpolated,
+     item 2);
+   * a weight that is not finite or is outside `[0, 1]`; a `ByAge` weight
+     at an age with no selected link (for a cumulative pattern, its last
+     age);
+   * a selected link at or after `TailFit::attachment`, the first link
+     the tail replaces (for `TailBondy`, the one after the factor it
+     keeps): the pattern and the tail would both claim it. A cumulative pattern
+     may end at the attachment age, since its last age fixes no link.
+
+   The estimate is still computed at every link (reported side by side,
+   and Mack needs its sigma), so a link the triangle cannot estimate stays
+   an error even when the pattern selects it fully.
+
+5. **Tails.** The tail is fitted on the blended factors: an estimated tail
+   (`TailCurve`, `TailBondy`, `LogLinear`) extrapolates the pattern in use,
+   as chainladder-python's `TailCurve` after `DevelopmentConstant` does.
+   Its sigma and standard error for Mack are read off the triangle's own
+   estimate (the lines through `ln(e - 1)`, `ln(sigma)` and
+   `ln(std_err)`), since they describe the triangle's variability and a
+   fully selected link has no standard error to put on a log line.
+
+   **No tail: the level is the tail** (revised 2026-10-15). With no tail
+   (`Tail::is_none()`: a constant factor of 1 at the oldest age, the
+   default) and a cumulative pattern whose last age is the oldest age
+   `a_n`, the pattern's level there is the tail, as chainladder-python's
+   `DevelopmentConstant(style = "cdf")` keeps it:
+
+   ```text
+   pattern_tail = CDF_given(a_n) = 1 / p_given(a_n)
+   ```
+
+   used as `Tail::Constant(TailConstant { factor: pattern_tail, .. })` at
+   the oldest age (chainladder-python's decay over the periods past it),
+   and reported as `ChainLadderFit::pattern_tail` and a `pattern_tail`
+   column of `totals()`. `pattern_rescale` is then 1. A level of 1 (100%
+   developed) implies a tail of 1, no tail. `pattern_tail` is `None` with
+   a tail, for an age-to-age pattern, and for a cumulative pattern that
+   stops before the oldest age: its level is not at the oldest age, so it
+   implies no tail and is rescaled to the estimated factors after it, by
+   the rule below. The implied tail is a constant with no parameter error
+   from the user, so it is treated as a selected factor: its standard
+   error is 0 (Mack's parameter risk has no tail term unless the user
+   gives `tail_std_err`, which applies as for any constant tail); its
+   sigma, which gives the process error of the step past the oldest age,
+   follows a `TailConstant` without `tail_sigma` today: extrapolated
+   log-linearly from the triangle's sigmas at the tail factor (R's
+   `tail.sigma` rule), and an error asking for `tail_sigma` when it cannot
+   be extrapolated. Merz and Wüthrich's closed form rejects it as any tail
+   other than 1 ("needs no tail factor"). In the bootstraps it is a
+   constant, the same in every simulation (unless a `tail_std_err` is
+   given, which draws it as a constant tail's), with the step to ultimate
+   one more future increment as for a bootstrap tail (decision 9); in the
+   one-year view the bootstrap develops past the oldest age with it and
+   closes the origins whose tail step falls in the coming year (decision
+   11), and the method must use the same tail: its implied tail (the same
+   level at the oldest age) or an explicit constant tail of the same
+   factor at the oldest age, or the call fails with `Error::Bootstrap("the
+   tail the bootstrap's pattern implies must be the re-reserving method's
+   tail")`. The check compares the tails as each model uses them, both
+   ways: a bootstrap's explicit constant tail is equally the tail a
+   method's pattern implies when the factors agree (to a relative
+   `1e-12`). A bootstrap that takes the method's pattern
+   (`OneYearPattern::Method`, no pattern and no tail of its own) reads it
+   as the method does: when the method has a tail of its own, to which it
+   rescales the pattern's level, the pattern implies no tail for the
+   bootstrap either (it is used as the age-to-age factors it selects), so
+   the default never fails on the method's tail; only a bootstrap's own
+   pattern can imply a tail the method does not use. Since an implied
+   tail's `tail_std_err` (and Mack's `tail_sigma`) change the draws, a
+   bootstrap with a pattern records the tail settings in its provenance
+   even without a tail of its own.
+
+   **With a tail, the tail is kept** and a cumulative pattern's level is
+   rescaled to it; the same rule rescales a pattern that stops before the
+   oldest age. With `a_L` the pattern's last age and `CDF_used(a_L)` the product of
+   the factors used from `a_L` on times the tail factor,
+
+   ```text
+   pattern_rescale = CDF_given(a_L) / CDF_used(a_L) = 1 / (p_given(a_L) * CDF_used(a_L))
+   ```
+
+   the factor that multiplies the supplied percents developed (and divides
+   the supplied CDFs) to reconcile the pattern's level at its last age with
+   what is used there. It reconciles that level only: at an earlier age
+   `a`, the rescaled percent developed is
+   `CDF_given(a_L) / (CDF_given(a) * CDF_used(a_L))`, which is the
+   projection's `1 / CDF_used(a)` only when every link from `a` to `a_L` is
+   fully selected. A blended link uses `w * s + (1 - w) * e`, not the
+   given factor, so with a blend the rescaled percents at earlier ages are
+   not the projection's (with `p = (0.5, 1.0)` at 12 and 24 months, an
+   estimate of 2.4 for 12-24, `w = 0.5` and no tail, the factor used is
+   2.2 and the rescale 1, but the projection's percent developed at 12
+   months is `1 / 2.2 = 0.4545`, not 0.5). `ChainLadderFit::cdf` is the
+   projection's at every age. When the pattern ends at the oldest age with
+   a tail, `CDF_used = T`, so the rescaled percent developed at the oldest
+   age times the tail factor is 100%, the user's rule; ending at a
+   `TailConstant`'s attachment age, `CDF_used` is that tail's factor and
+   the same holds there. The rescale changes no factor (it multiplies
+   every given value alike), so it needs no iteration with the tail fit.
+   It is `None` for an age-to-age pattern, which stops at the last link
+   and lets the tail multiply on top, as now. With a `TailConstant` after
+   it, chainladder-python replaces the level with the tail, as here; with
+   no tail it keeps the level as the tail, as the rule above now does
+   (both checked on RAA, GenIns and the expected-loss methods; Checks).
+   Before the revision of 2026-10-15 a pattern to the oldest age with no
+   tail was rescaled to 100% there, which deviated from chainladder-python
+   for a level above 1.
+
+6. **Mack's lifetime view.** The pattern is taken as known: a fully
+   selected factor has no estimation error, and the blend's error is the
+   estimate's share, `Var(f_k) = (1 - w_k)^2 sigma_k^2 / S_k`. The process
+   variance is the triangle's: `sigma_k` stays as estimated around `e_k`
+   (and interpolated as now), and only the factors it is combined with
+   change. In Mack's (1993) closed form, for origin `i` at position `I_i`,
+
+   ```text
+   mse(R_i) = U_i^2 sum_{k >= I_i} (sigma_k^2 / f_k^2) (1 / C_ik + (1 - w_k)^2 / S_k)
+   ```
+
+   with `f_k` the used factors and `C_ik`, `U_i` projected with them; the
+   total's covariance terms `2 U_i U_j sum_k (1 - w_k)^2 sigma_k^2 /
+   (f_k^2 S_k)` scale the same way, since in the lifetime view every
+   parameter term is the variance of one factor's estimate. In the
+   recursion `Mack::fit` uses, this is `std_err_k` replaced by
+   `(1 - w_k) std_err_k` (`blended_std_err`) in the per-origin and total
+   parameter recursions; the process recursion is unchanged. The tail's
+   own parameter error is not part of the pattern: it stays as now
+   (`tail_std_err = 0` removes it). A fully selected pattern with no tail
+   standard error therefore has zero parameter risk, and the reported
+   standard error is the process risk alone. A tail the pattern implies
+   (item 5) has a standard error of 0 unless the user gives one, and its
+   sigma extrapolated as a `TailConstant`'s without `tail_sigma`, so a
+   fully selected cumulative pattern with its level as the tail is process
+   risk alone too, the tail step included.
+
+7. **Merz and Wüthrich's one-year view.** Allowed with a pattern (it still
+   needs volume-weighted estimates and no tail). The model is Mack's
+   lifetime view of item 6 carried forward: under Merz and Wüthrich's
+   conditional resampling the true factor `phi_k` varies around the used
+   factor `f_k` with the blend's parameter variance, `phi_k - f_k ~ (0,
+   g_k^2 tau_k)` with `g = 1 - w` and `tau_k = sigma_k^2 / S_k`; each
+   future link ratio is `phi_k` plus Mack's process (`sigma_k^2 / C`); and
+   the factor used at every later valuation is `w s + g e'`, `e'` that
+   valuation's volume-weighted re-estimate. Linearising each origin's CDR
+   in calendar year `y` (its link that year `j`) gives three terms. Write
+   `T_l = sigma_l^2 / S'_l`, the estimate's variance at the year's start
+   (`S'` the volume then; in the arrangement `ClaimsDevelopmentResult`
+   uses, R's `CL_MSEPs`, `T_l / f_l^2` is the existing parameter term
+   `t_l = kept(l, y) sigma_l^2 / (f_l^2 S_l)`), `k_l = S_l / S'_l` (R's
+   `kept(l, y)`, 1 in the coming year), `a_l = 1 - k_l`, and `s_l` the
+   share of the year's new cell in the re-estimate (`share[l - y]`).
+   * **Own link.** `(F - f^(y)_j) / f_j` with `F = phi_j + process`. The
+     used factor at the year's start is `w s + g ((1 - a) e + a (phi +
+     noise))`, so `phi - f^(y) = (1 - g a)(phi - mean) - g a noise`, of
+     variance `g^2 tau (1 - g a)^2 + g^2 a^2 sigma^2 / dS =
+     g^2 T ((1 - g a)^2 / k + a)`. Process unchanged; parameter term
+     `g_j^2 ((1 - g_j a_j)^2 / k_j + a_j) t_j`.
+   * **A later link `l`, re-estimated:** `g_l s_l (phi_l - e^(y)_l +
+     process) / f_l`. `Var(phi - e^(y)) = sigma^2 (g^2 S + dS) / S'^2 =
+     T (1 - (1 - g^2) k)`, and with the new cell's process `sigma^2 / C =
+     T S' / C` the term is `g_l^2 (1 - s_l k_l (1 - g_l^2)) s_l t_l`.
+   * **The covariance of an origin's own link with a younger origin's
+     re-estimate of it** (the new cell is the older origin's own):
+     `g s (Cov(phi - f^(y), phi - e^(y)) + sigma^2 / C) / f^2 =
+     g_j (1 - s_j (1 - g_j^2 (1 - g_j a_j) - g_j a_j)) t_j`.
+
+   ```text
+   msep_o = process_o + u_o^2 ( own_j + sum_{l > j} later_l )
+   total  = sum_o [ msep_o + 2 u_o Y_o ( cross_j + sum_{l > j} later_l ) ]
+   ```
+
+   with `u_o` the origin's ultimate and `Y_o` the younger origins'
+   ultimates. In the coming year (`k = 1`, `a = 0`) the scales are `g^2`,
+   `g^2 (1 - s (1 - g^2))` and `g (1 - s (1 - g^2))`. At `w = 0` every scale
+   is 1 (today's formula, R's `CDR`); at `w = 1` on every link each
+   origin's one-year MSEP is its process term and the total is the sum of
+   the origins' (no shared estimate, no covariance), and the years add up
+   to Mack's process risk. Strictly between, the used factor follows the
+   data less than the estimate does, so the years' CDRs are correlated:
+   their variances need not add up to Mack's, and with `s != e` the CDR's
+   mean is not zero. These are standard deviations.
+
+   The proposal had the new cell's parameter variance at the estimate's
+   `tau` instead of the blend's `g^2 tau` (a later link at `g^2 s t`, the
+   cross term at `g (1 - (1 - g) s) t`) and left later years to the same
+   scales.
+   Both were wrong: the coming year is checked against the exact
+   first-order covariance of this model to `1e-9`, and every year against a
+   simulation of it; the coming year's scales carried to later years are
+   3% to 6% below the simulation from the second year on (Checks).
+
+8. **Bootstraps** (`OdpBootstrap`, `MackBootstrap`, lifetime and one-year
+   views). The residuals, the ODP's fitted values and scale `phi`, and
+   Mack's sigmas come from the triangle's estimate, as now: the selection
+   is not data, and fitting residuals around it would put its bias into
+   every pseudo triangle. Each simulation then uses `w s + (1 - w) e*`,
+   with `e*` the simulation's pseudo factor: a fully selected link is the
+   same in every simulation (no parameter error) and a blended one moves
+   by `(1 - w)` times the pseudo factor's deviation. The process error of
+   the future cells is unchanged (Gamma with `phi`, or Mack's process
+   around the used factors). An estimated tail is refitted on each
+   simulation's blended factors; a constant tail is drawn as now. This is
+   unlike a constant tail attached early, whose in-triangle factors move
+   with the pseudo factors (decision 9): those are the tail's shape, not a
+   user's selection. In the one-year view the re-reserving method's
+   pattern must equal the bootstrap's when the bootstrap has one, by the
+   argument of decision 11 item 4 (`Error::Bootstrap("the bootstrap's
+   pattern must be the re-reserving method's pattern")`). Equal means
+   the same selection: the two are resolved on each segment's ages and
+   compared by their selected factors (to a relative `1e-12`) and weights,
+   so the order of the values, the kind they are given in (an age-to-age
+   pattern and the factors to ultimate it implies are the same) and the
+   form of the weight (`All(1.0)` or `ByAge` with weights of 1) do not
+   matter; the level at a cumulative pattern's last age is not compared
+   as a selection, but when it implies a tail (item 5) that tail must be
+   the method's. A bootstrap without a pattern of its own takes the
+   method's in the one-year view by default (revised 2026-10-15:
+   `OdpBootstrap::one_year_pattern` and `MackBootstrap::one_year_pattern`,
+   `OneYearPattern::Method`), as the bindings' `bootstrap_ldf = True`
+   does, so the same analysis gives the same CDR distribution in Rust,
+   Python and R. `OneYearPattern::Estimated` keeps the explicit way to
+   simulate from the triangle's own factors (the bindings' `False`): the
+   pattern then enters only when the method re-reserves, and the pseudo
+   factors are simulated unblended; it is an error with a bootstrap that
+   has a pattern of its own (`Error::Bootstrap("a bootstrap with a pattern
+   of its own cannot simulate from the estimated factors: ...")`). The
+   error for a bootstrap pattern that differs from the method's stays.
+   The rescale factor is reported for the deterministic fit only.
+
+   **The ODP keeps the origins' level error** (kept by the user's decision
+   of 2026-10-15). England and Verrall's bootstrap (decision 8) projects
+   each origin from its pseudo latest value, so with every link selected
+   and no process error the reserve still varies: on RAA its standard
+   deviation is about 73% of the unblended one (seed 5, 2,000
+   simulations). This is the ODP's parameter error in the origin effects,
+   which a development pattern does not fix, and it stays: replacing the
+   pseudo latest values by the observed ones would drop a real part of
+   the ODP's parameter error for every user of a pattern. Mack's bootstrap
+   projects from the observed latest value, so there the reserve is the
+   deterministic one in every simulation and only the process error is
+   left. The Rust docs (`OdpBootstrap::pattern`, `MackBootstrap::development`,
+   the `pattern` module), Python's and R's bootstrap docs say so.
+
+9. **Segments.** One pattern applies to every segment, as one tail does
+   now, and is checked against each segment's own ages (an error names the
+   segment). A pattern per segment (chainladder-python's `callable_axis`)
+   is not in this decision: it would be a map from segment keys to
+   patterns on `fit_segments` and the bootstraps' `SegmentDependence`
+   runs, and can follow in its own PR without changing this API.
+
+10. **What the fits report.** Side by side, one value per link:
+    `estimated_ldf` (the triangle's, as today's `estimated_ldf` in the
+    bindings), `selected_ldf` (the pattern's after conversion; missing
+    where none), `ldf_weight` (0 where none), `blended_ldf`, and `ldf` (the
+    factors used, after the tail), with `std_err` (used, `(1 - w)` times
+    the estimate's) and `estimated_std_err`; and per segment
+    `pattern_rescale` (missing for an age-to-age pattern or none) and
+    `pattern_tail` (missing where the pattern implies no tail). These go
+    into `development_table()` / `development_frame()` and `totals()`.
+    The docs of every method that takes a pattern say that a supplied
+    pattern lowers the reported uncertainty: its ages carry no parameter
+    error, so a wrong benchmark is not reflected in the standard errors.
+
+#### Bindings
+
+* Python: `ChainLadder`, `Mack`, `ExpectedLoss`, `BornhuetterFerguson`,
+  `Benktander`, `CapeCod`, `OdpBootstrap` and `MackBootstrap` take
+  `ldf=None` (a `dict`, or any mapping, from age in months to value),
+  `ldf_kind=None` (`"ldf"`, `"cdf"` or `"percent_developed"`; required
+  when `ldf` is given, since the kind cannot be guessed) and
+  `ldf_weight=None` (a float or a `dict` from age to weight; not given, 1),
+  and read them back as properties of the same names (`None` without a
+  pattern) and in their `repr`. `ChainLadderFit` and `MackFit` gain
+  `selected_ldf` (`None` where none), `ldf_weight`, `blended_ldf`,
+  `estimated_std_err`, `pattern_rescale` (`None` for an age-to-age
+  pattern or none) and `pattern_tail` (`None` where the pattern implies
+  no tail); `std_err` is the factor in use's. The other fits
+  reach them through `chain_ladder` and their frames. The one-year view
+  takes the method's pattern from the method object, and the bootstrap's
+  from the bootstrap object. `OdpBootstrap.one_year` and
+  `MackBootstrap.one_year` take `bootstrap_ldf=True`, as R's one-year
+  functions: a bootstrap without `ldf` of its own takes the method's, so
+  its simulations are blended; `False` simulates from the triangle's own
+  factors, and is an error with a bootstrap that has its own `ldf`. Since
+  2026-10-15 they set `one_year_pattern` (`Method` or `Estimated`) on the
+  Rust bootstrap instead of copying the pattern themselves.
+* R: `chain_ladder()`, `mack()`, `expected_loss()`,
+  `bornhuetter_ferguson()`, `benktander()`, `cape_cod()`,
+  `odp_bootstrap()`, `mack_bootstrap()`, `odp_one_year()` and
+  `mack_one_year()` take `ldf = NULL` (a named numeric vector whose names
+  are ages, or a `data.frame` with columns `age` and `value`),
+  `ldf_kind = NULL` (the same three strings; required with `ldf`) and
+  `ldf_weight = 1` (a number or a named vector). The one-year functions
+  also take `bootstrap_ldf = TRUE`: the bootstrap takes the method's
+  pattern too, as item 8 requires of a bootstrap with one; `FALSE`
+  simulates from the triangle's own factors (`OneYearPattern::Estimated`).
+  A `chain_ladder_fit` (and so a `mack_fit`) gains the properties
+  `selected_ldf` (`NA` where none), `ldf_weight`, `blended_ldf`,
+  `estimated_std_err`, `pattern_rescale` (`NULL` for an age-to-age
+  pattern or none) and `pattern_tail` (`NULL` where the pattern implies no
+  tail). With `bootstrap_tail = FALSE`, a `tail` of the method's own and a
+  pattern whose level implies a tail in the bootstrap, the one-year
+  functions fail with item 5's tail error: give `bootstrap_tail = TRUE` or
+  `bootstrap_ldf = FALSE`.
+* No new dependency: `prospicio-reserving`'s default path stays
+  `wasm32-unknown-unknown` clean.
+
+#### Pull requests
+
+1. `claude/selected-patterns` (this note, then): `SelectedPattern`, the
+   conversion, validation and rescale, the chain ladder and expected-loss
+   family, Mack and the one-year closed form, and the bootstraps (item 8,
+   lifetime and one-year), with the bindings. The proposal left the
+   bootstraps to a second PR; they were small enough to build here (a
+   blend of the pseudo factors in the three places that draw them), so
+   there is one PR.
+
+#### Checks
+
+`validation/tests/reserving_patterns.rs`, with references in
+`validation/reference/reserving_patterns_python.csv` (generator
+`validation/scripts/reserving_patterns_python.py`) and the existing R rows
+of `validation/reference/reserving_chainladder_r.csv`:
+
+* **chainladder-python parity** (`DevelopmentConstant` then `Chainladder`
+  on RAA and GenIns; then `ExpectedLoss`, `BornhuetterFerguson`,
+  `Benktander` and `CapeCod` on `clrd_wkcomp.csv` with premium): a full
+  benchmark pattern (`s = 1 + 1.1 (e - 1)`) as age-to-age factors, as
+  factors to ultimate with 1 at the oldest age (where the level
+  conventions agree), as factors to ultimate with the level 1.03 and no
+  tail (both keep the level as the tail, since the revision of
+  2026-10-15; `pattern_tail = 1.03`), as factors to ultimate with the
+  level 1.03 followed by `TailConstant(1.05)` (where they agree too), and
+  a blend
+  (`0.6 s + 0.4 e`, blended by the script since chainladder-python has
+  none, so these rows check how blended factors reach each method, not the
+  blend); factors in use, factors to ultimate and ultimates to 1e-9
+  relative, and the given pattern read back (age-to-age from the selected
+  factors, cumulative as the factor to ultimate in use times
+  `pattern_rescale`). The cumulative rows are checked again with the
+  pattern given as percents developed.
+* **Hand cases** (unit tests in `pattern.rs`): each kind converts to the
+  same factors (`p = (0.5, 0.8, 0.95)` gives links 1.6 and 1.1875; with a
+  tail of 1.02, `pattern_rescale = 1 / (0.95 * 1.02)` and the rescaled
+  0.95 times the tail is 100%); round trips between the kinds; partial
+  patterns at the young and the old end; the blend's limits (`w = 0` is the
+  estimate, `w = 1` the selection) in the conversion and through the chain
+  ladder; every error of item 4; a selected link at a tail's attachment
+  rejected, a cumulative pattern ending there accepted; an estimated tail
+  fitted on the blended factors; Bornhuetter-Ferguson by hand; segments
+  (an error names the segment, the tables' new columns, unchanged tables
+  without a pattern). Since 2026-10-15: interpolation (CDF 4 at 12 and 1
+  at 48 gives three links of `4^(1/3)`; percents developed converted
+  first; uneven ages split by months; an interpolated age takes a weight;
+  a gapped pattern selects what the same CDFs given in full do); the
+  implied tail (95% at the oldest age with no tail: `pattern_tail = 1 /
+  0.95`, rescale 1, standard error 0, the same ultimates as the constant
+  tail `1 / 0.95`; none with a tail, a partial or an age-to-age pattern;
+  100% implies a tail of 1); Mack with the implied tail equal to the
+  constant tail with `tail_std_err = 0`, no parameter risk, a given
+  `tail_std_err` applied, and Merz and Wüthrich rejecting it.
+* **Mack against R `MackChainLadder`** (the existing rows of
+  `reserving_chainladder_r.csv`, since R takes no factors): selecting the
+  triangle's own estimated factors with `w = 1` reproduces R's ultimates
+  and `Mack.ProcessRisk` per origin and in total, with zero parameter risk;
+  with `w = 0.4` the parameter risk is 0.6 times R's `Mack.ParameterRisk`,
+  per origin and in total, the process risk R's; on RAA, GenIns and ABC, to
+  1e-9. A partial, non-uniform pattern on GenIns is checked against the
+  closed form of item 6 computed apart from the recursion (unit test).
+* **Merz and Wüthrich:** `w = 0` is R's `CDR` (unit test, and every
+  existing R row unchanged); `w = 1` on every link gives the process-only
+  form, a total with no covariance, and a run-off that adds up to Mack's
+  process risk (unit test). With a uniform (`w = 0.5`) and an age-by-age
+  blend of the triangle's own factors, the coming year equals the exact
+  first-order covariance of item 7's model, computed directly from the
+  triangle's cells, to 1e-9 on RAA, GenIns and ABC; every calendar year of
+  the run-off is within five Monte Carlo standard errors (about 1.9%) of
+  40,000 simulated run-offs of the model on GenIns (largest gaps 0.9%,
+  1.1% and 1.1% without a pattern, uniform and by age; mean 0.3%); and
+  Mack's bootstrap re-reserving with `w = 0.5` reconciles with the closed
+  form's coming year within five Monte Carlo standard errors (20,000
+  simulations on GenIns).
+* **Bootstraps** (unit tests): Mack's bootstrap with every link selected
+  and no process error gives the deterministic reserve in every simulation
+  and a CDR of 0 in the one-year view; with Mack's process its SD matches
+  Mack's process risk within five Monte Carlo standard errors; a uniform
+  blend of the triangle's own factors with `w = 0.6` scales the
+  parameter-only SD to 0.4 of the unblended one (within 0.02); the ODP
+  bootstrap on a triangle with no residuals gives the blended chain ladder's
+  reserve in every simulation, and on RAA with every link selected and no
+  process error keeps only the levels' error of "As built" (below 80% of
+  the unblended SD, centred on the chain ladder); the pattern-mismatch
+  error of item 8 in both bootstraps, and a method with a pattern accepted
+  by a bootstrap without one. Since 2026-10-15: a bootstrap without a
+  pattern gives the same one-year draws as one given the method's
+  (`OneYearPattern::Method`), different ones with `Estimated`, and
+  `Estimated` with a pattern of its own is an error (both bootstraps);
+  with the implied tail the ODP bootstrap on a triangle with no residuals
+  gives the chain ladder's reserve, tail included, in every simulation,
+  Mack's bootstrap with every link selected and no process error the
+  deterministic reserve with the tail, the one-year view a CDR of 0 on
+  that triangle, the same draws with the method's explicit constant tail
+  of the same factor, and the implied-tail error with another tail.
+
+#### As built (2026-10-14)
+
+Changes from the proposal, made while building it:
+
+* **Item 7's terms.** The proposal's later-link and cross terms used the
+  estimate's parameter variance for the new cell instead of the blend's,
+  and it carried the coming year's scales to later years. Both are
+  corrected above, with the exact and simulated checks.
+* **The ODP bootstrap keeps the origins' level error** (item 8). England
+  and Verrall's bootstrap, as built in decision 8, projects each origin
+  from its pseudo latest value, so with every link selected and no process
+  error the reserve still varies: on RAA its SD is about 73% of the
+  unblended one (seed 5). This is the ODP's parameter error in the origin
+  effects, which a development pattern does not fix. Mack's bootstrap
+  projects from the observed latest value, so there the reserve is the
+  deterministic one in every simulation, as the proposal's Checks said of
+  both.
+* **One PR**, bootstraps included (Pull requests).
+* **Tables.** `development_table()` gains its five pattern columns, and
+  `totals()` its `pattern_rescale`, only when a pattern selects a factor
+  in some segment, so a fit without a pattern has the same tables as
+  before. `std_err` is always the factor in use's, `(1 - w)` times the
+  estimate's (unchanged without a pattern).
+* **Provenance.** `Development`'s `Debug` leaves out `pattern` when there is
+  none, and `OdpBootstrap` records `pattern` only when it has one, so the
+  provenance of results without a pattern is as before.
+* **Bindings.** Python's `ldf_weight` defaults to `None` (meaning 1), not
+  `1.0`: PyO3 cannot give a float default to an argument that also takes
+  a dict, and `None` lets an `ldf_weight` given without `ldf` be an error.
+  R's one-year functions gained `bootstrap_ldf` (default `TRUE`), since
+  they build the bootstrap and the method from one set of arguments;
+  Python's `OdpBootstrap.one_year` and `MackBootstrap.one_year` take the
+  same argument with the same default, so that one analysis gives the
+  same CDR distribution in both languages (a review finding: without it,
+  Python simulated the pseudo factors unblended where R blended them).
+  The one-year check compares the two patterns by their resolved
+  selection on each segment's ages, not as given (item 8; a review
+  finding: Python dicts in another key order were rejected).
+  Python's `std_err` (and R's) on a fit is now the factor in use's,
+  `(1 - w)` times the estimate's, as the tables already were; without a
+  pattern it is unchanged. Tests: `python/tests/test_reserving_patterns.py`
+  and `R/prospicio/tests/test-reserving-patterns.R` (each kind, partial
+  patterns, blends uniform and by age, the tail rescale, the five methods,
+  Mack's risks, both bootstraps and their one-year views, segments, and
+  every error, a missing or wrong kind label included).
+* **Breaking (Rust)**, as proposed: `Development` loses `Copy` and `Eq`, and
+  `ChainLadder`, `Mack`, `MackBootstrap`'s contents and the four
+  expected-loss settings lose `Copy`; `Development`, `OdpBootstrap`,
+  `MackBootstrap` (`one_year_pattern`, 2026-10-15), `DevelopmentFit` and
+  `ChainLadderFit` gain public fields; `Error` gains `Pattern`.
+
+#### Revisions of 2026-10-15
+
+Decided by the user on 2026-10-15, after review of the built PR:
+
+1. **A cumulative pattern's level is the tail when no tail is given**
+   (item 5). It replaces the earlier rule, which rescaled such a pattern
+   to 100% at the oldest age. The implied tail factor is the pattern's
+   CDF at the oldest age (1 over its percent developed there), a
+   `TailConstant` at the oldest age, reported as `pattern_tail`. With a
+   tail the earlier rule stands (the level is rescaled so that percent
+   developed at the oldest age times the tail is 100%). Decided here: a
+   partial cumulative pattern that stops before the oldest age implies no
+   tail (its level is not at the oldest age) and keeps the rescale to the
+   estimated factors after it; in Mack the implied tail has no parameter
+   error unless the user gives `tail_std_err`, and its process error past
+   the oldest age follows a `TailConstant` without `tail_sigma` (sigma
+   extrapolated log-linearly, an error when it cannot be); in the
+   bootstraps and the one-year view it is a constant, the same in every
+   simulation, and the one-year method must use the same tail. The
+   chainladder-python rows with the level 1.03 and no tail are now in the
+   parity reference and match at 1e-9.
+2. **Rust bootstraps take the method's pattern by default** in the
+   one-year view (item 8): `OneYearPattern::Method` on `OdpBootstrap` and
+   `MackBootstrap`, as the bindings' `bootstrap_ldf = True`;
+   `OneYearPattern::Estimated` simulates from the triangle's own factors
+   and is an error with a pattern of the bootstrap's own; the mismatch
+   error stays.
+3. **Gaps are interpolated** (item 2): `ln CDF` linear in development age
+   between the given ages; a single given age is still an error; ages
+   before the first and after the last given age stay estimated.
+4. **The ODP bootstrap keeps the origins' level error** with every factor
+   selected (item 8): documented in the Rust, Python and R docs.

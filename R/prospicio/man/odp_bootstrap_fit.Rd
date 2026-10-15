@@ -16,7 +16,10 @@ odp_bootstrap(
   tail = 1,
   tail_std_err = NULL,
   dependence = c("independent", "synchronized", "rank_correlation"),
-  spearman = NULL
+  spearman = NULL,
+  ldf = NULL,
+  ldf_kind = NULL,
+  ldf_weight = 1
 )
 }
 \arguments{
@@ -74,6 +77,24 @@ rho between the segments' totals, a symmetric matrix with a unit
 diagonal and one row and column per segment in index order. It is
 converted to the normal scores' correlation \verb{2 sin(pi rho / 6)}, which
 must be positive definite.}
+
+\item{ldf, ldf_kind, ldf_weight}{A selected development pattern, as in
+\code{\link[=chain_ladder]{chain_ladder()}}. The residuals and the scale come from the triangle's
+own volume-weighted factors; each simulation then uses
+\code{w * selected + (1 - w) * pseudo} at the selected ages, so a fully
+selected factor is the same in every simulation (no parameter error)
+and a blended one moves by \code{1 - w} times the pseudo factor's
+deviation. The origins' level still moves (each simulation projects
+from its pseudo latest values), so even a fully selected pattern keeps
+part of the spread: with every factor selected and no process error,
+about 73\% of the unblended standard deviation on RAA. This is the
+ODP's parameter error in the origins' levels, which a development
+pattern does not fix, and it is kept on purpose; \code{\link[=mack_bootstrap]{mack_bootstrap()}}
+projects from the observed latest values and keeps only the process
+error. A supplied pattern lowers the reported uncertainty. With no
+\code{tail}, a cumulative pattern to the oldest age implies a constant tail
+(\code{pattern_tail} of \code{\link[=chain_ladder]{chain_ladder()}}), the same in every simulation
+unless \code{tail_std_err} is given.}
 }
 \value{
 An \code{odp_bootstrap_fit} object.
