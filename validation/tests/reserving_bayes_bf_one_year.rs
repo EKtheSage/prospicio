@@ -98,12 +98,7 @@ fn reweight() -> BayesOneYear {
 
 /// The one-year view of `BayesBf` at `cv`; `tight` adds the strong-prior
 /// limit's `development_sd` 100 and no process error.
-fn bf(
-    tri: &Triangle,
-    cv: f64,
-    tight: bool,
-    seed: u64,
-) -> BayesOneYearFit<BayesBfFit> {
+fn bf(tri: &Triangle, cv: f64, tight: bool, seed: u64) -> BayesOneYearFit<BayesBfFit> {
     let model = BayesBf {
         apriori: 0.5,
         cv,
