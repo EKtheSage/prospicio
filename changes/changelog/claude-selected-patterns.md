@@ -25,7 +25,7 @@
   `Development` is no longer `Copy` or `Eq`, and `ChainLadder`, `Mack`
   and the four expected-loss settings are no longer `Copy`; `Development`,
   `OdpBootstrap`, `DevelopmentFit` and `ChainLadderFit` gain public
-  fields, and `Error` gains `Pattern`.
+  fields, and `Error` gains `Pattern` (#264).
 - Selected development patterns in Python and R: `ChainLadder`, `Mack`,
   `ExpectedLoss`, `BornhuetterFerguson`, `Benktander`, `CapeCod`,
   `OdpBootstrap` and `MackBootstrap` (in R `chain_ladder()`, `mack()`,
@@ -40,4 +40,4 @@
   a bootstrap without a pattern of its own takes the method's. Chain-ladder and Mack fits gain `selected_ldf`,
   `ldf_weight`, `blended_ldf`, `estimated_std_err` and `pattern_rescale`,
   and their `std_err` is the standard error of the factor in use
-  (unchanged without a pattern).
+  (unchanged without a pattern) (#264).
