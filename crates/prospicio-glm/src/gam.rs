@@ -6,18 +6,41 @@
 //! B-spline basis on equally spaced knots, with a second-order difference
 //! penalty: mgcv's `s(x, bs = "ps")`. The basis is reparameterized so the
 //! smooth sums to zero over the data (mgcv's centering constraint), which
-//! keeps it identifiable next to the intercept.
+//! keeps it identifiable next to the intercept. A cyclic smooth
+//! ([`PSpline::cyclic`], mgcv's `bs = "cp"`) wraps the basis and the
+//! penalty around a period, so its ends meet in value and slope.
 
 use prospicio_core::{Error, Result};
 use prospicio_math::linalg::{cholesky, cholesky_inverse, symmetric_eigenvalues};
 use prospicio_math::optimize::{NelderMead, brent, minimize, nelder_mead};
 use prospicio_math::special::ln_gamma;
-use prospicio_math::spline::{bspline_basis, difference_penalty, pspline_knots};
+use prospicio_math::spline::{
+    bspline_basis, cyclic_bspline_basis, cyclic_difference_penalty, difference_penalty,
+    pspline_knots,
+};
 use prospicio_models::{Design, Fitted, Model};
 use prospicio_prob::{PredictiveDistribution, Provenance};
 
 use crate::{Dispersion, Glm, Irls, dev, irls, simulate_responses};
 use prospicio_models::Family;
+
+/// What shape a [`PSpline`] takes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum SmoothKind {
+    /// An ordinary P-spline, mgcv's `bs = "ps"`.
+    #[default]
+    Ordinary,
+    /// A cyclic P-spline, mgcv's `bs = "cp"`: `n_basis` cyclic B-splines on
+    /// equally spaced knots over the period, and a cyclic difference
+    /// penalty, so the smooth and its derivatives match at the two ends
+    /// (a month of the year, an hour of the day, an angle). The period is
+    /// `period` when given (mgcv's `knots = list(x = c(lo, hi))`), else the
+    /// data's range; values outside it wrap around.
+    Cyclic {
+        /// The period's ends `(lo, hi)`; `None` takes the data's range.
+        period: Option<(f64, f64)>,
+    },
+}
 
 /// A P-spline smooth of one numeric design column.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,8 +53,10 @@ pub struct PSpline {
     /// B-spline degree (3: cubic).
     pub degree: usize,
     /// Order of the difference penalty (2 penalizes curvature, leaving a
-    /// straight line unpenalized).
+    /// straight line unpenalized; cyclic, only a constant).
     pub order: usize,
+    /// Ordinary or cyclic.
+    pub kind: SmoothKind,
 }
 
 impl PSpline {
@@ -43,7 +68,55 @@ impl PSpline {
             n_basis: 10,
             degree: 3,
             order: 2,
+            kind: SmoothKind::Ordinary,
         }
+    }
+
+    /// A cyclic cubic P-spline with 10 basis functions and a second-order
+    /// cyclic penalty over the data's range, mgcv's
+    /// `s(column, bs = "cp")` default. Set the period with
+    /// [`period`](Self::period).
+    ///
+    /// ```
+    /// use prospicio_glm::{Glm, gam::{Gam, PSpline}};
+    /// use prospicio_models::{Design, Family, Fitted, Link, Model};
+    ///
+    /// // A seasonal effect over the months 0 to 12.
+    /// let t: Vec<f64> = (0..240).map(|i| (f64::from(i) + 0.5) / 20.0).collect();
+    /// let y: Vec<f64> = t.iter().map(|v| (std::f64::consts::TAU * v / 12.0).sin()).collect();
+    /// let design = Design::new(
+    ///     vec!["(Intercept)".into(), "month".into()],
+    ///     vec![vec![1.0; 240], t.clone()],
+    /// )
+    /// .unwrap();
+    /// let gam = Gam::new(
+    ///     Glm::new(Family::Gaussian, Link::Identity),
+    ///     vec![PSpline::cyclic("month").period(0.0, 12.0)],
+    /// );
+    /// let fit = gam.fit(&design, &y).unwrap();
+    /// // The ends of the year meet.
+    /// let ends = Design::new(
+    ///     vec!["(Intercept)".into(), "month".into()],
+    ///     vec![vec![1.0; 2], vec![0.0, 12.0]],
+    /// )
+    /// .unwrap();
+    /// let p = fit.predict(&ends).unwrap();
+    /// assert!((p[0] - p[1]).abs() < 1e-12);
+    /// ```
+    pub fn cyclic(column: &str) -> Self {
+        Self {
+            kind: SmoothKind::Cyclic { period: None },
+            ..Self::new(column)
+        }
+    }
+
+    /// The same cyclic smooth with the period `[lo, hi]`, which must cover
+    /// the data when it is fitted. Makes an ordinary smooth cyclic.
+    pub fn period(mut self, lo: f64, hi: f64) -> Self {
+        self.kind = SmoothKind::Cyclic {
+            period: Some((lo, hi)),
+        };
+        self
     }
 
     /// The same smooth with `k` basis functions.
@@ -179,8 +252,9 @@ impl Gam {
     }
 }
 
-/// A smooth's basis as fitted: knots from the training data and the
-/// constraint's null space `Z` (`k × (k - 1)`, row-major).
+/// A smooth's basis as fitted: knots from the training data (a cyclic
+/// smooth's: the period's two ends) and the constraint's null space `Z`
+/// (`k × (k - 1)`, row-major).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Basis {
     pub(crate) spline: PSpline,
@@ -210,20 +284,52 @@ impl Basis {
                 spline.column
             )));
         }
-        let knots = pspline_knots(lo, hi, k, spline.degree);
+        let knots = match spline.kind {
+            SmoothKind::Ordinary => pspline_knots(lo, hi, k, spline.degree),
+            SmoothKind::Cyclic { period } => {
+                // mgcv's "cp": the period's ends; k + 1 knots between them.
+                let (a, b) = period.unwrap_or((lo, hi));
+                if !(a.is_finite() && b.is_finite() && a < b) {
+                    return Err(Error::InvalidParameter {
+                        name: "period",
+                        value: a,
+                        reason: "must be finite with lo < hi",
+                    });
+                }
+                if lo < a || hi > b {
+                    return Err(Error::Data(format!(
+                        "the period of smooth {:?} does not cover its data",
+                        spline.column
+                    )));
+                }
+                vec![a, b]
+            }
+        };
+        let mut basis = Self {
+            spline: spline.clone(),
+            knots,
+            z: Vec::new(),
+        };
         // c = column sums of the basis; Z spans c⊥ (Householder).
         let mut c = vec![0.0; k];
         for &v in x {
-            for (cj, b) in c.iter_mut().zip(bspline_basis(v, &knots, spline.degree)) {
+            for (cj, b) in c.iter_mut().zip(basis.raw(v)) {
                 *cj += b;
             }
         }
-        let z = centering(c);
-        Ok(Self {
-            spline: spline.clone(),
-            knots,
-            z,
-        })
+        basis.z = centering(c);
+        Ok(basis)
+    }
+
+    /// The unconstrained basis at `x`: `k` values.
+    fn raw(&self, x: f64) -> Vec<f64> {
+        let (k, degree) = (self.spline.n_basis, self.spline.degree);
+        match self.spline.kind {
+            SmoothKind::Ordinary => bspline_basis(x, &self.knots, degree),
+            SmoothKind::Cyclic { .. } => {
+                cyclic_bspline_basis(x, self.knots[0], self.knots[1], k, degree)
+            }
+        }
     }
 
     fn width(&self) -> usize {
@@ -235,7 +341,7 @@ impl Basis {
         let (k, m) = (self.spline.n_basis, self.width());
         let mut cols = vec![vec![0.0; x.len()]; m];
         for (r, &v) in x.iter().enumerate() {
-            let b = bspline_basis(v, &self.knots, self.spline.degree);
+            let b = self.raw(v);
             for (j, col) in cols.iter_mut().enumerate() {
                 col[r] = (0..k).map(|i| b[i] * self.z[i * m + j]).sum();
             }
@@ -246,7 +352,10 @@ impl Basis {
     /// `Zᵀ P Z`, `(k - 1) × (k - 1)`.
     fn penalty(&self) -> Vec<f64> {
         let (k, m) = (self.spline.n_basis, self.width());
-        let p = difference_penalty(k, self.spline.order);
+        let p = match self.spline.kind {
+            SmoothKind::Ordinary => difference_penalty(k, self.spline.order),
+            SmoothKind::Cyclic { .. } => cyclic_difference_penalty(k, self.spline.order),
+        };
         let mut out = vec![0.0; m * m];
         for a in 0..m {
             for b in 0..m {
@@ -334,6 +443,7 @@ impl TensorBasis {
                 n_basis: k,
                 degree: tensor.degree,
                 order: tensor.order,
+                kind: SmoothKind::Ordinary,
             };
             // The margin's checks and knots, without its own constraint.
             knots.push(Basis::fit(&spline, col)?.knots);

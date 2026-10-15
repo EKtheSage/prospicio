@@ -82,6 +82,22 @@ def test_gam_smooths_a_curve():
     assert 0.002 < reml.reml_scale < 0.02 and 4 < reml.edf < 12
 
 
+def test_gam_cyclic_smooth():
+    t = [(i + 0.5) / 20 for i in range(240)]
+    y = [2.0 + math.sin(math.tau * v / 12) for v in t]
+    d = Design([[1.0] * 240, t], ["(Intercept)", "month"])
+    fit = Gam(Glm("gaussian"), [{"column": "month", "bs": "cp", "period": (0.0, 12.0)}]).fit(d, y)
+    ends = fit.predict(Design([[1.0, 1.0], [0.0, 12.0]], ["(Intercept)", "month"]))
+    assert abs(ends[0] - ends[1]) < 1e-12 and abs(ends[0] - 2.0) < 0.01
+    # The period wraps: month 13 is month 1.
+    p = fit.predict(Design([[1.0, 1.0], [1.0, 13.0]], ["(Intercept)", "month"]))
+    assert abs(p[0] - p[1]) < 1e-12
+    with pytest.raises(ValueError):
+        Gam(Glm("gaussian"), [{"column": "month", "bs": "zz"}])
+    with pytest.raises(ValueError):
+        Gam(Glm("gaussian"), [{"column": "month", "period": (0.0, 12.0)}])
+
+
 def test_gam_tensor_smooth():
     n = 200
     x = [((i * 37) % 101) / 100 for i in range(n)]

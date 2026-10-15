@@ -181,6 +181,27 @@ models and compares them.
   prospicio's score, so its fitted values are compared to 2e-4. Python
   `Gam(..., tensors=[["x", "z"]])`; R `gam_fit(..., tensors = list(c("x",
   "z")), tensor_basis = 5)`.
+- Cyclic smooths (`PSpline::cyclic`, `SmoothKind::Cyclic`, decided
+  2026-10-15): mgcv's `s(x, bs = "cp")`. `k` cyclic cubic B-splines on
+  `k + 1` equally spaced knots from the period's start to its end (no
+  0.1% widening, unlike `"ps"`), each function that starts below the
+  period wrapped onto its top (`prospicio_math::spline::
+  cyclic_bspline_basis`, as mgcv's `cSplineDes`), and the second-order
+  difference penalty taken around the circle (`cyclic_difference_penalty`),
+  which leaves only a constant unpenalized; the centering constraint then
+  removes it, so a cyclic block's penalty has full rank. The period is
+  `PSpline::period(lo, hi)` (mgcv's `knots = list(x = c(lo, hi))`) or the
+  data's range, and new data outside it wraps around (mgcv's `cwrap`), so
+  the fit and its derivatives meet at the ends. The GAM artifact writes
+  the smooth's `kind` and version 2 for it (see "Model artifacts"). Parity:
+  `validation/reference/gam_cyclic_mgcv.csv`
+  (`validation/scripts/r_gam_cyclic.R`, data computed in the script and
+  the test): the raw basis at the period's ends and inside, and the
+  penalty, at 1e-12; Gaussian by GCV with the period and over the data's
+  range, Gaussian and Poisson by REML: deviance, edf, scale, score, fitted
+  values and the mean at both ends at 1e-6 (1e-5 for edf). Python
+  `Gam(glm, [{"column": "month", "bs": "cp", "period": (0, 12)}])`; R
+  `gam_fit(..., bs = "cp", period = list(month = c(0, 12)))`.
 - `prospicio-bayes`: MCMC diagnostics for any sampler's draws, the estimators
   of Vehtari et al. (2021) as R's `posterior` implements them:
   rank-normalized split `rhat` (the larger of the bulk and folded

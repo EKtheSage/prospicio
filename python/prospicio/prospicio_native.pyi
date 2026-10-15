@@ -7021,9 +7021,13 @@ class Gam:
     ----------
     glm : Glm
         Family, link and dispersion.
-    smooths : list of str or (str, int)
+    smooths : list of str, (str, int) or dict
         The design columns to smooth, optionally with the number of basis
-        functions (10 by default).
+        functions (10 by default), or a dict ``{"column": ..., "n_basis":
+        ..., "bs": ..., "period": ...}``: ``bs`` is ``"ps"`` (the default)
+        or ``"cp"`` for a cyclic smooth (mgcv's ``bs = "cp"``), whose ends
+        meet over ``period``, a ``(lo, hi)`` pair (the data's range when
+        left out).
     smoothing : str or list of float, default "auto"
         ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
         ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an

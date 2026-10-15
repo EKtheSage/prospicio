@@ -26,3 +26,18 @@
   point where the elasticity rises. Linear stays the default. Python
   `TabulatedCurve(x, g, interpolation="log-log")`, R
   `tabulated_curve(x, g, interpolation = "log-log")`.
+
+### Models
+
+- Cyclic smooths in `prospicio_glm::gam`: `PSpline::cyclic(column)`,
+  with `period(lo, hi)`, is mgcv's `s(x, bs = "cp")`: the fit and its
+  slope meet at the ends of the period, and new data outside it wraps
+  around (mgcv parity). Python `Gam(glm, [{"column": "month", "bs": "cp",
+  "period": (0, 12)}])`, R `gam_fit(..., bs = "cp", period = list(month =
+  c(0, 12)))`. A GAM artifact with a cyclic smooth is format version 2;
+  one without stays version 1.
+
+### Breaking changes
+
+- Rust: `PSpline` gains a public `kind` field (`SmoothKind`); code that
+  builds a `PSpline` in full adds it or uses `PSpline::new`.
