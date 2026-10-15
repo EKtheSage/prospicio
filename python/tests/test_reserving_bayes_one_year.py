@@ -7,7 +7,9 @@ reweighting against refits are in
 validation/tests/reserving_bayes_one_year.rs; these tests check the binding:
 the settings, the fields and frames, the lifetime fit against ``fit``, which
 simulations are refitted, segments, replay by seed, the warnings and the
-errors.
+errors. ``BayesBf.one_year`` (decision 17) returns the same class with a
+``BayesBfFit``; its comparison with ``BayesOdp`` and the strong-prior limit is
+in validation/tests/reserving_bayes_bf_one_year.rs.
 """
 
 import csv
@@ -19,6 +21,8 @@ import pytest
 
 from prospicio.distributions import PredictiveDistribution
 from prospicio.reserving import (
+    BayesBf,
+    BayesBfFit,
     BayesOdp,
     BayesOdpFit,
     BayesOneYearFit,
@@ -286,3 +290,39 @@ def test_errors(genins):
         model.one_year(tiny(keys=True), "paid")
     with pytest.raises(ValueError, match="(?i)synchroni"):
         BayesOdp(n_sims=10, dependence="synchronized").one_year_segments(tiny(keys=True), "paid")
+
+
+def tiny_premium():
+    return Triangle.from_long(
+        TINY["origin"],
+        TINY["development"],
+        {"paid": PAID, "premium": [200.0] * 4 + [220.0] * 3 + [240.0] * 2 + [260.0]},
+    )
+
+
+def test_bayes_bf_one_year():
+    tri = tiny_premium()
+    model = BayesBf(apriori=0.85, cv=0.1, tune=300, draws=300, n_sims=1000, seed=3)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        view = model.one_year(tri, "paid", "premium", refit="reweight_only")
+        fit = model.fit(tri, "paid", "premium")
+    assert isinstance(view, BayesOneYearFit)
+    assert isinstance(view.fit, BayesBfFit)
+    # The posterior and lifetime reserves are fit's, draw for draw.
+    assert view.fit.draws == fit.draws
+    assert view.fit.reserves.draw_matrix() == fit.reserves.draw_matrix()
+    assert view.origins == ["2020", "2021", "2022", "2023"]
+    assert len(view.pareto_k) == 1000 and view.refitted == []
+    assert all(row[0] == 0.0 for row in view.cdr.draw_matrix())
+    assert view.cdr.variance() < fit.reserves.variance()
+    frame = view.to_frame()
+    assert list(frame["prior_ultimate"]) == pytest.approx(fit.prior_ultimate)
+    assert "opening_reserve" in frame.columns and "cdr_std_dev" in frame.columns
+    totals = view.totals_frame()
+    assert totals["flagged_share"][0] == pytest.approx(view.flagged_share)
+    assert "BayesOneYearFit(origins=4, n_sims=1000" in repr(view)
+    with pytest.raises(ValueError, match="refit must be"):
+        model.one_year(tri, "paid", "premium", refit="sometimes")
+    with pytest.raises(ValueError, match="k_threshold"):
+        model.one_year(tri, "paid", "premium", k_threshold=float("nan"))

@@ -2028,8 +2028,9 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #' and refits that failed theirs raise another (each prefixed with its
 #' segment's label over segments).
 #'
-#' Properties of a `bayes_one_year_fit`: `fit` (the [bayes_odp_fit] with
-#' the posterior and lifetime reserves), `chain_ladder`, `origins`,
+#' Properties of a `bayes_one_year_fit`: `fit` (the [bayes_odp_fit], or the
+#' [bayes_bf_fit] from [bayes_bf_one_year()], with the posterior and
+#' lifetime reserves), `chain_ladder`, `origins`,
 #' `development`; per origin (named as a [chain_ladder_fit]'s) `latest`,
 #' `opening_ultimate` and `opening_reserve` (the posterior mean reserve on
 #' the observed triangle); `cdr`, a [predictive_distribution] of the CDR
@@ -2093,7 +2094,7 @@ bayes_one_year_fit <- S7::new_class(
     }
     list(
       ptr = S7::new_S3_class("BayesOneYearFit"),
-      fit = bayes_odp_fit,
+      fit = S7::class_any,
       chain_ladder = S7::new_property(chain_ladder_fit, getter = function(self) {
         self@fit@chain_ladder
       }),
@@ -2123,7 +2124,12 @@ bayes_one_year_fit <- S7::new_class(
     )
   }),
   constructor = function(ptr) {
-    S7::new_object(S7::S7_object(), ptr = ptr, fit = bayes_odp_fit(ptr = ptr$fit()),
+    fit <- if (ptr$model() == "bayes_bf") {
+      bayes_bf_fit(ptr = ptr$bf_fit())
+    } else {
+      bayes_odp_fit(ptr = ptr$fit())
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr, fit = fit,
                    cdr = predictive_distribution(ptr = ptr$cdr()))
   }
 )
@@ -2765,6 +2771,85 @@ bayes_bf <- function(triangle, column, exposure, apriori = 1, cv = 0.1, developm
             paste(failed, collapse = "; "), call. = FALSE)
   }
   fit
+}
+
+#' One-year view of the Bayesian Bornhuetter-Ferguson
+#'
+#' The claims development result (CDR) over the coming year of
+#' [bayes_bf()], by Pareto smoothed importance sampling of the posterior
+#' (decisions 16 and 17 of `docs/design/reserving-bayes.md`), exactly as
+#' [bayes_odp_one_year()] with this model's means `mu[w] * gamma[d]`.
+#' `bayes_bf_one_year()` fits the posterior and the lifetime reserves as
+#' [bayes_bf()] does with the same settings. Each simulation draws the
+#' year's increments from a posterior draw with `process` error, reweights
+#' every posterior draw by the year's quasi likelihood (the `scale`, the
+#' priors and the prior ultimates unchanged), and takes each origin's CDR as
+#' its posterior mean reserve at the opening less its payment in the year
+#' and its weighted posterior mean reserve after it; a simulation whose
+#' Pareto k is above `k_threshold` is refitted with NUTS when `refit` says
+#' so.
+#'
+#' The prior's strength moves the view between two limits. A flat prior
+#' (`cv = Inf`) is the Bayesian chain ladder: on GenIns its CDR's
+#' standard deviation agrees with [bayes_odp_one_year()]'s within Monte
+#' Carlo error. A tight prior fixes each origin's level, so only the
+#' development pattern learns from the year: on GenIns at `cv = 0.001`
+#' without process error the CDR's standard deviation is the closed form of
+#' England, Verrall and Wuthrich's strong-prior limit. In between it
+#' narrows as the prior tightens (on GenIns with `apriori = 0.5`, the
+#' total's standard deviation at `cv = 0.2` is about 70% of the flat
+#' prior's, at `cv = 0.05` about 50%). There is no view over segments:
+#' [bayes_bf()] fits one segment.
+#'
+#' Failed MCMC diagnostics of the fit raise one [warning()] listing them,
+#' and refits that failed theirs raise another. The result is a
+#' [bayes_one_year_fit] whose `fit` is the [bayes_bf_fit]; its
+#' `as.data.frame()` adds each origin's `exposure` and `prior_ultimate`.
+#'
+#' Errors: as [bayes_bf()]; a `k_threshold` that is `NaN`.
+#'
+#' This is Python's `BayesBf.one_year()`.
+#'
+#' @inheritParams bayes_bf_fit
+#' @inheritParams bayes_one_year_fit
+#' @returns A `bayes_one_year_fit` object.
+#' @seealso [bayes_bf()], [bayes_odp_one_year()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130),
+#'                    premium = rep(c(200, 220, 240, 260), 4:1))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' view <- bayes_bf_one_year(tri, "paid", "premium", apriori = 0.85, cv = 0.1,
+#'                           n_sims = 1000, seed = 1, refit = "reweight_only")
+#' view@fit@prior_ultimate
+#' c(one_year = sqrt(variance(view@cdr)), lifetime = sqrt(variance(view@fit@reserves)))
+#' as.data.frame(view)
+bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
+                              development_sd = 10, process = c("gamma", "none"), chains = 4,
+                              tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
+                              target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
+                              refit = c("refit_flagged", "reweight_only", "refit_all")) {
+  cols <- exposure_columns(triangle, column, exposure)
+  process <- match.arg(process)
+  refit <- match.arg(refit)
+  priors <- c(single_number(apriori, "apriori"), single_number(cv, "cv"),
+              single_number(development_sd, "development_sd"))
+  run <- c(single_number(chains, "chains"), single_number(tune, "tune"),
+           single_number(draws, "draws"), single_number(n_sims, "n_sims"),
+           single_number(seed, "seed"), single_number(target_accept, "target_accept"),
+           single_number(max_depth, "max_depth"))
+  ptr <- rust_result(triangle@ptr$bayes_bf_one_year(
+    cols[1], cols[2], priors, process, run, single_number(k_threshold, "k_threshold"), refit))
+  view <- bayes_one_year_fit(ptr = ptr)
+  failed <- view@fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("bayes_bf_one_year: the MCMC diagnostics failed; check them before relying on the ",
+            "fit: ", paste(failed, collapse = "; "), call. = FALSE)
+  }
+  warn_refits("bayes_bf_one_year", "", length(view@refitted), view@refit_warnings)
+  view
 }
 
 #' Bootstrap of Mack's model
