@@ -36,6 +36,11 @@
   "period": (0, 12)}])`, R `gam_fit(..., bs = "cp", period = list(month =
   c(0, 12)))`. A GAM artifact with a cyclic smooth is format version 2;
   one without stays version 1.
+- Monotone smooths in `prospicio_glm::gam`: `PSpline::increasing` and
+  `PSpline::decreasing` are scam's `bs = "mpi"` and `"mpd"`, smoothed by
+  GCV, UBRE or fixed parameters (scam parity). Python `{"column": "x",
+  "bs": "mpi"}`, R `gam_fit(..., bs = "mpi")`. This completes the GAM
+  scope of v0.6.
 
 ### Breaking changes
 

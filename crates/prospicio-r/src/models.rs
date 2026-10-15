@@ -535,14 +535,16 @@ fn gam_fit_design(
                 ("ps", true) => PSpline::new(s),
                 ("cp", true) => PSpline::cyclic(s),
                 ("cp", false) => PSpline::cyclic(s).period(lo, hi),
-                ("ps", false) => {
+                ("mpi", true) => PSpline::increasing(s),
+                ("mpd", true) => PSpline::decreasing(s),
+                ("ps" | "mpi" | "mpd", false) => {
                     return Err(Error::Other(format!(
                         "smooth {s}: a period needs bs = \"cp\""
                     )));
                 }
                 (other, _) => {
                     return Err(Error::Other(format!(
-                        "bs must be \"ps\" or \"cp\", not {other:?}"
+                        "bs must be \"ps\", \"cp\", \"mpi\" or \"mpd\", not {other:?}"
                     )));
                 }
             };

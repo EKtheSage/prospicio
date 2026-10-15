@@ -8,7 +8,11 @@
 //! smooth sums to zero over the data (mgcv's centering constraint), which
 //! keeps it identifiable next to the intercept. A cyclic smooth
 //! ([`PSpline::cyclic`], mgcv's `bs = "cp"`) wraps the basis and the
-//! penalty around a period, so its ends meet in value and slope.
+//! penalty around a period, so its ends meet in value and slope. A
+//! monotone smooth ([`PSpline::increasing`], [`PSpline::decreasing`],
+//! scam's `bs = "mpi"` and `"mpd"`) is a sum of B-splines with
+//! non-decreasing coefficients, written as cumulative sums of `exp(γ)` and
+//! fitted by Gauss–Newton IRLS in `γ`.
 
 use prospicio_core::{Error, Result};
 use prospicio_math::linalg::{cholesky, cholesky_inverse, symmetric_eigenvalues};
@@ -21,7 +25,7 @@ use prospicio_math::spline::{
 use prospicio_models::{Design, Fitted, Model};
 use prospicio_prob::{PredictiveDistribution, Provenance};
 
-use crate::{Dispersion, Glm, Irls, dev, irls, simulate_responses};
+use crate::{Dispersion, Glm, Irls, dev, irls, simulate_responses, working_system};
 use prospicio_models::Family;
 
 /// What shape a [`PSpline`] takes.
@@ -40,6 +44,23 @@ pub enum SmoothKind {
         /// The period's ends `(lo, hi)`; `None` takes the data's range.
         period: Option<(f64, f64)>,
     },
+    /// A monotone increasing P-spline, scam's `bs = "mpi"` (Pya and Wood
+    /// 2015): cubic B-splines on equally spaced knots over the data's range
+    /// whose coefficients rise, `β₁ + Σ_{i≤j} exp(γᵢ)`, with a first-order
+    /// difference penalty on `γ` (which leaves a straight line
+    /// unpenalized). The basis is centered by its column means over the
+    /// training data, as scam does. Smoothing by GCV, UBRE or fixed
+    /// parameters: scam has no REML, and neither do monotone smooths here.
+    Increasing,
+    /// A monotone decreasing P-spline, scam's `bs = "mpd"`: the
+    /// [`Increasing`](Self::Increasing) basis negated.
+    Decreasing,
+}
+
+impl SmoothKind {
+    fn is_monotone(&self) -> bool {
+        matches!(self, Self::Increasing | Self::Decreasing)
+    }
 }
 
 /// A P-spline smooth of one numeric design column.
@@ -107,6 +128,48 @@ impl PSpline {
         Self {
             kind: SmoothKind::Cyclic { period: None },
             ..Self::new(column)
+        }
+    }
+
+    /// A monotone increasing cubic P-spline with 10 basis functions,
+    /// scam's `s(column, bs = "mpi")` default ([`SmoothKind::Increasing`]).
+    ///
+    /// ```
+    /// use prospicio_glm::{Glm, gam::{Gam, PSpline}};
+    /// use prospicio_models::{Design, Family, Fitted, Link, Model};
+    ///
+    /// // A rising curve with a dip in the noise: the fit never falls.
+    /// let x: Vec<f64> = (0..200).map(|i| f64::from(i) / 199.0).collect();
+    /// let y: Vec<f64> = x
+    ///     .iter()
+    ///     .enumerate()
+    ///     .map(|(i, v)| v * v + 0.05 * (f64::from(i as u32) * 1.7).sin())
+    ///     .collect();
+    /// let design = Design::new(
+    ///     vec!["(Intercept)".into(), "x".into()],
+    ///     vec![vec![1.0; 200], x],
+    /// )
+    /// .unwrap();
+    /// let fit = Gam::new(Glm::new(Family::Gaussian, Link::Identity), vec![PSpline::increasing("x")])
+    ///     .fit(&design, &y)
+    ///     .unwrap();
+    /// let f = fit.fitted();
+    /// assert!(f.windows(2).all(|w| w[1] >= w[0] - 1e-12));
+    /// ```
+    pub fn increasing(column: &str) -> Self {
+        Self {
+            order: 1,
+            kind: SmoothKind::Increasing,
+            ..Self::new(column)
+        }
+    }
+
+    /// A monotone decreasing cubic P-spline with 10 basis functions,
+    /// scam's `s(column, bs = "mpd")` ([`SmoothKind::Decreasing`]).
+    pub fn decreasing(column: &str) -> Self {
+        Self {
+            kind: SmoothKind::Decreasing,
+            ..Self::increasing(column)
         }
     }
 
@@ -254,7 +317,8 @@ impl Gam {
 
 /// A smooth's basis as fitted: knots from the training data (a cyclic
 /// smooth's: the period's two ends) and the constraint's null space `Z`
-/// (`k × (k - 1)`, row-major).
+/// (`k × (k - 1)`, row-major); for a monotone smooth, `z` holds the
+/// `k - 1` column means its centering subtracts.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Basis {
     pub(crate) spline: PSpline,
@@ -286,6 +350,14 @@ impl Basis {
         }
         let knots = match spline.kind {
             SmoothKind::Ordinary => pspline_knots(lo, hi, k, spline.degree),
+            // scam's knots: the data's range in k - degree equal intervals,
+            // not widened, extended degree intervals beyond each end.
+            SmoothKind::Increasing | SmoothKind::Decreasing => {
+                let h = (hi - lo) / (k - spline.degree) as f64;
+                (0..=k + spline.degree)
+                    .map(|i| lo + h * (i as f64 - spline.degree as f64))
+                    .collect()
+            }
             SmoothKind::Cyclic { period } => {
                 // mgcv's "cp": the period's ends; k + 1 knots between them.
                 let (a, b) = period.unwrap_or((lo, hi));
@@ -310,6 +382,18 @@ impl Basis {
             knots,
             z: Vec::new(),
         };
+        if spline.kind.is_monotone() {
+            // The column means of the cumulative basis, which centering
+            // subtracts (scam's cmX).
+            let mut means = vec![0.0; k - 1];
+            for &v in x {
+                for (m, c) in means.iter_mut().zip(basis.cumulative(v)) {
+                    *m += c;
+                }
+            }
+            basis.z = means.into_iter().map(|m| m / x.len() as f64).collect();
+            return Ok(basis);
+        }
         // c = column sums of the basis; Z spans c⊥ (Householder).
         let mut c = vec![0.0; k];
         for &v in x {
@@ -321,11 +405,31 @@ impl Basis {
         Ok(basis)
     }
 
+    /// A monotone smooth's uncentered columns at `x`: `Σ_{i≥j} Bᵢ(x)` for
+    /// `j = 1..k` (the first, a constant, dropped), negated if decreasing.
+    fn cumulative(&self, x: f64) -> Vec<f64> {
+        let b = self.raw(x);
+        let sign = if self.spline.kind == SmoothKind::Decreasing {
+            -1.0
+        } else {
+            1.0
+        };
+        let mut out = vec![0.0; b.len() - 1];
+        let mut tail = 0.0;
+        for j in (1..b.len()).rev() {
+            tail += b[j];
+            out[j - 1] = sign * tail;
+        }
+        out
+    }
+
     /// The unconstrained basis at `x`: `k` values.
     fn raw(&self, x: f64) -> Vec<f64> {
         let (k, degree) = (self.spline.n_basis, self.spline.degree);
         match self.spline.kind {
-            SmoothKind::Ordinary => bspline_basis(x, &self.knots, degree),
+            SmoothKind::Ordinary | SmoothKind::Increasing | SmoothKind::Decreasing => {
+                bspline_basis(x, &self.knots, degree)
+            }
             SmoothKind::Cyclic { .. } => {
                 cyclic_bspline_basis(x, self.knots[0], self.knots[1], k, degree)
             }
@@ -340,6 +444,14 @@ impl Basis {
     fn columns(&self, x: &[f64]) -> Vec<Vec<f64>> {
         let (k, m) = (self.spline.n_basis, self.width());
         let mut cols = vec![vec![0.0; x.len()]; m];
+        if self.spline.kind.is_monotone() {
+            for (r, &v) in x.iter().enumerate() {
+                for (j, c) in self.cumulative(v).into_iter().enumerate() {
+                    cols[j][r] = c - self.z[j];
+                }
+            }
+            return cols;
+        }
         for (r, &v) in x.iter().enumerate() {
             let b = self.raw(v);
             for (j, col) in cols.iter_mut().enumerate() {
@@ -355,6 +467,10 @@ impl Basis {
         let p = match self.spline.kind {
             SmoothKind::Ordinary => difference_penalty(k, self.spline.order),
             SmoothKind::Cyclic { .. } => cyclic_difference_penalty(k, self.spline.order),
+            // On γ directly: no constraint to project through.
+            SmoothKind::Increasing | SmoothKind::Decreasing => {
+                return difference_penalty(m, self.spline.order);
+            }
         };
         let mut out = vec![0.0; m * m];
         for a in 0..m {
@@ -703,10 +819,157 @@ fn observed_information(glm: &Glm, x: &Design, y: &[f64], mu: &[f64]) -> Vec<f64
 
 /// One penalized fit at fixed smoothing parameters.
 struct Trial {
+    /// `beta` holds `θ`: `γ` (log scale) in a monotone smooth's columns.
     irls: Irls,
     penalty: Vec<f64>,
     edf: f64,
     deviance: f64,
+}
+
+/// Penalized IRLS where the columns `exp_cols` enter as `exp(θ)`:
+/// `η = X β(θ)` with `βⱼ = exp(θⱼ)` there and `βⱼ = θⱼ` elsewhere, the
+/// deviance plus `θᵀ S θ` minimized over `θ` by Gauss–Newton (Fisher
+/// scoring on the Jacobian `J = X diag(∂β/∂θ)`), with step halving, from
+/// `theta0`. Its fixed point solves the penalized score equations, so it
+/// reaches scam's estimate at the same smoothing parameters. Returns the
+/// fit (with `beta` = `θ` and `information` = `JᵀWJ`) and the Hessian of
+/// half the objective without the penalty, `JᵀWJ − E`, where `E` is
+/// diagonal on `exp_cols`: `Σᵢ wᵢ (yᵢ − μᵢ) μ'ᵢ/Vᵢ Xᵢⱼ exp(θⱼ)`.
+fn irls_exp(
+    glm: &Glm,
+    x: &Design,
+    y: &[f64],
+    theta0: &[f64],
+    s: &[f64],
+    exp_cols: &[usize],
+) -> Result<(Irls, Vec<f64>)> {
+    let (family, link) = (glm.family, glm.link);
+    let (n, p) = (x.n_rows(), x.n_cols());
+    let w = x.weights();
+    let beta_of = |theta: &[f64]| -> Vec<f64> {
+        let mut b = theta.to_vec();
+        for &j in exp_cols {
+            b[j] = theta[j].exp();
+        }
+        b
+    };
+    let jacobian = |theta: &[f64]| -> Result<Design> {
+        let cols = (0..p)
+            .map(|j| {
+                let c = x.column(j);
+                if exp_cols.contains(&j) {
+                    let e = theta[j].exp();
+                    c.iter().map(|v| v * e).collect()
+                } else {
+                    c.to_vec()
+                }
+            })
+            .collect();
+        Design::new(x.names().to_vec(), cols)?
+            .with_offset(x.offset().to_vec())?
+            .with_weights(w.to_vec())
+    };
+    let state = |theta: &[f64]| -> Option<(Vec<f64>, Vec<f64>, f64)> {
+        let eta = x.linear_predictor(&beta_of(theta));
+        if !eta.iter().all(|&e| link.valid_eta(e)) {
+            return None;
+        }
+        let mu: Vec<f64> = eta.iter().map(|&e| link.inverse(e)).collect();
+        if !mu.iter().all(|&m| family.valid_mu(m)) {
+            return None;
+        }
+        let obj = dev(family, y, &mu, w) + crate::quadratic(s, theta);
+        obj.is_finite().then_some((eta, mu, obj))
+    };
+    let mut theta = theta0.to_vec();
+    let (mut eta, mut mu, mut current) = state(&theta)
+        .ok_or_else(|| Error::Data("the starting values give invalid means".into()))?;
+    for _ in 1..=glm.max_iterations {
+        let j = jacobian(&theta)?;
+        let (mut a, mut rhs) = working_system(glm, &j, y, &eta, &mu)?;
+        // The working response of the linearized model, z + J (θ − 1) on
+        // exp_cols: Jⱼ θⱼ replaces Xⱼ exp(θⱼ) = Jⱼ.
+        let mut v = vec![0.0; p];
+        for &c in exp_cols {
+            v[c] = theta[c] - 1.0;
+        }
+        for r in 0..p {
+            rhs[r] += (0..p).map(|c| a[r * p + c] * v[c]).sum::<f64>();
+        }
+        for (ai, si) in a.iter_mut().zip(s) {
+            *ai += si;
+        }
+        let l = cholesky(&a, p).ok_or_else(|| {
+            Error::Data("the design matrix is collinear: drop or merge columns".into())
+        })?;
+        let target = prospicio_math::linalg::cholesky_solve(&l, &rhs);
+        let previous = theta.clone();
+        // The linearized exp(γ) is poor far from γ: start from a step that
+        // moves no γ by more than 2 (a factor e² in its increment).
+        let reach = exp_cols
+            .iter()
+            .map(|&c| (target[c] - theta[c]).abs())
+            .fold(0.0, f64::max);
+        let mut step = if reach > 2.0 { 2.0 / reach } else { 1.0 };
+        loop {
+            let trial: Vec<f64> = previous
+                .iter()
+                .zip(&target)
+                .map(|(b, t)| b + step * (t - b))
+                .collect();
+            if let Some((e, m, obj)) = state(&trial)
+                && obj <= current * (1.0 + 1e-12)
+            {
+                theta = trial;
+                (eta, mu) = (e, m);
+                break;
+            }
+            step *= 0.5;
+            if step < 1e-10 {
+                // No step improves: converged as far as rounding allows.
+                break;
+            }
+        }
+        let new_obj = state(&theta).map_or(f64::INFINITY, |t| t.2);
+        let settled = (current - new_obj).abs() / (new_obj.abs() + 0.1) < glm.tolerance;
+        // Judged on β: an increment that wants to be 0 sends its γ towards
+        // −∞ in steps that never shrink, while exp(γ) settles.
+        let (now, before) = (beta_of(&theta), beta_of(&previous));
+        let still = now
+            .iter()
+            .zip(&before)
+            .all(|(b, q)| (b - q).abs() <= glm.tolerance.sqrt() * 1e-3 * (b.abs() + 1e-3));
+        current = new_obj;
+        if (settled && still) || step < 1e-10 {
+            let j = jacobian(&theta)?;
+            let (information, _) = working_system(glm, &j, y, &eta, &mu)?;
+            let mut hessian = information.clone();
+            for &c in exp_cols {
+                let col = x.column(c);
+                let e = theta[c].exp();
+                let extra: f64 = (0..n)
+                    .map(|i| {
+                        let d = link.mu_eta(eta[i]);
+                        w[i] * (y[i] - mu[i]) * d / family.variance(mu[i]) * col[i] * e
+                    })
+                    .sum();
+                hessian[c * p + c] -= extra;
+            }
+            return Ok((
+                Irls {
+                    beta: theta,
+                    information,
+                    iterations: 0,
+                    mu,
+                },
+                hessian,
+            ));
+        }
+    }
+    Err(Error::Data(format!(
+        "IRLS did not converge in {} iterations",
+        glm.max_iterations
+    )))
 }
 
 impl Model for Gam {
@@ -779,10 +1042,27 @@ impl Model for Gam {
             out
         };
         let n_lambda: usize = blocks.iter().map(|b| b.2.len()).sum();
+        // The columns of the monotone smooths, which enter as exp(γ).
+        let exp_cols: Vec<usize> = bases
+            .iter()
+            .zip(&blocks)
+            .filter(|(b, _)| b.spline.kind.is_monotone())
+            .flat_map(|(_, (at, m, _))| *at..at + m)
+            .collect();
+        if !exp_cols.is_empty() && self.smoothing == Smoothing::Reml {
+            return Err(Error::InvalidParameter {
+                name: "smoothing",
+                value: f64::NAN,
+                reason: "REML is not available with monotone smooths: use GCV, UBRE or fixed \
+                         smoothing parameters (as scam)",
+            });
+        }
         let w = x.weights();
         let y_mean = y.iter().zip(w).map(|(a, b)| a * b).sum::<f64>() / w.iter().sum::<f64>();
-        // Each trial starts IRLS from the last trial's means.
+        // Each trial starts IRLS from the last trial's means (and, with
+        // monotone smooths, its θ).
         let warm: std::cell::RefCell<Option<Vec<f64>>> = std::cell::RefCell::new(None);
+        let warm_theta: std::cell::RefCell<Option<Vec<f64>>> = std::cell::RefCell::new(None);
         let trial = |lambdas: &[f64]| -> Result<Trial> {
             let mut s = vec![0.0; p * p];
             let mut lambda = lambdas.iter();
@@ -795,6 +1075,46 @@ impl Model for Gam {
                         }
                     }
                 }
+            }
+            if !exp_cols.is_empty() {
+                // Start from the last θ, or from the link at the mean with
+                // small equal increments.
+                let theta0 = warm_theta.borrow().clone().unwrap_or_else(|| {
+                    let mut t = vec![0.0; p];
+                    if let Some(j) = x.names().iter().position(|n| n == "(Intercept)") {
+                        t[j] = glm.link.link(y_mean);
+                    }
+                    for &c in &exp_cols {
+                        t[c] = -2.0;
+                    }
+                    t
+                });
+                let (fit, hessian) = irls_exp(&glm, &x, y, &theta0, &s, &exp_cols)?;
+                *warm_theta.borrow_mut() = Some(fit.beta.clone());
+                // edf = tr((JᵀWJ − E + S)⁻¹ JᵀWJ), scam's influence with the
+                // Newton Hessian.
+                let mut a = hessian;
+                for (v, si) in a.iter_mut().zip(&s) {
+                    *v += si;
+                }
+                let l = cholesky(&a, p).ok_or_else(|| {
+                    Error::Data("the penalized Hessian is not positive definite".into())
+                })?;
+                let inv = cholesky_inverse(&l, p);
+                let edf: f64 = (0..p)
+                    .map(|i| {
+                        (0..p)
+                            .map(|k| inv[i * p + k] * fit.information[k * p + i])
+                            .sum::<f64>()
+                    })
+                    .sum();
+                let deviance = dev(glm.family, y, &fit.mu, w);
+                return Ok(Trial {
+                    irls: fit,
+                    penalty: s,
+                    edf,
+                    deviance,
+                });
             }
             let start = warm.borrow().clone();
             let fit = irls(
@@ -996,10 +1316,23 @@ impl Model for Gam {
         }
         let l = cholesky(&a, p)
             .ok_or_else(|| Error::Data("the penalized system is singular".into()))?;
-        let covariance = cholesky_inverse(&l, p)
+        let mut covariance: Vec<f64> = cholesky_inverse(&l, p)
             .into_iter()
             .map(|v| v * dispersion)
             .collect();
+        // Monotone columns: β = exp(θ), and its covariance by the delta
+        // method, diag(∂β/∂θ) Cov(θ) diag(∂β/∂θ).
+        let mut coefficients = best.irls.beta.clone();
+        let mut scale = vec![1.0; p];
+        for &c in &exp_cols {
+            coefficients[c] = coefficients[c].exp();
+            scale[c] = coefficients[c];
+        }
+        for a in 0..p {
+            for b in 0..p {
+                covariance[a * p + b] *= scale[a] * scale[b];
+            }
+        }
         let reml_scale = if use_reml {
             Some(reml(&best, &lambdas)?.1)
         } else {
@@ -1012,7 +1345,7 @@ impl Model for Gam {
             bases,
             tensors,
             names: x.names().to_vec(),
-            coefficients: best.irls.beta,
+            coefficients,
             lambdas,
             edf: best.edf,
             covariance,

@@ -374,9 +374,11 @@ S7::method(print, elastic_net_model) <- function(x, ...) {
 #' @inheritParams glm_fit
 #' @param smooths Names of numeric terms to smooth.
 #' @param n_basis Basis functions per smooth (recycled; 10 by default).
-#' @param bs The basis of each smooth (recycled): `"ps"`, a P-spline, or
+#' @param bs The basis of each smooth (recycled): `"ps"`, a P-spline;
 #'   `"cp"`, a cyclic P-spline (mgcv's `bs = "cp"`), whose ends meet in value
-#'   and slope over its period.
+#'   and slope over its period; or `"mpi"` / `"mpd"`, a monotone increasing
+#'   or decreasing P-spline (scam's), which takes GCV, UBRE or fixed
+#'   smoothing but not REML.
 #' @param period A named list of `c(lo, hi)` periods for cyclic smooths
 #'   (mgcv's `knots = list(x = c(lo, hi))`); a cyclic smooth left out takes
 #'   the data's range.

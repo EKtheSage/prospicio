@@ -29,8 +29,9 @@ const NET_FORMAT: &str = "risk_rs.elastic_net_fit";
 /// (`docs/design/models.md`, "Model artifacts"), so an artifact that needs
 /// nothing new stays readable by older builds.
 const FORMAT_VERSION: u64 = 1;
-/// The GAM format: version 2 adds cyclic smooths (`smooth.kind`), which a
-/// version 1 reader would misread as ordinary ones.
+/// The GAM format: version 2 adds cyclic and monotone smooths
+/// (`smooth.kind`), which a version 1 reader would misread as ordinary
+/// ones.
 const GAM_FORMAT_VERSION: u64 = 2;
 
 impl GlmFit {
@@ -415,8 +416,13 @@ fn spline_json(s: &PSpline) -> Value {
         json!({"column": s.column, "n_basis": s.n_basis, "degree": s.degree, "order": s.order});
     // Written only when not ordinary, so an ordinary smooth's JSON is as
     // in version 1.
-    if let SmoothKind::Cyclic { period } = s.kind {
-        v["kind"] = json!({"kind": "cyclic", "period": period.map(|(a, b)| nums(&[a, b]))});
+    match s.kind {
+        SmoothKind::Ordinary => {}
+        SmoothKind::Cyclic { period } => {
+            v["kind"] = json!({"kind": "cyclic", "period": period.map(|(a, b)| nums(&[a, b]))});
+        }
+        SmoothKind::Increasing => v["kind"] = json!({"kind": "increasing"}),
+        SmoothKind::Decreasing => v["kind"] = json!({"kind": "decreasing"}),
     }
     v
 }
@@ -464,6 +470,8 @@ fn spline_from(o: &Map<String, Value>) -> Result<PSpline> {
                             },
                         },
                     },
+                    Some("increasing") => SmoothKind::Increasing,
+                    Some("decreasing") => SmoothKind::Decreasing,
                     _ => return Err(bad("smooth.kind.kind")),
                 }
             }
@@ -680,6 +688,25 @@ mod tests {
         let back = GamFit::from_json(&text).unwrap();
         assert_eq!(back, cyc);
         assert_eq!(back.predict(&d).unwrap(), cyc.predict(&d).unwrap());
+        for spline in [PSpline::increasing("x"), PSpline::decreasing("x")] {
+            let mono = Gam::new(Glm::new(Family::Gamma, Link::Log), vec![spline.n_basis(8)])
+                .fit(&d, &y)
+                .unwrap();
+            let back = GamFit::from_json(&mono.to_json()).unwrap();
+            assert_eq!(back, mono);
+            assert_eq!(back.predict(&d).unwrap(), mono.predict(&d).unwrap());
+        }
+
+        // Monotone smooths have no REML.
+        assert!(
+            Gam::new(
+                Glm::new(Family::Gamma, Link::Log),
+                vec![PSpline::increasing("x")]
+            )
+            .smoothing(crate::gam::Smoothing::Reml)
+            .fit(&d, &y)
+            .is_err()
+        );
 
         let mut spec = ElasticNet::new(Family::Gaussian, Link::Identity, 0.5, 0.05);
         spec.penalty_factor = Some(vec![0.0, 1.0, 2.0]);

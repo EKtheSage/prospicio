@@ -284,7 +284,7 @@ pub(crate) struct Irls {
 }
 
 /// `Xᵀ W X` and `Xᵀ W z` for the working weights and response at `η`.
-fn working_system(
+pub(crate) fn working_system(
     spec: &Glm,
     design: &Design,
     y: &[f64],

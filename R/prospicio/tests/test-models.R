@@ -129,6 +129,16 @@ stopifnot(inherits(try(gam_fit(y ~ month, cs, smooths = "month", family = "gauss
 cf <- tempfile(fileext = ".rds")
 save_model(gc, cf)
 stopifnot(identical(predict(load_model(cf), data.frame(month = 13)), pe[[4]]))
+# Monotone smooths never turn back.
+ms <- data.frame(x = (0:199) / 199)
+ms$y <- ms$x^2 + 0.05 * sin(1.7 * (0:199))
+gi <- gam_fit(y ~ x, ms, smooths = "x", family = "gaussian", bs = "mpi")
+stopifnot(all(diff(gi@fitted) >= -1e-12))
+ms$z <- -ms$y
+gd <- gam_fit(z ~ x, ms, smooths = "x", family = "gaussian", bs = "mpd")
+stopifnot(all(diff(gd@fitted) <= 1e-12))
+stopifnot(inherits(try(gam_fit(y ~ x, ms, smooths = "x", family = "gaussian", bs = "mpi",
+                               smoothing = "reml"), silent = TRUE), "try-error"))
 # A tensor product smooth.
 tz <- data.frame(x = (((0:199) * 37) %% 101) / 100, z = (((0:199) * 53) %% 97) / 96)
 tz$y <- sin(3 * tz$x) * cos(2 * tz$z) + 0.05 * sin(91 * (0:199))

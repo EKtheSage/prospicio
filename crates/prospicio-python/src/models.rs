@@ -1273,9 +1273,16 @@ fn smooth_from_dict(d: &Bound<'_, pyo3::types::PyDict>) -> PyResult<PSpline> {
             Some((lo, hi)) => PSpline::cyclic(&column).period(lo, hi),
             None => PSpline::cyclic(&column),
         },
+        "mpi" | "mpd" if period.is_some() => {
+            return Err(PyValueError::new_err(
+                "a period needs a cyclic smooth (bs=\"cp\")",
+            ));
+        }
+        "mpi" => PSpline::increasing(&column),
+        "mpd" => PSpline::decreasing(&column),
         other => {
             return Err(PyValueError::new_err(format!(
-                "bs must be \"ps\" or \"cp\", not {other:?}"
+                "bs must be \"ps\", \"cp\", \"mpi\" or \"mpd\", not {other:?}"
             )));
         }
     };
@@ -1298,7 +1305,9 @@ fn smooth_from_dict(d: &Bound<'_, pyo3::types::PyDict>) -> PyResult<PSpline> {
 ///     ..., "bs": ..., "period": ...}``: ``bs`` is ``"ps"`` (the default)
 ///     or ``"cp"`` for a cyclic smooth (mgcv's ``bs = "cp"``), whose ends
 ///     meet over ``period``, a ``(lo, hi)`` pair (the data's range when
-///     left out).
+///     left out), or ``"mpi"`` / ``"mpd"`` for a monotone increasing or
+///     decreasing smooth (scam's), which takes GCV, UBRE or fixed
+///     smoothing but not REML.
 /// smoothing : str or list of float, default "auto"
 ///     ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
 ///     ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an

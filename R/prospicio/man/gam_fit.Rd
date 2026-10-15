@@ -63,9 +63,11 @@ more numeric terms. Each margin has its own smoothing parameter.}
 \item{tensor_basis}{Basis functions per margin of each tensor: one number
 (recycled) or a list with one vector per tensor (5 by default).}
 
-\item{bs}{The basis of each smooth (recycled): \code{"ps"}, a P-spline, or
+\item{bs}{The basis of each smooth (recycled): \code{"ps"}, a P-spline;
 \code{"cp"}, a cyclic P-spline (mgcv's \code{bs = "cp"}), whose ends meet in value
-and slope over its period.}
+and slope over its period; or \code{"mpi"} / \code{"mpd"}, a monotone increasing
+or decreasing P-spline (scam's), which takes GCV, UBRE or fixed
+smoothing but not REML.}
 
 \item{period}{A named list of \code{c(lo, hi)} periods for cyclic smooths
 (mgcv's \code{knots = list(x = c(lo, hi))}); a cyclic smooth left out takes

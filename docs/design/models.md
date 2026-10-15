@@ -202,6 +202,41 @@ models and compares them.
   values and the mean at both ends at 1e-6 (1e-5 for edf). Python
   `Gam(glm, [{"column": "month", "bs": "cp", "period": (0, 12)}])`; R
   `gam_fit(..., bs = "cp", period = list(month = c(0, 12)))`.
+- Monotone smooths (`PSpline::increasing`, `PSpline::decreasing`,
+  decided 2026-10-15): scam's `s(x, bs = "mpi")` and `"mpd"` (Pya and
+  Wood 2015), not mgcv's `mono.con` and `pcls`, which hold only for a
+  Gaussian response with fixed smoothing. Cubic B-splines on `k − 3`
+  equal intervals over the data's range (not widened), coefficients
+  `β₁ + Σ_{i≤j} exp(γᵢ)`: the basis is the cumulative sums
+  `Σ_{i≥j} Bᵢ` for `j ≥ 2` (the constant first dropped, negated for
+  decreasing), centered by its training column means as scam does (not by
+  the Householder constraint), with a first-order difference penalty on
+  `γ`, which leaves a straight line unpenalized. Fitting is Gauss–Newton
+  IRLS in `θ` (`γ` on the monotone columns, the coefficients elsewhere):
+  the working model is linearized at `θ` through the Jacobian
+  `X diag(∂β/∂θ)`, each step capped so no `γ` moves by more than 2 (the
+  linearized `exp` is poor further out, and uncapped steps halved for
+  hundreds of iterations), and convergence is judged on `β`, since an
+  increment that wants to be 0 sends its `γ` towards `−∞` in steps that
+  never shrink. The fixed point solves the penalized score equations, so
+  at the same smoothing parameter it is scam's estimate (scam itself takes
+  full Newton steps). The edf is scam's, `tr((JᵀWJ − E + S)⁻¹ JᵀWJ)` with
+  the Newton Hessian (`E` diagonal on the monotone columns,
+  `Σᵢ wᵢ (yᵢ − μᵢ) μ'ᵢ/Vᵢ Xᵢⱼ exp(γⱼ)`), so GCV and UBRE select as scam
+  does; REML is refused, as scam has none. The fit reports `β = exp(γ)`
+  on the monotone columns, so prediction stays linear in the expanded
+  design, and their covariance by the delta method from
+  `φ (JᵀWJ + S)⁻¹`. scam scales each penalty, `S = c DᵀD`: a scam `sp`
+  is `λ = c sp` here. Parity: `validation/reference/gam_monotone_scam.csv`
+  (`validation/scripts/r_gam_monotone.R`, data computed in the script and
+  the test): at scam's fixed `sp`, an increasing Gaussian and a decreasing
+  Poisson fit, deviance, edf, scale and fitted values at 1e-7 and the
+  increments at 1e-6; selected by GCV and UBRE, against scam at 1e-3 and
+  against its score's refined minimum (`optimize` over scam's own fixed-sp
+  fits, since scam's BFGS stops about 1e-4 short in edf) at 1e-9 for the
+  score, 1e-6 for the fit and 1e-5 for the edf, where the score is flat;
+  every fit is checked monotone on a grid. Python
+  `Gam(glm, [{"column": "x", "bs": "mpi"}])`; R `gam_fit(..., bs = "mpi")`.
 - `prospicio-bayes`: MCMC diagnostics for any sampler's draws, the estimators
   of Vehtari et al. (2021) as R's `posterior` implements them:
   rank-normalized split `rhat` (the larger of the bulk and folded
@@ -363,6 +398,50 @@ and Python's `GlmFit` pickles through the artifact. `GamFit`
 so new data gets exactly the training basis) and `ElasticNetFit`
 (`"risk_rs.elastic_net_fit"`, one per `λ`; R saves the whole path) work
 the same way.
+
+**The format, decided 2026-10-15.** Model artifacts are versioned JSON,
+for every engine; CBOR and Arrow are not used for them.
+
+- **One envelope.** Every artifact is a JSON object with `format`
+  (`"risk_rs.<kind>"`), `format_version` and `provenance` (crate version,
+  `input_hash`), then the kind's own fields, as `"risk_rs.distribution"`
+  and `"risk_rs.tower"` already are. The name keeps its `risk_rs` prefix:
+  renaming it would break every saved file for no gain.
+- **Why JSON.** An artifact is read by people auditing a model and by
+  tools that are not prospicio (a reviewer's script, a model inventory),
+  so it must be readable without our code; JSON is, and it diffs. Numbers
+  round-trip bit for bit already. Size does not argue for CBOR: the
+  arrays are the coefficients, the covariance (`p²` values), the knots
+  and constraints, and the fitted values (one per training row), at about
+  20 bytes a number; only the fitted values grow with the data, a few
+  megabytes for a million rows. If an artifact ever needs arrays far
+  larger than that (draws, a large network's weights), those arrays go
+  into an Arrow IPC file beside the JSON under a new format version, as
+  `PredictiveDistribution` already stores draws, rather than turning the
+  whole artifact binary.
+- **Versions are per format.** Each format has its own version and each
+  reader the newest it knows (`artifact.rs`: `FORMAT_VERSION`, and
+  `GAM_FORMAT_VERSION` = 2 since cyclic and monotone smooths). A writer
+  stamps the oldest version whose readers read that artifact correctly,
+  so a GAM with only ordinary smooths stays version 1 and older builds
+  still load it. A reader refuses a newer version. A new field that an
+  older reader would ignore and so misread (a smooth's `kind`) bumps the
+  version; one an older reader cannot ignore without failing its own
+  checks (the tensors, which change the number of smoothing parameters)
+  or that changes nothing it computes needs no bump.
+- **Delegated and later engines.** A boosting adapter, when it saves,
+  puts the engine's own text model (LightGBM's model string, XGBoost's
+  JSON) in a field of the same envelope; a network (`prospicio-nn`) or a
+  Bayesian fit (`prospicio-bayes`) uses the envelope with its weights or
+  draws as above. None of them saves yet. The JSON helpers stay in
+  `prospicio_glm::artifact` until a second crate writes an artifact; then
+  the envelope (the format check, the version rule, the non-finite
+  numbers) moves to `prospicio_models::artifact`, the module the life
+  cycle table names.
+- **The coding stays with the bindings**, as above: factor levels and
+  formula terms are front-end objects (Python's `Coding`, R's `terms`), so
+  the R package stores them beside the artifact in its RDS file and the
+  Rust artifact carries only the numeric design it was fitted on.
 
 Monitoring (`prospicio_models::monitor::actual_vs_expected`): a stored model's
 predictions against actuals by period, `A = Σ w y` and `E = Σ w μ`, each
@@ -570,8 +649,8 @@ their draws and stop being reproducible.
 
 ## Open questions
 
-- Serialization format for model artifacts (a versioned JSON or CBOR
-  schema, or Arrow for large coefficient sets).
+- (Decided 2026-10-15: model artifacts are versioned JSON; see "Model
+  artifacts".)
 - Whether `Design` stores dense or sparse columns (high-cardinality factors
   favour sparse).
 - Burn version pinning, given its API churn.

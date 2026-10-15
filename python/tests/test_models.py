@@ -98,6 +98,18 @@ def test_gam_cyclic_smooth():
         Gam(Glm("gaussian"), [{"column": "month", "period": (0.0, 12.0)}])
 
 
+def test_gam_monotone_smooth():
+    x = [i / 199 for i in range(200)]
+    y = [v * v + 0.05 * math.sin(1.7 * i) for i, v in enumerate(x)]
+    d = Design([[1.0] * 200, x], ["(Intercept)", "x"])
+    up = Gam(Glm("gaussian"), [{"column": "x", "bs": "mpi"}]).fit(d, y)
+    assert all(b >= a - 1e-12 for a, b in zip(up.fitted, up.fitted[1:]))
+    down = Gam(Glm("gaussian"), [{"column": "x", "bs": "mpd"}]).fit(d, [-v for v in y])
+    assert all(b <= a + 1e-12 for a, b in zip(down.fitted, down.fitted[1:]))
+    with pytest.raises(ValueError):
+        Gam(Glm("gaussian"), [{"column": "x", "bs": "mpi"}], smoothing="reml").fit(d, y)
+
+
 def test_gam_tensor_smooth():
     n = 200
     x = [((i * 37) % 101) / 100 for i in range(n)]

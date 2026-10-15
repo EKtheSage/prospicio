@@ -7027,7 +7027,9 @@ class Gam:
         ..., "bs": ..., "period": ...}``: ``bs`` is ``"ps"`` (the default)
         or ``"cp"`` for a cyclic smooth (mgcv's ``bs = "cp"``), whose ends
         meet over ``period``, a ``(lo, hi)`` pair (the data's range when
-        left out).
+        left out), or ``"mpi"`` / ``"mpd"`` for a monotone increasing or
+        decreasing smooth (scam's), which takes GCV, UBRE or fixed
+        smoothing but not REML.
     smoothing : str or list of float, default "auto"
         ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
         ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
