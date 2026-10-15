@@ -22,7 +22,10 @@
 //!    `MomentMatchThenRefit` sees the same years, moment-matches or
 //!    refits each flagged simulation (never both), and gives `RefitAll`'s
 //!    rows for those it refits and `ReweightOnly`'s for the unflagged
-//!    (decision 18);
+//!    (decision 18); it matches at least one, and replays bit for bit
+//!    (rows, `k̂`, the matched and the refitted) on one thread against
+//!    the default pool, matching's own parallel steps nested in the
+//!    simulations' included;
 //! 5. on those 300, the root mean square gap between a reweighted and a
 //!    refitted simulation's total, in units of the total's sd, is below
 //!    `UNFLAGGED_GAP` where `k̂` is at most 0.7 and below `FLAGGED_GAP`
@@ -85,7 +88,7 @@ struct Measured {
 /// `closed` of the triangle without a year, and `reserves` the lifetime
 /// reserves of its fit. Panics naming the model and the property; without
 /// `strict` (the sweep), only on the exact properties.
-fn conform<F: Sync>(
+fn conform<F: Sync + Send>(
     name: &str,
     run: &Run<'_, F>,
     closed: &Run<'_, F>,
@@ -147,6 +150,26 @@ fn conform<F: Sync>(
         m.pareto_k, a.pareto_k,
         "{name}: MomentMatchThenRefit's years"
     );
+    assert!(
+        !m.moment_matched.is_empty(),
+        "{name}: MomentMatchThenRefit matched nothing"
+    );
+    let m1 = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap()
+        .install(|| run(REFIT_SIMS, seed, OneYearRefit::MomentMatchThenRefit));
+    assert_eq!(
+        m1.cdr.draw_matrix(),
+        m.cdr.draw_matrix(),
+        "{name}: MomentMatchThenRefit's replay on one thread"
+    );
+    assert_eq!(m1.pareto_k, m.pareto_k, "{name}: matched replay's k");
+    assert_eq!(
+        m1.moment_matched, m.moment_matched,
+        "{name}: matched replay's matched"
+    );
+    assert_eq!(m1.refitted, m.refitted, "{name}: matched replay's refitted");
     let mut either = m.moment_matched.clone();
     either.extend(&m.refitted);
     either.sort_unstable();

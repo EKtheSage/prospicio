@@ -20,6 +20,7 @@ prospicio-math.workspace = true
 prospicio-models.workspace = true
 prospicio-pricing.workspace = true
 prospicio-prob = { workspace = true, features = ["arrow"] }
+rayon.workspace = true
 
 [features]
 # The Bayesian (NUTS) parity tests: about 220 s in a debug build, about 17 s

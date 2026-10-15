@@ -127,6 +127,16 @@ impl BayesOneYear {
 /// `theta` is always one posterior draw on the scale
 /// [`PosteriorDraws`] stores it.
 ///
+/// That scale must be unconstrained: every point of `R^p` a valid
+/// parameter, as the sampling scale is. Moment matching (decision 18)
+/// moves the draws by affine maps on it, which on a constrained scale (a
+/// standard deviation, `tanh` of a correlation) can leave the support;
+/// a Jacobian term does not mend that. `BayesOdp` and `BayesBf` store
+/// such draws. `Meyers` and `Compartmental` store natural-scale values
+/// (`tanh`, square roots of variances, exponentials) and must store or
+/// expose their unconstrained sampling scale before they implement this
+/// trait.
+///
 /// Everything a simulation's predictive step would draw afresh that the
 /// year's cells inform (an effect of an origin or an age with no observed
 /// cell, say) must be part of `theta`, carried with each posterior draw,
@@ -169,10 +179,12 @@ pub(crate) trait YearModel: Sync {
     /// matching (decision 18) evaluates it at moved draws with an empty
     /// year, where it should be cheap, and adds
     /// [`year_log_likelihood`](Self::year_log_likelihood), which the
-    /// conformance suite checks is the year's change to it. Every model so
-    /// far stores its draws on an unconstrained scale that is an affine
-    /// map of its sampling scale, so no Jacobian term is needed; a model
-    /// with constrained draws adds its own.
+    /// conformance suite checks is the year's change to it. It is the
+    /// density of the draws as stored: on a scale that is an affine map
+    /// of the sampling scale (every model so far) no Jacobian term is
+    /// needed, on any other unconstrained scale the model adds its own.
+    /// Conformance check 5 (the score identity) fails a log posterior
+    /// that is not the stored draws' density, which check 1 cannot see.
     fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64;
 }
 
@@ -853,7 +865,13 @@ pub(crate) mod conformance {
     /// 3. a seed replays the view bit for bit, whatever the threads, and
     ///    another seed gives another view;
     /// 4. a year with no cells gives a zero claims development result,
-    ///    `k̂` 0 and no refit or moment matching, even under `RefitAll`.
+    ///    `k̂` 0 and no refit or moment matching, even under `RefitAll`;
+    /// 5. `log_posterior` is the density of the draws as stored, not only
+    ///    up to a term in `theta` that check 1 cancels: its score has
+    ///    mean zero over the posterior draws ([`score_z`], every
+    ///    parameter within [`SCORE_Z`] standard errors). A model that
+    ///    stores a constrained transform of its sampling scale and leaves
+    ///    out the Jacobian fails it.
     pub(crate) fn check<M: YearModel, C: YearModel>(
         name: &str,
         model: &M,
@@ -947,5 +965,57 @@ pub(crate) mod conformance {
                 "{name}: {refit:?} gives a CDR without a year"
             );
         }
+
+        // 5. The log posterior is the stored draws' density.
+        let z = score_z(model, posterior);
+        let worst = z.iter().copied().fold(0.0, |m: f64, v| m.max(v.abs()));
+        assert!(
+            worst < SCORE_Z,
+            "{name}: the score of log_posterior has mean z {z:?} over the posterior draws"
+        );
+    }
+
+    /// The bound on [`score_z`] in [`check`]: generous, as NUTS draws
+    /// are autocorrelated and the standard error assumes they are not.
+    pub(crate) const SCORE_Z: f64 = 6.0;
+
+    /// The Stein (score) identity: for draws from a density `p`, the mean
+    /// of `d log p / d theta_i` is zero. For each parameter, the mean over
+    /// `posterior`'s draws of the central finite difference of
+    /// `log_posterior(theta, [])` (step `1e-5 (1 + |theta_i|)`), over its
+    /// standard error taking the draws as independent. A parameter whose
+    /// score does not vary gives 0 if its mean is 0 and infinity if not.
+    pub(crate) fn score_z<M: YearModel>(model: &M, posterior: &PosteriorDraws) -> Vec<f64> {
+        let (s, p) = (posterior.n_draws(), posterior.draw(0).len());
+        let mut scores = vec![Vec::with_capacity(s); p];
+        let mut theta = vec![0.0; p];
+        for d in 0..s {
+            theta.copy_from_slice(posterior.draw(d));
+            for (i, score) in scores.iter_mut().enumerate() {
+                let t = theta[i];
+                let h = 1e-5 * (1.0 + t.abs());
+                theta[i] = t + h;
+                let up = model.log_posterior(&theta, &[]);
+                theta[i] = t - h;
+                let down = model.log_posterior(&theta, &[]);
+                theta[i] = t;
+                score.push((up - down) / (2.0 * h));
+            }
+        }
+        scores
+            .iter()
+            .map(|g| {
+                let n = g.len() as f64;
+                let mean = g.iter().sum::<f64>() / n;
+                let sd = (g.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt();
+                if sd > 0.0 {
+                    mean / (sd / n.sqrt())
+                } else if mean == 0.0 {
+                    0.0
+                } else {
+                    f64::INFINITY
+                }
+            })
+            .collect()
     }
 }

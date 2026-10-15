@@ -342,11 +342,9 @@ fn split<M: YearModel>(
 }
 
 /// PSIS of `log_r`, relative efficiency 1 as the engine's; `None` when it
-/// cannot take them (a `+inf`, or no finite ratio).
+/// cannot take them (a NaN or `+inf`, or no finite ratio; `psis` rejects
+/// each).
 fn smooth(log_r: &[f64]) -> Option<(Vec<f64>, f64)> {
-    if !log_r.iter().any(|v| v.is_finite()) {
-        return None;
-    }
     prospicio_bayes::elpd::psis(log_r, 1.0).ok()
 }
 
@@ -478,6 +476,75 @@ mod tests {
         sample(&Normal(p), &vec![0.0; p], sampler).unwrap()
     }
 
+    /// The opening posterior `N(0, I)` stored as `exp(theta)`, a
+    /// constrained scale, with a log posterior that has the Jacobian
+    /// (`-log x` per parameter) or leaves it out.
+    struct ExpStored {
+        jacobian: bool,
+    }
+
+    impl YearModel for ExpStored {
+        fn n_origins(&self) -> usize {
+            1
+        }
+        fn n_year(&self) -> usize {
+            1
+        }
+        fn draw_year(&self, _theta: &[f64], _rng: &mut StreamRng, year: &mut [f64]) {
+            year.fill(0.0);
+        }
+        fn year_log_likelihood(&self, _theta: &[f64], _year: &[f64]) -> f64 {
+            0.0
+        }
+        fn paid(&self, _year: &[f64], paid: &mut [f64]) {
+            paid.fill(0.0);
+        }
+        fn opening(&self, _theta: &[f64], reserve: &mut [f64]) {
+            reserve.fill(0.0);
+        }
+        fn closing(&self, _theta: &[f64], _year: &[f64], reserve: &mut [f64]) {
+            reserve.fill(0.0);
+        }
+        fn refit(&self, _year: &[f64], _seed: u64) -> Result<(PosteriorDraws, bool)> {
+            Err(Error::Bayes("no refit".into()))
+        }
+        fn log_posterior(&self, theta: &[f64], _year: &[f64]) -> f64 {
+            theta
+                .iter()
+                .map(|x| {
+                    let v = x.ln();
+                    -0.5 * v * v - if self.jacobian { v } else { 0.0 }
+                })
+                .sum()
+        }
+    }
+
+    /// Conformance check 5 (the score identity) tells a log posterior
+    /// that is the stored draws' density from one that leaves out the
+    /// Jacobian of their scale, which check 1 cannot see.
+    #[test]
+    fn the_score_check_catches_a_missing_jacobian() {
+        let p = 2;
+        let names = vec!["x0".to_string(), "x1".to_string()];
+        let stored = opening_draws(p)
+            .transform(names, |v| v.iter().map(|t| t.exp()).collect())
+            .unwrap();
+        let worst = |jacobian| {
+            crate::bayes::one_year::conformance::score_z(&ExpStored { jacobian }, &stored)
+                .iter()
+                .fold(0.0, |m: f64, v| m.max(v.abs()))
+        };
+        let (with, without) = (worst(true), worst(false));
+        assert!(
+            with < crate::bayes::one_year::conformance::SCORE_Z,
+            "with the Jacobian: z {with}"
+        );
+        assert!(
+            without > 2.0 * crate::bayes::one_year::conformance::SCORE_Z,
+            "without the Jacobian: z {without}"
+        );
+    }
+
     /// A year far in the opening posterior's tail (`k̂` well above 0.7)
     /// is brought below the threshold, and the closing reserve is the
     /// conjugate posterior mean, where plain reweighting is far off.
@@ -499,7 +566,8 @@ mod tests {
         assert!(k_mm <= 0.7, "k after matching {k_mm}");
         // Each theta[j]'s posterior: precision 1 + 1 / sigma^2, mean
         // (y / sigma^2) over it (0.92) and sd 0.29; matching lands within
-        // 0.03 of it on every parameter, reweighting alone 0.25 off.
+        // 0.05 of it on every parameter (0.029 at this seed), reweighting
+        // alone 0.25 off.
         let exact = (1.0 / 0.09) / (1.0 + 1.0 / 0.09);
         let w = normalised(&log_w);
         let gap = |c: &[f64]| c.iter().map(|v| (v - exact).abs()).fold(0.0, f64::max);
