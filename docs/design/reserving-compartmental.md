@@ -3,8 +3,10 @@
 Status: **Decided** (2026-10-13; the user settled the open decisions at
 the end, all as recommended, with decision 1 widened: see there). PR A
 built (decision 4); PR B built (decisions 2, 5, 6, 7 and 9, each with its
-"Built" paragraph: the Rust core and its Python and R bindings); PRs C to
-E not yet · Lane:
+"Built" paragraph: the Rust core and its Python and R bindings); PR C
+built (decisions 1, 2, 4, 5, 6, 7 and 9, each with its "Built (PR C)"
+paragraph: the Rust core and its Python and R bindings); PRs D and E not
+yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -149,6 +151,22 @@ that grid, with the settings in place and the other values returning
 `Error::Bayes` ("not yet") until their PR adds them; PR C fills in the
 log-normal, loss ratios and incremental paid. Each value that ships gets
 its own Stan reference.
+
+**Built (PR C, Rust core).** The log-normal likelihood, loss ratios and
+incremental paid are built, and every combination of the three settings
+is allowed (8 in all), with the same density code: the response of a cell
+is its outstanding, cumulative or incremental paid, divided by premium on
+the loss-ratio scale, and the likelihood normal on it or on its log. Each
+value has its Stan reference (normal, amounts and cumulative paid in
+`compartmental_gm1.stan`; log-normal, loss ratios and incremental paid in
+`compartmental_gm2.stan`); the mixed combinations have no reference of
+their own and are checked by a unit test against the model written out in
+`f64` with the paper's closed form, for both presets' hierarchies (1e-12).
+`Fitted` still takes paid and outstanding only. The hierarchy is not a
+setting of its own but follows from the priors (decision 6):
+`CompartmentalPriors::gesmann_morris_2()` is model 2's, and
+`Compartmental::model_2(priors)` sets model 2's likelihood, scale, paid
+response and sampler.
 
 The analysis that led here, as proposed: Four candidates:
 
@@ -383,6 +401,47 @@ these additions and departures:
   `CompartmentalFit::population_origins` lists them. Its mean ultimate loss
   ratio is exact given a draw (log-normal moments of the effect).
 
+**Built (PR C, Rust core).** Model 2 as proposed, read again from the
+paper's code (sec. 7.2.3) and its printed `m2fit`, which the earlier
+notes had not quoted in full:
+
+* **The hierarchy is in the priors.** `CompartmentalPriors` gains
+  `ker_effect_sd` and `kp_effect_sd` (`Option<HalfPrior>`: uncorrelated
+  origin effects on the rates) and `development_effect_sd` (`[Option<
+  HalfPrior>; 4]`: uncorrelated development-year effects on `k_er`, `k_p`,
+  `RLR` and `RRF`); `None` is no effect, and `gesmann_morris()` has none,
+  so model 1 is unchanged. Each cell `(i, t)` then has `θ_p = m_p e^{s_p
+  (b_p + u_ip + v_tp)}`, and `RLR` and `RRF` keep their correlated origin
+  pair. `gesmann_morris_2()` is the code's preset: model 1's medians and
+  multipliers, every sd half `student_t(10, 0, ·)` with 0.3 for `k_er` and
+  `k_p`, 0.7 for `RLR` and 0.5 for `RRF`, shared by the parameter's two
+  groups as brms shares one sd prior per nlpar, and `normal(log 0.2, 0.2)`
+  on each `log σ`.
+* **The layout** on the paper's training triangle is the 87 parameters
+  proposed: the 4 intercepts, `log τ_RLR`, `log τ_RRF`, `atanh ρ`, the 6
+  other `log τ` (origin `k_er`, `k_p`; development `k_er`, `k_p`, `RLR`,
+  `RRF`), the 18 origin pairs, 9 `z` for each rate's origin effect, 9 for
+  each development effect, and the two `log σ`. The posterior adds, beside
+  model 1's names, `k_er[o]` and `k_p[o]` (each origin's rates at a zero
+  development effect, as `RLR[o]` and `RRF[o]` are), `dev_ker[a]`,
+  `dev_kp[a]`, `dev_RLR[a]` and `dev_RRF[a]` (each development age's
+  effect on the `o` scale, `a` in months), `tau_ker`, `tau_kp` and
+  `tau_dev_*`.
+* **Levels with no cell.** Development year 10 has no training cell; each
+  simulation draws one new effect per parameter for it, shared by every
+  origin, as decided, and 1997 one new set of origin effects (four
+  normals, the pair correlated). The ultimate loss ratio of an origin is
+  `RLR_i RRF_i` at a zero development effect.
+* **The swap** is invariant cell by cell, so `rate_swaps` (and its
+  warning) still counts draws whose population rates have `k_er <= k_p`,
+  and `CompartmentalFit::cell_rate_swaps` is the share of draws and
+  observed cells with `k_er <= k_p`, a diagnostic. On company 337 both are
+  0 at every seed of the sweep (decision 7).
+* **Errors.** Under the log-normal likelihood a response that is not
+  positive (an outstanding of 0, a paid that does not grow) is
+  `Error::Bayes` naming the cell; under incremental paid a paid cell whose
+  previous age has no paid is `Error::Bayes` naming both ages.
+
 ### 3. The ODE strategy
 
 Proposed. **Closed form wherever one exists**, a generic fixed-step solver
@@ -559,6 +618,28 @@ with these outcomes and departures:
 Laplace Hessians stay central differences of the exact gradient
 (`bayes/laplace.rs`, `Posterior::negative_hessian`), as decided.
 
+**Built (PR C).** The rule above, measured on the real model 2 density
+(company 337's training triangle, release, median µs; the
+`model_2_gradient_benchmark` test in `bayes/compartmental.rs`, run while
+other fits loaded the machine): the value 4.5 to 5.6, the chunked dual
+pass (`N` = 32, three passes) 67 to 74, 13 to 15 times the value. A
+hand-written gradient costs at least the value, so the chunked pass is
+within 10 times of any hand-written one that costs 1.5 times the value or
+more, and the rule alone would keep it. The fit, though, takes deep
+trees (decision 5), so PR C also writes a faster gradient for the models
+with effects by cell, still from the one generic density's pieces: the
+prior terms without a `z` in one dual pass over their at most 15 inputs
+(`Dual<16>`), the `z` terms by hand, each cell's term in a `Dual<5>` over
+its four `o` values and its `log σ`, and the chain rule from the `o`
+values to `theta` by hand (`o = b + u + v`, each effect `τ z`, and the
+`RRF` origin effect through `ρ`), summed by level. It costs 10 µs, 1.8
+times the value and about 7 times less than the chunked pass, and it
+matches the chunked pass over the generic density (the oracle) to 2e-15
+on the value and 6e-16 of the largest component on the gradient at 20
+points around model 2's posterior, under both rate orders, with a partial
+hierarchy and with amounts under the normal likelihood. Model 1's
+hierarchy keeps the chunked pass, unchanged, so its fits are as before.
+
 ### 5. The fit: whitening, pilot run and predictive
 
 Proposed. The fit follows `Meyers::fit` (`meyers.rs`), which already
@@ -643,6 +724,56 @@ count.
 company 337), as `Meyers` and the paper's validation; the model's own
 ultimate `Π_i RLR_i RRF_i` is reported alongside as a mean, without
 process error past the square. A reserve to ultimate is open decision 5.
+
+**Built (PR C, Rust core).** Model 2 fits as model 1 does (the data
+start, the pilot, the main run), with these outcomes:
+
+* **The start.** The population least squares runs on the likelihood's
+  scale (on the logs of the responses under the log-normal), with each
+  `log τ` at about its prior median; from it, and from the prior centre,
+  the default fit at seed 0 converges with no warning (validation tests).
+* **The sampler** is `Compartmental::model_2`'s, not `new`'s: 4 chains of
+  2,000 warm-up and 8,000 kept draws, target acceptance 0.999, tree depth
+  at most 10. Model 1's sampler left divergent transitions and R-hats
+  above 1.01 on most seeds; what fails is `k_p`: its effect sd by accident
+  year has a wide posterior (the paper's `sd(okp)` 2.23 (1.35)) and `b_kp`
+  is weakly identified against the mean of the effects, so `k_p` mixes
+  slowly (the paper's own fit has a bulk ESS of 499 on `okp` in 4,000
+  draws), and the effect sds whose posteriors pile up near 0 bring
+  divergences at lower target acceptance. Measured with the per-cell
+  gradient (decision 4), seeds of the gm2 sweep, other runs beside them:
+
+  | Warm-up, kept draws, target acceptance | Seeds | With a warning | With a divergence | Time a fit |
+  |---|---|---|---|---|
+  | 1,000, 2,000, 0.95 | 4 | 3 | 3 | 38 to 50 s |
+  | 1,000, 2,000, 0.99 (model 1's) | 8 | 7 | 4 | 19 to 44 s |
+  | 1,000, 2,000, 0.999 | 8 | 5 | 0 | 28 to 38 s |
+  | 1,000, 4,000, 0.995 | 8 | 4 | 4 | 28 to 40 s |
+  | 1,000, 4,000, 0.999 | 10 | 5 | 1 | 36 to 54 s |
+  | 2,000, 4,000, 0.999 | 200 | 41 | 1 | median 81 s (3 sweeps and Stan beside it) |
+  | 2,000, 8,000, 0.999 (model 2's) | 200 | 5 | 4 | median 126 s (4 sweeps beside it) |
+
+  With 4,000 kept draws 41 of 200 seeds warned, almost all on `k_p`:
+  R-hat 1.010 to 1.018 on `k_p`, `b_kp`, `tau_kp` or `tau_dev_kp`, or a
+  tail ESS below 400 on every `k_p[o]`; doubling the kept draws took the
+  smallest bulk ESS from about 700 to about 1,600. With 8,000 the 5 seeds
+  that warn have one divergent transition each (4) or a tail ESS of 398
+  and 399 on two `dev_kp` (1), the rate of model 1's defaults (6 of 200).
+* **Runtime** on company 337 (rustc 1.98.1, Windows, Intel Core Ultra 9
+  285H, 4 chains in parallel): a default model 2 fit takes about 61 s in
+  release on its own (52 s from the prior centre), including the pilot run
+  and 10,000 simulations; the release validation file with both fits about
+  2 minutes. Model 1's fits are unchanged (its gm1 suite at seed 0 gives
+  the same total reserve, 173,390 (10,167), and elpd_loo -810.75). The
+  debug unit tests use short runs (2 chains of 60 warm-up and 60 kept
+  draws for the model 2 fit): all compartmental unit tests take about 61 s
+  in debug, with the oracle and written-out tests of model 2.
+* **The predictive.** Each simulation draws the future increments,
+  log-normal about the cells' mean increments (normal under the normal
+  likelihood, with σ times the premium on the loss-ratio scale), and sums
+  them onto each origin's latest paid; outstanding cells are drawn the
+  same way. Development year 10's effects are drawn once per simulation
+  and shared by the origins, 1997's origin effects once per simulation.
 
 ### 6. The API
 
@@ -745,6 +876,25 @@ each), `to_long()` and `totals()`. `prior_predictive` returns
 at every age of the square, without the likelihood's noise (the preset's
 flat prior on `log σ` would swamp them); the `Compartmental` doc example
 shows the check. A bad prior setting is `InvalidSetting` naming it.
+
+**Built (PR C, Rust core).** `CompartmentalLikelihood::LogNormal`,
+`Scale::LossRatio` and `PaidResponse::Incremental` are built (decision 1),
+`Fitted`'s other values still `Error::Bayes`. `CompartmentalPriors` gains
+the three effect fields of decision 2 (a struct literal now needs them;
+`..CompartmentalPriors::gesmann_morris()` keeps model 1's hierarchy) and
+`CompartmentalPriors::gesmann_morris_2()`. `Compartmental::model_2(priors)`
+is `new(priors)` with model 2's likelihood, scale and paid response and
+its sampler (decision 5). `CompartmentalFit` gains `cell_rate_swaps:
+Option<f64>`. On the loss-ratio scale the predictions and reserves stay
+amounts; with incremental paid the `paid` predictive is still cumulative
+(the latest paid plus the simulated increments), so the reserve is still
+the paid at the last age less the latest. `prior_predictive` draws the
+new effects too, and with incremental paid and effects by cell its paid
+path is the sum of the cells' mean increments. The provenance's model is
+`compartmental_gm1` or `compartmental_gm2` when the settings and the
+hierarchy are the paper's, `compartmental` otherwise. The Python and R
+bindings take the new effects and model 2's settings (decision 9, "Built
+(PR C, bindings)").
 
 ### 7. Validation
 
@@ -861,6 +1011,59 @@ the posterior mean ultimate loss ratio against the chain ladder's on
 incurred; the CSV checks each origin's mean `RLR_i RRF_i` against Stan
 instead.
 
+**Built (PR C, Rust core).** `compartmental_gm2.stan`, reconstructed from
+the paper's code as printed (read again from the published PDF: the
+paper's `claimsprocess` subtracts the paid closed form at `t - 1` with the
+cell's own parameters, and the response is the loss ratio to direct
+premium), and `reserving_compartmental_gm2_stan.py` with the gm1 script's
+conventions (seed 20261015, 4 chains of 2,000 warm-up and 25,000 draws,
+`max_treedepth` 15). At the paper's `adapt_delta` 0.99 the run left 5
+divergent transitions in 100,000 kept draws, so, as the Risks section
+says, the step was tightened: at 0.999 it has none, max R-hat 1.0004, no
+draw at the maximum depth and none with population `k_er <= k_p` (about
+92 minutes). Against the printed `m2fit` every mean is within 0.08
+printed sd and every sd within 3.4% except `tau_dev_kp`'s (0.518 against
+0.43, heavy-tailed), so the rate rows were trusted. The CSV holds the same
+row families as gm1's, with `k_er[o]`, `k_p[o]` and the development
+effects `dev_*[a]` added, the test diagonal's expected outstanding and
+incremental paid amounts, and elpd_loo (arviz, Pareto k up to 1.04 on a
+few cells). For the two levels with no training cell the validation test
+averages the test cells' means over 25 new effects per posterior draw.
+
+Results at seed 0 (`Compartmental::model_2`), ours / Stan / printed
+(mean, sd): `b_ker` -1.294 (1.064) / -1.271 (1.056) / -1.31 (1.08);
+`b_kp` -5.112 (1.692) / -5.064 (1.722) / -5.07 (1.75); `b_RLR` 1.539 /
+1.534 / 1.54; `b_RRF` -1.456 / -1.446 / -1.45; `tau_RLR` 0.699 / 0.695 /
+0.69; `tau_RRF` 0.731 / 0.743 / 0.73; `tau_ker` 0.263 / 0.260 / 0.26;
+`tau_kp` 2.175 (1.315) / 2.211 (1.337) / 2.23 (1.35); `rho` 0.358 / 0.357 /
+0.37; `tau_dev_RLR` 0.352 / 0.361 / 0.35; `tau_dev_RRF` 1.124 / 1.119 /
+1.11; `tau_dev_ker` 0.274 / 0.272 / 0.27; `tau_dev_kp` 0.483 (0.511) /
+0.481 (0.518) / 0.45 (0.43); `log_sigma_os` -1.787 / -1.787 / -1.78;
+`log_sigma_pd` -1.887 / -1.887 / -1.89; total reserve 152,387 (13,909) /
+152,242 (13,938); 1997 reserve 30,322 (6,876) / 30,296 (6,801); elpd_loo
+203.75 / 204.29 (`knowledge/findings/compartmental-gm2-parity.md`).
+
+Tolerances, from the sweep over seeds 0 to 199 with model 2's sampler
+(largest seed-to-seed sd in each family, `s` the Stan posterior sd):
+parameter means `0.2 s` (spread `0.036 s`, `tau_dev_kp`; `0.017 s` off
+`k_p`), parameter sds 10% (1.4%), ultimate loss ratio, reserve and test
+means `0.1 s` (`0.011 s`, `0.017 s`, `0.014 s`), reserve sds 10% (1.6%),
+reserve percentiles `0.2 s` (`0.037 s`), elpd_loo 2.0 (0.45): every row at
+least 4.4 times its spread, and all 282 rows pass at every seed (at most
+0.93 of a tolerance, the printed `tau_dev_kp` mean). `k_p` mixes slowly,
+and the sds of its development effects and origin values (`tau_dev_kp`,
+`dev_kp[a]`, `k_p[o]`) are heavy-tailed from seed to seed, 4% to 14% over
+seeds 0 to 39 (18% with 4,000 kept draws), from the long right tail of
+`tau_dev_kp`'s posterior; those 19 sd rows are dropped, as decided for
+heavy-tailed rows, and their means kept (the sds of `k_p`, `b_kp` and
+`tau_kp` spread about 1% and stay, checked on seeds 0 to 39). The printed
+rows get 0.3 printed sd on a mean and 20% on an sd, at least 4.3 times the
+combined error of our run, the paper's (bulk ESS down to 470) and the
+rounding, without `tau_dev_kp`'s sd (0.43 printed, 0.518 in Stan). The
+elpd_loo row is PSIS-LOO with Pareto k above 0.7 on a few cells (up to
+1.04 in arviz, 1.3 in ours), so it checks the computation more than it
+measures the fit.
+
 ### 8. Segments and the backtest (PR E)
 
 Proposed. `Compartmental::fit_segments(triangle, paid, outstanding,
@@ -946,6 +1149,46 @@ decision 10 (a)):
   short chains, the settings not yet built and the missing priors. A
   default fit takes about 5 seconds in a release build.
 
+**Built (PR C, bindings).** Model 2 in both languages, in the style of
+PR B's bindings:
+
+* **Python**: `CompartmentalPriors(...)` takes `ker_effect_sd` and
+  `kp_effect_sd` (a half prior's tuple, or `None` for no effect) and
+  `development_effect_sd` (`None`, or four items on `k_er`, `k_p`, `rlr`
+  and `rrf`, each `None` or a half prior), all `None` by default, so PR
+  B's calls build model 1 unchanged; getters for the three (the last a
+  list of four), `CompartmentalPriors.gesmann_morris_2()`, and in
+  `replace` `None` keeps an effect, `False` removes it and a
+  `development_effect_sd` replaces all four. `Compartmental.model_2(priors,
+  *, rate_order, start, chains=4, tune=2000, draws=8000, n_sims=10000,
+  seed=0, target_accept=0.999, max_depth=10)` is the core's
+  `Compartmental::model_2`; the constructor accepts every likelihood,
+  scale and paid response, and `fitted` other than paid and outstanding
+  is still the core's "not yet built" `ValueError`.
+  `CompartmentalFit.cell_rate_swaps` is a float, or `None` when the rates
+  are shared. `prior_predictive` uses the model's settings, so a
+  `model_2` check sums the incremental paths.
+* **R**: `compartmental_priors()` gains `ker_effect_sd = NULL`,
+  `kp_effect_sd = NULL` and `development_effect_sd = NULL`, the last a
+  named list with any of `k_er`, `k_p`, `rlr` and `rrf` (one left out has
+  no development effect); `gesmann_morris_2_priors()`;
+  `compartmental_model_2()`, `compartmental()` with model 2's settings
+  and sampler as defaults; the fit's `cell_rate_swaps` property (`NA`
+  when the rates are shared); and `compartmental_prior_predictive()` gains
+  `paid_response` (last, so PR B's positional calls are unchanged). The
+  priors cross to Rust as 31 numbers and 10 family names, `"none"` for an
+  absent effect.
+* Tests: both fit company 337's training triangle with model 2's priors
+  and settings on shorter chains than `model_2`'s (4 x 1,000 warm-up and
+  2,000 draws, about 20 seconds; the default's minute and its
+  warning-free seed 0 are checked by the Rust validation), with the
+  total reserve within 3% of Stan's 152,242, `b_kp` within 0.5 of Stan's
+  -5.064 (posterior sd 1.72) and `elpd_loo` within 3 of 204.29; the new
+  parameter names, `cell_rate_swaps`, the presets and their errors, the
+  three mixed settings on short chains, the log-normal's non-positive
+  response and incremental paid's missing paid before as errors, and the
+  prior predictive check with development effects, replayed by seed.
+
 ### 10. Docs and knowledge
 
 Proposed. Each PR updates in itself: the Reserving row of AGENTS.md, the
@@ -963,6 +1206,19 @@ reconstruction notes for its brms code (references); the chunked-dual
 measurement (PR A, in the existing autodiff finding). A user guide page on company 337 (paid and OS
 fitted jointly, the prior predictive check) comes with PR C, once both
 likelihoods exist.
+
+Built (PR C, Rust core): model 2's code and printed posterior and its
+reconstruction in the Gesmann and Morris reference, the gm2 parity
+finding, the per-cell gradient in the autodiff finding and the model 2
+reference's run time in the CmdStan environment fact. The guide page waits
+for PR C's bindings, so that it can show both likelihoods from Python and
+R.
+
+Built (PR C, bindings): both likelihoods now reach Python and R. The
+guide page belongs in `docs/guides/`, which the Guides lane owns, so it
+is left to that lane (or to the user's go-ahead for this one) rather than
+written in this PR, tracked as
+[#253](https://github.com/EKtheSage/prospicio/issues/253).
 
 ## Risks
 

@@ -19,6 +19,9 @@ sources:
   - id: meyers
     resource: ../validation/scripts/reserving_meyers_stan.py
     title: The Stan reference generator for Meyers (CRC and CSR)
+  - id: gm2
+    resource: ../validation/scripts/reserving_compartmental_gm2_stan.py
+    title: The Stan reference generator for Compartmental model 2
 ---
 
 # Facts (2026-10-12)
@@ -70,3 +73,13 @@ sources:
   after the others). Stan prints rejections during warm-up (a NaN mean,
   an LKJ Cholesky factor at 0); none in the kept draws, which have no
   divergence and no draw at the maximum depth.[^compartmental]
+* Gesmann and Morris' model 2 (2026-10-14):
+  `validation/scripts/reserving_compartmental_gm2_stan.py` imports the
+  same helpers and runs with the same `uv` command. The program compiles
+  in about 90 s; 4 chains of 2,000 warm-up and 25,000 draws at
+  `max_treedepth` 15 took about 30 minutes at `adapt_delta` 0.99 (5
+  divergent transitions, so the reference tightens to 0.999) and about 92
+  minutes at 0.999 (the slowest chain; the four finished 28 to 92 minutes
+  in, with seed sweeps of our own fits loading the machine). Warm-up again
+  prints rejections (an infinite or NaN location); arviz warns that
+  Pareto k is above 0.7 for some cells (max 1.04).[^gm2]

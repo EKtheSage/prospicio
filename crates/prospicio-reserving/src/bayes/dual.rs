@@ -33,8 +33,8 @@ impl<const N: usize> Dual<N> {
     }
 
     /// The variable seeded in direction `k`: tangent `k` is 1 (the tests
-    /// seed with it; [`gradient`] sets the tangents in place).
-    #[cfg(test)]
+    /// and the compartmental model's per-cell gradient seed with it;
+    /// [`gradient`] sets the tangents in place).
     #[inline]
     pub(crate) fn variable(v: f64, k: usize) -> Self {
         let mut d = [0.0; N];

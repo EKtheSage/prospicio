@@ -3,6 +3,7 @@
 \name{compartmental_priors}
 \alias{compartmental_priors}
 \alias{gesmann_morris_priors}
+\alias{gesmann_morris_2_priors}
 \title{Priors of Gesmann and Morris' compartmental model}
 \usage{
 compartmental_priors(
@@ -13,10 +14,15 @@ compartmental_priors(
   rlr_effect_sd,
   rrf_effect_sd,
   lkj_eta,
-  log_sigma
+  log_sigma,
+  ker_effect_sd = NULL,
+  kp_effect_sd = NULL,
+  development_effect_sd = NULL
 )
 
 gesmann_morris_priors()
+
+gesmann_morris_2_priors()
 }
 \arguments{
 \item{k_er, k_p}{\code{c(median = , sd = )} of the reporting rate and the
@@ -37,6 +43,15 @@ uniform).}
 \verb{log sigma_pd} in that order, each
 \code{list(family = "student_t", nu = , location = , scale = )} or
 \code{list(family = "normal", mean = , sd = )}.}
+
+\item{ker_effect_sd, kp_effect_sd}{Priors on the sds of origin effects on
+\code{k_er} and \code{k_p}, in the form of \code{rlr_effect_sd}; \code{NULL}: no such
+effect.}
+
+\item{development_effect_sd}{Priors on the sds of development-year
+effects: a named list with any of \code{k_er}, \code{k_p}, \code{rlr} and \code{rrf}, each
+in the form of \code{rlr_effect_sd} (a parameter left out has no
+development effect); \code{NULL}: no development effect.}
 }
 \value{
 A \code{compartmental_priors} list.
@@ -48,16 +63,33 @@ them silently. \code{gesmann_morris_priors()} is the paper's case study
 (Gesmann and Morris 2020, model 1): \code{k_er} (3, 0.1), \code{k_p} (1, 0.1),
 \code{rlr} (0.7, 0.2), \code{rrf} (0.8, 0.1), half Student-t(10) effect sds with
 scales 0.2 and 0.1, LKJ(1), and Student-t(1, 0, 1000) on each
-\verb{log sigma} (effectively flat). On company 337 the data pull the rates 5
-to 9 prior sds from these medians: the posterior is a compromise with
-the preset, not a description of it. Check any set with
+\verb{log sigma} (effectively flat), with no effect on the rates and no
+development effect. On company 337 the data pull the rates 5 to 9 prior
+sds from these medians: the posterior is a compromise with the preset,
+not a description of it. Check any set with
 \code{\link[=compartmental_prior_predictive]{compartmental_prior_predictive()}} before fitting.
 }
 \details{
+\code{gesmann_morris_2_priors()} is the paper's model 2, from its code (sec.
+7.2.3, where it and the text disagree): model 1's rate and ratio priors;
+origin effects on all four parameters (\code{RLR} and \code{RRF} correlated,
+LKJ(1)) and development-year effects on all four, every effect sd half
+Student-t(10) on the \code{o} scale with one scale per parameter, shared by
+its two groups: 0.3 for \code{k_er} and \code{k_p}, 0.7 for \code{rlr} and 0.5 for
+\code{rrf}; and \verb{normal(log 0.2, 0.2)} on each \verb{log sigma} (the text gives a
+median of 0.1). Use it with \code{\link[=compartmental_model_2]{compartmental_model_2()}}.
+
 Each positive parameter \code{theta} (\code{k_er}, \code{k_p}, \code{rlr}, \code{rrf}) is
 \code{median * exp(sd * o)} with \code{o ~ N(0, 1)}: a log-normal prior with that
-median and log-scale sd. The origin effects on \code{RLR} and \code{RRF} live on
-that \code{o} scale.
+median and log-scale sd. The effects live on that \code{o} scale.
+
+The hierarchy follows from the priors. \code{RLR} and \code{RRF} always vary by
+origin, with correlated effects. \code{ker_effect_sd} and \code{kp_effect_sd} add
+origin effects on the rates, uncorrelated with the others, and
+\code{development_effect_sd} adds development-year effects on any of the four
+parameters; \code{NULL} (model 1) means no such effect. A development age
+with no observed cell takes a new effect from the population in each
+simulation, as an origin with no cell does.
 
 Errors: if a prior has the wrong form or a log-normal median or sd is
 not finite and positive. The other settings are checked by the fit.
@@ -71,6 +103,10 @@ q <- compartmental_priors(k_er = c(median = 2, sd = 0.3), k_p = p$k_p, rlr = p$r
                           rrf_effect_sd = list(family = "normal", scale = 0.2),
                           lkj_eta = 2, log_sigma = p$log_sigma)
 q$rrf_effect_sd
+# Model 2's priors: effects on the rates and by development year too.
+p2 <- gesmann_morris_2_priors()
+p2$kp_effect_sd
+p2$development_effect_sd$rlr
 }
 \seealso{
 \code{\link[=compartmental]{compartmental()}}, \code{\link[=compartmental_prior_predictive]{compartmental_prior_predictive()}}.

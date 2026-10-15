@@ -2,7 +2,9 @@
 //! outstanding compartment (`docs/design/reserving-compartmental.md`):
 //! paid and outstanding fitted jointly from one set of interpretable
 //! parameters, sampled with NUTS on a density written once over
-//! [`Scalar`] and differentiated with the chunked dual type (decision 4).
+//! [`Scalar`] and differentiated with the chunked dual type (decision 4),
+//! or with per-cell duals and a hand-written chain rule when the priors put
+//! effects on each cell (model 2).
 
 use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
@@ -12,7 +14,7 @@ use prospicio_prob::{
     Distribution, Gamma, InputHasher, KeyValue, PredictiveDistribution, Provenance,
 };
 
-use super::dual::{CHUNK, gradient};
+use super::dual::{CHUNK, Dual, gradient};
 use super::laplace::{Posterior, Whitened, mode};
 use super::scalar::{Scalar, exprel_neg};
 use super::{Diagnostics, Stream, derive_seed, pilot_seed};
@@ -51,7 +53,9 @@ pub enum CompartmentalLikelihood {
     /// model 1.
     #[default]
     Normal,
-    /// Log-normal, the paper's model 2: not yet built ([`Error::Bayes`]).
+    /// Log-normal, each response type with its own sigma on the log scale,
+    /// `log y ~ N(log μ, σ²)`: Gesmann and Morris' model 2. Every observed
+    /// response must be positive.
     LogNormal,
 }
 
@@ -61,7 +65,10 @@ pub enum Scale {
     /// Amounts, as model 1.
     #[default]
     Amount,
-    /// Loss ratios to premium, as model 2: not yet built ([`Error::Bayes`]).
+    /// Loss ratios to each origin's premium, as model 2: the response and
+    /// a normal likelihood's sigma are per unit of premium (a log-normal
+    /// sigma is the same on either scale). Predictions and reserves stay
+    /// amounts.
     LossRatio,
 }
 
@@ -71,7 +78,11 @@ pub enum PaidResponse {
     /// Cumulative paid, as model 1.
     #[default]
     Cumulative,
-    /// Incremental paid, as model 2: not yet built ([`Error::Bayes`]).
+    /// Incremental paid, as model 2: the paid of each period, whose mean is
+    /// the closed form at the cell's age less the same at the age before,
+    /// both with the cell's own parameters (the paper's `claimsprocess`).
+    /// Each observed paid cell after the first age needs the paid of the
+    /// age before.
     Incremental,
 }
 
@@ -171,6 +182,17 @@ pub struct CompartmentalPriors {
     pub lkj_eta: f64,
     /// Priors on `log σ_OS` and `log σ_PD`, in that order.
     pub log_sigma: [RealPrior; 2],
+    /// The sd of origin effects on `k_er`'s `o` scale, uncorrelated with the
+    /// others; `None` (model 1): `k_er` has no origin effect.
+    pub ker_effect_sd: Option<HalfPrior>,
+    /// The same for `k_p`.
+    pub kp_effect_sd: Option<HalfPrior>,
+    /// The sds of development-year effects on the `o` scales of `k_er`,
+    /// `k_p`, `RLR` and `RRF`, in that order, each uncorrelated; `None`: no
+    /// development effect on that parameter (model 1 has none). Each
+    /// development age with an observed cell is a level; a later age takes
+    /// a new effect from the population in each simulation.
+    pub development_effect_sd: [Option<HalfPrior>; 4],
 }
 
 impl CompartmentalPriors {
@@ -215,7 +237,49 @@ impl CompartmentalPriors {
             },
             lkj_eta: 1.0,
             log_sigma: [cauchy, cauchy],
+            ker_effect_sd: None,
+            kp_effect_sd: None,
+            development_effect_sd: [None; 4],
         }
+    }
+
+    /// Gesmann and Morris' (2020) case study, model 2 (code 7.2.3, where it
+    /// and the text disagree the code wins): the rate and ratio priors of
+    /// [`gesmann_morris`](Self::gesmann_morris); origin effects on all four
+    /// parameters (`RLR` and `RRF` correlated, LKJ(1)) and development-year
+    /// effects on all four, every effect sd half `student_t(10, 0, scale)`
+    /// on the `o` scale with one scale per parameter, shared by its two
+    /// groups as brms shares it: 0.3 for `k_er` and `k_p`, 0.7 for `RLR`
+    /// and 0.5 for `RRF`; and `normal(log 0.2, 0.2)` on each `log σ` (the
+    /// text gives a median of 0.1). Use it with the log-normal likelihood
+    /// on loss ratios with incremental paid, the paper's model 2.
+    pub fn gesmann_morris_2() -> Self {
+        let half = |scale: f64| HalfPrior::StudentT { nu: 10.0, scale };
+        let log_sigma = RealPrior::Normal {
+            mean: 0.2f64.ln(),
+            sd: 0.2,
+        };
+        Self {
+            rlr_effect_sd: half(0.7),
+            rrf_effect_sd: half(0.5),
+            log_sigma: [log_sigma, log_sigma],
+            ker_effect_sd: Some(half(0.3)),
+            kp_effect_sd: Some(half(0.3)),
+            development_effect_sd: [
+                Some(half(0.3)),
+                Some(half(0.3)),
+                Some(half(0.7)),
+                Some(half(0.5)),
+            ],
+            ..Self::gesmann_morris()
+        }
+    }
+
+    /// Whether any effect moves the rates by cell.
+    fn rates_vary(&self) -> bool {
+        self.ker_effect_sd.is_some()
+            || self.kp_effect_sd.is_some()
+            || self.development_effect_sd[..2].iter().any(Option::is_some)
     }
 
     fn validate(&self) -> Result<()> {
@@ -240,18 +304,46 @@ impl CompartmentalPriors {
             positive(median_name, median)?;
             positive(sd_name, sd)?;
         }
+        let dev = self.development_effect_sd;
         for (nu_name, scale_name, prior) in [
             (
                 "rlr_effect_sd nu",
                 "rlr_effect_sd scale",
-                self.rlr_effect_sd,
+                Some(self.rlr_effect_sd),
             ),
             (
                 "rrf_effect_sd nu",
                 "rrf_effect_sd scale",
-                self.rrf_effect_sd,
+                Some(self.rrf_effect_sd),
+            ),
+            (
+                "ker_effect_sd nu",
+                "ker_effect_sd scale",
+                self.ker_effect_sd,
+            ),
+            ("kp_effect_sd nu", "kp_effect_sd scale", self.kp_effect_sd),
+            (
+                "development_effect_sd k_er nu",
+                "development_effect_sd k_er scale",
+                dev[0],
+            ),
+            (
+                "development_effect_sd k_p nu",
+                "development_effect_sd k_p scale",
+                dev[1],
+            ),
+            (
+                "development_effect_sd rlr nu",
+                "development_effect_sd rlr scale",
+                dev[2],
+            ),
+            (
+                "development_effect_sd rrf nu",
+                "development_effect_sd rrf scale",
+                dev[3],
             ),
         ] {
+            let Some(prior) = prior else { continue };
             match prior {
                 HalfPrior::StudentT { nu, scale } => {
                     positive(nu_name, nu)?;
@@ -429,7 +521,12 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 /// point ([`CompartmentalStart`]), a pilot run of `tune` warm-up and
 /// `max(tune, 100)` kept draws per chain, then the pilot draws' mean and
 /// covariance. The gradient comes from the density written once over
-/// dual numbers (decision 4); a non-finite value counts as a divergence.
+/// dual numbers (decision 4) for priors without effects by cell (model 1).
+/// With effects by cell (model 2, or any origin effect on a rate or
+/// development effect), it is per-cell dual numbers over the cell's four
+/// parameters and `log σ`, then a hand-written chain rule to the sampled
+/// parameters, checked against the single dual pass over the generic
+/// density by a unit test. A non-finite value counts as a divergence.
 ///
 /// An origin with a positive premium and no observed cell (the papers'
 /// training triangle has none for its youngest accident year) has no `z`:
@@ -441,10 +538,23 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 /// observed at that age has a reserve of 0. The origin and development
 /// grains must be equal.
 ///
-/// The settings [`likelihood`](Self::likelihood), [`scale`](Self::scale),
-/// [`paid_response`](Self::paid_response) and [`fitted`](Self::fitted) take
-/// the values of the paper's model 1 only, for now; any other value is an
-/// [`Error::Bayes`] saying it is not yet built.
+/// The likelihood, the response scale and the paid response are settings
+/// (decision 1), each combination allowed: [`likelihood`](Self::likelihood)
+/// normal or log-normal, [`scale`](Self::scale) amounts or loss ratios to
+/// premium, [`paid_response`](Self::paid_response) cumulative or
+/// incremental. The hierarchy is in the priors: origin effects on `k_er`
+/// and `k_p` and development-year effects on any of the four parameters
+/// (`ker_effect_sd`, `kp_effect_sd` and `development_effect_sd` of
+/// [`CompartmentalPriors`]), so each cell has its own parameters, and the
+/// mean of an incremental paid cell is the closed form at its age less the
+/// same at the age before, both with that cell's parameters. Gesmann and
+/// Morris' model 2 is
+/// `Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())`
+/// ([`model_2`](Self::model_2) sets the log-normal likelihood on loss
+/// ratios with incremental paid and a longer, finer sampler).
+///
+/// [`fitted`](Self::fitted) takes paid and outstanding only, for now; any
+/// other value is an [`Error::Bayes`] saying it is not yet built.
 ///
 /// ```
 /// use prospicio_bayes::nuts::Sampler;
@@ -510,13 +620,11 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 pub struct Compartmental {
     /// The priors (decision 2; a required argument of [`new`](Self::new)).
     pub priors: CompartmentalPriors,
-    /// The likelihood: [`Normal`](CompartmentalLikelihood::Normal) only, for
-    /// now.
+    /// The likelihood.
     pub likelihood: CompartmentalLikelihood,
-    /// The response scale: [`Amount`](Scale::Amount) only, for now.
+    /// The response scale.
     pub scale: Scale,
-    /// Cumulative or incremental paid: [`Cumulative`](PaidResponse::Cumulative)
-    /// only, for now.
+    /// Cumulative or incremental paid.
     pub paid_response: PaidResponse,
     /// The responses fitted: [`PaidAndOutstanding`](Fitted::PaidAndOutstanding)
     /// only, for now.
@@ -560,6 +668,30 @@ impl Compartmental {
         }
     }
 
+    /// Gesmann and Morris' model 2 settings with `priors` (the paper's are
+    /// [`CompartmentalPriors::gesmann_morris_2`]): the log-normal
+    /// likelihood on loss ratios with incremental paid, and a longer, finer
+    /// sampler than [`new`](Self::new)'s, four chains of 2,000 warm-up and
+    /// 8,000 kept draws with target acceptance 0.999 (decision 5: with 87
+    /// parameters, effect sds whose posteriors pile up near 0 and a slowly
+    /// mixing `k_p`, model 1's sampler left divergent transitions or an
+    /// R-hat above 1.01 on most seeds); the rest as [`new`](Self::new).
+    pub fn model_2(priors: CompartmentalPriors) -> Self {
+        let model_1 = Self::new(priors);
+        Self {
+            likelihood: CompartmentalLikelihood::LogNormal,
+            scale: Scale::LossRatio,
+            paid_response: PaidResponse::Incremental,
+            sampler: Sampler {
+                tune: 2000,
+                draws: 8000,
+                target_accept: 0.999,
+                ..model_1.sampler
+            },
+            ..model_1
+        }
+    }
+
     /// Fits paid and outstanding of a single-segment cumulative triangle
     /// with premium from its `premium` column (the latest value per origin).
     /// The fit's origins are the premium column's; an origin with no paid
@@ -576,7 +708,12 @@ impl Compartmental {
     ) -> Result<CompartmentalFit> {
         self.validate()?;
         let data = Data::new(triangle, paid, outstanding, premium)?;
-        let model = Model::new(&data, self.priors, self.rate_order == RateOrder::Ordered);
+        let model = Model::new(
+            &data,
+            self.priors,
+            self.rate_order == RateOrder::Ordered,
+            self.response(),
+        )?;
         if model.cells.len() <= model.dim() {
             return Err(Error::Bayes(format!(
                 "{} observed cells for {} parameters; the model needs more cells than parameters",
@@ -601,6 +738,7 @@ impl Compartmental {
                 posterior.n_draws()
             ));
         }
+        let cell_rate_swaps = model.cell_rate_swaps(&posterior);
 
         let mut hasher = InputHasher::new();
         hasher.str(paid);
@@ -690,6 +828,7 @@ impl Compartmental {
             posterior,
             diagnostics,
             rate_swaps,
+            cell_rate_swaps,
             reserves,
             paid: paid_pd,
             outstanding: os_pd,
@@ -702,7 +841,10 @@ impl Compartmental {
     /// the premium column at each age of the square, drawn from the priors
     /// alone (Gesmann and Morris, sec. 3.4): a check of a prior set before
     /// fitting. Each simulation draws the intercepts, the effect sds, the
-    /// correlation and each origin's effects. The paths are means, without
+    /// correlation and each origin's effects, and with development effects
+    /// in the priors each age's effects (shared by the origins); with
+    /// effects by cell and incremental paid, the cumulative paid path is
+    /// the sum of the cells' mean increments. The paths are means, without
     /// the likelihood's noise: the preset's prior on `log σ` is effectively
     /// flat, so its draws of `σ` would swamp them. Under
     /// [`RateOrder::Ordered`] the rate intercepts are drawn from their priors
@@ -742,6 +884,8 @@ impl Compartmental {
         let times: Vec<f64> = ages.iter().map(|&a| f64::from(a) / 12.0).collect();
         let pr = self.priors;
         let ordered = self.rate_order == RateOrder::Ordered;
+        let cellwise = pr.rates_vary() || pr.development_effect_sd.iter().any(Option::is_some);
+        let incremental = self.paid_response == PaidResponse::Incremental;
         let mut keys = Vec::with_capacity(n * n);
         for &o in &origins {
             for &a in &ages {
@@ -752,6 +896,8 @@ impl Compartmental {
             .param("n_sims", n_sims)
             .param("seed", self.seed)
             .param("rate_order", format!("{:?}", self.rate_order))
+            .param("priors", format!("{pr:?}"))
+            .param("paid_response", format!("{:?}", self.paid_response))
             .param("premium", premium)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"));
         let both = PredictiveDistribution::simulate(
@@ -783,16 +929,62 @@ impl Compartmental {
                 let (g1, g2) = (gamma.sample(rng, 1)[0], gamma.sample(rng, 1)[0]);
                 let rho = 2.0 * g1 / (g1 + g2) - 1.0;
                 let rho_c = (1.0 - rho * rho).max(0.0).sqrt();
-                let curves: Vec<(f64, f64)> = times.iter().map(|&t| one_os(k_er, k_p, t)).collect();
+                if !cellwise {
+                    // Model 1's hierarchy: shared rates, one curve per age.
+                    let curves: Vec<(f64, f64)> =
+                        times.iter().map(|&t| one_os(k_er, k_p, t)).collect();
+                    for i in 0..n {
+                        let (z1, z2) = (normal(rng), normal(rng));
+                        let u1 = tau1 * z1;
+                        let u2 = tau2 * (rho * z1 + rho_c * z2);
+                        let rlr = m_rlr * (s_rlr * (b_rlr + u1)).exp() * premiums[i];
+                        let rrf = m_rrf * (s_rrf * (b_rrf + u2)).exp();
+                        for (k, (os, pd)) in curves.iter().enumerate() {
+                            row[i * n + k] = rlr * os;
+                            row[n * n + i * n + k] = rlr * rrf * pd;
+                        }
+                    }
+                    return;
+                }
+                // Effects by cell: the origin effects on the rates and the
+                // development effects, each drawn from its population.
+                let tau_rate =
+                    [pr.ker_effect_sd, pr.kp_effect_sd].map(|p| p.map(|h| draw_half(h, rng)));
+                let tau_dev = pr
+                    .development_effect_sd
+                    .map(|p| p.map(|h| draw_half(h, rng)));
+                let dev: Vec<[f64; 4]> = (0..n)
+                    .map(|_| tau_dev.map(|t| t.map_or(0.0, |t| t * normal(rng))))
+                    .collect();
+                let medians = [(m_er, s_er), (m_p, s_p), (m_rlr, s_rlr), (m_rrf, s_rrf)];
                 for i in 0..n {
                     let (z1, z2) = (normal(rng), normal(rng));
-                    let u1 = tau1 * z1;
-                    let u2 = tau2 * (rho * z1 + rho_c * z2);
-                    let rlr = m_rlr * (s_rlr * (b_rlr + u1)).exp() * premiums[i];
-                    let rrf = m_rrf * (s_rrf * (b_rrf + u2)).exp();
-                    for (k, (os, pd)) in curves.iter().enumerate() {
-                        row[i * n + k] = rlr * os;
-                        row[n * n + i * n + k] = rlr * rrf * pd;
+                    let u = [
+                        tau_rate[0].map_or(0.0, |t| t * normal(rng)),
+                        tau_rate[1].map_or(0.0, |t| t * normal(rng)),
+                        tau1 * z1,
+                        tau2 * (rho * z1 + rho_c * z2),
+                    ];
+                    let b = [b_ker, b_kp, b_rlr, b_rrf];
+                    let mut cum = 0.0;
+                    for (k, &t) in times.iter().enumerate() {
+                        let [ker, kp, rlr, rrf] = [0, 1, 2, 3].map(|p| {
+                            medians[p].0 * (medians[p].1 * (b[p] + u[p] + dev[k][p])).exp()
+                        });
+                        let (os, pd) = one_os(ker, kp, t);
+                        let base = rlr * premiums[i];
+                        row[i * n + k] = base * os;
+                        cum = if incremental {
+                            let before = if k == 0 {
+                                0.0
+                            } else {
+                                one_os(ker, kp, times[k - 1]).1
+                            };
+                            cum + base * rrf * (pd - before)
+                        } else {
+                            base * rrf * pd
+                        };
+                        row[n * n + i * n + k] = cum;
                     }
                 }
             },
@@ -857,22 +1049,20 @@ impl Compartmental {
         self.priors.validate()
     }
 
+    fn response(&self) -> Response {
+        Response {
+            likelihood: self.likelihood,
+            loss_ratio: self.scale == Scale::LossRatio,
+            incremental: self.paid_response == PaidResponse::Incremental,
+        }
+    }
+
     fn validate(&self) -> Result<()> {
         let not_yet = |what: &str| {
             Err(Error::Bayes(format!(
-                "{what} is not yet built; this release fits Gesmann and Morris' model 1 \
-                 (normal likelihood on amounts, cumulative paid, paid and outstanding)"
+                "{what} is not yet built; this release fits paid and outstanding together"
             )))
         };
-        if self.likelihood != CompartmentalLikelihood::Normal {
-            return not_yet("the log-normal likelihood");
-        }
-        if self.scale != Scale::Amount {
-            return not_yet("the loss-ratio scale");
-        }
-        if self.paid_response != PaidResponse::Cumulative {
-            return not_yet("incremental paid");
-        }
         match self.fitted {
             Fitted::PaidAndOutstanding => {}
             Fitted::PaidAndIncurred => return not_yet("fitting paid and incurred"),
@@ -899,7 +1089,17 @@ impl Compartmental {
     ) -> Provenance {
         let s = &self.sampler;
         let pr = &self.priors;
-        Provenance::new("compartmental_gm1")
+        let response = self.response();
+        // Model 1 and model 2 by name when the settings and the hierarchy
+        // are the paper's.
+        let model = if response == Response::MODEL_1 && pr.hierarchy() == Hierarchy::Model1 {
+            "compartmental_gm1"
+        } else if response == Response::MODEL_2 && pr.hierarchy() == Hierarchy::Model2 {
+            "compartmental_gm2"
+        } else {
+            "compartmental"
+        };
+        Provenance::new(model)
             .param("priors", format!("{pr:?}"))
             .param("likelihood", format!("{:?}", self.likelihood))
             .param("scale", format!("{:?}", self.scale))
@@ -957,16 +1157,29 @@ pub struct CompartmentalFit {
     /// Posterior draws, by chain: on the natural scale `k_er`, `k_p`, `RLR`
     /// and `RRF` (the population values, at a zero effect), `sigma_os`,
     /// `sigma_pd`, then `RLR[o]` and `RRF[o]` for each origin `o` with an
-    /// observed cell; and on the scale the paper prints, the intercepts
-    /// `b_ker`, `b_kp`, `b_RLR`, `b_RRF`, the effect sds `tau_RLR` and
-    /// `tau_RRF` on the `o` scale, `rho`, `log_sigma_os` and `log_sigma_pd`.
+    /// observed cell (at a zero development effect), with origin effects on
+    /// the rates `k_er[o]` and `k_p[o]` too, and with development effects
+    /// `dev_ker[a]`, `dev_kp[a]`, `dev_RLR[a]` and `dev_RRF[a]`, each
+    /// development age `a` (months) with an observed cell's effect on the
+    /// `o` scale; and on the scale the paper prints, the intercepts `b_ker`,
+    /// `b_kp`, `b_RLR`, `b_RRF`, the effect sds `tau_RLR` and `tau_RRF` (and
+    /// `tau_ker`, `tau_kp`) on the `o` scale, `rho` (and `tau_dev_ker`,
+    /// `tau_dev_kp`, `tau_dev_RLR`, `tau_dev_RRF`), `log_sigma_os` and
+    /// `log_sigma_pd`. Each name in parentheses is there only when the
+    /// priors have that effect.
     pub posterior: PosteriorDraws,
     /// R-hat, ESS and divergences, with warnings for failed thresholds and
     /// (under [`RateOrder::Free`]) for draws with `k_er <= k_p`.
     pub diagnostics: Diagnostics,
-    /// The number of posterior draws with `k_er <= k_p` (0 under
-    /// [`RateOrder::Ordered`]).
+    /// The number of posterior draws whose population rates have
+    /// `k_er <= k_p` (0 under [`RateOrder::Ordered`]).
     pub rate_swaps: usize,
+    /// With effects on the rates (each cell its own `k_er` and `k_p`), the
+    /// share of posterior draws and observed cells with `k_er <= k_p`: a
+    /// diagnostic, not a warning, since each cell's means are invariant
+    /// under the swap on their own (decision 2). `None` when the rates are
+    /// shared.
+    pub cell_rate_swaps: Option<f64>,
     /// Joint posterior predictive distribution of each origin's reserve, the
     /// paid at the square's last age less the latest paid: dimension
     /// `origin`, one component per origin, with the layout of
@@ -979,9 +1192,10 @@ pub struct CompartmentalFit {
     /// Posterior predictive outstanding of each future cell of the square
     /// (after each origin's latest outstanding), the same layout.
     pub outstanding: PredictiveDistribution,
-    /// Each origin's posterior mean ultimate loss ratio `RLR_i RRF_i` (for an
-    /// origin drawn from the population, the mean over its effect too). The
-    /// model's ultimate, without process error past the square.
+    /// Each origin's posterior mean ultimate loss ratio `RLR_i RRF_i`, at a
+    /// zero development effect (for an origin drawn from the population, the
+    /// mean over its effect too). The model's ultimate, without process
+    /// error past the square.
     pub ultimate_loss_ratio: Vec<f64>,
     model: Model,
 }
@@ -1009,9 +1223,15 @@ impl CompartmentalFit {
     }
 
     /// PSIS-LOO of the observed cells, with each cell's relative efficiency
-    /// from the chains. The pointwise term is the full normal log density of
-    /// each amount (brms' `log_lik`), so the result compares with other fits
-    /// of the same amounts only.
+    /// from the chains. The pointwise term is the full log density of each
+    /// cell's response under the fit's likelihood (brms' `log_lik`): normal,
+    /// or log-normal including its `-ln y` term, on the fit's scale (amounts
+    /// or loss ratios to premium) and paid response (cumulative or
+    /// incremental). So elpd_loo compares only fits with the same scale and
+    /// paid response: model 2's elpd on loss ratios does not compare with
+    /// model 1's on amounts. Check each cell's Pareto k: model 2 on the
+    /// papers' training triangle has a few above 0.7 (up to about 1.3), so
+    /// there the estimate is rough.
     pub fn loo(&self) -> Result<CompartmentalLoo> {
         let model = &self.model;
         let n = model.cells.len();
@@ -1337,41 +1557,228 @@ impl Data {
     }
 }
 
-/// An observed amount.
+/// The response settings of a fit (decision 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Response {
+    likelihood: CompartmentalLikelihood,
+    /// Loss ratios to premium (else amounts).
+    loss_ratio: bool,
+    /// Incremental paid (else cumulative).
+    incremental: bool,
+}
+
+impl Response {
+    /// Gesmann and Morris' model 1: normal on amounts, cumulative paid.
+    const MODEL_1: Self = Self {
+        likelihood: CompartmentalLikelihood::Normal,
+        loss_ratio: false,
+        incremental: false,
+    };
+    /// Their model 2: log-normal on loss ratios, incremental paid.
+    const MODEL_2: Self = Self {
+        likelihood: CompartmentalLikelihood::LogNormal,
+        loss_ratio: true,
+        incremental: true,
+    };
+
+    fn log_normal(self) -> bool {
+        self.likelihood == CompartmentalLikelihood::LogNormal
+    }
+}
+
+/// Which of the paper's hierarchies a prior set has, for the provenance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Hierarchy {
+    /// Origin effects on `RLR` and `RRF` only.
+    Model1,
+    /// Origin effects on all four parameters and development effects on
+    /// all four.
+    Model2,
+    Other,
+}
+
+impl CompartmentalPriors {
+    fn hierarchy(&self) -> Hierarchy {
+        let extra = [
+            self.ker_effect_sd.is_some(),
+            self.kp_effect_sd.is_some(),
+            self.development_effect_sd[0].is_some(),
+            self.development_effect_sd[1].is_some(),
+            self.development_effect_sd[2].is_some(),
+            self.development_effect_sd[3].is_some(),
+        ];
+        if extra.iter().all(|&e| !e) {
+            Hierarchy::Model1
+        } else if extra.iter().all(|&e| e) {
+            Hierarchy::Model2
+        } else {
+            Hierarchy::Other
+        }
+    }
+
+    /// The four positive priors, in the order `k_er`, `k_p`, `RLR`, `RRF`.
+    fn positive(&self) -> [PositivePrior; 4] {
+        [self.k_er, self.k_p, self.rlr, self.rrf]
+    }
+
+    /// The origin effect sd priors on the rates, `k_er` then `k_p`.
+    fn rate_effect_sd(&self) -> [Option<HalfPrior>; 2] {
+        [self.ker_effect_sd, self.kp_effect_sd]
+    }
+}
+
+/// The four parameters, in the order of [`CompartmentalPriors::positive`].
+const KER: usize = 0;
+const KP: usize = 1;
+const RLR: usize = 2;
+const RRF: usize = 3;
+/// Their names in the posterior's origin values (`RLR[1990]`) and, short,
+/// in the names of their effects (`tau_dev_ker`, `dev_ker[24]`).
+const NATURAL: [&str; 4] = ["k_er", "k_p", "RLR", "RRF"];
+const SHORT: [&str; 4] = ["ker", "kp", "RLR", "RRF"];
+
+/// An observed cell.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Obs {
     origin: usize,
     /// The age index, into [`Model::times`].
     k: usize,
     t: f64,
+    /// For an incremental paid cell after the first age, the time of the
+    /// age before.
+    t_before: Option<f64>,
+    /// The response: outstanding, cumulative or incremental paid, as an
+    /// amount or a loss ratio.
     y: f64,
+    /// `ln y` under the log-normal likelihood, 0 otherwise.
+    ln_y: f64,
+    /// The premium under the amount scale, 1 under the loss-ratio scale.
+    w: f64,
     /// Paid (true) or outstanding.
     paid: bool,
 }
 
+/// Positions in `theta` past the fixed ones, and in a natural-scale draw.
+#[derive(Debug, Clone, PartialEq)]
+struct Layout {
+    /// `log τ` of the origin effects on `k_er` and `k_p`.
+    tau_rate: [Option<usize>; 2],
+    /// `log τ` of the development effects on each parameter.
+    tau_dev: [Option<usize>; 4],
+    /// The first `z`: the origin pairs of `RLR` and `RRF`.
+    z0: usize,
+    /// The first `z` of the origin effects on `k_er` and `k_p`.
+    z_rate: [Option<usize>; 2],
+    /// The first `z` of the development effects on each parameter.
+    z_dev: [Option<usize>; 4],
+    /// `log σ_OS`; `log σ_PD` follows.
+    log_sigma0: usize,
+    /// In a natural-scale draw: the first origin value of each parameter.
+    nat_origin: [Option<usize>; 4],
+    /// The first development effect (on the `o` scale) of each parameter.
+    nat_dev: [Option<usize>; 4],
+    /// `b_ker`, then `b_kp`, `b_RLR`, `b_RRF`, `tau_RLR` and `tau_RRF`.
+    nat_b0: usize,
+    nat_tau_rate: [Option<usize>; 2],
+    nat_rho: usize,
+    nat_tau_dev: [Option<usize>; 4],
+    /// `log_sigma_os`; `log_sigma_pd` follows.
+    nat_log_sigma: usize,
+}
+
+impl Layout {
+    fn new(priors: &CompartmentalPriors, n_levels: usize, n_dev_levels: usize) -> Self {
+        let rate = priors.rate_effect_sd();
+        let dev = priors.development_effect_sd;
+        let mut at = ATANH_RHO + 1;
+        let next = |on: bool, size: usize, at: &mut usize| {
+            on.then(|| {
+                *at += size;
+                *at - size
+            })
+        };
+        let tau_rate = rate.map(|p| next(p.is_some(), 1, &mut at));
+        let tau_dev = dev.map(|p| next(p.is_some(), 1, &mut at));
+        let z0 = at;
+        at += 2 * n_levels;
+        let z_rate = rate.map(|p| next(p.is_some(), n_levels, &mut at));
+        let z_dev = dev.map(|p| next(p.is_some(), n_dev_levels, &mut at));
+        let log_sigma0 = at;
+        let mut n = 6 + 2 * n_levels;
+        let nat_origin = [
+            next(rate[0].is_some(), n_levels, &mut n),
+            next(rate[1].is_some(), n_levels, &mut n),
+            Some(6),
+            Some(6 + n_levels),
+        ];
+        let nat_dev = dev.map(|p| next(p.is_some(), n_dev_levels, &mut n));
+        let nat_b0 = n;
+        n += 6;
+        let nat_tau_rate = rate.map(|p| next(p.is_some(), 1, &mut n));
+        let nat_rho = n;
+        n += 1;
+        let nat_tau_dev = dev.map(|p| next(p.is_some(), 1, &mut n));
+        Self {
+            tau_rate,
+            tau_dev,
+            z0,
+            z_rate,
+            z_dev,
+            log_sigma0,
+            nat_origin,
+            nat_dev,
+            nat_b0,
+            nat_tau_rate,
+            nat_rho,
+            nat_tau_dev,
+            nat_log_sigma: n,
+        }
+    }
+}
+
 /// The log posterior on the unconstrained `theta = (b_ker | delta, b_kp,
-/// b_RLR, b_RRF, log τ₁, log τ₂, atanh ρ, z_11, z_12, .., z_m1, z_m2,
+/// b_RLR, b_RRF, log τ_RLR, log τ_RRF, atanh ρ, [log τ_ker, log τ_kp,
+/// log τ_dev_ker, .., log τ_dev_RRF], z_11, z_12, .., z_m1, z_m2, [z_ker,
+/// z_kp by origin, z_dev_ker, .., z_dev_RRF by development level],
 /// log σ_OS, log σ_PD)` over the `m` origins with an observed cell, where
-/// under [`RateOrder::Ordered`] `k_er = k_p + e^delta`.
+/// the bracketed blocks are there only for the effects the priors have and
+/// under [`RateOrder::Ordered`] `k_er = k_p + e^delta` (the population
+/// rates). A cell's parameters are `θ = m e^(s (b + u_origin + u_dev))`.
 #[derive(Debug, Clone, PartialEq)]
 struct Model {
     /// Outstanding cells first, then paid, each by origin and age.
     cells: Vec<Obs>,
     n_outstanding: usize,
     premium: Vec<f64>,
+    /// Each origin's latest observed cumulative paid (0 with none).
+    latest_paid: Vec<f64>,
     /// Each origin's level (position among the origins with data), if any.
     level: Vec<Option<usize>>,
     /// The origin of each level.
     level_origin: Vec<usize>,
     /// The origin label of each level, for the names.
     labels: Vec<String>,
+    /// Each age index's development level (position among the ages with an
+    /// observed cell), if any.
+    dev_level: Vec<Option<usize>>,
+    /// The age in months of each development level, for the names.
+    dev_labels: Vec<String>,
     /// Development time of each age index of the square, in years.
     times: Vec<f64>,
     /// The age indices that hold an observed cell, `0..n_observed`.
     n_observed: usize,
     priors: CompartmentalPriors,
     ordered: bool,
+    response: Response,
+    /// Whether any effect varies by cell beyond `RLR` and `RRF` by origin
+    /// (model 1 has none: its rates are shared, one curve per age).
+    cellwise: bool,
+    layout: Layout,
 }
+
+/// The most entries of `theta` without a `z` (model 2: 13 and the two
+/// `log σ`), the dual width of [`Model::prior_globals`].
+const GLOBALS: usize = 16;
 
 /// Positions in `theta`.
 const B_KER: usize = 0;
@@ -1380,14 +1787,20 @@ const B_RLR: usize = 2;
 const B_RRF: usize = 3;
 const LOG_TAU: usize = 4;
 const ATANH_RHO: usize = 6;
-const Z0: usize = 7;
 
 impl Model {
-    fn new(data: &Data, priors: CompartmentalPriors, ordered: bool) -> Self {
+    fn new(
+        data: &Data,
+        priors: CompartmentalPriors,
+        ordered: bool,
+        response: Response,
+    ) -> Result<Self> {
         let n = data.origins.len();
         let mut has = vec![false; n];
+        let mut has_age = vec![false; data.n_ages];
         for c in data.outstanding.iter().chain(&data.paid) {
             has[c.0] = true;
+            has_age[c.1] = true;
         }
         let mut level = vec![None; n];
         let mut level_origin = Vec::new();
@@ -1401,49 +1814,273 @@ impl Model {
             .iter()
             .map(|&i| data.origins[i].to_string())
             .collect();
+        let mut dev_level = vec![None; data.n_ages];
+        let mut dev_labels = Vec::new();
+        for k in 0..data.n_ages {
+            if has_age[k] {
+                dev_level[k] = Some(dev_labels.len());
+                dev_labels.push(data.age(k).to_string());
+            }
+        }
         let times: Vec<f64> = (0..data.n_ages)
             .map(|k| f64::from(data.age(k)) / 12.0)
             .collect();
-        let obs = |&(origin, k, y): &(usize, usize, f64), paid: bool| Obs {
-            origin,
-            k,
-            t: times[k],
-            y,
-            paid,
-        };
-        let mut os: Vec<Obs> = data.outstanding.iter().map(|c| obs(c, false)).collect();
-        let mut pd: Vec<Obs> = data.paid.iter().map(|c| obs(c, true)).collect();
+        let log_normal = response.log_normal();
+        let obs =
+            |origin: usize, k: usize, value: f64, before: Option<f64>, paid: bool| -> Result<Obs> {
+                let amount = before.map_or(value, |b| value - b);
+                let w = if response.loss_ratio {
+                    1.0
+                } else {
+                    data.premium[origin]
+                };
+                let y = if response.loss_ratio {
+                    amount / data.premium[origin]
+                } else {
+                    amount
+                };
+                if log_normal && !(y > 0.0 && y.is_finite()) {
+                    let what = match (paid, before.is_some()) {
+                        (false, _) => "outstanding",
+                        (true, true) => "incremental paid",
+                        (true, false) => "paid",
+                    };
+                    return Err(Error::Bayes(format!(
+                        "origin {} at development age {} months has {what} {amount}; the \
+                     log-normal likelihood needs every observed response positive",
+                        data.origins[origin],
+                        data.age(k)
+                    )));
+                }
+                Ok(Obs {
+                    origin,
+                    k,
+                    t: times[k],
+                    t_before: before.map(|_| times[k - 1]),
+                    y,
+                    ln_y: if log_normal { y.ln() } else { 0.0 },
+                    w,
+                    paid,
+                })
+            };
+        let mut os = data
+            .outstanding
+            .iter()
+            .map(|&(i, k, v)| obs(i, k, v, None, false))
+            .collect::<Result<Vec<Obs>>>()?;
+        let mut pd = data
+            .paid
+            .iter()
+            .map(|&(i, k, v)| {
+                let before = if response.incremental && k > 0 {
+                    let b = data
+                        .paid
+                        .iter()
+                        .find(|c| c.0 == i && c.1 == k - 1)
+                        .ok_or_else(|| {
+                            Error::Bayes(format!(
+                                "origin {} has paid at development age {} months but none at \
+                                 {} months; incremental paid needs the paid of the age before \
+                                 each paid cell",
+                                data.origins[i],
+                                data.age(k),
+                                data.age(k - 1)
+                            ))
+                        })?;
+                    Some(b.2)
+                } else {
+                    None
+                };
+                obs(i, k, v, before, true)
+            })
+            .collect::<Result<Vec<Obs>>>()?;
         os.sort_by_key(|c| (c.origin, c.k));
         pd.sort_by_key(|c| (c.origin, c.k));
         let n_outstanding = os.len();
         let mut cells = os;
         cells.extend(pd);
         let n_observed = cells.iter().map(|c| c.k + 1).max().unwrap_or(0);
-        Self {
+        let layout = Layout::new(&priors, level_origin.len(), dev_labels.len());
+        let cellwise = priors.hierarchy() != Hierarchy::Model1;
+        debug_assert!(layout.z0 + 2 <= GLOBALS);
+        Ok(Self {
             cells,
             n_outstanding,
             premium: data.premium.clone(),
+            latest_paid: data
+                .latest_paid
+                .iter()
+                .map(|l| l.map_or(0.0, |(_, v)| v))
+                .collect(),
             level,
             level_origin,
             labels,
+            dev_level,
+            dev_labels,
             times,
             n_observed,
             priors,
             ordered,
+            response,
+            cellwise,
+            layout,
+        })
+    }
+
+    /// The prior terms of [`log_density`](Self::log_density) that do not
+    /// involve a `z`, at `g`: `theta[..z0]` followed by `log σ_OS` and
+    /// `log σ_PD`.
+    fn prior_globals<S: Scalar>(&self, g: &[S]) -> S {
+        let pr = &self.priors;
+        let lay = &self.layout;
+        let mut f = S::from_f64(0.0);
+        for &b in &g[B_KP..=B_RRF] {
+            f -= b * b * 0.5;
         }
+        let (k_er, _, b_ker) = self.rates(g);
+        f -= b_ker * b_ker * 0.5;
+        if self.ordered {
+            f += g[B_KER] - k_er.ln();
+        }
+        f += half_on_log(g[LOG_TAU], pr.rlr_effect_sd)
+            + half_on_log(g[LOG_TAU + 1], pr.rrf_effect_sd);
+        let rho = g[ATANH_RHO].tanh();
+        f += (-(rho * rho) + 1.0).ln() * pr.lkj_eta;
+        for (at, prior) in lay.tau_rate.iter().zip(pr.rate_effect_sd()) {
+            if let (Some(at), Some(prior)) = (at, prior) {
+                f += half_on_log(g[*at], prior);
+            }
+        }
+        for (at, prior) in lay.tau_dev.iter().zip(pr.development_effect_sd) {
+            if let (Some(at), Some(prior)) = (at, prior) {
+                f += half_on_log(g[*at], prior);
+            }
+        }
+        let n = lay.z0;
+        f + real_prior(g[n], pr.log_sigma[0]) + real_prior(g[n + 1], pr.log_sigma[1])
+    }
+
+    /// One cell's term of the log likelihood, `-r² / 2 - log σ`, from the
+    /// `o` values of its four parameters and its type's `log σ`, with the
+    /// same operations as [`log_density`](Self::log_density)'s cell by cell
+    /// path.
+    fn cell_term<S: Scalar>(&self, c: &Obs, o: [S; 4], ls: S) -> S {
+        let ms = self.priors.positive().map(lognormal);
+        let th: [S; 4] = std::array::from_fn(|p| (o[p] * ms[p].1).exp() * ms[p].0);
+        let r = self.residual(c, self.cell_mean(c, th)) * (-ls).exp();
+        -(r * r * 0.5) - ls
+    }
+
+    /// The log posterior and its gradient with effects by cell: the prior
+    /// terms without a `z` in one dual pass over their at most `GLOBALS`
+    /// inputs, the `z` terms by hand, each cell's term in a dual pass over
+    /// its four `o` values and its `log σ`, and the chain rule from the `o`
+    /// values (`o = b + u_origin + u_dev`, each effect `τ z`, and `RRF`'s
+    /// origin effect `τ₂ (ρ z₁ + sqrt(1 - ρ²) z₂)`) to `theta` by hand,
+    /// summed by level. The same value and gradient as the chunked dual pass
+    /// over [`log_density`](Self::log_density), to rounding (a unit test
+    /// checks it).
+    fn cellwise_gradient(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
+        let lay = &self.layout;
+        let (z0, ls) = (lay.z0, self.log_sigma0());
+        grad.fill(0.0);
+        let mut globals = theta[..z0].to_vec();
+        globals.extend([theta[ls], theta[ls + 1]]);
+        let mut g = vec![0.0; globals.len()];
+        let mut f = gradient::<GLOBALS>(&globals, &mut g, |x| self.prior_globals(x));
+        grad[..z0].copy_from_slice(&g[..z0]);
+        grad[ls] = g[z0];
+        grad[ls + 1] = g[z0 + 1];
+        for j in z0..ls {
+            f -= theta[j] * theta[j] * 0.5;
+            grad[j] -= theta[j];
+        }
+        // The cells, with the derivatives by `o` summed by level.
+        let (u, v) = self.effects(theta);
+        let (_, _, b_ker) = self.rates(theta);
+        let b = [b_ker, theta[B_KP], theta[B_RLR], theta[B_RRF]];
+        let mut by_origin = vec![[0.0; 4]; self.n_levels()];
+        let mut by_dev = vec![[0.0; 4]; self.n_dev_levels()];
+        let mut by_b = [0.0; 4];
+        for c in &self.cells {
+            let j = self.level[c.origin].expect("an observed origin has a level");
+            let d = self.dev_level[c.k].expect("an observed age has a level");
+            let o: [Dual<5>; 4] =
+                std::array::from_fn(|p| Dual::variable(b[p] + u[p][j] + v[p][d], p));
+            let at = ls + usize::from(c.paid);
+            let t = self.cell_term(c, o, Dual::variable(theta[at], 4));
+            f += t.v;
+            grad[at] += t.d[4];
+            for p in 0..4 {
+                by_origin[j][p] += t.d[p];
+                by_dev[d][p] += t.d[p];
+                by_b[p] += t.d[p];
+            }
+        }
+        // The intercepts: b_ker through the rate map (under the ordered
+        // rates it depends on delta and b_kp).
+        let rates = [
+            Dual::<2>::variable(theta[B_KER], 0),
+            Dual::variable(theta[B_KP], 1),
+        ];
+        let (_, _, b_ker) = self.rates(&rates);
+        grad[B_KER] += by_b[KER] * b_ker.d[0];
+        grad[B_KP] += by_b[KER] * b_ker.d[1] + by_b[KP];
+        grad[B_RLR] += by_b[RLR];
+        grad[B_RRF] += by_b[RRF];
+        // The origin effects.
+        let rho = theta[ATANH_RHO].tanh();
+        let rho_c = (1.0 - rho * rho).sqrt();
+        let (tau1, tau2) = (theta[LOG_TAU].exp(), theta[LOG_TAU + 1].exp());
+        for (j, gj) in by_origin.iter().enumerate() {
+            let (a, bz) = (lay.z0 + 2 * j, lay.z0 + 2 * j + 1);
+            let (z1, z2) = (theta[a], theta[bz]);
+            grad[LOG_TAU] += gj[RLR] * u[RLR][j];
+            grad[LOG_TAU + 1] += gj[RRF] * u[RRF][j];
+            grad[a] += gj[RLR] * tau1 + gj[RRF] * tau2 * rho;
+            grad[bz] += gj[RRF] * tau2 * rho_c;
+            // dρ/dv = 1 - ρ², d sqrt(1 - ρ²)/dv = -ρ sqrt(1 - ρ²).
+            grad[ATANH_RHO] += gj[RRF] * tau2 * (z1 * rho_c * rho_c - z2 * rho * rho_c);
+            for r in [KER, KP] {
+                if let (Some(l), Some(z)) = (lay.tau_rate[r], lay.z_rate[r]) {
+                    grad[l] += gj[r] * u[r][j];
+                    grad[z + j] += gj[r] * theta[l].exp();
+                }
+            }
+        }
+        // The development effects.
+        for (d, gd) in by_dev.iter().enumerate() {
+            for p in 0..4 {
+                if let (Some(l), Some(z)) = (lay.tau_dev[p], lay.z_dev[p]) {
+                    grad[l] += gd[p] * v[p][d];
+                    grad[z + d] += gd[p] * theta[l].exp();
+                }
+            }
+        }
+        f
     }
 
     fn n_levels(&self) -> usize {
         self.level_origin.len()
     }
 
+    fn n_dev_levels(&self) -> usize {
+        self.dev_labels.len()
+    }
+
     /// Position of `log σ_OS`; `log σ_PD` follows.
     fn log_sigma0(&self) -> usize {
-        Z0 + 2 * self.n_levels()
+        self.layout.log_sigma0
+    }
+
+    /// Whether any development effect is in the priors.
+    fn has_dev(&self) -> bool {
+        self.layout.z_dev.iter().any(Option::is_some)
     }
 
     /// The names of `theta`, for the pilot draws.
     fn sampled_names(&self) -> Vec<String> {
+        let lay = &self.layout;
         let mut names: Vec<String> = [
             if self.ordered { "delta" } else { "b_ker" },
             "b_kp",
@@ -1455,9 +2092,29 @@ impl Model {
         ]
         .map(String::from)
         .to_vec();
+        for r in [KER, KP] {
+            if lay.tau_rate[r].is_some() {
+                names.push(format!("log_tau_{}", SHORT[r]));
+            }
+        }
+        for (on, short) in lay.tau_dev.iter().zip(SHORT) {
+            if on.is_some() {
+                names.push(format!("log_tau_dev_{}", short));
+            }
+        }
         for j in 0..self.n_levels() {
             names.push(format!("z[{j},1]"));
             names.push(format!("z[{j},2]"));
+        }
+        for r in [KER, KP] {
+            if lay.z_rate[r].is_some() {
+                names.extend((0..self.n_levels()).map(|j| format!("z_{}[{j}]", SHORT[r])));
+            }
+        }
+        for (on, short) in lay.z_dev.iter().zip(SHORT) {
+            if on.is_some() {
+                names.extend((0..self.n_dev_levels()).map(|d| format!("z_dev_{}[{d}]", short)));
+            }
         }
         names.push("log_sigma_os".into());
         names.push("log_sigma_pd".into());
@@ -1466,28 +2123,38 @@ impl Model {
 
     /// The names of the natural-scale draws ([`CompartmentalFit::posterior`]).
     fn names(&self) -> Vec<String> {
+        let lay = &self.layout;
         let mut names: Vec<String> = ["k_er", "k_p", "RLR", "RRF", "sigma_os", "sigma_pd"]
             .map(String::from)
             .to_vec();
-        for name in ["RLR", "RRF"] {
-            for j in 0..self.n_levels() {
-                names.push(format!("{name}[{}]", self.labels[j]));
+        for p in [RLR, RRF, KER, KP] {
+            if lay.nat_origin[p].is_some() {
+                for j in 0..self.n_levels() {
+                    names.push(format!("{}[{}]", NATURAL[p], self.labels[j]));
+                }
             }
         }
-        names.extend(
-            [
-                "b_ker",
-                "b_kp",
-                "b_RLR",
-                "b_RRF",
-                "tau_RLR",
-                "tau_RRF",
-                "rho",
-                "log_sigma_os",
-                "log_sigma_pd",
-            ]
-            .map(String::from),
-        );
+        for (on, short) in lay.nat_dev.iter().zip(SHORT) {
+            if on.is_some() {
+                for label in &self.dev_labels {
+                    names.push(format!("dev_{}[{}]", short, label));
+                }
+            }
+        }
+        names.extend(["b_ker", "b_kp", "b_RLR", "b_RRF", "tau_RLR", "tau_RRF"].map(String::from));
+        for r in [KER, KP] {
+            if lay.nat_tau_rate[r].is_some() {
+                names.push(format!("tau_{}", SHORT[r]));
+            }
+        }
+        names.push("rho".into());
+        for (on, short) in lay.nat_tau_dev.iter().zip(SHORT) {
+            if on.is_some() {
+                names.push(format!("tau_dev_{}", short));
+            }
+        }
+        names.push("log_sigma_os".into());
+        names.push("log_sigma_pd".into());
         names
     }
 
@@ -1506,9 +2173,75 @@ impl Model {
         }
     }
 
+    /// The effects on the `o` scale from `theta`: by origin level and by
+    /// development level, for each of the four parameters (0 where the
+    /// priors have none).
+    #[allow(clippy::type_complexity)]
+    fn effects<S: Scalar>(&self, theta: &[S]) -> ([Vec<S>; 4], [Vec<S>; 4]) {
+        let lay = &self.layout;
+        let (m, nd) = (self.n_levels(), self.n_dev_levels());
+        let zero = S::from_f64(0.0);
+        let rho = theta[ATANH_RHO].tanh();
+        let rho_c = (-(rho * rho) + 1.0).sqrt();
+        let (tau1, tau2) = (theta[LOG_TAU].exp(), theta[LOG_TAU + 1].exp());
+        let mut u: [Vec<S>; 4] = std::array::from_fn(|_| vec![zero; m]);
+        for j in 0..m {
+            let (z1, z2) = (theta[lay.z0 + 2 * j], theta[lay.z0 + 2 * j + 1]);
+            u[RLR][j] = tau1 * z1;
+            u[RRF][j] = tau2 * (rho * z1 + rho_c * z2);
+        }
+        for r in [KER, KP] {
+            if let (Some(l), Some(z)) = (lay.tau_rate[r], lay.z_rate[r]) {
+                let tau = theta[l].exp();
+                for (j, u) in u[r].iter_mut().enumerate() {
+                    *u = tau * theta[z + j];
+                }
+            }
+        }
+        let mut v: [Vec<S>; 4] = std::array::from_fn(|_| vec![zero; nd]);
+        for p in 0..4 {
+            if let (Some(l), Some(z)) = (lay.tau_dev[p], lay.z_dev[p]) {
+                let tau = theta[l].exp();
+                for (d, v) in v[p].iter_mut().enumerate() {
+                    *v = tau * theta[z + d];
+                }
+            }
+        }
+        (u, v)
+    }
+
+    /// The mean of a cell's response given its parameters `(k_er, k_p, RLR,
+    /// RRF)`: outstanding, cumulative paid or incremental paid (the closed
+    /// form at the cell's age less the same at the age before, both with
+    /// these parameters), times the premium on the amount scale.
+    fn cell_mean<S: Scalar>(&self, c: &Obs, [k_er, k_p, rlr, rrf]: [S; 4]) -> S {
+        let base = rlr * c.w;
+        if c.paid {
+            let (_, pd) = one_os(k_er, k_p, c.t);
+            let pd = match c.t_before {
+                Some(t) => pd - one_os(k_er, k_p, t).1,
+                None => pd,
+            };
+            base * rrf * pd
+        } else {
+            base * one_os(k_er, k_p, c.t).0
+        }
+    }
+
+    /// The residual of a cell on the likelihood's scale: `y - μ`, or
+    /// `ln y - ln μ`.
+    fn residual<S: Scalar>(&self, c: &Obs, mean: S) -> S {
+        if self.response.log_normal() {
+            -(mean.ln()) + c.ln_y
+        } else {
+            -mean + c.y
+        }
+    }
+
     /// The log posterior, written once over [`Scalar`].
     fn log_density<S: Scalar>(&self, theta: &[S]) -> S {
         let pr = &self.priors;
+        let lay = &self.layout;
         let mut f = S::from_f64(0.0);
         for &b in &theta[B_KP..=B_RRF] {
             f -= b * b * 0.5;
@@ -1527,47 +2260,79 @@ impl Model {
         let rho = theta[ATANH_RHO].tanh();
         let rho_c2 = -(rho * rho) + 1.0;
         f += rho_c2.ln() * pr.lkj_eta;
-        let rho_c = rho_c2.sqrt();
+        for (at, prior) in lay.tau_rate.iter().zip(pr.rate_effect_sd()) {
+            if let (Some(at), Some(prior)) = (at, prior) {
+                f += half_on_log(theta[*at], prior);
+            }
+        }
+        for (at, prior) in lay.tau_dev.iter().zip(pr.development_effect_sd) {
+            if let (Some(at), Some(prior)) = (at, prior) {
+                f += half_on_log(theta[*at], prior);
+            }
+        }
         let ls = self.log_sigma0();
-        for &z in &theta[Z0..ls] {
+        for &z in &theta[lay.z0..ls] {
             f -= z * z * 0.5;
         }
         let (ls_os, ls_pd) = (theta[ls], theta[ls + 1]);
         f += real_prior(ls_os, pr.log_sigma[0]) + real_prior(ls_pd, pr.log_sigma[1]);
         let inv = [(-ls_os).exp(), (-ls_pd).exp()];
-        let (tau1, tau2) = (l1.exp(), l2.exp());
-        let (m_rlr, s_rlr) = lognormal(pr.rlr);
-        let (m_rrf, s_rrf) = lognormal(pr.rrf);
-        // The rates are shared, so the closed form is one per age.
-        let curves: Vec<(S, S)> = self.times[..self.n_observed]
-            .iter()
-            .map(|&t| one_os(k_er, k_p, t))
-            .collect();
-        // Π RLR and Π RLR RRF of each level.
-        let scale: Vec<(S, S)> = self
-            .level_origin
-            .iter()
-            .enumerate()
-            .map(|(j, &i)| {
-                let (z1, z2) = (theta[Z0 + 2 * j], theta[Z0 + 2 * j + 1]);
-                let u1 = tau1 * z1;
-                let u2 = tau2 * (rho * z1 + rho_c * z2);
-                let rlr = ((theta[B_RLR] + u1) * s_rlr).exp() * (m_rlr * self.premium[i]);
-                let rrf = ((theta[B_RRF] + u2) * s_rrf).exp() * m_rrf;
-                (rlr, rlr * rrf)
-            })
-            .collect();
+        let (u, v) = self.effects(theta);
         let mut n_os = 0.0;
-        for c in &self.cells {
-            let (os, pd) = curves[c.k];
-            let (a, b) = scale[self.level[c.origin].expect("an observed origin has a level")];
-            let r = if c.paid {
-                (-(b * pd) + c.y) * inv[1]
-            } else {
-                n_os += 1.0;
-                (-(a * os) + c.y) * inv[0]
-            };
-            f -= r * r * 0.5;
+        if self.cellwise {
+            // Each cell its own parameters.
+            let b = [b_ker, theta[B_KP], theta[B_RLR], theta[B_RRF]];
+            let ms = pr.positive().map(lognormal);
+            for c in &self.cells {
+                let j = self.level[c.origin].expect("an observed origin has a level");
+                let d = self.dev_level[c.k].expect("an observed age has a level");
+                let th: [S; 4] =
+                    std::array::from_fn(|p| ((b[p] + u[p][j] + v[p][d]) * ms[p].1).exp() * ms[p].0);
+                let r = self.residual(c, self.cell_mean(c, th)) * inv[usize::from(c.paid)];
+                if !c.paid {
+                    n_os += 1.0;
+                }
+                f -= r * r * 0.5;
+            }
+        } else {
+            let (m_rlr, s_rlr) = lognormal(pr.rlr);
+            let (m_rrf, s_rrf) = lognormal(pr.rrf);
+            // The rates are shared, so the closed form is one per age.
+            let curves: Vec<(S, S)> = self.times[..self.n_observed]
+                .iter()
+                .map(|&t| one_os(k_er, k_p, t))
+                .collect();
+            // Π RLR and Π RLR RRF of each level (RLR and RLR RRF on the
+            // loss-ratio scale).
+            let scale: Vec<(S, S)> = self
+                .level_origin
+                .iter()
+                .enumerate()
+                .map(|(j, &i)| {
+                    let w = if self.response.loss_ratio {
+                        m_rlr
+                    } else {
+                        m_rlr * self.premium[i]
+                    };
+                    let rlr = ((theta[B_RLR] + u[RLR][j]) * s_rlr).exp() * w;
+                    let rrf = ((theta[B_RRF] + u[RRF][j]) * s_rrf).exp() * m_rrf;
+                    (rlr, rlr * rrf)
+                })
+                .collect();
+            for c in &self.cells {
+                let (os, pd) = curves[c.k];
+                let (a, b) = scale[self.level[c.origin].expect("an observed origin has a level")];
+                let mean = if !c.paid {
+                    n_os += 1.0;
+                    a * os
+                } else if c.t_before.is_some() {
+                    b * (pd - curves[c.k - 1].1)
+                } else {
+                    b * pd
+                };
+                let r = self.residual(c, mean) * inv[usize::from(c.paid)];
+                f -= r * r * 0.5;
+            }
         }
         let n_pd = (self.cells.len() - self.n_outstanding) as f64;
         f - ls_os * n_os - ls_pd * n_pd
@@ -1575,13 +2340,13 @@ impl Model {
 
     /// `theta` on the natural scale ([`names`](Self::names)).
     fn natural(&self, theta: &[f64]) -> Vec<f64> {
-        let (m_rlr, s_rlr) = lognormal(self.priors.rlr);
-        let (m_rrf, s_rrf) = lognormal(self.priors.rrf);
+        let lay = &self.layout;
+        let ms = self.priors.positive().map(lognormal);
+        let (m_rlr, s_rlr) = ms[RLR];
+        let (m_rrf, s_rrf) = ms[RRF];
         let (k_er, k_p, b_ker) = self.rates(theta);
         let ls = self.log_sigma0();
-        let (tau1, tau2) = (theta[LOG_TAU].exp(), theta[LOG_TAU + 1].exp());
-        let rho = theta[ATANH_RHO].tanh();
-        let rho_c = (1.0 - rho * rho).max(0.0).sqrt();
+        let (u, v) = self.effects(theta);
         let mut out = vec![
             k_er,
             k_p,
@@ -1590,124 +2355,257 @@ impl Model {
             theta[ls].exp(),
             theta[ls + 1].exp(),
         ];
-        let m = self.n_levels();
-        let mut rrf = Vec::with_capacity(m);
-        for j in 0..m {
-            let (z1, z2) = (theta[Z0 + 2 * j], theta[Z0 + 2 * j + 1]);
-            out.push(m_rlr * (s_rlr * (theta[B_RLR] + tau1 * z1)).exp());
-            rrf.push(m_rrf * (s_rrf * (theta[B_RRF] + tau2 * (rho * z1 + rho_c * z2))).exp());
+        let b = [b_ker, theta[B_KP], theta[B_RLR], theta[B_RRF]];
+        for p in [RLR, RRF, KER, KP] {
+            if lay.nat_origin[p].is_some() {
+                out.extend(u[p].iter().map(|u| ms[p].0 * (ms[p].1 * (b[p] + u)).exp()));
+            }
         }
-        out.extend(rrf);
+        for (on, v) in lay.nat_dev.iter().zip(&v) {
+            if on.is_some() {
+                out.extend_from_slice(v);
+            }
+        }
         out.extend([
             b_ker,
             theta[B_KP],
             theta[B_RLR],
             theta[B_RRF],
-            tau1,
-            tau2,
-            rho,
-            theta[ls],
-            theta[ls + 1],
+            theta[LOG_TAU].exp(),
+            theta[LOG_TAU + 1].exp(),
         ]);
+        for l in lay.tau_rate.into_iter().flatten() {
+            out.push(theta[l].exp());
+        }
+        out.push(theta[ATANH_RHO].tanh());
+        for l in lay.tau_dev.into_iter().flatten() {
+            out.push(theta[l].exp());
+        }
+        out.extend([theta[ls], theta[ls + 1]]);
         out
     }
 
-    /// Positions in a natural-scale draw.
-    fn nat_rlr(&self, j: usize) -> usize {
-        6 + j
-    }
-
-    fn nat_rrf(&self, j: usize) -> usize {
-        6 + self.n_levels() + j
-    }
-
-    fn nat_b0(&self) -> usize {
-        6 + 2 * self.n_levels()
-    }
-
-    /// `(RLR_i, RRF_i)` of origin `i` from a natural-scale draw: its own
-    /// for an origin with data, else a new effect from the population drawn
-    /// from `rng` (two normals).
-    fn ratios(&self, nat: &[f64], i: usize, rng: &mut StreamRng) -> (f64, f64) {
+    /// The origin values `(k_er, k_p, RLR, RRF)` of origin `i` (at a zero
+    /// development effect) from a natural-scale draw: its own for an origin
+    /// with data, else new effects from the population drawn from `rng`
+    /// (two normals for `RLR` and `RRF`, then one for each rate with an
+    /// origin effect).
+    fn origin_values(&self, nat: &[f64], i: usize, rng: &mut StreamRng) -> [f64; 4] {
+        let lay = &self.layout;
         if let Some(j) = self.level[i] {
-            return (nat[self.nat_rlr(j)], nat[self.nat_rrf(j)]);
+            return std::array::from_fn(|p| lay.nat_origin[p].map_or(nat[p], |at| nat[at + j]));
         }
-        let b = self.nat_b0();
-        let (b_rlr, b_rrf, tau1, tau2, rho) =
-            (nat[b + 2], nat[b + 3], nat[b + 4], nat[b + 5], nat[b + 6]);
-        let (m_rlr, s_rlr) = lognormal(self.priors.rlr);
-        let (m_rrf, s_rrf) = lognormal(self.priors.rrf);
+        let b = lay.nat_b0;
+        let (b_rlr, b_rrf, tau1, tau2, rho) = (
+            nat[b + 2],
+            nat[b + 3],
+            nat[b + 4],
+            nat[b + 5],
+            nat[lay.nat_rho],
+        );
+        let ms = self.priors.positive().map(lognormal);
+        let (m_rlr, s_rlr) = ms[RLR];
+        let (m_rrf, s_rrf) = ms[RRF];
         let z1 = norm_quantile(rng.next_open01());
         let z2 = norm_quantile(rng.next_open01());
         let rho_c = (1.0 - rho * rho).max(0.0).sqrt();
-        (
+        let mut out = [
+            nat[0],
+            nat[1],
             m_rlr * (s_rlr * (b_rlr + tau1 * z1)).exp(),
             m_rrf * (s_rrf * (b_rrf + tau2 * (rho * z1 + rho_c * z2))).exp(),
-        )
+        ];
+        for r in [KER, KP] {
+            if let Some(at) = lay.nat_tau_rate[r] {
+                let z = norm_quantile(rng.next_open01());
+                out[r] = ms[r].0 * (ms[r].1 * (nat[b + r] + nat[at] * z)).exp();
+            }
+        }
+        out
+    }
+
+    /// The development multipliers `e^(s v)` of each age of the square and
+    /// each parameter from a natural-scale draw: its own effect for an age
+    /// with data, else a new one from the population drawn from `rng` (one
+    /// normal per parameter with a development effect, age by age), shared
+    /// by every origin; 1 for a parameter with none.
+    fn dev_multipliers(&self, nat: &[f64], rng: &mut StreamRng) -> Vec<[f64; 4]> {
+        let lay = &self.layout;
+        let ms = self.priors.positive().map(lognormal);
+        self.dev_level
+            .iter()
+            .map(|level| {
+                let mut out = [1.0; 4];
+                for p in 0..4 {
+                    if let (Some(first), Some(tau)) = (lay.nat_dev[p], lay.nat_tau_dev[p]) {
+                        let v = match level {
+                            Some(d) => nat[first + d],
+                            None => nat[tau] * norm_quantile(rng.next_open01()),
+                        };
+                        out[p] = (ms[p].1 * v).exp();
+                    }
+                }
+                out
+            })
+            .collect()
+    }
+
+    /// The parameters of every observed cell from a natural-scale draw (its
+    /// origin's values times its age's development multipliers).
+    fn observed_parameters(&self, nat: &[f64]) -> Vec<[f64; 4]> {
+        let lay = &self.layout;
+        let ms = self.priors.positive().map(lognormal);
+        // No new level is drawn for an observed cell, so the stream is
+        // never read.
+        let mut unused = StreamRng::new(0, 0);
+        self.cells
+            .iter()
+            .map(|c| {
+                let mut th = self.origin_values(nat, c.origin, &mut unused);
+                let d = self.dev_level[c.k].expect("an observed age has a level");
+                for (p, th) in th.iter_mut().enumerate() {
+                    if let Some(first) = lay.nat_dev[p] {
+                        *th *= (ms[p].1 * nat[first + d]).exp();
+                    }
+                }
+                th
+            })
+            .collect()
+    }
+
+    /// A draw of a cell given its mean amount, the type's sigma and the
+    /// origin `i`: normal (with sigma times the premium on the loss-ratio
+    /// scale) or log-normal.
+    fn draw_cell(&self, mean: f64, sigma: f64, i: usize, rng: &mut StreamRng) -> f64 {
+        let e = norm_quantile(rng.next_open01());
+        if self.response.log_normal() {
+            mean * (sigma * e).exp()
+        } else if self.response.loss_ratio {
+            mean + sigma * self.premium[i] * e
+        } else {
+            mean + sigma * e
+        }
     }
 
     /// One simulation of the future cells, paid then outstanding, into
-    /// `row`, given a natural-scale draw: each cell normal about its mean
-    /// with its type's σ, independent given the draw. An origin with no
-    /// observed cell takes one new effect for all its cells.
+    /// `row`, given a natural-scale draw: each cell (each increment under
+    /// incremental paid, summed onto the latest paid) normal or log-normal
+    /// about its mean with its type's σ, independent given the draw. An
+    /// origin with no observed cell takes one new set of effects for all its
+    /// cells, and an age with none one new set for all its cells.
     fn simulate(&self, nat: &[f64], future: &Future, rng: &mut StreamRng, row: &mut [f64]) {
         let (k_er, k_p) = (nat[0], nat[1]);
         let (sigma_os, sigma_pd) = (nat[4], nat[5]);
+        let dev = if self.has_dev() {
+            self.dev_multipliers(nat, rng)
+        } else {
+            vec![[1.0; 4]; self.times.len()]
+        };
         let curves: Vec<(f64, f64)> = self.times.iter().map(|&t| one_os(k_er, k_p, t)).collect();
         let n = self.premium.len();
-        let mut ratios: Vec<Option<(f64, f64)>> = vec![None; n];
-        let mut get = |i: usize, rng: &mut StreamRng| -> (f64, f64) {
-            *ratios[i].get_or_insert_with(|| self.ratios(nat, i, rng))
+        let mut values: Vec<Option<[f64; 4]>> = vec![None; n];
+        let mut get = |i: usize, rng: &mut StreamRng| -> [f64; 4] {
+            *values[i].get_or_insert_with(|| self.origin_values(nat, i, rng))
+        };
+        // The cell's parameters and its closed form `(OS, PD)` at age `k`
+        // and its PD at the age before (0 at the first age).
+        let cell = |th: [f64; 4], k: usize| -> ([f64; 4], (f64, f64), f64) {
+            if !self.cellwise {
+                let before = if k == 0 { 0.0 } else { curves[k - 1].1 };
+                return (th, curves[k], before);
+            }
+            let th: [f64; 4] = std::array::from_fn(|p| th[p] * dev[k][p]);
+            let now = one_os(th[KER], th[KP], self.times[k]);
+            let before = if k == 0 {
+                0.0
+            } else {
+                one_os(th[KER], th[KP], self.times[k - 1]).1
+            };
+            (th, now, before)
         };
         let n_paid = future.paid.len();
+        let mut current = (usize::MAX, 0.0);
         for (x, &(i, k)) in row[..n_paid].iter_mut().zip(&future.paid) {
-            let (rlr, rrf) = get(i, rng);
-            let mean = self.premium[i] * rlr * rrf * curves[k].1;
-            *x = mean + sigma_pd * norm_quantile(rng.next_open01());
+            let (th, (_, pd), before) = cell(get(i, rng), k);
+            let scale = self.premium[i] * th[RLR] * th[RRF];
+            *x = if self.response.incremental {
+                if current.0 != i {
+                    current = (i, self.latest_paid[i]);
+                }
+                current.1 += self.draw_cell(scale * (pd - before), sigma_pd, i, rng);
+                current.1
+            } else {
+                self.draw_cell(scale * pd, sigma_pd, i, rng)
+            };
         }
         for (x, &(i, k)) in row[n_paid..].iter_mut().zip(&future.outstanding) {
-            let (rlr, _) = get(i, rng);
-            let mean = self.premium[i] * rlr * curves[k].0;
-            *x = mean + sigma_os * norm_quantile(rng.next_open01());
+            let (th, (os, _), _) = cell(get(i, rng), k);
+            let mean = self.premium[i] * th[RLR] * os;
+            *x = self.draw_cell(mean, sigma_os, i, rng);
         }
     }
 
-    /// The full normal log density of each cell from a natural-scale draw,
-    /// appended to `out`.
+    /// The full log density of each cell's response from a natural-scale
+    /// draw, appended to `out`: normal, or log-normal (with its `-ln y`).
     fn log_likelihoods(&self, nat: &[f64], out: &mut Vec<f64>) {
-        let (k_er, k_p) = (nat[0], nat[1]);
         let (sigma_os, sigma_pd) = (nat[4], nat[5]);
         let half_log_tau = 0.5 * std::f64::consts::TAU.ln();
-        for c in &self.cells {
-            let (os, pd) = one_os(k_er, k_p, c.t);
-            let j = self.level[c.origin].expect("an observed origin has a level");
-            let rlr = nat[self.nat_rlr(j)] * self.premium[c.origin];
-            let (mean, sigma) = if c.paid {
-                (rlr * nat[self.nat_rrf(j)] * pd, sigma_pd)
+        for (c, th) in self.cells.iter().zip(self.observed_parameters(nat)) {
+            let mean = self.cell_mean(c, th);
+            let sigma = if c.paid { sigma_pd } else { sigma_os };
+            out.push(if self.response.log_normal() {
+                let z = (c.ln_y - mean.ln()) / sigma;
+                -half_log_tau - sigma.ln() - c.ln_y - 0.5 * z * z
             } else {
-                (rlr * os, sigma_os)
-            };
-            let z = (c.y - mean) / sigma;
-            out.push(-half_log_tau - sigma.ln() - 0.5 * z * z);
+                let z = (c.y - mean) / sigma;
+                -half_log_tau - sigma.ln() - 0.5 * z * z
+            });
         }
     }
 
-    /// Each origin's posterior mean `RLR_i RRF_i`; for an origin with no
-    /// data, `E[RLR RRF | draw] = m e^(s_RLR b_RLR + s_RRF b_RRF + v / 2)`
-    /// with `v` the variance of `s_RLR u_1 + s_RRF u_2`, averaged over the
-    /// draws.
+    /// With effects on the rates, the share of draws and observed cells
+    /// with `k_er <= k_p`.
+    fn cell_rate_swaps(&self, posterior: &PosteriorDraws) -> Option<f64> {
+        if !self.priors.rates_vary() {
+            return None;
+        }
+        let mut swaps = 0usize;
+        for nat in posterior.values().chunks_exact(posterior.dim()) {
+            swaps += self
+                .observed_parameters(nat)
+                .iter()
+                .filter(|th| th[KER] <= th[KP])
+                .count();
+        }
+        Some(swaps as f64 / (posterior.n_draws() * self.cells.len()) as f64)
+    }
+
+    /// Each origin's posterior mean `RLR_i RRF_i` (at a zero development
+    /// effect); for an origin with no data, `E[RLR RRF | draw] = m e^(s_RLR
+    /// b_RLR + s_RRF b_RRF + v / 2)` with `v` the variance of `s_RLR u_1 +
+    /// s_RRF u_2`, averaged over the draws.
     fn mean_ultimate_loss_ratios(&self, posterior: &PosteriorDraws) -> Vec<f64> {
+        let lay = &self.layout;
         let (m_rlr, s_rlr) = lognormal(self.priors.rlr);
         let (m_rrf, s_rrf) = lognormal(self.priors.rrf);
+        let (at_rlr, at_rrf) = (
+            lay.nat_origin[RLR].expect("RLR by origin"),
+            lay.nat_origin[RRF].expect("RRF by origin"),
+        );
         let n = self.premium.len();
         let mut sums = vec![0.0; n];
         for nat in posterior.values().chunks_exact(posterior.dim()) {
-            let b = self.nat_b0();
-            let (b_rlr, b_rrf, tau1, tau2, rho) =
-                (nat[b + 2], nat[b + 3], nat[b + 4], nat[b + 5], nat[b + 6]);
+            let b = lay.nat_b0;
+            let (b_rlr, b_rrf, tau1, tau2, rho) = (
+                nat[b + 2],
+                nat[b + 3],
+                nat[b + 4],
+                nat[b + 5],
+                nat[lay.nat_rho],
+            );
             for (i, sum) in sums.iter_mut().enumerate() {
                 *sum += match self.level[i] {
-                    Some(j) => nat[self.nat_rlr(j)] * nat[self.nat_rrf(j)],
+                    Some(j) => nat[at_rlr + j] * nat[at_rrf + j],
                     None => {
                         let (a, c) = (s_rlr * tau1, s_rrf * tau2);
                         let v = a * a + c * c + 2.0 * rho * a * c;
@@ -1731,12 +2629,13 @@ impl Model {
     }
 
     /// `theta` with the population values `(k_er, k_p, RLR, RRF)`, every `z`
-    /// and `atanh ρ` at 0, `log τ` at about the prior medians and the
+    /// and `atanh ρ` at 0, each `log τ` at about its prior median and the
     /// `log σ` at the log of each type's residual sd about the population
     /// curve.
     fn theta_at(&self, population: [f64; 4]) -> Option<Vec<f64>> {
         let [k_er, k_p, rlr, rrf] = population;
         let pr = &self.priors;
+        let lay = &self.layout;
         let o = |prior: PositivePrior, v: f64| {
             let (m, s) = lognormal(prior);
             (v / m).ln() / s
@@ -1755,6 +2654,16 @@ impl Model {
         theta[B_RRF] = o(pr.rrf, rrf);
         theta[LOG_TAU] = half_median(pr.rlr_effect_sd).ln();
         theta[LOG_TAU + 1] = half_median(pr.rrf_effect_sd).ln();
+        for (at, prior) in lay.tau_rate.iter().zip(pr.rate_effect_sd()) {
+            if let (Some(at), Some(prior)) = (at, prior) {
+                theta[*at] = half_median(prior).ln();
+            }
+        }
+        for (at, prior) in lay.tau_dev.iter().zip(pr.development_effect_sd) {
+            if let (Some(at), Some(prior)) = (at, prior) {
+                theta[*at] = half_median(prior).ln();
+            }
+        }
         let rms = self.residual_rms(population);
         let ls = self.log_sigma0();
         theta[ls] = rms[0].ln();
@@ -1764,23 +2673,23 @@ impl Model {
         (f.is_finite() && theta.iter().all(|v| v.is_finite())).then_some(theta)
     }
 
-    /// The root mean square residual of the outstanding and the paid cells
-    /// about the population curve, each at least `1e-6` of its cells' mean
-    /// absolute value.
-    fn residual_rms(&self, [k_er, k_p, rlr, rrf]: [f64; 4]) -> [f64; 2] {
+    /// The root mean square residual (on the likelihood's scale) of the
+    /// outstanding and the paid cells about the population curve, each at
+    /// least `1e-6` of its cells' mean absolute value (of 1 on the log
+    /// scale).
+    fn residual_rms(&self, population: [f64; 4]) -> [f64; 2] {
         let mut sum = [0.0; 2];
         let mut size = [0.0; 2];
         let mut count = [0.0; 2];
         for c in &self.cells {
-            let (os, pd) = one_os(k_er, k_p, c.t);
-            let base = self.premium[c.origin] * rlr;
-            let (mean, k) = if c.paid {
-                (base * rrf * pd, 1)
+            let k = usize::from(c.paid);
+            let r = self.residual(c, self.cell_mean(c, population));
+            sum[k] += r * r;
+            size[k] += if self.response.log_normal() {
+                1.0
             } else {
-                (base * os, 0)
+                c.y.abs()
             };
-            sum[k] += (c.y - mean) * (c.y - mean);
-            size[k] += c.y.abs();
             count[k] += 1.0;
         }
         [0, 1].map(|k| {
@@ -1789,13 +2698,14 @@ impl Model {
         })
     }
 
-    /// The data-based start: least squares of the population curve on the
-    /// log scale of `(k_er, k_p, RLR, RRF)`, each type weighted by the
-    /// inverse of its residual variance (twice, from the prior medians), then
-    /// the representative of the rate swap the priors prefer.
+    /// The data-based start: least squares of the population curve (on the
+    /// likelihood's scale) of `log (k_er, k_p, RLR, RRF)`, each type
+    /// weighted by the inverse of its residual variance (twice, from the
+    /// prior medians), then the representative of the rate swap the priors
+    /// prefer.
     fn data_start(&self) -> Option<Vec<f64>> {
         let pr = &self.priors;
-        let medians = [pr.k_er, pr.k_p, pr.rlr, pr.rrf].map(|p| lognormal(p).0);
+        let medians = pr.positive().map(|p| lognormal(p).0);
         let mut phi = medians.map(f64::ln).to_vec();
         for _ in 0..2 {
             let population = [0, 1, 2, 3].map(|j| phi[j].exp());
@@ -1823,7 +2733,7 @@ impl Model {
     /// raised to `1.1 k_p`.
     fn prior_centre_start(&self) -> Vec<f64> {
         let pr = &self.priors;
-        let [k_er, k_p, rlr, rrf] = [pr.k_er, pr.k_p, pr.rlr, pr.rrf].map(|p| lognormal(p).0);
+        let [k_er, k_p, rlr, rrf] = pr.positive().map(|p| lognormal(p).0);
         let k_er = if self.ordered {
             k_er.max(1.1 * k_p)
         } else {
@@ -1848,7 +2758,11 @@ impl Posterior for Model {
     }
 
     fn log_posterior(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
-        let f = gradient::<CHUNK>(theta, grad, |x| self.log_density(x));
+        let f = if self.cellwise {
+            self.cellwise_gradient(theta, grad)
+        } else {
+            gradient::<CHUNK>(theta, grad, |x| self.log_density(x))
+        };
         if f.is_finite() { f } else { f64::NAN }
     }
 }
@@ -1862,22 +2776,11 @@ struct LeastSquares<'a> {
 
 impl LeastSquares<'_> {
     fn value<S: Scalar>(&self, phi: &[S]) -> S {
-        let (k_er, k_p, rlr, rrf) = (phi[0].exp(), phi[1].exp(), phi[2].exp(), phi[3].exp());
-        let curves: Vec<(S, S)> = self.model.times[..self.model.n_observed]
-            .iter()
-            .map(|&t| one_os(k_er, k_p, t))
-            .collect();
+        let population = [phi[0].exp(), phi[1].exp(), phi[2].exp(), phi[3].exp()];
         let mut f = S::from_f64(0.0);
         for c in &self.model.cells {
-            let (os, pd) = curves[c.k];
-            let base = rlr * self.model.premium[c.origin];
-            let (mean, w) = if c.paid {
-                (base * rrf * pd, self.weight[1])
-            } else {
-                (base * os, self.weight[0])
-            };
-            let r = -mean + c.y;
-            f -= r * r * (0.5 * w);
+            let r = self.model.residual(c, self.model.cell_mean(c, population));
+            f -= r * r * (0.5 * self.weight[usize::from(c.paid)]);
         }
         f
     }
@@ -2005,35 +2908,72 @@ mod tests {
     }
 
     fn model(ordered: bool) -> Model {
-        let tri = triangle(true);
-        let data = Data::new(&tri, "paid", incurred(), "premium").unwrap();
-        Model::new(&data, CompartmentalPriors::gesmann_morris(), ordered)
+        model_with(
+            CompartmentalPriors::gesmann_morris(),
+            ordered,
+            Response::MODEL_1,
+        )
     }
 
-    /// Points around the paper's posterior: `theta` at the printed means
-    /// with a deterministic spread.
+    fn model_with(priors: CompartmentalPriors, ordered: bool, response: Response) -> Model {
+        let tri = triangle(true);
+        let data = Data::new(&tri, "paid", incurred(), "premium").unwrap();
+        Model::new(&data, priors, ordered, response).unwrap()
+    }
+
+    /// Gesmann and Morris' model 2 on the training triangle.
+    fn model_2(ordered: bool) -> Model {
+        model_with(
+            CompartmentalPriors::gesmann_morris_2(),
+            ordered,
+            Response::MODEL_2,
+        )
+    }
+
+    fn preset_2() -> Compartmental {
+        Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
+    }
+
+    /// Points around the paper's posterior (model 1's, or model 2's when
+    /// the model has effects by cell): `theta` at the printed means with a
+    /// deterministic spread.
     fn points(model: &Model) -> Vec<Vec<f64>> {
+        let two = model.cellwise;
         (0..20)
             .map(|k| {
                 let mut x = vec![0.0; model.dim()];
                 let wobble = |j: usize| 0.3 * ((7 * k + 3 * j) as f64).sin();
-                x[B_KER] = if model.ordered {
-                    0.2 + wobble(0)
-                } else {
-                    -5.4 + wobble(0)
+                x[B_KER] = match (model.ordered, two) {
+                    (true, _) => 0.2 + wobble(0),
+                    (false, false) => -5.4 + wobble(0),
+                    (false, true) => -1.31 + wobble(0),
                 };
-                x[B_KP] = -8.49 + wobble(1);
-                x[B_RLR] = 1.44 + wobble(2);
-                x[B_RRF] = -1.36 + wobble(3);
-                x[LOG_TAU] = 0.64f64.ln() + wobble(4);
-                x[LOG_TAU + 1] = 0.74f64.ln() + wobble(5);
-                x[ATANH_RHO] = 0.6 + wobble(6);
-                let ls = model.log_sigma0();
-                for (j, z) in x[Z0..ls].iter_mut().enumerate() {
-                    *z = 3.0 * wobble(7 + j);
+                let (b, tau, rho, ls) = if two {
+                    ([-5.07, 1.54, -1.45], [0.69, 0.73], 0.37, [-1.78, -1.89])
+                } else {
+                    ([-8.49, 1.44, -1.36], [0.64, 0.74], 0.6, [8.25, 6.66])
+                };
+                x[B_KP] = b[0] + wobble(1);
+                x[B_RLR] = b[1] + wobble(2);
+                x[B_RRF] = b[2] + wobble(3);
+                x[LOG_TAU] = tau[0].ln() + wobble(4);
+                x[LOG_TAU + 1] = tau[1].ln() + wobble(5);
+                x[ATANH_RHO] = rho + wobble(6);
+                let z0 = model.layout.z0;
+                // Model 2's other effect sds: 0.26, 2.23 by origin, then
+                // 0.27, 0.45, 0.35, 1.11 by development year (the printed
+                // m2fit).
+                let sds = [0.26f64, 2.23, 0.27, 0.45, 0.35, 1.11];
+                for (j, l) in x[ATANH_RHO + 1..z0].iter_mut().enumerate() {
+                    *l = sds[j].ln() + wobble(7 + j);
                 }
-                x[ls] = 8.25 + wobble(ls);
-                x[ls + 1] = 6.66 + wobble(ls + 1);
+                let ls0 = model.log_sigma0();
+                let spread = if two { 1.0 } else { 3.0 };
+                for (j, z) in x[z0..ls0].iter_mut().enumerate() {
+                    *z = spread * wobble(13 + j);
+                }
+                x[ls0] = ls[0] + wobble(ls0);
+                x[ls0 + 1] = ls[1] + wobble(ls0 + 1);
                 x
             })
             .collect()
@@ -2064,6 +3004,25 @@ mod tests {
             for x in points(&m) {
                 assert_gradient(|t, g| m.log_posterior(t, g), &x);
             }
+            // Model 2 (87 parameters): fewer points, for the debug build's
+            // time.
+            let m = model_2(ordered);
+            for x in points(&m).iter().step_by(4) {
+                assert_gradient(|t, g| m.log_posterior(t, g), x);
+            }
+        }
+        // Model 1's hierarchy with model 2's response (the fast path with
+        // increments on the log scale).
+        let m = model_with(
+            CompartmentalPriors::gesmann_morris(),
+            false,
+            Response::MODEL_2,
+        );
+        for x in points(&m).iter().step_by(4) {
+            let mut x = x.clone();
+            let ls = m.log_sigma0();
+            (x[ls], x[ls + 1]) = (-1.8, -1.9);
+            assert_gradient(|t, g| m.log_posterior(t, g), &x);
         }
     }
 
@@ -2084,12 +3043,12 @@ mod tests {
             + (1.0 - rho * rho).ln()
             + cauchy(x[ls])
             + cauchy(x[ls + 1]);
-        for z in &x[Z0..ls] {
+        for z in &x[m.layout.z0..ls] {
             f -= 0.5 * z * z;
         }
         for c in &m.cells {
             let j = m.level[c.origin].unwrap();
-            let (z1, z2) = (x[Z0 + 2 * j], x[Z0 + 2 * j + 1]);
+            let (z1, z2) = (x[m.layout.z0 + 2 * j], x[m.layout.z0 + 2 * j + 1]);
             let u1 = x[4].exp() * z1;
             let u2 = x[5].exp() * (rho * z1 + (1.0 - rho * rho).sqrt() * z2);
             let rlr = 0.7 * (0.2 * (x[2] + u1)).exp();
@@ -2145,7 +3104,7 @@ mod tests {
         assert!(start[B_KP] > -10.0 && start[B_KP] < -7.0, "{start:?}");
         assert!((start[ls] - 8.25).abs() < 1.5, "{start:?}");
         assert!((start[ls + 1] - 6.66).abs() < 2.5, "{start:?}");
-        assert!(start[Z0..ls].iter().all(|&z| z == 0.0));
+        assert!(start[m.layout.z0..ls].iter().all(|&z| z == 0.0));
         let centre = m.start(CompartmentalStart::PriorCentre);
         assert_eq!(&centre[..4], &[0.0; 4]);
         let ordered = model(true);
@@ -2350,27 +3309,6 @@ mod tests {
         let cases = [
             (
                 Compartmental {
-                    likelihood: CompartmentalLikelihood::LogNormal,
-                    ..preset()
-                },
-                "log-normal",
-            ),
-            (
-                Compartmental {
-                    scale: Scale::LossRatio,
-                    ..preset()
-                },
-                "loss-ratio",
-            ),
-            (
-                Compartmental {
-                    paid_response: PaidResponse::Incremental,
-                    ..preset()
-                },
-                "incremental",
-            ),
-            (
-                Compartmental {
                     fitted: Fitted::PaidAndIncurred,
                     ..preset()
                 },
@@ -2564,5 +3502,420 @@ mod tests {
             preset().prior_predictive(&tri, "premium", 0),
             Err(Error::InvalidSetting { name: "n_sims", .. })
         ));
+    }
+
+    #[test]
+    fn the_layout_of_model_2() {
+        let m = model_2(false);
+        // 4 intercepts, 8 sds, 1 correlation, 72 z and 2 log sigma.
+        assert_eq!(m.dim(), 87);
+        assert_eq!(m.sampled_names().len(), 87);
+        assert_eq!((m.n_levels(), m.n_dev_levels()), (9, 9));
+        assert_eq!(m.dev_level[9], None);
+        assert_eq!(m.layout.z0, 13);
+        assert_eq!(m.layout.z_rate, [Some(31), Some(40)]);
+        assert_eq!(m.layout.z_dev, [Some(49), Some(58), Some(67), Some(76)]);
+        assert_eq!(m.log_sigma0(), 85);
+        let names = m.names();
+        // 6 population values, 4 x 9 origin values, 4 x 9 development
+        // effects, 6 intercepts and sds, 2 rate sds, rho, 4 development
+        // sds and 2 log sigma.
+        assert_eq!(names.len(), 6 + 36 + 36 + 6 + 2 + 1 + 4 + 2);
+        assert_eq!(names[6], "RLR[1988]");
+        assert_eq!(names[24], "k_er[1988]");
+        assert_eq!(names[42], "dev_ker[12]");
+        assert_eq!(names[77], "dev_RRF[108]");
+        assert_eq!(
+            &names[82..],
+            [
+                "tau_RLR",
+                "tau_RRF",
+                "tau_ker",
+                "tau_kp",
+                "rho",
+                "tau_dev_ker",
+                "tau_dev_kp",
+                "tau_dev_RLR",
+                "tau_dev_RRF",
+                "log_sigma_os",
+                "log_sigma_pd"
+            ]
+        );
+        let nat = m.natural(&points(&m)[0]);
+        assert_eq!(nat.len(), names.len());
+        // Loss ratios, incremental paid.
+        let c = &m.cells;
+        assert!((c[0].y - (62679. - 9558.) / PREMIUM[0]).abs() < 1e-15);
+        assert!(c[45].paid && c[45].y == 9558. / PREMIUM[0] && c[45].t_before.is_none());
+        assert_eq!(c[46].y, (22778. - 9558.) / PREMIUM[0]);
+        assert_eq!((c[46].t_before, c[46].w), (Some(1.0), 1.0));
+        assert_eq!(c[46].ln_y, c[46].y.ln());
+        assert_eq!(
+            CompartmentalPriors::gesmann_morris_2().hierarchy(),
+            Hierarchy::Model2
+        );
+        let some = CompartmentalPriors {
+            kp_effect_sd: None,
+            ..CompartmentalPriors::gesmann_morris_2()
+        };
+        assert_eq!(some.hierarchy(), Hierarchy::Other);
+        let m = model_with(some, false, Response::MODEL_2);
+        assert_eq!(m.dim(), 87 - 1 - 9);
+    }
+
+    /// The log posterior written out in `f64` with the paper's form of the
+    /// closed form, for either preset's hierarchy and any response, at `x`
+    /// in the documented layout.
+    fn written_out(two: bool, response: Response, x: &[f64]) -> f64 {
+        let half_t = |l: f64, s: f64| l - 5.5 * ((l.exp() / s).powi(2) / 10.0).ln_1p();
+        let (n_tau, z0, ls) = if two { (6, 13, 85) } else { (0, 7, 25) };
+        let rho = x[6].tanh();
+        let mut f =
+            -0.5 * (x[0] * x[0] + x[1] * x[1] + x[2] * x[2] + x[3] * x[3]) + (1.0 - rho * rho).ln();
+        let scales = if two {
+            f += half_t(x[4], 0.7) + half_t(x[5], 0.5);
+            [0.3, 0.3, 0.3, 0.3, 0.7, 0.5]
+        } else {
+            f += half_t(x[4], 0.2) + half_t(x[5], 0.1);
+            [0.0; 6]
+        };
+        for j in 0..n_tau {
+            f += half_t(x[7 + j], scales[j]);
+        }
+        for z in &x[z0..ls] {
+            f -= 0.5 * z * z;
+        }
+        for l in [x[ls], x[ls + 1]] {
+            f += if two {
+                -0.5 * ((l - 0.2f64.ln()) / 0.2).powi(2)
+            } else {
+                -((l / 1000.0).powi(2)).ln_1p()
+            };
+        }
+        let tau = |j: usize| x[7 + j].exp();
+        let pd = |a: f64, b: f64, rlr: f64, rrf: f64, t: f64| {
+            rlr * rrf / (a - b) * (a * (1.0 - (-b * t).exp()) - b * (1.0 - (-a * t).exp()))
+        };
+        for (w, row) in PAID.iter().enumerate() {
+            for (d, &paid) in row.iter().enumerate() {
+                let (z1, z2) = (x[z0 + 2 * w], x[z0 + 2 * w + 1]);
+                let mut o = [
+                    x[0],
+                    x[1],
+                    x[2] + x[4].exp() * z1,
+                    x[3] + x[5].exp() * (rho * z1 + (1.0 - rho * rho).sqrt() * z2),
+                ];
+                if two {
+                    o[0] += tau(0) * x[31 + w];
+                    o[1] += tau(1) * x[40 + w];
+                    for (p, o) in o.iter_mut().enumerate() {
+                        *o += tau(2 + p) * x[49 + 9 * p + d];
+                    }
+                }
+                let (a, b) = (3.0 * (0.1 * o[0]).exp(), (0.1 * o[1]).exp());
+                let (rlr, rrf) = (0.7 * (0.2 * o[2]).exp(), 0.8 * (0.1 * o[3]).exp());
+                let t = (d + 1) as f64;
+                let os = rlr * a / (a - b) * ((-b * t).exp() - (-a * t).exp());
+                let (paid_y, paid_mean) = if response.incremental && d > 0 {
+                    (
+                        paid - row[d - 1],
+                        pd(a, b, rlr, rrf, t) - pd(a, b, rlr, rrf, t - 1.0),
+                    )
+                } else {
+                    (paid, pd(a, b, rlr, rrf, t))
+                };
+                let unit = if response.loss_ratio { 1.0 } else { PREMIUM[w] };
+                for (y, mean, l) in [
+                    (INCURRED[w][d] - paid, os, x[ls]),
+                    (paid_y, paid_mean, x[ls + 1]),
+                ] {
+                    let (y, mean) = (y / PREMIUM[w] * unit, mean * unit);
+                    let r = if response.log_normal() {
+                        (y.ln() - mean.ln()) / l.exp()
+                    } else {
+                        (y - mean) / l.exp()
+                    };
+                    f -= l + 0.5 * r * r;
+                }
+            }
+        }
+        f
+    }
+
+    #[test]
+    fn the_density_is_each_model_written_out() {
+        // Both presets' hierarchies with every response, at one point.
+        for two in [false, true] {
+            for likelihood in [
+                CompartmentalLikelihood::Normal,
+                CompartmentalLikelihood::LogNormal,
+            ] {
+                for loss_ratio in [false, true] {
+                    for incremental in [false, true] {
+                        let response = Response {
+                            likelihood,
+                            loss_ratio,
+                            incremental,
+                        };
+                        let priors = if two {
+                            CompartmentalPriors::gesmann_morris_2()
+                        } else {
+                            CompartmentalPriors::gesmann_morris()
+                        };
+                        let m = model_with(priors, false, response);
+                        let mut x = points(&m)[3].clone();
+                        let ls = m.log_sigma0();
+                        (x[ls], x[ls + 1]) = match (response.log_normal(), loss_ratio) {
+                            (true, _) => (-1.8, -1.9),
+                            (false, true) => (-3.0, -3.5),
+                            (false, false) => (8.25, 6.66),
+                        };
+                        let want = written_out(two, response, &x);
+                        let mut g = vec![0.0; m.dim()];
+                        let got = m.log_posterior(&x, &mut g);
+                        assert!(
+                            (got - want).abs() <= 1e-12 * want.abs(),
+                            "{two} {response:?}: {got} vs {want}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn responses_the_likelihood_cannot_take_are_errors() {
+        let origin: Vec<Month> = [0, 0, 1].map(|w| Month::january(2000 + w)).to_vec();
+        let tri = |ages: &[Lag], paid: &[f64], os: &[f64]| {
+            Triangle::from_long(&Long {
+                keys: &[],
+                origin: &origin,
+                development: DevelopmentColumn::Age(ages),
+                values: &[("paid", paid), ("os", os), ("premium", &[10.0; 3])],
+                origin_grain: Grain::Year,
+                development_grain: Grain::Year,
+                cumulative: true,
+            })
+            .unwrap()
+        };
+        let err = |m: &Compartmental, t: &Triangle| {
+            m.fit(t, "paid", Outstanding::Column("os"), "premium")
+                .unwrap_err()
+                .to_string()
+        };
+        // A zero outstanding, and a paid that does not grow: no log.
+        let zero_os = tri(&[12, 24, 12], &[1.0, 2.0, 1.0], &[3.0, 0.0, 2.0]);
+        let e = err(&preset_2(), &zero_os);
+        assert!(
+            e.contains("2000") && e.contains("24 months") && e.contains("outstanding 0"),
+            "{e}"
+        );
+        let flat = tri(&[12, 24, 12], &[1.0, 1.0, 1.0], &[3.0, 2.0, 2.0]);
+        let e = err(&preset_2(), &flat);
+        assert!(
+            e.contains("incremental paid 0") && e.contains("positive"),
+            "{e}"
+        );
+        // Incremental paid with no paid at the age before.
+        let gap = tri(&[12, 36, 12], &[1.0, 2.0, 1.0], &[3.0, 2.0, 2.0]);
+        let normal = Compartmental {
+            paid_response: PaidResponse::Incremental,
+            ..preset()
+        };
+        let e = err(&normal, &gap);
+        assert!(
+            e.contains("36 months") && e.contains("none at 24 months"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn model_2_fits_and_predicts_increments() {
+        let tri = triangle(true);
+        let fit = Compartmental {
+            sampler: Sampler {
+                chains: 2,
+                tune: 60,
+                draws: 60,
+                target_accept: 0.9,
+                ..preset_2().sampler
+            },
+            n_sims: 200,
+            seed: 6,
+            ..preset_2()
+        }
+        .fit(&tri, "paid", incurred(), "premium")
+        .unwrap();
+        assert_eq!(fit.population_origins, [Period::year(1997)]);
+        assert_eq!(fit.posterior.dim(), 93);
+        assert!(fit.posterior.names().iter().any(|n| n == "tau_dev_RRF"));
+        let share = fit.cell_rate_swaps.unwrap();
+        assert!((0.0..=1.0).contains(&share), "{share}");
+        assert_eq!(fit.loo().unwrap().loo.pareto_k.len(), 90);
+        assert_eq!(fit.reserves.provenance().model, "compartmental_gm2");
+        // Log-normal increments are positive, so each simulation's paid
+        // grows with age from the latest paid, and the reserve is the paid
+        // at age 10 less the latest.
+        let keys = fit.paid.components();
+        let n = keys.len();
+        for (row, reserves) in fit
+            .paid
+            .draw_matrix()
+            .chunks_exact(n)
+            .zip(fit.reserves.draw_matrix().chunks_exact(10))
+        {
+            for j in 0..n {
+                let (KeyValue::Period(o), KeyValue::Int(age)) = (&keys[j][0], &keys[j][1]) else {
+                    unreachable!("cell keys are (origin, age)")
+                };
+                let i = fit.origins.iter().position(|p| p == o).unwrap();
+                let before = if j > 0 && keys[j - 1][0] == keys[j][0] {
+                    row[j - 1]
+                } else {
+                    fit.latest_paid[i]
+                };
+                assert!(row[j] > before, "{o} {age}: {} after {before}", row[j]);
+                if *age == 120 {
+                    assert!((row[j] - fit.latest_paid[i] - reserves[i]).abs() < 1e-9 * row[j]);
+                }
+            }
+        }
+        assert!(
+            fit.ultimate_loss_ratio
+                .iter()
+                .all(|v| v.is_finite() && *v > 0.0)
+        );
+    }
+
+    #[test]
+    fn the_prior_predictive_paths_of_model_2() {
+        let tri = triangle(true);
+        let paths = preset_2().prior_predictive(&tri, "premium", 500).unwrap();
+        assert_eq!(paths.paid.n_components(), 100);
+        // The increments are positive, so cumulative paid grows with age in
+        // every draw.
+        let draws = paths.paid.draw_matrix();
+        for row in draws.chunks_exact(100) {
+            for i in 0..10 {
+                for k in 1..10 {
+                    assert!(row[10 * i + k] > row[10 * i + k - 1]);
+                }
+            }
+        }
+        let os = paths.outstanding.draw_matrix();
+        assert!(os.iter().all(|v| v.is_finite() && *v > 0.0));
+        let again = preset_2().prior_predictive(&tri, "premium", 500).unwrap();
+        assert_eq!(draws, again.paid.draw_matrix());
+        // The provenance records the paid response and the priors.
+        let param = |pd: &PredictiveDistribution, key: &str| {
+            pd.provenance()
+                .parameters
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        let cumulative = Compartmental {
+            paid_response: PaidResponse::Cumulative,
+            ..preset_2()
+        }
+        .prior_predictive(&tri, "premium", 10)
+        .unwrap();
+        assert_ne!(
+            param(&paths.paid, "paid_response"),
+            param(&cumulative.paid, "paid_response")
+        );
+        let model_1 = preset().prior_predictive(&tri, "premium", 10).unwrap();
+        assert_ne!(
+            param(&paths.outstanding, "priors"),
+            param(&model_1.outstanding, "priors")
+        );
+    }
+
+    #[test]
+    fn the_cellwise_gradient_is_the_generic_densitys() {
+        // The per-cell gradient against the chunked dual pass over the
+        // generic density (the oracle), at 20 points around model 2's
+        // posterior: both rate orders, a partial hierarchy, and amounts with
+        // the normal likelihood.
+        let partial = CompartmentalPriors {
+            ker_effect_sd: None,
+            development_effect_sd: [None, Some(HalfPrior::Normal { scale: 0.3 }), None, None],
+            ..CompartmentalPriors::gesmann_morris_2()
+        };
+        let models = [
+            model_2(false),
+            model_2(true),
+            model_with(partial, false, Response::MODEL_2),
+            model_with(
+                CompartmentalPriors::gesmann_morris_2(),
+                false,
+                Response::MODEL_1,
+            ),
+        ];
+        let (mut worst_value, mut worst_grad): (f64, f64) = (0.0, 0.0);
+        for (n, m) in models.iter().enumerate() {
+            assert!(m.cellwise);
+            for mut x in points(m) {
+                if n == 3 {
+                    let ls = m.log_sigma0();
+                    (x[ls], x[ls + 1]) = (8.25, 6.66);
+                }
+                let mut want = vec![0.0; m.dim()];
+                let f = gradient::<CHUNK>(&x, &mut want, |t| m.log_density(t));
+                let mut got = vec![0.0; m.dim()];
+                let g = m.cellwise_gradient(&x, &mut got);
+                let scale = want.iter().fold(0.0f64, |a, v| a.max(v.abs()));
+                worst_value = worst_value.max((g - f).abs() / f.abs());
+                for (a, b) in got.iter().zip(&want) {
+                    worst_grad = worst_grad.max((a - b).abs() / scale);
+                }
+            }
+        }
+        println!("cellwise gradient: value {worst_value:.1e}, gradient {worst_grad:.1e}");
+        assert!(worst_value <= 1e-12 && worst_grad <= 1e-12);
+    }
+
+    /// The cost of model 2's log posterior on the paper's training triangle
+    /// (87 parameters), release build: median time of the value and of the
+    /// value with its gradient.
+    #[test]
+    #[ignore = "a release benchmark; run with --release --ignored --nocapture"]
+    fn model_2_gradient_benchmark() {
+        let median = |f: &mut dyn FnMut()| {
+            let mut times: Vec<f64> = (0..41)
+                .map(|_| {
+                    let start = std::time::Instant::now();
+                    for _ in 0..200 {
+                        f();
+                    }
+                    start.elapsed().as_secs_f64() / 200.0 * 1e6
+                })
+                .collect();
+            times.sort_by(f64::total_cmp);
+            times[20]
+        };
+        for (label, m) in [("model 1", model(false)), ("model 2", model_2(false))] {
+            let x = points(&m)[0].clone();
+            let mut g = vec![0.0; m.dim()];
+            let value = median(&mut || {
+                std::hint::black_box(m.log_density::<f64>(std::hint::black_box(&x)));
+            });
+            let chunked = median(&mut || {
+                std::hint::black_box(gradient::<CHUNK>(std::hint::black_box(&x), &mut g, |t| {
+                    m.log_density(t)
+                }));
+            });
+            let grad = median(&mut || {
+                std::hint::black_box(m.log_posterior(std::hint::black_box(&x), &mut g));
+            });
+            println!(
+                "{label}, p = {}: value {value:.2} us, chunked dual gradient {chunked:.2} us \
+                 ({:.1}x), the sampler's gradient {grad:.2} us ({:.1}x)",
+                m.dim(),
+                chunked / value,
+                grad / value
+            );
+        }
     }
 }

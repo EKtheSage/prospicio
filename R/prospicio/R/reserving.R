@@ -3604,15 +3604,32 @@ S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape
 #' (Gesmann and Morris 2020, model 1): `k_er` (3, 0.1), `k_p` (1, 0.1),
 #' `rlr` (0.7, 0.2), `rrf` (0.8, 0.1), half Student-t(10) effect sds with
 #' scales 0.2 and 0.1, LKJ(1), and Student-t(1, 0, 1000) on each
-#' `log sigma` (effectively flat). On company 337 the data pull the rates 5
-#' to 9 prior sds from these medians: the posterior is a compromise with
-#' the preset, not a description of it. Check any set with
+#' `log sigma` (effectively flat), with no effect on the rates and no
+#' development effect. On company 337 the data pull the rates 5 to 9 prior
+#' sds from these medians: the posterior is a compromise with the preset,
+#' not a description of it. Check any set with
 #' [compartmental_prior_predictive()] before fitting.
+#'
+#' `gesmann_morris_2_priors()` is the paper's model 2, from its code (sec.
+#' 7.2.3, where it and the text disagree): model 1's rate and ratio priors;
+#' origin effects on all four parameters (`RLR` and `RRF` correlated,
+#' LKJ(1)) and development-year effects on all four, every effect sd half
+#' Student-t(10) on the `o` scale with one scale per parameter, shared by
+#' its two groups: 0.3 for `k_er` and `k_p`, 0.7 for `rlr` and 0.5 for
+#' `rrf`; and `normal(log 0.2, 0.2)` on each `log sigma` (the text gives a
+#' median of 0.1). Use it with [compartmental_model_2()].
 #'
 #' Each positive parameter `theta` (`k_er`, `k_p`, `rlr`, `rrf`) is
 #' `median * exp(sd * o)` with `o ~ N(0, 1)`: a log-normal prior with that
-#' median and log-scale sd. The origin effects on `RLR` and `RRF` live on
-#' that `o` scale.
+#' median and log-scale sd. The effects live on that `o` scale.
+#'
+#' The hierarchy follows from the priors. `RLR` and `RRF` always vary by
+#' origin, with correlated effects. `ker_effect_sd` and `kp_effect_sd` add
+#' origin effects on the rates, uncorrelated with the others, and
+#' `development_effect_sd` adds development-year effects on any of the four
+#' parameters; `NULL` (model 1) means no such effect. A development age
+#' with no observed cell takes a new effect from the population in each
+#' simulation, as an origin with no cell does.
 #'
 #' Errors: if a prior has the wrong form or a log-normal median or sd is
 #' not finite and positive. The other settings are checked by the fit.
@@ -3631,6 +3648,13 @@ S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape
 #'   `log sigma_pd` in that order, each
 #'   `list(family = "student_t", nu = , location = , scale = )` or
 #'   `list(family = "normal", mean = , sd = )`.
+#' @param ker_effect_sd,kp_effect_sd Priors on the sds of origin effects on
+#'   `k_er` and `k_p`, in the form of `rlr_effect_sd`; `NULL`: no such
+#'   effect.
+#' @param development_effect_sd Priors on the sds of development-year
+#'   effects: a named list with any of `k_er`, `k_p`, `rlr` and `rrf`, each
+#'   in the form of `rlr_effect_sd` (a parameter left out has no
+#'   development effect); `NULL`: no development effect.
 #' @returns A `compartmental_priors` list.
 #' @seealso [compartmental()], [compartmental_prior_predictive()].
 #' @export
@@ -3643,8 +3667,13 @@ S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape
 #'                           rrf_effect_sd = list(family = "normal", scale = 0.2),
 #'                           lkj_eta = 2, log_sigma = p$log_sigma)
 #' q$rrf_effect_sd
+#' # Model 2's priors: effects on the rates and by development year too.
+#' p2 <- gesmann_morris_2_priors()
+#' p2$kp_effect_sd
+#' p2$development_effect_sd$rlr
 compartmental_priors <- function(k_er, k_p, rlr, rrf, rlr_effect_sd, rrf_effect_sd, lkj_eta,
-                                 log_sigma) {
+                                 log_sigma, ker_effect_sd = NULL, kp_effect_sd = NULL,
+                                 development_effect_sd = NULL) {
   positive <- function(x, arg) {
     if (!is.numeric(x) || length(x) != 2 || anyNA(x) || any(!is.finite(x)) || any(x <= 0)) {
       stop(sprintf("%s must be c(median = , sd = ), both finite and positive", arg), call. = FALSE)
@@ -3675,6 +3704,23 @@ compartmental_priors <- function(k_er, k_p, rlr, rrf, rlr_effect_sd, rrf_effect_
   if (!is.list(log_sigma) || length(log_sigma) != 2) {
     stop("log_sigma must be a list of two priors: log sigma_os, then log sigma_pd", call. = FALSE)
   }
+  optional <- function(x, arg) if (is.null(x)) NULL else family_of(x, arg, half)
+  dev_names <- c("k_er", "k_p", "rlr", "rrf")
+  dev <- NULL
+  if (!is.null(development_effect_sd)) {
+    if (!is.list(development_effect_sd) || !length(development_effect_sd) ||
+        is.null(names(development_effect_sd)) ||
+        any(!names(development_effect_sd) %in% dev_names) ||
+        anyDuplicated(names(development_effect_sd))) {
+      stop(paste0("development_effect_sd must be NULL or a named list with any of k_er, k_p, ",
+                  "rlr and rrf, each a half prior"), call. = FALSE)
+    }
+    dev <- lapply(stats::setNames(dev_names, dev_names), function(n) {
+      optional(development_effect_sd[[n]], paste0("development_effect_sd$", n))
+    })
+    dev <- dev[!vapply(dev, is.null, TRUE)]
+    if (!length(dev)) dev <- NULL
+  }
   structure(list(
     k_er = positive(k_er, "k_er"), k_p = positive(k_p, "k_p"), rlr = positive(rlr, "rlr"),
     rrf = positive(rrf, "rrf"),
@@ -3682,7 +3728,10 @@ compartmental_priors <- function(k_er, k_p, rlr, rrf, rlr_effect_sd, rrf_effect_
     rrf_effect_sd = family_of(rrf_effect_sd, "rrf_effect_sd", half),
     lkj_eta = single_number(lkj_eta, "lkj_eta"),
     log_sigma = list(family_of(log_sigma[[1]], "log_sigma[[1]]", real),
-                     family_of(log_sigma[[2]], "log_sigma[[2]]", real))
+                     family_of(log_sigma[[2]], "log_sigma[[2]]", real)),
+    ker_effect_sd = optional(ker_effect_sd, "ker_effect_sd"),
+    kp_effect_sd = optional(kp_effect_sd, "kp_effect_sd"),
+    development_effect_sd = dev
   ), class = "compartmental_priors")
 }
 
@@ -3698,7 +3747,22 @@ gesmann_morris_priors <- function() {
     lkj_eta = 1, log_sigma = list(cauchy, cauchy))
 }
 
-# The priors as the Rust side reads them: 19 numbers and 4 family names.
+#' @rdname compartmental_priors
+#' @export
+gesmann_morris_2_priors <- function() {
+  half <- function(scale) list(family = "student_t", nu = 10, scale = scale)
+  log_sigma <- list(family = "normal", mean = log(0.2), sd = 0.2)
+  compartmental_priors(
+    k_er = c(median = 3, sd = 0.1), k_p = c(median = 1, sd = 0.1),
+    rlr = c(median = 0.7, sd = 0.2), rrf = c(median = 0.8, sd = 0.1),
+    rlr_effect_sd = half(0.7), rrf_effect_sd = half(0.5), lkj_eta = 1,
+    log_sigma = list(log_sigma, log_sigma), ker_effect_sd = half(0.3),
+    kp_effect_sd = half(0.3),
+    development_effect_sd = list(k_er = half(0.3), k_p = half(0.3), rlr = half(0.7),
+                                 rrf = half(0.5)))
+}
+
+# The priors as the Rust side reads them: 31 numbers and 10 family names.
 compartmental_prior_values <- function(priors, call) {
   if (!inherits(priors, "compartmental_priors")) {
     stop(errorCondition(paste0(
@@ -3709,19 +3773,26 @@ compartmental_prior_values <- function(priors, call) {
   real <- function(r) {
     if (r$family == "student_t") c(r$nu, r$location, r$scale) else c(r$mean, r$sd, NaN)
   }
+  optional <- list(priors$ker_effect_sd, priors$kp_effect_sd,
+                   priors$development_effect_sd$k_er, priors$development_effect_sd$k_p,
+                   priors$development_effect_sd$rlr, priors$development_effect_sd$rrf)
   list(
     values = as.double(c(priors$k_er, priors$k_p, priors$rlr, priors$rrf,
                          half(priors$rlr_effect_sd), half(priors$rrf_effect_sd), priors$lkj_eta,
-                         real(priors$log_sigma[[1]]), real(priors$log_sigma[[2]]))),
+                         real(priors$log_sigma[[1]]), real(priors$log_sigma[[2]]),
+                         unlist(lapply(optional, function(h) {
+                           if (is.null(h)) c(NaN, NaN) else half(h)
+                         })))),
     families = c(priors$rlr_effect_sd$family, priors$rrf_effect_sd$family,
-                 priors$log_sigma[[1]]$family, priors$log_sigma[[2]]$family))
+                 priors$log_sigma[[1]]$family, priors$log_sigma[[2]]$family,
+                 vapply(optional, function(h) if (is.null(h)) "none" else h$family, "")))
 }
 
 #' Gesmann and Morris' compartmental model
 #'
 #' Gesmann and Morris' (2020) hierarchical compartmental reserving model
-#' with one outstanding compartment, their model 1, fitted to paid and
-#' outstanding jointly with NUTS. Claims flow from exposure into outstanding
+#' with one outstanding compartment, their models 1 and 2, fitted to paid
+#' and outstanding jointly with NUTS. Claims flow from exposure into outstanding
 #' as they are reported, at rate `k_er`, and from outstanding into paid as
 #' they settle, at rate `k_p`. For origin `i` with premium `P_i` and
 #' development time `t` in years, with
@@ -3729,21 +3800,37 @@ compartmental_prior_values <- function(priors, call) {
 #' `OS_i(t) = P_i RLR_i k_er g(t)` and
 #' `PD_i(t) = P_i RLR_i RRF_i [(1 - exp(-k_p t)) - k_p g(t)]`, so `RLR_i` is
 #' the reported loss ratio, `RRF_i` the reserve robustness factor (paid over
-#' reported) and `RLR_i RRF_i` the ultimate loss ratio. The rates are
-#' shared; `RLR` and `RRF` vary by origin with correlated effects (LKJ
-#' prior on the correlation) on the priors' `o` scale. Outstanding and
-#' cumulative paid amounts are normal about these curves, each type with
-#' its own sigma. NUTS samples on a pilot run's dense scale, with the
-#' gradient from dual numbers (`docs/design/reserving-compartmental.md`).
+#' reported) and `RLR_i RRF_i` the ultimate loss ratio. `RLR` and `RRF`
+#' vary by origin with correlated effects (LKJ prior on the correlation) on
+#' the priors' `o` scale; the priors can add origin effects on the rates
+#' and development-year effects on any of the four
+#' ([compartmental_priors()]), each cell then taking its own parameters.
+#' NUTS samples on a pilot run's dense scale, with the gradient from dual
+#' numbers (`docs/design/reserving-compartmental.md`).
 #'
-#' `priors` is required ([gesmann_morris_priors()] is the paper's case
-#' study). `likelihood`, `scale`, `paid_response` and `fitted` take the
-#' values of model 1 by default; their other values are accepted but the
-#' fit stops with an error saying they are not yet built.
+#' Model 1 (the defaults) has normal outstanding and cumulative paid
+#' amounts about these curves, each type with its own sigma. Model 2
+#' (`compartmental_model_2()`, with [gesmann_morris_2_priors()]) has
+#' log-normal outstanding and incremental paid loss ratios to premium;
+#' every combination of `likelihood`, `scale` and `paid_response` is
+#' built. Under `likelihood = "lognormal"` every response must be
+#' positive, and under `paid_response = "incremental"` each paid cell needs
+#' the paid at the age before; the fit stops with an error naming the cell
+#' otherwise. `fitted` other than `"paid_and_outstanding"` is accepted, but
+#' the fit stops with an error saying it is not yet built.
+#'
+#' `compartmental_model_2()` is `compartmental()` with model 2's
+#' likelihood, scale and paid response, and a longer, finer sampler: four
+#' chains of 2,000 warm-up and 8,000 kept draws with target acceptance
+#' 0.999. With 87 parameters, effect sds whose posteriors pile up near 0
+#' and a slowly mixing `k_p`, model 1's sampler left divergent transitions
+#' or an R-hat above 1.01 on most seeds; this one passes every threshold
+#' on 195 of 200 seeds on company 337. A fit takes about a minute.
 #'
 #' An origin with a premium and no observed cell (the papers' training
 #' triangle has one) draws its effects from the population in each
-#' simulation. The reserve is the paid at the square's last age less the
+#' simulation, and so does a development age with no observed cell. The
+#' reserve is the paid at the square's last age less the
 #' latest paid; the square has as many ages as the premium column has
 #' origins, and the origin and development grains must be equal. One `seed`
 #' replays a fit exactly: the chains and the simulations each take a seed
@@ -3752,14 +3839,19 @@ compartmental_prior_values <- function(priors, call) {
 #' The means are exactly invariant under swapping the two rates (with `RLR`
 #' and `RRF` rescaled), so only the priors tell the two modes apart. Under
 #' `rate_order = "free"` (the paper's priors) the fit warns when any
-#' posterior draw has `k_er <= k_p`; `rate_order = "ordered"` samples
-#' `k_er = k_p + exp(delta)`, the same priors restricted to `k_er > k_p`.
+#' posterior draw has population rates with `k_er <= k_p`;
+#' `rate_order = "ordered"` samples `k_er = k_p + exp(delta)`, the same
+#' priors restricted to `k_er > k_p`. With effects on the rates, the fit's
+#' `cell_rate_swaps` is the share of draws and observed cells with
+#' `k_er <= k_p` (`NA` when the rates are shared).
 #'
 #' Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
 #' per chain, any divergent transition) and rate swaps do not fail the fit:
 #' `compartmental()` raises one [warning()] listing them, and they stay in
 #' the fit's `diagnostics`. With the defaults, 194 of 200 seeds on company
-#' 337 passed every threshold; each of the other six just missed one.
+#' 337 passed every threshold for model 1, and with
+#' `compartmental_model_2()`'s sampler 195 of 200 for model 2; each of the
+#' others just missed one.
 #'
 #' Properties of the fit: `origins` (those of the premium column),
 #' `premium`, `latest_paid` (0 for an origin with none),
@@ -3768,21 +3860,30 @@ compartmental_prior_values <- function(priors, call) {
 #' [odp_bootstrap()]'s), `paid` and `outstanding` (the future cells of the
 #' square, dimensions `origin` and `age` in months, from the same
 #' simulations), `ultimate_loss_ratio` (each origin's posterior mean
-#' `RLR_i RRF_i`), `rate_swaps`, `diagnostics`, `summary` (also
-#' `summary(fit)`), `draws` (a matrix of the posterior draws of `k_er`,
-#' `k_p`, `RLR`, `RRF`, `sigma_os`, `sigma_pd`, `RLR[o]` and `RRF[o]` for
-#' each origin with an observed cell, then `b_ker`, `b_kp`, `b_RLR`,
-#' `b_RRF`, `tau_RLR`, `tau_RRF`, `rho`, `log_sigma_os` and
-#' `log_sigma_pd`), and `paid_table` and `outstanding_table` (one row per
+#' `RLR_i RRF_i`), `rate_swaps`, `cell_rate_swaps`, `diagnostics`,
+#' `summary` (also `summary(fit)`), `draws` (a matrix of the posterior
+#' draws: on the natural scale `k_er`, `k_p`, `RLR`, `RRF` (population
+#' values, at a zero effect), `sigma_os`, `sigma_pd`, `RLR[o]` and
+#' `RRF[o]` for each origin `o` with an observed cell, with origin effects
+#' on the rates `k_er[o]` and `k_p[o]` too, and with development effects
+#' `dev_ker[a]`, `dev_kp[a]`, `dev_RLR[a]` and `dev_RRF[a]` for each
+#' development age `a` (months) with an observed cell, on the `o` scale;
+#' then `b_ker`, `b_kp`, `b_RLR`, `b_RRF`, `tau_RLR`, `tau_RRF` (and
+#' `tau_ker`, `tau_kp`), `rho` (and `tau_dev_ker`, `tau_dev_kp`,
+#' `tau_dev_RLR`, `tau_dev_RRF`), `log_sigma_os` and `log_sigma_pd`, a name
+#' in parentheses only when the priors have that effect), and `paid_table` and `outstanding_table` (one row per
 #' future cell: `origin`, `development`, `mean`, `std_dev`, `q05`, `q50`
 #' and `q95`). `as.data.frame()` has one row per origin with the `premium`,
 #' `latest_paid`, the `mean` and `std_dev` of the posterior predictive
 #' reserve and the `ultimate_loss_ratio`; [totals_frame()] has the totals.
 #' [bayes_loo()] gives the PSIS-LOO of the observed cells, outstanding
-#' first, with the full normal log density of each amount (brms'
-#' `log_lik`), plus `n_outstanding`, `elpd_outstanding` and `elpd_paid`.
+#' first, with the full log density of each response, normal or log-normal
+#' (with its `-log y` term), as brms' `log_lik`, on the response's scale
+#' (compare it only with fits of the same responses), plus `n_outstanding`, `elpd_outstanding` and `elpd_paid`.
 #'
-#' Errors: if a setting is not yet built; if not exactly one of
+#' Errors: if `fitted` is not yet built; if a response is not positive
+#' under the log-normal, or a paid cell has no paid at the age before
+#' under incremental paid; if not exactly one of
 #' `outstanding` and `incurred` is given; if a column is missing, the
 #' triangle has several segments, a premium is missing or not positive, or
 #' the origin and development grains differ; if a prior or sampler setting
@@ -3798,11 +3899,12 @@ compartmental_prior_values <- function(priors, call) {
 #'   incurred less paid, cell by cell (the papers' outstanding on company
 #'   337 is incurred with bulk and IBNR less paid). Give exactly one of
 #'   `outstanding` and `incurred`.
-#' @param likelihood `"normal"` (model 1); `"lognormal"` is not yet built.
-#' @param scale `"amount"` (model 1); `"loss_ratio"` is not yet built.
-#' @param paid_response `"cumulative"` (model 1); `"incremental"` is not
-#'   yet built.
-#' @param fitted `"paid_and_outstanding"` (model 1); `"paid_and_incurred"`,
+#' @param likelihood `"normal"` (model 1) or `"lognormal"` (model 2).
+#' @param scale The response scale: `"amount"` (model 1) or `"loss_ratio"`,
+#'   amounts over the origin's premium (model 2).
+#' @param paid_response `"cumulative"` (model 1) or `"incremental"` (model
+#'   2).
+#' @param fitted `"paid_and_outstanding"`; `"paid_and_incurred"`,
 #'   `"paid_only"` and `"incurred_only"` are not yet built.
 #' @param rate_order `"free"` or `"ordered"`, as above.
 #' @param start Where the pilot run starts: `"data"`, a least-squares fit
@@ -3840,6 +3942,15 @@ compartmental_prior_values <- function(priors, call) {
 #'                                       draws = 150, target_accept = 0.9, n_sims = 1000))
 #' head(fit@summary)
 #' as.data.frame(fit)
+#' # Model 2, with short chains for the example (the defaults take about a
+#' # minute on company 337).
+#' fit2 <- suppressWarnings(compartmental_model_2(tri, "paid", "premium",
+#'                                                gesmann_morris_2_priors(),
+#'                                                incurred = "incurred", chains = 2,
+#'                                                tune = 150, draws = 150,
+#'                                                target_accept = 0.9, n_sims = 1000))
+#' fit2@cell_rate_swaps
+#' as.data.frame(fit2)
 compartmental_fit <- S7::new_class(
   "compartmental_fit",
   package = "prospicio",
@@ -3861,6 +3972,9 @@ compartmental_fit <- S7::new_class(
     }),
     rate_swaps = S7::new_property(S7::class_integer, getter = function(self) {
       as.integer(self@ptr$rate_swaps())
+    }),
+    cell_rate_swaps = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$cell_rate_swaps()
     }),
     diagnostics = S7::new_property(S7::class_list, getter = function(self) {
       self@ptr$diagnostics()
@@ -3943,6 +4057,25 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
   fit
 }
 
+#' @rdname compartmental_fit
+#' @export
+compartmental_model_2 <- function(triangle, paid, premium, priors, outstanding = NULL,
+                                  incurred = NULL, rate_order = c("free", "ordered"),
+                                  start = c("data", "prior_centre"), chains = 4, tune = 2000,
+                                  draws = 8000, n_sims = 10000, seed = 0, target_accept = 0.999,
+                                  max_depth = 10) {
+  if (missing(priors)) {
+    stop(paste0("priors are required: use gesmann_morris_2_priors() for the paper's model 2, ",
+                "or compartmental_priors(), and check them with compartmental_prior_predictive()"),
+         call. = FALSE)
+  }
+  compartmental(triangle, paid, premium, priors, outstanding = outstanding, incurred = incurred,
+                likelihood = "lognormal", scale = "loss_ratio", paid_response = "incremental",
+                rate_order = match.arg(rate_order), start = match.arg(start), chains = chains,
+                tune = tune, draws = draws, n_sims = n_sims, seed = seed,
+                target_accept = target_accept, max_depth = max_depth)
+}
+
 #' Prior predictive check of the compartmental model
 #'
 #' Paths of the mean outstanding and cumulative paid of each origin of the
@@ -3951,9 +4084,12 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
 #' [compartmental()] fits it. Each simulation draws the intercepts, the
 #' effect sds, the correlation and each origin's effects. The paths are
 #' means, without the likelihood's noise, which under the preset's
-#' effectively flat prior on `log sigma` would swamp them. Under
-#' `rate_order = "ordered"` the rates are drawn from their priors restricted
-#' to `k_er > k_p`. The seed is derived from `seed`, as the fit's
+#' effectively flat prior on `log sigma` would swamp them. With
+#' development effects in the priors, each simulation also draws each age's
+#' effects (shared by the origins), and with effects by cell and
+#' `paid_response = "incremental"` the cumulative paid path is the sum of
+#' the cells' mean increments. Under `rate_order = "ordered"` the rates are
+#' drawn from their priors restricted to `k_er > k_p`. The seed is derived from `seed`, as the fit's
 #' simulations' is.
 #'
 #' Errors: if a prior setting is invalid, `n_sims` is 0, the premium column
@@ -3961,9 +4097,12 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
 #'
 #' @inheritParams compartmental_fit
 #' @param n_sims Number of paths; positive.
+#' @param paid_response `"cumulative"` or `"incremental"`, as in the fit to
+#'   be checked; it matters only with effects by cell.
 #' @returns A list of two [predictive_distribution]s, `outstanding` and
 #'   `paid`, each with dimensions `origin` and `age` (months).
-#' @seealso [compartmental()], [gesmann_morris_priors()].
+#' @seealso [compartmental()], [gesmann_morris_priors()],
+#'   [gesmann_morris_2_priors()].
 #' @export
 #' @examples
 #' long <- data.frame(year = rep(1988:1990, 3:1), age = c(12, 24, 36, 12, 24, 12),
@@ -3975,7 +4114,8 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
 #' quantile(marginal(paths$paid, list(origin = "1988", age = 36)), c(0.05, 0.5, 0.95)) / 104.4
 compartmental_prior_predictive <- function(triangle, premium, priors,
                                            rate_order = c("free", "ordered"), n_sims = 1000,
-                                           seed = 0) {
+                                           seed = 0,
+                                           paid_response = c("cumulative", "incremental")) {
   call <- sys.call()
   check_triangle(triangle)
   if (!is.character(premium) || length(premium) != 1 || is.na(premium)) {
@@ -3986,8 +4126,8 @@ compartmental_prior_predictive <- function(triangle, premium, priors,
          call. = FALSE)
   }
   p <- compartmental_prior_values(priors, call)
-  settings <- c("normal", "amount", "cumulative", "paid_and_outstanding", match.arg(rate_order),
-                "data")
+  settings <- c("normal", "amount", match.arg(paid_response), "paid_and_outstanding",
+                match.arg(rate_order), "data")
   out <- rust_result(triangle@ptr$compartmental_prior_predictive(
     premium, p$values, p$families, settings,
     compartmental_run(4, 1000, 2000, n_sims, seed, 0.99, 10)), call = call)
