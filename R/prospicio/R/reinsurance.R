@@ -541,7 +541,8 @@ tower_ceded <- function(tower, losses) {
 #'   flat or sliding commission and `("profit_commission", <layer name>)` per
 #'   layer with a profit commission. `aggregate(result, keep = "kind")` gives
 #'   gross, total ceded and net per year; net is a loss, before premiums and
-#'   commissions.
+#'   commissions. Take one kind with [select_components()] before joining it
+#'   to a book: summing over `kind` adds gross, ceded and net together.
 #' @export
 #' @examples
 #' ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 1000, seed = 7)

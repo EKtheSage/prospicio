@@ -135,15 +135,23 @@ impl Band {
     }
 
     /// The same band with its sums insured spread uniformly between
-    /// `lower` and `upper` (`0 < lower ≤ upper`, finite) instead of one
-    /// representative risk. The band's mean sum insured becomes
-    /// `(lower + upper)/2`; its expected loss is unchanged.
+    /// `lower` and `upper` (`0 ≤ lower ≤ upper`, `upper > 0`, finite: a
+    /// band may start at 0) instead of one representative risk. The band's
+    /// mean sum insured becomes `(lower + upper)/2`, which may differ from
+    /// `sum_insured`; its expected loss is unchanged.
+    /// [`with_tilted_bounds`](Self::with_tilted_bounds) keeps the mean, and
+    /// [`with_spread_bounds`](Self::with_spread_bounds) keeps it whenever
+    /// it can.
     pub fn with_bounds(mut self, lower: f64, upper: f64) -> Result<Self> {
-        if !(lower.is_finite() && lower > 0.0) {
-            return Err(invalid("lower", lower, "must be positive and finite"));
+        if !(lower.is_finite() && lower >= 0.0) {
+            return Err(invalid("lower", lower, "must be non-negative and finite"));
         }
-        if !(upper.is_finite() && upper >= lower) {
-            return Err(invalid("upper", upper, "must be finite and at least lower"));
+        if !(upper.is_finite() && upper >= lower && upper > 0.0) {
+            return Err(invalid(
+                "upper",
+                upper,
+                "must be finite, positive and at least lower",
+            ));
         }
         self.bounds = Some((lower, upper));
         self.tilt = 0.0;
@@ -183,6 +191,31 @@ impl Band {
         let w = upper - lower;
         b.tilt = solve_tilt((si - lower) / w) / w;
         Ok(b)
+    }
+
+    /// The same band spread between `lower` and `upper`, keeping
+    /// `sum_insured` as the mean whenever it lies strictly between them
+    /// (tilted, [`with_tilted_bounds`](Self::with_tilted_bounds)) and
+    /// uniformly otherwise ([`with_bounds`](Self::with_bounds)), where the
+    /// mean becomes the midpoint. Compare [`mean_sum_insured`](
+    /// Self::mean_sum_insured) with `sum_insured` to see whether it moved.
+    ///
+    /// ```
+    /// use prospicio_pricing::exposure::Mbbefd;
+    /// use prospicio_pricing::profile::Band;
+    ///
+    /// let c3 = Mbbefd::swiss_re(3.0).unwrap();
+    /// let inside = Band::from_expected_loss(2.0, 400.0, 1.2, c3).unwrap();
+    /// assert!((inside.with_spread_bounds(1.0, 5.0).unwrap().mean_sum_insured() - 2.0).abs() < 1e-9);
+    /// let outside = Band::from_expected_loss(6.0, 400.0, 1.2, c3).unwrap();
+    /// assert_eq!(outside.with_spread_bounds(1.0, 5.0).unwrap().mean_sum_insured(), 3.0);
+    /// ```
+    pub fn with_spread_bounds(self, lower: f64, upper: f64) -> Result<Self> {
+        if lower < self.sum_insured && self.sum_insured < upper {
+            self.with_tilted_bounds(lower, upper)
+        } else {
+            self.with_bounds(lower, upper)
+        }
     }
 
     /// The band's mean sum insured over its risks: with bounds, the
@@ -270,7 +303,8 @@ impl Band {
         Self::from_expected_loss(sum_insured, risks, premium * loss_ratio, curve)
     }
 
-    /// Expected number of losses a year, `EL / (mean SI × mean rate)`.
+    /// Expected number of losses a year, `EL / (mean SI × mean rate)`:
+    /// losses of every size, not only those that reach a layer.
     pub fn expected_claims(&self) -> f64 {
         self.expected_loss / (self.mean_sum_insured() * self.curve.mean_rate())
     }
@@ -314,7 +348,8 @@ impl RiskProfile {
         &self.bands
     }
 
-    /// Expected losses a year, all bands.
+    /// Expected losses a year, all bands: losses of every size, not only
+    /// those that reach a layer.
     pub fn expected_claims(&self) -> f64 {
         self.bands.iter().map(Band::expected_claims).sum()
     }
@@ -566,9 +601,30 @@ mod tests {
         assert!(
             Band::from_expected_loss(1.0, 1.0, 1.0, c)
                 .unwrap()
-                .with_bounds(0.0, 1.0)
+                .with_bounds(0.0, 0.0)
                 .is_err()
         );
+        // A band may start at 0.
+        assert!(
+            Band::from_expected_loss(1.0, 1.0, 1.0, c)
+                .unwrap()
+                .with_bounds(0.0, 1.0)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_band_from_zero_rates_layers() {
+        // Issue #212: a band starting at 0 (the profile's first band).
+        let c3 = Mbbefd::swiss_re(3.0).unwrap();
+        let b = Band::from_expected_loss(0.5, 100.0, 10.0, c3)
+            .unwrap()
+            .with_spread_bounds(0.0, 1.0)
+            .unwrap();
+        assert!((b.mean_sum_insured() - 0.5).abs() < 1e-9);
+        let p = RiskProfile::new(vec![b]).unwrap();
+        let x = p.expected_layer_loss(0.25, 0.25, None).unwrap();
+        assert!(x.is_finite() && x > 0.0 && x < 10.0, "{x}");
     }
 
     #[test]

@@ -5,8 +5,9 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::{
-    Book, Expense, ExpenseBasis, Face, Group, LADDER, Layout, Ledger, Leg, LegKind, RatioRow, Role,
-    RowKind, Source, derive_premium, snap,
+    Book, Expense, ExpenseBasis, Face, Group, LADDER, Layout, Ledger, Leg, LegKind, ProgramLayer,
+    RatioRow, Role, RowKind, Source, derive_premium, occurrence_source, pnl_program,
+    pnl_program_stated, round_premium, size_premium, snap,
 };
 
 use crate::discrete::DiscreteDist;
@@ -140,43 +141,85 @@ impl PnlLedger {
         step_label: &str,
         tower: Robj,
         face: &str,
+        retro: &[f64],
+        expense_at_mean: bool,
     ) -> Result<Self> {
         let source = Source::new(values.to_vec(), probs.to_vec()).map_err(to_r)?;
-        let mut book = Book::new(name, premium);
-        for e in expenses(exp_index, &exp_basis, exp_value, &exp_label)? {
-            book = book.expense(e);
+        let mut book = make_book(
+            name,
+            premium,
+            exp_index,
+            &exp_basis,
+            exp_value,
+            &exp_label,
+            [premium_label, loss_label, step_label],
+        )?;
+        if let [basic, lcm, minimum, maximum] = *retro {
+            let given = |x: f64| (!x.is_nan()).then_some(x);
+            book = book.retro(
+                prospicio_aggregate::LossSensitivePremium::new(
+                    basic,
+                    lcm,
+                    given(minimum),
+                    given(maximum),
+                )
+                .map_err(to_r)?,
+            );
         }
-        if !premium_label.is_empty() {
-            book = book.premium_label(premium_label);
+        if expense_at_mean {
+            book = book.expense_at_expected_loss();
         }
-        if !loss_label.is_empty() {
-            book = book.loss_label(loss_label);
-        }
-        if !step_label.is_empty() {
-            book = book.step_label(step_label);
-        }
-        let face = match face {
-            "consolidated" => Face::Consolidated,
-            "walk" => Face::Walk,
-            "peel-top-down" => Face::PeelTopDown,
-            "peel-bottom-up" => Face::PeelBottomUp,
-            other => {
-                return Err(Error::Other(format!(
-                    "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
-                )));
-            }
-        };
-        let tower = if tower.is_null() {
-            None
-        } else {
-            Some(
-                <&ReinsuranceTower>::try_from(&tower)
-                    .map_err(|_| Error::Other("tower must be a reinsurance_tower".into()))?,
-            )
-        };
+        let face = face_of(face)?;
+        let tower = tower_of(&tower)?;
         Ok(Self {
             inner: book
                 .ledger(&source, tower.map(|t| &t.inner), face)
+                .map_err(to_r)?,
+        })
+    }
+
+    /// A book's ledger with occurrence covers over the joint source
+    /// `(gross, ceded, probs)`, the rest as `book`; `aggregate` is NULL or
+    /// a `ReinsuranceTower`.
+    #[allow(clippy::too_many_arguments)]
+    fn book_occurrence(
+        gross: &[f64],
+        ceded: &[f64],
+        probs: &[f64],
+        name: &str,
+        premium: f64,
+        exp_index: &[f64],
+        exp_basis: Vec<String>,
+        exp_value: &[f64],
+        exp_label: Vec<String>,
+        premium_label: &str,
+        loss_label: &str,
+        step_label: &str,
+        occurrence: Robj,
+        aggregate: Robj,
+        face: &str,
+        expense_at_mean: bool,
+    ) -> Result<Self> {
+        let joint = Source::joint(gross.to_vec(), ceded.to_vec(), probs.to_vec()).map_err(to_r)?;
+        let mut book = make_book(
+            name,
+            premium,
+            exp_index,
+            &exp_basis,
+            exp_value,
+            &exp_label,
+            [premium_label, loss_label, step_label],
+        )?;
+        if expense_at_mean {
+            book = book.expense_at_expected_loss();
+        }
+        let face = face_of(face)?;
+        let occurrence = tower_of(&occurrence)?
+            .ok_or_else(|| Error::Other("occurrence must be a reinsurance_tower".into()))?;
+        let aggregate = tower_of(&aggregate)?;
+        Ok(Self {
+            inner: book
+                .occurrence_ledger(&joint, &occurrence.inner, aggregate.map(|t| &t.inner), face)
                 .map_err(to_r)?,
         })
     }
@@ -192,12 +235,73 @@ impl PnlLedger {
     }
 
     fn row(&self, label: &str) -> Result<DiscreteDist> {
-        self.inner
+        let r = self
+            .inner
             .row(label)
-            .map(|r| DiscreteDist {
-                inner: r.distribution().clone(),
-            })
-            .ok_or_else(|| Error::Other(format!("no row labelled {label:?}")))
+            .ok_or_else(|| Error::Other(format!("no row labelled {label:?}")))?;
+        if r.is_delta() {
+            return Err(Error::Other(format!(
+                "row {label:?} is a difference of two rows' statistics, with no distribution"
+            )));
+        }
+        Ok(DiscreteDist {
+            inner: r.distribution().clone(),
+        })
+    }
+
+    fn is_stitched(&self) -> bool {
+        self.inner.is_stitched()
+    }
+
+    /// A book's stitched peel of several occurrence layers (and the
+    /// aggregate covers behind them), on a severity grid; `aggregate` is
+    /// NULL or a `ReinsuranceTower`.
+    #[allow(clippy::too_many_arguments)]
+    fn book_peel(
+        frequency: Robj,
+        step: f64,
+        severity: &[f64],
+        name: &str,
+        premium: f64,
+        exp_index: &[f64],
+        exp_basis: Vec<String>,
+        exp_value: &[f64],
+        exp_label: Vec<String>,
+        premium_label: &str,
+        loss_label: &str,
+        step_label: &str,
+        occurrence: Robj,
+        aggregate: Robj,
+        face: &str,
+        points: f64,
+    ) -> Result<Self> {
+        let n = crate::aggregate::AnyCount::from_robj(&frequency)?;
+        let severity = prospicio_prob::Grid::new(step, severity.to_vec()).map_err(to_r)?;
+        let book = make_book(
+            name,
+            premium,
+            exp_index,
+            &exp_basis,
+            exp_value,
+            &exp_label,
+            [premium_label, loss_label, step_label],
+        )?;
+        let face = face_of(face)?;
+        let occurrence = tower_of(&occurrence)?
+            .ok_or_else(|| Error::Other("occurrence must be a reinsurance_tower".into()))?;
+        let aggregate = tower_of(&aggregate)?;
+        Ok(Self {
+            inner: book
+                .occurrence_peel(
+                    &n,
+                    &severity,
+                    &occurrence.inner,
+                    aggregate.map(|t| &t.inner),
+                    face,
+                    points as usize,
+                )
+                .map_err(to_r)?,
+        })
     }
 
     fn prob_eq_0(&self) -> f64 {
@@ -246,9 +350,12 @@ impl PnlLedger {
                 .collect::<Vec<_>>()
                 .into(),
         ];
-        for q in LADDER {
-            names.push(format!("k{:02.0}", q * 100.0));
-            cols.push(self.inner.scenarios(q).map_err(to_r)?.into());
+        // A stitched ledger has no common source, so no scenario columns.
+        if !self.inner.is_stitched() {
+            for q in LADDER {
+                names.push(format!("k{:02.0}", q * 100.0));
+                cols.push(self.inner.scenarios(q).map_err(to_r)?.into());
+            }
         }
         List::from_names_and_values(names, cols)
     }
@@ -382,6 +489,137 @@ fn pnl_derive_premium(
     derive_premium(technical, &e).map_err(to_r)
 }
 
+/// `pnl_program`'s ladder: `list(premium, technical, deposits, rates,
+/// ceded_premium)`; a NaN `stated` means the ladder prices the layer, a
+/// rate is NaN for a stated layer, and a non-NaN `stated_premium` prices an
+/// engine that states its own premium (`net_loss` is then unused).
+#[allow(clippy::too_many_arguments)]
+#[extendr]
+fn pnl_program_rust(
+    net_loss: f64,
+    net_combined_ratio: f64,
+    expense_ratio: f64,
+    ceded_loss: &[f64],
+    share: &[f64],
+    combined_ratio: &[f64],
+    stated: &[f64],
+    aggregate: &[f64],
+    stated_premium: f64,
+) -> Result<List> {
+    let layers: Vec<ProgramLayer> = (0..share.len())
+        .map(|j| ProgramLayer {
+            ceded_loss: ceded_loss[j],
+            share: share[j],
+            combined_ratio: combined_ratio[j],
+            stated: (!stated[j].is_nan()).then_some(stated[j]),
+            aggregate: aggregate[j] != 0.0,
+        })
+        .collect();
+    let p = if stated_premium.is_nan() {
+        pnl_program(net_loss, net_combined_ratio, expense_ratio, &layers)
+    } else {
+        pnl_program_stated(stated_premium, expense_ratio, &layers)
+    }
+    .map_err(to_r)?;
+    let rates: Vec<f64> = p.rates.iter().map(|r| r.unwrap_or(f64::NAN)).collect();
+    Ok(list!(
+        premium = p.premium,
+        technical = p.technical,
+        deposits = p.deposits,
+        rates = rates,
+        ceded_premium = p.ceded_premium
+    ))
+}
+
+/// A premium sized from a loss ratio, rounded as aggregate writes one.
+#[extendr]
+fn size_premium_rust(expected_loss: f64, loss_ratio: f64) -> Result<f64> {
+    size_premium(expected_loss, loss_ratio).map_err(to_r)
+}
+
+/// A premium rounded as aggregate writes one.
+#[extendr]
+fn round_premium_rust(premium: f64) -> f64 {
+    round_premium(premium)
+}
+
+/// The joint source of the annual gross and occurrence-ceded loss:
+/// `list(gross, ceded, probs)`.
+#[extendr]
+fn pnl_occurrence_source(
+    frequency: Robj,
+    step: f64,
+    probs: &[f64],
+    occurrence: Robj,
+    points_a: f64,
+    points_b: f64,
+) -> Result<List> {
+    let n = crate::aggregate::AnyCount::from_robj(&frequency)?;
+    let severity = prospicio_prob::Grid::new(step, probs.to_vec()).map_err(to_r)?;
+    let tower = tower_of(&occurrence)?
+        .ok_or_else(|| Error::Other("occurrence must be a reinsurance_tower".into()))?;
+    let (source, _) = occurrence_source(
+        &n,
+        &severity,
+        &tower.inner,
+        [points_a as usize, points_b as usize],
+    )
+    .map_err(to_r)?;
+    Ok(list!(
+        gross = source.values().to_vec(),
+        ceded = source.second().unwrap_or_default().to_vec(),
+        probs = source.probs().to_vec()
+    ))
+}
+
+fn tower_of(tower: &Robj) -> Result<Option<&ReinsuranceTower>> {
+    if tower.is_null() {
+        return Ok(None);
+    }
+    <&ReinsuranceTower>::try_from(tower)
+        .map(Some)
+        .map_err(|_| Error::Other("tower must be a reinsurance_tower".into()))
+}
+
+fn face_of(face: &str) -> Result<Face> {
+    match face {
+        "consolidated" => Ok(Face::Consolidated),
+        "walk" => Ok(Face::Walk),
+        "peel-top-down" => Ok(Face::PeelTopDown),
+        "peel-bottom-up" => Ok(Face::PeelBottomUp),
+        other => Err(Error::Other(format!(
+            "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
+        ))),
+    }
+}
+
+/// A book from flattened expenses; an empty label means the default.
+fn make_book(
+    name: &str,
+    premium: f64,
+    exp_index: &[f64],
+    exp_basis: &[String],
+    exp_value: &[f64],
+    exp_label: &[String],
+    labels: [&str; 3],
+) -> Result<Book> {
+    let mut book = Book::new(name, premium);
+    for e in expenses(exp_index, exp_basis, exp_value, exp_label)? {
+        book = book.expense(e);
+    }
+    let [premium_label, loss_label, step_label] = labels;
+    if !premium_label.is_empty() {
+        book = book.premium_label(premium_label);
+    }
+    if !loss_label.is_empty() {
+        book = book.loss_label(loss_label);
+    }
+    if !step_label.is_empty() {
+        book = book.step_label(step_label);
+    }
+    Ok(book)
+}
+
 /// Expense legs from flattened terms.
 fn expenses(
     index: &[f64],
@@ -424,4 +662,8 @@ extendr_module! {
     mod pnl;
     impl PnlLedger;
     fn pnl_derive_premium;
+    fn pnl_occurrence_source;
+    fn pnl_program_rust;
+    fn size_premium_rust;
+    fn round_premium_rust;
 }

@@ -1,6 +1,6 @@
 # Design note: the P&L ledger
 
-Status: **In progress** (PRs 1 to 4 done) · Depends on: `Grid`, `Tower::on_annual_grid` and
+Status: **Done** (PRs 1 to 6b, follow-ups 7a to 7c) · Depends on: `Grid`, `Tower::on_annual_grid` and
 `Tower::on_grid`, `bivariate::{JointGrid, fft_bivariate}` · Lane: Aggregate
 
 ## Goal
@@ -141,10 +141,10 @@ on a step (PR 3).
 7. **`pnl_program` returns numbers** (premium, each layer's deposit or
    rate, the targets used), not DecL text.
 8. **Left out:** charts, the DecL writer and parser, help text, the
-   massive one-sweep route and the stitched peel with its Palm scenario
-   ladder (several occurrence layers peeled one by one), `waterfall_df`
-   and `pentagon_df`, `evaluate` (Cherny–Madan break-even), and the
-   engine pass-throughs (`stats_df`, `reins_*`).
+   massive one-sweep route, the Palm scenario ladder of the stitched peel
+   (the stitched peel itself came in 7c, without it), `waterfall_df` and
+   `pentagon_df`, `evaluate` (Cherny–Madan break-even), and the engine
+   pass-throughs (`stats_df`, `reins_*`).
 
 ## PR plan
 
@@ -228,13 +228,179 @@ Each PR is one type or method, with its parity tests, bindings and docs.
    test checks those six cells are that tie. Python `Book`, `Expense`,
    `derive_premium`; R `pnl_book()`, `pnl_expense()`, `book_ledger()`,
    `derive_premium()`.
-5. **Occurrence covers on a joint source**: the comonotone `(gross,
-   ceded)` per claim, compounded by `fft_bivariate`, and the walk through
-   an occurrence tier then an aggregate one. Parity: 4.
-6. **`pnl_program`** (premium and layer deposits or rates from target
-   combined ratios), then the variable terms and reinstatement premiums
-   as legs (swing, sliding scale, profit commission, corridor, retro;
-   `D + h(R)` on the `(L, R)` joint).
+5. (Done.) **Occurrence covers on a joint source**: `Source::joint`
+   (atoms with two coordinates) and `Leg::of2` (a function of both; a
+   one-argument leg reads the first), `pnl::occurrence_source` (each claim
+   on the severity's grid to `(x, c(x))`, the cession of one event split
+   linearly between grid points, compounded by `fft_bivariate`, cells
+   below `1e-15` of the total mass dropped as `aggregate`'s
+   `_clip_density_fuzz` does) and `Book::occurrence_ledger` (the walk:
+   the occurrence tier as one group, its recovery the joint's second
+   coordinate, then each aggregate cover on `max(gross − ceded, 0)`, with
+   the `Net of occurrence` block; the per-atom peel with one occurrence
+   layer; the consolidated face over the net loss at each atom). A peel
+   through several occurrence layers is refused: the joint carries only
+   the total cession, and `aggregate`'s stitched route (each row its own
+   marginal, no `κ`) is not built. Occurrence layers may not carry annual
+   terms. Parity: `validation/scripts/aggregate_pnl_occurrence.py`, 1,566
+   values: example 4 walked and consolidated, the same with an aggregate
+   cover 3 xs 5 on its net walked, consolidated and peeled top down, and
+   the joint of example 4 cell by cell (280 cells at `1e-15`, built here
+   from the severity and the cover). The ledgers run on `aggregate`'s
+   joint with `PnL`'s probabilities, at `1e-12`; the consolidated faces at
+   `1e-11`, since `aggregate` reads their net marginal off its 1-D engine
+   and prospicio off the joint, and their standard deviations differ by
+   about `2e-12`. A joint built here keeps its total (`0.99999999999999`)
+   where `aggregate` divides by it, a shift of about `1e-14` in every
+   probability. Python `occurrence_source`, `Book.occurrence_ledger` and a
+   joint source as a tuple `(gross, ceded, probs)`; R
+   `occurrence_source()`, `book_occurrence_ledger()`.
+6. PR 6 is two PRs, as its two halves turned out independent:
+
+   a. (Done.) **Variable terms and `pnl_program`.** The builders book a
+      layer's loss-sensitive terms as legs at each atom, each from the
+      `Layer`'s own function at its annual ceded loss: a swing-rated
+      premium (`premium_for`), a sliding-scale commission
+      (`ceding_commission_for`, the leg `sliding commission`), a profit
+      commission (`profit_commission_for`, `profit commission`) and a
+      loss corridor (in the recovery), on the walk, the peel and the
+      consolidated face (the net premium and the commission varying per
+      atom), on annual covers and on aggregate covers behind occurrence
+      covers. `aggregate`'s corridor `s po w xs a` on the ceded loss ratio
+      of a premium `P` is `loss_corridor(a P / share, (a + w) P / share,
+      s)`. `Book::retro` rates the book retrospectively (the premium is a
+      `LossSensitivePremium` at the gross loss; premium expenses on the
+      premium given, the collar's basic in `aggregate`); like `aggregate`,
+      a retro book buys no cover. Occurrence layers keep fixed terms, as
+      `aggregate`'s features go on the aggregate tier. `pnl_program`
+      returns the ladder as numbers (decision 7): deposits at 100%
+      placement `round(E_j / c_j / s_j)`, the booked premium
+      `round((E_net / c_net + Σ s_j d_j) / (1 − ER))`, rounded as
+      `aggregate` writes them (whole units above 100, cents below, ties
+      to even), with `size_premium` and `round_premium` (the `rate`
+      respelling and an engine's stated technical premium came in 7a).
+      On the consolidated face `aggregate`'s variable builder books a
+      loss-basis expense stochastic on the gross, where its guaranteed
+      cost builder books it at the expected gross loss (prospicio's choice
+      is 7b). Parity:
+      `validation/scripts/aggregate_pnl_variable.py`, 2,342 values: each
+      feature walked and consolidated on a 3 xs 5 cover, a profit
+      commission on half the layer, a swing-rated cover behind example
+      4's occurrence cover (consolidated at `1e-11`, as in PR 5), retro,
+      and the ladder on two engines (premiums 817 and 911, deposits 145,
+      16.29 and 158), with `aggregate`'s expected losses as inputs. Python
+      `Book(retro=)`, `pnl_program`, `size_premium`, `round_premium`; R
+      `pnl_book(retro =)`, `pnl_program()`, `size_premium()`,
+      `round_premium()`.
+   b. (Done.) **Reinstatement premiums** as legs, `D + h(R)` on the
+      `(L, R)` joint. An occurrence tier of one layer may carry annual
+      terms and paid reinstatements: `occurrence_source` cedes each claim
+      without them, so the joint's second coordinate is the unlimited
+      annual cession `R`, and `Book::occurrence_ledger` books the recovery
+      `A(R) = share × after_terms(R / share)` (the new crate-level
+      `Layer::after_terms` applies the deductible, corridor and annual
+      limit) and the premium `D + h(R)`, the deposit plus the reinstatement
+      premium pro rata as to amount on that layer loss
+      (`Layer::reinstatement_premium_on`), on every face; an aggregate
+      cover behind it recovers on `max(L − A(R), 0)`. On a tier of several
+      layers annual terms and reinstatements are refused (the joint
+      carries the total cession), as `aggregate` requires a single
+      reinstated layer; annual covers refuse reinstatements, which belong
+      to an occurrence cover. `aggregate` refuses to peel a reinstated
+      program; prospicio peels it, the tier being one layer. Its
+      consolidated face is over the joint with a loss-basis expense
+      stochastic on the gross, as prospicio's (7b). Parity:
+      `validation/scripts/aggregate_pnl_reinstatements.py`, 1,121 values
+      on example 4's joint: one reinstatement at 100%, none (an annual
+      limit of 2), and one free and one at 50% with a ceding commission
+      and an aggregate cover behind it, each walked and consolidated, at
+      `1e-12` (standard deviations relative to `1e-10`: `E[X²] − E[X]²`
+      on a net premium of 17.4 with an SD of 0.24 loses about `1e-12` to
+      cancellation, summed in different orders on each side).
+7. **Follow-ups** to the six PRs, at the user's request (2026-10-14):
+
+   a. (Done.) **`pnl_program`'s rates and an engine's stated premium.**
+      `Program::rates` respells each ladder-priced deposit as a rate to
+      eight significant figures, `aggregate`'s `premium_style='rate'`
+      (`_respell_as_rates`): an occurrence layer's on the booked premium,
+      an aggregate layer's on it less the occurrence premiums as their
+      rates resolve, so `ProgramLayer` now says its tier (`aggregate`,
+      with the constructors `ProgramLayer::occurrence`, `::aggregate` and
+      `.stated`); a stated layer has no rate. `pnl_program_stated` prices
+      an engine that states its own technical premium (`premium at lr`):
+      it takes the net book's place, and with no layer to pay for the
+      premium is only grossed up, unrounded, as `aggregate`'s `derive
+      premium`. Parity: the `program` block of
+      `aggregate_pnl_variable.py` grows to five engines (rates on both
+      tiers, a stated engine with and without cover, a layer with its own
+      deposit kept), every number exact. Python `pnl_program_stated` and
+      `rates`; R `pnl_program_stated()` and `rates`.
+   b. (Done.) **A loss-basis expense on the consolidated face** at each
+      atom's gross loss, `rate × x` with `x` the gross coordinate of the
+      atom whose net loss the face is over. `aggregate` books it three
+      ways: at the expected gross loss on its guaranteed-cost and
+      occurrence builders (its source there is a net marginal, where the
+      gross loss is not measurable), stochastic on its variable builder
+      without an occurrence program and on its reinstatement builder.
+      prospicio's consolidated face always has the gross loss at hand, so
+      it books the expense per atom on every face; the mean is the same,
+      and the consolidated margin is then the walk's net margin atom by
+      atom (a unit test checks every quantile).
+      `Book::expense_at_expected_loss` keeps `aggregate`'s guaranteed-cost booking, which its parity
+      case `lblc` uses. Parity: `swlc` (a swing-rated cover, the variable
+      builder) and `r1lc` (a reinstated layer) with `10% premium expense
+      and 5% loss expense` match `aggregate` exactly. Two cases where
+      prospicio builds what `aggregate` refuses are choices, not
+      oversights, each with a unit test: a walk over a retro book is the
+      one gross group (the consolidated face's result; there is no cover
+      to walk through), and a peel of a single reinstated occurrence layer
+      is its walk (the tier is one layer). Python `Book(...,
+      expense_at_expected_loss=True)`; R `pnl_book(expense_at_expected_loss
+      = TRUE)`.
+   c. (Done.) **The stitched peel** of several occurrence layers, revising
+      decision 8. The joint carries only the occurrence tier's total
+      cession, so no shared source can carry a per-layer occurrence walk.
+      `Book::occurrence_peel(frequency, severity, occurrence, aggregate,
+      face, points)` builds every row as its own exact marginal instead,
+      as `aggregate`'s `_peel_stitched`: an occurrence layer's recovery,
+      each running net and the tier's total are each one compound (by
+      FFT on twice `points`, truncated, no tail lumped) of a per-claim
+      map of the severity (the layer's cession of one claim, taken from
+      the whole tower so the layers add to the tier), split linearly onto
+      the grid; an aggregate layer's recovery and running net are
+      pushforwards of the net-of-occurrence aggregate through its annual
+      terms; premiums and commissions are constants, and every other row
+      is one of these with a sign and a shift. `Ledger::stitched` lays
+      such rows out by the same plan as a per-atom ledger. The mean column
+      foots by linearity; the standard deviation, skewness and card
+      quantiles are each row's own (marginal). Built differently, by
+      necessity:
+      - no scenario columns: `aggregate` prints a Palm ladder here, which
+        conditions each row on the result through the claims or, with an
+        aggregate tier, through the retained aggregate, so the same gross
+        loss row reads `κ01 = −16` on one program and `−11.55` on another;
+        those columns are not statistics of the rows and are not built
+        (`scenarios` and `stack` refuse a stitched ledger);
+      - the `Impact` row is the differences of the grand result's
+        statistics and the gross result's (its standard deviation can be
+        negative), as `aggregate`, since the two are not on one source;
+      - a loss-basis expense is constant at `rate × E[gross]` (no shared
+        source, as `aggregate`'s `on_source_loss=False`): the exception to
+        7b.
+      Occurrence layers on this route have fixed terms (no annual terms
+      or reinstatements) and aggregate layers no loss-sensitive terms,
+      as `aggregate`'s stitched route is guaranteed cost. The route is
+      chosen by calling it: `occurrence_ledger` still refuses a peel
+      through several occurrence layers, and its message points here.
+      Parity: `validation/scripts/aggregate_pnl_stitched.py`, 495 values
+      (two occurrence layers with a commission peeled top down, and
+      bottom up with an aggregate cover behind them; the sheet's mean,
+      standard deviation, CV and skewness, the card with its marginal
+      quantiles, the legs), every one at `1e-12` (`1e-10` for skewness)
+      on the first run. `aggregate` normalizes each marginal by its total
+      mass after the FFT's truncation, as `Ledger::stitched` does. Python
+      `Book.occurrence_peel` and `Ledger.is_stitched`; R
+      `book_occurrence_peel()` and `ledger_is_stitched()`.
 
 ## Validation
 
@@ -296,4 +462,6 @@ the numbers a first run gave (2026-10-14):
   gives a premium of 714 (499.885 / 0.7) and expenses of 25% of premium;
   with `occurrence net of 200 xs 100` and `aggregate net of 500 xs 1000`
   (log2=13) at `net_combined_ratio=.9, occ_combined_ratio=.6,
-  agg_combined_ratio=.5`, a premium of 809 and deposits of 146 and 6.09.
+  agg_combined_ratio=.5`, a premium of 809 and deposits of 146 and 6.09
+  on a first run; at `bs=1/8` the ladder gives 817, 145 and 16.29, the
+  numbers PR 6a checks.

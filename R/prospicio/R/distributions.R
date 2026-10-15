@@ -665,6 +665,28 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' p@keys
 NULL
 
+#' One part of a predictive distribution
+#'
+#' The components whose value on dimension `dim` is one of `keys`, with every
+#' dimension and the draws' joint structure kept. Take one part of a result
+#' this way before joining it to another: `select_components(apply_tower(...),
+#' "kind", "ceded")` is a treaty's cession, ready to add to a book with
+#' [join_predictive()]. Aggregating over `kind` instead adds gross, ceded and
+#' net together.
+#'
+#' @param dist A [predictive_distribution].
+#' @param dim The dimension's name.
+#' @param keys Values on that dimension (character or whole numbers).
+#' @returns A [predictive_distribution].
+#' @export
+#' @examples
+#' pd <- predictive_distribution(matrix(c(10, 4, 3, 0, 7, 4), ncol = 3),
+#'   data.frame(kind = c("gross", "ceded", "net"), layer = c("ground_up", "5x5", "retained")))
+#' mean(select_components(pd, "kind", "ceded"))
+select_components <- function(dist, dim, keys) {
+  predictive_distribution(ptr = rust_result(dist@ptr$select(as.character(dim), keys)))
+}
+
 #' @rdname portfolio
 #' @export
 join_predictive <- function(parts, dim, same_simulations = FALSE) {

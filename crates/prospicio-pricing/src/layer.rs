@@ -280,6 +280,46 @@ fn solve_alpha(target: f64, ratio: impl Fn(f64) -> Result<f64>) -> Result<f64> {
     }
 }
 
+/// The coefficient of variation of the loss to `limit` xs `attachment`
+/// per loss that reaches the layer: `sd / mean` of `min(max(X − a, 0), l)`
+/// given `X > a`. It is what [`LimitedFluctuation`]'s pure premium
+/// standard needs for a layer (`crate::credibility`), from the severity's
+/// [`layer`](Severity::layer) and
+/// [`layer_second_moment`](Severity::layer_second_moment).
+///
+/// [`LimitedFluctuation`]: crate::credibility::LimitedFluctuation
+///
+/// ```
+/// use prospicio_pricing::layer::layer_cv;
+/// use prospicio_prob::Gamma;
+///
+/// // Memoryless: an unlimited layer's loss given a loss above it is the
+/// // exponential severity again, whose CV is 1.
+/// let e = Gamma::new(1.0, 100.0).unwrap();
+/// assert!((layer_cv(&e, f64::INFINITY, 50.0).unwrap() - 1.0).abs() < 1e-9);
+/// ```
+///
+/// # Errors
+///
+/// An invalid layer, or no chance of a loss above the attachment.
+pub fn layer_cv<S: Severity + ?Sized>(severity: &S, limit: f64, attachment: f64) -> Result<f64> {
+    if limit.is_nan() || limit <= 0.0 || !(attachment.is_finite() && attachment >= 0.0) {
+        return Err(Error::Data(format!(
+            "the layer {limit} xs {attachment} needs a positive limit and a finite, \
+             non-negative attachment"
+        )));
+    }
+    let reach = severity.survival(attachment);
+    if reach.is_nan() || reach <= 0.0 {
+        return Err(Error::Data(format!(
+            "no loss reaches the layer's attachment {attachment}"
+        )));
+    }
+    let m1 = severity.layer(limit, attachment) / reach;
+    let m2 = severity.layer_second_moment(limit, attachment) / reach;
+    Ok((m2 - m1 * m1).max(0.0).sqrt() / m1)
+}
+
 /// Increased limit factor: the expected loss capped at `limit` relative
 /// to the expected loss capped at `basic_limit`,
 /// `ILF(limit) = LEV(limit) / LEV(basic_limit)`.

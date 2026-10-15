@@ -22,6 +22,14 @@ dist_from_json_rust <- function(text) .Call(wrap__dist_from_json_rust, text)
 
 pnl_derive_premium <- function(technical, exp_index, exp_basis, exp_value, exp_label) .Call(wrap__pnl_derive_premium, technical, exp_index, exp_basis, exp_value, exp_label)
 
+pnl_occurrence_source <- function(frequency, step, probs, occurrence, points_a, points_b) .Call(wrap__pnl_occurrence_source, frequency, step, probs, occurrence, points_a, points_b)
+
+pnl_program_rust <- function(net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated, aggregate, stated_premium) .Call(wrap__pnl_program_rust, net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated, aggregate, stated_premium)
+
+size_premium_rust <- function(expected_loss, loss_ratio) .Call(wrap__size_premium_rust, expected_loss, loss_ratio)
+
+round_premium_rust <- function(premium) .Call(wrap__round_premium_rust, premium)
+
 tvar_weighted_rust <- function(values, probs, p) .Call(wrap__tvar_weighted_rust, values, probs, p)
 
 tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
@@ -78,7 +86,7 @@ elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, li
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid)
 
-gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas)
+gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas, tensors, tensor_basis)
 
 family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Call(wrap__family_deviance_rust, family_name, theta, power, y, mu, weights)
 
@@ -155,6 +163,12 @@ pricing_classical_premium <- function(x, principle, loading, q) .Call(wrap__pric
 pricing_calibrate_classical <- function(x, principle, premium, q) .Call(wrap__pricing_calibrate_classical, x, principle, premium, q)
 
 pricing_ilf <- function(severity, limit, basic_limit) .Call(wrap__pricing_ilf, severity, limit, basic_limit)
+
+pricing_layer_cv <- function(severity, limit, attachment) .Call(wrap__pricing_layer_cv, severity, limit, attachment)
+
+pricing_swiss_re_c_for_mean_rate <- function(rate) .Call(wrap__pricing_swiss_re_c_for_mean_rate, rate)
+
+pricing_swiss_re_c_for_layer_share <- function(limit, attachment, mpl, share) .Call(wrap__pricing_swiss_re_c_for_layer_share, limit, attachment, mpl, share)
 
 pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)
 
@@ -478,7 +492,13 @@ PnlLedger <- new.env(parent = emptyenv())
 
 PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower) .Call(wrap__PnlLedger__new, values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower)
 
-PnlLedger$book <- function(values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face) .Call(wrap__PnlLedger__book, values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face)
+PnlLedger$book <- function(values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face, retro, expense_at_mean) .Call(wrap__PnlLedger__book, values, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, tower, face, retro, expense_at_mean)
+
+PnlLedger$is_stitched <- function() .Call(wrap__PnlLedger__is_stitched, self)
+
+PnlLedger$book_peel <- function(frequency, step, severity, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, points) .Call(wrap__PnlLedger__book_peel, frequency, step, severity, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, points)
+
+PnlLedger$book_occurrence <- function(gross, ceded, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, expense_at_mean) .Call(wrap__PnlLedger__book_occurrence, gross, ceded, probs, name, premium, exp_index, exp_basis, exp_value, exp_label, premium_label, loss_label, step_label, occurrence, aggregate, face, expense_at_mean)
 
 PnlLedger$rows <- function() .Call(wrap__PnlLedger__rows, self)
 
@@ -585,6 +605,8 @@ PredictiveDistribution$draw_matrix <- function() .Call(wrap__PredictiveDistribut
 PredictiveDistribution$marginal <- function(key) .Call(wrap__PredictiveDistribution__marginal, self, key)
 
 PredictiveDistribution$aggregate <- function(keep) .Call(wrap__PredictiveDistribution__aggregate, self, keep)
+
+PredictiveDistribution$select <- function(dim, keys) .Call(wrap__PredictiveDistribution__select, self, dim, keys)
 
 PredictiveDistribution$total <- function() .Call(wrap__PredictiveDistribution__total, self)
 
@@ -755,6 +777,8 @@ GamModel$dispersion <- function() .Call(wrap__GamModel__dispersion, self)
 GamModel$deviance <- function() .Call(wrap__GamModel__deviance, self)
 
 GamModel$score <- function() .Call(wrap__GamModel__score, self)
+
+GamModel$reml_scale <- function() .Call(wrap__GamModel__reml_scale, self)
 
 GamModel$fitted <- function() .Call(wrap__GamModel__fitted, self)
 
@@ -1294,6 +1318,52 @@ TruncatedDist$sample <- function(n, seed, stream) .Call(wrap__TruncatedDist__sam
 #' @export
 `[[.TruncatedDist` <- `$.TruncatedDist`
 
+PolicyLimitsDist <- new.env(parent = emptyenv())
+
+PolicyLimitsDist$new <- function(severity, limits, weights) .Call(wrap__PolicyLimitsDist__new, severity, limits, weights)
+
+PolicyLimitsDist$limits <- function() .Call(wrap__PolicyLimitsDist__limits, self)
+
+PolicyLimitsDist$weights <- function() .Call(wrap__PolicyLimitsDist__weights, self)
+
+PolicyLimitsDist$family <- function() .Call(wrap__PolicyLimitsDist__family, self)
+
+PolicyLimitsDist$mean <- function() .Call(wrap__PolicyLimitsDist__mean, self)
+
+PolicyLimitsDist$variance <- function() .Call(wrap__PolicyLimitsDist__variance, self)
+
+PolicyLimitsDist$cdf <- function(x) .Call(wrap__PolicyLimitsDist__cdf, self, x)
+
+PolicyLimitsDist$survival <- function(x) .Call(wrap__PolicyLimitsDist__survival, self, x)
+
+PolicyLimitsDist$quantile <- function(p) .Call(wrap__PolicyLimitsDist__quantile, self, p)
+
+PolicyLimitsDist$lev <- function(limit) .Call(wrap__PolicyLimitsDist__lev, self, limit)
+
+PolicyLimitsDist$stop_loss <- function(retention) .Call(wrap__PolicyLimitsDist__stop_loss, self, retention)
+
+PolicyLimitsDist$layer <- function(limit, attachment) .Call(wrap__PolicyLimitsDist__layer, self, limit, attachment)
+
+PolicyLimitsDist$layer_variance <- function(limit, attachment) .Call(wrap__PolicyLimitsDist__layer_variance, self, limit, attachment)
+
+PolicyLimitsDist$sample <- function(n, seed, stream) .Call(wrap__PolicyLimitsDist__sample, self, n, seed, stream)
+
+#' @export
+`$.PolicyLimitsDist` <- function (self, name) { func <- PolicyLimitsDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.PolicyLimitsDist` <- `$.PolicyLimitsDist`
+
+pareto_fit_standard_error_rust <- function(losses, t, reporting, censored, weights, truncation_at) .Call(wrap__pareto_fit_standard_error_rust, losses, t, reporting, censored, weights, truncation_at)
+
+piecewise_pareto_fit_standard_errors_rust <- function(losses, t, reporting, censored, weights, truncation_at, truncation_type) .Call(wrap__piecewise_pareto_fit_standard_errors_rust, losses, t, reporting, censored, weights, truncation_at, truncation_type)
+
+severity_fit_rust <- function(family, losses, reporting, censored, weights) .Call(wrap__severity_fit_rust, family, losses, reporting, censored, weights)
+
+product_limit_rust <- function(losses, reporting, censored, weights) .Call(wrap__product_limit_rust, losses, reporting, censored, weights)
+
+goodness_of_fit_rust <- function(severity, losses, reporting, censored, weights) .Call(wrap__goodness_of_fit_rust, severity, losses, reporting, censored, weights)
+
 MixtureDist <- new.env(parent = emptyenv())
 
 MixtureDist$new <- function(weights, components) .Call(wrap__MixtureDist__new, weights, components)
@@ -1474,11 +1544,13 @@ TowerModel$excess_frequency <- function(x) .Call(wrap__TowerModel__excess_freque
 
 TowerModel$layer_loss <- function(limit, attachment) .Call(wrap__TowerModel__layer_loss, self, limit, attachment)
 
+TowerModel$diagnostics <- function(min_alpha, max_ratio) .Call(wrap__TowerModel__diagnostics, self, min_alpha, max_ratio)
+
 TowerModel$match_tower <- function(attachments, layer_losses, frequencies, rule_name) .Call(wrap__TowerModel__match_tower, attachments, layer_losses, frequencies, rule_name)
 
 TowerModel$fit_pml_curve <- function(return_periods, amounts, tail_alpha, truncation_at) .Call(wrap__TowerModel__fit_pml_curve, return_periods, amounts, tail_alpha, truncation_at)
 
-TowerModel$fit_references <- function(limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name) .Call(wrap__TowerModel__fit_references, limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name)
+TowerModel$fit_references <- function(limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name, alpha_bounds) .Call(wrap__TowerModel__fit_references, limits, attachments, losses, thresholds, frequencies, default_alpha, rule_name, alpha_bounds)
 
 #' @export
 `$.TowerModel` <- function (self, name) { func <- TowerModel[[name]]; environment(func) <- environment(); func }
@@ -1518,6 +1590,8 @@ Tabulated <- new.env(parent = emptyenv())
 
 Tabulated$new <- function(x, g) .Call(wrap__Tabulated__new, x, g)
 
+Tabulated$from_severity <- function(severity, mpl, points) .Call(wrap__Tabulated__from_severity, severity, mpl, points)
+
 Tabulated$x <- function() .Call(wrap__Tabulated__x, self)
 
 Tabulated$g <- function() .Call(wrap__Tabulated__g, self)
@@ -1538,9 +1612,13 @@ Tabulated$rate_quantile <- function(u) .Call(wrap__Tabulated__rate_quantile, sel
 
 RiskProfile <- new.env(parent = emptyenv())
 
-RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, tilted) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, tilted)
+RiskProfile$new <- function(sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, spread) .Call(wrap__RiskProfile__new, sums_insured, risks, curves, expected_losses, premiums, loss_ratio, lower, upper, spread)
 
 RiskProfile$expected_loss <- function() .Call(wrap__RiskProfile__expected_loss, self)
+
+RiskProfile$sums_insured <- function() .Call(wrap__RiskProfile__sums_insured, self)
+
+RiskProfile$mean_sums_insured <- function() .Call(wrap__RiskProfile__mean_sums_insured, self)
 
 RiskProfile$expected_claims <- function() .Call(wrap__RiskProfile__expected_claims, self)
 
@@ -2354,6 +2432,12 @@ RiskCopula$gaussian <- function(correlation, dim) .Call(wrap__RiskCopula__gaussi
 RiskCopula$student_t <- function(correlation, dim, nu) .Call(wrap__RiskCopula__student_t, correlation, dim, nu)
 
 RiskCopula$archimedean <- function(family, theta, dim) .Call(wrap__RiskCopula__archimedean, family, theta, dim)
+
+RiskCopula$nested <- function(family, root) .Call(wrap__RiskCopula__nested, family, root)
+
+RiskCopula$vine <- function(kind, order, pairs) .Call(wrap__RiskCopula__vine, kind, order, pairs)
+
+RiskCopula$log_density <- function(u, n) .Call(wrap__RiskCopula__log_density, self, u, n)
 
 RiskCopula$dim <- function() .Call(wrap__RiskCopula__dim, self)
 

@@ -147,3 +147,26 @@ stopifnot(max(abs(copula_cdf(ac, rbind(c(0.3, 0.6), c(1, 0.4))) -
                   c((0.3^-2 + 0.6^-2 - 1)^-0.5, 0.4))) < 1e-14,
           inherits(try(copula_cdf(t_copula(matrix(c(1, 0.5, 0.5, 1), 2), 4), c(0.5, 0.5)),
                        silent = TRUE), "try-error"))
+
+# Nested Archimedean copulas.
+nac <- nested_archimedean_copula("gumbel",
+  nac_node(1.5, 1, list(nac_node(3, c(2, 3)), nac_node(2, c(4, 5)))))
+stopifnot(nac@dimension == 5, abs(copula_cdf(nac, c(1, 0.5, 1, 1, 1)) - 0.5) < 1e-15)
+one <- nested_archimedean_copula("clayton", nac_node(2, 1:3))
+flat <- archimedean_copula("clayton", 2, dim = 3)
+stopifnot(identical(copula_sample(one, 20, seed = 4), copula_sample(flat, 20, seed = 4)))
+stopifnot(inherits(try(nested_archimedean_copula("gumbel",
+  nac_node(3, 1, list(nac_node(2, 2:3)))), silent = TRUE), "try-error"))
+
+# Vine copulas.
+v <- vine_copula("d", 1:3, list(
+  list(pair_copula("gumbel", 2), pair_copula("clayton", 1.5, 90)),
+  list(pair_copula("frank", 3))))
+stopifnot(v@dimension == 3, is.finite(copula_log_density(v, c(0.2, 0.7, 0.4))))
+stopifnot(length(copula_log_density(v, rbind(c(0.2, 0.7, 0.4), c(0.5, 0.5, 0.5)))) == 2)
+stopifnot(all(dim(copula_sample(v, 4, seed = 1)) == c(4, 3)))
+stopifnot(inherits(try(pair_copula("gaussian", 0.5, 90), silent = TRUE), "list"))
+stopifnot(inherits(try(vine_copula("d", 1:3, list(list(pair_copula("gaussian", 0.5, 90),
+  pair_copula("frank", 1)))), silent = TRUE), "try-error"))
+stopifnot(inherits(try(copula_log_density(archimedean_copula("gumbel", 2), c(0.5, 0.5)),
+  silent = TRUE), "try-error"))

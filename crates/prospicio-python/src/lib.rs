@@ -78,20 +78,23 @@ mod prospicio_native {
     use super::pareto::{
         PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma,
         PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
-        PyPiecewisePareto, PyTruncated, PyTweedie, PyWeibull, claim_count,
-        local_pareto_to_piecewise,
+        PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PyTruncated, PyTweedie, PyWeibull,
+        claim_count, fit_severity, goodness_of_fit, local_pareto_to_piecewise, product_limit,
     };
     #[pymodule_export]
     use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
     #[pymodule_export]
-    use super::pnl::{PyBook, PyExpense, PyGroup, PyLedger, PyLeg, derive_premium, stack};
+    use super::pnl::{
+        PyBook, PyExpense, PyGroup, PyLedger, PyLeg, derive_premium, occurrence_source,
+        pnl_program, pnl_program_stated, round_premium, size_premium, stack,
+    };
     #[pymodule_export]
     use super::pricing::{
         PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,
         PyTabulatedCurve, PyTowerModel, alpha_between_frequencies,
         alpha_between_frequency_and_layer, alpha_between_layers, fit_pml_curve, fit_references,
-        ilf, loss_elimination_ratio, match_tower, pareto_extrapolation, price, price_portfolio,
-        severity_exposure_curve,
+        ilf, layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation, price,
+        price_portfolio, severity_exposure_curve,
     };
     #[pymodule_export]
     use super::ratemaking::{
@@ -117,8 +120,9 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::risk::{
-        PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd, PyPotTail,
-        PyStudentTCopula, allocate, calibrate, capital, covar, entropic, esscher,
-        esscher_allocation, hill, iman_conover, marginal_expected_shortfall, mean_excess, simulate,
+        PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
+        PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula, PyVineCopula,
+        allocate, calibrate, capital, covar, entropic, esscher, esscher_allocation, hill,
+        iman_conover, marginal_expected_shortfall, mean_excess, simulate,
     };
 }

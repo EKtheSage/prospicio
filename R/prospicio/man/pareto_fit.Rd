@@ -3,6 +3,8 @@
 \name{pareto_fit}
 \alias{pareto_fit}
 \alias{piecewise_pareto_fit}
+\alias{pareto_standard_error}
+\alias{piecewise_pareto_standard_errors}
 \alias{generalized_pareto_fit}
 \title{Maximum likelihood fits to large losses}
 \usage{
@@ -16,6 +18,25 @@ pareto_fit(
 )
 
 piecewise_pareto_fit(
+  losses,
+  t,
+  reporting_thresholds = NULL,
+  censored = NULL,
+  weights = NULL,
+  truncation = NULL,
+  truncation_type = "lp"
+)
+
+pareto_standard_error(
+  losses,
+  t,
+  reporting_thresholds = NULL,
+  censored = NULL,
+  weights = NULL,
+  truncation = NULL
+)
+
+piecewise_pareto_standard_errors(
   losses,
   t,
   reporting_thresholds = NULL,
@@ -62,6 +83,15 @@ truncated ones are solved numerically and clamped to \verb{[0.001, 1000]}. A
 piecewise Pareto truncated as a whole (\code{truncation_type = "wd"}) couples
 the alphas, which are then solved together. The generalized Pareto fit
 is untruncated; read its alphas as \code{t / g@beta} and \code{1 / g@xi}.
+}
+\details{
+\code{pareto_standard_error()} and \code{piecewise_pareto_standard_errors()}
+take the same arguments as the fits and give the standard error of each
+alpha from the observed information: \code{alpha / sqrt(n)} untruncated, \code{n}
+the uncensored weight (ending in the piece, for a piecewise Pareto,
+whose alphas are uncorrelated; \code{NaN} where none does). A truncated fit
+adds the conditioning terms; a piecewise Pareto truncated as a whole
+couples its alphas and is refused.
 }
 \examples{
 pareto_fit(c(1500, 2500, 4000, 10000), 1000, censored = c(FALSE, FALSE, FALSE, TRUE))

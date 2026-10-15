@@ -49,6 +49,7 @@ from .prospicio_native import (
     fit_pml_curve,
     fit_references,
     ilf,
+    layer_cv,
     loss_elimination_ratio,
     match_tower,
     pareto_extrapolation,
@@ -65,6 +66,7 @@ from .prospicio_native import (
 __all__ = [
     "CollectiveModel",
     "ilf",
+    "layer_cv",
     "loss_elimination_ratio",
     "pareto_extrapolation",
     "alpha_between_layers",

@@ -3,16 +3,19 @@
 
 use prospicio_aggregate::pnl::{
     Book as RsBook, Expense as RsExpense, ExpenseBasis, Face, Group as RsGroup, LADDER, Layout,
-    Ledger as RsLedger, Leg as RsLeg, LegKind, Role, Row, RowKind, Source, Stats,
-    derive_premium as rs_derive_premium, snap, stack as rs_stack,
+    Ledger as RsLedger, Leg as RsLeg, LegKind, Program, ProgramLayer, Role, Row, RowKind, Source,
+    Stats, derive_premium as rs_derive_premium, pnl_program as rs_pnl_program,
+    pnl_program_stated as rs_pnl_program_stated, round_premium as rs_round_premium,
+    size_premium as rs_size_premium, snap, stack as rs_stack,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
+use crate::aggregate::{AnyCount, PyBivariateReport};
 use crate::discrete::PyDiscrete;
 use crate::distributions::PyGrid;
-use crate::reinsurance::PyTower;
+use crate::reinsurance::{PyLossSensitivePremium, PyTower};
 use crate::to_py;
 
 fn kind_of(name: Option<&str>) -> PyResult<Option<LegKind>> {
@@ -210,14 +213,12 @@ impl PyGroup {
     }
 }
 
-/// A source: a :class:`Grid`, or a tuple ``(values, probs)``.
+/// A source: a :class:`Grid`, a tuple ``(values, probs)``, or a joint
+/// source ``(gross, ceded, probs)``.
 fn source_of(source: &Bound<'_, PyAny>) -> PyResult<Source> {
     Ok(if let Ok(g) = source.extract::<PyRef<'_, PyGrid>>() {
         Source::from_grid(&g.inner).map_err(to_py)?
     } else if let Ok(t) = source.cast::<PyTuple>() {
-        if t.len() != 2 {
-            return Err(PyTypeError::new_err("a source tuple is (values, probs)"));
-        }
         let col = |o: Bound<'_, PyAny>| -> PyResult<Vec<f64>> {
             if o.hasattr("tolist")? {
                 o.call_method0("tolist")?.extract()
@@ -225,10 +226,23 @@ fn source_of(source: &Bound<'_, PyAny>) -> PyResult<Source> {
                 o.extract()
             }
         };
-        Source::new(col(t.get_item(0)?)?, col(t.get_item(1)?)?).map_err(to_py)?
+        match t.len() {
+            2 => Source::new(col(t.get_item(0)?)?, col(t.get_item(1)?)?).map_err(to_py)?,
+            3 => Source::joint(
+                col(t.get_item(0)?)?,
+                col(t.get_item(1)?)?,
+                col(t.get_item(2)?)?,
+            )
+            .map_err(to_py)?,
+            _ => {
+                return Err(PyTypeError::new_err(
+                    "a source tuple is (values, probs) or a joint (gross, ceded, probs)",
+                ));
+            }
+        }
     } else {
         return Err(PyTypeError::new_err(
-            "the source is a Grid or a tuple (values, probs)",
+            "the source is a Grid, a tuple (values, probs) or a joint (gross, ceded, probs)",
         ));
     })
 }
@@ -347,13 +361,32 @@ impl PyLedger {
     /// Returns
     /// -------
     /// Discrete
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     No such row, or a stitched peel's ``Impact`` row, a difference of
+    ///     statistics with no distribution of its own.
     fn row(&self, label: &str) -> PyResult<PyDiscrete> {
-        self.inner
+        let r = self
+            .inner
             .row(label)
-            .map(|r| PyDiscrete {
-                inner: r.distribution().clone(),
-            })
-            .ok_or_else(|| PyValueError::new_err(format!("no row labelled {label:?}")))
+            .ok_or_else(|| PyValueError::new_err(format!("no row labelled {label:?}")))?;
+        if r.is_delta() {
+            return Err(PyValueError::new_err(format!(
+                "row {label:?} is a difference of two rows' statistics, with no distribution"
+            )));
+        }
+        Ok(PyDiscrete {
+            inner: r.distribution().clone(),
+        })
+    }
+
+    /// Whether every row is its own marginal (:meth:`Book.occurrence_peel`):
+    /// the sheet then has no scenario columns.
+    #[getter]
+    fn is_stitched(&self) -> bool {
+        self.inner.is_stitched()
     }
 
     /// The chance that the result is 0.
@@ -370,7 +403,8 @@ impl PyLedger {
     /// -------
     /// dict
     ///     Columns ``step`` (on a tower), ``side``, ``label``, ``row`` (the
-    ///     row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios.
+    ///     row's key), ``EX``, ``SD``, ``CV``, ``Skew`` and the scenarios
+    ///     (none on a stitched peel, :meth:`Book.occurrence_peel`).
     fn sheet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let d = self.index(py)?;
         let rows = self.inner.rows();
@@ -387,11 +421,14 @@ impl PyLedger {
             "Skew",
             rows.iter().map(|r| r.skew().map(snap)).collect::<Vec<_>>(),
         )?;
-        for q in LADDER {
-            d.set_item(
-                ladder_label("k", q),
-                self.inner.scenarios(q).map_err(to_py)?,
-            )?;
+        // A stitched ledger has no common source, so no scenario columns.
+        if !self.inner.is_stitched() {
+            for q in LADDER {
+                d.set_item(
+                    ladder_label("k", q),
+                    self.inner.scenarios(q).map_err(to_py)?,
+                )?;
+            }
         }
         Ok(d)
     }
@@ -787,7 +824,8 @@ pub(crate) fn derive_premium(technical: f64, expenses: Vec<PyExpense>) -> PyResu
 /// - ``consolidated`` (``pnl``): one group, the net position. With a tower
 ///   it books net premium (gross less ceded premiums) less the net loss
 ///   less the commission received less expenses, over the net loss; a
-///   loss-basis expense books as its rate times the expected gross loss.
+///   loss-basis expense books as its rate times each year's gross loss
+///   (or the expected one, with ``expense_at_expected_loss``).
 /// - ``walk`` (``xpnl``): the gross book, then one buy group per stage of
 ///   the tower, with the running net and the covers' total impact.
 /// - ``peel-top-down`` and ``peel-bottom-up`` (``xpnl ... peel``): one buy
@@ -810,6 +848,17 @@ pub(crate) fn derive_premium(technical: f64, expenses: Vec<PyExpense>) -> PyResu
 ///     ``Loss`` by default; also the gross book's margin on a walk.
 /// step_label : str, optional
 ///     The gross book's step on a walk, ``Gross`` by default.
+/// retro : prospicio.reinsurance.LossSensitivePremium, optional
+///     Rate the book retrospectively (``aggregate``'s ``retro <collar>
+///     premium``): the premium is these terms at the year's gross loss,
+///     and ``premium`` (the collar's basic premium in ``aggregate``) is
+///     what premium-basis expenses are taken on. A retro book buys no
+///     cover here.
+/// expense_at_expected_loss : bool, default False
+///     Book a loss-basis expense on the consolidated face at the expected
+///     gross loss, as ``aggregate``'s guaranteed-cost builder does, rather
+///     than at each year's gross loss (which makes the consolidated margin
+///     the walk's net margin year by year).
 ///
 /// Examples
 /// --------
@@ -830,7 +879,8 @@ pub(crate) struct PyBook {
 #[pymethods]
 impl PyBook {
     #[new]
-    #[pyo3(signature = (name, premium, expenses=None, *, premium_label=None, loss_label=None, step_label=None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (name, premium, expenses=None, *, premium_label=None, loss_label=None, step_label=None, retro=None, expense_at_expected_loss=false))]
     fn new(
         name: String,
         premium: f64,
@@ -838,8 +888,16 @@ impl PyBook {
         premium_label: Option<String>,
         loss_label: Option<String>,
         step_label: Option<String>,
+        retro: Option<PyRef<'_, PyLossSensitivePremium>>,
+        expense_at_expected_loss: bool,
     ) -> Self {
         let mut b = RsBook::new(name, premium);
+        if expense_at_expected_loss {
+            b = b.expense_at_expected_loss();
+        }
+        if let Some(r) = retro {
+            b = b.retro(r.inner);
+        }
         for e in expenses.unwrap_or_default() {
             b = b.expense(e.inner);
         }
@@ -888,17 +946,7 @@ impl PyBook {
         tower: Option<PyRef<'_, PyTower>>,
         face: &str,
     ) -> PyResult<PyLedger> {
-        let face = match face {
-            "consolidated" => Face::Consolidated,
-            "walk" => Face::Walk,
-            "peel-top-down" => Face::PeelTopDown,
-            "peel-bottom-up" => Face::PeelBottomUp,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
-                )));
-            }
-        };
+        let face = face_of(face)?;
         let source = source_of(source)?;
         Ok(PyLedger {
             inner: self
@@ -908,7 +956,370 @@ impl PyBook {
         })
     }
 
+    /// The ledger with occurrence covers over the joint source ``joint``
+    /// of the annual gross loss and the loss the ``occurrence`` tower cedes
+    /// (:func:`occurrence_source`), then the aggregate covers of
+    /// ``aggregate`` on the net of the occurrence covers, as
+    /// ``aggregate``'s ``xpnl`` and ``pnl`` over its ``occ_bivariate``.
+    ///
+    /// The occurrence covers are one group on the walk, named after the
+    /// first layer; a peel needs exactly one occurrence layer. The
+    /// consolidated face is over the net loss at each atom. A single
+    /// occurrence layer may carry annual terms and paid reinstatements on
+    /// the joint's unlimited annual cession ``R``: its recovery ``A(R)``
+    /// and premium ``D + h(R)`` then vary with the year.
+    ///
+    /// Parameters
+    /// ----------
+    /// joint : tuple of (list of float, list of float, list of float)
+    ///     ``(gross, ceded, probs)``.
+    /// occurrence : prospicio.reinsurance.Tower
+    ///     Per-occurrence covers; annual terms and reinstatements on a
+    ///     single layer only.
+    /// aggregate : prospicio.reinsurance.Tower, optional
+    /// face : str, default "consolidated"
+    ///
+    /// Returns
+    /// -------
+    /// Ledger
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As :meth:`ledger`, annual terms on an occurrence tier of several
+    ///     layers, or a peel through several occurrence layers.
+    #[pyo3(signature = (joint, occurrence, aggregate=None, face="consolidated"))]
+    fn occurrence_ledger(
+        &self,
+        joint: &Bound<'_, PyAny>,
+        occurrence: PyRef<'_, PyTower>,
+        aggregate: Option<PyRef<'_, PyTower>>,
+        face: &str,
+    ) -> PyResult<PyLedger> {
+        let face = face_of(face)?;
+        let joint = source_of(joint)?;
+        Ok(PyLedger {
+            inner: self
+                .inner
+                .occurrence_ledger(
+                    &joint,
+                    &occurrence.inner,
+                    aggregate.as_deref().map(|t| &t.inner),
+                    face,
+                )
+                .map_err(to_py)?,
+        })
+    }
+
+    /// Several occurrence layers peeled one by one, and the aggregate
+    /// covers of ``aggregate`` behind them, ``aggregate``'s stitched peel.
+    /// The joint source carries only the occurrence tier's total cession,
+    /// so every row is its own exact marginal: each occurrence layer's
+    /// recovery, running net and the tier's total the compound of a
+    /// per-claim map of ``severity`` under ``frequency`` (by FFT on twice
+    /// ``points``), each aggregate layer's a pushforward of the
+    /// net-of-occurrence aggregate. The mean column foots; the other
+    /// statistics are each row's own, with no scenario columns; ``Impact``
+    /// is the difference of the grand and gross results' statistics; a
+    /// loss-basis expense is booked at the expected gross loss.
+    ///
+    /// Parameters
+    /// ----------
+    /// frequency : Poisson, NegativeBinomial, Binomial or a count
+    /// severity : Grid
+    /// occurrence : prospicio.reinsurance.Tower
+    ///     Occurrence layers with fixed terms.
+    /// aggregate : prospicio.reinsurance.Tower, optional
+    /// face : str, default "peel-top-down"
+    ///     ``peel-top-down`` or ``peel-bottom-up``.
+    /// points : int, default 1024
+    ///
+    /// Returns
+    /// -------
+    /// Ledger
+    ///     A stitched ledger (``is_stitched``).
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     A face that is not a peel, a retro book, occurrence layers with
+    ///     annual terms, reinstatements or loss-sensitive terms, aggregate
+    ///     layers with loss-sensitive terms, or a severity grid longer than
+    ///     ``points``.
+    #[pyo3(signature = (frequency, severity, occurrence, aggregate=None, face="peel-top-down", points=1024))]
+    #[allow(clippy::too_many_arguments)]
+    fn occurrence_peel(
+        &self,
+        py: Python<'_>,
+        frequency: &Bound<'_, PyAny>,
+        severity: PyRef<'_, PyGrid>,
+        occurrence: PyRef<'_, PyTower>,
+        aggregate: Option<PyRef<'_, PyTower>>,
+        face: &str,
+        points: usize,
+    ) -> PyResult<PyLedger> {
+        let face = face_of(face)?;
+        let n = AnyCount::extract(frequency)?;
+        let (sev, occ) = (severity.inner.clone(), occurrence.inner.clone());
+        let agg = aggregate.map(|t| t.inner.clone());
+        let book = self.inner.clone();
+        let inner = py
+            .detach(|| {
+                book.occurrence_peel(n.as_counting(), &sev, &occ, agg.as_ref(), face, points)
+            })
+            .map_err(to_py)?;
+        Ok(PyLedger { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!("Book(premium={})", self.inner.gross_premium())
     }
+}
+
+/// A joint source's columns: gross, ceded, probabilities.
+type JointColumns = (Vec<f64>, Vec<f64>, Vec<f64>);
+
+fn face_of(face: &str) -> PyResult<Face> {
+    match face {
+        "consolidated" => Ok(Face::Consolidated),
+        "walk" => Ok(Face::Walk),
+        "peel-top-down" => Ok(Face::PeelTopDown),
+        "peel-bottom-up" => Ok(Face::PeelBottomUp),
+        other => Err(PyValueError::new_err(format!(
+            "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
+        ))),
+    }
+}
+
+/// The joint source of the annual gross loss and the loss ceded by the
+/// per-occurrence covers of ``occurrence``, ``aggregate``'s
+/// ``occ_bivariate(views=('gross', 'ceded'))``: each claim on the
+/// severity's grid goes to ``(x, c(x))``, the cession split linearly
+/// between grid points, compounded by a two-dimensional FFT on ``points``
+/// points per axis; cells below ``1e-15`` of the total mass are dropped as
+/// round-off.
+///
+/// Parameters
+/// ----------
+/// frequency : Poisson, NegativeBinomial, Binomial or a count
+/// severity : Grid
+/// occurrence : prospicio.reinsurance.Tower
+///     Per-occurrence covers; a single layer may carry annual terms and
+///     reinstatements, and each claim is then ceded without them.
+/// points : tuple of (int, int)
+///
+/// Returns
+/// -------
+/// tuple of (tuple of (list of float, list of float, list of float), BivariateReport)
+///     The joint source ``(gross, ceded, probs)`` for
+///     :meth:`Book.occurrence_ledger`, and the FFT's report.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import occurrence_source
+/// >>> from prospicio.distributions import Grid, Poisson
+/// >>> from prospicio.reinsurance import Layer, Tower
+/// >>> sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
+/// >>> cover = Tower([Layer("occ 2 xs 2", 2.0, 2.0)])
+/// >>> (gross, ceded, probs), _ = occurrence_source(Poisson(2.0), sev, cover, (64, 32))
+/// >>> round(sum(c * p for c, p in zip(ceded, probs)), 12)
+/// 0.8
+#[pyfunction]
+pub(crate) fn occurrence_source(
+    py: Python<'_>,
+    frequency: &Bound<'_, PyAny>,
+    severity: PyRef<'_, PyGrid>,
+    occurrence: PyRef<'_, PyTower>,
+    points: (usize, usize),
+) -> PyResult<(JointColumns, PyBivariateReport)> {
+    let n = AnyCount::extract(frequency)?;
+    let (sev, tower) = (severity.inner.clone(), occurrence.inner.clone());
+    let (source, report) = py
+        .detach(|| {
+            prospicio_aggregate::pnl::occurrence_source(
+                n.as_counting(),
+                &sev,
+                &tower,
+                [points.0, points.1],
+            )
+        })
+        .map_err(to_py)?;
+    Ok((
+        (
+            source.values().to_vec(),
+            source.second().unwrap_or_default().to_vec(),
+            source.probs().to_vec(),
+        ),
+        PyBivariateReport { inner: report },
+    ))
+}
+
+/// A premium rounded as ``aggregate`` writes one: to whole units above 100,
+/// to cents at or below it, ties to even.
+///
+/// Parameters
+/// ----------
+/// premium : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import round_premium
+/// >>> round_premium(714.12), round_premium(16.285)
+/// (714.0, 16.29)
+#[pyfunction]
+pub(crate) fn round_premium(premium: f64) -> f64 {
+    rs_round_premium(premium)
+}
+
+/// The premium sized from a target loss ratio, ``aggregate``'s
+/// ``pnl_program`` without the ladder: the expected loss over
+/// ``loss_ratio``, rounded by :func:`round_premium`.
+///
+/// Parameters
+/// ----------
+/// expected_loss : float
+/// loss_ratio : float
+///
+/// Returns
+/// -------
+/// float
+///
+/// Raises
+/// ------
+/// ValueError
+///     If either is not positive and finite.
+#[pyfunction]
+pub(crate) fn size_premium(expected_loss: f64, loss_ratio: f64) -> PyResult<f64> {
+    rs_size_premium(expected_loss, loss_ratio).map_err(to_py)
+}
+
+/// The premium ladder of ``aggregate``'s ``pnl_program``, as numbers:
+/// the net technical premium ``E_net / c_net``, each layer's deposit at
+/// 100% placement ``round(E_j / c_j / s_j)`` (or the premium it states),
+/// and the booked premium ``round((T_net + sum s_j d_j) / (1 - ER))``. The
+/// book's own margin is ``(1 - c_net) T_net`` whatever the cover costs.
+/// Each priced deposit is also respelled as a rate, ``aggregate``'s
+/// ``premium_style='rate'``: of the booked premium on the occurrence tier,
+/// of it less the occurrence premiums on the aggregate tier.
+///
+/// Parameters
+/// ----------
+/// net_loss : float
+///     Expected net loss.
+/// net_combined_ratio : float
+/// expense_ratio : float
+///     Gross expenses as a fraction of premium.
+/// layers : list of dict, optional
+///     Each with ``ceded_loss`` (expected, at the placed share), ``share``,
+///     ``combined_ratio``, optionally ``stated`` (a premium the contract
+///     states, at the placed share, which is kept) and ``aggregate``
+///     (``True`` for a layer on the aggregate tier).
+///
+/// Returns
+/// -------
+/// dict
+///     ``premium``, ``technical``, ``deposits``, ``rates`` (``None`` for a
+///     stated layer) and ``ceded_premium``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     A ratio that is not positive, an expense ratio outside ``[0, 1)``
+///     or a share outside ``(0, 1]``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import pnl_program
+/// >>> p = pnl_program(406.0, 0.9, 0.25, [dict(ceded_loss=86.0, share=1.0, combined_ratio=0.6)])
+/// >>> p["premium"], p["deposits"], p["rates"]
+/// (792.0, [143.0], [0.18055556])
+#[pyfunction]
+#[pyo3(signature = (net_loss, net_combined_ratio, expense_ratio, layers=None))]
+pub(crate) fn pnl_program<'py>(
+    py: Python<'py>,
+    net_loss: f64,
+    net_combined_ratio: f64,
+    expense_ratio: f64,
+    layers: Option<Vec<Bound<'py, PyDict>>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let ls = program_layers(layers)?;
+    let p = rs_pnl_program(net_loss, net_combined_ratio, expense_ratio, &ls).map_err(to_py)?;
+    program_dict(py, p)
+}
+
+/// The premium ladder for an engine that states its own technical premium
+/// (``aggregate``'s ``premium at lr``): the stated premium takes the net
+/// book's place. With no layer to pay for, the premium is the stated one
+/// grossed up and left unrounded, as ``aggregate``'s ``derive premium``.
+///
+/// Parameters
+/// ----------
+/// stated : float
+///     The engine's technical premium.
+/// expense_ratio : float
+/// layers : list of dict, optional
+///     As :func:`pnl_program`.
+///
+/// Returns
+/// -------
+/// dict
+///     As :func:`pnl_program`.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import pnl_program_stated
+/// >>> round(pnl_program_stated(1000.0, 0.25)["premium"], 6)
+/// 1333.333333
+#[pyfunction]
+#[pyo3(signature = (stated, expense_ratio, layers=None))]
+pub(crate) fn pnl_program_stated<'py>(
+    py: Python<'py>,
+    stated: f64,
+    expense_ratio: f64,
+    layers: Option<Vec<Bound<'py, PyDict>>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let ls = program_layers(layers)?;
+    let p = rs_pnl_program_stated(stated, expense_ratio, &ls).map_err(to_py)?;
+    program_dict(py, p)
+}
+
+fn program_layers(layers: Option<Vec<Bound<'_, PyDict>>>) -> PyResult<Vec<ProgramLayer>> {
+    let mut ls = Vec::new();
+    for d in layers.unwrap_or_default() {
+        let get = |k: &str| -> PyResult<f64> {
+            d.get_item(k)?
+                .ok_or_else(|| PyValueError::new_err(format!("a program layer needs {k:?}")))?
+                .extract()
+        };
+        let stated = match d.get_item("stated")? {
+            Some(v) if !v.is_none() => Some(v.extract::<f64>()?),
+            _ => None,
+        };
+        let layer = match stated {
+            Some(p) => ProgramLayer::occurrence(0.0, get("share")?, 1.0).stated(p),
+            None => {
+                ProgramLayer::occurrence(get("ceded_loss")?, get("share")?, get("combined_ratio")?)
+            }
+        };
+        let aggregate = match d.get_item("aggregate")? {
+            Some(v) if !v.is_none() => v.extract::<bool>()?,
+            _ => false,
+        };
+        ls.push(ProgramLayer { aggregate, ..layer });
+    }
+    Ok(ls)
+}
+
+fn program_dict(py: Python<'_>, p: Program) -> PyResult<Bound<'_, PyDict>> {
+    let out = PyDict::new(py);
+    out.set_item("premium", p.premium)?;
+    out.set_item("technical", p.technical)?;
+    out.set_item("deposits", p.deposits)?;
+    out.set_item("rates", p.rates)?;
+    out.set_item("ceded_premium", p.ceded_premium)?;
+    Ok(out)
 }

@@ -3,6 +3,8 @@
 \name{mbbefd}
 \alias{mbbefd}
 \alias{swiss_re_curve}
+\alias{swiss_re_for_mean_rate}
+\alias{swiss_re_for_layer_share}
 \alias{exposure_curve}
 \alias{exposure_layer_share}
 \alias{severity_exposure_curve}
@@ -12,6 +14,10 @@
 mbbefd(b, g, ptr = NULL)
 
 swiss_re_curve(c)
+
+swiss_re_for_mean_rate(rate)
+
+swiss_re_for_layer_share(limit, attachment, mpl, share)
 
 exposure_curve(curve, x)
 
@@ -26,13 +32,18 @@ rate_quantile(curve, u)
 
 \item{c}{Swiss Re curve parameter, non-negative (0 is the straight line).}
 
-\item{curve}{An \code{mbbefd} or \link{tabulated_curve} object.}
-
-\item{x}{Fractions of the MPL.}
+\item{rate}{A mean destruction rate, between the curves' at \code{c = 10}
+and \code{c = 0} (0.5).}
 
 \item{limit, attachment}{The layer.}
 
 \item{mpl}{Maximum possible loss of the risk.}
+
+\item{share}{The layer's share of a risk's expected loss.}
+
+\item{curve}{An \code{mbbefd} or \link{tabulated_curve} object.}
+
+\item{x}{Fractions of the MPL.}
 
 \item{severity}{A severity: \link{lognormal}, \link{grid_distribution} or a
 Pareto-family distribution.}
@@ -57,6 +68,12 @@ of a risk's expected loss in the layer \code{limit} xs \code{attachment}, `G(min
 \itemize{
 \item l)/M, 1)) - G(min(a/M, 1))\code{. }severity_exposure_curve()\verb{is the curve of any severity capped at the MPL,}LEV(x M) / LEV(M)`.
 }
+
+\code{swiss_re_for_mean_rate()} and \code{swiss_re_for_layer_share()}
+calibrate \code{c}: to a mean destruction rate (a cedant's loss ratio over
+its rate on sum insured, say), or to the share of a risk's expected
+loss in one layer. They return the curve, with its \code{c} as the
+attribute \code{"c"}.
 }
 \examples{
 c3 <- swiss_re_curve(3)

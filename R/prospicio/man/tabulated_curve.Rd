@@ -2,14 +2,26 @@
 % Please edit documentation in R/pricing.R
 \name{tabulated_curve}
 \alias{tabulated_curve}
+\alias{tabulated_curve_from_severity}
 \title{Tabulated exposure curve}
 \usage{
-tabulated_curve(x, g)
+tabulated_curve(x, g, ptr = NULL)
+
+tabulated_curve_from_severity(severity, mpl, points = 200)
 }
 \arguments{
 \item{x}{Increasing from 0 to 1.}
 
 \item{g}{\code{G(x)}, from 0 to 1.}
+
+\item{ptr}{Internal.}
+
+\item{severity}{A severity: \link{lognormal}, \link{grid_distribution} or a
+Pareto-family distribution.}
+
+\item{mpl}{The maximum possible loss.}
+
+\item{points}{Number of points, at least 4.}
 }
 \value{
 A \code{tabulated_curve} object with properties \code{x}, \code{g} and \code{mean}.
@@ -27,9 +39,16 @@ for the expected loss to be right.
 \details{
 Works with \code{\link[=exposure_curve]{exposure_curve()}}, \code{\link[=exposure_layer_share]{exposure_layer_share()}} and
 \code{\link[=rate_quantile]{rate_quantile()}}, like an \link{mbbefd} curve.
+
+\code{tabulated_curve_from_severity()} tabulates a severity's exposure curve
+capped at the MPL (as \code{\link[=severity_exposure_curve]{severity_exposure_curve()}}) at \code{points} points,
+half spaced geometrically from \code{1e-6} and half at equal steps of \code{G},
+so a risk profile's band can use it.
 }
 \examples{
 t <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
 exposure_curve(t, 0.3)
 t@mean
+s <- tabulated_curve_from_severity(lognormal_from_mean_cv(1e5, 2), 1e6)
+exposure_curve(s, 0.5)
 }

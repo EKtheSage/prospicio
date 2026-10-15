@@ -788,3 +788,170 @@ def test_book_builders():
         book.ledger(gross, None, "sideways")
     with pytest.raises(ValueError):
         Expense("bogus", 1.0)
+
+
+def test_book_occurrence_covers():
+    from prospicio.aggregate import Book, Expense, occurrence_source
+    from prospicio.distributions import Grid, Poisson
+    from prospicio.reinsurance import Layer, Tower
+
+    # The P&L design note's example 4 against aggregate 1.0.1: gross margin
+    # 14.2, the occurrence cover's recovery 0.8 and margin -0.7, net 13.5.
+    sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
+    occ = Tower([Layer("occ 2 xs 2", 2.0, 2.0).with_deposit_premium(2.0).with_ceding_commission(0.25)])
+    joint, report = occurrence_source(Poisson(2.0), sev, occ, (64, 32))
+    assert len(joint) == 3 and len(joint[0]) == 280
+    book = Book("Ex4", 20.0, [Expense("premium", 0.1)])
+    walk = book.occurrence_ledger(joint, occ, face="walk")
+    s = walk.sheet()
+    net = s["row"].index("net through occ 2 xs 2")
+    assert s["EX"][net] == pytest.approx(13.5, abs=1e-10)
+    assert s["SD"][net] == pytest.approx(2.236067977, abs=1e-8)
+    assert s["k01"][net] == pytest.approx(7.5, abs=1e-10)
+    rec = s["row"].index("occ 2 xs 2 recovery")
+    assert s["EX"][rec] == pytest.approx(0.8, abs=1e-10)
+    agg = Tower([Layer.stop_loss("agg 3 xs 5", 3.0, 5.0).with_deposit_premium(0.5)])
+    c = book.occurrence_ledger(joint, occ, agg)
+    w = book.occurrence_ledger(joint, occ, agg, "walk")
+    assert c.result.mean() == pytest.approx(w.result.mean(), abs=1e-12)
+    assert "Net of occurrence" in w.sheet()["step"]
+    with pytest.raises(ValueError):
+        book.occurrence_ledger(([1.0], [1.0]), occ)
+    two = Tower([Layer("a", 1.0, 1.0), Layer("b", 2.0, 2.0)])
+    with pytest.raises(ValueError):
+        book.occurrence_ledger(joint, two, face="peel-top-down")
+
+
+def test_book_variable_terms_and_program():
+    from prospicio.aggregate import Book, Expense, pnl_program, round_premium, size_premium
+    from prospicio.reinsurance import Layer, LossSensitivePremium, Tower
+
+    # aggregate 1.0.1: a 3 xs 5 cover with a sliding scale, or a profit
+    # commission, on example 1's book.
+    gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    book = Book("V", 10.0, [Expense("premium", 0.1)])
+    base = Layer.stop_loss("ceded agg", 3.0, 5.0).with_deposit_premium(1.0)
+    slide = Tower([base.with_sliding_scale([(0.3, 0.2), (0.1, 0.6)])])
+    s = book.ledger(gross, slide, "walk").sheet()
+    assert s["EX"][s["row"].index("sliding commission")] == pytest.approx(0.268, abs=1e-12)
+    pc = Tower([base.with_profit_commission(0.25, 0.1)])
+    c = book.ledger(gross, pc)
+    assert c.result.mean() == pytest.approx(4.629, abs=1e-12)
+    assert c.sheet()["SD"][c.sheet()["row"].index("commission")] > 0
+    # Swing rating: the ceded premium varies with the ceded loss.
+    swing = Tower([Layer.stop_loss("ceded agg", 3.0, 5.0).with_swing_rating(0.5, 1.1, 0.6, 2.5)])
+    w = book.ledger(gross, swing, "walk").sheet()
+    assert w["EX"][w["row"].index("ceded agg premium")] == pytest.approx(-0.796, abs=1e-12)
+    # Retro: the premium is the collar at the gross loss.
+    retro = Book("V", 2.0, [Expense("premium", 0.1)],
+                 retro=LossSensitivePremium(2.0, 1.1, minimum=3.0, maximum=9.0))
+    assert retro.ledger(gross).row("Premium").mean() == pytest.approx(6.108, abs=1e-12)
+    with pytest.raises(ValueError):
+        retro.ledger(gross, pc)
+    # pnl_program's ladder, against aggregate's on the design note's book.
+    p = pnl_program(405.97794085441933, 0.9, 0.25, [
+        dict(ceded_loss=86.78504710067914, share=1.0, combined_ratio=0.6),
+        dict(ceded_loss=8.144345556686755, share=1.0, combined_ratio=0.5)])
+    assert p["premium"] == 817.0 and p["deposits"] == [145.0, 16.29]
+    kept = pnl_program(406.0, 0.9, 0.25, [dict(share=0.5, stated=50.0)])
+    assert kept["deposits"] == [100.0] and kept["ceded_premium"] == 50.0
+    assert round_premium(146.5) == 146.0 and size_premium(499.885, 0.7) == 714.0
+    with pytest.raises(ValueError):
+        size_premium(-1.0, 0.7)
+
+
+def test_book_reinstatements():
+    from prospicio.aggregate import Book, Expense, occurrence_source
+    from prospicio.distributions import Grid, Poisson
+    from prospicio.reinsurance import Layer, Tower
+
+    # aggregate 1.0.1: an occurrence cover 2 xs 2 with one reinstatement at
+    # 100% on example 4's book; the premium D + h(R) varies with the year.
+    sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
+    occ = Tower([Layer("occ 2 xs 2", 2.0, 2.0, premium=2.0, reinstatement_rates=[1.0])])
+    joint, _ = occurrence_source(Poisson(2.0), sev, occ, (64, 32))
+    book = Book("R", 20.0, [Expense("premium", 0.1)])
+    s = book.occurrence_ledger(joint, occ, face="walk").sheet()
+    prem = s["row"].index("occ 2 xs 2 premium")
+    assert s["EX"][prem] == pytest.approx(-2.65936, abs=1e-5)
+    assert s["SD"][prem] == pytest.approx(0.940194, abs=1e-6)
+    net = book.occurrence_ledger(joint, occ)
+    assert net.result.mean() == pytest.approx(12.323104, abs=1e-6)
+    with pytest.raises(ValueError):
+        book.ledger(([1.0, 5.0], [0.5, 0.5]), occ, "walk")
+
+
+def test_pnl_program_rates_and_stated_premium():
+    from prospicio.aggregate import pnl_program, pnl_program_stated
+
+    # aggregate 1.0.1's premium_style='rate' on the design note's engine.
+    p = pnl_program(405.97794085441933, 0.9, 0.25, [
+        dict(ceded_loss=86.78504710067914, share=1.0, combined_ratio=0.6),
+        dict(ceded_loss=8.144345556686755, share=1.0, combined_ratio=0.5, aggregate=True)])
+    assert p["rates"] == [0.17747858, 0.024241071]
+    # An engine stating 1000 of premium, with and without cover.
+    s = pnl_program_stated(1000.0, 0.25, [
+        dict(ceded_loss=112.82015639464626, share=1.0, combined_ratio=0.6),
+        dict(ceded_loss=25.56634375990714, share=1.0, combined_ratio=0.5, aggregate=True)])
+    assert s["premium"] == 1652.0 and s["rates"] == [0.11380145, 0.034924863]
+    assert pnl_program_stated(1000.0, 0.25)["premium"] == pytest.approx(1000 / 0.75, abs=1e-9)
+    kept = pnl_program(406.0, 0.9, 0.25, [dict(share=0.5, stated=20.0)])
+    assert kept["rates"] == [None]
+
+
+def test_consolidated_loss_expense_each_year():
+    from prospicio.aggregate import Book, Expense
+    from prospicio.reinsurance import Layer, Tower
+
+    gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    cover = Tower([Layer.stop_loss("SL", 3.0, 5.0).with_deposit_premium(1.0)])
+    book = Book("B", 10.0, [Expense("loss", 0.05)])
+    c, w = book.ledger(gross, cover), book.ledger(gross, cover, "walk")
+    # The consolidated margin is the walk's net margin, year by year.
+    assert c.result.std_dev() == pytest.approx(w.result.std_dev(), abs=1e-12)
+    m = Book("B", 10.0, [Expense("loss", 0.05)], expense_at_expected_loss=True).ledger(gross, cover)
+    assert m.result.mean() == pytest.approx(c.result.mean(), abs=1e-12)
+    assert m.row("expense").std_dev() == 0.0 and c.row("expense").std_dev() > 0.0
+
+
+def test_stitched_occurrence_peel():
+    from prospicio.aggregate import Book, Expense
+    from prospicio.distributions import Grid, Poisson
+    from prospicio.reinsurance import Layer, Tower
+
+    # aggregate 1.0.1's stitched peel: two occurrence layers, top down.
+    sev = Grid(1.0, [0.0, 0.4, 0.3, 0.0, 0.2, 0.0, 0.1])
+    occ = Tower([Layer("occ 1 xs 1", 1.0, 1.0).with_deposit_premium(1.0),
+                 Layer("occ 2 xs 2", 2.0, 2.0).with_deposit_premium(1.0).with_ceding_commission(0.2)])
+    book = Book("S", 20.0, [Expense("premium", 0.1)])
+    peel = book.occurrence_peel(Poisson(2.0), sev, occ, points=64)
+    assert peel.is_stitched
+    s = peel.sheet()
+    assert "k01" not in s
+    net = s["row"].index("net through occ 1 xs 1")
+    assert s["SD"][net] == pytest.approx(1.897366596, abs=1e-8)
+    assert s["EX"][net] == pytest.approx(13.8, abs=1e-9)
+    with pytest.raises(ValueError):
+        peel.row("total impact")
+    with pytest.raises(ValueError):
+        book.occurrence_peel(Poisson(2.0), sev, occ, face="walk", points=64)
+
+
+def test_select_ceded_before_joining_a_book():
+    # Issue #193: join only the ceded part of a tower's result to a book.
+    from prospicio.aggregate import simulate_events
+    from prospicio.distributions import Lognormal, Poisson, PredictiveDistribution
+    from prospicio.reinsurance import Layer, Tower
+
+    ev = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 2000, seed=7)
+    res = Tower([Layer("5x5", 5e6, 5e6), Layer("10x10", 10e6, 10e6)]).apply(ev)
+    ceded = res.select("kind", ["ceded"])
+    assert ceded.dims == ["kind", "layer"] and len(ceded.components()) == 2
+    by_kind = res.aggregate(["kind"])
+    assert ceded.mean() == pytest.approx(by_kind.marginal(["ceded"]).mean(), rel=1e-12)
+    with pytest.raises(ValueError):
+        res.select("kind", ["nothing"])
+    with pytest.raises(ValueError):
+        res.select("lob", ["ceded"])
+    two = res.select("kind", ["gross", "net"])
+    assert len(two.components()) == 2
