@@ -509,7 +509,7 @@ class BayesBf:
         k_threshold : float, default 0.7
             The Pareto ``k`` above which a simulation's importance weights
             are not trusted.
-        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
         
         Returns
@@ -1077,11 +1077,15 @@ class BayesOdp:
             The Pareto ``k`` above which a simulation's importance weights
             are not trusted (the threshold of Vehtari et al. 2024 for a few
             thousand draws).
-        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
             What happens to a flagged simulation: refitted with NUTS, or
             reweighted anyway (fast, biased where ``k`` is high);
             ``"refit_all"`` refits every simulation, to check the
-            reweighting.
+            reweighting; ``"moment_match_then_refit"`` first moves the
+            posterior draws by affine maps to the moments the weights
+            estimate (moment matching, as R's ``loo::loo_moment_match``)
+            and refits only a simulation whose ``k`` stays above
+            ``k_threshold`` (``moment_matched`` lists the others).
         
         Returns
         -------
@@ -1128,7 +1132,7 @@ class BayesOdp:
         column : str
         k_threshold : float, default 0.7
             As in ``one_year``.
-        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
             As in ``one_year``.
         
         Returns
@@ -1482,8 +1486,9 @@ class BayesOneYearFit:
     value is an adverse development and ``cdr.quantile(0.005)`` is minus
     the one-year value at risk at 99.5%. ``pareto_k`` has one Pareto ``k``
     per simulation; ``flagged_share`` is the share above ``k_threshold``,
-    whether or not they were refitted, and ``refitted`` lists the
-    simulations refitted with NUTS. ``fit`` is the model's own lifetime fit,
+    whether or not they were refitted, ``refitted`` lists the simulations
+    refitted with NUTS and ``moment_matched`` those moment matching
+    rescued (``refit="moment_match_then_refit"``). ``fit`` is the model's own lifetime fit,
     a ``BayesOdpFit`` or a ``BayesBfFit``.
     """
     def __repr__(self, /) -> str: ...
@@ -1540,6 +1545,14 @@ class BayesOneYearFit:
     def latest(self, /) -> list[float]:
         """
         Latest observed value per origin.
+        """
+    @property
+    def moment_matched(self, /) -> list[int]:
+        """
+        The simulations moment matching rescued (their ``k`` brought to at
+        most ``k_threshold``), in order (0-based); empty unless ``refit``
+        was ``"moment_match_then_refit"``, when each flagged simulation is
+        in this or in ``refitted``.
         """
     @property
     def opening_reserve(self, /) -> list[float]:
@@ -1681,6 +1694,12 @@ class BayesOneYearFits:
     def latest(self, /) -> list[float]:
         """
         Latest observed value per origin.
+        """
+    @property
+    def moment_matched(self, /) -> list[int]:
+        """
+        The simulations of a single-segment fit that moment matching
+        rescued.
         """
     @property
     def opening_reserve(self, /) -> list[float]:

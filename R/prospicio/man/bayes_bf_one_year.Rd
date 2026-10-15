@@ -20,7 +20,7 @@ bayes_bf_one_year(
   target_accept = 0.95,
   max_depth = 10,
   k_threshold = 0.7,
-  refit = c("refit_flagged", "reweight_only", "refit_all")
+  refit = c("refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit")
 )
 }
 \arguments{
@@ -67,8 +67,11 @@ few thousand draws).}
 
 \item{refit}{What happens to a flagged simulation: \code{"refit_flagged"}
 refits it with NUTS, \code{"reweight_only"} reweights it anyway (fast,
-biased where k is high), and \code{"refit_all"} refits every simulation, to
-check the reweighting.}
+biased where k is high), \code{"refit_all"} refits every simulation, to
+check the reweighting, and \code{"moment_match_then_refit"} first moves the
+posterior draws by affine maps to the moments the weights estimate
+(moment matching, as \code{loo::loo_moment_match()}), refitting only a
+simulation whose k stays above \code{k_threshold}.}
 }
 \value{
 A \code{bayes_one_year_fit} object.

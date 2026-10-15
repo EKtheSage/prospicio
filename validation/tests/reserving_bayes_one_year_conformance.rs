@@ -154,10 +154,10 @@ fn conform<F: Sync>(
         either, c.refitted,
         "{name}: matched or refitted, never both"
     );
-    for i in 0..REFIT_SIMS {
+    for (i, &f) in is_flagged.iter().enumerate() {
         if m.refitted.contains(&i) {
             assert_eq!(row(&m, i), row(&b, i), "{name}: refit {i} after matching");
-        } else if !is_flagged[i] {
+        } else if !f {
             assert_eq!(row(&m, i), row(&a, i), "{name}: unflagged {i}");
         }
     }

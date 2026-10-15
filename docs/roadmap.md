@@ -270,7 +270,12 @@ what it is aiming for by v1.0.
     reference runs on every implementor. `BayesBf::one_year` is the
     second model (Python `BayesBf.one_year`, R `bayes_bf_one_year()`):
     under a flat prior it agrees with `BayesOdp`'s view, under a tight
-    one with the closed form of the strong-prior limit.
+    one with the closed form of the strong-prior limit. Moment matching
+    (decision 18, opt-in `MomentMatchThenRefit`, in Rust, Python and R)
+    moves the posterior draws of a flagged simulation by affine maps
+    before falling back to a refit: on RAA and GenIns it rescues nearly
+    every flagged simulation, as accurately as a refit, at about a
+    twenty-fifth of the cost.
   - Selected development patterns (`reserving-v02.md`, decision 12;
     branch `claude/selected-patterns`, in Rust, Python and R):
     `SelectedPattern` on `Development` as age-to-age factors, factors
@@ -293,8 +298,8 @@ what it is aiming for by v1.0.
   for Meyers`);
   then the same one-year view for `Meyers` and `Compartmental`
   through the generic interface (decision 17), once the user sets the
-  defaults for their refit cost; and moment matching as the cheaper
-  first fallback (open decision 12 (b), decided 2026-10-15).
+  defaults for their refit cost (moment matching, built in decision
+  18, may make that cost rare).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.

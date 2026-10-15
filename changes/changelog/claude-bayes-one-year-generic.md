@@ -17,3 +17,15 @@
   run on each model. `BayesOdp`'s one-year view is unchanged, bit for
   bit. A simulation whose year has a log likelihood that is not a number
   is now an error, as a failed refit is.
+- Moment matching in the Bayesian one-year view, opt-in:
+  `OneYearRefit::MomentMatchThenRefit` moves the posterior draws of a
+  flagged simulation by affine maps to the moments its importance weights
+  estimate (Paananen et al. 2021, as R's `loo::loo_moment_match`, with
+  its split estimate) and refits with NUTS only a simulation whose Pareto
+  k stays above the threshold; `BayesOneYearFit::moment_matched` (and
+  `BayesOneYearSegment::moment_matched`) lists the simulations it
+  rescued. `RefitFlagged` stays the default. In Python
+  `refit="moment_match_then_refit"` and `.moment_matched`, in R the same
+  `refit` value and `@moment_matched` (1-based). **Breaking (Rust)** for
+  code that matches `OneYearRefit` exhaustively or builds
+  `BayesOneYearFit` or `BayesOneYearSegment` in full.

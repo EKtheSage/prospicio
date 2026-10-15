@@ -46,7 +46,7 @@ together, as in `reserving-v02.md` decision 7.
 | 6 | `claude/bayes-meyers-segments` | Meyers' CRC, CSR and CAY with `fit_segments` and `TriangleModel` (open decision 9; decisions 8 and 11, "Meyers"), in Rust, with `fit_segments` in Python and R | PR 5 |
 | 7 | next | compartmental reserving, in its own design note (open decision 9) | |
 | 8 | `claude/bayes-one-year` | the one-year view by PSIS reweighting, `BayesOdp` first, with segments (open decision 6, decision 16); Rust, then the bindings | PR 1 |
-| 9 | `claude/bayes-one-year-generic` | one generic one-year view for every Bayesian model (`YearModel`, decision 17) on the public PSIS, its conformance suite, and `BayesBf::one_year`, in Rust, Python and R | #273 (PR 8 merged) |
+| 9 | `claude/bayes-one-year-generic` | one generic one-year view for every Bayesian model (`YearModel`, decision 17) on the public PSIS, its conformance suite, and `BayesBf::one_year`; moment matching before refitting, opt-in (decision 18); in Rust, Python and R | #273 (PR 8 merged) |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
 PRs 2 to 4 touch the same binding files
@@ -2037,6 +2037,114 @@ and the first values) for `ReweightOnly` on GenIns (2,000 simulations),
 generic engine and the public PSIS reproduce all three exactly, and
 `reserving_bayes_one_year.rs` passes unchanged.
 
+### 18. Moment matching before refitting (PR 9)
+
+Built in Rust, Python and R on `claude/bayes-one-year-generic`
+(2026-10-15), as open decision 12 (b): the user kept `RefitFlagged` as
+the default and asked for moment matching to be tried and measured.
+
+**The method** (`bayes/moment_match.rs`), the general form of Paananen,
+Piironen, Bürkner and Vehtari (2021, "Implicitly adaptive importance
+sampling", *Statistics and Computing* 31, 16) as R's
+`loo::loo_moment_match` implements it (read from `loo`'s source, not
+from memory):
+
+1. For a flagged simulation, start from the opening draws `θ_s`, their
+   smoothed normalised weights and `k̂`.
+2. Try, in order: a shift to the weighted mean; a shift and a scaling
+   to the weighted mean and marginal variances (`loo`'s `S / (S - 1)`
+   correction); a shift and the map `L_w L⁻¹` to the weighted mean and
+   covariance (`L` and `L_w` the Cholesky factors of the plain and the
+   weighted covariance, `cov.wt`'s `1 - Σ w²` divisor; the identity when
+   either is not positive definite). Each moves the current draws; the
+   log ratio of a moved draw `T(θ_s)` is `log p(T(θ_s) | y, year) - log
+   p(θ_s | y)`, the year's target taken as `log_posterior(x, [])` plus
+   `year_log_likelihood(x, year)` (equal up to a constant, which the
+   conformance suite checks). The map is affine, so the proposal's
+   Jacobian is a constant and drops out of the self-normalised weights,
+   as in `loo`.
+3. Keep a step only if PSIS gives a lower `k̂`; after a kept step start
+   again at the shift; stop when none lowers it, when `k̂` is at most the
+   threshold, or after 30 kept steps (`loo`'s `max_iters`). A ratio PSIS
+   cannot take (`+inf`) stops matching; a NaN ratio is a zero weight.
+4. If `k̂` came to at most the threshold, the closing reserve is `loo`'s
+   split estimate (its default): the first half of the draws moved by
+   the whole map `T`, the second half left, each weighted by the target
+   over the mixture `½ p(x | y) + ½ p(T⁻¹(x) | y) / |det T|` (here the
+   Jacobian matters) and Pareto-smoothed, and the closing reserve is the
+   weighted mean of the model's closing reserve at those draws.
+   Otherwise the simulation is refitted with NUTS on the seed every
+   setting draws, so its row is `RefitAll`'s.
+
+All maps are lower triangular (diagonal or `L_w L⁻¹`), so `T⁻¹` is a
+forward substitution and `log |det T|` the sum of the log diagonal. The
+opening draws' log posterior is computed once per segment; each step
+costs one pass of the log posterior over the 4,000 draws.
+`OdpCells::log_posterior` skips cloning the model when the year is empty.
+
+**Settings.** `OneYearRefit::MomentMatchThenRefit`, opt-in; the default
+stays `RefitFlagged`. `pareto_k` stays each simulation's `k̂` before
+matching, so `flagged_share` means the same under every setting; the new
+`moment_matched` (on `BayesOneYearFit` and `BayesOneYearSegment`) lists
+the simulations matching rescued, and each flagged simulation is in it
+or in `refitted`. Python `refit="moment_match_then_refit"` and
+`.moment_matched`; R the same `refit` value and `@moment_matched`
+(1-based). Moment matching draws no random numbers, so the years and the
+other settings' views are unchanged bit for bit (the pinned test of
+decision 17 passes).
+
+**Results** (`validation/tests/reserving_bayes_one_year_moment_match.rs`,
+release, 16 threads; `BayesOdp` on RAA and GenIns and `BayesBf` on GenIns
+with premium, apriori 0.5 and cv 0.2; 2,000 simulations under every
+setting on the same years; mean and seed-to-seed sd over seeds 0 to 19):
+
+| | `BayesOdp` RAA | `BayesOdp` GenIns | `BayesBf` GenIns |
+|---|---|---|---|
+| flagged (`k̂` > 0.7) | 268 (14) | 531 (15) | 255 (17) |
+| rescued by matching | 100% | 99.99% (min 99.8%) | 100% |
+| rms gap to the refit, rescued, matched (sd of the total) | 0.058 (0.008) | 0.036 (0.007) | 0.038 (0.007) |
+| the same simulations reweighted only | 0.240 (0.045) | 0.155 (0.012) | 0.186 (0.021) |
+| total sd over `RefitAll`'s: `MomentMatchThenRefit` | 0.999 (0.006) | 1.001 (0.008) | 0.999 (0.008) |
+| `RefitFlagged` | 0.999 (0.005) | 1.000 (0.005) | 0.999 (0.008) |
+| `ReweightOnly` | 1.004 (0.013) | 1.004 (0.009) | 1.004 (0.011) |
+| wall time, `ReweightOnly` | 0.23 s | 0.23 s | 0.22 s |
+| wall time, `RefitFlagged` | 7.7 s | 13.6 s | 6.9 s |
+| wall time, `MomentMatchThenRefit` | 0.50 s | 0.73 s | 0.48 s |
+
+The rescued simulations' gap to their refits is the size of the
+unflagged simulations' gap between reweighting and refitting (0.035 to
+0.056 sd, decision 17), so matching makes a flagged simulation as good as
+an unflagged one; their spread is the refits' (sd ratio 1.000 to 1.002)
+and their mean gap within 0.006 sd of zero. Matching costs about 1 ms of
+wall time per flagged simulation against 25 to 28 ms for a refit, so a
+run costs two to three times `ReweightOnly` and a fifteenth to a nineteenth
+of `RefitFlagged`. The total's sd is within Monte Carlo error of
+`RefitAll`'s under every setting at 2,000 simulations; reweighting alone
+is noisier per simulation, not visibly biased at this size. The wall
+times were taken while other builds shared the machine, so they are
+rough; their ratios are steady across seeds.
+
+The test, at 1,000 simulations and seed 0, also checks exactly that
+matching sees `ReweightOnly`'s `k̂`, that each flagged simulation is
+matched or refitted but not both, and that a refitted row is
+`RefitFlagged`'s and an unflagged one `ReweightOnly`'s; the release
+conformance suite checks the same for every model on 300 simulations
+against `RefitAll`, and a triangle without a year matches and refits
+nothing. A unit test on a conjugate normal model (six parameters, `k̂`
+about 5) shows matching landing within 0.03 of the exact posterior mean
+where reweighting is 0.25 off, and another that each step's moved draws
+have the weighted moments. Bounds: `rescued` at least 0.99 and the gap
+below 0.11 (RAA), 0.07 (GenIns, `BayesBf`), each at least the sweep's
+mean plus 4 sds.
+
+**Recommendation.** Matching is as accurate as refitting on these
+triangles and about 25 times cheaper per flagged simulation, and it
+leaves the refit as the fallback, so it could be the default (the user
+decides; the default is unchanged). For `Meyers` (0.3 to 0.5 s per
+refit) and the compartmental models (5.5 s and 61 s) the saving grows
+with the refit's cost, if their posteriors are as close to normal under
+an affine map; that is measured when their `YearModel`s exist.
+
 ## Open decisions for the user
 
 Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a),
@@ -2139,7 +2247,14 @@ are settled.
     the flagged share the user sees.
     Decided 2026-10-15 by the user: keep `RefitFlagged` as the default for
     now, and try (b); the engine's `YearModel::log_posterior` (decision 17)
-    is its hook, and (b) is measured next.
+    is its hook. Built and measured in PR 9 (decision 18) as the opt-in
+    `MomentMatchThenRefit`, in `loo`'s general form (affine steps to the
+    weighted mean, variances and covariance, then the split estimate)
+    rather than from the Laplace approximation: on RAA and GenIns it
+    rescues 99.99% to 100% of the flagged simulations, within 0.04 to 0.06
+    sd of their refits (reweighting alone: 0.16 to 0.24), at about 1 ms
+    each against about 26 ms for a refit. Open for the user: make it the
+    default (recommended).
 13. **One PSIS for both crates.** Raised 2026-10-14 by PR 8. The one-year
     engine carries a copy of `prospicio_bayes::elpd`'s private PSIS (a
     test checks the two agree on `k̂`). (a) Make `psis` public in

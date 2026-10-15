@@ -26,7 +26,7 @@ bayes_odp_one_year(
   target_accept = 0.95,
   max_depth = 10,
   k_threshold = 0.7,
-  refit = c("refit_flagged", "reweight_only", "refit_all")
+  refit = c("refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit")
 )
 
 bayes_odp_one_year_segments(
@@ -46,7 +46,7 @@ bayes_odp_one_year_segments(
   dependence = c("independent", "rank_correlation", "synchronized"),
   spearman = NULL,
   k_threshold = 0.7,
-  refit = c("refit_flagged", "reweight_only", "refit_all")
+  refit = c("refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit")
 )
 }
 \arguments{
@@ -92,8 +92,11 @@ few thousand draws).}
 
 \item{refit}{What happens to a flagged simulation: \code{"refit_flagged"}
 refits it with NUTS, \code{"reweight_only"} reweights it anyway (fast,
-biased where k is high), and \code{"refit_all"} refits every simulation, to
-check the reweighting.}
+biased where k is high), \code{"refit_all"} refits every simulation, to
+check the reweighting, and \code{"moment_match_then_refit"} first moves the
+posterior draws by affine maps to the moments the weights estimate
+(moment matching, as \code{loo::loo_moment_match()}), refitting only a
+simulation whose k stays above \code{k_threshold}.}
 
 \item{dependence}{How the segments depend on each other:
 \code{"independent"}, each segment's own posterior and simulations; or
@@ -162,13 +165,17 @@ with dimension \code{origin} (a negative value is an adverse development, and
 \code{-quantile(fit@cdr, 0.005)} is the one-year loss at 99.5\%); \code{pareto_k}
 (one per simulation, \code{Inf} when too few weights differ to fit the tail),
 \code{refitted} (the simulations refitted with NUTS, 1-based),
+\code{moment_matched} (the simulations moment matching rescued, 1-based;
+empty unless \code{refit = "moment_match_then_refit"}, when each flagged
+simulation is in it or in \code{refitted}),
 \code{refit_warnings} (how many refits had a diagnostic warning),
 \code{k_threshold} and \code{flagged_share} (the share of simulations above it,
 whether or not they were refitted). A \code{bayes_one_year_fits} has the
 same, without \code{fit}, with \code{keys}, \code{index}, \code{scale} and \code{diagnostics} (a
 data.frame as \code{\link[=bayes_odp_segments]{bayes_odp_segments()}}'s), and with \code{cdr} keyed by the
 triangle's keys and \code{origin}; \code{scale}, \code{pareto_k}, \code{refitted},
-\code{refit_warnings} and \code{flagged_share} need a single-segment fit: use
+\code{moment_matched}, \code{refit_warnings} and \code{flagged_share} need a
+single-segment fit: use
 \code{\link[=segment]{segment()}} or \code{\link[=totals_frame]{totals_frame()}}. \code{as.data.frame()} has one row per
 segment and origin: \code{origin}, \code{latest}, \code{opening_ultimate},
 \code{opening_reserve}, and the \code{cdr_mean} and \code{cdr_std_dev} of the CDR;

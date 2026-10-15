@@ -24,7 +24,7 @@
 //! `RefitAll`'s, and the wall times; its first 1,000 simulations are the
 //! test's (a simulation depends only on the seed and its index). Every
 //! bound is the sweep's mean minus (floor) or plus (bounds) at least 4
-//! seed-to-seed sds over seeds 0 to 9 (`SWEEP_SEEDS=10 cargo test
+//! seed-to-seed sds over seeds 0 to 19 (`SWEEP_SEEDS=20 cargo test
 //! --release -p prospicio-validation --features slow-bayes --test
 //! reserving_bayes_one_year_moment_match -- --ignored seed_sweep
 //! --nocapture`).
@@ -45,10 +45,13 @@ const SWEEP_SIMS: usize = 2_000;
 
 /// Per model: the floor on `rescued` and the bound on `gap_matched`, at
 /// `SIMS`.
+/// Over seeds 0 to 19: `rescued` at least 0.9964 (GenIns; 1 elsewhere),
+/// `gap_matched` mean + 4 sd 0.101 (RAA), 0.062 (GenIns) and 0.064
+/// (`BayesBf`), seed 0 at 0.049, 0.038 and 0.041.
 const BOUNDS: &[(&str, f64, f64)] = &[
-    ("BayesOdp RAA", 0.9, 0.2),
-    ("BayesOdp GenIns", 0.9, 0.2),
-    ("BayesBf GenIns", 0.9, 0.2),
+    ("BayesOdp RAA", 0.99, 0.11),
+    ("BayesOdp GenIns", 0.99, 0.07),
+    ("BayesBf GenIns", 0.99, 0.07),
 ];
 
 fn mean(x: &[f64]) -> f64 {
@@ -301,7 +304,7 @@ fn seed_sweep() {
     let seeds: u64 = std::env::var("SWEEP_SEEDS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(10);
+        .unwrap_or(20);
     type Row = (Vec<Measured>, Vec<Measured>, Vec<[f64; 3]>);
     let mut by_model: Vec<(&str, Row)> = Vec::new();
     for seed in 0..seeds {
