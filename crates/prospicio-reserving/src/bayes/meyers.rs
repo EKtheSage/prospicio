@@ -1,7 +1,10 @@
 //! Meyers' correlated chain ladder (CRC), changing settlement rate (CSR) and
 //! correlated accident year (CAY) models on cumulative values with premium
 //! (`docs/design/reserving-bayes.md`, decision 7), over segments (decision
-//! 11) and in the diagonal backtest (decision 8).
+//! 11), in the diagonal backtest (decision 8) and in the one-year view
+//! (decision 19, [`year`]).
+
+mod year;
 
 use std::collections::BTreeMap;
 
@@ -15,7 +18,10 @@ use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use super::laplace::{Posterior, Whitened};
 use super::odp::log_mean_exp;
-use super::{Diagnostics, Stream, derive_seed, pilot_seed};
+use super::one_year::{
+    self, BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, YearDraws,
+};
+use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
 use crate::backtest::{CellForecast, TriangleModel};
 use crate::bootstrap::{
     component_sums, hash_segment, origin_keys, pick_segment, push_moments, segment_sums,
@@ -275,6 +281,10 @@ pub struct MeyersSegment {
     /// R-hat, ESS and divergences, with warnings for failed thresholds.
     pub diagnostics: Diagnostics,
     model: Model,
+    /// The posterior draws on the unconstrained scale NUTS samples (an
+    /// affine map of it), for the one-year view (decision 19); a
+    /// [`MeyersFit`] does not keep them.
+    sampled: PosteriorDraws,
 }
 
 impl MeyersSegment {
@@ -444,22 +454,253 @@ impl Meyers {
             Stream::Chains,
             Stream::Predictive,
         )?;
-        let MeyersSegment {
-            chain_ladder,
+        Ok(fit.into_fit(ultimates, reserves))
+    }
+
+    /// The one-year view of `column` of a single-segment cumulative
+    /// triangle with premium from its `premium` column: the claims
+    /// development result over the twelve months after the valuation, by
+    /// reweighting the posterior with Pareto smoothed importance sampling
+    /// (decisions 16 to 19 of `docs/design/reserving-bayes.md`).
+    ///
+    /// The posterior and the lifetime ultimates and reserves are
+    /// [`fit`](Self::fit)'s, draw for draw. Each of [`n_sims`](Self::n_sims)
+    /// simulations picks a posterior draw `θ`, draws the cumulative values
+    /// `C` of the year's cells (the cells valued in the twelve months, as
+    /// in [`OdpBootstrap::one_year`](crate::OdpBootstrap::one_year); one per
+    /// open origin with an annual grain) from the model given `θ`, weights
+    /// every posterior draw by the likelihood of those values given the
+    /// observed ones and smooths the weights (Pareto `k̂` per simulation).
+    /// Origin `w`'s claims development result is
+    ///
+    /// ```text
+    /// CDR_w = E[U_w | D0] - E[U_w | D0, C]
+    /// ```
+    ///
+    /// with `U_w` its ultimate (the value at the oldest age) and each
+    /// expectation the (weighted) posterior mean of `E[U_w | θ]`, which is
+    /// `exp(mu_wm + sigma_m^2 / 2)`; CAY's mean adds `rho` times the
+    /// previous origin's residual at the oldest age where that cell is
+    /// observed by the end of the year, and its variance is
+    /// `(1 + rho^2) sigma_m^2` where it is not. An origin the year takes to
+    /// the oldest age has `E[U_w | D0] - C_wm` as its claims development
+    /// result, one already there has none. The opening reserve,
+    /// `E[U_w | D0]` less the latest value, is the posterior mean of the
+    /// lifetime reserve. A flagged simulation (`k̂` above the threshold)
+    /// is moment-matched and, if that cannot rescue it, refitted with NUTS
+    /// on the triangle extended by its year, as [`BayesOneYear::refit`]
+    /// says.
+    ///
+    /// The draws are reweighted on the unconstrained scale NUTS samples
+    /// (`u_i` for the steps of `sigma_d^2`, `atanh(rho)` for CAY), which
+    /// the fit keeps beside its natural-scale
+    /// [`posterior`](MeyersFit::posterior). In CAY each year cell's
+    /// previous origin is observed or in the year at the same age (it is
+    /// valued earlier), so the year's residuals follow from the draw.
+    ///
+    /// ```
+    /// use prospicio_bayes::nuts::Sampler;
+    /// use prospicio_reserving::bayes::{BayesOneYear, Meyers};
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    /// use prospicio_prob::Distribution;
+    ///
+    /// let paid: [&[f64]; 6] = [
+    ///     &[952.0, 1529.0, 2813.0, 3647.0, 3724.0, 3832.0],
+    ///     &[849.0, 1564.0, 2202.0, 2432.0, 2468.0],
+    ///     &[983.0, 2211.0, 2830.0, 3832.0],
+    ///     &[1657.0, 2685.0, 3169.0],
+    ///     &[932.0, 1940.0],
+    ///     &[1162.0],
+    /// ];
+    /// let premium = [5812.0, 4908.0, 5454.0, 5165.0, 5214.0, 5230.0];
+    /// let (mut origin, mut age, mut values, mut prem) = (vec![], vec![], vec![], vec![]);
+    /// for (w, row) in paid.iter().enumerate() {
+    ///     for (d, &v) in row.iter().enumerate() {
+    ///         origin.push(Month::january(1988 + w as i32));
+    ///         age.push(12 * (d as u32 + 1));
+    ///         values.push(v);
+    ///         prem.push(premium[w]);
+    ///     }
+    /// }
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&age),
+    ///     values: &[("paid", &values), ("premium", &prem)],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let model = Meyers {
+    ///     sampler: Sampler { tune: 300, draws: 300, ..Meyers::default().sampler },
+    ///     n_sims: 500,
+    ///     ..Meyers::default()
+    /// };
+    /// let view = model.one_year(&tri, "paid", "premium", &BayesOneYear::default())?;
+    /// assert_eq!(view.cdr.n_components(), 6);
+    /// // 1988 is fully developed: no cell in the year, no change.
+    /// assert!(view.cdr.draw_matrix().chunks(6).all(|row| row[0] == 0.0));
+    /// // The one-year view is narrower than the lifetime view.
+    /// assert!(view.cdr.std_dev() < view.fit.reserves.std_dev());
+    /// # Ok::<(), prospicio_reserving::Error>(())
+    /// ```
+    pub fn one_year(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        premium: &str,
+        settings: &BayesOneYear,
+    ) -> Result<BayesOneYearFit<MeyersFit>> {
+        self.validate()?;
+        settings.validate()?;
+        let segment = triangle.segment(column)?;
+        let premium_segment = triangle.segment(premium)?;
+        let (fit, ultimates, reserves) = self.fit_segment(
+            &segment,
+            &premium_segment,
+            column,
             premium,
-            posterior,
-            diagnostics,
-            model,
-        } = fit;
-        Ok(MeyersFit {
-            chain_ladder,
-            premium,
-            posterior,
-            diagnostics,
-            ultimates,
-            reserves,
-            model,
-        })
+            Stream::Chains,
+            Stream::Predictive,
+        )?;
+        let year = self.year_draws(triangle, &segment, &fit, Stream::Predictive, settings)?;
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        hasher.str(premium);
+        hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
+        hasher.f64s(&fit.premium);
+        let provenance = self.one_year_provenance(column, premium, hasher, settings);
+        one_year::assemble(
+            fit.into_fit(ultimates, reserves),
+            year,
+            &segment,
+            settings,
+            provenance,
+        )
+    }
+
+    /// The one-year view of `column` in every segment of a cumulative
+    /// triangle, with premium from the same segment's `premium` column,
+    /// each segment's posterior and simulations as in
+    /// [`fit_segments`](Self::fit_segments) (segment `k`'s own seeds) and
+    /// its view as in [`one_year`](Self::one_year), into one joint claims
+    /// development result, the segments depending on each other as
+    /// [`dependence`](Self::dependence) says: `Independent` as drawn,
+    /// `RankCorrelation` by Iman–Conover on the segments' total claims
+    /// development results, as the bootstraps' one-year view does;
+    /// `Synchronized` is an [`Error::Bayes`]. A failure names its segment.
+    pub fn one_year_segments(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        premium: &str,
+        settings: &BayesOneYear,
+    ) -> Result<BayesOneYearFits<MeyersSegment>> {
+        self.validate()?;
+        settings.validate()?;
+        if self.dependence == SegmentDependence::Synchronized {
+            return Err(Error::Bayes(
+                "Synchronized dependence draws the residuals of the same positions in every \
+                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
+                    .into(),
+            ));
+        }
+        self.dependence.validate(triangle.index().len())?;
+        let mut k = 0;
+        let fitted = fit_each_with_exposure(triangle, column, premium, |segment, prem| {
+            let predictive = Stream::SegmentPredictive(k);
+            let fit = self
+                .fit_segment(
+                    segment,
+                    prem,
+                    column,
+                    premium,
+                    Stream::SegmentChains(k),
+                    predictive,
+                )
+                .and_then(|(fit, _, _)| {
+                    let year = self.year_draws(triangle, segment, &fit, predictive, settings)?;
+                    Ok((fit, year))
+                });
+            k += 1;
+            fit
+        })?;
+
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        hasher.str(premium);
+        let mut dims = fitted.key_names.clone();
+        dims.push("origin".into());
+        let mut components = Vec::new();
+        for ((label, (fit, _)), segment) in fitted.iter().zip(triangle.segments(column)?) {
+            hasher.str(&label.to_string());
+            hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
+            hasher.f64s(&fit.premium);
+            components.extend(origin_keys(label, &segment.origins));
+        }
+        let mut draws = Vec::with_capacity(self.n_sims * components.len());
+        for i in 0..self.n_sims {
+            for (_, year) in &fitted.fits {
+                let m = year.opening.len();
+                draws.extend_from_slice(&year.cdr[i * m..(i + 1) * m]);
+            }
+        }
+        let provenance = self
+            .one_year_provenance(column, premium, hasher, settings)
+            .param("segments", fitted.len())
+            .param("dependence", format!("{:?}", self.dependence));
+        let cdr = PredictiveDistribution::from_draws(dims, components, draws, provenance)?;
+        let segments = fitted.map(|(fit, year)| BayesOneYearSegment {
+            fit: fit.clone(),
+            opening_ultimate: one_year::opening_ultimate(&fit.chain_ladder, &year.opening),
+            opening_reserve: year.opening.clone(),
+            pareto_k: year.pareto_k.clone(),
+            refitted: year.refitted.clone(),
+            moment_matched: year.moment_matched.clone(),
+            refit_warnings: year.refit_warnings,
+            k_threshold: settings.k_threshold,
+        });
+        let cdr = self.dependence.reorder(cdr, &segments, self.seed)?;
+        Ok(BayesOneYearFits { segments, cdr })
+    }
+
+    /// The one-year simulations of one fitted segment, from the seed the
+    /// segment's `predictive` stream derives (module docs, "Seeds").
+    fn year_draws(
+        &self,
+        triangle: &Triangle,
+        segment: &Segment,
+        fit: &MeyersSegment,
+        predictive: Stream,
+        settings: &BayesOneYear,
+    ) -> Result<YearDraws> {
+        let year = year::MeyersYear::new(
+            self,
+            &fit.model,
+            triangle,
+            segment,
+            &fit.chain_ladder,
+            &fit.premium,
+        )?;
+        one_year::simulate(
+            &year,
+            &fit.sampled,
+            settings,
+            self.n_sims,
+            one_year_seed(derive_seed(self.seed, predictive)),
+        )
+    }
+
+    fn one_year_provenance(
+        &self,
+        column: &str,
+        premium: &str,
+        hasher: InputHasher,
+        settings: &BayesOneYear,
+    ) -> Provenance {
+        let mut provenance = self.provenance(column, premium, hasher);
+        provenance.model = format!("meyers_{}_one_year", self.model.name());
+        one_year::provenance(provenance, settings)
     }
 
     /// Fits `column` in every segment of a cumulative triangle, with
@@ -624,7 +865,8 @@ impl Meyers {
         let chain_ladder = ChainLadder::default().fit_segment(segment, &segment.ages)?;
         let premiums = origin_exposure(segment, premium_segment, premium)?;
         let model = self.model_of(segment, &chain_ladder, &premiums)?;
-        let (posterior, diagnostics) = self.sample(&model, derive_seed(self.seed, chains))?;
+        let (posterior, sampled, diagnostics) =
+            self.sample(&model, derive_seed(self.seed, chains))?;
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
@@ -676,6 +918,7 @@ impl Meyers {
                 posterior,
                 diagnostics,
                 model,
+                sampled,
             },
             ultimates,
             reserves,
@@ -686,9 +929,15 @@ impl Meyers {
     /// a pilot run (decision 7, "Sampling scale"), whitened roughly at the
     /// start point, then by the pilot draws' mean and covariance, since the
     /// joint mode lies deep in the funnel of the late `sigma_d`, far from
-    /// the posterior's bulk. The draws on the natural scale and their
-    /// diagnostics.
-    fn sample(&self, model: &Model, chains: u64) -> Result<(PosteriorDraws, Diagnostics)> {
+    /// the posterior's bulk. The draws on the natural scale, the same draws
+    /// on the unconstrained scale `Model::log_posterior` takes (an affine
+    /// map of the whitened one NUTS samples, so its density needs no
+    /// Jacobian), and their diagnostics.
+    fn sample(
+        &self,
+        model: &Model,
+        chains: u64,
+    ) -> Result<(PosteriorDraws, PosteriorDraws, Diagnostics)> {
         let p = model.dim();
         let start = model.start();
         let rough = Whitened::regularised(model, &start)?;
@@ -711,14 +960,15 @@ impl Meyers {
                 ..self.sampler
             },
         )?;
-        let posterior = draws.transform(model.names(), |z| model.natural(&whitened.theta(z)))?;
+        let sampled = draws.transform(model.sampled_names(), |z| whitened.theta(z))?;
+        let posterior = sampled.transform(model.names(), |theta| model.natural(theta))?;
         let summary = posterior.summary()?;
         let diagnostics = Diagnostics::new(
             &summary,
             posterior.chains(),
             posterior.divergences().iter().sum(),
         );
-        Ok((posterior, diagnostics))
+        Ok((posterior, sampled, diagnostics))
     }
 
     fn validate(&self) -> Result<()> {
@@ -1135,7 +1385,7 @@ impl TriangleModel for Meyers {
             &origins,
             cells.ages(),
         )?;
-        let (posterior, _) = self.sample(&model, derive_seed(seed, Stream::Chains))?;
+        let (posterior, _, _) = self.sample(&model, derive_seed(seed, Stream::Chains))?;
         let at = cell_index(&model.cells, no, rebuilt.n_dev);
         let ages = rebuilt.path_ages();
 
@@ -1192,6 +1442,33 @@ impl TriangleModel for Meyers {
             distribution,
             log_density,
         })
+    }
+}
+
+impl MeyersSegment {
+    /// The fit of a single segment, with its lifetime predictive.
+    fn into_fit(
+        self,
+        ultimates: PredictiveDistribution,
+        reserves: PredictiveDistribution,
+    ) -> MeyersFit {
+        let MeyersSegment {
+            chain_ladder,
+            premium,
+            posterior,
+            diagnostics,
+            model,
+            sampled: _,
+        } = self;
+        MeyersFit {
+            chain_ladder,
+            premium,
+            posterior,
+            diagnostics,
+            ultimates,
+            reserves,
+            model,
+        }
     }
 }
 
@@ -1371,6 +1648,19 @@ impl Model {
     /// Position of `u_1`.
     fn u0(&self) -> usize {
         self.after_beta() + usize::from(self.kind != MeyersModel::Crc)
+    }
+
+    /// The names of the unconstrained parameters: `v` is `atanh(rho)` and
+    /// `u[d]` the logit of `sigma[d]^2`'s step.
+    fn sampled_names(&self) -> Vec<String> {
+        let mut names = self.names();
+        if self.cay() {
+            names[self.after_beta()] = "v".into();
+        }
+        for (d, name) in names[self.u0()..].iter_mut().enumerate() {
+            *name = format!("u[{}]", d + 1);
+        }
+        names
     }
 
     fn names(&self) -> Vec<String> {
@@ -3251,5 +3541,337 @@ pub(crate) mod tests {
             ),
             "{e}"
         );
+    }
+
+    // The one-year view (decision 19).
+
+    /// A fully developed 4 x 4 square of paid with premium.
+    fn square() -> Triangle {
+        let rows: [[f64; 4]; 4] = [
+            [357.0, 1124.0, 1735.0, 2218.0],
+            [352.0, 1236.0, 2170.0, 3353.0],
+            [290.0, 1292.0, 2219.0, 3235.0],
+            [310.0, 1418.0, 2195.0, 3757.0],
+        ];
+        let (mut origin, mut ages, mut paid, mut prem) = (vec![], vec![], vec![], vec![]);
+        for (w, row) in rows.iter().enumerate() {
+            for (d, &v) in row.iter().enumerate() {
+                origin.push(Month::january(2001 + w as i32));
+                ages.push(12 * (d as crate::Lag + 1));
+                paid.push(v);
+                prem.push(5000.0 + 500.0 * w as f64);
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("premium", &prem)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    /// The pieces a [`year::MeyersYear`] borrows: the segment, its chain
+    /// ladder and premiums, and the model.
+    fn year_parts(meyers: &Meyers, tri: &Triangle) -> (Segment, ChainLadderFit, Vec<f64>, Model) {
+        let segment = tri.segment("paid").unwrap();
+        let cl = ChainLadder::default()
+            .fit_segment(&segment, &segment.ages)
+            .unwrap();
+        let premium =
+            origin_exposure(&segment, &tri.segment("premium").unwrap(), "premium").unwrap();
+        let model = meyers.model_of(&segment, &cl, &premium).unwrap();
+        (segment, cl, premium, model)
+    }
+
+    /// The year's pieces without sampling: the importance ratio is the
+    /// change in the log posterior, the expected ultimate of CRC and CSR
+    /// does not depend on the year, and the opening reserve is the mean of
+    /// the lifetime simulation's reserve given a draw (with CAY's
+    /// integrated residual).
+    #[test]
+    fn the_year_follows_the_model() {
+        use crate::bayes::one_year::YearModel;
+        let tri = comauto();
+        for kind in [MeyersModel::Crc, MeyersModel::Csr, MeyersModel::Cay] {
+            let meyers = Meyers {
+                model: kind,
+                ..Meyers::default()
+            };
+            let (segment, cl, premium, model) = year_parts(&meyers, &tri);
+            let year =
+                year::MeyersYear::new(&meyers, &model, &tri, &segment, &cl, &premium).unwrap();
+            assert_eq!(year.n_year(), 9, "{kind:?}");
+            assert_eq!(year.n_origins(), 10);
+            let theta = off_mode(&model);
+            let mut other = theta.clone();
+            for (j, v) in other.iter_mut().enumerate() {
+                *v -= 0.02 * (j as f64 % 5.0 - 2.0);
+            }
+            let mut rng = StreamRng::new(3, 0);
+            let mut values = vec![0.0; 9];
+            year.draw_year(&theta, &mut rng, &mut values);
+            assert!(values.iter().all(|v| v.is_finite() && *v > 0.0));
+            // 1. The ratio is the change in the log posterior.
+            let change = |t: &[f64]| {
+                year.log_posterior(t, &values)
+                    - year.log_posterior(t, &[])
+                    - year.year_log_likelihood(t, &values)
+            };
+            let (a, b) = (change(&theta), change(&other));
+            assert!((a - b).abs() < 1e-9 * (1.0 + a.abs()), "{kind:?}: {a} {b}");
+            // 2. The year's payment and closing reserve.
+            let mut opening = vec![0.0; 10];
+            let mut paid = vec![0.0; 10];
+            let mut closing = vec![0.0; 10];
+            year.opening(&theta, &mut opening);
+            year.paid(&values, &mut paid);
+            year.closing(&theta, &values, &mut closing);
+            assert_eq!((opening[0], paid[0], closing[0]), (0.0, 0.0, 0.0));
+            // 1989 reaches the oldest age in the year.
+            assert_eq!(closing[1], 0.0);
+            assert_eq!(paid[1], values[0] - cl.latest[1]);
+            if kind != MeyersModel::Cay {
+                for w in 2..10 {
+                    let moved = closing[w] + paid[w];
+                    assert!(
+                        (moved - opening[w]).abs() < 1e-9 * opening[w].abs().max(1.0),
+                        "{kind:?} origin {w}: {moved} {}",
+                        opening[w]
+                    );
+                }
+            }
+            // 3. The opening reserve is the lifetime reserve's mean given
+            // the draw.
+            let nat = model.natural(&theta);
+            let closed: Vec<bool> = cl.latest_position.iter().map(|&d| d == 9).collect();
+            let n = 200_000;
+            let mut sum = [0.0; 10];
+            let mut sq = [0.0; 10];
+            let mut row = vec![0.0; 10];
+            let mut rng = StreamRng::new(5, 0);
+            for _ in 0..n {
+                model.draw_ultimates(&nat, &premium, &closed, &cl.latest, &mut rng, &mut row);
+                for w in 0..10 {
+                    let r = row[w] - cl.latest[w];
+                    sum[w] += r;
+                    sq[w] += r * r;
+                }
+            }
+            for w in 1..10 {
+                let mean = sum[w] / n as f64;
+                let se = ((sq[w] / n as f64 - mean * mean) / n as f64).sqrt();
+                assert!(
+                    (mean - opening[w]).abs() < 5.0 * se,
+                    "{kind:?} origin {w}: simulated {mean}, opening {} (se {se})",
+                    opening[w]
+                );
+            }
+        }
+        // A square has no year.
+        let closed = square();
+        let meyers = Meyers::default();
+        let (segment, cl, premium, model) = year_parts(&meyers, &closed);
+        let year =
+            year::MeyersYear::new(&meyers, &model, &closed, &segment, &cl, &premium).unwrap();
+        assert_eq!(year.n_year(), 0);
+    }
+
+    /// The one-year conformance suite (decision 17) on CRC, CSR and CAY,
+    /// with a fully developed square as the triangle without a year.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_conforms() {
+        for kind in [MeyersModel::Crc, MeyersModel::Csr, MeyersModel::Cay] {
+            let meyers = quick(kind, 4);
+            let fitted: Vec<(Triangle, Segment, MeyersSegment)> = [comauto(), square()]
+                .into_iter()
+                .map(|tri| {
+                    let segment = tri.segment("paid").unwrap();
+                    let premium = tri.segment("premium").unwrap();
+                    let (fit, _, _) = meyers
+                        .fit_segment(
+                            &segment,
+                            &premium,
+                            "paid",
+                            "premium",
+                            Stream::Chains,
+                            Stream::Predictive,
+                        )
+                        .unwrap();
+                    (tri, segment, fit)
+                })
+                .collect();
+            let years: Vec<year::MeyersYear> = fitted
+                .iter()
+                .map(|(tri, segment, fit)| {
+                    year::MeyersYear::new(
+                        &meyers,
+                        &fit.model,
+                        tri,
+                        segment,
+                        &fit.chain_ladder,
+                        &fit.premium,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            crate::bayes::one_year::conformance::check(
+                &format!("Meyers {kind:?}"),
+                &years[0],
+                &fitted[0].2.sampled,
+                &years[1],
+                &fitted[1].2.sampled,
+            );
+        }
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_reweights_the_fits_posterior() {
+        let model = quick(MeyersModel::Csr, 6);
+        let only = BayesOneYear {
+            refit: crate::bayes::OneYearRefit::ReweightOnly,
+            ..BayesOneYear::default()
+        };
+        let view = model
+            .one_year(&comauto(), "paid", "premium", &only)
+            .unwrap();
+        // The posterior and lifetime predictive are fit()'s, draw for draw.
+        let fit = model.fit(&comauto(), "paid", "premium").unwrap();
+        assert_eq!(view.fit.posterior, fit.posterior);
+        assert_eq!(view.fit.reserves.draw_matrix(), fit.reserves.draw_matrix());
+        assert_eq!(
+            view.fit.ultimates.draw_matrix(),
+            fit.ultimates.draw_matrix()
+        );
+        assert_eq!(view.cdr.dims(), ["origin"]);
+        assert_eq!(view.cdr.n_components(), 10);
+        assert_eq!(view.pareto_k.len(), 2_000);
+        assert!(view.refitted.is_empty() && view.moment_matched.is_empty());
+        // 1988 is fully developed.
+        assert!(view.cdr.draw_matrix().chunks(10).all(|r| r[0] == 0.0));
+        // The opening reserve is the lifetime reserve's posterior mean.
+        let lifetime = fit.reserves.total();
+        let opening: f64 = view.opening_reserve.iter().sum();
+        let se = lifetime.std_dev() / 2_000f64.sqrt();
+        assert!(
+            (opening - lifetime.mean()).abs() < 5.0 * se,
+            "opening {opening}, lifetime {} (se {se})",
+            lifetime.mean()
+        );
+        assert!(view.cdr.std_dev() < fit.reserves.std_dev());
+        assert_eq!(view.cdr.provenance().model, "meyers_csr_one_year");
+        let long = view.to_long();
+        assert_eq!(long.n_rows(), 10);
+        assert!(long.column("premium").is_some());
+        assert!(view.totals().column("flagged_share").is_some());
+        // The default moment-matches the flagged simulations, refitting
+        // only those matching cannot rescue.
+        let matched = Meyers {
+            n_sims: 300,
+            ..model.clone()
+        }
+        .one_year(&comauto(), "paid", "premium", &BayesOneYear::default())
+        .unwrap();
+        let flagged: Vec<usize> = (0..300).filter(|&i| view.pareto_k[i] > 0.7).collect();
+        assert_eq!(matched.pareto_k, view.pareto_k[..300]);
+        let mut either = matched.moment_matched.clone();
+        either.extend(&matched.refitted);
+        either.sort_unstable();
+        assert_eq!(either, flagged);
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_over_segments() {
+        let only = BayesOneYear {
+            refit: crate::bayes::OneYearRefit::ReweightOnly,
+            ..BayesOneYear::default()
+        };
+        let tri = twins();
+        let model = quick(MeyersModel::Crc, 9);
+        let views = model
+            .one_year_segments(&tri, "paid", "premium", &only)
+            .unwrap();
+        assert_eq!(views.cdr.dims(), ["lob", "origin"]);
+        assert_eq!(views.cdr.n_components(), 20);
+        let lifetime = model.fit_segments(&tri, "paid", "premium").unwrap();
+        for (a, b) in views.segments.fits.iter().zip(&lifetime.segments.fits) {
+            assert_eq!(a.fit.posterior, b.posterior);
+            assert_eq!(a.pareto_k.len(), 2_000);
+        }
+        let totals = line_totals(&views.cdr);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!(r.abs() < 4.5 / 2_000f64.sqrt(), "rank correlation {r}");
+        assert_eq!(views.to_long().n_rows(), 20);
+        assert_eq!(views.totals().n_rows(), 2);
+        assert_eq!(
+            views.segment(&[("lob", "b")]).unwrap().cdr.n_components(),
+            10
+        );
+        let correlated = Meyers {
+            dependence: SegmentDependence::RankCorrelation {
+                spearman: vec![1.0, 0.7, 0.7, 1.0],
+            },
+            ..model
+        };
+        let views = correlated
+            .one_year_segments(&tri, "paid", "premium", &only)
+            .unwrap();
+        let totals = line_totals(&views.cdr);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!((r - 0.7).abs() < 0.05, "rank correlation {r}");
+    }
+
+    #[test]
+    fn one_year_errors() {
+        let e = Meyers::default()
+            .one_year(
+                &comauto(),
+                "paid",
+                "premium",
+                &BayesOneYear {
+                    k_threshold: f64::NAN,
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(
+                e,
+                Error::InvalidSetting {
+                    name: "k_threshold",
+                    ..
+                }
+            ),
+            "{e}"
+        );
+        let e = Meyers {
+            dependence: SegmentDependence::Synchronized,
+            ..Meyers::default()
+        }
+        .one_year_segments(&twins(), "paid", "premium", &BayesOneYear::default())
+        .unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            "{e}"
+        );
+        assert!(matches!(
+            Meyers::default().one_year(&twins(), "paid", "premium", &BayesOneYear::default()),
+            Err(Error::MultipleSegments(2))
+        ));
     }
 }
