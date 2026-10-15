@@ -256,7 +256,13 @@ pub struct MackBootstrap {
     /// Process error on the next cumulative values.
     pub process: MackProcess,
     /// Mack's factors (their `alpha`) and how unestimable sigmas are filled
-    /// in.
+    /// in. With a selected pattern ([`Development::pattern`]) the residuals
+    /// and sigmas stay the triangle's estimate's, and each simulation uses
+    /// `w s + (1 - w) f*` for its pseudo factors `f*`: a fully selected
+    /// factor is the same in every simulation, so the pattern lowers the
+    /// simulated uncertainty, and a wrong benchmark is not reflected in it.
+    /// In the one-year view the re-reserving method must then have the same
+    /// pattern (decision 12).
     pub development: Development,
     /// Subtract the pool's mean from the residuals before resampling them,
     /// for the pseudo factors and the `Residuals` process, so that the

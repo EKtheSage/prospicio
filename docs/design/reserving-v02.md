@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 proposed, branch `claude/selected-patterns`) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built in Rust on branch `claude/selected-patterns`, bindings to follow on the same branch) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -1568,7 +1568,10 @@ the bootstrap would have no tail to apply it to.
 
 ### 12. Selected development patterns
 
-Status: **Proposed** (2026-10-14), not built. Branch `claude/selected-patterns`.
+Status: **Built in Rust** (2026-10-14), branch `claude/selected-patterns`;
+the Python and R bindings follow on the same branch. What changed from the
+proposal while building it is listed under "As built" at the end of this
+decision; items 7, 8 and the Checks below are the built versions.
 
 Every factor-based method estimates its age-to-age factors from the
 triangle alone. The only outside input is `TailConstant { factor,
@@ -1786,42 +1789,60 @@ pub struct Development {
    standard error is the process risk alone.
 
 7. **Merz and Wüthrich's one-year view.** Allowed with a pattern (it still
-   needs volume-weighted estimates and no tail). With blending, next year's
-   factor is `w s + (1 - w) e^(I+1)`, so every term that reaches the CDR
-   through the estimate is multiplied by `(1 - w)` once per estimate it
-   goes through. Linearising origin `i`'s CDR in year 0, at link `a =
-   I_i`, with `F` its observed link ratio next year, `share_a = C_ia /
-   S^(I+1)_a` the weight of the new diagonal cell in the re-estimate, and
-   `f_true - f_a = (1 - w)(f_true - e_a)` (the pattern carries no error):
-
-   * origin `i`'s own link: `(F - f_a) / f_a`, variance `sigma_a^2 / (f_a^2
-     C_ia) + (1 - w_a)^2 sigma_a^2 / (f_a^2 S_a)`: process unchanged,
-     parameter times `(1 - w_a)^2`;
-   * a later link `l`, re-estimated: `(1 - w_l) share_l (F_l - e_l) /
-     f_l`, variance `(1 - w_l)^2 share_l sigma_l^2 / (f_l^2 S_l)`;
-   * the covariance of origin `i`'s own link with a younger origin's
-     re-estimate of the same link: `(1 - w_a) share_a ((1 - w_a)
-     sigma_a^2 / S_a + sigma_a^2 / C_ia) / f_a^2 = (1 - w_a)(1 - w_a
-     share_a) sigma_a^2 / (f_a^2 S_a)`, which is R's `sigma_a^2 / (f_a^2
-     S_a)` at `w = 0`.
-
-   In the arrangement `ClaimsDevelopmentResult` uses (R's `CL_MSEPs`),
-   with `t_l = kept(l, y) first_l sigma_l^2 / (f_l^2 S_l)` the existing
-   parameter terms of origin `o` in calendar year `y`, `j` its link that
-   year, `u_o` its ultimate and `Y_o` the younger origins' ultimates:
+   needs volume-weighted estimates and no tail). The model is Mack's
+   lifetime view of item 6 carried forward: under Merz and Wüthrich's
+   conditional resampling the true factor `phi_k` varies around the used
+   factor `f_k` with the blend's parameter variance, `phi_k - f_k ~ (0,
+   g_k^2 tau_k)` with `g = 1 - w` and `tau_k = sigma_k^2 / S_k`; each
+   future link ratio is `phi_k` plus Mack's process (`sigma_k^2 / C`); and
+   the factor used at every later valuation is `w s + g e'`, `e'` that
+   valuation's volume-weighted re-estimate. Linearising each origin's CDR
+   in calendar year `y` (its link that year `j`) gives three terms. Write
+   `T_l = sigma_l^2 / S'_l`, the estimate's variance at the year's start
+   (`S'` the volume then; in the arrangement `ClaimsDevelopmentResult`
+   uses, R's `CL_MSEPs`, `T_l / f_l^2` is the existing parameter term
+   `t_l = kept(l, y) sigma_l^2 / (f_l^2 S_l)`), `k_l = S_l / S'_l` (R's
+   `kept(l, y)`, 1 in the coming year), `a_l = 1 - k_l`, and `s_l` the
+   share of the year's new cell in the re-estimate (`share[l - y]`).
+   * **Own link.** `(F - f^(y)_j) / f_j` with `F = phi_j + process`. The
+     used factor at the year's start is `w s + g ((1 - a) e + a (phi +
+     noise))`, so `phi - f^(y) = (1 - g a)(phi - mean) - g a noise`, of
+     variance `g^2 tau (1 - g a)^2 + g^2 a^2 sigma^2 / dS =
+     g^2 T ((1 - g a)^2 / k + a)`. Process unchanged; parameter term
+     `g_j^2 ((1 - g_j a_j)^2 / k_j + a_j) t_j`.
+   * **A later link `l`, re-estimated:** `g_l s_l (phi_l - e^(y)_l +
+     process) / f_l`. `Var(phi - e^(y)) = sigma^2 (g^2 S + dS) / S'^2 =
+     T (1 - (1 - g^2) k)`, and with the new cell's process `sigma^2 / C =
+     T S' / C` the term is `g_l^2 (1 - s_l k_l (1 - g_l^2)) s_l t_l`.
+   * **The covariance of an origin's own link with a younger origin's
+     re-estimate of it** (the new cell is the older origin's own):
+     `g s (Cov(phi - f^(y), phi - e^(y)) + sigma^2 / C) / f^2 =
+     g_j (1 - s_j (1 - g_j^2 (1 - g_j a_j) - g_j a_j)) t_j`.
 
    ```text
-   msep_o = process_o + u_o^2 sum_{l >= j} (1 - w_l)^2 t_l
-   total  = sum_o [ process_o + u_o^2 sum_{l >= j} (1 - w_l)^2 t_l
-                    + 2 u_o Y_o ( (1 - w_j)(1 - w_j s_j) t_j + sum_{l > j} (1 - w_l)^2 t_l ) ]
+   msep_o = process_o + u_o^2 ( own_j + sum_{l > j} later_l )
+   total  = sum_o [ msep_o + 2 u_o Y_o ( cross_j + sum_{l > j} later_l ) ]
    ```
 
-   with `s_j = share[j - y]`, the share the existing code uses for the
-   year's new cell. At `w = 0` this is today's formula; at `w = 1` on every
-   link each origin's one-year MSEP is its process term and the total is
-   the sum of the origins' (no shared estimate, no covariance). The
-   later-year (`y > 0`) cross term is derived the same way; the
-   implementation PR checks it by simulation (Checks).
+   with `u_o` the origin's ultimate and `Y_o` the younger origins'
+   ultimates. In the coming year (`k = 1`, `a = 0`) the scales are `g^2`,
+   `g^2 (1 - s (1 - g^2))` and `g (1 - s (1 - g^2))`. At `w = 0` every scale
+   is 1 (today's formula, R's `CDR`); at `w = 1` on every link each
+   origin's one-year MSEP is its process term and the total is the sum of
+   the origins' (no shared estimate, no covariance), and the years add up
+   to Mack's process risk. Strictly between, the used factor follows the
+   data less than the estimate does, so the years' CDRs are correlated:
+   their variances need not add up to Mack's, and with `s != e` the CDR's
+   mean is not zero. These are standard deviations.
+
+   The proposal had the new cell's parameter variance at the estimate's
+   `tau` instead of the blend's `g^2 tau` (a later link at `g^2 s t`, the
+   cross term at `g (1 - (1 - g) s) t`) and left later years to the same
+   scales.
+   Both were wrong: the coming year is checked against the exact
+   first-order covariance of this model to `1e-9`, and every year against a
+   simulation of it; the coming year's scales carried to later years are
+   3% to 6% below the simulation from the second year on (Checks).
 
 8. **Bootstraps** (`OdpBootstrap`, `MackBootstrap`, lifetime and one-year
    views). The residuals, the ODP's fitted values and scale `phi`, and
@@ -1883,44 +1904,106 @@ pub struct Development {
 
 1. `claude/selected-patterns` (this note, then): `SelectedPattern`, the
    conversion, validation and rescale, the chain ladder and expected-loss
-   family, Mack and the one-year closed form, with the bindings.
-2. A follow-up branch: the bootstraps (item 8), lifetime and one-year,
-   with the bindings.
+   family, Mack and the one-year closed form, and the bootstraps (item 8,
+   lifetime and one-year), with the bindings. The proposal left the
+   bootstraps to a second PR; they were small enough to build here (a
+   blend of the pseudo factors in the three places that draw them), so
+   there is one PR.
 
 #### Checks
 
 `validation/tests/reserving_patterns.rs`, with references in
 `validation/reference/reserving_patterns_python.csv` (generator
-`validation/scripts/reserving_patterns_python.py`):
+`validation/scripts/reserving_patterns_python.py`) and the existing R rows
+of `validation/reference/reserving_chainladder_r.csv`:
 
-* **chainladder-python parity** (`DevelopmentConstant` then `Chainladder`,
-  `BornhuetterFerguson`, `Benktander`, `CapeCod`; RAA, GenIns, and
-  `clrd_wkcomp.csv` for the exposure methods): full patterns of both
-  styles, the CDF at the oldest age 1 (where the level conventions agree),
-  and a CDF pattern followed by `TailConstant` (where they agree too);
-  ultimates and IBNR to 1e-9 relative.
-* **Hand cases** (unit tests): each kind converts to the same factors
-  (`p = (0.5, 0.8, 0.95)` gives links 1.6 and 1.1875; with a tail of 1.02,
-  `pattern_rescale = 1 / (0.95 * 1.02)`); partial patterns at the young
-  and the old end; the arithmetic blend; every error of item 4; a selected
-  link at a tail's attachment rejected, a cumulative pattern ending there
-  accepted.
-* **Mack against R `MackChainLadder`** (`reserving_patterns_r.csv`):
-  selecting the triangle's own estimated factors with `w = 1` reproduces
-  R's ultimates and `Mack.ProcessRisk` per origin and in total, with zero
-  parameter risk; with a uniform `w`, the parameter risk is `(1 - w)`
-  times R's `Mack.ParameterRisk`, per origin and in total, and the process
-  risk is R's. A partial or non-uniform pattern is checked against the
-  closed form of item 6, computed independently of the recursion.
-* **Merz and Wüthrich:** `w = 0` is R's `CDR` (existing rows); `w = 1` on
-  every link gives the process-only closed form and a total with no
-  covariance; a blended pattern is checked against the exact one-year SD
-  under conditional resampling in `reserving_one_year_mack.rs`, within the
-  first-order gap that test already pins (0.1%), for year 0 and for the
-  full run-off.
-* **Bootstraps:** with every link selected (`w = 1`) and no process
-  error, every simulation's reserve is the deterministic one exactly, and
-  every one-year CDR is 0; with process error, Mack's bootstrap SD matches
+* **chainladder-python parity** (`DevelopmentConstant` then `Chainladder`
+  on RAA and GenIns; then `ExpectedLoss`, `BornhuetterFerguson`,
+  `Benktander` and `CapeCod` on `clrd_wkcomp.csv` with premium): a full
+  benchmark pattern (`s = 1 + 1.1 (e - 1)`) as age-to-age factors, as
+  factors to ultimate with 1 at the oldest age (where the level
+  conventions agree), as factors to ultimate with the level 1.03 followed
+  by `TailConstant(1.05)` (where they agree too), and a blend
+  (`0.6 s + 0.4 e`, blended by the script since chainladder-python has
+  none, so these rows check how blended factors reach each method, not the
+  blend); factors in use, factors to ultimate and ultimates to 1e-9
+  relative, and the given pattern read back (age-to-age from the selected
+  factors, cumulative as the factor to ultimate in use times
+  `pattern_rescale`). The cumulative rows are checked again with the
+  pattern given as percents developed.
+* **Hand cases** (unit tests in `pattern.rs`): each kind converts to the
+  same factors (`p = (0.5, 0.8, 0.95)` gives links 1.6 and 1.1875; with a
+  tail of 1.02, `pattern_rescale = 1 / (0.95 * 1.02)` and the rescaled
+  0.95 times the tail is 100%); round trips between the kinds; partial
+  patterns at the young and the old end; the blend's limits (`w = 0` is the
+  estimate, `w = 1` the selection) in the conversion and through the chain
+  ladder; every error of item 4; a selected link at a tail's attachment
+  rejected, a cumulative pattern ending there accepted; an estimated tail
+  fitted on the blended factors; Bornhuetter-Ferguson by hand; segments
+  (an error names the segment, the tables' new columns, unchanged tables
+  without a pattern).
+* **Mack against R `MackChainLadder`** (the existing rows of
+  `reserving_chainladder_r.csv`, since R takes no factors): selecting the
+  triangle's own estimated factors with `w = 1` reproduces R's ultimates
+  and `Mack.ProcessRisk` per origin and in total, with zero parameter risk;
+  with `w = 0.4` the parameter risk is 0.6 times R's `Mack.ParameterRisk`,
+  per origin and in total, the process risk R's; on RAA, GenIns and ABC, to
+  1e-9. A partial, non-uniform pattern on GenIns is checked against the
+  closed form of item 6 computed apart from the recursion (unit test).
+* **Merz and Wüthrich:** `w = 0` is R's `CDR` (unit test, and every
+  existing R row unchanged); `w = 1` on every link gives the process-only
+  form, a total with no covariance, and a run-off that adds up to Mack's
+  process risk (unit test). With a uniform (`w = 0.5`) and an age-by-age
+  blend of the triangle's own factors, the coming year equals the exact
+  first-order covariance of item 7's model, computed directly from the
+  triangle's cells, to 1e-9 on RAA, GenIns and ABC; every calendar year of
+  the run-off is within five Monte Carlo standard errors (about 1.9%) of
+  40,000 simulated run-offs of the model on GenIns (largest gaps 0.9%,
+  1.1% and 1.1% without a pattern, uniform and by age; mean 0.3%); and
+  Mack's bootstrap re-reserving with `w = 0.5` reconciles with the closed
+  form's coming year within five Monte Carlo standard errors (20,000
+  simulations on GenIns).
+* **Bootstraps** (unit tests): Mack's bootstrap with every link selected
+  and no process error gives the deterministic reserve in every simulation
+  and a CDR of 0 in the one-year view; with Mack's process its SD matches
   Mack's process risk within five Monte Carlo standard errors; a uniform
-  blend with `s = e` scales the parameter-only SD by about `(1 - w)`; the
-  pattern-mismatch error of item 8.
+  blend of the triangle's own factors with `w = 0.6` scales the
+  parameter-only SD to 0.4 of the unblended one (within 0.02); the ODP
+  bootstrap on a triangle with no residuals gives the blended chain ladder's
+  reserve in every simulation, and on RAA with every link selected and no
+  process error keeps only the levels' error of "As built" (below 80% of
+  the unblended SD, centred on the chain ladder); the pattern-mismatch
+  error of item 8 in both bootstraps, and a method with a pattern accepted
+  by a bootstrap without one.
+
+#### As built (2026-10-14)
+
+Changes from the proposal, made while building it:
+
+* **Item 7's terms.** The proposal's later-link and cross terms used the
+  estimate's parameter variance for the new cell instead of the blend's,
+  and it carried the coming year's scales to later years. Both are
+  corrected above, with the exact and simulated checks.
+* **The ODP bootstrap keeps the origins' level error** (item 8). England
+  and Verrall's bootstrap, as built in decision 8, projects each origin
+  from its pseudo latest value, so with every link selected and no process
+  error the reserve still varies: on RAA its SD is about 73% of the
+  unblended one (seed 5). This is the ODP's parameter error in the origin
+  effects, which a development pattern does not fix. Mack's bootstrap
+  projects from the observed latest value, so there the reserve is the
+  deterministic one in every simulation, as the proposal's Checks said of
+  both.
+* **One PR**, bootstraps included (Pull requests).
+* **Tables.** `development_table()` gains its five pattern columns, and
+  `totals()` its `pattern_rescale`, only when a pattern selects a factor
+  in some segment, so a fit without a pattern has the same tables as
+  before. `std_err` is always the factor in use's, `(1 - w)` times the
+  estimate's (unchanged without a pattern).
+* **Provenance.** `Development`'s `Debug` leaves out `pattern` when there is
+  none, and `OdpBootstrap` records `pattern` only when it has one, so the
+  provenance of results without a pattern is as before.
+* **Breaking (Rust)**, as proposed: `Development` loses `Copy` and `Eq`, and
+  `ChainLadder`, `Mack`, `MackBootstrap`'s contents and the four
+  expected-loss settings lose `Copy`; `Development`, `OdpBootstrap`,
+  `DevelopmentFit` and `ChainLadderFit` gain public fields; `Error` gains
+  `Pattern`.
