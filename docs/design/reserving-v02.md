@@ -2046,7 +2046,14 @@ Changes from the proposal, made while building it:
   `1.0`: PyO3 cannot give a float default to an argument that also takes
   a dict, and `None` lets an `ldf_weight` given without `ldf` be an error.
   R's one-year functions gained `bootstrap_ldf` (default `TRUE`), since
-  they build the bootstrap and the method from one set of arguments.
+  they build the bootstrap and the method from one set of arguments;
+  Python's `OdpBootstrap.one_year` and `MackBootstrap.one_year` take the
+  same argument with the same default, so that one analysis gives the
+  same CDR distribution in both languages (a review finding: without it,
+  Python simulated the pseudo factors unblended where R blended them).
+  The one-year check compares the two patterns by their resolved
+  selection on each segment's ages, not as given (item 8; a review
+  finding: Python dicts in another key order were rejected).
   Python's `std_err` (and R's) on a fit is now the factor in use's,
   `(1 - w)` times the estimate's, as the tables already were; without a
   pattern it is unchanged. Tests: `python/tests/test_reserving_patterns.py`
