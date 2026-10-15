@@ -2281,4 +2281,93 @@ mod tests {
         let r = spearman(&totals[0], &totals[1]);
         assert!((r - 0.7).abs() < 0.05, "rank correlation {r}");
     }
+
+    /// An FNV-1a hash of the bits of `values`, to pin a run exactly.
+    fn bits_hash(values: &[f64]) -> u64 {
+        values.iter().fold(0xcbf2_9ce4_8422_2325, |h, v| {
+            (h ^ v.to_bits()).wrapping_mul(0x0000_0100_0000_01b3)
+        })
+    }
+
+    /// Seed-pinned one-year views, bit for bit: a change to the engine
+    /// (decision 17) must leave them unchanged.
+    #[test]
+    fn the_one_year_view_is_pinned_by_seed() {
+        let only = quick(4)
+            .one_year(
+                &genins(),
+                "values",
+                &BayesOneYear {
+                    refit: OneYearRefit::ReweightOnly,
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap();
+        let all = BayesOdp {
+            n_sims: 40,
+            ..quick(5)
+        }
+        .one_year(
+            &genins(),
+            "values",
+            &BayesOneYear {
+                refit: OneYearRefit::RefitAll,
+                ..BayesOneYear::default()
+            },
+        )
+        .unwrap();
+        // Captured from the engine before decision 17 (commit aa6cbe6).
+        let pins = [
+            (
+                &only,
+                [
+                    0x4cc3_6ede_8d24_e4c1,
+                    0x60f8_b2e8_2cfa_9edf,
+                    0xc865_9e9b_1ef3_bb95,
+                ],
+                [0.0, 93132.50520453123, 100440.25771184723],
+                [0.18344198587327784, 0.5487737326308497, 1.1487178720844788],
+            ),
+            (
+                &all,
+                [
+                    0xbcd8_cd4c_efd7_772d,
+                    0x0803_8c32_e92d_9604,
+                    0xf02b_6074_1996_c9cf,
+                ],
+                [0.0, 41944.76182826993, 51877.40122388203],
+                [0.152359561840937, 0.39860461448610535, 0.2447379364603276],
+            ),
+        ];
+        for (view, hashes, first, k) in pins {
+            let got = [
+                bits_hash(view.cdr.draw_matrix()),
+                bits_hash(&view.pareto_k),
+                bits_hash(&view.opening_reserve),
+            ];
+            assert_eq!(got, hashes, "{got:#x?}");
+            assert_eq!(view.cdr.draw_matrix()[10..13], first);
+            assert_eq!(view.pareto_k[..3], k);
+        }
+        let segments = quick(9)
+            .one_year_segments(
+                &twins(),
+                "values",
+                &BayesOneYear {
+                    refit: OneYearRefit::ReweightOnly,
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap();
+        let k: Vec<f64> = segments
+            .segments
+            .fits
+            .iter()
+            .flat_map(|s| s.pareto_k.clone())
+            .collect();
+        assert_eq!(
+            [bits_hash(segments.cdr.draw_matrix()), bits_hash(&k)],
+            [0x1b86_9a1b_102e_2965, 0xa555_8ff3_9fe3_7baf]
+        );
+    }
 }
