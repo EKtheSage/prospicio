@@ -10,7 +10,10 @@ use prospicio_prob::{InputHasher, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
 use super::laplace::{Posterior, Whitened, mode};
-use super::{Diagnostics, Stream, derive_seed};
+use super::one_year::{
+    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, YearDraws, YearModel,
+};
+use super::{Diagnostics, Stream, derive_seed, one_year_seed};
 use crate::backtest::{CellForecast, TriangleModel};
 use crate::bootstrap::{
     ProcessDistribution, component_sums, hash_segment, origin_keys, pick_segment, prepare,
@@ -20,6 +23,7 @@ use crate::chain_ladder::ChainLadderFit;
 use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
 use crate::frame::TriangleFrame;
+use crate::one_year_bootstrap::YearCells;
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -327,15 +331,9 @@ impl BayesOdp {
     /// A failure names its segment.
     pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<BayesOdpFits> {
         self.validate()?;
-        if self.dependence == SegmentDependence::Synchronized {
-            return Err(Error::Bayes(
-                "Synchronized dependence draws the residuals of the same positions in every \
-                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
-                    .into(),
-            ));
-        }
-        // A bad rank-correlation matrix fails here, before any sampling.
-        self.dependence.validate(triangle.index().len())?;
+        // Synchronized and a bad rank-correlation matrix fail here, before
+        // any sampling.
+        self.check_dependence(triangle)?;
         let mut k = 0;
         let fitted = fit_each(triangle, column, |segment| {
             let fit = self.fit_segment(
@@ -390,6 +388,237 @@ impl BayesOdp {
         let segments = fitted.map(|(fit, _)| fit.clone());
         let reserves = self.dependence.reorder(reserves, &segments, self.seed)?;
         Ok(BayesOdpFits { segments, reserves })
+    }
+
+    /// The one-year view of `column` of a single-segment cumulative
+    /// triangle (decision 16): the claims development result over the
+    /// twelve months after the valuation, by reweighting the posterior with
+    /// Pareto smoothed importance sampling.
+    ///
+    /// The posterior is [`fit`](Self::fit)'s, draw for draw. Each of
+    /// [`n_sims`](Self::n_sims) simulations picks a posterior draw `θ`,
+    /// draws the increments `X` of the year's cells (the cells valued in the
+    /// twelve months, as in [`OdpBootstrap::one_year`](crate::OdpBootstrap::one_year);
+    /// one per open origin with an annual grain) with
+    /// [`process`](Self::process) error, weights every posterior draw `θ_s`
+    /// by `exp(Σ (X η_s - exp η_s) / φ)`, the quasi likelihood of the year
+    /// with `φ` and the priors unchanged, and smooths the weights (Pareto
+    /// `k̂` per simulation). Origin `w`'s claims development result is
+    ///
+    /// ```text
+    /// CDR_w = E[R_w | D0] - (X_w + E[R'_w | D0, X])
+    /// ```
+    ///
+    /// with `R_w` the sum of its future increments' means `exp(η_wd)` at
+    /// the opening, `X_w` its increments in the year and `R'_w` the means of
+    /// the increments after the year, each expectation the (weighted) mean
+    /// over the posterior draws. Its mean is zero up to Monte Carlo and
+    /// importance sampling error. A simulation whose `k̂` is above
+    /// [`BayesOneYear::k_threshold`] is refitted with NUTS on the triangle
+    /// extended by its year, with this model's sampler and a seed drawn
+    /// from the simulation's own stream, when [`BayesOneYear::refit`] says
+    /// so. An origin with every remaining cell in the year has its whole
+    /// run-off as its one-year view; one at the last age has none. A
+    /// triangle with no cells in the year (every origin at the last age)
+    /// leaves the posterior unchanged: `k̂` is 0 and nothing is refitted.
+    ///
+    /// Unlike the ODP bootstrap, which leaves the cells of an origin that
+    /// lags the valuation unobserved before the year, every cell up to the
+    /// end of the year is observed and conditioned on here.
+    ///
+    /// ```
+    /// use prospicio_bayes::nuts::Sampler;
+    /// use prospicio_reserving::bayes::{BayesOdp, BayesOneYear};
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    /// use prospicio_prob::Distribution;
+    ///
+    /// let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
+    ///     values: &[(
+    ///         "paid",
+    ///         &[100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ///     )],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let model = BayesOdp {
+    ///     sampler: Sampler { tune: 300, draws: 300, ..Sampler::default() },
+    ///     n_sims: 500,
+    ///     ..BayesOdp::default()
+    /// };
+    /// let view = model.one_year(&tri, "paid", &BayesOneYear::default())?;
+    /// assert_eq!(view.cdr.n_components(), 4);
+    /// // 2020 is fully developed: no cell in the year, no change.
+    /// assert!(view.cdr.draw_matrix().chunks(4).all(|row| row[0] == 0.0));
+    /// assert_eq!(view.pareto_k.len(), 500);
+    /// // The one-year view is narrower than the lifetime view.
+    /// assert!(view.cdr.std_dev() < view.fit.reserves.std_dev());
+    /// # Ok::<(), prospicio_reserving::Error>(())
+    /// ```
+    pub fn one_year(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        settings: &BayesOneYear,
+    ) -> Result<BayesOneYearFit> {
+        self.validate()?;
+        settings.validate()?;
+        let segment = triangle.segment(column)?;
+        let (fit, reserves) =
+            self.fit_segment(&segment, column, Stream::Chains, Stream::Predictive)?;
+        let year = self.year_draws(triangle, &segment, &fit, Stream::Predictive, settings)?;
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
+        let cdr = PredictiveDistribution::from_draws(
+            vec!["origin".into()],
+            segment.origins.iter().map(|&o| vec![o.into()]).collect(),
+            year.cdr,
+            self.one_year_provenance(column, &fit.model, settings)
+                .input_hash(hasher.finish()),
+        )?;
+        let opening_ultimate = opening_ultimate(&fit.chain_ladder, &year.opening);
+        let BayesOdpSegment {
+            chain_ladder,
+            scale,
+            posterior,
+            diagnostics,
+            model,
+        } = fit;
+        Ok(BayesOneYearFit {
+            fit: BayesOdpFit {
+                chain_ladder,
+                scale,
+                posterior,
+                diagnostics,
+                reserves,
+                model,
+            },
+            opening_ultimate,
+            opening_reserve: year.opening,
+            cdr,
+            pareto_k: year.pareto_k,
+            refitted: year.refitted,
+            refit_warnings: year.refit_warnings,
+            k_threshold: settings.k_threshold,
+        })
+    }
+
+    /// The one-year view of `column` in every segment of a cumulative
+    /// triangle, each segment's posterior and simulations as in
+    /// [`fit_segments`](Self::fit_segments) (segment `k`'s own seeds), into
+    /// one joint claims development result, the segments depending on each
+    /// other as [`dependence`](Self::dependence) says: `Independent` as
+    /// drawn, `RankCorrelation` by Iman–Conover on the segments' total
+    /// claims development results, as the bootstraps' one-year view does;
+    /// `Synchronized` is an [`Error::Bayes`]. A failure names its segment.
+    pub fn one_year_segments(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        settings: &BayesOneYear,
+    ) -> Result<BayesOneYearFits> {
+        self.validate()?;
+        settings.validate()?;
+        self.check_dependence(triangle)?;
+        let mut k = 0;
+        let fitted = fit_each(triangle, column, |segment| {
+            let predictive = Stream::SegmentPredictive(k);
+            let fit = self
+                .fit_segment(segment, column, Stream::SegmentChains(k), predictive)
+                .and_then(|(fit, _)| {
+                    let year = self.year_draws(triangle, segment, &fit, predictive, settings)?;
+                    Ok((fit, year))
+                });
+            k += 1;
+            fit
+        })?;
+
+        let mut hasher = InputHasher::new();
+        hasher.str(column);
+        let mut dims = fitted.key_names.clone();
+        dims.push("origin".into());
+        let mut components = Vec::new();
+        for ((label, (fit, _)), segment) in fitted.iter().zip(triangle.segments(column)?) {
+            hasher.str(&label.to_string());
+            hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
+            components.extend(origin_keys(label, &segment.origins));
+        }
+        let mut draws = Vec::with_capacity(self.n_sims * components.len());
+        for i in 0..self.n_sims {
+            for (_, year) in &fitted.fits {
+                let m = year.opening.len();
+                draws.extend_from_slice(&year.cdr[i * m..(i + 1) * m]);
+            }
+        }
+        let first = &fitted.fits[0].0.model;
+        let provenance = self
+            .one_year_provenance(column, first, settings)
+            .param("segments", fitted.len())
+            .param("dependence", format!("{:?}", self.dependence))
+            .input_hash(hasher.finish());
+        let cdr = PredictiveDistribution::from_draws(dims, components, draws, provenance)?;
+        let segments = fitted.map(|(fit, year)| BayesOneYearSegment {
+            fit: fit.clone(),
+            opening_ultimate: opening_ultimate(&fit.chain_ladder, &year.opening),
+            opening_reserve: year.opening.clone(),
+            pareto_k: year.pareto_k.clone(),
+            refitted: year.refitted.clone(),
+            refit_warnings: year.refit_warnings,
+            k_threshold: settings.k_threshold,
+        });
+        let cdr = self.dependence.reorder(cdr, &segments, self.seed)?;
+        Ok(BayesOneYearFits { segments, cdr })
+    }
+
+    /// `Synchronized` and a bad rank-correlation matrix fail before any
+    /// sampling.
+    fn check_dependence(&self, triangle: &Triangle) -> Result<()> {
+        if self.dependence == SegmentDependence::Synchronized {
+            return Err(Error::Bayes(
+                "Synchronized dependence draws the residuals of the same positions in every \
+                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
+                    .into(),
+            ));
+        }
+        self.dependence.validate(triangle.index().len())
+    }
+
+    /// The one-year simulations of one fitted segment, from the seed the
+    /// segment's `predictive` stream derives (module docs, "Seeds").
+    fn year_draws(
+        &self,
+        triangle: &Triangle,
+        segment: &Segment,
+        fit: &BayesOdpSegment,
+        predictive: Stream,
+        settings: &BayesOneYear,
+    ) -> Result<YearDraws> {
+        let year = OdpYear::new(self, triangle, segment, fit);
+        super::one_year::simulate(
+            &year,
+            &fit.posterior,
+            settings,
+            self.n_sims,
+            one_year_seed(derive_seed(self.seed, predictive)),
+        )
+    }
+
+    fn one_year_provenance(
+        &self,
+        column: &str,
+        model: &Model,
+        settings: &BayesOneYear,
+    ) -> Provenance {
+        let mut provenance = self.base_provenance(column);
+        provenance.model = "bayes_odp_one_year".into();
+        super::one_year::provenance(provenance, settings)
+            .param("c0", model.c0)
+            .param("scale", model.phi)
     }
 
     /// The posterior of one segment and its reserves by origin, with the
@@ -997,6 +1226,134 @@ impl super::autodiff::GenericDensity for Model {
     }
 }
 
+/// The latest value plus `reserve`, per origin.
+fn opening_ultimate(chain_ladder: &ChainLadderFit, reserve: &[f64]) -> Vec<f64> {
+    chain_ladder
+        .latest
+        .iter()
+        .zip(reserve)
+        .map(|(l, r)| l + r)
+        .collect()
+}
+
+/// The coming year of a fitted [`BayesOdp`] segment, for the one-year
+/// view (decision 16): the year's increments, one per cell valued in the
+/// twelve months after the valuation, in origin and then development order.
+struct OdpYear<'a> {
+    odp: &'a BayesOdp,
+    model: &'a Model,
+    /// The opening posterior mean, the refits' Newton start.
+    start: Vec<f64>,
+    /// The year's cells, `(origin, position)`.
+    year: Vec<(usize, usize)>,
+    /// The cells after the latest diagonal, the opening reserve.
+    future: Vec<(usize, usize)>,
+    /// The cells after the year, the closing reserve.
+    after: Vec<(usize, usize)>,
+}
+
+impl<'a> OdpYear<'a> {
+    fn new(
+        odp: &'a BayesOdp,
+        triangle: &Triangle,
+        segment: &Segment,
+        fit: &'a BayesOdpSegment,
+    ) -> Self {
+        let latest = &fit.chain_ladder.latest_position;
+        let nd = segment.n_dev;
+        let mut last = latest.clone();
+        // No tail (decision 12): the year stops at the last age.
+        for y in YearCells::of(
+            segment,
+            latest,
+            |o, d| triangle.valuation_of(o + segment.origin_offset, d + segment.dev_offset),
+            false,
+        ) {
+            last[y.origin] = y.last;
+        }
+        let cells = |from: &dyn Fn(usize) -> usize, to: &dyn Fn(usize) -> usize| {
+            (0..segment.n_origins)
+                .flat_map(|w| (from(w) + 1..=to(w)).map(move |d| (w, d)))
+                .collect::<Vec<_>>()
+        };
+        Self {
+            odp,
+            model: &fit.model,
+            start: fit.posterior.mean(),
+            year: cells(&|w| latest[w], &|w| last[w]),
+            future: cells(&|w| latest[w], &|_| nd - 1),
+            after: cells(&|w| last[w], &|_| nd - 1),
+        }
+    }
+
+    /// The sum of `exp(eta)` over `cells` by origin, into `reserve`.
+    fn expected(&self, theta: &[f64], cells: &[(usize, usize)], reserve: &mut [f64]) {
+        reserve.fill(0.0);
+        for &(w, d) in cells {
+            reserve[w] += self.model.eta(theta, w, d).exp();
+        }
+    }
+}
+
+impl YearModel for OdpYear<'_> {
+    fn n_origins(&self) -> usize {
+        self.model.n_origins
+    }
+
+    fn n_year(&self) -> usize {
+        self.year.len()
+    }
+
+    fn draw_year(&self, theta: &[f64], rng: &mut StreamRng, year: &mut [f64]) {
+        for (x, &(w, d)) in year.iter_mut().zip(&self.year) {
+            let mu = self.model.eta(theta, w, d).exp();
+            *x = process_draw(self.odp.process, self.model.phi, mu, rng);
+        }
+    }
+
+    fn year_log_likelihood(&self, theta: &[f64], year: &[f64]) -> f64 {
+        self.year
+            .iter()
+            .zip(year)
+            .map(|(&(w, d), &x)| {
+                let eta = self.model.eta(theta, w, d);
+                x * eta - eta.exp()
+            })
+            .sum::<f64>()
+            / self.model.phi
+    }
+
+    fn paid(&self, year: &[f64], paid: &mut [f64]) {
+        paid.fill(0.0);
+        for (&(w, _), x) in self.year.iter().zip(year) {
+            paid[w] += x;
+        }
+    }
+
+    fn opening(&self, theta: &[f64], reserve: &mut [f64]) {
+        self.expected(theta, &self.future, reserve);
+    }
+
+    fn closing(&self, theta: &[f64], _year: &[f64], reserve: &mut [f64]) {
+        self.expected(theta, &self.after, reserve);
+    }
+
+    fn closing_uses_year(&self) -> bool {
+        false
+    }
+
+    /// The same model (priors, `c0` and `phi` unchanged) with the year's
+    /// increments as observed cells, sampled as [`BayesOdp::fit`] samples.
+    fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)> {
+        let mut extended = self.model.clone();
+        extended
+            .cells
+            .extend(self.year.iter().zip(year).map(|(&(w, d), &x)| (w, d, x)));
+        let (posterior, diagnostics) = self.odp.sample(&extended, self.start.clone(), seed)?;
+        Ok((posterior, !diagnostics.warnings.is_empty()))
+    }
+}
+
 /// PSIS-LOO of `model`'s observed increments under `posterior` ([`BayesOdpFit::loo`]).
 fn loo(model: &Model, posterior: &PosteriorDraws, chain_ladder: &ChainLadderFit) -> Result<Loo> {
     if let Some(&(w, d, x)) = model.cells.iter().find(|c| c.2 < 0.0) {
@@ -1053,6 +1410,7 @@ fn loo(model: &Model, posterior: &PosteriorDraws, chain_ladder: &ChainLadderFit)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bayes::OneYearRefit;
     use crate::bayes::laplace::tests::assert_gradient;
     use crate::triangle::tests::{GENINS, annual, raa};
     use crate::{OdpBootstrap, triangle::Long};
@@ -1652,5 +2010,275 @@ mod tests {
             matches!(&e, Error::Bayes(m) if m.contains("without a train row")),
             "{e}"
         );
+    }
+
+    fn columns(draws: &PredictiveDistribution) -> Vec<Vec<f64>> {
+        let n = draws.n_components();
+        (0..n)
+            .map(|j| draws.draw_matrix().chunks(n).map(|r| r[j]).collect())
+            .collect()
+    }
+
+    fn mean_sd(x: &[f64]) -> (f64, f64) {
+        let n = x.len() as f64;
+        let m = x.iter().sum::<f64>() / n;
+        (
+            m,
+            (x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / n).sqrt(),
+        )
+    }
+
+    fn total(d: &PredictiveDistribution) -> Vec<f64> {
+        let n = d.n_components();
+        d.draw_matrix().chunks(n).map(|r| r.iter().sum()).collect()
+    }
+
+    #[test]
+    fn the_one_year_view_reweights_the_fits_posterior() {
+        let model = quick(4);
+        let settings = BayesOneYear {
+            refit: OneYearRefit::ReweightOnly,
+            ..BayesOneYear::default()
+        };
+        let view = model.one_year(&genins(), "values", &settings).unwrap();
+        // The posterior and lifetime reserves are fit()'s, draw for draw.
+        let fit = model.fit(&genins(), "values").unwrap();
+        assert_eq!(view.fit.posterior, fit.posterior);
+        assert_eq!(view.fit.reserves.draw_matrix(), fit.reserves.draw_matrix());
+        assert_eq!(view.cdr.dims(), ["origin"]);
+        assert_eq!(view.pareto_k.len(), 2_000);
+        assert!(view.refitted.is_empty());
+
+        let cdr = columns(&view.cdr);
+        let life = columns(&fit.reserves);
+        // 2001 is at the last age: no cell, no change.
+        assert!(cdr[0].iter().all(|&x| x == 0.0));
+        assert_eq!(view.opening_reserve[0], 0.0);
+        // The opening reserve is the posterior mean of the expected run-off.
+        let (life_mean, life_sd) = mean_sd(&total(&fit.reserves));
+        let opening: f64 = view.opening_reserve.iter().sum();
+        assert!(
+            (opening - life_mean).abs() < 4.0 * life_sd / 2_000f64.sqrt(),
+            "{opening} {life_mean}"
+        );
+        for (o, ((u, l), r)) in view
+            .opening_ultimate
+            .iter()
+            .zip(&fit.chain_ladder.latest)
+            .zip(&view.opening_reserve)
+            .enumerate()
+        {
+            assert!((u - l - r).abs() < 1e-6 * u, "origin {o}");
+        }
+        // 2002 has one cell left, in the year: its one-year view is its
+        // whole run-off, the opening reserve less the lifetime reserve.
+        let (_, s) = mean_sd(&cdr[1]);
+        let (_, s_life) = mean_sd(&life[1]);
+        assert!((s / s_life - 1.0).abs() < 0.1, "{s} {s_life}");
+        // Every origin's mean is zero within Monte Carlo error, and its
+        // spread at most its lifetime spread.
+        for (o, (c, l)) in cdr.iter().zip(&life).enumerate().skip(1) {
+            let (m, s) = mean_sd(c);
+            let (_, s_life) = mean_sd(l);
+            assert!(m.abs() < 4.0 * s / 2_000f64.sqrt(), "origin {o}: {m} {s}");
+            assert!(s <= 1.1 * s_life, "origin {o}: {s} {s_life}");
+        }
+        // The total is narrower than the lifetime total.
+        assert!(mean_sd(&total(&view.cdr)).1 < 0.9 * life_sd);
+
+        let long = view.to_long();
+        assert_eq!(long.n_rows(), 10);
+        for (a, b) in long
+            .column("opening_reserve")
+            .unwrap()
+            .iter()
+            .zip(&view.opening_reserve)
+        {
+            assert!((a - b).abs() < 1e-6 * (1.0 + b));
+        }
+        assert!(long.column("cdr_std_dev").is_some());
+        let totals = view.totals();
+        assert_eq!(
+            totals.column("flagged_share").unwrap(),
+            [view.flagged_share()]
+        );
+        assert_eq!(totals.column("scale").unwrap(), [view.fit.scale]);
+        let provenance = view.cdr.provenance();
+        assert_eq!(provenance.model, "bayes_odp_one_year");
+        assert!(
+            provenance
+                .parameters
+                .contains(&("refit".into(), "ReweightOnly".into()))
+        );
+
+        // A seed replays the view, whatever the threads.
+        let one = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| model.one_year(&genins(), "values", &settings).unwrap());
+        assert_eq!(one.cdr.draw_matrix(), view.cdr.draw_matrix());
+        assert_eq!(one.pareto_k, view.pareto_k);
+    }
+
+    #[test]
+    fn refits_see_the_same_years_and_agree_with_the_reweighting() {
+        let model = BayesOdp {
+            n_sims: 40,
+            ..quick(5)
+        };
+        let run = |refit, k_threshold| {
+            model
+                .one_year(&genins(), "values", &BayesOneYear { k_threshold, refit })
+                .unwrap()
+        };
+        let only = run(OneYearRefit::ReweightOnly, 0.7);
+        let all = run(OneYearRefit::RefitAll, 0.7);
+        assert_eq!(all.refitted, (0..40).collect::<Vec<_>>());
+        assert_eq!(all.pareto_k, only.pareto_k);
+        // Refitting the flagged simulations gives the refitted rows for
+        // them and the reweighted rows for the others: the same years, the
+        // same refit seeds.
+        let flagged = run(OneYearRefit::RefitFlagged, 0.7);
+        let is_flagged: Vec<bool> = only
+            .pareto_k
+            .iter()
+            .map(|&k| k.is_nan() || k > 0.7)
+            .collect();
+        assert_eq!(
+            flagged.refitted,
+            (0..40).filter(|&i| is_flagged[i]).collect::<Vec<_>>()
+        );
+        assert!(!flagged.refitted.is_empty() && flagged.refitted.len() < 40);
+        let rows =
+            |v: &BayesOneYearFit, i: usize| v.cdr.draw_matrix()[i * 10..(i + 1) * 10].to_vec();
+        for (i, &f) in is_flagged.iter().enumerate() {
+            let expected = if f { rows(&all, i) } else { rows(&only, i) };
+            assert_eq!(rows(&flagged, i), expected, "simulation {i}");
+        }
+        // 2002's CDR is its whole run-off, with no closing reserve to
+        // estimate, so it is the same either way.
+        let (a, b) = (columns(&only.cdr), columns(&all.cdr));
+        assert_eq!(a[1], b[1]);
+        // Where k is below the threshold, a reweighted and a refitted
+        // simulation differ by the two estimators' Monte Carlo errors,
+        // small against the total's spread (about 0.06 sd at these 1,200
+        // draws).
+        let (ta, tb) = (total(&only.cdr), total(&all.cdr));
+        let (_, sd) = mean_sd(&ta);
+        let gaps: Vec<f64> = (0..40)
+            .filter(|&i| !is_flagged[i])
+            .map(|i| (ta[i] - tb[i]) / sd)
+            .collect();
+        let rms = (gaps.iter().map(|g| g * g).sum::<f64>() / gaps.len() as f64).sqrt();
+        assert!(
+            rms < 0.2,
+            "rms gap {rms} sd over {} simulations",
+            gaps.len()
+        );
+    }
+
+    #[test]
+    fn one_year_errors() {
+        let e = quick(0)
+            .one_year(
+                &genins(),
+                "values",
+                &BayesOneYear {
+                    k_threshold: f64::NAN,
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(
+                e,
+                Error::InvalidSetting {
+                    name: "k_threshold",
+                    ..
+                }
+            ),
+            "{e}"
+        );
+        let model = BayesOdp {
+            dependence: SegmentDependence::Synchronized,
+            ..quick(0)
+        };
+        let e = model
+            .one_year_segments(&twins(), "values", &BayesOneYear::default())
+            .unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_fully_developed_triangle_has_no_flags_and_no_refits() {
+        // Every origin at the last age: the coming year has no cells, so
+        // the reweighting has nothing to do and the default refits nothing.
+        let square = annual(
+            2001,
+            &[
+                &[357.0, 1124.0, 1735.0, 2218.0],
+                &[352.0, 1236.0, 2170.0, 3353.0],
+                &[290.0, 1292.0, 2219.0, 3235.0],
+                &[310.0, 1418.0, 2195.0, 3757.0],
+            ],
+        );
+        let model = BayesOdp {
+            n_sims: 200,
+            ..quick(4)
+        };
+        let view = model
+            .one_year(&square, "values", &BayesOneYear::default())
+            .unwrap();
+        assert_eq!(view.flagged_share(), 0.0);
+        assert!(view.refitted.is_empty());
+        assert!(view.pareto_k.iter().all(|&k| k == 0.0));
+        assert!(view.cdr.draw_matrix().iter().all(|v| v.abs() < 1e-9));
+    }
+
+    #[test]
+    fn the_one_year_view_over_segments() {
+        let settings = BayesOneYear {
+            refit: OneYearRefit::ReweightOnly,
+            ..BayesOneYear::default()
+        };
+        let tri = twins();
+        let fits = quick(9)
+            .one_year_segments(&tri, "values", &settings)
+            .unwrap();
+        assert_eq!(fits.cdr.dims(), ["lob", "origin"]);
+        assert_eq!(fits.cdr.n_components(), 20);
+        // Each segment's posterior is fit_segments'.
+        let lifetime = quick(9).fit_segments(&tri, "values").unwrap();
+        for (a, b) in fits.segments.fits.iter().zip(&lifetime.segments.fits) {
+            assert_eq!(a.fit.posterior, b.posterior);
+            assert_eq!(a.pareto_k.len(), 2_000);
+        }
+        let totals = line_totals(&fits.cdr);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!(r.abs() < 4.5 / 2_000f64.sqrt(), "rank correlation {r}");
+        assert_eq!(fits.to_long().n_rows(), 20);
+        let t = fits.totals();
+        assert_eq!(t.n_rows(), 2);
+        assert!(t.column("flagged_share").is_some());
+        assert!(t.column("cdr_std_dev").is_some());
+        let b = fits.segment(&[("lob", "b")]).unwrap();
+        assert_eq!(b.cdr.n_components(), 10);
+
+        let correlated = BayesOdp {
+            dependence: SegmentDependence::RankCorrelation {
+                spearman: vec![1.0, 0.7, 0.7, 1.0],
+            },
+            ..quick(9)
+        };
+        let fits = correlated
+            .one_year_segments(&tri, "values", &settings)
+            .unwrap();
+        let totals = line_totals(&fits.cdr);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!((r - 0.7).abs() < 0.05, "rank correlation {r}");
     }
 }

@@ -16,7 +16,7 @@ use prospicio_core::{Error, Result};
 use prospicio_models::{Family, Link};
 use serde_json::{Map, Number, Value, json};
 
-use crate::gam::{Basis, Gam, GamFit, PSpline, Smoothing};
+use crate::gam::{Basis, Gam, GamFit, PSpline, Smoothing, TensorBasis, TensorSpline};
 use crate::net::{ElasticNet, ElasticNetFit};
 use crate::{Dispersion, Glm, GlmFit};
 
@@ -115,10 +115,12 @@ impl GamFit {
             "spec": {
                 "glm": glm_json(&spec.glm),
                 "smooths": spec.smooths.iter().map(spline_json).collect::<Vec<_>>(),
+                "tensors": spec.tensors.iter().map(tensor_json).collect::<Vec<_>>(),
                 "smoothing": match &spec.smoothing {
                     Smoothing::Auto => json!({"kind": "auto"}),
                     Smoothing::Gcv => json!({"kind": "gcv"}),
                     Smoothing::Ubre => json!({"kind": "ubre"}),
+                    Smoothing::Reml => json!({"kind": "reml"}),
                     Smoothing::Fixed(l) => json!({"kind": "fixed", "lambdas": nums(l.as_slice())}),
                 },
             },
@@ -126,6 +128,11 @@ impl GamFit {
                 "spline": spline_json(&b.spline),
                 "knots": nums(&b.knots),
                 "z": nums(&b.z),
+            })).collect::<Vec<_>>(),
+            "tensor_bases": self.tensors.iter().map(|t| json!({
+                "tensor": tensor_json(&t.tensor),
+                "knots": t.knots.iter().map(|k| nums(k)).collect::<Vec<_>>(),
+                "z": nums(&t.z),
             })).collect::<Vec<_>>(),
             "names": self.names,
             "coefficients": nums(&self.coefficients),
@@ -135,6 +142,7 @@ impl GamFit {
             "dispersion": num(self.dispersion),
             "deviance": num(self.deviance),
             "score": num(self.score),
+            "reml_scale": self.reml_scale.map(num),
             "fitted": nums(&self.fitted),
         });
         serde_json::to_string(&doc).expect("a JSON value serializes")
@@ -155,6 +163,7 @@ impl GamFit {
             Some("auto") => Smoothing::Auto,
             Some("gcv") => Smoothing::Gcv,
             Some("ubre") => Smoothing::Ubre,
+            Some("reml") => Smoothing::Reml,
             Some("fixed") => Smoothing::Fixed(floats(sm, "lambdas")?),
             _ => return Err(bad("spec.smoothing.kind")),
         };
@@ -169,6 +178,42 @@ impl GamFit {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
+        // Tensors came later: an artifact without them has none.
+        let tensors = match spec_o.get("tensors") {
+            None => Vec::new(),
+            Some(v) => v
+                .as_array()
+                .ok_or_else(|| bad("spec.tensors"))?
+                .iter()
+                .map(|t| tensor_from(object(t, "tensor")?))
+                .collect::<Result<Vec<_>>>()?,
+        };
+        let tensor_bases = match top.get("tensor_bases") {
+            None => Vec::new(),
+            Some(v) => v
+                .as_array()
+                .ok_or_else(|| bad("tensor_bases"))?
+                .iter()
+                .map(|v| {
+                    let o = object(v, "tensor basis")?;
+                    let knots = array(o, "knots")?
+                        .iter()
+                        .map(|k| {
+                            k.as_array()
+                                .ok_or_else(|| bad("tensor_bases.knots"))?
+                                .iter()
+                                .map(|x| float(x, "knot"))
+                                .collect::<Result<Vec<_>>>()
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    Ok(TensorBasis {
+                        tensor: tensor_from(object(field(o, "tensor")?, "tensor")?)?,
+                        knots,
+                        z: floats(o, "z")?,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+        };
         let names = strings(top, "names")?;
         let coefficients = floats(top, "coefficients")?;
         let covariance = floats(top, "covariance")?;
@@ -177,7 +222,9 @@ impl GamFit {
         if coefficients.len() != p
             || covariance.len() != p * p
             || bases.len() != smooths.len()
-            || lambdas.len() != smooths.len()
+            || tensor_bases.len() != tensors.len()
+            || lambdas.len()
+                != smooths.len() + tensors.iter().map(|t| t.columns.len()).sum::<usize>()
         {
             return Err(Error::Data(
                 "model artifact sizes disagree: names, coefficients, covariance, smooths".into(),
@@ -187,9 +234,11 @@ impl GamFit {
             spec: Gam {
                 glm,
                 smooths,
+                tensors,
                 smoothing,
             },
             bases,
+            tensors: tensor_bases,
             names,
             coefficients,
             lambdas,
@@ -198,6 +247,10 @@ impl GamFit {
             dispersion: float(field(top, "dispersion")?, "dispersion")?,
             deviance: float(field(top, "deviance")?, "deviance")?,
             score: float(field(top, "score")?, "score")?,
+            reml_scale: match top.get("reml_scale") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(v) => Some(float(v, "reml_scale")?),
+            },
             fitted: floats(top, "fitted")?,
             input_hash: input_hash(top)?,
         })
@@ -349,6 +402,26 @@ fn glm_from(spec: &Map<String, Value>) -> Result<Glm> {
 
 fn spline_json(s: &PSpline) -> Value {
     json!({"column": s.column, "n_basis": s.n_basis, "degree": s.degree, "order": s.order})
+}
+
+fn tensor_json(t: &TensorSpline) -> Value {
+    json!({"columns": t.columns, "n_basis": t.n_basis, "degree": t.degree, "order": t.order})
+}
+
+fn tensor_from(o: &Map<String, Value>) -> Result<TensorSpline> {
+    Ok(TensorSpline {
+        columns: strings(o, "columns")?,
+        n_basis: array(o, "n_basis")?
+            .iter()
+            .map(|v| {
+                v.as_u64()
+                    .map(|k| k as usize)
+                    .ok_or_else(|| bad("tensor.n_basis"))
+            })
+            .collect::<Result<Vec<_>>>()?,
+        degree: uint(o, "degree")? as usize,
+        order: uint(o, "order")? as usize,
+    })
 }
 
 fn spline_from(o: &Map<String, Value>) -> Result<PSpline> {

@@ -75,6 +75,25 @@ def test_gam_smooths_a_curve():
     assert fit.names[0] == "(Intercept)" and fit.names[1] == "s(x).1"
     fixed = Gam(Glm("gaussian"), ["x"], smoothing=[1e8]).fit(d, y)
     assert abs(fixed.edf - 2.0) < 1e-4
+    assert fit.reml_scale is None
+    # REML: a noisy curve, its dispersion estimated with the smoothing.
+    noisy = [v + 0.1 * math.sin(97.0 * i) for i, v in enumerate(y)]
+    reml = Gam(Glm("gaussian"), [("x", 12)], smoothing="reml").fit(d, noisy)
+    assert 0.002 < reml.reml_scale < 0.02 and 4 < reml.edf < 12
+
+
+def test_gam_tensor_smooth():
+    n = 200
+    x = [((i * 37) % 101) / 100 for i in range(n)]
+    z = [((i * 53) % 97) / 96 for i in range(n)]
+    y = [math.sin(3 * a) * math.cos(2 * b) + 0.05 * math.sin(91.0 * i)
+         for i, (a, b) in enumerate(zip(x, z))]
+    d = Design([[1.0] * n, x, z], ["(Intercept)", "x", "z"])
+    fit = Gam(Glm("gaussian"), [], smoothing="reml", tensors=[["x", "z"]]).fit(d, y)
+    assert len(fit.lambdas) == 2 and fit.names[1] == "te(x,z).1"
+    assert max(abs(a - b) for a, b in zip(fit.fitted, y)) < 0.2
+    sized = Gam(Glm("gaussian"), [], tensors=[(["x", "z"], [5, 6])], smoothing=[1.0, 1.0]).fit(d, y)
+    assert len(sized.names) == 1 + 29
 
 
 def test_metrics_and_splits():

@@ -38,7 +38,10 @@ use prospicio_core::{Error, Result};
 use prospicio_prob::{Discrete, Distribution, Grid};
 
 mod builders;
-pub use builders::{Book, Expense, ExpenseBasis, Face, derive_premium};
+pub use builders::{
+    Book, Expense, ExpenseBasis, Face, Program, ProgramLayer, derive_premium, occurrence_source,
+    pnl_program, pnl_program_stated, round_premium, size_premium,
+};
 
 /// The levels of the scenario and marginal columns, `aggregate`'s
 /// `PERCENTILE_LADDER`.
@@ -101,6 +104,7 @@ impl LegKind {
 }
 
 type Of = Box<dyn Fn(f64) -> f64 + Send + Sync>;
+type Of2 = Box<dyn Fn(f64, f64) -> f64 + Send + Sync>;
 
 /// A side's legs once evaluated: label, kind and signed values.
 type SignedLegs = Vec<(String, Option<LegKind>, Vec<f64>)>;
@@ -108,6 +112,7 @@ type SignedLegs = Vec<(String, Option<LegKind>, Vec<f64>)>;
 enum LegValue {
     Constant(f64),
     Of(Of),
+    Of2(Of2),
     Values(Vec<f64>),
 }
 
@@ -126,6 +131,7 @@ impl std::fmt::Debug for Leg {
         let value = match &self.value {
             LegValue::Constant(c) => format!("constant {c}"),
             LegValue::Of(_) => "a function of the source".to_string(),
+            LegValue::Of2(_) => "a function of the joint source".to_string(),
             LegValue::Values(v) => format!("{} values", v.len()),
         };
         f.debug_struct("Leg")
@@ -154,6 +160,21 @@ impl Leg {
             label: label.into(),
             kind: None,
             value: LegValue::Of(Box::new(f)),
+            step: None,
+        }
+    }
+
+    /// A leg that is a function of both coordinates of a joint source
+    /// ([`Source::joint`]): an occurrence cover's recovery, the second
+    /// coordinate, or an aggregate cover on the net of it.
+    pub fn of2(
+        label: impl Into<String>,
+        f: impl Fn(f64, f64) -> f64 + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            kind: None,
+            value: LegValue::Of2(Box::new(f)),
             step: None,
         }
     }
@@ -191,10 +212,19 @@ impl Leg {
         &self.label
     }
 
-    fn evaluate(&self, xs: &[f64]) -> Result<Vec<f64>> {
+    fn evaluate(&self, xs: &[f64], ys: Option<&[f64]>) -> Result<Vec<f64>> {
         let v = match &self.value {
             LegValue::Constant(c) => vec![*c; xs.len()],
             LegValue::Of(f) => xs.iter().map(|&x| f(x)).collect(),
+            LegValue::Of2(f) => {
+                let ys = ys.ok_or_else(|| {
+                    Error::Data(format!(
+                        "leg {:?} is a function of two values and needs a joint source",
+                        self.label
+                    ))
+                })?;
+                xs.iter().zip(ys).map(|(&x, &y)| f(x, y)).collect()
+            }
             LegValue::Values(v) => {
                 if v.len() != xs.len() {
                     return Err(Error::Data(format!(
@@ -392,6 +422,9 @@ pub struct Row {
     sd: f64,
     skew: Option<f64>,
     step_size: Option<f64>,
+    /// On a stitched ledger's `Impact` row: the two rows whose statistics
+    /// it is the difference of.
+    delta: Option<Box<(Row, Row)>>,
 }
 
 impl Row {
@@ -440,6 +473,13 @@ impl Row {
     }
 
     /// The row's distribution.
+    ///
+    /// On a stitched ledger's `Impact` row ([`Row::is_delta`]) this is a
+    /// placeholder with no meaning: that row is the difference of two
+    /// rows' statistics, which its [`mean`](Row::mean), [`sd`](Row::sd),
+    /// [`cv`](Row::cv), [`skew`](Row::skew) and [`quantile`](Row::quantile)
+    /// give. Do not use its distribution; the Python and R bindings refuse
+    /// it.
     pub fn distribution(&self) -> &Discrete {
         &self.distribution
     }
@@ -458,6 +498,9 @@ impl Row {
     /// The coefficient of variation; `None` when the mean is within `1e-12`
     /// of 0.
     pub fn cv(&self) -> Option<f64> {
+        if let Some(d) = &self.delta {
+            return Some(d.0.cv()? - d.1.cv()?);
+        }
         (self.mean.abs() > NOISE).then(|| self.sd / self.mean)
     }
 
@@ -466,9 +509,98 @@ impl Row {
         self.skew
     }
 
-    /// The row's own quantile at `p` (the marginal ladder).
+    /// The row's own quantile at `p` (the marginal ladder); on a stitched
+    /// ledger's `Impact` row, the difference of the two rows' quantiles.
     pub fn quantile(&self, p: f64) -> Result<f64> {
+        if let Some(d) = &self.delta {
+            return Ok(d.0.quantile(p)? - d.1.quantile(p)?);
+        }
         self.distribution.quantile(p)
+    }
+
+    /// Whether the row is a difference of two rows' statistics (a stitched
+    /// ledger's `Impact`), with no distribution of its own.
+    pub fn is_delta(&self) -> bool {
+        self.delta.is_some()
+    }
+
+    /// A row that is its own marginal, `marginal`, with the plan's place of
+    /// `like`.
+    fn from_marginal(like: &Row, marginal: Marginal) -> Result<Row> {
+        let (values, probs, sign, shift) = match marginal {
+            Marginal::Constant(v) => (vec![v], vec![1.0], 1.0, 0.0),
+            Marginal::Affine {
+                values,
+                probs,
+                sign,
+                shift,
+            } => (values, probs, sign, shift),
+        };
+        if values.len() != probs.len() || values.is_empty() {
+            return Err(Error::Data(format!(
+                "row {:?}: a marginal needs as many probabilities as values",
+                like.label
+            )));
+        }
+        let total: f64 = probs.iter().sum();
+        if !(total > 0.0 && total.is_finite()) {
+            return Err(Error::Data(format!(
+                "row {:?}: a marginal needs a positive total mass",
+                like.label
+            )));
+        }
+        // The moments of X, normalized, then signed and shifted.
+        let m1: f64 = values.iter().zip(&probs).map(|(x, p)| x * p).sum::<f64>() / total;
+        let m2: f64 = values
+            .iter()
+            .zip(&probs)
+            .map(|(x, p)| x * x * p)
+            .sum::<f64>()
+            / total;
+        let sd = (m2 - m1 * m1).max(0.0).sqrt();
+        let mean = sign * m1 + shift;
+        let signed: Vec<f64> = values.iter().map(|x| sign * x + shift).collect();
+        let norm: Vec<f64> = probs.iter().map(|p| p / total).collect();
+        let skew = (sd > 0.0).then(|| {
+            signed
+                .iter()
+                .zip(&norm)
+                .map(|(v, p)| (v - mean).powi(3) * p)
+                .sum::<f64>()
+                / sd.powi(3)
+        });
+        let distribution = Discrete::new(signed, norm)?;
+        Ok(Row {
+            label: like.label.clone(),
+            kind: like.kind,
+            step: like.step.clone(),
+            side: like.side,
+            display: like.display.clone(),
+            leg_kind: like.leg_kind,
+            values: Vec::new(),
+            distribution,
+            mean,
+            sd,
+            skew,
+            step_size: None,
+            delta: None,
+        })
+    }
+
+    /// `a`'s statistics less `b`'s, with the plan's place of `like`.
+    fn difference(like: &Row, a: &Row, b: &Row) -> Row {
+        let skew = match (a.skew, b.skew) {
+            (Some(x), Some(y)) => Some(x - y),
+            _ => None,
+        };
+        Row {
+            mean: a.mean - b.mean,
+            sd: a.sd - b.sd,
+            skew,
+            values: Vec::new(),
+            delta: Some(Box::new((a.clone(), b.clone()))),
+            ..like.clone()
+        }
     }
 }
 
@@ -607,6 +739,7 @@ pub fn stack(
 #[derive(Debug, Clone, PartialEq)]
 pub struct Source {
     values: Vec<f64>,
+    second: Option<Vec<f64>>,
     probs: Vec<f64>,
 }
 
@@ -640,7 +773,29 @@ impl Source {
         } else {
             probs.into_iter().map(|p| p / total).collect()
         };
-        Ok(Self { values, probs })
+        Ok(Self {
+            values,
+            second: None,
+            probs,
+        })
+    }
+
+    /// A joint source: atoms `(values[k], second[k])` with probabilities
+    /// `probs`, as [`Source::new`]. One-argument legs read the first
+    /// coordinate, [`Leg::of2`] legs both: the gross loss and the ceded
+    /// loss of an occurrence cover, say.
+    pub fn joint(values: Vec<f64>, second: Vec<f64>, probs: Vec<f64>) -> Result<Self> {
+        if second.len() != values.len() {
+            return Err(Error::Data(
+                "a joint source needs as many second values as first".into(),
+            ));
+        }
+        if second.iter().any(|v| !v.is_finite()) {
+            return Err(Error::Data("the source's values must be finite".into()));
+        }
+        let mut s = Self::new(values, probs)?;
+        s.second = Some(second);
+        Ok(s)
     }
 
     /// The points of a grid with mass.
@@ -655,9 +810,14 @@ impl Source {
         Self::new(values, probs)
     }
 
-    /// The atoms' values.
+    /// The atoms' values (their first coordinates on a joint source).
     pub fn values(&self) -> &[f64] {
         &self.values
+    }
+
+    /// The atoms' second coordinates on a joint source.
+    pub fn second(&self) -> Option<&[f64]> {
+        self.second.as_deref()
     }
 
     /// Their probabilities, summing to 1.
@@ -679,6 +839,27 @@ pub struct Ledger {
     grand_consideration: Row,
     grand_obligation: Row,
     result: usize,
+    stitched: bool,
+}
+
+/// One row of a stitched ledger ([`Ledger::stitched`]): a constant, or
+/// `sign × X + shift` for `X` on `values` with masses `probs` (normalized
+/// to their total).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Marginal {
+    /// A constant: a premium, a commission.
+    Constant(f64),
+    /// An affine map of a distribution.
+    Affine {
+        /// The values of `X`.
+        values: Vec<f64>,
+        /// Their masses.
+        probs: Vec<f64>,
+        /// `1` or `−1`.
+        sign: f64,
+        /// The shift.
+        shift: f64,
+    },
 }
 
 /// How a ledger is laid out.
@@ -808,7 +989,7 @@ impl Ledger {
             let side = |legs: &[Leg], s: f64| -> Result<SignedLegs> {
                 legs.iter()
                     .map(|leg| {
-                        let v = leg.evaluate(xs)?;
+                        let v = leg.evaluate(xs, source.second())?;
                         Ok((
                             leg.label.clone(),
                             leg.kind,
@@ -1209,7 +1390,75 @@ impl Ledger {
             grand_consideration,
             grand_obligation,
             result: result_index,
+            stitched: false,
         })
+    }
+
+    /// A ledger whose rows are each their own marginal rather than legs on
+    /// one source, `aggregate`'s stitched peel: `groups` and `layout` give
+    /// the plan as for [`Ledger::new`] (their legs' values are not used,
+    /// only their labels, kinds and number), and `marginal` gives each
+    /// row's distribution by its [`RowKind`]. The `Impact` row is the
+    /// grand result's statistics less the first group's, each from its own
+    /// marginal; the mean column foots, the others are marginal. There are
+    /// no scenario columns ([`scenarios`](Ledger::scenarios) and
+    /// [`extend`](Ledger::extend) refuse a stitched ledger).
+    ///
+    /// # Errors
+    ///
+    /// What [`Ledger::new`] refuses, a marginal with no mass, or one
+    /// `marginal` returns.
+    pub fn stitched(
+        groups: Vec<Group>,
+        layout: Layout,
+        marginal: impl Fn(&RowKind) -> Result<Marginal>,
+    ) -> Result<Ledger> {
+        // The plan, from a source of one atom.
+        let probe = Ledger::new(&Source::new(vec![0.0], vec![1.0])?, groups, layout)?;
+        let mut rows = Vec::with_capacity(probe.rows.len());
+        for r in &probe.rows {
+            if r.kind == RowKind::TotalImpact {
+                rows.push(r.clone());
+            } else {
+                rows.push(Row::from_marginal(r, marginal(&r.kind)?)?);
+            }
+        }
+        let find = |rows: &[Row], kind: RowKind| rows.iter().find(|r| r.kind == kind).cloned();
+        if let Some(i) = rows.iter().position(|r| r.kind == RowKind::TotalImpact) {
+            let grand = find(&rows, RowKind::GrandResult).ok_or_else(|| {
+                Error::Data("a stitched ledger with an impact row needs a grand result".into())
+            })?;
+            let first = find(&rows, RowKind::GroupResult(0))
+                .ok_or_else(|| Error::Data("a stitched ledger needs a first group".into()))?;
+            rows[i] = Row::difference(&rows[i], &grand, &first);
+        }
+        let grand_consideration = match find(&rows, RowKind::GrandTotal(Side::Consideration)) {
+            Some(r) => r,
+            None => Row::from_marginal(
+                &probe.grand_consideration,
+                marginal(&RowKind::GrandTotal(Side::Consideration))?,
+            )?,
+        };
+        let grand_obligation = match find(&rows, RowKind::GrandTotal(Side::Obligation)) {
+            Some(r) => r,
+            None => Row::from_marginal(
+                &probe.grand_obligation,
+                marginal(&RowKind::GrandTotal(Side::Obligation))?,
+            )?,
+        };
+        Ok(Ledger {
+            rows,
+            grand_consideration,
+            grand_obligation,
+            probs: Vec::new(),
+            stitched: true,
+            ..probe
+        })
+    }
+
+    /// Whether every row is its own marginal ([`Ledger::stitched`]).
+    pub fn is_stitched(&self) -> bool {
+        self.stitched
     }
 
     /// A ledger of one group named `name`, as `aggregate`'s single-group
@@ -1274,6 +1523,7 @@ impl Ledger {
             sd,
             skew,
             step_size: None,
+            delta: None,
         })
     }
 
@@ -1315,6 +1565,16 @@ impl Ledger {
 
     /// The chance that the result is 0 (to `1e-12`).
     pub fn prob_eq_0(&self) -> f64 {
+        if self.stitched {
+            let d = &self.result().distribution;
+            return d
+                .values()
+                .iter()
+                .zip(d.probs())
+                .filter(|(v, _)| same(**v, 0.0))
+                .map(|(_, p)| p)
+                .sum();
+        }
         self.result()
             .values
             .iter()
@@ -1329,6 +1589,13 @@ impl Ledger {
     /// (snapped within [`NOISE`] of 0). The result's own cell is that
     /// quantile.
     pub fn scenarios(&self, q: f64) -> Result<Vec<f64>> {
+        if self.stitched {
+            return Err(Error::Data(
+                "a stitched ledger's rows are each their own marginal, on no common source: \
+                 it has no scenario columns"
+                    .into(),
+            ));
+        }
         let result = self.result();
         let x = result.quantile(q)?;
         let mask: Vec<bool> = result.values.iter().map(|&v| same(v, x)).collect();
@@ -1680,6 +1947,11 @@ impl Ledger {
     /// source (`aggregate`'s `pnl_a + pnl_b`): every row is rebuilt from the
     /// legs' values. Fails if the sources differ.
     pub fn extend(&self, other: &Ledger, layout: Layout) -> Result<Ledger> {
+        if self.stitched || other.stitched {
+            return Err(Error::Data(
+                "a stitched ledger's rows are on no common source and cannot be added".into(),
+            ));
+        }
         if self.probs.len() != other.probs.len()
             || self
                 .probs
@@ -1734,6 +2006,7 @@ impl Ledger {
         let n = self.probs.len();
         let source = Source {
             values: (0..n).map(|k| k as f64).collect(),
+            second: None,
             probs: self.probs.clone(),
         };
         Ledger::new(&source, groups, layout)

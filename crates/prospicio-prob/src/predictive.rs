@@ -380,6 +380,77 @@ impl PredictiveDistribution {
         )
     }
 
+    /// The components whose value on dimension `dim` is one of `keys`, in
+    /// their order, with every dimension and the draws' joint structure
+    /// kept. A `Period` value also matches its label given as an integer or
+    /// text, as [`component_index`](Self::component_index).
+    ///
+    /// This is how one part of a result is taken before joining it to
+    /// another: the `ceded` components of `prospicio_aggregate`'s
+    /// `Tower::apply`, say, to add a treaty's cession to a book. Summing
+    /// over `kind` with [`aggregate`](Self::aggregate) instead adds gross,
+    /// ceded and net together.
+    ///
+    /// ```
+    /// use prospicio_prob::{Distribution, PredictiveDistribution, Provenance};
+    ///
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["kind".into(), "layer".into()],
+    ///     vec![
+    ///         vec!["gross".into(), "ground_up".into()],
+    ///         vec!["ceded".into(), "5x5".into()],
+    ///         vec!["net".into(), "retained".into()],
+    ///     ],
+    ///     vec![10.0, 3.0, 7.0, 4.0, 0.0, 4.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// let ceded = pd.select("kind", &["ceded".into()]).unwrap();
+    /// assert_eq!(ceded.n_components(), 1);
+    /// assert_eq!(ceded.mean(), 1.5);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// An unknown dimension, no keys, or a key no component has on `dim`.
+    pub fn select(&self, dim: &str, keys: &[KeyValue]) -> Result<Self> {
+        let Some(d) = self.dims.iter().position(|name| name == dim) else {
+            return Err(Error::Data(format!(
+                "no dimension {dim:?}; the dimensions are {:?}",
+                self.dims
+            )));
+        };
+        if keys.is_empty() {
+            return Err(Error::Data("select needs at least one key".into()));
+        }
+        let matches = |c: &KeyValue, v: &KeyValue| {
+            c == v
+                || matches!((c, v), (KeyValue::Period(p), KeyValue::Int(_) | KeyValue::Text(_))
+                        if p.to_string() == v.to_string())
+        };
+        for v in keys {
+            if !self.components.iter().any(|k| matches(&k[d], v)) {
+                return Err(Error::Data(format!(
+                    "no component has {v} on dimension {dim:?}"
+                )));
+            }
+        }
+        let picked: Vec<usize> = (0..self.components.len())
+            .filter(|&j| keys.iter().any(|v| matches(&self.components[j][d], v)))
+            .collect();
+        let n = self.n_components();
+        let mut draws = Vec::with_capacity(self.n_sims * picked.len());
+        for row in self.draws.chunks_exact(n) {
+            draws.extend(picked.iter().map(|&j| row[j]));
+        }
+        Self::from_draws(
+            self.dims.clone(),
+            picked.iter().map(|&j| self.components[j].clone()).collect(),
+            draws,
+            self.provenance.clone(),
+        )
+    }
+
     /// `n` whole rows drawn with replacement from stream `rng`, so the
     /// components keep their dependence.
     pub fn resample(&self, rng: &mut StreamRng, n: usize) -> Result<Self> {

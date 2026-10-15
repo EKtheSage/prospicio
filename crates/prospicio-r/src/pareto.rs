@@ -644,6 +644,146 @@ severity_class!(TruncatedDist {
     }
 });
 
+/// A severity capped by a mix of policy limits.
+#[extendr]
+pub(crate) struct PolicyLimitsDist {
+    pub(crate) inner: std::sync::Arc<prospicio_prob::PolicyLimits>,
+}
+
+severity_class!(PolicyLimitsDist {
+    fn new(severity: Robj, limits: &[f64], weights: &[f64]) -> Result<Self> {
+        let base = crate::distributions::severity_from_robj(&severity)?;
+        let p = prospicio_prob::PolicyLimits::new(base, limits.to_vec(), weights.to_vec())
+            .map_err(to_r)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(p),
+        })
+    }
+
+    fn limits(&self) -> Vec<f64> {
+        self.inner.limits().to_vec()
+    }
+
+    fn weights(&self) -> Vec<f64> {
+        self.inner.weights().to_vec()
+    }
+
+    fn family(&self) -> String {
+        self.inner.base().dist().family().to_string()
+    }
+});
+
+/// The standard error of a Pareto fit's alpha (observed information).
+#[extendr]
+fn pareto_fit_standard_error_rust(
+    losses: &[f64],
+    t: f64,
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+    truncation_at: f64,
+) -> Result<f64> {
+    let data = large_losses(losses, reporting, censored, weights)?;
+    prospicio_prob::Pareto::fit_with_standard_error(t, &data, truncation(truncation_at))
+        .map(|(_, se)| se)
+        .map_err(to_r)
+}
+
+/// The standard errors of a piecewise Pareto fit's alphas.
+#[extendr]
+fn piecewise_pareto_fit_standard_errors_rust(
+    losses: &[f64],
+    t: &[f64],
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+    truncation_at: f64,
+    truncation_type: &str,
+) -> Result<Vec<f64>> {
+    let data = large_losses(losses, reporting, censored, weights)?;
+    let kind = truncation_kind(truncation_type)?;
+    let truncation = truncation(truncation_at).map(|tr| (tr, kind));
+    prospicio_prob::PiecewisePareto::fit_with_standard_errors(t.to_vec(), &data, truncation)
+        .map(|(_, se)| se)
+        .map_err(to_r)
+}
+
+/// A lognormal, gamma, Weibull or Burr fitted to large losses:
+/// `list(family, ptr, parameters, standard_errors, covariance,
+/// log_likelihood, aic, bic, converged)`, the parameters named.
+#[extendr]
+fn severity_fit_rust(
+    family: &str,
+    losses: &[f64],
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+) -> Result<List> {
+    use prospicio_prob::severity_fit::{Family, fit_severity};
+    let family = Family::from_name(family).map_err(to_r)?;
+    let data = large_losses(losses, reporting, censored, weights)?;
+    let fit = fit_severity(family, &data).map_err(to_r)?;
+    let names = family.parameter_names();
+    let named = |v: Vec<f64>| -> Result<Robj> {
+        let mut r: Robj = v.into();
+        r.set_names(names.iter().copied())?;
+        Ok(r)
+    };
+    let ptr = crate::distributions::dist_to_robj(fit.dist().clone())?;
+    Ok(list!(
+        family = family.name(),
+        ptr = ptr,
+        parameters = named(fit.parameters().to_vec())?,
+        standard_errors = named(fit.standard_errors())?,
+        covariance = fit.covariance().to_vec(),
+        log_likelihood = fit.log_likelihood(),
+        aic = fit.aic(),
+        bic = fit.bic(),
+        converged = fit.converged()
+    ))
+}
+
+/// The product-limit estimator: `list(x, at_risk, events, survival)`.
+#[extendr]
+fn product_limit_rust(
+    losses: &[f64],
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+) -> Result<List> {
+    let data = large_losses(losses, reporting, censored, weights)?;
+    let s = prospicio_prob::severity_fit::product_limit(&data);
+    Ok(list!(
+        x = s.iter().map(|p| p.x).collect::<Vec<_>>(),
+        at_risk = s.iter().map(|p| p.at_risk).collect::<Vec<_>>(),
+        events = s.iter().map(|p| p.events).collect::<Vec<_>>(),
+        survival = s.iter().map(|p| p.survival).collect::<Vec<_>>()
+    ))
+}
+
+/// A severity against the product-limit estimate: `list(x, at_risk,
+/// survival, model_survival, model_quantile, max_distance)`.
+#[extendr]
+fn goodness_of_fit_rust(
+    severity: Robj,
+    losses: &[f64],
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+) -> Result<List> {
+    let dist = crate::distributions::dist_from_robj(&severity)?;
+    let data = large_losses(losses, reporting, censored, weights)?;
+    let g = prospicio_prob::severity_fit::goodness_of_fit(&dist, &data).map_err(to_r)?;
+    Ok(list!(
+        x = g.steps.iter().map(|p| p.x).collect::<Vec<_>>(),
+        at_risk = g.steps.iter().map(|p| p.at_risk).collect::<Vec<_>>(),
+        survival = g.steps.iter().map(|p| p.survival).collect::<Vec<_>>(),
+        model_survival = g.model_survival,
+        model_quantile = g.model_quantile,
+        max_distance = g.max_distance
+    ))
+}
+
 /// A finite mixture of severities.
 #[extendr]
 pub(crate) struct MixtureDist {
@@ -769,6 +909,12 @@ extendr_module! {
     impl BurrDist;
     impl BetaDist;
     impl TruncatedDist;
+    impl PolicyLimitsDist;
+    fn pareto_fit_standard_error_rust;
+    fn severity_fit_rust;
+    fn product_limit_rust;
+    fn goodness_of_fit_rust;
+    fn piecewise_pareto_fit_standard_errors_rust;
     impl MixtureDist;
     impl Binomial;
     fn claim_count_parameters;

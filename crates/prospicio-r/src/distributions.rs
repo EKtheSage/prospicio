@@ -83,7 +83,7 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     use crate::pareto::{
         BetaDist, BurrDist, CustomDist, GammaDist, GeneralizedPareto, InverseGammaDist,
         InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-        PiecewisePareto, TruncatedDist, TweedieDist, WeibullDist,
+        PiecewisePareto, PolicyLimitsDist, TruncatedDist, TweedieDist, WeibullDist,
     };
     if let Ok(d) = <&Lognormal>::try_from(obj) {
         return Ok(d.inner.into());
@@ -130,6 +130,9 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     if let Ok(d) = <&TruncatedDist>::try_from(obj) {
         return Ok(Dist::Truncated(d.inner.clone()));
     }
+    if let Ok(d) = <&PolicyLimitsDist>::try_from(obj) {
+        return Ok(Dist::PolicyLimits(d.inner.clone()));
+    }
     if let Ok(d) = <&MixtureDist>::try_from(obj) {
         return Ok(d.inner.clone().into());
     }
@@ -154,14 +157,21 @@ fn dist_to_json_rust(dist: Robj) -> Result<String> {
 /// of the family's Rust type for R to wrap in its class.
 #[extendr]
 fn dist_from_json_rust(text: &str) -> Result<List> {
-    use crate::pareto::{
-        BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist, InverseGaussianDist,
-        LogAffinePareto, LoglogisticDist, MixtureDist, Pareto, PiecewisePareto, TruncatedDist,
-        TweedieDist, WeibullDist,
-    };
     let d = Dist::from_json(text).map_err(to_r)?;
     let family = d.family();
-    let ptr: Robj = match d {
+    let ptr = dist_to_robj(d)?;
+    Ok(list!(family = family, ptr = ptr))
+}
+
+/// A distribution as the pointer of its family's Rust type, for R to wrap
+/// in its class by `Dist::family`.
+pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
+    use crate::pareto::{
+        BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist, InverseGaussianDist,
+        LogAffinePareto, LoglogisticDist, MixtureDist, Pareto, PiecewisePareto, PolicyLimitsDist,
+        TruncatedDist, TweedieDist, WeibullDist,
+    };
+    Ok(match d {
         Dist::Lognormal(inner) => Lognormal { inner }.into(),
         Dist::Pareto(inner) => Pareto { inner }.into(),
         Dist::PiecewisePareto(inner) => PiecewisePareto { inner }.into(),
@@ -176,6 +186,7 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
         Dist::Burr(inner) => BurrDist { inner }.into(),
         Dist::Beta(inner) => BetaDist { inner }.into(),
         Dist::Truncated(inner) => TruncatedDist { inner }.into(),
+        Dist::PolicyLimits(inner) => PolicyLimitsDist { inner }.into(),
         Dist::Mixture(inner) => MixtureDist { inner }.into(),
         Dist::Grid(inner) => Grid::wrap(inner).into(),
         Dist::Sampled(inner) => Sampled { inner }.into(),
@@ -184,13 +195,13 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
                 "a custom distribution cannot be loaded".into(),
             ));
         }
-    };
-    Ok(list!(family = family, ptr = ptr))
+    })
 }
 
 /// The distributions accepted as a severity, for error messages.
 const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, inverse gamma, \
-                          inverse Gaussian, Burr, beta, truncated, mixture, grid, custom, or \
+                          inverse Gaussian, Burr, beta, truncated, policy limits, mixture, grid, \
+                          custom, or \
                           a Pareto-family distribution";
 
 /// A severity accepted wherever a parametric or discretized loss
@@ -672,6 +683,12 @@ impl PredictiveDistribution {
     fn aggregate(&self, keep: Vec<String>) -> Result<Self> {
         let keep: Vec<&str> = keep.iter().map(String::as_str).collect();
         let inner = self.inner.aggregate(&keep).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn select(&self, dim: &str, keys: Robj) -> Result<Self> {
+        let keys = key_column(&keys)?;
+        let inner = self.inner.select(dim, &keys).map_err(to_r)?;
         Ok(Self { inner })
     }
 

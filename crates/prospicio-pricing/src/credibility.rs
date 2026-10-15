@@ -52,6 +52,16 @@ impl LimitedFluctuation {
         Ok(Self { p, k })
     }
 
+    /// The probability `p` of lying within `k` of the mean.
+    pub fn p(&self) -> f64 {
+        self.p
+    }
+
+    /// The tolerance `k`, relative to the mean.
+    pub fn k(&self) -> f64 {
+        self.k
+    }
+
     /// `(Φ⁻¹((1 + p)/2) / k)²`, the full standard for the frequency.
     pub fn frequency_standard(&self) -> f64 {
         let z = norm_quantile(0.5 * (1.0 + self.p));

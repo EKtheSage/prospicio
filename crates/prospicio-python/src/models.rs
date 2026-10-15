@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing, TensorSpline};
 use prospicio_glm::net::{CvPath, ElasticNet, ElasticNetFit};
 use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
 use prospicio_models::resample::{self, Split};
@@ -1252,7 +1252,14 @@ impl PyElasticNetFit {
 ///     functions (10 by default).
 /// smoothing : str or list of float, default "auto"
 ///     ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
-///     ``"ubre"``, or fixed smoothing parameters, one per smooth.
+///     ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
+///     unknown dispersion with the smoothing parameters), or fixed
+///     smoothing parameters: one per smooth, then one per tensor margin.
+/// tensors : list, optional
+///     Tensor product smooths (mgcv's ``te(..., bs = "ps", np = FALSE)``):
+///     each a list of two or more column names, or ``(columns, n_basis)``
+///     with one basis size per column (5 by default). Each margin has its
+///     own smoothing parameter.
 ///
 /// Examples
 /// --------
@@ -1272,12 +1279,30 @@ pub(crate) struct PyGam {
 #[pymethods]
 impl PyGam {
     #[new]
-    #[pyo3(signature = (glm, smooths, smoothing = None))]
+    #[pyo3(signature = (glm, smooths, smoothing = None, tensors = None))]
     fn new(
         glm: PyRef<'_, PyGlm>,
         smooths: Vec<Bound<'_, PyAny>>,
         smoothing: Option<&Bound<'_, PyAny>>,
+        tensors: Option<Vec<Bound<'_, PyAny>>>,
     ) -> PyResult<Self> {
+        let tensors = tensors
+            .unwrap_or_default()
+            .iter()
+            .map(|t| {
+                if let Ok(cols) = t.extract::<Vec<String>>() {
+                    let refs: Vec<&str> = cols.iter().map(String::as_str).collect();
+                    Ok(TensorSpline::new(&refs))
+                } else if let Ok((cols, k)) = t.extract::<(Vec<String>, Vec<usize>)>() {
+                    let refs: Vec<&str> = cols.iter().map(String::as_str).collect();
+                    Ok(TensorSpline::new(&refs).n_basis(k))
+                } else {
+                    Err(PyTypeError::new_err(
+                        "each tensor must be a list of column names, or (columns, n_basis per column)",
+                    ))
+                }
+            })
+            .collect::<PyResult<Vec<_>>>()?;
         let splines = smooths
             .iter()
             .map(|s| {
@@ -1302,18 +1327,22 @@ impl PyGam {
                         "auto" => Smoothing::Auto,
                         "gcv" => Smoothing::Gcv,
                         "ubre" => Smoothing::Ubre,
+                        "reml" => Smoothing::Reml,
                         other => {
                             return Err(PyValueError::new_err(format!(
-                                "smoothing must be \"auto\", \"gcv\", \"ubre\" or a list \
-                                 of numbers, got {other:?}"
+                                "smoothing must be \"auto\", \"gcv\", \"ubre\", \"reml\" or a \
+                                 list of numbers, got {other:?}"
                             )));
                         }
                     }
                 }
             }
         };
+        let gam = tensors
+            .into_iter()
+            .fold(Gam::new(glm.inner, splines), Gam::tensor);
         Ok(Self {
-            inner: Gam::new(glm.inner, splines).smoothing(smoothing),
+            inner: gam.smoothing(smoothing),
         })
     }
 
@@ -1423,10 +1452,17 @@ impl PyGamFit {
         self.inner.deviance()
     }
 
-    /// The minimized GCV or UBRE score.
+    /// The minimized GCV, UBRE or REML score (mgcv's ``gcv.ubre``).
     #[getter]
     fn score(&self) -> f64 {
         self.inner.score()
+    }
+
+    /// The dispersion REML estimates with the smoothing parameters
+    /// (mgcv's ``reml.scale``), or ``None`` for GCV and UBRE.
+    #[getter]
+    fn reml_scale(&self) -> Option<f64> {
+        self.inner.reml_scale()
     }
 
     /// Fitted means on the training data.

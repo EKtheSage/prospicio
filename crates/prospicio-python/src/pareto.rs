@@ -299,6 +299,37 @@ severity_class!(PyPareto {
         Ok(Self { inner })
     }
 
+    /// ``Pareto.fit`` with the standard error of the alpha from the
+    /// observed information. Untruncated it is ``alpha / sqrt(n)``, ``n``
+    /// the uncensored weight; truncated, the conditioning terms add to the
+    /// information. Parameters as ``fit``.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (Pareto, float)
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Pareto
+    /// >>> fit, se = Pareto.fit_with_standard_error([1500.0, 2500.0, 4000.0], 1000.0)
+    /// >>> round(se * 3 ** 0.5 / fit.alpha, 12)
+    /// 1.0
+    #[staticmethod]
+    #[pyo3(signature = (losses, t, reporting_thresholds = None, censored = None, weights = None, truncation = None))]
+    fn fit_with_standard_error(
+        losses: Vec<f64>,
+        t: f64,
+        reporting_thresholds: Option<Vec<f64>>,
+        censored: Option<Vec<bool>>,
+        weights: Option<Vec<f64>>,
+        truncation: Option<f64>,
+    ) -> PyResult<(Self, f64)> {
+        let data = large_losses(losses, reporting_thresholds, censored, weights)?;
+        let (inner, se) = prospicio_prob::Pareto::fit_with_standard_error(t, &data, truncation)
+            .map_err(to_py)?;
+        Ok((Self { inner }, se))
+    }
+
     /// Threshold ``t``.
     #[getter]
     fn t(&self) -> f64 {
@@ -970,6 +1001,71 @@ severity_class!(PyTruncated {
     }
 });
 
+/// A severity capped by a mix of policy limits: the loss ``min(X, L)``
+/// with ``L = limits[j]`` with probability ``weights[j]``, as a cedant's
+/// losses censored at its policies' limits. Every layer moment is exact,
+/// from the base severity's, and the distribution function has an atom at
+/// each finite limit, so ``Grid.rounding`` and ``CollectiveModel`` take it
+/// like any severity.
+///
+/// Parameters
+/// ----------
+/// severity : a severity
+///     The losses before the limits; any distribution but ``Sampled``.
+/// limits : list of float
+///     Positive; ``inf`` for an unlimited policy.
+/// weights : list of float
+///     Non-negative, normalized to sum to 1 (policy or loss counts do).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Pareto, PolicyLimits
+/// >>> c = PolicyLimits(Pareto(100.0, 2.0), [1000.0, 5000.0], [3, 1])
+/// >>> round(c.mean(), 9)  # 0.75 * 100 * (2 - 0.1) + 0.25 * 100 * (2 - 0.02)
+/// 192.0
+#[pyclass(name = "PolicyLimits", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyPolicyLimits {
+    pub(crate) inner: std::sync::Arc<prospicio_prob::PolicyLimits>,
+}
+
+severity_class!(PyPolicyLimits {
+    #[new]
+    fn new(severity: &Bound<'_, PyAny>, limits: Vec<f64>, weights: Vec<f64>) -> PyResult<Self> {
+        let base = crate::distributions::extract_severity(severity)?;
+        let p = prospicio_prob::PolicyLimits::new(base, limits, weights).map_err(to_py)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(p),
+        })
+    }
+
+    /// The policy limits.
+    #[getter]
+    fn limits(&self) -> Vec<f64> {
+        self.inner.limits().to_vec()
+    }
+
+    /// Each limit's weight, summing to 1.
+    #[getter]
+    fn weights(&self) -> Vec<f64> {
+        self.inner.weights().to_vec()
+    }
+
+    /// The severity before the limits.
+    #[getter]
+    fn severity(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        crate::distributions::dist_to_py(py, self.inner.base().dist().clone())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PolicyLimits({}, limits={:?}, weights={:?})",
+            self.inner.base().dist().family(),
+            self.inner.limits(),
+            self.inner.weights()
+        )
+    }
+});
+
 /// A finite mixture of severities: component ``i`` with probability
 /// ``w_i``, such as attritional plus large losses.
 ///
@@ -1143,6 +1239,37 @@ severity_class!(PyPiecewisePareto {
             .detach(|| prospicio_prob::PiecewisePareto::fit(t, &data, truncation))
             .map_err(to_py)?;
         Ok(Self { inner })
+    }
+
+    /// ``PiecewisePareto.fit`` with the standard error of each alpha. The
+    /// likelihood separates by piece, so the alphas are uncorrelated:
+    /// ``alpha_k / sqrt(n_k)``, ``n_k`` the uncensored weight ending in
+    /// piece ``k`` (NaN where none does). A truncated last piece takes the
+    /// truncated Pareto's; ``truncation_type="wd"`` couples the alphas and
+    /// is refused. Parameters as ``fit``.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (PiecewisePareto, list of float)
+    #[staticmethod]
+    #[pyo3(signature = (losses, t, reporting_thresholds = None, censored = None, weights = None, truncation = None, truncation_type = "lp"))]
+    #[allow(clippy::too_many_arguments)]
+    fn fit_with_standard_errors(
+        losses: Vec<f64>,
+        t: Vec<f64>,
+        reporting_thresholds: Option<Vec<f64>>,
+        censored: Option<Vec<bool>>,
+        weights: Option<Vec<f64>>,
+        truncation: Option<f64>,
+        truncation_type: &str,
+    ) -> PyResult<(Self, Vec<f64>)> {
+        let data = large_losses(losses, reporting_thresholds, censored, weights)?;
+        let kind = truncation_kind(truncation_type)?;
+        let truncation = truncation.map(|tr| (tr, kind));
+        let (inner, se) =
+            prospicio_prob::PiecewisePareto::fit_with_standard_errors(t, &data, truncation)
+                .map_err(to_py)?;
+        Ok((Self { inner }, se))
     }
 
     /// Thresholds.
@@ -1757,3 +1884,241 @@ severity_class!(PyCustom {
         )
     }
 });
+
+/// A severity fitted by maximum likelihood to large losses, from
+/// ``fit_severity``: the distribution, its parameters with standard errors
+/// and covariance (from the observed information), and the fit's
+/// log-likelihood with AIC and BIC.
+#[pyclass(name = "SeverityFit", module = "prospicio.distributions", frozen)]
+pub(crate) struct PySeverityFit {
+    inner: prospicio_prob::severity_fit::SeverityFit,
+}
+
+#[pymethods]
+impl PySeverityFit {
+    /// The family's name.
+    #[getter]
+    fn family(&self) -> &'static str {
+        self.inner.family().name()
+    }
+
+    /// The fitted distribution.
+    #[getter]
+    fn distribution(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        crate::distributions::dist_to_py(py, self.inner.dist().clone())
+    }
+
+    /// The parameters by name.
+    #[getter]
+    fn parameters(&self) -> std::collections::BTreeMap<&'static str, f64> {
+        let names = self.inner.family().parameter_names();
+        names
+            .iter()
+            .copied()
+            .zip(self.inner.parameters().iter().copied())
+            .collect()
+    }
+
+    /// Each parameter's standard error, by name; NaN where the observed
+    /// information is singular.
+    #[getter]
+    fn standard_errors(&self) -> std::collections::BTreeMap<&'static str, f64> {
+        let names = self.inner.family().parameter_names();
+        names
+            .iter()
+            .copied()
+            .zip(self.inner.standard_errors())
+            .collect()
+    }
+
+    /// The parameters' covariance, one row per parameter in the family's
+    /// order (``meanlog, sdlog``; ``shape, scale``; ``alpha, gamma, scale``).
+    #[getter]
+    fn covariance(&self) -> Vec<Vec<f64>> {
+        let n = self.inner.parameters().len();
+        self.inner
+            .covariance()
+            .chunks(n)
+            .map(<[f64]>::to_vec)
+            .collect()
+    }
+
+    /// The maximized log-likelihood.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    /// Akaike's information criterion.
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    /// The Bayesian information criterion, with the losses' total weight.
+    #[getter]
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
+    /// Whether the optimizer met its tolerance.
+    #[getter]
+    fn converged(&self) -> bool {
+        self.inner.converged()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SeverityFit({}, {:?}, log_likelihood={:.6})",
+            self.inner.family().name(),
+            self.inner.parameters(),
+            self.inner.log_likelihood()
+        )
+    }
+}
+
+/// Maximum likelihood fit of a lognormal, gamma, Weibull or Burr severity
+/// to large losses, each conditioned on exceeding its reporting threshold
+/// (left truncation), with losses capped by a policy limit censored.
+///
+/// Parameters
+/// ----------
+/// family : {"lognormal", "gamma", "weibull", "burr"}
+/// losses : list of float
+/// reporting_thresholds : list of float, optional
+///     Per-loss thresholds below which a loss would not have been
+///     reported.
+/// censored : list of bool, optional
+///     ``True`` where a policy limit capped the loss.
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// SeverityFit
+///
+/// Examples
+/// --------
+/// >>> import math
+/// >>> from prospicio.distributions import fit_severity
+/// >>> y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0]
+/// >>> fit = fit_severity("lognormal", y)
+/// >>> round(fit.parameters["meanlog"], 6) == round(sum(map(math.log, y)) / 7, 6)
+/// True
+#[pyfunction]
+#[pyo3(signature = (family, losses, reporting_thresholds = None, censored = None, weights = None))]
+pub(crate) fn fit_severity(
+    py: Python<'_>,
+    family: &str,
+    losses: Vec<f64>,
+    reporting_thresholds: Option<Vec<f64>>,
+    censored: Option<Vec<bool>>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<PySeverityFit> {
+    use prospicio_prob::severity_fit::{Family, fit_severity};
+    let family = Family::from_name(family).map_err(to_py)?;
+    let data = large_losses(losses, reporting_thresholds, censored, weights)?;
+    let inner = py.detach(|| fit_severity(family, &data)).map_err(to_py)?;
+    Ok(PySeverityFit { inner })
+}
+
+/// The product-limit (Kaplan–Meier) estimator for left-truncated,
+/// right-censored losses: at each value where an uncensored loss lies, the
+/// weight at risk (losses reported below it and not below it), the
+/// uncensored weight there and ``S(x)``, the survival conditional on the
+/// lowest reporting threshold.
+///
+/// Parameters
+/// ----------
+/// losses : list of float
+/// reporting_thresholds : list of float, optional
+/// censored : list of bool, optional
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// dict of str to list of float
+///     ``x``, ``at_risk``, ``events`` and ``survival``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import product_limit
+/// >>> product_limit([100.0, 200.0, 300.0, 400.0])["survival"]
+/// [0.75, 0.5, 0.25, 0.0]
+#[pyfunction]
+#[pyo3(signature = (losses, reporting_thresholds = None, censored = None, weights = None))]
+pub(crate) fn product_limit(
+    losses: Vec<f64>,
+    reporting_thresholds: Option<Vec<f64>>,
+    censored: Option<Vec<bool>>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<std::collections::BTreeMap<&'static str, Vec<f64>>> {
+    let data = large_losses(losses, reporting_thresholds, censored, weights)?;
+    let steps = prospicio_prob::severity_fit::product_limit(&data);
+    Ok([
+        ("x", steps.iter().map(|s| s.x).collect()),
+        ("at_risk", steps.iter().map(|s| s.at_risk).collect()),
+        ("events", steps.iter().map(|s| s.events).collect()),
+        ("survival", steps.iter().map(|s| s.survival).collect()),
+    ]
+    .into_iter()
+    .collect())
+}
+
+/// A severity against the product-limit estimate of large losses, each
+/// conditioned on its reporting threshold: P-P (``survival`` against
+/// ``model_survival``, the model's survival conditional on the lowest
+/// reporting threshold), Q-Q (``x`` against ``model_quantile``, the
+/// model's conditional quantile at the middle of each step) and
+/// ``max_distance``, the largest gap between the two survival functions.
+///
+/// Parameters
+/// ----------
+/// severity : a distribution
+///     A fit's ``distribution``, a Pareto fit, or any other.
+/// losses : list of float
+/// reporting_thresholds : list of float, optional
+/// censored : list of bool, optional
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``x``, ``at_risk``, ``survival``, ``model_survival``,
+///     ``model_quantile`` (lists) and ``max_distance`` (float).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import fit_severity, goodness_of_fit
+/// >>> y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0]
+/// >>> gof = goodness_of_fit(fit_severity("lognormal", y).distribution, y)
+/// >>> len(gof["x"]), gof["max_distance"] < 0.3
+/// (6, True)
+#[pyfunction]
+#[pyo3(signature = (severity, losses, reporting_thresholds = None, censored = None, weights = None))]
+pub(crate) fn goodness_of_fit<'py>(
+    py: Python<'py>,
+    severity: &Bound<'py, PyAny>,
+    losses: Vec<f64>,
+    reporting_thresholds: Option<Vec<f64>>,
+    censored: Option<Vec<bool>>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    use pyo3::types::PyDictMethods;
+    let dist = crate::distributions::extract_dist(severity)?;
+    let data = large_losses(losses, reporting_thresholds, censored, weights)?;
+    let g = prospicio_prob::severity_fit::goodness_of_fit(&dist, &data).map_err(to_py)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("x", g.steps.iter().map(|s| s.x).collect::<Vec<_>>())?;
+    d.set_item(
+        "at_risk",
+        g.steps.iter().map(|s| s.at_risk).collect::<Vec<_>>(),
+    )?;
+    d.set_item(
+        "survival",
+        g.steps.iter().map(|s| s.survival).collect::<Vec<_>>(),
+    )?;
+    d.set_item("model_survival", g.model_survival)?;
+    d.set_item("model_quantile", g.model_quantile)?;
+    d.set_item("max_distance", g.max_distance)?;
+    Ok(d)
+}

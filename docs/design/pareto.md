@@ -317,7 +317,21 @@ for fixed `k = α_ini/α_tail` the tail alpha is a closed form, so it is a
 one-dimensional profile likelihood in `k`, solved by bisection on its
 analytic score. R's optimizer stops about `2e-5` short of the maximum
 (our estimate has the higher likelihood at 40 digits), so those parity
-rows use `1e-4`. `PiecewisePareto::fit` with
+rows use `1e-4`.
+The body families take the same data through
+`severity_fit::fit_severity` (`docs/design/distributions.md`).
+`Pareto::fit_with_standard_error` and
+`PiecewisePareto::fit_with_standard_errors` (decided 2026-10-14, #213)
+add the observed-information standard error of each alpha. Untruncated
+it is `α̂ / sqrt(n)` with `n` the uncensored weight, which is the stand-in
+the submission notebook used. Truncated at `T`, each conditioning term
+adds `c² q/(1 − q)²` to the information (with `c = ln(T/r)` and
+`q = (r/T)^α`), and the result matches a central second difference of
+the log-likelihood to `1e-5`. A piecewise Pareto's likelihood separates
+by piece, so its alphas are uncorrelated and each takes `α_k / sqrt(n_k)`
+(or the truncated Pareto's for a truncated last piece). Truncation of the
+whole distribution couples the alphas and is refused rather than given a
+full Hessian. `fit` keeps its return type. `PiecewisePareto::fit` with
 `Truncation::WholeDistribution` maximizes the coupled likelihood by
 coordinate ascent from the untruncated estimates (each alpha by the
 Illinois method on its analytic partial derivative, clamped to
@@ -458,6 +472,26 @@ fit is our own construction, not the package's:
 Where the references leave freedom, this completion differs from the R
 package's (which fills gaps with a default alpha), so the two are not
 compared.
+
+A fit that reproduces its references can still be implausible between them
+(issue #211; `knowledge/findings/tower-fit-shape.md`). Two tools:
+
+- `TowerModel::diagnostics(min_alpha, max_ratio)`: the alpha range, the
+  largest ratio between neighbouring alphas, whether the mean is infinite
+  (the last, untruncated piece at alpha 1 or below; a low alpha elsewhere
+  is only heavy), and a warning per failed check.
+- `fit_references_bounded(.., alpha_bounds)`: the alpha between
+  consecutive reference points kept in `[lo, hi]`, linear in the
+  frequencies and so part of the linear program and of the analytic
+  center's inequalities; the unlimited top layer's alpha too. It does not
+  bound the two pieces `match_tower` fits inside a limited layer, whose
+  constraint would be nonlinear in the layer loss; `diagnostics` reports
+  those. Infeasible bounds are refused naming the bounds, inconsistent
+  references naming their number (no longer `NaN`).
+
+`match_tower`'s jagged alphas on exposure-rated losses are exact matching
+of a curve that is not piecewise Pareto, not a defect; a least-squares fit
+that trades exactness for smoothness would be a separate method.
 
 Bindings: Python `prospicio.pricing` (`CollectiveModel`, `ilf`,
 `loss_elimination_ratio`, `pareto_extrapolation`, the three implied-alpha

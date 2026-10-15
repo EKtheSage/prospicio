@@ -23,10 +23,12 @@ use prospicio_reserving::{
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
-    BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment, Compartmental,
-    CompartmentalFit as CompartmentalInner, CompartmentalLikelihood, CompartmentalPriors,
-    CompartmentalStart, Fitted, HalfPrior, MeyersFits as MeyersFitsInner, MeyersSegment,
-    Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
+    BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment, BayesOneYear,
+    BayesOneYearFit as BayesOneYearInner, BayesOneYearFits as BayesOneYearFitsInner,
+    BayesOneYearSegment, Compartmental, CompartmentalFit as CompartmentalInner,
+    CompartmentalLikelihood, CompartmentalPriors, CompartmentalStart, Fitted, HalfPrior,
+    MeyersFits as MeyersFitsInner, MeyersSegment, OneYearRefit, Outstanding, PaidResponse,
+    PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesOdp, BayesOdpFit as BayesOdpInner, Diagnostics,
@@ -912,6 +914,55 @@ impl Triangle {
         };
         let inner = model.fit_segments(&self.inner, column).map_err(to_r)?;
         Ok(BayesOdpFits { inner })
+    }
+
+    /// The one-year view of `bayes_odp` on a single-segment triangle
+    /// column by PSIS reweighting: `priors` are `intercept_sd`, `origin_sd`
+    /// and `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
+    /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
+    /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
+    /// "reweight_only" or "refit_all") says.
+    fn bayes_odp_one_year(
+        &self,
+        column: &str,
+        priors: Vec<f64>,
+        process: &str,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: &str,
+    ) -> Result<BayesOneYearFit> {
+        let model = bayes_odp_model(&priors, process, &run, SegmentDependence::Independent)?;
+        let settings = one_year_settings(k_threshold, refit)?;
+        let inner = model
+            .one_year(&self.inner, column, &settings)
+            .map_err(to_r)?;
+        Ok(BayesOneYearFit { inner })
+    }
+
+    /// The one-year view of `bayes_odp_segments` on every segment of a
+    /// triangle column, with the settings of `bayes_odp_one_year` and the
+    /// segments depending on each other as `dependence` ("independent",
+    /// "rank_correlation" with the row-major `spearman` matrix, or
+    /// "synchronized", an error) says.
+    #[allow(clippy::too_many_arguments)]
+    fn bayes_odp_one_year_segments(
+        &self,
+        column: &str,
+        priors: Vec<f64>,
+        process: &str,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: &str,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
+    ) -> Result<BayesOneYearFits> {
+        let dependence = segment_dependence(dependence, spearman)?;
+        let model = bayes_odp_model(&priors, process, &run, dependence)?;
+        let settings = one_year_settings(k_threshold, refit)?;
+        let inner = model
+            .one_year_segments(&self.inner, column, &settings)
+            .map_err(to_r)?;
+        Ok(BayesOneYearFits { inner })
     }
 
     /// Meyers' CRC, CSR or CAY model (`model`, "crc", "csr" or "cay") of a
@@ -2340,6 +2391,252 @@ impl BayesOdpFit {
     }
 }
 
+/// The `BayesOdp` of the one-year views: `priors` are `intercept_sd`,
+/// `origin_sd` and `development_sd`; `run` is `chains`, `tune`, `draws`,
+/// `n_sims`, `seed`, `target_accept` and `max_depth`.
+fn bayes_odp_model(
+    priors: &[f64],
+    process: &str,
+    run: &[f64],
+    dependence: SegmentDependence,
+) -> Result<BayesOdp> {
+    let (&[intercept_sd, origin_sd, development_sd], &[chains, tune, draws, n_sims, seed, ta, md]) =
+        (priors, run)
+    else {
+        return Err(Error::Other(
+            "bayes_odp_model takes 3 priors and 7 run settings".into(),
+        ));
+    };
+    let boot = bootstrap(n_sims, seed, process, SegmentDependence::Independent)?;
+    Ok(BayesOdp {
+        intercept_sd,
+        origin_sd,
+        development_sd,
+        process: boot.process,
+        sampler: BayesSampler {
+            chains: whole(chains, "chains")? as usize,
+            tune: whole(tune, "tune")? as usize,
+            draws: whole(draws, "draws")? as usize,
+            seed: 0,
+            target_accept: ta,
+            max_depth: whole(md, "max_depth")?,
+        },
+        n_sims: boot.n_sims,
+        seed: boot.seed,
+        dependence,
+    })
+}
+
+/// The settings of a Bayesian one-year view: `k_threshold` and the
+/// `refit` policy by name.
+fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
+    let refit = match refit {
+        "refit_flagged" => OneYearRefit::RefitFlagged,
+        "reweight_only" => OneYearRefit::ReweightOnly,
+        "refit_all" => OneYearRefit::RefitAll,
+        _ => {
+            return Err(Error::Other(format!(
+                "refit must be \"refit_flagged\", \"reweight_only\" or \"refit_all\", got \
+                 \"{refit}\""
+            )));
+        }
+    };
+    Ok(BayesOneYear { k_threshold, refit })
+}
+
+/// The one-year view of a Bayesian model on a single-segment triangle
+/// column: the lifetime fit, the opening reserve, the claims development
+/// result and each simulation's Pareto k.
+#[extendr]
+pub(crate) struct BayesOneYearFit {
+    inner: BayesOneYearInner,
+}
+
+#[extendr]
+impl BayesOneYearFit {
+    /// The lifetime fit, as `bayes_odp` gives it.
+    fn fit(&self) -> BayesOdpFit {
+        BayesOdpFit {
+            inner: self.inner.fit.clone(),
+        }
+    }
+
+    fn opening_ultimate(&self) -> Vec<f64> {
+        self.inner.opening_ultimate.clone()
+    }
+
+    fn opening_reserve(&self) -> Vec<f64> {
+        self.inner.opening_reserve.clone()
+    }
+
+    fn cdr(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.cdr.clone(),
+        }
+    }
+
+    fn pareto_k(&self) -> Vec<f64> {
+        self.inner.pareto_k.clone()
+    }
+
+    /// The simulations refitted with NUTS, 1-based.
+    fn refitted(&self) -> Vec<f64> {
+        self.inner
+            .refitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect()
+    }
+
+    fn refit_warnings(&self) -> f64 {
+        self.inner.refit_warnings as f64
+    }
+
+    fn k_threshold(&self) -> f64 {
+        self.inner.k_threshold
+    }
+
+    fn flagged_share(&self) -> f64 {
+        self.inner.flagged_share()
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.fit.development_table())
+    }
+
+    /// The fit itself, as for any single-segment fit without keys: a
+    /// condition on a key is an error.
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        let one = SegmentFits {
+            key_names: Vec::new(),
+            labels: vec![Label::new(Vec::<String>::new())],
+            fits: vec![()],
+        };
+        pick(&one, keys, values)?;
+        Ok(Self {
+            inner: self.inner.clone(),
+        })
+    }
+}
+
+/// The one-year view of a Bayesian model on every segment of a triangle
+/// column: each segment's posterior, opening reserve and Pareto k, and the
+/// joint claims development result.
+#[extendr]
+pub(crate) struct BayesOneYearFits {
+    inner: BayesOneYearFitsInner,
+}
+
+impl BayesOneYearFits {
+    fn one(&self, field: &str, instead: &str) -> Result<&BayesOneYearSegment> {
+        single(&self.inner.segments, field, instead)
+    }
+}
+
+#[extendr]
+impl BayesOneYearFits {
+    /// The volume-weighted chain ladder of every segment.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: self.inner.segments.map(|s| s.fit.chain_ladder.clone()),
+        }
+    }
+
+    fn opening_ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.opening_ultimate.clone())
+    }
+
+    fn opening_reserve(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.opening_reserve.clone())
+    }
+
+    fn cdr(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.cdr.clone(),
+        }
+    }
+
+    fn scale(&self) -> Result<f64> {
+        Ok(self.one("scale", "totals_frame()")?.fit.scale)
+    }
+
+    fn pareto_k(&self) -> Result<Vec<f64>> {
+        Ok(self.one("pareto_k", "")?.pareto_k.clone())
+    }
+
+    /// The simulations of a single-segment fit refitted with NUTS, 1-based.
+    fn refitted(&self) -> Result<Vec<f64>> {
+        Ok(self
+            .one("refitted", "")?
+            .refitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
+    }
+
+    fn refit_warnings(&self) -> Result<f64> {
+        Ok(self.one("refit_warnings", "")?.refit_warnings as f64)
+    }
+
+    /// Each segment's number of refits and of refits with a diagnostic
+    /// warning, for the warning of `bayes_odp_one_year_segments()`.
+    fn refit_counts(&self) -> List {
+        let fits = &self.inner.segments.fits;
+        list!(
+            refits = fits
+                .iter()
+                .map(|s| s.refitted.len() as f64)
+                .collect::<Vec<_>>(),
+            warned = fits
+                .iter()
+                .map(|s| s.refit_warnings as f64)
+                .collect::<Vec<_>>()
+        )
+    }
+
+    fn k_threshold(&self) -> f64 {
+        self.inner.segments.fits[0].k_threshold
+    }
+
+    fn flagged_share(&self) -> Result<f64> {
+        Ok(self.one("flagged_share", "totals_frame()")?.flagged_share())
+    }
+
+    /// One row per segment: `list(table, warnings)`, as
+    /// `segment_diagnostics`.
+    fn diagnostics_table(&self) -> List {
+        segment_diagnostics(&self.inner.segments, self.inner.totals(), |s| {
+            &s.fit.diagnostics
+        })
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.segments.development_table())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
+        })
+    }
+}
+
 /// The `Meyers` of `meyers` and `meyers_segments`: `priors` are
 /// `logelr_mean`, `logelr_sd`, `origin_sd`, `development_sd`, `gamma_sd` and
 /// `rho_shape`; `run` is `chains`, `tune`, `draws`, `n_sims`, `seed`,
@@ -3204,6 +3501,8 @@ extendr_module! {
     impl OdpBootstrapFit;
     impl BayesOdpFit;
     impl BayesOdpFits;
+    impl BayesOneYearFit;
+    impl BayesOneYearFits;
     impl MeyersFit;
     impl MeyersFits;
     impl CompartmentalFit;

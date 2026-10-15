@@ -131,6 +131,56 @@ models and compares them.
   offset, gamma): deviance, edf, scale, score, a coefficient and fitted
   values, at 1e-5 to 1e-6 where the smooth is clearly non-linear and
   looser where the optimal smoothing is effectively infinite.
+- REML smoothing (`Smoothing::Reml`, decided 2026-10-14): mgcv's
+  `method = "REML"`, the Laplace approximation to the restricted
+  likelihood (Wood 2011), `D_p/(2φ) − l_s(φ) + ½ ln|XᵀWX + S| − ½ ln|S|₊ −
+  (M_p/2) ln(2πφ)`. Checked in R against mgcv's own `gcv.ubre` before
+  building: it matches only with `W` the observed (Newton) weights, which
+  differ from the expected ones for a non-canonical link such as the gamma
+  with a log link, and with `φ` mgcv's `reml.scale`, not `sig2`. So the
+  determinant uses the observed information at the fit (the β̂ is the same
+  PIRLS solution either way), `l_s` is mgcv's `fix.family.ls` (Gaussian,
+  Poisson, gamma, inverse Gaussian, binomial; negative binomial and
+  Tweedie are refused), `ln|S|₊ = Σ r_j ln λ_j + ln|P_j|₊` with each
+  smooth's rank and log pseudo-determinant from its eigenvalues (Jacobi,
+  `prospicio_math::linalg::symmetric_eigenvalues`), and an unknown `φ` is
+  minimized with the score at each trial: `D_p/(n − M_p)` in closed form
+  for the Gaussian and inverse Gaussian, by Brent on `ln φ` for the gamma.
+  `GamFit::reml_scale` reports it; `dispersion` stays the `Dispersion`
+  estimate (mgcv's `sig2`). The search is the coordinate search on
+  `ln λ`, then Nelder–Mead jointly for several smooths. Parity: six REML
+  cases in `gam_mgcv.csv` (the five GAMs above and two smooths). mgcv
+  stops once the score settles to about 3e-7 relative; where the score is
+  flat in `λ` prospicio reaches a lower score (by up to 2e-3 in 4,700), so
+  those cases compare the score to 1e-6 and the fit loosely, and the test
+  asserts that the score is never above mgcv's. The wavy single smooths
+  agree to 1e-6.
+- Tensor product smooths (`TensorSpline`, `Gam::tensor`, decided
+  2026-10-14): mgcv's `te(x, z, bs = "ps", np = FALSE)`. Each margin is a
+  cubic B-spline basis on mgcv's `"ps"` knots (5 functions by default),
+  the basis is the row-wise Kronecker product (the last margin's index
+  fastest), margin `i` contributes `I ⊗ … ⊗ P_i ⊗ … ⊗ I` with its own
+  smoothing parameter, and the whole product is centered to sum to zero
+  like a P-spline. `np = FALSE` matters: mgcv's default reparameterizes
+  each margin before forming the Kronecker penalties, which is a
+  different model, not a different basis for the same one; with it off,
+  how mgcv scales the penalties or picks the constraint's basis leaves the
+  fit unchanged. Smoothing parameters run over the P-splines, then each
+  tensor's margins. For REML, a block with several penalties takes
+  `ln|Σ λ_i P_i|₊` from its top `r` eigenvalues at each trial, `r` the rank
+  of `Σ P_i`. The search for several smoothing parameters is now one coarse
+  coordinate pass (a 64-cell scan of `ln λ`, then Brent to 1e-4) polished
+  jointly by Nelder–Mead, for every criterion, and each trial starts IRLS
+  from the previous trial's means; a single smooth keeps the full-precision
+  scan, so its results are unchanged. Parity:
+  `validation/reference/gam_tensor_mgcv.csv`
+  (`validation/scripts/r_gam_tensor.R`, data `validation/data/
+  gam_surface.csv`): a surface by REML and GCV, Poisson counts by REML,
+  and a P-spline next to the tensor by REML, at 1e-5 and 1e-6 for the
+  score; GCV with two parameters is flat and mgcv stops about 1e-9 above
+  prospicio's score, so its fitted values are compared to 2e-4. Python
+  `Gam(..., tensors=[["x", "z"]])`; R `gam_fit(..., tensors = list(c("x",
+  "z")), tensor_basis = 5)`.
 - `prospicio-bayes`: MCMC diagnostics for any sampler's draws, the estimators
   of Vehtari et al. (2021) as R's `posterior` implements them:
   rank-normalized split `rhat` (the larger of the bulk and folded

@@ -236,7 +236,8 @@ pnl_flat_expenses <- function(expenses) {
 #' - `"consolidated"` (`pnl`): one group, the net position. With a tower it
 #'   books net premium (gross less ceded premiums) less the net loss less
 #'   the commission received less expenses, over the net loss; a
-#'   loss-basis expense books as its rate times the expected gross loss.
+#'   loss-basis expense books as its rate times each year's gross loss (or
+#'   the expected one, with `expense_at_expected_loss`).
 #' - `"walk"` (`xpnl`): the gross book, then one buy group per stage of the
 #'   tower, with the running net and the covers' total impact.
 #' - `"peel-top-down"` and `"peel-bottom-up"`: one buy group per layer, with
@@ -260,6 +261,17 @@ pnl_flat_expenses <- function(expenses) {
 #' @param premium_label,loss_label,step_label The premium leg's label
 #'   (`"Premium"`), the loss leg's (`"Loss"`, also the gross book's margin on
 #'   a walk) and the gross book's step on a walk (`"Gross"`).
+#' @param retro `NULL`, or `c(basic, lcm, minimum, maximum)` (`NA` for an
+#'   open end) to rate the book retrospectively, `aggregate`'s `retro
+#'   <collar> premium`: the premium is `clip(basic + lcm * x, minimum,
+#'   maximum)` at the year's gross loss `x`, and `premium` (the collar's
+#'   basic premium in `aggregate`) is what premium-basis expenses are taken
+#'   on. A retro book buys no cover here.
+#' @param expense_at_expected_loss Book a loss-basis expense on the
+#'   consolidated face at the expected gross loss, as `aggregate`'s
+#'   guaranteed-cost builder does, rather than at each year's gross loss
+#'   (which makes the consolidated margin the walk's net margin year by
+#'   year).
 #' @param basis `"fixed"`, `"premium"` or `"loss"`, or a list of
 #'   `list(basis, value)` terms.
 #' @param value The amount or rate, with a single `basis`.
@@ -281,9 +293,16 @@ pnl_flat_expenses <- function(expenses) {
 #' walk <- book_ledger(book, gross, reinsurance_tower(list(cover)), "walk")
 #' mean(ledger_result(walk))
 pnl_book <- function(name, premium, expenses = list(), premium_label = NULL, loss_label = NULL,
-                     step_label = NULL) {
+                     step_label = NULL, retro = NULL, expense_at_expected_loss = FALSE) {
+  if (!is.null(retro)) {
+    retro <- as.double(retro)
+    if (length(retro) == 2) retro <- c(retro, NA, NA)
+    if (length(retro) != 4) stop("retro is c(basic, lcm, minimum, maximum)")
+    retro[is.na(retro)] <- NaN
+  }
   structure(list(name = as.character(name), premium = as.double(premium), expenses = expenses,
-                 premium_label = premium_label, loss_label = loss_label, step_label = step_label),
+                 premium_label = premium_label, loss_label = loss_label, step_label = step_label,
+                 retro = retro, expense_at_expected_loss = isTRUE(expense_at_expected_loss)),
             class = "pnl_book")
 }
 
@@ -309,7 +328,8 @@ book_ledger <- function(book, source, tower = NULL, face = "consolidated") {
   ptr <- rust_result(PnlLedger$book(
     src$values, src$probs, book$name, book$premium, e$index, e$basis, e$value, e$label,
     lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
-    if (is.null(tower)) NULL else tower@ptr, as.character(face)
+    if (is.null(tower)) NULL else tower@ptr, as.character(face),
+    if (is.null(book$retro)) double() else book$retro, isTRUE(book$expense_at_expected_loss)
   ))
   structure(list(ptr = ptr), class = "pnl_ledger")
 }
@@ -320,3 +340,191 @@ derive_premium <- function(technical, expenses) {
   e <- pnl_flat_expenses(expenses)
   rust_result(pnl_derive_premium(as.double(technical), e$index, e$basis, e$value, e$label))
 }
+
+#' Occurrence covers on the joint gross and ceded loss
+#'
+#' The ledger of a [pnl_book()] with per-occurrence covers, as the Python
+#' package `aggregate`'s `xpnl` and `pnl` over its `occ_bivariate`. The
+#' ceded aggregate is not a function of the gross aggregate (the claim count
+#' decouples them), so the source is their joint law: `occurrence_source()`
+#' sends each claim on the severity's grid to `(x, c(x))`, `c` the tower's
+#' cession of one event (split linearly between grid points), compounds the
+#' pairs by a two-dimensional FFT on `points` points per axis, and drops
+#' cells below `1e-15` of the total mass as round-off.
+#'
+#' `book_occurrence_ledger()` lays the book out over that joint: on a walk
+#' the occurrence covers are one group named after the first layer, then
+#' each aggregate cover of `aggregate` recovers its cession of the net of
+#' the occurrence covers; a peel needs exactly one occurrence layer; the
+#' consolidated face is over the net loss at each atom. A single occurrence
+#' layer may carry annual terms and paid reinstatements, on the joint's
+#' unlimited annual cession `R`: its recovery `A(R)` and premium `D + h(R)`
+#' then vary with the year. On a tier of several layers they are refused.
+#'
+#' @param frequency A claim count, as [poisson_count()].
+#' @param severity A [grid_distribution] of one claim.
+#' @param occurrence A [reinsurance_tower] of per-occurrence covers.
+#' @param points The number of points on each axis, `c(gross, ceded)`.
+#' @param book A [pnl_book()].
+#' @param joint `list(gross, ceded, probs)`, from `occurrence_source()`.
+#' @param aggregate `NULL` or a [reinsurance_tower] of aggregate covers.
+#' @param face `"consolidated"`, `"walk"`, `"peel-top-down"` or
+#'   `"peel-bottom-up"`.
+#' @returns `occurrence_source()` a `list(gross, ceded, probs)`,
+#'   `book_occurrence_ledger()` a [pnl_ledger()].
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))
+#' occ <- reinsurance_tower(list(with_ceding_commission(
+#'   with_deposit_premium(xol_layer("occ 2 xs 2", 2, 2), 2), 0.25)))
+#' joint <- occurrence_source(poisson_count(2), sev, occ, c(64, 32))
+#' book <- pnl_book("Ex4", 20, list(pnl_expense("premium", 0.1)))
+#' mean(ledger_result(book_occurrence_ledger(book, joint, occ, face = "walk")))
+occurrence_source <- function(frequency, severity, occurrence, points) {
+  points <- rep_len(as.double(points), 2)
+  rust_result(pnl_occurrence_source(
+    frequency@ptr, severity@step, severity@probs, occurrence@ptr, points[1], points[2]
+  ))
+}
+
+#' @rdname occurrence_source
+#' @export
+book_occurrence_ledger <- function(book, joint, occurrence, aggregate = NULL, face = "consolidated") {
+  e <- pnl_flat_expenses(book$expenses)
+  lbl <- function(x) if (is.null(x)) "" else as.character(x)
+  ptr <- rust_result(PnlLedger$book_occurrence(
+    as.double(joint[[1]]), as.double(joint[[2]]), as.double(joint[[3]]),
+    book$name, book$premium, e$index, e$basis, e$value, e$label,
+    lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
+    occurrence@ptr, if (is.null(aggregate)) NULL else aggregate@ptr, as.character(face),
+    isTRUE(book$expense_at_expected_loss)
+  ))
+  structure(list(ptr = ptr), class = "pnl_ledger")
+}
+
+#' Premium ladder from target combined ratios
+#'
+#' The premium ladder of the Python package `aggregate`'s `pnl_program`,
+#' as numbers: the net technical premium `net_loss / net_combined_ratio`,
+#' each layer's deposit at 100% placement `round(ceded_loss /
+#' combined_ratio / share)` (or the premium it states), and the booked
+#' premium `round((T_net + sum share * deposit) / (1 - expense_ratio))`.
+#' The book's own margin is `(1 - net_combined_ratio) T_net` whatever the
+#' cover costs. Each priced deposit is also respelled as a rate,
+#' `aggregate`'s `premium_style = 'rate'`: of the booked premium on the
+#' occurrence tier, of it less the occurrence premiums on the aggregate
+#' tier. `pnl_program_stated()` prices an engine that states its own
+#' technical premium (`premium at lr`), which takes the net book's place;
+#' with no layer, it is only grossed up and left unrounded, as
+#' `aggregate`'s `derive premium`. `round_premium()` rounds as `aggregate` writes a premium:
+#' to whole units above 100, to cents at or below it, ties to even;
+#' `size_premium()` sizes one from a target loss ratio.
+#'
+#' @param net_loss Expected net loss.
+#' @param net_combined_ratio Target net combined ratio.
+#' @param expense_ratio Gross expenses as a fraction of premium.
+#' @param layers `NULL` or a data frame with `ceded_loss` (expected, at the
+#'   placed share), `share`, `combined_ratio` and optionally `stated` (a
+#'   premium the contract states at the placed share, kept; `NA` to price)
+#'   and `aggregate` (`TRUE` for a layer on the aggregate tier).
+#' @param stated The engine's stated technical premium.
+#' @param premium A premium.
+#' @param expected_loss Expected loss.
+#' @param loss_ratio Target loss ratio.
+#' @returns `pnl_program()` and `pnl_program_stated()` a list of `premium`,
+#'   `technical`, `deposits`, `rates` (`NA` for a stated layer) and
+#'   `ceded_premium`; the others a number.
+#' @export
+#' @examples
+#' pnl_program(406, 0.9, 0.25, data.frame(ceded_loss = 86, share = 1, combined_ratio = 0.6))
+#' round_premium(c(714.12, 16.285))
+pnl_program <- function(net_loss, net_combined_ratio, expense_ratio, layers = NULL) {
+  pnl_ladder(net_loss, net_combined_ratio, expense_ratio, layers, NaN)
+}
+
+#' @rdname pnl_program
+#' @export
+pnl_program_stated <- function(stated, expense_ratio, layers = NULL) {
+  pnl_ladder(0, 1, expense_ratio, layers, as.double(stated))
+}
+
+pnl_ladder <- function(net_loss, net_combined_ratio, expense_ratio, layers, stated_premium) {
+  n <- if (is.null(layers)) 0 else nrow(layers)
+  col <- function(name, default) {
+    if (n == 0) return(double())
+    v <- if (name %in% names(layers)) as.double(layers[[name]]) else rep(default, n)
+    v[is.na(v)] <- default
+    v
+  }
+  r <- rust_result(pnl_program_rust(
+    as.double(net_loss), as.double(net_combined_ratio), as.double(expense_ratio),
+    col("ceded_loss", 0), col("share", 1), col("combined_ratio", 1), col("stated", NaN),
+    col("aggregate", 0), stated_premium
+  ))
+  r$rates[is.nan(r$rates)] <- NA_real_
+  r
+}
+
+#' @rdname pnl_program
+#' @export
+round_premium <- function(premium) vapply(as.double(premium), round_premium_rust, double(1))
+
+#' @rdname pnl_program
+#' @export
+size_premium <- function(expected_loss, loss_ratio) {
+  rust_result(size_premium_rust(as.double(expected_loss), as.double(loss_ratio)))
+}
+
+#' Several occurrence layers peeled one by one
+#'
+#' The stitched peel of the Python package `aggregate` (`xpnl ... peel` with
+#' two or more occurrence layers). The joint of [occurrence_source()]
+#' carries only the occurrence tier's total cession, so every row is its own
+#' exact marginal: each occurrence layer's recovery, each running net and the
+#' tier's total is the compound of a per-claim map of the severity under the
+#' claim count (by FFT on twice `points`), and each aggregate layer's a
+#' pushforward of the net-of-occurrence aggregate. The mean column foots; the
+#' other statistics are each row's own, and the sheet has no scenario columns
+#' (`ledger_is_stitched()` is `TRUE`); the `Impact` row is the difference of
+#' the grand and gross results' statistics, with no distribution of its own;
+#' a loss-basis expense is booked at the expected gross loss.
+#'
+#' @param book A [pnl_book()].
+#' @param frequency A claim count, as [poisson_count()].
+#' @param severity A [grid_distribution] of one claim.
+#' @param occurrence A [reinsurance_tower] of occurrence layers with fixed
+#'   terms.
+#' @param aggregate `NULL` or a [reinsurance_tower] of aggregate covers
+#'   without loss-sensitive terms.
+#' @param face `"peel-top-down"` or `"peel-bottom-up"`.
+#' @param points The number of grid points.
+#' @param ledger A [pnl_ledger()].
+#' @returns `book_occurrence_peel()` a [pnl_ledger()]; `ledger_is_stitched()`
+#'   whether every row is its own marginal.
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0, 0.2, 0, 0.1))
+#' occ <- reinsurance_tower(list(
+#'   with_deposit_premium(xol_layer("occ 1 xs 1", 1, 1), 1),
+#'   with_deposit_premium(xol_layer("occ 2 xs 2", 2, 2), 1)))
+#' book <- pnl_book("S", 20, list(pnl_expense("premium", 0.1)))
+#' peel <- book_occurrence_peel(book, poisson_count(2), sev, occ, points = 64)
+#' ledger_sheet(peel)[, c("step", "label", "EX", "SD")]
+book_occurrence_peel <- function(book, frequency, severity, occurrence, aggregate = NULL,
+                                 face = "peel-top-down", points = 1024) {
+  e <- pnl_flat_expenses(book$expenses)
+  lbl <- function(x) if (is.null(x)) "" else as.character(x)
+  if (!is.null(book$retro)) stop("a retrospectively rated book buys no cover here")
+  ptr <- rust_result(PnlLedger$book_peel(
+    frequency@ptr, severity@step, severity@probs,
+    book$name, book$premium, e$index, e$basis, e$value, e$label,
+    lbl(book$premium_label), lbl(book$loss_label), lbl(book$step_label),
+    occurrence@ptr, if (is.null(aggregate)) NULL else aggregate@ptr, as.character(face),
+    as.double(points)
+  ))
+  structure(list(ptr = ptr), class = "pnl_ledger")
+}
+
+#' @rdname book_occurrence_peel
+#' @export
+ledger_is_stitched <- function(ledger) ledger$ptr$is_stitched()

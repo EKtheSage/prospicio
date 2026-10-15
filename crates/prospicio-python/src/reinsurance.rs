@@ -716,7 +716,7 @@ fn with_premium(mut layer: Layer, premium: f64) -> PyResult<Layer> {
     frozen
 )]
 pub(crate) struct PyLossSensitivePremium {
-    inner: LossSensitivePremium,
+    pub(crate) inner: LossSensitivePremium,
 }
 
 #[pymethods]
@@ -942,7 +942,9 @@ impl PyTower {
     /// layer, ``("ceding_commission", name)`` per layer with a flat or
     /// sliding commission and ``("profit_commission", name)`` per layer with
     /// a profit commission. ``aggregate(["kind"])`` gives gross, total ceded
-    /// and net; net is a loss, before premiums and commissions.
+    /// and net; net is a loss, before premiums and commissions. Take one kind
+    /// with ``select("kind", ["ceded"])`` before joining it to a book:
+    /// summing over ``kind`` adds gross, ceded and net together.
     ///
     /// Parameters
     /// ----------

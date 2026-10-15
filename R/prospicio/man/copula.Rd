@@ -5,6 +5,8 @@
 \alias{gaussian_copula}
 \alias{t_copula}
 \alias{archimedean_copula}
+\alias{nested_archimedean_copula}
+\alias{nac_node}
 \title{Copulas}
 \usage{
 copula(ptr)
@@ -18,6 +20,10 @@ archimedean_copula(
   theta,
   dim = 2
 )
+
+nested_archimedean_copula(family = c("clayton", "gumbel"), tree)
+
+nac_node(theta, leaves = numeric(), children = list())
 }
 \arguments{
 \item{ptr}{Internal: an existing copula to wrap.}
@@ -31,6 +37,14 @@ archimedean_copula(
 \item{theta}{Positive for Clayton and Frank; at least 1 for Gumbel and Joe.}
 
 \item{dim}{Number of dimensions.}
+
+\item{tree}{For \code{nested_archimedean_copula()}, the root node, built with
+\code{nac_node(theta, leaves, children)}: \code{leaves} the dimensions (1, 2,
+...) joined at this level and \code{children} a list of nested nodes. Every
+dimension appears once, every node has at least two members, and no
+child's \code{theta} is below its parent's. Clayton or Gumbel only.}
+
+\item{leaves, children}{See \code{tree}.}
 }
 \value{
 A \code{copula} object with \code{dimension} and \code{description} properties. Use
@@ -45,9 +59,18 @@ Gumbel and Joe (upper-tail dependence) or Frank (none). Kendall's tau is
 \code{(2 / pi) * asin(r)} for the Gaussian and t copulas, \code{theta / (theta + 2)}
 for Clayton and \code{1 - 1 / theta} for Gumbel.
 }
+\details{
+\code{nested_archimedean_copula()} joins groups of dimensions by their
+own Archimedean copula and the groups by an outer one with weaker
+dependence, to any depth (McNeil 2008): Kendall's tau between two
+dimensions is that of the node where they first meet.
+}
 \examples{
 r <- matrix(c(1, 0.5, 0.5, 1), 2)
 copula_sample(gaussian_copula(r), 3, seed = 1)
 t_copula(r, nu = 4)
 archimedean_copula("clayton", 2, dim = 3)
+nac <- nested_archimedean_copula("gumbel",
+  nac_node(1.5, 1, list(nac_node(3, c(2, 3)), nac_node(2, c(4, 5)))))
+copula_cdf(nac, c(1, 0.5, 1, 1, 1))
 }

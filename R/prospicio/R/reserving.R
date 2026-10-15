@@ -1808,6 +1808,297 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
   fit
 }
 
+#' One-year view of the Bayesian chain ladder
+#'
+#' The claims development result (CDR) over the coming year of
+#' [bayes_odp()], by Pareto smoothed importance sampling of the posterior
+#' (decision 16 of `docs/design/reserving-bayes.md`).
+#' `bayes_odp_one_year()` fits the posterior and the lifetime reserves as
+#' [bayes_odp()] does with the same settings. Each simulation picks a
+#' posterior draw, draws the year's increments from it with `process`
+#' error (the cells valued in the next twelve months, as in
+#' [odp_one_year()]), reweights every posterior draw by the year's quasi
+#' likelihood with the `scale` and the priors unchanged, and smooths the
+#' weights (one Pareto k per simulation). Origin `w`'s CDR is
+#' `E[R[w] | D0] - (X[w] + E[R'[w] | D0, X])`, with `R` the expected
+#' run-off at the opening, `X` the year's payments and `R'` the expected
+#' run-off after the year, each expectation the (weighted) mean over the
+#' posterior draws; its mean is about zero. Every cell up to the end of the
+#' year is observed and conditioned on, also for an origin that lags the
+#' valuation.
+#'
+#' A simulation whose Pareto k is above `k_threshold` is flagged and, with
+#' `refit = "refit_flagged"` (the default), refitted with NUTS on the
+#' triangle extended by its year, with the model's sampler. A refit takes
+#' about 40 ms in a release build, and 14% to 26% of the simulations are
+#' flagged on RAA and GenIns, so a default run of 10,000 simulations takes
+#' one to two minutes there; `"reweight_only"` takes about a second and
+#' leaves the total's standard deviation about 1% low. On RAA and GenIns
+#' the standard deviation of the total CDR agrees with [odp_one_year()]'s
+#' on average over seeds (with `"reweight_only"`, a ratio of 1.001 on RAA
+#' and 1.006 on GenIns over 80 seeds); any single run of 10,000
+#' simulations is within a few percent of it. A triangle with no cells in
+#' the coming year (every origin at the last age) has a CDR of zero,
+#' Pareto k of 0 and no refits.
+#'
+#' `bayes_odp_one_year_segments()` does the same in every segment of the
+#' triangle, each segment's posterior and simulations as in
+#' [bayes_odp_segments()] (segment `k`'s own seeds), into one joint CDR,
+#' the segments depending on each other as `dependence` says:
+#' `"independent"`, or `"rank_correlation"` by Iman-Conover on the
+#' segments' total CDR, as the bootstraps' one-year view does.
+#'
+#' Failed MCMC diagnostics of the fit raise one [warning()] listing them,
+#' and refits that failed theirs raise another (each prefixed with its
+#' segment's label over segments).
+#'
+#' Properties of a `bayes_one_year_fit`: `fit` (the [bayes_odp_fit] with
+#' the posterior and lifetime reserves), `chain_ladder`, `origins`,
+#' `development`; per origin (named as a [chain_ladder_fit]'s) `latest`,
+#' `opening_ultimate` and `opening_reserve` (the posterior mean reserve on
+#' the observed triangle); `cdr`, a [predictive_distribution] of the CDR
+#' with dimension `origin` (a negative value is an adverse development, and
+#' `-quantile(fit@cdr, 0.005)` is the one-year loss at 99.5%); `pareto_k`
+#' (one per simulation, `Inf` when too few weights differ to fit the tail),
+#' `refitted` (the simulations refitted with NUTS, 1-based),
+#' `refit_warnings` (how many refits had a diagnostic warning),
+#' `k_threshold` and `flagged_share` (the share of simulations above it,
+#' whether or not they were refitted). A `bayes_one_year_fits` has the
+#' same, without `fit`, with `keys`, `index`, `scale` and `diagnostics` (a
+#' data.frame as [bayes_odp_segments()]'s), and with `cdr` keyed by the
+#' triangle's keys and `origin`; `scale`, `pareto_k`, `refitted`,
+#' `refit_warnings` and `flagged_share` need a single-segment fit: use
+#' [segment()] or [totals_frame()]. `as.data.frame()` has one row per
+#' segment and origin: `origin`, `latest`, `opening_ultimate`,
+#' `opening_reserve`, and the `cdr_mean` and `cdr_std_dev` of the CDR;
+#' [totals_frame()] one per segment, with the `scale` and the
+#' `flagged_share` too.
+#'
+#' Errors: as [bayes_odp()] (or [bayes_odp_segments()]); a `k_threshold`
+#' that is `NaN`.
+#'
+#' These are Python's `BayesOdp.one_year()` and
+#' `BayesOdp.one_year_segments()`, which return a `BayesOneYearFit` and a
+#' `BayesOneYearFits`.
+#'
+#' @inheritParams bayes_odp_fits
+#' @param k_threshold The Pareto k above which a simulation's importance
+#'   weights are not trusted (the threshold of Vehtari et al. 2024 for a
+#'   few thousand draws).
+#' @param refit What happens to a flagged simulation: `"refit_flagged"`
+#'   refits it with NUTS, `"reweight_only"` reweights it anyway (fast,
+#'   biased where k is high), and `"refit_all"` refits every simulation, to
+#'   check the reweighting.
+#' @param ptr A `BayesOneYearFit` or `BayesOneYearFits` pointer; used
+#'   internally.
+#' @returns A `bayes_one_year_fit` or `bayes_one_year_fits` object.
+#' @seealso [bayes_odp()], [odp_one_year()] for the ODP bootstrap's one-year
+#'   view, [claims_development_result()] for Merz and Wuthrich's.
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' tri <- triangle(long, "year", "age", "paid")
+#' view <- bayes_odp_one_year(tri, n_sims = 1000, seed = 1, refit = "reweight_only")
+#' view@opening_reserve
+#' view@flagged_share
+#' # The one-year view is narrower than the lifetime view.
+#' c(one_year = sqrt(variance(view@cdr)), lifetime = sqrt(variance(view@fit@reserves)))
+#' as.data.frame(view)
+bayes_one_year_fit <- S7::new_class(
+  "bayes_one_year_fit",
+  package = "prospicio",
+  properties = local({
+    by_origin <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        stats::setNames(f(self), origin_names(self@chain_ladder@ptr))
+      })
+    }
+    list(
+      ptr = S7::new_S3_class("BayesOneYearFit"),
+      fit = bayes_odp_fit,
+      chain_ladder = S7::new_property(chain_ladder_fit, getter = function(self) {
+        self@fit@chain_ladder
+      }),
+      origins = S7::new_property(S7::class_character, getter = function(self) {
+        self@chain_ladder@origins
+      }),
+      development = S7::new_property(S7::class_integer, getter = function(self) {
+        self@chain_ladder@development
+      }),
+      latest = by_origin(function(self) self@chain_ladder@ptr$latest()),
+      opening_ultimate = by_origin(function(self) self@ptr$opening_ultimate()),
+      opening_reserve = by_origin(function(self) self@ptr$opening_reserve()),
+      cdr = predictive_distribution,
+      pareto_k = S7::new_property(S7::class_double, getter = function(self) self@ptr$pareto_k()),
+      refitted = S7::new_property(S7::class_integer, getter = function(self) {
+        as.integer(self@ptr$refitted())
+      }),
+      refit_warnings = S7::new_property(S7::class_integer, getter = function(self) {
+        as.integer(self@ptr$refit_warnings())
+      }),
+      k_threshold = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$k_threshold()
+      }),
+      flagged_share = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$flagged_share()
+      })
+    )
+  }),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr, fit = bayes_odp_fit(ptr = ptr$fit()),
+                   cdr = predictive_distribution(ptr = ptr$cdr()))
+  }
+)
+
+#' @rdname bayes_one_year_fit
+#' @export
+bayes_one_year_fits <- S7::new_class(
+  "bayes_one_year_fits",
+  package = "prospicio",
+  properties = local({
+    by_origin <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        stats::setNames(f(self), origin_names(self@chain_ladder@ptr))
+      })
+    }
+    one <- function(class, f) {
+      S7::new_property(class, getter = function(self) rust_result(f(self@ptr), call = NULL))
+    }
+    list(
+      ptr = S7::new_S3_class("BayesOneYearFits"),
+      chain_ladder = chain_ladder_fit,
+      keys = S7::new_property(S7::class_character, getter = function(self) self@chain_ladder@keys),
+      index = S7::new_property(S7::class_data.frame, getter = function(self) {
+        self@chain_ladder@index
+      }),
+      origins = S7::new_property(S7::class_character, getter = function(self) {
+        self@chain_ladder@origins
+      }),
+      development = S7::new_property(S7::class_integer, getter = function(self) {
+        self@chain_ladder@development
+      }),
+      latest = by_origin(function(self) self@chain_ladder@ptr$latest()),
+      opening_ultimate = by_origin(function(self) self@ptr$opening_ultimate()),
+      opening_reserve = by_origin(function(self) self@ptr$opening_reserve()),
+      cdr = predictive_distribution,
+      scale = one(S7::class_double, function(p) p$scale()),
+      diagnostics = S7::new_property(S7::class_data.frame, getter = function(self) {
+        d <- self@ptr$diagnostics_table()
+        out <- fit_table_frame(d$table)
+        out$divergences <- as.integer(out$divergences)
+        out$warnings <- d$warnings
+        out
+      }),
+      pareto_k = one(S7::class_double, function(p) p$pareto_k()),
+      refitted = one(S7::class_integer, function(p) as.integer(rust_result(p$refitted()))),
+      refit_warnings = one(S7::class_integer, function(p) {
+        as.integer(rust_result(p$refit_warnings()))
+      }),
+      k_threshold = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$k_threshold()
+      }),
+      flagged_share = one(S7::class_double, function(p) p$flagged_share())
+    )
+  }),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
+                   cdr = predictive_distribution(ptr = ptr$cdr()))
+  }
+)
+
+# The settings of bayes_odp() as the one-year views pass them to Rust.
+bayes_odp_run <- function(intercept_sd, origin_sd, development_sd, chains, tune, draws, n_sims,
+                          seed, target_accept, max_depth) {
+  list(
+    priors = c(single_number(intercept_sd, "intercept_sd"), single_number(origin_sd, "origin_sd"),
+               single_number(development_sd, "development_sd")),
+    run = c(single_number(chains, "chains"), single_number(tune, "tune"),
+            single_number(draws, "draws"), single_number(n_sims, "n_sims"),
+            single_number(seed, "seed"), single_number(target_accept, "target_accept"),
+            single_number(max_depth, "max_depth"))
+  )
+}
+
+# One warning if any NUTS refit of a one-year view failed its diagnostics;
+# `labels` prefix each segment's count, `refits` and `warned` count them.
+warn_refits <- function(caller, labels, refits, warned) {
+  failed <- warned > 0
+  if (any(failed)) {
+    warning(caller, ": the MCMC diagnostics of NUTS refits in the one-year view failed ",
+            "(R-hat, ESS or a divergence): ",
+            paste0(labels[failed], warned[failed], " of ", refits[failed], " refits",
+                   collapse = "; "), call. = FALSE)
+  }
+}
+
+#' @rdname bayes_one_year_fit
+#' @export
+bayes_odp_one_year <- function(triangle, column = NULL, intercept_sd = 10, origin_sd = 10,
+                               development_sd = 10, process = c("gamma", "none"), chains = 4,
+                               tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
+                               target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
+                               refit = c("refit_flagged", "reweight_only", "refit_all")) {
+  column <- fit_column(triangle, column)
+  process <- match.arg(process)
+  refit <- match.arg(refit)
+  s <- bayes_odp_run(intercept_sd, origin_sd, development_sd, chains, tune, draws, n_sims, seed,
+                     target_accept, max_depth)
+  ptr <- rust_result(triangle@ptr$bayes_odp_one_year(
+    column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit))
+  view <- bayes_one_year_fit(ptr = ptr)
+  failed <- view@fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("bayes_odp_one_year: the MCMC diagnostics failed; check them before relying on the ",
+            "fit: ", paste(failed, collapse = "; "), call. = FALSE)
+  }
+  warn_refits("bayes_odp_one_year", "", length(view@refitted), view@refit_warnings)
+  view
+}
+
+#' @rdname bayes_one_year_fit
+#' @export
+bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 10,
+                                        origin_sd = 10, development_sd = 10,
+                                        process = c("gamma", "none"), chains = 4, tune = 1000,
+                                        draws = 1000, n_sims = 10000, seed = 0,
+                                        target_accept = 0.95, max_depth = 10,
+                                        dependence = c("independent", "rank_correlation",
+                                                       "synchronized"),
+                                        spearman = NULL, k_threshold = 0.7,
+                                        refit = c("refit_flagged", "reweight_only",
+                                                  "refit_all")) {
+  column <- fit_column(triangle, column)
+  process <- match.arg(process)
+  dependence <- match.arg(dependence)
+  refit <- match.arg(refit)
+  s <- bayes_odp_run(intercept_sd, origin_sd, development_sd, chains, tune, draws, n_sims, seed,
+                     target_accept, max_depth)
+  ptr <- rust_result(triangle@ptr$bayes_odp_one_year_segments(
+    column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit,
+    dependence, spearman_arg(spearman)))
+  view <- bayes_one_year_fits(ptr = ptr)
+  d <- view@diagnostics
+  keys <- setdiff(names(d), c("max_rhat", "min_ess_bulk", "min_ess_tail", "divergences",
+                              "warnings"))
+  labels <- if (length(keys)) {
+    paste0(do.call(paste, c(unname(as.list(d[, keys, drop = FALSE])), sep = " / ")), ": ")
+  } else {
+    rep("", nrow(d))
+  }
+  failed <- d$warnings != ""
+  if (any(failed)) {
+    warning("bayes_odp_one_year_segments: the MCMC diagnostics failed; check them before ",
+            "relying on the fit: ", paste0(labels[failed], d$warnings[failed], collapse = "; "),
+            call. = FALSE)
+  }
+  counts <- view@ptr$refit_counts()
+  warn_refits("bayes_odp_one_year_segments", labels, counts$refits, counts$warned)
+  view
+}
+
 #' Meyers' CRC, CSR and CAY models
 #'
 #' Meyers' (2019, CAS Monograph 8) log-normal models of a cumulative
@@ -2949,11 +3240,13 @@ growth <- function(fit, age) {
 check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
                   mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, meyers_fit,
-                  meyers_fits, one_year_fit, clark_fit, compartmental_fit)
+                  meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, clark_fit,
+                  compartmental_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
          "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, ",
-         "meyers_fit, meyers_fits, one_year_fit, clark_fit or compartmental_fit",
+         "meyers_fit, meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, ",
+         "clark_fit or compartmental_fit",
          call. = FALSE)
   }
 }
@@ -2963,7 +3256,8 @@ check_fit <- function(fit) {
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #' [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #' [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#' [one_year_fit], [clark_fit] or [compartmental_fit] with the triangle's key columns by name. `as.data.frame(fit)` has one row per
+#' [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit] or
+#' [compartmental_fit] with the triangle's key columns by name. `as.data.frame(fit)` has one row per
 #' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
 #' method's own), plus for Mack `process_risk`, `parameter_risk` and
 #' `standard_error`, for the expected-loss methods `exposure` and `apriori`
@@ -2977,12 +3271,14 @@ check_fit <- function(fit) {
 #' `exposure`, `expected_ultimate` and the three standard errors; for
 #' [compartmental()] the `premium`, `latest_paid`, the `mean` and `std_dev`
 #' of the posterior predictive reserve and the `ultimate_loss_ratio`. The
-#' one-year view names them `opening_ultimate` and `opening_reserve` and
-#' adds the `cdr_mean` and `cdr_std_dev` of the claims development result.
+#' one-year view (and [bayes_odp_one_year()]'s) names them
+#' `opening_ultimate` and `opening_reserve` and adds the `cdr_mean` and
+#' `cdr_std_dev` of the claims development result.
 #' `totals_frame()` has one row per segment with the same quantities for
 #' the segment's total (for the expected-loss methods the total `exposure`,
 #' for the ODP bootstrap, its one-year view, [bayes_odp()],
-#' [bayes_odp_segments()] and [bayes_bf()] also the `scale`;
+#' [bayes_odp_segments()] and [bayes_bf()] also the `scale`, for
+#' [bayes_odp_one_year()] the `scale` and `flagged_share`;
 #' for Clark its `omega`, `theta`, `scale` and, for Cape Cod, `elr`).
 #' `development_frame()` has one row per segment and age: `development`,
 #' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
@@ -3004,7 +3300,8 @@ check_fit <- function(fit) {
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#'   [one_year_fit], [clark_fit] or [compartmental_fit] (a [clark_fit] or
+#'   [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit] or
+#'   [compartmental_fit] (a [clark_fit] or
 #'   [compartmental_fit] not for `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
@@ -3076,6 +3373,12 @@ S7::method(summary, meyers_fit) <- function(object, ...) object@summary
 S7::method(as.data.frame, meyers_fits) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(summary, meyers_fits) <- function(object, ...) object@summary
 S7::method(as.data.frame, one_year_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(as.data.frame, bayes_one_year_fit) <- function(x, ...) {
+  fit_table_frame(x@ptr$long_table())
+}
+S7::method(as.data.frame, bayes_one_year_fits) <- function(x, ...) {
+  fit_table_frame(x@ptr$long_table())
+}
 S7::method(as.data.frame, clark_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 
 # A segment count for print headers when there are several.
@@ -3225,6 +3528,31 @@ S7::method(print, one_year_fit) <- function(x, ...) {
               format(sum(x@opening_reserve), digits = 10), format(mean(cdr), digits = 10),
               format(sqrt(variance(cdr)), digits = 10)))
   print(if (p$n_segments() > 1) totals_frame(x) else as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+S7::method(print, bayes_one_year_fit) <- function(x, ...) {
+  cdr <- x@cdr
+  cat(sprintf("<bayes_one_year_fit> %d simulations, scale %s\n", as.integer(cdr@n_sims),
+              format(x@fit@scale, digits = 6)))
+  cat(sprintf("Pareto k above %s: %s of the simulations, %d refitted%s\n",
+              format(x@k_threshold), format(x@flagged_share, digits = 3), length(x@refitted),
+              if (x@refit_warnings > 0) sprintf(" (%d with warnings)", x@refit_warnings) else ""))
+  cat(sprintf("total opening reserve %s; claims development result mean %s, sd %s\n",
+              format(sum(x@opening_reserve), digits = 10), format(mean(cdr), digits = 10),
+              format(sqrt(variance(cdr)), digits = 10)))
+  print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+S7::method(print, bayes_one_year_fits) <- function(x, ...) {
+  cdr <- x@cdr
+  p <- x@chain_ladder@ptr
+  cat(sprintf("<bayes_one_year_fits> %d simulations%s\n", as.integer(cdr@n_sims),
+              if (p$n_segments() > 1) segments_note(p) else
+                sprintf(", scale %s", format(x@scale, digits = 6))))
+  cat(sprintf("total opening reserve %s; claims development result mean %s, sd %s\n",
+              format(sum(x@opening_reserve), digits = 10), format(mean(cdr), digits = 10),
+              format(sqrt(variance(cdr)), digits = 10)))
+  print(totals_frame(x), row.names = FALSE)
   invisible(x)
 }
 S7::method(print, mack_fit) <- function(x, ...) {

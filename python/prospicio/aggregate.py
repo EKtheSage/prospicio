@@ -7,7 +7,9 @@ event loss table with secondary uncertainty (EventLossTable), and two lines hit 
 the same events: their joint loss by a 2-D FFT (fft_bivariate, JointGrid) and the
 clash model (Clash), and the P&L ledger (Ledger, Group, Leg, and stack to set
 ledgers' results side by side; Book, Expense and derive_premium build the ledger of
-a book and its annual covers). Layers and towers are in
+a book and its annual covers, and occurrence_source the joint gross and ceded loss
+its occurrence covers are walked over; pnl_program prices a book and its covers from
+target combined ratios). Layers and towers are in
 ``prospicio.reinsurance``."""
 
 from .prospicio_native import (
@@ -38,10 +40,15 @@ from .prospicio_native import (
     layer_loss_picks,
     occurrence_exceedance,
     occurrence_pml,
+    occurrence_source,
     panjer,
+    pnl_program,
+    pnl_program_stated,
     recommend_grid,
     round_bucket,
+    round_premium,
     simulate_events,
+    size_premium,
     stack,
     wiener_hopf,
 )
@@ -80,4 +87,9 @@ __all__ = [
     "Book",
     "Expense",
     "derive_premium",
+    "occurrence_source",
+    "pnl_program",
+    "pnl_program_stated",
+    "size_premium",
+    "round_premium",
 ]

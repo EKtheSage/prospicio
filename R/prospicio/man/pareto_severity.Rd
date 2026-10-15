@@ -34,7 +34,8 @@ Defined for the Pareto-family severities (\link{pareto}, \link{piecewise_pareto}
 \link{tweedie}, \link{weibull_distribution}, \link{loglogistic_distribution},
 \link{inverse_gamma_distribution}, \link{inverse_gaussian_distribution},
 \link{burr_distribution}, \link{beta_distribution}, \link{truncated_distribution},
-\link{mixture_distribution} and \link{custom_distribution}.
+\link{policy_limits_distribution}, \link{mixture_distribution} and
+\link{custom_distribution}.
 }
 \examples{
 p <- pareto(500, 2)

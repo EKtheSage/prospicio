@@ -1971,7 +1971,7 @@ fn check_axis(axis: usize) -> PyResult<()> {
 /// What ``fft_bivariate`` produced and the error it introduced.
 #[pyclass(name = "BivariateReport", module = "prospicio.aggregate", frozen)]
 pub(crate) struct PyBivariateReport {
-    inner: prospicio_aggregate::BivariateReport,
+    pub(crate) inner: prospicio_aggregate::BivariateReport,
 }
 
 #[pymethods]

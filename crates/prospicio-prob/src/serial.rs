@@ -25,7 +25,8 @@ use crate::evt::Gpd;
 use crate::sampled::Empirical;
 use crate::{
     Beta, Burr, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
-    Lognormal, Mixture, Pareto, PiecewisePareto, Sampled, Truncated, Truncation, Tweedie, Weibull,
+    Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, Truncated, Truncation,
+    Tweedie, Weibull,
 };
 
 /// Value of the `format` field.
@@ -165,6 +166,11 @@ fn body(d: &Dist) -> Result<Map<String, Value>> {
             put("upper", num(x.upper()));
             put("inner", Value::Object(body(x.inner().dist())?));
         }
+        Dist::PolicyLimits(x) => {
+            put("limits", nums(x.limits()));
+            put("weights", nums(x.weights()));
+            put("base", Value::Object(body(x.base().dist())?));
+        }
         Dist::Mixture(x) => {
             let dists = x.dists().ok_or_else(|| {
                 Error::Data(
@@ -253,6 +259,16 @@ fn from_body(m: &Map<String, Value>) -> Result<Dist> {
             let s = SeverityDist::try_from(d)
                 .map_err(|_| Error::Data("a truncated severity cannot be sampled draws".into()))?;
             Truncated::new(s, f("lower")?, f("upper")?)?.into()
+        }
+        "policy_limits" => {
+            let base = m
+                .get("base")
+                .ok_or_else(|| Error::Data("base is missing".into()))?;
+            let d = from_body(object(base, "base distribution")?)?;
+            let s = SeverityDist::try_from(d).map_err(|_| {
+                Error::Data("a severity under policy limits cannot be sampled draws".into())
+            })?;
+            PolicyLimits::new(s, floats(m, "limits")?, floats(m, "weights")?)?.into()
         }
         "mixture" => {
             let weights = floats(m, "weights")?;
@@ -384,6 +400,13 @@ mod tests {
                 SeverityDist::try_from(Dist::from(Gamma::new(2.0, 500.0).unwrap())).unwrap(),
                 100.0,
                 f64::INFINITY,
+            )
+            .unwrap()
+            .into(),
+            PolicyLimits::new(
+                SeverityDist::try_from(Dist::from(Gamma::new(2.0, 500.0).unwrap())).unwrap(),
+                vec![1000.0, f64::INFINITY],
+                vec![0.75, 0.25],
             )
             .unwrap()
             .into(),

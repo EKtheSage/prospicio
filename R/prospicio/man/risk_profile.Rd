@@ -16,7 +16,7 @@ risk_profile(
   loss_ratio = NULL,
   lower = NULL,
   upper = NULL,
-  spread = c("uniform", "tilted")
+  spread = c("uniform", "tilted", "auto")
 )
 
 profile_simulate(profile, n_sims, seed)
@@ -47,17 +47,20 @@ with one per band.}
 \item{loss_ratio}{Expected loss ratio: one value, or one per band.}
 
 \item{lower, upper}{Optional bounds of each band's sums insured, one per
-band (\code{NA} for a band without). A band with bounds spreads its risks'
-sums insured uniformly between them: its mean \code{SI} is
-\code{(lower + upper) / 2} (in place of \code{sums_insured}), each simulated loss
-draws its own \code{SI} between the bounds, and the exposure-rated
+band (\code{NA} for a band without; a band may start at 0). A band with
+bounds spreads its risks' sums insured between them: each simulated
+loss draws its own \code{SI} between the bounds, and the exposure-rated
 expectations average over the band, weighted by sum insured.}
 
 \item{spread}{How a band with bounds spreads its sums insured:
-\code{"uniform"}, or \code{"tilted"} to keep \code{sums_insured} as the mean, so the
+\code{"uniform"} (its mean \code{SI} becomes \code{(lower + upper) / 2}, in place of
+\code{sums_insured}), \code{"tilted"} to keep \code{sums_insured} as the mean, so the
 spread matches both the bounds and the band's total sum insured (the
 density \code{exp(theta * s)} on the bounds, \code{theta} solved for that mean;
-\code{sums_insured} must lie strictly between the bounds).}
+\code{sums_insured} must lie strictly between the bounds), or \code{"auto"}
+(tilted when \code{sums_insured} lies strictly between the bounds, uniform
+otherwise). Not given, the spread is uniform with a warning for each
+band whose mean moves (as with \code{"auto"}).}
 
 \item{profile}{A \code{risk_profile}.}
 
@@ -74,7 +77,9 @@ to, or \code{NULL}.}
 }
 \value{
 \code{risk_profile()}: a \code{risk_profile} object with properties
-\code{expected_loss} (all bands) and \code{expected_claims} (per band).
+\code{expected_loss} (all bands), \code{expected_claims} (per band: losses of
+every size, not only those that reach a layer) and
+\code{mean_sums_insured} (per band).
 }
 \description{
 Bands of sum insured, each with an expected loss (given, or premium times

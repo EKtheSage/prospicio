@@ -436,3 +436,102 @@ local({
   stopifnot(inherits(try(derive_premium(5, list(pnl_expense("loss", 0.1))), silent = TRUE), "try-error"))
   stopifnot(inherits(try(book_ledger(book, gross, NULL, "peel-top-down"), silent = TRUE), "try-error"))
 })
+
+# Occurrence covers on the joint gross and ceded loss (aggregate 1.0.1's
+# example 4): net 13.5, the cover's recovery 0.8.
+local({
+  sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))
+  occ <- reinsurance_tower(list(with_ceding_commission(
+    with_deposit_premium(xol_layer("occ 2 xs 2", 2, 2), 2), 0.25)))
+  joint <- occurrence_source(poisson_count(2), sev, occ, c(64, 32))
+  stopifnot(length(joint$gross) == 280)
+  book <- pnl_book("Ex4", 20, list(pnl_expense("premium", 0.1)))
+  s <- ledger_sheet(book_occurrence_ledger(book, joint, occ, face = "walk"))
+  stopifnot(abs(s$EX[s$row == "net through occ 2 xs 2"] - 13.5) < 1e-10)
+  stopifnot(abs(s$k01[s$row == "net through occ 2 xs 2"] - 7.5) < 1e-10)
+  stopifnot(abs(s$EX[s$row == "occ 2 xs 2 recovery"] - 0.8) < 1e-10)
+  agg <- reinsurance_tower(list(with_deposit_premium(aggregate_stop_loss("agg 3 xs 5", 3, 5), 0.5)))
+  w <- book_occurrence_ledger(book, joint, occ, agg, "walk")
+  c7 <- book_occurrence_ledger(book, joint, occ, agg)
+  stopifnot(abs(mean(ledger_result(w)) - mean(ledger_result(c7))) < 1e-12)
+  stopifnot("Net of occurrence" %in% ledger_sheet(w)$step)
+})
+
+# Variable terms as legs, retro and pnl_program's ladder (aggregate 1.0.1).
+local({
+  gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+  book <- pnl_book("V", 10, list(pnl_expense("premium", 0.1)))
+  base <- with_deposit_premium(aggregate_stop_loss("ceded agg", 3, 5), 1)
+  slide <- reinsurance_tower(list(with_sliding_scale(base, c(0.3, 0.1), c(0.2, 0.6))))
+  s <- ledger_sheet(book_ledger(book, gross, slide, "walk"))
+  stopifnot(abs(s$EX[s$row == "sliding commission"] - 0.268) < 1e-12)
+  pc <- reinsurance_tower(list(with_profit_commission(base, 0.25, 0.1)))
+  stopifnot(abs(mean(ledger_result(book_ledger(book, gross, pc))) - 4.629) < 1e-12)
+  retro <- pnl_book("V", 2, list(pnl_expense("premium", 0.1)), retro = c(2, 1.1, 3, 9))
+  stopifnot(abs(mean(ledger_row(book_ledger(retro, gross), "Premium")) - 6.108) < 1e-12)
+  p <- pnl_program(405.97794085441933, 0.9, 0.25, data.frame(
+    ceded_loss = c(86.78504710067914, 8.144345556686755), share = 1, combined_ratio = c(0.6, 0.5)))
+  stopifnot(p$premium == 817, identical(p$deposits, c(145, 16.29)))
+  stopifnot(identical(round_premium(c(146.5, 16.285)), c(146, 16.29)), size_premium(499.885, 0.7) == 714)
+})
+
+# Reinstatement premiums on the joint (aggregate 1.0.1): D + h(R) varies.
+local({
+  sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))
+  occ <- reinsurance_tower(list(xol_layer("occ 2 xs 2", 2, 2, premium = 2, reinstatement_rates = 1)))
+  joint <- occurrence_source(poisson_count(2), sev, occ, c(64, 32))
+  book <- pnl_book("R", 20, list(pnl_expense("premium", 0.1)))
+  s <- ledger_sheet(book_occurrence_ledger(book, joint, occ, face = "walk"))
+  stopifnot(abs(s$EX[s$row == "occ 2 xs 2 premium"] + 2.65936) < 1e-5)
+  stopifnot(abs(mean(ledger_result(book_occurrence_ledger(book, joint, occ))) - 12.323104) < 1e-6)
+})
+
+# pnl_program's rates and an engine's stated premium (aggregate 1.0.1).
+local({
+  p <- pnl_program(405.97794085441933, 0.9, 0.25, data.frame(
+    ceded_loss = c(86.78504710067914, 8.144345556686755), share = 1, combined_ratio = c(0.6, 0.5),
+    aggregate = c(FALSE, TRUE)))
+  stopifnot(identical(p$rates, c(0.17747858, 0.024241071)))
+  stopifnot(abs(pnl_program_stated(1000, 0.25)$premium - 1000 / 0.75) < 1e-9)
+  k <- pnl_program(406, 0.9, 0.25, data.frame(share = 0.5, stated = 20))
+  stopifnot(is.na(k$rates))
+})
+
+# A loss-basis expense on the consolidated face, at each year's gross loss.
+local({
+  gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+  cover <- reinsurance_tower(list(with_deposit_premium(aggregate_stop_loss("SL", 3, 5), 1)))
+  book <- pnl_book("B", 10, list(pnl_expense("loss", 0.05)))
+  c1 <- book_ledger(book, gross, cover)
+  w <- book_ledger(book, gross, cover, "walk")
+  sdv <- function(d) sqrt(d@ptr$variance())
+  stopifnot(abs(sdv(ledger_result(c1)) - sdv(ledger_result(w))) < 1e-12)
+  m <- book_ledger(pnl_book("B", 10, list(pnl_expense("loss", 0.05)), expense_at_expected_loss = TRUE),
+                   gross, cover)
+  stopifnot(abs(mean(ledger_result(m)) - mean(ledger_result(c1))) < 1e-12)
+})
+
+# The stitched peel of several occurrence layers (aggregate 1.0.1).
+local({
+  sev <- grid_distribution(1, c(0, 0.4, 0.3, 0, 0.2, 0, 0.1))
+  occ <- reinsurance_tower(list(
+    with_deposit_premium(xol_layer("occ 1 xs 1", 1, 1), 1),
+    with_ceding_commission(with_deposit_premium(xol_layer("occ 2 xs 2", 2, 2), 1), 0.2)))
+  book <- pnl_book("S", 20, list(pnl_expense("premium", 0.1)))
+  peel <- book_occurrence_peel(book, poisson_count(2), sev, occ, points = 64)
+  stopifnot(ledger_is_stitched(peel))
+  s <- ledger_sheet(peel)
+  stopifnot(!("k01" %in% names(s)))
+  stopifnot(abs(s$SD[s$row == "net through occ 1 xs 1"] - 1.897366596) < 1e-8)
+  stopifnot(abs(s$SD[s$step == "All" & s$label == "Impact"] + 2.201414) < 1e-6)
+})
+
+# Issue #193: select the ceded part of a tower's result before joining.
+local({
+  ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 2000, seed = 7)
+  res <- apply_tower(reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6))), ev)
+  ceded <- select_components(res, "kind", "ceded")
+  by_kind <- aggregate(res, keep = "kind")
+  stopifnot(abs(mean(ceded) - mean(marginal(by_kind, list("ceded")))) < 1e-6 * mean(ceded))
+  stopifnot(inherits(try(select_components(res, "kind", "none"), silent = TRUE), "try-error"))
+})
