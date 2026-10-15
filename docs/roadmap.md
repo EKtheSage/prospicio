@@ -36,8 +36,8 @@ when from experience, and which pricing method fits which scenario.
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
-| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. Still to do: REML, tensor smooths |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental model 1 (`Compartmental`, Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. P-splines with REML too, tensor product smooths |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental model 1 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp` by PSIS reweighting (Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -66,9 +66,9 @@ what it is aiming for by v1.0.
 - **Now:** quadrature, linear algebra, one-dimensional minimizers (Brent,
   golden section), Nelder–Mead, root finding, special functions (with the
   incomplete beta and gamma past their usual domain, the exponential
-  integral and the Mills ratio), splines.
-- **Next, on demand:** log-determinants and Hessians for REML smoothing
-  (`prospicio-glm`), and Sobol sequences for quasi-Monte Carlo (v1.x).
+  integral and the Mills ratio), splines, symmetric eigenvalues (Jacobi,
+  for REML's penalty determinants).
+- **Next, on demand:** Sobol sequences for quasi-Monte Carlo (v1.x).
 - **v1.0:** only the numerics other crates use. No general-purpose
   library.
 
@@ -78,13 +78,18 @@ what it is aiming for by v1.0.
   - Distributions in three representations (parametric, `Grid`,
     `Sampled`), plus counts, the Pareto family, the inverse gamma,
     inverse Gaussian, Burr and scaled beta, mixtures, truncation and
-    splicing, `Custom` and the `Dist` enum with JSON save and load.
+    splicing, a severity under a mix of policy limits, `Custom` and the
+    `Dist` enum with JSON save and load; standard errors of the Pareto
+    fits, and maximum likelihood fits of the lognormal, gamma, Weibull and
+    Burr with reporting thresholds and censoring.
     Third raw moments on `Severity` and `Counting`; `aggregate`'s named
     fixed, Bernoulli and geometric counts.
-  - `PredictiveDistribution`: join, reorder, blend, Arrow IPC; provenance
+  - `PredictiveDistribution`: join, reorder, blend, select (one part of a
+    result, such as a tower's cession, before joining it), Arrow IPC; provenance
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
-  - Risk measures and distortions, copulas (Gaussian, t, Archimedean)
+  - Risk measures and distortions, copulas (Gaussian, t, Archimedean,
+    nested Archimedean, C- and D-vines)
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
   - `Discrete`, a distribution on finitely many values of either sign,
@@ -92,7 +97,6 @@ what it is aiming for by v1.0.
 - **Next:**
   1. Nested Archimedean and vine copulas (`docs/design/risk.md`).
   2. Threshold diagnostics for EVT.
-  3. Signed regular grids for rebucketed P&L legs (`pnl.md`, PR 3).
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -158,7 +162,8 @@ what it is aiming for by v1.0.
 
 - **Now:**
   - Layer rating, ILFs and Pareto extrapolation, tower matching.
-  - Exposure curves (MBBEFD, tabulated, from a severity) and risk
+  - Exposure curves (MBBEFD, tabulated, from a severity, with the Swiss
+    Re `c` calibrated to a mean rate or a layer's share) and risk
     profiles with spread sums insured.
   - Risk-loaded prices from simulated losses.
   - Classical credibility: limited fluctuation standards and the
@@ -240,6 +245,13 @@ what it is aiming for by v1.0.
     reconstructed in Stan and its printed posterior on company 337; in
     Python (`Compartmental`, `CompartmentalPriors.gesmann_morris()`) and
     R (`compartmental()`, `gesmann_morris_priors()`).
+  - The one-year view of `BayesOdp` by Pareto smoothed importance
+    sampling (`reserving-bayes.md` PR 8, decision 16): each simulated
+    year reweights the posterior draws, and a simulation whose Pareto
+    `k` is above 0.7 is refitted with NUTS; one segment or several
+    (independent or rank correlated), in Rust, Python and R; its claims development
+    result agrees with the ODP bootstrap's one-year view on RAA and
+    GenIns.
   - Selected development patterns (`reserving-v02.md`, decision 12;
     branch `claude/selected-patterns`, Rust built, bindings next):
     `SelectedPattern` on `Development` as age-to-age factors, factors
@@ -260,7 +272,8 @@ what it is aiming for by v1.0.
   Rust, Python and R) are done, with PR C next
   (model 2's log-normal likelihood) (the 200-triangle calibration study
   can now use `TriangleModel for Meyers`);
-  then the one-year view by PSIS reweighting (open decision 6).
+  then the same one-year view for `Meyers`, `BayesBf` and
+  `Compartmental` (decision 16).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
@@ -279,11 +292,10 @@ what it is aiming for by v1.0.
 ### `prospicio-glm` (Models lane)
 
 - **Now:** GLM by IRLS, Tweedie with power profiling, elastic net with a
-  cross-validated path, robust covariance, GAM with P-splines (GCV/UBRE).
-- **Next:**
-  1. REML smoothing.
-  2. Tensor smooths.
-  3. Cyclic and monotone smooths. This completes the GAM scope of v0.6.
+  cross-validated path, robust covariance, GAM with P-splines and tensor
+  product smooths (GCV/UBRE and REML).
+- **Next:** cyclic and monotone smooths. This completes the GAM scope of
+  v0.6.
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.
 
 ### `prospicio-nn` (Models lane, opt-in)

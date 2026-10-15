@@ -143,3 +143,41 @@ for (d in list(ig, iv, b, bt, tr, sp)) {
 stopifnot(inherits(try(truncated_distribution(pareto(100, 2), 0, 50), silent = TRUE), "try-error"))
 
 cat("prospicio R pareto tests passed\n")
+
+# Issue #213: a severity under a mix of policy limits, and fit standard errors.
+x <- pareto(100, 2)
+pl <- policy_limits_distribution(x, c(1000, 5000, Inf), c(2, 1, 1))
+stopifnot(all(abs(pl@weights - c(0.5, 0.25, 0.25)) < 1e-15))
+near(mean(pl), 0.5 * 100 * 1.9 + 0.25 * 100 * 1.98 + 0.25 * 200)
+near(layer(pl, 500, 1500), 0.5 * layer(x, 500, 1500))
+near(mean(dist_from_json(dist_to_json(pl))), mean(pl))
+gpl <- discretize(pl, 10, 2000)
+stopifnot(abs(mean(gpl) - lev(pl, 1999 * 10)) < 1e-9 * mean(pl))
+losses <- c(1500, 2500, 4000, 10000)
+fit <- pareto_fit(losses, 1000, censored = c(FALSE, FALSE, FALSE, TRUE))
+near(pareto_standard_error(losses, 1000, censored = c(FALSE, FALSE, FALSE, TRUE)),
+     fit@alpha / sqrt(3))
+pw <- piecewise_pareto_fit(c(1200, 1500, 2500, 6000), c(1000, 2000))
+near(piecewise_pareto_standard_errors(c(1200, 1500, 2500, 6000), c(1000, 2000)),
+     pw@alpha / sqrt(2))
+
+# Issue #194: body severities fitted with truncation and censoring.
+y <- c(120, 300, 450, 800, 1500, 2600, 4000, 650, 90, 2100)
+f <- severity_fit("lognormal", y)
+sdl <- sqrt(mean((log(y) - mean(log(y)))^2))
+stopifnot(abs(f$parameters[["meanlog"]] - mean(log(y))) < 1e-7)
+stopifnot(abs(f$parameters[["sdlog"]] / sdl - 1) < 1e-7)
+stopifnot(abs(f$standard_errors[["meanlog"]] / (sdl / sqrt(10)) - 1) < 1e-4)
+stopifnot(inherits(f$distribution, "prospicio::lognormal"), all(dim(f$covariance) == 2))
+fb <- severity_fit("burr", y, reporting_thresholds = ifelse(y > 100, 100, 0), censored = y >= 4000)
+stopifnot(inherits(fb$distribution, "prospicio::burr_distribution"), is.finite(fb$log_likelihood))
+stopifnot(inherits(try(severity_fit("pareto", y), silent = TRUE), "try-error"))
+
+# Issue #194: the product-limit estimator and goodness of fit.
+pl <- product_limit(c(100, 200, 200, 400), weights = c(1, 2, 1, 4))
+stopifnot(isTRUE(all.equal(pl$survival, c(7 / 8, 0.5, 0))))
+stopifnot(identical(product_limit(c(120, 200, 300), c(0, 150, 150))$at_risk, c(1, 2, 1)))
+gy <- c(120, 300, 450, 800, 1500, 2600, 4000)
+gc <- c(rep(FALSE, 6), TRUE)
+g <- goodness_of_fit(severity_fit("weibull", gy, censored = gc)$distribution, gy, censored = gc)
+stopifnot(nrow(g$table) == 6, g$max_distance > 0, g$max_distance < 0.5)

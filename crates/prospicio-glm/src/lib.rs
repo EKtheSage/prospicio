@@ -324,7 +324,7 @@ fn working_system(
 }
 
 /// `βᵀ S β` for a row-major `S`.
-fn quadratic(s: &[f64], beta: &[f64]) -> f64 {
+pub(crate) fn quadratic(s: &[f64], beta: &[f64]) -> f64 {
     let p = beta.len();
     (0..p)
         .map(|a| beta[a] * (0..p).map(|b| s[a * p + b] * beta[b]).sum::<f64>())

@@ -35,6 +35,7 @@ pub mod lognormal;
 pub mod mixture;
 pub mod pareto;
 pub mod piecewise_pareto;
+pub mod policy_limits;
 pub mod portfolio;
 pub mod predictive;
 pub mod provenance;
@@ -42,13 +43,18 @@ pub mod risk;
 pub mod sampled;
 pub mod serial;
 pub mod severity;
+pub mod severity_fit;
 pub mod truncated;
 pub mod tweedie;
+pub mod vine;
 pub mod weibull;
 
 pub use beta::Beta;
 pub use burr::Burr;
-pub use copula::{Archimedean, ArchimedeanCopula, Copula, GaussianCopula, StudentTCopula};
+pub use copula::{
+    Archimedean, ArchimedeanCopula, Copula, GaussianCopula, NestedArchimedeanCopula, NestedNode,
+    StudentTCopula,
+};
 pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
 pub use custom::Custom;
 pub use discrete::{Discrete, TailRow};
@@ -68,6 +74,7 @@ pub use lognormal::Lognormal;
 pub use mixture::Mixture;
 pub use pareto::Pareto;
 pub use piecewise_pareto::{PiecewisePareto, Truncation};
+pub use policy_limits::PolicyLimits;
 pub use predictive::{ComponentKey, KeyValue, PredictiveDistribution};
 pub use provenance::{InputHasher, Provenance};
 pub use sampled::{Empirical, Sampled};

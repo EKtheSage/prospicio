@@ -935,3 +935,23 @@ def test_stitched_occurrence_peel():
         peel.row("total impact")
     with pytest.raises(ValueError):
         book.occurrence_peel(Poisson(2.0), sev, occ, face="walk", points=64)
+
+
+def test_select_ceded_before_joining_a_book():
+    # Issue #193: join only the ceded part of a tower's result to a book.
+    from prospicio.aggregate import simulate_events
+    from prospicio.distributions import Lognormal, Poisson, PredictiveDistribution
+    from prospicio.reinsurance import Layer, Tower
+
+    ev = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(3e6, 1.5), 2000, seed=7)
+    res = Tower([Layer("5x5", 5e6, 5e6), Layer("10x10", 10e6, 10e6)]).apply(ev)
+    ceded = res.select("kind", ["ceded"])
+    assert ceded.dims == ["kind", "layer"] and len(ceded.components()) == 2
+    by_kind = res.aggregate(["kind"])
+    assert ceded.mean() == pytest.approx(by_kind.marginal(["ceded"]).mean(), rel=1e-12)
+    with pytest.raises(ValueError):
+        res.select("kind", ["nothing"])
+    with pytest.raises(ValueError):
+        res.select("lob", ["ceded"])
+    two = res.select("kind", ["gross", "net"])
+    assert len(two.components()) == 2

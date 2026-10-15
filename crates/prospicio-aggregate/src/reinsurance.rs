@@ -1119,6 +1119,11 @@ impl Tower {
     /// totals of the others); `net = gross - Σ ceded` in every year, so
     /// net is a loss, before any premium or commission.
     ///
+    /// Take one kind with `select("kind", ...)` before joining it to
+    /// another distribution (the ceded part to a book, say): `aggregate(&[])`
+    /// or summing over `kind` adds gross, ceded and net together, which is
+    /// no quantity at all.
+    ///
     /// ```
     /// use prospicio_aggregate::{Layer, Tower, simulate_events};
     /// use prospicio_prob::{Distribution, Lognormal, Poisson};

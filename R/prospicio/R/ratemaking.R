@@ -10,6 +10,10 @@
 #' next month's start (30 June is 1 July). Ratemaking dates are year
 #' fractions, so 1 July 2011 is 2011.5.
 #'
+#' It is a ratemaking date, not a calendar: do not assign accident years
+#' with it, since `year_fraction(2016, 12, 31)` is 2017. Take the accident
+#' year from the date itself.
+#'
 #' @param year,month,day Integer vectors of the same length.
 #' @returns A numeric vector.
 #' @export

@@ -24,6 +24,7 @@ reference:
       - burr_distribution
       - beta_distribution
       - truncated_distribution
+      - policy_limits_distribution
       - mixture_distribution
       - custom_distribution
       - dist_to_json
@@ -35,6 +36,8 @@ reference:
       - log_affine_pareto
       - generalized_pareto
       - pareto_fit
+      - severity_fit
+      - product_limit
       - local_pareto_to_piecewise
       - pareto_severity
       - local_alpha
@@ -61,6 +64,7 @@ reference:
       - blend_predictive
       - portfolio
       - marginal
+      - select_components
       - total
       - draw_matrix
       - provenance
@@ -124,6 +128,7 @@ reference:
       - collective_simulate
       - excess_frequency
       - layer_rating
+      - layer_cv
       - risk_loaded_price
       - capital_portfolio
       - natural_price
@@ -149,6 +154,7 @@ reference:
       - match_tower
       - fit_pml_curve
       - fit_references
+      - tower_diagnostics
       - tower_model
   - title: Credibility
     contents:
@@ -210,6 +216,7 @@ reference:
       - copula
       - copula_sample
       - copula_cdf
+      - vine_copula
       - copula_simulate
       - iman_conover
   - title: Extreme value tails
@@ -247,5 +254,6 @@ reference:
       - compartmental_priors
       - compartmental_prior_predictive
       - one_year_fit
+      - bayes_one_year_fit
       - clark_fit
       - fit_frames

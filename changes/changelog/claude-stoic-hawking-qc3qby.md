@@ -12,6 +12,43 @@
   `aggregate` 1.0.1's `GridDistribution`, `pmf` and skewness. Python
   `Discrete`; R `discrete_distribution()`, `quantile_upper()`,
   `discrete_skewness()` and `return_periods()` (#241).
+- Nested (hierarchical) Archimedean copulas,
+  `prospicio_prob::NestedArchimedeanCopula`: Clayton or Gumbel copulas
+  joining groups of dimensions inside a weaker outer one, to any depth,
+  with the distribution function and McNeil's sampling. Python
+  `prospicio.risk.NestedArchimedeanCopula`; R
+  `nested_archimedean_copula()` and `nac_node()`.
+- Vine copulas, `prospicio_prob::vine`: pair copulas (independence,
+  Gaussian, Clayton, Gumbel, Frank, Joe, with rotations) with their
+  conditional distributions and densities, and C- and D-vines built from
+  them (log-density, inverse Rosenblatt transform, sampling), matching
+  pyvinecopulib 1.0.1. Python `prospicio.risk.PairCopula` and
+  `VineCopula`; R `pair_copula()`, `vine_copula()` and
+  `copula_log_density()`.
+- A severity under a mix of policy limits, `prospicio_prob::PolicyLimits`
+  (#213): `min(X, L)` with each limit's weight, exact layer moments from
+  the base severity's and an atom at each finite limit, so it discretizes,
+  compounds and saves as JSON like any severity. Python `PolicyLimits`; R
+  `policy_limits_distribution()`.
+- Standard errors of the Pareto fits from the observed information
+  (#213): `Pareto::fit_with_standard_error` (truncated or not) and
+  `PiecewisePareto::fit_with_standard_errors` (uncorrelated by piece).
+  Python `Pareto.fit_with_standard_error`,
+  `PiecewisePareto.fit_with_standard_errors`; R `pareto_standard_error()`,
+  `piecewise_pareto_standard_errors()`.
+- Maximum likelihood fits of the lognormal, gamma, Weibull and Burr to
+  large losses with reporting thresholds (left truncation), policy limits
+  (censoring) and weights (#194):
+  `prospicio_prob::severity_fit::fit_severity`, returning the
+  distribution, parameters, standard errors and covariance,
+  log-likelihood, AIC and BIC. Python `fit_severity` and `SeverityFit`; R
+  `severity_fit()`.
+- Goodness of fit for large losses with reporting thresholds and
+  censoring (#194): the product-limit (Kaplan–Meier) estimator with left
+  truncation, `severity_fit::product_limit`, and
+  `severity_fit::goodness_of_fit`, which sets any severity against it
+  (P-P, Q-Q and the largest distance). Python `product_limit`,
+  `goodness_of_fit`; R `product_limit()`, `goodness_of_fit()`.
 
 ### Aggregate and reinsurance
 
@@ -116,3 +153,52 @@
   the card are each row's own, with no scenario columns. Python
   `Book.occurrence_peel` and `Ledger.is_stitched`; R
   `book_occurrence_peel()` and `ledger_is_stitched()` (#251).
+- `PredictiveDistribution::select(dim, keys)`: the components with given
+  values on one dimension, joint structure kept, so a tower's ceded part
+  can be joined to a book (#193). Python `PredictiveDistribution.select`, R
+  `select_components()`; `Tower.apply`'s docs now warn against summing over
+  `kind`.
+- Tower matching diagnostics (#211): `TowerModel::diagnostics` reports
+  alphas below a minimum, jumps between neighbouring alphas and an
+  infinite mean, and `fit_references_bounded` keeps the alpha between
+  reference points within bounds; `fit_references` no longer says
+  `references = NaN` when it refuses. Python `TowerModel.diagnostics()` and
+  `fit_references(..., alpha_bounds=)`; R `tower_diagnostics()` and
+  `fit_references(alpha_bounds =)`.
+- Exposure-rating helpers (#212): `TabulatedCurve::from_severity` (a
+  severity's exposure curve, tabulated where it bends),
+  `Mbbefd::swiss_re_for_mean_rate` and `swiss_re_for_layer_share` (the
+  Swiss Re `c` calibrated to a mean destruction rate or to one layer's
+  share), and `layer::layer_cv` (the CV of a layer's loss per loss that
+  reaches it). A risk profile's band may start at 0, and
+  `Band::with_spread_bounds` keeps the band's sum insured as the mean
+  when it can. The Python and R risk profiles now warn when the default
+  uniform spread moves a band's mean, and take `spread="auto"`. Python
+  `TabulatedCurve.from_severity`, `Mbbefd.swiss_re_for_mean_rate`,
+  `Mbbefd.swiss_re_for_layer_share`, `layer_cv`; R
+  `tabulated_curve_from_severity()`, `swiss_re_for_mean_rate()`,
+  `swiss_re_for_layer_share()`, `layer_cv()` and
+  `risk_profile(spread = "auto")`.
+- Small fixes from the guides (#214): `LimitedFluctuation::p` and `k`
+  (Python `LimitedFluctuation.p`, `.k`); `year_fraction`'s docs warn
+  against assigning accident years with it; the exponential premium
+  principle keeps its loading at a very small `k` (it fell below the
+  mean at `k = 1e-12`); `Portfolio::epd` no longer returns a tiny
+  negative ratio.
+
+### Models
+
+- REML smoothing for GAMs (`Smoothing::Reml`, mgcv's `method = "REML"`):
+  the Laplace-approximate restricted likelihood with the observed
+  information, an unknown dispersion estimated with the smoothing
+  parameters (`GamFit::reml_scale`), for the Gaussian, Poisson, gamma,
+  inverse Gaussian and binomial families, matching mgcv 1.9.1. Python
+  `Gam(..., smoothing="reml")` and `GamFit.reml_scale`; R
+  `gam_fit(smoothing = "reml")` and `@reml_scale`. New in
+  `prospicio-math`: `linalg::symmetric_eigenvalues`.
+- Tensor product smooths for GAMs (`TensorSpline`, `Gam::tensor`):
+  mgcv's `te(..., bs = "ps", np = FALSE)`, a smoothing parameter per
+  margin, with GCV, UBRE or REML, matching mgcv 1.9.1. Searches with
+  several smoothing parameters now polish a coarse coordinate pass
+  jointly. Python `Gam(..., tensors=)`; R `gam_fit(tensors =,
+  tensor_basis =)`.

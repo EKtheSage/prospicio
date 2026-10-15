@@ -353,6 +353,9 @@ covar <- function(x, key, p, q) {
 #' copula_sample(gaussian_copula(r), 3, seed = 1)
 #' t_copula(r, nu = 4)
 #' archimedean_copula("clayton", 2, dim = 3)
+#' nac <- nested_archimedean_copula("gumbel",
+#'   nac_node(1.5, 1, list(nac_node(3, c(2, 3)), nac_node(2, c(4, 5)))))
+#' copula_cdf(nac, c(1, 0.5, 1, 1, 1))
 copula <- S7::new_class(
   "copula",
   package = "prospicio",
@@ -390,6 +393,81 @@ t_copula <- function(correlation, nu) {
 archimedean_copula <- function(family = c("clayton", "gumbel", "frank", "joe"), theta, dim = 2) {
   family <- match.arg(family)
   copula(rust_result(RiskCopula$archimedean(family, as.double(theta), as.double(dim))))
+}
+
+#' @rdname copula
+#' @param tree For `nested_archimedean_copula()`, the root node, built with
+#'   `nac_node(theta, leaves, children)`: `leaves` the dimensions (1, 2,
+#'   ...) joined at this level and `children` a list of nested nodes. Every
+#'   dimension appears once, every node has at least two members, and no
+#'   child's `theta` is below its parent's. Clayton or Gumbel only.
+#' @details `nested_archimedean_copula()` joins groups of dimensions by their
+#'   own Archimedean copula and the groups by an outer one with weaker
+#'   dependence, to any depth (McNeil 2008): Kendall's tau between two
+#'   dimensions is that of the node where they first meet.
+#' @export
+nested_archimedean_copula <- function(family = c("clayton", "gumbel"), tree) {
+  family <- match.arg(family)
+  copula(rust_result(RiskCopula$nested(family, tree)))
+}
+
+#' @rdname copula
+#' @param leaves,children See `tree`.
+#' @export
+nac_node <- function(theta, leaves = numeric(), children = list()) {
+  list(as.double(theta), as.double(leaves), children)
+}
+
+#' Vine copulas
+#'
+#' A C- or D-vine copula built from bivariate pair copulas (Aas et al.
+#' 2009). `pair_copula()` is one: a family, its parameter and a rotation by
+#' 0, 90, 180 or 270 degrees (for Clayton, Gumbel and Joe; 90 and 270 give
+#' negative dependence; pyvinecopulib's conventions). In a C-vine, tree `t`
+#' joins the `t`-th variable in the order to every later one, given those
+#' before; in a D-vine, variables `t` places apart in the order, given those
+#' between. Each edge's first argument is its earlier variable. Fewer trees
+#' than `d - 1` truncate the vine (the rest independence).
+#' `copula_log_density()` is the vine's log-density.
+#'
+#' @param family One of `"independence"`, `"gaussian"`, `"clayton"`,
+#'   `"gumbel"`, `"frank"` and `"joe"`.
+#' @param parameter Gaussian correlation in (-1, 1); Clayton above 0; Gumbel
+#'   and Joe at least 1; Frank not 0.
+#' @param rotation 0, 90, 180 or 270.
+#' @param kind `"c"` or `"d"`.
+#' @param order The dimensions (1, 2, ...) in vine order.
+#' @param pairs A list of trees, tree `t` a list of its `d - t` pair copulas.
+#' @param copula A vine [copula].
+#' @param u A point or a matrix with one point per row.
+#' @returns `pair_copula()`: a list; `vine_copula()`: a [copula];
+#'   `copula_log_density()`: one value per point.
+#' @export
+#' @examples
+#' v <- vine_copula("d", 1:3, list(
+#'   list(pair_copula("gumbel", 2), pair_copula("clayton", 1.5, 90)),
+#'   list(pair_copula("frank", 3))))
+#' copula_log_density(v, c(0.2, 0.7, 0.4))
+#' copula_sample(v, 3, seed = 1)
+vine_copula <- function(kind = c("c", "d"), order, pairs) {
+  kind <- match.arg(kind)
+  copula(rust_result(RiskCopula$vine(kind, as.double(order), pairs)))
+}
+
+#' @rdname vine_copula
+#' @export
+pair_copula <- function(family = c("independence", "gaussian", "clayton", "gumbel", "frank",
+                                   "joe"),
+                        parameter = 0, rotation = 0) {
+  family <- match.arg(family)
+  list(family, as.double(parameter), as.double(rotation))
+}
+
+#' @rdname vine_copula
+#' @export
+copula_log_density <- function(copula, u) {
+  u <- if (is.matrix(u)) u else matrix(u, nrow = 1)
+  rust_result(copula@ptr$log_density(as.double(u), as.double(nrow(u))))
 }
 
 #' Copula distribution function

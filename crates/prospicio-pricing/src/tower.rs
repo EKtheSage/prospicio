@@ -49,6 +49,86 @@ impl TowerModel {
     pub fn layer_loss(&self, limit: f64, attachment: f64) -> f64 {
         self.frequency * self.severity.layer(limit, attachment)
     }
+
+    /// Checks on the matched severity's shape. A match reproduces its
+    /// references exactly, but between and beyond them a piece can be
+    /// implausible: an alpha below `min_alpha` (a piece heavier than the
+    /// data suggest; below 1 on the last, untruncated piece the mean is
+    /// infinite), or neighbouring alphas more than `max_ratio` apart (a
+    /// jagged curve). `diagnostics(1.0, 2.0)` is a reasonable default.
+    ///
+    /// ```
+    /// use prospicio_pricing::tower::{SelectionRule, match_tower};
+    ///
+    /// let model = match_tower(
+    ///     &[1000.0, 1500.0, 2000.0],
+    ///     &[100.0, 90.0, 120.0],
+    ///     &[Some(0.25), None, None],
+    ///     SelectionRule::MinimizeAlphaRatio,
+    /// )
+    /// .unwrap();
+    /// let d = model.diagnostics(1.0, 2.0);
+    /// assert!(!d.infinite_mean);
+    /// assert!(d.min_alpha > 0.0 && d.max_ratio >= 1.0);
+    /// ```
+    pub fn diagnostics(&self, min_alpha: f64, max_ratio: f64) -> TowerDiagnostics {
+        let t = self.severity.thresholds();
+        let a = self.severity.alphas();
+        let mut warnings = Vec::new();
+        for (ti, ai) in t.iter().zip(a) {
+            if *ai < min_alpha {
+                warnings.push(format!(
+                    "the piece from {ti} has alpha {ai:.4}, below {min_alpha}"
+                ));
+            }
+        }
+        let mut worst = 1.0f64;
+        for (i, w) in a.windows(2).enumerate() {
+            let r = (w[0] / w[1]).max(w[1] / w[0]);
+            worst = worst.max(r);
+            if r > max_ratio {
+                warnings.push(format!(
+                    "the alphas {:.4} and {:.4} either side of {} differ by a factor of {r:.3}, \
+                     above {max_ratio}",
+                    w[0],
+                    w[1],
+                    t[i + 1]
+                ));
+            }
+        }
+        let last = *a.last().expect("a severity has a piece");
+        let infinite_mean = last <= 1.0 && self.severity.truncation().is_none();
+        if infinite_mean {
+            warnings.push(format!(
+                "the last piece, from {}, has alpha {last:.4}: the severity's mean is infinite",
+                t[t.len() - 1]
+            ));
+        }
+        TowerDiagnostics {
+            min_alpha: a.iter().copied().fold(f64::INFINITY, f64::min),
+            max_alpha: a.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            max_ratio: worst,
+            infinite_mean,
+            warnings,
+        }
+    }
+}
+
+/// [`TowerModel::diagnostics`]: the range of the severity's alphas, the
+/// largest ratio between neighbouring alphas, whether the mean is infinite,
+/// and a warning for each check that fails.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TowerDiagnostics {
+    /// The smallest alpha.
+    pub min_alpha: f64,
+    /// The largest alpha.
+    pub max_alpha: f64,
+    /// The largest ratio between neighbouring alphas (at least 1).
+    pub max_ratio: f64,
+    /// The last piece's alpha is at most 1 and it is not truncated.
+    pub infinite_mean: bool,
+    /// One line per failed check; empty when the shape looks plausible.
+    pub warnings: Vec<String>,
 }
 
 /// Layer losses `e_i = u_i − u_{i+1}` (and `e_k = u_k`) from the expected
@@ -329,6 +409,56 @@ pub fn fit_references(
     default_alpha: f64,
     rule: SelectionRule,
 ) -> Result<TowerModel> {
+    fit_references_bounded(references, default_alpha, rule, None)
+}
+
+/// [`fit_references`] with the Pareto alpha between consecutive reference
+/// points kept within `alpha_bounds = (lo, hi)`, when given: `α ∈ [lo,
+/// hi]` between points `a < b` is `g(a) (a/b)^hi ≤ g(b) ≤ g(a) (a/b)^lo`,
+/// linear in the frequencies, so it joins the completion's linear program,
+/// and the unlimited top layer's alpha is bounded the same way. It bounds
+/// the alphas between the points; the two pieces [`match_tower`] places
+/// inside a limited layer can still fall either side of the bounds, which
+/// [`TowerModel::diagnostics`] reports. A frequency at the lowest point
+/// that no reference gives is derived after the fit and is not bounded.
+///
+/// ```
+/// use prospicio_pricing::layer::XsLayer;
+/// use prospicio_pricing::tower::{Reference, SelectionRule, fit_references_bounded};
+///
+/// let layer = |l, a, e| Reference::Layer { layer: XsLayer::new(l, a).unwrap(), expected_loss: e };
+/// let refs = [
+///     layer(1.0, 1.0, 1.706),
+///     layer(5.0, 5.0, 0.675),
+///     layer(f64::INFINITY, 10.0, 0.295),
+///     Reference::Frequency { threshold: 1.0, frequency: 2.8 },
+/// ];
+/// let free = fit_references_bounded(&refs, 2.0, SelectionRule::default(), None).unwrap();
+/// assert!(free.diagnostics(1.0, 2.0).min_alpha < 1.0);
+/// let bounded =
+///     fit_references_bounded(&refs, 2.0, SelectionRule::default(), Some((1.0, 4.0))).unwrap();
+/// assert!((bounded.layer_loss(5.0, 5.0) / 0.675 - 1.0).abs() < 1e-11);
+/// assert!(bounded.layer_loss(2.0, 2.0) < free.layer_loss(2.0, 2.0));
+/// ```
+///
+/// # Errors
+///
+/// As [`fit_references`], bounds that are not `0 ≤ lo < hi`, a default
+/// alpha outside them with no unlimited reference, or bounds that leave no
+/// tower meeting the references.
+pub fn fit_references_bounded(
+    references: &[Reference],
+    default_alpha: f64,
+    rule: SelectionRule,
+    alpha_bounds: Option<(f64, f64)>,
+) -> Result<TowerModel> {
+    if let Some((lo, hi)) = alpha_bounds
+        && !(lo >= 0.0 && lo.is_finite() && hi > lo)
+    {
+        return Err(Error::Data(format!(
+            "alpha bounds ({lo}, {hi}) must have 0 <= lo < hi"
+        )));
+    }
     if references.is_empty() {
         return Err(invalid("references", 0.0, "need at least one reference"));
     }
@@ -385,21 +515,40 @@ pub fn fit_references(
     }
     points.sort_by(f64::total_cmp);
     points.dedup();
+    if let Some((lo, hi)) = alpha_bounds
+        && !unlimited
+        && !(default_alpha >= lo && default_alpha <= hi)
+    {
+        return Err(Error::Data(format!(
+            "the default alpha {default_alpha} lies outside the alpha bounds ({lo}, {hi})"
+        )));
+    }
     let completion = Completion {
         points: &points,
         references,
         default_alpha,
         unlimited,
+        bounds: alpha_bounds,
     };
     // Bisection on the relative margin: feasibility shrinks as it grows.
     // Below about 1e-6 the margin drowns in the solver's tolerance.
     let tiny = 1e-6;
     let Some(mut best) = completion.solve(tiny) else {
-        return Err(invalid(
-            "references",
-            f64::NAN,
-            "are inconsistent: no decreasing, convex excess-loss function meets them",
-        ));
+        let free = Completion {
+            bounds: None,
+            ..completion
+        };
+        return Err(match alpha_bounds {
+            Some((lo, hi)) if free.solve(tiny).is_some() => Error::Data(format!(
+                "no tower meets the references with every alpha between them in ({lo}, {hi}); \
+                 widen the bounds"
+            )),
+            _ => Error::Data(format!(
+                "the {} references are inconsistent: no decreasing, convex excess-loss \
+                 function meets them",
+                references.len()
+            )),
+        });
     };
     let (mut lo, mut hi) = (tiny, 1.0);
     if completion.solve(hi).is_some() {
@@ -421,11 +570,7 @@ pub fn fit_references(
         best = sol;
     }
     let x = completion.center(best).ok_or_else(|| {
-        invalid(
-            "references",
-            f64::NAN,
-            "could not be completed to a strictly consistent tower",
-        )
+        Error::Data("the references could not be completed to a strictly consistent tower".into())
     })?;
     let m = points.len();
     let scale = points[0];
@@ -449,6 +594,8 @@ struct Completion<'a> {
     references: &'a [Reference],
     default_alpha: f64,
     unlimited: bool,
+    /// Bounds on the alpha between consecutive points.
+    bounds: Option<(f64, f64)>,
 }
 
 impl Completion<'_> {
@@ -528,6 +675,28 @@ impl Completion<'_> {
                 ComparisonOp::Eq,
                 0.0,
             );
+        }
+        if let Some((lo, hi)) = self.bounds {
+            let k = 1.0 + eps;
+            for i in 0..m - 1 {
+                let r = p[i] / p[i + 1];
+                // α ≥ lo: g_{i+1} ≤ g_i r^lo; α ≤ hi: g_{i+1} ≥ g_i r^hi.
+                lp.add_constraint([(g[i], r.powf(lo)), (g[i + 1], -k)], ComparisonOp::Ge, 0.0);
+                if hi.is_finite() {
+                    lp.add_constraint(
+                        [(g[i + 1], 1.0), (g[i], -k * r.powf(hi))],
+                        ComparisonOp::Ge,
+                        0.0,
+                    );
+                }
+            }
+            if self.unlimited {
+                // α_top − 1 = g_m p_m / u_m.
+                lp.add_constraint([(gm, pm), (um, -k * (lo - 1.0))], ComparisonOp::Ge, 0.0);
+                if hi.is_finite() {
+                    lp.add_constraint([(um, hi - 1.0), (gm, -k * pm)], ComparisonOp::Ge, 0.0);
+                }
+            }
         }
         let solution = lp.solve().ok()?.into_solution().ok()?;
         let x: Vec<f64> = u.iter().chain(&g).map(|&v| solution.var_value(v)).collect();
@@ -620,6 +789,36 @@ impl Completion<'_> {
         let mut unlimited = vec![0.0; 2 * m];
         unlimited[m - 1] = 1.0;
         out.push(unlimited);
+        if let Some((lo, hi)) = self.bounds {
+            for i in 0..m - 1 {
+                let r = self.points[i] / self.points[i + 1];
+                if i > 0 || with_lowest {
+                    let mut row = vec![0.0; 2 * m];
+                    row[m + i] = r.powf(lo);
+                    row[m + i + 1] = -1.0;
+                    out.push(row);
+                    if hi.is_finite() {
+                        let mut row = vec![0.0; 2 * m];
+                        row[m + i + 1] = 1.0;
+                        row[m + i] = -r.powf(hi);
+                        out.push(row);
+                    }
+                }
+            }
+            if self.unlimited {
+                let pm = self.points[m - 1] / scale;
+                let mut row = vec![0.0; 2 * m];
+                row[2 * m - 1] = pm;
+                row[m - 1] = -(lo - 1.0);
+                out.push(row);
+                if hi.is_finite() {
+                    let mut row = vec![0.0; 2 * m];
+                    row[m - 1] = hi - 1.0;
+                    row[2 * m - 1] = -pm;
+                    out.push(row);
+                }
+            }
+        }
         out
     }
 
@@ -1240,5 +1439,87 @@ mod tests {
             vec![100.0, 90.0, 290.0]
         );
         assert!(layer_losses_from_unlimited(&[1.0, 2.0]).is_err());
+    }
+}
+#[cfg(test)]
+mod issue_211 {
+    use super::*;
+
+    fn refs() -> Vec<Reference> {
+        let layer = |l, a, e| Reference::Layer {
+            layer: XsLayer::new(l, a).unwrap(),
+            expected_loss: e,
+        };
+        vec![
+            layer(1.0, 1.0, 1.706),
+            layer(5.0, 5.0, 0.675),
+            layer(f64::INFINITY, 10.0, 0.295),
+            Reference::Frequency {
+                threshold: 1.0,
+                frequency: 2.8,
+            },
+        ]
+    }
+
+    #[test]
+    fn diagnostics_flag_the_heavy_pieces() {
+        let m = fit_references(&refs(), 2.0, SelectionRule::default()).unwrap();
+        let d = m.diagnostics(1.0, 2.0);
+        assert!(d.min_alpha < 0.6 && !d.infinite_mean);
+        assert!(d.warnings.iter().any(|w| w.contains("below 1")));
+        assert!(m.diagnostics(0.1, 10.0).warnings.is_empty());
+    }
+
+    #[test]
+    fn bounds_hold_between_the_points_and_keep_the_references() {
+        let free = fit_references(&refs(), 2.0, SelectionRule::default()).unwrap();
+        let m = fit_references_bounded(&refs(), 2.0, SelectionRule::default(), Some((1.2, 3.0)))
+            .unwrap();
+        for (l, a, e) in [
+            (1.0, 1.0, 1.706),
+            (5.0, 5.0, 0.675),
+            (f64::INFINITY, 10.0, 0.295),
+        ] {
+            assert!((m.layer_loss(l, a) / e - 1.0).abs() < 1e-11);
+        }
+        assert!((m.excess_frequency(1.0) / 2.8 - 1.0).abs() < 1e-11);
+        // The alpha between consecutive reference points lies in the bounds.
+        let pts = [1.0, 2.0, 5.0, 10.0];
+        for w in pts.windows(2) {
+            let alpha =
+                (m.excess_frequency(w[0]) / m.excess_frequency(w[1])).ln() / (w[1] / w[0]).ln();
+            assert!((1.2 - 1e-9..=3.0 + 1e-9).contains(&alpha), "{alpha}");
+        }
+        assert!(m.layer_loss(2.0, 2.0) < free.layer_loss(2.0, 2.0));
+    }
+
+    #[test]
+    fn refusals_name_the_cause() {
+        let tight =
+            fit_references_bounded(&refs(), 2.0, SelectionRule::default(), Some((2.5, 3.0)))
+                .unwrap_err()
+                .to_string();
+        assert!(tight.contains("widen the bounds"), "{tight}");
+        let bad = [
+            Reference::Layer {
+                layer: XsLayer::new(5.0, 5.0).unwrap(),
+                expected_loss: 3.0,
+            },
+            Reference::Frequency {
+                threshold: 5.0,
+                frequency: 0.2,
+            },
+        ];
+        let msg = fit_references(&bad, 2.0, SelectionRule::default())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("inconsistent") && !msg.contains("NaN"),
+            "{msg}"
+        );
+        assert!(
+            fit_references_bounded(&refs(), 2.0, SelectionRule::default(), Some((3.0, 2.0)))
+                .is_err()
+        );
     }
 }

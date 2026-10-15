@@ -305,3 +305,34 @@ stopifnot(abs(same$premium - p1$premium) < 1e-14,
           < 1e-12,
           inherits(try(payment_pattern_from_development(c(1, 2), c(2, 1.1)), silent = TRUE),
                    "try-error"))
+
+# Issue #211: tower diagnostics and alpha bounds.
+local({
+  layers <- data.frame(limit = c(1, 5, Inf), attachment = c(1, 5, 10),
+                       expected_loss = c(1.706, 0.675, 0.295))
+  freq <- data.frame(threshold = 1, frequency = 2.8)
+  free <- fit_references(layers, freq)
+  d <- tower_diagnostics(free)
+  stopifnot(d$min_alpha < 1, !d$infinite_mean, length(d$warnings) > 0)
+  b <- fit_references(layers, freq, alpha_bounds = c(1.2, 3))
+  stopifnot(abs(layer(b, 5, 5) / 0.675 - 1) < 1e-10, layer(b, 2, 2) < layer(free, 2, 2))
+})
+
+# Issue #212: exposure helpers, the spread default's warning, a band from 0.
+c3 <- swiss_re_curve(3)
+w <- tryCatch(risk_profile(2, 400, c3, expected_loss = 1.2, lower = 1, upper = 5),
+              warning = function(w) conditionMessage(w))
+stopifnot(is.character(w), grepl("no longer has sums_insured", w))
+ra <- risk_profile(2, 400, c3, expected_loss = 1.2, lower = 1, upper = 5, spread = "auto")
+stopifnot(abs(ra@mean_sums_insured - 2) < 1e-9)
+r0 <- risk_profile(1, 10, c3, premium = 1, loss_ratio = 0.6, lower = 0, upper = 2, spread = "auto")
+stopifnot(is.finite(profile_layer_loss(r0, 0.5, 0.5)))
+sev <- lognormal_from_mean_cv(1e5, 2)
+tc <- tabulated_curve_from_severity(sev, 1e6)
+xs <- c(0.01, 0.1, 0.3, 0.7)
+stopifnot(max(abs(exposure_curve(tc, xs) - severity_exposure_curve(sev, 1e6, xs))) < 1e-3)
+stopifnot(abs(attr(swiss_re_for_mean_rate(c3@mean), "c") - 3) < 1e-9)
+share <- exposure_layer_share(c3, 4, 2, 10)
+stopifnot(abs(attr(swiss_re_for_layer_share(4, 2, 10, share), "c") - 3) < 1e-9)
+# A Pareto with alpha 3: CV 1/sqrt(3).
+stopifnot(abs(layer_cv(pareto(100, 3), Inf, 0) - 1 / sqrt(3)) < 1e-9)

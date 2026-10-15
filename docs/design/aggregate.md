@@ -213,6 +213,24 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   rating; a nearly degenerate tilt against the band's single risk.
   Python `RiskProfile(..., spread="tilted")`, R
   `risk_profile(spread = "tilted")`.
+- **Exposure-rating helpers and the spread's warning (decided
+  2026-10-14, #212).** `TabulatedCurve::from_severity(severity, mpl,
+  points)` tabulates a severity's curve for a band: half the points
+  geometric from `1e-6` (the first chord sets the mean rate), half where
+  `G` takes equal steps, so the curve's bend is sampled where the loss
+  is. `Mbbefd::swiss_re_for_mean_rate` and `swiss_re_for_layer_share`
+  calibrate the Swiss Re `c` on `[0, 10]` by bisection (both targets are
+  monotone in `c`) and refuse a target outside that range. `layer_cv` is
+  the CV of a layer's loss given a loss above the attachment, for
+  `LimitedFluctuation`. A band may start at 0 (`with_bounds` takes
+  `lower ≥ 0`, `upper > 0`). `Band::with_spread_bounds` tilts when the SI
+  lies strictly between the bounds and spreads uniformly otherwise. The
+  bindings keep the uniform spread as the default, so no result changes,
+  but warn when it moves a band's mean; `spread="auto"` uses
+  `with_spread_bounds`. The default stays uniform because the guides and
+  notebooks print numbers from it. Tested: from_severity within `1e-3`
+  of the exact curve, `c = 3` recovered from both targets to `1e-9`, the
+  exponential's layer CV 1, a band from 0 rating a layer, and the warning.
 - **Seasonal event times (decided 2026-10-08).** `EventSet::with_seasonal_times(weights)`
   dates losses by a piecewise-constant density over the year: `m =
   weights.len()` equal periods (12 for months, 52 for weeks) starting at

@@ -391,7 +391,7 @@ impl<B: ReserveFit + Clone> OneYearFits<B> {
 
 /// Renames a table's `ultimate` and `reserve` to `opening_ultimate` and
 /// `opening_reserve`.
-fn opening_names(mut table: FitTable) -> FitTable {
+pub(crate) fn opening_names(mut table: FitTable) -> FitTable {
     for (name, _) in &mut table.values {
         if name == "ultimate" || name == "reserve" {
             *name = format!("opening_{name}");
@@ -424,7 +424,7 @@ impl YearCells {
     /// that reaches the last age by the end of the year takes it when that
     /// valuation is in the year or before (decision 11). An origin with
     /// nothing in the year has no entry.
-    fn of(
+    pub(crate) fn of(
         segment: &Segment,
         latest: &[usize],
         valuation: impl Fn(usize, usize) -> Month,

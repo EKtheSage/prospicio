@@ -313,7 +313,7 @@ class AsIf:
 class BayesBf:
     """
     The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
-    (2012, Model 3.1): the over-dispersed Poisson model of a cumulative
+    (2012, Model 3.1):the over-dispersed Poisson model of a cumulative
     triangle's incremental values ``X`` with mean ``mu[w] * gamma[d]``, an
     informative gamma prior on each origin's row parameter ``mu[w]`` with
     mean ``apriori * exposure[w]`` and coefficient of variation ``cv``, a
@@ -969,6 +969,131 @@ class BayesOdp:
         """
         Number of predictive simulations.
         """
+    def one_year(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "refit_flagged") -> BayesOneYearFit:
+        """
+        The one-year view of one measure column of a single-segment
+        cumulative triangle: the claims development result over the coming
+        year, by Pareto smoothed importance sampling of the posterior
+        (decision 16 of ``docs/design/reserving-bayes.md``). The posterior
+        and the lifetime reserves are ``fit``'s for the same settings. Each
+        simulation picks a posterior draw, draws the year's increments from
+        it with ``process`` error (the cells valued in the next twelve
+        months, as in ``OdpBootstrap.one_year``), reweights every posterior
+        draw by the year's quasi likelihood with ``scale`` and the priors
+        unchanged, and smooths the weights (one Pareto ``k`` per
+        simulation). Origin ``w``'s claims development result is
+        
+        ``CDR[w] = E[R[w] | D0] - (X[w] + E[R'[w] | D0, X])``
+        
+        with ``R`` the expected run-off at the opening, ``X`` the year's
+        payments and ``R'`` the expected run-off after the year, each
+        expectation the (weighted) mean over the posterior draws; its mean
+        is about zero. A simulation whose ``k`` is above ``k_threshold`` is
+        flagged and, with ``refit="refit_flagged"`` (the default), refitted
+        with NUTS on the triangle extended by its year, with this model's
+        sampler. A refit takes about 40 ms in a release build, and 14% to
+        26% of the simulations are flagged on RAA and GenIns, so a default
+        run of 10,000 simulations takes one to two minutes there;
+        ``"reweight_only"`` takes about a second and leaves the total's
+        standard deviation about 1% low. Every cell up to the end of the
+        year is observed and conditioned on, also for an origin that lags
+        the valuation. Raises one ``UserWarning`` listing the failed
+        diagnostics of the fit, and another if any refit failed its
+        diagnostics.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        column : str
+        k_threshold : float, default 0.7
+            The Pareto ``k`` above which a simulation's importance weights
+            are not trusted (the threshold of Vehtari et al. 2024 for a few
+            thousand draws).
+        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+            What happens to a flagged simulation: refitted with NUTS, or
+            reweighted anyway (fast, biased where ``k`` is high);
+            ``"refit_all"`` refits every simulation, to check the
+            reweighting.
+        
+        Returns
+        -------
+        BayesOneYearFit
+        
+        Raises
+        ------
+        ValueError
+            As ``fit``; if ``k_threshold`` is NaN or ``refit`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import BayesOdp, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+        ... )
+        >>> view = BayesOdp(n_sims=1000, seed=1).one_year(tri, "values", refit="reweight_only")
+        >>> view.cdr.components()
+        [('2020',), ('2021',), ('2022',), ('2023',)]
+        >>> len(view.pareto_k), view.refitted
+        (1000, [])
+        >>> view.cdr.variance() < view.fit.reserves.variance()
+        True
+        """
+    def one_year_segments(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "refit_flagged") -> BayesOneYearFits:
+        """
+        The one-year view of one measure column in every segment of a
+        cumulative triangle: each segment's posterior and simulations as in
+        ``fit_segments`` (segment ``k``'s own seeds), reweighted and
+        refitted as in ``one_year``, into one joint claims development
+        result, the segments depending on each other as ``dependence`` says:
+        ``"independent"``, or ``"rank_correlation"`` by Iman–Conover on the
+        segments' total claims development results, as the bootstraps'
+        one-year view does. Raises one ``UserWarning`` listing the failed
+        diagnostics of every segment's fit, and another if any refit failed
+        its diagnostics, each message prefixed with its segment's label.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        column : str
+        k_threshold : float, default 0.7
+            As in ``one_year``.
+        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+            As in ``one_year``.
+        
+        Returns
+        -------
+        BayesOneYearFits
+        
+        Raises
+        ------
+        ValueError
+            As ``one_year`` and ``fit_segments``, including
+            ``dependence="synchronized"``.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import BayesOdp, Triangle
+        >>> paid = [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]
+        >>> tri = Triangle.from_long(
+        ...     ([2020] * 4 + [2021] * 3 + [2022] * 2 + [2023]) * 2,
+        ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12] * 2,
+        ...     {"paid": paid + [2 * v for v in paid]},
+        ...     keys={"lob": ["Auto"] * 10 + ["Home"] * 10},
+        ... )
+        >>> model = BayesOdp(tune=300, draws=300, n_sims=500)
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     views = model.one_year_segments(tri, "paid", refit="reweight_only")
+        >>> views.index, views.cdr.dims
+        (['Auto', 'Home'], ['lob', 'origin'])
+        >>> len(views.segment(lob="Home").pareto_k)
+        500
+        """
     @property
     def origin_sd(self, /) -> float:
         """
@@ -1270,6 +1395,280 @@ class BayesOdpFits:
         One row per segment: the key columns, the chain ladder's totals,
         the ``scale``, and the ``mean`` and ``std_dev`` of the segment's
         posterior predictive total reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+
+@final
+class BayesOneYearFit:
+    """
+    The one-year view of a Bayesian model on a single-segment triangle,
+    from ``BayesOdp.one_year``: the lifetime fit, the opening reserve, the
+    claims development result over the coming year and how reliable each
+    simulation's importance reweighting was.
+    
+    ``cdr`` is the joint distribution of the claims development result by
+    origin (dimension ``"origin"``), the opening reserve less the year's
+    payment and the posterior mean reserve after the year, so a negative
+    value is an adverse development and ``cdr.quantile(0.005)`` is minus
+    the one-year value at risk at 99.5%. ``pareto_k`` has one Pareto ``k``
+    per simulation; ``flagged_share`` is the share above ``k_threshold``,
+    whether or not they were refitted, and ``refitted`` lists the
+    simulations refitted with NUTS.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def cdr(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the claims development result by origin:
+        dimension ``"origin"``, one component per origin, one row per
+        simulation.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The model's volume-weighted chain ladder.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladder's development factors, one row per age, as
+        ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def fit(self, /) -> BayesOdpFit:
+        """
+        The model fitted to the observed triangle, with its posterior and
+        lifetime reserves, as ``BayesOdp.fit`` gives it.
+        """
+    @property
+    def flagged_share(self, /) -> float:
+        """
+        The share of simulations whose ``k`` is above ``k_threshold`` (or
+        NaN), whether or not they were refitted.
+        """
+    @property
+    def k_threshold(self, /) -> float:
+        """
+        The Pareto ``k`` above which a simulation is flagged.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed value per origin.
+        """
+    @property
+    def opening_reserve(self, /) -> list[float]:
+        """
+        Each origin's posterior mean reserve on the observed triangle: the
+        mean over the posterior draws of the expected future increments.
+        """
+    @property
+    def opening_ultimate(self, /) -> list[float]:
+        """
+        The latest value plus the opening reserve, per origin.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and CDR component.
+        """
+    @property
+    def pareto_k(self, /) -> list[float]:
+        """
+        Each simulation's Pareto ``k``, in the order of the simulations
+        (``inf`` when too few weights differ to fit the tail).
+        """
+    @property
+    def refit_warnings(self, /) -> int:
+        """
+        How many of the refits had a diagnostic warning (R-hat, ESS or a
+        divergence).
+        """
+    @property
+    def refitted(self, /) -> list[int]:
+        """
+        The simulations refitted with NUTS, in order (0-based).
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, ``latest``, ``opening_ultimate``,
+        ``opening_reserve``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
+        claims development result. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row: the totals of ``to_frame()``'s columns, the ``scale``, the
+        ``flagged_share``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
+        total claims development result. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+
+@final
+class BayesOneYearFits:
+    """
+    The one-year view of a Bayesian model in every segment of a triangle,
+    from ``BayesOdp.one_year_segments``, laid out as ``OneYearFit``.
+    
+    ``cdr`` is one joint distribution of the claims development result with
+    the triangle's keys and ``"origin"`` as dimensions, so
+    ``cdr.aggregate(["lob"])`` keeps the dependence between segments.
+    Per-origin lists run over the origins of each segment in turn, like the
+    rows of ``to_frame()`` and the components of ``cdr``. ``scale``,
+    ``diagnostics``, ``pareto_k``, ``refitted``, ``refit_warnings`` and
+    ``flagged_share`` are one segment's and need a single-segment fit: for
+    several segments use ``segment(...)``, ``totals_frame()`` (the scales
+    and flagged shares) or ``diagnostics_frame()``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def cdr(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the claims development result by segment and
+        origin: the triangle's keys and ``"origin"`` are its dimensions, one
+        component per segment and origin, one row per simulation.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of every segment.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months of the first segment.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladders' development factors, one row per segment and
+        age, as ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics of a single-segment fit's posterior, as
+        ``BayesOdpFit.diagnostics``.
+        """
+    def diagnostics_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, then ``max_rhat``,
+        ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+        ``warnings`` of the segment's posterior, as
+        ``BayesOdpFits.diagnostics_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def flagged_share(self, /) -> float:
+        """
+        The share of a single-segment fit's simulations whose ``k`` is
+        above ``k_threshold`` (or NaN).
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def k_threshold(self, /) -> float:
+        """
+        The Pareto ``k`` above which a simulation is flagged.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed value per origin.
+        """
+    @property
+    def opening_reserve(self, /) -> list[float]:
+        """
+        Each origin's posterior mean reserve on the observed triangle.
+        """
+    @property
+    def opening_ultimate(self, /) -> list[float]:
+        """
+        The latest value plus the opening reserve, per origin.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and CDR component.
+        """
+    @property
+    def pareto_k(self, /) -> list[float]:
+        """
+        Each simulation's Pareto ``k`` in a single-segment fit.
+        """
+    @property
+    def refit_warnings(self, /) -> int:
+        """
+        How many of a single-segment fit's refits had a diagnostic warning.
+        """
+    @property
+    def refitted(self, /) -> list[int]:
+        """
+        The simulations of a single-segment fit refitted with NUTS.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The plugged-in scale ``phi`` of a single-segment fit.
+        """
+    def segment(self, /, **keys) -> BayesOneYearFits:
+        """
+        The one-year view of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint claims
+        development result (same dimensions).
+        
+        Returns
+        -------
+        BayesOneYearFits
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``opening_ultimate``, ``opening_reserve``, and the
+        ``cdr_mean`` and ``cdr_std_dev`` of the claims development result.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the totals of ``to_frame()``'s
+        columns, the ``scale``, the ``flagged_share``, and the ``cdr_mean``
+        and ``cdr_std_dev`` of the segment's total claims development
+        result. Needs pandas.
         
         Returns
         -------
@@ -6289,7 +6688,14 @@ class Gam:
         functions (10 by default).
     smoothing : str or list of float, default "auto"
         ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
-        ``"ubre"``, or fixed smoothing parameters, one per smooth.
+        ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
+        unknown dispersion with the smoothing parameters), or fixed
+        smoothing parameters: one per smooth, then one per tensor margin.
+    tensors : list, optional
+        Tensor product smooths (mgcv's ``te(..., bs = "ps", np = FALSE)``):
+        each a list of two or more column names, or ``(columns, n_basis)``
+        with one basis size per column (5 by default). Each margin has its
+        own smoothing parameter.
     
     Examples
     --------
@@ -6302,7 +6708,7 @@ class Gam:
     >>> abs(fit.predict(d)[50] - y[50]) < 0.01
     True
     """
-    def __new__(cls, /, glm: Glm, smooths: Sequence[Any], smoothing: Any |None = None) -> Gam: ...
+    def __new__(cls, /, glm: Glm, smooths: Sequence[Any], smoothing: Any |None = None, tensors: Sequence[Any] |None = None) -> Gam: ...
     def fit(self, /, design: Design, y: Sequence[float]) -> GamFit:
         """
         Fits the model.
@@ -6411,9 +6817,15 @@ class GamFit:
         PredictiveDistribution
         """
     @property
+    def reml_scale(self, /) -> float |None:
+        """
+        The dispersion REML estimates with the smoothing parameters
+        (mgcv's ``reml.scale``), or ``None`` for GCV and UBRE.
+        """
+    @property
     def score(self, /) -> float:
         """
-        The minimized GCV or UBRE score.
+        The minimized GCV, UBRE or REML score (mgcv's ``gcv.ubre``).
         """
     def to_json(self, /) -> str:
         """
@@ -9164,6 +9576,8 @@ class LimitedFluctuation:
     >>> lf = LimitedFluctuation(0.90, 0.05)
     >>> round(lf.frequency_standard())
     1082
+    >>> lf.p, lf.k
+    (0.9, 0.05)
     """
     def __new__(cls, /, p: float = 0.90, k: float = 0.05) -> LimitedFluctuation: ...
     def __repr__(self, /) -> str: ...
@@ -9187,6 +9601,16 @@ class LimitedFluctuation:
         Returns
         -------
         float
+        """
+    @property
+    def k(self, /) -> float:
+        """
+        The tolerance ``k``, relative to the mean.
+        """
+    @property
+    def p(self, /) -> float:
+        """
+        The probability ``p`` of lying within ``k`` of the mean.
         """
     def pure_premium_standard(self, /, cv: float) -> float:
         """
@@ -10717,6 +11141,44 @@ class Mbbefd:
         -------
         Mbbefd
         """
+    @staticmethod
+    def swiss_re_for_layer_share(limit: float, attachment: float, mpl: float, share: float) -> tuple[Mbbefd, float]:
+        """
+        The Swiss Re curve that gives ``limit`` xs ``attachment`` the share
+        ``share`` of a risk's loss with maximum possible loss ``mpl``
+        (``G((a + l)/mpl) - G(a/mpl)``), and its ``c``.
+        
+        Parameters
+        ----------
+        limit, attachment, mpl : float
+        share : float
+        
+        Returns
+        -------
+        tuple of (Mbbefd, float)
+        """
+    @staticmethod
+    def swiss_re_for_mean_rate(rate: float) -> tuple[Mbbefd, float]:
+        """
+        The Swiss Re curve whose mean destruction rate is ``rate``, and its
+        ``c``.
+        
+        Parameters
+        ----------
+        rate : float
+            Between the curves at ``c = 10`` and ``c = 0`` (0.5).
+        
+        Returns
+        -------
+        tuple of (Mbbefd, float)
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import Mbbefd
+        >>> curve, c = Mbbefd.swiss_re_for_mean_rate(Mbbefd.swiss_re(3.0).mean())
+        >>> round(c, 9)
+        3.0
+        """
     def total_loss_probability(self, /) -> float:
         """
         Probability of a total loss, ``1/g``.
@@ -11705,6 +12167,73 @@ class NegativeBinomial:
         """
 
 @final
+class NestedArchimedeanCopula:
+    """
+    A nested (hierarchical) Archimedean copula: groups of dimensions joined
+    by their own Clayton or Gumbel copula, and the groups joined by an outer
+    one with weaker dependence, to any depth. Kendall's tau between two
+    dimensions is that of the node where they first meet.
+    
+    Parameters
+    ----------
+    family : {"clayton", "gumbel"}
+    tree : tuple
+        The root node ``(theta, members)``: each member a dimension
+        (0-based) or a node. Every dimension appears once, every node has at
+        least two members, and no child's ``theta`` is below its parent's.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import NestedArchimedeanCopula
+    >>> c = NestedArchimedeanCopula("gumbel", (1.5, [0, (3.0, [1, 2]), (2.0, [3, 4])]))
+    >>> c.dim, c.family
+    (5, 'gumbel')
+    >>> c.cdf([1.0, 0.5, 1.0, 1.0, 1.0])
+    0.5
+    """
+    def __new__(cls, /, family: str, tree: Any) -> NestedArchimedeanCopula: ...
+    def cdf(self, /, u: Sequence[float]) -> float:
+        """
+        The copula's distribution function at the point ``u``.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of dimensions.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        Family name.
+        """
+    def sample(self, /, n: int, seed: int) -> list[list[float]]:
+        """
+        ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def tree(self, /) -> Any:
+        """
+        The tree, as given: ``(theta, members)``, leaves first.
+        """
+
+@final
 class OccurrencePml:
     """
     One point of the occurrence PML curve, from ``occurrence_pml``.
@@ -12236,6 +12765,71 @@ class OneYearFit:
         """
 
 @final
+class PairCopula:
+    """
+    A bivariate copula for a vine: a family, its parameter and a rotation.
+    
+    Parameters
+    ----------
+    family : {"independence", "gaussian", "clayton", "gumbel", "frank", "joe"}
+    parameter : float, default 0.0
+        Gaussian correlation in (-1, 1); Clayton above 0; Gumbel and Joe at
+        least 1; Frank not 0 (negative for negative dependence).
+    rotation : {0, 90, 180, 270}, default 0
+        For Clayton, Gumbel and Joe: 90 and 270 give negative dependence,
+        180 moves the tail dependence to the other corner (pyvinecopulib's
+        conventions).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import PairCopula
+    >>> c = PairCopula("clayton", 2.0)
+    >>> round(c.h2(0.3, 0.6), 12) == round(0.6**-3 * (0.3**-2 + 0.6**-2 - 1) ** -1.5, 12)
+    True
+    """
+    def __new__(cls, /, family: str, parameter: float = 0.0, rotation: int = 0) -> PairCopula: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, u: float, v: float) -> float:
+        """
+        The distribution function ``C(u, v)``.
+        """
+    def density(self, /, u: float, v: float) -> float:
+        """
+        The density ``c(u, v)``.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        Family name.
+        """
+    def h1(self, /, v: float, u: float) -> float:
+        """
+        ``h1(v | u) = dC(u, v)/du``: the second argument given the first.
+        """
+    def h1_inverse(self, /, p: float, u: float) -> float:
+        """
+        The ``v`` with ``h1(v | u) = p``.
+        """
+    def h2(self, /, u: float, v: float) -> float:
+        """
+        ``h2(u | v) = dC(u, v)/dv``: the first argument given the second.
+        """
+    def h2_inverse(self, /, p: float, v: float) -> float:
+        """
+        The ``u`` with ``h2(u | v) = p``.
+        """
+    @property
+    def parameter(self, /) -> float:
+        """
+        The parameter.
+        """
+    @property
+    def rotation(self, /) -> int:
+        """
+        The rotation in degrees.
+        """
+
+@final
 class Pareto:
     """
     Single-parameter Pareto: ``P(X > x) = (t / x) ** alpha`` for ``x >= t``,
@@ -12310,6 +12904,25 @@ class Pareto:
         >>> from prospicio.distributions import Pareto
         >>> round(Pareto.fit([1500.0, 2500.0, 4000.0], 1000.0).alpha, 6)
         1.10524
+        """
+    @staticmethod
+    def fit_with_standard_error(losses: Sequence[float], t: float, reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncation: float |None = None) -> tuple[Pareto, float]:
+        """
+        ``Pareto.fit`` with the standard error of the alpha from the
+        observed information. Untruncated it is ``alpha / sqrt(n)``, ``n``
+        the uncensored weight; truncated, the conditioning terms add to the
+        information. Parameters as ``fit``.
+        
+        Returns
+        -------
+        tuple of (Pareto, float)
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Pareto
+        >>> fit, se = Pareto.fit_with_standard_error([1500.0, 2500.0, 4000.0], 1000.0)
+        >>> round(se * 3 ** 0.5 / fit.alpha, 12)
+        1.0
         """
     def layer(self, /, limit: float, attachment: float) -> float:
         """
@@ -12876,6 +13489,20 @@ class PiecewisePareto:
         -------
         PiecewisePareto
         """
+    @staticmethod
+    def fit_with_standard_errors(losses: Sequence[float], t: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncation: float |None = None, truncation_type: str = "lp") -> tuple[PiecewisePareto, list[float]]:
+        """
+        ``PiecewisePareto.fit`` with the standard error of each alpha. The
+        likelihood separates by piece, so the alphas are uncorrelated:
+        ``alpha_k / sqrt(n_k)``, ``n_k`` the uncensored weight ending in
+        piece ``k`` (NaN where none does). A truncated last piece takes the
+        truncated Pareto's; ``truncation_type="wd"`` couples the alphas and
+        is refused. Parameters as ``fit``.
+        
+        Returns
+        -------
+        tuple of (PiecewisePareto, list of float)
+        """
     def layer(self, /, limit: float, attachment: float) -> float:
         """
         Expected loss to the layer ``limit`` xs ``attachment``.
@@ -13128,6 +13755,196 @@ class Poisson:
         Returns
         -------
         float
+        """
+
+@final
+class PolicyLimits:
+    """
+    A severity capped by a mix of policy limits: the loss ``min(X, L)``
+    with ``L = limits[j]`` with probability ``weights[j]``, as a cedant's
+    losses censored at its policies' limits. Every layer moment is exact,
+    from the base severity's, and the distribution function has an atom at
+    each finite limit, so ``Grid.rounding`` and ``CollectiveModel`` take it
+    like any severity.
+    
+    Parameters
+    ----------
+    severity : a severity
+        The losses before the limits; any distribution but ``Sampled``.
+    limits : list of float
+        Positive; ``inf`` for an unlimited policy.
+    weights : list of float
+        Non-negative, normalized to sum to 1 (policy or loss counts do).
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Pareto, PolicyLimits
+    >>> c = PolicyLimits(Pareto(100.0, 2.0), [1000.0, 5000.0], [3, 1])
+    >>> round(c.mean(), 9)  # 0.75 * 100 * (2 - 0.1) + 0.25 * 100 * (2 - 0.02)
+    192.0
+    """
+    def __new__(cls, /, severity: Any, limits: Sequence[float], weights: Sequence[float]) -> PolicyLimits: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def limits(self, /) -> list[float]:
+        """
+        The policy limits.
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def severity(self, /) -> Any:
+        """
+        The severity before the limits.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def weights(self, /) -> list[float]:
+        """
+        Each limit's weight, summing to 1.
         """
 
 @final
@@ -13811,6 +14628,39 @@ class PredictiveDistribution:
         Returns
         -------
         PredictiveDistribution
+        """
+    def select(self, /, dim: str, keys: Sequence[int |str]) -> PredictiveDistribution:
+        """
+        The components whose value on dimension ``dim`` is one of ``keys``,
+        with every dimension and the draws' joint structure kept.
+        
+        Take one part of a result this way before joining it to another:
+        ``Tower.apply(...).select("kind", ["ceded"])`` is a treaty's cession,
+        ready to add to a book. Aggregating over ``kind`` instead adds gross,
+        ceded and net together.
+        
+        Parameters
+        ----------
+        dim : str
+        keys : list of int or str
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            An unknown dimension, no keys, or a key no component has.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(
+        ...     ["kind", "layer"], [("gross", "ground_up"), ("ceded", "5x5"), ("net", "retained")],
+        ...     [[10.0, 3.0, 7.0], [4.0, 0.0, 4.0]])
+        >>> pd.select("kind", ["ceded"]).mean()
+        1.5
         """
     def total(self, /) -> Sampled:
         """
@@ -14564,12 +15414,17 @@ class RiskProfile:
         ``sums_insured``), each simulated loss draws its own ``SI`` between
         the bounds, and the exposure-rated expectations average over the
         band, weighted by sum insured.
-    spread : {"uniform", "tilted"}, default "uniform"
+    spread : {"uniform", "tilted", "auto"}, optional
         How a band with bounds spreads its sums insured. ``"tilted"`` keeps
         ``sums_insured`` as the mean, so the spread matches both the bounds
         and the band's total sum insured: the density ``∝ exp(θ s)`` on the
         bounds with ``θ`` solved for that mean (``sums_insured`` must lie
-        strictly between the bounds).
+        strictly between the bounds). ``"uniform"`` moves the mean to
+        ``(lower + upper) / 2``. ``"auto"`` tilts a band whose
+        ``sums_insured`` lies strictly between its bounds and spreads any
+        other uniformly. Not given, the spread is uniform, with a
+        ``UserWarning`` for each band whose mean moves (as with ``"auto"``).
+        A band may start at ``lower = 0``.
     
     Examples
     --------
@@ -14582,11 +15437,12 @@ class RiskProfile:
     >>> events.has_sums_insured
     True
     """
-    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None, lower: Sequence[float |None] |None = None, upper: Sequence[float |None] |None = None, spread: str = "uniform") -> RiskProfile: ...
+    def __new__(cls, /, sums_insured: Sequence[float], risks: Sequence[float], curves: Any, expected_losses: Sequence[float] |None = None, premiums: Sequence[float] |None = None, loss_ratio: Any |None = None, lower: Sequence[float |None] |None = None, upper: Sequence[float |None] |None = None, spread: str |None = None) -> RiskProfile: ...
     def __repr__(self, /) -> str: ...
     def expected_claims(self, /) -> list[float]:
         """
-        Expected number of losses a year, per band.
+        Expected number of losses a year, per band: losses of every size,
+        not only those that reach a layer.
         
         Returns
         -------
@@ -14827,6 +15683,63 @@ class Sampled:
         """
 
 @final
+class SeverityFit:
+    """
+    A severity fitted by maximum likelihood to large losses, from
+    ``fit_severity``: the distribution, its parameters with standard errors
+    and covariance (from the observed information), and the fit's
+    log-likelihood with AIC and BIC.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aic(self, /) -> float:
+        """
+        Akaike's information criterion.
+        """
+    @property
+    def bic(self, /) -> float:
+        """
+        The Bayesian information criterion, with the losses' total weight.
+        """
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the optimizer met its tolerance.
+        """
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The parameters' covariance, one row per parameter in the family's
+        order (``meanlog, sdlog``; ``shape, scale``; ``alpha, gamma, scale``).
+        """
+    @property
+    def distribution(self, /) -> Any:
+        """
+        The fitted distribution.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The family's name.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximized log-likelihood.
+        """
+    @property
+    def parameters(self, /) -> dict[str, float]:
+        """
+        The parameters by name.
+        """
+    @property
+    def standard_errors(self, /) -> dict[str, float]:
+        """
+        Each parameter's standard error, by name; NaN where the observed
+        information is singular.
+        """
+
+@final
 class StackingFit:
     """
     Posterior stacking weights, from ``BayesStacking.fit`` or
@@ -15029,6 +15942,33 @@ class TabulatedCurve:
         Returns
         -------
         list of float
+        """
+    @staticmethod
+    def from_severity(severity: Any, mpl: float, points: int = 200) -> TabulatedCurve:
+        """
+        The exposure curve of ``severity`` capped at ``mpl``, tabulated at
+        ``points`` points, for a risk profile's band (which takes an
+        ``Mbbefd`` or a ``TabulatedCurve``).
+        
+        Parameters
+        ----------
+        severity : a severity
+        mpl : float
+            The maximum possible loss.
+        points : int, default 200
+            At least 4.
+        
+        Returns
+        -------
+        TabulatedCurve
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Lognormal
+        >>> from prospicio.pricing import TabulatedCurve
+        >>> t = TabulatedCurve.from_severity(Lognormal.from_mean_cv(1e5, 2.0), 1e6)
+        >>> t.x[0], t.x[-1], t.g[-1]
+        (0.0, 1.0, 1.0)
         """
     @property
     def g(self, /) -> list[float]:
@@ -15376,7 +16316,9 @@ class Tower:
         layer, ``("ceding_commission", name)`` per layer with a flat or
         sliding commission and ``("profit_commission", name)`` per layer with
         a profit commission. ``aggregate(["kind"])`` gives gross, total ceded
-        and net; net is a loss, before premiums and commissions.
+        and net; net is a loss, before premiums and commissions. Take one kind
+        with ``select("kind", ["ceded"])`` before joining it to a book:
+        summing over ``kind`` adds gross, ceded and net together.
         
         Parameters
         ----------
@@ -15686,6 +16628,25 @@ class TowerModel:
     a PML curve or a set of references.
     """
     def __repr__(self, /) -> str: ...
+    def diagnostics(self, /, min_alpha: float = 1.0, max_ratio: float = 2.0) -> dict:
+        """
+        Checks on the matched severity's shape. A match reproduces its
+        references exactly, but between and beyond them a piece can be
+        implausible: an alpha below ``min_alpha`` (below 1 on the last,
+        untruncated piece the mean is infinite), or neighbouring alphas more
+        than ``max_ratio`` apart.
+        
+        Parameters
+        ----------
+        min_alpha : float, default 1.0
+        max_ratio : float, default 2.0
+        
+        Returns
+        -------
+        dict
+            ``min_alpha``, ``max_alpha``, ``max_ratio``, ``infinite_mean`` and
+            ``warnings`` (a list of str, empty when the shape looks plausible).
+        """
     def excess_frequency(self, /, x: float) -> float:
         """
         Expected number of losses a year above ``x``.
@@ -16800,6 +17761,88 @@ class ViewPrice:
         """
 
 @final
+class VineCopula:
+    """
+    A C- or D-vine copula built from bivariate pair copulas (Aas et al.
+    2009), with each edge's first argument its earlier variable in the
+    order.
+    
+    Parameters
+    ----------
+    kind : {"c", "d"}
+        A C-vine: tree ``t`` joins the ``t``-th variable in the order to
+        every later one, given the first ``t``. A D-vine: tree ``t`` joins
+        variables ``t + 1`` places apart in the order, given those between.
+    order : list of int
+        The dimensions (0-based) in vine order.
+    pairs : list of list of PairCopula
+        Tree ``t``'s ``d - 1 - t`` pair copulas, edge by edge. Fewer trees
+        truncate the vine (the rest independence).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import PairCopula, VineCopula
+    >>> v = VineCopula("d", [0, 1, 2], [[PairCopula("gumbel", 2.0), PairCopula("clayton", 1.5, 90)],
+    ...                                 [PairCopula("frank", 3.0)]])
+    >>> v.dim
+    3
+    """
+    def __new__(cls, /, kind: str, order: Sequence[int], pairs: Sequence[Sequence[PairCopula]]) -> VineCopula: ...
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of dimensions.
+        """
+    def inverse_rosenblatt(self, /, w: Sequence[float]) -> list[float]:
+        """
+        The inverse Rosenblatt transform: the point whose conditional
+        distributions, in vine order, are the uniforms ``w`` (in vine order).
+        
+        Parameters
+        ----------
+        w : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        ``"c"`` or ``"d"``.
+        """
+    def log_density(self, /, u: Sequence[float]) -> float:
+        """
+        The log-density at the point ``u``.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def order(self, /) -> list[int]:
+        """
+        The order.
+        """
+    def sample(self, /, n: int, seed: int) -> list[list[float]]:
+        """
+        ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        
+        Returns
+        -------
+        list of list of float
+        """
+
+@final
 class Weibull:
     """
     Weibull distribution with shape ``k`` and scale ``lam``:
@@ -17766,7 +18809,7 @@ def fit_pml_curve(return_periods: Sequence[float], amounts: Sequence[float], tai
     TowerModel
     """
 
-def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequencies: Sequence[tuple[float, float]] = ..., default_alpha: float = 2.0, rule: str = "minimize") -> TowerModel:
+def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequencies: Sequence[tuple[float, float]] = ..., default_alpha: float = 2.0, rule: str = "minimize", alpha_bounds: tuple[float, float] |None = None) -> TowerModel:
     """
     A model that reproduces every reference: expected layer losses (which
     may overlap or leave gaps) and excess frequencies.
@@ -17780,10 +18823,20 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     default_alpha : float, default 2.0
         Alpha above the highest point, unless an unlimited layer sets it.
     rule : {"minimize", "midpoint"}, default "minimize"
+    alpha_bounds : tuple of (float, float), optional
+        ``(lo, hi)``: keep the Pareto alpha between consecutive reference
+        points within these bounds. The two pieces fitted inside a limited
+        layer can still fall either side; check with
+        :meth:`TowerModel.diagnostics`.
     
     Returns
     -------
     TowerModel
+    
+    Raises
+    ------
+    ValueError
+        Inconsistent references, or bounds that leave no tower meeting them.
     
     Examples
     --------
@@ -17791,6 +18844,37 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     >>> m = fit_references([(1000.0, 1000.0, 150.0), (3000.0, 1500.0, 160.0)], [(1000.0, 0.3)])
     >>> round(m.layer_loss(3000.0, 1500.0), 6)
     160.0
+    """
+
+def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> SeverityFit:
+    """
+    Maximum likelihood fit of a lognormal, gamma, Weibull or Burr severity
+    to large losses, each conditioned on exceeding its reporting threshold
+    (left truncation), with losses capped by a policy limit censored.
+    
+    Parameters
+    ----------
+    family : {"lognormal", "gamma", "weibull", "burr"}
+    losses : list of float
+    reporting_thresholds : list of float, optional
+        Per-loss thresholds below which a loss would not have been
+        reported.
+    censored : list of bool, optional
+        ``True`` where a policy limit capped the loss.
+    weights : list of float, optional
+    
+    Returns
+    -------
+    SeverityFit
+    
+    Examples
+    --------
+    >>> import math
+    >>> from prospicio.distributions import fit_severity
+    >>> y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0]
+    >>> fit = fit_severity("lognormal", y)
+    >>> round(fit.parameters["meanlog"], 6) == round(sum(map(math.log, y)) / 7, 6)
+    True
     """
 
 def from_json(text: str) -> Any:
@@ -17826,6 +18910,39 @@ def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |N
     Returns
     -------
     float
+    """
+
+def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict:
+    """
+    A severity against the product-limit estimate of large losses, each
+    conditioned on its reporting threshold: P-P (``survival`` against
+    ``model_survival``, the model's survival conditional on the lowest
+    reporting threshold), Q-Q (``x`` against ``model_quantile``, the
+    model's conditional quantile at the middle of each step) and
+    ``max_distance``, the largest gap between the two survival functions.
+    
+    Parameters
+    ----------
+    severity : a distribution
+        A fit's ``distribution``, a Pareto fit, or any other.
+    losses : list of float
+    reporting_thresholds : list of float, optional
+    censored : list of bool, optional
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict
+        ``x``, ``at_risk``, ``survival``, ``model_survival``,
+        ``model_quantile`` (lists) and ``max_distance`` (float).
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import fit_severity, goodness_of_fit
+    >>> y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0]
+    >>> gof = goodness_of_fit(fit_severity("lognormal", y).distribution, y)
+    >>> len(gof["x"]), gof["max_distance"] < 0.3
+    (6, True)
     """
 
 def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[int], list[int]]]:
@@ -17945,6 +19062,32 @@ def ks_uniform(values: Sequence[float]) -> float:
     Returns
     -------
     float
+    """
+
+def layer_cv(severity: Any, limit: float, attachment: float) -> float:
+    """
+    Coefficient of variation of the loss to ``limit`` xs ``attachment``
+    per loss that reaches the layer: ``sd / mean`` of
+    ``min(max(X - a, 0), l)`` given ``X > a``. It is the CV that
+    ``LimitedFluctuation``'s pure premium standard needs for a layer.
+    
+    Parameters
+    ----------
+    severity : a severity
+    limit : float
+        Positive; ``inf`` for an unlimited layer.
+    attachment : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Gamma
+    >>> from prospicio.pricing import layer_cv
+    >>> round(layer_cv(Gamma(1.0, 100.0), float("inf"), 50.0), 9)
+    1.0
     """
 
 def layer_loss_picks(severity: Grid, attachments: Sequence[float], picks: Sequence[float], claims: float = 1.0) -> Picks:
@@ -18723,6 +19866,33 @@ def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_c
     True
     """
 
+def product_limit(losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict[str, list[float]]:
+    """
+    The product-limit (Kaplan–Meier) estimator for left-truncated,
+    right-censored losses: at each value where an uncensored loss lies, the
+    weight at risk (losses reported below it and not below it), the
+    uncensored weight there and ``S(x)``, the survival conditional on the
+    lowest reporting threshold.
+    
+    Parameters
+    ----------
+    losses : list of float
+    reporting_thresholds : list of float, optional
+    censored : list of bool, optional
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict of str to list of float
+        ``x``, ``at_risk``, ``events`` and ``survival``.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import product_limit
+    >>> product_limit([100.0, 200.0, 300.0, 400.0])["survival"]
+    [0.75, 0.5, 0.25, 0.0]
+    """
+
 def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n_draws: int = 1000, seed: int = 0) -> list[float]:
     """
     Pseudo-BMA weights, ``w_k`` proportional to ``exp(elpd_k)``; with
@@ -19175,6 +20345,10 @@ def year_fraction(year: int, month: int, day: int) -> float:
     The year fraction of a date on Werner and Modlin's half-month grid: the
     first of a month is its start, a day near the middle is half way, and
     the last day is the next month's start (6/30 is 7/1).
+    
+    It is a ratemaking date, not a calendar: do not assign accident years
+    with it, since ``year_fraction(2016, 12, 31)`` is 2017.0. Take the
+    accident year from the date itself.
     
     Parameters
     ----------

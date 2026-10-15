@@ -185,6 +185,46 @@ def test_risk_profile_tilts_a_spread_to_its_mean_sum_insured():
         RiskProfile([3e6], [400], c, spread="steep", **kw)
 
 
+
+def test_issue_212_exposure_helpers_and_spread():
+    from prospicio.pricing import (Mbbefd, RiskProfile, TabulatedCurve, layer_cv,
+                                   severity_exposure_curve)
+
+    c3 = Mbbefd.swiss_re(3.0)
+    kw = dict(expected_losses=[1.2], lower=[1.0], upper=[5.0])
+    # Not given: uniform, with a warning that the mean moved from 2 to 3.
+    with pytest.warns(UserWarning, match="no longer has sums_insured"):
+        uniform = RiskProfile([2.0], [400], c3, **kw)
+    # "auto" tilts a band whose sum insured lies inside its bounds.
+    auto = RiskProfile([2.0], [400], c3, spread="auto", **kw)
+    tilted = RiskProfile([2.0], [400], c3, spread="tilted", **kw)
+    assert auto.expected_layer_loss(3.0, 2.0) == pytest.approx(
+        tilted.expected_layer_loss(3.0, 2.0), rel=1e-12)
+    assert uniform.expected_layer_loss(3.0, 2.0) > auto.expected_layer_loss(3.0, 2.0)
+    with pytest.warns(UserWarning):
+        RiskProfile([6.0], [400], c3, spread="auto", **kw)
+    # A band may start at 0.
+    zero = RiskProfile([1.0], [10], c3, premiums=[1.0], loss_ratio=0.6,
+                       lower=[0.0], upper=[2.0], spread="auto")
+    assert math.isfinite(zero.expected_layer_loss(0.5, 0.5))
+
+    # The tabulated curve of a severity matches its exact curve.
+    sev = D.Lognormal.from_mean_cv(1e5, 2.0)
+    t = TabulatedCurve.from_severity(sev, 1e6)
+    xs = [0.01, 0.1, 0.3, 0.7]
+    for got, want in zip(t.curve(xs), severity_exposure_curve(sev, 1e6, xs)):
+        assert got == pytest.approx(want, abs=1e-3)
+
+    # c recovered from the mean rate and from one layer's share.
+    curve, c = Mbbefd.swiss_re_for_mean_rate(c3.mean())
+    assert c == pytest.approx(3.0, abs=1e-9)
+    share = c3.layer_share(4.0, 2.0, 10.0)
+    _, c = Mbbefd.swiss_re_for_layer_share(4.0, 2.0, 10.0, share)
+    assert c == pytest.approx(3.0, abs=1e-9)
+
+    # Memoryless: the exponential's layer CV given a loss above it is 1.
+    assert layer_cv(D.Gamma(1.0, 100.0), math.inf, 50.0) == pytest.approx(1.0, abs=1e-9)
+
 INSCO_ROWS = [[15, 7, 0], [15, 13, 0], [5, 20, 11], [7, 33, 0], [13, 20, 7],
               [5, 27, 8], [15, 16, 9], [26, 19, 10], [17, 8, 40], [16, 20, 64]]
 
@@ -590,3 +630,23 @@ def test_payment_pattern_and_price_over_payout():
         price_over_payout(one, p)
     with pytest.raises(ValueError):
         PaymentPattern.from_development([1.0, 2.0], [2.0, 1.1])
+
+
+def test_tower_diagnostics_and_alpha_bounds():
+    # Issue #211: fits that reproduce the references can be implausible
+    # between them; diagnostics say so, and alpha bounds rein them in.
+    import math
+    from prospicio.pricing import fit_references
+
+    layers = [(1, 1, 1.706), (5, 5, 0.675), (math.inf, 10, 0.295)]
+    free = fit_references(layers, [(1, 2.8)], default_alpha=2.0)
+    d = free.diagnostics()
+    assert d["min_alpha"] < 1.0 and not d["infinite_mean"] and d["warnings"]
+    bounded = fit_references(layers, [(1, 2.8)], default_alpha=2.0, alpha_bounds=(1.2, 3.0))
+    assert bounded.layer_loss(5, 5) == pytest.approx(0.675, rel=1e-11)
+    assert bounded.layer_loss(2, 2) < free.layer_loss(2, 2)
+    with pytest.raises(ValueError, match="widen the bounds"):
+        fit_references(layers, [(1, 2.8)], alpha_bounds=(2.5, 3.0))
+    with pytest.raises(ValueError) as e:
+        fit_references([(5.0, 5.0, 3.0)], [(5.0, 0.2)])
+    assert "NaN" not in str(e.value)

@@ -486,7 +486,7 @@ pub(crate) struct GamModel {
 
 /// Fits a GAM: the GLM spec plus P-spline smooths of the named design
 /// columns with `n_basis` functions each. `smoothing` is "auto", "gcv",
-/// "ubre" or "fixed" with `lambdas`.
+/// "ubre", "reml" or "fixed" with `lambdas`.
 #[extendr]
 #[allow(clippy::too_many_arguments)]
 fn gam_fit_design(
@@ -505,6 +505,8 @@ fn gam_fit_design(
     n_basis: &[f64],
     smoothing: &str,
     lambdas: &[f64],
+    tensors: List,
+    tensor_basis: List,
 ) -> Result<GamModel> {
     let f = family(family_name, theta, power)?;
     let l = link(link_name, f, f64::NAN)?;
@@ -526,18 +528,33 @@ fn gam_fit_design(
         "auto" => Smoothing::Auto,
         "gcv" => Smoothing::Gcv,
         "ubre" => Smoothing::Ubre,
+        "reml" => Smoothing::Reml,
         "fixed" => Smoothing::Fixed(lambdas.to_vec()),
         other => {
             return Err(Error::Other(format!(
-                "smoothing must be auto, gcv, ubre or numeric, got {other}"
+                "smoothing must be auto, gcv, ubre, reml or numeric, got {other}"
             )));
         }
     };
+    if tensors.len() != tensor_basis.len() {
+        return Err(Error::Other("give one tensor_basis per tensor".into()));
+    }
+    let mut gam = Gam::new(glm, splines);
+    for (cols, k) in tensors.values().zip(tensor_basis.values()) {
+        let cols: Vec<String> = cols
+            .as_string_vector()
+            .ok_or_else(|| Error::Other("each tensor is a character vector of columns".into()))?;
+        let refs: Vec<&str> = cols.iter().map(String::as_str).collect();
+        let k = k
+            .as_real_vector()
+            .ok_or_else(|| Error::Other("tensor_basis must be numeric".into()))?
+            .into_iter()
+            .map(|v| whole(v, "tensor_basis").map(|v| v as usize))
+            .collect::<Result<Vec<_>>>()?;
+        gam = gam.tensor(prospicio_glm::gam::TensorSpline::new(&refs).n_basis(k));
+    }
     let d = design(x, names, offset, weights)?;
-    let inner = Gam::new(glm, splines)
-        .smoothing(smoothing)
-        .fit(&d, y)
-        .map_err(to_r)?;
+    let inner = gam.smoothing(smoothing).fit(&d, y).map_err(to_r)?;
     Ok(GamModel { inner })
 }
 
@@ -579,6 +596,11 @@ impl GamModel {
 
     fn score(&self) -> f64 {
         self.inner.score()
+    }
+
+    /// The REML dispersion, `NA` for GCV and UBRE.
+    fn reml_scale(&self) -> f64 {
+        self.inner.reml_scale().unwrap_or(f64::NAN)
     }
 
     fn fitted(&self) -> Vec<f64> {

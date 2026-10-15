@@ -525,3 +525,13 @@ local({
   stopifnot(abs(s$SD[s$row == "net through occ 1 xs 1"] - 1.897366596) < 1e-8)
   stopifnot(abs(s$SD[s$step == "All" & s$label == "Impact"] + 2.201414) < 1e-6)
 })
+
+# Issue #193: select the ceded part of a tower's result before joining.
+local({
+  ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 2000, seed = 7)
+  res <- apply_tower(reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6))), ev)
+  ceded <- select_components(res, "kind", "ceded")
+  by_kind <- aggregate(res, keep = "kind")
+  stopifnot(abs(mean(ceded) - mean(marginal(by_kind, list("ceded")))) < 1e-6 * mean(ceded))
+  stopifnot(inherits(try(select_components(res, "kind", "none"), silent = TRUE), "try-error"))
+})
