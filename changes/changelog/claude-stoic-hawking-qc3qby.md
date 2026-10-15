@@ -212,4 +212,4 @@
   `alpha_bounds`, `TabulatedCurve.from_severity`, the Swiss Re `c`
   calibrations, `layer_cv`, `PolicyLimits` in the submission evaluation,
   and an explicit `spread` on risk profiles with bounds. The gaps tables
-  keep #192 and clash across more than two lines.
+  keep #192 and clash across more than two lines (#265).
