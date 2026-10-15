@@ -716,7 +716,10 @@ pub(crate) fn hash_segment(
 
 /// The chain ladder (with `tail`, which leaves the fitted values and
 /// residuals as they are), fitted values, residuals and scale of one
-/// segment, and the pool of residuals to resample.
+/// segment, and the pool of residuals to resample. Without a selected
+/// pattern: the Bayesian models' starting point and the tests; the
+/// bootstraps call [`prepare_selected`].
+#[cfg(any(test, feature = "bayes"))]
 pub(crate) fn prepare(
     segment: &Segment,
     ages: &[Lag],
