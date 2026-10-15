@@ -1590,7 +1590,9 @@ Mbbefd$rate_quantile <- function(u) .Call(wrap__Mbbefd__rate_quantile, self, u)
 
 Tabulated <- new.env(parent = emptyenv())
 
-Tabulated$new <- function(x, g) .Call(wrap__Tabulated__new, x, g)
+Tabulated$new <- function(x, g, interpolation) .Call(wrap__Tabulated__new, x, g, interpolation)
+
+Tabulated$interpolation <- function() .Call(wrap__Tabulated__interpolation, self)
 
 Tabulated$from_severity <- function(severity, mpl, points) .Call(wrap__Tabulated__from_severity, severity, mpl, points)
 

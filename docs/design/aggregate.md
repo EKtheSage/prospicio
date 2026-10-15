@@ -231,6 +231,36 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   notebooks print numbers from it. Tested: from_severity within `1e-3`
   of the exact curve, `c = 3` recovered from both targets to `1e-9`, the
   exponential's layer CV 1, a band from 0 rating a layer, and the warning.
+- **Log-log interpolation of tabulated curves (decided 2026-10-15).**
+  `TabulatedCurve::with_interpolation(x, g, Interpolation::LogLog)` runs
+  the curve as a power law between points, `G(x) = Gₖ (x / xₖ)^pₖ` with
+  the elasticity `pₖ = ln(Gₖ₊₁ / Gₖ) / ln(xₖ₊₁ / xₖ)`, straight on log-log
+  axes, the way published scales are read off log-scaled charts and the
+  way the CAS reading on exposure rating describes fitted alternatives.
+  The first piece, from `(0, 0)`, stays straight (`ln 0` is undefined,
+  and a power below 1 there would make `G'(0)` infinite and the mean rate
+  0), so the mean rate is the first chord's under both interpolations.
+  The interpolated curve is concave exactly when the elasticities never
+  rise and the second piece's is at most 1; the constructor refuses
+  anything else and names the point where the elasticity rises. A curve's
+  elasticity `x G'(x) / G(x)` need not fall: a total-loss mass lifts it
+  near `x = 1`, so the Swiss Re curves with `c` up to 3, read at a few
+  points, fail and keep linear interpolation, while severity curves (a
+  lognormal or Pareto capped at an MPL) and `c` = 4 and 5 pass. Rejected:
+  a fallback to the chord on a piece whose elasticity rises, since the
+  chord can still leave a convex kink at either end, and only a concave
+  interpolant keeps the destruction-rate distribution valid; a general
+  concave interpolant is a larger item, not planned. The destruction rate
+  is continuous within each power piece, with atoms where the elasticity
+  drops and a total loss with the last elasticity over `G'(0)`; its
+  quantile inverts `G'` in closed form on each piece. Linear stays the
+  default, so no result changes. Tested: the points reproduced, sampling
+  against `G` and the mean rate, the atoms and a piece boundary, a flat
+  top, and on ten-point tables of the Swiss Re `c` = 4 and 5 curves and
+  of a lognormal and a Pareto severity curve the largest error past the
+  first point at 0.36 to 0.67 of linear's. Python
+  `TabulatedCurve(x, g, interpolation="log-log")` (kept through pickling),
+  R `tabulated_curve(x, g, interpolation = "log-log")`.
 - **Seasonal event times (decided 2026-10-08).** `EventSet::with_seasonal_times(weights)`
   dates losses by a piecewise-constant density over the year: `m =
   weights.len()` equal periods (12 for months, 52 for weeks) starting at

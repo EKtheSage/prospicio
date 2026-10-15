@@ -16,3 +16,13 @@
   `Gpd::fit_with_covariance` returns a fit with the covariance of
   `(xi, beta)`. Python `prospicio.risk.threshold_diagnostics` (a dict of
   columns) and R `threshold_diagnostics()` (a data frame).
+
+### Pricing
+
+- Log-log interpolation of tabulated exposure curves:
+  `TabulatedCurve::with_interpolation(x, g, Interpolation::LogLog)` runs
+  the curve as a power law between points (the first piece stays
+  straight) and refuses a table it would make non-concave, naming the
+  point where the elasticity rises. Linear stays the default. Python
+  `TabulatedCurve(x, g, interpolation="log-log")`, R
+  `tabulated_curve(x, g, interpolation = "log-log")`.

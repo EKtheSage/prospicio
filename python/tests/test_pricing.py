@@ -93,6 +93,23 @@ def test_tabulated_curve_and_destruction_rates():
     assert t.layer_share(5e6, 5e6, 10e6) == pytest.approx(0.2)
     with pytest.raises(ValueError):
         TabulatedCurve([0.0, 0.5, 1.0], [0.0, 0.3, 1.0])  # convex
+    # Log-log: a power law between 0.1 and 0.5, kept through a pickle.
+    import math
+    import pickle
+
+    ll = TabulatedCurve([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0], interpolation="log-log")
+    p = math.log(2) / math.log(5)
+    assert ll.curve([0.3])[0] == pytest.approx(0.4 * 3**p, abs=1e-15)
+    assert ll.interpolation == "log-log" and t.interpolation == "linear"
+    back = pickle.loads(pickle.dumps(ll))
+    assert back.interpolation == "log-log" and back.curve([0.3]) == ll.curve([0.3])
+    with pytest.raises(ValueError):
+        TabulatedCurve([0.0, 0.5, 1.0], [0.0, 0.7, 1.0], interpolation="cubic")
+    # Swiss Re c = 3 read at ten points: its elasticity rises near 1.
+    xs = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0]
+    gs = Mbbefd.swiss_re(3.0).curve(xs)
+    with pytest.raises(ValueError, match="elasticity"):
+        TabulatedCurve(xs, gs, interpolation="log-log")
     # MBBEFD rate quantiles reproduce the curve's mean.
     c3 = Mbbefd.swiss_re(3.0)
     n = 100_000

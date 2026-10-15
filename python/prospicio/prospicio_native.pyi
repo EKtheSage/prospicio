@@ -16403,7 +16403,7 @@ class StudentTCopula:
 class TabulatedCurve:
     """
     A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
-    ``(1, 1)``, interpolated linearly, as published curves are given
+    ``(1, 1)``, interpolated linearly or log-log, as published curves are given
     (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
     reinsurer's own).
     
@@ -16413,12 +16413,22 @@ class TabulatedCurve:
     mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
     first points for the expected loss to be right.
     
+    With ``interpolation="log-log"`` the curve runs as a power law between
+    points (straight on log-log axes), ``G(x) = G_k (x / x_k) ** p_k``, which
+    follows a curve's bend between sparse points better than a chord; the
+    first piece, from ``(0, 0)``, stays straight. The interpolated curve must
+    be concave, so the elasticities ``p_k`` may not rise from piece to piece:
+    a table with a total-loss mass at the top (the Swiss Re curves with ``c``
+    up to 3, read at a few points) fails and keeps linear interpolation. The
+    destruction rate is then continuous within each piece past the first.
+    
     Parameters
     ----------
     x : list of float
         Increasing from 0 to 1.
     g : list of float
         ``G(x)``, from 0 to 1.
+    interpolation : {"linear", "log-log"}, default "linear"
     
     Raises
     ------
@@ -16433,8 +16443,8 @@ class TabulatedCurve:
     >>> round(t.curve([0.3])[0], 12), t.mean_rate()
     (0.6, 0.25)
     """
-    def __getnewargs__(self, /) -> tuple[list[float], list[float]]: ...
-    def __new__(cls, /, x: Sequence[float], g: Sequence[float]) -> TabulatedCurve: ...
+    def __getnewargs__(self, /) -> tuple[list[float], list[float], str]: ...
+    def __new__(cls, /, x: Sequence[float], g: Sequence[float], interpolation: str = "linear") -> TabulatedCurve: ...
     def __repr__(self, /) -> str: ...
     def curve(self, /, x: Sequence[float]) -> list[float]:
         """
@@ -16479,6 +16489,12 @@ class TabulatedCurve:
     def g(self, /) -> list[float]:
         """
         The table's ``G(x)``.
+        """
+    @property
+    def interpolation(self, /) -> str:
+        """
+        How the curve runs between its points: ``"linear"`` or
+        ``"log-log"``.
         """
     def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
         """

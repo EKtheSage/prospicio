@@ -166,9 +166,9 @@ what it is aiming for by v1.0.
     indication by the loss ratio and pure premium methods with credibility
     against a complement (`docs/design/ratemaking.md`). This finishes the
     v0.6 pricing scope.
-- **Next:**
-  1. Log-log interpolation for tabulated curves (the tilted spread within
-     bands is done).
+  - Log-log interpolation of tabulated exposure curves, where it keeps
+    the curve concave.
+- **Next:** open.
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)
