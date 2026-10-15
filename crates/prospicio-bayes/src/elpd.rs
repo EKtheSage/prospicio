@@ -229,8 +229,9 @@ pub fn loo(log_lik: &[f64], n: usize, r_eff: Option<&[f64]>) -> Result<Loo> {
 /// - When the tail cannot be fitted (`M < 5`, `M ≥ S`, or a tail of ties),
 ///   the weights are the raw (shifted) log ratios and `k̂` is infinite.
 ///
-/// The log ratios must be finite or `-∞` (a weight of zero), and `r_eff`
-/// finite and positive; anything else, or no ratios, is an error.
+/// The log ratios must be finite or `-∞` (a weight of zero), with at least
+/// one finite, and `r_eff` finite and positive; anything else, or no
+/// ratios, is an error.
 ///
 /// ```
 /// use prospicio_bayes::elpd::psis;
@@ -247,6 +248,11 @@ pub fn psis(log_ratios: &[f64], r_eff: f64) -> Result<(Vec<f64>, f64)> {
     if log_ratios.iter().any(|v| v.is_nan() || *v == f64::INFINITY) {
         return Err(Error::Data(
             "psis needs log ratios that are finite or -inf".into(),
+        ));
+    }
+    if !log_ratios.iter().any(|v| v.is_finite()) {
+        return Err(Error::Data(
+            "psis needs at least one finite log ratio (every weight is zero)".into(),
         ));
     }
     if !(r_eff.is_finite() && r_eff > 0.0) {
@@ -411,6 +417,10 @@ mod tests {
         // A zero weight is allowed; bad input is an error.
         assert!(psis(&[f64::NEG_INFINITY, 0.0, 1.0], 1.0).is_ok());
         assert!(psis(&[], 1.0).is_err());
+        // Every weight zero: no finite ratio to shift by, so an error, for
+        // short and long inputs alike.
+        assert!(psis(&[f64::NEG_INFINITY; 3], 1.0).is_err());
+        assert!(psis(&[f64::NEG_INFINITY; 100], 1.0).is_err());
         assert!(psis(&[0.0, f64::NAN], 1.0).is_err());
         assert!(psis(&[0.0, f64::INFINITY], 1.0).is_err());
         assert!(psis(&[0.0, 1.0], 0.0).is_err());
