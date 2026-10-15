@@ -11,6 +11,7 @@
 //!   ratios `1 / p(yᵢ | θₛ)` stabilized by fitting a generalized Pareto to
 //!   their largest values. The fitted shape `k̂` per observation is the
 //!   reliability diagnostic.
+//! - [`psis`]: the Pareto smoothing itself, for any log importance ratios.
 //!
 //! References: Vehtari, Gelman and Gabry (2017), *Practical Bayesian model
 //! evaluation using leave-one-out cross-validation and WAIC*; Vehtari,
@@ -192,7 +193,7 @@ pub fn loo(log_lik: &[f64], n: usize, r_eff: Option<&[f64]>) -> Result<Loo> {
     for i in 0..n {
         let ll = column(log_lik, n, i);
         let r = r_eff.map_or(1.0, |r| r[i]);
-        let (log_w, k) = psis(&ll.iter().map(|v| -v).collect::<Vec<f64>>(), r);
+        let (log_w, k) = psis_unchecked(&ll.iter().map(|v| -v).collect::<Vec<f64>>(), r);
         let lse_w = log_sum_exp(&log_w);
         let num: Vec<f64> = log_w.iter().zip(&ll).map(|(w, l)| w + l).collect();
         pointwise.push(log_sum_exp(&num) - lse_w);
@@ -205,9 +206,59 @@ pub fn loo(log_lik: &[f64], n: usize, r_eff: Option<&[f64]>) -> Result<Loo> {
     })
 }
 
-/// Pareto-smoothed log importance weights for log ratios `log_r`, and the
-/// fitted shape `k̂` (infinite when the tail is too short to fit).
-fn psis(log_r: &[f64], r_eff: f64) -> (Vec<f64>, f64) {
+/// Pareto-smoothed importance sampling (PSIS) of `S` log importance ratios
+/// `log_ratios`: the smoothed log weights, one per ratio, and the fitted
+/// generalized Pareto shape `k̂`, the reliability diagnostic. This is the
+/// smoothing [`loo`] applies to each observation (with log ratios
+/// `-log p(yᵢ | θₛ)`); it is public for any other reweighting of posterior
+/// draws, such as a one-year view.
+///
+/// Conventions:
+///
+/// - The weights are unnormalized and on the log scale, shifted so that the
+///   largest raw log ratio is 0. Normalize with `log Σ exp` when needed.
+/// - The tail is the largest `M = min(⌈0.2 S⌉, ⌈3 √(S / r_eff)⌉)` ratios,
+///   where `r_eff` is the relative efficiency of the draws (their effective
+///   sample size over `S`; 1 for independent draws). The tail is replaced,
+///   in ascending order, by the generalized Pareto quantiles at
+///   `(z - 1/2) / M`, `z = 1, ..., M`, fitted to the exceedances over the
+///   `(M + 1)`th largest ratio by Zhang and Stephens' estimator, with `k̂`
+///   shrunk towards 0.5 as by a prior worth 10 observations (Vehtari et al.,
+///   2024), and truncated at the largest raw ratio. The other weights are
+///   the raw (shifted) log ratios.
+/// - When the tail cannot be fitted (`M < 5`, `M ≥ S`, or a tail of ties),
+///   the weights are the raw (shifted) log ratios and `k̂` is infinite.
+///
+/// The log ratios must be finite or `-∞` (a weight of zero), and `r_eff`
+/// finite and positive; anything else, or no ratios, is an error.
+///
+/// ```
+/// use prospicio_bayes::elpd::psis;
+///
+/// // Equal ratios: a tail of ties, so the weights stay equal and k̂ = ∞.
+/// let (log_w, k) = psis(&[0.3; 1000], 1.0).unwrap();
+/// assert!(log_w.iter().all(|&w| w == 0.0));
+/// assert!(k.is_infinite());
+/// ```
+pub fn psis(log_ratios: &[f64], r_eff: f64) -> Result<(Vec<f64>, f64)> {
+    if log_ratios.is_empty() {
+        return Err(Error::Data("psis needs at least one log ratio".into()));
+    }
+    if log_ratios.iter().any(|v| v.is_nan() || *v == f64::INFINITY) {
+        return Err(Error::Data(
+            "psis needs log ratios that are finite or -inf".into(),
+        ));
+    }
+    if !(r_eff.is_finite() && r_eff > 0.0) {
+        return Err(Error::Data(format!(
+            "psis needs a finite positive r_eff, got {r_eff}"
+        )));
+    }
+    Ok(psis_unchecked(log_ratios, r_eff))
+}
+
+/// [`psis`] without the input checks.
+fn psis_unchecked(log_r: &[f64], r_eff: f64) -> (Vec<f64>, f64) {
     let s = log_r.len();
     // Shift so the largest log ratio is 0: ratios are in (0, 1].
     let max = log_r.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -301,6 +352,69 @@ mod tests {
         // The prior pulls k a little towards 0.5 (10 in 2010).
         assert!((k - (0.3 * 2000.0 + 5.0) / 2010.0).abs() < 0.02, "{k}");
         assert!((sigma / 2.0 - 1.0).abs() < 0.05, "{sigma}");
+    }
+
+    /// Uniforms in (0, 1) from a fixed xorshift stream.
+    fn uniforms(n: usize, mut state: u64) -> Vec<f64> {
+        (0..n)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+            })
+            .collect()
+    }
+
+    #[test]
+    fn psis_is_the_smoothing_loo_applies() {
+        // Two observations whose likelihoods have heavy-tailed ratios.
+        let (s, n) = (4000, 2);
+        let u = uniforms(s * n, 0x9e37_79b9_7f4a_7c15);
+        let ll: Vec<f64> = u.iter().map(|&v| 2.0 * v.ln()).collect();
+        let r_eff = [1.0, 0.6];
+        let l = loo(&ll, n, Some(&r_eff)).unwrap();
+        for i in 0..n {
+            let col = column(&ll, n, i);
+            let log_r: Vec<f64> = col.iter().map(|v| -v).collect();
+            let (lw, k) = psis(&log_r, r_eff[i]).unwrap();
+            assert_eq!(k.to_bits(), l.pareto_k[i].to_bits());
+            assert!(k.is_finite());
+            let num: Vec<f64> = lw.iter().zip(&col).map(|(w, c)| w + c).collect();
+            let elpd_i = log_sum_exp(&num) - log_sum_exp(&lw);
+            assert_eq!(elpd_i.to_bits(), l.estimate.pointwise[i].to_bits());
+        }
+    }
+
+    #[test]
+    fn psis_conventions() {
+        let s = 10_000;
+        let log_r: Vec<f64> = uniforms(s, 42).iter().map(|v| -v.ln()).collect();
+        let max = log_r.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        // r_eff sets the tail length: M = min(⌈0.2 S⌉, ⌈3 √(S / r_eff)⌉).
+        for (r_eff, m) in [(1.0, 300), (0.25, 600)] {
+            let (lw, k) = psis(&log_r, r_eff).unwrap();
+            assert!(k.is_finite());
+            let changed = lw
+                .iter()
+                .zip(&log_r)
+                .filter(|(w, r)| (**w - (**r - max)).abs() > 1e-12)
+                .count();
+            assert!(changed <= m && changed > m / 2, "{r_eff}: {changed}");
+            // Shifted so the largest raw ratio is 0, and truncated there.
+            assert!(lw.iter().all(|&w| w <= 0.0));
+        }
+        // Too few draws for a tail: raw shifted weights and an infinite k̂.
+        let (lw, k) = psis(&[1.0, 2.0, 3.0], 1.0).unwrap();
+        assert!(k.is_infinite());
+        assert_eq!(lw, vec![-2.0, -1.0, 0.0]);
+        // A zero weight is allowed; bad input is an error.
+        assert!(psis(&[f64::NEG_INFINITY, 0.0, 1.0], 1.0).is_ok());
+        assert!(psis(&[], 1.0).is_err());
+        assert!(psis(&[0.0, f64::NAN], 1.0).is_err());
+        assert!(psis(&[0.0, f64::INFINITY], 1.0).is_err());
+        assert!(psis(&[0.0, 1.0], 0.0).is_err());
+        assert!(psis(&[0.0, 1.0], f64::NAN).is_err());
     }
 
     #[test]
