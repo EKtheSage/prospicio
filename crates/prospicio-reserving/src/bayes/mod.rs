@@ -24,6 +24,13 @@
 //! over a number type and differentiated with forward-mode dual numbers;
 //! its `reserves` are a [`PredictiveDistribution`] by origin.
 //!
+//! [`BayesOdp::one_year`] gives the one-year view, the claims development
+//! result over the coming year, by reweighting the posterior draws with
+//! Pareto smoothed importance sampling and refitting the simulations whose
+//! Pareto `k` is too high ([`BayesOneYear`], decision 16). The engine takes
+//! any model through an internal trait, so Meyers' models, [`BayesBf`] and
+//! [`Compartmental`] can follow.
+//!
 //! # Seeds
 //!
 //! One `seed` drives a fit, as in the bootstraps. The chains and the
@@ -37,6 +44,10 @@
 //! (in index order) takes tags `2 + 2k` (its chains) and `3 + 2k` (its
 //! simulations) instead, so every segment samples and simulates from its
 //! own streams and independent segments are independent (decision 11).
+//! The one-year view's simulations take the first value of stream
+//! `u64::MAX` of the simulations' derived seed (the fit's, or the
+//! segment's), and simulation `i` stream `i` of it; a refitted simulation
+//! samples from a seed drawn on its own stream.
 //! The pilot run of [`Meyers`] and [`Compartmental`], which sets the
 //! sampling scale, takes stream
 //! `u64::MAX` of its chains' seed (the segment's, over segments), which no
@@ -53,6 +64,7 @@ mod dual;
 mod laplace;
 mod meyers;
 mod odp;
+mod one_year;
 mod scalar;
 
 pub use bf::{BayesBf, BayesBfFit};
@@ -63,6 +75,9 @@ pub use compartmental::{
 };
 pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};
 pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};
+pub use one_year::{
+    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, OneYearRefit,
+};
 
 use prospicio_bayes::nuts::ParamSummary;
 use prospicio_core::StreamRng;
@@ -183,6 +198,15 @@ pub(crate) fn derive_seed(seed: u64, stream: Stream) -> u64 {
 /// chains (`0..chains`) do not reach, so it takes no tag of [`Stream`].
 pub(crate) fn pilot_seed(chains: u64) -> u64 {
     StreamRng::new(chains, u64::MAX).next_u64()
+}
+
+/// The seed of the one-year view's simulations (decision 16): the first value
+/// of stream `u64::MAX` of the predictive simulations' derived seed
+/// `predictive` (a fit's, or a segment's over segments), a stream its
+/// simulations (`0..n_sims`) do not reach. One-year simulation `i` then uses
+/// stream `i` of it, and a refit the chains seed that simulation draws.
+pub(crate) fn one_year_seed(predictive: u64) -> u64 {
+    StreamRng::new(predictive, u64::MAX).next_u64()
 }
 
 #[cfg(test)]

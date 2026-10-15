@@ -1702,6 +1702,10 @@ Triangle$bayes_odp <- function(column, intercept_sd, origin_sd, development_sd, 
 
 Triangle$bayes_odp_segments <- function(column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__bayes_odp_segments, self, column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
 
+Triangle$bayes_odp_one_year <- function(column, priors, process, run, k_threshold, refit) .Call(wrap__Triangle__bayes_odp_one_year, self, column, priors, process, run, k_threshold, refit)
+
+Triangle$bayes_odp_one_year_segments <- function(column, priors, process, run, k_threshold, refit, dependence, spearman) .Call(wrap__Triangle__bayes_odp_one_year_segments, self, column, priors, process, run, k_threshold, refit, dependence, spearman)
+
 Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__meyers, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
 Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__meyers_segments, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
@@ -2006,6 +2010,80 @@ BayesOdpFits$segment <- function(keys, values) .Call(wrap__BayesOdpFits__segment
 
 #' @export
 `[[.BayesOdpFits` <- `$.BayesOdpFits`
+
+BayesOneYearFit <- new.env(parent = emptyenv())
+
+BayesOneYearFit$fit <- function() .Call(wrap__BayesOneYearFit__fit, self)
+
+BayesOneYearFit$opening_ultimate <- function() .Call(wrap__BayesOneYearFit__opening_ultimate, self)
+
+BayesOneYearFit$opening_reserve <- function() .Call(wrap__BayesOneYearFit__opening_reserve, self)
+
+BayesOneYearFit$cdr <- function() .Call(wrap__BayesOneYearFit__cdr, self)
+
+BayesOneYearFit$pareto_k <- function() .Call(wrap__BayesOneYearFit__pareto_k, self)
+
+BayesOneYearFit$refitted <- function() .Call(wrap__BayesOneYearFit__refitted, self)
+
+BayesOneYearFit$refit_warnings <- function() .Call(wrap__BayesOneYearFit__refit_warnings, self)
+
+BayesOneYearFit$k_threshold <- function() .Call(wrap__BayesOneYearFit__k_threshold, self)
+
+BayesOneYearFit$flagged_share <- function() .Call(wrap__BayesOneYearFit__flagged_share, self)
+
+BayesOneYearFit$long_table <- function() .Call(wrap__BayesOneYearFit__long_table, self)
+
+BayesOneYearFit$totals_table <- function() .Call(wrap__BayesOneYearFit__totals_table, self)
+
+BayesOneYearFit$development_table <- function() .Call(wrap__BayesOneYearFit__development_table, self)
+
+BayesOneYearFit$segment <- function(keys, values) .Call(wrap__BayesOneYearFit__segment, self, keys, values)
+
+#' @export
+`$.BayesOneYearFit` <- function (self, name) { func <- BayesOneYearFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesOneYearFit` <- `$.BayesOneYearFit`
+
+BayesOneYearFits <- new.env(parent = emptyenv())
+
+BayesOneYearFits$chain_ladder <- function() .Call(wrap__BayesOneYearFits__chain_ladder, self)
+
+BayesOneYearFits$opening_ultimate <- function() .Call(wrap__BayesOneYearFits__opening_ultimate, self)
+
+BayesOneYearFits$opening_reserve <- function() .Call(wrap__BayesOneYearFits__opening_reserve, self)
+
+BayesOneYearFits$cdr <- function() .Call(wrap__BayesOneYearFits__cdr, self)
+
+BayesOneYearFits$scale <- function() .Call(wrap__BayesOneYearFits__scale, self)
+
+BayesOneYearFits$pareto_k <- function() .Call(wrap__BayesOneYearFits__pareto_k, self)
+
+BayesOneYearFits$refitted <- function() .Call(wrap__BayesOneYearFits__refitted, self)
+
+BayesOneYearFits$refit_warnings <- function() .Call(wrap__BayesOneYearFits__refit_warnings, self)
+
+BayesOneYearFits$refit_counts <- function() .Call(wrap__BayesOneYearFits__refit_counts, self)
+
+BayesOneYearFits$k_threshold <- function() .Call(wrap__BayesOneYearFits__k_threshold, self)
+
+BayesOneYearFits$flagged_share <- function() .Call(wrap__BayesOneYearFits__flagged_share, self)
+
+BayesOneYearFits$diagnostics_table <- function() .Call(wrap__BayesOneYearFits__diagnostics_table, self)
+
+BayesOneYearFits$long_table <- function() .Call(wrap__BayesOneYearFits__long_table, self)
+
+BayesOneYearFits$totals_table <- function() .Call(wrap__BayesOneYearFits__totals_table, self)
+
+BayesOneYearFits$development_table <- function() .Call(wrap__BayesOneYearFits__development_table, self)
+
+BayesOneYearFits$segment <- function(keys, values) .Call(wrap__BayesOneYearFits__segment, self, keys, values)
+
+#' @export
+`$.BayesOneYearFits` <- function (self, name) { func <- BayesOneYearFits[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesOneYearFits` <- `$.BayesOneYearFits`
 
 MeyersFit <- new.env(parent = emptyenv())
 

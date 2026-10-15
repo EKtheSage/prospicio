@@ -313,7 +313,7 @@ class AsIf:
 class BayesBf:
     """
     The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
-    (2012, Model 3.1): the over-dispersed Poisson model of a cumulative
+    (2012, Model 3.1):the over-dispersed Poisson model of a cumulative
     triangle's incremental values ``X`` with mean ``mu[w] * gamma[d]``, an
     informative gamma prior on each origin's row parameter ``mu[w]`` with
     mean ``apriori * exposure[w]`` and coefficient of variation ``cv``, a
@@ -969,6 +969,131 @@ class BayesOdp:
         """
         Number of predictive simulations.
         """
+    def one_year(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "refit_flagged") -> BayesOneYearFit:
+        """
+        The one-year view of one measure column of a single-segment
+        cumulative triangle: the claims development result over the coming
+        year, by Pareto smoothed importance sampling of the posterior
+        (decision 16 of ``docs/design/reserving-bayes.md``). The posterior
+        and the lifetime reserves are ``fit``'s for the same settings. Each
+        simulation picks a posterior draw, draws the year's increments from
+        it with ``process`` error (the cells valued in the next twelve
+        months, as in ``OdpBootstrap.one_year``), reweights every posterior
+        draw by the year's quasi likelihood with ``scale`` and the priors
+        unchanged, and smooths the weights (one Pareto ``k`` per
+        simulation). Origin ``w``'s claims development result is
+        
+        ``CDR[w] = E[R[w] | D0] - (X[w] + E[R'[w] | D0, X])``
+        
+        with ``R`` the expected run-off at the opening, ``X`` the year's
+        payments and ``R'`` the expected run-off after the year, each
+        expectation the (weighted) mean over the posterior draws; its mean
+        is about zero. A simulation whose ``k`` is above ``k_threshold`` is
+        flagged and, with ``refit="refit_flagged"`` (the default), refitted
+        with NUTS on the triangle extended by its year, with this model's
+        sampler. A refit takes about 40 ms in a release build, and 14% to
+        26% of the simulations are flagged on RAA and GenIns, so a default
+        run of 10,000 simulations takes one to two minutes there;
+        ``"reweight_only"`` takes about a second and leaves the total's
+        standard deviation about 1% low. Every cell up to the end of the
+        year is observed and conditioned on, also for an origin that lags
+        the valuation. Raises one ``UserWarning`` listing the failed
+        diagnostics of the fit, and another if any refit failed its
+        diagnostics.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        column : str
+        k_threshold : float, default 0.7
+            The Pareto ``k`` above which a simulation's importance weights
+            are not trusted (the threshold of Vehtari et al. 2024 for a few
+            thousand draws).
+        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+            What happens to a flagged simulation: refitted with NUTS, or
+            reweighted anyway (fast, biased where ``k`` is high);
+            ``"refit_all"`` refits every simulation, to check the
+            reweighting.
+        
+        Returns
+        -------
+        BayesOneYearFit
+        
+        Raises
+        ------
+        ValueError
+            As ``fit``; if ``k_threshold`` is NaN or ``refit`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import BayesOdp, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+        ... )
+        >>> view = BayesOdp(n_sims=1000, seed=1).one_year(tri, "values", refit="reweight_only")
+        >>> view.cdr.components()
+        [('2020',), ('2021',), ('2022',), ('2023',)]
+        >>> len(view.pareto_k), view.refitted
+        (1000, [])
+        >>> view.cdr.variance() < view.fit.reserves.variance()
+        True
+        """
+    def one_year_segments(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "refit_flagged") -> BayesOneYearFits:
+        """
+        The one-year view of one measure column in every segment of a
+        cumulative triangle: each segment's posterior and simulations as in
+        ``fit_segments`` (segment ``k``'s own seeds), reweighted and
+        refitted as in ``one_year``, into one joint claims development
+        result, the segments depending on each other as ``dependence`` says:
+        ``"independent"``, or ``"rank_correlation"`` by Iman–Conover on the
+        segments' total claims development results, as the bootstraps'
+        one-year view does. Raises one ``UserWarning`` listing the failed
+        diagnostics of every segment's fit, and another if any refit failed
+        its diagnostics, each message prefixed with its segment's label.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        column : str
+        k_threshold : float, default 0.7
+            As in ``one_year``.
+        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+            As in ``one_year``.
+        
+        Returns
+        -------
+        BayesOneYearFits
+        
+        Raises
+        ------
+        ValueError
+            As ``one_year`` and ``fit_segments``, including
+            ``dependence="synchronized"``.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import BayesOdp, Triangle
+        >>> paid = [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]
+        >>> tri = Triangle.from_long(
+        ...     ([2020] * 4 + [2021] * 3 + [2022] * 2 + [2023]) * 2,
+        ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12] * 2,
+        ...     {"paid": paid + [2 * v for v in paid]},
+        ...     keys={"lob": ["Auto"] * 10 + ["Home"] * 10},
+        ... )
+        >>> model = BayesOdp(tune=300, draws=300, n_sims=500)
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     views = model.one_year_segments(tri, "paid", refit="reweight_only")
+        >>> views.index, views.cdr.dims
+        (['Auto', 'Home'], ['lob', 'origin'])
+        >>> len(views.segment(lob="Home").pareto_k)
+        500
+        """
     @property
     def origin_sd(self, /) -> float:
         """
@@ -1270,6 +1395,280 @@ class BayesOdpFits:
         One row per segment: the key columns, the chain ladder's totals,
         the ``scale``, and the ``mean`` and ``std_dev`` of the segment's
         posterior predictive total reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+
+@final
+class BayesOneYearFit:
+    """
+    The one-year view of a Bayesian model on a single-segment triangle,
+    from ``BayesOdp.one_year``: the lifetime fit, the opening reserve, the
+    claims development result over the coming year and how reliable each
+    simulation's importance reweighting was.
+    
+    ``cdr`` is the joint distribution of the claims development result by
+    origin (dimension ``"origin"``), the opening reserve less the year's
+    payment and the posterior mean reserve after the year, so a negative
+    value is an adverse development and ``cdr.quantile(0.005)`` is minus
+    the one-year value at risk at 99.5%. ``pareto_k`` has one Pareto ``k``
+    per simulation; ``flagged_share`` is the share above ``k_threshold``,
+    whether or not they were refitted, and ``refitted`` lists the
+    simulations refitted with NUTS.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def cdr(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the claims development result by origin:
+        dimension ``"origin"``, one component per origin, one row per
+        simulation.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The model's volume-weighted chain ladder.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladder's development factors, one row per age, as
+        ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def fit(self, /) -> BayesOdpFit:
+        """
+        The model fitted to the observed triangle, with its posterior and
+        lifetime reserves, as ``BayesOdp.fit`` gives it.
+        """
+    @property
+    def flagged_share(self, /) -> float:
+        """
+        The share of simulations whose ``k`` is above ``k_threshold`` (or
+        NaN), whether or not they were refitted.
+        """
+    @property
+    def k_threshold(self, /) -> float:
+        """
+        The Pareto ``k`` above which a simulation is flagged.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed value per origin.
+        """
+    @property
+    def opening_reserve(self, /) -> list[float]:
+        """
+        Each origin's posterior mean reserve on the observed triangle: the
+        mean over the posterior draws of the expected future increments.
+        """
+    @property
+    def opening_ultimate(self, /) -> list[float]:
+        """
+        The latest value plus the opening reserve, per origin.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and CDR component.
+        """
+    @property
+    def pareto_k(self, /) -> list[float]:
+        """
+        Each simulation's Pareto ``k``, in the order of the simulations
+        (``inf`` when too few weights differ to fit the tail).
+        """
+    @property
+    def refit_warnings(self, /) -> int:
+        """
+        How many of the refits had a diagnostic warning (R-hat, ESS or a
+        divergence).
+        """
+    @property
+    def refitted(self, /) -> list[int]:
+        """
+        The simulations refitted with NUTS, in order (0-based).
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, ``latest``, ``opening_ultimate``,
+        ``opening_reserve``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
+        claims development result. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row: the totals of ``to_frame()``'s columns, the ``scale``, the
+        ``flagged_share``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
+        total claims development result. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+
+@final
+class BayesOneYearFits:
+    """
+    The one-year view of a Bayesian model in every segment of a triangle,
+    from ``BayesOdp.one_year_segments``, laid out as ``OneYearFit``.
+    
+    ``cdr`` is one joint distribution of the claims development result with
+    the triangle's keys and ``"origin"`` as dimensions, so
+    ``cdr.aggregate(["lob"])`` keeps the dependence between segments.
+    Per-origin lists run over the origins of each segment in turn, like the
+    rows of ``to_frame()`` and the components of ``cdr``. ``scale``,
+    ``diagnostics``, ``pareto_k``, ``refitted``, ``refit_warnings`` and
+    ``flagged_share`` are one segment's and need a single-segment fit: for
+    several segments use ``segment(...)``, ``totals_frame()`` (the scales
+    and flagged shares) or ``diagnostics_frame()``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def cdr(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the claims development result by segment and
+        origin: the triangle's keys and ``"origin"`` are its dimensions, one
+        component per segment and origin, one row per simulation.
+        """
+    @property
+    def chain_ladder(self, /) -> ChainLadderFit:
+        """
+        The volume-weighted chain ladder of every segment.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months of the first segment.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        The chain ladders' development factors, one row per segment and
+        age, as ``ChainLadderFit.development_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics of a single-segment fit's posterior, as
+        ``BayesOdpFit.diagnostics``.
+        """
+    def diagnostics_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, then ``max_rhat``,
+        ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+        ``warnings`` of the segment's posterior, as
+        ``BayesOdpFits.diagnostics_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def flagged_share(self, /) -> float:
+        """
+        The share of a single-segment fit's simulations whose ``k`` is
+        above ``k_threshold`` (or NaN).
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def k_threshold(self, /) -> float:
+        """
+        The Pareto ``k`` above which a simulation is flagged.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed value per origin.
+        """
+    @property
+    def opening_reserve(self, /) -> list[float]:
+        """
+        Each origin's posterior mean reserve on the observed triangle.
+        """
+    @property
+    def opening_ultimate(self, /) -> list[float]:
+        """
+        The latest value plus the opening reserve, per origin.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and CDR component.
+        """
+    @property
+    def pareto_k(self, /) -> list[float]:
+        """
+        Each simulation's Pareto ``k`` in a single-segment fit.
+        """
+    @property
+    def refit_warnings(self, /) -> int:
+        """
+        How many of a single-segment fit's refits had a diagnostic warning.
+        """
+    @property
+    def refitted(self, /) -> list[int]:
+        """
+        The simulations of a single-segment fit refitted with NUTS.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The plugged-in scale ``phi`` of a single-segment fit.
+        """
+    def segment(self, /, **keys) -> BayesOneYearFits:
+        """
+        The one-year view of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint claims
+        development result (same dimensions).
+        
+        Returns
+        -------
+        BayesOneYearFits
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest``, ``opening_ultimate``, ``opening_reserve``, and the
+        ``cdr_mean`` and ``cdr_std_dev`` of the claims development result.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the totals of ``to_frame()``'s
+        columns, the ``scale``, the ``flagged_share``, and the ``cdr_mean``
+        and ``cdr_std_dev`` of the segment's total claims development
+        result. Needs pandas.
         
         Returns
         -------
