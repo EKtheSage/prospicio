@@ -2216,8 +2216,14 @@ mod tests {
     }
 
     /// Seed-pinned one-year views, bit for bit: a change to the engine
-    /// (decision 17) must leave them unchanged.
+    /// (decision 17) must leave them unchanged. The hashes were captured on
+    /// Windows x86_64 (MSVC); another platform's `exp` and `ln` round
+    /// differently in the last bit, NUTS trajectories then diverge, and the
+    /// draws differ (Ubuntu CI fails it). So it guards a refactor on the
+    /// machine that captured it and is not run by CI: run it with
+    /// `--ignored` there, before and after the change.
     #[test]
+    #[ignore = "platform-specific pins (Windows x86_64); a local refactor guard, run with --ignored"]
     fn the_one_year_view_is_pinned_by_seed() {
         let only = quick(4)
             .one_year(

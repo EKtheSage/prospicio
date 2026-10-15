@@ -2118,7 +2118,9 @@ or in `refitted`. Python `refit="moment_match_then_refit"` and
 `.moment_matched`; R the same `refit` value and `@moment_matched`
 (1-based). Moment matching draws no random numbers, so the years and the
 other settings' views are unchanged bit for bit (the pinned test of
-decision 17 passes).
+decision 17 passes on the Windows machine that captured it; its hashes
+are platform-specific, since another libm changes the NUTS draws, so it
+is ignored in CI and run with `--ignored` as a local refactor guard).
 
 **Results** (`validation/tests/reserving_bayes_one_year_moment_match.rs`,
 release, 16 threads; `BayesOdp` on RAA and GenIns and `BayesBf` on GenIns
